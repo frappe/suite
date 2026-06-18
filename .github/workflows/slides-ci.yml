@@ -1,0 +1,31 @@
+name: Slides CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "suite/slides/**"
+      - "frontend/src/apps/slides/**"
+      - "pyproject.toml"
+      - ".github/workflows/slides-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  pull_request:
+    paths:
+      - "suite/slides/**"
+      - "frontend/src/apps/slides/**"
+      - "pyproject.toml"
+      - ".github/workflows/slides-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: slides-ci-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    uses: ./.github/workflows/suite-module-ci.yml
+    with:
+      module: suite.slides
+      test-path: suite/slides

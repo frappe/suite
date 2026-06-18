@@ -1,0 +1,33 @@
+name: Mail CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "suite/mail/**"
+      - "suite/server/**"
+      - "frontend/src/apps/mail/**"
+      - "pyproject.toml"
+      - ".github/workflows/mail-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  pull_request:
+    paths:
+      - "suite/mail/**"
+      - "suite/server/**"
+      - "frontend/src/apps/mail/**"
+      - "pyproject.toml"
+      - ".github/workflows/mail-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mail-ci-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    uses: ./.github/workflows/suite-module-ci.yml
+    with:
+      module: suite.mail
+      test-path: suite/mail

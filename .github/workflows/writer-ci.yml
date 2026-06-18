@@ -1,0 +1,33 @@
+name: Writer CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "suite/writer/**"
+      - "suite/frappe_writer/**"
+      - "frontend/src/apps/writer/**"
+      - "pyproject.toml"
+      - ".github/workflows/writer-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  pull_request:
+    paths:
+      - "suite/writer/**"
+      - "suite/frappe_writer/**"
+      - "frontend/src/apps/writer/**"
+      - "pyproject.toml"
+      - ".github/workflows/writer-ci.yml"
+      - ".github/workflows/suite-module-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: writer-ci-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    uses: ./.github/workflows/suite-module-ci.yml
+    with:
+      module: suite.writer
+      test-path: suite/writer
