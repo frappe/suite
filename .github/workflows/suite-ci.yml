@@ -57,6 +57,9 @@ jobs:
           test_modules=""
           for root in $test_roots; do
             while IFS= read -r file; do
+              if ! grep -Eq '(^[[:space:]]*def test_|class .*Test|IntegrationTestCase|UnitTestCase)' "$file"; then
+                continue
+              fi
               module="${file%.py}"
               module="${module//\//.}"
               test_modules="$test_modules $module"
