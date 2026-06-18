@@ -219,6 +219,12 @@ jobs:
         working-directory: frontend
         run: yarn install --frozen-lockfile
 
+      - name: Create bench site config
+        if: steps.frontend-changes.outputs.run == '1'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../../sites"
+          printf '{"default_site":"localhost","webserver_port":8000,"socketio_port":9000}\n' > "$GITHUB_WORKSPACE/../../sites/common_site_config.json"
+
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
         working-directory: frontend
