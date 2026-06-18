@@ -52,50 +52,7 @@ jobs:
       - name: Find backend tests to run
         id: backend_tests
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            changed_files="pyproject.toml"
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-          else
-            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-              changed_files="$(git diff --name-only HEAD~1 HEAD)"
-            else
-              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
-            fi
-          fi
-
-          test_roots=""
-          extra_sheets=0
-          extra_meet=0
-          add_test_root() {
-            case " $test_roots " in
-              *" $1 "*) ;;
-              *) test_roots="$test_roots $1" ;;
-            esac
-          }
-
-          if printf '%s\n' "$changed_files" | grep -Eq '^(pyproject\.toml|suite/hooks\.py|suite/modules\.txt|suite/suite_core/|\.github/workflows/suite-ci\.yml)'; then
-            test_roots=" suite/drive suite/slides suite/writer suite/sheets suite/mail suite/server suite/client suite/meet"
-            extra_sheets=1
-            extra_meet=1
-          else
-            printf '%s\n' "$changed_files" | grep -Eq '^suite/drive/' && add_test_root suite/drive
-            printf '%s\n' "$changed_files" | grep -Eq '^suite/slides/' && add_test_root suite/slides
-            printf '%s\n' "$changed_files" | grep -Eq '^suite/(writer|frappe_writer)/' && add_test_root suite/writer
-            if printf '%s\n' "$changed_files" | grep -Eq '^suite/sheets/'; then
-              add_test_root suite/sheets
-              extra_sheets=1
-            fi
-            if printf '%s\n' "$changed_files" | grep -Eq '^suite/(mail|server)/'; then
-              add_test_root suite/mail
-              add_test_root suite/server
-            fi
-            printf '%s\n' "$changed_files" | grep -Eq '^suite/(client|calendar)/' && add_test_root suite/client
-            if printf '%s\n' "$changed_files" | grep -Eq '^suite/meet/'; then
-              add_test_root suite/meet
-              extra_meet=1
-            fi
-          fi
+          test_roots="suite/drive suite/slides suite/writer suite/sheets suite/mail suite/server suite/client suite/meet"
 
           test_modules=""
           for root in $test_roots; do
@@ -108,8 +65,6 @@ jobs:
 
           test_modules="$(echo "$test_modules" | xargs)"
           echo "test_modules=$test_modules" >> $GITHUB_OUTPUT
-          echo "extra_sheets=$extra_sheets" >> $GITHUB_OUTPUT
-          echo "extra_meet=$extra_meet" >> $GITHUB_OUTPUT
           echo "Backend test module count: $(test -n "$test_modules" && echo "$test_modules" | wc -w | xargs || echo 0)"
           printf 'Backend test modules:\n%s\n' "$test_modules"
 
@@ -189,14 +144,12 @@ jobs:
           TYPE: server
 
       - name: Run Sheets Collab Server Tests
-        if: steps.backend_tests.outputs.extra_sheets == '1'
         working-directory: suite/sheets/collab-server
         run: |
           npm install
           npm test
 
       - name: Run Meet SFU Server Tests
-        if: steps.backend_tests.outputs.extra_meet == '1'
         working-directory: suite/meet/sfu-server
         run: |
           yarn install --frozen-lockfile
