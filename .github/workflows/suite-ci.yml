@@ -1,0 +1,235 @@
+name: Suite CI
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "suite/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - ".github/workflows/suite-ci.yml"
+  pull_request:
+    paths:
+      - "suite/**"
+      - "frontend/**"
+      - "pyproject.toml"
+      - ".github/workflows/suite-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: suite-ci-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    name: Backend
+
+    services:
+      redis-cache:
+        image: redis:alpine
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:alpine
+        ports:
+          - 11000:6379
+      mariadb:
+        image: mariadb:10.6
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find backend modules to test
+        id: backend-modules
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            changed_files="pyproject.toml"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              changed_files="$(git diff --name-only HEAD~1 HEAD)"
+            else
+              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+            fi
+          fi
+
+          modules=""
+          add_module() {
+            case " $modules " in
+              *" $1 "*) ;;
+              *) modules="$modules $1" ;;
+            esac
+          }
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(pyproject\.toml|suite/hooks\.py|suite/modules\.txt|suite/suite_core/|\.github/workflows/suite-ci\.yml)'; then
+            modules=" suite.drive suite.slides suite.writer suite.sheets suite.mail suite.client suite.meet"
+          else
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/drive/' && add_module suite.drive
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/slides/' && add_module suite.slides
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/(writer|frappe_writer)/' && add_module suite.writer
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/sheets/' && add_module suite.sheets
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/(mail|server)/' && add_module suite.mail
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/(client|calendar)/' && add_module suite.client
+            printf '%s\n' "$changed_files" | grep -Eq '^suite/meet/' && add_module suite.meet
+          fi
+
+          modules="$(echo "$modules" | xargs)"
+          echo "modules=$modules" >> $GITHUB_OUTPUT
+          echo "Backend modules: ${modules:-none}"
+
+      - name: Setup Python
+        if: steps.backend-modules.outputs.modules != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Setup Node
+        if: steps.backend-modules.outputs.modules != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Cache pip
+        if: steps.backend-modules.outputs.modules != ''
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Get yarn cache directory path
+        if: steps.backend-modules.outputs.modules != ''
+        id: yarn-cache-dir-path
+        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
+
+      - name: Cache yarn
+        if: steps.backend-modules.outputs.modules != ''
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Install MariaDB Client
+        if: steps.backend-modules.outputs.modules != ''
+        run: |
+          sudo apt update
+          sudo apt-get install -y mariadb-client
+
+      - name: Setup Bench
+        if: steps.backend-modules.outputs.modules != ''
+        run: |
+          pip install frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
+          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
+
+      - name: Install Suite
+        if: steps.backend-modules.outputs.modules != ''
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench get-app suite $GITHUB_WORKSPACE
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
+          bench --site test_site install-app suite
+          bench build
+        env:
+          CI: "Yes"
+
+      - name: Run Backend Tests
+        if: steps.backend-modules.outputs.modules != ''
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site set-config allow_tests true
+          for module in ${{ steps.backend-modules.outputs.modules }}; do
+            bench --site test_site run-tests --app suite --module "$module"
+          done
+        env:
+          TYPE: server
+
+      - name: Run Sheets Collab Server Tests
+        if: contains(steps.backend-modules.outputs.modules, 'suite.sheets')
+        working-directory: suite/sheets/collab-server
+        run: |
+          npm install
+          npm test
+
+      - name: Run Meet SFU Server Tests
+        if: contains(steps.backend-modules.outputs.modules, 'suite.meet')
+        working-directory: suite/meet/sfu-server
+        run: |
+          yarn install --frozen-lockfile
+          yarn test
+
+  frontend:
+    runs-on: ubuntu-latest
+    name: Frontend
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check frontend changes
+        id: frontend-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run_frontend=1
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              changed_files="$(git diff --name-only HEAD~1 HEAD)"
+            else
+              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+            fi
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+          fi
+
+          echo "run=$run_frontend" >> $GITHUB_OUTPUT
+          echo "Run frontend: $run_frontend"
+
+      - name: Setup Node
+        if: steps.frontend-changes.outputs.run == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "yarn"
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install dependencies
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: yarn build
+
+      - name: Test
+        if: steps.frontend-changes.outputs.run == '1'
+        working-directory: frontend
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            yarn test
+          else
+            echo "No frontend test script configured"
+          fi
