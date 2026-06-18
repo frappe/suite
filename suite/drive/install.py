@@ -13,7 +13,7 @@ def ensure_custom_fields():
 	through Drive's hooks and needs these columns to already exist. Create them up
 	front. Idempotent: create_custom_fields updates fields in place on re-run.
 	"""
-	path = frappe.get_app_path("suite", "drive", "fixtures", "custom_field.json")
+	path = frappe.get_app_path("suite", "fixtures", "custom_field.json")
 	with open(path) as f:
 		fields = json.load(f)
 
