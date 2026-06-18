@@ -2,7 +2,7 @@ describe("Core functionality", () => {
   before(() => {
     cy.request({
       method: "POST",
-      url: "/api/method/suite.drive.test_api.clear_data",
+      url: "/api/method/suite.drive.e2e_api.clear_data",
     });
   });
   beforeEach(() => {

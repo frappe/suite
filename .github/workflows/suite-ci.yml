@@ -49,43 +49,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Find backend tests to run
-        id: backend_tests
-        run: |
-          test_roots="suite/drive suite/slides suite/writer suite/sheets suite/mail suite/server suite/client suite/meet"
-
-          test_modules=""
-          for root in $test_roots; do
-            while IFS= read -r file; do
-              if ! grep -Eq '(^[[:space:]]*def test_|class .*Test|IntegrationTestCase|UnitTestCase)' "$file"; then
-                continue
-              fi
-              module="${file%.py}"
-              module="${module//\//.}"
-              test_modules="$test_modules $module"
-            done < <(find "$root" -name 'test*.py' ! -name 'test_helpers.py' -type f | sort)
-          done
-
-          test_modules="$(echo "$test_modules" | xargs)"
-          echo "test_modules=$test_modules" >> $GITHUB_OUTPUT
-          echo "Backend test module count: $(test -n "$test_modules" && echo "$test_modules" | wc -w | xargs || echo 0)"
-          printf 'Backend test modules:\n%s\n' "$test_modules"
-
       - name: Setup Python
-        if: steps.backend_tests.outputs.test_modules != ''
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
       - name: Setup Node
-        if: steps.backend_tests.outputs.test_modules != ''
         uses: actions/setup-node@v4
         with:
           node-version: 24
           check-latest: true
 
       - name: Cache pip
-        if: steps.backend_tests.outputs.test_modules != ''
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -95,12 +70,10 @@ jobs:
             ${{ runner.os }}-
 
       - name: Get yarn cache directory path
-        if: steps.backend_tests.outputs.test_modules != ''
         id: yarn-cache-dir-path
         run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
 
       - name: Cache yarn
-        if: steps.backend_tests.outputs.test_modules != ''
         uses: actions/cache@v4
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
@@ -109,13 +82,11 @@ jobs:
             ${{ runner.os }}-yarn-
 
       - name: Install MariaDB Client
-        if: steps.backend_tests.outputs.test_modules != ''
         run: |
           sudo apt update
           sudo apt-get install -y mariadb-client
 
       - name: Setup Bench
-        if: steps.backend_tests.outputs.test_modules != ''
         run: |
           pip install frappe-bench
           bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
@@ -123,7 +94,6 @@ jobs:
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
       - name: Install Suite
-        if: steps.backend_tests.outputs.test_modules != ''
         working-directory: /home/runner/frappe-bench
         run: |
           bench get-app suite $GITHUB_WORKSPACE
@@ -135,14 +105,10 @@ jobs:
           CI: "Yes"
 
       - name: Run Backend Tests
-        if: steps.backend_tests.outputs.test_modules != ''
         working-directory: /home/runner/frappe-bench
         run: |
           bench --site test_site set-config allow_tests true
-          for module in ${{ steps.backend_tests.outputs.test_modules }}; do
-            echo "Running $module"
-            bench --site test_site run-tests --app suite --module "$module"
-          done
+          bench --site test_site run-tests --app suite
         env:
           TYPE: server
 
