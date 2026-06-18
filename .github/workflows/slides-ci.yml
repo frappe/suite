@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  server:
+  backend-frontend:
     uses: ./.github/workflows/suite-module-ci.yml
     with:
       module: suite.slides

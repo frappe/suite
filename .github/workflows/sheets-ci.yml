@@ -24,27 +24,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  server:
+  backend-frontend:
     uses: ./.github/workflows/suite-module-ci.yml
     with:
       module: suite.sheets
       test-path: suite/sheets
-
-  collab-server:
-    runs-on: ubuntu-latest
-    name: Collab Server
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Install dependencies
-        working-directory: suite/sheets/collab-server
-        run: npm install
-
-      - name: Test
-        working-directory: suite/sheets/collab-server
-        run: npm test
+      extra-backend-working-directory: suite/sheets/collab-server
+      extra-backend-install-command: npm install
+      extra-backend-test-command: npm test
