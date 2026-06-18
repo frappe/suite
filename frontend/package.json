@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "comment": "Minimal foundation deps only \u2014 enough to build the shell+router+stubs (the Phase 5 foundation gate). The full 94+42 union merged from the 7 source apps is preserved in package.union.json; each per-app port re-adds its real deps from there.",
   "dependencies": {
@@ -98,10 +99,12 @@
     "yjs": "^13.6.30"
   },
   "devDependencies": {
-    "vite": "^8.0.16",
     "@vitejs/plugin-vue": "^6.0.6",
-    "tailwindcss": "^3.4.19",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.14",
-    "autoprefixer": "^10.4.20"
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.6"
   }
 }
