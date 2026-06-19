@@ -57,7 +57,7 @@ jobs:
       - name: Run Semgrep rules
         run: |
           pip install semgrep
-          semgrep scan --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness suite/meet
+          semgrep scan --config ./frappe-semgrep-rules/rules --config r/python.lang.correctness .
 
   deps-vulnerable-check:
     name: Vulnerable Dependency Check
