@@ -11,7 +11,7 @@
 # ==============================================================================
 
 x-frappe-image: &frappe_image
-  image: ${FRAPPE_IMAGE:-ghcr.io/frappe/suite:latest}
+  image: ${FRAPPE_IMAGE:-ghcr.io/frappe/suite/meet:latest}
   restart: unless-stopped
 
 x-depends-on-configurator: &depends_on_configurator
@@ -176,7 +176,7 @@ services:
 
   # ── SFU Server (host networking for WebRTC) ─────────────────────────────────
   sfu:
-    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}
+    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
     container_name: suite-sfu
     restart: unless-stopped
     network_mode: host

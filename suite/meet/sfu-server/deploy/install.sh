@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/frappe/meet/develop/sfu-server/deploy/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/frappe/suite/develop/suite/meet/sfu-server/deploy/install.sh | bash
 #
 # ==============================================================================
 
 set -euo pipefail
 
-REPO="frappe/meet"
+REPO="frappe/suite"
 BRANCH="${1:-develop}"
-BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH/sfu-server/deploy"
+BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH/suite/meet/sfu-server/deploy"
 INSTALL_DIR="${SFU_INSTALL_DIR:-/opt/meet-sfu}"
 
 # Colors

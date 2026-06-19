@@ -115,7 +115,7 @@ check_env() {
     fi
 
     # Informational
-    info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}"
+    info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     info "SFU Port: ${PORT:-3000}"
     info "WebRTC ports: ${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-40200} UDP"
 
@@ -136,7 +136,7 @@ cmd_setup() {
 
     header "Pulling SFU image"
     set -a; source "$ENV_FILE"; set +a
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}"
+    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     ok "Image pulled"
 
     # Start SFU first (nginx depends on it being healthy)
@@ -198,7 +198,7 @@ cmd_restart() {
 cmd_pull() {
     set -a; source "$ENV_FILE"; set +a
     header "Pulling latest SFU image"
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}"
+    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     ok "Image pulled"
     info "Run './deploy.sh restart' to use the new image"
 }

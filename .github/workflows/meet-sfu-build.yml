@@ -17,7 +17,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: frappe/suite/sfu-server
+  IMAGE_NAME: frappe/suite/meet-sfu-server
 
 jobs:
   build-and-push:

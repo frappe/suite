@@ -15,7 +15,7 @@ Mediasoup-based Selective Forwarding Unit (SFU) for Frappe Meet.
 
 ```bash
 # Install on the server (downloads deploy files to /opt/meet-sfu)
-curl -fsSL https://raw.githubusercontent.com/frappe/meet/develop/sfu-server/deploy/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/frappe/suite/develop/suite/meet/sfu-server/deploy/install.sh | bash
 
 # Configure
 cd /opt/meet-sfu

@@ -12,7 +12,7 @@ This guide explains how to deploy Frappe Meet on a single VPS using Docker. The 
 ### Step 1: Run the Installer
 Run the following command on your server to download all the necessary deployment files:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/frappe/meet/develop/deploy/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/frappe/suite/develop/suite/meet/deploy/install.sh | bash
 ```
 
 ### Step 2: Navigate to the Install Directory

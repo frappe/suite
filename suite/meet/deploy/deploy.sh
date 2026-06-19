@@ -137,8 +137,8 @@ cmd_setup() {
 
     # Pull images
     header "Pulling images"
-    docker pull "${FRAPPE_IMAGE:-ghcr.io/frappe/suite:latest}"
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}"
+    docker pull "${FRAPPE_IMAGE:-ghcr.io/frappe/suite/meet:latest}"
+    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     ok "Images pulled"
 
     # Start DB + Redis
@@ -241,8 +241,8 @@ cmd_update() {
     set -a; source "$ENV_FILE"; set +a
 
     header "Pulling latest images"
-    docker pull "${FRAPPE_IMAGE:-ghcr.io/frappe/suite:latest}"
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}"
+    docker pull "${FRAPPE_IMAGE:-ghcr.io/frappe/suite/meet:latest}"
+    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     ok "Images pulled"
 
     header "Restarting services with new images"

@@ -3,14 +3,14 @@
 # Frappe Meet — Installer
 # ==============================================================================
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/frappe/meet/develop/deploy/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/frappe/suite/develop/suite/meet/deploy/install.sh | bash
 # ==============================================================================
 
 set -euo pipefail
 
-REPO="frappe/meet"
+REPO="frappe/suite"
 BRANCH="${1:-develop}"
-BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH/deploy"
+BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH/suite/meet/deploy"
 INSTALL_DIR="${MEET_INSTALL_DIR:-$PWD/frappe-meet}"
 
 # Colors

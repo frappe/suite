@@ -17,7 +17,7 @@
 services:
   # ── SFU Server ──────────────────────────────────────────────────────────────
   sfu:
-    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/sfu-server:latest}
+    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
     container_name: suite-sfu
     restart: unless-stopped
     network_mode: host
