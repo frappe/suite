@@ -18,7 +18,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: frappe/meet
+  IMAGE_NAME: frappe/suite/meet
 
 jobs:
   build-and-push:
