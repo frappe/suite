@@ -83,14 +83,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('suite/meet/e2e/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
       - name: Cache bench directory
         id: cache-bench
         uses: actions/cache@v4
@@ -147,7 +139,7 @@ jobs:
         run: |
           yarn install --frozen-lockfile --non-interactive
           yarn playwright install-deps chromium
-          yarn playwright install chromium
+          google-chrome --version
 
       - name: Start Frappe Server
         working-directory: /home/runner/frappe-bench

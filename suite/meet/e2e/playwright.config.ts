@@ -35,6 +35,7 @@ export default defineConfig({
 			name: "chromium",
 			use: {
 				...devices["Desktop Chrome"],
+				channel: "chrome",
 				launchOptions: {
 					args: [
 						"--use-fake-ui-for-media-stream",
