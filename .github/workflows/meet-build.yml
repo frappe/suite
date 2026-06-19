@@ -64,6 +64,7 @@ jobs:
 
       - name: Inject Cache Buster
         run: |
+          grep -q 'RUN --mount=type=secret,id=apps_json' frappe_docker/images/custom/Containerfile
           sed -i 's/RUN --mount=type=secret,id=apps_json/ARG CACHE_BUSTER\nRUN echo "Cache Buster: $CACHE_BUSTER"\nRUN --mount=type=secret,id=apps_json/' frappe_docker/images/custom/Containerfile
 
       - name: Build and push Docker image
