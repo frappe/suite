@@ -13,7 +13,7 @@ wired up separately (Procfile/supervisor + nginx + `site_config.json`). Their ow
 - **Env:** `JWT_SECRET` (must equal site_config `sfu_secret`), `WEBRTC_ANNOUNCED_IP`, `HOST`, `PORT`, `RTC_MIN_PORT`, `RTC_MAX_PORT`
 - **site_config keys:** `sfu_server_url`, `sfu_secret`
 - **Health:** `GET /health`
-- **Deploy refs:** `suite/meet/sfu-server/deploy/`, `suite/meet/deploy/` (docker-compose self-host stack)
+- **Deploy refs:** `suite/meet/sfu-server/deploy/`
 
 ## 2. Meet — realtime handlers (🔴, no separate process)
 - **Path:** `suite/meet/realtime/handlers.js` — Frappe socketio handler (guest rooms, ping/pong)
