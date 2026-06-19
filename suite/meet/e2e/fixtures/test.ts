@@ -138,7 +138,7 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 		},
 		async endCall() {
 			await page.getByTestId("toolbar-end-call").click();
-			await page.waitForURL("**/meet/");
+			await page.waitForURL(/\/meet\/?$/);
 		},
 	};
 }

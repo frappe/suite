@@ -9,7 +9,7 @@ test.describe("Joining and leaving", () => {
 
 		await hostPage.getByTestId("toolbar-end-call").click();
 
-		await hostPage.waitForURL("**/meet/");
+		await hostPage.waitForURL(/\/meet\/?$/);
 		await expect(hostPage.getByTestId("home-page")).toBeVisible();
 	});
 
