@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: meet-e2e-${{ github.event.number || github.sha }}
+  group: meet-e2e-${{ github.event.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
