@@ -26,6 +26,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     name: E2E Tests
+    timeout-minutes: 60
 
     services:
       redis-cache:
@@ -86,7 +87,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('suite/meet/e2e/package.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('suite/meet/e2e/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-playwright-
 
@@ -142,9 +143,11 @@ jobs:
 
       - name: Install E2E Dependencies
         working-directory: ${{ github.workspace }}/suite/meet/e2e
+        timeout-minutes: 20
         run: |
-          yarn install --non-interactive
-          yarn playwright install chromium --with-deps
+          yarn install --frozen-lockfile --non-interactive
+          yarn playwright install-deps chromium
+          yarn playwright install chromium
 
       - name: Start Frappe Server
         working-directory: /home/runner/frappe-bench
