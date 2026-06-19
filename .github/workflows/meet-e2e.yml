@@ -107,12 +107,16 @@ jobs:
       - name: Install Suite
         working-directory: /home/runner/frappe-bench
         run: |
-          rm -rf apps/suite sites/meet.test
+          rm -rf apps/suite sites/meet.test sites/assets/suite
           bench get-app suite $GITHUB_WORKSPACE
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin meet.test
           bench --site meet.test install-app suite
+          cd apps/suite/frontend
+          yarn install --frozen-lockfile --non-interactive
+          yarn build
+          cd /home/runner/frappe-bench
           bench build
         env:
           CI: "Yes"
