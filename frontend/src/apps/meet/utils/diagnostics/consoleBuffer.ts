@@ -104,6 +104,7 @@ function appendEntry(level: LogLevel, args: unknown[]): void {
 export function installConsoleBuffer(
 	options: InstallConsoleBufferOptions = {},
 ): void {
+	if (process.env.NODE_ENV === "development") return;
 	const store = ensureStore(options.maxEntries ?? DEFAULT_MAX_ENTRIES);
 	if (store.installed) return;
 

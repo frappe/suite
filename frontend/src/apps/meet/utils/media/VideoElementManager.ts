@@ -97,6 +97,7 @@ export class VideoElementManager {
 
 			if (videoTracks.length > 0) {
 				const newVideoTrack = videoTracks[0];
+				const perfLabel = `video-attach-perf|${participantId}|${newVideoTrack.id}`;
 				const existingVideoTrack = (
 					videoElement.srcObject as MediaStream | null
 				)?.getVideoTracks?.()?.[0];
@@ -108,6 +109,7 @@ export class VideoElementManager {
 					!existingVideoTrack || existingVideoTrack.id !== newVideoTrack.id;
 
 				if (!videoElement.srcObject || videoTrackChanged || isStale) {
+					console.time(perfLabel);
 					console.log(`Attaching video track for ${participantId}`, {
 						trackId: newVideoTrack.id,
 						hadExisting: !!existingVideoTrack,
@@ -116,14 +118,40 @@ export class VideoElementManager {
 					});
 					const videoStream = new MediaStream(videoTracks);
 					videoElement.srcObject = videoStream;
+					console.timeLog(perfLabel, "src-object-set", {
+						readyState: videoElement.readyState,
+					});
 					// we have a separate audio element for audio playback
 					videoElement.muted = true;
 					this.lastVideoAttachAt.set(participantId, Date.now());
+					let timerEnded = false;
+					const endTimer = () => {
+						if (!timerEnded) {
+							timerEnded = true;
+							console.timeEnd(perfLabel);
+						}
+					};
 
 					try {
+						const hasFrameCallback = !!videoElement.requestVideoFrameCallback;
+						videoElement.requestVideoFrameCallback?.(() => {
+							console.timeLog(perfLabel, "first-video-frame", {
+								readyState: videoElement.readyState,
+							});
+							endTimer();
+						});
 						await videoElement.play();
+						if (!timerEnded) {
+							console.timeLog(perfLabel, "play-resolved", {
+								readyState: videoElement.readyState,
+							});
+						}
+						if (!hasFrameCallback) {
+							endTimer();
+						}
 					} catch (err) {
 						console.error(`Error playing video for ${participantId}:`, err);
+						endTimer();
 					}
 				} else {
 					console.log(

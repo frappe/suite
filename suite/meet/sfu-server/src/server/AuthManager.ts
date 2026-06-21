@@ -74,19 +74,19 @@ export class AuthManager {
 			socket.userId = decoded.user_id;
 			socket.userName = decoded.user_name;
 			socket.meetingId = decoded.meeting_id;
-			socket.site = decoded.site;
 			socket.isHost = decoded.is_host || false;
 			socket.isCohost = decoded.is_cohost || false;
 			socket.scope = decoded.scope || 'presence-preview';
+			socket.e2eeRequired = Boolean(decoded.e2ee_required);
+			socket.e2eeReady = !socket.e2eeRequired;
 			socket.currentToken = token;
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 			this.scheduleTokenExpiry(socket);
 
 			loggers.authManager.info(
-				'Authenticated user: %s for meeting: %s (site: %s)',
+				'Authenticated user: %s for meeting: %s',
 				socket.userId,
 				socket.meetingId,
-				socket.site ?? '<unspecified>',
 			);
 			return true;
 		} catch (error) {
@@ -109,6 +109,8 @@ export class AuthManager {
 
 	updateSocketToken(socket: Socket, token: string): void {
 		const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+		const wasE2EERequired = socket.e2eeRequired === true;
+		const wasE2EEReady = socket.e2eeReady === true;
 
 		if (!decoded.meeting_id || decoded.meeting_id !== socket.meetingId) {
 			throw new Error('Token meeting mismatch');
@@ -118,12 +120,12 @@ export class AuthManager {
 			throw new Error('Token user mismatch');
 		}
 
-		if ((decoded.site ?? undefined) !== (socket.site ?? undefined)) {
-			throw new Error('Token site mismatch');
-		}
-
 		socket.currentToken = token;
 		socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
+		socket.e2eeRequired = Boolean(decoded.e2ee_required);
+		socket.e2eeReady = socket.e2eeRequired
+			? wasE2EERequired && wasE2EEReady
+			: true;
 
 		if (socket.handshake?.auth) {
 			socket.handshake.auth.token = token;
@@ -190,6 +192,8 @@ export class AuthManager {
 		this.clearTokenExpiry(socket);
 		socket.currentToken = undefined;
 		socket.tokenExpiresAt = undefined;
+		socket.e2eeReady = undefined;
+		socket.e2eeRequired = undefined;
 	}
 
 	private scheduleTokenExpiry(socket: Socket): void {

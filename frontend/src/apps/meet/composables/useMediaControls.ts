@@ -555,6 +555,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			echoCancellation: true,
 			noiseSuppression: true,
 			autoGainControl: true,
+			sampleRate: 16000,
+			sampleSize: 16,
 		};
 
 		if (videoEnabled) {

@@ -1,5 +1,6 @@
 import { toast } from "frappe-ui";
 import audioNotificationManager from "../utils/audioNotifications";
+import { E2EEMeeting } from "../utils/media/E2EEMeeting";
 import type { SFUClient } from "../utils/SFUClient";
 import type { ChatMessage, ChatStore } from "./useChatStore";
 import type { CurrentUser } from "./useCurrentUser";
@@ -10,6 +11,60 @@ interface ChatAPI {
 	toggleRestriction: (enabled: boolean) => void;
 }
 
+const E2EE_CHAT_PREFIX = "e2ee:";
+
+function isEncryptedChatMessage(message: string): boolean {
+	return message.startsWith(E2EE_CHAT_PREFIX);
+}
+
+async function encryptChatMessage(
+	key: CryptoKey,
+	text: string,
+): Promise<string> {
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	const encoded = new TextEncoder().encode(text);
+	const encrypted = await crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv },
+		key,
+		encoded,
+	);
+
+	const combined = new Uint8Array(iv.length + encrypted.byteLength);
+	combined.set(iv);
+	combined.set(new Uint8Array(encrypted), iv.length);
+
+	const binary = Array.from(combined)
+		.map((b) => String.fromCharCode(b))
+		.join("");
+	return E2EE_CHAT_PREFIX + btoa(binary);
+}
+
+async function decryptChatMessage(
+	key: CryptoKey,
+	encryptedMessage: string,
+): Promise<string> {
+	const payload = encryptedMessage.slice(E2EE_CHAT_PREFIX.length);
+	const binary = atob(payload);
+	const combined = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		combined[i] = binary.charCodeAt(i);
+	}
+
+	const iv = combined.slice(0, 12);
+	const ciphertext = combined.slice(12);
+
+	const decrypted = await crypto.subtle.decrypt(
+		{ name: "AES-GCM", iv },
+		key,
+		ciphertext,
+	);
+	return new TextDecoder().decode(decrypted);
+}
+
+function shouldEncryptChat(): boolean {
+	return E2EEMeeting.instance.hasMeetingContext();
+}
+
 export function useChat(deps: {
 	chatStore: ChatStore;
 	currentUser: CurrentUser;
@@ -17,17 +72,41 @@ export function useChat(deps: {
 }): ChatAPI {
 	const { chatStore, currentUser, sfuClient } = deps;
 
+	async function getChatKey(): Promise<CryptoKey | null> {
+		return E2EEMeeting.instance.getE2EEChatKey();
+	}
+
 	const setupChatEvents = (notificationQueue: unknown) => {
-		sfuClient.on("chat:message", (data: Record<string, unknown>) => {
+		sfuClient.on("chat:message", async (data: Record<string, unknown>) => {
 			if (data.fromUser === currentUser.currentUser.value?.user_id) {
 				return;
+			}
+
+			let plaintext = data.message as string;
+
+			if (isEncryptedChatMessage(plaintext)) {
+				const key = await getChatKey();
+				if (!key) {
+					console.warn(
+						"E2EE chat: received encrypted message but no meeting context set",
+					);
+					plaintext = "[Encrypted message]";
+				} else {
+					try {
+						plaintext = await decryptChatMessage(key, plaintext);
+					} catch (e) {
+						console.error("E2EE chat: decryption failed", e);
+						const errName = e instanceof Error ? e.name : "Error";
+						plaintext = `[Encrypted: ${errName}]`;
+					}
+				}
 			}
 
 			const message: ChatMessage = {
 				id: Date.now() + Math.random(),
 				user_id: data.fromUser as string,
 				user_name: (data.fromName || data.fromUser) as string,
-				message: data.message as string,
+				message: plaintext,
 				timestamp: new Date().toISOString(),
 			};
 
@@ -42,7 +121,7 @@ export function useChat(deps: {
 				(
 					notificationQueue as { addNotification?: (n: unknown) => void }
 				)?.addNotification?.({
-					message: data.message,
+					message: plaintext,
 					fromUser: data.fromUser,
 					fromName: data.fromName || data.fromUser,
 					timestamp: message.timestamp,
@@ -68,7 +147,7 @@ export function useChat(deps: {
 		}
 	};
 
-	const onSendChat = (text: string) => {
+	const onSendChat = async (text: string) => {
 		try {
 			const message: ChatMessage = {
 				id: Date.now() + Math.random(),
@@ -83,7 +162,16 @@ export function useChat(deps: {
 			chatStore.addMessage(message);
 
 			if (sfuClient.isConnected()) {
-				sfuClient.sendChatMessage(text, {
+				let messageToSend = text;
+
+				if (shouldEncryptChat()) {
+					const key = await getChatKey();
+					if (key) {
+						messageToSend = await encryptChatMessage(key, text);
+					}
+				}
+
+				sfuClient.sendChatMessage(messageToSend, {
 					clientId: currentUser.currentUser.value?.user_id,
 				});
 			}

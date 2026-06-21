@@ -1,54 +1,63 @@
 const { io } = require("socket.io-client");
+require("dotenv").config();
 const jwt = require("jsonwebtoken");
-const { parseArgs } = require("node:util");
+const yargs = require("yargs/yargs");
+const { hideBin } = require("yargs/helpers");
 const { spawn } = require("child_process");
 
-const { values: argv } = parseArgs({
-	options: {
-		meeting: { type: "string", short: "m" },
-		count: { type: "string", short: "c", default: "5" },
-		"sfu-url": { type: "string", default: "http://localhost" },
-		"sfu-port": { type: "string", default: "3000" },
-		secret: { type: "string", short: "s", default: process.env.JWT_SECRET || "" },
-		"with-producers": { type: "boolean", default: false },
-		"auto-toggle": { type: "boolean", default: false },
-		lifetime: { type: "string", short: "l", default: "0" },
-		help: { type: "boolean", short: "h" },
-	},
-	strict: true,
-});
+const argv = yargs(hideBin(process.argv))
+	.option("meeting", {
+		type: "string",
+		demandOption: true,
+		describe: "Meeting ID / room ID to join",
+	})
+	.option("count", {
+		type: "number",
+		default: 5,
+		describe: "Number of fake users to spawn",
+	})
+	.option("sfu-url", {
+		type: "string",
+		default: "http://localhost",
+		describe: "Base SFU URL (protocol+host)",
+	})
+	.option("sfu-port", {
+		type: "number",
+		default: 3000,
+		describe: "SFU port if not implicit in URL",
+	})
+	.option("secret", {
+		type: "string",
+		default: process.env.JWT_SECRET,
+		describe: "JWT signing secret used by SFU (required)",
+	})
+	.option("with-producers", {
+		type: "boolean",
+		default: false,
+		describe: "Create real fake audio/video producers using FFmpeg",
+	})
+	.option("auto-toggle", {
+		type: "boolean",
+		default: false,
+		describe: "Periodically send media_control events",
+	})
+	.option("lifetime", {
+		type: "number",
+		default: 0,
+		describe: "Milliseconds before disconnecting (0 = keep alive)",
+	})
+	.help().argv;
 
-if (argv.help) {
-	console.log(`
-Usage: node scripts/spawn-fake-users.js --meeting <id> [options]
-
-Options:
-  --meeting, -m       Meeting ID / room ID to join (required)
-  --count, -c         Number of fake users to spawn (default: 5)
-  --sfu-url           Base SFU URL (default: http://localhost)
-  --sfu-port          SFU port (default: 3000)
-  --secret, -s        JWT signing secret (or set JWT_SECRET env var)
-  --with-producers    Create real fake audio/video producers using FFmpeg
-  --auto-toggle       Periodically send media_control events
-  --lifetime, -l      Milliseconds before disconnecting (0 = keep alive)
-  --help, -h          Show this help
-`);
-	process.exit(0);
-}
-
-if (!argv.meeting) {
-	console.error("Error: --meeting is required. Use --help for usage.");
-	process.exit(1);
-}
-
-const meetingId = argv.meeting;
-const count = Number(argv.count);
-const sfuUrl = argv["sfu-url"];
-const sfuPort = Number(argv["sfu-port"]);
-const secret = argv.secret;
-const withProducers = argv["with-producers"];
-const autoToggle = argv["auto-toggle"];
-const lifetime = Number(argv.lifetime);
+const {
+	meeting: meetingId,
+	count,
+	sfuUrl,
+	sfuPort,
+	secret,
+	withProducers,
+	autoToggle,
+	lifetime,
+} = argv;
 
 if (!secret) {
 	console.error("Error: JWT secret is required. Provide --secret or set JWT_SECRET environment variable.");

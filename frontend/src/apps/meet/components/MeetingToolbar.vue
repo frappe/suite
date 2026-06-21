@@ -265,7 +265,8 @@ const emit = defineEmits<{
 	"visibility-change": [visible: boolean];
 }>();
 
-const { isMobile } = useResponsiveGrid();
+const { windowWidth } = useResponsiveGrid();
+const isMobile = computed(() => windowWidth.value < 768);
 
 const moreOptions = computed(() => [
 	{

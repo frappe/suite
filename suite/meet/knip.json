@@ -21,11 +21,19 @@
     "frontend": {
       "entry": "src/main.ts",
       "project": ["src/**/*.{ts,vue}", "!src/main.ts"],
+      "ignore": ["src/composables/rnnoise.d.ts"],
+      "ignoreDependencies": ["@noble/hashes"],
       "ignoreUnresolved": ["~icons/lucide/*"]
     },
     "sfu-server": {
-      "entry": "src/server.ts",
-      "project": ["src/**/*.ts", "!src/server.ts"]
+      "entry": [
+        "src/server.ts",
+        "src/server/__tests__/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "!src/server.ts"
+      ]
     }
   }
 }

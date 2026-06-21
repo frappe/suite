@@ -37,15 +37,21 @@
 				</div>
 
 				<div class="space-y-3">
-                    <Switch
-                        class="w-full !px-0"
-                        label="Host Only Chat"
-                        description="Restrict chat so only hosts and co-hosts can send messages"
-                        v-model="hostOnlyChat"
-                        :disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
-                    />
-                </div>
+					<Switch
+						class="w-full !px-0"
+						label="Host Only Chat"
+						description="Restrict chat so only hosts and co-hosts can send messages"
+						v-model="hostOnlyChat"
+						:disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
+					/>
+				</div>
 
+				<!-- E2EE Toggle -->
+				<E2EESettingsSection
+					:meeting-id="props.meetingId"
+					:meeting-doc="meetingDoc"
+					:globally-enabled="globalE2EEEnabled"
+				/>
 			</div>
 		</template>
 	</SettingsLayoutBase>
@@ -53,9 +59,10 @@
 
 <script setup lang="ts">
 import { debounce, FormControl, Switch, toast } from "frappe-ui";
-import { onMounted, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { useChatStore } from "@/apps/meet/composables/useChatStore";
 import { useMeetingDoc } from "../../composables/useMeetingDoc";
+import E2EESettingsSection from "./E2EESettingsSection.vue";
 import SettingsLayoutBase from "./SettingsLayoutBase.vue";
 
 const props = defineProps({
@@ -69,6 +76,7 @@ const {
 	getMeetingDoc,
 	allowGuest: globalAllowGuest,
 	meetingType: globalMeetingType,
+	e2eeEnabled: globalE2EEEnabled,
 } = useMeetingDoc();
 
 const chatStore = useChatStore();
@@ -79,17 +87,15 @@ const hostOnlyChat = ref<boolean>(chatStore.hostOnlyChat);
 
 const meetingDoc = getMeetingDoc(props.meetingId);
 
-onMounted(async () => {
-	try {
-		allowGuest.value = globalAllowGuest.value;
-		meetingType.value = globalMeetingType.value;
-		if (meetingDoc.doc?.host_only_chat !== undefined) {
-			hostOnlyChat.value = !!meetingDoc.doc.host_only_chat;
+watch(
+	() => meetingDoc.doc?.host_only_chat,
+	(value) => {
+		if (value !== undefined) {
+			hostOnlyChat.value = !!value;
 		}
-	} catch (error) {
-		console.error("Failed to load meeting settings");
-	}
-});
+	},
+	{ immediate: true },
+);
 
 const saveSettings = debounce(async () => {
 	if (meetingDoc.updateSettings.loading) return;

@@ -90,7 +90,6 @@ export function useNetworkQuality() {
 
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
-			kind: entry.kind,
 			isPaused: () => entry.consumer.paused,
 			isMuted: () => entry.track?.muted ?? false,
 			getBytesReceived: () => bytes,

@@ -26,7 +26,6 @@
 									:is="tab.component"
 									class="h-full flex flex-col w-full"
 									@device-changed="$emit('device-changed', $event)"
-									:is-visible="show"
 									:meeting-id="meetingId"
 								/>
 							</div>
@@ -74,7 +73,6 @@
 							v-if="activeTab"
 							class="h-full flex flex-col w-full"
 							@device-changed="$emit('device-changed', $event)"
-							:is-visible="show"
 							:meeting-id="meetingId"
 						/>
 					</div>
@@ -111,11 +109,6 @@ interface TabItem {
 	condition?: () => boolean;
 	hideLabel?: boolean;
 	groupLabel?: string;
-}
-
-interface TabGroup {
-	label: string;
-	items: TabItem[];
 }
 
 const props = defineProps<{

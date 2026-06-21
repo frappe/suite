@@ -29,6 +29,7 @@ class SaeMeeting(Document):
 		allow_guest: DF.Check
 		banned_users: DF.Table[SaeMeetingUser]
 		co_hosts: DF.Table[SaeMeetingUser]
+		e2ee_enabled: DF.Check
 		meeting_type: DF.Literal["open", "restricted"]
 		members: DF.Table[SaeMeetingUser]
 		waiting_room: DF.Table[SaeMeetingUser]
@@ -375,6 +376,12 @@ class SaeMeeting(Document):
 
 		if self.is_user_banned(guest_id):
 			frappe.throw(_("Guest is banned from this meeting"))
+
+	def enable_e2ee(self) -> bool:
+		"""Enable epoch-based E2EE for this meeting."""
+		self.e2ee_enabled = True
+		self.save()
+		return True
 
 	@frappe.whitelist()
 	def update_settings(

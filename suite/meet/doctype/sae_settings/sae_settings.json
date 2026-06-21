@@ -7,7 +7,8 @@
  "field_order": [
   "section_break_mm5y",
   "codec_strategy",
-  "allow_guest"
+    "allow_guest",
+    "e2ee_enabled"
  ],
  "fields": [
   {
@@ -28,6 +29,13 @@
    "fieldname": "allow_guest",
    "fieldtype": "Check",
    "label": "Allow Guest Access"
+    },
+    {
+    "default": "1",
+     "description": "Require compatible clients and shared key handshake for end-to-end encrypted media in meetings",
+     "fieldname": "e2ee_enabled",
+     "fieldtype": "Check",
+     "label": "Enable E2EE"
   }
  ],
  "grid_page_length": 50,

@@ -11,6 +11,7 @@
 					<label class="text-sm-medium text-gray-700">Meeting URL</label>
 					<ClickToCopyField :textContent="meetingUrl" :breakLines="false" />
 				</div>
+
 			</div>
 		</template>
 	</Dialog>
