@@ -78,7 +78,9 @@ export class SocketHandlerManager {
 
 	setupSocketHandlers(): void {
 		this.io.use((socket, next) => {
-			this.authManager.authenticateSocket(socket);
+			if (!this.authManager.authenticateSocket(socket)) {
+				return next(new Error('Authentication failed'));
+			}
 			next();
 		});
 

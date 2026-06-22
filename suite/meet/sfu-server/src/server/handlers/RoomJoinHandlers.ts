@@ -88,6 +88,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('join_room', async (data, callback) => {
 			try {
+				if (!socket.userId || !socket.meetingId) {
+					callback({ success: false, error: 'Authentication required' });
+					return;
+				}
+
 				const { roomId, userData, mediaState } = data;
 				await handleJoinRoom(socket, {
 					roomId,
