@@ -168,6 +168,65 @@ export class E2EEEpochRelay {
 		this.flushPendingCommitRequestsForRoom(roomId);
 	}
 
+	removePendingJoiner(roomId: string, senderId: number): void {
+		const prefix = `${roomId}:`;
+		for (const [key, batch] of this.commitRequestBatches) {
+			if (!key.startsWith(prefix)) continue;
+			batch.joiningSenderIds = batch.joiningSenderIds.filter(
+				(id) => id !== senderId,
+			);
+			if (batch.joiningSenderIds.length === 0) {
+				clearTimeout(batch.timer);
+				this.commitRequestBatches.delete(key);
+			}
+		}
+
+		for (const [key, pending] of this.pendingCommitRequests) {
+			if (!key.startsWith(prefix)) continue;
+			const beforeJoiners = pending.joiningSenderIds.length;
+			pending.joiningSenderIds = pending.joiningSenderIds.filter(
+				(id) => id !== senderId,
+			);
+			const removedJoiner = beforeJoiners !== pending.joiningSenderIds.length;
+			const removedTriedCommitter = pending.alreadyTried.includes(senderId);
+			pending.alreadyTried = pending.alreadyTried.filter(
+				(id) => id !== senderId,
+			);
+
+			console.log('[DEBUG-e2ee] SFU: pending joiner removed', {
+				roomId,
+				senderId,
+				stillRemainingJoiners: pending.joiningSenderIds.length,
+			});
+
+			if (
+				pending.joiningSenderIds.length === 0 &&
+				pending.removedSenderIds.length === 0
+			) {
+				clearTimeout(pending.timer);
+				this.pendingCommitRequests.delete(key);
+				console.log(
+					'[DEBUG-e2ee] SFU: pending request dropped because last joiner left',
+					{ roomId, senderId },
+				);
+				continue;
+			}
+
+			if (
+				!removedJoiner &&
+				removedTriedCommitter &&
+				!this.hasMappedCommitterCandidate(roomId, pending, senderId)
+			) {
+				clearTimeout(pending.timer);
+				this.pendingCommitRequests.delete(key);
+				console.log(
+					'[DEBUG-e2ee] SFU: pending request dropped because committer left and no replacement is available',
+					{ roomId, senderId },
+				);
+			}
+		}
+	}
+
 	private async handle(
 		socket: Socket,
 		payload: E2eeEpochPayload,
@@ -903,6 +962,25 @@ export class E2EEEpochRelay {
 			if (sid === senderId) return participantId;
 		}
 		return undefined;
+	}
+
+	private hasMappedCommitterCandidate(
+		roomId: string,
+		pending: PendingCommitRequest,
+		leavingSenderId: number,
+	): boolean {
+		const map = this.participantToSender.get(roomId);
+		if (!map) return false;
+		const excluded = new Set([
+			leavingSenderId,
+			...pending.joiningSenderIds,
+			...pending.removedSenderIds,
+			...pending.alreadyTried,
+		]);
+		for (const senderId of map.values()) {
+			if (!excluded.has(senderId)) return true;
+		}
+		return false;
 	}
 
 	private emitToTarget(

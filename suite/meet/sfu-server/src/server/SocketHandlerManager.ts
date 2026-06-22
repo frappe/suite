@@ -1426,10 +1426,11 @@ export class SocketHandlerManager {
 
 					// Only remove peer if full access
 					if (socket.scope === 'full') {
-						this.participantToSender.get(roomId)?.delete(participantId);
 						if (socket.senderId !== undefined) {
 							await this.e2eeRoster.remove(roomId, socket.senderId);
+							this.e2eeEpochRelay.removePendingJoiner(roomId, socket.senderId);
 						}
+						this.participantToSender.get(roomId)?.delete(participantId);
 						await this.mediasoup.removePeer(roomId, participantId);
 
 						if (this.isRealParticipant(participantId)) {
