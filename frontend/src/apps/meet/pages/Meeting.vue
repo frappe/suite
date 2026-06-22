@@ -616,7 +616,7 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 const syncLoggedInCurrentUser = () => {
 	currentUser.setCurrentUser({
 		user_id: session.user?.sessionUser || "",
-		name: session.user?.full_name || "",
+		name: session.user?.full_name || session.user?.sessionUser || "",
 		full_name: session.user?.full_name || "",
 		avatar: session.user?.avatar || "",
 	});
