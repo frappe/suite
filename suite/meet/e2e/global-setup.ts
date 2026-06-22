@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { request } from "@playwright/test";
 import type { FullConfig } from "@playwright/test";
 import { loginViaApi } from "./helpers/auth";
-import { clearMeetingCreateRateLimit, createMeetingViaApi } from "./helpers/meeting";
+import { createMeetingViaApi } from "./helpers/meeting";
 
 async function waitForService(url: string, name: string): Promise<void> {
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -43,7 +43,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	// Create shared meetings once for the entire test run
 	const apiContext = await request.newContext({ baseURL });
 	await loginViaApi(apiContext);
-	await clearMeetingCreateRateLimit(apiContext);
 	const openMeetingId = await createMeetingViaApi(apiContext, "open");
 	const restrictedMeetingId = await createMeetingViaApi(apiContext, "restricted");
 	await apiContext.dispose();

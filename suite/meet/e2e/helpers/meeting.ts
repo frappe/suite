@@ -37,11 +37,10 @@ export async function createMeetingViaApi(
 export async function clearMeetingCreateRateLimit(
 	request: APIRequestContext,
 ): Promise<void> {
-	const response = await request.post(
+	await request.post(
 		"/api/method/suite.meet.api.test_helpers.clear_create_rate_limit",
 		{ data: {} },
 	);
-	if (!response.ok()) return;
 }
 
 export type { MeetingType };
