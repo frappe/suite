@@ -41,5 +41,5 @@ export const sessionStore = defineStore('mail-session', () => {
 		onSuccess: (data) => (document.querySelector("link[rel='icon']").href = data.favicon),
 	})
 
-	return { isLoggedIn: session.isLoggedIn, login, logout, branding }
+	return { isLoggedIn: computed(() => session.isLoggedIn), login, logout, branding }
 })
