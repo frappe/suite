@@ -30,7 +30,7 @@ export function useCurrentUser(): CurrentUser {
 
 	const userInitials = computed(() => {
 		const name =
-			currentUser.value?.full_name ?? currentUser.value?.name ?? "You";
+			currentUser.value?.full_name || currentUser.value?.name || "You";
 		return getInitials(name);
 	});
 

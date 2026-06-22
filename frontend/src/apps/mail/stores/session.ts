@@ -1,23 +1,13 @@
-import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
+import { getSessionUser, useSessionStore } from '@/boot/session'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
 export const sessionStore = defineStore('mail-session', () => {
+	const session = useSessionStore()
 	const { userResource, mailboxes } = userStore()
-
-	const sessionUser = () => {
-		const cookies = new URLSearchParams(document.cookie.split('; ').join('&'))
-		let _sessionUser = cookies.get('user_id')
-		if (_sessionUser === 'Guest') _sessionUser = null
-
-		return _sessionUser
-	}
-
-	const user = ref(sessionUser())
-	const isLoggedIn = computed(() => !!user.value)
 
 	const login = createResource({
 		url: 'login',
@@ -26,10 +16,10 @@ export const sessionStore = defineStore('mail-session', () => {
 		},
 		onSuccess: () => {
 			userResource.reload()
-			user.value = sessionUser()
+			session.user = getSessionUser()
 			login.reset()
 
-			if (user.value === 'Administrator') window.location.replace('/app')
+			if (session.user === 'Administrator') window.location.replace('/app')
 			else router.replace({ name: 'mail-root-shortcut' })
 		},
 	})
@@ -39,7 +29,7 @@ export const sessionStore = defineStore('mail-session', () => {
 		onSuccess() {
 			userResource.reset()
 			mailboxes.reset()
-			user.value = null
+			session.user = null
 			window.location.reload()
 		},
 	})
@@ -51,5 +41,5 @@ export const sessionStore = defineStore('mail-session', () => {
 		onSuccess: (data) => (document.querySelector("link[rel='icon']").href = data.favicon),
 	})
 
-	return { isLoggedIn, login, logout, branding }
+	return { isLoggedIn: session.isLoggedIn, login, logout, branding }
 })

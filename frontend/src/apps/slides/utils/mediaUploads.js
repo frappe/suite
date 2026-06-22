@@ -3,7 +3,7 @@ import { FileUploadHandler, toast, call } from 'frappe-ui'
 import { presentationId, isPublicPresentation, presentationDoc } from '../stores/presentation'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
 
-import { session } from '@/apps/slides/stores/session'
+import { session } from '@/boot/session'
 
 const fileUploadHandler = new FileUploadHandler()
 
@@ -107,7 +107,8 @@ export const getAttachmentUrl = (fileUrl) => {
 
 	if (fileUrl.startsWith('/private')) {
 		// if owner is trying to access just send static path
-		if (presentationDoc.value?.owner === session.user || session.user === 'Administrator') {
+		const user = session.user?.sessionUser
+		if (presentationDoc.value?.owner === user || user === 'Administrator') {
 			return fileUrl
 		}
 		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}&public=${isPublicPresentation.value}`

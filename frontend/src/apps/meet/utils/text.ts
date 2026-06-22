@@ -1,4 +1,4 @@
-export function getInitials(name: string, fallback = "?"): string {
+export function getInitials(name: string, fallback = ""): string {
 	const trimmed = name.trim();
 	if (!trimmed) return fallback;
 

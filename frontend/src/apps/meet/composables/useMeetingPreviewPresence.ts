@@ -1,7 +1,7 @@
 import { createResource } from "frappe-ui";
 import { io, type Socket } from "socket.io-client";
 import { computed, onUnmounted, readonly, ref } from "vue";
-import { session } from "../data/session";
+import { session } from "@/boot/session";
 import type {
 	FrappeRequestError,
 	ParticipantJoinedEvent,

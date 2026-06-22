@@ -238,7 +238,7 @@ import {
 	selectedMicId,
 	selectedSpeakerId,
 } from "../data/mediaPreferences";
-import { session } from "../data/session";
+import { session } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -679,7 +679,7 @@ onMounted(async () => {
 	// Setup current user
 	currentUser.setCurrentUser({
 		user_id: session.user?.sessionUser || "",
-		name: session.user?.full_name || session.user?.sessionUser || "",
+		name: session.user?.full_name || "",
 		full_name: session.user?.full_name || "",
 		avatar: session.user?.avatar || "",
 	});
