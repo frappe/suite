@@ -33,9 +33,6 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			socket.join(scopedRoomId);
 
-			if (!socket.meetingId) {
-				socket.meetingId = roomId;
-			}
 			socket.roomId = scopedRoomId;
 			socket.participantId = participantId;
 
