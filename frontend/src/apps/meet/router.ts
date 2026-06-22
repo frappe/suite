@@ -1,7 +1,7 @@
 import type { RouteLocationNormalized, Router } from "vue-router";
 
 import suiteRouter from "@/router";
-import { useSessionStore, userResource } from "@/boot/session";
+import { userResource } from "@/boot/session";
 
 /**
  * Meet router compat + guard.
@@ -28,17 +28,15 @@ function installMeetGuard(r: Router) {
 		// Only act on meet routes; let the suite handle everything else.
 		if (typeof to.name !== "string" || !to.name.startsWith("meet-")) return;
 
-		const session = useSessionStore();
-		if (session.user && !userResource.fetched) {
+		if (to.meta?.requiresAdmin) {
 			try {
-				await userResource.fetch();
+				if (!userResource.fetched) {
+					await userResource.fetch();
+				}
 			} catch {
 				// userResource onError already redirects to /login on auth errors.
 				return false;
 			}
-		}
-
-		if (to.meta?.requiresAdmin) {
 			const user = userResource.data as Record<string, unknown> | null;
 			const isAdmin = (user?.roles as string[])?.some((r) =>
 				["System Manager", "Administrator"].includes(r),

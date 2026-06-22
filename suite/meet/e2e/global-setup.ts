@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { request } from "@playwright/test";
 import type { FullConfig } from "@playwright/test";
 import { loginViaApi } from "./helpers/auth";
-import { createMeetingViaApi } from "./helpers/meeting";
+import { clearMeetingCreateRateLimit, createMeetingViaApi } from "./helpers/meeting";
 
 async function waitForService(url: string, name: string): Promise<void> {
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -30,7 +30,7 @@ export interface MeetingsState {
 export default async function globalSetup(config: FullConfig): Promise<void> {
 	const projectUse = config.projects[0]?.use ?? {};
 	const baseURL = String(
-		projectUse.baseURL ?? process.env.BASE_URL ?? "http://localhost:8096",
+		projectUse.baseURL ?? process.env.BASE_URL ?? "http://localhost:8098",
 	);
 	const sfuBaseURL = process.env.SFU_URL ?? "http://localhost:3000";
 	const sfuHealthURL = sfuBaseURL.endsWith("/health")
@@ -43,6 +43,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	// Create shared meetings once for the entire test run
 	const apiContext = await request.newContext({ baseURL });
 	await loginViaApi(apiContext);
+	await clearMeetingCreateRateLimit(apiContext);
 	const openMeetingId = await createMeetingViaApi(apiContext, "open");
 	const restrictedMeetingId = await createMeetingViaApi(apiContext, "restricted");
 	await apiContext.dispose();

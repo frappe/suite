@@ -238,7 +238,7 @@ import {
 	selectedMicId,
 	selectedSpeakerId,
 } from "../data/mediaPreferences";
-import { session } from "@/boot/session";
+import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -579,6 +579,9 @@ const togglePeople = () => {
 	isPeopleOpen.value = !isPeopleOpen.value;
 	if (isPeopleOpen.value) {
 		chatStore.isChatOpen = false;
+		if (isCurrentUserHost.value || isCurrentUserCohost.value) {
+			void sfuConnection.fetchExistingWaitingRoomUsers();
+		}
 	}
 };
 
@@ -608,6 +611,15 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 	}
 
 	await Promise.all(promises);
+};
+
+const syncLoggedInCurrentUser = () => {
+	currentUser.setCurrentUser({
+		user_id: session.user?.sessionUser || "",
+		name: session.user?.full_name || "",
+		full_name: session.user?.full_name || "",
+		avatar: session.user?.avatar || "",
+	});
 };
 
 // --- Lifecycle ---
@@ -676,13 +688,19 @@ onMounted(async () => {
 		return;
 	}
 
+	if (!userResource.fetched) {
+		void userResource
+			.fetch()
+			.then(() => {
+				syncLoggedInCurrentUser();
+			})
+			.catch((error: unknown) => {
+				console.warn("Failed to load current user profile:", error);
+			});
+	}
+
 	// Setup current user
-	currentUser.setCurrentUser({
-		user_id: session.user?.sessionUser || "",
-		name: session.user?.full_name || "",
-		full_name: session.user?.full_name || "",
-		avatar: session.user?.avatar || "",
-	});
+	syncLoggedInCurrentUser();
 
 	// Initialize camera
 	await mediaControls.initializeCamera();
