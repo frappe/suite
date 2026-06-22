@@ -32,6 +32,45 @@ repos:
 
   - repo: local
     hooks:
+      - id: knip-e2e
+        name: Knip (E2E)
+        entry: yarn knip:e2e
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/meet/e2e/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
+      - id: knip-sfu-server
+        name: Knip (SFU Server)
+        entry: yarn knip:sfu-server
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/meet/sfu-server/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
+      - id: knip-sheets-collab
+        name: Knip (Sheets Collab Server)
+        entry: yarn knip:sheets-collab
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/sheets/collab-server/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
       - id: biome-sfu-server
         name: Biome Check (SFU Server)
         entry: bash -lc 'cd suite/meet/sfu-server && node_modules/.bin/biome check --write --config-path biome.json "${@/#suite\/meet\/sfu-server\//}"' --

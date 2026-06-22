@@ -1,0 +1,16 @@
+{
+  "name": "suite",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "knip:e2e": "knip --workspace suite/meet/e2e",
+    "knip:frontend": "knip --workspace frontend",
+    "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
+    "knip:sheets-collab": "knip --workspace suite/sheets/collab-server",
+    "knip": "knip"
+  },
+  "devDependencies": {
+    "knip": "^6.4.1",
+    "typescript": "^6.0.3"
+  }
+}
