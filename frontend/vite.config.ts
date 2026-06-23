@@ -6,6 +6,17 @@ import { noiseSuppressionAudioWorkletVitePlugin } from '@workadventure/noise-sup
 import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 
+const emitSlidesServiceWorker = () => ({
+  name: 'slides-service-worker',
+  apply: 'build' as const,
+  writeBundle() {
+    const swSource = path.resolve(__dirname, 'src/apps/slides/service-worker.js')
+    const swOutput = path.resolve(__dirname, '../suite/www/service-worker.js')
+    fs.mkdirSync(path.dirname(swOutput), { recursive: true })
+    fs.copyFileSync(swSource, swOutput)
+  },
+})
+
 const benchRoot = path.resolve(__dirname, '../../..')
 const commonSiteConfig = JSON.parse(
   fs.readFileSync(path.join(benchRoot, 'sites/common_site_config.json'), 'utf-8'),
@@ -40,6 +51,7 @@ export default defineConfig(({ mode }) => ({
       },
     }),
     vue(),
+    emitSlidesServiceWorker(),
   ],
   resolve: {
     alias: {

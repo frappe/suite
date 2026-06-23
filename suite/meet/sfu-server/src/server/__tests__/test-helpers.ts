@@ -93,6 +93,7 @@ export function createMockSocket(
 
 interface MockServer {
 	io: Server<ClientToServerEvents, ServerToClientEvents>;
+	middlewareFn: ((s: Socket, next: (err?: Error) => void) => void) | null;
 	connectionFn: ((s: Socket) => void) | null;
 	socketsAdapterRooms: Map<string, Set<string>>;
 	socketsMap: Map<string, Socket>;
@@ -107,13 +108,15 @@ function createMockServer(): MockServer {
 			ClientToServerEvents,
 			ServerToClientEvents
 		>,
+		middlewareFn: null,
 		connectionFn: null,
 		socketsAdapterRooms,
 		socketsMap,
 	};
 
 	const io = {
-		use() {
+		use(fn: (s: Socket, next: (err?: Error) => void) => void) {
+			mock.middlewareFn = fn;
 			return io;
 		},
 		on(event: string, fn: (s: Socket) => void) {
@@ -146,6 +149,7 @@ function createMockMediasoupManager(): MediasoupManager {
 
 function createMockAuthManager(): AuthManager {
 	return {
+		authenticateSocket: vi.fn().mockReturnValue(true),
 		ensureFullAccess: vi.fn(),
 		ensurePresenceAccess: vi.fn(),
 		isTokenExpired: vi.fn().mockReturnValue(false),

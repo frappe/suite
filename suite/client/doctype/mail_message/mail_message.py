@@ -869,7 +869,7 @@ def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
 	try:
 		emails = []
 		for mail in mails:
-			junk = bool(suite.mail.get("junk"))
+			junk = bool(mail.get("junk"))
 			emails.append(
 				{
 					"id": mail["id"],

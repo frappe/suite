@@ -1,0 +1,6 @@
+# Commits listed here are skipped by `git blame` (large whitespace/formatting-only
+# changes that would otherwise obscure authorship). Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style(slides): convert service-worker.js to tab indentation
+6ed2aa9d8881c18ce4d581e20ca18eae8ad512ed

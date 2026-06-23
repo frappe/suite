@@ -1,11 +1,28 @@
 # Git history preservation (graft procedure)
 
-> **STATUS — DONE (2026-06-16).** All 7 apps' original per-file authorship now shows in
-> GitHub's **History *and* Blame UI** on `develop`. This was achieved with the
+> **STATUS — DONE (regrafted 2026-06-17).** All 7 apps' original per-file authorship now
+> shows in GitHub's **History *and* Blame UI** on `develop`. This was achieved with the
 > **content-bearing append** method documented immediately below. The `-s ours` procedure
 > described later in this file is **SUPERSEDED** (it linked ancestry but left blame
 > collapsed on the port commit, because `-s ours` never introduces the original file
 > content into the mainline tree) — kept only as historical context.
+
+## Live commit SHAs (the regraft that is actually in `develop`)
+
+> ⚠️ The first append run (tip `4e5219a86`, base `3f9e986cc`) described in the diagram
+> below was **superseded by a regraft on 2026-06-17** and is **NOT in the current
+> `develop` ancestry** (`git merge-base --is-ancestor 4e5219a86 develop` fails). The
+> method/topology is identical; only the SHAs changed. When verifying blame, use the
+> **live** port commit below — grepping the old `4e5219a86` returns misleading zeros.
+
+The structure in `develop` today is `T' → G' → M' → P'`:
+
+| Role | SHA | Subject |
+|------|-----|---------|
+| `T'` base | `64d776f6fa` | mainline tip the regraft built on |
+| `G'` remove | `7475c253e0` | `regraft: remove app files (re-added with original authorship below)` |
+| `M'` union | `31c428a021` | `regraft: graft original per-app authorship (content-bearing)` — **8-parent** (`G'` + the 7 filter-repo'd app histories) |
+| `P'` port | `494c3ce9fb` | `Phase 5/6 port: 7 apps into suite (tree byte-identical to develop)` — single parent `M'` |
 
 ## The method actually used: content-bearing fast-forward append
 

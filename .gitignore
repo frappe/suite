@@ -15,7 +15,8 @@ node_modules
 # Built www entrypoints (one per app); sheets.html is a hand-written template
 /suite/**/www/*.html
 !/suite/sheets/www/sheets.html
-/suite/slides/www/service-worker.js
+# Slides service worker — emitted to the unified www root by the vite build
+/suite/www/service-worker.js
 
 # Migrated Node sidecar build output (sfu-server / collab-server also carry own .gitignore)
 /suite/meet/sfu-server/dist/

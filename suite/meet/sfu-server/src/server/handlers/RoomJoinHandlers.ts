@@ -33,9 +33,6 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			socket.join(scopedRoomId);
 
-			if (!socket.meetingId) {
-				socket.meetingId = roomId;
-			}
 			socket.roomId = scopedRoomId;
 			socket.participantId = participantId;
 
@@ -88,6 +85,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('join_room', async (data, callback) => {
 			try {
+				if (!socket.userId || !socket.meetingId) {
+					callback({ success: false, error: 'Authentication required' });
+					return;
+				}
+
 				const { roomId, userData, mediaState } = data;
 				await handleJoinRoom(socket, {
 					roomId,

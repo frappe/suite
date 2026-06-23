@@ -21,10 +21,12 @@
 ## What this is
 
 Frappe Suite merges what used to be seven separate apps —
-[Drive](https://github.com/frappe/drive), Slides,
+[Drive](https://github.com/frappe/drive), 
+[Slides](https://github.com/frappe/slides),
 [Writer](https://github.com/frappe/writer),
-[Sheets](https://github.com/frappe/sheets), Meet,
-[Mail](https://github.com/frappe/mail), and Calendar — into **one Frappe app** with:
+[Sheets](https://github.com/frappe/sheets), 
+[Meet](https://github.com/frappe/meet),
+[Mail](https://github.com/frappe/mail), and [Calendar](https://github.com/frappe/calendar_app) — into **one Frappe app** with:
 
 - **One backend app** (`suite`) — each former app now lives as a module under
   `suite/<module>/`, with a single consolidated `hooks.py`, `modules.txt`,

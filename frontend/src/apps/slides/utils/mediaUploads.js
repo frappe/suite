@@ -7,6 +7,8 @@ import { session } from '@/boot/session'
 
 const fileUploadHandler = new FileUploadHandler()
 
+export const SLIDES_MEDIA_PARAM = 'slides_media=1'
+
 const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
@@ -109,7 +111,10 @@ export const getAttachmentUrl = (fileUrl) => {
 		// if owner is trying to access just send static path
 		const user = session.user?.sessionUser
 		if (presentationDoc.value?.owner === user || user === 'Administrator') {
-			return fileUrl
+			// Tag the request so the slides service worker can cache it without
+			// touching other apps' /private/files/ traffic (Drive, Mail, ...).
+			// Non-owner media already goes through the slides-namespaced proxy below.
+			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
 		}
 		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}&public=${isPublicPresentation.value}`
 	}
