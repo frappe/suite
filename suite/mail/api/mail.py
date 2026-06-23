@@ -96,7 +96,7 @@ def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool =
 		if not name:
 			continue
 
-		from_email = (suite.mail.get("from_email") or "").lower()
+		from_email = (mail.get("from_email") or "").lower()
 
 		if not from_email:
 			continue
@@ -277,7 +277,7 @@ def serialize_mail(mail: dict) -> dict:
 
 	return {
 		**{field: mail[field] for field in mail_fields},
-		"attachments": serialize_attachments(suite.mail.get("attachments", [])),
+		"attachments": serialize_attachments(mail.get("attachments", [])),
 	}
 
 
