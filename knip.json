@@ -23,7 +23,7 @@
       ]
     },
     "suite/meet/sfu-server": {
-      "entry": "src/**/*.test.ts",
+      "entry": ["src/server.ts", "src/**/*.test.ts"],
       "project": ["src/**/*.ts", "!src/server.ts", "!src/**/*.test.ts"],
       "vitest": false,
       "ignoreBinaries": ["vitest"],

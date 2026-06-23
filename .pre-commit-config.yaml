@@ -73,7 +73,7 @@ repos:
 
       - id: biome-sfu-server
         name: Biome Check (SFU Server)
-        entry: bash -lc 'cd suite/meet/sfu-server && node_modules/.bin/biome check --write --config-path biome.json "${@/#suite\/meet\/sfu-server\//}"' --
+        entry: bash -c 'cd suite/meet/sfu-server && node_modules/.bin/biome check --write --config-path biome.json "${@/#suite\/meet\/sfu-server\//}"' --
         language: system
         files: "suite/meet/sfu-server/.*\\.(js|ts|json)$"
         exclude: |
