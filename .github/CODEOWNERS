@@ -12,6 +12,7 @@
 
 # Mail
 /suite/client/ @krantheman @s-aga-r
+/suite/server/ @krantheman @s-aga-r
 /suite/mail/ @krantheman @s-aga-r
 /frontend/src/apps/mail/ @krantheman @s-aga-r
 
