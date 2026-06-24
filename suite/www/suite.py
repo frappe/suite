@@ -32,5 +32,6 @@ def get_boot():
 	return frappe._dict(
 		{
 			"site_name": frappe.local.site,
+			"socketio_port": frappe.conf.get("socketio_port") or 9000,
 		}
 	)

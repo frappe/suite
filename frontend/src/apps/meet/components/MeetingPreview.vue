@@ -2,7 +2,7 @@
 	<div class="flex-1 flex flex-col" data-testid="meeting-preview">
 		<div class="bg-gray-50 px-6 pt-4 flex-shrink-0">
 			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-2 cursor-pointer" @click="$router.push('/')">
+				<div class="flex items-center gap-2 cursor-pointer" @click="$router.push('/meet')">
 					<FrappeMeetingLogo class="h-8" />
 					<h4 class="text-gray-900 text-base">Frappe Meet</h4>
 				</div>

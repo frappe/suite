@@ -29,6 +29,7 @@ const frappeBackendUrl = `http://${defaultSite}:${webserverPort}`
 export default defineConfig(({ mode }) => ({
   define: {
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+    __SITE_NAME__: JSON.stringify(defaultSite),
     __SOCKETIO_PORT__: JSON.stringify(commonSiteConfig.socketio_port || 9000),
   },
   // Served by Frappe at /assets/suite/frontend/ (build output lands in
@@ -83,8 +84,7 @@ export default defineConfig(({ mode }) => ({
     port: 8085,
     allowedHosts: [defaultSite, 'suite.localhost'],
     fs: {
-      // Meet imports socketio_port from sites/common_site_config.json (outside
-      // the frontend root); allow the bench + frappe-ui source paths.
+      // Allow the bench + frappe-ui source paths used by the dev proxy/build.
       allow: ['..', 'node_modules', '../../..'],
     },
   },

@@ -11,10 +11,10 @@ Nested under `views/MeetLayout.vue`:
 - `:meetingId` → `meet-meeting` — **`meta: { isPublic: true }`** so guests can join.
 
 ## What changed vs standalone
-- **Build-breakers fixed:** `socket.ts` no longer imports `socketio_port` from
-  `sites/common_site_config.json` (resolved outside the frontend root) — it reads
-  `window.socketio_port` with a `9000` fallback. The router's `__FRONTEND_ROUTE__`
-  define + `createWebHistory` were dropped (relative routes under `/meet` instead).
+- **Build-breakers fixed:** `socket.ts` reads `window.site_name` / `window.socketio_port`
+  from Jinja boot data, falling back to Vite `__SITE_NAME__` / `__SOCKETIO_PORT__` in dev.
+  The router's `__FRONTEND_ROUTE__` define + `createWebHistory` were dropped
+  (relative routes under `/meet` instead).
 - `requiresAdmin`/`allowGuest` logic moved into a prefix-scoped guard (`router.ts`).
 - **`$socket` → `useSocket()`**, **`$platform` → `usePlatform()`** composable (the
   global properties from `main.ts` are gone). Boot side-effects
@@ -31,8 +31,8 @@ Nested under `views/MeetLayout.vue`:
 - Backend method paths rewritten to `suite.meet.api.*`.
 
 ## Known / deferred (please review)
-- `window.socketio_port` / `window.site_name` are expected as Jinja boot data; the
-  socket falls back to `9000` in dev.
+- `window.site_name` / `window.socketio_port` are expected as Jinja boot data; Vite dev
+  falls back to `__SITE_NAME__` / `__SOCKETIO_PORT__`.
 
 ## Verify (Phase 6)
 Log in at `suite.localhost:8004/meet`. Confirm: home loads; create/join a meeting

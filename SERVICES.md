@@ -16,8 +16,9 @@ wired up separately (Procfile/supervisor + nginx + `site_config.json`). Their ow
 - **Deploy refs:** `suite/meet/sfu-server/deploy/`
 
 ## 2. Meet — realtime handlers (🔴, no separate process)
-- **Path:** `suite/meet/realtime/handlers.js` — Frappe socketio handler (guest rooms, ping/pong)
+- **Path:** `realtime/handlers.js` (repo root) — Frappe socketio handler (guest rooms, ping/pong)
 - **Run:** auto-loaded by Frappe's existing `socketio` node process by convention. **No Procfile entry needed.** Backend counterpart: `suite/meet/api/meeting.py::validate_guest_session`.
+- **Why the repo root:** Frappe's Node realtime loader (`apps/frappe/realtime/index.js`) requires `../../<app>/realtime/handlers.js` per installed app, i.e. `apps/suite/realtime/handlers.js`. Nesting it inside a module (e.g. `suite/meet/realtime/`) hides it from the loader — guest `subscribe`/`unsubscribe` events go unhandled and `publish_realtime(room="guest:<id>")` never reaches the guest.
 
 ## 3. Sheets — collaboration server (🔴 required for live spreadsheet collab)
 - **Path:** `suite/sheets/collab-server/` · Yjs/Hocuspocus v4 WebSocket backend (Node ESM)
