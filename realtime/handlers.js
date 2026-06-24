@@ -36,6 +36,6 @@ const meet_handlers = (socket) => {
 	});
 };
 
-guest_room = (guest_id) => `guest:${guest_id}`;
+const guest_room = (guest_id) => `guest:${guest_id}`;
 
 module.exports = meet_handlers;
