@@ -52,6 +52,17 @@ def _get_codec_strategy() -> str:
 	return frappe.get_cached_doc("Sae Settings").codec_strategy or "svc"
 
 
+def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
+	"""Return (fullname, avatar, is_host, is_cohost) for a signed-in user."""
+	fullname, avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
+		user,
+		None,
+	)
+	is_host = meeting.owner == user
+	is_cohost = meeting.is_host_or_cohost(user) and not is_host
+	return fullname, avatar, is_host, is_cohost
+
+
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
 def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
@@ -90,13 +101,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 
 	sfu_config = get_sfu_config()
 
-	user_fullname, user_avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
-		user,
-		None,
-	)
-
-	is_host = meeting.owner == user
-	is_cohost = meeting.is_host_or_cohost(user) and not is_host
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
 
 	auth_token = _generate_sfu_token(
 		user_id=user,
@@ -253,12 +258,7 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 	if frappe.session.user not in meeting.get_members():
 		frappe.throw(_("Not a meeting member"))
 
-	user_fullname, user_avatar = frappe.db.get_value(
-		"User", frappe.session.user, ["full_name", "user_image"]
-	) or (frappe.session.user, None)
-
-	is_host = meeting.owner == frappe.session.user
-	is_cohost = meeting.is_host_or_cohost(frappe.session.user) and not is_host
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
 
 	auth_token = _generate_sfu_token(
 		user_id=frappe.session.user,
