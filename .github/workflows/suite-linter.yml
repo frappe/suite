@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "suite/**"
+      - "frontend/**"
       - "pyproject.toml"
       - ".github/workflows/suite-linter.yml"
   workflow_dispatch:
