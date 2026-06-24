@@ -613,15 +613,6 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 	await Promise.all(promises);
 };
 
-const syncLoggedInCurrentUser = () => {
-	currentUser.setCurrentUser({
-		user_id: session.user?.sessionUser || "",
-		name: session.user?.full_name || session.user?.sessionUser || "",
-		full_name: session.user?.full_name || "",
-		avatar: session.user?.avatar || "",
-	});
-};
-
 // --- Lifecycle ---
 onMounted(async () => {
 	// get wasJustCreated before resetting stores else it'll be reset to false
@@ -636,12 +627,7 @@ onMounted(async () => {
 	reactionStore.$reset();
 	raiseHandStore.$reset();
 	gridLayout.resetGridLayout();
-	currentUser.setCurrentUser({
-		user_id: "",
-		name: "",
-		full_name: "",
-		avatar: "",
-	});
+	currentUser.resetCurrentUser();
 
 	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
 	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);
@@ -689,18 +675,12 @@ onMounted(async () => {
 	}
 
 	if (!userResource.fetched) {
-		void userResource
-			.fetch()
-			.then(() => {
-				syncLoggedInCurrentUser();
-			})
-			.catch((error: unknown) => {
-				console.warn("Failed to load current user profile:", error);
-			});
+		try {
+			await userResource.fetch();
+		} catch (error) {
+			console.warn("Failed to load current user profile:", error);
+		}
 	}
-
-	// Setup current user
-	syncLoggedInCurrentUser();
 
 	// Initialize camera
 	await mediaControls.initializeCamera();
