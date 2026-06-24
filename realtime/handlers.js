@@ -1,4 +1,4 @@
-const meet_handlers = (socket) => {
+const suite_handlers = (socket) => {
 	socket.on("ping", () => {
 		socket.emit("pong");
 	});
@@ -38,4 +38,4 @@ const meet_handlers = (socket) => {
 
 const guest_room = (guest_id) => `guest:${guest_id}`;
 
-module.exports = meet_handlers;
+module.exports = suite_handlers;
