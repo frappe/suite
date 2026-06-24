@@ -135,21 +135,6 @@ process.on('SIGTERM', async () => {
 	process.exit(0);
 });
 
-process.on('uncaughtException', (error) => {
-	loggers.server.error(
-		'Uncaught exception (server kept alive): %s\n%s',
-		error.message,
-		error.stack,
-	);
-});
-
-process.on('unhandledRejection', (reason) => {
-	loggers.server.error(
-		'Unhandled rejection (server kept alive): %s',
-		reason instanceof Error ? reason.message : String(reason),
-	);
-});
-
 sfuServer.start().catch((error) => {
 	loggers.server.error(
 		'Failed to start SFU server: %s',
