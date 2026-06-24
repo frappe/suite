@@ -95,10 +95,6 @@ export class RoomManager {
 		return this.routers.get(roomId);
 	}
 
-	getAllRooms(): Room[] {
-		return Array.from(this.rooms.values());
-	}
-
 	getRoomStats(roomId: string): RoomStats | null {
 		const room = this.rooms.get(roomId);
 		if (!room) return null;
@@ -117,15 +113,6 @@ export class RoomManager {
 				0,
 			),
 		};
-	}
-
-	getAllRoomsStats(): RoomStats[] {
-		const stats: RoomStats[] = [];
-		for (const [roomId] of this.rooms) {
-			const stat = this.getRoomStats(roomId);
-			if (stat) stats.push(stat);
-		}
-		return stats;
 	}
 
 	getRoomCount(): number {

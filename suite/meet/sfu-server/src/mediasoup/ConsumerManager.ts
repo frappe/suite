@@ -128,12 +128,6 @@ export class ConsumerManager {
 		);
 	}
 
-	getConsumersByPeer(roomId: string, peerId: string): ConsumerData[] {
-		return Array.from(this.consumers.values()).filter(
-			(c) => c.roomId === roomId && c.peerId === peerId,
-		);
-	}
-
 	getConsumerCount(): number {
 		return this.consumers.size;
 	}

@@ -98,15 +98,6 @@ export class AuthManager {
 		}
 	}
 
-	getUserAvatar(token: string): string | undefined {
-		try {
-			const decoded = jwt.decode(token) as JWTPayload;
-			return decoded.user_avatar;
-		} catch (_error) {
-			return undefined;
-		}
-	}
-
 	updateSocketToken(socket: Socket, token: string): void {
 		const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
 
