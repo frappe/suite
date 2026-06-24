@@ -31,7 +31,7 @@ def _generate_sfu_token(
 ) -> str:
 	"""Generate a JWT token for SFU authentication."""
 	sfu_config = get_sfu_config()
-	secret = sfu_config.get("sfu_secret") or frappe.conf.get("secret_key")
+	secret = sfu_config.get("sfu_secret")
 	if not secret:
 		frappe.throw(_("SFU secret not configured"))
 
@@ -472,7 +472,7 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 	Validates the guest token and returns SFU URL/port.
 	"""
 	sfu_config = get_sfu_config()
-	secret = sfu_config.get("sfu_secret") or frappe.conf.get("secret_key")
+	secret = sfu_config.get("sfu_secret")
 	if not secret:
 		frappe.throw(_("SFU secret not configured"))
 
