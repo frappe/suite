@@ -44,10 +44,8 @@ export class SFUServer {
 				allowedHeaders: ['*'],
 				credentials: false,
 			},
-			transports: ['websocket', 'polling'],
 			pingTimeout: 60000,
 			pingInterval: 25000,
-			allowEIO3: true,
 		});
 
 		this.mediasoup = new MediasoupManager();
@@ -65,16 +63,6 @@ export class SFUServer {
 	}
 
 	private setupMiddleware(): void {
-		this.app.use((_req, res, next) => {
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-			res.header('Access-Control-Allow-Headers', '*');
-			if (_req.method === 'OPTIONS') {
-				res.sendStatus(204);
-				return;
-			}
-			next();
-		});
 		this.app.use(express.json());
 	}
 
