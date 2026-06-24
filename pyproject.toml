@@ -17,7 +17,7 @@ dependencies = [
     # kept for other suite modules (drive dropped these): PyJWT→meet, Markdown→writer, beautifulsoup4→mail/client
     "PyJWT>=2.8.0",
     "Markdown==3.8.2",
-    "beautifulsoup4~=4.13.4",
+    "beautifulsoup4~=4.15.0",
     # mail
     "wrapt~=1.17.3",
     "bcrypt~=4.2.1",

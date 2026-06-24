@@ -2,7 +2,12 @@
   "name": "suite",
   "version": "0.0.1",
   "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
+    "build": "yarn workspace @suite/frontend build",
+    "watch": "yarn workspace @suite/frontend dev",
     "knip:e2e": "knip --workspace suite/meet/e2e",
     "knip:frontend": "knip --workspace frontend",
     "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
