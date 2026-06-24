@@ -3,9 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { UserData } from '../../types';
 import { RoomRegistry } from '../RoomRegistry';
 
-function makeSocket(
-	id: string,
-): Socket & { emit: (e: string, d: unknown) => boolean } {
+function makeSocket(id: string): Socket {
 	const emitCalls: { event: string; data: unknown }[] = [];
 	const sock = {
 		id,
@@ -14,21 +12,59 @@ function makeSocket(
 			return true;
 		},
 		_emitCalls: emitCalls,
-	};
-	return sock as unknown as Socket & {
-		emit: (e: string, d: unknown) => boolean;
-	};
+	} as unknown as Socket;
+	return sock;
 }
 
 function makeIo(): {
 	io: Server;
 	sockets: Map<string, ReturnType<typeof makeSocket>>;
+	rooms: Map<string, Set<string>>;
+	joinRoom: (socketId: string, roomId: string) => void;
 } {
 	const sockets = new Map<string, ReturnType<typeof makeSocket>>();
+	const rooms = new Map<string, Set<string>>();
+	const joinRoom = (socketId: string, roomId: string) => {
+		let set = rooms.get(roomId);
+		if (!set) {
+			set = new Set();
+			rooms.set(roomId, set);
+		}
+		set.add(socketId);
+	};
 	const io = {
-		sockets: { sockets, adapter: { rooms: new Map() } },
+		sockets: { sockets, adapter: { rooms } },
+		to(roomId: string) {
+			const ids = rooms.get(roomId) ?? new Set();
+			return {
+				emit(event: string, data: unknown) {
+					for (const id of ids) {
+						const s = sockets.get(id);
+						if (s) s.emit(event, data);
+					}
+				},
+			};
+		},
 	} as unknown as Server;
-	return { io, sockets };
+	return { io, sockets, rooms, joinRoom };
+}
+
+function addFullSocket(
+	setup: ReturnType<typeof makeIo>,
+	roomId: string,
+	sock: Socket,
+) {
+	setup.sockets.set(sock.id, sock);
+	setup.joinRoom(sock.id, `${roomId}:full`);
+}
+
+function addPreviewSocket(
+	setup: ReturnType<typeof makeIo>,
+	roomId: string,
+	sock: Socket,
+) {
+	setup.sockets.set(sock.id, sock);
+	setup.joinRoom(sock.id, `${roomId}:preview`);
 }
 
 describe('RoomRegistry', () => {
@@ -79,53 +115,41 @@ describe('RoomRegistry', () => {
 
 	describe('scope-based emit', () => {
 		it('emitToFullAccessParticipants only reaches full sockets, not preview sockets', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitToFullAccessParticipants('r1', 'hello', { x: 1 });
 
-			expect(full._emitCalls).toEqual([{ event: 'hello', data: { x: 1 } }]);
-			expect(preview._emitCalls).toEqual([]);
+			expect((full as unknown as { _emitCalls: unknown[] })._emitCalls).toEqual(
+				[{ event: 'hello', data: { x: 1 } }],
+			);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
 		});
 
 		it('emitToPreviewParticipants only reaches preview sockets, not full sockets', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitToPreviewParticipants('r1', 'hi', { y: 2 });
 
-			expect(preview._emitCalls).toEqual([{ event: 'hi', data: { y: 2 } }]);
-			expect(full._emitCalls).toEqual([]);
-		});
-
-		it('removeSocket clears the socket from both scopes', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
-
-			const s = makeSocket('s-1');
-			sockets.set(s.id, s);
-			registry.addFullAccessSocket('r1', s.id);
-			registry.addPreviewSocket('r1', s.id);
-			expect(registry.isEmpty('r1')).toBe(false);
-
-			registry.removeSocket('r1', s.id);
-			expect(registry.isEmpty('r1')).toBe(true);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([{ event: 'hi', data: { y: 2 } }]);
+			expect((full as unknown as { _emitCalls: unknown[] })._emitCalls).toEqual(
+				[],
+			);
 		});
 
 		it('emitToScope is a no-op when the room has no sockets', () => {
@@ -134,6 +158,26 @@ describe('RoomRegistry', () => {
 			expect(() =>
 				registry.emitToFullAccessParticipants('nope', 'x', { ok: true }),
 			).not.toThrow();
+		});
+	});
+
+	describe('isEmpty', () => {
+		it('reflects socket.io room membership for both scopes', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+
+			expect(registry.isEmpty('r1')).toBe(true);
+
+			const full = makeSocket('full-1');
+			addFullSocket(setup, 'r1', full);
+			expect(registry.isEmpty('r1')).toBe(false);
+
+			setup.rooms.get('r1:full')?.delete(full.id);
+			expect(registry.isEmpty('r1')).toBe(true);
+
+			const preview = makeSocket('preview-1');
+			addPreviewSocket(setup, 'r1', preview);
+			expect(registry.isEmpty('r1')).toBe(false);
 		});
 	});
 
@@ -146,15 +190,13 @@ describe('RoomRegistry', () => {
 		};
 
 		it('participant_joined sends full userData to full sockets and a stripped payload to preview sockets', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitParticipantEvent(
 				'r1',
@@ -163,13 +205,17 @@ describe('RoomRegistry', () => {
 				userData,
 			);
 
-			expect(full._emitCalls).toEqual([
-				{
-					event: 'participant_joined',
-					data: { roomId: 'r1', participantId: 'u-1', userData },
-				},
-			]);
-			expect(preview._emitCalls).toEqual([
+			expect((full as unknown as { _emitCalls: unknown[] })._emitCalls).toEqual(
+				[
+					{
+						event: 'participant_joined',
+						data: { roomId: 'r1', participantId: 'u-1', userData },
+					},
+				],
+			);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([
 				{
 					event: 'participant_joined',
 					data: {
@@ -182,15 +228,13 @@ describe('RoomRegistry', () => {
 		});
 
 		it('participant_joined for a preview-* id only emits to full sockets (preview sockets get nothing)', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitParticipantEvent(
 				'r1',
@@ -199,30 +243,36 @@ describe('RoomRegistry', () => {
 				userData,
 			);
 
-			expect(full._emitCalls).toHaveLength(1);
-			expect(preview._emitCalls).toEqual([]);
+			expect(
+				(full as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toHaveLength(1);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
 		});
 
 		it('participant_left broadcasts to both full and preview sockets for a real participant', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitParticipantEvent('r1', 'participant_left', 'u-1');
 
-			expect(full._emitCalls).toEqual([
-				{
-					event: 'participant_left',
-					data: { roomId: 'r1', participantId: 'u-1' },
-				},
-			]);
-			expect(preview._emitCalls).toEqual([
+			expect((full as unknown as { _emitCalls: unknown[] })._emitCalls).toEqual(
+				[
+					{
+						event: 'participant_left',
+						data: { roomId: 'r1', participantId: 'u-1' },
+					},
+				],
+			);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([
 				{
 					event: 'participant_left',
 					data: { roomId: 'r1', participantId: 'u-1' },
@@ -231,37 +281,35 @@ describe('RoomRegistry', () => {
 		});
 
 		it('participant_left for a preview-* id only reaches full sockets', () => {
-			const { io, sockets } = makeIo();
-			const registry = new RoomRegistry(io);
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
 
 			const full = makeSocket('full-1');
 			const preview = makeSocket('preview-1');
-			sockets.set(full.id, full);
-			sockets.set(preview.id, preview);
-			registry.addFullAccessSocket('r1', full.id);
-			registry.addPreviewSocket('r1', preview.id);
+			addFullSocket(setup, 'r1', full);
+			addPreviewSocket(setup, 'r1', preview);
 
 			registry.emitParticipantEvent('r1', 'participant_left', 'preview-1');
 
-			expect(full._emitCalls).toHaveLength(1);
-			expect(preview._emitCalls).toEqual([]);
+			expect(
+				(full as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toHaveLength(1);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
 		});
 	});
 
 	describe('cleanupRoom', () => {
-		it('clears sockets, raised hands, and host-only chat flag for the room', () => {
-			const { io, sockets } = makeIo();
+		it('clears raised hands and host-only chat flag for the room', () => {
+			const { io } = makeIo();
 			const registry = new RoomRegistry(io);
 
-			const full = makeSocket('full-1');
-			sockets.set(full.id, full);
-			registry.addFullAccessSocket('r1', full.id);
 			registry.setRaisedHand('r1', 'u-1', 'ts');
 			registry.setHostOnlyChat('r1', true);
 
 			registry.cleanupRoom('r1');
 
-			expect(registry.isEmpty('r1')).toBe(true);
 			expect(registry.getRaisedHands('r1')).toEqual({});
 			expect(registry.isHostOnlyChat('r1')).toBe(false);
 		});

@@ -37,6 +37,7 @@ const SOCKET_DEFAULTS = {
 
 export function createMockSocket(
 	partial: Partial<TypedSocket> = {},
+	adapterRooms: Map<string, Set<string>> | null = null,
 ): MockSocket {
 	const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
 	const emitCalls: { event: string; data: unknown }[] = [];
@@ -71,7 +72,21 @@ export function createMockSocket(
 		},
 		join(roomId: string) {
 			joinCalls.push(roomId);
+			if (adapterRooms) {
+				let set = adapterRooms.get(roomId);
+				if (!set) {
+					set = new Set();
+					adapterRooms.set(roomId, set);
+				}
+				set.add(socket.id);
+			}
 			return Promise.resolve(this);
+		},
+		leave(roomId: string) {
+			if (adapterRooms) {
+				adapterRooms.get(roomId)?.delete(socket.id);
+			}
+			return this;
 		},
 		disconnect(_close: boolean) {
 			return socket;
@@ -164,6 +179,7 @@ interface ManagerHarness {
 	mediasoup: ReturnType<typeof createMockMediasoupManager>;
 	authManager: ReturnType<typeof createMockAuthManager>;
 	connect(socket: MockSocket): void;
+	createSocket(overrides?: Partial<TypedSocket>): MockSocket;
 }
 
 export function createManager(): ManagerHarness {
@@ -179,5 +195,24 @@ export function createManager(): ManagerHarness {
 		io.connectionFn(socket);
 	};
 
-	return { manager, io, mediasoup, authManager, connect };
+	const createSocket = (overrides: Partial<TypedSocket> = {}): MockSocket => {
+		const socket = createMockSocket(overrides, io.socketsAdapterRooms);
+		io.socketsMap.set(socket.id, socket);
+		const origDisconnect = socket.disconnect.bind(socket);
+		(socket as { disconnect: (close: boolean) => void }).disconnect = (
+			close: boolean,
+		) => {
+			// Mirror socket.io's auto-leave-on-disconnect: remove the socket
+			// from every adapter room it joined.
+			for (const [roomId, ids] of io.socketsAdapterRooms) {
+				ids.delete(socket.id);
+				if (ids.size === 0) io.socketsAdapterRooms.delete(roomId);
+			}
+			io.socketsMap.delete(socket.id);
+			return origDisconnect(close);
+		};
+		return socket;
+	};
+
+	return { manager, io, mediasoup, authManager, connect, createSocket };
 }

@@ -37,7 +37,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			socket.participantId = participantId;
 
 			if (socket.scope === 'full') {
-				deps.registry.addFullAccessSocket(scopedRoomId, socket.id);
+				deps.registry.joinScope(socket, scopedRoomId, 'full');
 				deps.mediasoup.addPeer(scopedRoomId, participantId, userData);
 
 				if (isRealParticipant(userData.userId)) {
@@ -57,7 +57,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					userData.video_enabled,
 				);
 			} else if (socket.scope === 'presence-preview') {
-				deps.registry.addPreviewSocket(scopedRoomId, socket.id);
+				deps.registry.joinScope(socket, scopedRoomId, 'presence-preview');
 
 				loggers.socketHandler.info(
 					'Preview user %s observing room %s (not added as peer)',

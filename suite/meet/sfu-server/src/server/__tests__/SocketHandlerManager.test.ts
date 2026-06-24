@@ -3,13 +3,14 @@ import {
 	createManager,
 	createMockSocket,
 	type MockSocket,
+	type TypedSocket,
 } from './test-helpers';
 
 function connectFullSocket(
 	harness: ReturnType<typeof createManager>,
 	overrides: Partial<MockSocket> = {},
 ): MockSocket {
-	const socket = createMockSocket(overrides);
+	const socket = harness.createSocket(overrides);
 	harness.connect(socket);
 	return socket;
 }

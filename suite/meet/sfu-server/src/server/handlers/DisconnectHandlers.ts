@@ -20,7 +20,8 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			if (roomId && participantId) {
 				try {
-					deps.registry.removeSocket(roomId, socket.id);
+					socket.leave(`${roomId}:full`);
+					socket.leave(`${roomId}:preview`);
 
 					if (socket.scope === 'full') {
 						await deps.mediasoup.removePeer(roomId, participantId);

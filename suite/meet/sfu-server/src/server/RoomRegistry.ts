@@ -5,10 +5,11 @@ import type {
 	UserData,
 } from '../types';
 
+const fullRoom = (roomId: string) => `${roomId}:full`;
+const previewRoom = (roomId: string) => `${roomId}:preview`;
+
 export class RoomRegistry {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
-	private fullAccessSockets: Map<string, Set<string>> = new Map();
-	private previewSockets: Map<string, Set<string>> = new Map();
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
 
@@ -16,21 +17,12 @@ export class RoomRegistry {
 		this.io = io;
 	}
 
-	addFullAccessSocket(roomId: string, socketId: string): void {
-		const set = this.fullAccessSockets.get(roomId) ?? new Set<string>();
-		set.add(socketId);
-		this.fullAccessSockets.set(roomId, set);
-	}
-
-	addPreviewSocket(roomId: string, socketId: string): void {
-		const set = this.previewSockets.get(roomId) ?? new Set<string>();
-		set.add(socketId);
-		this.previewSockets.set(roomId, set);
-	}
-
-	removeSocket(roomId: string, socketId: string): void {
-		this.fullAccessSockets.get(roomId)?.delete(socketId);
-		this.previewSockets.get(roomId)?.delete(socketId);
+	joinScope(
+		socket: Socket,
+		roomId: string,
+		scope: 'full' | 'presence-preview',
+	): void {
+		socket.join(scope === 'full' ? fullRoom(roomId) : previewRoom(roomId));
 	}
 
 	setRaisedHand(roomId: string, peerId: string, isoTimestamp: string): void {
@@ -59,16 +51,33 @@ export class RoomRegistry {
 	}
 
 	isEmpty(roomId: string): boolean {
-		const fullAccessCount = this.fullAccessSockets.get(roomId)?.size ?? 0;
-		const previewCount = this.previewSockets.get(roomId)?.size ?? 0;
-		return fullAccessCount === 0 && previewCount === 0;
+		const adapter = this.io.sockets.adapter;
+		const full = adapter.rooms.get(fullRoom(roomId))?.size ?? 0;
+		const preview = adapter.rooms.get(previewRoom(roomId))?.size ?? 0;
+		return full === 0 && preview === 0;
 	}
 
 	cleanupRoom(roomId: string): void {
-		this.fullAccessSockets.delete(roomId);
-		this.previewSockets.delete(roomId);
 		delete this.raisedHands[roomId];
 		delete this.hostOnlyChat[roomId];
+	}
+
+	emitToScope(
+		roomId: string,
+		scope: 'full' | 'presence-preview',
+		event: string,
+		data: unknown,
+	): void {
+		const key = scope === 'full' ? fullRoom(roomId) : previewRoom(roomId);
+		const ids = this.io.sockets.adapter.rooms.get(key);
+		if (!ids) return;
+		for (const id of ids) {
+			const socket = this.io.sockets.sockets.get(id);
+			if (socket) {
+				// biome-ignore lint/suspicious/noExplicitAny: Internal utility for type-safe emission to dynamic event names
+				(socket as any).emit(event, data);
+			}
+		}
 	}
 
 	emitToFullAccessParticipants(
@@ -76,7 +85,7 @@ export class RoomRegistry {
 		event: string,
 		data: unknown,
 	): void {
-		this.emitToScope(this.fullAccessSockets.get(roomId), event, data);
+		this.emitToScope(roomId, 'full', event, data);
 	}
 
 	emitToPreviewParticipants(
@@ -84,7 +93,7 @@ export class RoomRegistry {
 		event: string,
 		data: unknown,
 	): void {
-		this.emitToScope(this.previewSockets.get(roomId), event, data);
+		this.emitToScope(roomId, 'presence-preview', event, data);
 	}
 
 	emitParticipantEvent(
@@ -121,21 +130,6 @@ export class RoomRegistry {
 					roomId,
 					participantId,
 				});
-			}
-		}
-	}
-
-	private emitToScope(
-		socketIds: Set<string> | undefined,
-		event: string,
-		data: unknown,
-	): void {
-		if (!socketIds) return;
-		for (const socketId of socketIds) {
-			const socket: Socket | undefined = this.io.sockets.sockets.get(socketId);
-			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: Internal utility method for type-safe event emission
-				(socket as any).emit(event, data);
 			}
 		}
 	}
