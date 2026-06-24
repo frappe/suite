@@ -167,7 +167,10 @@ function createMockAuthManager(): AuthManager {
 		authenticateSocket: vi.fn().mockReturnValue(true),
 		ensureFullAccess: vi.fn(),
 		ensurePresenceAccess: vi.fn(),
-		isTokenExpired: vi.fn().mockReturnValue(false),
+		isTokenExpired: vi.fn((socket: { tokenExpiresAt?: number }) => {
+			if (!socket?.tokenExpiresAt) return false;
+			return Date.now() >= socket.tokenExpiresAt;
+		}),
 		triggerTokenExpiry: vi.fn(),
 		cleanupSocket: vi.fn(),
 	} as unknown as AuthManager;

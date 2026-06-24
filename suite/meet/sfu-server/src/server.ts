@@ -92,6 +92,7 @@ export class SFUServer {
 		loggers.server.info('Stopping SFU Server');
 
 		try {
+			this.socketHandlerManager.stop();
 			await this.mediasoup.cleanup();
 
 			this.server.close(() => {
@@ -102,6 +103,7 @@ export class SFUServer {
 				'Error during server shutdown: %s',
 				(error as Error).message,
 			);
+			this.socketHandlerManager.stop();
 			this.server.close(() => {
 				loggers.server.info('SFU Server force stopped');
 			});
@@ -121,6 +123,25 @@ process.on('SIGTERM', async () => {
 	loggers.server.info('Received SIGTERM, shutting down gracefully');
 	await sfuServer.stop();
 	process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+	loggers.server.error(
+		'Uncaught exception (process will exit): %s\n%s',
+		error.message,
+		error.stack,
+	);
+	process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+	const err = reason instanceof Error ? reason : new Error(String(reason));
+	loggers.server.error(
+		'Unhandled rejection (process will exit): %s\n%s',
+		err.message,
+		err.stack,
+	);
+	process.exit(1);
 });
 
 sfuServer.start().catch((error) => {

@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types';
+import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
 import type { AuthManager } from './AuthManager';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
@@ -27,6 +28,7 @@ export class SocketHandlerManager {
 	private registry: RoomRegistry;
 	private rateLimiter: RateLimiter;
 	private registerHandlers: ((socket: import('socket.io').Socket) => void)[];
+	private idleExpirySweep: NodeJS.Timeout | null = null;
 
 	constructor(
 		io: Server<ClientToServerEvents, ServerToClientEvents>,
@@ -97,5 +99,30 @@ export class SocketHandlerManager {
 				register(socket);
 			}
 		});
+
+		this.idleExpirySweep = setInterval(
+			() => this.sweepExpiredSockets(),
+			30_000,
+		);
+	}
+
+	private sweepExpiredSockets(): void {
+		for (const [, socket] of this.io.sockets.sockets) {
+			if (this.authManager.isTokenExpired(socket as never)) {
+				loggers.authManager.debug(
+					'Idle sweep: disconnecting expired socket %s (user %s)',
+					socket.id,
+					(socket as { userId?: string }).userId,
+				);
+				this.authManager.triggerTokenExpiry(socket as never, 'idle_sweep');
+			}
+		}
+	}
+
+	stop(): void {
+		if (this.idleExpirySweep) {
+			clearInterval(this.idleExpirySweep);
+			this.idleExpirySweep = null;
+		}
 	}
 }

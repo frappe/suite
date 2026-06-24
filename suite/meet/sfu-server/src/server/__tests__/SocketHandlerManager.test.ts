@@ -429,4 +429,28 @@ describe('SocketHandlerManager characterization', () => {
 			expect.objectContaining({ participantId: 'rh-1', raised: false }),
 		);
 	});
+
+	describe('idle expiry sweep', () => {
+		it('disconnects sockets whose token has expired, leaves non-expired ones alone', () => {
+			const harness = createManager();
+			const expired = connectFullSocket(harness, { id: 'sock-exp' });
+			const fresh = connectFullSocket(harness, { id: 'sock-fresh' });
+
+			const expiredSocket = expired as unknown as { tokenExpiresAt: number };
+			const freshSocket = fresh as unknown as { tokenExpiresAt: number };
+			expiredSocket.tokenExpiresAt = Date.now() - 1000;
+			freshSocket.tokenExpiresAt = Date.now() + 60_000;
+
+			harness.manager['sweepExpiredSockets']();
+
+			expect(harness.authManager.triggerTokenExpiry).toHaveBeenCalledWith(
+				expired,
+				'idle_sweep',
+			);
+			expect(harness.authManager.triggerTokenExpiry).not.toHaveBeenCalledWith(
+				fresh,
+				expect.anything(),
+			);
+		});
+	});
 });
