@@ -27,7 +27,10 @@ export function useCurrentUser(): CurrentUser {
 
 	const guestOverride = ref<User | null>(null);
 
-	const currentUser = computed(() => guestOverride.value || (session.user as User));
+	const currentUser = computed<User>(() => {
+		const { sessionUser, ...rest } = session.user;
+		return guestOverride.value || { ...rest, user_id: sessionUser };
+	});
 
 	const userInitials = computed(() => {
 		const name =
