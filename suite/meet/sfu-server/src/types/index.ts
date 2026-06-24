@@ -418,7 +418,6 @@ declare module 'socket.io' {
 		participantId?: string;
 		currentToken?: string;
 		tokenExpiresAt?: number;
-		tokenExpiryTimer?: NodeJS.Timeout;
 		scope?: SFUScope;
 	}
 }

@@ -31,7 +31,6 @@ export class AuthManager {
 			socket.scope = decoded.scope || 'presence-preview';
 			socket.currentToken = token;
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
-			this.scheduleTokenExpiry(socket);
 
 			loggers.authManager.info(
 				'Authenticated user: %s for meeting: %s (site: %s)',
@@ -76,8 +75,6 @@ export class AuthManager {
 			socket.id,
 			socket.userId,
 		);
-
-		this.scheduleTokenExpiry(socket);
 	}
 
 	isTokenExpired(socket: Socket): boolean {
@@ -92,8 +89,6 @@ export class AuthManager {
 		if (socket.disconnected) {
 			return;
 		}
-
-		this.clearTokenExpiry(socket);
 
 		const timestamp = new Date().toISOString();
 
@@ -129,35 +124,8 @@ export class AuthManager {
 	}
 
 	cleanupSocket(socket: Socket): void {
-		this.clearTokenExpiry(socket);
 		socket.currentToken = undefined;
 		socket.tokenExpiresAt = undefined;
-	}
-
-	private scheduleTokenExpiry(socket: Socket): void {
-		this.clearTokenExpiry(socket);
-
-		if (!socket.tokenExpiresAt) {
-			return;
-		}
-
-		const delay = socket.tokenExpiresAt - Date.now();
-
-		if (delay <= 0) {
-			this.triggerTokenExpiry(socket, 'expired_before_timer');
-			return;
-		}
-
-		socket.tokenExpiryTimer = setTimeout(() => {
-			this.triggerTokenExpiry(socket, 'timer_elapsed');
-		}, delay);
-	}
-
-	private clearTokenExpiry(socket: Socket): void {
-		if (socket.tokenExpiryTimer) {
-			clearTimeout(socket.tokenExpiryTimer);
-			socket.tokenExpiryTimer = undefined;
-		}
 	}
 
 	ensurePresenceAccess(socket: Socket): void {
