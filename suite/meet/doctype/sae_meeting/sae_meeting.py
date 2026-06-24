@@ -222,6 +222,7 @@ class SaeMeeting(Document):
 			"meeting_join_approved",
 			user=user,
 			message={"meeting": self.name, "user": user, "approved_by": frappe.session.user},
+			after_commit=True,
 		)
 
 		# for guests
@@ -249,6 +250,7 @@ class SaeMeeting(Document):
 				"meeting_user_approved",
 				user=authorized_user,
 				message={"meeting": self.name, "user": user, "approved_by": frappe.session.user},
+				after_commit=True,
 			)
 
 		frappe.publish_realtime(
@@ -256,6 +258,7 @@ class SaeMeeting(Document):
 			doctype=self.doctype,
 			docname=self.name,
 			message={"meeting": self.name, "waiting_count": len(updated_waiting_users)},
+			after_commit=True,
 		)
 
 		return {"status": "joined", "message": "Successfully joined the meeting"}
