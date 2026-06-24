@@ -1,19 +1,18 @@
-name: Meet Linters
+name: Suite Linters
 
 on:
   pull_request:
     paths:
-      - "suite/meet/**"
-      - "frontend/src/apps/meet/**"
+      - "suite/**"
       - "pyproject.toml"
-      - ".github/workflows/meet-linter.yml"
+      - ".github/workflows/suite-linter.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: meet-linters-${{ github.ref }}
+  group: suite-linters-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,27 +28,6 @@ jobs:
         with:
           python-version: "3.14"
           cache: pip
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: "yarn"
-          cache-dependency-path: |
-            frontend/yarn.lock
-            suite/meet/sfu-server/yarn.lock
-            suite/meet/e2e/yarn.lock
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: yarn install --frozen-lockfile
-
-      - name: Install SFU Server dependencies
-        working-directory: suite/meet/sfu-server
-        run: yarn install --frozen-lockfile
-
-      - name: Install E2E dependencies
-        working-directory: suite/meet/e2e
-        run: yarn install --frozen-lockfile
 
       - name: Download Semgrep rules
         run: git clone --depth 1 https://github.com/frappe/semgrep-rules.git frappe-semgrep-rules
