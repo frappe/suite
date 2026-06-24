@@ -1,7 +1,7 @@
 # Copyright (c) 2025, Frappe and contributors
 # For license information, please see license.txt
 
-import random
+import secrets
 import string
 
 import frappe
@@ -417,15 +417,7 @@ class SaeMeeting(Document):
 
 
 def generate(segment_length=4, num_segments=3, separator="-"):
-	# Define the character set: only lowercase letters
-	characters = string.ascii_lowercase
-
-	# Generate segments
-	segments = []
-	for _i in range(num_segments):
-		segment = "".join(random.choice(characters) for _j in range(segment_length))
-		segments.append(segment)
-
-	# Join segments with the separator
-	random_id = separator.join(segments)
-	return random_id
+	return separator.join(
+		"".join(secrets.choice(string.ascii_lowercase) for _ in range(segment_length))
+		for _ in range(num_segments)
+	)
