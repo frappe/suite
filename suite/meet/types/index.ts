@@ -44,12 +44,6 @@ export interface ScreenShareData {
 	[key: string]: unknown;
 }
 
-export interface WebRTCSignalData {
-	fromUser?: string;
-	targetUser: string;
-	signalData: Record<string, unknown>;
-}
-
 export interface ChatMessage {
 	roomId: string;
 	message: string;
