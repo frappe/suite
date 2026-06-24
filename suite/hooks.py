@@ -11,15 +11,51 @@ app_email = "developers@frappe.io"
 app_license = "agpl-3.0"
 
 # ============================================================================
-# Apps screen — a SINGLE unified Suite entry (replaces the 7 per-app entries)
+# Apps screen / App switcher
 # ============================================================================
 add_to_apps_screen = [
 	{
-		"name": "suite",
-		"logo": "/assets/suite/frontend/logo.svg",
-		"title": "Frappe Suite",
-		"route": "/suite",
-	}
+		"name": "drive",
+		"logo": "/assets/suite/drive/images/icons/logo.svg",
+		"title": "Drive",
+		"route": "/drive",
+	},
+	{
+		"name": "slides",
+		"logo": "/assets/suite/slides/images/slides.svg",
+		"title": "Slides",
+		"route": "/slides",
+	},
+	{
+		"name": "writer",
+		"logo": "/assets/suite/writer/images/writer.png",
+		"title": "Writer",
+		"route": "/writer",
+	},
+	{
+		"name": "sheets",
+		"logo": "/assets/suite/sheets/logo.svg",
+		"title": "Sheets",
+		"route": "/sheets",
+	},
+	{
+		"name": "meet",
+		"logo": "/assets/suite/meet/images/meet.png",
+		"title": "Meet",
+		"route": "/meet",
+	},
+	{
+		"name": "mail",
+		"logo": "/assets/suite/mail/images/logo.svg",
+		"title": "Mail",
+		"route": "/mail",
+	},
+	{
+		"name": "calendar",
+		"logo": "/assets/suite/calendar/images/logo.svg",
+		"title": "Calendar",
+		"route": "/calendar",
+	},
 ]
 
 # ============================================================================
@@ -247,7 +283,7 @@ scheduler_events = {
 # Lifecycle hooks — dispatched through suite.suite_core.boot so that EACH
 # former app's handler is preserved and invoked in order.
 # ============================================================================
-from suite.suite_core import boot as _suite_boot  # noqa: E402
+from suite.suite_core import boot as _suite_boot
 
 after_install = "suite.suite_core.boot.after_install"
 after_migrate = "suite.suite_core.boot.after_migrate"
