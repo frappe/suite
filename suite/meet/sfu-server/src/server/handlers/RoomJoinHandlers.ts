@@ -138,7 +138,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 					socket.leave(roomId);
 					socket.leave(`${roomId}:full`);
-					socket.leave(`${roomId}:presence-preview`);
+					socket.leave(`${roomId}:preview`);
 					socket.roomId = undefined;
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
