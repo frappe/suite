@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FrappeUIProvider, Dialogs } from "frappe-ui";
-import { provide } from "vue";
+import { provide, onMounted } from "vue";
 
 import { initSocket } from "@/apps/meet/socket";
 import { getPlatform } from "@/apps/meet/utils/device";
@@ -21,6 +21,18 @@ import { getPlatform } from "@/apps/meet/utils/device";
 initSocket();
 
 provide("$platform", getPlatform());
+
+onMounted(() => {
+	const stored = localStorage.getItem("meet-color-scheme") || "system";
+	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+	const theme =
+		stored === "system"
+			? mediaQuery.matches
+				? "dark"
+				: "light"
+			: stored;
+	document.documentElement.setAttribute("data-theme", theme);
+});
 </script>
 
 <template>

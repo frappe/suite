@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { Sidebar, createResource } from "frappe-ui";
-import { computed, h } from "vue";
+import { computed, h, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
+import AppearanceSettingsDialog from "./AppearanceSettingsDialog.vue";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
-import LucideUsers from "~icons/lucide/users";
-import LucidePhone from "~icons/lucide/phone";
 import LucideSettings from "~icons/lucide/settings";
-import LucideZap from "~icons/lucide/zap";
 import LucideBadgeHelp from "~icons/lucide/badge-help";
 import LucideBook from "~icons/lucide/book";
 import LucideLayoutGrid from "~icons/lucide/layout-grid";
@@ -135,30 +133,15 @@ const sidebarSections = computed(() => [
 				icon: LucideCalendar,
 			},
 			{
-				label: "Contacts",
-				to: "/contacts",
-				icon: LucideUsers,
-			},
-			{
-				label: "Calls",
-				to: "/calls",
-				icon: LucidePhone,
-			},
-			{
 				label: "Settings",
-				to: "/meet/audio-test",
+				onClick: () => (showSettingsDialog.value = true),
 				icon: LucideSettings,
-				isActive: route.name === "meet-audio-test",
 			},
 		],
 	},
 ]);
 
-function emitInstantMeeting() {
-	window.dispatchEvent(
-		new CustomEvent("meet-quick-action", { detail: "instant" }),
-	);
-}
+const showSettingsDialog = ref(false);
 </script>
 
 <template>
@@ -177,13 +160,6 @@ function emitInstantMeeting() {
 			<div class="flex items-center gap-1 px-1 py-1">
 				<button
 					class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-2 text-ink-gray-7"
-					@click="emitInstantMeeting"
-					:title="isCollapsed ? 'Instant meet' : ''"
-				>
-					<LucideZap class="size-4" />
-				</button>
-				<button
-					class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-2 text-ink-gray-7"
 					@click="openHelp"
 					:title="isCollapsed ? 'Help' : ''"
 				>
@@ -192,4 +168,6 @@ function emitInstantMeeting() {
 			</div>
 		</template>
 	</Sidebar>
+
+	<AppearanceSettingsDialog v-model="showSettingsDialog" />
 </template>
