@@ -7,14 +7,12 @@ withDefaults(
 	defineProps<{
 		variant?: "default" | "active";
 		active?: boolean;
-		size?: "sm" | "md";
 		title?: string;
 		testId?: string;
 	}>(),
 	{
 		variant: "default",
 		active: false,
-		size: "md",
 	},
 );
 

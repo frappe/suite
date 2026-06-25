@@ -558,56 +558,6 @@ def validate_guest_session(guest_id: str) -> dict:
 
 
 @frappe.whitelist()
-def get_my_meetings() -> list[dict]:
-	"""Get recent meetings created by or involving the current user."""
-	user = frappe.session.user
-
-	meetings = frappe.db.get_all(
-		"Sae Meeting",
-		filters=[["owner", "=", user]],
-		fields=["name", "meeting_type", "creation", "owner", "allow_guest"],
-		limit=10,
-		order_by="creation desc",
-	)
-
-	result = []
-	for m in meetings:
-		members = frappe.db.get_all(
-			"Sae Meeting User",
-			filters={"parent": m["name"], "parenttype": "Sae Meeting"},
-			fields=["user", "user_name"],
-		)
-
-		member_details = []
-		for member in members[:5]:
-			avatar = None
-			if not member["user"].startswith("guest_"):
-				avatar = frappe.db.get_value("User", member["user"], "user_image")
-			member_details.append(
-				{
-					"user_id": member["user"],
-					"full_name": member["user_name"] or member["user"],
-					"avatar_url": avatar,
-				}
-			)
-
-		result.append(
-			{
-				"id": m["name"],
-				"title": m["name"],
-				"date": m["creation"].strftime("%Y-%m-%d") if m["creation"] else None,
-				"creation": str(m["creation"]) if m["creation"] else None,
-				"members": member_details,
-				"member_count": len(members),
-				"meeting_type": m["meeting_type"],
-				"owner": m["owner"],
-			}
-		)
-
-	return result
-
-
-@frappe.whitelist()
 def promote_to_cohost(meeting_id: str, user_id: str) -> dict:
 	"""
 	Promote a user to co-host during an active meeting (host only)

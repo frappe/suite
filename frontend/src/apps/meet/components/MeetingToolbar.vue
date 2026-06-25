@@ -93,21 +93,15 @@
 				</ToolbarButton>
 
 				<!-- More Options -->
-				<div class="relative" ref="dropdownContainer" @click="handleDropdownClick">
-					<Dropdown :options="moreOptions" placement="top">
-						<template #default="{ open }">
-							<button
-								type="button"
-								title="More options"
-								data-testid="toolbar-more"
-								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
-								:class="open ? 'bg-white/20' : ''"
-							>
-								<lucide-more-horizontal class="w-4 h-4" />
-							</button>
-						</template>
-					</Dropdown>
-				</div>
+			<div class="relative">
+				<Dropdown :options="moreOptions" placement="top">
+					<template #default="{ open }">
+						<ToolbarButton title="More options" test-id="toolbar-more" :active="open">
+							<lucide-more-horizontal class="w-4 h-4" />
+						</ToolbarButton>
+					</template>
+				</Dropdown>
+			</div>
 
 				<!-- End Call -->
 				<ToolbarButton
@@ -258,8 +252,6 @@ const moreOptions = computed(() => [
 
 const isVisible = ref(true);
 const isHovering = ref(false);
-const isDropdownOpen = ref(false);
-const dropdownContainer = ref(null);
 const showMeetingInfoDialog = ref(false);
 const showSettingsDialog = ref(false);
 const showMeetingInfoWhenE2EEReady = ref(false);
@@ -287,7 +279,7 @@ const resetHideTimer = (force = false) => {
 
 	if (
 		!force &&
-		(isDropdownOpen.value || isHovering.value || props.isReactionPickerOpen)
+		(isHovering.value || props.isReactionPickerOpen)
 	) {
 		return;
 	}
@@ -324,32 +316,6 @@ const handleShortcut = (event) => {
 	}
 };
 
-const handleDropdownClick = (_event) => {
-	isDropdownOpen.value = !isDropdownOpen.value;
-
-	if (isDropdownOpen.value) {
-		if (hideTimeout) {
-			clearTimeout(hideTimeout);
-			hideTimeout = null;
-		}
-		isVisible.value = true;
-	} else {
-		resetHideTimer();
-	}
-};
-
-const handleDocumentClick = (event) => {
-	if (
-		dropdownContainer.value &&
-		!dropdownContainer.value.contains(event.target)
-	) {
-		if (isDropdownOpen.value) {
-			isDropdownOpen.value = false;
-			resetHideTimer();
-		}
-	}
-};
-
 const handleHostE2EEEnabled = () => {
 	showMeetingInfoWhenE2EEReady.value = true;
 };
@@ -359,7 +325,6 @@ const showMeetingInfoForReadyE2EE = () => {
 	showMeetingInfoDialog.value = true;
 	showControls();
 };
-
 const handleReactionSelect = (emoji) => {
 	emit("toggle-reactions", emoji);
 
@@ -400,7 +365,6 @@ onMounted(() => {
 	document.addEventListener("touchstart", handleActivity);
 	document.addEventListener("touchmove", handleActivity);
 	document.addEventListener("keydown", handleShortcut);
-	document.addEventListener("click", handleDocumentClick);
 	document.addEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 
@@ -414,7 +378,6 @@ onUnmounted(() => {
 	document.removeEventListener("touchstart", handleActivity);
 	document.removeEventListener("touchmove", handleActivity);
 	document.removeEventListener("keydown", handleShortcut);
-	document.removeEventListener("click", handleDocumentClick);
 	document.removeEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 </script>

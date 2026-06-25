@@ -15,25 +15,29 @@
 				</div>
 
 				<div class="mt-[42px] flex gap-4">
-					<QuickActionCard
-						label="Instant meet"
-						class="flex-1"
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 						@click="startInstantMeeting"
 					>
-						<template #icon>
-							<LucideZap class="size-6 text-ink-gray-8" />
-						</template>
-					</QuickActionCard>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideZap class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
+					</button>
 
-					<QuickActionCard
-						label="Join with code"
-						class="flex-1"
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 						@click="showJoinDialog = true"
 					>
-						<template #icon>
-							<LucideLink class="size-6 text-ink-gray-8" />
-						</template>
-					</QuickActionCard>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideLink class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
+					</button>
 				</div>
 			</div>
 			</div>
@@ -75,13 +79,11 @@ import {
 	createResource,
 	toast,
 } from "frappe-ui";
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 
 import { useConnectionState } from "../composables/useConnectionState";
 import MeetSidebar from "../components/MeetSidebar.vue";
-import QuickActionCard from "../components/QuickActionCard.vue";
-
 import LucideZap from "~icons/lucide/zap";
 import LucideLink from "~icons/lucide/link";
 
@@ -152,16 +154,5 @@ const isMeetingCodeValid = (code: string) => {
 	return regex.test(code);
 };
 
-function handleQuickAction(e: Event) {
-	const detail = (e as CustomEvent).detail;
-	if (detail === "instant") startInstantMeeting();
-}
 
-onMounted(() => {
-	window.addEventListener("meet-quick-action", handleQuickAction);
-});
-
-onUnmounted(() => {
-	window.removeEventListener("meet-quick-action", handleQuickAction);
-});
 </script>

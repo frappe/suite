@@ -149,9 +149,7 @@ import {
 	markRaw,
 	nextTick,
 	onMounted,
-	type Ref,
 	ref,
-	toRefs,
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
@@ -201,7 +199,7 @@ const props = defineProps<{
 	open?: boolean;
 	userId?: string;
 	userName?: string;
-	messages?: ChatMessage[] | { value: ChatMessage[] };
+	messages?: ChatMessage[];
 	isHost?: boolean;
 	isCohost?: boolean;
 	isGuest?: boolean;
@@ -240,9 +238,6 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
-const { messages } = toRefs(props) as {
-	messages: Ref<ChatMessage[] | { value: ChatMessage[] }>;
-};
 const draft = ref("");
 const selectedEmojiIndex = ref(0);
 const filteredEmojis = ref<EmojiItem[]>([]);
@@ -289,20 +284,14 @@ onMounted(async () => {
 	}
 });
 
-const resolvedMessages = computed<ChatMessage[]>(() => {
-	const m = messages.value;
-	if (!m) return [];
-	if (Array.isArray(m)) return m;
-	return m.value || [];
-});
-
 const groupedMessages = computed<MessageGroup[]>(() => {
-	if (resolvedMessages.value.length === 0) return [];
+	const msgs = props.messages;
+	if (!msgs || msgs.length === 0) return [];
 
 	const groups: MessageGroup[] = [];
 	let currentGroup: MessageGroup | null = null;
 
-	for (const message of resolvedMessages.value) {
+	for (const message of msgs) {
 		const isOwn = message.user_id === props.userId;
 		const shouldStartNewGroup =
 			!currentGroup ||

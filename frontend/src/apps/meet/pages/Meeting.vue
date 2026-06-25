@@ -61,12 +61,6 @@
 				<MeetingHeader
 					:meetingId="meetingId"
 					:meetingTitle="meetingTitle"
-					:isChatOpen="chatStore.isChatOpen"
-					:isPeopleOpen="isPeopleOpen"
-					:hasUnread="chatStore.hasUnreadMessages"
-					:lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
-					@toggle-chat="toggleChat"
-					@toggle-people="togglePeople"
 				/>
 
 				<div

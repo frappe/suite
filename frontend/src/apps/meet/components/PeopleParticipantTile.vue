@@ -62,7 +62,7 @@
 			</button>
 
 			<!-- Host Controls -->
-			<div v-if="showHostControls" class="relative">
+			<div v-if="canControlParticipant" class="relative">
 				<Dropdown :options="hostOptions" placement="bottom-end">
 					<template #default>
 						<button
@@ -121,10 +121,6 @@ const emit = defineEmits<{
 
 const meetingCtx = useMeetingContext();
 const showKickDialog = ref(false);
-
-const showHostControls = computed(() => {
-	return props.canControlParticipant;
-});
 
 const isHandRaised = computed(() => {
 	if (!meetingCtx?.raiseHandStore?.raisedHands) return false;
