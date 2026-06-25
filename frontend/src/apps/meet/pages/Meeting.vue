@@ -733,6 +733,10 @@ const handleE2EENeedsMediaRepublish = async () => {
 
 // --- Lifecycle ---
 onMounted(async () => {
+	// Force dark theme at the document root so teleported overlays
+	// (dialogs, dropdowns) inherit the meeting's dark tokens.
+	document.documentElement.setAttribute("data-theme", "dark");
+
 	// get wasJustCreated before resetting stores else it'll be reset to false
 	const wasJustCreated = connectionState.justCreated;
 
@@ -831,6 +835,7 @@ onUnmounted(() => {
 		handleE2EENeedsMediaRepublish,
 	);
 	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
+	document.documentElement.removeAttribute("data-theme");
 });
 
 // Watch for localVideo element and localStream connection
