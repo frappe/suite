@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="h-[100dvh] flex flex-col overflow-hidden overscroll-none bg-surface-base text-ink-gray-9"
+		class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden overscroll-none bg-surface-base text-ink-gray-9"
 		data-meeting-component
 		data-theme="dark"
 	>
@@ -292,13 +292,6 @@ const lobbyStore = useLobbyStore();
 const reactionStore = useReactionStore();
 const raiseHandStore = useRaiseHandStore();
 const gridLayout = useGridLayout(mediaState);
-
-const previousPageChrome = {
-	htmlOverscrollBehavior: "",
-	bodyOverscrollBehavior: "",
-	bodyOverflow: "",
-	bodyBackground: "",
-};
 
 // --- Lobby notification tracking ---
 const notifiedLobbyUsers = ref(new Set<string>());
@@ -743,15 +736,6 @@ onMounted(async () => {
 	// Force dark theme at the document root so teleported overlays
 	// (dialogs, dropdowns) inherit the meeting's dark tokens.
 	document.documentElement.setAttribute("data-theme", "dark");
-	previousPageChrome.htmlOverscrollBehavior =
-		document.documentElement.style.overscrollBehavior;
-	previousPageChrome.bodyOverscrollBehavior = document.body.style.overscrollBehavior;
-	previousPageChrome.bodyOverflow = document.body.style.overflow;
-	previousPageChrome.bodyBackground = document.body.style.background;
-	document.documentElement.style.overscrollBehavior = "none";
-	document.body.style.overscrollBehavior = "none";
-	document.body.style.overflow = "hidden";
-	document.body.style.background = "var(--surface-base)";
 
 	// get wasJustCreated before resetting stores else it'll be reset to false
 	const wasJustCreated = connectionState.justCreated;
@@ -852,11 +836,6 @@ onUnmounted(() => {
 	);
 	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
 	document.documentElement.removeAttribute("data-theme");
-	document.documentElement.style.overscrollBehavior =
-		previousPageChrome.htmlOverscrollBehavior;
-	document.body.style.overscrollBehavior = previousPageChrome.bodyOverscrollBehavior;
-	document.body.style.overflow = previousPageChrome.bodyOverflow;
-	document.body.style.background = previousPageChrome.bodyBackground;
 });
 
 // Watch for localVideo element and localStream connection
