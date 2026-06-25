@@ -54,7 +54,20 @@
 			:name="resolvedDisplayName"
 			:size="labelSize"
 			:position="labelPosition"
-		/>
+		>
+			<template v-if="showAudioState">
+				<lucide-mic v-if="isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
+				<AudioIndicator
+					v-if="isAudioEnabled && stream"
+					:mediaStream="stream"
+					:isActive="true"
+					:maxHeight="12"
+					:sensitivity="3.0"
+					activeColorClass="bg-white"
+				/>
+				<lucide-mic-off v-else-if="!isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
+			</template>
+		</NamePill>
 
 		<!-- Reaction -->
 		<div
@@ -77,31 +90,11 @@
 		</div>
 
 		<div
-			v-if="showAudioState && isAudioEnabled && stream"
-			class="absolute top-2 right-2 rounded-full bg-gray-700 p-1.5"
-		>
-			<AudioIndicator
-				:mediaStream="stream"
-				:isActive="true"
-				:maxHeight="16"
-				:sensitivity="3.0"
-				activeColorClass="bg-gray-100"
-			/>
-		</div>
-
-		<div
 			v-if="showNetworkState && showNetworkIndicator"
-			class="absolute top-2 right-12 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
+			class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
 			:title="networkQualityMessage"
 		>
 			<WifiAlertIcon class="w-4 h-4 text-white" />
-		</div>
-
-		<div
-			v-if="showAudioState && !isAudioEnabled"
-			class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
-		>
-			<lucide-mic-off class="w-4 h-4 text-white" />
 		</div>
 
 		<!-- Participant action toolbar -->
