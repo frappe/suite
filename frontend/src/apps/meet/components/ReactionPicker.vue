@@ -9,17 +9,17 @@
 				:side="'top'"
 				:align="'center'"
 				:side-offset="12"
-				class="bg-black/90 rounded-2xl p-3 shadow-xl border border-white/10 max-w-sm w-full z-[70]"
+				class="rounded-2xl bg-surface-base p-3 shadow-xl max-w-sm w-full z-[70]"
 				data-testid="reaction-picker"
 			>
-				<div class="text-center">
-					<div class="grid grid-cols-5 gap-3 mb-4">
+				<div class="text-center space-y-3">
+					<div class="grid grid-cols-7 gap-2">
 						<button
 							v-for="emoji in reactionEmojis"
 							:key="emoji"
 							type="button"
 							@click="handleReactionSelect(emoji)"
-							class="mx-auto flex items-center justify-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-4xl"
+							class="mx-auto flex items-center justify-center size-9 rounded-lg bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors text-xl"
 							:aria-label="`Send ${emoji} reaction`"
 							:data-testid="`reaction-${emoji}`"
 						>
@@ -29,8 +29,8 @@
 					<button
 						type="button"
 						@click="handleRaiseHand"
-						class="w-full py-2 px-4 bg-white/10 hover:bg-opacity-100 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium text-white"
-						:class="{ '!bg-gray-800 hover:!bg-gray-800': isHandRaised }"
+						class="w-full py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium text-ink-gray-8 bg-surface-gray-2 hover:bg-surface-gray-3"
+						:class="{ '!bg-surface-gray-3': isHandRaised }"
 						data-testid="toggle-raise-hand"
 					>
 						<lucide-hand class="w-5 h-5" />
@@ -71,7 +71,6 @@ const reactionEmojis = [
 	"🤔",
 	"😮",
 	"😢",
-	"😡",
 	"🤝",
 	"✨",
 	"🔥",
