@@ -56,7 +56,6 @@
 			:position="labelPosition"
 		>
 			<template v-if="showAudioState">
-				<lucide-mic v-if="isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
 				<AudioIndicator
 					v-if="isAudioEnabled && stream"
 					:mediaStream="stream"
