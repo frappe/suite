@@ -77,6 +77,6 @@ export function usePoll(deps: {
 	return {
 		setupPollEvents,
 		createPoll,
-		submitVote,
+		submitVote
 	};
 }

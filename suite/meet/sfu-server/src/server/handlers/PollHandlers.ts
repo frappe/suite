@@ -11,9 +11,28 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				const roomId = socket.roomId;
 				const { question, options } = data;
 
+				if (!socket.isHost && !socket.isCohost) {
+					if (callback)
+						callback({ success: false, error: 'Only hosts can create polls' });
+					return;
+				}
+
 				if (!roomId || !question || !options || !socket.participantId) {
 					if (callback)
 						callback({ success: false, error: 'Invalid poll data' });
+					return;
+				}
+
+				if (
+					!Array.isArray(options) ||
+					options.length < 2 ||
+					options.length > 10
+				) {
+					if (callback)
+						callback({
+							success: false,
+							error: 'Poll must have between 2 and 10 options',
+						});
 					return;
 				}
 
@@ -112,6 +131,8 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					'poll:vote failed: %s',
 					(error as Error).message,
 				);
+				if (callback)
+					callback({ success: false, error: (error as Error).message });
 			}
 		});
 	};

@@ -73,6 +73,15 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					boolean
 				>,
 			});
+
+			if (socket.scope === 'full') {
+				const roomPolls = deps.registry.getActivePolls(scopedRoomId);
+				if (roomPolls && roomPolls.size > 0) {
+					socket.emit('existing_polls', {
+						polls: Array.from(roomPolls.values()),
+					});
+				}
+			}
 		} catch (error) {
 			loggers.socketHandler.error(
 				'Error in handleJoinRoom for user %s: %s',

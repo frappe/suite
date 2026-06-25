@@ -66,13 +66,17 @@ const getPercentage = (votes: number) => {
 	return Math.round((votes / totalVotes.value) * 100);
 };
 
-const handleVote = (optionId: string) => {
+const handleVote = async (optionId: string) => {
 	if (localVotedOption.value) return;
 
 	localVotedOption.value = optionId;
 
 	if (pollService) {
-		pollService.submitVote(props.poll.pollId, optionId);
-	}
+        try {
+            await pollService.submitVote(props.poll.pollId, optionId);
+        } catch (error) {
+            localVotedOption.value = null;
+        }
+    }
 };
 </script>

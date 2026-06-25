@@ -36,6 +36,7 @@
                 </div>
 
                 <Button 
+                    v-if="options.length <10"
                     variant="subtle" 
                     class="w-full mt-2" 
                     @click="addOption"
