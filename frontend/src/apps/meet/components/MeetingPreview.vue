@@ -34,20 +34,20 @@
  								playsinline
  							/>
  
- 							<div
- 								v-if="!isCameraOn"
- 								class="absolute inset-0 bg-surface-gray-6 flex items-center justify-center"
- 							>
- 								<div class="text-center text-ink-gray-8">
- 									<MeetingAvatar
- 										:label="userInitials"
- 										:image="userAvatar"
- 										:tiles="1"
- 										class="mx-auto mb-4 w-20 h-20"
- 									/>
- 									<p class="text-3xl-medium">{{ currentUserName }}</p>
- 								</div>
- 							</div>
+							<div
+								v-if="!isCameraOn"
+								class="absolute inset-0 bg-[#383838] flex items-center justify-center"
+							>
+								<div class="text-center text-white">
+									<MeetingAvatar
+										:label="userInitials"
+										:image="userAvatar"
+										:tiles="1"
+										class="mx-auto mb-4 w-20 h-20"
+									/>
+									<p class="text-3xl-medium">{{ currentUserName }}</p>
+								</div>
+							</div>
  
  							<PreviewToolbar
  								:isMicOn="isMicOn"
