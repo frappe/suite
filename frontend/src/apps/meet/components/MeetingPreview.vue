@@ -1,137 +1,137 @@
 <template>
-	<div class="flex-1 flex flex-col" data-testid="meeting-preview">
-		<div class="bg-gray-50 px-6 pt-4 flex-shrink-0">
-			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-2 cursor-pointer" @click="$router.push('/meet')">
-					<FrappeMeetingLogo class="h-8" />
-					<h4 class="text-gray-900 text-base">Frappe Meet</h4>
-				</div>
-				<Button
-					v-if="!session.isLoggedIn"
-					variant="ghost"
-					size="sm"
-					@click="redirectToLogin"
-				>
-					Sign In
-				</Button>
-			</div>
-		</div>
-
-		<div class="flex-1 flex lg:flex-row flex-col bg-gray-50 text-gray-900">
-			<div class="max-w-7xl mx-auto w-full flex lg:flex-row flex-col">
-				<!-- Video Section -->
-				<div class="lg:flex-[2] flex flex-col justify-center p-6 lg:pr-4">
-					<div class="max-w-3xl mx-auto w-full">
-						<div
-							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group h-full"
-							data-testid="preview-video-shell"
-						>
-							<video
-								:ref="(el: unknown) => setLocalVideoRef?.(el as HTMLVideoElement | null)"
-								class="w-full h-full object-cover transform scale-x-[-1]"
-								autoplay
-								muted
-								playsinline
-							/>
-
-							<div
-								v-if="!isCameraOn"
-								class="absolute inset-0 bg-gray-800 flex items-center justify-center"
-							>
-								<div class="text-center text-white">
-									<MeetingAvatar
-										:label="userInitials"
-										:image="userAvatar"
-										:tiles="1"
-										class="mx-auto mb-4 w-20 h-20"
-									/>
-									<p class="text-3xl-medium">{{ currentUserName }}</p>
-								</div>
-							</div>
-
-							<PreviewToolbar
-								:isMicOn="isMicOn"
-								:isCameraOn="isCameraOn"
-								:cameraPermissionGranted="cameraPermissionGranted"
-								:microphonePermissionGranted="microphonePermissionGranted"
-								@toggle-microphone="$emit('toggle-microphone')"
-								@toggle-camera="$emit('toggle-camera')"
-								@device-changed="$emit('device-changed', $event)"
-							/>
-						</div>
-					</div>
-				</div>
-
-				<!-- Join Section -->
-				<div
-					class="lg:flex-[1] flex items-center lg:justify-end justify-center p-6 lg:pl-4"
-				>
-					<div class="max-w-md w-full">
-						<div class="p-8 mb-6 w-full h-full flex flex-col justify-center">
-							<div class="mb-6 text-center">
-								<div class="mb-4">
-									<div
-								class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-gradient-to-br from-blue-100 to-indigo-100"
-							>
-								<lucide-video class="w-8 h-8 text-blue-600" />
-							</div>
-						</div>
-
-						<h2 class="text-5xl text-gray-900 mb-3">
-							<span class="text-gray-900"> Ready to join? </span>
-						</h2>
-
-						<div v-if="meetingTitle" class="bg-gray-50 rounded-lg px-4 py-3 mb-4">
-							<p class="text-xl-medium text-gray-700 truncate">
-								{{ meetingTitle }}
-							</p>
-						</div>
-
-						<!-- Avatar group for current participants -->
-						<ParticipantAvatarGroup
-							v-if="!isGuest"
-							:participants="[...participants]"
-							:error="presenceError"
-							:maxDisplayed="3"
-						/>
-							</div>
-
-							<form class="space-y-3" @submit.prevent="handleJoin">
-								<FormControl
-									v-if="isGuest"
-									ref="guestNameInputRef"
-									v-model="guestName"
-									type="text"
-									label="Your name"
-									placeholder="John Doe"
-									:maxlength="50"
-									autocomplete="off"
-									data-testid="guest-name-input"
-								/>
-
-								<Button
-									v-if="!presenceError"
-									type="submit"
-									variant="solid"
-									size="lg"
-									:loading="isConnecting || joinGuestAPI.loading"
-									:disabled="isGuest && !guestName.trim()"
-									class="w-full"
-									data-testid="join-meeting-preview-button"
-								>
-									<template #prefix>
-										<lucide-video class="w-5 h-5" />
-									</template>
-									Join Meeting
-								</Button>
-							</form>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-</template>
+ 	<div class="flex-1 flex flex-col bg-surface-base" data-testid="meeting-preview">
+ 		<div class="px-6 pt-4 flex-shrink-0">
+ 			<div class="flex items-center justify-between">
+ 				<div class="flex items-center gap-2 cursor-pointer" @click="$router.push('/meet')">
+ 					<FrappeMeetingLogo class="h-8" />
+ 					<h4 class="text-ink-gray-8 text-base">Frappe Meet</h4>
+ 				</div>
+ 				<Button
+ 					v-if="!session.isLoggedIn"
+ 					variant="ghost"
+ 					size="sm"
+ 					@click="redirectToLogin"
+ 				>
+ 					Sign In
+ 				</Button>
+ 			</div>
+ 		</div>
+ 
+ 		<div class="flex-1 flex lg:flex-row flex-col text-ink-gray-8">
+ 			<div class="max-w-7xl mx-auto w-full flex lg:flex-row flex-col">
+ 				<!-- Video Section -->
+ 				<div class="lg:flex-[2] flex flex-col justify-center p-6 lg:pr-4">
+ 					<div class="max-w-3xl mx-auto w-full">
+ 						<div
+ 							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group h-full"
+ 							data-testid="preview-video-shell"
+ 						>
+ 							<video
+ 								:ref="(el: unknown) => setLocalVideoRef?.(el as HTMLVideoElement | null)"
+ 								class="w-full h-full object-cover transform scale-x-[-1]"
+ 								autoplay
+ 								muted
+ 								playsinline
+ 							/>
+ 
+ 							<div
+ 								v-if="!isCameraOn"
+ 								class="absolute inset-0 bg-surface-gray-6 flex items-center justify-center"
+ 							>
+ 								<div class="text-center text-ink-gray-8">
+ 									<MeetingAvatar
+ 										:label="userInitials"
+ 										:image="userAvatar"
+ 										:tiles="1"
+ 										class="mx-auto mb-4 w-20 h-20"
+ 									/>
+ 									<p class="text-3xl-medium">{{ currentUserName }}</p>
+ 								</div>
+ 							</div>
+ 
+ 							<PreviewToolbar
+ 								:isMicOn="isMicOn"
+ 								:isCameraOn="isCameraOn"
+ 								:cameraPermissionGranted="cameraPermissionGranted"
+ 								:microphonePermissionGranted="microphonePermissionGranted"
+ 								@toggle-microphone="$emit('toggle-microphone')"
+ 								@toggle-camera="$emit('toggle-camera')"
+ 								@device-changed="$emit('device-changed', $event)"
+ 							/>
+ 						</div>
+ 					</div>
+ 				</div>
+ 
+ 				<!-- Join Section -->
+ 				<div
+ 					class="lg:flex-[1] flex items-center lg:justify-end justify-center p-6 lg:pl-4"
+ 				>
+ 					<div class="max-w-md w-full">
+ 						<div class="p-8 mb-6 w-full h-full flex flex-col justify-center">
+ 							<div class="mb-6 text-center">
+ 								<div class="mb-4">
+ 									<div
+ 								class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-surface-gray-2"
+ 							>
+ 								<lucide-video class="w-8 h-8 text-ink-gray-8" />
+ 							</div>
+ 						</div>
+ 
+ 						<h2 class="text-5xl text-ink-gray-8 mb-3">
+ 							<span class="text-ink-gray-8"> Ready to join? </span>
+ 						</h2>
+ 
+ 						<div v-if="meetingTitle" class="bg-surface-gray-2 rounded-lg px-4 py-3 mb-4">
+ 							<p class="text-xl-medium text-ink-gray-7 truncate">
+ 								{{ meetingTitle }}
+ 							</p>
+ 						</div>
+ 
+ 						<!-- Avatar group for current participants -->
+ 						<ParticipantAvatarGroup
+ 							v-if="!isGuest"
+ 							:participants="[...participants]"
+ 							:error="presenceError"
+ 							:maxDisplayed="3"
+ 						/>
+ 							</div>
+ 
+ 							<form class="space-y-3" @submit.prevent="handleJoin">
+ 								<FormControl
+ 									v-if="isGuest"
+ 									ref="guestNameInputRef"
+ 									v-model="guestName"
+ 									type="text"
+ 									label="Your name"
+ 									placeholder="John Doe"
+ 									:maxlength="50"
+ 									autocomplete="off"
+ 									data-testid="guest-name-input"
+ 								/>
+ 
+ 								<Button
+ 									v-if="!presenceError"
+ 									type="submit"
+ 									variant="solid"
+ 									size="lg"
+ 									:loading="isConnecting || joinGuestAPI.loading"
+ 									:disabled="isGuest && !guestName.trim()"
+ 									class="w-full"
+ 									data-testid="join-meeting-preview-button"
+ 								>
+ 									<template #prefix>
+ 										<lucide-video class="w-5 h-5" />
+ 									</template>
+ 									Join Meeting
+ 								</Button>
+ 							</form>
+ 						</div>
+ 					</div>
+ 				</div>
+ 			</div>
+ 		</div>
+ 	</div>
+ </template>
 
 <script setup lang="ts">
 import { Button, createResource, FormControl, toast } from "frappe-ui";
