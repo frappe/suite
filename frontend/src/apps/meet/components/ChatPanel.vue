@@ -169,8 +169,6 @@ const handlePollSubmit = (payload: {
 	question: string;
 	options: { text: string }[];
 }) => {
-	console.log("1. Button clicked. Payload:", payload);
-    console.log("2. Is pollService injected?", pollService);
 	if (pollService) {
 		pollService.createPoll(payload.question, payload.options);
 		showPollModal.value = false;
