@@ -5,8 +5,8 @@
 		data-testid="meeting-layout"
 		:class="
 			mode === 'sidebar'
-				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2'
-				: 'relative h-full'
+				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2 rounded-lg'
+				: 'relative h-full rounded-lg overflow-hidden'
 		"
 	>
 		<!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->

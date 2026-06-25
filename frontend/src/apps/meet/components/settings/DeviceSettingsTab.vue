@@ -16,10 +16,10 @@
 					<FormControl label="Camera" type="autocomplete" v-model="selectedCameraIdLocal"
 						:options="cameraSelectOptions" placeholder="Select camera">
 						<template #prefix>
-							<lucide-camera class="mr-2 h-4 w-4" />
+							<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 				</div>
@@ -28,16 +28,16 @@
 					<FormControl class="w-full" label="Microphone" type="autocomplete" v-model="selectedMicIdLocal"
 						:options="micSelectOptions" placeholder="Select microphone">
 						<template #prefix>
-							<lucide-mic class="mr-2 h-4 w-4" />
+							<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 
 					<div v-if="selectedMicIdLocal" class="w-5">
 						<AudioIndicator class="mt-2" :device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
-							:max-height="40" activeColorClass="bg-gray-800" />
+							:max-height="40" activeColorClass="bg-ink-gray-6" />
 					</div>
 				</div>
 
@@ -45,10 +45,10 @@
 					<FormControl class="w-full" label="Speaker" type="autocomplete" v-model="selectedSpeakerIdLocal"
 						:options="speakerSelectOptions" placeholder="Select speaker">
 						<template #prefix>
-							<lucide-speaker class="mr-2 h-4 w-4" />
+							<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 

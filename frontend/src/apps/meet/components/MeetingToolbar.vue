@@ -1,73 +1,48 @@
 <template>
 	<div
 		class="pointer-events-none w-full overflow-hidden shrink-0 transition-[height,margin] duration-500 ease-in-out"
-		:class="{ 'mt-2 mb-2': isVisible }"
 		:style="{ height: toolbarHeight }"
 	>
 		<div
-			class="flex justify-center px-4 transition-transform duration-500 ease-in-out"
+			class="flex h-full items-end justify-center px-4 transition-transform duration-500 ease-in-out"
 			:class="isVisible ? 'translate-y-0' : 'translate-y-full'"
 		>
 			<div
-				class="flex items-center gap-3 p-4 bg-black/80 backdrop-blur-md rounded-full border border-white/10 shadow-xl pointer-events-auto transition-all duration-500"
+				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
 				@mouseenter="onMouseEnter"
 				@mouseleave="onMouseLeave"
 				data-testid="meeting-toolbar"
 			>
 				<!-- Microphone -->
-				<Button
-					@click="$emit('toggle-microphone')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isMicOn,
-					}"
+				<ToolbarButton
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
-					data-testid="toolbar-microphone"
+					test-id="toolbar-microphone"
+					@click="$emit('toggle-microphone')"
 				>
-					<template #icon>
-						<lucide-mic-off v-if="!isMicOn" class="w-5 h-5 text-white" />
-						<lucide-mic v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<lucide-mic-off v-if="!isMicOn" class="w-4 h-4" />
+					<lucide-mic v-else class="w-4 h-4" />
+				</ToolbarButton>
 
 				<!-- Camera -->
-				<Button
-					@click="$emit('toggle-camera')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isCameraOn,
-					}"
+				<ToolbarButton
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
-					data-testid="toolbar-camera"
+					test-id="toolbar-camera"
+					@click="$emit('toggle-camera')"
 				>
-					<template #icon>
-						<lucide-video-off v-if="!isCameraOn" class="w-5 h-5 text-white" />
-						<lucide-video v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<lucide-video-off v-if="!isCameraOn" class="w-4 h-4" />
+					<lucide-video v-else class="w-4 h-4" />
+				</ToolbarButton>
 
 				<!-- Screen Share -->
-				<Button
+				<ToolbarButton
 					v-if="canScreenShare()"
-					@click="$emit('toggle-screen-share')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': isScreenSharing,
-					}"
 					title="Toggle Screen Share"
-					data-testid="toolbar-screen-share"
+					test-id="toolbar-screen-share"
+					@click="$emit('toggle-screen-share')"
 				>
-					<template #icon>
-						<lucide-monitor-up v-if="!isScreenSharing" class="w-5 h-5 text-white" />
-						<lucide-monitor-pause v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<lucide-monitor-up v-if="!isScreenSharing" class="w-4 h-4" />
+					<lucide-monitor-pause v-else class="w-4 h-4" />
+				</ToolbarButton>
 
 				<!-- Reactions -->
 				<ReactionPicker
@@ -78,113 +53,71 @@
 					@update:open="updateReactionPickerOpen"
 				>
 					<template #trigger>
-						<Button
-							variant="solid"
-							theme="gray"
-							size="lg"
-							class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-							:class="{
-								'!bg-gray-800 hover:!bg-gray-800': isReactionPickerOpen,
-							}"
+						<ToolbarButton
 							title="Reactions & Raise Hand"
-							data-testid="toolbar-reactions"
+							test-id="toolbar-reactions"
+							@click="() => {}"
 						>
-							<template #icon>
-								<lucide-smile class="w-5 h-5 text-white" />
-							</template>
-						</Button>
+							<lucide-smile class="w-4 h-4" />
+						</ToolbarButton>
 					</template>
 				</ReactionPicker>
 
 				<!-- Chat -->
-				<div v-if="!isMobile" class="relative">
-					<Button
-						@click="$emit('toggle-chat')"
-						variant="solid"
-						size="lg"
-						theme="gray"
-						class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-						:class="{
-							'!bg-gray-800 hover:!bg-gray-800': isChatOpen,
-						}"
-						title="Show Chat"
-						data-testid="toolbar-chat"
-					>
-						<template #icon>
-							<lucide-message-square-off
-								v-if="isChatOpen"
-								class="w-5 h-5 text-white"
-							/>
-							<lucide-message-square v-else class="w-5 h-5 text-white" />
-						</template>
-					</Button>
-
-					<!-- Unread Badge -->
-					<div
+				<ToolbarButton
+					:active="isChatOpen"
+					title="Show Chat"
+					test-id="toolbar-chat"
+					@click="$emit('toggle-chat')"
+				>
+					<lucide-message-square-off v-if="isChatOpen" class="w-4 h-4" />
+					<lucide-message-square v-else class="w-4 h-4" />
+					<span
 						v-if="hasUnread && !isChatOpen"
-						class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"
+						class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"
 					/>
-				</div>
+				</ToolbarButton>
 
 				<!-- People -->
-				<div class="relative" v-if="!isMobile">
-					<Button
-						@click="$emit('toggle-people')"
-						variant="solid"
-						size="lg"
-						theme="gray"
-						class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-						:class="{
-							'!bg-gray-800 hover:!bg-gray-800': isPeopleOpen,
-						}"
-						title="Show Participants"
-						data-testid="toolbar-people"
-					>
-						<template #icon>
-							<lucide-users class="w-5 h-5 text-white" />
-						</template>
-					</Button>
-
-					<div
-						v-if="lobbyUserCount > 0"
-						class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"
+				<ToolbarButton
+					:active="isPeopleOpen"
+					title="Show Participants"
+					test-id="toolbar-people"
+					@click="$emit('toggle-people')"
+				>
+					<lucide-users class="w-4 h-4" />
+					<span
+						v-if="lobbyUserCount && lobbyUserCount > 0"
+						class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"
 					/>
-				</div>
+				</ToolbarButton>
 
 				<!-- More Options -->
 				<div class="relative" ref="dropdownContainer" @click="handleDropdownClick">
 					<Dropdown :options="moreOptions" placement="top">
-						<template #default>
-							<Button
-								variant="solid"
-								theme="gray"
-								size="lg"
-								class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
+						<template #default="{ open }">
+							<button
+								type="button"
 								title="More options"
 								data-testid="toolbar-more"
+								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
+								:class="open ? 'bg-white/20' : ''"
 							>
-								<template #icon>
-									<lucide-more-horizontal class="w-5 h-5 text-white" />
-								</template>
-							</Button>
+								<lucide-more-horizontal class="w-4 h-4" />
+							</button>
 						</template>
 					</Dropdown>
 				</div>
 
 				<!-- End Call -->
-				<Button
-					@click="$emit('end-call')"
-					variant="solid"
-					theme="red"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95 !bg-red-600 hover:!bg-red-500"
+				<ToolbarButton
+					variant="active"
 					title="End Call"
-					data-testid="toolbar-end-call"
+					test-id="toolbar-end-call"
+					@click="$emit('end-call')"
 				>
-					<template #icon>
-						<lucide-phone-off class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<lucide-phone-off class="w-4 h-4" />
+				</ToolbarButton>
 			</div>
 		</div>
 	</div>
@@ -204,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dropdown } from "frappe-ui";
+import { Dropdown } from "frappe-ui";
 import {
 	type Component,
 	computed,
@@ -223,6 +156,7 @@ import { canScreenShare } from "../utils/device";
 import MeetingInfoDialog from "./MeetingInfoDialog.vue";
 import ReactionPicker from "./ReactionPicker.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
+import ToolbarButton from "./ToolbarButton.vue";
 
 const $platform = usePlatform();
 
@@ -309,7 +243,6 @@ const moreOptions = computed(() => [
 					label: "People",
 					onClick: () => {
 						emit("toggle-people");
-						isVisible.value = false;
 					},
 				},
 				{
@@ -317,7 +250,6 @@ const moreOptions = computed(() => [
 					label: "Chat",
 					onClick: () => {
 						emit("toggle-chat");
-						isVisible.value = false;
 					},
 				},
 			]
@@ -333,7 +265,7 @@ const showSettingsDialog = ref(false);
 const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
 
-const TOOLBAR_VISIBLE_HEIGHT = "5.5rem";
+const TOOLBAR_VISIBLE_HEIGHT = "3.25rem";
 const toolbarHeight = computed(() =>
 	isVisible.value ? TOOLBAR_VISIBLE_HEIGHT : "0px",
 );

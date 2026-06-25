@@ -7,9 +7,9 @@
 		leave-from-class="opacity-100 transform translate-x-0"
 		leave-to-class="opacity-0 transform translate-x-full"
 	>
-		<div v-show="open" class="h-full py-4 flex justify-end" data-testid="chat-panel-wrapper">
+		<div v-show="open" class="h-full flex justify-end" data-testid="chat-panel-wrapper">
 			<div
-				class="w-80 sm:w-96 bg-white border border-gray-200 shadow-xl flex flex-col z-40 h-full rounded-lg mr-4"
+				class="w-80 sm:w-96 bg-surface-gray-1 border border-outline-gray-2 flex flex-col z-40 h-full rounded-[10px] mr-4"
 				data-testid="chat-panel"
 			>
 				<div class="flex items-center justify-between p-4 border-b border-gray-200">
@@ -41,7 +41,7 @@
 							<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
 						</div>
 					</div>
-					<div v-else class="min-w-0">
+						<div v-else class="min-w-0">
 						<div class="text-xs flex items-center gap-2">
 							<span class="truncate font-medium">{{ item.group.user_name }}</span>
 							<span class="text-gray-600">{{ time(item.group.timestamp) }}</span>
@@ -50,7 +50,7 @@
 							<div
 								v-for="message in item.group.messages"
 								:key="message.id"
-								class="text-sm text-gray-900 whitespace-pre-wrap [overflow-wrap:anywhere] leading-4"
+								class="text-sm text-ink-gray-8 whitespace-pre-wrap [overflow-wrap:anywhere] leading-4"
 							>
 								<template
 									v-for="(token, i) in tokenizeChatMessage(message.message)"
@@ -61,7 +61,7 @@
 										:href="token.url"
 										target="_blank"
 										rel="noopener noreferrer"
-										class="text-blue-500 underline"
+										class="text-ink-blue-5 underline"
 									>{{ token.text }}</a>
 									<span v-else>{{ token.text }}</span>
 								</template>
@@ -74,7 +74,7 @@
 				</div>
 			</div>
 
-				<form class="p-2 relative" @submit.prevent="handleSend">
+				<form class="p-3 relative" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
 						<div class="flex gap-2">
 							<FormControl
@@ -86,7 +86,7 @@
 								autocomplete="off"
 								data-testid="chat-input"
 							/>
-							<Button size="md" type="submit" variant="outline" data-testid="chat-send"> Send </Button>
+							<Button size="md" type="submit" variant="solid" data-testid="chat-send"> Send </Button>
 						</div>
 						<EmojiPicker
 							:show="showEmojiPicker"
@@ -95,7 +95,7 @@
 							@select="addEmoji"
 						/>
 					</template>
-					<div v-else class="text-center text-sm text-gray-500 py-3 bg-gray-50 rounded border border-gray-200 m-2">
+					<div v-else class="text-center text-sm text-ink-gray-5 py-3 bg-surface-gray-2 rounded-lg border border-outline-gray-2 m-2">
 						The host has restricted chat to hosts and co-hosts only.
 					</div>
 				</form>

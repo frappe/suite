@@ -1,8 +1,8 @@
 <template>
-	<div class="flex items-center gap-3 py-3 mx-4 border-b border-gray-200 last:border-b-0 transition-colors">
+	<div class="flex items-center gap-3 px-3 py-1.5 rounded-lg transition-colors hover:bg-surface-gray-2">
 		<div class="flex-shrink-0">
 			<div
-				class="relative flex items-center justify-center rounded-full overflow-hidden bg-gradient-to-br from-gray-500 to-gray-600 text-white shadow-inner w-10 h-10"
+				class="relative flex items-center justify-center rounded-full overflow-hidden bg-surface-gray-3 text-ink-gray-7 w-8 h-8"
 			>
 				<img
 					v-if="participant.avatar"
@@ -11,7 +11,7 @@
 					class="w-full h-full object-cover"
 					draggable="false"
 				/>
-				<span v-else class=" text-sm-semibold select-none">
+				<span v-else class="text-sm-medium select-none">
 					{{ participant.initials }}
 				</span>
 			</div>
@@ -19,7 +19,7 @@
 
 		<div class="flex-1 min-w-0">
 			<div class="flex items-center gap-2">
-				<span class="text-sm-medium text-ink-black truncate">
+				<span class="text-sm text-ink-gray-8 truncate">
 					{{ participant.user_name }}
 				</span>
 				<span v-if="isCurrentUser" class="text-xs text-ink-gray-5">(You)</span>
@@ -28,48 +28,39 @@
 			</div>
 		</div>
 
-		<div class="flex items-center gap-2 flex-shrink-0">
+		<div class="flex items-center gap-1 flex-shrink-0">
 			<!-- Raised Hand Indicator -->
-			<div v-if="isHandRaised" class="w-8 h-8 flex items-center justify-center">
-				<div
-					class="rounded-full bg-[#e54e17] text-white p-1"
-					:title="`${participant.user_name || participant.user_id} has raised their hand`"
-				>
-					<lucide-hand class="w-4 h-4" />
+			<div v-if="isHandRaised" class="flex items-center justify-center p-1.5 rounded-lg" :title="`${participant.user_name || participant.user_id} has raised their hand`">
+				<div class="rounded-full bg-amber-500 p-0.5">
+					<lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
 				</div>
 			</div>
 
-			<!-- Audio Indicator -->
-			<div class="w-8 h-8 flex items-center justify-center">
-				<lucide-mic-off v-if="!participant.audio_enabled" class="w-4 h-4 text-ink-gray-4" />
-                <AudioIndicator
-                    v-else-if="stream"
-                    :mediaStream="stream"
-                    :isActive="true"
-                    :maxHeight="16"
-                    :sensitivity="3.0"
-                    activeColorClass="bg-gray-900"
-                />
-			</div>
+			<!-- Audio Mute Button -->
+			<button
+				class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-3 text-ink-gray-6"
+				:title="participant.audio_enabled ? 'Mute' : 'Unmute'"
+			>
+				<lucide-mic-off v-if="!participant.audio_enabled" class="w-4 h-4" />
+				<AudioIndicator
+					v-else-if="stream"
+					:mediaStream="stream"
+					:isActive="true"
+					:maxHeight="16"
+					:sensitivity="3.0"
+					activeColorClass="bg-ink-gray-6"
+				/>
+			</button>
 
-			<!-- Video Indicator -->
-			<div class="w-8 h-8 flex items-center justify-center">
-				<lucide-video v-if="participant.video_enabled" class="w-4 h-4 text-ink-gray-7" />
-				<lucide-video-off v-else class="w-4 h-4 text-ink-gray-4" />
-			</div>
-
+			<!-- Host Controls -->
 			<div v-if="showHostControls" class="relative">
 				<Dropdown :options="hostOptions" placement="bottom-end">
 					<template #default>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="w-8 h-8"
+						<button
+							class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-3 text-ink-gray-6"
 						>
-							<template #icon>
-								<lucide-more-vertical class="w-4 h-4 text-ink-gray-6" />
-							</template>
-						</Button>
+							<lucide-more-vertical class="w-4 h-4" />
+						</button>
 					</template>
 				</Dropdown>
 			</div>

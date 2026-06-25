@@ -1,5 +1,5 @@
 <template>
-	<div class="h-[100dvh] bg-gray-900 flex flex-col" data-meeting-component>
+	<div class="h-[100dvh] bg-surface-base flex flex-col" data-meeting-component>
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
 			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
@@ -52,7 +52,20 @@
 
 		<!-- Main meeting interface -->
 		<template v-else>
-			<div class="relative flex flex-1 min-h-0 overflow-hidden">
+			<div class="relative flex flex-1 min-h-0 overflow-hidden flex-col">
+				<!-- Breadcrumb header - spans full width above grid -->
+				<MeetingHeader
+					:meetingId="meetingId"
+					:meetingTitle="meetingTitle"
+					:isChatOpen="chatStore.isChatOpen"
+					:isPeopleOpen="isPeopleOpen"
+					:hasUnread="chatStore.hasUnreadMessages"
+					:lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
+					@toggle-chat="toggleChat"
+					@toggle-people="togglePeople"
+					@copy-meeting-id="handleCopyMeetingId"
+				/>
+
 				<div
 					v-if="e2eeJoinPendingMessage"
 					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
@@ -72,11 +85,11 @@
 					<!-- Video column — padding-bottom mirrors the toolbar height so tiles
                  reclaim the space when the toolbar hides, without affecting panels -->
 					<div
-						class="flex flex-col min-h-0 transition-[padding-bottom] duration-500 ease-in-out"
-						:style="{ paddingBottom: isToolbarVisible ? '6rem' : '0' }"
+						class="flex flex-col min-h-0 transition-[padding-bottom] duration-500 ease-in-out relative"
+						:style="{ paddingBottom: isToolbarVisible ? '3.75rem' : '0' }"
 					>
 						<!-- Video area -->
-						<div class="p-4 flex flex-col flex-1 min-h-0 text-white">
+						<div class="px-2.5 pb-2.5 flex flex-col flex-1 min-h-0 text-white">
 							<MeetingLayout @open-people-panel="togglePeople" />
 						</div>
 					</div>
@@ -90,16 +103,16 @@
 						leave-from-class="opacity-100 transform translate-x-0"
 						leave-to-class="opacity-0 transform translate-x-full"
 					>
-						<div
-							v-if="activePanel"
-							class="h-full overflow-hidden z-50 md:z-auto bg-black/30 backdrop-blur-sm md:bg-transparent"
-							:class="{
-								'absolute inset-0 w-full': isMobile,
-								relative: !isMobile,
-								'md:relative': true,
-							}"
-							:style="{ width: isMobile ? '100%' : '24rem' }"
-						>
+					<div
+						v-if="activePanel"
+						class="h-full overflow-hidden z-50 md:z-auto bg-surface-base/50 backdrop-blur-sm md:bg-transparent"
+						:class="{
+							'absolute inset-0 w-full': isMobile,
+							relative: !isMobile,
+							'md:relative': true,
+						}"
+						:style="{ width: isMobile ? '100%' : '24rem' }"
+					>
 							<!-- Chat Panel -->
 							<ChatPanel
 								v-if="activePanel === 'chat'"
@@ -144,7 +157,7 @@
 				</div>
 
 				<!-- Meeting controls are anchored to the meeting viewport so side panels do not shift them -->
-				<div class="pointer-events-none absolute inset-x-0 bottom-0">
+				<div class="pointer-events-none absolute inset-x-0 bottom-2">
 					<!-- Meeting controls -->
 					<MeetingToolbar
 						:isChatOpen="chatStore.isChatOpen"
@@ -214,6 +227,7 @@ import JoinRequestNotifications from "../components/JoinRequestNotifications.vue
 import LobbyOverlay from "../components/LobbyOverlay.vue";
 import MeetingLayout from "../components/MeetingLayout.vue";
 import MeetingPreview from "../components/MeetingPreview.vue";
+import MeetingHeader from "../components/MeetingHeader.vue";
 import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
@@ -647,6 +661,10 @@ const togglePeople = () => {
 			void sfuConnection.fetchExistingWaitingRoomUsers();
 		}
 	}
+};
+
+const handleCopyMeetingId = () => {
+	toast.success("Meeting code copied");
 };
 
 const toggleReactions = (payload: string) => {
