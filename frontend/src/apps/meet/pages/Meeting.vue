@@ -63,7 +63,6 @@
 					:lobbyUserCount="lobbyStore.lobbyUsers?.length || 0"
 					@toggle-chat="toggleChat"
 					@toggle-people="togglePeople"
-					@copy-meeting-id="handleCopyMeetingId"
 				/>
 
 				<div
@@ -661,10 +660,6 @@ const togglePeople = () => {
 			void sfuConnection.fetchExistingWaitingRoomUsers();
 		}
 	}
-};
-
-const handleCopyMeetingId = () => {
-	toast.success("Meeting code copied");
 };
 
 const toggleReactions = (payload: string) => {

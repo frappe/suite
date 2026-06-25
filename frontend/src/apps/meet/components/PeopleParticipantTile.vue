@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-[#2b2b2b]"
+		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-surface-gray-2"
 	>
 		<div class="flex-shrink-0">
 			<div
@@ -31,13 +31,13 @@
 		<div class="ml-auto flex shrink-0 items-center justify-end gap-1">
 			<span
 				v-if="isHost"
-				class="rounded-full bg-[#424242] px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+				class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
 			>
 				Host
 			</span>
 			<span
 				v-if="participant.is_guest"
-				class="rounded-full bg-[#424242] px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+				class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
 			>
 				Guest
 			</span>

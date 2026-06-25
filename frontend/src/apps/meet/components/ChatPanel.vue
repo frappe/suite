@@ -9,84 +9,115 @@
 	>
 		<div v-show="open" class="h-full flex justify-end pb-3" data-testid="chat-panel-wrapper">
 			<div
-				class="w-80 sm:w-96 bg-surface-gray-1 border border-outline-gray-2 flex flex-col z-40 h-full rounded-[10px] mr-4"
+				class="mr-2 flex h-full w-[calc(100%-0.5rem)] max-w-[380px] flex-col rounded-[10px] bg-surface-gray-1 z-40 overflow-hidden"
 				data-testid="chat-panel"
 			>
-				<div class="flex items-center justify-between p-4 border-b border-gray-200">
-
-					 <div class="text-gray-900 text-base font-medium">Chat</div>
-                    
-                    <div class="flex items-center gap-1">
-                        <Dropdown 
-                            v-if="isHost || isCohost"
-                            :options="pollMenuOptions"
-                        >
-                            <Button variant="ghost" icon="more-horizontal" class="text-gray-600 hover:bg-gray-100" />
-                        </Dropdown>
-
-                        <Button variant="ghost" class="text-gray-600 hover:bg-gray-100" @click="$emit('close')">
-                            <lucide-x class="w-4 h-4 text-gray-900 cursor-pointer hover:text-gray-600" />
-                        </Button>
-                    </div>
-                </div>
-
-			<div ref="listEl" class="flex-1 overflow-y-auto p-4 space-y-4" data-testid="chat-messages">
-				<template v-for="item in chatItems" :key="item.key">
-					<div v-if="item.type === 'poll'" class="min-w-0">
-						<div class="text-xs flex items-center gap-2">
-							<span class="truncate font-medium">{{ pollCreatorName(item.poll) }}</span>
-							<span class="text-gray-600">{{ time(item.timestamp) }}</span>
-						</div>
-						<div class="my-1">
-							<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
-						</div>
+				<div class="flex items-center justify-between gap-3 px-4 py-5 shrink-0">
+					<div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">
+						Chat
 					</div>
-						<div v-else class="min-w-0">
-						<div class="text-xs flex items-center gap-2">
-							<span class="truncate font-medium">{{ item.group.user_name }}</span>
-							<span class="text-gray-600">{{ time(item.group.timestamp) }}</span>
-						</div>
-						<div class="my-1 space-y-2">
+					<div class="flex shrink-0 items-center gap-1">
+						<Dropdown
+							v-if="isHost || isCohost"
+							:options="pollMenuOptions"
+						>
+							<Button variant="ghost" icon="more-horizontal" class="text-ink-gray-6 hover:bg-surface-gray-2" />
+						</Dropdown>
+
+						<Button variant="ghost" class="text-ink-gray-6 hover:bg-surface-gray-2" @click="$emit('close')">
+							<lucide-x class="h-4 w-4 text-ink-gray-8" />
+						</Button>
+					</div>
+				</div>
+
+				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7" data-testid="chat-messages">
+					<div class="flex flex-col gap-5">
+						<template v-for="item in chatItems" :key="item.key">
+							<div v-if="item.type === 'poll'" class="min-w-0">
+								<div class="mb-1 flex items-center gap-1 text-[11px] tracking-[0.11px]">
+									<span class="truncate text-ink-gray-7">{{ pollCreatorName(item.poll) }}</span>
+									<span class="shrink-0 text-ink-gray-5">· {{ time(item.timestamp) }}</span>
+								</div>
+								<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
+							</div>
+
 							<div
-								v-for="message in item.group.messages"
-								:key="message.id"
-								class="text-sm text-ink-gray-8 whitespace-pre-wrap [overflow-wrap:anywhere] leading-4"
+							v-else
+							class="flex min-w-0 gap-2"
+							:class="item.group.isOwn ? 'justify-end' : 'justify-start'"
+						>
+							<div
+								v-if="!item.group.isOwn"
+								class="mt-6 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-gray-3 text-xs text-ink-gray-7"
 							>
-								<template
-									v-for="(token, i) in tokenizeChatMessage(message.message)"
-									:key="i"
-								>
-									<a
-										v-if="token.type === 'link'"
-										:href="token.url"
-										target="_blank"
-										rel="noopener noreferrer"
-										class="text-ink-blue-5 underline"
-									>{{ token.text }}</a>
-									<span v-else>{{ token.text }}</span>
-								</template>
+								{{ getInitials(item.group.user_name) }}
+							</div>
+
+							<div
+								class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
+								:class="item.group.isOwn ? 'items-end' : 'items-start'"
+							>
+								<div v-if="!item.group.isOwn" class="flex max-w-full items-center gap-1 text-[11px] tracking-[0.11px]">
+									<span class="truncate text-ink-gray-7">{{ item.group.user_name }}</span>
+									<span class="shrink-0 text-ink-gray-5">· {{ time(item.group.timestamp) }}</span>
+								</div>
+
+								<div class="flex flex-col gap-2.5" :class="item.group.isOwn ? 'items-end' : 'items-start'">
+									<div
+										v-for="message in item.group.messages"
+										:key="message.id"
+										class="max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-sm leading-[1.15] tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
+										:class="item.group.isOwn ? 'bg-surface-gray-3 text-right' : 'bg-surface-gray-2'"
+									>
+										<template
+											v-for="(token, i) in tokenizeChatMessage(message.message)"
+											:key="i"
+										>
+											<a
+												v-if="token.type === 'link'"
+												:href="token.url"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-ink-blue-5 underline"
+											>{{ token.text }}</a>
+											<span v-else>{{ token.text }}</span>
+										</template>
+									</div>
+								</div>
 							</div>
 						</div>
+						</template>
 					</div>
-				</template>
-				<div v-if="chatItems.length === 0" class="text-gray-500 text-sm text-center mt-8">
-					No messages yet
-				</div>
-			</div>
 
-				<form class="p-3 relative" @submit.prevent="handleSend">
+					<div v-if="chatItems.length === 0" class="mt-8 text-center text-sm text-ink-gray-5">
+						No messages yet
+					</div>
+				</div>
+
+				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
-						<div class="flex gap-2">
-							<FormControl
-								size="md"
+						<div class="flex items-center gap-3 rounded-full bg-surface-gray-2 py-2.5 pl-5 pr-3">
+							<input
 								v-model="draft"
 								@keydown="handleKeydown"
 								placeholder="Type a message"
-								class="flex-1"
+								class="min-w-0 flex-1 appearance-none border-none bg-transparent p-0 text-sm text-ink-gray-8 shadow-none outline-none ring-0 tracking-[0.28px] placeholder:text-ink-gray-5 focus:border-none focus:outline-none focus:ring-0 focus-visible:outline-none"
 								autocomplete="off"
 								data-testid="chat-input"
 							/>
-							<Button size="md" type="submit" variant="solid" data-testid="chat-send"> Send </Button>
+							<Button
+								type="submit"
+								variant="solid"
+								theme="gray"
+								class="!h-7 !w-7 shrink-0 !rounded-lg p-0"
+								style="background-color: var(--surface-gray-3); color: var(--ink-gray-8)"
+								aria-label="Send message"
+								data-testid="chat-send"
+							>
+								<template #icon>
+									<lucide-send class="h-4 w-4" />
+								</template>
+							</Button>
 						</div>
 						<EmojiPicker
 							:show="showEmojiPicker"
@@ -95,14 +126,14 @@
 							@select="addEmoji"
 						/>
 					</template>
-					<div v-else class="text-center text-sm text-ink-gray-5 py-3 bg-surface-gray-2 rounded-lg border border-outline-gray-2 m-2">
+					<div v-else class="m-2 rounded-lg border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5">
 						The host has restricted chat to hosts and co-hosts only.
 					</div>
 				</form>
-				<CreatePollModal 
-                    v-model="showPollModal" 
-                    @submit="handlePollSubmit" 
-                />
+				<CreatePollModal
+					v-model="showPollModal"
+					@submit="handlePollSubmit"
+				/>
 			</div>
 		</div>
 	</Transition>
@@ -111,7 +142,7 @@
 <script setup lang="ts">
 import data from "@emoji-mart/data";
 import { init, SearchIndex } from "emoji-mart";
-import { Button, FormControl, Dropdown } from "frappe-ui";
+import { Button, Dropdown } from "frappe-ui";
 import {
 	computed,
 	inject,
@@ -124,6 +155,7 @@ import {
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
+import { getInitials } from "../utils/text";
 import EmojiPicker from "./EmojiPicker.vue";
 import { usePollStore } from "../composables/usePollStore";
 import type { PollPayloadFE } from "../types";
@@ -133,6 +165,7 @@ import LucideChartColumn from "~icons/lucide/chart-column";
 
 interface ChatMessage {
 	id: string | number;
+	user_id: string;
 	user_name: string;
 	message: string;
 	timestamp: string;
@@ -145,8 +178,10 @@ interface EmojiItem {
 
 interface MessageGroup {
 	id: string | number;
+	user_id: string;
 	user_name: string;
 	timestamp: string;
+	isOwn: boolean;
 	messages: ChatMessage[];
 }
 
@@ -268,9 +303,11 @@ const groupedMessages = computed<MessageGroup[]>(() => {
 	let currentGroup: MessageGroup | null = null;
 
 	for (const message of resolvedMessages.value) {
+		const isOwn = message.user_id === props.userId;
 		const shouldStartNewGroup =
 			!currentGroup ||
-			currentGroup.user_name !== message.user_name ||
+			currentGroup.user_id !== message.user_id ||
+			currentGroup.isOwn !== isOwn ||
 			(currentGroup.messages.length > 0 &&
 				Math.abs(
 					new Date(message.timestamp).getTime() -
@@ -280,8 +317,10 @@ const groupedMessages = computed<MessageGroup[]>(() => {
 		if (shouldStartNewGroup) {
 			currentGroup = {
 				id: message.id,
+				user_id: message.user_id,
 				user_name: message.user_name,
 				timestamp: message.timestamp,
+				isOwn,
 				messages: [message],
 			};
 			groups.push(currentGroup);

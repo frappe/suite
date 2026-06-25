@@ -9,7 +9,7 @@
 	>
 		<div v-show="open" class="h-full flex justify-end pb-3" data-testid="people-panel-wrapper">
 			<div
-				class="w-[380px] bg-[#232323] flex flex-col z-40 h-full rounded-[10px] mr-2 overflow-hidden"
+				class="w-[380px] bg-surface-gray-1 flex flex-col z-40 h-full rounded-[10px] mr-2 overflow-hidden"
 				data-testid="people-panel"
 			>
 				<div class="flex items-center justify-between px-4 py-5 shrink-0">
