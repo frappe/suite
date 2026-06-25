@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import type {
+	ActivePoll,
 	ClientToServerEvents,
 	ServerToClientEvents,
 	UserData,
@@ -13,6 +14,7 @@ export class RoomRegistry {
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
 	private participantSockets: Record<string, Record<string, string>> = {};
+	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 
 	constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
 		this.io = io;
@@ -71,6 +73,14 @@ export class RoomRegistry {
 
 	isHostOnlyChat(roomId: string): boolean {
 		return Boolean(this.hostOnlyChat[roomId]);
+	}
+
+	getActivePolls(roomId: string): Map<string, ActivePoll> | undefined {
+		return this.activePolls[roomId];
+	}
+
+	setActivePolls(roomId: string, polls: Map<string, ActivePoll>): void {
+		this.activePolls[roomId] = polls;
 	}
 
 	isEmpty(roomId: string): boolean {

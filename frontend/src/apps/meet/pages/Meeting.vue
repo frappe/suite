@@ -242,6 +242,8 @@ import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
+import { usePoll } from "../composables/usePoll.js";
+import { usePollStore } from "../composables/usePollStore.js";
 
 // Router
 const route = useRoute();
@@ -254,6 +256,7 @@ const currentUser = useCurrentUser();
 const mediaState = useMediaState();
 const participantStore = useParticipantStore();
 const chatStore = useChatStore();
+const pollStore = usePollStore();
 const lobbyStore = useLobbyStore();
 const reactionStore = useReactionStore();
 const raiseHandStore = useRaiseHandStore();
@@ -397,6 +400,15 @@ const chat = useChat({
 	sfuClient: sfuConnection.sfuClient,
 });
 
+// --- Poll ---
+
+const poll = usePoll({
+	pollStore,
+	currentUser,
+	sfuClient: sfuConnection.sfuClient,
+});
+
+
 // --- Reactions ---
 const reactions = useReactions({
 	reactionStore,
@@ -468,6 +480,8 @@ provide(
 		return meetingTitle.value;
 	}),
 );
+
+provide("poll", poll);
 
 // --- Computed properties ---
 const isConnecting = computed(() => connectionState.isConnecting);
@@ -623,6 +637,7 @@ onMounted(async () => {
 	mediaState.$reset();
 	participantStore.$reset();
 	chatStore.$reset();
+	pollStore.$reset();
 	lobbyStore.$reset();
 	reactionStore.$reset();
 	raiseHandStore.$reset();
@@ -662,6 +677,7 @@ onMounted(async () => {
 	chat.setupChatEvents(chatNotificationQueue.value);
 	reactions.setupReactionEvents();
 	raiseHand.setupRaiseHandEvents();
+	poll.setupPollEvents();
 
 	// Setup notification context watchers
 

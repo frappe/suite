@@ -12,6 +12,7 @@ import { registerErrorHandlers } from './handlers/ErrorHandlers';
 import type { HandlerDeps } from './handlers/Handler';
 import { registerHostControlHandlers } from './handlers/HostControlHandlers';
 import { registerMediaControlHandlers } from './handlers/MediaControlHandlers';
+import { registerPollHandlers } from './handlers/PollHandlers';
 import { registerProducerHandlers } from './handlers/ProducerHandlers';
 import { registerRaiseHandHandlers } from './handlers/RaiseHandHandlers';
 import { registerReactionHandlers } from './handlers/ReactionHandlers';
@@ -59,6 +60,7 @@ export class SocketHandlerManager {
 			registerMediaControlHandlers(deps),
 			registerHostControlHandlers(deps),
 			registerScreenShareHandlers(deps),
+			registerPollHandlers(deps),
 			registerChatHandlers(deps),
 			registerReactionHandlers(deps),
 			registerRaiseHandHandlers(deps),
