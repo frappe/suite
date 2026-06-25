@@ -99,12 +99,12 @@
 
 					<!-- Panel Container -->
 					<Transition
-						enter-active-class="transition-all duration-300 ease-out"
-						enter-from-class="opacity-0 transform translate-x-full w-0"
-						enter-to-class="opacity-100 transform translate-x-0"
-						leave-active-class="transition-all duration-300 ease-in"
-						leave-from-class="opacity-100 transform translate-x-0"
-						leave-to-class="opacity-0 transform translate-x-full"
+						enter-active-class="transition-opacity duration-300 ease-out"
+						enter-from-class="opacity-0"
+						enter-to-class="opacity-100"
+						leave-active-class="transition-opacity duration-300 ease-in"
+						leave-from-class="opacity-100"
+						leave-to-class="opacity-0"
 					>
 					<div
 						v-if="activePanel"
