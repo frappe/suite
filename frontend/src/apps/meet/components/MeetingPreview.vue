@@ -36,7 +36,7 @@
  
 							<div
 								v-if="!isCameraOn"
-								class="absolute inset-0 bg-[#383838] flex items-center justify-center"
+								class="absolute inset-0 bg-surface-gray-6 flex items-center justify-center"
 							>
 								<div class="text-center text-white">
 									<MeetingAvatar
