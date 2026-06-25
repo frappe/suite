@@ -81,7 +81,7 @@
  							<span class="text-ink-gray-8"> Ready to join? </span>
  						</h2>
  
- 						<div v-if="meetingTitle" class="bg-surface-gray-2 rounded-lg px-4 py-3 mb-4">
+ 						<div v-if="meetingTitle" class="rounded-lg px-4 py-3 mb-4">
  							<p class="text-xl-medium text-ink-gray-7 truncate">
  								{{ meetingTitle }}
  							</p>
