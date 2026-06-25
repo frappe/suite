@@ -1,5 +1,9 @@
 <template>
-	<div class="h-[100dvh] bg-surface-base flex flex-col" data-meeting-component>
+	<div
+		class="h-[100dvh] flex flex-col bg-surface-base text-ink-gray-9"
+		data-meeting-component
+		data-theme="dark"
+	>
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
 			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
