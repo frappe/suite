@@ -1,8 +1,10 @@
 <template>
-	<div class="flex items-center gap-3 px-3 py-1.5 rounded-lg transition-colors hover:bg-surface-gray-2">
+	<div
+		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-[#2b2b2b]"
+	>
 		<div class="flex-shrink-0">
 			<div
-				class="relative flex items-center justify-center rounded-full overflow-hidden bg-surface-gray-3 text-ink-gray-7 w-8 h-8"
+				class="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-gray-2 text-ink-gray-7"
 			>
 				<img
 					v-if="participant.avatar"
@@ -17,18 +19,31 @@
 			</div>
 		</div>
 
-		<div class="flex-1 min-w-0">
+		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
-				<span class="text-sm text-ink-gray-8 truncate">
+				<span class="truncate text-sm text-ink-gray-8 tracking-[0.28px]">
 					{{ participant.user_name }}
 				</span>
 				<span v-if="isCurrentUser" class="text-xs text-ink-gray-5">(You)</span>
-				<Badge v-if="isHost" theme="gray" size="sm">Host</Badge>
-				<Badge v-if="participant.is_guest" theme="gray" size="sm">Guest</Badge>
 			</div>
 		</div>
 
-		<div class="flex items-center gap-1 flex-shrink-0">
+		<div class="ml-auto flex shrink-0 items-center justify-end gap-1">
+			<span
+				v-if="isHost"
+				class="rounded-full bg-[#424242] px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+			>
+				Host
+			</span>
+			<span
+				v-if="participant.is_guest"
+				class="rounded-full bg-[#424242] px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+			>
+				Guest
+			</span>
+		</div>
+
+		<div class="flex flex-shrink-0 items-center gap-1">
 			<!-- Raised Hand Indicator -->
 			<div v-if="isHandRaised" class="flex items-center justify-center p-1.5 rounded-lg" :title="`${participant.user_name || participant.user_id} has raised their hand`">
 				<div class="rounded-full bg-amber-500 p-0.5">
@@ -38,18 +53,12 @@
 
 			<!-- Audio Mute Button -->
 			<button
-				class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-3 text-ink-gray-6"
+				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
 				:title="participant.audio_enabled ? 'Mute' : 'Unmute'"
+				@click="participant.audio_enabled && canControlParticipant ? emit('muteParticipant', participant.user_id) : undefined"
 			>
 				<lucide-mic-off v-if="!participant.audio_enabled" class="w-4 h-4" />
-				<AudioIndicator
-					v-else-if="stream"
-					:mediaStream="stream"
-					:isActive="true"
-					:maxHeight="16"
-					:sensitivity="3.0"
-					activeColorClass="bg-ink-gray-6"
-				/>
+				<lucide-mic v-else class="w-4 h-4" />
 			</button>
 
 			<!-- Host Controls -->
@@ -57,13 +66,19 @@
 				<Dropdown :options="hostOptions" placement="bottom-end">
 					<template #default>
 						<button
-							class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-3 text-ink-gray-6"
+							class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
 						>
-							<lucide-more-vertical class="w-4 h-4" />
+							<lucide-more-horizontal class="w-4 h-4" />
 						</button>
 					</template>
 				</Dropdown>
 			</div>
+			<button
+				v-else
+				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
+			>
+				<lucide-more-horizontal class="w-4 h-4" />
+			</button>
 		</div>
 	</div>
 
@@ -76,12 +91,10 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, Dropdown } from "frappe-ui";
+import { Dropdown } from "frappe-ui";
 import { computed, ref } from "vue";
-import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import type { Participant } from "../utils/media/ParticipantManager";
-import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
 
 interface Props {
@@ -107,11 +120,6 @@ const emit = defineEmits<{
 }>();
 
 const meetingCtx = useMeetingContext();
-const { stream } = useAudioStream(props.participant.user_id, {
-	mediaState: meetingCtx?.mediaState,
-	currentUser: meetingCtx?.currentUser,
-});
-
 const showKickDialog = ref(false);
 
 const showHostControls = computed(() => {

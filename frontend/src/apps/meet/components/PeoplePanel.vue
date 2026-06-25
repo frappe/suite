@@ -7,14 +7,14 @@
 		leave-from-class="opacity-100 transform translate-x-0"
 		leave-to-class="opacity-0 transform translate-x-full"
 	>
-		<div v-show="open" class="h-full flex justify-end" data-testid="people-panel-wrapper">
+		<div v-show="open" class="h-full flex justify-end pb-3" data-testid="people-panel-wrapper">
 			<div
-				class="w-80 sm:w-96 bg-surface-gray-1 border border-outline-gray-2 flex flex-col z-40 h-full rounded-[10px] mr-4"
+				class="w-[380px] bg-[#232323] flex flex-col z-40 h-full rounded-[10px] mr-2 overflow-hidden"
 				data-testid="people-panel"
 			>
-				<div class="flex items-center justify-between px-4 py-5 border-b border-outline-gray-2">
+				<div class="flex items-center justify-between px-4 py-5 shrink-0">
 					<div class="text-sm-medium text-ink-gray-8">
-						People ({{ totalParticipantCount }})
+						People
 					</div>
 					<lucide-x
 						@click="$emit('close')"
@@ -22,7 +22,7 @@
 					/>
 				</div>
 
-				<div class="px-2 pt-3">
+				<div class="px-2 pb-2 shrink-0">
 					<FormControl
 						v-model="searchQuery"
 						type="text"
@@ -36,7 +36,7 @@
 					</FormControl>
 				</div>
 
-				<div class="flex-1 overflow-y-auto px-2 pt-2">
+				<div class="flex-1 overflow-y-auto px-2">
 					<PeopleWaitingSection
 						v-if="isCreator"
 						:lobbyUsers="filteredLobbyUsers"
@@ -97,6 +97,7 @@ interface CurrentUser {
 	name?: string;
 	avatar?: string;
 	initials?: string;
+	is_guest?: boolean;
 }
 
 interface Props {
@@ -262,6 +263,7 @@ const currentUserData = computed<Participant>(() => ({
 	),
 	audio_enabled: props.isMicOn,
 	video_enabled: props.isCameraOn,
+	is_guest: props.currentUser?.is_guest || false,
 }));
 
 const totalParticipantCount = computed(() => {

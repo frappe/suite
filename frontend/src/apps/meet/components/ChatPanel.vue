@@ -7,7 +7,7 @@
 		leave-from-class="opacity-100 transform translate-x-0"
 		leave-to-class="opacity-0 transform translate-x-full"
 	>
-		<div v-show="open" class="h-full flex justify-end" data-testid="chat-panel-wrapper">
+		<div v-show="open" class="h-full flex justify-end pb-3" data-testid="chat-panel-wrapper">
 			<div
 				class="w-80 sm:w-96 bg-surface-gray-1 border border-outline-gray-2 flex flex-col z-40 h-full rounded-[10px] mr-4"
 				data-testid="chat-panel"
