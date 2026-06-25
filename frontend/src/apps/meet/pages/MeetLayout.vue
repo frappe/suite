@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { FrappeUIProvider, Dialogs } from "frappe-ui";
-import { provide } from "vue";
+import { provide, onMounted, onUnmounted } from "vue";
 
 import { initSocket } from "@/apps/meet/socket";
 import { getPlatform } from "@/apps/meet/utils/device";
@@ -17,10 +17,19 @@ import { getPlatform } from "@/apps/meet/utils/device";
  *   - provides the meet-local `$platform` value (was app.config.globalProperties
  *     in main.ts) for any inject consumers,
  *   - wraps children in FrappeUIProvider + Dialogs and renders <router-view>.
+ *   - sets dark theme (meet uses a dark UI throughout).
  */
 initSocket();
 
 provide("$platform", getPlatform());
+
+onMounted(() => {
+	document.documentElement.setAttribute("data-theme", "dark");
+});
+
+onUnmounted(() => {
+	document.documentElement.removeAttribute("data-theme");
+});
 </script>
 
 <template>
