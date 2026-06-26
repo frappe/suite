@@ -155,9 +155,7 @@ export function useSFUConnection(deps: {
 						src: participant.avatar as string,
 						class: "w-6 h-6 rounded-full object-cover",
 					})
-				: h(LucideUserIcon, {
-						class: "text-white",
-					}),
+				: h(LucideUserIcon),
 			duration: 3,
 		});
 	};
@@ -189,9 +187,7 @@ export function useSFUConnection(deps: {
 						src: participant.avatar as string,
 						class: "w-6 h-6 rounded-full object-cover",
 					})
-				: h(LucideUserIcon, {
-						class: "text-white",
-					}),
+				: h(LucideUserIcon),
 			duration: 3,
 		});
 	};
