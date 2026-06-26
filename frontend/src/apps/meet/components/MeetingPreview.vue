@@ -1,29 +1,12 @@
 <template>
  	<div class="flex-1 flex flex-col bg-surface-base" data-testid="meeting-preview">
- 		<div class="px-6 pt-4 flex-shrink-0">
- 			<div class="flex items-center justify-between">
- 				<div class="flex items-center gap-2 cursor-pointer" @click="$router.push('/meet')">
- 					<FrappeMeetingLogo class="h-8" />
- 					<h4 class="text-ink-gray-8 text-base">Frappe Meet</h4>
- 				</div>
- 				<Button
- 					v-if="!session.isLoggedIn"
- 					variant="ghost"
- 					size="sm"
- 					@click="redirectToLogin"
- 				>
- 					Sign In
- 				</Button>
- 			</div>
- 		</div>
- 
- 		<div class="flex-1 flex lg:flex-row flex-col text-ink-gray-8">
+		<div class="flex-1 flex lg:flex-row flex-col text-ink-gray-8">
  			<div class="max-w-7xl mx-auto w-full flex lg:flex-row flex-col">
  				<!-- Video Section -->
- 				<div class="lg:flex-[2] flex flex-col justify-center p-6 lg:pr-4">
- 					<div class="max-w-3xl mx-auto w-full">
+ 				<div class="lg:flex-[2] flex flex-col items-center justify-center p-6 lg:pr-4">
+ 					<div class="max-w-3xl w-full">
  						<div
- 							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group h-full"
+ 							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group w-full"
  							data-testid="preview-video-shell"
  						>
  							<video
@@ -49,22 +32,23 @@
 								</div>
 							</div>
  
- 							<PreviewToolbar
- 								:isMicOn="isMicOn"
- 								:isCameraOn="isCameraOn"
- 								:cameraPermissionGranted="cameraPermissionGranted"
- 								:microphonePermissionGranted="microphonePermissionGranted"
- 								@toggle-microphone="$emit('toggle-microphone')"
- 								@toggle-camera="$emit('toggle-camera')"
- 								@device-changed="$emit('device-changed', $event)"
- 							/>
- 						</div>
- 					</div>
- 				</div>
+					</div>
+
+					<PreviewToolbar
+						:isMicOn="isMicOn"
+						:isCameraOn="isCameraOn"
+						:cameraPermissionGranted="cameraPermissionGranted"
+						:microphonePermissionGranted="microphonePermissionGranted"
+						@toggle-microphone="$emit('toggle-microphone')"
+						@toggle-camera="$emit('toggle-camera')"
+						@device-changed="$emit('device-changed', $event)"
+					/>
+				</div>
+			</div>
  
  				<!-- Join Section -->
  				<div
- 					class="lg:flex-[1] flex items-center lg:justify-end justify-center p-6 lg:pl-4"
+ 					class="lg:flex-[1] flex items-center justify-center p-6 lg:pl-4"
  				>
  					<div class="max-w-md w-full">
  						<div class="p-8 mb-6 w-full h-full flex flex-col justify-center">
@@ -140,17 +124,8 @@ import ParticipantAvatarGroup from "../components/ParticipantAvatarGroup.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";
 import { session } from "@/boot/session";
-import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 import { getErrorMessage } from "../utils/error";
 import MeetingAvatar from "./MeetingAvatar.vue";
-
-function redirectToLogin() {
-	const path = window.location.pathname.startsWith("/meet")
-		? window.location.pathname
-		: `/meet${window.location.pathname}`;
-	window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`;
-}
-
 interface VideoElement {
 	$el?:
 		| HTMLElement

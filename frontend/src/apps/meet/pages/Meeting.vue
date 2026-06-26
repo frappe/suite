@@ -26,43 +26,54 @@
 			</div>
 		</div>
 
-		<!-- Preview mode -->
-		<MeetingPreview
-			v-else-if="showPreview"
-			:meetingId="meetingId"
-			:isCameraOn="mediaState.isCameraOn"
-			:isMicOn="mediaState.isMicOn"
-			:cameraPermissionGranted="mediaState.cameraPermissionGranted"
-			:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-			:isConnecting="connectionState.isConnecting"
-			:userInitials="currentUser.userInitials.value"
-			:userAvatar="currentUser.userAvatar.value"
-			:currentUserName="
-				currentUser.currentUser.value?.full_name ||
-				currentUser.currentUser.value?.name ||
-				'You'
-			"
-			:guestAuthToken="connectionState.guestAuthToken"
-			:isWaitingForApproval="lobbyStore.isWaitingForApproval"
-			:setLocalVideoRef="mediaControls.setLocalVideoRef"
-			@toggle-microphone="mediaControls.toggleMicrophone()"
-			@toggle-camera="mediaControls.toggleCamera()"
-			@join-from-preview="joinMeetingFromPreview"
-			@guest-join-complete="handleGuestJoinComplete"
-			@leave-waiting-room="leaveWaitingRoom"
-			@try-join-again="tryJoinAgain"
-			@device-changed="handleDeviceChanged"
-		/>
-
-		<!-- Main meeting interface -->
 		<template v-else>
-			<div class="relative flex flex-1 min-h-0 overflow-hidden flex-col">
-				<!-- Breadcrumb header - spans full width above grid -->
-				<MeetingHeader
-					:meetingId="meetingId"
-					:meetingTitle="meetingTitle"
-				/>
+			<MeetingHeader
+				:meetingId="meetingId"
+				:meetingTitle="meetingTitle"
+			>
+				<template #right>
+					<Button
+						v-if="showPreview && !session.isLoggedIn"
+						variant="ghost"
+						size="sm"
+						@click="redirectToLogin"
+					>
+						Sign In
+					</Button>
+				</template>
+			</MeetingHeader>
 
+			<!-- Preview mode -->
+			<MeetingPreview
+				v-if="showPreview"
+				:meetingId="meetingId"
+				:isCameraOn="mediaState.isCameraOn"
+				:isMicOn="mediaState.isMicOn"
+				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
+				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
+				:isConnecting="connectionState.isConnecting"
+				:userInitials="currentUser.userInitials.value"
+				:userAvatar="currentUser.userAvatar.value"
+				:currentUserName="
+					currentUser.currentUser.value?.full_name ||
+					currentUser.currentUser.value?.name ||
+					'You'
+				"
+				:guestAuthToken="connectionState.guestAuthToken"
+				:isWaitingForApproval="lobbyStore.isWaitingForApproval"
+				:setLocalVideoRef="mediaControls.setLocalVideoRef"
+				@toggle-microphone="mediaControls.toggleMicrophone()"
+				@toggle-camera="mediaControls.toggleCamera()"
+				@join-from-preview="joinMeetingFromPreview"
+				@guest-join-complete="handleGuestJoinComplete"
+				@leave-waiting-room="leaveWaitingRoom"
+				@try-join-again="tryJoinAgain"
+				@device-changed="handleDeviceChanged"
+			/>
+
+			<!-- Main meeting interface -->
+			<template v-else>
+			<div class="relative flex flex-1 min-h-0 overflow-hidden flex-col">
 				<div
 					v-if="e2eeJoinPendingMessage"
 					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
@@ -195,6 +206,7 @@
 			/>
 
 			<RejectionOverlay v-if="isRejected && isGuestSession" @leave="goHome" />
+			</template>
 		</template>
 
 		<!-- Chat notifications -->
@@ -274,6 +286,13 @@ import { usePollStore } from "../composables/usePollStore.js";
 const route = useRoute();
 const router = useRouter();
 const meetingId = computed(() => route.params.meetingId as string);
+
+function redirectToLogin() {
+	const path = window.location.pathname.startsWith("/meet")
+		? window.location.pathname
+		: `/meet${window.location.pathname}`;
+	window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`;
+}
 
 // --- Stores (singletons) ---
 const connectionState = useConnectionState();
@@ -727,10 +746,6 @@ const handleE2EENeedsMediaRepublish = async () => {
 
 // --- Lifecycle ---
 onMounted(async () => {
-	// Force dark theme at the document root so teleported overlays
-	// (dialogs, dropdowns) inherit the meeting's dark tokens.
-	document.documentElement.setAttribute("data-theme", "dark");
-
 	// get wasJustCreated before resetting stores else it'll be reset to false
 	const wasJustCreated = connectionState.justCreated;
 

@@ -8,13 +8,14 @@
 		leave-to-class="opacity-0 transform translate-y-4"
 	>
 		<div
-			class="z-5 pointer-events-none w-auto max-w-3xl px-4 md:px-0 bottom-4 left-1/2 transform -translate-x-1/2 absolute"
+			class="z-5 pointer-events-none mt-4 flex w-full justify-center px-4 md:px-0"
 		>
 			<div
 				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-300 mx-auto px-2 py-1"
 			>
 				<!-- Microphone -->
 				<ToolbarButton
+					:variant="isMicOn ? 'default' : 'muted'"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
 					test-id="preview-toolbar-microphone"
 					@click="$emit('toggle-microphone')"
@@ -25,6 +26,7 @@
 
 				<!-- Camera -->
 				<ToolbarButton
+					:variant="isCameraOn ? 'default' : 'muted'"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
 					test-id="preview-toolbar-camera"
 					@click="$emit('toggle-camera')"

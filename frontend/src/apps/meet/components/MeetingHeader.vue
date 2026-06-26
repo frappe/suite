@@ -27,7 +27,11 @@ const crumbs = computed(() => [
 			<div class="size-7 rounded-md overflow-hidden">
 				<FrappeMeetingLogo class="w-full h-full" />
 			</div>
-			<Breadcrumbs :items="crumbs"/>
+			<Breadcrumbs :items="crumbs" />
+		</div>
+		<!-- Right: optional slot -->
+		<div v-if="$slots.right" class="flex items-center gap-2">
+			<slot name="right" />
 		</div>
 	</div>
 </template>
