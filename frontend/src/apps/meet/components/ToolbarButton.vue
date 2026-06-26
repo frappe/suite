@@ -5,7 +5,7 @@ defineOptions({
 
 withDefaults(
 	defineProps<{
-		variant?: "default" | "active";
+		variant?: "default" | "active" | "muted";
 		active?: boolean;
 		title?: string;
 		testId?: string;
@@ -30,6 +30,7 @@ defineEmits<{
 		:class="[
 			active ? 'bg-white/20 hover:!bg-white/20' : '',
 			variant === 'active' ? '[&_svg]:!text-red-500' : '',
+			variant === 'muted' ? '[&_svg]:!text-[#E54E17]' : '',
 		]"
 		@click="$emit('click')"
 	>

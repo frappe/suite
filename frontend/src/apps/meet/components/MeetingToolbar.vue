@@ -15,6 +15,7 @@
 			>
 				<!-- Microphone -->
 				<ToolbarButton
+					:variant="isMicOn ? 'default' : 'muted'"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
 					test-id="toolbar-microphone"
 					@click="$emit('toggle-microphone')"
@@ -25,6 +26,7 @@
 
 				<!-- Camera -->
 				<ToolbarButton
+					:variant="isCameraOn ? 'default' : 'muted'"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
 					test-id="toolbar-camera"
 					@click="$emit('toggle-camera')"
@@ -74,7 +76,8 @@
 					<lucide-message-square v-else class="w-4 h-4" />
 					<span
 						v-if="hasUnread && !isChatOpen"
-						class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"
+						data-testid="toolbar-chat-unread"
+						class="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full"
 					/>
 				</ToolbarButton>
 
@@ -93,15 +96,21 @@
 				</ToolbarButton>
 
 				<!-- More Options -->
-			<div class="relative">
-				<Dropdown :options="moreOptions" placement="top">
-					<template #default="{ open }">
-						<ToolbarButton title="More options" test-id="toolbar-more" :active="open">
-							<lucide-more-horizontal class="w-4 h-4" />
-						</ToolbarButton>
-					</template>
-				</Dropdown>
-			</div>
+				<div class="relative">
+					<Dropdown :options="moreOptions" placement="top">
+						<template #default="{ open }">
+							<button
+								type="button"
+								title="More options"
+								data-testid="toolbar-more"
+								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 p-0 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
+								:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
+							>
+								<lucide-more-horizontal class="w-4 h-4" />
+							</button>
+						</template>
+					</Dropdown>
+				</div>
 
 				<!-- End Call -->
 				<ToolbarButton
