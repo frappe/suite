@@ -100,7 +100,7 @@
                  reclaim the space when the toolbar hides, without affecting panels -->
 					<div
 						class="flex flex-col min-h-0 transition-[padding-bottom] duration-500 ease-in-out relative"
-						:style="{ paddingBottom: isToolbarVisible ? '2.5rem' : '0' }"
+						:style="{ paddingBottom: isToolbarVisible ? '3.75rem' : '0' }"
 					>
 						<!-- Video area -->
 						<div class="px-2.5 pb-2.5 flex flex-col flex-1 min-h-0 text-white">
