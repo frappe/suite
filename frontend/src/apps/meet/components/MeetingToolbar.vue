@@ -20,8 +20,7 @@
 					test-id="toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
-					<lucide-mic-off v-if="!isMicOn" class="w-4 h-4" />
-					<lucide-mic v-else class="w-4 h-4" />
+					<MeetMicIcon class="w-4 h-4" />
 				</ToolbarButton>
 
 				<!-- Camera -->
@@ -31,8 +30,7 @@
 					test-id="toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
-					<lucide-video-off v-if="!isCameraOn" class="w-4 h-4" />
-					<lucide-video v-else class="w-4 h-4" />
+					<MeetCameraIcon class="w-4 h-4" />
 				</ToolbarButton>
 
 				<!-- Screen Share -->
@@ -42,8 +40,7 @@
 					test-id="toolbar-screen-share"
 					@click="$emit('toggle-screen-share')"
 				>
-					<lucide-monitor-up v-if="!isScreenSharing" class="w-4 h-4" />
-					<lucide-monitor-pause v-else class="w-4 h-4" />
+					<MeetPresentIcon class="w-4 h-4" />
 				</ToolbarButton>
 
 				<!-- Reactions -->
@@ -60,7 +57,7 @@
 							test-id="toolbar-reactions"
 							@click="() => {}"
 						>
-							<lucide-smile class="w-4 h-4" />
+							<MeetSmileIcon class="w-4 h-4" />
 						</ToolbarButton>
 					</template>
 				</ReactionPicker>
@@ -106,7 +103,7 @@
 								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 p-0 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
 								:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
 							>
-								<lucide-more-horizontal class="w-4 h-4" />
+								<MeetSettingsIcon class="w-4 h-4" />
 							</button>
 						</template>
 					</Dropdown>
@@ -119,7 +116,7 @@
 					test-id="toolbar-end-call"
 					@click="$emit('end-call')"
 				>
-					<lucide-phone-off class="w-4 h-4" />
+					<MeetPhoneOffIcon class="w-4 h-4" />
 				</ToolbarButton>
 			</div>
 		</div>
@@ -155,6 +152,12 @@ import { useMeetingDoc } from "../composables/useMeetingDoc";
 import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { autoHideToolbar } from "../data/mediaPreferences";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetPhoneOffIcon from "../icons/MeetPhoneOffIcon.vue";
+import MeetPresentIcon from "../icons/MeetPresentIcon.vue";
+import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
+import MeetSmileIcon from "../icons/MeetSmileIcon.vue";
 import { canScreenShare } from "../utils/device";
 import MeetingInfoDialog from "./MeetingInfoDialog.vue";
 import ReactionPicker from "./ReactionPicker.vue";

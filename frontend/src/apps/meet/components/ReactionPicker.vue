@@ -33,7 +33,7 @@
 						:class="{ '!bg-surface-gray-3': isHandRaised }"
 						data-testid="toggle-raise-hand"
 					>
-						<lucide-hand class="w-5 h-5" />
+						<MeetHandIcon class="w-5 h-5" />
 						{{ isHandRaised ? "Lower Hand" : "Raise Hand" }}
 					</button>
 				</div>
@@ -49,6 +49,7 @@ import {
 	PopoverRoot,
 	PopoverTrigger,
 } from "reka-ui";
+import MeetHandIcon from "../icons/MeetHandIcon.vue";
 
 const props = defineProps<{
 	isOpen?: boolean;
