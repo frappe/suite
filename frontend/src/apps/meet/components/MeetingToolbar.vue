@@ -8,7 +8,7 @@
 			:class="isVisible ? 'translate-y-0' : 'translate-y-full'"
 		>
 			<div
-				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-500"
 				@mouseenter="onMouseEnter"
 				@mouseleave="onMouseLeave"
 				data-testid="meeting-toolbar"
@@ -100,7 +100,7 @@
 								type="button"
 								title="More options"
 								data-testid="toolbar-more"
-								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 p-0 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
+								class="relative flex h-8 w-11 items-center justify-center rounded-2xl bg-white/10 p-0 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
 								:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
 							>
 								<MeetSettingsIcon class="w-4 h-4" />
@@ -269,7 +269,7 @@ const showSettingsDialog = ref(false);
 const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
 
-const TOOLBAR_VISIBLE_HEIGHT = "3.25rem";
+const TOOLBAR_VISIBLE_HEIGHT = "2rem";
 const toolbarHeight = computed(() =>
 	isVisible.value ? TOOLBAR_VISIBLE_HEIGHT : "0px",
 );
