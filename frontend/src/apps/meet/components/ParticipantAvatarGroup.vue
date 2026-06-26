@@ -13,7 +13,7 @@
  					:key="participant.user_id"
  					:style="{ zIndex: 0 }"
  				>
-					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 overflow-hidden bg-surface-gray-2 text-ink-gray-7 flex items-center justify-center text-base-semibold">
+					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 overflow-hidden bg-surface-gray-1 text-ink-gray-7 flex items-center justify-center text-base-semibold">
 						<Avatar
 							v-if="participant.avatar_url"
 							:image="participant.avatar_url"
@@ -27,7 +27,7 @@
  					v-if="extraCount > 0"
  					:style="{ zIndex: 0 }"
  				>
-					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 bg-surface-gray-2 flex items-center justify-center text-ink-gray-7 text-base-semibold">
+					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 bg-surface-gray-1 flex items-center justify-center text-ink-gray-7 text-base-semibold">
  						+{{ extraCount }}
  					</div>
  				</div>

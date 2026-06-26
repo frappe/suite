@@ -4,7 +4,7 @@
 	>
 		<div class="flex-shrink-0">
 			<div
-				class="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-gray-2 text-ink-gray-7"
+				class="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-gray-1 text-ink-gray-7"
 			>
 				<img
 					v-if="participant.avatar"

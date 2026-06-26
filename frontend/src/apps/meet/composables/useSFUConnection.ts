@@ -153,7 +153,7 @@ export function useSFUConnection(deps: {
 			icon: participant.avatar
 				? h("img", {
 						src: participant.avatar as string,
-						class: "w-6 h-6 rounded-full object-cover",
+						class: "h-4 w-4 rounded-full object-cover",
 					})
 				: h(LucideUserIcon),
 			duration: 3,
@@ -185,7 +185,7 @@ export function useSFUConnection(deps: {
 			icon: participant?.avatar
 				? h("img", {
 						src: participant.avatar as string,
-						class: "w-6 h-6 rounded-full object-cover",
+						class: "h-4 w-4 rounded-full object-cover",
 					})
 				: h(LucideUserIcon),
 			duration: 3,
