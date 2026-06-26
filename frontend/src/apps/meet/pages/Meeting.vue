@@ -4,22 +4,27 @@
 		data-meeting-component
 		data-theme="dark"
 	>
-		<MeetingHeader
+		<div
 			v-if="!hasConnectionError"
-			:meetingId="meetingId"
-			:meetingTitle="meetingTitle"
+			class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
+			:class="headerVisible ? 'h-11' : 'h-0'"
 		>
-			<template #right>
-				<Button
-					v-if="showPreview && !session.isLoggedIn"
-					variant="ghost"
-					size="sm"
-					@click="redirectToLogin"
-				>
-					Sign In
-				</Button>
-			</template>
-		</MeetingHeader>
+			<MeetingHeader
+				:meetingId="meetingId"
+				:meetingTitle="meetingTitle"
+			>
+				<template #right>
+					<Button
+						v-if="showPreview && !session.isLoggedIn"
+						variant="ghost"
+						size="sm"
+						@click="redirectToLogin"
+					>
+						Sign In
+					</Button>
+				</template>
+			</MeetingHeader>
+		</div>
 
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
@@ -272,6 +277,7 @@ import {
 	useSFUConnection,
 } from "../composables/useSFUConnection";
 import {
+	autoHideToolbar,
 	selectedCameraId,
 	selectedMicId,
 	selectedSpeakerId,
@@ -624,6 +630,9 @@ const chatNotificationQueue = ref<InstanceType<
 const isReactionPickerOpen = ref(false);
 const isFullscreen = ref(false);
 const isToolbarVisible = ref(true);
+const headerVisible = computed(
+	() => showPreview.value || isConnecting.value || !autoHideToolbar.value || isToolbarVisible.value,
+);
 
 // --- Extracted handlers ---
 const handlers = useMeetingHandlers({
