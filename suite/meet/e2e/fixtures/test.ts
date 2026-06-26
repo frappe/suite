@@ -96,7 +96,7 @@ async function createMeetingViaUi(
 	await page.getByTestId("home-page").waitFor({ state: "visible", timeout: 20_000 });
 
 	if (meetingType === "open") {
-		await page.getByTestId("create-open-meeting-button").click();
+		await page.getByRole("button", { name: "Instant meet" }).click();
 	} else {
 		await page.getByTestId("create-meeting-options").click();
 		await page.getByRole("menuitem", { name: "Create a restricted meeting" }).click();

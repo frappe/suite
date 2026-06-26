@@ -96,8 +96,13 @@
 
 				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
-						<div class="flex items-center gap-3 rounded-full bg-surface-gray-2 py-2.5 pl-5 pr-3">
+						<div
+							class="flex cursor-text items-center gap-3 rounded-full bg-surface-gray-2 py-2.5 pl-5 pr-3"
+							data-testid="chat-input-wrapper"
+							@click="focusInput"
+						>
 							<input
+								ref="inputEl"
 								v-model="draft"
 								@keydown="handleKeydown"
 								placeholder="Type a message"
@@ -238,6 +243,7 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
+const inputEl = ref<HTMLInputElement | null>(null);
 const draft = ref("");
 const selectedEmojiIndex = ref(0);
 const filteredEmojis = ref<EmojiItem[]>([]);
@@ -482,6 +488,10 @@ function handleSend() {
 	if (!text) return;
 	emit("send", text);
 	draft.value = "";
+}
+
+function focusInput() {
+	inputEl.value?.focus();
 }
 
 async function scrollToBottom() {

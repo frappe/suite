@@ -12,6 +12,11 @@ test.describe("Multi participant", () => {
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(3);
 		await hostPage.getByTestId("toolbar-people").click();
-		await expect(hostPage.getByTestId("people-panel")).toContainText("People (3)");
+
+		const peoplePanel = hostPage.getByTestId("people-panel");
+		await expect(peoplePanel).toContainText("People");
+		await expect(peoplePanel).toContainText("Administrator");
+		await expect(peoplePanel).toContainText("Guest One");
+		await expect(peoplePanel).toContainText("Guest Two");
 	});
 });

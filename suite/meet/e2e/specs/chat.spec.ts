@@ -10,6 +10,8 @@ test.describe("Chat", () => {
 		await guest.joinAsGuest(meetingId, `Guest Chat ${test.info().parallelIndex}`);
 
 		await hostPage.getByTestId("toolbar-chat").click();
+		await hostPage.getByTestId("chat-input-wrapper").click();
+		await expect(hostPage.getByTestId("chat-input")).toBeFocused();
 		await hostPage.getByPlaceholder("Type a message").fill(message);
 		await hostPage.getByTestId("chat-send").click();
 
@@ -30,9 +32,7 @@ test.describe("Chat", () => {
 		await guest.joinAsGuest(meetingId, `Guest Unread ${test.info().parallelIndex}`);
 
 		const chatButton = hostPage.getByTestId("toolbar-chat");
-		const unreadBadge = chatButton.locator(
-			"xpath=ancestor::div[contains(@class,'relative')][1]/div[contains(@class,'bg-red-500')]",
-		);
+		const unreadBadge = hostPage.getByTestId("toolbar-chat-unread");
 
 		await expect(unreadBadge).toHaveCount(0);
 
