@@ -20,8 +20,7 @@
 					test-id="preview-toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
-					<lucide-mic-off v-if="!isMicOn" class="w-4 h-4" />
-					<lucide-mic v-else class="w-4 h-4" />
+					<MeetMicIcon />
 				</ToolbarButton>
 
 				<!-- Camera -->
@@ -31,8 +30,7 @@
 					test-id="preview-toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
-					<lucide-video-off v-if="!isCameraOn" class="w-4 h-4" />
-					<lucide-video v-else class="w-4 h-4" />
+					<MeetCameraIcon />
 				</ToolbarButton>
 
 				<!-- Settings -->
@@ -42,7 +40,7 @@
 					test-id="preview-toolbar-settings"
 					@click="showSettingsDialog = true"
 				>
-					<lucide-settings class="w-4 h-4" />
+					<MeetSettingsIcon />
 				</ToolbarButton>
 			</div>
 		</div>
@@ -58,6 +56,9 @@
 
 <script setup lang="ts">
 import { usePlatform } from "../composables/usePlatform";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
 import ToolbarButton from "./ToolbarButton.vue";
 

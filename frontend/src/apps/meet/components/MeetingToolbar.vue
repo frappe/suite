@@ -4,11 +4,13 @@
 		:style="{ height: toolbarHeight }"
 	>
 		<div
-			class="flex h-full items-end justify-center px-4 transition-transform duration-500 ease-in-out"
+			class="grid h-full w-full grid-cols-[1fr_auto_1fr] items-end px-4 transition-transform duration-500 ease-in-out"
 			:class="isVisible ? 'translate-y-0' : 'translate-y-full'"
 		>
 			<div
-				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				class="col-start-2 flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				role="toolbar"
+				aria-label="Meeting controls"
 				@mouseenter="onMouseEnter"
 				@mouseleave="onMouseLeave"
 				data-testid="meeting-toolbar"
@@ -20,7 +22,7 @@
 					test-id="toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
-					<MeetMicIcon class="w-4 h-4" />
+					<MeetMicIcon />
 				</ToolbarButton>
 
 				<!-- Camera -->
@@ -30,7 +32,7 @@
 					test-id="toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
-					<MeetCameraIcon class="w-4 h-4" />
+					<MeetCameraIcon />
 				</ToolbarButton>
 
 				<!-- Screen Share -->
@@ -40,7 +42,7 @@
 					test-id="toolbar-screen-share"
 					@click="$emit('toggle-screen-share')"
 				>
-					<MeetPresentIcon class="w-4 h-4" />
+					<MeetPresentIcon />
 				</ToolbarButton>
 
 				<!-- Reactions -->
@@ -57,54 +59,25 @@
 							test-id="toolbar-reactions"
 							@click="() => {}"
 						>
-							<MeetSmileIcon class="w-4 h-4" />
+							<MeetSmileIcon />
 						</ToolbarButton>
 					</template>
 				</ReactionPicker>
-
-				<!-- Chat -->
-				<ToolbarButton
-					:active="isChatOpen"
-					title="Show Chat"
-					test-id="toolbar-chat"
-					@click="$emit('toggle-chat')"
-				>
-					<lucide-message-square-off v-if="isChatOpen" class="w-4 h-4" />
-					<lucide-message-square v-else class="w-4 h-4" />
-					<span
-						v-if="hasUnread && !isChatOpen"
-						data-testid="toolbar-chat-unread"
-						class="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-red-500 rounded-full"
-					/>
-				</ToolbarButton>
-
-				<!-- People -->
-				<ToolbarButton
-					:active="isPeopleOpen"
-					title="Show Participants"
-					test-id="toolbar-people"
-					@click="$emit('toggle-people')"
-				>
-					<lucide-users class="w-4 h-4" />
-					<span
-						v-if="lobbyUserCount && lobbyUserCount > 0"
-						class="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full"
-					/>
-				</ToolbarButton>
 
 				<!-- More Options -->
 				<div class="relative">
 					<Dropdown :options="moreOptions" placement="top">
 						<template #default="{ open }">
-							<button
-								type="button"
-								title="More options"
-								data-testid="toolbar-more"
-								class="relative flex h-11 w-11 items-center justify-center rounded-[12px] bg-white/10 p-0 backdrop-blur-[10px] transition-all duration-200 [&_svg]:text-ink-gray-9 hover:bg-white/15"
-								:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
-							>
-								<MeetSettingsIcon class="w-4 h-4" />
-							</button>
+							<Tooltip text="More options" :hover-delay="0.3">
+								<button
+									type="button"
+									data-testid="toolbar-more"
+									class="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-transparent p-0 transition-all duration-200 [&_svg]:h-6 [&_svg]:w-6 [&_svg]:text-ink-gray-9 hover:bg-white/10"
+									:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
+								>
+									<MeetSettingsIcon />
+								</button>
+							</Tooltip>
 						</template>
 					</Dropdown>
 				</div>
@@ -116,7 +89,44 @@
 					test-id="toolbar-end-call"
 					@click="$emit('end-call')"
 				>
-					<MeetPhoneOffIcon class="w-4 h-4" />
+					<MeetPhoneOffIcon />
+				</ToolbarButton>
+			</div>
+
+			<div
+				class="col-start-3 flex items-center justify-self-end gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				role="group"
+				aria-label="Meeting side panels"
+				@mouseenter="onMouseEnter"
+				@mouseleave="onMouseLeave"
+			>
+				<!-- People -->
+				<ToolbarButton
+					:active="isPeopleOpen"
+					title="Show Participants"
+					test-id="toolbar-people"
+					@click="$emit('toggle-people')"
+				>
+					<MeetPeopleIcon class="!h-4 !w-4" />
+					<span
+						v-if="lobbyUserCount && lobbyUserCount > 0"
+						class="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"
+					/>
+				</ToolbarButton>
+
+				<!-- Chat -->
+				<ToolbarButton
+					:active="isChatOpen"
+					title="Show Chat"
+					test-id="toolbar-chat"
+					@click="$emit('toggle-chat')"
+				>
+					<MeetChatIcon class="!h-4 !w-4" />
+					<span
+						v-if="hasUnread && !isChatOpen"
+						data-testid="toolbar-chat-unread"
+						class="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full"
+					/>
 				</ToolbarButton>
 			</div>
 		</div>
@@ -137,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { Dropdown } from "frappe-ui";
+import { Dropdown, Tooltip } from "frappe-ui";
 import {
 	type Component,
 	computed,
@@ -153,7 +163,9 @@ import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { autoHideToolbar } from "../data/mediaPreferences";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetChatIcon from "../icons/MeetChatIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetPeopleIcon from "../icons/MeetPeopleIcon.vue";
 import MeetPhoneOffIcon from "../icons/MeetPhoneOffIcon.vue";
 import MeetPresentIcon from "../icons/MeetPresentIcon.vue";
 import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
