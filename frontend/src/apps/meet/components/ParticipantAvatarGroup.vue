@@ -13,20 +13,21 @@
  					:key="participant.user_id"
  					:style="{ zIndex: 0 }"
  				>
- 					<div class="ring-2 ring-surface-base rounded-full h-10">
- 						<Avatar
- 							:image="participant.avatar_url"
- 							:label="getInitials(participant.full_name)"
- 							size="2xl"
- 							shape="circle"
- 						/>
- 					</div>
+					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 overflow-hidden bg-surface-gray-3 text-white flex items-center justify-center text-base-semibold">
+						<Avatar
+							v-if="participant.avatar_url"
+							:image="participant.avatar_url"
+							size="2xl"
+							shape="circle"
+						/>
+						<span v-else>{{ getInitials(participant.full_name) }}</span>
+					</div>
  				</div>
  				<div
  					v-if="extraCount > 0"
  					:style="{ zIndex: 0 }"
  				>
- 					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 bg-surface-gray-2 flex items-center justify-center text-ink-gray-5 text-base-semibold">
+					<div class="ring-2 ring-surface-base rounded-full h-10 w-10 bg-surface-gray-3 flex items-center justify-center text-white text-base-semibold">
  						+{{ extraCount }}
  					</div>
  				</div>
