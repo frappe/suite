@@ -29,7 +29,7 @@
 			class="h-full gap-2 overflow-hidden"
 			:class="[
 				mode === 'sidebar'
-					? 'grid auto-rows-fr content-start mt-3 sm:mt-0 sm:ml-3'
+					? 'grid auto-rows-fr sm:auto-rows-[calc((100%-1.5rem)/4)] content-start mt-3 sm:mt-0 sm:ml-3'
 					: 'flex flex-wrap justify-center content-start',
 				mode === 'sidebar' && !isMobile
 					? gridColumns === 2
@@ -172,15 +172,13 @@ const displayScreenShares = computed(
 
 // ── Pinned area data ──────────────────────────────────────────────────────────
 
-// Unpin when the pinned participant leaves
+// Unpin when a pinned participant leaves.
 watch(
-	() => pinnedTiles.value.filter((t) => t.type === "participant"),
-	(pinnedParticipantTiles) => {
-		pinnedParticipantTiles.forEach((pTile) => {
-			if (!participants.value[pTile.id]) {
-				meetingCtx.gridLayout.unpinTile(pTile.type, pTile.id);
-			}
-		});
+	() => [pinnedTiles.value, participants.value] as const,
+	() => {
+		pinnedTiles.value
+			.filter((tile) => tile.type === "participant" && !participants.value[tile.id])
+			.forEach((tile) => meetingCtx.gridLayout.unpinTile(tile.type, tile.id));
 	},
 	{ deep: true },
 );
