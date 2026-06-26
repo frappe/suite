@@ -4,6 +4,23 @@
 		data-meeting-component
 		data-theme="dark"
 	>
+		<MeetingHeader
+			v-if="!hasConnectionError"
+			:meetingId="meetingId"
+			:meetingTitle="meetingTitle"
+		>
+			<template #right>
+				<Button
+					v-if="showPreview && !session.isLoggedIn"
+					variant="ghost"
+					size="sm"
+					@click="redirectToLogin"
+				>
+					Sign In
+				</Button>
+			</template>
+		</MeetingHeader>
+
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
 			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
@@ -27,22 +44,6 @@
 		</div>
 
 		<template v-else>
-			<MeetingHeader
-				:meetingId="meetingId"
-				:meetingTitle="meetingTitle"
-			>
-				<template #right>
-					<Button
-						v-if="showPreview && !session.isLoggedIn"
-						variant="ghost"
-						size="sm"
-						@click="redirectToLogin"
-					>
-						Sign In
-					</Button>
-				</template>
-			</MeetingHeader>
-
 			<!-- Preview mode -->
 			<MeetingPreview
 				v-if="showPreview"
