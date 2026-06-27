@@ -19,6 +19,7 @@ export function useKeyboardShortcuts(deps: {
 			ctrl: true,
 			description: "Toggle microphone",
 			group: "Meeting controls",
+			condition: isNotTyping,
 			handler: () => mediaControls.toggleMicrophone(),
 		},
 		{
@@ -26,6 +27,7 @@ export function useKeyboardShortcuts(deps: {
 			ctrl: true,
 			description: "Toggle camera",
 			group: "Meeting controls",
+			condition: isNotTyping,
 			handler: () => mediaControls.toggleCamera(),
 		},
 		{
@@ -33,7 +35,7 @@ export function useKeyboardShortcuts(deps: {
 			description: "Push to talk",
 			group: "Meeting controls",
 			triggeredOn: "hold",
-			condition: () => pushToTalkEnabled.value,
+			condition: () => pushToTalkEnabled.value && isNotTyping(),
 			onHold: () => {
 				if (!mediaState.isMicOn) {
 					unmutedByPushToTalk = true;
@@ -50,4 +52,10 @@ export function useKeyboardShortcuts(deps: {
 			},
 		},
 	]);
+}
+
+function isNotTyping() {
+	return !document.activeElement?.closest(
+		'input, textarea, [contenteditable="true"], [contenteditable=""]',
+	);
 }

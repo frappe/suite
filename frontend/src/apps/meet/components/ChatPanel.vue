@@ -101,15 +101,22 @@
 							data-testid="chat-input-wrapper"
 							@click="focusInput"
 						>
-							<input
-								ref="inputEl"
-								v-model="draft"
-								@keydown="handleKeydown"
+							<TextEditor
+								ref="textEditor"
+								content=""
 								placeholder="Type a message"
-								class="min-w-0 flex-1 appearance-none border-none bg-transparent p-0 text-sm text-ink-gray-8 shadow-none outline-none ring-0 tracking-[0.28px] placeholder:text-ink-gray-5 focus:border-none focus:outline-none focus:ring-0 focus-visible:outline-none"
-								autocomplete="off"
+								class="chat-composer-editor min-w-0 flex-1"
+								editor-class="chat-composer-prose max-w-none text-sm text-ink-gray-8 tracking-[0.28px]"
 								data-testid="chat-input"
-							/>
+								@keydown.space.stop
+								@keyup.space.stop
+								@keydown.enter.exact="handleComposerEnter"
+								@change="handleEditorChange"
+							>
+								<template #editor="{ editor }">
+									<EditorContent :editor="editor" />
+								</template>
+							</TextEditor>
 							<Button
 								type="submit"
 								variant="solid"
@@ -124,12 +131,6 @@
 								</template>
 							</Button>
 						</div>
-						<EmojiPicker
-							:show="showEmojiPicker"
-							:filtered-emojis="filteredEmojis"
-							:selected-index="selectedEmojiIndex"
-							@select="addEmoji"
-						/>
 					</template>
 					<div v-else class="m-2 rounded-lg border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5">
 						The host has restricted chat to hosts and co-hosts only.
@@ -145,9 +146,10 @@
 </template>
 
 <script setup lang="ts">
-import data from "@emoji-mart/data";
-import { init, SearchIndex } from "emoji-mart";
-import { Button, Dropdown } from "frappe-ui";
+import { EditorContent } from "@tiptap/vue-3";
+import type { Editor } from "@tiptap/core";
+import { PluginKey } from "@tiptap/pm/state";
+import { Button, Dropdown, TextEditor } from "frappe-ui";
 import {
 	computed,
 	inject,
@@ -159,7 +161,6 @@ import {
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
 import { getInitials } from "../utils/text";
-import EmojiPicker from "./EmojiPicker.vue";
 import { usePollStore } from "../composables/usePollStore";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
@@ -172,11 +173,6 @@ interface ChatMessage {
 	user_name: string;
 	message: string;
 	timestamp: string;
-}
-
-interface EmojiItem {
-	emoji: string;
-	keywords: string[];
 }
 
 interface MessageGroup {
@@ -243,51 +239,17 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
-const inputEl = ref<HTMLInputElement | null>(null);
+const textEditor = ref<InstanceType<typeof TextEditor> | null>(null);
 const draft = ref("");
-const selectedEmojiIndex = ref(0);
-const filteredEmojis = ref<EmojiItem[]>([]);
-const isEmojiDataReady = ref(false);
+const emojiSuggestionPluginKey = new PluginKey("emojiSuggestion");
 
 const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
 	return props.isHost || props.isCohost;
 });
 
-const defaultEmojis: EmojiItem[] = [
-	{ emoji: "😀", keywords: ["smile"] },
-	{ emoji: "😂", keywords: ["laugh"] },
-	{ emoji: "❤️", keywords: ["heart"] },
-	{ emoji: "👍", keywords: ["thumbs up"] },
-	{ emoji: "👏", keywords: ["clap"] },
-	{ emoji: "🔥", keywords: ["fire"] },
-	{ emoji: "💯", keywords: ["100"] },
-	{ emoji: "🙌", keywords: ["raised hands"] },
-	{ emoji: "😊", keywords: ["blush"] },
-	{ emoji: "🎉", keywords: ["party"] },
-];
-
-const recentlyUsedEmojis = ref<EmojiItem[]>(defaultEmojis.slice());
-
 onMounted(async () => {
 	await scrollToBottom();
-	try {
-		await init({ data });
-		isEmojiDataReady.value = true;
-
-		const stored = localStorage.getItem("recentEmojis");
-		if (stored) {
-			try {
-				recentlyUsedEmojis.value = JSON.parse(stored);
-			} catch {
-				recentlyUsedEmojis.value = defaultEmojis.slice();
-			}
-		} else {
-			recentlyUsedEmojis.value = defaultEmojis.slice();
-		}
-	} catch (error) {
-		console.error("Failed to initialize emoji data:", error);
-	}
 });
 
 const groupedMessages = computed<MessageGroup[]>(() => {
@@ -366,132 +328,42 @@ function pollCreatorName(poll: PollPayloadFE) {
 	return poll.createdByName || poll.createdBy;
 }
 
-const showEmojiPicker = computed(() => {
-	const colonIndex = draft.value.lastIndexOf(":");
-	if (colonIndex === -1) return false;
-	const afterColon = draft.value.slice(colonIndex + 1);
-	return !afterColon.includes(" ") && /^[a-zA-Z0-9]*$/.test(afterColon);
-});
-
-const emojiQuery = computed(() => {
-	const colonIndex = draft.value.lastIndexOf(":");
-	if (colonIndex === -1) return "";
-	const afterColon = draft.value.slice(colonIndex + 1);
-	if (afterColon.includes(" ")) return "";
-	// don't allow special characters in emoji query
-	// or while pasting url you'll have emoji picker popup
-	if (!/^[a-zA-Z0-9]*$/.test(afterColon)) return "";
-	return afterColon;
-});
-
-watch(emojiQuery, async (query) => {
-	if (!query) {
-		filteredEmojis.value = recentlyUsedEmojis.value;
-		selectedEmojiIndex.value = 0;
-		return;
-	}
-
-	if (!isEmojiDataReady.value) {
-		filteredEmojis.value = [];
-		return;
-	}
-	try {
-		const results = await SearchIndex.search(query, {
-			maxResults: 10,
-			caller: undefined as unknown as string,
-		});
-		filteredEmojis.value = results.map((emoji) => ({
-			emoji: emoji.skins[0].native,
-			keywords: emoji.keywords || [],
-		}));
-		if (selectedEmojiIndex.value >= filteredEmojis.value.length) {
-			selectedEmojiIndex.value = 0;
-		}
-	} catch (error) {
-		filteredEmojis.value = [];
-	}
-});
-
-// Watch for when emoji picker should be shown
-watch(showEmojiPicker, (isShown) => {
-	if (isShown && emojiQuery.value === "") {
-		// Show recently used emojis when picker first opens with just :
-		filteredEmojis.value = recentlyUsedEmojis.value;
-		selectedEmojiIndex.value = 0;
-	}
-});
-function handleKeydown(event) {
-	if (!showEmojiPicker.value) return;
-	const { key } = event;
-	if (key === "ArrowDown") {
-		event.preventDefault();
-		selectedEmojiIndex.value =
-			(selectedEmojiIndex.value + 1) % filteredEmojis.value.length;
-	} else if (key === "ArrowUp") {
-		event.preventDefault();
-		selectedEmojiIndex.value =
-			selectedEmojiIndex.value === 0
-				? filteredEmojis.value.length - 1
-				: selectedEmojiIndex.value - 1;
-	} else if (key === "Enter") {
-		event.preventDefault();
-		if (filteredEmojis.value.length > 0) {
-			addEmoji(filteredEmojis.value[selectedEmojiIndex.value]);
-		}
-	} else if (key === "Escape") {
-		event.preventDefault();
-		// Remove the last colon to hide picker
-		const colonIndex = draft.value.lastIndexOf(":");
-		if (colonIndex > -1) {
-			draft.value = draft.value.slice(0, colonIndex);
-		}
-	}
+function handleEditorChange() {
+	draft.value = getEditorText();
 }
 
-function addEmoji(item) {
-	const emoji = item.emoji;
-	const colonIndex = draft.value.lastIndexOf(":");
-	const beforeColon = draft.value.slice(0, colonIndex);
-	const afterColon = draft.value.slice(colonIndex + 1);
-
-	if (afterColon) {
-		// Replace :<query> with emoji
-		draft.value = beforeColon + emoji;
-	} else {
-		// Replace : with emoji
-		draft.value = beforeColon + emoji;
-	}
-
-	const existingIndex = recentlyUsedEmojis.value.findIndex(
-		(e) => e.emoji === emoji,
-	);
-	if (existingIndex > -1) {
-		recentlyUsedEmojis.value.splice(existingIndex, 1);
-	}
-	recentlyUsedEmojis.value.unshift(item);
-	if (recentlyUsedEmojis.value.length > 10) {
-		recentlyUsedEmojis.value = recentlyUsedEmojis.value.slice(0, 10);
-	}
-	localStorage.setItem(
-		"recentEmojis",
-		JSON.stringify(recentlyUsedEmojis.value),
-	);
+function handleComposerEnter(event: KeyboardEvent) {
+	if (isEmojiSuggestionActive()) return;
+	event.preventDefault();
+	handleSend();
 }
 
 function handleSend() {
-	if (showEmojiPicker.value && filteredEmojis.value.length > 0) {
-		addEmoji(filteredEmojis.value[selectedEmojiIndex.value]);
-		return;
-	}
-	const text = draft.value.trim();
+	const text = getEditorText().trim();
 	if (!canSendMessages.value) return;
 	if (!text) return;
 	emit("send", text);
 	draft.value = "";
+	const editor = getEditor();
+	editor?.commands.clearContent();
+	nextTick(() => editor?.commands.focus());
 }
 
 function focusInput() {
-	inputEl.value?.focus();
+	getEditor()?.commands.focus("end");
+}
+
+function getEditor(): Editor | null {
+	return textEditor.value?.editor || null;
+}
+
+function getEditorText() {
+	return getEditor()?.getText() || "";
+}
+
+function isEmojiSuggestionActive() {
+	const editor = getEditor();
+	return !!editor && !!emojiSuggestionPluginKey.getState(editor.state)?.active;
 }
 
 async function scrollToBottom() {
@@ -502,3 +374,25 @@ async function scrollToBottom() {
 
 watch([chatItems], scrollToBottom, { deep: true });
 </script>
+
+<style scoped>
+.chat-composer-editor :deep(.ProseMirror) {
+	min-height: 20px;
+	max-height: 48px;
+	overflow-y: auto;
+	background: transparent;
+	caret-color: var(--ink-gray-8);
+}
+
+.chat-composer-editor :deep(.ProseMirror p) {
+	margin: 0;
+}
+
+.chat-composer-editor :deep(.ProseMirror p.is-editor-empty::before) {
+	color: var(--ink-gray-5);
+}
+
+.chat-composer-editor :deep(.ProseMirror-focused) {
+	outline: none;
+}
+</style>
