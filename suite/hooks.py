@@ -227,6 +227,16 @@ override_doctype_class = {
 # ============================================================================
 override_whitelisted_methods = {
 	"frappe.core.doctype.user.user.update_password": "suite.mail.events.update_password",
+	# mail — backward-compatible redirects for the standalone `mail` app's
+	# endpoints (still called by Frappe Framework's frappe/email/frappemail.py)
+	# now that the API lives under the combined `suite` app.
+	"mail.api.auth.validate": "suite.mail.api.auth.validate",
+	"mail.api.outbound.upload_attachment": "suite.mail.api.outbound.upload_attachment",
+	"mail.api.outbound.send": "suite.mail.api.outbound.send",
+	"mail.api.outbound.send_raw": "suite.mail.api.outbound.send_raw",
+	"mail.api.inbound.fetch_blob": "suite.mail.api.inbound.fetch_blob",
+	"mail.api.inbound.pull": "suite.mail.api.inbound.pull",
+	"mail.api.inbound.pull_raw": "suite.mail.api.inbound.pull_raw",
 }
 
 # ============================================================================
@@ -379,6 +389,9 @@ ALLOWED_PATHS = [
 ALLOWED_WILDCARD_PATHS = [
 	"/api/method/frappe.integrations.oauth2_logins.",
 	"/api/method/suite.mail.api.",
+	# mail — backward-compatible prefix for the standalone `mail` app's
+	# endpoints still called by Frappe Framework (see override_whitelisted_methods).
+	"/api/method/mail.api.",
 	"/api/method/suite.calendar.api.",
 	"/api/method/suite.meet.api.",
 	"/api/method/suite.drive.api.",
