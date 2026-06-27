@@ -148,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, useTemplateRef } from 'vue'
+import { computed, ref, watch, useTemplateRef } from 'vue'
 
 import { Avatar, TabButtons, Dropdown } from 'frappe-ui'
 import { useInfiniteScroll } from '@vueuse/core'
