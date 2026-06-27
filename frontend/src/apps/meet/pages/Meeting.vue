@@ -514,7 +514,7 @@ const lobby = useLobby({
 type AccessData = { allow_guest?: boolean; host_only_chat?: boolean };
 
 // --- Keyboard Shortcuts ---
-const keyboardShortcuts = useKeyboardShortcuts({
+useKeyboardShortcuts({
 	mediaControls: {
 		toggleMicrophone: () => mediaControls.toggleMicrophone(),
 		toggleCamera: () => mediaControls.toggleCamera(),
@@ -767,8 +767,6 @@ onMounted(async () => {
 	currentUser.resetCurrentUser();
 	e2eeState.reset();
 
-	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
-	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.addEventListener("fullscreenchange", syncFullscreenState);
 	document.addEventListener(
 		"meet:e2ee-needs-media-republish",
@@ -841,8 +839,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-	window.removeEventListener("keydown", keyboardShortcuts.handleKeyDown);
-	window.removeEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.removeEventListener("fullscreenchange", syncFullscreenState);
 	document.removeEventListener(
 		"meet:e2ee-needs-media-republish",

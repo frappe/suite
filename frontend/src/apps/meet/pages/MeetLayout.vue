@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { FrappeUIProvider, Dialogs } from "frappe-ui";
-import { provide, watch } from "vue";
-import { useRoute } from "vue-router";
+import { onMounted, onUnmounted, provide } from "vue";
 
 import { initSocket } from "@/apps/meet/socket";
 import { getPlatform } from "@/apps/meet/utils/device";
@@ -23,27 +22,29 @@ initSocket();
 
 provide("$platform", getPlatform());
 
-const route = useRoute();
+let previousTheme: string | null = null;
+let previousThemeMode: string | null = null;
 
-function getStoredTheme() {
-	const stored = localStorage.getItem("meet-color-scheme") || "system";
-	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-	return stored === "system"
-		? mediaQuery.matches
-			? "dark"
-			: "light"
-		: stored;
-}
+onMounted(() => {
+	previousTheme = document.documentElement.getAttribute("data-theme");
+	previousThemeMode = document.documentElement.getAttribute("data-theme-mode");
+	document.documentElement.setAttribute("data-theme", "dark");
+	document.documentElement.setAttribute("data-theme-mode", "dark");
+});
 
-function applyRouteTheme() {
-	const theme =
-		route.name === "meet-meeting"
-			? "dark"
-			: getStoredTheme();
-	document.documentElement.setAttribute("data-theme", theme);
-}
+onUnmounted(() => {
+	if (previousTheme) {
+		document.documentElement.setAttribute("data-theme", previousTheme);
+	} else {
+		document.documentElement.removeAttribute("data-theme");
+	}
 
-watch(() => route.name, applyRouteTheme, { immediate: true });
+	if (previousThemeMode) {
+		document.documentElement.setAttribute("data-theme-mode", previousThemeMode);
+	} else {
+		document.documentElement.removeAttribute("data-theme-mode");
+	}
+});
 </script>
 
 <template>

@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { Sidebar, createResource } from "frappe-ui";
+import { KeyboardShortcutsModal, Sidebar, createResource, useShortcut } from "frappe-ui";
 import { computed, h, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
-import AppearanceSettingsDialog from "./AppearanceSettingsDialog.vue";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
-import LucideSettings from "~icons/lucide/settings";
 import LucideBadgeHelp from "~icons/lucide/badge-help";
-import LucideBook from "~icons/lucide/book";
+import LucideKeyboard from "~icons/lucide/keyboard";
 import LucideLayoutGrid from "~icons/lucide/layout-grid";
 
 const route = useRoute();
@@ -94,14 +92,9 @@ const settingsItems = computed(() => [
 					})) || [],
 			},
 			{
-				icon: LucideBook,
-				label: "Documentation",
-				onClick: openHelp,
-			},
-			{
-				icon: LucideBadgeHelp,
-				label: "Support",
-				onClick: () => window.open("https://t.me/frappe", "_blank"),
+				icon: LucideKeyboard,
+				label: "Shortcuts",
+				onClick: () => (showShortcutsDialog.value = true),
 			},
 		],
 	},
@@ -132,16 +125,19 @@ const sidebarSections = computed(() => [
 				to: "/calendar",
 				icon: LucideCalendar,
 			},
-			{
-				label: "Settings",
-				onClick: () => (showSettingsDialog.value = true),
-				icon: LucideSettings,
-			},
 		],
 	},
 ]);
 
-const showSettingsDialog = ref(false);
+const showShortcutsDialog = ref(false);
+
+useShortcut({
+	key: "?",
+	description: "View shortcuts",
+	group: "General",
+	allowInDialog: true,
+	handler: () => (showShortcutsDialog.value = true),
+});
 </script>
 
 <template>
@@ -169,5 +165,5 @@ const showSettingsDialog = ref(false);
 		</template>
 	</Sidebar>
 
-	<AppearanceSettingsDialog v-model="showSettingsDialog" />
+	<KeyboardShortcutsModal v-model:open="showShortcutsDialog" />
 </template>
