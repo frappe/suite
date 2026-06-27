@@ -6,8 +6,8 @@ import type { MediaState } from "./useMediaState";
 export function useAudioStream(
 	participantId: string,
 	deps: {
-		mediaState: MediaState;
-		currentUser: CurrentUser;
+		mediaState?: MediaState;
+		currentUser?: CurrentUser;
 	},
 ) {
 	const stream = ref<MediaStream | null>(null);
@@ -15,6 +15,8 @@ export function useAudioStream(
 	const sfuManagerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager");
 
 	const getStream = () => {
+		if (!mediaState || !currentUser) return;
+
 		try {
 			const sfuManager = sfuManagerRef?.value;
 

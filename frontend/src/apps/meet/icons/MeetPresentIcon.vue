@@ -1,5 +1,5 @@
 <template>
-	<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	<svg class="size-5" viewBox="3 4 18 17" fill="none" aria-hidden="true">
 		<path fill-rule="evenodd" clip-rule="evenodd" d="M117.5 22H126.5V23.5H117.5V22Z" fill="currentColor" transform="translate(-110 -4)" />
 		<path fill-rule="evenodd" clip-rule="evenodd" d="M122.75 19V23.5H121.25V19H122.75Z" fill="currentColor" transform="translate(-110 -4)" />
 		<path

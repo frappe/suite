@@ -1,10 +1,10 @@
 <template>
 	<div
 		class="pointer-events-none w-full overflow-hidden shrink-0 transition-[height,margin] duration-500 ease-in-out"
-		:style="{ height: toolbarHeight }"
+		:class="isVisible ? 'h-[3.75rem]' : 'h-0'"
 	>
 		<div
-			class="grid h-full w-full grid-cols-[1fr_auto_1fr] items-end px-4 transition-transform duration-500 ease-in-out"
+			class="grid h-full w-full grid-cols-[1fr_auto_1fr] items-end px-4 transition-transform duration-500 ease-in-out pb-2"
 			:class="isVisible ? 'translate-y-0' : 'translate-y-full'"
 		>
 			<div
@@ -67,17 +67,17 @@
 				<!-- More Options -->
 				<div class="relative">
 					<Dropdown :options="moreOptions" placement="top">
-						<template #default="{ open }">
-							<Tooltip text="More options" :hover-delay="0.3">
-								<button
-									type="button"
-									data-testid="toolbar-more"
-									class="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-transparent p-0 transition-all duration-200 [&_svg]:h-6 [&_svg]:w-6 [&_svg]:text-ink-gray-9 hover:bg-white/10"
-									:class="open ? 'bg-white/20 hover:!bg-white/20' : ''"
-								>
+						<template #default>
+							<Button
+								size="lg"
+								variant="ghost"
+								data-testid="toolbar-more"
+								tooltip="More options"
+							>
+								<template #icon>
 									<MeetSettingsIcon />
-								</button>
-							</Tooltip>
+								</template>
+							</Button>
 						</template>
 					</Dropdown>
 				</div>
@@ -107,7 +107,7 @@
 					test-id="toolbar-people"
 					@click="$emit('toggle-people')"
 				>
-					<MeetPeopleIcon class="!h-4 !w-4" />
+					<MeetPeopleIcon />
 					<span
 						v-if="lobbyUserCount && lobbyUserCount > 0"
 						class="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"
@@ -121,7 +121,7 @@
 					test-id="toolbar-chat"
 					@click="$emit('toggle-chat')"
 				>
-					<MeetChatIcon class="!h-4 !w-4" />
+					<MeetChatIcon />
 					<span
 						v-if="hasUnread && !isChatOpen"
 						data-testid="toolbar-chat-unread"
@@ -147,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { Dropdown, Tooltip } from "frappe-ui";
+import { Button, Dropdown } from "frappe-ui";
 import {
 	type Component,
 	computed,
@@ -280,11 +280,6 @@ const showMeetingInfoDialog = ref(false);
 const showSettingsDialog = ref(false);
 const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
-
-const TOOLBAR_VISIBLE_HEIGHT = "3.25rem";
-const toolbarHeight = computed(() =>
-	isVisible.value ? TOOLBAR_VISIBLE_HEIGHT : "0px",
-);
 
 const showControls = () => {
 	isVisible.value = true;

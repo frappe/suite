@@ -5,34 +5,25 @@
  				<!-- Video Section -->
  				<div class="lg:flex-[2] flex flex-col items-center justify-center p-6 lg:pr-4">
  					<div class="max-w-3xl w-full">
- 						<div
- 							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group w-full"
- 							data-testid="preview-video-shell"
- 						>
- 							<video
- 								:ref="(el: unknown) => setLocalVideoRef?.(el as HTMLVideoElement | null)"
- 								class="w-full h-full object-cover transform scale-x-[-1]"
- 								autoplay
- 								muted
- 								playsinline
- 							/>
- 
-							<div
-								v-if="!isCameraOn"
-								class="absolute inset-0 bg-surface-gray-3 flex items-center justify-center"
-							>
-								<div class="text-center text-white">
-									<MeetingAvatar
-										:label="userInitials"
-										:image="userAvatar"
-										:tiles="1"
-										class="mx-auto mb-4 w-20 h-20"
-									/>
-									<p class="text-3xl-medium">{{ currentUserName }}</p>
-								</div>
-							</div>
- 
-					</div>
+						<div
+							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group w-full"
+							data-testid="preview-video-shell"
+						>
+							<ParticipantTile
+								class="h-full w-full"
+								:participant="previewParticipant"
+								:isLocal="true"
+								:isVideoEnabled="isCameraOn"
+								:isAudioEnabled="isMicOn"
+								:videoRef="previewVideoRef"
+								:showPinButton="false"
+								:showReaction="false"
+								:showRaisedHand="false"
+								:showNetworkState="false"
+								:tileBackgroundClass="'bg-black'"
+								:avatarBackgroundClass="'bg-surface-gray-3'"
+							/>
+						</div>
 
 					<PreviewToolbar
 						:isMicOn="isMicOn"
@@ -121,11 +112,12 @@
 import { Button, createResource, FormControl, toast } from "frappe-ui";
 import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
 import ParticipantAvatarGroup from "../components/ParticipantAvatarGroup.vue";
+import ParticipantTile from "../components/ParticipantTile.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";
 import { session } from "@/boot/session";
 import { getErrorMessage } from "../utils/error";
-import MeetingAvatar from "./MeetingAvatar.vue";
+import type { Participant } from "../utils/media/ParticipantManager";
 interface VideoElement {
 	$el?:
 		| HTMLElement
@@ -178,6 +170,19 @@ const joinGuestAPI = createResource({
 const meetingTitle = inject("meetingTitle");
 
 const isGuest = computed(() => !session.isLoggedIn && !props.guestAuthToken);
+
+const previewParticipant = computed<Participant>(() => ({
+	user_id: "preview-local-user",
+	user_name: props.currentUserName || props.userInitials || "You",
+	avatar: props.userAvatar || null,
+	initials: props.userInitials || "",
+	audio_enabled: props.isMicOn,
+	video_enabled: props.isCameraOn,
+}));
+
+const previewVideoRef = (el: unknown) => {
+	props.setLocalVideoRef?.(el as HTMLVideoElement | null);
+};
 
 const { participants, error: presenceError } = useMeetingPreviewPresence(
 	props.meetingId,

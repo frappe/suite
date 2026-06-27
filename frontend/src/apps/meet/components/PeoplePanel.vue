@@ -45,6 +45,11 @@
 						@approve-all="handleApproveAllLobbyUsers"
 					/>
 
+					<div
+						v-if="filteredLobbyUsers.length > 0 && allVisibleParticipants.length > 0"
+						class="my-2 border-t border-outline-gray-2"
+					/>
+
 					<!-- All Participants -->
 					<div v-if="allVisibleParticipants.length > 0" class="flex flex-col gap-1">
 						<PeopleParticipantTile

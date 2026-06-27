@@ -79,7 +79,7 @@
 
 			<!-- Main meeting interface -->
 			<template v-else>
-			<div class="relative flex flex-1 min-h-0 overflow-hidden flex-col">
+			<div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
 				<div
 					v-if="e2eeJoinPendingMessage"
 					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
@@ -96,14 +96,9 @@
 						gridTemplateColumns: 'minmax(0, 1fr) var(--panel-width)',
 					}"
 				>
-					<!-- Video column — padding-bottom mirrors the toolbar height so tiles
-                 reclaim the space when the toolbar hides, without affecting panels -->
-					<div
-						class="flex flex-col min-h-0 transition-[padding-bottom] duration-500 ease-in-out relative"
-						:style="{ paddingBottom: isToolbarVisible ? '3.75rem' : '0' }"
-					>
+					<div class="flex flex-col min-h-0 relative">
 						<!-- Video area -->
-						<div class="px-2.5 pb-2.5 flex flex-col flex-1 min-h-0 text-white">
+						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white">
 							<MeetingLayout @open-people-panel="togglePeople" />
 						</div>
 					</div>
@@ -170,8 +165,8 @@
 					</Transition>
 				</div>
 
-				<!-- Meeting controls are anchored to the meeting viewport so side panels do not shift them -->
-				<div class="pointer-events-none absolute inset-x-0 bottom-2">
+				<!-- Meeting controls live in their own row so tiles resize without JS padding -->
+				<div class="pointer-events-none min-h-0">
 					<!-- Meeting controls -->
 					<MeetingToolbar
 						:isChatOpen="chatStore.isChatOpen"

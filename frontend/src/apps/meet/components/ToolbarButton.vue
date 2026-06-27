@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Tooltip } from "frappe-ui";
+import { Button } from "frappe-ui";
 
 defineOptions({
 	inheritAttrs: false,
@@ -24,19 +24,25 @@ defineEmits<{
 </script>
 
 <template>
-	<Tooltip :text="title" :disabled="!title" :hover-delay="0.3">
-		<button
-			v-bind="$attrs"
-			:data-testid="testId"
-			class="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-transparent p-0 transition-all duration-200 [&_svg]:h-6 [&_svg]:w-6 [&_svg]:text-ink-gray-9 hover:bg-white/10"
-			:class="[
-				active ? 'bg-white/10 hover:!bg-white/10' : '',
-				variant === 'active' ? '[&_svg]:!text-red-500' : '',
-				variant === 'muted' ? '[&_svg]:!text-[#E54E17]' : '',
-			]"
-			@click="$emit('click')"
-		>
-			<slot />
-		</button>
-	</Tooltip>
+	<Button
+		v-bind="$attrs"
+		size="lg"
+		variant="ghost"
+		theme="gray"
+		:data-testid="testId"
+		:tooltip="title"
+		class="relative"
+		@click="$emit('click')"
+	>
+		<template #icon>
+			<span
+				:class="{
+					'text-red-500': variant === 'active',
+					'text-[#E54E17]': variant === 'muted',
+				}"
+			>
+				<slot />
+			</span>
+		</template>
+	</Button>
 </template>

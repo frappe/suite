@@ -54,7 +54,6 @@
 				:isAudioEnabled="isMicOn"
 				:isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
 				:videoRef="setLocalVideoRef"
-				:tileCount="visibleTileCount"
 				:showReaction="pinnedTiles.length===0"
 				:style="tileStyle"
 			/>
@@ -216,7 +215,6 @@ const getScreenShareTileBindings = (shareTile: {
 		isVideoEnabled: true,
 		isAudioEnabled: false,
 		videoRef: wrappedVideoRef,
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		class: isPinned ? "pinned-tile" : undefined,
 		style: isPinned
 			? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`]
@@ -252,7 +250,6 @@ const getParticipantTileBindings = (
 		isAudioEnabled: participant.audio_enabled,
 		isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
 		videoRef: getRemoteVideoRef(participant.user_id),
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		showReaction: pinnedTiles.value.length === 0,
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]

@@ -1,5 +1,5 @@
 <template>
-	<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	<svg class="size-5" viewBox="3 3 18 18" fill="none" aria-hidden="true">
 		<path
 			fill-rule="evenodd"
 			clip-rule="evenodd"

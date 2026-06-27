@@ -2,22 +2,11 @@
 	<div
 		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-surface-gray-2"
 	>
-		<div class="flex-shrink-0">
-			<div
-				class="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-surface-gray-1 text-ink-gray-7"
-			>
-				<img
-					v-if="participant.avatar"
-					:src="participant.avatar"
-					:alt="participant.user_name"
-					class="w-full h-full object-cover"
-					draggable="false"
-				/>
-				<span v-else class="text-sm-medium select-none">
-					{{ participant.initials }}
-				</span>
-			</div>
-		</div>
+		<Avatar
+			size="lg"
+			:image="participant.avatar"
+			:label="participant.user_name || participant.user_id"
+		/>
 
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
@@ -51,14 +40,21 @@
 				</div>
 			</div>
 
+			<!-- Video Status -->
+			<button
+				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
+				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
+			>
+				<MeetCameraIcon :class="participant.video_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
+			</button>
+
 			<!-- Audio Mute Button -->
 			<button
 				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
 				:title="participant.audio_enabled ? 'Mute' : 'Unmute'"
 				@click="participant.audio_enabled && canControlParticipant ? emit('muteParticipant', participant.user_id) : undefined"
 			>
-				<lucide-mic-off v-if="!participant.audio_enabled" class="w-4 h-4" />
-				<lucide-mic v-else class="w-4 h-4" />
+				<MeetMicIcon :class="participant.audio_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
 			</button>
 
 			<!-- Host Controls -->
@@ -91,9 +87,11 @@
 </template>
 
 <script setup lang="ts">
-import { Dropdown } from "frappe-ui";
+import { Avatar, Dropdown } from "frappe-ui";
 import { computed, ref } from "vue";
 import { useMeetingContext } from "../composables/useMeetingContext";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
 

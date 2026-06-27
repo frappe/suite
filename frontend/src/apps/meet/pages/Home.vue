@@ -4,13 +4,13 @@
 
 		<div class="flex flex-1 flex-col overflow-auto">
 			<div class="flex flex-1 items-start justify-center pt-[100px]">
-				<div class="w-[600px] max-w-full px-6">
+				<div class="w-[760px] max-w-full px-6">
 				<div class="mb-2 flex flex-col gap-0.5">
 					<h1 class="text-xl-semibold text-ink-gray-8 tracking-[0.2px]">
 						Hey {{ firstName }},
 					</h1>
 					<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
-						Start an instant meeting or create a shareable meeting link.
+						Start an open meeting, create a restricted meeting, or join with a code.
 					</p>
 				</div>
 
@@ -25,6 +25,18 @@
 							</div>
 						</div>
 						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
+					</button>
+
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="startRestrictedMeeting"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideLock class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
 					</button>
 
 					<button
@@ -86,6 +98,7 @@ import { useConnectionState } from "../composables/useConnectionState";
 import MeetSidebar from "../components/MeetSidebar.vue";
 import LucideZap from "~icons/lucide/zap";
 import LucideLink from "~icons/lucide/link";
+import LucideLock from "~icons/lucide/lock";
 
 const router = useRouter();
 const connectionState = useConnectionState();
@@ -124,6 +137,14 @@ const startInstantMeeting = () => {
 	toast.promise(createMeeting.submit({ meeting_type: "open" }), {
 		loading: "Creating meeting...",
 		success: "Meeting created successfully!",
+		error: "Failed to create meeting. Please try again.",
+	});
+};
+
+const startRestrictedMeeting = () => {
+	toast.promise(createMeeting.submit({ meeting_type: "restricted" }), {
+		loading: "Creating restricted meeting...",
+		success: "Restricted meeting created successfully!",
 		error: "Failed to create meeting. Please try again.",
 	});
 };

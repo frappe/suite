@@ -4,6 +4,7 @@ import { computed, h, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
+import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 import AppearanceSettingsDialog from "./AppearanceSettingsDialog.vue";
 
@@ -15,6 +16,7 @@ import LucideBook from "~icons/lucide/book";
 import LucideLayoutGrid from "~icons/lucide/layout-grid";
 
 const route = useRoute();
+const sessionStore = useSessionStore();
 
 const isCollapsed = useStorage("meet-sidebar-collapsed", false);
 
@@ -110,9 +112,7 @@ const settingsItems = computed(() => [
 			{
 				icon: "log-out",
 				label: "Log out",
-				onClick: () => {
-					window.location.href = "/api/method/frappe.client.logout";
-				},
+				onClick: () => sessionStore.logout.submit(),
 			},
 		],
 	},
