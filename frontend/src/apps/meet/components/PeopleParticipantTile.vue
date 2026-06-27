@@ -41,21 +41,20 @@
 			</div>
 
 			<!-- Video Status -->
-			<button
-				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
+			<span
+				class="flex items-center justify-center p-1.5 text-ink-gray-6"
 				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
 			>
 				<MeetCameraIcon :class="participant.video_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
-			</button>
+			</span>
 
-			<!-- Audio Mute Button -->
-			<button
-				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
-				:title="participant.audio_enabled ? 'Mute' : 'Unmute'"
-				@click="participant.audio_enabled && canControlParticipant ? emit('muteParticipant', participant.user_id) : undefined"
+			<!-- Audio Status -->
+			<span
+				class="flex items-center justify-center p-1.5 text-ink-gray-6"
+				:title="participant.audio_enabled ? 'Microphone on' : 'Microphone off'"
 			>
 				<MeetMicIcon :class="participant.audio_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
-			</button>
+			</span>
 
 			<!-- Host Controls -->
 			<div v-if="canControlParticipant" class="relative">
@@ -69,12 +68,7 @@
 					</template>
 				</Dropdown>
 			</div>
-			<button
-				v-else
-				class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
-			>
-				<lucide-more-horizontal class="w-4 h-4" />
-			</button>
+			<div v-else class="w-7 shrink-0" aria-hidden="true" />
 		</div>
 	</div>
 

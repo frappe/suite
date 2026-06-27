@@ -5,7 +5,7 @@
 				<div
 					v-for="request in joinRequests"
 					:key="request.user_id"
-					class="min-w-80 max-w-96 rounded-md bg-surface-gray-9 p-4 shadow-lg"
+					class="min-w-80 max-w-96 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4 shadow-lg"
 				>
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex items-center space-x-3 flex-1 min-w-0">
@@ -16,8 +16,8 @@
 							/>
 
 							<div class="flex-1 min-w-0">
-								<p class="text-sm text-ink-base">
-									<span class="font-semibold text-ink-base">
+								<p class="text-sm text-ink-gray-7">
+									<span class="font-semibold text-ink-gray-9">
 										{{ request.user_name || request.user_id }}
 									</span>
 									wants to join the meeting
@@ -41,11 +41,9 @@
 
 					<div class="flex space-x-2">
 						<Button
-							variant="outline"
 							size="sm"
-							theme="green"
 							@click="$emit('approve-user', request.user_id)"
-							class="flex-1 !bg-surface-gray-9 hover:!bg-surface-gray-8"
+							class="flex-1"
 						>
 							<template #prefix>
 								<lucide-check class="w-3 h-3 mr-1" />
@@ -53,11 +51,9 @@
 							Admit
 						</Button>
 						<Button
-							variant="outline"
-							theme="red"
 							size="sm"
 							@click="$emit('reject-user', request.user_id)"
-							class="flex-1 !bg-surface-gray-9 hover:!bg-surface-gray-8"
+							class="flex-1"
 						>
 							<template #prefix>
 								<lucide-x class="w-3 h-3 mr-1" />

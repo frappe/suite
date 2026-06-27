@@ -1,5 +1,5 @@
 <template>
-	<svg class="size-5" viewBox="4 3 16 18" fill="none" aria-hidden="true">
+	<svg :class="$attrs.class || 'size-5'" viewBox="4 3 16 18" fill="none" aria-hidden="true">
 		<path
 			fill-rule="evenodd"
 			clip-rule="evenodd"
@@ -23,3 +23,7 @@
 		/>
 	</svg>
 </template>
+
+<script setup lang="ts">
+defineOptions({ inheritAttrs: false });
+</script>

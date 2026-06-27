@@ -19,6 +19,7 @@
 								:showPinButton="false"
 								:showReaction="false"
 								:showRaisedHand="false"
+								:showAudioState="false"
 								:showNetworkState="false"
 								:tileBackgroundClass="'bg-black'"
 								:avatarBackgroundClass="'bg-surface-gray-3'"

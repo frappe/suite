@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="group relative rounded-lg overflow-hidden min-h-0"
+		class="group relative rounded-md overflow-hidden min-h-0"
 		:class="tileBackgroundClass"
 		:data-testid="`participant-tile-${participant.user_id}`"
 		:data-audio-enabled="String(isAudioEnabled)"

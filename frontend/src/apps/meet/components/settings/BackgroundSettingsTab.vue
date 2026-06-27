@@ -39,7 +39,7 @@
 						class="relative cursor-pointer rounded-lg border-2 overflow-hidden transition-all duration-200 hover:shadow-sm group"
 						:class="[
 							selectedBackgroundOption === option.name
-								? 'border-outline-gray-7 ring-1 ring-outline-gray-6'
+								? 'border-outline-gray-3 ring-1 ring-outline-gray-2'
 								: 'border-outline-gray-1 hover:border-outline-gray-2',
 						]">
 						<div class="aspect-video bg-surface-gray-2 relative">
@@ -68,8 +68,8 @@
 
 							<!-- Selected indicator -->
 							<div v-if="selectedBackgroundOption === option.name"
-								class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-10 rounded-full flex items-center justify-center">
-								<lucide-check class="w-3 h-3 text-ink-gray-9" />
+								class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-9 rounded-full flex items-center justify-center">
+								<lucide-check class="w-3 h-3 text-ink-gray-1" />
 							</div>
 
 							<!-- Delete button for custom images -->

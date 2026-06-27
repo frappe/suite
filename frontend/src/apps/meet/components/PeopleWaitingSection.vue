@@ -1,6 +1,6 @@
 <template>
 	<div v-if="lobbyUsers.length > 0" class="">
-		<div class="px-4 py-2 text-xs-medium text-ink-gray-5 tracking-wide bg-surface-gray-1 flex items-center justify-between">
+		<div class="px-3 py-2 text-xs-medium text-ink-gray-5 tracking-wide bg-surface-gray-1 flex items-center justify-between">
 			<span>Waiting to join</span>
 			<Button
 				variant="ghost"
@@ -34,18 +34,14 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<Button
-					variant="outline"
 					size="sm"
-					theme="green"
 					@click="$emit('approve', lobbyUser.userId)"
 					:data-testid="`approve-waiting-user-${lobbyUser.userId}`"
 				>
 					<lucide-check class="w-4 h-4" />
 				</Button>
 				<Button
-					variant="outline"
 					size="sm"
-					theme="red"
 					@click="$emit('reject', lobbyUser.userId)"
 					:data-testid="`reject-waiting-user-${lobbyUser.userId}`"
 				>
