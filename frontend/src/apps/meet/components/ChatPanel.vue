@@ -97,7 +97,7 @@
 				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
 						<div
-							class="flex cursor-text items-center gap-3 rounded-full bg-surface-gray-2 py-2.5 pl-5 pr-3"
+							class="flex cursor-text items-end gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-2 shadow-sm transition-colors focus-within:border-outline-gray-3"
 							data-testid="chat-input-wrapper"
 							@click="focusInput"
 						>
@@ -110,7 +110,10 @@
 								data-testid="chat-input"
 								@keydown.space.stop
 								@keyup.space.stop
-								@keydown.enter.exact="handleComposerEnter"
+								@keydown.shift.enter.prevent.stop="insertLineBreak"
+								@keydown.meta.enter.prevent.stop="insertLineBreak"
+								@keydown.ctrl.enter.prevent.stop="insertLineBreak"
+								@keydown.enter.exact.capture="handleComposerEnter"
 								@change="handleEditorChange"
 							>
 								<template #editor="{ editor }">
@@ -119,10 +122,9 @@
 							</TextEditor>
 							<Button
 								type="submit"
-								variant="solid"
+								variant="subtle"
 								theme="gray"
-								class="!h-7 !w-7 shrink-0 !rounded-lg p-0"
-								style="background-color: var(--surface-gray-3); color: var(--ink-gray-8)"
+								class="!h-7 !w-7 shrink-0 !rounded-md p-0"
 								aria-label="Send message"
 								data-testid="chat-send"
 							>
@@ -148,7 +150,6 @@
 <script setup lang="ts">
 import { EditorContent } from "@tiptap/vue-3";
 import type { Editor } from "@tiptap/core";
-import { PluginKey } from "@tiptap/pm/state";
 import { Button, Dropdown, TextEditor } from "frappe-ui";
 import {
 	computed,
@@ -241,7 +242,6 @@ const emit = defineEmits<{
 const listEl = ref<HTMLElement | null>(null);
 const textEditor = ref<InstanceType<typeof TextEditor> | null>(null);
 const draft = ref("");
-const emojiSuggestionPluginKey = new PluginKey("emojiSuggestion");
 
 const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
@@ -333,9 +333,15 @@ function handleEditorChange() {
 }
 
 function handleComposerEnter(event: KeyboardEvent) {
+	event.stopPropagation();
+	if (event.defaultPrevented) return;
 	if (isEmojiSuggestionActive()) return;
 	event.preventDefault();
 	handleSend();
+}
+
+function insertLineBreak() {
+	getEditor()?.commands.setHardBreak();
 }
 
 function handleSend() {
@@ -363,7 +369,7 @@ function getEditorText() {
 
 function isEmojiSuggestionActive() {
 	const editor = getEditor();
-	return !!editor && !!emojiSuggestionPluginKey.getState(editor.state)?.active;
+	return !!editor?.view.dom.querySelector(".suggestion");
 }
 
 async function scrollToBottom() {
