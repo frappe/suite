@@ -105,10 +105,9 @@
                       :label="$user(row.owner)?.full_name || 'Deleted'"
                       size="xs"
                     />
-                    <span :title="row.owner"
-                      >{{ $user(row.owner)?.full_name || 'Deleted' }}
-                      {{ $user(row.owner)?.full_name || 'Deleted' }}</span
-                    >
+                    <span :title="row.owner">
+                      {{ $user(row.owner)?.full_name || 'Deleted' }}
+                    </span>
                   </template>
                 </div>
 
