@@ -38,6 +38,7 @@
 				<!-- Screen Share -->
 				<ToolbarButton
 					v-if="canScreenShare()"
+					:active="isScreenSharing"
 					title="Toggle Screen Share"
 					test-id="toolbar-screen-share"
 					@click="$emit('toggle-screen-share')"

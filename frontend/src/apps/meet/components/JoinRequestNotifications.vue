@@ -1,11 +1,12 @@
 <template>
 	<Teleport to="body">
-		<div v-if="joinRequests.length > 0" class="fixed bottom-4 right-4 z-50 space-y-2">
+		<div v-if="joinRequests.length > 0" class="pointer-events-none fixed bottom-4 right-4 z-50 space-y-2">
 			<TransitionGroup name="notification" tag="div" class="relative space-y-2">
 				<div
 					v-for="request in joinRequests"
 					:key="request.user_id"
-					class="min-w-80 max-w-96 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4 shadow-lg"
+					:data-testid="`join-request-${request.user_id}`"
+					class="pointer-events-auto min-w-80 max-w-96 rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4 shadow-lg"
 				>
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex items-center space-x-3 flex-1 min-w-0">

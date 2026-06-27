@@ -107,7 +107,6 @@
 								placeholder="Type a message"
 								class="chat-composer-editor min-w-0 flex-1"
 								editor-class="chat-composer-prose max-w-none text-sm text-ink-gray-8 tracking-[0.28px]"
-								data-testid="chat-input"
 								@keydown.space.stop
 								@keyup.space.stop
 								@keydown.shift.enter.prevent.stop="insertLineBreak"
@@ -117,7 +116,7 @@
 								@change="handleEditorChange"
 							>
 								<template #editor="{ editor }">
-									<EditorContent :editor="editor" />
+									<EditorContent :editor="editor" data-testid="chat-input" />
 								</template>
 							</TextEditor>
 							<Button

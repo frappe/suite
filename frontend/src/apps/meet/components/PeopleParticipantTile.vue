@@ -1,6 +1,8 @@
 <template>
 	<div
 		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-surface-gray-2"
+		:data-testid="`people-participant-${participant.user_id}`"
+		:data-audio-enabled="participant.audio_enabled ? 'true' : 'false'"
 	>
 		<Avatar
 			size="lg"
@@ -62,6 +64,8 @@
 					<template #default>
 						<button
 							class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
+							:aria-label="`Actions for ${participant.user_name || participant.user_id}`"
+							:data-testid="`people-participant-actions-${participant.user_id}`"
 						>
 							<lucide-more-horizontal class="w-4 h-4" />
 						</button>
