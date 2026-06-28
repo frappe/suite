@@ -8,12 +8,16 @@ on:
     paths:
       - "suite/meet/**"
       - "frontend/src/apps/meet/**"
+      - "package.json"
+      - "yarn.lock"
       - "pyproject.toml"
       - ".github/workflows/meet-e2e.yml"
   pull_request:
     paths:
       - "suite/meet/**"
       - "frontend/src/apps/meet/**"
+      - "package.json"
+      - "yarn.lock"
       - "pyproject.toml"
       - ".github/workflows/meet-e2e.yml"
   workflow_dispatch:
@@ -113,7 +117,7 @@ jobs:
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin meet.test
           bench --site meet.test install-app suite
-          cd apps/suite/frontend
+          cd apps/suite
           yarn install --frozen-lockfile --non-interactive
           yarn build
           cd /home/runner/frappe-bench
