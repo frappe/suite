@@ -2,7 +2,7 @@ import { toast } from "frappe-ui";
 import type { SFUClient } from "../utils/SFUClient";
 import type { CurrentUser } from "./useCurrentUser";
 import { usePollStore } from "./usePollStore";
-import type { PollPayloadFE } from "../../../../../suite/meet/sfu-server/src/types"
+import { PollPayloadFE } from "../types";
 
 interface PollAPI {
 	setupPollEvents: () => void;
@@ -30,6 +30,7 @@ export function usePoll(deps: {
 
 		sfuClient.on("existing_polls", (data: unknown) => {
 			const payload = data as { polls: PollPayloadFE[] };
+			console.log("[POLL DEBUG] Received existing_polls from server:", payload);
 			pollStore.setExistingPolls(payload.polls);
 		});
 	};

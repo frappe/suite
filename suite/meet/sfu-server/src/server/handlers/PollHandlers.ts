@@ -36,6 +36,20 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					return;
 				}
 
+				if (
+					options.some(
+						(opt) => typeof opt?.text !== 'string' || !opt.text.trim(),
+					)
+				) {
+					if (callback) {
+						callback({
+							success: false,
+							error: 'Poll options cannot be empty.',
+						});
+					}
+					return;
+				}
+
 				const activePollsMap =
 					deps.registry.getActivePolls(roomId) || new Map<string, ActivePoll>();
 
@@ -47,7 +61,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					question,
 					options: options.map((opt: { id?: string; text: string }) => ({
 						id: `opt-${crypto.randomUUID()}`,
-						text: opt.text,
+						text: opt.text.trim(),
 						votes: 0,
 					})),
 					votedUsers: new Set(),

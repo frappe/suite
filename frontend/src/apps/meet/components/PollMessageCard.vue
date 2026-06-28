@@ -2,20 +2,20 @@
     <div class="border border-gray-200 rounded-lg p-3">
         <div class="flex items-start gap-2 mb-3 text-gray-900 font-medium">
             <lucide-bar-chart-2 class="w-4 h-4 mt-0.5 text-gray-900 shrink-0" />
-            <h4 class="text-sm leading-tight">{{ poll.question }}</h4>
+            <h4 class="text-sm leading-tight">{{ livePoll.question }}</h4>
         </div>
         
         <div class="space-y-2">
             <button
-                v-for="option in poll.options"
+                v-for="option in livePoll.options"
                 :key="option.id"
                 @click="handleVote(option.id)"
-                :disabled="!!localVotedOption"
+                :disabled="hasVoted"
                 class="relative w-full text-left rounded-md overflow-hidden border border-gray-200 transition-colors focus:outline-none bg-gray-50"
                 :class="{ 
-                    'hover:border-gray-400 hover:bg-gray-100 cursor-pointer': !localVotedOption,
+                    'hover:border-gray-400 hover:bg-gray-100 cursor-pointer': !hasVoted,
                     'border-gray-900 ring-1 ring-gray-900': localVotedOption === option.id,
-                    'opacity-75 cursor-default': localVotedOption && localVotedOption !== option.id
+                    'opacity-75 cursor-default': hasVoted && localVotedOption !== option.id
                 }"
             >
                 <div 
@@ -44,21 +44,47 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from "vue";
+import { PollPayloadFE } from "../types";
+import { usePollStore } from "../composables/usePollStore";
 
 const props = defineProps<{
-	poll: {
-		pollId: string;
-		question: string;
-		options: { id: string; text: string; votes: number }[];
-	};
+	poll: PollPayloadFE
 }>();
 
 const pollService = inject("poll") as any;
+const pollStore = usePollStore()
 
 const localVotedOption = ref<string | null>(null);
 
+const livePoll = computed(() => {
+    const storePolls = Object.values(pollStore.polls) as PollPayloadFE[];
+    const foundInStore = storePolls?.find(p => p.pollId === props.poll.pollId);
+    
+    console.log(`[POLL DEBUG] UI looking for Poll ${props.poll.pollId}. Found in store?`, !!foundInStore, '| hasVoted:', foundInStore?.hasVoted);
+    
+    return foundInStore || props.poll;
+});
+
+const hasVoted = computed(() => {
+    return localVotedOption.value !== null || !!livePoll.value.hasVoted;
+});
+
+const handleVote = async (optionId: string) => {
+    if (hasVoted.value) return; 
+
+    localVotedOption.value = optionId;
+
+    if (pollService) {
+        try {
+            await pollService.submitVote(livePoll.value.pollId, optionId);
+        } catch (error) {
+            localVotedOption.value = null;
+        }
+    }
+};
+
 const totalVotes = computed(() => {
-	return props.poll.options.reduce((sum, opt) => sum + opt.votes, 0);
+    return livePoll.value.options.reduce((sum, opt) => sum + opt.votes, 0);
 });
 
 const getPercentage = (votes: number) => {
@@ -66,17 +92,4 @@ const getPercentage = (votes: number) => {
 	return Math.round((votes / totalVotes.value) * 100);
 };
 
-const handleVote = async (optionId: string) => {
-	if (localVotedOption.value) return;
-
-	localVotedOption.value = optionId;
-
-	if (pollService) {
-        try {
-            await pollService.submitVote(props.poll.pollId, optionId);
-        } catch (error) {
-            localVotedOption.value = null;
-        }
-    }
-};
 </script>

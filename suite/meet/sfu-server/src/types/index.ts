@@ -438,6 +438,7 @@ export interface PollPayloadFE {
 	question: string;
 	options: PollOption[];
 	isActive: boolean;
+	hasVoted?: boolean;
 }
 
 // Socket.IO module augmentation

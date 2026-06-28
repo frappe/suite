@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
-import type { PollPayloadFE } from "../../../../../suite/meet/sfu-server/src/types"
+import { PollPayloadFE } from "../types";
 
 export const usePollStore = defineStore("poll", () => {
 	const polls = ref<Record<string, PollPayloadFE>>({});
@@ -17,7 +17,12 @@ export const usePollStore = defineStore("poll", () => {
 	}
 
 	function updatePoll(poll: PollPayloadFE) {
-		polls.value[poll.pollId] = poll;
+		const existingPoll = polls.value[poll.pollId];
+        if (existingPoll && existingPoll.hasVoted) {
+            poll.hasVoted = true;
+        }
+        
+        polls.value[poll.pollId] = poll;
 	}
 
 	function setExistingPolls(existingPolls: PollPayloadFE[]) {

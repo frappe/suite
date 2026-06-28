@@ -77,8 +77,30 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full') {
 				const roomPolls = deps.registry.getActivePolls(scopedRoomId);
 				if (roomPolls && roomPolls.size > 0) {
+					loggers.socketHandler.info(
+						`[POLL DEBUG] User ${participantId} joining. Checking ${roomPolls.size} active polls.`,
+					);
+					const personalizedPolls = Array.from(roomPolls.values()).map(
+						(poll) => {
+							const userVoted = poll.votedUsers.has(participantId);
+
+							loggers.socketHandler.info(
+								`[POLL DEBUG] Poll ${poll.pollId} | Voted Users: ${Array.from(poll.votedUsers).join(', ')} | Did ${participantId} vote? ${userVoted}`,
+							);
+
+							return {
+								pollId: poll.pollId,
+								createdBy: poll.createdBy,
+								question: poll.question,
+								options: poll.options,
+								isActive: poll.isActive,
+								hasVoted: userVoted,
+							};
+						},
+					);
+
 					socket.emit('existing_polls', {
-						polls: Array.from(roomPolls.values()),
+						polls: personalizedPolls,
 					});
 				}
 			}
