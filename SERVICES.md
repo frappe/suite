@@ -1,8 +1,8 @@
 # Suite sidecar services
 
-Three former-per-app components are standalone processes, not part of the Frappe
-web/worker processes. They were migrated into the `suite` app but must be run and
-wired up separately (Procfile/supervisor + nginx + `site_config.json`). Their own
+Three Suite components are standalone processes, not part of the Frappe web/worker
+processes. They must be run and wired up separately (Procfile/supervisor + nginx +
+`site_config.json`). Their own
 `deploy/` snippet dirs hold reference Procfile/supervisor/nginx/site_config fragments.
 
 ## 1. Meet — SFU media server (🔴 required for Meet calls)
