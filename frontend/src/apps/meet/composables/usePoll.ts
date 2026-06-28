@@ -30,7 +30,6 @@ export function usePoll(deps: {
 
 		sfuClient.on("existing_polls", (data: unknown) => {
 			const payload = data as { polls: PollPayloadFE[] };
-			console.log("[POLL DEBUG] Received existing_polls from server:", payload);
 			pollStore.setExistingPolls(payload.polls);
 		});
 	};

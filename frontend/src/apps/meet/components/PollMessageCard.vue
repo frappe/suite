@@ -58,10 +58,7 @@ const localVotedOption = ref<string | null>(null);
 
 const livePoll = computed(() => {
     const storePolls = Object.values(pollStore.polls) as PollPayloadFE[];
-    const foundInStore = storePolls?.find(p => p.pollId === props.poll.pollId);
-    
-    console.log(`[POLL DEBUG] UI looking for Poll ${props.poll.pollId}. Found in store?`, !!foundInStore, '| hasVoted:', foundInStore?.hasVoted);
-    
+    const foundInStore = storePolls?.find(p => p.pollId === props.poll.pollId);    
     return foundInStore || props.poll;
 });
 
