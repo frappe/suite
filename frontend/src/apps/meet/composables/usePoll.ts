@@ -75,9 +75,12 @@ export function usePoll(deps: {
 		if (!response.success) {
 			throw new Error(response.error ?? "Failed to submit vote");
 		}
+
+		pollStore.markPollAsVoted(pollId);
 	} catch (error) {
 		console.error("Failed to submit vote:", error);
 		toast.error((error as Error).message);
+		throw error
 	}
 	};
 

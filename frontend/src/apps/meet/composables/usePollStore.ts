@@ -31,6 +31,12 @@ export const usePollStore = defineStore("poll", () => {
 		});
 	}
 
+	const markPollAsVoted = (pollId: string) => {
+    if (polls.value[pollId]) {
+        polls.value[pollId].hasVoted = true;
+    }
+};
+
 	function $reset() {
 		polls.value = {};
 	}
@@ -41,6 +47,7 @@ export const usePollStore = defineStore("poll", () => {
 		addPoll,
 		updatePoll,
 		setExistingPolls,
+		markPollAsVoted,
 		$reset,
 	};
 });

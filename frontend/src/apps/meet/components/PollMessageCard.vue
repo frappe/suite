@@ -62,9 +62,7 @@ const livePoll = computed(() => {
     return foundInStore || props.poll;
 });
 
-const hasVoted = computed(() => {
-    return localVotedOption.value !== null || !!livePoll.value.hasVoted;
-});
+const hasVoted = computed(() => !!livePoll.value.hasVoted);
 
 const handleVote = async (optionId: string) => {
     if (hasVoted.value) return; 
