@@ -67,11 +67,18 @@ export function usePoll(deps: {
 		}
 
 		try {
-			await sfuClient.sendRequest("poll:vote", { pollId, optionId });
-		} catch (error) {
-			console.error("Failed to submit vote:", error);
-			toast.error("Failed to submit vote. You may have already voted.");
+		const response = await sfuClient.sendRequest("poll:vote", {
+			pollId,
+			optionId,
+		}) as { success: boolean; error?: string };
+
+		if (!response.success) {
+			throw new Error(response.error ?? "Failed to submit vote");
 		}
+	} catch (error) {
+		console.error("Failed to submit vote:", error);
+		toast.error((error as Error).message);
+	}
 	};
 
 	return {
