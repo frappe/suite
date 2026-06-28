@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
 import router from '@/apps/mail/router'
+import { SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 
 import type { UserAccount, UserResource } from '@/apps/mail/types'
 
@@ -41,7 +42,7 @@ export const userStore = defineStore('mail-user', () => {
 		mailboxes.fetch()
 		addressBooks.fetch()
 		identities.fetch()
-		blockedAddresses.fetch()
+		screenedAddresses.fetch()
 		sieveScripts.fetch()
 	}
 
@@ -58,18 +59,18 @@ export const userStore = defineStore('mail-user', () => {
 		auto: true,
 	})
 
-	const account = computed(
-		() => userResource.data?.accounts?.find((a) => a.id === accountId.value)?.name,
-	)
+	// The logged-in user (the user component of every account handle is always the session user).
+	// Exposed so callers can rebuild a `user:account_id` virtual-doctype document name when needed.
+	const user = computed(() => userResource.data?.name)
 
 	const mailboxes = createResource({
 		url: 'suite.mail.api.mail.get_mailboxes',
-		makeParams: () => ({ account: account.value }),
+		makeParams: () => ({ account_id: accountId.value }),
 		cache: ['mailboxes', accountId.value],
 	})
 
 	const mailboxIds = computed(() => {
-		const ids: Record<MailboxRole, string> = {
+		const ids: Record<MailboxRole | 'screener', string> = {
 			inbox: '',
 			sent: '',
 			drafts: '',
@@ -77,42 +78,61 @@ export const userStore = defineStore('mail-user', () => {
 			junk: '',
 			archive: '',
 			important: '',
+			screener: '',
 		}
-		mailboxes.data?.forEach((m: { role?: MailboxRole; id: string }) => {
+		mailboxes.data?.forEach((m: { role?: MailboxRole; _name?: string; id: string }) => {
 			if (m.role) ids[m.role] = m.id
+			else if (m._name === SCREENER_MAILBOX_NAME) ids.screener = m.id
 		})
 		return ids
 	})
 
 	const addressBooks = createResource({
 		url: 'suite.mail.api.contacts.get_address_books',
-		makeParams: () => ({ account: account.value }),
+		makeParams: () => ({ account_id: accountId.value }),
 		cache: ['addressBooks', accountId.value],
 	})
 
 	const identities = createResource({
 		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account: account.value }),
+		makeParams: () => ({ account_id: accountId.value }),
 		cache: ['identities', accountId.value],
 	})
 
-	const blockedAddresses = createResource({
-		url: 'suite.mail.api.mail.get_blocked_addresses',
-		makeParams: () => ({ account: account.value }),
-		cache: ['blockedAddresses', accountId.value],
+	// Screened senders for the account: each is `{ email, action }` where action is 'Reject'
+	// (discard incoming mail) or 'Spam' (file it into the Spam folder).
+	const screenedAddresses = createResource({
+		url: 'suite.mail.api.mail.get_screened_addresses',
+		makeParams: () => ({ account_id: accountId.value }),
+		cache: ['screenedAddresses', accountId.value],
 	})
 
 	const sieveScripts = createResource({
 		url: 'suite.mail.api.sieve.get_sieve_scripts',
-		makeParams: () => ({ account: account.value }),
+		makeParams: () => ({ account_id: accountId.value }),
 		cache: ['sieveScripts', accountId.value],
 	})
 
 	const domains = createResource({ url: 'suite.mail.api.admin.get_enabled_domains' })
 
+	// Clear all user/account state so the next sign-in starts from a clean slate. Without
+	// resetting accountId, resolveAccount() would see the resolved account as unchanged and skip
+	// setAccount(), so the per-account resources (mailboxes, etc.) would never re-fetch until a
+	// full page reload.
+	const reset = () => {
+		accountId.value = ''
+		userResource.reset()
+		mailboxes.reset()
+		addressBooks.reset()
+		identities.reset()
+		screenedAddresses.reset()
+		sieveScripts.reset()
+		domains.reset()
+	}
+
 	return {
 		accountId,
-		account,
+		user,
 		resolveAccount,
 		userResource,
 		mailboxes,
@@ -121,6 +141,7 @@ export const userStore = defineStore('mail-user', () => {
 		identities,
 		domains,
 		sieveScripts,
-		blockedAddresses,
+		screenedAddresses,
+		reset,
 	}
 })

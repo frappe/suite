@@ -259,7 +259,7 @@ const store = userStore()
 
 const contact = createDocumentResource({
 	doctype: 'Contact Card',
-	name: `${store.account}|${contactName}`,
+	name: `${store.user}:${store.accountId}|${contactName}`,
 	onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
 	setValue: {
 		onSuccess: () => raiseToast(__('Contact updated.')),
@@ -272,7 +272,7 @@ const contact = createDocumentResource({
 
 const deleteContact = createResource({
 	url: 'suite.client.doctype.contact_card.contact_card.delete_contact_cards',
-	makeParams: () => ({ user: user.data.name, ids: [contact.doc.id] }),
+	makeParams: () => ({ account_id: accountId, ids: [contact.doc.id] }),
 	onSuccess: () => {
 		showDeleteContact.value = false
 		raiseToast(__('Contact deleted.'))
@@ -382,7 +382,7 @@ const contactDisplay = computed(
 usePageMeta(() => ({ title: contactDisplay.value }))
 
 const breadcrumbs = computed(() => [
-	{ label: __('Contacts'), route: '/contacts' },
+	{ label: __('Contacts'), route: '/mail/contacts' },
 	{ label: contactDisplay.value },
 ])
 

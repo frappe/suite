@@ -30,7 +30,7 @@ export interface MeetingsState {
 export default async function globalSetup(config: FullConfig): Promise<void> {
 	const projectUse = config.projects[0]?.use ?? {};
 	const baseURL = String(
-		projectUse.baseURL ?? process.env.BASE_URL ?? "http://localhost:8096",
+		projectUse.baseURL ?? process.env.BASE_URL ?? "http://localhost:8098",
 	);
 	const sfuBaseURL = process.env.SFU_URL ?? "http://localhost:3000";
 	const sfuHealthURL = sfuBaseURL.endsWith("/health")

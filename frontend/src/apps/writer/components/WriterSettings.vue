@@ -1,13 +1,10 @@
 <template>
   <Dialog
-    v-model="open"
-    :options="{
-      title: 'Settings',
-    }"
+    v-model:open="open"
+    title="Settings"
     @close="model = false"
   >
-    <template #body-content>
-      <Tabs v-model="tabIndex" :tabs>
+    <Tabs v-model="tabIndex" :tabs>
         <template #tab-panel>
           <Form>
             <template #default="{ dirty, setDirty, error }">
@@ -204,7 +201,6 @@
           </Form>
         </template>
       </Tabs>
-    </template>
   </Dialog>
 </template>
 

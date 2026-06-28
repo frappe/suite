@@ -62,21 +62,16 @@ export class ParticipantManager {
 	}
 
 	addParticipant(participantData: ParticipantData): Participant {
+		const displayName =
+			participantData.userData?.name || participantData.user_name || "";
 		const participant: Participant = {
 			user_id:
 				participantData.participantId || (participantData.user_id as string),
-			user_name:
-				participantData.userData?.name ||
-				participantData.user_name ||
-				participantData.participantId ||
-				"",
+			user_name: displayName,
 			avatar:
 				participantData.userData?.avatar || participantData.avatar || null,
 			initials: this.generateInitials(
-				participantData.userData?.name ||
-					participantData.user_name ||
-					participantData.participantId ||
-					"",
+				displayName || participantData.participantId || "",
 			),
 			audio_enabled: participantData.userData?.audio_enabled,
 			video_enabled: participantData.userData?.video_enabled,

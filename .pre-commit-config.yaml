@@ -1,0 +1,89 @@
+exclude: "node_modules|.git"
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        files: "suite/.*"
+        exclude: ".*json$|.*txt$|.*csv|.*md|.*svg"
+      - id: check-merge-conflict
+      - id: check-ast
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+      - id: debug-statements
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.3
+    hooks:
+      - id: ruff
+        name: "Run ruff import sorter"
+        args: ["--select=I", "--fix"]
+
+      - id: ruff
+        args: ["--fix"]
+        name: "Run ruff linter"
+
+      - id: ruff-format
+        name: "Run ruff formatter"
+
+  - repo: local
+    hooks:
+      - id: knip-e2e
+        name: Knip (E2E)
+        entry: yarn knip:e2e
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/meet/e2e/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
+      - id: knip-sfu-server
+        name: Knip (SFU Server)
+        entry: yarn knip:sfu-server
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/meet/sfu-server/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
+      - id: knip-sheets-collab
+        name: Knip (Sheets Collab Server)
+        entry: yarn knip:sheets-collab
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              suite/sheets/collab-server/.*|
+              knip\.json|
+              package\.json|
+              yarn\.lock
+          )$
+
+      - id: biome-sfu-server
+        name: Biome Check (SFU Server)
+        entry: bash -c 'cd suite/meet/sfu-server && node_modules/.bin/biome check --write --config-path biome.json "${@/#suite\/meet\/sfu-server\//}"' --
+        language: system
+        files: "suite/meet/sfu-server/.*\\.(js|ts|json)$"
+        exclude: |
+          (?x)^(
+              .*node_modules.*|
+              suite/meet/sfu-server/dist/.*|
+              suite/meet/sfu-server/tsconfig\.json
+          )$
+
+ci:
+  autoupdate_schedule: weekly
+  skip: []
+  submodules: false

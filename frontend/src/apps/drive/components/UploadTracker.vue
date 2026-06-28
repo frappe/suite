@@ -23,7 +23,7 @@
         <button class="focus:outline-none" @click.stop="collapsed = !collapsed">
           <component :is="collapsed ? LucidePlus : LucideMinus" class="size-4 text-ink-gray-8" />
         </button>
-        <button class="focus:outline-none" @click="store.commit('clearUploads')">
+        <button class="focus:outline-none" @click="clearUploads()">
           <LucideX class="size-4 text-ink-gray-8" />
         </button>
       </div>
@@ -73,21 +73,19 @@
     </div>
     <Dialog
       v-if="showErrorDialog"
-      v-model="showErrorDialog"
-      :options="{
-        title: 'Upload failed',
-        message: selectedUpload.error,
-        size: 'sm',
-        actions: [
-          {
-            label: 'OK',
-            variant: 'solid',
-            onClick: () => {
-              showErrorDialog = false
-            },
+      v-model:open="showErrorDialog"
+      title="Upload failed"
+      :message="selectedUpload.error"
+      size="sm"
+      :actions="[
+        {
+          label: 'OK',
+          variant: 'solid',
+          onClick: () => {
+            showErrorDialog = false
           },
-        ],
-      }"
+        },
+      ]"
     />
   </div>
 </template>
@@ -100,9 +98,9 @@ import LucideMinus from '~icons/lucide/minus'
 import LucideFolderOpenDot from '~icons/lucide/folder-open-dot'
 import LucideX from '~icons/lucide/x'
 import LucideRefreshCcw from '~icons/lucide/refresh-ccw'
-import store from '@/apps/drive/store'
+import { uploadsInProgress, uploadsCompleted, uploadsFailed, clearUploads } from '@/apps/drive/data/uploads'
 import { useRouter } from 'vue-router'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 const collapsed = ref(false)
 const showErrorDialog = ref(false)
@@ -114,17 +112,6 @@ const router = useRouter()
 const currentTabGetter = () => {
   return uploadsFailed.value.concat(uploadsInProgress.value, uploadsCompleted.value)
 }
-
-const mapGetters = () => {
-  return Object.fromEntries(
-    Object.keys(store.getters).map((getter) => [getter, computed(() => store.getters[getter])])
-  )
-}
-const { uploadsInProgress, uploadsCompleted, uploadsFailed } = mapGetters([
-  'uploadsInProgress',
-  'uploadsCompleted',
-  'uploadsFailed',
-])
 
 const openFile = (upload) => {
   selectedUpload.value = upload

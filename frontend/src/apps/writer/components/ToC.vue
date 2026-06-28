@@ -182,7 +182,7 @@ import LucideTrash from '~icons/lucide/trash'
 import LucideLeftClose from '~icons/lucide/panel-left-close'
 import { ref, watch, computed, h, onMounted, onBeforeUnmount } from 'vue'
 import { Button, TextInput, ContextMenu, focusDirective as vFocus, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
-import { copyToClipboard } from '@/apps/writer/ui/drive/js/utils'
+import { copyToClipboard } from '@/apps/drive/ui/drive/js/utils'
 
 const props = defineProps({
   editor: Object,

@@ -3,7 +3,7 @@ from frappe.apps import get_apps
 from frappe.translate import get_all_translations
 from frappe.utils.caching import redis_cache
 
-from suite.mail.utils.user import is_system_manager
+from suite.mail.utils.user import is_jmap_configured, is_system_manager
 
 
 @frappe.whitelist(allow_guest=True)
@@ -51,6 +51,11 @@ def get_translations() -> dict:
 @redis_cache(user=True)
 def get_permitted_apps():
 	apps = get_apps()
+
+	# Calendar rides on mail's JMAP; hide it from users without a configured mail account.
+	if not is_jmap_configured(frappe.session.user):
+		apps = [app for app in apps if app.get("name") != "calendar"]
+
 	if not is_system_manager(frappe.session.user):
 		return apps
 

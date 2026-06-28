@@ -21,7 +21,7 @@
       />
       <Button
         icon-left="check-circle"
-        @click="markAsRead.submit({ all: true }), (store.state.notifCount = 0)"
+        @click="markAllRead"
       >
         Mark all as Read
       </Button>
@@ -48,7 +48,7 @@
 import { ref, h, watch } from 'vue'
 import { formatTimeAgo } from '@vueuse/core'
 import { createResource, Avatar, ListView, TabButtons, Button} from 'frappe-ui'
-import store from '@/apps/drive/store'
+import { notifCount } from '@/apps/drive/resources/permissions'
 import { formatDate } from '@/apps/drive/utils/format'
 import emitter from '@/apps/drive/emitter'
 import LucideInbox from '~icons/lucide/inbox'
@@ -63,7 +63,7 @@ const options = {
     if (row.type === 'Team') emitter.emit('showSettings', 1)
     if (onlyUnread.value) {
       markAsRead.submit({ name: row.name })
-      store.state.notifCount = store.state.notifCount - 1
+      if (notifCount.data > 0) notifCount.setData(notifCount.data - 1)
     }
   },
   selectable: false,
@@ -130,6 +130,11 @@ const markAsRead = createResource({
   },
   onSuccess() {
     notifications.reload()
+    notifCount.fetch()
   },
 })
+
+function markAllRead() {
+  markAsRead.submit({ all: true })
+}
 </script>

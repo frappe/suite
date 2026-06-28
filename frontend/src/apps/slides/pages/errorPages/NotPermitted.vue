@@ -10,5 +10,4 @@
 
 <script setup>
 import { Button } from 'frappe-ui'
-import { session } from '@/apps/slides/stores/session'
 </script>

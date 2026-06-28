@@ -42,9 +42,9 @@
         <div
           v-show="
             activeComment === comment.id &&
-            $store.state.user.id !== 'Guest' &&
+            currentUserId !== 'Guest' &&
             !comment.new &&
-            (comment.owner == $store.state.user.id || file.doc.write)
+            (comment.owner == currentUserId || file.doc.write)
           "
           class="p-1.5 text-sm flex gap-1 border-b text-ink-gray-9"
           :class="comment.loading && !comment.edit && 'opacity-70'"
@@ -52,7 +52,7 @@
           <Button
             v-if="
               !comment.resolved &&
-              (comment.owner == $store.state.user.id || file.doc.write)
+              (comment.owner == currentUserId || file.doc.write)
             "
             :disabled="comment.loading"
             variant="ghost"
@@ -67,7 +67,7 @@
           <Button
             v-if="
               comment.resolved &&
-              (comment.owner == $store.state.user.id || file.doc.write)
+              (comment.owner == currentUserId || file.doc.write)
             "
             :disabled="comment.loading"
             variant="ghost"
@@ -81,7 +81,7 @@
           </Button>
           <Button
             v-if="
-              comment.owner == $store.state.user.id ||
+              comment.owner == currentUserId ||
               (comment.owner === 'Guest' && file.doc.write)
             "
             :disabled="comment.loading"
@@ -159,7 +159,7 @@
                       activeComment === comment.id &&
                       !reply.edit &&
                       !reply.resolved &&
-                      comment.owner == $store.state.user.id &&
+                      comment.owner == currentUserId &&
                       'opacity-100'
                     "
                     :options="
@@ -167,13 +167,13 @@
                         {
                           label: 'Edit',
                           onClick: () => (reply.edit = true),
-                          cond: comment.owner == $store.state.user.id,
+                          cond: comment.owner == currentUserId,
                         },
                         {
                           label: 'Delete',
                           onClick: () => removeReply(comment.id, reply.id),
                           cond:
-                            comment.owner == $store.state.user.id &&
+                            comment.owner == currentUserId &&
                             index !== 0,
                         },
                       ])
@@ -190,7 +190,7 @@
                         activeComment === comment.id &&
                         !reply.edit &&
                         !reply.resolved &&
-                        comment.owner == $store.state.user.id &&
+                        comment.owner == currentUserId &&
                         'opacity-100'
                       "
                       variant="ghost"
@@ -212,7 +212,7 @@
                     "
                     :editable="
                       !!(reply.edit || reply.new) &&
-                      reply.owner === $store.state.user.id
+                      reply.owner === currentUserId
                     "
                     :content="reply.text"
                     @change="setCommentHeights"
@@ -248,9 +248,9 @@
                 size="xl"
                 class="self-center"
                 :label="
-                  $user($store.state.user.id)?.full_name || $store.state.user.id
+                  $user(currentUserId)?.full_name || currentUserId
                 "
-                :image="$user($store.state.user.id)?.user_image"
+                :image="$user(currentUserId)?.user_image"
               />
 
               <CommentEditor
@@ -301,7 +301,9 @@ import LucideX from '~icons/lucide/x'
 import LucideCheck from '~icons/lucide/check'
 import LucideMessageCircleCode from '~icons/lucide/message-circle-code'
 import LucideMoreVertical from '~icons/lucide/more-vertical'
-import store from '@/apps/writer/store'
+
+import { useSessionStore } from '@/boot/session'
+const currentUserId = computed(() => useSessionStore().user)
 import { useUsers } from '@/apps/writer/composables/useUsers'
 import CommentEditor from './CommentEditor.vue'
 import { rebuild, getEditorPos } from '@/apps/writer/extensions/comments'
@@ -422,7 +424,7 @@ const newReply = (comment, editor) => {
   const reply = {
     id,
     text: newReplies[comment.id],
-    owner: store.state.user.id,
+    owner: currentUserId.value,
     creation: Date.now(),
     mentions: editor.commands.getMentions(),
   }
@@ -488,7 +490,7 @@ const setCommentHeights = useDebounceFn(() => {
           document.querySelector(`[data-comment-name="${comment.id}"]`) ||
           document.querySelector(`[data-comment-id="${comment.id}"]`)
         let anchorTop
-        if (comment.new && comment.owner !== store.state.user.id) anchorTop = 0
+        if (comment.new && comment.owner !== currentUserId.value) anchorTop = 0
         else if (!el && comment.anchorText) {
           comment.detached = 1
           anchorTop = props.showUnanchored ? 48 : 0

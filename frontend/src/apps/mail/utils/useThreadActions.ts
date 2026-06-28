@@ -4,7 +4,7 @@ import { createResource, toast } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
-import { useUndo } from '@/apps/mail/utils/composables'
+import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { Mail, Thread } from '@/apps/mail/types'
@@ -52,6 +52,7 @@ export function useThreadActions(deps: {
 	const store = userStore()
 	const { mailboxes, mailboxIds } = store
 	const { setUndoAction, undo } = useUndo()
+	const { promptBlockSenders, willJunkSenders } = useBlockSender()
 
 	const threadMails = (threadIds: string[]): Mail[] => {
 		const items = (threadsResource.value.data ?? []).filter((t: Thread) =>
@@ -81,7 +82,7 @@ export function useThreadActions(deps: {
 	const setSeen = createResource({
 		url: 'suite.mail.api.mail.set_mails_seen',
 		makeParams: ({ ids, seen }: { ids: string[]; seen: boolean }) => ({
-			account: store.account,
+			account_id: store.accountId,
 			ids,
 			seen,
 		}),
@@ -91,7 +92,7 @@ export function useThreadActions(deps: {
 	const setFlagged = createResource({
 		url: 'suite.mail.api.mail.set_flagged',
 		makeParams: ({ ids, flagged }: { ids: string[]; flagged: boolean }) => ({
-			account: store.account,
+			account_id: store.accountId,
 			ids,
 			flagged,
 		}),
@@ -115,12 +116,20 @@ export function useThreadActions(deps: {
 			ids: string[]
 			mailbox: string
 			clear_junk?: boolean
-		}) => ({ account: store.account, ids, mailbox: target, clear_junk }),
+		}) => ({ account_id: store.accountId, ids, mailbox: target, clear_junk }),
 	})
 
 	const moveToOptions = computed(() =>
 		mailboxes.data
-			?.filter((m) => ![mailbox.value, mailboxIds.sent, mailboxIds.drafts].includes(m.id))
+			?.filter(
+				(m) =>
+					![
+						mailbox.value,
+						mailboxIds.sent,
+						mailboxIds.drafts,
+						mailboxIds.screener,
+					].includes(m.id),
+			)
 			.map((m) => ({
 				label: m._name,
 				icon: h(Icon, { name: getIcon(m), class: FOLDER_ICON_COLOR_MAP[m.color] }),
@@ -131,7 +140,7 @@ export function useThreadActions(deps: {
 	const addMails = createResource({
 		url: 'suite.mail.api.mail.add_mails_to_mailbox',
 		makeParams: ({ ids, mailbox_id }: { ids: string[]; mailbox_id: string }) => ({
-			account: store.account,
+			account_id: store.accountId,
 			ids,
 			mailbox_id,
 		}),
@@ -140,7 +149,7 @@ export function useThreadActions(deps: {
 	const removeMails = createResource({
 		url: 'suite.mail.api.mail.remove_mails_from_mailbox',
 		makeParams: ({ ids, mailbox_id }: { ids: string[]; mailbox_id: string }) => ({
-			account: store.account,
+			account_id: store.accountId,
 			ids,
 			mailbox_id,
 		}),
@@ -150,7 +159,13 @@ export function useThreadActions(deps: {
 	type MailSnapshot = { id: string; mailbox_ids: string[]; junk: 0 | 1 }
 	const setMailsMailboxes = createResource({
 		url: 'suite.mail.api.mail.set_mails_mailboxes',
-		makeParams: ({ mails }: { mails: MailSnapshot[] }) => ({ account: store.account, mails }),
+		makeParams: ({
+			mails,
+			screen_action,
+		}: {
+			mails: MailSnapshot[]
+			screen_action?: string | null
+		}) => ({ account_id: store.accountId, mails, screen_action }),
 	})
 
 	const showAddTo = computed(
@@ -169,7 +184,11 @@ export function useThreadActions(deps: {
 
 	const addToOptions = computed(() =>
 		mailboxes.data
-			?.filter((m) => !m.role || ['inbox', 'archive'].includes(m.role))
+			?.filter(
+				(m) =>
+					(!m.role || ['inbox', 'archive'].includes(m.role)) &&
+					m.id !== mailboxIds.screener,
+			)
 			.filter((m) => {
 				const selected = threadsResource.value.data?.filter((t: Thread) =>
 					selections.value.includes(t.thread_id),
@@ -266,65 +285,57 @@ export function useThreadActions(deps: {
 
 	const setMailsSpam = createResource({
 		url: 'suite.mail.api.mail.set_mails_spam_status',
-		makeParams: ({ ids, spam }: { ids: string[]; spam: boolean }) => ({
-			account: store.account,
+		makeParams: ({
 			ids,
 			spam,
-		}),
+			screen_action,
+		}: {
+			ids: string[]
+			spam: boolean
+			screen_action?: string | null
+		}) => ({ account_id: store.accountId, ids, spam, screen_action }),
 	})
 
 	const showJunkOrDeleteThreads = ref(false)
-	const threadsToBeJunkedOrDeleted = ref<string[]>([])
-	const isJunkAction = ref(false)
+	const threadsToBeDeleted = ref<string[]>([])
 
+	// Marking as Junk is reversible (and may still prompt to block per the account setting), so it
+	// runs inline with no confirmation; only the destructive delete keeps a confirmation dialog.
 	const junkOrDeleteThreads = (threadIDs: string[], isJunk: boolean) => {
 		if (!threadIDs?.length) return
 
-		threadsToBeJunkedOrDeleted.value = threadIDs
-		isJunkAction.value = isJunk
+		if (isJunk) return handleSetSpamStatus({ 1: threadIDs })
+
+		threadsToBeDeleted.value = threadIDs
 		showJunkOrDeleteThreads.value = true
 	}
 
-	const junkOrDeleteThreadCount = computed(() => threadsToBeJunkedOrDeleted.value.length)
-
-	const junkOrDeleteTitle = computed(() => {
-		const count =
-			junkOrDeleteThreadCount.value === 1 ? '' : junkOrDeleteThreadCount.value.toString()
-		const noun = junkOrDeleteThreadCount.value > 1 ? __('Threads') : __('Thread')
-
-		return isJunkAction.value
-			? __('Mark {0} {1} as Junk', [count, noun])
-			: __('Delete {0} {1}', [count, noun])
-	})
-
-	const junkOrDeleteMessage = computed(() => {
-		const noun = junkOrDeleteThreadCount.value > 1 ? __('threads') : __('thread')
-
-		return isJunkAction.value
-			? __('Are you sure you want to mark the selected {0} as junk?', [noun])
-			: __('Are you sure you want to permanently delete the selected {0}?', [noun])
-	})
-
-	const handleJunkOrDelete = () => {
-		if (isJunkAction.value) handleSetSpamStatus({ 1: threadsToBeJunkedOrDeleted.value })
-		else handleDeleteThreads(threadsToBeJunkedOrDeleted.value)
-
+	const handleDeleteConfirmed = () => {
+		handleDeleteThreads(threadsToBeDeleted.value)
 		showJunkOrDeleteThreads.value = false
 	}
 
-	const junkOrDeleteThreadsOptions = computed(() => ({
-		title: junkOrDeleteTitle.value,
-		message: junkOrDeleteMessage.value,
-		icon: { name: 'alert-triangle', appearance: 'warning' },
-		actions: [
-			{
-				label: __('Confirm'),
-				variant: 'solid',
-				autofocus: true,
-				onClick: handleJunkOrDelete,
-			},
-		],
-	}))
+	const junkOrDeleteThreadsOptions = computed(() => {
+		const total = threadsToBeDeleted.value.length
+		const count = total === 1 ? '' : total.toString()
+		const noun = total > 1 ? __('Threads') : __('Thread')
+		const lowerNoun = total > 1 ? __('threads') : __('thread')
+
+		return {
+			title: __('Delete {0} {1}', [count, noun]),
+			message: __('Are you sure you want to permanently delete the selected {0}?', [
+				lowerNoun,
+			]),
+			actions: [
+				{
+					label: __('Confirm'),
+					variant: 'solid',
+					autofocus: true,
+					onClick: handleDeleteConfirmed,
+				},
+			],
+		}
+	})
 
 	const bulkDelete = createResource({
 		url: 'suite.client.doctype.mail_message.mail_message.bulk_delete',
@@ -422,6 +433,10 @@ export function useThreadActions(deps: {
 		const selectedThreads = Object.values(threadIDs).flat()
 		if (!selectedThreads.length) return
 
+		// Moving to Junk is the same as Mark as Junk: no undo, offer to block the sender instead.
+		if (Object.keys(threadIDs).length === 1 && Object.keys(threadIDs)[0] === mailboxIds.junk)
+			return handleSetSpamStatus({ 1: selectedThreads })
+
 		const originOf = (tid: string): string | undefined =>
 			threadsResource.value.data?.find((t: Thread) => t.thread_id === tid)?.mailboxes[0]
 				?.mailbox_id
@@ -514,31 +529,52 @@ export function useThreadActions(deps: {
 		if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
 
 		const spam = Object.keys(threadIDs)[0] === '1'
+		const mails = threadMails(selectedThreads)
 		// Snapshot exact state now (threads leave the list on success) so undo restores the original
 		// mailbox + junk, rather than set_spam_status's blanket move to Inbox.
-		const snapshot = threadMails(selectedThreads).map((m) => ({
+		const snapshot = mails.map((m) => ({
 			id: m.id,
 			mailbox_ids: m.mailboxes.map((mb) => mb.mailbox_id),
 			junk: m.junk,
 		}))
+		const senders = mails.map((m) => ({ name: m.from_name, email: m.from_email }))
 		const ids = snapshot.map((m) => m.id)
+
+		// Screen the senders in the SAME call as the mail change (no second request, no undo race): Junk
+		// → Spam (unless the account prompts to block instead), Not Junk → Accept. Undo flips it, also in
+		// the same call as the mailbox restore.
+		const screenForward = spam ? (willJunkSenders(senders) ? 'Spam' : null) : 'Accepted'
+
 		const action = async () => {
-			await setMailsSpam.submit({ ids, spam })
+			await setMailsSpam.submit({ ids, spam, screen_action: screenForward })
 			handleSuccessAndRemoveFromList(threadIDs)
+			// 'Ask to Block Sender' mode: junking still prompts to fully block the sender (Reject).
+			if (spam && !screenForward) promptBlockSenders(senders)
 		}
 
 		setUndoAction(() => {
 			const undoAction = async () => {
-				await setMailsMailboxes.submit({ mails: snapshot })
+				await setMailsMailboxes.submit({
+					mails: snapshot,
+					screen_action: screenForward ? (spam ? 'Accepted' : 'Spam') : null,
+				})
 				reloadThreads()
 			}
-			raisePromiseToast(undoAction, __('Undoing...'), __('Junk status restored.'))
+			// Undo flips the junk status back — name the resulting state, like the forward toast does.
+			const restored =
+				selectedThreads.length === 1
+					? __('Thread marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
+					: __('Threads marked as {0}.', [spam ? __('Not Junk') : __('Junk')])
+			raisePromiseToast(undoAction, __('Undoing...'), restored)
 		})
 		const loading = spam ? __('Marking as Junk...') : __('Marking as Not Junk...')
+		// When the account auto-junks the sender, surface that as the single toast for the whole action.
 		const success =
-			selectedThreads.length === 1
-				? __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
-				: __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
+			spam && willJunkSenders(senders)
+				? __('Mails from sender will go to Junk.')
+				: selectedThreads.length === 1
+					? __('Thread marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
+					: __('Threads marked as {0}.', [spam ? __('Junk') : __('Not Junk')])
 
 		raisePromiseToast(action, loading, success, undo)
 	}

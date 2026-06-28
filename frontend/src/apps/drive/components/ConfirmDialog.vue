@@ -1,7 +1,6 @@
 <template>
-  <Dialog v-model="open" :options="dialogOptions" @close="dialogType = ''">
-    <template #body-content>
-      <div class="flex items-center justify-start">
+  <Dialog v-model:open="open" v-bind="dialogOptions" @close="dialogType = ''">
+    <div class="flex items-center justify-start">
         <div class="text-base text-ink-gray-6">
           <template v-if="props.entities.length">
             {{ props.entities.length > 1 ? 'These items ' : `"${props.entities[0].file_name}" ` }}
@@ -10,7 +9,6 @@
         </div>
       </div>
       <ErrorMessage class="my-1 text-center" :message="updateResource.error" />
-    </template>
   </Dialog>
 </template>
 <script setup>

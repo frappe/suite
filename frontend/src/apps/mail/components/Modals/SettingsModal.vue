@@ -38,7 +38,7 @@
 	</Dialog>
 </template>
 <script setup lang="ts">
-import { computed, inject, markRaw, ref } from 'vue'
+import { computed, inject, markRaw, ref, watch } from 'vue'
 import {
 	Ban,
 	Code,
@@ -55,7 +55,7 @@ import {
 } from 'lucide-vue-next'
 import { Button, Dialog } from 'frappe-ui'
 
-import { userStore } from '@/apps/mail/stores/user'
+import { useSettings } from '@/apps/mail/utils/composables'
 import AccountSettings from '@/apps/mail/components/Settings/AccountSettings.vue'
 import AdvancedSettings from '@/apps/mail/components/Settings/AdvancedSettings.vue'
 import AppearanceSettings from '@/apps/mail/components/Settings/AppearanceSettings.vue'
@@ -70,8 +70,8 @@ import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 
 const show = defineModel<boolean>()
+const { settingsTab } = useSettings()
 
-const store = userStore()
 const user = inject('$user')
 
 const tabs = computed(() => {
@@ -85,9 +85,7 @@ const tabs = computed(() => {
 			label: __('Account'),
 			icon: Mailbox,
 			component: markRaw(AccountSettings),
-			condition:
-				user.data.is_jmap_configured &&
-				store.account === user.data.accounts.find((a) => a.is_personal)?.name,
+			condition: user.data.is_jmap_configured,
 		},
 		{
 			label: __('Identity'),
@@ -122,10 +120,10 @@ const tabs = computed(() => {
 			label: __('Automation'),
 			icon: Zap,
 			component: markRaw(AutomationSettings),
-			condition: user.data.is_jmap_configure,
+			condition: user.data.is_jmap_configured,
 		},
 		{
-			label: __('Block List'),
+			label: __('Screened Senders'),
 			icon: Ban,
 			component: markRaw(BlockListSettings),
 			condition: user.data.is_jmap_configured,
@@ -152,4 +150,12 @@ const tabs = computed(() => {
 	return allTabs.filter((tab) => tab.condition === undefined || tab.condition)
 })
 const activeTab = ref(tabs.value[0])
+
+// When opened via useSettings().openSettings('<label>'), jump to that tab.
+watch(show, (open) => {
+	if (!open || !settingsTab.value) return
+	const match = tabs.value.find((tab) => tab.label === settingsTab.value)
+	if (match) activeTab.value = match
+	settingsTab.value = ''
+})
 </script>

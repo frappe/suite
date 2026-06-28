@@ -65,7 +65,7 @@
   </template>
 </template>
 <script setup>
-import store from '@/apps/drive/store'
+import { useSessionStore } from '@/boot/session'
 import { Avatar, createResource } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import ArrowRight from '~icons/lucide/arrow-right'
@@ -167,7 +167,7 @@ function groupAndTransform(activities) {
       }
     }
     activity.full_name =
-      activity.owner === store.state.user.id ? 'You' : activity.full_name
+      activity.owner === useSessionStore().user ? 'You' : activity.full_name
     activity.message = generateMessage(activity)
     activity.creation = formatDate(activity.creation)
   }

@@ -9,9 +9,13 @@ import App from '@/App.vue'
 import router from '@/router'
 import { configureFrappeUI } from '@/boot/config'
 import { translationPlugin } from '@/boot/translation'
+import { userResource, getSessionUser } from '@/boot/session'
 
 // One frappe-ui resource/session configuration for the whole suite.
 configureFrappeUI()
+if (getSessionUser()) {
+  userResource.fetch()
+}
 
 const app = createApp(App)
 

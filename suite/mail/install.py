@@ -6,9 +6,25 @@ from suite.mail.stalwart.cli import StalwartCLI
 
 
 def after_install() -> None:
+	create_mail_admin_role()
 	add_rate_limits()
 	create_new_folder("Frappe Mail", "Home")
 	generate_jmap_push_keys()
+
+
+def create_mail_admin_role() -> None:
+	"""Create the Mail Admin role if missing.
+
+	Deliberately NOT shipped as a fixture: fixture sync deletes and re-inserts the role
+	on every `bench migrate`, and the fresh insert makes Frappe's Role.on_update see
+	desk_access as "changed". That re-evaluates user_type for every holder and clears the
+	sessions of any whose type flips — logging mail users out on every migrate.
+	"""
+
+	if not frappe.db.exists("Role", "Mail Admin"):
+		frappe.get_doc({"doctype": "Role", "role_name": "Mail Admin", "desk_access": 0}).insert(
+			ignore_permissions=True
+		)
 
 
 def after_migrate() -> None:
@@ -38,6 +54,49 @@ def add_rate_limits() -> None:
 		{"method_path": "suite.mail.api.outbound.upload_attachment", "limit": 60, "seconds": 60},
 		{"method_path": "suite.mail.api.outbound.send", "limit": 300, "seconds": 60},
 		{"method_path": "suite.mail.api.outbound.send_raw", "limit": 300, "seconds": 120},
+		# suite.mail.api.outbound — priority-based limits (per minute)
+		{
+			"method_path": "suite.mail.api.outbound.send",
+			"key": "priority",
+			"value": "Low",
+			"limit": 100,
+			"seconds": 60,
+		},
+		{
+			"method_path": "suite.mail.api.outbound.send",
+			"key": "priority",
+			"value": "Normal",
+			"limit": 50,
+			"seconds": 60,
+		},
+		{
+			"method_path": "suite.mail.api.outbound.send",
+			"key": "priority",
+			"value": "High",
+			"limit": 10,
+			"seconds": 60,
+		},
+		{
+			"method_path": "suite.mail.api.outbound.send_raw",
+			"key": "priority",
+			"value": "Low",
+			"limit": 100,
+			"seconds": 60,
+		},
+		{
+			"method_path": "suite.mail.api.outbound.send_raw",
+			"key": "priority",
+			"value": "Normal",
+			"limit": 50,
+			"seconds": 60,
+		},
+		{
+			"method_path": "suite.mail.api.outbound.send_raw",
+			"key": "priority",
+			"value": "High",
+			"limit": 10,
+			"seconds": 60,
+		},
 		# suite.mail.api.spamd
 		{"method_path": "suite.mail.api.spamd.scan", "limit": 60, "seconds": 60},
 		{"method_path": "suite.mail.api.spamd.get_spam_score", "limit": 60, "seconds": 60},

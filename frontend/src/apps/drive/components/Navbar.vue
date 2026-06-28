@@ -1,13 +1,8 @@
 <template>
-  <nav
-    v-if="store.state.breadcrumbs?.length"
-    id="navbar"
-    ondragstart="return false;"
-    ondrop="return false;"
-    class="bg-surface-base border-b px-5 py-2.5 h-12 flex justify-between"
-  >
+  <nav v-if="breadcrumbItems?.length" id="navbar" ondragstart="return false;" ondrop="return false;"
+    class="bg-surface-base border-b px-5 py-2.5 h-12 flex justify-between">
     <slot name="breadcrumbs">
-      <Breadcrumbs :items="store.state.breadcrumbs" class="select-none truncate max-w-[80%]">
+      <Breadcrumbs :items="breadcrumbItems" class="select-none truncate max-w-[80%]">
         <template #prefix="{ item, index }">
           <LoadingIndicator v-if="item.loading" width="20" scale="70" />
         </template>
@@ -23,75 +18,48 @@
         </div>
       </div>
 
-      <LucideStar
-        v-if="rootEntity?.is_favourite"
-        width="16"
-        height="16"
-        class="my-auto text-ink-amber-6 stroke-current fill-current"
-      />
+      <LucideStar v-if="rootEntity?.is_favourite" width="16" height="16"
+        class="my-auto text-ink-amber-6 stroke-current fill-current" />
       <template v-if="!isLoggedIn && !inIframe">
         <Button variant="outline" @click="redirectLogin">Sign In</Button>
-        <Button
-          class="hidden md:block"
-          variant="solid"
-          label="Try out Drive"
-          @click="open('https://frappecloud.com/dashboard/signup?product=drive')"
-        />
+        <Button class="hidden md:block" variant="solid" label="Try out Drive"
+          @click="open('https://frappecloud.com/dashboard/signup?product=drive')" />
       </template>
-      <Dropdown
-        v-else-if="defaultActions"
-        :options="defaultActions"
-        placement="right"
-        :button="{
-          variant: 'ghost',
-          icon: LucideMoreHorizontal,
-        }"
-      />
-      <Dropdown
-        v-if="
-          ['Folder', 'Home', 'Team'].includes($route.name) &&
-          isLoggedIn &&
-          // Assume upload to remove flash
-          props.rootResource?.data?.upload !== false
-        "
-        :button="{
+      <Dropdown v-else-if="defaultActions" :options="defaultActions" placement="right" :button="{
+        variant: 'ghost',
+        icon: LucideMoreHorizontal,
+      }" />
+      <Dropdown v-if="
+        ['drive-Folder', 'drive-Home', 'drive-Team'].includes($route.name) &&
+        isLoggedIn &&
+        // Assume upload to remove flash
+        props.rootResource?.data?.upload !== false
+      " :button="{
           variant: 'solid',
           id: 'create-button',
           label: 'Create',
           iconLeft: h(LucidePlus, { class: 'size-4' }),
-        }"
-        :options="newEntityOptions"
-        placement="right"
-      />
-      <Button
-        v-else-if="$route.name === 'drive-Documents' || $route.name === 'drive-Presentations'"
-        id="create-button"
-        label="Create"
-        variant="solid"
-        :icon-left="h(LucidePlus, { class: 'size-4' })"
-        @click="newExternal($route.name === 'drive-Documents' ? 'Document' : 'Presentation')"
-      />
-      <Button
-        v-if="button"
-        :disabled="!button.entities.data?.length"
-        :theme="button.theme || 'gray'"
-        @click="dialog = 'cta-' + $route.name.toLowerCase()"
-      >
+        }" :options="newEntityOptions" placement="right" />
+      <Button v-else-if="$route.name === 'drive-Documents' || $route.name === 'drive-Presentations'" id="create-button"
+        label="Create" variant="solid" :icon-left="h(LucidePlus, { class: 'size-4' })"
+        @click="newExternal($route.name === 'drive-Documents' ? 'Document' : 'Presentation')" />
+      <Button v-if="button" :disabled="!button.entities.data?.length" :theme="button.theme || 'gray'"
+        @click="openListDialog('cta-' + $route.name.toLowerCase())">
         <template #prefix>
           <component :is="button.icon" class="size-4" />
         </template>
         {{ button.label }}
       </Button>
     </div>
-    <Dialogs
-      v-model="dialog"
-      :entities="entities.length ? entities : rootEntity ? [rootEntity] : []"
-    />
+    <EntityDialogs v-model="entityDialog" :resource="props.rootResource" :entities="dialogEntities" />
   </nav>
 </template>
 <script setup>
+import EntityDialogs from '@/apps/drive/components/EntityDialogs.vue'
 import { Button, Breadcrumbs, LoadingIndicator, Dropdown } from 'frappe-ui'
-import store from '@/apps/drive/store'
+import { useSessionStore, useCurrentUser } from '@/boot/session'
+import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
+const { systemUser } = useCurrentUser()
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { entitiesDownload } from '@/apps/drive/utils/download'
@@ -138,6 +106,10 @@ const open = (url) => {
 const props = defineProps({
   rootResource: Object,
   actions: { type: Array, required: false },
+  breadcrumbs: {
+    type: Array,
+    default: null,
+  },
   // Used to pass into dialogs
   entities: {
     type: Array,
@@ -145,9 +117,37 @@ const props = defineProps({
   },
 })
 
-const isLoggedIn = computed(() => store.getters.isLoggedIn)
-const dialog = inject('dialog', ref(''))
+const breadcrumbItems = computed(
+  () => props.breadcrumbs ?? pageBreadcrumbs.value,
+)
+
+const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
+const listDialog = inject('listDialog', null)
+const entityDialog = ref('')
 const rootEntity = computed(() => props.rootResource?.data?.file_name && props.rootResource?.data)
+const dialogEntities = computed(() =>
+  props.entities.length ? props.entities : rootEntity.value ? [rootEntity.value] : [],
+)
+
+function openListDialog(type) {
+  if (listDialog) listDialog.value = type
+}
+
+function openEntityDialog(type) {
+  entityDialog.value = type
+}
+
+function routeDialog(type) {
+  if (listDialog) openListDialog(type)
+  else openEntityDialog(type)
+}
+
+emitter.on('share', () => routeDialog('s'))
+emitter.on('rename', () => routeDialog('rn'))
+emitter.on('remove', () => routeDialog('remove'))
+emitter.on('move', () => routeDialog('m'))
+emitter.on('newFolder', () => openListDialog('f'))
+emitter.on('newLink', () => openListDialog('l'))
 
 const defaultActions = computed(() => {
   if (!rootEntity.value?.file_name) return
@@ -165,7 +165,7 @@ const defaultActions = computed(() => {
           label: __('Open in Desk'),
           icon: LucideMonitorCog,
           onClick: () => window.open('/desk/file/' + rootEntity.value.name, '_blank'),
-          isEnabled: () => isSiteFile(rootEntity.value) && store.state.user.systemUser,
+          isEnabled: () => isSiteFile(rootEntity.value) && systemUser.value,
         },
         {
           label: __('Go to original'),
@@ -194,8 +194,7 @@ const defaultActions = computed(() => {
         {
           label: __('Show Info'),
           icon: LucideInfo,
-          onClick: () => (dialog.value = 'i'),
-          isEnabled: () => !store.state.activeEntity || !store.state.showInfo,
+          onClick: () => openEntityDialog('i'),
         },
       ],
     },
@@ -206,21 +205,19 @@ const defaultActions = computed(() => {
         {
           label: __('Share'),
           icon: LucideShare2,
-          onClick: () => {
-            dialog.value = 's'
-          },
+          onClick: () => openEntityDialog('s'),
           isEnabled: () => rootEntity.value.share && isManaged(rootEntity.value),
         },
         {
           label: __('Rename'),
           icon: LucideSquarePen,
-          onClick: () => (dialog.value = 'rn'),
+          onClick: () => openEntityDialog('rn'),
           isEnabled: () => rootEntity.value.write && isManaged(rootEntity.value),
         },
         {
           label: __('Move'),
           icon: LucideArrowLeftRight,
-          onClick: () => (dialog.value = 'm'),
+          onClick: () => openEntityDialog('m'),
           isEnabled: () => rootEntity.value.write && isManaged(rootEntity.value),
         },
         {
@@ -255,7 +252,7 @@ const defaultActions = computed(() => {
         {
           label: __('Delete'),
           icon: LucideTrash,
-          onClick: () => (dialog.value = 'remove'),
+          onClick: () => openEntityDialog('remove'),
           isEnabled: () => rootEntity.value.write,
           theme: 'red',
         },
@@ -266,20 +263,20 @@ const defaultActions = computed(() => {
     return { ...k, items: k.items.filter((l) => !l.isEnabled || l.isEnabled()) }
   })
 })
-const isPrivate = computed(() => (store.state.breadcrumbs[0]?.name === 'drive-Home' ? 1 : 0))
+const isPrivate = computed(() => (isHomeContext() ? 1 : 0))
 
 // Functions
 
 // Constants
 const possibleButtons = [
   {
-    route: 'Recents',
+    route: 'drive-Recents',
     label: __('Clear'),
     icon: LucideClock,
     entities: getRecents,
   },
   {
-    route: 'Trash',
+    route: 'drive-Trash',
     label: __('Empty'),
     icon: LucideTrash,
     entities: getTrash,
@@ -306,12 +303,12 @@ const newEntityOptions = computed(() => [
       {
         label: 'Folder',
         icon: LucideFolderPlus,
-        onClick: () => (dialog.value = 'f'),
+        onClick: () => openListDialog('f'),
       },
       {
         label: 'Link',
         icon: LucideLink,
-        onClick: () => (dialog.value = 'l'),
+        onClick: () => openListDialog('l'),
       },
     ]),
   },

@@ -4,6 +4,29 @@ export * from './doctypes'
 
 export type COLOR_SCHEME = 'System Default' | 'Light Mode' | 'Dark Mode'
 
+// What happens to a sender when one of their messages is marked as Junk (Account Settings).
+export type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
+
+// A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
+// it into the Spam (Junk) folder; 'Accepted' lets it reach the inbox. (Doctype: Screened Email Address.)
+export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
+
+export interface ScreenedAddress {
+	email: string
+	action: ScreeningAction
+}
+
+// A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.
+export interface ScreeningSender {
+	from_email: string
+	from_name: string
+	subject: string
+	preview: string
+	received_at: number
+	count: number
+	unread: number
+}
+
 export interface User {
 	name: string
 	email: string
@@ -14,7 +37,6 @@ export interface User {
 	user_image: string | null
 	api_key: string | null
 	user_settings?: string
-	default_outgoing_email?: string
 	color_scheme?: COLOR_SCHEME
 	group_messages_by?: 'None' | 'Day' | 'Month'
 	show_reading_pane?: 0 | 1
@@ -25,7 +47,15 @@ export interface User {
 	is_jmap_configured: boolean
 
 	mailboxes: { id: string; name: string; role: string }[]
-	accounts: UserAccount[]
+	// `get_user_info` enriches each account with its per-account outgoing default and
+	// Account Settings doc name (the fields moved off User Settings).
+	accounts: (UserAccount & {
+		default_outgoing_email?: string
+		account_settings?: string
+		on_mark_as_junk?: OnMarkAsJunk
+		enable_screening?: boolean
+		block_remote_images?: boolean
+	})[]
 }
 
 export interface UserResource {
@@ -142,6 +172,15 @@ export interface MailboxData {
 	icon?: string
 	color?: 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple'
 	disable_push_notification?: 0 | 1
+	automation_rules?: AutomationRules | null
+}
+
+export interface AutomationRules {
+	emails_from: string
+	subject_contains: string
+	match_if: 'any' | 'all'
+	mark_as_read: boolean
+	add_star: boolean
 }
 
 export interface NotificationPayload {

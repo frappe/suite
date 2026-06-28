@@ -94,8 +94,9 @@
 </template>
 <script setup>
 import { Button, Breadcrumbs, Dropdown } from 'frappe-ui'
-import { getFileLink } from '@/apps/writer/ui/drive/js/utils'
-import store from '@/apps/writer/store'
+import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
+
+import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { createDocument, apps } from '@/apps/writer/resources/'
@@ -150,7 +151,7 @@ const isOffline = inject('isOffline')
 const showVersions = defineModel('showVersions')
 const showTemplates = defineModel('showTemplates')
 
-const isLoggedIn = computed(() => store.getters.isLoggedIn)
+const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
 
@@ -222,8 +223,6 @@ const fileActions = computed(() =>
               label: __('Show Info'),
               icon: LucideInfo,
               onClick: () => (dialog.value = 'i'),
-              isEnabled: () =>
-                !store.state.activeEntity || !store.state.showInfo,
             },
             {
               label: __('Favourite'),

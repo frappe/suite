@@ -3,9 +3,11 @@ import { FileUploadHandler, toast, call } from 'frappe-ui'
 import { presentationId, isPublicPresentation, presentationDoc } from '../stores/presentation'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
 
-import { session } from '@/apps/slides/stores/session'
+import { session } from '@/boot/session'
 
 const fileUploadHandler = new FileUploadHandler()
+
+export const SLIDES_MEDIA_PARAM = 'slides_media=1'
 
 const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
 	if (fileType === 'image') {
@@ -107,8 +109,12 @@ export const getAttachmentUrl = (fileUrl) => {
 
 	if (fileUrl.startsWith('/private')) {
 		// if owner is trying to access just send static path
-		if (presentationDoc.value?.owner === session.user || session.user === 'Administrator') {
-			return fileUrl
+		const user = session.user?.sessionUser
+		if (presentationDoc.value?.owner === user || user === 'Administrator') {
+			// Tag the request so the slides service worker can cache it without
+			// touching other apps' /private/files/ traffic (Drive, Mail, ...).
+			// Non-owner media already goes through the slides-namespaced proxy below.
+			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
 		}
 		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}&public=${isPublicPresentation.value}`
 	}

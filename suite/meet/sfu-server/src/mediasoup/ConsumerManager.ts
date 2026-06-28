@@ -149,7 +149,6 @@ export class ConsumerManager {
 			(c) => c.consumer.producerId === producerId,
 		);
 	}
-
 	getConsumersByPeer(roomId: string, peerId: string): ConsumerData[] {
 		return Array.from(this.consumers.values()).filter(
 			(c) => c.roomId === roomId && c.peerId === peerId,

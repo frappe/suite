@@ -7,6 +7,7 @@ import { slides } from '@/apps/slides/stores/slide'
 import { focusElementId } from '@/apps/slides/stores/element'
 import { dirty, isSaving } from '@/apps/slides/stores/saving'
 import { captureDOM } from '@/apps/slides/utils/domToWebp'
+import { getAttachmentUrl } from '@/apps/slides/utils/mediaUploads'
 
 const DEBOUNCE_MS = 5000
 
@@ -87,7 +88,9 @@ export const useThumbnailCapture = (thumbnailCapture, hasOngoingInteraction) => 
 	const evictThumbnailCache = async (url) => {
 		if (!('caches' in window) || !url) return
 		const cache = await caches.open('slides-media')
-		await cache.delete(url)
+		// delete the exact URL the SW cached under — getAttachmentUrl() adds the
+		// slides_media marker / proxy path, so the raw url alone wouldn't match
+		await cache.delete(getAttachmentUrl(url))
 	}
 
 	const apply = async (thumbnail) => {

@@ -1,6 +1,7 @@
 <template>
 	<div v-if="threadID" class="relative flex h-full flex-col overflow-hidden">
 		<ThreadHeader
+			v-if="!readonly"
 			:threads
 			:thread
 			:can-go-prev="canGoPrev"
@@ -36,7 +37,7 @@
 					<template v-for="mail in group.mails" :key="mail.name">
 						<ThreadDivider
 							v-if="shouldShowUnseenMarker(mail.id)"
-							class="!text-ink-blue-5 [&_.border-t]:border-[var(--outline-blue-1)] [&_span:not(.border-t)]:border-[var(--outline-blue-1)]"
+							class="!text-ink-blue-6 [&_.border-t]:border-[var(--outline-blue-3)] [&_span:not(.border-t)]:border-[var(--outline-blue-3)]"
 							:message="unseenMessage"
 						/>
 
@@ -66,8 +67,7 @@
 									(thread.length > 1 && !mail.draft) ||
 									(mail.draft && dataTheme === 'dark'),
 								'cursor-pointer': isCollapsed(mail),
-								'sm:shadow-elevation-light-md':
-									mail.draft && dataTheme === 'light',
+								'sm:shadow-md': mail.draft && dataTheme === 'light',
 							}"
 							@click="mail.collapsed = false"
 						>
@@ -102,6 +102,7 @@
 										<MailDate :datetime="mail.received_at" />
 									</div>
 									<MailActions
+										v-if="!readonly"
 										:mailbox
 										:mail
 										:draft-mail="draftMails[mail.name]"
@@ -180,7 +181,7 @@
 												:datetime="mail.received_at"
 											/>
 											<MailActions
-												v-if="!isMobile"
+												v-if="!isMobile && !readonly"
 												:mailbox
 												:mail
 												:is-collapsed="isCollapsed(mail)"
@@ -213,17 +214,31 @@
 
 								<div v-show="!isCollapsed(mail)">
 									<Alert
-										v-if="blockedAddresses.data.includes(mail.from_email)"
+										v-if="!readonly && isSenderBlocked(mail.from_email)"
 										:title="__('This sender is blocked')"
-										:description="
-											__(
-												`{0} is currently on your block list. You won't receive new messages from this source until you unblock them.`,
-												[mail.from_name || mail.from_email],
-											)
-										"
 										class="mb-4"
 										:dismissable="false"
 									>
+										<template #description>
+											<p class="text-ink-gray-6 prose-sm">
+												{{
+													__('{0} is currently on your', [
+														mail.from_name || mail.from_email,
+													])
+												}}
+												<button
+													type="button"
+													class="hover:text-ink-gray-8 underline"
+													@click="openSettings(__('Block List'))"
+												>
+													{{ __('block list') }}</button
+												>{{
+													__(
+														". You won't receive new messages from this source until you unblock them.",
+													)
+												}}
+											</p>
+										</template>
 										<template #footer>
 											<div class="col-span-full">
 												<Button
@@ -239,31 +254,57 @@
 									<EmailContent
 										v-if="hasHtmlContent(mail.html_body)"
 										:content="mail.html_body"
+										:block-images="shouldBlockImages(mail)"
+										:can-trust="!readonly"
+										@trust="trustSender.submit(mail.from_email)"
 									/>
-									<pre
-										v-else
-										class="whitespace-pre-wrap break-words pt-4 font-sans text-base !leading-5 sm:text-sm"
-										>{{ mail.html_body || mail.text_body }}</pre
-									>
 
-									<div
-										v-if="filteredAttachments(mail).length"
-										class="mt-8 flex flex-wrap"
-									>
-										<AttachmentCapsule
-											v-for="(attachment, idx) in filteredAttachments(mail)"
-											:key="idx"
-											:file-name="attachment.filename"
-											:blob-i-d="attachment.blob_id"
-											:type="attachment.type"
-											class="mb-2 mr-2"
-											@click.stop.prevent="
-												openAttachment(
-													filteredAttachments(mail),
-													Number(idx),
-												)
-											"
-										/>
+									<LinkifiedText
+										v-else
+										:text="mail.html_body || mail.text_body"
+									/>
+
+									<div v-if="filteredAttachments(mail).length" class="mt-8">
+										<div
+											v-if="zippableAttachments(mail).length > 1"
+											class="mb-3 flex items-center justify-between"
+										>
+											<span class="text-ink-gray-5 text-sm">
+												{{
+													__('{0} attachments', [
+														String(filteredAttachments(mail).length),
+													])
+												}}
+											</span>
+											<Button
+												variant="ghost"
+												:icon="Download"
+												:label="__('Download all')"
+												:tooltip="__('Download all')"
+												:loading="downloadingZipMail === mail.name"
+												@click.stop.prevent="
+													downloadAttachmentsAsZip(mail)
+												"
+											/>
+										</div>
+										<div class="flex flex-wrap">
+											<AttachmentCapsule
+												v-for="(attachment, idx) in filteredAttachments(
+													mail,
+												)"
+												:key="idx"
+												:file-name="attachment.filename"
+												:blob-i-d="attachment.blob_id"
+												:type="attachment.type"
+												class="mb-2 mr-2"
+												@click.stop.prevent="
+													openAttachment(
+														filteredAttachments(mail),
+														Number(idx),
+													)
+												"
+											/>
+										</div>
 									</div>
 								</div>
 							</template>
@@ -272,7 +313,7 @@
 				</template>
 
 				<div
-					v-if="thread.length && !thread?.at(-1)?.draft"
+					v-if="!readonly && thread.length && !thread?.at(-1)?.draft"
 					class="flex"
 					:class="
 						isMobile
@@ -334,10 +375,12 @@ import {
 	watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, Forward, Reply, ReplyAll } from 'lucide-vue-next'
+import { ChevronDown, Download, Forward, Reply, ReplyAll } from 'lucide-vue-next'
 import { Alert, Avatar, Badge, Button, createResource } from 'frappe-ui'
 
+import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
+	downloadUrlAsFile,
 	extractQuotedContent,
 	getFirstAlphabet,
 	getFormattedDate,
@@ -347,13 +390,14 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
-import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
+import { useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import LinkifiedText from '@/apps/mail/components/LinkifiedText.vue'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -362,15 +406,25 @@ import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 
-import type { Attachment, ComposeMailData, Identity, Mail, Mailbox } from '@/apps/mail/types'
+import type {
+	Attachment,
+	ComposeMailData,
+	Identity,
+	Mail,
+	Mailbox,
+	ScreenedAddress,
+} from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoPrev, canGoNext } = defineProps<{
+const { mailbox, threadID, threads, messages, canGoPrev, canGoNext, readonly } = defineProps<{
 	mailbox: string
 	threadID?: string
 	threads: string[]
 	messages?: Mail[]
 	canGoPrev?: boolean
 	canGoNext?: boolean
+	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
+	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
+	readonly?: boolean
 }>()
 
 const emit = defineEmits([
@@ -389,10 +443,33 @@ const emit = defineEmits([
 ])
 
 const { isMobile } = useScreenSize()
+const { openSettings } = useSettings()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 const store = userStore()
-const { mailboxes, mailboxIds, identities, blockedAddresses } = store
+const { mailboxes, mailboxIds, identities, screenedAddresses } = store
+
+// A sender is "blocked" when screened with the Reject action (their mail is discarded).
+const isSenderBlocked = (email: string) =>
+	!!screenedAddresses.data?.some(
+		(a: ScreenedAddress) => a.email === email && a.action === 'Reject',
+	)
+
+// Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
+// account's "Block Remote Images" setting withholds remote images (read-tracking pixels) until you opt in.
+const blockRemoteImagesEnabled = computed(
+	() =>
+		store.userResource?.data?.accounts?.find((a) => a.id === store.accountId)
+			?.block_remote_images ?? true,
+)
+const isScreenedIn = (email: string) =>
+	!!identities.data?.some((i: Identity) => i.email === email) ||
+	!!screenedAddresses.data?.some(
+		(a: ScreenedAddress) => a.email === email && a.action === 'Accepted',
+	)
+const shouldBlockImages = (mail: { from_email: string }) =>
+	blockRemoteImagesEnabled.value && !isScreenedIn(mail.from_email)
+
 const { dataTheme } = useTheme()
 
 const route = useRoute()
@@ -458,7 +535,7 @@ const thread = ref<Mail[]>([])
 
 const threadFallback = createResource({
 	url: 'suite.mail.api.mail.get_thread',
-	makeParams: () => ({ account: store.account, thread_id: threadID }),
+	makeParams: () => ({ account_id: store.accountId, thread_id: threadID }),
 	onSuccess: (mails: Mail[]) => {
 		// Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
 		if (!mails?.length) {
@@ -473,7 +550,8 @@ const threadFallback = createResource({
 
 const transformThreadMails = (mails: Mail[]) =>
 	mails
-		.filter((mail) => filterRelevantMails(mail))
+		// Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
+		.filter((mail) => readonly || filterRelevantMails(mail))
 		.map((mail) => ({
 			...mail,
 			groupedRecipients: getGroupedRecipients(mail.recipients, false),
@@ -518,8 +596,8 @@ const loadThread = () => {
 	})
 
 	// Opening a thread marks every message in the whole conversation read — including copies in other
-	// mailboxes (e.g. Sent) that aren't shown in this view.
-	if (source.some((mail) => !mail.seen)) setThreadSeen(true)
+	// mailboxes (e.g. Sent) that aren't shown in this view. Read-only views (the Screener) never do this.
+	if (!readonly && source.some((mail) => !mail.seen)) setThreadSeen(true)
 }
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
@@ -558,9 +636,14 @@ const syncWithSource = () => {
 		if (fresh) mail.mailboxes = fresh.mailboxes
 	})
 
-	// Append any newly-arrived messages, before a trailing draft.
+	// Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
+	// that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
+	// saved id isn't known here), so a draft returning from a background reload would otherwise be
+	// mistaken for a new message and spawn a duplicate, blank compose editor.
 	const existing = new Set(thread.value.map((mail) => mail.id))
-	const additions = transformThreadMails(source).filter((mail) => !existing.has(mail.id))
+	const additions = transformThreadMails(source).filter(
+		(mail) => !existing.has(mail.id) && !mail.draft,
+	)
 	if (!additions.length) return
 
 	const draftIndex = thread.value.findIndex((mail) => mail.draft)
@@ -640,11 +723,25 @@ watch(
 onMounted(() => loadThread())
 
 const unblockEmailAddress = createResource({
-	url: 'suite.mail.api.mail.unblock_email_addresses',
-	makeParams: (email) => ({ account: store.account, emails: [email] }),
+	url: 'suite.mail.api.mail.unscreen_email_addresses',
+	makeParams: (email) => ({ account_id: store.accountId, emails: [email] }),
 	onSuccess: () => {
-		raiseToast(__('Email address unblocked.'))
-		blockedAddresses.reload()
+		raiseToast(__('Sender unblocked.'))
+		screenedAddresses.reload()
+	},
+})
+
+// Trusting a sender accepts them (screened in), so their remote images load now and going forward.
+const trustSender = createResource({
+	url: 'suite.mail.api.mail.screen_email_addresses',
+	makeParams: (email: string) => ({
+		account_id: store.accountId,
+		emails: [email],
+		action: 'Accepted',
+	}),
+	onSuccess: () => {
+		raiseToast(__('Sender marked as trusted.'))
+		screenedAddresses.reload()
 	},
 })
 
@@ -695,6 +792,24 @@ const openAttachment = (mailAttachments: Attachment[], idx: number) => {
 	attachments.value = mailAttachments
 	attachmentIndex.value = idx
 	showAttachmentViewer.value = true
+}
+
+const zippableAttachments = (mail: Mail) =>
+	filteredAttachments(mail).filter((a: Attachment) => a.blob_id)
+
+const downloadingZipMail = ref<string | null>(null)
+
+const downloadAttachmentsAsZip = async (mail: Mail) => {
+	const mailAttachments = zippableAttachments(mail)
+	if (mailAttachments.length < 2) return
+
+	downloadingZipMail.value = mail.name
+	try {
+		const url = await getAttachmentsZipUrl(mailAttachments)
+		downloadUrlAsFile(url, `${mail.subject || 'attachments'}.zip`)
+	} finally {
+		downloadingZipMail.value = null
+	}
 }
 
 const isCollapsed = (mail: Mail) =>
@@ -773,7 +888,8 @@ const discardLocalDraft = (mail: string) => {
 // Shortcuts
 
 const handleKeydown = (e: KeyboardEvent) => {
-	if (shouldIgnoreKeypress(e)) return
+	// Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
+	if (readonly || shouldIgnoreKeypress(e)) return
 
 	const key = e.key.toLowerCase()
 	const lastMail = thread.value?.at(-1)

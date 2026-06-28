@@ -11,15 +11,51 @@ app_email = "developers@frappe.io"
 app_license = "agpl-3.0"
 
 # ============================================================================
-# Apps screen — a SINGLE unified Suite entry (replaces the 7 per-app entries)
+# Apps screen / App switcher
 # ============================================================================
 add_to_apps_screen = [
 	{
-		"name": "suite",
-		"logo": "/assets/suite/frontend/logo.svg",
-		"title": "Frappe Suite",
-		"route": "/suite",
-	}
+		"name": "drive",
+		"logo": "/assets/suite/drive/images/icons/logo.svg",
+		"title": "Drive",
+		"route": "/drive",
+	},
+	{
+		"name": "slides",
+		"logo": "/assets/suite/slides/images/slides.svg",
+		"title": "Slides",
+		"route": "/slides",
+	},
+	{
+		"name": "writer",
+		"logo": "/assets/suite/writer/images/writer.png",
+		"title": "Writer",
+		"route": "/writer",
+	},
+	{
+		"name": "sheets",
+		"logo": "/assets/suite/sheets/logo.svg",
+		"title": "Sheets",
+		"route": "/sheets",
+	},
+	{
+		"name": "meet",
+		"logo": "/assets/suite/meet/images/meet.png",
+		"title": "Meet",
+		"route": "/meet",
+	},
+	{
+		"name": "mail",
+		"logo": "/assets/suite/mail/images/logo.svg",
+		"title": "Mail",
+		"route": "/mail",
+	},
+	{
+		"name": "calendar",
+		"logo": "/assets/suite/calendar/images/logo.svg",
+		"title": "Calendar",
+		"route": "/calendar",
+	},
 ]
 
 # ============================================================================
@@ -131,8 +167,12 @@ permission_query_conditions = {
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
 	# mail (client)
 	"Account Settings": "suite.client.doctype.account_settings.account_settings.get_permission_query_condition",
+	"Blocked Email Address": "suite.client.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
+	"Calendar Exchange": "suite.client.doctype.calendar_exchange.calendar_exchange.get_permission_query_condition",
+	"Junk Email Address": "suite.client.doctype.junk_email_address.junk_email_address.get_permission_query_condition",
 	"Mail Exchange": "suite.client.doctype.mail_exchange.mail_exchange.get_permission_query_condition",
 	"Mail Queue": "suite.client.doctype.mail_queue.mail_queue.get_permission_query_condition",
+	"Mail Sync History": "suite.client.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
 	"Mailbox Settings": "suite.client.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
 	"User Settings": "suite.client.doctype.user_settings.user_settings.get_permission_query_condition",
 }
@@ -153,13 +193,17 @@ has_permission = {
 	# mail (client)
 	"Account Settings": "suite.client.doctype.account_settings.account_settings.has_permission",
 	"Address Book": "suite.client.doctype.address_book.address_book.has_permission",
+	"Blocked Email Address": "suite.client.doctype.blocked_email_address.blocked_email_address.has_permission",
 	"Calendar": "suite.client.doctype.calendar.calendar.has_permission",
 	"Calendar Event": "suite.client.doctype.calendar_event.calendar_event.has_permission",
+	"Calendar Exchange": "suite.client.doctype.calendar_exchange.calendar_exchange.has_permission",
 	"Contact Card": "suite.client.doctype.contact_card.contact_card.has_permission",
 	"Event Notification": "suite.client.doctype.event_notification.event_notification.has_permission",
 	"Identity": "suite.client.doctype.identity.identity.has_permission",
+	"Junk Email Address": "suite.client.doctype.junk_email_address.junk_email_address.has_permission",
 	"Mail Exchange": "suite.client.doctype.mail_exchange.mail_exchange.has_permission",
 	"Mail Queue": "suite.client.doctype.mail_queue.mail_queue.has_permission",
+	"Mail Sync History": "suite.client.doctype.mail_sync_history.mail_sync_history.has_permission",
 	"Mailbox": "suite.client.doctype.mailbox.mailbox.has_permission",
 	"Mailbox Settings": "suite.client.doctype.mailbox_settings.mailbox_settings.has_permission",
 	"Participant Identity": "suite.client.doctype.participant_identity.participant_identity.has_permission",
@@ -183,6 +227,16 @@ override_doctype_class = {
 # ============================================================================
 override_whitelisted_methods = {
 	"frappe.core.doctype.user.user.update_password": "suite.mail.events.update_password",
+	# mail — backward-compatible redirects for the standalone `mail` app's
+	# endpoints (still called by Frappe Framework's frappe/email/frappemail.py)
+	# now that the API lives under the combined `suite` app.
+	"mail.api.auth.validate": "suite.mail.api.auth.validate",
+	"mail.api.outbound.upload_attachment": "suite.mail.api.outbound.upload_attachment",
+	"mail.api.outbound.send": "suite.mail.api.outbound.send",
+	"mail.api.outbound.send_raw": "suite.mail.api.outbound.send_raw",
+	"mail.api.inbound.fetch_blob": "suite.mail.api.inbound.fetch_blob",
+	"mail.api.inbound.pull": "suite.mail.api.inbound.pull",
+	"mail.api.inbound.pull_raw": "suite.mail.api.inbound.pull_raw",
 }
 
 # ============================================================================
@@ -222,6 +276,7 @@ scheduler_events = {
 		"suite.sheets.versioning.tasks.truncate_op_log",
 		# mail
 		"suite.client.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
+		"suite.client.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 	],
 	"hourly": [
 		# mail
@@ -247,7 +302,7 @@ scheduler_events = {
 # Lifecycle hooks — dispatched through suite.suite_core.boot so that EACH
 # former app's handler is preserved and invoked in order.
 # ============================================================================
-from suite.suite_core import boot as _suite_boot  # noqa: E402
+from suite.suite_core import boot as _suite_boot
 
 after_install = "suite.suite_core.boot.after_install"
 after_migrate = "suite.suite_core.boot.after_migrate"
@@ -255,7 +310,7 @@ after_app_install = "suite.suite_core.boot.after_app_install"
 extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
 
 # drive — custom upload + after_request middleware (single definers)
-after_upload_file = "suite.drive.overrides.file.after_upload_file"
+after_file_upload = "suite.drive.overrides.file.after_file_upload"
 after_request = "suite.drive.api.product.after_request"
 
 # ============================================================================
@@ -270,8 +325,6 @@ fixtures = [
 	{"dt": "Presentation", "filters": [["is_template", "=", "1"]]},
 	# meet
 	{"dt": "Role", "filters": [["role_name", "like", "Meet %"]]},
-	# mail
-	{"dt": "Role", "filters": [["role_name", "in", ["Mail Admin"]]]},
 ]
 
 # ============================================================================
@@ -290,7 +343,7 @@ ignore_links_on_delete = [
 	"Server Deployment",
 	# Client
 	"Account Settings",
-	"Blocked Email Address",
+	"Screened Email Address",
 	"Mail Exchange",
 	"Mail Queue",
 	"Mail Signature",
@@ -336,6 +389,9 @@ ALLOWED_PATHS = [
 ALLOWED_WILDCARD_PATHS = [
 	"/api/method/frappe.integrations.oauth2_logins.",
 	"/api/method/suite.mail.api.",
+	# mail — backward-compatible prefix for the standalone `mail` app's
+	# endpoints still called by Frappe Framework (see override_whitelisted_methods).
+	"/api/method/mail.api.",
 	"/api/method/suite.calendar.api.",
 	"/api/method/suite.meet.api.",
 	"/api/method/suite.drive.api.",

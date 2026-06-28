@@ -252,7 +252,7 @@ import {
 	selectedMicId,
 	selectedSpeakerId,
 } from "../data/mediaPreferences";
-import { session } from "../data/session";
+import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -609,6 +609,9 @@ const togglePeople = () => {
 	isPeopleOpen.value = !isPeopleOpen.value;
 	if (isPeopleOpen.value) {
 		chatStore.isChatOpen = false;
+		if (isCurrentUserHost.value || isCurrentUserCohost.value) {
+			void sfuConnection.fetchExistingWaitingRoomUsers();
+		}
 	}
 };
 
@@ -691,12 +694,7 @@ onMounted(async () => {
 	reactionStore.$reset();
 	raiseHandStore.$reset();
 	gridLayout.resetGridLayout();
-	currentUser.setCurrentUser({
-		user_id: "",
-		name: "",
-		full_name: "",
-		avatar: "",
-	});
+	currentUser.resetCurrentUser();
 
 	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
 	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);
@@ -748,13 +746,13 @@ onMounted(async () => {
 		return;
 	}
 
-	// Setup current user
-	currentUser.setCurrentUser({
-		user_id: session.user?.sessionUser || "",
-		name: session.user?.full_name || session.user?.sessionUser || "",
-		full_name: session.user?.full_name || "",
-		avatar: session.user?.avatar || "",
-	});
+	if (!userResource.fetched) {
+		try {
+			await userResource.fetch();
+		} catch (error) {
+			console.warn("Failed to load current user profile:", error);
+		}
+	}
 
 	// Initialize camera
 	await mediaControls.initializeCamera();

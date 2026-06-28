@@ -1,7 +1,7 @@
 <template>
   <div class="flex w-full h-full">
     <div class="w-full h-full flex flex-col">
-      <Navbar v-if="!file?.error" :root-resource="file" />
+      <Navbar v-if="!file?.error" :root-resource="file" :breadcrumbs="pageBreadcrumbs" />
       <ErrorPage v-if="file.error" :error="file.error" />
       <div
         v-else
@@ -39,7 +39,8 @@
 </template>
 
 <script setup>
-import store from '@/apps/drive/store'
+import { setActiveEntity } from '@/apps/drive/data/selection'
+import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 import Navbar from '@/apps/drive/components/Navbar.vue'
 import { ref, computed, onMounted, defineProps } from 'vue'
 import { Button, LoadingIndicator } from 'frappe-ui'
@@ -56,6 +57,7 @@ import {
   isWriterDocument,
   hasHostedContent,
 } from '@/apps/drive/utils/files'
+import { currentFolder } from '@/apps/drive/data/currentFolder'
 import ErrorPage from '@/apps/drive/components/ErrorPage.vue'
 
 const router = useRouter()
@@ -66,12 +68,11 @@ const props = defineProps({
 
 const currentEntity = ref(props.entityName)
 
-// buggy logic, only works if navigated through folder
-const folderEntities = computed(() => store.state.currentFolder?.entities || [])
+const folderEntities = computed(() => currentFolder.value.entities || [])
 const filteredEntities = computed(() =>
   folderEntities.value.filter(
-    (item) => !item.is_folder && !hasHostedContent(item) && item.file_type !== 'Link'
-  )
+    (item) => !item.is_folder && !hasHostedContent(item) && item.file_type !== 'Link',
+  ),
 )
 
 const index = computed(() => {
@@ -121,12 +122,11 @@ const file = createResource({
   url: 'suite.drive.api.permissions.get_entity_with_permissions',
   params: { entity_name: props.entityName },
   transform(entity) {
-    store.commit('setActiveEntity', entity)
+    setActiveEntity(entity)
     return prettyData([entity])[0]
   },
   onSuccess,
 })
-store.commit('setCurrentResource', file)
 
 function scrollEntity(negative = false) {
   currentEntity.value = negative ? prevEntity.value : nextEntity.value

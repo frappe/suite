@@ -7,7 +7,7 @@ import {
 import { focusedSlide, slideIndex, slides, setSlideIndex } from '@/apps/slides/stores/slide'
 
 import { router } from '@/apps/slides/router'
-import { session } from '@/apps/slides/stores/session'
+import { session } from '@/boot/session'
 
 const inSlideShowMode = ref(false)
 
@@ -53,7 +53,8 @@ const prefetchNextSlide = () => {
 }
 
 const getAssetUrl = (url) => {
-	if (presentationDoc.value?.owner === session.user || session.user === 'Administrator') {
+	const user = session.user?.sessionUser
+	if (presentationDoc.value?.owner === user || user === 'Administrator') {
 		return url
 	}
 	return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(url)}&public=${isPublicPresentation.value}`

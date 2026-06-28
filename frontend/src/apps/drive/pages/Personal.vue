@@ -3,7 +3,7 @@
     icon: LucideHome,
     title: 'No files yet',
     description: 'Upload to get started!',
-  }" :verify="!store.state.shareView && {
+  }" :verify="!shareView && {
           data: {
             write: 1,
             upload: 1,
@@ -15,8 +15,9 @@
 <script setup>
 import GenericPage from '@/apps/drive/components/GenericPage.vue'
 import { getPersonal } from '@/apps/drive/resources/files'
-import store from '@/apps/drive/store'
+import { shareView } from '@/apps/drive/data/prefs'
+import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import LucideHome from '~icons/lucide/home'
 
-store.commit('setCurrentFolder', { name: '', team: '' })
+setCurrentFolder({ name: '', team: '' })
 </script>

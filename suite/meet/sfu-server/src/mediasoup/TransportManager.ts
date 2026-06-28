@@ -97,10 +97,6 @@ export class TransportManager {
 		return this.transports.get(transportId);
 	}
 
-	removeTransport(transportId: string): void {
-		this.transports.delete(transportId);
-	}
-
 	getTransportCount(): number {
 		return this.transports.size;
 	}

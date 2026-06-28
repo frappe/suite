@@ -1,6 +1,6 @@
 <template>
 	<FrappeUIProvider>
-		<component :is="Layout">
+		<component :is="Layout" class="mail-app-root">
 			<router-view />
 		</component>
 		<InstallPrompt v-if="isMobile" />
@@ -8,10 +8,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, provide, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, provide, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
+import { shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { showNotification } from '@/apps/mail/utils/push-notifications'
 import { initSocket } from '@/apps/mail/socket'
@@ -39,7 +40,7 @@ import type { NotificationPayload } from '@/apps/mail/types'
  * do not need the $user/$dayjs/$socket injects.
  */
 const { userResource } = userStore()
-const { dataTheme } = useTheme()
+const { dataTheme, cycleTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const route = useRoute()
 
@@ -54,15 +55,38 @@ const Layout = computed(() => {
 
 watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
 
+// Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
+// Dialogs/Dropdowns, which teleport to <body> — OUTSIDE .mail-app-root. Without this, their
+// un-classed text (modal <h1> titles, base ink color) and heading weights fall back to defaults
+// (black + non-bold), which the standalone app avoided by setting these on <html> globally.
+// Removed on leave so other suite apps are unaffected.
+onMounted(() => document.body.classList.add('mail-app'))
+onUnmounted(() => document.body.classList.remove('mail-app'))
+
+// App-wide Cmd/Ctrl+Shift+L to cycle the color scheme. The standalone app wired this in its root
+// App.vue, but in the suite that App.vue is unused — this MailLayout is the mounted mail root, so the
+// listener has to live here for the shortcut to fire on any mail page.
+const handleThemeShortcut = (e: KeyboardEvent) => {
+	if (
+		(e.metaKey || e.ctrlKey) &&
+		e.shiftKey &&
+		e.key.toLowerCase() === 'l' &&
+		!shouldIgnoreKeypress(e, true)
+	) {
+		e.preventDefault()
+		cycleTheme()
+	}
+}
+
 /* -------------------------------------------------------------------------- */
 /* Push-notification service worker.                                          */
 /*                                                                            */
-/* Moved out of the standalone main.ts. The suite has NO vite-plugin-pwa, so  */
-/* `/assets/suite/frontend/sw.js` is NOT emitted yet — push notifications     */
-/* will not function at runtime under the suite until a foundation PWA/FCM    */
-/* setup lands (flagged for foundation attention). Kept FULLY fail-safe so it */
-/* never breaks the build or first paint. `firebase` is dynamically imported  */
-/* so it stays code-split out of the shared shell chunk.                      */
+/* Moved out of the standalone main.ts. `sw.js` (the FCM service worker) is    */
+/* emitted at /assets/suite/frontend/sw.js by vite-plugin-pwa from             */
+/* src/apps/mail/sw.ts (see vite.config.ts). It is a build-only artifact, so   */
+/* push notifications work in a production build, not the dev server. Kept     */
+/* FULLY fail-safe so it never breaks the build or first paint. `firebase` is  */
+/* dynamically imported so it stays code-split out of the shared shell chunk.  */
 /* -------------------------------------------------------------------------- */
 const registerServiceWorker = async () => {
 	try {
@@ -102,18 +126,47 @@ onMounted(() => {
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
+	window.addEventListener('keydown', handleThemeShortcut)
 })
+
+onUnmounted(() => window.removeEventListener('keydown', handleThemeShortcut))
 </script>
 
 <style>
 /* Global mail styles ported from the standalone src/index.css. The suite's
    global css already imports frappe-ui/style.css, so we only carry the mail
-   base type sizing + the shared `.icon` helper. frappe-ui design tokens are
-   referenced via their CSS variables (NOT @apply, which would break the build
-   for these plugin-registered token classes). */
+   base type sizing, the heading rules, and the shared `.icon` helper.
+   The standalone applied these to `html`/`h1`/`h2` globally; here they are
+   scoped to `.mail-app-root` (the mail layout root) so they don't leak into
+   the other suite apps. frappe-ui design *tokens* are referenced via their CSS
+   variables (NOT @apply, which would break the build for these plugin-registered
+   token classes); plain Tailwind utilities below still use @apply. */
 .mail-app-root {
+	@apply text-xl sm:text-lg text-ink-gray-8 bg-surface-base;
+}
+
+.mail-app-root h1 {
+	@apply !font-semibold;
+}
+
+.mail-app-root h2 {
+	@apply text-xl !font-medium sm:text-lg;
+}
+
+/* frappe-ui Dialogs/Dropdowns teleport to <body>, escaping .mail-app-root, so the base text color
+   and heading weights above don't reach them (e.g. the Settings modal's bold <h1> titles, readable
+   ink color in dark mode). Re-apply at <body> scope while mail is mounted (the `mail-app` class is
+   added/removed by this layout). */
+body.mail-app {
 	color: var(--ink-gray-8);
-	background-color: var(--surface-base);
+}
+
+body.mail-app h1 {
+	@apply !font-semibold;
+}
+
+body.mail-app h2 {
+	@apply text-xl !font-medium sm:text-lg;
 }
 
 .icon {

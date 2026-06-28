@@ -266,7 +266,7 @@ const localParticipant = computed(() => {
 			: userIdRaw == null
 				? "local"
 				: String(userIdRaw);
-	const displayNameRaw = fullNameRaw ?? nameRaw ?? "You";
+	const displayNameRaw = fullNameRaw || nameRaw || "You";
 	const user_name =
 		typeof displayNameRaw === "string"
 			? displayNameRaw

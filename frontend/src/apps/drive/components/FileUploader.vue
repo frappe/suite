@@ -3,8 +3,9 @@
 </template>
 <script setup>
 import { ref, onMounted, onBeforeUnmount, inject, watch } from 'vue'
-import store from '@/apps/drive/store'
 import { useRoute } from 'vue-router'
+import { addUpload, updateUpload } from '@/apps/drive/data/uploads'
+import { currentFolder } from '@/apps/drive/data/currentFolder'
 import Dropzone from 'dropzone'
 import { storageBar } from '@/apps/drive/resources/files'
 
@@ -123,7 +124,7 @@ onMounted(() => {
     },
     addRemoveLinks: true,
     accept: function (file, done) {
-      file.team = store.state.currentFolder.team || ''
+      file.team = currentFolder.value.team || ''
       if (file.size == 0) {
         done('Empty files will not be uploaded.')
       } else {
@@ -152,9 +153,9 @@ onMounted(() => {
   })
 
   dropzone.value.on('addedfile', function (file) {
-    file.parent = store.state.currentFolder.name
+    file.parent = currentFolder.value.name
     emitter.emit('refresh')
-    store.commit('addUpload', {
+    addUpload({
       uuid: file.upload.uuid,
       name: file.name,
       progress: 0,
@@ -194,7 +195,7 @@ onMounted(() => {
     })
   }
   dropzone.value.on('uploadprogress', function (file, progress) {
-    store.commit('updateUpload', {
+    updateUpload({
       uuid: file.upload.uuid,
       progress: progress,
     })
@@ -208,7 +209,7 @@ onMounted(() => {
       if (messages.length) message = JSON.parse(messages[0]).message
     }
     message = message || 'Please contact support.'
-    store.commit('updateUpload', {
+    updateUpload({
       uuid: file.upload.uuid,
       error: message,
       completed: false,
@@ -216,14 +217,14 @@ onMounted(() => {
   })
   // REDO COMPONENT
   dropzone.value.on('success', function (file, response) {
-    store.commit('updateUpload', {
+    updateUpload({
       uuid: file.upload.uuid,
       response: response.message,
     })
     storageBar.fetch(storageBar.params)
   })
   dropzone.value.on('complete', function (file) {
-    store.commit('updateUpload', {
+    updateUpload({
       uuid: file.upload.uuid,
       completed: true,
     })
@@ -249,7 +250,7 @@ emitter.on('retryUpload', (uuid) => {
     file.status = Dropzone.ADDED
     dropzone.value.enqueueFile(file)
     dropzone.value.processFile(file)
-    store.commit('updateUpload', {
+    updateUpload({
       uuid,
       error: null,
       progress: 0,

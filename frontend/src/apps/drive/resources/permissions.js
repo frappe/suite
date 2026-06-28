@@ -1,6 +1,6 @@
 import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts'
-import store from '@/apps/drive/store'
+import { useSessionStore } from '@/boot/session'
 
 export const usersWithAccess = createResource({
   url: 'suite.drive.api.permissions.get_shared_with_list',
@@ -105,7 +105,7 @@ export const createTeam = createResource({
   url: 'suite.drive.api.product.create_team',
   makeParams: (params) => ({
     ...params,
-    user: store.state.user.id,
+    user: useSessionStore().user,
   }),
 })
 

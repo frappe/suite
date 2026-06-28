@@ -1,7 +1,6 @@
 Drive
 Slides
 Writer
-Frappe Writer
 Sheets
 Meet
 Mail

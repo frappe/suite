@@ -1,48 +1,25 @@
 <template>
-  <Sidebar
-    id="sidebar"
-    v-model:collapsed="isCollapsed"
-    class="hidden sm:flex"
-    :header="{
-      title: 'Drive',
-      subtitle: $store.state.user.fullName,
-      menuItems: settingsItems,
-      logo: FrappeDriveLogo,
-    }"
-    :sections="sidebarItems"
-  >
+  <Sidebar id="sidebar" v-model:collapsed="sidebarCollapsed" class="hidden sm:flex" :header="{
+    title: 'Drive',
+    subtitle: currentUserFullName,
+    menuItems: settingsItems,
+    logo: FrappeDriveLogo,
+  }" :sections="sidebarItems">
     <template #footer-items="{ isCollapsed }">
       <StorageBar v-if="teamExists.data" :is-expanded="!isCollapsed" />
     </template>
     <template #sidebar-item="{ item, isCollapsed }">
-      <SidebarItem
-        :class="
-          draggedSpace === item.label &&
-          'ring-1 ring-outline-gray-3 !bg-surface-gray-3'
-        "
-        :label="item.label"
-        :accessKey="item.accessKey"
-        :icon="item.icon"
-        :suffix="item.suffix"
-        :to="item.to"
-        :isActive="item.isActive"
-        :isCollapsed
-        :onClick="item.onClick"
-        @dragover.prevent="
-          ;(['Trash', 'Home'].includes(item.label) ||
-            item.to.startsWith('/t')) &&
-            (draggedSpace = item.label)
-        "
-        @dragleave="draggedSpace = null"
-        @drop.prevent="handleDrop($event, item)"
-      />
+      <SidebarItem :class="draggedSpace === item.label &&
+        'ring-1 ring-outline-gray-3 !bg-surface-gray-3'
+        " :label="item.label" :accessKey="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to"
+        :isActive="item.isActive" :isCollapsed :onClick="item.onClick" @dragover.prevent="
+          ; (['Trash', 'Home'].includes(item.label) ||
+          item.to?.name === 'drive-Team') &&
+          (draggedSpace = item.label)
+          " @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
     </template>
   </Sidebar>
-  <SettingsDialog
-    v-if="showSettings"
-    v-model="showSettings"
-    :suggested-tab="suggestedTab"
-  />
+  <SettingsDialog v-if="showSettings" v-model="showSettings" :suggested-tab="suggestedTab" />
   <ShortcutsDialog v-if="showShortcuts" v-model="showShortcuts" />
 </template>
 <script setup>
@@ -54,7 +31,10 @@ import { notifCount, apps } from '@/apps/drive/resources/permissions'
 import { getTeams } from '@/apps/drive/resources/files'
 import { dynamicList } from '@/apps/drive/utils/files'
 
-import store from '@/apps/drive/store'
+import { useCurrentUser, useSessionStore } from '@/boot/session'
+const { fullName: currentUserFullName } = useCurrentUser()
+import { getRootSection } from '@/apps/drive/data/breadcrumbs'
+import { sidebarCollapsed } from '@/apps/drive/data/prefs'
 import icons from '@/apps/drive/utils/icons'
 import LucideClock from '~icons/lucide/clock'
 import LucideUsers from '~icons/lucide/users'
@@ -73,7 +53,7 @@ import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, watch, h } from 'vue'
 import AppsIcon from '@/apps/drive/components/AppsIcon.vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { move } from '@/apps/drive/resources/files'
 
 import LucideBook from '~icons/lucide/book'
@@ -87,6 +67,7 @@ import { getThemeMode, switchTheme } from '@/apps/drive/utils/setupTheme'
 
 defineEmits(['toggleMobileSidebar', 'showSearchPopUp'])
 const router = useRouter()
+const route = useRoute()
 notifCount.fetch()
 getTeams.fetch()
 apps.fetch()
@@ -96,9 +77,6 @@ const teamExists = createResource({
   auto: true,
   onSuccess: (d) => !d && router.replace({ name: 'drive-Setup' }),
 })
-
-const isCollapsed = ref(store.state.sidebarCollapsed)
-watch(isCollapsed, (v) => store.commit('setSidebarCollapsed', v))
 
 const showSettings = ref(false)
 const showShortcuts = ref(false)
@@ -202,12 +180,13 @@ const settingsItems = computed(() => [
 ])
 
 function logout() {
-  store.dispatch('logout')
-  router.redirect('/')
+  useSessionStore().logout.submit()
 }
 
 const sidebarItems = computed(() => {
-  const first = store.state.breadcrumbs[0] || {}
+  const first = getRootSection()
+  const active = (routeName) =>
+    route.name === routeName || first.name === routeName
   return dynamicList([
     {
       items: [
@@ -219,8 +198,8 @@ const sidebarItems = computed(() => {
         {
           label: __('Inbox'),
           icon: LucideInbox,
-          to: '/inbox',
-          isActive: first.name === 'drive-Inbox',
+          to: { name: 'drive-Inbox' },
+          isActive: active('drive-Inbox'),
           accessKey: 'i',
           suffix: notifCount.data,
         },
@@ -231,30 +210,30 @@ const sidebarItems = computed(() => {
       items: [
         {
           label: 'Home',
-          to: `/`,
+          to: { name: 'drive-Home' },
           icon: LucideHome,
-          isActive: first.name == 'drive-Home',
+          isActive: active('drive-Home'),
           accessKey: 'h',
         },
         {
           label: 'Recents',
-          to: `/recents`,
+          to: { name: 'drive-Recents' },
           icon: LucideClock,
-          isActive: first.name == 'drive-Recents',
+          isActive: active('drive-Recents'),
           accessKey: 'r',
         },
         {
           label: 'Shared',
-          to: `/shared`,
+          to: { name: 'drive-Shared' },
           icon: LucideUsers,
-          isActive: first.name == 'drive-Shared',
+          isActive: active('drive-Shared'),
           accessKey: 's',
         },
         {
           label: 'Trash',
-          to: `/trash`,
+          to: { name: 'drive-Trash' },
           icon: LucideTrash,
-          isActive: first.name == 'drive-Trash',
+          isActive: active('drive-Trash'),
         },
       ],
     },
@@ -266,9 +245,11 @@ const sidebarItems = computed(() => {
         getTeams.data &&
         Object.values(getTeams.data).map((team) => ({
           label: team.title,
-          to: `/t/${team.name}/`,
+          to: { name: 'drive-Team', params: { team: team.name } },
           icon: h(icons[team.icon || 'building']),
-          isActive: team.name === first.name,
+          isActive:
+            (route.name === 'drive-Team' && route.params.team === team.name) ||
+            first.name === team.name,
           accessKey: 't',
         })),
     },
@@ -278,30 +259,30 @@ const sidebarItems = computed(() => {
       items: dynamicList([
         {
           label: 'Attachments',
-          to: `/attachments`,
+          to: { name: 'drive-Attachments' },
           icon: LucidePaperclip,
-          isActive: first.name == 'drive-Attachments',
+          isActive: active('drive-Attachments'),
           accessKey: 'a',
         },
         {
           label: 'Favourites',
-          to: `/favourites`,
+          to: { name: 'drive-Favourites' },
           icon: LucideStar,
-          isActive: first.name == 'drive-Favourites',
+          isActive: active('drive-Favourites'),
           accessKey: 'f',
         },
         {
           label: 'Documents',
-          to: `/documents`,
+          to: { name: 'drive-Documents' },
           icon: LucideFileText,
-          isActive: first.name == 'drive-Documents',
+          isActive: active('drive-Documents'),
           accessKey: 'd',
         },
         {
           label: 'Presentations',
-          to: `/presentations`,
+          to: { name: 'drive-Presentations' },
           icon: LucideGalleryVerticalEnd,
-          isActive: first.name == 'drive-Presentations',
+          isActive: active('drive-Presentations'),
           cond: apps.data?.find?.((k) => k.name === 'slides'),
         },
       ]),
@@ -320,8 +301,8 @@ const handleDrop = (e, space) => {
       { entity_names: [file_name] },
       { onSuccess: () => emitter.emit('remove-file-ui', file_name) }
     )
-  } else if (space.to.startsWith('/t/')) {
-    const team = space.to.slice(3, -1)
+  } else if (space.to?.name === 'drive-Team') {
+    const team = space.to.params.team
     move.submit(
       { entity_names: [file_name], team },
       { onSuccess: () => emitter.emit('remove-file-ui', file_name) }

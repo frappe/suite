@@ -1,7 +1,7 @@
 # Copyright (c) 2025, Frappe and contributors
 # For license information, please see license.txt
 
-import random
+import secrets
 import string
 
 import frappe
@@ -198,9 +198,12 @@ class SaeMeeting(Document):
 
 	def remove_from_waiting_room(self, user):
 		"""Remove user from waiting room"""
-		self.waiting_room = [row for row in self.waiting_room if row.user != user]
+		for row in self.get("waiting_room") or []:
+			if row.user == user:
+				self.remove(row)
+				return
 
-	def approve_user(self, user):
+	def approve_user(self, user, save=True):
 		"""Approve a user from waiting room to join the meeting"""
 		if not self.is_host_or_cohost(frappe.session.user):
 			frappe.throw(_("Only hosts and co-hosts can approve join requests"))
@@ -212,13 +215,15 @@ class SaeMeeting(Document):
 		self.add_user_to_table("members", user)
 
 		self.remove_from_waiting_room(user)
-		self.save()
+		if save:
+			self.save()
 
 		# for signed-in users
 		frappe.publish_realtime(
 			"meeting_join_approved",
 			user=user,
 			message={"meeting": self.name, "user": user, "approved_by": frappe.session.user},
+			after_commit=True,
 		)
 
 		# for guests
@@ -246,6 +251,7 @@ class SaeMeeting(Document):
 				"meeting_user_approved",
 				user=authorized_user,
 				message={"meeting": self.name, "user": user, "approved_by": frappe.session.user},
+				after_commit=True,
 			)
 
 		frappe.publish_realtime(
@@ -253,6 +259,7 @@ class SaeMeeting(Document):
 			doctype=self.doctype,
 			docname=self.name,
 			message={"meeting": self.name, "waiting_count": len(updated_waiting_users)},
+			after_commit=True,
 		)
 
 		return {"status": "joined", "message": "Successfully joined the meeting"}
@@ -263,7 +270,7 @@ class SaeMeeting(Document):
 
 		users = self.get_waiting_room()
 		for user in users:
-			self.approve_user(user)
+			self.approve_user(user, save=False)
 
 		self.save()
 
@@ -420,15 +427,7 @@ class SaeMeeting(Document):
 
 
 def generate(segment_length=4, num_segments=3, separator="-"):
-	# Define the character set: only lowercase letters
-	characters = string.ascii_lowercase
-
-	# Generate segments
-	segments = []
-	for _i in range(num_segments):
-		segment = "".join(random.choice(characters) for _j in range(segment_length))
-		segments.append(segment)
-
-	# Join segments with the separator
-	random_id = separator.join(segments)
-	return random_id
+	return separator.join(
+		"".join(secrets.choice(string.ascii_lowercase) for _ in range(segment_length))
+		for _ in range(num_segments)
+	)

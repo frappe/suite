@@ -1,4 +1,5 @@
-import { type ComputedRef, computed, type Ref, ref } from "vue";
+import { type ComputedRef, computed, ref } from "vue";
+import { session } from "@/boot/session";
 import { getInitials } from "../utils/text";
 
 export interface User {
@@ -12,10 +13,9 @@ export interface User {
 }
 
 export interface CurrentUser {
-	currentUser: Ref<User>;
+	currentUser: ComputedRef<User>;
 	userInitials: ComputedRef<string>;
 	userAvatar: ComputedRef<string>;
-	isCreator: Ref<boolean>;
 	setCurrentUser: (user: User) => void;
 	resetCurrentUser: () => void;
 }
@@ -25,12 +25,16 @@ let instance: CurrentUser | null = null;
 export function useCurrentUser(): CurrentUser {
 	if (instance) return instance;
 
-	const currentUser = ref<User>({});
-	const isCreator = ref(false);
+	const guestOverride = ref<User | null>(null);
+
+	const currentUser = computed<User>(() => {
+		const { sessionUser, ...rest } = session.user;
+		return guestOverride.value || { ...rest, user_id: sessionUser };
+	});
 
 	const userInitials = computed(() => {
 		const name =
-			currentUser.value?.full_name ?? currentUser.value?.name ?? "You";
+			currentUser.value?.full_name || currentUser.value?.name || "You";
 		return getInitials(name);
 	});
 
@@ -39,19 +43,17 @@ export function useCurrentUser(): CurrentUser {
 	});
 
 	const setCurrentUser = (user: User) => {
-		currentUser.value = user;
+		guestOverride.value = user;
 	};
 
 	const resetCurrentUser = () => {
-		currentUser.value = {};
-		isCreator.value = false;
+		guestOverride.value = null;
 	};
 
 	instance = {
 		currentUser,
 		userInitials,
 		userAvatar,
-		isCreator,
 		setCurrentUser,
 		resetCurrentUser,
 	};

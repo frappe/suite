@@ -7,12 +7,16 @@ on:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "package.json"
+      - "yarn.lock"
       - "pyproject.toml"
       - ".github/workflows/suite-ci.yml"
   pull_request:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "package.json"
+      - "yarn.lock"
       - "pyproject.toml"
       - ".github/workflows/suite-ci.yml"
   workflow_dispatch:
@@ -141,14 +145,14 @@ jobs:
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
             else
               changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(frontend/|package\.json|yarn\.lock|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           fi
 
           echo "run=$run_frontend" >> $GITHUB_OUTPUT
@@ -160,11 +164,10 @@ jobs:
         with:
           node-version: 24
           cache: "yarn"
-          cache-dependency-path: frontend/yarn.lock
+          cache-dependency-path: yarn.lock
 
       - name: Install dependencies
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: yarn install --frozen-lockfile
 
       - name: Create bench site config
@@ -175,7 +178,6 @@ jobs:
 
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
-        working-directory: frontend
         run: yarn build
 
       - name: Test

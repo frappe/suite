@@ -30,7 +30,7 @@
       </Button>
       <template v-if="$route.name != 'Home'">
         <Button
-          v-if="$store.state.user.id && $store.state.user.id !== 'Guest'"
+          v-if="isLoggedIn"
           variant="solid"
           size="md"
           @click="$router.replace({ name: 'writer-home' })"
@@ -47,10 +47,10 @@
 
 <script setup>
 import { Button } from 'frappe-ui'
-import store from '@/apps/writer/store'
-// Template compat: standalone app exposed a global $store.
-const $store = store
-import { watchEffect } from 'vue'
+
+import { useSessionStore } from '@/boot/session'
+import { computed, watchEffect } from 'vue'
+const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 import LucideFileUser from '~icons/lucide/file-user'
 import LucideFileQuestionMark from '~icons/lucide/file-question-mark'
 import LucideHome from '~icons/lucide/home'
@@ -63,9 +63,9 @@ watchEffect(() => {
   if (
     (String(props.error).includes('FORBIDDEN') ||
       props.error.exc_type === 'PermissionError') &&
-    !store.getters.isLoggedIn
+    !isLoggedIn.value
   )
     redirectLogin()
-  store.commit('setBreadcrumbs', [])
+
 })
 </script>

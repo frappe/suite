@@ -33,7 +33,7 @@ def _generate_sfu_token(
 ) -> str:
 	"""Generate a JWT token for SFU authentication."""
 	sfu_config = get_sfu_config()
-	secret = sfu_config.get("sfu_secret") or frappe.conf.get("secret_key")
+	secret = sfu_config.get("sfu_secret")
 	if not secret:
 		frappe.throw(_("SFU secret not configured"))
 
@@ -79,6 +79,17 @@ def _add_e2ee_metadata(payload: dict, meeting_id: str) -> dict:
 	return payload
 
 
+def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
+	"""Return (fullname, avatar, is_host, is_cohost) for a signed-in user."""
+	fullname, avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
+		user,
+		None,
+	)
+	is_host = meeting.owner == user
+	is_cohost = meeting.is_host_or_cohost(user) and not is_host
+	return fullname, avatar, is_host, is_cohost
+
+
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
 def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
@@ -117,13 +128,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 
 	sfu_config = get_sfu_config()
 
-	user_fullname, user_avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
-		user,
-		None,
-	)
-
-	is_host = meeting.owner == user
-	is_cohost = meeting.is_host_or_cohost(user) and not is_host
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
 
 	auth_token = _generate_sfu_token(
 		user_id=user,
@@ -157,7 +162,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 
 @frappe.whitelist()
 def join_meeting(meeting_id: str) -> dict:
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 
 	if meeting.is_user_banned(frappe.session.user):
 		frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
@@ -213,7 +218,7 @@ def join_meeting(meeting_id: str) -> dict:
 @frappe.whitelist()
 def approve_join_request(meeting_id: str, user_id: str) -> dict:
 	"""Approve a user's join request from waiting room"""
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 	meeting.approve_user(user_id)
 
 	return {"meeting_id": meeting_id, "user_id": user_id, "message": "User approved successfully"}
@@ -222,7 +227,7 @@ def approve_join_request(meeting_id: str, user_id: str) -> dict:
 @frappe.whitelist()
 def approve_all_join_requests(meeting_id: str) -> dict:
 	"""Approve all users' join requests from waiting room"""
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 	meeting.approve_all_users()
 
 	return {"meeting_id": meeting_id, "message": "All users approved successfully"}
@@ -231,7 +236,7 @@ def approve_all_join_requests(meeting_id: str) -> dict:
 @frappe.whitelist()
 def reject_join_request(meeting_id: str, user_id: str) -> dict:
 	"""Reject a user's join request from waiting room"""
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 	meeting.reject_user(user_id)
 
 	# For guests, publish realtime event in a guest-specific room
@@ -284,12 +289,7 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 	if frappe.session.user not in meeting.get_members():
 		frappe.throw(_("Not a meeting member"))
 
-	user_fullname, user_avatar = frappe.db.get_value(
-		"User", frappe.session.user, ["full_name", "user_image"]
-	) or (frappe.session.user, None)
-
-	is_host = meeting.owner == frappe.session.user
-	is_cohost = meeting.is_host_or_cohost(frappe.session.user) and not is_host
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
 
 	auth_token = _generate_sfu_token(
 		user_id=frappe.session.user,
@@ -363,7 +363,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 	if not frappe.db.exists("Sae Meeting", meeting_id):
 		frappe.throw(_("Meeting not found"))
 
-	meeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 
 	global_settings = frappe.get_cached_doc("Sae Settings")
 	if not global_settings.allow_guest or not meeting.allow_guest:
@@ -547,7 +547,7 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 	Validates the guest token and returns SFU URL/port.
 	"""
 	sfu_config = get_sfu_config()
-	secret = sfu_config.get("sfu_secret") or frappe.conf.get("secret_key")
+	secret = sfu_config.get("sfu_secret")
 	if not secret:
 		frappe.throw(_("SFU secret not configured"))
 
@@ -605,7 +605,7 @@ def promote_to_cohost(meeting_id: str, user_id: str) -> dict:
 	"""
 	Promote a user to co-host during an active meeting (host only)
 	"""
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
+	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id, for_update=True)
 	return meeting.promote_to_cohost(frappe.session.user, user_id)
 
 

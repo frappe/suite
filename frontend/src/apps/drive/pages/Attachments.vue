@@ -15,7 +15,7 @@ import { getAttachments } from '@/apps/drive/resources/files'
 import LucideStar from '~icons/lucide/star'
 import { watch } from 'vue'
 import { useRoute } from 'vue-router'
-import store from '@/apps/drive/store'
+import { setPageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 
 const props = defineProps({
   doctype: {
@@ -37,8 +37,7 @@ watch(
       doctype,
       docname,
     }
-    store.commit(
-      'setBreadcrumbs',
+    setPageBreadcrumbs(
       [
         {
           label: __(route.name),
@@ -55,7 +54,7 @@ watch(
           name: docname,
           route: { name: route.name, params: { doctype, docname } },
         },
-      ].filter((k) => k.label)
+      ].filter((k) => k.label),
     )
   },
   { immediate: true }

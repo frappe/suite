@@ -1,5 +1,5 @@
 import suiteRouter from '@/router'
-import store from '@/apps/drive/store'
+import { setActiveEntity } from '@/apps/drive/data/selection'
 
 /**
  * Drive router compat shim + app-local navigation guard.
@@ -26,7 +26,7 @@ const isDriveRoute = (route: { name?: unknown; path?: string }) =>
 suiteRouter.beforeEach((to, _from, next) => {
   if (!isDriveRoute(to)) return next()
   if (to.params.team) localStorage.setItem('recentTeam', String(to.params.team))
-  store.commit('setActiveEntity', null)
+  setActiveEntity(null)
   next()
 })
 

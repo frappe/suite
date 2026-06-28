@@ -26,6 +26,7 @@ import {
 } from '../TagInput/utils'
 
 import LucideChevronDown from '~icons/lucide/chevron-down'
+import LucideCheck from '~icons/lucide/check'
 import { SelectProps, SelectValue as SelectValue_ } from './types'
 
 const props = withDefaults(defineProps<SelectProps>(), {

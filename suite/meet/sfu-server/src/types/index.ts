@@ -49,7 +49,6 @@ import type {
 	SFUScope,
 	UpdateTokenRequest,
 	UserData,
-	WebRTCSignalData,
 } from '../../../types';
 
 // Re-export mediasoup types
@@ -99,7 +98,6 @@ export type {
 	SFUScope,
 	UpdateTokenRequest,
 	UserData,
-	WebRTCSignalData,
 	WebRtcTransport,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -119,9 +117,6 @@ export interface ServerToClientEvents {
 	'chat:message': (data: ChatMessage) => void;
 	'chat:restriction_updated': (data: { enabled: boolean }) => void;
 	'reaction:message': (data: ReactionMessage) => void;
-	webrtc_offer: (data: WebRTCSignalData) => void;
-	webrtc_answer: (data: WebRTCSignalData) => void;
-	ice_candidate: (data: WebRTCSignalData) => void;
 	active_speaker: (data: ActiveSpeakerEvent) => void;
 	sfu_error: (data: SFUErrorEvent) => void;
 	'auth:expired': (data: AuthExpiredEvent) => void;
@@ -197,9 +192,6 @@ export interface ClientToServerEvents {
 		data: Record<string, never>,
 		callback: (response: RoomParticipantsResponse) => void,
 	) => void;
-	webrtc_offer: (data: WebRTCSignalData) => void;
-	webrtc_answer: (data: WebRTCSignalData) => void;
-	ice_candidate: (data: WebRTCSignalData) => void;
 	media_control: (data: MediaControlRequest) => void;
 	host_control: (data: HostControlRequest) => void;
 	screen_share: (data: ScreenShareRequest) => void;
@@ -508,7 +500,6 @@ declare module 'socket.io' {
 		senderId?: number;
 		currentToken?: string;
 		tokenExpiresAt?: number;
-		tokenExpiryTimer?: NodeJS.Timeout;
 		scope?: SFUScope;
 		e2eeRequired?: boolean;
 		e2eeReady?: boolean;

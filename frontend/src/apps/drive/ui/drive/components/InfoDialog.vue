@@ -1,12 +1,11 @@
 <template>
-  <Dialog v-model="open" @close="dialogType = ''">
-    <template #body-title>
+  <Dialog v-model:open="open" @close="dialogType = ''">
+    <template #title>
       <h3 class="text-4xl-semibold leading-6 text-ink-gray-9 cursor-pointer pr-2" @click="emitter.emit('rename')">
         {{ entity.file_name }}
       </h3>
     </template>
-    <template #body-content>
-      <ul class="space-y-3 text-sm mb-4 text-ink-gray-8">
+    <ul class="space-y-3 text-sm mb-4 text-ink-gray-8">
         <span class="text-base-semibold">Information</span>
         <li>
           <span class="inline-block w-24 text-ink-gray-5">{{ __('Owner') }}:</span>
@@ -117,7 +116,6 @@
           <span class="col-span-1">{{ entity.team }}</span>
         </li>
       </ul>
-    </template>
   </Dialog>
 </template>
 

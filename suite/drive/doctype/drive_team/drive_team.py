@@ -55,14 +55,7 @@ class DriveTeam(Document):
         if settings.flat:
             (user_directory_path / "embeds").mkdir(exist_ok=True)
 
-    def on_trash(self):
-        user_settings = frappe.get_list("Drive Settings", {"default_team": self.name}, pluck=["name"])
-        for s in user_settings:
-            d = frappe.get_doc("Drive Settings", s)
-            d.default_team = ""
-            d.save()
-        frappe.db.commit()
-
+    def before_trash(self):
         try:
             site_dir = Path(frappe.get_site_path())
             files_dir = site_dir / "private" / "files"

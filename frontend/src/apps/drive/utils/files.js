@@ -1,5 +1,16 @@
 import router from '@/apps/drive/router'
-import store from '@/apps/drive/store'
+
+import {
+  appendBreadcrumb,
+  applyBreadCrumbs,
+  isHomeContext,
+} from '@/apps/drive/data/breadcrumbs'
+import { currentFolder } from '@/apps/drive/data/currentFolder'
+
+export {
+  applyBreadCrumbs as setBreadCrumbs,
+  buildBreadCrumbs,
+} from '@/apps/drive/data/breadcrumbs'
 import { formatSize } from '@/apps/drive/utils/format'
 import { nextTick } from 'vue'
 import { useTimeAgo } from '@vueuse/core'
@@ -117,12 +128,12 @@ export const openEntity = (entity, new_tab = false) => {
   }
   if (!['Link', 'Presentation'].includes(entity.file_type)) {
     if (!entity.breadcrumbs?.length)
-      store.state.breadcrumbs.push({
+      appendBreadcrumb({
         label: entity.file_name,
         name: entity.name,
         route: null,
       })
-    else setBreadCrumbs(entity)
+    else applyBreadCrumbs(entity)
   }
 
   // hm?
@@ -228,7 +239,7 @@ function extractTime(n) {
 }
 
 export const sortEntities = (rows, order) => {
-  if (!order) order = store.state.sortOrder
+  if (!order?.field) return rows
   // Mutates directly
   const field = order.field
   const asc = order.ascending ? 1 : -1
@@ -267,94 +278,6 @@ export const prettyData = (entities) => {
     if (entity.accessed) entity.relativeAccessed = useTimeAgo(entity.accessed)
     return entity
   })
-}
-export const setBreadCrumbs = (entity) => {
-  let breadcrumbs = entity.breadcrumbs
-  const in_home = entity.in_home
-  const team =
-    getTeams.data?.[breadcrumbs[0].team] ||
-    getPublicTeams.data?.[breadcrumbs[0].team]
-
-  let res = []
-  if (entity.attached_to_doctype) {
-    // Framework attachments live under Home/Attachments; surface their real
-    // location (Attachments > Doctype > Document) instead of "Shared".
-    res = [
-      {
-        label: __('Attachments'),
-        name: 'drive-Attachments',
-        route: { name: 'drive-Attachments' },
-      },
-      {
-        label: entity.attached_to_doctype,
-        name: entity.attached_to_doctype,
-        route: {
-          name: 'drive-Attachments',
-          params: { doctype: entity.attached_to_doctype },
-        },
-      },
-    ]
-    if (entity.attached_to_name) {
-      res.push({
-        label: entity.attached_to_name,
-        name: entity.attached_to_name,
-        route: {
-          name: 'drive-Attachments',
-          params: {
-            doctype: entity.attached_to_doctype,
-            docname: entity.attached_to_name,
-          },
-        },
-      })
-    }
-    // Drop the folder-based upward path; only the file itself follows above.
-    breadcrumbs = breadcrumbs.slice(-1)
-  } else if (team || in_home) {
-    res = [
-      {
-        label: in_home ? __('Home') : team.title,
-        name: in_home ? 'drive-Home' : team.name,
-        route: in_home
-          ? { name: 'drive-Home' }
-          : { name: 'drive-Team', params: { team: team.name } },
-      },
-    ]
-  } else if (entity.folder === 'Home/Attachments' || entity.folder === 'Home') {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive/shared',
-      },
-    ]
-  } else if (store.getters.isLoggedIn) {
-    res = [
-      {
-        label: __('Shared'),
-        name: 'drive-Shared',
-        route: '/drive?shared=1',
-      },
-    ]
-  }
-
-  if (!breadcrumbs[0].folder) breadcrumbs.splice(0, 1)
-  const popBreadcrumbs = (item) => () =>
-    res.splice(res.findIndex((k) => k.name === item.name) + 1)
-
-  breadcrumbs.forEach((folder, idx) => {
-    const final = idx === breadcrumbs.length - 1
-    res.push({
-      label: folder.file_name,
-      name: folder.name,
-      onClick: final
-        ? () => entity.write && emitter.emit('rename')
-        : popBreadcrumbs(folder),
-      route: final
-        ? null
-        : { name: 'drive-Folder', params: { entityName: folder.name } },
-    })
-  })
-  store.commit('setBreadcrumbs', res)
 }
 
 export function getIconUrl(file_type) {
@@ -614,7 +537,7 @@ export const pasteObj = (e) => {
       const entity = uploadImage(file, {
         team: route.params.team,
         parent: route.params.entityName || '',
-        personal: store.state.breadcrumbs[0].name === 'drive-Home' ? 1 : 0,
+        personal: isHomeContext() ? 1 : 0,
         total_file_size: file.size,
         file_modified: file.lastModified,
       })
@@ -765,17 +688,16 @@ export const newExternal = async (type) => {
   const route = router.currentRoute.value
   if (type === 'Presentation') {
     window.location.href = `/slides/presentation/new?parent=${
-      store.state.currentFolder.name
+      currentFolder.value.name
     }&team=${route.params.team || ''}`
     return
   }
   const data = await createDocument.submit({
     team: route.params.team,
-    parent: store.state.currentFolder.name,
+    parent: currentFolder.value.name,
   })
   prettyData([data])
   data.file_type = type
-  store.state.listResource.data?.push?.(data)
   getDocuments.data?.push?.(data)
   window.location.href = '/writer/w/' + data.name
 }

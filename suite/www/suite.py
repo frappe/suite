@@ -32,5 +32,10 @@ def get_boot():
 	return frappe._dict(
 		{
 			"site_name": frappe.local.site,
+			"socketio_port": frappe.conf.get("socketio_port") or 9000,
+			# Surfaced on window.push_relay_server_url for mail's FCM push setup
+			# (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
+			# standalone www/mail.py boot, which the suite shell replaced.
+			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 		}
 	)

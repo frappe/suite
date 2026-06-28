@@ -31,10 +31,18 @@ const handleOnline = () => {
   })
 }
 
+const registerServiceWorker = () => {
+  if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return
+  navigator.serviceWorker.register('/service-worker.js').catch((err) => {
+    console.warn('Slides Service Worker registration failed:', err)
+  })
+}
+
 onMounted(() => {
   isOnline.value = navigator?.onLine
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
+  registerServiceWorker()
 })
 
 onUnmounted(() => {

@@ -4,12 +4,6 @@
     <div class="mx-auto flex min-h-full max-w-5xl flex-col px-6 pt-[10%] pb-16">
 
       <div class="mx-auto grid grid-cols-4 gap-x-20 gap-y-10">
-        <div class=" col-span-4">
-          <TextInput placeholder="Search" variant="subtle">
-            <template #prefix><span class="lucide-search size-4 text-ink-gray-4" /></template>
-            </TextInput>
-
-        </div>
         <router-link
           v-for="app in apps"
           :key="app.id"
@@ -51,7 +45,6 @@ import { onMounted } from 'vue'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { useRootStore } from '@/stores/root'
-import { TextInput } from 'frappe-ui'
 
 const apps = SUITE_APPS
 const suiteLogo = SUITE_LOGO

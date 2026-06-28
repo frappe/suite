@@ -1,4 +1,4 @@
-import { allUsers } from '@/apps/writer/ui/drive/js/resources'
+import { allUsers } from '@/apps/drive/ui/drive/js/resources'
 
 /**
  * Replacement for the standalone app's global `$user(name)` property.

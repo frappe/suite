@@ -19,19 +19,11 @@
   "defaults_section",
   "default_dns_ttl",
   "default_disk_quota_gb",
+  "enable_gravatar",
   "default_gravatar",
   "column_break_cuxv",
   "stalwart_version",
   "stalwart_cli_version",
-  "storage_shard_count",
-  "logs_section",
-  "push_log_file_count",
-  "push_log_level",
-  "push_log_max_file_size",
-  "column_break_ztzv",
-  "storage_log_file_count",
-  "storage_log_level",
-  "storage_log_max_file_size",
   "limits_section",
   "exchange_max_export",
   "exchange_max_import",
@@ -43,6 +35,24 @@
   "column_break_cazi",
   "process_pending_emails_batch_size",
   "process_pending_emails_max_batch_size",
+  "logs_section",
+  "push_log_file_count",
+  "storage_log_file_count",
+  "inbound_log_file_count",
+  "outbound_log_file_count",
+  "exchange_log_file_count",
+  "column_break_ztzv",
+  "push_log_level",
+  "storage_log_level",
+  "inbound_log_level",
+  "outbound_log_level",
+  "exchange_log_level",
+  "column_break_pvju",
+  "push_log_max_file_size",
+  "storage_log_max_file_size",
+  "inbound_log_max_file_size",
+  "outbound_log_max_file_size",
+  "exchange_log_max_file_size",
   "timeouts_seconds_section",
   "column_break_rtlq",
   "ansible_play_timeout",
@@ -400,7 +410,15 @@
    "reqd": 1
   },
   {
+   "default": "0",
+   "description": "Use Gravatar for default user images. Gravatar is a third-party service; enabling this shares users' email addresses (hashed) with it. When disabled, initials are shown instead.",
+   "fieldname": "enable_gravatar",
+   "fieldtype": "Check",
+   "label": "Enable Gravatar"
+  },
+  {
    "default": "404",
+   "depends_on": "eval: doc.enable_gravatar",
    "fieldname": "default_gravatar",
    "fieldtype": "Select",
    "label": "Default Gravatar",
@@ -419,13 +437,6 @@
    "fieldname": "stalwart_version",
    "fieldtype": "Data",
    "label": "Stalwart Version",
-   "reqd": 1
-  },
-  {
-   "default": "8",
-   "fieldname": "storage_shard_count",
-   "fieldtype": "Int",
-   "label": "Storage Shard Count",
    "reqd": 1
   },
   {
@@ -607,12 +618,82 @@
    "fieldname": "limits_section",
    "fieldtype": "Section Break",
    "label": "Limits"
+  },
+  {
+   "default": "10",
+   "fieldname": "outbound_log_file_count",
+   "fieldtype": "Int",
+   "label": "Outbound Log File Count",
+   "reqd": 1
+  },
+  {
+   "default": "INFO",
+   "fieldname": "outbound_log_level",
+   "fieldtype": "Select",
+   "label": "Outbound Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "default": "5000000",
+   "fieldname": "outbound_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Outbound Log Max File Size",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_pvju",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "10",
+   "fieldname": "inbound_log_file_count",
+   "fieldtype": "Int",
+   "label": "Inbound Log File Count",
+   "reqd": 1
+  },
+  {
+   "default": "INFO",
+   "fieldname": "inbound_log_level",
+   "fieldtype": "Select",
+   "label": "Inbound Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "default": "5000000",
+   "fieldname": "inbound_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Inbound Log Max File Size",
+   "reqd": 1
+  },
+  {
+   "default": "10",
+   "fieldname": "exchange_log_file_count",
+   "fieldtype": "Int",
+   "label": "Exchange Log File Count",
+   "reqd": 1
+  },
+  {
+   "default": "INFO",
+   "fieldname": "exchange_log_level",
+   "fieldtype": "Select",
+   "label": "Exchange Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "default": "5000000",
+   "fieldname": "exchange_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Exchange Log Max File Size",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-08 22:01:00.877073",
+ "modified": "2026-06-23 17:16:11.209239",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

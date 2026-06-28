@@ -1,5 +1,5 @@
 import { frappeRequest } from 'frappe-ui'
-import store from '@/apps/drive/store'
+import { useSessionStore } from '@/boot/session'
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 
@@ -32,9 +32,9 @@ function applyTheme(mode) {
 
 export async function setupTheme() {
   if (import.meta.env.DEV) {
-    if (store.getters.isLoggedIn) {
+    if (useSessionStore().isLoggedIn) {
       const boot = await frappeRequest({
-        url: 'suite.drive.www.drive.get_context_for_dev',
+        url: '/api/method/suite.drive.www.drive.get_context_for_dev',
         method: 'POST',
       })
       applyTheme(boot?.desk_theme || 'Light')
@@ -53,7 +53,7 @@ export async function setupTheme() {
 export function switchTheme(theme) {
   applyTheme(theme)
 
-  if (store.getters.isLoggedIn) {
+  if (useSessionStore().isLoggedIn) {
     frappeRequest({
       url: 'frappe.core.doctype.user.user.switch_theme',
       params: { theme },

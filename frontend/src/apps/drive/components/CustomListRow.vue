@@ -54,7 +54,7 @@ import { ListRow } from 'frappe-ui'
 import CustomListRowItem from './CustomListRowItem.vue'
 import { openEntity, isModKey } from '@/apps/drive/utils/files'
 import { useRoute } from 'vue-router'
-import store from '@/apps/drive/store'
+import { activeEntity } from '@/apps/drive/data/selection'
 import { computed, ref } from 'vue'
 
 defineProps({
@@ -70,6 +70,6 @@ const dragOverItem = ref()
 const route = useRoute()
 
 // Used as right-click doesn't trigger active in frappe-ui
-const selectedName = computed(() => store.state.activeEntity?.name)
+const selectedName = computed(() => activeEntity.value?.name)
 const open = (row) => route.name !== 'Trash' && openEntity(row)
 </script>

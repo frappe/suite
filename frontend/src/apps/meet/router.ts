@@ -1,8 +1,7 @@
 import type { RouteLocationNormalized, Router } from "vue-router";
 
 import suiteRouter from "@/router";
-
-import { userResource } from "@/apps/meet/data/user";
+import { userResource } from "@/boot/session";
 
 /**
  * Meet router compat + guard.

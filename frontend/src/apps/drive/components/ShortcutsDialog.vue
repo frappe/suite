@@ -1,7 +1,6 @@
 <template>
-  <Dialog v-model="open" :options="{ title: 'Keyboard Shortcuts', size: '4xl' }">
-    <template #body-content>
-      <div v-focus class="w-full grid grid-cols-2 gap-10 py-1">
+  <Dialog v-model:open="open" title="Keyboard Shortcuts" size="4xl">
+    <div v-focus class="w-full grid grid-cols-2 gap-10 py-1">
         <div v-for="group in shortcutGroups" :key="group.title" class="border-b pb-4">
           <h2 class="text-xl-semibold text-ink-gray-8 mb-4">
             {{ group.title }}
@@ -28,7 +27,6 @@
           </ul>
         </div>
       </div>
-    </template>
   </Dialog>
 </template>
 <script setup>

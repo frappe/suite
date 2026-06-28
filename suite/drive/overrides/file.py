@@ -395,7 +395,7 @@ class File(FrappeFile):
             yield frappe.get_doc(self.doctype, name)
 
 
-def after_upload_file(doc):
+def after_file_upload(doc):
     # frappe handler.upload_file reassigns `doc` to our return value, so always return it.
     if not is_site_file(doc):
         return doc

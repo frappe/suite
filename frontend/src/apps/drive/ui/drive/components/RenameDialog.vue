@@ -1,22 +1,19 @@
 <template>
   <Dialog
-    v-model="open"
-    :options="{
-      title: 'Rename',
-      size: 'xs',
-      actions: [
-        {
-          label: 'Confirm',
-          variant: 'solid',
-          disabled: !newTitle || newTitle === entity.file_name || rename.loading,
-          onClick: submit,
-        },
-      ],
-    }"
+    v-model:open="open"
+    title="Rename"
+    size="xs"
+    :actions="[
+      {
+        label: 'Confirm',
+        variant: 'solid',
+        disabled: !newTitle || newTitle === entity.file_name || rename.loading,
+        onClick: submit,
+      },
+    ]"
     @close="dialogType = ''"
   >
-    <template #body-content>
-      <div class="flex gap-3">
+    <div class="flex gap-3">
         <FormControl
           v-model="newTitle"
           v-focus
@@ -32,7 +29,6 @@
           {{ file_ext }}
         </div>
       </div>
-    </template>
   </Dialog>
 </template>
 

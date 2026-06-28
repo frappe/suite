@@ -6,15 +6,15 @@
 import GenericPage from '@/apps/drive/components/GenericPage.vue'
 import { computed } from 'vue'
 import { getSiteFiles, getShared } from '@/apps/drive/resources/files'
-import store from '@/apps/drive/store'
+import { shareView } from '@/apps/drive/data/prefs'
 import LucideFiles from '~icons/lucide/files'
 
 
 const getEntities = computed(() =>
-  store.state.shareView ? getShared : getSiteFiles
+  shareView.value ? getShared : getSiteFiles
 )
 const empty = computed(() =>
-  store.state.shareView
+  shareView.value
     ? {
       icon: LucideUsers,
       title: 'No shared files',

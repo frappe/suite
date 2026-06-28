@@ -1,7 +1,9 @@
 import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts'
 import { openEntity, setTitle } from '@/apps/drive/utils/files'
-import store from '@/apps/drive/store'
+import { activeEntity } from '@/apps/drive/data/selection'
+import { updateLastBreadcrumbLabel } from '@/apps/drive/data/breadcrumbs'
+import { getSortOrder } from '@/apps/drive/data/prefs'
 import router from '@/apps/drive/router'
 import { prettyData, setCache } from '@/apps/drive/utils/files'
 import { updateURLSlug } from '@/apps/drive/utils/files'
@@ -173,12 +175,15 @@ export const updateMoved = (team, new_parent, special) => {
       }),
       cache: ['folder', new_parent],
     }).fetch(
-      store.state.sortOrder[new_parent]
-        ? {
-            order_by: store.state.sortOrder[new_parent].field,
-            ascending: store.state.sortOrder[new_parent].ascending,
-          }
-        : {}
+      (() => {
+        const order = getSortOrder(new_parent)
+        return order
+          ? {
+              order_by: order.field,
+              ascending: order.ascending,
+            }
+          : {}
+      })()
     )
   } else {
     ;(move.params.is_private ? getPersonal : getFiles).fetch({ team })
@@ -272,14 +277,16 @@ export const rename = createResource({
     }
   },
   onSuccess: () => {
-    let l = store.state.breadcrumbs[store.state.breadcrumbs.length - 1]
-    if (l.name === rename.params.entity_name) {
-      l.label = rename.params.new_title
-      store.state.activeEntity.file_name = rename.params.new_title
-      store.state.activeEntity.modified = new Date()
-      setTitle(rename.params.new_title)
-      updateURLSlug(rename.params.new_title)
+    updateLastBreadcrumbLabel(
+      rename.params.new_title,
+      rename.params.entity_name,
+    )
+    if (activeEntity.value?.name === rename.params.entity_name) {
+      activeEntity.value.file_name = rename.params.new_title
+      activeEntity.value.modified = new Date()
     }
+    setTitle(rename.params.new_title)
+    updateURLSlug(rename.params.new_title)
   },
   onError(error) {
     toast({

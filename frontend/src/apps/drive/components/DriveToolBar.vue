@@ -11,16 +11,10 @@
         {
           label: __('Site'),
           value: false,
-          onClick: () => {
-            store.commit('toggleShareView', false)
-          },
         },
         {
           label: __('With you'),
           value: true,
-          onClick: () => {
-            store.commit('toggleShareView', true)
-          },
         },
       ]" />
     </div>
@@ -78,7 +72,7 @@
           </div>
         </Dropdown>
 
-        <TabButtons v-model="viewState" :buttons="[
+        <TabButtons v-model="view" :buttons="[
           {
             icon: 'grid',
             value: 'grid',
@@ -122,7 +116,7 @@ import {
   onWatcherCleanup,
 } from 'vue'
 import { getIconUrl } from '@/apps/drive/utils/files'
-import store from '@/apps/drive/store'
+import { view, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
 import LucideFilter from '~icons/lucide/filter'
 import TeamSelector from '@/apps/drive/components/TeamSelector.vue'
@@ -141,9 +135,6 @@ const props = defineProps({
 const activeFilters = defineModel('filters')
 const disabled = computed(() => !props.getEntities.data?.length)
 
-const viewState = ref(store.state.view)
-watch(viewState, (val) => store.commit('toggleView', val))
-const shareView = ref(store.state.shareView)
 const searchInput = useTemplateRef('search-input')
 
 const delayedLoading = ref(false)

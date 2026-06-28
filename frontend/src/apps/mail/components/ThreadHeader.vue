@@ -1,12 +1,12 @@
 <template>
-	<div class="bg-surface-base sticky top-0 flex items-center border-b p-2.5 sm:px-5">
+	<div class="bg-surface-base sticky top-0 flex items-center border-b py-2.5 sm:px-3.5">
 		<Button
 			variant="ghost"
 			class="mr-2 shrink-0"
 			@click="$router.push({ name: 'mail-mailbox', params: { mailbox }, query: route.query })"
 		>
 			<template #icon>
-				<ChevronLeft class="text-ink-gray-7 icon" />
+				<ChevronLeft class="icon" />
 			</template>
 		</Button>
 		<template v-if="thread?.length">
@@ -37,6 +37,13 @@
 					</Button>
 				</template>
 
+				<Dropdown :options="moveToOptions">
+					<Button variant="ghost" :tooltip="__('Move To')">
+						<template #icon>
+							<FolderInput class="icon" />
+						</template>
+					</Button>
+				</Dropdown>
 				<Dropdown v-if="showAddTo" :options="addToOptions">
 					<Button variant="ghost" :tooltip="__('Add To')">
 						<template #icon>
@@ -48,13 +55,6 @@
 					<Button variant="ghost" :tooltip="__('Remove From')">
 						<template #icon>
 							<FolderMinus class="icon" />
-						</template>
-					</Button>
-				</Dropdown>
-				<Dropdown :options="moveToOptions">
-					<Button variant="ghost" :tooltip="__('Move To')">
-						<template #icon>
-							<FolderInput class="icon" />
 						</template>
 					</Button>
 				</Dropdown>
@@ -109,7 +109,7 @@ import {
 import { Button, Dropdown, Tooltip } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
-import { getIcon } from '@/apps/mail/utils'
+import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -153,10 +153,14 @@ const threadMailboxes = computed(() => {
 // Every mailbox the thread's mails touch (union), and whether any mail is in more than one — used by
 // Remove From, which is only offered when removing won't orphan a mail.
 const threadMailboxesUnion = computed(() => [
-	...new Set((thread ?? []).flatMap((mail: Mail) => mail.mailboxes.map((m) => m.mailbox_id))),
+	...new Set(
+		(thread ?? [])
+			.filter((mail: Mail) => mail.id)
+			.flatMap((mail: Mail) => mail.mailboxes.map((m) => m.mailbox_id)),
+	),
 ])
 const canRemoveFrom = computed(() =>
-	(thread ?? []).some((mail: Mail) => mail.mailboxes.length > 1),
+	(thread ?? []).some((mail: Mail) => mail.id && mail.mailboxes.length > 1),
 )
 
 const threadActions = computed((): Action[] => [
@@ -179,14 +183,8 @@ const threadActions = computed((): Action[] => [
 				thread.map((m) => m.id),
 				false,
 			),
-		icon: h(Star, { class: 'fill-ink-amber-5 text-ink-amber-5 stroke-ink-amber-5' }),
+		icon: h(Star, { style: 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' }),
 		condition: () => thread.every((m) => m.flagged),
-	},
-	{
-		label: __('Mark as Unread (U)'),
-		onClick: () => emit('setSeen', false),
-		icon: MailIcon,
-		condition: () => true,
 	},
 	{
 		label: __('Archive Thread (E)'),
@@ -225,6 +223,12 @@ const threadActions = computed((): Action[] => [
 		icon: Trash2,
 		condition: () => threadMailboxes.value.includes(mailboxIds.trash),
 	},
+	{
+		label: __('Mark as Unread (U)'),
+		onClick: () => emit('setSeen', false),
+		icon: MailIcon,
+		condition: () => true,
+	},
 ])
 
 const showAddTo = computed(() =>
@@ -236,6 +240,7 @@ const addToOptions = computed(() =>
 		?.filter(
 			(m) =>
 				(!m.role || ['inbox', 'archive'].includes(m.role)) &&
+				m.id !== mailboxIds.screener &&
 				!threadMailboxes.value.includes(m.id),
 		)
 		.map((m) => getMailboxOption(m, 'addThreadToMailbox')),
@@ -255,6 +260,7 @@ const moveToOptions = computed(() => {
 	const excludedMailboxes = new Set([
 		mailboxIds.sent,
 		mailboxIds.drafts,
+		mailboxIds.screener,
 		...threadMailboxes.value,
 	])
 	return mailboxes.data
@@ -266,7 +272,7 @@ const getMailboxOption = (
 	mailbox: MailboxData,
 	emitName: 'moveThread' | 'addThreadToMailbox' | 'removeThreadFromMailbox',
 ) => ({
-	label: mailbox._name,
+	label: getMailboxName(mailbox),
 	icon: h(Icon, { name: getIcon(mailbox), class: FOLDER_ICON_COLOR_MAP[mailbox.color!] }),
 	onClick: () => emit(emitName, mailbox.id),
 })

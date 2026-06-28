@@ -50,7 +50,8 @@ import {
   Avatar,
   Tooltip,
 } from 'frappe-ui'
-import store from '@/apps/drive/store'
+import { useSessionStore } from '@/boot/session'
+import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
 import { useRoute } from 'vue-router'
 import { computed, h, ref, watch, useTemplateRef } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
@@ -136,7 +137,7 @@ const selectedColumns = [
     label: __('Owner'),
     key: '',
     getLabel: ({ row }) =>
-      row.owner === store.state.user.id
+      row.owner === useSessionStore().user
         ? __('You')
         : row.owner_full_name || row.owner || '-',
     isEnabled: (n) => n !== 'Attachments',
@@ -184,11 +185,11 @@ const selectedColumns = [
 const setActive = (entityName) => {
   const entity = props.folderContents.find((k) => k.name === entityName)
   selectedRow.value =
-    !entity || entity.name !== store.state.activeEntity?.name ? entity : null
+    !entity || entity.name !== activeEntity.value?.name ? entity : null
 }
 
 watch(selectedRow, (k) => {
-  store.commit('setActiveEntity', k)
+  setActiveEntity(k)
 })
 const dropdownActionItems = (row) => {
   if (!row) return []
@@ -198,7 +199,7 @@ const dropdownActionItems = (row) => {
       ...a,
       handler: () => {
         rowEvent.value = false
-        store.commit('setActiveEntity', row)
+        setActiveEntity(row)
         a.action([row])
       },
     }))
@@ -217,7 +218,7 @@ const contextMenu = (event, row) => {
 const handleSelections = (sels) => {
   selections.value = sels
   selectedRow.value = null
-  store.commit('setActiveEntity', null)
+  setActiveEntity(null)
 }
 
 // Add keyboard shortcuts here as f-ui selections has to be mutated

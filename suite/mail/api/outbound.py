@@ -3,7 +3,7 @@ from email.utils import parseaddr
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, random_string
 from frappe.utils.file_manager import save_file
 from werkzeug.datastructures.file_storage import FileStorage
 from werkzeug.utils import secure_filename
@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 from suite.mail.api.auth import validate_user
 from suite.client.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.utils import get_config, get_messages_directory
+from suite.mail.utils.logger import get_outbound_logger
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import get_user_personal_account
 
@@ -20,9 +21,16 @@ from suite.mail.utils.user import get_user_personal_account
 def upload_attachment() -> dict:
 	"""Upload an attachment to the Frappe Mail folder."""
 
-	try:
-		validate_user()
+	ctx = {
+		"req_id": random_string(10),
+		"ip": frappe.request.remote_addr,
+	}
+	logger = get_outbound_logger(ctx)
 
+	logger.debug("upload-attachment-started")
+	validate_user()
+
+	try:
 		if file := frappe.request.files.get("file"):
 			if not isinstance(file, FileStorage):
 				frappe.throw(_("Invalid file type."))
@@ -43,9 +51,13 @@ def upload_attachment() -> dict:
 				"file_size": doc.file_size,
 				"file_url": doc.file_url,
 			}
-	except Exception as e:
-		frappe.log_error(title=_("Error uploading attachment"), message=frappe.get_traceback())
-		frappe.throw(str(e))
+
+	except frappe.exceptions.ValidationError:
+		raise
+
+	except Exception:
+		logger.exception("upload-attachment-failed")
+		frappe.throw(_("Failed to upload attachment. Please check the error logs for details."))
 
 	frappe.throw(_("No file found in the request."), frappe.MandatoryError)
 
@@ -66,32 +78,49 @@ def send(
 	attachments: list[dict] | None = None,
 	is_newsletter: bool = False,
 	save_as_draft: bool = False,
+	priority: str | None = None,
 ) -> str:
 	"""Send Mail."""
 
+	ctx = {
+		"req_id": random_string(10),
+		"ip": frappe.request.remote_addr,
+	}
+	logger = get_outbound_logger(ctx)
+
+	logger.debug("send-started", is_newsletter=is_newsletter, save_as_draft=save_as_draft)
 	account = get_user_personal_account(frappe.session.user, raise_exception=True)
 
-	from_name, from_email = parseaddr(from_)
-	doc = MailQueue._create(
-		account=account,
-		from_name=from_name,
-		from_email=from_email,
-		subject=subject,
-		reply_to=format_reply_to(reply_to),
-		headers=headers,
-		recipients=format_recipients(to, cc, bcc),
-		attachments=attachments,
-		html_body=html,
-		text_body=text,
-		via_api=True,
-		newsletter=is_newsletter,
-		in_reply_to=in_reply_to,
-		save_as_draft=save_as_draft,
-		destroy_after_submit=False,
-		delivery_mode="Batch" if is_newsletter else "Enqueue",
-	)
+	try:
+		from_name, from_email = parseaddr(from_)
+		doc = MailQueue._create(
+			account=account,
+			from_name=from_name,
+			from_email=from_email,
+			subject=subject,
+			reply_to=format_reply_to(reply_to),
+			headers=headers,
+			recipients=format_recipients(to, cc, bcc),
+			attachments=attachments,
+			html_body=html,
+			text_body=text,
+			via_api=True,
+			newsletter=is_newsletter,
+			priority=priority,
+			in_reply_to=in_reply_to,
+			save_as_draft=save_as_draft,
+			destroy_after_submit=False,
+			delivery_mode="Batch" if is_newsletter else "Enqueue",
+		)
 
-	return doc.name
+		return doc.name
+
+	except frappe.exceptions.ValidationError:
+		raise
+
+	except Exception:
+		logger.exception("send-failed")
+		frappe.throw(_("Failed to send email. Please check the error logs for details."))
 
 
 @frappe.whitelist(methods=["POST"])
@@ -101,31 +130,48 @@ def send_raw(
 	to: str | list[str],
 	raw_message: str | None = None,
 	is_newsletter: bool = False,
+	priority: str | None = None,
 ) -> str:
 	"""Send raw email. Supports both single-shot and chunked upload."""
 
-	chunk_index = frappe.form_dict.get("chunk_index")
-	total_chunks = frappe.form_dict.get("total_chunk_count")
-	upload_session = frappe.form_dict.get("uuid")
+	ctx = {
+		"req_id": random_string(10),
+		"ip": frappe.request.remote_addr,
+	}
+	logger = get_outbound_logger(ctx)
 
-	if chunk_index is not None and total_chunks is not None and upload_session:
-		return _handle_chunked_upload(
-			from_, to, is_newsletter, int(chunk_index), int(total_chunks), str(upload_session)
-		)
+	logger.debug("send-raw-started", is_newsletter=is_newsletter, has_raw_message=bool(raw_message))
 
-	raw_message = raw_message or get_message_from_files()
-	if not raw_message:
-		frappe.throw(_("The raw message is required."), frappe.MandatoryError)
+	try:
+		chunk_index = frappe.form_dict.get("chunk_index")
+		total_chunks = frappe.form_dict.get("total_chunk_count")
+		upload_session = frappe.form_dict.get("uuid")
 
-	max_message_size = _get_max_message_payload_size()
-	if len(raw_message.encode("utf-8")) > max_message_size:
-		frappe.throw(
-			_("The raw message exceeds the maximum allowed size of {0} MB.").format(
-				max_message_size // (1024 * 1024)
+		if chunk_index is not None and total_chunks is not None and upload_session:
+			return _handle_chunked_upload(
+				from_, to, is_newsletter, int(chunk_index), int(total_chunks), str(upload_session), priority
 			)
-		)
 
-	return _enqueue_mail(from_, to, raw_message, is_newsletter)
+		raw_message = raw_message or get_message_from_files()
+		if not raw_message:
+			frappe.throw(_("The raw message is required."), frappe.MandatoryError)
+
+		max_message_size = _get_max_message_payload_size()
+		if len(raw_message.encode("utf-8")) > max_message_size:
+			frappe.throw(
+				_("The raw message exceeds the maximum allowed size of {0} MB.").format(
+					max_message_size // (1024 * 1024)
+				)
+			)
+
+		return _enqueue_mail(from_, to, raw_message, is_newsletter, priority)
+
+	except frappe.exceptions.ValidationError:
+		raise
+
+	except Exception:
+		logger.exception("send-raw-failed")
+		frappe.throw(_("Failed to send raw email. Please check the error logs for details."))
 
 
 def get_message_from_files() -> str | None:
@@ -163,7 +209,13 @@ def format_reply_to(reply_to: str | list[str] | None) -> list[dict]:
 
 
 def _handle_chunked_upload(
-	from_: str, to: str | list[str], is_newsletter: bool, chunk_index: int, total_chunks: int, session_id: str
+	from_: str,
+	to: str | list[str],
+	is_newsletter: bool,
+	chunk_index: int,
+	total_chunks: int,
+	session_id: str,
+	priority: str | None = None,
 ) -> str:
 	"""Handle chunked uploads for large emails."""
 
@@ -198,7 +250,7 @@ def _handle_chunked_upload(
 
 	os.remove(temp_path)
 
-	return _enqueue_mail(from_, to, raw_message, is_newsletter)
+	return _enqueue_mail(from_, to, raw_message, is_newsletter, priority)
 
 
 def _normalize_recipients(
@@ -226,7 +278,13 @@ def _get_max_message_payload_size() -> int:
 	return cint(get_config("max_message_payload_size_mb")) * 1024 * 1024
 
 
-def _enqueue_mail(from_: str, to: str | list[str], raw_message: str, is_newsletter: bool = False) -> str:
+def _enqueue_mail(
+	from_: str,
+	to: str | list[str],
+	raw_message: str,
+	is_newsletter: bool = False,
+	priority: str | None = None,
+) -> str:
 	"""Enqueue mail in MailQueue."""
 
 	from_name, from_email = parseaddr(from_)
@@ -242,6 +300,7 @@ def _enqueue_mail(from_: str, to: str | list[str], raw_message: str, is_newslett
 		recipients=format_recipients(to),
 		via_api=True,
 		newsletter=is_newsletter,
+		priority=priority,
 		raw_message=raw_message,
 		delivery_mode="Batch" if is_newsletter else "Enqueue",
 	)

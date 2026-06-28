@@ -219,6 +219,7 @@ import {
 	useTemplateRef,
 	watch,
 } from 'vue'
+import { useRouter } from 'vue-router'
 import { EditorContent } from '@tiptap/vue-3'
 import { watchDebounced } from '@vueuse/core'
 import {
@@ -275,7 +276,15 @@ const {
 
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
 
-const { account, identities } = userStore()
+const router = useRouter()
+const store = userStore()
+const { accountId, identities } = store
+
+const viewSentMessage = (threadID: string) =>
+	router.push({
+		name: 'mail-mail',
+		params: { accountId: store.accountId, mailbox: store.mailboxIds.sent, threadID },
+	})
 
 const getIdentity = (email: string) =>
 	identities.data?.find((identity: Identity) => identity.email === email)
@@ -317,10 +326,14 @@ const user = inject('$user') as UserResource
 
 const getDefaultFromEmail = () => {
 	const identityEmails = identities.data?.map((i: Identity) => i.email) ?? []
+	// The default outgoing email is now per-account; pick the active account's.
+	const defaultOutgoingEmail = user.data?.accounts?.find(
+		(a) => a.id === accountId,
+	)?.default_outgoing_email
 
 	return (
 		identityEmails.find((e) => e === mailDetails?.from_email) ??
-		identityEmails.find((e) => e === user.data.default_outgoing_email) ??
+		identityEmails.find((e) => e === defaultOutgoingEmail) ??
 		identityEmails[0] ??
 		user.data.name
 	)
@@ -409,10 +422,12 @@ const onMailUpdateSuccess = ({
 	id,
 	status,
 	error,
+	thread_id,
 }: {
 	id: string
 	status: string
 	error: string
+	thread_id?: string
 }) => {
 	if (id) mail.id = id
 	updateOriginalMail()
@@ -423,7 +438,14 @@ const onMailUpdateSuccess = ({
 	if (show.value) return
 
 	if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
-	else if (status === 'Submitted') raiseToast(__('Message sent.'))
+	else if (status === 'Submitted')
+		raiseToast(
+			__('Message sent.'),
+			'success',
+			thread_id
+				? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
+				: undefined,
+		)
 }
 
 // Resources
@@ -431,7 +453,7 @@ const onMailUpdateSuccess = ({
 const createMail = createResource({
 	url: 'suite.mail.api.mail.create_mail',
 	makeParams: ({ save_as_draft }: { save_as_draft: boolean }) => ({
-		account,
+		account_id: accountId,
 		...mail,
 		...processInlineImages(mail),
 		from_name: getIdentity(mail.from_email!)._name,
@@ -444,7 +466,7 @@ const createMail = createResource({
 const updateDraft = createResource({
 	url: 'suite.mail.api.mail.update_draft_mail',
 	makeParams: ({ submit }: { submit: boolean }) => ({
-		account,
+		account_id: accountId,
 		...mail,
 		...processInlineImages(mail),
 		from_name: getIdentity(mail.from_email!)._name,
@@ -456,7 +478,7 @@ const updateDraft = createResource({
 
 const deleteMail = createResource({
 	url: 'suite.mail.api.mail.delete_mail',
-	makeParams: () => ({ account, id: mail.id }),
+	makeParams: () => ({ account_id: accountId, id: mail.id }),
 	onSuccess: () => {
 		reloadMails()
 		raiseToast(__('Draft discarded.'))
@@ -533,14 +555,27 @@ const openQuotedContent = () => {
 	mail.quoted_content = ''
 }
 
+const buildSignature = (email?: string) => {
+	const identity = getIdentity(email!)
+	return identity?.text_signature
+		? `<div><br></div><div><br></div>${identity.html_signature}`
+		: ''
+}
+
+const bodyText = (html: string) => {
+	const element = document.createElement('div')
+	element.innerHTML = html || ''
+	return element.textContent?.trim() ?? ''
+}
+
+// Swap the signature when the From identity changes — but only while the body is still the
+// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
+// Compared by text so the editor's HTML normalization doesn't defeat the match.
 watch(
 	() => mail.from_email,
-	(val) => {
-		if (isBodyEmpty.value) {
-			const identity = getIdentity(val!)
-			mail.html_body = identity?.text_signature
-				? `<div><br></div><div><br></div>${identity.html_signature}`
-				: ''
+	(val, oldVal) => {
+		if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal))) {
+			mail.html_body = buildSignature(val)
 		}
 	},
 	{ immediate: true },

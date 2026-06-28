@@ -18,7 +18,9 @@
 <script setup>
 import GenericPage from '@/apps/drive/components/GenericPage.vue'
 import { getTeam, getTeams, getPublicTeams } from '@/apps/drive/resources/files'
-import store from '@/apps/drive/store'
+import { useSessionStore } from '@/boot/session'
+import { setPageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
+import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import { useRoute } from 'vue-router'
 import LucideBuilding2 from '~icons/lucide/building-2'
 import { computed, watch } from 'vue'
@@ -26,7 +28,11 @@ import { computed, watch } from 'vue'
 const props = defineProps({
   team: String,
 })
-store.commit('setCurrentFolder', { name: '', team: props.team })
+watch(
+  () => props.team,
+  (team) => setCurrentFolder({ name: '', team: team || '' }),
+  { immediate: true },
+)
 
 const route = useRoute()
 const teamData = computed(
@@ -34,7 +40,7 @@ const teamData = computed(
 )
 const write = computed(
   () =>
-    teamData.value?.users?.find((k) => k.user === store.state.user.id)
+    teamData.value?.users?.find((k) => k.user === useSessionStore().user)
       ?.access_level > 0
 )
 watch(() => getPublicTeams.data, console.log)
@@ -43,7 +49,7 @@ watch(
   teamData,
   (t) =>
     t &&
-    store.commit('setBreadcrumbs', [
+    setPageBreadcrumbs([
       {
         label: t.title,
         name: t.name,

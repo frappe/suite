@@ -11,7 +11,7 @@ import { rebuild } from '@/apps/writer/extensions/comments'
 import { inject, ref } from 'vue'
 import { updateComments } from '@/apps/writer/resources'
 
-import store from '@/apps/writer/store'
+import { useSessionStore } from '@/boot/session'
 
 const REALTIME_CONFIG = {
   signaling: ['wss://signal.frappe.cloud'],
@@ -146,7 +146,7 @@ export function useYjs(id, document, editor, edited) {
   // WebRTC for real-time P2P collaboration
   const provider = new WebrtcProvider(roomName, doc, REALTIME_CONFIG)
   const permanentUserData = new Y.PermanentUserData(doc)
-  permanentUserData.setUserMapping(doc, doc.clientID, store.state.user.id)
+  permanentUserData.setUserMapping(doc, doc.clientID, useSessionStore().user)
 
   // Comments
   const { cleanup: cleanupComments, ...commentsData } = useComments(

@@ -1,11 +1,7 @@
-# Working on your app inside the Suite SPA
+# Working On A Suite App
 
-Your standalone app's frontend has been folded into **one unified Vue 3 SPA**
-(`apps/suite/frontend`). This guide orients you so you can verify your app and
-make changes. For the full migration story see `monorepo.md` (at the suite app root, `apps/suite/`),
-`apps/suite/frontend/PHASE5-PORT-CONTRACT.md` (the per-app port contract, with
-per-app breaking-change risks in §5), and `apps/suite/HISTORY-GRAFT.md` (how your
-original git authorship was preserved).
+Frappe Suite uses **one unified Vue 3 SPA** (`apps/suite/frontend`). This guide
+orients you so you can make changes safely within a product area.
 
 > Your commit history is intact: `git log --follow` / `git blame` on a file under
 > `src/apps/<your-app>/` reaches the original authors (grafted from the source repo).
@@ -27,7 +23,6 @@ apps/suite/frontend/
         router.ts      # (most apps) a prefix-scoped navigation guard on the shared router
         views/         # route-level pages (was usually pages/)
         components/ composables/ stores/ utils/ ...
-        PORT-NOTES.md  # what changed in YOUR app + known issues + verify checklist
 ```
 
 Each app owns its original URL **prefix**: `/drive /slides /writer /sheets /meet
@@ -35,7 +30,7 @@ Each app owns its original URL **prefix**: `/drive /slides /writer /sheets /meet
 `src/apps/<app>/routes.ts` on first navigation into the prefix, so heavy app deps
 stay code-split.
 
-## How to run & verify
+## How to run
 
 Dev site: **`suite.localhost:8004`** (bench/mprocs-managed). The SPA serves every
 app prefix.
@@ -51,9 +46,6 @@ bench build --app suite
   the SPA. After pulling, **restart `frappe serve`** or `/drive`, `/mail`, etc. will
   404 until the rules reload (`/suite` works without it).
 - Log in once, then open your app at `suite.localhost:8004/<your-prefix>`.
-- **Verify checklist** for your app is in `src/apps/<your-app>/PORT-NOTES.md`
-  (create an item, open it, exercise permissions, key flows).
-
 ## Conventions your changes must follow
 
 The foundation (router, shell, build, shared boot) is **shared infrastructure**.
@@ -82,18 +74,8 @@ Keep your work inside `src/apps/<your-app>/`.
 - **Translation:** bare `__('text')` works globally (foundation `boot/translation.ts`).
   Apps populate `window.translatedMessages` themselves on module load.
 
-## Cross-cutting changes already applied (don't redo)
+## Backend calls
 
-- **Backend method paths were rewritten to the `suite.*` namespace** to match the
-  relocated backend, e.g. `drive.api.files.*` → `suite.drive.api.files.*`,
-  `mail.client.doctype.*` → `suite.client.doctype.*` (the `client` module was
-  hoisted), `slides.slides.doctype.*` → `suite.slides.doctype.*`,
-  `calendar_app.api.*` → `suite.calendar.api.*`. Framework `frappe.*` paths are
-  unchanged. If you add a new backend call, use the `suite.*` path.
-- A shared global `__()` translation plugin replaced each app's own.
-
-## Known-deferred (suite-wide)
-
-Tracked for Phase 6/7, not yet done: suite-level PWA/FCM service worker (Mail push)
-and a sweep of any remaining `/assets/<oldapp>/...` URLs.
-App-specific deferred items are listed in each app's `PORT-NOTES.md`.
+Use the `suite.*` namespace for product backend calls, e.g.
+`suite.drive.api.files.*`, `suite.client.doctype.*`, `suite.slides.doctype.*`, and
+`suite.calendar.api.*`. Framework `frappe.*` paths are unchanged.

@@ -33,18 +33,25 @@ from suite.mail.storage.data_store import Entity
 from suite.mail.utils import (
 	enqueue_job,
 	get_config,
-	get_push_logger,
+	log_error,
 	parse_filters,
 	user_context,
 )
 from suite.mail.utils.dt import convert_to_utc, parse_iso_datetime, to_iso8601_z
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.lock import acquire_lock, release_lock
+from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.mail.utils.validation import has_permission_for_user
 
 
 class MailMessage(Document):
+	@property
+	def account(self) -> str:
+		"""Full ``user:account_id`` JMAP handle, rebuilt from the selected user and account ID."""
+
+		return f"{self.user}:{self.account_id}"
+
 	@property
 	def to(self) -> list[dict[str, str | None]]:
 		"""Returns the recipients in the To field."""
@@ -199,6 +206,8 @@ class MailMessage(Document):
 
 		id = filters.get("id")
 		account = filters.get("account")
+		if not account and filters.get("user") and filters.get("account_id"):
+			account = f"{filters['user']}:{filters['account_id']}"
 
 		if not account:
 			frappe.msgprint(_("Please select an account to view messages."), alert=True)
@@ -268,6 +277,8 @@ class MailMessage(Document):
 	def get_count(filters=None, **kwargs) -> int:
 		filters = parse_filters(filters)
 		account = filters.get("account")
+		if not account and filters.get("user") and filters.get("account_id"):
+			account = f"{filters['user']}:{filters['account_id']}"
 
 		if account:
 			if has_permission_for_user(parse_account(account)[0], raise_exception=False):
@@ -644,7 +655,7 @@ def fetch_messages(
 
 	messages = []
 
-	service = get_email_service(account)
+	service = get_email_service(*parse_account(account))
 	data = service.query(filter, position, limit, sort)
 
 	ids = data.get("ids", [])
@@ -667,7 +678,7 @@ def fetch_threads(
 	has_permission_for_user(parse_account(account)[0])
 
 	# Page of threads (each mapped to all of its email IDs across mailboxes).
-	service = get_email_service(account)
+	service = get_email_service(*parse_account(account))
 	thread_email_ids = service.query_thread(filter, position, limit, fetch_all=True)
 	if not thread_email_ids:
 		return {}
@@ -691,7 +702,7 @@ def fetch_thread(account: str, thread_id: str, sort: Literal["asc", "desc"] = "a
 
 	has_permission_for_user(parse_account(account)[0])
 
-	service = get_thread_service(account)
+	service = get_thread_service(*parse_account(account))
 	result = service.get([thread_id])
 	ids = result.get(thread_id, [])
 	messages = get_messages(account, ids=ids)
@@ -743,7 +754,7 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
 			ids_to_fetch.append(id)
 
 	if ids_to_fetch:
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		emails = service.get(ids_to_fetch)
 		mailbox_map = {mb["id"]: mb["name"] for mb in service.mailboxes}
 
@@ -770,14 +781,14 @@ def get_message_ids(
 	has_permission_for_user(parse_account(account)[0])
 
 	try:
-		thread_service = get_thread_service(account)
+		thread_service = get_thread_service(*parse_account(account))
 		result = thread_service.get(thread_ids)
 		ids = [id for _thread_id, ids in result.items() for id in ids]
 
 		if not mailbox_id:
 			return ids
 
-		email_service = get_email_service(account)
+		email_service = get_email_service(*parse_account(account))
 		emails = email_service.get(ids, properties=["id", "mailboxIds"])
 		if isinstance(mailbox_id, str):
 			return [email["id"] for email in emails if mailbox_id in email["mailboxIds"]]
@@ -785,7 +796,7 @@ def get_message_ids(
 			return [email["id"] for email in emails if not set(mailbox_id).isdisjoint(email["mailboxIds"])]
 
 	except Exception:
-		frappe.log_error(_("Failed to fetch message IDs."), frappe.get_traceback(with_context=True))
+		log_error(_("Failed to fetch message IDs."), frappe.get_traceback(with_context=True))
 		frappe.throw(_("Failed to fetch message IDs."))
 
 
@@ -798,13 +809,13 @@ def delete_messages(account: str, ids: list[str]) -> None:
 	has_permission_for_user(parse_account(account)[0])
 
 	try:
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.delete(ids)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to delete mail(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to delete mail(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to delete mail(s)."))
 
@@ -818,7 +829,7 @@ def empty_mailbox(account: str, mailbox_id: str) -> None:
 	has_permission_for_user(parse_account(account)[0])
 
 	try:
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 
 		while True:
 			result = service.query({"inMailbox": mailbox_id}, position=0, limit=service.max_objects_in_get)
@@ -830,9 +841,9 @@ def empty_mailbox(account: str, mailbox_id: str) -> None:
 			service.delete(ids)
 			_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to empty mailbox"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to empty mailbox"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to empty mailbox."))
 
@@ -847,13 +858,13 @@ def move_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> N
 
 	try:
 		emails = [{"id": id, "mailbox_ids": {mailbox_id: True}} for id in ids]
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_mailboxes=True)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to move mail(s) to mailbox"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to move mail(s) to mailbox"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to move mail(s) to mailbox."))
 
@@ -869,7 +880,7 @@ def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
 	try:
 		emails = []
 		for mail in mails:
-			junk = bool(suite.mail.get("junk"))
+			junk = bool(mail.get("junk"))
 			emails.append(
 				{
 					"id": mail["id"],
@@ -877,13 +888,13 @@ def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
 					"keywords": {"$junk": junk, "$notjunk": not junk},
 				}
 			)
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_keywords=False, replace_mailboxes=True)
 		_remove_cached_messages(account, [mail["id"] for mail in mails])
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to restore mailbox membership for mail(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to restore mailbox membership for mail(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to restore mailbox membership for mail(s)."))
 
@@ -898,13 +909,13 @@ def add_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> No
 
 	try:
 		emails = [{"id": id, "mailbox_ids": {mailbox_id: True}} for id in ids]
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_mailboxes=False)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to add mail(s) to mailbox"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to add mail(s) to mailbox"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to add mail(s) to mailbox."))
 
@@ -919,13 +930,13 @@ def remove_messages_from_mailbox(account: str, ids: list[str], mailbox_id: str) 
 
 	try:
 		emails = [{"id": id, "mailbox_ids": {mailbox_id: False}} for id in ids]
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_mailboxes=False)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to remove mail(s) from mailbox"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to remove mail(s) from mailbox"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to remove mail(s) from mailbox."))
 
@@ -940,7 +951,7 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
 
 	try:
 		emails = [{"id": id, "keywords": {"$seen": seen}} for id in ids]
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_keywords=False)
 
 		messages_to_cache = {}
@@ -958,9 +969,9 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
 			_cache_messages(account, messages_to_cache)
 
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to set seen status for mail(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to set seen status for mail(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to set seen status for mail(s)."))
 
@@ -975,7 +986,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
 
 	try:
 		emails = [{"id": id, "keywords": {"$flagged": flagged}} for id in ids]
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		service.update(emails, replace_keywords=False)
 
 		messages_to_cache = {}
@@ -993,9 +1004,9 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
 			_cache_messages(account, messages_to_cache)
 
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to set flagged status for mail(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to set flagged status for mail(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to set flagged status for mail(s)."))
 
@@ -1006,13 +1017,13 @@ def set_spam_status(account: str, ids: list[str], spam: bool = True) -> None:
 	if not account or not ids:
 		frappe.throw(_("Account and Mail IDs are required."))
 
-	user = parse_account(account)[0]
+	user, account_id = parse_account(account)
 	has_permission_for_user(user)
 
 	try:
 		connection = get_jmap_connection(user)
-		email_service = EmailService(account, connection)
-		mailbox_service = MailboxService(account, connection)
+		email_service = EmailService(account_id, connection)
+		mailbox_service = MailboxService(account_id, connection)
 
 		mailbox_id = mailbox_service.get_mailbox_id_by_role(
 			"junk" if spam else "inbox", create_if_not_exists=True, raise_exception=True
@@ -1025,9 +1036,9 @@ def set_spam_status(account: str, ids: list[str], spam: bool = True) -> None:
 
 		_remove_cached_messages(account, ids)
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to set spam status for mail(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to set spam status for mail(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to set spam status for mail(s)."))
 
@@ -1063,7 +1074,7 @@ def fetch_blobs(account: str, blobs: list[str] | list[tuple[str, str | None]]) -
 		return result
 
 	try:
-		service = get_email_service(account)
+		service = get_email_service(*parse_account(account))
 		fetched_blobs = service.download_blobs_concurrently(blobs_to_fetch)
 
 		blobs_to_cache = {}
@@ -1076,9 +1087,9 @@ def fetch_blobs(account: str, blobs: list[str] | list[tuple[str, str | None]]) -
 
 		return result
 	except Exception:
-		frappe.log_error(
-			title=_("Failed to fetch blob(s)"),
-			message=frappe.get_traceback(with_context=True),
+		log_error(
+			_("Failed to fetch blob(s)"),
+			frappe.get_traceback(with_context=True),
 		)
 		frappe.throw(_("Failed to fetch blob(s)."))
 
@@ -1108,7 +1119,8 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
 
 	sent_at = parse_iso_datetime(message["sentAt"])
 	formatted_message = {
-		"account": account,
+		"account_id": parse_account(account)[1],
+		"user": parse_account(account)[0],
 		"sent_at": sent_at,
 		"creation": sent_at,
 		"id": message["id"],
@@ -1192,7 +1204,7 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
 
 	for attachment in formatted_message["attachments"]:
 		if blob_id := attachment["blob_id"]:
-			params = f"account={account}&blob_id={blob_id}"
+			params = f"account_id={parse_account(account)[1]}&blob_id={blob_id}"
 			if filename := attachment["filename"]:
 				params += f"&filename={quote(filename)}"
 			attachment["url"] = f"/api/method/suite.mail.api.mail.get_attachment?{params}"
@@ -1216,40 +1228,35 @@ def _get_total_cache_key(account: str) -> str:
 def _get_cached_messages(account: str, ids: list[str]) -> dict[str, dict | None]:
 	"""Returns a dictionary of cached messages for the provided IDs."""
 
-	user, account_id = parse_account(account)
-	store = get_data_store(user, account_id)
+	store = get_data_store(parse_account(account)[1])
 	return store.get_many(Entity.EMAIL, subkeys=ids)
 
 
 def _cache_messages(account: str, messages: dict[str, dict]) -> None:
 	"""Store messages in cache with the message ID as the subkey."""
 
-	user, account_id = parse_account(account)
-	store = get_data_store(user, account_id)
+	store = get_data_store(parse_account(account)[1])
 	store.set_many(Entity.EMAIL, items=messages)
 
 
 def _remove_cached_messages(account: str, ids: list[str]) -> None:
 	"""Remove messages from cache for the provided IDs."""
 
-	user, account_id = parse_account(account)
-	store = get_data_store(user, account_id)
+	store = get_data_store(parse_account(account)[1])
 	store.delete_many(Entity.EMAIL, subkeys=ids)
 
 
 def _get_cached_blobs(account: str, blob_ids: list[str]) -> dict[str, bytes | None]:
 	"""Returns a dictionary of cached blobs for the provided blob IDs."""
 
-	user, account_id = parse_account(account)
-	store = get_blob_store(user, account_id)
+	store = get_blob_store(parse_account(account)[1])
 	return store.get_many(subkeys=blob_ids)
 
 
 def _cache_blobs(account: str, blobs: dict[str, bytes]) -> None:
 	"""Store blobs in cache with the blob ID as the subkey."""
 
-	user, account_id = parse_account(account)
-	store = get_blob_store(user, account_id)
+	store = get_blob_store(parse_account(account)[1])
 	store.set_many(items=blobs)
 
 
@@ -1257,8 +1264,7 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 	"""Fetch changes from the server and remove MailMessage documents from the cache."""
 
 	ctx = ctx or {}
-
-	logger = get_push_logger()
+	logger = get_push_logger(ctx)
 
 	current_state = get_sync_state(account, type="email")
 
@@ -1266,35 +1272,35 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 	ctx["email_state"] = email_state
 
 	if not current_state:
-		logger.info({**ctx, "event": "initializing-email-sync-state"})
+		logger.info("initializing-email-sync-state")
 		return update_sync_state(account, type="email", state=email_state)
 
 	elif email_state == current_state:
-		logger.info({**ctx, "event": "email-state-unchanged"})
+		logger.debug("email-state-unchanged")
 		return
 
 	user, account_id = parse_account(account)
 
 	try:
-		logger.info({**ctx, "event": "fetching-changes-from-server"})
+		logger.debug("fetching-changes-from-server")
 
 		connection = get_jmap_connection(user)
-		email_service = EmailService(account, connection)
-		mailbox_service = MailboxService(account, connection)
+		email_service = EmailService(account_id, connection)
+		mailbox_service = MailboxService(account_id, connection)
 
 		result = email_service.changes(current_state)
 
 		if created_ids := result["created"]:
-			logger.info({**ctx, "event": "new-messages-created", "count": len(created_ids)})
+			logger.info("new-messages-created", count=len(created_ids))
 
 			if messages := get_messages(account, ids=created_ids):
 				subscribed_mailboxes = set([m["id"] for m in mailbox_service.mailboxes if m["isSubscribed"]])
-				logger.debug({**ctx, "subscribed_mailboxes": subscribed_mailboxes})
+				logger.debug("resolved-subscribed-mailboxes", subscribed_mailboxes=subscribed_mailboxes)
 
 				disabled_mailboxes = set(
 					frappe.db.get_all(
 						"Mailbox Settings",
-						{"account": account, "disable_push_notification": 1},
+						{"account_id": account_id, "disable_push_notification": 1},
 						pluck="mailbox_id",
 					)
 				) | {
@@ -1302,7 +1308,7 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 					for m in mailbox_service.mailboxes
 					if m["role"] in ["sent", "drafts", "junk", "trash"]
 				}
-				logger.debug({**ctx, "disabled_mailboxes_for_notification": disabled_mailboxes})
+				logger.debug("resolved-disabled-mailboxes", disabled_mailboxes=disabled_mailboxes)
 
 				notify_candidates = []
 				mailboxes_to_reload = set()
@@ -1327,17 +1333,17 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 					if is_candidate:
 						notify_candidates.append((mailbox_id, message))
 
-				logger.debug({**ctx, "notify_candidates_count": len(notify_candidates)})
+				logger.debug("computed-notify-candidates", notify_candidates_count=len(notify_candidates))
 
 				max_push_notifications = cint(get_config("max_push_notifications"))
 				recent_messages = notify_candidates[:max_push_notifications]
 
-				logger.debug({**ctx, "recent_notify_candidates_count": len(recent_messages)})
+				logger.debug("capped-notify-candidates", recent_notify_candidates_count=len(recent_messages))
 
 				pn = PushNotification("mail")
 
 				if pn.is_enabled():
-					logger.info({**ctx, "event": "sending-push-notifications", "count": len(recent_messages)})
+					logger.info("sending-push-notifications", count=len(recent_messages))
 
 					url = frappe.utils.get_url()
 					for mailbox_id, message in recent_messages:
@@ -1349,28 +1355,28 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 							f"{url}/assets/suite/mail/frontend/manifest/manifest-icon-192.maskable.png",
 						)
 				else:
-					logger.info({**ctx, "event": "push-notifications-disabled"})
+					logger.debug("push-notifications-disabled")
 
 				if mailboxes_to_reload:
 					frappe.publish_realtime("new_mail_created", list(mailboxes_to_reload), user=user)
 
 		if updated_ids := result["updated"]:
-			logger.info({**ctx, "event": "messages-updated", "count": len(updated_ids)})
+			logger.info("messages-updated", count=len(updated_ids))
 			_remove_cached_messages(account, updated_ids)
 
 		if destroyed_ids := result["destroyed"]:
-			logger.info({**ctx, "event": "messages-deleted", "count": len(destroyed_ids)})
+			logger.info("messages-deleted", count=len(destroyed_ids))
 			_remove_cached_messages(account, destroyed_ids)
 
 		new_state = result["newState"]
 
 		ctx["new_state"] = new_state
-		logger.info({**ctx, "event": "updating-email-sync-state"})
+		logger.debug("updating-email-sync-state")
 
 		update_sync_state(account, type="email", state=new_state)
 
 		if result["hasMoreChanges"]:
-			logger.info({**ctx, "event": "more-changes-to-fetch"})
+			logger.debug("more-changes-to-fetch")
 			ctx.pop("current_state", None)
 			ctx.pop("email_state", None)
 			ctx.pop("new_state", None)
@@ -1378,10 +1384,10 @@ def fetch_changes(account: str, email_state: str | None = None, ctx: dict | None
 			fetch_changes(account, ctx=ctx)
 
 	except Exception:
-		logger.error({**ctx, "event": "fetch-changes-failed"})
-		frappe.log_error(
-			title=_("Failed to fetch changes"),
-			message=frappe.get_traceback(with_context=True),
+		logger.error("fetch-changes-failed")
+		log_error(
+			_("Failed to fetch changes"),
+			frappe.get_traceback(with_context=True),
 		)
 
 
@@ -1391,14 +1397,13 @@ def locked_fetch_changes(
 	"""Fetch changes for the specified account with a lock to prevent concurrent execution."""
 
 	ctx = ctx or {}
-
-	logger = get_push_logger()
+	logger = get_push_logger(ctx)
 
 	try:
-		logger.info({**ctx, "event": "starting-fetch-changes"})
+		logger.debug("starting-fetch-changes")
 		fetch_changes(account, email_state, ctx=ctx)
 	finally:
-		logger.info({**ctx, "event": "releasing-fetch-changes-lock"})
+		logger.debug("releasing-fetch-changes-lock")
 		release_lock(f"fetch_changes:{account}", lock_id)
 
 
@@ -1406,23 +1411,22 @@ def enqueue_fetch_changes(account: str, email_state: str | None = None, ctx: dic
 	"""Enqueue the fetch_changes job for the specified account."""
 
 	ctx = ctx or {}
+	logger = get_push_logger(ctx)
 
-	logger = get_push_logger()
-
-	logger.info({**ctx, "event": "enqueueing-fetch-changes"})
+	logger.debug("enqueueing-fetch-changes")
 
 	lockname = f"fetch_changes:{account}"
 	fetch_lock_timeout = cint(get_config("fetch_lock_timeout"))
 	identifier = acquire_lock(lockname, acquire_timeout=0, lock_timeout=fetch_lock_timeout)
 
 	if not identifier:
-		logger.info({**ctx, "event": "fetch-changes-lock-not-acquired"})
+		logger.debug("fetch-changes-lock-not-acquired")
 		return
 
 	ctx["lock_id"] = identifier
 
 	with user_context("Administrator"):
-		logger.debug({**ctx, "event": "fetch-changes-lock-acquired"})
+		logger.debug("fetch-changes-lock-acquired")
 		enqueue_job(
 			locked_fetch_changes,
 			account=account,
@@ -1435,47 +1439,54 @@ def enqueue_fetch_changes(account: str, email_state: str | None = None, ctx: dic
 
 
 def schedule_fetch_changes() -> None:
-	"""Schedule fetch_changes for users who have email accounts configured and haven't had their email state updated in the last 3 hours."""
+	"""Schedule fetch_changes for every (user, account) whose email state hasn't been
+	updated in the last 3 hours.
+
+	Account Settings are now shared per account ID, so the set of accounts to sync is
+	derived from each JMAP-configured user's accounts, and the last-update timestamp is
+	read from that user's per-account data store."""
 
 	USER = frappe.qb.DocType("User")
 	USER_SETTINGS = frappe.qb.DocType("User Settings")
-	ACCOUNT_SETTINGS = frappe.qb.DocType("Account Settings")
 
-	threshold = add_to_date(now(), hours=-3)
+	threshold = get_datetime(add_to_date(now(), hours=-3))
 
-	accounts = (
-		frappe.qb.from_(ACCOUNT_SETTINGS)
+	users = (
+		frappe.qb.from_(USER_SETTINGS)
 		.join(USER)
-		.on(USER.name == ACCOUNT_SETTINGS.user)
-		.join(USER_SETTINGS)
-		.on(USER_SETTINGS.user == USER.name)
-		.select(ACCOUNT_SETTINGS.account)
-		.distinct()
+		.on(USER.name == USER_SETTINGS.user)
+		.select(USER_SETTINGS.user)
 		.where(
 			(USER.enabled == 1)
 			& (USER_SETTINGS.username != "")
 			& (USER_SETTINGS.username.isnotnull())
 			& (USER_SETTINGS.skip_schedule_fetch_changes == 0)
-			& (
-				ACCOUNT_SETTINGS.email_state_last_update.isnull()
-				| (ACCOUNT_SETTINGS.email_state_last_update < threshold)
-			)
 		)
-	).run(pluck="account")
+	).run(pluck="user")
+
+	if not users:
+		return
+
+	accounts = []
+	for user in users:
+		try:
+			account_ids = list(get_jmap_connection(user, ignore_permissions=True).accounts.keys())
+		except Exception:
+			continue
+
+		for account_id in account_ids:
+			store = get_data_store(account_id)
+			last_update = store.get(Entity.STATE, "email_state_last_update")
+			if not last_update or get_datetime(last_update) < threshold:
+				accounts.append(f"{user}:{account_id}")
 
 	if not accounts:
 		return
 
 	req_id = random_string(10)
-	logger = get_push_logger()
+	logger = get_push_logger({"req_id": req_id})
 
-	logger.info(
-		{
-			"req_id": req_id,
-			"event": "scheduling-fetch-changes",
-			"account_count": len(accounts),
-		}
-	)
+	logger.info("scheduling-fetch-changes", account_count=len(accounts))
 
 	for idx, account in enumerate(accounts, start=1):
 		ctx = {"req_id": f"{req_id}-{idx}", "account": account}

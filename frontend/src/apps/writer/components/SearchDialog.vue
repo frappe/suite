@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-model="show" :options="{ size: 'xl', position: 'top' }" class="z-11">
+  <Dialog v-model:open="show" size="xl" position="top" class="z-11">
     <template #body>
       <div class="flex flex-col">
         <div class="relative">

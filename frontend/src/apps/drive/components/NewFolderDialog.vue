@@ -1,23 +1,20 @@
 <template>
   <Dialog
-    v-model="open"
-    :options="{
-      title: 'Create a folder',
-      size: 'xs',
-      actions: [
-        {
-          label: 'Create',
-          variant: 'solid',
-          disabled: folderName.length === 0,
-          loading: createFolder.loading,
-          onClick: submit,
-        },
-      ],
-    }"
+    v-model:open="open"
+    title="Create a folder"
+    size="xs"
+    :actions="[
+      {
+        label: 'Create',
+        variant: 'solid',
+        disabled: folderName.length === 0,
+        loading: createFolder.loading,
+        onClick: submit,
+      },
+    ]"
     @close="dialogType = ''"
   >
-    <template #body-content>
-      <FormControl
+    <FormControl
         v-model="folderName"
         v-focus
         label="Name:"
@@ -31,7 +28,6 @@
       <div v-if="createFolder.error" class="pt-4 text-base font-sm text-ink-red-6">
         {{ createFolder.error.messages[0] }}
       </div>
-    </template>
   </Dialog>
 </template>
 

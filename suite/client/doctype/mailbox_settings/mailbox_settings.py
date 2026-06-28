@@ -8,19 +8,36 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.jmap import parse_account
-from suite.mail.utils.user import is_system_manager
-from suite.mail.utils.validation import has_permission_for_user
+from suite.mail.utils.user import get_account_scoped_permission_query, has_account_scoped_permission
+
+# Fields that feed the Mailbox section of the frappe_mail_automation sieve script; a change to any of
+# them regenerates the script.
+AUTOMATION_FIELDS = ("emails_from", "subject_contains", "match_if", "mark_as_read", "add_star")
 
 
 class MailboxSettings(Document):
+	"""Per-mailbox settings, shared per JMAP account ID — every user with access to the
+	account sees the same mailbox icons, colors, and push-notification preferences."""
+
 	def autoname(self) -> None:
 		self.name = str(uuid7())
 
 	def validate(self) -> None:
 		self.validate_duplicate()
 
-	def before_insert(self) -> None:
-		self.user = parse_account(self.account)[0]
+	def on_update(self) -> None:
+		# Regenerate the automation sieve when a folder's automation rules change through the document
+		# lifecycle (e.g. a save from Desk). The high-volume API path writes via db_set — which bypasses
+		# this hook — and rebuilds explicitly once after its structural writes. Skipped during migrate
+		# (no JMAP round-trips) and when a caller paused builds for a bulk write.
+		if frappe.flags.in_migrate or frappe.flags.get("skip_automation_sieve_build"):
+			return
+
+		if any(self.has_value_changed(field) for field in AUTOMATION_FIELDS):
+			from suite.mail.api.sieve import maybe_build_automation_sieve
+			from suite.mail.utils.user import get_session_account
+
+			maybe_build_automation_sieve(get_session_account(self.account_id))
 
 	def validate_duplicate(self) -> None:
 		"""Checks for duplicate Mailbox Settings for the same account and mailbox ID."""
@@ -28,7 +45,7 @@ class MailboxSettings(Document):
 		existing = frappe.db.exists(
 			"Mailbox Settings",
 			{
-				"account": self.account,
+				"account_id": self.account_id,
 				"mailbox_id": self.mailbox_id,
 				"name": ["!=", self.name],
 			},
@@ -37,7 +54,7 @@ class MailboxSettings(Document):
 		if existing:
 			frappe.throw(
 				_("Mailbox Settings for account {0} with mailbox ID {1} already exists.").format(
-					frappe.bold(self.account), frappe.bold(self.mailbox_id)
+					frappe.bold(self.account_id), frappe.bold(self.mailbox_id)
 				),
 				title=_("Duplicate Mailbox Settings"),
 			)
@@ -59,7 +76,10 @@ def get_mailbox_settings(
 ) -> MailboxSettings | None:
 	"""Fetches the Mailbox Settings for a given account and mailbox ID."""
 
-	if settings := frappe.db.get_value("Mailbox Settings", {"account": account, "mailbox_id": mailbox_id}):
+	account_id = parse_account(account)[1]
+	if settings := frappe.db.get_value(
+		"Mailbox Settings", {"account_id": account_id, "mailbox_id": mailbox_id}
+	):
 		return frappe.get_doc("Mailbox Settings", settings)
 
 	if raise_exception:
@@ -70,6 +90,44 @@ def get_mailbox_settings(
 		)
 
 
+def get_mailbox_automation_rules(account: str, mailbox_id: str) -> dict | None:
+	"""Return the persisted automation rules for a mailbox as a rule dict, or None if it has none.
+
+	This is the backup that the frappe_mail_automation Sieve script is generated from, so the script
+	can be rebuilt even if a third-party client deletes it. A mailbox is considered to have no
+	automation when neither a sender nor a subject condition is set.
+	"""
+
+	settings = get_mailbox_settings(account, mailbox_id, raise_exception=False)
+	if not settings or not (settings.emails_from or settings.subject_contains):
+		return None
+
+	return {
+		"emails_from": settings.emails_from or "",
+		"subject_contains": settings.subject_contains or "",
+		"match_if": settings.match_if or "any",
+		"mark_as_read": bool(settings.mark_as_read),
+		"add_star": bool(settings.add_star),
+	}
+
+
+def automation_rules_to_settings(rules: dict | None) -> dict:
+	"""Flatten a rule dict (or None) into the Mailbox Settings automation fields.
+
+	A falsy `rules` clears the fields, so removing a mailbox's automation in the UI also clears its
+	backup.
+	"""
+
+	rules = rules or {}
+	return {
+		"emails_from": rules.get("emails_from") or "",
+		"subject_contains": rules.get("subject_contains") or "",
+		"match_if": rules.get("match_if") or "any",
+		"mark_as_read": 1 if rules.get("mark_as_read") else 0,
+		"add_star": 1 if rules.get("add_star") else 0,
+	}
+
+
 def set_mailbox_settings(account: str, mailbox_id: str, **kwargs) -> None:
 	"""Sets the Mailbox Settings for a given account and mailbox ID. Creates a new document if it doesn't exist."""
 
@@ -77,7 +135,7 @@ def set_mailbox_settings(account: str, mailbox_id: str, **kwargs) -> None:
 
 	if not settings:
 		settings = frappe.new_doc("Mailbox Settings")
-		settings.account = account
+		settings.account_id = parse_account(account)[1]
 		settings.mailbox_id = mailbox_id
 		settings.insert()
 
@@ -96,24 +154,18 @@ def set_mailbox_settings(account: str, mailbox_id: str, **kwargs) -> None:
 
 
 def on_doctype_update() -> None:
+	# Mailbox settings are shared per account_id, so uniqueness is on (account_id, mailbox_id).
 	frappe.db.add_unique(
-		"Mailbox Settings", ["account", "mailbox_id"], constraint_name="unique_account_mailbox"
+		"Mailbox Settings", ["account_id", "mailbox_id"], constraint_name="unique_account_id_mailbox"
 	)
 
 
 def get_permission_query_condition(user: str | None = None) -> str:
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return ""
-
-	return f"(`tabMailbox Settings`.user = '{user}')"
+	return get_account_scoped_permission_query("Mailbox Settings", user=user)
 
 
 def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 	if doc.doctype != "Mailbox Settings":
 		return False
 
-	user = doc.user or parse_account(doc.account)[0]
-
-	return has_permission_for_user(user, raise_exception=False)
+	return has_account_scoped_permission(doc, user=user)

@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-model="open" :options="{ size: 'xl', position: 'top' }">
+  <Dialog v-model:open="open" size="xl" position="top">
     <template #body>
       <div class="flex px-4 py-3 gap-1 items-center border-b">
         <LucideSearch class="w-4 mr-1 h-auto" name="search" />

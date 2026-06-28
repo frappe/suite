@@ -32,7 +32,6 @@ import { createResource, FormControl, LoadingIndicator } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'
 import { useRoute } from 'vue-router'
-import store from '@/apps/drive/store'
 import { createTeam } from '@/apps/drive/resources/permissions'
 
 const route = useRoute()

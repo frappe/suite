@@ -107,7 +107,7 @@
               <span class="text-base text-ink-gray-8">{{ user.full_name }}</span>
               <span class="text-xs text-ink-gray-6">{{ user.email }}</span>
             </div>
-            <div v-if="isAdmin.data && user.name != $store.state.user.id" class="ml-auto">
+            <div v-if="isAdmin.data && user.name != currentUserId" class="ml-auto">
               <Dropdown v-slot="{ open }" :options="accessOptions" placement="right">
                 <Button variant="ghost" @click="selectedUser = user">
                   {{
@@ -130,7 +130,7 @@
               {{
                 __(user.access_level == 2 ? 'Manager' : user.access_level == 1 ? 'User' : 'Guest')
               }}
-              <template v-if="user.name === $store.state.user.id">(you)</template>
+              <template v-if="user.name === currentUserId">(you)</template>
             </span>
           </div>
         </div>
@@ -204,14 +204,11 @@
   </Tabs>
 
   <Dialog
-    v-model="showInvite"
-    :options="{
-      title: 'Invite people to ' + teamData.title,
-      size: 'lg',
-    }"
+    v-model:open="showInvite"
+    :title="'Invite people to ' + teamData.title"
+    size="lg"
   >
-    <template #body-content>
-      <div class="flex items-start justify-start gap-4">
+    <div class="flex items-start justify-start gap-4">
         <div class="flex flex-wrap gap-1 rounded w-full bg-surface-gray-2 p-2">
           <Button
             v-for="(email, idx) in invited"
@@ -257,36 +254,32 @@
           }
         "
       />
-    </template>
   </Dialog>
   <Dialog
     v-if="showRemove"
-    v-model="showRemove"
-    :options="{
-      title: 'Are you sure?',
-      size: 'md',
-      message: `Removing ${selectedUser.full_name} will completely revoke their access to your team. You can always add them back using the same email ID.`,
-      actions: [
-        {
-          variant: 'solid',
-          theme: 'red',
-          label: 'I confirm that I want to remove ' + selectedUser.full_name + '.',
-          loading: removeUser.loading,
-          onClick: () => {
-            removeUser.submit({
-              user_id: selectedUser.name,
-              team,
-            })
-            teamUsers.data.splice(teamUsers.data.indexOf(selectedUser), 1)
-            showRemove = false
-          },
+    v-model:open="showRemove"
+    title="Are you sure?"
+    size="md"
+    :message="`Removing ${selectedUser.full_name} will completely revoke their access to your team. You can always add them back using the same email ID.`"
+    :actions="[
+      {
+        variant: 'solid',
+        theme: 'red',
+        label: 'I confirm that I want to remove ' + selectedUser.full_name + '.',
+        loading: removeUser.loading,
+        onClick: () => {
+          removeUser.submit({
+            user_id: selectedUser.name,
+            team,
+          })
+          teamUsers.data.splice(teamUsers.data.indexOf(selectedUser), 1)
+          showRemove = false
         },
-      ],
-    }"
+      },
+    ]"
   />
-  <Dialog v-model="showAddTeam" :options="{ title: __('New Team'), size: 'sm' }">
-    <template #body-content>
-      <div class="flex flex-col gap-4">
+  <Dialog v-model:open="showAddTeam" :title="__('New Team')" size="sm">
+    <div class="flex flex-col gap-4">
         <div>
           <FormLabel label="Team Name:" required />
           <div class="flex gap-1.5 mt-1.5">
@@ -332,7 +325,6 @@
       <div v-if="createTeam.error" class="text-sm text-ink-red-6 my-3">
         {{ createTeam.error.messages[0] }}
       </div>
-    </template>
     <template #actions>
       <div class="flex justify-end">
         <Button
@@ -367,11 +359,11 @@
     </template>
   </Dialog>
   <Dialog
-    v-model="showEditTeam"
-    :options="{ title: __('Settings - ' + teamData.title), size: 'sm' }"
+    v-model:open="showEditTeam"
+    :title="__('Settings - ' + teamData.title)"
+    size="sm"
   >
-    <template #body-content>
-      <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-4">
         <div>
           <FormLabel label="Team Name:" required />
           <div class="flex gap-1 mt-1.5">
@@ -395,7 +387,6 @@
           <FormControl v-model="prefix" :disabled="true" type="text" label="Folder" />
         </template>
       </div>
-    </template>
     <template #actions>
       <Button
         :disabled="!teamName.trim().length"
@@ -428,6 +419,8 @@
 <script setup>
 import { default as vFocus } from '@/apps/drive/utils/focus'
 import { h, computed } from 'vue'
+import { useSessionStore } from '@/boot/session'
+const currentUserId = computed(() => useSessionStore().user)
 import { getTeams } from '@/apps/drive/resources/files'
 import icons from '@/apps/drive/utils/icons'
 import { getInvites, rejectInvite, acceptInvite, createTeam } from '@/apps/drive/resources/permissions'

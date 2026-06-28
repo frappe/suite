@@ -41,6 +41,7 @@
 		<Combobox
 			v-model="input"
 			placeholder=""
+			variant="ghost"
 			:options
 			:open-on-click="false"
 			class="recipient-combobox border-none !bg-inherit !ring-0"
@@ -216,7 +217,7 @@ const mailContacts = createResource({
 	url: 'suite.mail.api.contacts.get_contacts',
 	auto: false,
 	makeParams: (text: string) => ({
-		account: store.account,
+		account_id: store.accountId,
 		filter: { operator: 'OR', conditions: [{ text }, { email: text }] },
 	}),
 	transform: (data) =>
@@ -245,6 +246,18 @@ const options = computed(() => [
 	flex: 0 0 auto !important;
 	field-sizing: content;
 	min-width: 2px;
+}
+
+/* The recipient field is an inline, box-less editor. frappe-ui v2's Combobox trigger
+   adds a border + focus-within ring; force them off (the variant/class overrides don't
+   beat its focus-within rule). */
+[data-recipient-input] .recipient-combobox,
+[data-recipient-input] [data-slot='trigger'],
+[data-recipient-input] [data-slot='trigger']:focus-within {
+	border-color: transparent !important;
+	background-color: transparent !important;
+	box-shadow: none !important;
+	outline: none !important;
 }
 
 body:has(.recipient-combobox[data-state='open']) [data-slot='content'][data-selection] {

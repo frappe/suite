@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-model="open" :options="{ size: 'lg' }">
+  <Dialog v-model:open="open" size="lg">
     <template #body-main>
       <div class="p-4">
         <!-- Header -->
@@ -110,7 +110,7 @@
               </div>
               <div class="ml-auto">
                 <span
-                  v-if="user.user == $store.state.user.id"
+                  v-if="user.user == currentUserId"
                   class="mr-1 text-ink-gray-7"
                 >
                   <div v-if="user.user === entity.owner" class="flex gap-1">
@@ -173,6 +173,8 @@
 </template>
 <script setup>
 import { ref, computed, watch, markRaw, h } from 'vue'
+import { useSessionStore } from '@/boot/session'
+const currentUserId = computed(() => useSessionStore().user)
 import {
   Avatar,
   Dialog,

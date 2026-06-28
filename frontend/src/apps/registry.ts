@@ -24,10 +24,6 @@ export interface SuiteApp {
   name: string
   /** URL prefix this app owns; preserved from the original standalone app. */
   prefix: string
-  /** Short blurb for the launcher tile. */
-  description: string
-  /** lucide icon name — fallback chrome (e.g. top-nav) when a logo isn't shown. */
-  icon: string
   /** Imported, build-fingerprinted brand-logo URL. */
   logo: string
 }
@@ -35,11 +31,11 @@ export interface SuiteApp {
 export const SUITE_LOGO = suiteLogo
 
 export const SUITE_APPS: SuiteApp[] = [
-  { id: 'drive', name: 'Drive', prefix: '/drive', description: 'Files & folders', icon: 'HardDrive', logo: driveLogo },
-  { id: 'slides', name: 'Slides', prefix: '/slides', description: 'Presentations', icon: 'Presentation', logo: slidesLogo },
-  { id: 'writer', name: 'Writer', prefix: '/writer', description: 'Documents', icon: 'FileText', logo: writerLogo },
-  { id: 'sheets', name: 'Sheets', prefix: '/sheets', description: 'Spreadsheets', icon: 'Table', logo: sheetsLogo },
-  { id: 'meet', name: 'Meet', prefix: '/meet', description: 'Video meetings', icon: 'Video', logo: meetLogo },
-  { id: 'mail', name: 'Mail', prefix: '/mail', description: 'Email', icon: 'Mail', logo: mailLogo },
-  { id: 'calendar', name: 'Calendar', prefix: '/calendar', description: 'Schedule', icon: 'Calendar', logo: calendarLogo },
+  { id: 'drive', name: 'Drive', prefix: '/drive', logo: driveLogo },
+  { id: 'slides', name: 'Slides', prefix: '/slides', logo: slidesLogo },
+  { id: 'writer', name: 'Writer', prefix: '/writer', logo: writerLogo },
+  { id: 'sheets', name: 'Sheets', prefix: '/sheets', logo: sheetsLogo },
+  { id: 'meet', name: 'Meet', prefix: '/meet', logo: meetLogo },
+  { id: 'mail', name: 'Mail', prefix: '/mail', logo: mailLogo },
+  { id: 'calendar', name: 'Calendar', prefix: '/calendar', logo: calendarLogo },
 ]

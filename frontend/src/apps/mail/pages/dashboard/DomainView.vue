@@ -194,7 +194,7 @@ const downloadDNSJson = createResource({
 })
 
 const BREADCRUMBS = computed(() => [
-	{ label: __('Domains'), route: '/dashboard/domains' },
+	{ label: __('Domains'), route: '/mail/dashboard/domains' },
 	{ label: domain.data?.name || domainId },
 ])
 

@@ -73,10 +73,15 @@ const presentationListResource = createResource({
 	method: 'GET',
 	auto: true,
 	cache: 'presentations',
-	onSuccess: (data) => {
-		presentationList.value = data
-	},
 })
+
+watch(
+	() => presentationListResource.data,
+	(data) => {
+		if (data) presentationList.value = data
+	},
+	{ immediate: true },
+)
 
 const navigateToPresentation = (name, present) => {
 	name = name || previewPresentation.value?.name

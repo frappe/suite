@@ -27,6 +27,7 @@ from frappe.utils import (
 	get_datetime,
 	get_url,
 	now,
+	random_string,
 	time_diff_in_seconds,
 )
 
@@ -34,7 +35,7 @@ from suite.client.doctype.push_subscription.push_subscription import (
 	freeze_jmap_push_notifications,
 	unfreeze_jmap_push_notifications,
 )
-from suite.mail.jmap import get_email_service, parse_account
+from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.utils import (
 	compress_directory,
@@ -46,6 +47,7 @@ from suite.mail.utils import (
 	reconnect_on_failure,
 )
 from suite.mail.utils.dt import parse_iso_datetime
+from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import (
 	clear_sync_state,
 	get_user_email_address,
@@ -536,9 +538,6 @@ class MailExchange(Document):
 		elif self.operation == "Export":
 			self.validate_export()
 
-	def before_insert(self) -> None:
-		self.user = parse_account(self.account)[0]
-
 	def before_submit(self) -> None:
 		self.status = "Queued"
 		self.queued_at = now()
@@ -550,11 +549,21 @@ class MailExchange(Document):
 		self.status = "Cancelled"
 
 	def validate_account(self) -> None:
-		"""Validate the account."""
+		"""Validate that the selected user can authenticate and has access to the account."""
 
 		if not is_jmap_configured(self.user):
 			frappe.throw(
 				_("User {0} does not have JMAP settings configured.").format(frappe.bold(self.user)),
+				frappe.PermissionError,
+			)
+
+		from suite.mail.jmap import get_user_account_ids
+
+		if self.account_id not in get_user_account_ids(self.user):
+			frappe.throw(
+				_("Account ID {0} is not accessible to user {1}.").format(
+					frappe.bold(self.account_id), frappe.bold(self.user)
+				),
 				frappe.PermissionError,
 			)
 
@@ -606,8 +615,24 @@ class MailExchange(Document):
 		else:
 			self.export_limit = self.max_export
 
+	def _get_logger(self) -> ExchangeLogger:
+		"""Returns a structured event logger bound to this exchange's context."""
+
+		return get_exchange_logger(
+			{
+				"req_id": random_string(10),
+				"exchange": self.name,
+				"key": "mail",
+				"operation": self.operation,
+				"user": self.user,
+				"account_id": self.account_id,
+			}
+		)
+
 	def process(self) -> None:
 		"""Enqueue the import or export based on the operation type."""
+
+		logger = self._get_logger()
 
 		if self.operation == "Import":
 			job_id = f"{self.name}:mail:import"
@@ -621,6 +646,7 @@ class MailExchange(Document):
 				deduplicate=True,
 				enqueue_after_commit=True,
 			)
+			logger.debug("import-enqueued", job_id=job_id, format=self.import_format)
 		elif self.operation == "Export":
 			job_id = f"{self.name}:mail:export"
 			frappe.enqueue_doc(
@@ -633,12 +659,15 @@ class MailExchange(Document):
 				deduplicate=True,
 				enqueue_after_commit=True,
 			)
+			logger.debug("export-enqueued", job_id=job_id, format=self.export_format)
 
 	@frappe.whitelist()
 	def retry(self) -> None:
 		"""Retry the import or export."""
 
 		frappe.only_for("System Manager")
+
+		self._get_logger().info("retry-requested", status=self.status, retries=cint(self.retries))
 
 		if self.docstatus != 1:
 			frappe.throw(_("Only submitted mail exchange can be retried."))
@@ -670,8 +699,12 @@ class MailExchange(Document):
 		if self.operation != "Import":
 			return
 
+		logger = self._get_logger()
+		logger.info("import-started", format=self.import_format, import_file=self.import_file)
+
 		freeze_jmap_push_notifications(self.user)
 		self._mark_started()
+		self._log_output(_("Starting import from the uploaded {0} file.").format(self.import_format.upper()))
 
 		import_file = os.path.join(get_bench_path(), f"sites/{frappe.local.site}{self.import_file}")
 		base_dir = os.path.join(get_mail_import_directory(), self.name)
@@ -683,8 +716,10 @@ class MailExchange(Document):
 				shutil.copy(import_file, os.path.join(base_dir, os.path.basename(import_file)))
 			else:
 				extract_compressed_file(import_file, base_dir)
+			logger.debug("import-source-prepared", base_dir=base_dir)
+			self._log_output(_("Prepared the source files for import."))
 
-			service = get_email_service(self.account)
+			service = get_email_service(self.user, self.account_id)
 
 			mailbox_map = {}
 			if self.import_format == "maildir-nested":
@@ -693,18 +728,26 @@ class MailExchange(Document):
 			meta = ImportMetadataLoader.load(
 				self.import_format, base_dir, mailbox_map, self.import_metadata_dict
 			)
+			logger.info("import-metadata-loaded", emails=len(meta), max_import=self.max_import)
+			self._log_output(_("Found {0} email(s) to import.").format(len(meta)))
 
 			if not meta:
 				frappe.throw(_("No emails found for import."))
 			if len(meta) > self.max_import:
 				frappe.throw(_("Import limit exceeded."))
 
-			self._import_batches(service, base_dir, meta)
-			clear_sync_state(self.account, type="email")
+			self._import_batches(service, base_dir, meta, logger)
+			clear_sync_state(self.account_id, type="email")
 
-			kwargs.update({"status": "Completed", "output": _("Import completed")})
+			logger.info("import-completed", emails=len(meta))
+			self._log_output(_("Import completed successfully. {0} email(s) imported.").format(len(meta)))
+			kwargs.update({"status": "Completed"})
 		except Exception:
-			kwargs.update({"status": "Failed", "output": frappe.get_traceback(with_context=False)})
+			logger.exception("import-failed")
+			self._log_output(_("Import failed. See the error details below."))
+			kwargs.update(
+				{"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
+			)
 		finally:
 			shutil.rmtree(base_dir, ignore_errors=True)
 			unfreeze_jmap_push_notifications(self.user)
@@ -719,15 +762,23 @@ class MailExchange(Document):
 		if self.operation != "Export":
 			return
 
+		logger = self._get_logger()
+		logger.info("export-started", format=self.export_format, archive_type=self.export_archive_type)
+
 		self._mark_started()
+		self._log_output(_("Starting export to {0} format.").format(self.export_format.upper()))
 		out_dir = os.path.join(get_mail_export_directory(), self.name)
 		os.makedirs(out_dir, exist_ok=True)
 
 		kwargs = {}
 		try:
-			service = get_email_service(self.account)
+			service = get_email_service(self.user, self.account_id)
 			total = service.query(self.export_filter_dict, limit=1)["total"]
 			limit = min(total, cint(self.export_limit or total))
+			logger.info("export-query-resolved", total=total, limit=limit, max_export=self.max_export)
+			self._log_output(
+				_("Found {0} email(s) matching the filter; exporting up to {1}.").format(total, limit)
+			)
 
 			if limit > self.max_export:
 				frappe.throw(_("Export limit exceeded."))
@@ -740,12 +791,19 @@ class MailExchange(Document):
 			emails = service.get(ids, properties=properties)
 
 			if self.deduplicate_export:
+				fetched = len(emails)
 				unique_emails = {}
 				for e in emails:
 					key = e["messageId"][0]
 					if key not in unique_emails:
 						unique_emails[key] = e
 				emails = list(unique_emails.values())
+				logger.debug("export-deduplicated", fetched=fetched, unique=len(emails))
+				self._log_output(
+					_("Removed {0} duplicate(s); {1} unique email(s) remain.").format(
+						fetched - len(emails), len(emails)
+					)
+				)
 
 			mailbox_map = {}
 			if self.export_format == "mbox":
@@ -753,12 +811,22 @@ class MailExchange(Document):
 			elif self.export_format == "maildir-nested":
 				mailbox_map = self._build_mailbox_map(service.mailboxes)
 
-			self._export_batches(service, emails, out_dir, mailbox_map)
+			self._export_batches(service, emails, out_dir, mailbox_map, logger)
+
+			self._log_output(
+				_("Packaging exported emails into a {0} archive.").format(self.export_archive_type)
+			)
 			self._attach_export(out_dir)
 
-			kwargs.update({"status": "Completed", "output": _("Export completed")})
+			logger.info("export-completed", emails=len(emails))
+			self._log_output(_("Export completed successfully. {0} email(s) exported.").format(len(emails)))
+			kwargs.update({"status": "Completed"})
 		except Exception:
-			kwargs.update({"status": "Failed", "output": frappe.get_traceback(with_context=False)})
+			logger.exception("export-failed")
+			self._log_output(_("Export failed. See the error details below."))
+			kwargs.update(
+				{"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
+			)
 		finally:
 			shutil.rmtree(out_dir, ignore_errors=True)
 
@@ -773,6 +841,7 @@ class MailExchange(Document):
 			status="In Progress",
 			started_at=started_at,
 			started_after=time_diff_in_seconds(started_at, self.queued_at),
+			output="",
 		)
 
 	def _mark_completed(self, **kwargs) -> None:
@@ -786,9 +855,17 @@ class MailExchange(Document):
 
 		self._db_set(**kwargs)
 
-	def _import_batches(self, service: EmailService, base_dir: str, metadata: list[ImportEmailMeta]) -> None:
+	def _import_batches(
+		self,
+		service: EmailService,
+		base_dir: str,
+		metadata: list[ImportEmailMeta],
+		logger: ExchangeLogger,
+	) -> None:
 		"""Imports emails in batches using the EmailService."""
 
+		total = len(metadata)
+		imported = 0
 		batch_size = service.max_objects_in_set
 		for batch in create_batch(metadata, batch_size):
 			blobs: list[tuple[bytes, str]] = []
@@ -818,14 +895,25 @@ class MailExchange(Document):
 				],
 			)
 
+			imported += len(batch)
+			logger.debug("import-batch-processed", batch=len(batch), imported=imported, total=total)
+			self._log_output(_("Imported {0} of {1} email(s).").format(imported, total))
+
 	def _export_batches(
-		self, service: EmailService, emails: list[dict], out_dir: str, mailbox_map: dict[str, str]
+		self,
+		service: EmailService,
+		emails: list[dict],
+		out_dir: str,
+		mailbox_map: dict[str, str],
+		logger: ExchangeLogger,
 	) -> None:
 		"""Exports emails in batches using the EmailService."""
 
 		if self.export_format == "jmap":
 			ExportWriter.write_meta(emails, out_dir)
 
+		total = len(emails)
+		exported = 0
 		batch_size = cint(get_config("exchange_export_batch_size"))
 		for batch in create_batch(emails, batch_size):
 			blobs = [(e["blobId"], None) for e in batch if e.get("blobId")]
@@ -834,6 +922,7 @@ class MailExchange(Document):
 			export_emails = []
 			for e in batch:
 				if e.get("blobId") not in data:
+					logger.warning("export-blob-missing", id=e.get("id"), blob_id=e.get("blobId"))
 					continue
 
 				export_emails.append(
@@ -850,6 +939,10 @@ class MailExchange(Document):
 				)
 
 			ExportWriter.write(self.export_format, export_emails, out_dir, mailbox_map)
+
+			exported += len(export_emails)
+			logger.debug("export-batch-written", batch=len(export_emails), exported=exported, total=total)
+			self._log_output(_("Exported {0} of {1} email(s).").format(exported, total))
 
 	def _build_mailbox_map(self, mailboxes: list[dict]) -> dict[str, str]:
 		"""Builds a mapping of mailbox IDs to their full paths."""
@@ -926,6 +1019,16 @@ class MailExchange(Document):
 			now=True,
 		)
 
+	def _log_output(self, message: str) -> None:
+		"""Appends a timestamped, user-friendly line to the `output` field and persists it.
+
+		These messages are surfaced in the UI so the user can follow the progress of the
+		background import/export as it happens."""
+
+		line = f"[{now()}] {message}"
+		self.output = f"{self.output}\n{line}" if self.output else line
+		self._db_set(output=self.output)
+
 	def _db_set(self, **kwargs) -> None:
 		"""Updates the document with the given key-value pairs."""
 
@@ -951,6 +1054,17 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 		return True
 
 	return doc.user == user
+
+
+def get_email_service(
+	user: str,
+	account_id: str,
+	ignore_permissions: bool = False,
+) -> EmailService:
+	"""Returns a EmailService configured with the longer exchange timeouts."""
+
+	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
+	return EmailService(account_id, connection)
 
 
 def extract_received_or_sent(msg: Message) -> datetime:
@@ -1001,7 +1115,7 @@ def retry_stuck_mail_exchanges() -> None:
 		.select(ME.name)
 		.where(
 			(ME.status.isin(["Queued", "In Progress"]))
-			& (ME.queued_at <= get_datetime(add_to_date(now(), hours=-1)))
+			& (ME.queued_at <= get_datetime(add_to_date(now(), days=-1)))
 		)
 		.orderby(ME.queued_at, order=Order.asc)
 	).run(pluck="name")

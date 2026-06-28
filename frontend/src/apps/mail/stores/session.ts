@@ -1,23 +1,15 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
+import { getSessionUser, useSessionStore } from '@/boot/session'
 import router from '@/apps/mail/router'
+import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 
 export const sessionStore = defineStore('mail-session', () => {
-	const { userResource, mailboxes } = userStore()
-
-	const sessionUser = () => {
-		const cookies = new URLSearchParams(document.cookie.split('; ').join('&'))
-		let _sessionUser = cookies.get('user_id')
-		if (_sessionUser === 'Guest') _sessionUser = null
-
-		return _sessionUser
-	}
-
-	const user = ref(sessionUser())
-	const isLoggedIn = computed(() => !!user.value)
+	const session = useSessionStore()
+	const { userResource, reset } = userStore()
 
 	const login = createResource({
 		url: 'login',
@@ -25,11 +17,15 @@ export const sessionStore = defineStore('mail-session', () => {
 			throw new Error('Invalid email or password')
 		},
 		onSuccess: () => {
+			// Start from a clean slate: a prior session's account/resources may still be in memory
+			// (e.g. cookies cleared without a page reload). Without this, resolveAccount() would
+			// skip setAccount() and the mailboxes/account resources wouldn't load until a reload.
+			reset()
 			userResource.reload()
-			user.value = sessionUser()
+			session.user = getSessionUser()
 			login.reset()
 
-			if (user.value === 'Administrator') window.location.replace('/app')
+			if (session.user === 'Administrator') window.location.replace('/app')
 			else router.replace({ name: 'mail-root-shortcut' })
 		},
 	})
@@ -37,9 +33,8 @@ export const sessionStore = defineStore('mail-session', () => {
 	const logout = createResource({
 		url: 'logout',
 		onSuccess() {
-			userResource.reset()
-			mailboxes.reset()
-			user.value = null
+			reset()
+			session.user = null
 			window.location.reload()
 		},
 	})
@@ -51,5 +46,27 @@ export const sessionStore = defineStore('mail-session', () => {
 		onSuccess: (data) => (document.querySelector("link[rel='icon']").href = data.favicon),
 	})
 
-	return { isLoggedIn, login, logout, branding }
+	// Called when a request fails with an auth/permission error: sign the user out (clear state,
+	// one toast, redirect to login) when their session is actually gone. No-op when still logged
+	// in (a genuine PermissionError that should surface) or when there was never a session in
+	// this tab (a failed login attempt — let the form show "wrong password"). Frappe resets the
+	// user_id cookie to Guest on a dead session, so the cookie is the discriminator. Idempotent:
+	// once the session user is cleared, concurrent calls return early, so the toast/redirect fire once.
+	const handleSessionExpired = (): void => {
+		if (getSessionUser()) return
+		if (!session.user) return
+
+		session.user = null
+		reset()
+		raiseToast(__('You have been signed out. Please sign in again.'), 'error')
+		if (router.currentRoute.value.name !== 'mail-login') router.replace({ name: 'mail-login' })
+	}
+
+	return {
+		isLoggedIn: computed(() => session.isLoggedIn),
+		login,
+		logout,
+		branding,
+		handleSessionExpired,
+	}
 })

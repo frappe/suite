@@ -141,7 +141,7 @@ const LIST_OPTIONS = {
 }
 
 const TABS = [
-	{ label: __('Import'), icon: HardDriveDownload, index: 0 },
-	{ label: __('Export'), icon: HardDriveUpload, index: 1 },
+	{ label: __('Import'), icon: HardDriveDownload },
+	{ label: __('Export'), icon: HardDriveUpload },
 ]
 </script>

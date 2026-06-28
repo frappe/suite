@@ -77,7 +77,7 @@ import { Button } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import { openEntity } from '@/apps/drive/utils/files'
 import { useRoute } from 'vue-router'
-import store from '@/apps/drive/store'
+import { setActiveEntity } from '@/apps/drive/data/selection'
 import { settings } from '@/apps/drive/resources/permissions'
 import { onKeyDown } from '@vueuse/core'
 import { onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
@@ -114,7 +114,7 @@ const dropdownActionItems = (row) => {
       ...a,
       handler: () => {
         rowEvent.value = false
-        store.commit('setActiveEntity', row)
+        setActiveEntity(row)
         a.action([row])
       },
     }))

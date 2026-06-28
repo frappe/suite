@@ -24,7 +24,6 @@ const TextPreview = defineAsyncComponent(() => import('./FileTypePreview/TextPre
 const AudioPreview = defineAsyncComponent(() => import('@/apps/drive/components/FileTypePreview/AudioPreview.vue'))
 import LucideAlertCircle from '~icons/lucide/alert-circle'
 import { diskSettings } from '@/apps/drive/resources/permissions'
-import store from '@/apps/drive/store'
 
 const props = defineProps({
   previewEntity: {

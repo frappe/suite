@@ -14,6 +14,14 @@
 		</div>
 		<HeaderActions @reload-mails="reloadThreads(true, ['drafts', 'sent'])" />
 	</header>
+
+	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
+	     screening is on and threads are waiting to be screened. -->
+	<div v-if="showScreenerBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
+		<span class="text-ink-gray-5">{{ screenerBannerLabel }}</span>
+		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
+	</div>
+
 	<div
 		v-if="
 			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
@@ -32,7 +40,7 @@
 	<div
 		class="relative flex"
 		:class="
-			[mailboxIds.trash, mailboxIds.junk].includes(mailbox)
+			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) || showScreenerBanner
 				? 'h-[calc(100dvh-6.1rem)]'
 				: 'h-[calc(100dvh-3.05rem)]'
 		"
@@ -140,6 +148,16 @@
 							</template>
 						</template>
 
+						<Dropdown
+							v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
+							:options="moveToOptions"
+						>
+							<Button variant="ghost" :tooltip="__('Move To')">
+								<template #icon>
+									<component :is="FolderInput" class="icon" />
+								</template>
+							</Button>
+						</Dropdown>
 						<Dropdown v-if="showAddTo" :options="addToOptions">
 							<Button variant="ghost" :tooltip="__('Add To')">
 								<template #icon>
@@ -151,16 +169,6 @@
 							<Button variant="ghost" :tooltip="__('Remove From')">
 								<template #icon>
 									<component :is="FolderMinus" class="icon" />
-								</template>
-							</Button>
-						</Dropdown>
-						<Dropdown
-							v-if="!!selections.length && !['search', 'starred'].includes(mailbox)"
-							:options="moveToOptions"
-						>
-							<Button variant="ghost" :tooltip="__('Move To')">
-								<template #icon>
-									<component :is="FolderInput" class="icon" />
 								</template>
 							</Button>
 						</Dropdown>
@@ -348,6 +356,7 @@
 
 	<Dialog v-model="showEmptyMailbox" :options="emptyMailboxOptions" />
 	<Dialog v-model="showJunkOrDeleteThreads" :options="junkOrDeleteThreadsOptions" />
+	<BlockSenderModal />
 	<ShortcutsModal v-model="showShortcuts" />
 </template>
 <script setup lang="ts">
@@ -394,9 +403,10 @@ import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import BlockSenderModal from '@/apps/mail/components/Modals/BlockSenderModal.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 
-import type { COLOR_SCHEME, Thread, UserResource } from '@/apps/mail/types'
+import type { MailboxData, Thread, UserResource } from '@/apps/mail/types'
 
 const { accountId, mailbox, threadID } = defineProps<{
 	accountId: string
@@ -408,7 +418,7 @@ const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
 const { openSidebar } = useSidebar()
-const { undo } = useUndo()
+const { undo, setUndoAction } = useUndo()
 
 const socket = inject('$socket')
 const user = inject('$user') as UserResource
@@ -548,13 +558,6 @@ const handleKeyDown = (e: KeyboardEvent) => {
 	isShiftPressed.value = e.shiftKey
 	const key = e.key.toLowerCase()
 
-	// Handle Ctrl/Cmd+Shift+L (Cycle Theme)
-	if ((e.metaKey || e.ctrlKey) && e.shiftKey && key === 'l' && !shouldIgnoreKeypress(e, true)) {
-		e.preventDefault()
-		isGPressed.value = false
-		return cycleTheme()
-	}
-
 	// Handle Ctrl/Cmd+A (Select All)
 	if ((e.metaKey || e.ctrlKey) && key === 'a' && !shouldIgnoreKeypress(e, true)) {
 		e.preventDefault()
@@ -626,28 +629,6 @@ const handleShowShortcuts = (e: KeyboardEvent) => {
 	showShortcuts.value = true
 }
 
-const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
-
-const cycleTheme = () => {
-	const current = user.data.color_scheme
-	const idx = COLOR_SCHEME_CYCLE.indexOf(current as COLOR_SCHEME)
-	const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-	updateColorScheme.submit(next)
-}
-
-const updateColorScheme = createResource({
-	url: 'frappe.client.set_value',
-	makeParams: (color_scheme: COLOR_SCHEME) => ({
-		doctype: 'User Settings',
-		name: user.data.user_settings,
-		fieldname: { color_scheme },
-	}),
-	onSuccess: (data) => {
-		raiseToast(__('Color scheme updated to {0}.', [data.color_scheme]))
-		user.reload()
-	},
-})
-
 const handleEnter = (e: KeyboardEvent) => {
 	e.preventDefault()
 	if (threadInFocus.value) goToThread(threadInFocus.value)
@@ -704,13 +685,18 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
 	let newThread = undefined
 
+	// Step across the page boundary at the first/last thread, like the ThreadHeader arrows.
+	// newThread stays the in-page target (undefined at an edge), so shift-select skips a
+	// cross-page move — the new page resolves asynchronously and goToPage resets selections.
 	if (threadID) {
-		newThread = getThreadByOffset(offset) || threadInFocus.value
-		goToThread(newThread)
+		newThread = getThreadByOffset(offset)
+		goToThreadByOffset(offset)
+	} else if (!threadIDs.value.includes(threadInFocus.value)) {
+		focusOnThread(threadIDs.value[0])
+		newThread = threadIDs.value[0]
 	} else {
-		if (threadIDs.value.includes(threadInFocus.value)) focusOnThreadByOffset(offset)
-		else focusOnThread(threadIDs.value[0])
-		newThread = threadInFocus.value
+		newThread = getThreadByOffset(offset, threadInFocus.value)
+		focusOnThreadByOffset(offset)
 	}
 
 	// Handle shift+arrow selection
@@ -753,28 +739,6 @@ const selectActions = computed((): SelectAction[] => [
 				(threadID) =>
 					threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)
 						?.flagged === 1,
-			),
-	},
-	{
-		label: __('Mark as Read (Shift+U)'),
-		onClick: () => handleSetSeen({ 1: selections.value }),
-		icon: MailOpen,
-		condition: () =>
-			selections.value.some(
-				(threadID) =>
-					threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)
-						?.seen === 0,
-			),
-	},
-	{
-		label: __('Mark as Unread (U)'),
-		onClick: () => handleSetSeen({ 0: selections.value }),
-		icon: MailIcon,
-		condition: () =>
-			selections.value.some(
-				(threadID) =>
-					threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)
-						?.seen === 1,
 			),
 	},
 	{
@@ -821,6 +785,28 @@ const selectActions = computed((): SelectAction[] => [
 		icon: Trash2,
 		condition: () => mailbox === mailboxIds.trash,
 	},
+	{
+		label: __('Mark as Read (Shift+U)'),
+		onClick: () => handleSetSeen({ 1: selections.value }),
+		icon: MailOpen,
+		condition: () =>
+			selections.value.some(
+				(threadID) =>
+					threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)
+						?.seen === 0,
+			),
+	},
+	{
+		label: __('Mark as Unread (U)'),
+		onClick: () => handleSetSeen({ 0: selections.value }),
+		icon: MailIcon,
+		condition: () =>
+			selections.value.some(
+				(threadID) =>
+					threadsResource.value?.data?.find((t: Thread) => t.thread_id === threadID)
+						?.seen === 1,
+			),
+	},
 ])
 
 // Search
@@ -831,9 +817,34 @@ const page = ref(0) // navigation target: the page being fetched
 const displayedPage = ref(0) // the page currently shown; lags `page` until its data loads
 const total = ref(0) // exact total matching the current view (search only)
 const hasMore = ref(false) // lookahead: an extra row was returned, so a next page exists
-// Current mailbox's record (carries total_threads/unread_threads). Declared here because the threads
-// resource's makeParams reads it during setup (via the immediate watch), before its later UI uses.
+// Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
+// detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
+
+// ── Screener banner ─────────────────────────────────────────────────────────────────────────────
+// An info bar mirroring the trash/junk one, shown on the inbox while Hey-style screening is on and
+// unscreened threads are waiting. The count is the Screening folder's unread count, kept fresh by the
+// periodic mailbox poll below.
+const activeAccount = computed(() => user.data?.accounts?.find((a) => a.id === accountId))
+const screeningEnabled = computed(() => !!activeAccount.value?.enable_screening)
+const screenerCount = computed(
+	() =>
+		mailboxes.data?.find((m: MailboxData) => m.id === mailboxIds.screener)?.unread_threads ??
+		0,
+)
+const showScreenerBanner = computed(
+	() =>
+		mailbox === mailboxIds.inbox &&
+		screeningEnabled.value &&
+		screenerCount.value > 0 &&
+		(showReadingPane.value || !threadID),
+)
+const screenerBannerLabel = computed(() =>
+	screenerCount.value === 1
+		? __('1 new thread is waiting to be screened.')
+		: __('{0} new threads are waiting to be screened.', [String(screenerCount.value)]),
+)
+const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
 // Called once a page's data has loaded: reveal it (range + list update together) and scroll to top.
 // No-op for same-page reloads (e.g. the periodic refresh) so those don't yank the scroll position.
@@ -846,7 +857,7 @@ const syncDisplayedPage = () => {
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
-		account: store.account,
+		account_id: store.accountId,
 		filter: route.query,
 		limit: PAGE_LENGTH,
 		start: page.value * PAGE_LENGTH,
@@ -883,21 +894,19 @@ const isMailboxLoaded = ref(false)
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
 	makeParams: () => ({
-		account: store.account,
+		account_id: store.accountId,
 		mailbox,
-		limit: threadsLimit.value,
+		limit: PAGE_LENGTH + 1,
 		start: page.value * PAGE_LENGTH,
 		filter_by: filter.value,
 	}),
 	transform: (data: [Thread[], string]) => {
 		const rows = data[0]
-		// The extra (PAGE_LENGTH + 1)th row only signals a next page — drop it from the display.
-		if (countMode.value === 'lookahead') {
-			hasMore.value = rows.length > PAGE_LENGTH
-			return rows.slice(0, PAGE_LENGTH)
-		}
-		hasMore.value = false
-		return rows
+		// This resource always fetches one extra row (PAGE_LENGTH + 1) to detect a next page without
+		// relying on the (flaky) stored count: clip the extra row from the display and record whether it
+		// was there. Drives `hasMore` for both plain and filtered mailboxes.
+		hasMore.value = rows.length > PAGE_LENGTH
+		return rows.slice(0, PAGE_LENGTH)
 	},
 	onSuccess: (data: [Thread[], string]) => {
 		correctPageOverflow(data[0])
@@ -919,38 +928,28 @@ const correctPageOverflow = (pageData: Thread[]) => {
 
 const threadsOnPage = computed(() => threadsResource.value.data?.length ?? 0)
 
-// How the total count and "next page" are resolved:
+// How the count *label* is resolved (pagination/range never depend on the stored count — see below):
 // - 'exact'     (search): the backend returns the exact total.
-// - 'mailbox'   (a plain mailbox, no filter): use the mailbox's stored thread count.
-// - 'lookahead' (a filtered mailbox, or the cross-mailbox "starred" view): no cheap total exists, so
-//   we fetch one extra row (PAGE_LENGTH + 1). The extra row means a next page exists; we show the
-//   running count with a "+" suffix and only enable Next while it's present.
+// - 'mailbox'   (a plain mailbox, no filter): show the mailbox's stored thread count for the "of N".
+//   It's occasionally wrong (server `totalThreads` drops then self-heals), but it's the only cheap
+//   exact total we have, so we use it for the label only — never to drive fetching or navigation.
+// - 'lookahead' (a filtered mailbox or the cross-mailbox "starred" view): no cheap total exists, so
+//   we show the running count with a "+" suffix and only enable Next while a next page is detected.
 const countMode = computed<'exact' | 'mailbox' | 'lookahead'>(() => {
 	if (mailbox === 'search') return 'exact'
 	if (mailbox === 'starred' || filter.value) return 'lookahead'
 	return 'mailbox'
 })
+
+// The stored thread count, shown as the "of N" total for a plain mailbox. Used for display only.
 const mailboxTotal = computed(() => mailboxObj.value?.total_threads ?? 0)
 
-// Rows to request for the current page. In 'lookahead' mode fetch one extra row to detect a next
-// page; in 'mailbox' mode never fetch past the known total, so the last page returns only the
-// remainder (avoids overshooting, e.g. "26–50 of 41"). Falls back to a full page until the total loads.
-const threadsLimit = computed(() => {
-	if (countMode.value === 'lookahead') return PAGE_LENGTH + 1
-	if (countMode.value === 'mailbox' && mailboxTotal.value > 0) {
-		return Math.min(PAGE_LENGTH, Math.max(0, mailboxTotal.value - page.value * PAGE_LENGTH))
-	}
-	return PAGE_LENGTH
-})
-
-// The fixed total for the current view, if known (null in lookahead mode, where we only know a lower
-// bound). Used to clamp the displayed range so it never overshoots — during a page change the previous
-// page's rows linger until the new page loads, which would otherwise read as "26–50 of 41".
-const knownTotal = computed<number | null>(() => {
-	if (countMode.value === 'exact') return total.value
-	if (countMode.value === 'mailbox') return mailboxTotal.value
-	return null
-})
+// A *reliable* fixed total used to clamp the displayed range (so it never overshoots during a page
+// change, when the previous page's rows linger). Only search has one — the mailbox's `totalThreads`
+// is too flaky to clamp against, so plain/lookahead views derive the range from the loaded rows.
+const knownTotal = computed<number | null>(() =>
+	countMode.value === 'exact' ? total.value : null,
+)
 
 const rangeEnd = computed(() => {
 	// Based on the displayed (loaded) page, not the navigation target, so the range only moves once the
@@ -971,9 +970,11 @@ const range = computed(() =>
 		? `${rangeStart.value}`
 		: `${rangeStart.value}–${rangeEnd.value}`,
 )
-const displayTotal = computed(() =>
-	countMode.value === 'lookahead' ? rangeEnd.value : (knownTotal.value ?? 0),
-)
+const displayTotal = computed(() => {
+	if (countMode.value === 'lookahead') return rangeEnd.value
+	if (countMode.value === 'mailbox') return mailboxTotal.value
+	return knownTotal.value ?? 0 // exact
+})
 // In lookahead mode the count is a lower bound — show "n+" while a next page exists, else "n".
 const totalLabel = computed(() =>
 	countMode.value === 'lookahead'
@@ -981,15 +982,22 @@ const totalLabel = computed(() =>
 		: `${displayTotal.value}`,
 )
 
-// Prev/Next are bounded by the navigation target (`page`), not the displayed page, so presses can be
-// queued while a page is still loading. Lookahead only knows one page ahead exists, so it can't queue
-// past the loaded page.
+// Whether a next page exists. When we have a total (search, or a plain mailbox), we compare the next
+// page's range against it so presses can be *queued* several pages ahead while a page is still
+// loading. A plain mailbox also keeps the extra-row probe (`hasMore`) as a fallback, so a transiently
+// low stored count can't strand the user mid-list — it still advances one page at a time (bounded to
+// the loaded page) until the count self-heals. Lookahead has no total, so it relies on the probe alone.
 const canGoPrev = computed(() => page.value > 0)
-const canGoNext = computed(() =>
-	countMode.value === 'lookahead'
-		? hasMore.value && page.value === displayedPage.value
-		: (page.value + 1) * PAGE_LENGTH < (knownTotal.value ?? 0),
-)
+// A next page exists if the next page's range fits within the total.
+const rangeHasNext = (total: number) => (page.value + 1) * PAGE_LENGTH < total
+// Fallback when the total is unreliable/absent: the extra-row probe, bounded to the loaded page.
+const probeHasNext = computed(() => hasMore.value && page.value === displayedPage.value)
+const canGoNext = computed(() => {
+	if (countMode.value === 'exact') return rangeHasNext(knownTotal.value ?? 0)
+	if (countMode.value === 'mailbox')
+		return rangeHasNext(mailboxTotal.value) || probeHasNext.value
+	return probeHasNext.value // lookahead
+})
 
 // Coalesce rapid Prev/Next presses: only the final target page is fetched, and the displayed page
 // (range + list) updates once it loads — intermediate pages are never shown.
@@ -1037,10 +1045,19 @@ watch(
 	{ immediate: true },
 )
 
+// Periodically refresh the mailbox list (keeps sidebar counts current), then reload the open
+// mailbox's threads only when its thread count actually changed — so a quiet mailbox isn't reloaded
+// (and scroll-reset) every 30s.
+const pollForChanges = async () => {
+	const prevTotal = mailboxObj.value?.total_threads
+	await mailboxes.reload()
+	if (mailboxObj.value?.total_threads !== prevTotal) threadsResource.value.reload()
+}
+
 onMounted(() => {
 	window.addEventListener('keydown', handleKeyDown)
 	window.addEventListener('keyup', handleKeyUp)
-	reloadInterval.value = setInterval(() => threadsResource.value.reload(), 30000)
+	reloadInterval.value = setInterval(pollForChanges, 30000)
 
 	socket.on('new_mail_created', (updatedMailboxes: string[]) => {
 		if (updatedMailboxes.includes(mailbox)) threadsResource.value.reload()
@@ -1049,12 +1066,18 @@ onMounted(() => {
 	socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
 		raiseToast(payload.message, payload.success ? 'success' : 'error'),
 	)
+
+	socket.on('calendar_exchange_completed', (payload: { success: boolean; message: string }) =>
+		raiseToast(payload.message, payload.success ? 'success' : 'error'),
+	)
 })
 
 onUnmounted(() => {
 	window.removeEventListener('keydown', handleKeyDown)
 	window.removeEventListener('keyup', handleKeyUp)
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
+	// Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
+	setUndoAction(undefined)
 })
 
 const goToMailbox = () =>
@@ -1069,28 +1092,38 @@ const goToThread = (threadID: string) => {
 }
 
 // When stepping past the first/last thread of a page, move to the adjacent page (if any) and open
-// its edge thread once the new page has loaded (`openPendingEdgeThread`, called from onSuccess).
-let pendingEdgeThread: 'first' | 'last' | null = null
+// or focus its edge thread once the new page has loaded (`openPendingEdgeThread`, called from
+// onSuccess). `action` distinguishes the reading view (open) from list keyboard focus (focus).
+let pendingEdgeThread: { edge: 'first' | 'last'; action: 'open' | 'focus' } | null = null
 
-const goToThreadByOffset = (offset: number) => {
-	const next = getThreadByOffset(offset)
-	if (next) return goToThread(next)
-
+const crossPageByOffset = (offset: number, action: 'open' | 'focus') => {
+	// While a page transition is in flight (flag set until the new page loads), ignore further
+	// crossings — otherwise key auto-repeat at an edge keeps incrementing page.value and blows
+	// through many pages before the debounced reload fires.
+	if (pendingEdgeThread) return
 	if (offset > 0 && canGoNext.value) {
-		pendingEdgeThread = 'first'
+		pendingEdgeThread = { edge: 'first', action }
 		goToPage(true)
 	} else if (offset < 0 && canGoPrev.value) {
-		pendingEdgeThread = 'last'
+		pendingEdgeThread = { edge: 'last', action }
 		goToPage(false)
 	}
 }
 
+const goToThreadByOffset = (offset: number) => {
+	const next = getThreadByOffset(offset)
+	if (next) return goToThread(next)
+	crossPageByOffset(offset, 'open')
+}
+
 const openPendingEdgeThread = () => {
 	if (!pendingEdgeThread) return
-	const id = pendingEdgeThread === 'first' ? threadIDs.value[0] : threadIDs.value.at(-1)
+	const id = pendingEdgeThread.edge === 'first' ? threadIDs.value[0] : threadIDs.value.at(-1)
 	if (!id) return // keep the flag if the page is still empty (e.g. after overflow correction)
+	const { action } = pendingEdgeThread
 	pendingEdgeThread = null
-	goToThread(id)
+	if (action === 'open') goToThread(id)
+	else focusOnThread(id)
 }
 
 const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
@@ -1107,8 +1140,11 @@ const focusOnThread = (threadID: string) => {
 	scrollIntoView(threadID)
 }
 
-const focusOnThreadByOffset = (offset: number) =>
-	focusOnThread(getThreadByOffset(offset, threadInFocus.value))
+const focusOnThreadByOffset = (offset: number) => {
+	const next = getThreadByOffset(offset, threadInFocus.value)
+	if (next) return focusOnThread(next)
+	crossPageByOffset(offset, 'focus')
+}
 
 const scrollIntoView = (threadID: string) => {
 	const el = mailItemsRef.value?.find((el) => el?.id === threadID)?.$el
@@ -1149,7 +1185,7 @@ const showEmptyMailbox = ref(false)
 
 const emptyMailbox = createResource({
 	url: 'suite.mail.api.mail.empty_user_mailbox',
-	makeParams: () => ({ account: store.account, mailbox }),
+	makeParams: () => ({ account_id: store.accountId, mailbox }),
 	onSuccess: () => {
 		threadsResource.value.data = []
 		raiseToast(__('{0} emptied.', [mailboxName.value]))

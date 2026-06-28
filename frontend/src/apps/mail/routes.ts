@@ -109,6 +109,12 @@ export const routes: RouteRecordRaw[] = [
 				props: true,
 			},
 			{
+				path: 'account/:accountId/screener',
+				name: 'mail-screener',
+				component: () => import('@/apps/mail/pages/ScreenerView.vue'),
+				props: true,
+			},
+			{
 				path: 'account/:accountId/address-books/',
 				name: 'mail-address-books',
 				component: () => import('@/apps/mail/pages/AddressBooksView.vue'),
@@ -142,6 +148,19 @@ export const routes: RouteRecordRaw[] = [
 				path: 'mail-exchanges/:id',
 				name: 'mail-exchange',
 				component: () => import('@/apps/mail/pages/MailExchangeView.vue'),
+				meta: { noLayout: true },
+				props: true,
+			},
+			{
+				path: 'calendar-exchanges',
+				name: 'mail-calendar-exchanges',
+				component: () => import('@/apps/mail/pages/CalendarExchangesView.vue'),
+				meta: { noLayout: true },
+			},
+			{
+				path: 'calendar-exchanges/:id',
+				name: 'mail-calendar-exchange',
+				component: () => import('@/apps/mail/pages/CalendarExchangeView.vue'),
 				meta: { noLayout: true },
 				props: true,
 			},

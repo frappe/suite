@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-model="open" :options="{ size: 'lg' }" @close="dialogType = ''">
+  <Dialog v-model:open="open" size="lg" @close="dialogType = ''">
     <template #body-main>
       <div class="p-4 sm:px-6">
         <div class="flex w-full justify-between gap-x-15 mb-4">

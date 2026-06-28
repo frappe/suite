@@ -5,7 +5,7 @@ import { createResource } from 'frappe-ui'
 // Boot side-effects that ran in the standalone app's main.ts / App.vue. The
 // suite's shared main.ts does not run them, so trigger them on writer module
 // load. Backend method paths preserved as-is.
-import { allUsers } from '@/apps/writer/ui/drive/js/resources'
+import { allUsers } from '@/apps/drive/ui/drive/js/resources'
 import { apps } from '@/apps/writer/resources/'
 
 allUsers.fetch()

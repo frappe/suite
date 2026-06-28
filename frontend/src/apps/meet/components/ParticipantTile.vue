@@ -243,7 +243,7 @@ const resolvedDisplayName = computed(() => {
 	return (
 		props.displayName ||
 		props.participant.user_name ||
-		props.participant.user_id
+		(props.participant.is_guest ? "Guest" : "")
 	);
 });
 
