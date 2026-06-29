@@ -35,7 +35,7 @@
               </template>
             </TextInput>
           </div>
-          <component v-else :is="tab.id === activeTabId ? ContextMenu : 'div'" :items="tabActions">
+          <component v-else :is="tab.id === activeTabId ? ContextMenu : 'div'" :options="tabActions">
             <Button variant="ghost" class="w-full !text-ink-gray-5 !justify-start cursor-grab active:cursor-grabbing"
               :class="tab.id === activeTabId && 'font-medium !text-ink-gray-8'" :label="tab.label"
               :icon-left="h(LucideFileText, { class: 'size-4 shrink-0' })" @click="
