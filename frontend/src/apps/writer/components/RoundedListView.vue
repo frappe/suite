@@ -19,7 +19,7 @@
           v-if="i === 0"
           class="w-fit"
           v-model="thumbnail"
-          :buttons="[
+          :options="[
             {
               label: 'Grid',
               value: 'grid',
@@ -149,7 +149,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, useTemplateRef } from 'vue'
 
-import { Avatar, TabButtons, Dropdown } from 'frappe-ui'
+import { Avatar, TabButtons } from 'frappe-ui'
 import { useInfiniteScroll } from '@vueuse/core'
 import LucideGrid from '~icons/lucide/grid'
 import LucideList from '~icons/lucide/list'

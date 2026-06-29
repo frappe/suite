@@ -6,7 +6,7 @@
     <div class="flex overflow-x-auto px-2 py-2 gap-1">
       <TabButtons
         v-model="activeTabId"
-        :buttons="
+        :options="
           tabs.map((k) => ({
             label: k.label,
             value: k.id,
