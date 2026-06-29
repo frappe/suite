@@ -155,6 +155,15 @@ export class ProducerManager extends EventEmitter {
 		return this.producers.size;
 	}
 
+	getProducerIdsByPeer(roomId: string, peerId: string): string[] {
+		return Array.from(this.producers.entries())
+			.filter(
+				([, producerData]) =>
+					producerData.roomId === roomId && producerData.peerId === peerId,
+			)
+			.map(([producerId]) => producerId);
+	}
+
 	cleanup(): void {
 		for (const [producerId, producerData] of this.producers) {
 			try {

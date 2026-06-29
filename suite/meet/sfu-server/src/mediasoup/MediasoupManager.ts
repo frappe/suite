@@ -184,6 +184,14 @@ export class MediasoupManager {
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) return;
 
+		for (const producerId of this.producerManager.getProducerIdsByPeer(
+			roomId,
+			peerId,
+		)) {
+			this.closeProducer(producerId);
+		}
+		this.consumerManager.closePeerConsumers(roomId, peerId);
+		this.transportManager.closePeerTransports(roomId, peerId);
 		this.peerManager.removePeer(room, peerId);
 		this.peerScores.delete(peerId);
 	}

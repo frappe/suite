@@ -220,6 +220,38 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
 	});
 
+	it('disconnect of an older duplicate full-access socket does not remove the current peer', async () => {
+		const harness = createManager();
+
+		const older = connectFullSocket(harness, {
+			id: 'sock-old',
+			userId: 'user-1',
+		});
+		emitJoin(older);
+		await new Promise((r) => setImmediate(r));
+
+		const current = connectFullSocket(harness, {
+			id: 'sock-current',
+			userId: 'user-1',
+		});
+		emitJoin(current);
+		await new Promise((r) => setImmediate(r));
+
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+		older.fire('disconnect');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+
+		current.fire('disconnect');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'user-1',
+		);
+	});
+
 	it('host_control with mute_participant sends host_control_update to the target; non-host gets sfu_error and target gets nothing', async () => {
 		const harness = createManager();
 

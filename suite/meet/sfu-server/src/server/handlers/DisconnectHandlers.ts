@@ -24,34 +24,41 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 					socket.leave(`${roomId}:preview`);
 
 					if (socket.scope === 'full') {
-						await deps.mediasoup.removePeer(roomId, participantId);
-
-						if (isRealParticipant(participantId)) {
-							deps.registry.emitParticipantEvent(
-								roomId,
-								'participant_left',
-								participantId,
-							);
-						}
-
-						if (deps.registry.hasRaisedHand(roomId, participantId)) {
-							deps.registry.clearRaisedHand(roomId, participantId);
-							deps.registry.emitToFullAccessParticipants(
-								roomId,
-								'hand_raised',
-								{
-									participantId,
-									raised: false,
-									timestamp: new Date().toISOString(),
-								},
-							);
-						}
-
-						loggers.socketHandler.info(
-							'Cleaned up user %s from room %s',
-							participantId,
+						const shouldCleanupPeer = deps.registry.releaseParticipant(
+							socket,
 							roomId,
+							participantId,
 						);
+						if (shouldCleanupPeer) {
+							await deps.mediasoup.removePeer(roomId, participantId);
+
+							if (isRealParticipant(participantId)) {
+								deps.registry.emitParticipantEvent(
+									roomId,
+									'participant_left',
+									participantId,
+								);
+							}
+
+							if (deps.registry.hasRaisedHand(roomId, participantId)) {
+								deps.registry.clearRaisedHand(roomId, participantId);
+								deps.registry.emitToFullAccessParticipants(
+									roomId,
+									'hand_raised',
+									{
+										participantId,
+										raised: false,
+										timestamp: new Date().toISOString(),
+									},
+								);
+							}
+
+							loggers.socketHandler.info(
+								'Cleaned up user %s from room %s',
+								participantId,
+								roomId,
+							);
+						}
 					}
 
 					if (deps.registry.isEmpty(roomId)) {

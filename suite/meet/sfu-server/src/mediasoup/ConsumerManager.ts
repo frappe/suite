@@ -210,6 +210,14 @@ export class ConsumerManager {
 		};
 	}
 
+	closePeerConsumers(roomId: string, peerId: string): void {
+		for (const [consumerId, consumerData] of this.consumers) {
+			if (consumerData.roomId !== roomId || consumerData.peerId !== peerId)
+				continue;
+			this.closeConsumer(consumerId);
+		}
+	}
+
 	cleanup(): void {
 		for (const [consumerId, consumerData] of this.consumers) {
 			try {

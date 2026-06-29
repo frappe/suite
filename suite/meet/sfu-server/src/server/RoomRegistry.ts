@@ -12,6 +12,7 @@ export class RoomRegistry {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
+	private participantSockets: Record<string, Record<string, string>> = {};
 
 	constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
 		this.io = io;
@@ -23,6 +24,28 @@ export class RoomRegistry {
 		scope: 'full' | 'presence-preview',
 	): void {
 		socket.join(scope === 'full' ? fullRoom(roomId) : previewRoom(roomId));
+	}
+
+	claimParticipant(
+		socket: Socket,
+		roomId: string,
+		participantId: string,
+	): void {
+		if (!this.participantSockets[roomId]) this.participantSockets[roomId] = {};
+		this.participantSockets[roomId][participantId] = socket.id;
+	}
+
+	releaseParticipant(
+		socket: Socket,
+		roomId: string,
+		participantId: string,
+	): boolean {
+		if (this.participantSockets[roomId]?.[participantId] !== socket.id) {
+			return false;
+		}
+
+		delete this.participantSockets[roomId][participantId];
+		return true;
 	}
 
 	setRaisedHand(roomId: string, peerId: string, isoTimestamp: string): void {
@@ -60,6 +83,7 @@ export class RoomRegistry {
 	cleanupRoom(roomId: string): void {
 		delete this.raisedHands[roomId];
 		delete this.hostOnlyChat[roomId];
+		delete this.participantSockets[roomId];
 	}
 
 	emitToScope(
