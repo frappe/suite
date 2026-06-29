@@ -174,14 +174,14 @@ describe("SFURecoveryManager", () => {
 			);
 		});
 
-		it("returns recovering when another recovery is in progress", async () => {
+		it("shares the active recovery so concurrent callers observe the same outcome", async () => {
 			const { manager, transportManager } = createManager({
 				restartResult: false,
 			});
 
 			const first = manager.recoverTransportIce("first");
 			await expect(manager.recoverTransportIce("second")).resolves.toBe(
-				"recovering",
+				"failed",
 			);
 			await first;
 			expect(transportManager.restartAllTransportIce).toHaveBeenCalledTimes(1);

@@ -14,7 +14,7 @@ interface RecoveryManagerOptions {
 }
 
 type TransportDirection = "send" | "recv";
-export type RecoveryResult = "recovered" | "failed" | "recovering" | "skipped";
+export type RecoveryResult = "recovered" | "failed" | "skipped";
 
 export class SFURecoveryManager {
 	private sfuClient: SFUClient;
@@ -22,6 +22,7 @@ export class SFURecoveryManager {
 	private getMeetingId: () => string | null;
 	private onRecovered?: (reason: string) => Promise<void> | void;
 	private recoveryInProgress = false;
+	private activeRecovery: Promise<RecoveryResult> | null = null;
 	private lastRecoveryAt = 0;
 	private static readonly RECOVERY_COOLDOWN_MS = 7000;
 	private static readonly DISCONNECTED_GRACE_MS = 3000;
@@ -41,9 +42,7 @@ export class SFURecoveryManager {
 	}
 
 	async recoverTransportIce(reason: string): Promise<RecoveryResult> {
-		if (this.recoveryInProgress) {
-			return "recovering";
-		}
+		if (this.activeRecovery) return this.activeRecovery;
 
 		if (!this.sfuClient?.isConnected?.()) {
 			return "skipped";
@@ -57,26 +56,32 @@ export class SFURecoveryManager {
 		this.recoveryInProgress = true;
 		this.lastRecoveryAt = now;
 
-		try {
-			console.warn("Restarting SFU transport ICE", {
-				reason,
-				meetingId: this.getMeetingId(),
-			});
+		this.activeRecovery = (async (): Promise<RecoveryResult> => {
+			try {
+				console.warn("Restarting SFU transport ICE", {
+					reason,
+					meetingId: this.getMeetingId(),
+				});
 
-			const restarted = await this.transportManager.restartAllTransportIce();
-			if (!restarted) {
+				const restarted =
+					await this.transportManager.restartAllTransportIce();
+				if (!restarted) {
+					return "failed";
+				}
+
+				console.log("SFU transport ICE restart completed", { reason });
+				await this.onRecovered?.(reason);
+				return "recovered";
+			} catch (error) {
+				console.error("SFU transport ICE restart failed:", error);
 				return "failed";
+			} finally {
+				this.recoveryInProgress = false;
+				this.activeRecovery = null;
 			}
+		})();
 
-			console.log("SFU transport ICE restart completed", { reason });
-			await this.onRecovered?.(reason);
-			return "recovered";
-		} catch (error) {
-			console.error("SFU transport ICE restart failed:", error);
-			return "failed";
-		} finally {
-			this.recoveryInProgress = false;
-		}
+		return this.activeRecovery;
 	}
 
 	handleTransportConnectionStateChange(direction: string, state: string): void {
