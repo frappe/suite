@@ -32,7 +32,7 @@ class WriterDocument(Document):
 	@frappe.whitelist(methods=["POST"])
 	def new_version(self, data: str, title: str | None = None):
 		"""Create a new version of the document"""
-		if not data or not data.strip():
+		if not data or not data.strip() or data.strip() == "<p></p>":
 			frappe.response["data"] = False
 			return
 
