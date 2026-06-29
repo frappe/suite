@@ -296,7 +296,7 @@ const onEditorKeydown = async (e) => {
 
 const autoversion = async () => {
   if (!edited.value) return
-  const html = editor.value.getHTML()
+  const html = editor.value.getHTML()?.trim()
   if (!html || html === '<p></p>') return
   await props.document.newVersion.submit({ data: html })
   const err = props.document.newVersion.error
