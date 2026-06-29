@@ -165,16 +165,16 @@ permission_query_conditions = {
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
-	# mail (client)
-	"Account Settings": "suite.client.doctype.account_settings.account_settings.get_permission_query_condition",
-	"Blocked Email Address": "suite.client.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
-	"Calendar Exchange": "suite.client.doctype.calendar_exchange.calendar_exchange.get_permission_query_condition",
-	"Junk Email Address": "suite.client.doctype.junk_email_address.junk_email_address.get_permission_query_condition",
-	"Mail Exchange": "suite.client.doctype.mail_exchange.mail_exchange.get_permission_query_condition",
-	"Mail Queue": "suite.client.doctype.mail_queue.mail_queue.get_permission_query_condition",
-	"Mail Sync History": "suite.client.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
-	"Mailbox Settings": "suite.client.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
-	"User Settings": "suite.client.doctype.user_settings.user_settings.get_permission_query_condition",
+	# mail
+	"Account Settings": "suite.mail.doctype.account_settings.account_settings.get_permission_query_condition",
+	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
+	"Calendar Exchange": "suite.mail.doctype.calendar_exchange.calendar_exchange.get_permission_query_condition",
+	"Junk Email Address": "suite.mail.doctype.junk_email_address.junk_email_address.get_permission_query_condition",
+	"Mail Exchange": "suite.mail.doctype.mail_exchange.mail_exchange.get_permission_query_condition",
+	"Mail Queue": "suite.mail.doctype.mail_queue.mail_queue.get_permission_query_condition",
+	"Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
+	"Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
+	"User Settings": "suite.mail.doctype.user_settings.user_settings.get_permission_query_condition",
 }
 
 # ============================================================================
@@ -190,29 +190,29 @@ has_permission = {
 	# sheets
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
-	# mail (client)
-	"Account Settings": "suite.client.doctype.account_settings.account_settings.has_permission",
-	"Address Book": "suite.client.doctype.address_book.address_book.has_permission",
-	"Blocked Email Address": "suite.client.doctype.blocked_email_address.blocked_email_address.has_permission",
-	"Calendar": "suite.client.doctype.calendar.calendar.has_permission",
-	"Calendar Event": "suite.client.doctype.calendar_event.calendar_event.has_permission",
-	"Calendar Exchange": "suite.client.doctype.calendar_exchange.calendar_exchange.has_permission",
-	"Contact Card": "suite.client.doctype.contact_card.contact_card.has_permission",
-	"Event Notification": "suite.client.doctype.event_notification.event_notification.has_permission",
-	"Identity": "suite.client.doctype.identity.identity.has_permission",
-	"Junk Email Address": "suite.client.doctype.junk_email_address.junk_email_address.has_permission",
-	"Mail Exchange": "suite.client.doctype.mail_exchange.mail_exchange.has_permission",
-	"Mail Queue": "suite.client.doctype.mail_queue.mail_queue.has_permission",
-	"Mail Sync History": "suite.client.doctype.mail_sync_history.mail_sync_history.has_permission",
-	"Mailbox": "suite.client.doctype.mailbox.mailbox.has_permission",
-	"Mailbox Settings": "suite.client.doctype.mailbox_settings.mailbox_settings.has_permission",
-	"Participant Identity": "suite.client.doctype.participant_identity.participant_identity.has_permission",
-	"Push Subscription": "suite.client.doctype.push_subscription.push_subscription.has_permission",
-	"Quota": "suite.client.doctype.quota.quota.has_permission",
-	"Sieve Script": "suite.client.doctype.sieve_script.sieve_script.has_permission",
-	"User Account": "suite.client.doctype.user_account.user_account.has_permission",
-	"User Settings": "suite.client.doctype.user_settings.user_settings.has_permission",
-	"Vacation Response": "suite.client.doctype.vacation_response.vacation_response.has_permission",
+	# mail
+	"Account Settings": "suite.mail.doctype.account_settings.account_settings.has_permission",
+	"Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
+	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.has_permission",
+	"Calendar": "suite.mail.doctype.calendar.calendar.has_permission",
+	"Calendar Event": "suite.mail.doctype.calendar_event.calendar_event.has_permission",
+	"Calendar Exchange": "suite.mail.doctype.calendar_exchange.calendar_exchange.has_permission",
+	"Contact Card": "suite.mail.doctype.contact_card.contact_card.has_permission",
+	"Event Notification": "suite.mail.doctype.event_notification.event_notification.has_permission",
+	"Identity": "suite.mail.doctype.identity.identity.has_permission",
+	"Junk Email Address": "suite.mail.doctype.junk_email_address.junk_email_address.has_permission",
+	"Mail Exchange": "suite.mail.doctype.mail_exchange.mail_exchange.has_permission",
+	"Mail Queue": "suite.mail.doctype.mail_queue.mail_queue.has_permission",
+	"Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.has_permission",
+	"Mailbox": "suite.mail.doctype.mailbox.mailbox.has_permission",
+	"Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.has_permission",
+	"Participant Identity": "suite.mail.doctype.participant_identity.participant_identity.has_permission",
+	"Push Subscription": "suite.mail.doctype.push_subscription.push_subscription.has_permission",
+	"Quota": "suite.mail.doctype.quota.quota.has_permission",
+	"Sieve Script": "suite.mail.doctype.sieve_script.sieve_script.has_permission",
+	"User Account": "suite.mail.doctype.user_account.user_account.has_permission",
+	"User Settings": "suite.mail.doctype.user_settings.user_settings.has_permission",
+	"Vacation Response": "suite.mail.doctype.vacation_response.vacation_response.has_permission",
 }
 
 # ============================================================================
@@ -278,25 +278,24 @@ scheduler_events = {
 		"suite.sheets.versioning.tasks.rollup_snapshots",
 		"suite.sheets.versioning.tasks.truncate_op_log",
 		# mail
-		"suite.client.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
-		"suite.client.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
+		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
+		"suite.mail.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 	],
 	"hourly": [
 		# mail
-		"suite.client.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
+		"suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
 	],
 	"hourly_long": [
 		# mail
-		"suite.client.doctype.mail_message.mail_message.schedule_fetch_changes",
+		"suite.mail.doctype.mail_message.mail_message.schedule_fetch_changes",
 	],
 	"cron": {
 		"*/5 * * * *": [
-			# mail (server)
+			# mail
 			"suite.mail.doctype.server_job.server_job.retry_failed_jobs",
 			"suite.mail.doctype.server_deployment.server_deployment.retry_failed_deployments",
 			"suite.mail.doctype.server_ansible_play.server_ansible_play.retry_failed_ansible_plays",
-			# mail (client)
-			"suite.client.doctype.mail_queue.mail_queue.enqueue_process_pending_emails",
+			"suite.mail.doctype.mail_queue.mail_queue.enqueue_process_pending_emails",
 		],
 	},
 }
@@ -338,13 +337,12 @@ signup_form_template = "templates/signup.html"
 
 # mail — link integrity on delete
 ignore_links_on_delete = [
-	# Server
+	# mail
 	"Mail Account Request",
 	"Mail Domain Request",
 	"Server Job",
 	"Server Ansible Play",
 	"Server Deployment",
-	# Client
 	"Account Settings",
 	"Screened Email Address",
 	"Mail Exchange",

@@ -4,6 +4,5 @@ Writer
 Sheets
 Meet
 Mail
-Client
 Calendar
 Suite Core

@@ -12,3 +12,4 @@ def execute() -> None:
 	"""
 	frappe.db.set_value("DocType", {"module": "Server"}, "module", "Mail", update_modified=False)
 	frappe.db.set_value("Workspace Sidebar", {"module": "Server"}, "module", "Mail", update_modified=False)
+	frappe.db.delete("Module Def", {"name": "Server", "app_name": "suite"})

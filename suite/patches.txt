@@ -12,6 +12,7 @@ execute:frappe.db.delete("Mail Cluster Store")
 suite.writer.patches.remove_frappe_writer_module
 
 suite.mail.patches.delete_server_module
+suite.mail.patches.delete_client_module
 suite.mail.patches.capture_user_outgoing_settings
 suite.mail.patches.rebuild_rate_limit_unique_constraint
 suite.mail.patches.refactor_account_settings

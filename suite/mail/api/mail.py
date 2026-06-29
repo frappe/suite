@@ -18,7 +18,7 @@ from suite.mail.api.sieve import (
 	pause_automation_sieve_build,
 )
 from suite.mail.api.utils import get_avatar_url
-from suite.client.doctype.mail_message.mail_message import (
+from suite.mail.doctype.mail_message.mail_message import (
 	add_messages_to_mailbox,
 	delete_messages,
 	empty_mailbox,
@@ -35,13 +35,13 @@ from suite.client.doctype.mail_message.mail_message import (
 	set_seen_status,
 	set_spam_status,
 )
-from suite.client.doctype.mail_queue.mail_queue import MailQueue
-from suite.client.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
-from suite.client.doctype.mailbox_settings.mailbox_settings import (
+from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
+from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 	automation_rules_to_settings,
 	set_mailbox_settings,
 )
-from suite.client.doctype.screened_email_address.screened_email_address import (
+from suite.mail.doctype.screened_email_address.screened_email_address import (
 	get_screened_email_addresses,
 )
 from suite.mail.jmap import (

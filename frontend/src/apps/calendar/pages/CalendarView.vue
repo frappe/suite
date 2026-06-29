@@ -215,7 +215,7 @@ const submitEvent = (sendEmail: boolean) => {
 }
 
 const editEvent = createResource({
-	url: 'suite.client.doctype.calendar_event.calendar_event.update_calendar_event',
+	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		...eventToBeUpdated,
 		id: eventToBeUpdated.master_id,

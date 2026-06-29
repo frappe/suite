@@ -1,6 +1,6 @@
 import frappe
 
-from suite.client.doctype.account_settings.account_settings import backfill_default_outgoing_emails
+from suite.mail.doctype.account_settings.account_settings import backfill_default_outgoing_emails
 from suite.mail.patches.capture_user_outgoing_settings import CACHE_KEY
 
 

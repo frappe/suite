@@ -4,8 +4,8 @@ import frappe
 from frappe import _
 from frappe.utils import random_string
 
-from suite.client.doctype.mail_message.mail_message import enqueue_fetch_changes
-from suite.client.doctype.push_subscription.push_subscription import (
+from suite.mail.doctype.mail_message.mail_message import enqueue_fetch_changes
+from suite.mail.doctype.push_subscription.push_subscription import (
 	decrypt_jmap_push_payload,
 	get_push_subscription_keys,
 	is_jmap_push_notifications_frozen,

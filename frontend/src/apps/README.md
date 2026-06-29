@@ -77,5 +77,5 @@ Keep your work inside `src/apps/<your-app>/`.
 ## Backend calls
 
 Use the `suite.*` namespace for product backend calls, e.g.
-`suite.drive.api.files.*`, `suite.client.doctype.*`, `suite.slides.doctype.*`, and
+`suite.drive.api.files.*`, `suite.mail.doctype.*`, `suite.slides.doctype.*`, and
 `suite.calendar.api.*`. Framework `frappe.*` paths are unchanged.

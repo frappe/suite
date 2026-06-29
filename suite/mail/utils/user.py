@@ -177,7 +177,7 @@ def get_user_personal_account(
 ) -> str | None:
 	"""Returns the personal account of the user."""
 
-	from suite.client.doctype.user_account.user_account import fetch_user_accounts
+	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
 
 	for account in fetch_user_accounts(user, limit=None):
 		if account["is_personal"]:
@@ -192,7 +192,7 @@ def get_user_emails(user: str) -> list[str]:
 
 	emails = []
 
-	from suite.client.doctype.user_account.user_account import fetch_user_accounts
+	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
 
 	for account in [a["name"] for a in fetch_user_accounts(user, limit=None)]:
 		emails.extend(get_account_emails(account))
@@ -241,7 +241,7 @@ def generate_user_keys(user: str) -> dict:
 def get_sync_state(account: str, type: Literal["email"]) -> str | None:
 	"""Returns the Sync State for the given account and type."""
 
-	from suite.client.doctype.account_settings.account_settings import get_or_create_account_settings
+	from suite.mail.doctype.account_settings.account_settings import get_or_create_account_settings
 
 	store = get_data_store(parse_account(account)[1])
 	value = store.get(Entity.STATE, f"{type}_current_state")

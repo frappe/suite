@@ -4,8 +4,8 @@ import re
 import frappe
 
 from suite.mail.api.utils import get_avatar_url
-from suite.client.doctype.address_book.address_book import fetch_address_books
-from suite.client.doctype.contact_card.contact_card import bulk_add_contact_cards, fetch_contact_cards
+from suite.mail.doctype.address_book.address_book import fetch_address_books
+from suite.mail.doctype.contact_card.contact_card import bulk_add_contact_cards, fetch_contact_cards
 from suite.mail.jmap import get_default_address_book_id
 from suite.mail.utils.user import get_session_account
 

@@ -1,0 +1,243 @@
+{
+ "actions": [],
+ "creation": "2026-04-15 14:57:59.610465",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "outgoing_section",
+  "default_outgoing_email",
+  "column_break_outgoing",
+  "create_contacts_after_email_submit",
+  "destroy_email_after_submit",
+  "destroy_newsletter_after_submit",
+  "incoming_section",
+  "on_mark_as_junk",
+  "column_break_fnnk",
+  "enable_screening",
+  "block_remote_images",
+  "cache_section",
+  "column_break_brmt",
+  "total_cached_blobs",
+  "total_cached_mail_messages",
+  "total_cached_contact_cards",
+  "column_break_bxpt",
+  "has_cached_jmap_identities",
+  "has_cached_jmap_mailboxes",
+  "sieve_section",
+  "last_active_sieve_script_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "outgoing_section",
+   "fieldtype": "Section Break",
+   "label": "Outgoing"
+  },
+  {
+   "description": "Default email address used as the sender when composing new messages.",
+   "fieldname": "default_outgoing_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Default Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "column_break_outgoing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Automatically creates contact cards for new recipients after an email is sent.",
+   "fieldname": "create_contacts_after_email_submit",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Create Contacts After Email Submit"
+  },
+  {
+   "default": "0",
+   "description": "Automatically deletes the email from your mailbox after it is sent.",
+   "fieldname": "destroy_email_after_submit",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Destroy Email After Submit"
+  },
+  {
+   "default": "0",
+   "description": "Automatically delete newsletters after they are sent.",
+   "fieldname": "destroy_newsletter_after_submit",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Destroy Newsletter After Submit"
+  },
+  {
+   "fieldname": "incoming_section",
+   "fieldtype": "Section Break",
+   "label": "Incoming"
+  },
+  {
+   "default": "Junk Sender's Mail",
+   "description": "What to do with the sender when a message is marked as Junk. \"Junk Sender's Mail\" files their future mail into Junk; \"Ask to Block Sender\" prompts to block them outright.",
+   "fieldname": "on_mark_as_junk",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "On Mark As Junk",
+   "options": "Junk Sender's Mail\nAsk to Block Sender"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, mail from senders not on the Accepted list is filed into the Screening folder instead of the inbox (Hey-style screening). Only senders you accept reach the inbox.",
+   "fieldname": "enable_screening",
+   "fieldtype": "Check",
+   "label": "Enable Screening"
+  },
+  {
+   "default": "1",
+   "description": "When enabled, remote images in mail from senders you haven't accepted are not loaded (this prevents senders from tracking when you open their mail). You can load them per message.",
+   "fieldname": "block_remote_images",
+   "fieldtype": "Check",
+   "label": "Block Remote Images"
+  },
+  {
+   "depends_on": "eval: !doc.__islocal",
+   "fieldname": "cache_section",
+   "fieldtype": "Section Break",
+   "label": "Cache"
+  },
+  {
+   "default": "0",
+   "description": "Whether this account's JMAP identities are cached for your session.",
+   "fieldname": "has_cached_jmap_identities",
+   "fieldtype": "Check",
+   "is_virtual": 1,
+   "label": "Has Cached JMAP Identities",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether this account's JMAP mailboxes are cached for your session.",
+   "fieldname": "has_cached_jmap_mailboxes",
+   "fieldtype": "Check",
+   "is_virtual": 1,
+   "label": "Has Cached JMAP Mailboxes",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_brmt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Number of message blobs (bodies and attachments) cached for your session.",
+   "fieldname": "total_cached_blobs",
+   "fieldtype": "Int",
+   "is_virtual": 1,
+   "label": "Total Cached Blobs",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Number of mail messages cached for your session.",
+   "fieldname": "total_cached_mail_messages",
+   "fieldtype": "Int",
+   "is_virtual": 1,
+   "label": "Total Cached Mail Messages",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Number of contact cards cached for your session.",
+   "fieldname": "total_cached_contact_cards",
+   "fieldtype": "Int",
+   "is_virtual": 1,
+   "label": "Total Cached Contact Cards",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval: !doc.__islocal",
+   "fieldname": "sieve_section",
+   "fieldtype": "Section Break",
+   "label": "Sieve"
+  },
+  {
+   "description": "ID of the Sieve script that was active before a vacation auto-reply was enabled; it is re-activated when the vacation response is turned off.",
+   "fieldname": "last_active_sieve_script_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Last Active Sieve Script ID",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_fnnk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_bxpt",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "group": "Reference",
+   "link_doctype": "Mailbox Settings",
+   "link_fieldname": "account_id"
+  },
+  {
+   "group": "Reference",
+   "link_doctype": "Mail Sync History",
+   "link_fieldname": "account_id"
+  },
+  {
+   "group": "Reference",
+   "link_doctype": "Screened Email Address",
+   "link_fieldname": "account_id"
+  },
+  {
+   "group": "Exchange",
+   "link_doctype": "Mail Exchange",
+   "link_fieldname": "account_id"
+  },
+  {
+   "group": "Exchange",
+   "link_doctype": "Calendar Exchange",
+   "link_fieldname": "account_id"
+  }
+ ],
+ "modified": "2026-06-24 20:45:58.331960",
+ "modified_by": "Administrator",
+ "module": "Mail",
+ "name": "Account Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "All",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
