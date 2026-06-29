@@ -93,11 +93,8 @@ export class RoomRegistry {
 	cleanupRoom(roomId: string): void {
 		delete this.raisedHands[roomId];
 		delete this.hostOnlyChat[roomId];
-<<<<<<< HEAD
 		delete this.participantSockets[roomId];
-=======
 		delete this.activePolls[roomId];
->>>>>>> 4f951d82e (fix: addressed greptile comments)
 	}
 
 	emitToScope(
