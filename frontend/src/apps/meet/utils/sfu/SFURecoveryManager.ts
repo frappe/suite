@@ -14,6 +14,7 @@ interface RecoveryManagerOptions {
 }
 
 type TransportDirection = "send" | "recv";
+export type RecoveryResult = "recovered" | "failed" | "skipped";
 
 export class SFURecoveryManager {
 	private sfuClient: SFUClient;
@@ -39,18 +40,18 @@ export class SFURecoveryManager {
 		return this.recoveryInProgress;
 	}
 
-	async recoverTransportIce(reason: string): Promise<boolean> {
+	async recoverTransportIce(reason: string): Promise<RecoveryResult> {
 		if (this.recoveryInProgress) {
-			return false;
+			return "skipped";
 		}
 
 		if (!this.sfuClient?.isConnected?.()) {
-			return false;
+			return "skipped";
 		}
 
 		const now = Date.now();
 		if (now - this.lastRecoveryAt < SFURecoveryManager.RECOVERY_COOLDOWN_MS) {
-			return false;
+			return "skipped";
 		}
 
 		this.recoveryInProgress = true;
@@ -64,15 +65,15 @@ export class SFURecoveryManager {
 
 			const restarted = await this.transportManager.restartAllTransportIce();
 			if (!restarted) {
-				return false;
+				return "failed";
 			}
 
 			console.log("SFU transport ICE restart completed", { reason });
 			await this.onRecovered?.(reason);
-			return true;
+			return "recovered";
 		} catch (error) {
 			console.error("SFU transport ICE restart failed:", error);
-			return false;
+			return "failed";
 		} finally {
 			this.recoveryInProgress = false;
 		}
@@ -102,8 +103,8 @@ export class SFURecoveryManager {
 			if (now - since >= SFURecoveryManager.DISCONNECTED_GRACE_MS) {
 				void this.recoverTransportIce(
 					`transport_${direction}_disconnected_timeout`,
-				).then((recovered) => {
-					if (recovered) {
+				).then((result) => {
+					if (result === "recovered") {
 						this.disconnectedSince.delete(direction);
 					}
 				});

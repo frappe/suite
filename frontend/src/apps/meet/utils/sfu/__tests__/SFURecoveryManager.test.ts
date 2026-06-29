@@ -155,4 +155,23 @@ describe("SFURecoveryManager", () => {
 			expect(transportManager.restartAllTransportIce).toHaveBeenCalledTimes(2);
 		});
 	});
+
+	describe("recoverTransportIce", () => {
+		it("separates recovered, failed, and skipped states", async () => {
+			const recovered = createManager();
+			await expect(recovered.manager.recoverTransportIce("test")).resolves.toBe(
+				"recovered",
+			);
+
+			const failed = createManager({ restartResult: false });
+			await expect(failed.manager.recoverTransportIce("test")).resolves.toBe(
+				"failed",
+			);
+
+			const skipped = createManager({ connected: false });
+			await expect(skipped.manager.recoverTransportIce("test")).resolves.toBe(
+				"skipped",
+			);
+		});
+	});
 });

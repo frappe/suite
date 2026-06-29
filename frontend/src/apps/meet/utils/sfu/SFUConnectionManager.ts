@@ -279,7 +279,7 @@ export class SFUConnectionManager {
 		}
 	}
 
-	async resyncProducers(): Promise<void> {
+	async resetReceiveSide(): Promise<void> {
 		this.transportManager.closeReceiveTransport();
 		this.mediaManager.consumerManager.clear();
 		await this.createReceiveTransport();
@@ -287,9 +287,15 @@ export class SFUConnectionManager {
 		await this.flushBufferedProducers();
 	}
 
+	async resyncProducers(): Promise<void> {
+		await this.createReceiveTransport();
+		await this.requestExistingProducers();
+		await this.flushBufferedProducers();
+	}
+
 	async resyncAfterRecovery(reason: string): Promise<void> {
-		const recovered = await this.recoveryManager.recoverTransportIce(reason);
-		if (!recovered) await this.resyncProducers();
+		const result = await this.recoveryManager.recoverTransportIce(reason);
+		if (result === "failed") await this.resetReceiveSide();
 	}
 
 	private hasConsumerForProducer(participantId: string, producerId: string): boolean {
