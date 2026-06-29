@@ -173,5 +173,18 @@ describe("SFURecoveryManager", () => {
 				"skipped",
 			);
 		});
+
+		it("returns recovering when another recovery is in progress", async () => {
+			const { manager, transportManager } = createManager({
+				restartResult: false,
+			});
+
+			const first = manager.recoverTransportIce("first");
+			await expect(manager.recoverTransportIce("second")).resolves.toBe(
+				"recovering",
+			);
+			await first;
+			expect(transportManager.restartAllTransportIce).toHaveBeenCalledTimes(1);
+		});
 	});
 });

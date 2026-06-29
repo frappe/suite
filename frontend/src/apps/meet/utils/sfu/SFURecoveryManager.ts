@@ -14,7 +14,7 @@ interface RecoveryManagerOptions {
 }
 
 type TransportDirection = "send" | "recv";
-export type RecoveryResult = "recovered" | "failed" | "skipped";
+export type RecoveryResult = "recovered" | "failed" | "recovering" | "skipped";
 
 export class SFURecoveryManager {
 	private sfuClient: SFUClient;
@@ -42,7 +42,7 @@ export class SFURecoveryManager {
 
 	async recoverTransportIce(reason: string): Promise<RecoveryResult> {
 		if (this.recoveryInProgress) {
-			return "skipped";
+			return "recovering";
 		}
 
 		if (!this.sfuClient?.isConnected?.()) {

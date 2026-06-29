@@ -295,7 +295,9 @@ export class SFUConnectionManager {
 
 	async resyncAfterRecovery(reason: string): Promise<void> {
 		const result = await this.recoveryManager.recoverTransportIce(reason);
-		if (result === "failed") await this.resetReceiveSide();
+		if (result === "recovered" || result === "failed" || result === "skipped") {
+			await this.resetReceiveSide();
+		}
 	}
 
 	private hasConsumerForProducer(participantId: string, producerId: string): boolean {
