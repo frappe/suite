@@ -159,6 +159,11 @@ function createMockMediasoupManager(): MediasoupManager {
 		addPeer: vi.fn(),
 		removePeer: vi.fn().mockResolvedValue(undefined),
 		peerExistsInRoom: vi.fn().mockReturnValue(true),
+		createProducer: vi.fn().mockResolvedValue({
+			id: 'producer-1',
+			kind: 'video',
+			appData: { type: 'screen' },
+		}),
 	} as unknown as MediasoupManager;
 }
 

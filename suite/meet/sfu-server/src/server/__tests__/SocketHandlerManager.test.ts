@@ -306,6 +306,52 @@ describe('SocketHandlerManager characterization', () => {
 		).toBe(false);
 	});
 
+	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
+		const harness = createManager();
+
+		const sharer = connectFullSocket(harness, {
+			id: 'sock-sharer',
+			userId: 'sharer-1',
+		});
+		emitJoin(sharer, { userId: 'sharer-1', name: 'Sharer' });
+		await new Promise((r) => setImmediate(r));
+
+		const viewer = connectFullSocket(harness, {
+			id: 'sock-viewer',
+			userId: 'viewer-1',
+		});
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((r) => setImmediate(r));
+
+		viewer.emitCalls.length = 0;
+		const callback = vi.fn();
+
+		sharer.fire(
+			'create_producer',
+			{
+				transportId: 'transport-1',
+				rtpParameters: {},
+				kind: 'video',
+				appData: { type: 'screen' },
+			},
+			callback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, isScreen: true }),
+		);
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_created',
+			data: expect.objectContaining({
+				participantId: 'sharer-1',
+				producerId: 'producer-1',
+				kind: 'video',
+				isScreen: true,
+			}),
+		});
+	});
+
 	it('chat:send broadcasts to other full-access participants in the same room and not back to the sender', async () => {
 		const harness = createManager();
 
