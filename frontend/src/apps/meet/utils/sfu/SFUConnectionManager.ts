@@ -281,6 +281,7 @@ export class SFUConnectionManager {
 
 	async resyncProducers(): Promise<void> {
 		this.transportManager.closeReceiveTransport();
+		this.mediaManager.consumerManager.clear();
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();
