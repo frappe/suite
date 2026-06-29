@@ -262,9 +262,14 @@ def update_sync_state(account: str, type: Literal["email"], state: str) -> None:
 	store = get_data_store(parse_account(account)[1])
 
 	current_state = store.get(Entity.STATE, f"{type}_current_state")
-	store.set(Entity.STATE, f"{type}_previous_state", current_state)
-	store.set(Entity.STATE, f"{type}_current_state", state)
-	store.set(Entity.STATE, f"{type}_state_last_update", frappe.utils.now())
+	store.set_many(
+		Entity.STATE,
+		{
+			f"{type}_previous_state": current_state,
+			f"{type}_current_state": state,
+			f"{type}_state_last_update": frappe.utils.now(),
+		},
+	)
 
 
 @reconnect_on_failure()
