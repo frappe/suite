@@ -295,7 +295,9 @@ export class SFUConnectionManager {
 		const existingConsumers =
 			this.mediaManager.consumerManager.getConsumersByParticipant(participantId);
 		return existingConsumers.some(
-			(c) => c.producerId === producerId || c.consumer.producerId === producerId,
+			(c) =>
+				!c.consumer.closed &&
+				(c.producerId === producerId || c.consumer.producerId === producerId),
 		);
 	}
 
