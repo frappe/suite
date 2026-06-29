@@ -50,6 +50,7 @@ export class SFUMeetingManager {
 			sfuClient,
 			transportManager: this.transportManager,
 			meetingId: () => this.connectionManager?.meetingId ?? null,
+			onRecovered: () => this.connectionManager?.resyncProducers(),
 		});
 
 		this.mediaManager = new SFUMediaManager(
@@ -105,6 +106,10 @@ export class SFUMeetingManager {
 
 	async setupExistingParticipants(): Promise<void> {
 		return this.connectionManager.setupExistingParticipants();
+	}
+
+	async resyncAfterRecovery(reason: string): Promise<void> {
+		return this.connectionManager.resyncAfterRecovery(reason);
 	}
 
 	async subscribeToRemoteProducer({

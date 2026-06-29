@@ -100,11 +100,7 @@ export function useNetworkQuality() {
 		const stalledIds = stallDetector.check(samples);
 		if (stalledIds.length === 0) return;
 
-		const recoveryManager = sfuManager.recoveryManager;
-		if (!recoveryManager) return;
-		void recoveryManager.recoverTransportIce(
-			`consumer_stall_${stalledIds.join(",")}`,
-		);
+		void sfuManager.resyncAfterRecovery(`consumer_stall_${stalledIds.join(",")}`);
 	};
 
 	const pollStats = async () => {

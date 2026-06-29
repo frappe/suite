@@ -10,6 +10,7 @@ interface RecoveryManagerOptions {
 	sfuClient: SFUClient;
 	transportManager: TransportManager;
 	meetingId: () => string | null;
+	onRecovered?: (reason: string) => Promise<void> | void;
 }
 
 type TransportDirection = "send" | "recv";
@@ -18,6 +19,7 @@ export class SFURecoveryManager {
 	private sfuClient: SFUClient;
 	private transportManager: TransportManager;
 	private getMeetingId: () => string | null;
+	private onRecovered?: (reason: string) => Promise<void> | void;
 	private recoveryInProgress = false;
 	private lastRecoveryAt = 0;
 	private static readonly RECOVERY_COOLDOWN_MS = 7000;
@@ -30,6 +32,7 @@ export class SFURecoveryManager {
 		this.sfuClient = options.sfuClient;
 		this.transportManager = options.transportManager;
 		this.getMeetingId = options.meetingId;
+		this.onRecovered = options.onRecovered;
 	}
 
 	get isRecovering(): boolean {
@@ -65,6 +68,7 @@ export class SFURecoveryManager {
 			}
 
 			console.log("SFU transport ICE restart completed", { reason });
+			await this.onRecovered?.(reason);
 			return true;
 		} catch (error) {
 			console.error("SFU transport ICE restart failed:", error);

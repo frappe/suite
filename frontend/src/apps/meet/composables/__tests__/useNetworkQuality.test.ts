@@ -110,10 +110,10 @@ describe("useNetworkQuality", () => {
 		unmount();
 	});
 
-	it("triggers ICE restart when a remote consumer stalls for several polls", async () => {
+	it("resyncs after recovery when a remote consumer stalls for several polls", async () => {
 		vi.useFakeTimers();
 
-		const recoverTransportIce = vi.fn().mockResolvedValue(true);
+		const resyncAfterRecovery = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
 		const stats = new Map<string, { type: string; bytesReceived: number }>([
@@ -151,9 +151,7 @@ describe("useNetworkQuality", () => {
 					getAllConsumers: () => [entry],
 				},
 			},
-			recoveryManager: {
-				recoverTransportIce,
-			},
+			resyncAfterRecovery,
 		});
 
 		const observed = ref("unknown");
@@ -174,17 +172,17 @@ describe("useNetworkQuality", () => {
 		app.mount(root);
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(recoverTransportIce).not.toHaveBeenCalled();
+		expect(resyncAfterRecovery).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(recoverTransportIce).not.toHaveBeenCalled();
+		expect(resyncAfterRecovery).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(recoverTransportIce).not.toHaveBeenCalled();
+		expect(resyncAfterRecovery).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(recoverTransportIce).toHaveBeenCalledTimes(1);
-		expect(recoverTransportIce).toHaveBeenCalledWith(
+		expect(resyncAfterRecovery).toHaveBeenCalledTimes(1);
+		expect(resyncAfterRecovery).toHaveBeenCalledWith(
 			expect.stringMatching(/^consumer_stall_/),
 		);
 

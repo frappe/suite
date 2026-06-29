@@ -279,6 +279,17 @@ export class SFUConnectionManager {
 		}
 	}
 
+	async resyncProducers(): Promise<void> {
+		await this.createReceiveTransport();
+		await this.requestExistingProducers();
+		await this.flushBufferedProducers();
+	}
+
+	async resyncAfterRecovery(reason: string): Promise<void> {
+		const recovered = await this.recoveryManager.recoverTransportIce(reason);
+		if (!recovered) await this.resyncProducers();
+	}
+
 	private hasConsumerForProducer(participantId: string, producerId: string): boolean {
 		const existingConsumers =
 			this.mediaManager.consumerManager.getConsumersByParticipant(participantId);
@@ -357,12 +368,7 @@ export class SFUConnectionManager {
 
 	private setupSFUEventHandlers(): void {
 		this.sfuClient.on("reconnect", () => {
-			void this.recoveryManager
-				.recoverTransportIce("socket_reconnect")
-				.finally(async () => {
-					await this.requestExistingProducers();
-					await this.flushBufferedProducers();
-				});
+			void this.resyncAfterRecovery("socket_reconnect");
 		});
 
 		this.sfuClient.on("participant_joined", (data: ParticipantData) => {
