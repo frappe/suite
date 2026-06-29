@@ -31,6 +31,7 @@ export class AuthManager {
 			socket.scope = decoded.scope || 'presence-preview';
 			socket.currentToken = token;
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
+			socket.isGuest = decoded.is_guest || false;
 
 			loggers.authManager.info(
 				'Authenticated user: %s for meeting: %s (site: %s)',
@@ -162,6 +163,12 @@ export class AuthManager {
 	ensureFullAccess(socket: Socket): void {
 		if (socket.scope !== 'full') {
 			throw new Error('Insufficient scope for full access');
+		}
+	}
+
+	ensureNotGuest(socket: Socket): void {
+		if (socket.isGuest) {
+			throw new Error('Guests are not permitted to perform this action.');
 		}
 	}
 }

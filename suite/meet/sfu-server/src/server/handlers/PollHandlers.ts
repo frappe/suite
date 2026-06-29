@@ -99,6 +99,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 		socket.on('poll:vote', (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				deps.authManager.ensureNotGuest(socket);
 				const roomId = socket.roomId;
 				const { pollId, optionId } = data;
 

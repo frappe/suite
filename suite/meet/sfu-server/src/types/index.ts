@@ -395,6 +395,7 @@ export interface JWTPayload {
 	user_avatar?: string;
 	is_host: boolean;
 	is_cohost?: boolean;
+	is_guest?: boolean;
 	scope?: SFUScope;
 	session_id?: string;
 	exp?: number;
@@ -450,6 +451,7 @@ declare module 'socket.io' {
 		site?: string;
 		isHost: boolean;
 		isCohost: boolean;
+		isGuest?: boolean;
 		roomId?: string;
 		participantId?: string;
 		currentToken?: string;
