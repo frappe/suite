@@ -152,7 +152,7 @@ const props = defineProps({
   },
 })
 
-const isOffline = inject('isOffline')
+const isOffline = inject('isOffline', ref(false))
 
 const showVersions = defineModel('showVersions')
 const showTemplates = defineModel('showTemplates')
