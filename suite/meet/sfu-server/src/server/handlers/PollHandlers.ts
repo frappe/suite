@@ -2,6 +2,7 @@ import type { Socket } from 'socket.io';
 import type { ActivePoll } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
+import { randomUUID } from 'node:crypto';
 
 export function registerPollHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -53,14 +54,14 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				const activePollsMap =
 					deps.registry.getActivePolls(roomId) || new Map<string, ActivePoll>();
 
-				const pollId = `poll-${crypto.randomUUID()}`;
+				const pollId = `poll-${randomUUID()}`;
 
 				const newPoll: ActivePoll = {
 					pollId,
 					createdBy: socket.participantId,
 					question,
 					options: options.map((opt: { id?: string; text: string }) => ({
-						id: `opt-${crypto.randomUUID()}`,
+						id: `opt-${randomUUID()}`,
 						text: opt.text.trim(),
 						votes: 0,
 					})),
