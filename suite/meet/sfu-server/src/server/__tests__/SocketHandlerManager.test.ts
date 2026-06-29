@@ -252,6 +252,34 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('leave_room from an older duplicate socket still closes an empty room', async () => {
+		const harness = createManager();
+
+		const older = connectFullSocket(harness, {
+			id: 'sock-old',
+			userId: 'user-1',
+		});
+		emitJoin(older);
+		await new Promise((r) => setImmediate(r));
+
+		const current = connectFullSocket(harness, {
+			id: 'sock-current',
+			userId: 'user-1',
+		});
+		emitJoin(current);
+		await new Promise((r) => setImmediate(r));
+
+		current.leave('room-1:full');
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
+		(harness.mediasoup.closeRoom as ReturnType<typeof vi.fn>).mockClear();
+
+		older.fire('leave_room');
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+	});
+
 	it('host_control with mute_participant sends host_control_update to the target; non-host gets sfu_error and target gets nothing', async () => {
 		const harness = createManager();
 

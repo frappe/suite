@@ -295,6 +295,16 @@ export class TransportManager {
 		return this.recvTransport;
 	}
 
+	closeReceiveTransport() {
+		if (!this.recvTransport) return;
+		try {
+			this.recvTransport.close();
+		} catch (_e) {
+			/* ignore */
+		}
+		this.recvTransport = null;
+	}
+
 	setupReceiveTransportHandlers() {
 		if (!this.recvTransport) return;
 		const client = this.getClient();

@@ -152,6 +152,10 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					socket.leave(`${roomId}:full`);
 					socket.leave(`${roomId}:preview`);
 					socket.roomId = undefined;
+					if (deps.registry.isEmpty(roomId)) {
+						deps.registry.cleanupRoom(roomId);
+						deps.mediasoup.closeRoom(roomId);
+					}
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
 					loggers.socketHandler.warn(

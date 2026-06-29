@@ -280,6 +280,7 @@ export class SFUConnectionManager {
 	}
 
 	async resyncProducers(): Promise<void> {
+		this.transportManager.closeReceiveTransport();
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();

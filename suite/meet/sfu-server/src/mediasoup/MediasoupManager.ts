@@ -183,6 +183,7 @@ export class MediasoupManager {
 	async removePeer(roomId: string, peerId: string): Promise<void> {
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) return;
+		const peer = room.peers.get(peerId);
 
 		for (const producerId of this.producerManager.getProducerIdsByPeer(
 			roomId,
@@ -192,6 +193,9 @@ export class MediasoupManager {
 		}
 		this.consumerManager.closePeerConsumers(roomId, peerId);
 		this.transportManager.closePeerTransports(roomId, peerId);
+		peer?.producers.clear();
+		peer?.consumers.clear();
+		peer?.transports.clear();
 		this.peerManager.removePeer(room, peerId);
 		this.peerScores.delete(peerId);
 	}
