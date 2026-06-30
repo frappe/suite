@@ -11,6 +11,7 @@ interface RecoveryManagerOptions {
 	transportManager: TransportManager;
 	meetingId: () => string | null;
 	onRecovered?: (reason: string) => Promise<void> | void;
+	onFailed?: (reason: string) => Promise<void> | void;
 }
 
 type TransportDirection = "send" | "recv";
@@ -21,8 +22,10 @@ export class SFURecoveryManager {
 	private transportManager: TransportManager;
 	private getMeetingId: () => string | null;
 	private onRecovered?: (reason: string) => Promise<void> | void;
+	private onFailed?: (reason: string) => Promise<void> | void;
 	private recoveryInProgress = false;
 	private activeRecovery: Promise<RecoveryResult> | null = null;
+	private failedRecoveryCallback: Promise<RecoveryResult> | null = null;
 	private lastRecoveryAt = 0;
 	private static readonly RECOVERY_COOLDOWN_MS = 7000;
 	private static readonly DISCONNECTED_GRACE_MS = 3000;
@@ -35,22 +38,23 @@ export class SFURecoveryManager {
 		this.transportManager = options.transportManager;
 		this.getMeetingId = options.meetingId;
 		this.onRecovered = options.onRecovered;
+		this.onFailed = options.onFailed;
 	}
 
 	get isRecovering(): boolean {
 		return this.recoveryInProgress;
 	}
 
-	async recoverTransportIce(reason: string): Promise<RecoveryResult> {
+	recoverTransportIce(reason: string): Promise<RecoveryResult> {
 		if (this.activeRecovery) return this.activeRecovery;
 
 		if (!this.sfuClient?.isConnected?.()) {
-			return "skipped";
+			return Promise.resolve("skipped");
 		}
 
 		const now = Date.now();
 		if (now - this.lastRecoveryAt < SFURecoveryManager.RECOVERY_COOLDOWN_MS) {
-			return "skipped";
+			return Promise.resolve("skipped");
 		}
 
 		this.recoveryInProgress = true;
@@ -84,10 +88,37 @@ export class SFURecoveryManager {
 		return this.activeRecovery;
 	}
 
+	private recoverTransportFailure(
+		reason: string,
+		onRecovered?: () => void,
+	): void {
+		const recovery = this.recoverTransportIce(reason);
+		void recovery
+			.then(async (result) => {
+				if (result === "recovered") {
+					onRecovered?.();
+				}
+
+				if (result === "failed") {
+					if (this.failedRecoveryCallback === recovery) return;
+					this.failedRecoveryCallback = recovery;
+					await this.onFailed?.(reason);
+				}
+			})
+			.finally(() => {
+				if (this.failedRecoveryCallback === recovery) {
+					this.failedRecoveryCallback = null;
+				}
+			})
+			.catch((error) => {
+				console.warn("SFU recovery failure fallback failed:", error);
+			});
+	}
+
 	handleTransportConnectionStateChange(direction: string, state: string): void {
 		if (state === "failed" || state === "closed") {
 			this.disconnectedSince.delete(direction as TransportDirection);
-			this.recoverTransportIce(`transport_${direction}_${state}`);
+			this.recoverTransportFailure(`transport_${direction}_${state}`);
 			return;
 		}
 
@@ -106,12 +137,9 @@ export class SFURecoveryManager {
 		const now = Date.now();
 		for (const [direction, since] of this.disconnectedSince) {
 			if (now - since >= SFURecoveryManager.DISCONNECTED_GRACE_MS) {
-				void this.recoverTransportIce(
-					`transport_${direction}_disconnected_timeout`,
-				).then((result) => {
-					if (result === "recovered") {
-						this.disconnectedSince.delete(direction);
-					}
+				const reason = `transport_${direction}_disconnected_timeout`;
+				this.recoverTransportFailure(reason, () => {
+					this.disconnectedSince.delete(direction);
 				});
 			}
 		}
@@ -140,6 +168,7 @@ export class SFURecoveryManager {
 
 	reset(): void {
 		this.recoveryInProgress = false;
+		this.failedRecoveryCallback = null;
 		this.lastRecoveryAt = 0;
 		this.disconnectedSince.clear();
 		if (this.watchdogHandle !== null) {

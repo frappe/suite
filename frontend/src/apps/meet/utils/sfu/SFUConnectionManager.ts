@@ -282,6 +282,8 @@ export class SFUConnectionManager {
 	async resetReceiveSide(): Promise<void> {
 		this.transportManager.closeReceiveTransport();
 		this.mediaManager.consumerManager.clear();
+		this.mediaManager.processedConsumers.clear();
+		this.mediaManager.isScreenShareActive = false;
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();
