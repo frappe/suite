@@ -17,7 +17,7 @@ import sheetsLogo from '@/assets/app-logos/sheets.svg'
 import slidesLogo from '@/assets/app-logos/slides.svg'
 import suiteLogo from '@/assets/app-logos/suite.svg'
 import writerLogo from '@/assets/app-logos/writer.png'
-import { systemUser } from '@/boot/session'
+import { jmapUser, systemUser } from '@/boot/session'
 
 export interface SuiteApp {
   id: string
@@ -63,8 +63,12 @@ export const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
 }
 
 export function getAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {
-  return [
+  const items = [
     ...(systemUser.value ? [DESK_APP_SWITCHER_ITEM] : []),
     ...SUITE_APP_SWITCHER_ITEMS.filter((app) => app.name !== currentApp),
   ]
+  if (!jmapUser.value) {
+    return items.filter((app) => app.name !== 'mail' && app.name !== 'calendar')
+  }
+  return items
 }

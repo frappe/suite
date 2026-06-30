@@ -45,26 +45,3 @@ def get_translations() -> dict:
 		language = frappe.db.get_single_value("System Settings", "language")
 
 	return get_all_translations(language)
-
-
-@frappe.whitelist()
-@redis_cache(user=True)
-def get_permitted_apps():
-	apps = get_apps()
-
-	# Calendar rides on mail's JMAP; hide it from users without a configured mail account.
-	if not is_jmap_configured(frappe.session.user):
-		apps = [app for app in apps if app.get("name") != "calendar"]
-
-	if not is_system_manager(frappe.session.user):
-		return apps
-
-	desk = {
-		"name": "frappe",
-		"logo": "/assets/suite/mail/images/desk.png",
-		"title": "Desk",
-		"route": "/app",
-	}
-	apps.append(desk)
-
-	return apps
