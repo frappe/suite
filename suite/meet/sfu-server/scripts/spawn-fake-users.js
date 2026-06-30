@@ -1,5 +1,4 @@
 const { io } = require("socket.io-client");
-require("dotenv").config();
 const jwt = require("jsonwebtoken");
 const yargs = require("yargs/yargs");
 const { hideBin } = require("yargs/helpers");
@@ -109,33 +108,33 @@ const dgram = require("dgram");
 function createOpusPacket(seq, ts, ssrc, isSpeaking) {
 	// Audio level: 0 = loudest (speaking), 127 = silence
 	const audioLevel = isSpeaking ? 30 : 127; // 30 is "fairly loud"
-	
+
 	// RTP Header (12 bytes) + Header Extension (4 + 4 bytes)
 	const header = Buffer.alloc(20);
-	
+
 	// RTP fixed header
 	header.writeUInt8(0x90, 0); // Version 2, no padding, HAS extension (X=1), no CSRC
 	header.writeUInt8(111, 1);  // Payload type 111 (Opus), Marker=0
 	header.writeUInt16BE(seq % 65536, 2);
 	header.writeUInt32BE(ts % 4294967296, 4);
 	header.writeUInt32BE(ssrc, 8);
-	
+
 	// RTP Header Extension (RFC 5285 one-byte header)
 	header.writeUInt16BE(0xBEDE, 12); // One-byte header profile
 	header.writeUInt16BE(1, 14);       // Length: 1 word (4 bytes)
-	
+
 	// Extension element: ID=1 (ssrc-audio-level), Length=0 (1 byte data)
 	// Format: 4-bit ID | 4-bit length-1, then data bytes
 	header.writeUInt8(0x10, 16);       // ID=1, Length=0 (means 1 byte)
 	header.writeUInt8(0x80 | audioLevel, 17); // V=1 (voice activity), Level
 	header.writeUInt8(0x00, 18);       // Padding
 	header.writeUInt8(0x00, 19);       // Padding
-	
+
 	// Opus payload: TOC byte + minimal data
-	const opus = isSpeaking 
+	const opus = isSpeaking
 		? Buffer.from([0xF8, 0x7F, 0x7F, 0x7F, 0x7F]) // "loud" noise
 		: Buffer.from([0xF8, 0x00, 0x00, 0x00, 0x00]); // silence
-	
+
 	return Buffer.concat([header, opus]);
 }
 
@@ -186,28 +185,28 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	const audioPort = audioTransport.port;
 	const audioSsrc = 111111 + index;
 	const udpSocket = dgram.createSocket("udp4");
-	
+
 	let seq = 0;
 	let ts = 0;
 	let isSpeaking = false;
 	let nextToggle = Date.now() + 1000 + Math.random() * 3000;
-	
+
 	const audioInterval = setInterval(() => {
 		// Toggle speaking state randomly
 		if (Date.now() > nextToggle) {
 			isSpeaking = !isSpeaking;
-			const duration = isSpeaking 
+			const duration = isSpeaking
 				? 2000 + Math.random() * 4000  // Talk 2-6s
 				: 3000 + Math.random() * 6000; // Pause 3-9s
 			nextToggle = Date.now() + duration;
 			if (isSpeaking) console.log(`[#${index}] 🗣️ Speaking...`);
 		}
-		
+
 		const packet = createOpusPacket(seq++, ts, audioSsrc, isSpeaking);
 		udpSocket.send(packet, audioPort, audioIp);
 		ts += 960; // 20ms @ 48kHz
 	}, 20);
-	
+
 	console.log(`[#${index}] 🔊 Audio streaming started`);
 
 	// Video via FFmpeg (only if needed for visual debugging)
@@ -227,11 +226,11 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	videoFfmpeg.stderr.on("data", () => {}); // Suppress output
 	console.log(`[#${index}] 📺 Video streaming started`);
 
-	return { 
-		stop: () => { 
-			clearInterval(audioInterval); 
+	return {
+		stop: () => {
+			clearInterval(audioInterval);
 			udpSocket.close();
-			videoFfmpeg.kill("SIGTERM"); 
+			videoFfmpeg.kill("SIGTERM");
 		}
 	};
 }

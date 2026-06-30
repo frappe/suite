@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import http from 'node:http';
 import { join } from 'node:path';
 import cors from 'cors';
