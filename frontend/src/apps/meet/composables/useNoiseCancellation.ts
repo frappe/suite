@@ -227,9 +227,6 @@ export function useNoiseCancellation(): UseNoiseCancellationReturn {
 		preloaded = null;
 	});
 
-	// Kick off preload eagerly so toggling is instant.
-	void preloadWorklet();
-
 	return {
 		isProcessing,
 		processedStream,
