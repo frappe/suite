@@ -113,7 +113,7 @@ const webRtcTransportOptions: WebRTCTransportOptions = {
 	},
 	// Add additional WebRTC options for better connectivity
 	maxIncomingBitrate: 3000000,
-	maxOutgoingBitrate: 2500000,
+	maxOutgoingBitrate: 3000000,
 	initialAvailableOutgoingBitrate: 1000000,
 	// Add ICE server configurations for NAT traversal
 	iceServers: [
