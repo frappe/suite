@@ -81,6 +81,7 @@ export class E2EEMeeting {
 		this.senderSigningPriv = senderSigningPrivArg ?? null;
 		this.senderChains.clear();
 		this.receiverChain = null;
+		this.updateActiveScriptTransforms();
 		void this.setupPendingTransforms();
 		notifyE2EEContextReady();
 	}
@@ -94,6 +95,19 @@ export class E2EEMeeting {
 		this.receiverChain?.setSenderSigningPub(senderId, signingPub);
 		for (const worker of this.scriptTransformWorkers) {
 			worker.postMessage({ type: "addSenderSigningPub", senderId, signingPub });
+		}
+	}
+
+	private updateActiveScriptTransforms(): void {
+		if (!this.meetingSecret || this.keyVersion === null) return;
+		for (const worker of this.scriptTransformWorkers) {
+			worker.postMessage({
+				type: "updateContext",
+				meetingSecret: new Uint8Array(this.meetingSecret),
+				keyVersion: this.keyVersion,
+				senderSigningPrivateKey: this.senderSigningPriv ?? undefined,
+				senderSigningPubs: Array.from(this.senderSigningPubs.entries()),
+			});
 		}
 	}
 

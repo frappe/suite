@@ -1005,6 +1005,88 @@ describe("E2EE chain registry", () => {
 		}
 	});
 
+	it("setMeetingContext updates active RTCRtpScriptTransform workers", async () => {
+		const { generateMeetingSecret, ed25519KeyPair } = await import("../e2ee");
+		const meeting = E2EEMeeting.instance;
+		const firstSecret = await generateMeetingSecret();
+		const secondSecret = await generateMeetingSecret();
+		const kp = await ed25519KeyPair();
+		const originalSender = globalThis.RTCRtpSender;
+		const originalReceiver = globalThis.RTCRtpReceiver;
+		const originalScriptTransform = (
+			globalThis as typeof globalThis & { RTCRtpScriptTransform?: unknown }
+		).RTCRtpScriptTransform;
+		const originalWorker = globalThis.Worker;
+
+		const workers: Array<{ messages: unknown[] }> = [];
+		try {
+			Object.defineProperty(globalThis, "RTCRtpSender", {
+				configurable: true,
+				writable: true,
+				value: { prototype: {} },
+			});
+			Object.defineProperty(globalThis, "RTCRtpReceiver", {
+				configurable: true,
+				writable: true,
+				value: { prototype: {} },
+			});
+			Object.defineProperty(globalThis, "RTCRtpScriptTransform", {
+				configurable: true,
+				writable: true,
+				value: function RTCRtpScriptTransform() {},
+			});
+			Object.defineProperty(globalThis, "Worker", {
+				configurable: true,
+				writable: true,
+				value: class Worker {
+					messages: unknown[] = [];
+					constructor() {
+						workers.push(this);
+					}
+					postMessage(message: unknown) {
+						this.messages.push(message);
+					}
+				},
+			});
+
+			meeting.setMeetingContext(firstSecret, 1, kp.privateKey);
+			expect(await meeting.setupSenderTransform({} as RTCRtpSender, 5, "video"))
+				.toBe(true);
+			expect(workers).toHaveLength(1);
+
+			meeting.setMeetingContext(secondSecret, 2, kp.privateKey);
+
+			expect(workers[0]?.messages).toContainEqual(
+				expect.objectContaining({
+					type: "updateContext",
+					keyVersion: 2,
+					senderSigningPrivateKey: kp.privateKey,
+				}),
+			);
+		} finally {
+			Object.defineProperty(globalThis, "RTCRtpSender", {
+				configurable: true,
+				writable: true,
+				value: originalSender,
+			});
+			Object.defineProperty(globalThis, "RTCRtpReceiver", {
+				configurable: true,
+				writable: true,
+				value: originalReceiver,
+			});
+			Object.defineProperty(globalThis, "RTCRtpScriptTransform", {
+				configurable: true,
+				writable: true,
+				value: originalScriptTransform,
+			});
+			Object.defineProperty(globalThis, "Worker", {
+				configurable: true,
+				writable: true,
+				value: originalWorker,
+			});
+		}
+	});
+
 	it("retains sender signing pub registered before meeting context", async () => {
 		const { generateMeetingSecret, ed25519KeyPair } = await import("../e2ee");
 		const meeting = E2EEMeeting.instance;

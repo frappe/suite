@@ -39,6 +39,13 @@ type WorkerOptions = {
 type WorkerMessage =
 	| { type: "addSenderSigningPub"; senderId: number; signingPub: CryptoKey }
 	| {
+			type: "updateContext";
+			meetingSecret: Uint8Array<ArrayBuffer>;
+			keyVersion: number;
+			senderSigningPrivateKey?: CryptoKey;
+			senderSigningPubs: Array<[number, CryptoKey]>;
+	  }
+	| {
 			type: "prewarm";
 			mediaType: string;
 			senderSigningPubs: Array<[number, CryptoKey]>;
@@ -70,6 +77,16 @@ class SendState {
 		private mediaType: string,
 		private signingPrivateKey: CryptoKey,
 	) {}
+
+	updateContext(
+		meetingSecret: Uint8Array<ArrayBuffer>,
+		signingPrivateKey: CryptoKey,
+	): void {
+		this.meetingSecret.fill(0);
+		this.meetingSecret = meetingSecret;
+		this.signingPrivateKey = signingPrivateKey;
+		this.nextGeneration = 0;
+	}
 
 	async encrypt(
 		frame: EncodedFrame,
@@ -162,6 +179,20 @@ class RecvState {
 
 	setSenderSigningPub(senderId: number, signingPub: CryptoKey): void {
 		this.signingPubs.set(senderId, signingPub);
+	}
+
+	updateContext(
+		meetingSecret: Uint8Array<ArrayBuffer>,
+		senderSigningPubs: Array<[number, CryptoKey]>,
+	): void {
+		this.meetingSecret.fill(0);
+		this.meetingSecret = meetingSecret;
+		for (const [senderId, pub] of senderSigningPubs) {
+			this.signingPubs.set(senderId, pub);
+		}
+		this.highWaterMark.clear();
+		this.seenFrames.clear();
+		this.frameKeyCache.clear();
 	}
 
 	async warmSigningPub(pub: CryptoKey): Promise<void> {
@@ -360,6 +391,10 @@ class RecvState {
 
 let recvState: RecvState | null = null;
 let sendState: SendState | null = null;
+let activeKeyVersion: number | null = null;
+let activeMeetingSecret: Uint8Array<ArrayBuffer> | null = null;
+let activeSenderSigningPrivateKey: CryptoKey | null = null;
+let activeSenderSigningPubs: Array<[number, CryptoKey]> | null = null;
 let pendingRecvPrewarm: {
 	mediaType: string;
 	senderSigningPubs: Array<[number, CryptoKey]>;
@@ -418,11 +453,46 @@ self.addEventListener("message", (event: MessageEvent<WorkerMessage>) => {
 		};
 		return;
 	}
+	if (event.data.type === "updateContext") {
+		activeKeyVersion = event.data.keyVersion;
+		activeMeetingSecret = event.data.meetingSecret;
+		activeSenderSigningPrivateKey = event.data.senderSigningPrivateKey ?? null;
+		activeSenderSigningPubs = event.data.senderSigningPubs;
+		if (sendState && event.data.senderSigningPrivateKey) {
+			sendState.updateContext(
+				event.data.meetingSecret,
+				event.data.senderSigningPrivateKey,
+			);
+		}
+		if (recvState) {
+			recvState.updateContext(
+				event.data.meetingSecret,
+				event.data.senderSigningPubs,
+			);
+		} else {
+			const merged = new Map<number, CryptoKey>();
+			for (const [id, pub] of pendingRecvPrewarm?.senderSigningPubs ?? []) {
+				merged.set(id, pub);
+			}
+			for (const [id, pub] of event.data.senderSigningPubs) {
+				merged.set(id, pub);
+			}
+			pendingRecvPrewarm = {
+				mediaType: pendingRecvPrewarm?.mediaType ?? "video",
+				senderSigningPubs: Array.from(merged.entries()),
+			};
+		}
+		return;
+	}
 	if (event.data.type === "wipe") {
 		recvState?.wipe();
 		sendState?.wipe();
 		recvState = null;
 		sendState = null;
+		activeKeyVersion = null;
+		activeMeetingSecret = null;
+		activeSenderSigningPrivateKey = null;
+		activeSenderSigningPubs = null;
 		pendingRecvPrewarm = null;
 	}
 });
@@ -438,34 +508,44 @@ self.addEventListener("rtctransform", (event: Event) => {
 		}
 	).transformer;
 	const options = transformer.options;
+	activeKeyVersion = activeKeyVersion ?? options.keyVersion;
+	activeMeetingSecret = activeMeetingSecret ?? options.meetingSecret;
+	activeSenderSigningPrivateKey =
+		activeSenderSigningPrivateKey ?? options.senderSigningPrivateKey ?? null;
+	activeSenderSigningPubs =
+		activeSenderSigningPubs ?? options.senderSigningPubs ?? [];
 
 	const transform = new TransformStream<EncodedFrame, EncodedFrame>({
 		async transform(frame, controller) {
 			if (options.direction === "send") {
-				if (!options.senderSigningPrivateKey) return;
+				if (!activeSenderSigningPrivateKey || !activeMeetingSecret) return;
 				if (!sendState) {
 					sendState = new SendState(
-						options.meetingSecret,
+						activeMeetingSecret,
 						options.senderId,
 						options.mediaType,
-						options.senderSigningPrivateKey,
+						activeSenderSigningPrivateKey,
 					);
 				}
-				const encrypted = await sendState.encrypt(frame, options.keyVersion);
+				const encrypted = await sendState.encrypt(
+					frame,
+					activeKeyVersion ?? options.keyVersion,
+				);
 				if (encrypted) controller.enqueue(encrypted);
 				return;
 			}
 
+			if (!activeMeetingSecret) return;
 			if (!recvState) {
 				recvState = new RecvState(
-					options.meetingSecret,
-					options.senderSigningPubs ?? [],
+					activeMeetingSecret,
+					activeSenderSigningPubs ?? [],
 				);
 			}
 			await applyPendingPrewarm(recvState);
 			const decrypted = await recvState.decrypt(
 				frame,
-				options.keyVersion,
+				activeKeyVersion ?? options.keyVersion,
 				options.mediaType,
 			);
 			if (decrypted) controller.enqueue(decrypted);
