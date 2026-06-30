@@ -472,6 +472,20 @@ export class MediasoupManager {
 		await this.consumerManager.resumeConsumer(options.consumerId);
 		loggers.mediasoupManager.debug('Resumed consumer %s', options.consumerId);
 
+		// A resumed consumer would otherwise show a frozen frame until
+		// the next encoder keyframe (typically 1-5 s).
+		if (wasPaused && consumer.kind === 'video') {
+			try {
+				await consumer.requestKeyFrame();
+			} catch (error) {
+				loggers.mediasoupManager.warn(
+					'Failed to request key frame for resumed consumer %s: %s',
+					consumer.id,
+					(error as Error).message,
+				);
+			}
+		}
+
 		let appliedLayers:
 			| { spatialLayer: number | null; temporalLayer: number | null }
 			| undefined;
@@ -512,10 +526,12 @@ export class MediasoupManager {
 					);
 					const currentLayers = consumer.currentLayers;
 					const previousSpatial = currentLayers?.spatialLayer ?? null;
+					// Request a keyframe on spatial layer upgrade so the
+					// higher layer is visible without waiting for the next
+					// encoder keyframe.
 					if (
-						(previousSpatial !== null &&
-							layerResult.spatialLayer > previousSpatial) ||
-						wasPaused
+						previousSpatial !== null &&
+						layerResult.spatialLayer > previousSpatial
 					) {
 						try {
 							await consumer.requestKeyFrame();
