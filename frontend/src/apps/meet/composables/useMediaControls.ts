@@ -1212,27 +1212,17 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					}
 				} catch (pubErr) {
 					console.error("Failed to publish screen share producer:", pubErr);
-					if (sfuClient.isConnected()) {
-						sfuClient.sendScreenShare("stop_share", {
-							reason: "publish-failed",
-							source: "screen-share",
-							details: {
-								message: (pubErr as Error)?.message,
-							},
-							stoppedAt: Date.now(),
-						});
-					}
-					mediaState.isScreenSharing = false;
-					mediaState.screenShareStream = null;
-					for (const t of screenStream.getTracks()) {
-						t.stop();
-					}
+					await stopScreenShare("publish-failed", {
+						message: (pubErr as Error)?.message,
+					});
 					throw pubErr;
 				}
 
 				screenStream.getVideoTracks()[0].addEventListener("ended", () => {
 					if (mediaState.isScreenSharing) {
-						stopScreenShare("track-ended");
+						stopScreenShare("track-ended").catch((err) => {
+							console.error("track-ended screen share cleanup failed:", err);
+						});
 					}
 				});
 

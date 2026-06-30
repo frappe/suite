@@ -42,7 +42,6 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						{
 							participantId: socket.participantId,
 							reason: shareData?.reason,
-							shareData,
 							timestamp: new Date().toISOString(),
 						},
 					);

@@ -125,7 +125,6 @@ export interface ScreenShareStoppedEvent {
 	participantId: string;
 	timestamp: string;
 	reason?: string;
-	shareData?: ScreenShareData;
 }
 
 export interface ActiveSpeakerEvent {
