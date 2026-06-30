@@ -6,14 +6,15 @@
 	"scripts": {
 		"build": "tsc",
 		"start": "node dist/sfu-server/src/server.js",
-		"dev": "ts-node src/server.ts",
+		"dev": "node --env-file=.env node_modules/.bin/ts-node src/server.ts",
 		"dev:watch": "nodemon",
-		"spawn-fake": "node scripts/spawn-fake-users.js",
+		"spawn-fake": "node --env-file=.env scripts/spawn-fake-users.js",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"format": "biome format .",
 		"format:write": "biome format --write .",
-		"test": "for f in src/server/__tests__/*.test.ts; do npx ts-node --transpile-only --project tsconfig.json \"$f\" || exit 1; done"
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"keywords": [
 		"mediasoup",

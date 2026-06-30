@@ -8,6 +8,7 @@
 //   2. The batched request has joiningSenderIds = [first, second].
 //   3. flushPendingCommitRequests cancels pending timers.
 
+import { describe, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
 	InMemoryRosterPersistence,
@@ -133,7 +134,8 @@ async function main(): Promise<void> {
 	console.log('Commit-request batching tests passed');
 }
 
-void main().catch((error) => {
-	console.error(error);
-	process.exit(1);
+describe('E2EE commit batching', () => {
+	it('batches rapid commit requests and can flush pending batches', async () => {
+		await main();
+	});
 });

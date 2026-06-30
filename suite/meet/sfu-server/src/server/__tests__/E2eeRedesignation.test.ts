@@ -12,6 +12,7 @@
 //   3. After MAX_REDESIGNATIONS attempts, the SFU gives up and stops
 //      emitting commit-requests.
 
+import { describe, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
 	InMemoryRosterPersistence,
@@ -240,7 +241,8 @@ async function main(): Promise<void> {
 	console.log('Committer redesignation tests passed');
 }
 
-void main().catch((error) => {
-	console.error(error);
-	process.exit(1);
+describe('E2EE committer redesignation', () => {
+	it('redesignates committers and clears pending requests', async () => {
+		await main();
+	});
 });

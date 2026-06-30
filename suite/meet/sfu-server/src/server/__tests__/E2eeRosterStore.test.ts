@@ -3,6 +3,7 @@
 //
 // (sfu-server has no formal test framework; keep these in sync manually.)
 
+import { describe, it } from 'vitest';
 import {
 	InMemoryRosterPersistence,
 	type RosterEntry,
@@ -135,7 +136,8 @@ async function main(): Promise<void> {
 	console.log('E2eeRosterStore tests passed');
 }
 
-void main().catch((error) => {
-	console.error(error);
-	process.exit(1);
+describe('E2eeRosterStore', () => {
+	it('stores, picks, clears, and hydrates roster entries', async () => {
+		await main();
+	});
 });

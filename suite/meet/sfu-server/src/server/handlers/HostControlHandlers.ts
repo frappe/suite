@@ -69,7 +69,8 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 							roomId,
 						);
 						break;
-					case 'kick_participant':
+					case 'kick_participant': {
+						const targetSenderId = targetSocket.senderId;
 						targetSocket.emit('host_control_update', {
 							action,
 							targetParticipantId,
@@ -78,11 +79,19 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 						});
 
 						loggers.socketHandler.info(
-							'Host %s kicked participant %s from room %s',
+							'Host %s kicked participant %s (senderId=%s) from room %s',
 							socket.participantId,
 							targetParticipantId,
+							targetSenderId,
 							roomId,
 						);
+						if (targetSocket.e2eeRequired && targetSenderId !== undefined) {
+							await deps.e2eeEpochRelay.requestCommitForRemoval(
+								roomId,
+								[targetSenderId],
+								deps.e2eeEpochRelay.getCurrentEpochNumber(roomId),
+							);
+						}
 
 						setTimeout(() => {
 							if (targetSocket.connected) {
@@ -94,6 +103,7 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 							}
 						}, 1000);
 						break;
+					}
 					case 'lower_hand':
 						if (deps.registry.hasRaisedHand(roomId, targetParticipantId)) {
 							deps.registry.clearRaisedHand(roomId, targetParticipantId);

@@ -13,6 +13,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { describe, it } from 'vitest';
 import {
 	InMemoryRosterPersistence,
 	type RosterEntry,
@@ -126,7 +127,8 @@ async function main(): Promise<void> {
 	}
 }
 
-void main().catch((error) => {
-	console.error(error);
-	process.exit(1);
+describe('FileRosterPersistence', () => {
+	it('persists roster entries and handles edge cases', async () => {
+		await main();
+	});
 });

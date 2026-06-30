@@ -1,6 +1,7 @@
 // Smoke tests for stale pending E2EE join cleanup on disconnect. Run via:
 //   yarn test
 
+import { describe, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
 	InMemoryRosterPersistence,
@@ -232,7 +233,8 @@ async function main(): Promise<void> {
 	console.log('Pending joiner disconnect tests passed');
 }
 
-void main().catch((error) => {
-	console.error(error);
-	process.exit(1);
+describe('E2EE pending joiner disconnect cleanup', () => {
+	it('drops stale pending joiners and preserves remove-only requests', async () => {
+		await main();
+	});
 });
