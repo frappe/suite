@@ -79,8 +79,20 @@ export class E2EEMeeting {
 		this.meetingSecret = meetingSecretArg;
 		this.keyVersion = keyVersionArg;
 		this.senderSigningPriv = senderSigningPrivArg ?? null;
-		this.senderChains.clear();
-		this.receiverChain = null;
+		if (this.senderSigningPriv) {
+			for (const chain of this.senderChains.values()) {
+				chain.updateContext(
+					new Uint8Array(meetingSecretArg),
+					this.senderSigningPriv,
+				);
+			}
+		} else {
+			for (const chain of this.senderChains.values()) {
+				chain.wipe();
+			}
+			this.senderChains.clear();
+		}
+		this.receiverChain?.updateContext(new Uint8Array(meetingSecretArg));
 		this.updateActiveScriptTransforms();
 		void this.setupPendingTransforms();
 		notifyE2EEContextReady();
@@ -332,7 +344,12 @@ export class E2EEMeeting {
 		if (!readable || !writable) return false;
 		try {
 			readable
-				.pipeThrough(createEncryptionTransformStream(chain, senderKeyVersion))
+				.pipeThrough(
+					createEncryptionTransformStream(
+						chain,
+						() => this.keyVersion ?? senderKeyVersion,
+					),
+				)
 				.pipeTo(writable)
 				.catch((error: unknown) => {
 					console.warn("E2EE sender transform pipeline failed:", error);
@@ -436,7 +453,7 @@ export class E2EEMeeting {
 				.pipeThrough(
 					createDecryptionTransformStream(
 						chain,
-						receiverKeyVersion,
+						() => this.keyVersion ?? receiverKeyVersion,
 						receiver,
 						mediaType,
 					),

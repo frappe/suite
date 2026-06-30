@@ -438,6 +438,57 @@ describe("Transform streams (T1.5 + T1.6)", () => {
 		}
 	});
 
+	it("legacy transform streams use the latest meeting context after epoch rotation", async () => {
+		const {
+			generateMeetingSecret,
+			SenderChainState,
+			ReceiverChainState,
+			createEncryptionTransformStream,
+			createDecryptionTransformStream,
+			ed25519KeyPair,
+		} = await import("../e2ee");
+		const firstSecret = await generateMeetingSecret();
+		const secondSecret = await generateMeetingSecret();
+		const kp = await ed25519KeyPair();
+		let keyVersion = 1;
+		const senderState = new SenderChainState(
+			firstSecret,
+			42,
+			"video",
+			kp.privateKey,
+		);
+		const receiverState = new ReceiverChainState(firstSecret);
+		receiverState.setSenderSigningPub(42, kp.publicKey);
+		const encrypt = createEncryptionTransformStream(
+			senderState,
+			() => keyVersion,
+		);
+		const decrypt = createDecryptionTransformStream(
+			receiverState,
+			() => keyVersion,
+			undefined,
+			"video",
+		);
+		const reader = decrypt.readable.getReader();
+		const pipePromise = encrypt.readable.pipeTo(decrypt.writable);
+		const writer = encrypt.writable.getWriter();
+
+		await writer.write(makeFakeFrame(new TextEncoder().encode("before")));
+		const before = await reader.read();
+		expect(new TextDecoder().decode(before.value.data)).toBe("before");
+
+		keyVersion = 2;
+		senderState.updateContext(secondSecret, kp.privateKey);
+		receiverState.updateContext(new Uint8Array(secondSecret));
+		await writer.write(makeFakeFrame(new TextEncoder().encode("after")));
+		const after = await reader.read();
+
+		expect(new TextDecoder().decode(after.value.data)).toBe("after");
+
+		await writer.close();
+		await pipePromise;
+	});
+
 	it("receiver drops frames with wrong keyVersion", async () => {
 		const {
 			generateMeetingSecret,

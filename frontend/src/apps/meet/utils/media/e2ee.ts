@@ -198,8 +198,8 @@ export async function featureDetectX25519(): Promise<boolean> {
 export class SenderChainState {
 	readonly senderId: number;
 	readonly mediaType: string;
-	private readonly meetingSecret: Uint8Array<ArrayBuffer>;
-	private readonly signingPrivateKey: CryptoKey;
+	private meetingSecret: Uint8Array<ArrayBuffer>;
+	private signingPrivateKey: CryptoKey;
 	private nextGeneration = 0;
 
 	constructor(
@@ -244,6 +244,16 @@ export class SenderChainState {
 		return signWithEd25519(this.signingPrivateKey, signed);
 	}
 
+	updateContext(
+		meetingSecret: Uint8Array<ArrayBuffer>,
+		signingPrivateKey: CryptoKey,
+	): void {
+		zeroUint8Array(this.meetingSecret);
+		this.meetingSecret = meetingSecret;
+		this.signingPrivateKey = signingPrivateKey;
+		this.nextGeneration = 0;
+	}
+
 	wipe(): void {
 		zeroUint8Array(this.meetingSecret);
 		this.nextGeneration = 0;
@@ -251,7 +261,7 @@ export class SenderChainState {
 }
 
 export class ReceiverChainState {
-	private readonly meetingSecret: Uint8Array<ArrayBuffer>;
+	private meetingSecret: Uint8Array<ArrayBuffer>;
 	private readonly highWaterMark = new Map<string, number>();
 	private readonly signingPubs = new Map<number, CryptoKey>();
 	private readonly seenFrames = new Map<string, Set<number>>();
@@ -270,6 +280,14 @@ export class ReceiverChainState {
 
 	hasSenderSigningPub(senderId: number): boolean {
 		return this.signingPubs.has(senderId);
+	}
+
+	updateContext(meetingSecret: Uint8Array<ArrayBuffer>): void {
+		zeroUint8Array(this.meetingSecret);
+		this.meetingSecret = meetingSecret;
+		this.highWaterMark.clear();
+		this.seenFrames.clear();
+		this.frameKeyCache.clear();
 	}
 
 	async getKeyForFrame(
@@ -350,10 +368,12 @@ export class ReceiverChainState {
 
 export function createEncryptionTransformStream(
 	chainState: SenderChainState,
-	keyVersion: number,
+	keyVersion: number | (() => number),
 ): TransformStream {
 	return new TransformStream({
 		async transform(encodedFrame, controller) {
+			const currentKeyVersion =
+				typeof keyVersion === "function" ? keyVersion() : keyVersion;
 			const subtle = getSubtle();
 			const typedFrame = encodedFrame as EncodedFrameLike;
 			const clearPrefix = getClearPrefix(
@@ -367,8 +387,8 @@ export function createEncryptionTransformStream(
 					senderId: chainState.senderId,
 					generation,
 					frameType: typedFrame.type,
-					keyVersion,
-					epochNumber: keyVersion,
+					keyVersion: currentKeyVersion,
+					epochNumber: currentKeyVersion,
 					iv,
 				});
 				const headerBuf = new Uint8Array(header.length);
@@ -418,12 +438,16 @@ export function createEncryptionTransformStream(
 
 export function createDecryptionTransformStream(
 	chainState: ReceiverChainState,
-	expectedKeyVersion: number,
+	expectedKeyVersion: number | (() => number),
 	_receiver: RTCRtpReceiver | undefined,
 	mediaType: string,
 ): TransformStream {
 	return new TransformStream({
 		async transform(encodedFrame, controller) {
+			const currentExpectedKeyVersion =
+				typeof expectedKeyVersion === "function"
+					? expectedKeyVersion()
+					: expectedKeyVersion;
 			const subtle = getSubtle();
 			const data = new Uint8Array(encodedFrame.data);
 			const clearPrefixSize = getClearPrefixSize(mediaType);
@@ -446,19 +470,19 @@ export function createDecryptionTransformStream(
 			if (!header) {
 				return;
 			}
-			if (header.keyVersion !== expectedKeyVersion) {
+			if (header.keyVersion !== currentExpectedKeyVersion) {
 				console.warn("[E2EE] decrypt: key version mismatch", {
 					header: header.keyVersion,
-					expected: expectedKeyVersion,
+					expected: currentExpectedKeyVersion,
 					senderId: header.senderId,
 					mediaType,
 				});
 				return;
 			}
-			if (header.epochNumber !== expectedKeyVersion) {
+			if (header.epochNumber !== currentExpectedKeyVersion) {
 				console.warn("[E2EE] decrypt: epoch mismatch", {
 					header: header.epochNumber,
-					expected: expectedKeyVersion,
+					expected: currentExpectedKeyVersion,
 					senderId: header.senderId,
 					mediaType,
 				});
