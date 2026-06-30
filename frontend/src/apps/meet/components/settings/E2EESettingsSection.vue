@@ -79,7 +79,7 @@ onMounted(async () => {
 const loadE2EEDetails = async () => {
 	try {
 		const response = (await frappeRequest({
-			url: "meet.api.meeting.get_meeting_e2ee_details",
+			url: "suite.meet.api.meeting.get_meeting_e2ee_details",
 			params: { meeting_id: props.meetingId },
 		})) as {
 			e2ee_enabled?: boolean;
@@ -99,7 +99,7 @@ const registerE2EEDevice = async (identity: {
 	authPublicKey: string;
 }): Promise<void> => {
 	await frappeRequest({
-		url: "meet.api.meeting.register_e2ee_device",
+		url: "suite.meet.api.meeting.register_e2ee_device",
 		params: {
 			device_id: identity.deviceId,
 			ed25519_public_key: identity.authPublicKey,
@@ -139,7 +139,7 @@ watch(e2eeEnabled, async (val, oldVal) => {
 		);
 
 		const response = (await frappeRequest({
-			url: "meet.api.meeting.convert_meeting_to_e2ee",
+			url: "suite.meet.api.meeting.convert_meeting_to_e2ee",
 			params: {
 				meeting_id: props.meetingId,
 			},
