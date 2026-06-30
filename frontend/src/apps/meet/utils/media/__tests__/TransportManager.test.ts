@@ -370,4 +370,40 @@ describe("getNetworkStats", () => {
 		await manager.getNetworkStats();
 		expect(getStats).not.toHaveBeenCalled();
 	});
+
+	it("does not double-count RTT from candidate-pair and remote-inbound-rtp on the same transport", async () => {
+		const manager = createManager();
+		manager.sendTransport = {
+			id: "s",
+			connectionState: "connected",
+			getStats: vi.fn().mockResolvedValue(
+				new Map([
+					[
+						"pair1",
+						{
+							type: "candidate-pair",
+							state: "succeeded",
+							currentRoundTripTime: 0.1,
+						},
+					],
+					[
+						"remote1",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+					[
+						"remote2",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+					[
+						"remote3",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+				]),
+			),
+		} as never;
+		manager.recvTransport = null;
+		const stats = await manager.getNetworkStats();
+		expect(stats.rtt).toBe(100);
+		expect(stats.isValid).toBe(true);
+	});
 });

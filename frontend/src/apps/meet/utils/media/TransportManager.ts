@@ -513,23 +513,31 @@ export class TransportManager {
 		}
 
 		try {
-			let totalRtt = 0;
-			let rttCount = 0;
 			let packetsSent = 0;
 			let packetsLost = 0;
 			let validStatsFound = false;
 
-			const processStats = (stats: Map<string, TransportStatReport>) => {
+			// One RTT sample per transport, from a single report type.
+			const transportRtt: number[] = [];
+
+			const processStats = (
+				stats: Map<string, TransportStatReport>,
+				preferRemoteInbound: boolean,
+			) => {
+				let remoteRttSum = 0;
+				let remoteRttCount = 0;
+				let pairRttSum = 0;
+				let pairRttCount = 0;
+
 				for (const report of stats.values()) {
-					// Check RTT from candidate pairs
 					if (
 						report.type === "candidate-pair" &&
 						report.state === "succeeded"
 					) {
 						if (report.currentRoundTripTime !== undefined) {
 							// Convert exact seconds to ms
-							totalRtt += report.currentRoundTripTime * 1000;
-							rttCount++;
+							pairRttSum += report.currentRoundTripTime * 1000;
+							pairRttCount++;
 							if (report.availableOutgoingBitrate) {
 								result.availableOutgoingBitrate =
 									report.availableOutgoingBitrate;
@@ -537,13 +545,11 @@ export class TransportManager {
 						}
 					}
 
-					// Outbound RTP (local sending): check fraction lost from RTCP (remote-inbound-rtp usually, or inside outbound-rtp in some browsers)
 					if (report.type === "outbound-rtp") {
 						validStatsFound = true;
-						// Some browsers may put it directly here or in a linked remote-inbound-rtp
 					}
 
-					// Inbound RTP (local receiving): we can calculate packet loss we are seeing
+					// Inbound RTP (local receiving): downlink loss we see.
 					if (report.type === "inbound-rtp") {
 						validStatsFound = true;
 						if (
@@ -555,14 +561,25 @@ export class TransportManager {
 						}
 					}
 
-					// Remote Inbound RTP (remote receiving our media): tells us about the uplink loss
-					if (report.type === "remote-inbound-rtp") {
-						if (report.roundTripTime !== undefined) {
-							// Note: this is typically per-stream RTT
-							totalRtt += report.roundTripTime * 1000;
-							rttCount++;
-						}
+					// Remote Inbound RTP: SFU's view of our outbound streams.
+					// Per-stream RTT.
+					if (
+						report.type === "remote-inbound-rtp" &&
+						report.roundTripTime !== undefined
+					) {
+						remoteRttSum += report.roundTripTime * 1000;
+						remoteRttCount++;
 					}
+				}
+
+				// Pick one source per transport. remote-inbound-rtp is
+				// the per-stream RTT the SFU measured and is only
+				// available on the send transport; recv falls back to
+				// candidate-pair.
+				if (preferRemoteInbound && remoteRttCount > 0) {
+					transportRtt.push(remoteRttSum / remoteRttCount);
+				} else if (pairRttCount > 0) {
+					transportRtt.push(pairRttSum / pairRttCount);
 				}
 			};
 
@@ -572,7 +589,7 @@ export class TransportManager {
 					this.sendTransport.connectionState === "completed")
 			) {
 				const sendStats = await this.sendTransport.getStats();
-				processStats(sendStats);
+				processStats(sendStats, true);
 			}
 
 			if (
@@ -581,11 +598,12 @@ export class TransportManager {
 					this.recvTransport.connectionState === "completed")
 			) {
 				const recvStats = await this.recvTransport.getStats();
-				processStats(recvStats);
+				processStats(recvStats, false);
 			}
 
-			if (rttCount > 0) {
-				result.rtt = totalRtt / rttCount;
+			if (transportRtt.length > 0) {
+				const total = transportRtt.reduce((sum, v) => sum + v, 0);
+				result.rtt = total / transportRtt.length;
 				validStatsFound = true;
 			}
 
