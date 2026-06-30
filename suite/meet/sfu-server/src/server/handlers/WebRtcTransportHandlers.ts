@@ -5,6 +5,8 @@ import { getRoomId } from './utils';
 
 export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
+		const encryptedWebRtcTransportIds = new Set<string>();
+
 		socket.on('create_webrtc_transport', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
@@ -18,6 +20,9 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					userId,
 					direction,
 				);
+				if (socket.e2eeRequired && encryptionEnabled) {
+					encryptedWebRtcTransportIds.add(transportParams.id);
+				}
 
 				callback({ success: true, ...transportParams });
 			} catch (error) {
@@ -32,12 +37,15 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 		socket.on('connect_webrtc_transport', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				if (socket.e2eeRequired) {
+				const { transportId, dtlsParameters } = data;
+				if (
+					socket.e2eeRequired &&
+					!encryptedWebRtcTransportIds.has(transportId)
+				) {
 					throw new Error(
 						'Plain transport is not allowed when E2EE is required',
 					);
 				}
-				const { transportId, dtlsParameters } = data;
 				await deps.mediasoup.connectWebRtcTransport(
 					transportId,
 					dtlsParameters,

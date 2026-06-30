@@ -411,6 +411,66 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it('allows an encrypted WebRTC transport to connect when E2EE is required', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-e2ee',
+			userId: 'e2ee-user',
+			e2eeRequired: true,
+			e2eeReady: true,
+		});
+
+		const createCallback = vi.fn();
+		socket.fire(
+			'create_webrtc_transport',
+			{ direction: 'send', encryptionEnabled: true },
+			createCallback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(createCallback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'transport-1' }),
+		);
+
+		const connectCallback = vi.fn();
+		socket.fire(
+			'connect_webrtc_transport',
+			{ transportId: 'transport-1', dtlsParameters: {} },
+			connectCallback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(connectCallback).toHaveBeenCalledWith({ success: true });
+		expect(harness.mediasoup.connectWebRtcTransport).toHaveBeenCalledWith(
+			'transport-1',
+			{},
+		);
+	});
+
+	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-e2ee-plain',
+			userId: 'e2ee-plain-user',
+			e2eeRequired: true,
+			e2eeReady: true,
+		});
+		const callback = vi.fn();
+
+		socket.fire(
+			'connect_webrtc_transport',
+			{ transportId: 'transport-plain', dtlsParameters: {} },
+			callback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Plain transport is not allowed when E2EE is required',
+		});
+		expect(harness.mediasoup.connectWebRtcTransport).not.toHaveBeenCalled();
+	});
+
 	it('chat:send broadcasts to other full-access participants in the same room and not back to the sender', async () => {
 		const harness = createManager();
 
