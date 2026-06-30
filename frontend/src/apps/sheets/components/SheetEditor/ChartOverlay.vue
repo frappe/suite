@@ -65,6 +65,11 @@ const props = defineProps({
   // (sourceSheet, sourceRange) → 2D matrix. Caller-owned so it can pull from
   // the sheet engine and re-derive on cell edits.
   getMatrix:    { type: Function, required: true },
+  // Bumps when the source data should be re-pulled — on refresh and on any
+  // sheet cell edit, but NOT on drag/resize/scroll. Part of the matrix cache
+  // key so position-only re-renders (drag/resize) reuse the cached matrix
+  // instead of re-materialising it every frame, while edits refresh the chart.
+  dataVersion:  { type: Number, default: 0 },
   selectedId:   { type: String, default: '' },
   // When true the whole overlay is hidden (e.g. while the chart dialog is
   // open) — prevents the chart's z-indexed action toolbar from floating
@@ -84,8 +89,19 @@ function _hostStyle(chart) {
   }
 }
 
+// Cache the materialised matrix per chart, keyed by source + dataVersion. This
+// runs in the template, so it fires on every overlay re-render — including the
+// chartVersion bumps that move/resize trigger on each drag frame. Without the
+// cache, dragging a chart over a 100k-row source re-pulled the whole range
+// (and made ChartView rebuild the ECharts option) every mouse move.
+const _matrixCache = new Map()
 function _matrixFor(chart) {
-  return props.getMatrix(chart.sourceSheet, chart.sourceRange) || []
+  const key = `${chart.sourceSheet}\x00${chart.sourceRange}\x00${props.dataVersion}`
+  const hit = _matrixCache.get(chart.id)
+  if (hit && hit.key === key) return hit.matrix
+  const matrix = props.getMatrix(chart.sourceSheet, chart.sourceRange) || []
+  _matrixCache.set(chart.id, { key, matrix })
+  return matrix
 }
 
 // ── Drag (move) ──────────────────────────────────────────────────────────────

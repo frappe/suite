@@ -157,7 +157,11 @@ import { IconPicker } from 'frappe-ui/icons'
 import { Settings, Zap } from 'lucide-vue-next'
 import { Alert, Button, Dialog, FormControl, Switch, Tabs, createResource } from 'frappe-ui'
 
-import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
+import {
+	FOLDER_COLOR_MAP,
+	FOLDER_ICON_MAP,
+	SCREENER_MAILBOX_NAME,
+} from '@/apps/mail/constants'
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
@@ -201,8 +205,9 @@ const original = reactive({ ...DEFAULT_FOLDER })
 const isNotificationsDisabled = computed(
 	() =>
 		!isNew.value &&
-		mailbox?.role &&
-		['sent', 'drafts', 'junk', 'trash'].includes(mailbox.role),
+		((mailbox?.role &&
+			['sent', 'drafts', 'junk', 'trash', 'archive'].includes(mailbox.role)) ||
+			mailbox?._name === SCREENER_MAILBOX_NAME),
 )
 
 const isNotDirty = computed(() => {

@@ -1,11 +1,23 @@
 import { ref, computed, watch } from 'vue'
-import { computePivot, writePivotToSheet } from '../../engine/pivot.js'
-import { colLabel, cellId } from '../../utils/cells.js'
+import { computePivotModel, computePivotModelAsync, pivotDrillDown, writePivotToSheet } from '../../engine/pivot.js'
+import { colLabel, cellId, parseCellId } from '../../utils/cells.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 
 // Styling applied to the pivot's column header row (row 0) and Grand Total
 // row (last row). Matches the Google Sheets look the user asked for.
 const PIVOT_HEADER_FORMAT = { bold: true, backgroundColor: '#d9e0e8' }
+
+// Does an output rectangle contain a cell?
+function _rectContains(ext, row, col) {
+  return !!ext && row >= ext.r0 && row <= ext.r1 && col >= ext.c0 && col <= ext.c1
+}
+
+// Do an output rectangle and a selection {r0,c0,r1,c1} overlap?
+function _rectIntersects(ext, sel) {
+  return !!ext && !!sel &&
+    sel.r0 <= ext.r1 && sel.r1 >= ext.r0 &&
+    sel.c0 <= ext.c1 && sel.c1 >= ext.c0
+}
 
 /**
  * @param {{
@@ -23,7 +35,7 @@ const PIVOT_HEADER_FORMAT = { bold: true, backgroundColor: '#d9e0e8' }
  * }} opts
  */
 export function usePivotIntegration({
-  pivot, sheet, formats, currentSheet, renderVersion, getGrid,
+  pivot, sheet, formats, currentSheet, activeCell, renderVersion, getGrid,
   contextMenu, switchSheet, syncNames,
   history, isDirty, repopulateGrid,
 }) {
@@ -32,11 +44,9 @@ export function usePivotIntegration({
   const pivotEditId       = ref('')
   const pivotEditConfig   = ref(null)
   const pivotVersion      = ref(0)
-  // Row/column count of the last-rendered pivot output; used to position the
-  // edit FAB and the highlight overlay without re-running the full
-  // computePivot() on every canvas render frame.
-  const _pivotRowCount    = ref(0)
-  const _pivotColCount    = ref(0)
+  // True while an async pivot build is aggregating the source rows — drives a
+  // spinner so big sheets don't look frozen.
+  const pivotBuilding     = ref(false)
 
   // Every engine mutation (including restore on page reload) bumps the version,
   // so reactive computeds like `activePivotConfig` re-evaluate. Without this,
@@ -44,10 +54,28 @@ export function usePivotIntegration({
   // silently and the cached computed never sees the new pivot list.
   pivot.setOnChange?.(() => { pivotVersion.value++ })
 
-  // Reading pivotVersion forces Vue to re-evaluate on every add/update/delete.
+  // The pivot the edit FAB / drill-down / delete should target: among the
+  // pivots on the current sheet, the one whose output rectangle contains the
+  // active cell. Several pivots can now share an outputSheet, so this is
+  // selection-aware. Reading pivotVersion + renderVersion + activeCell forces
+  // Vue to re-evaluate on add/update/delete, after each render (which sets
+  // pivot _extents), and whenever the selection moves.
   const activePivotConfig = computed(() => {
     void pivotVersion.value
-    return pivot.list().find(p => p.outputSheet === currentSheet.value) ?? null
+    void renderVersion.value
+    const candidates = pivot.list().filter(p => p.outputSheet === currentSheet.value)
+    if (!candidates.length) return null
+    const cell = parseCellId(activeCell?.value || '')
+    if (cell) {
+      const hit = candidates
+        .filter(p => _rectContains(p._extent, cell.row, cell.col))
+        .sort((a, b) => (a._extent.r0 - b._extent.r0) || (a._extent.c0 - b._extent.c0))[0]
+      if (hit) return hit
+    }
+    // Fall back to the sole pivot on the sheet so single-pivot sheets always
+    // show the edit affordance — and so a freshly-added pivot whose _extent
+    // isn't computed yet is still active. With several pivots, require a hit.
+    return candidates.length === 1 ? candidates[0] : null
   })
 
   // Set of sheet names that are pivot outputs — computed so templates reactively
@@ -59,32 +87,33 @@ export function usePivotIntegration({
 
   function isPivotSheet(name) { return pivotSheetNames.value.has(name) }
 
-  // After a page reload, pivot.restore() puts the config back but never calls
-  // _applyPivotOutput, so the in-memory _pivotRowCount stays at 0 — and both
-  // the edit FAB and the highlight overlay (which gate on rows > 0) silently
-  // hide. Watch the active config: when it becomes non-null, do a READ-ONLY
-  // computePivot() to derive dimensions. We don't go through _applyPivotOutput
-  // because its setCell writes would bump renderVersion and could mark the
-  // sheet dirty even though the cells already match the saved snapshot.
+  // After a page reload, pivot.restore() puts the config back but the transient
+  // _extent (not persisted) is gone, so both the edit FAB and the highlight
+  // overlay (which gate on _extent) silently hide. Watch the active config:
+  // when it lacks an _extent, derive one from the already-written cells without
+  // touching the sheet, so we don't bump renderVersion or mark the sheet dirty
+  // even though the cells already match the saved snapshot.
   //
   // Also (re-)apply the header/total banding so older pivots created before
   // this styling existed pick it up the first time they're opened. formats.set
-  // is idempotent and doesn't mark isDirty by itself, so this is safe to run
-  // on every activation.
+  // is idempotent and doesn't mark isDirty by itself, so this is safe.
   watch(activePivotConfig, (cfg) => {
-    if (!cfg) {
-      _pivotRowCount.value = 0
-      _pivotColCount.value = 0
-      return
-    }
-    const table = computePivot(cfg, (s, e, sh) => sheet.getRangeValues(s, e, sh))
-    _pivotRowCount.value = table.length
-    _pivotColCount.value = table[0]?.length || 0
-    _styleHeaderAndTotal(table, cfg.outputSheet)
+    // _extent is transient render state that isn't persisted, so after a reload
+    // a pivot's rectangle is unknown until it's recomputed. Derive it from the
+    // already-written cells (cheap contiguous scan from the anchor) rather than
+    // re-running the aggregation, then cache it. Once cached we skip — extents
+    // are otherwise refreshed at render time in _applyPivotOutput.
+    if (!cfg || cfg._extent) return
+    const ext = _outputExtentAt(cfg.outputSheet, cfg.anchorRow || 0, cfg.anchorCol || 0)
+    if (!ext) return
+    pivot.setExtent(cfg.id, ext)
+    _restyleHeaderAndTotal(cfg.outputSheet, ext)
+    // setExtent doesn't notify; nudge the overlays to pick up the new rect.
+    pivotVersion.value++
   }, { immediate: true })
 
-  // Positions the edit FAB below the Grand Total row without re-running
-  // computePivot() — _pivotRowCount is updated whenever pivot output is written.
+  // Positions the edit FAB below the active pivot's Grand Total row from its
+  // cached _extent, without re-running computePivot() on every render frame.
   // getCellRect returns coordinates even when the cell has scrolled above the
   // visible cell area, so the FAB would otherwise overlap the column/row
   // headers when the user scrolls past the pivot. Gate on the headers.
@@ -93,9 +122,9 @@ export function usePivotIntegration({
     renderVersion.value
     const cfg  = activePivotConfig.value
     const grid = getGrid()
-    const rows = _pivotRowCount.value
-    if (!grid || !cfg || !rows) return null
-    const rect = grid.getCellRect?.(rows - 1, 0)
+    const ext  = cfg?._extent
+    if (!grid || !ext) return null
+    const rect = grid.getCellRect?.(ext.r1, ext.c0)
     if (!rect) return null
     const zoom = grid.getZoom?.() ?? 1
     const top  = rect.y + rect.height + 6
@@ -118,11 +147,10 @@ export function usePivotIntegration({
     renderVersion.value
     const cfg  = activePivotConfig.value
     const grid = getGrid()
-    const rows = _pivotRowCount.value
-    const cols = _pivotColCount.value
-    if (!grid || !cfg || !rows || !cols) return null
-    const tl = grid.getCellRect?.(0, 0)
-    const br = grid.getCellRect?.(rows - 1, cols - 1)
+    const ext  = cfg?._extent
+    if (!grid || !ext) return null
+    const tl = grid.getCellRect?.(ext.r0, ext.c0)
+    const br = grid.getCellRect?.(ext.r1, ext.c1)
     if (!tl || !br) return null
     const zoom    = grid.getZoom?.() ?? 1
     const headerY = COL_HEADER_H * zoom
@@ -166,10 +194,10 @@ export function usePivotIntegration({
     pivotDialogOpen.value   = true
   }
 
-  function onPivotRefresh() {
+  async function onPivotRefresh() {
     const cfg = activePivotConfig.value
     if (!cfg) return
-    _applyPivotOutput(cfg)
+    await _applyPivotOutput(cfg)
     repopulateGrid()
   }
 
@@ -179,80 +207,217 @@ export function usePivotIntegration({
     pivot.remove(cfg.id)
   }
 
-  function _clearPivotOutputSheet(sheetName) {
-    const data = sheet.getRawData(sheetName)
-    for (const id of Object.keys(data)) {
-      sheet.setCell(id, '', sheetName)
-      // Clear the format too — otherwise the previous header/total band
-      // lingers on rows the new (shorter) pivot no longer occupies.
-      formats?.clear?.(id, sheetName)
-    }
-  }
-
-  function _applyPivotOutput(config) {
-    const table = computePivot(config, (s, e, sh) => sheet.getRangeValues(s, e, sh))
-    _pivotRowCount.value = table.length
-    _pivotColCount.value = table[0]?.length || 0
-    writePivotToSheet(
-      table, config.outputSheet,
-      (id, val, sh) => sheet.setCell(id, val, sh),
-      shName => _clearPivotOutputSheet(shName),
-    )
-    _styleHeaderAndTotal(table, config.outputSheet)
-  }
-
-  // Apply the bold + #d9e0e8 banding to row 0 (column headers) and the last
-  // row (Grand Total). Walks every column in the pivot width so the band is
-  // continuous even for cells the engine left empty (which writePivotToSheet
-  // skipped). Re-applied on every recompute since _clearPivotOutputSheet wipes
-  // formats first.
-  function _styleHeaderAndTotal(table, outputSheet) {
-    if (!formats?.set || !table.length) return
-    const cols = table[0]?.length || 0
-    const lastRow = table.length - 1
-    for (let c = 0; c < cols; c++) {
-      formats.set(cellId(0, c), PIVOT_HEADER_FORMAT, outputSheet)
-      if (lastRow > 0) {
-        formats.set(cellId(lastRow, c), PIVOT_HEADER_FORMAT, outputSheet)
+  // Clear only the pivot's previous output rectangle — never the whole sheet,
+  // which would wipe a neighbouring pivot or user data now that several pivots
+  // can live on one sheet. `extent` is the previously-rendered rect (null on a
+  // pivot's first render → nothing to clear).
+  function _clearPivotRect(sheetName, extent) {
+    if (!extent) return
+    for (let r = extent.r0; r <= extent.r1; r++) {
+      for (let c = extent.c0; c <= extent.c1; c++) {
+        const id = cellId(r, c)
+        sheet.setCell(id, '', sheetName)
+        // Clear the format too — otherwise the previous header/total band
+        // lingers on rows the new (shorter) pivot no longer occupies.
+        formats?.clear?.(id, sheetName)
       }
     }
   }
 
-  function recomputePivotsForSheet(srcSheet) {
+  // Async, chunked build. Aggregates the source in row blocks, yielding between
+  // them so a 100k-row pivot doesn't freeze the UI. A newer build supersedes an
+  // in-flight one via the token (e.g. rapid edits / refresh).
+  let _buildToken = 0
+  async function _applyPivotOutput(config) {
+    const token = ++_buildToken
+    pivotBuilding.value = true
+    try {
+      const model = await computePivotModelAsync(
+        config,
+        (s, e, sh) => sheet.getRangeValues(s, e, sh),
+        { onYield: () => _yieldUnlessSuperseded(token) },
+      )
+      if (token !== _buildToken) return
+      const table = model?.table ?? []
+      const ar = config.anchorRow || 0
+      const ac = config.anchorCol || 0
+      const prevExtent = pivot.get(config.id)?._extent ?? null
+      writePivotToSheet(
+        table, config.outputSheet,
+        (id, val, sh) => sheet.setCell(id, val, sh),
+        (sh, ext) => _clearPivotRect(sh, ext),
+        { row: ar, col: ac },
+        prevExtent,
+      )
+      const newExtent = table.length
+        ? { r0: ar, c0: ac, r1: ar + table.length - 1, c1: ac + (table[0]?.length || 1) - 1 }
+        : null
+      pivot.setExtent(config.id, newExtent)
+      _styleHeaderAndTotal(table, config.outputSheet, ar, ac)
+    } finally {
+      if (token === _buildToken) pivotBuilding.value = false
+    }
+  }
+
+  // Yield a macrotask so the UI can paint/respond between blocks; resolves
+  // false when a newer build has taken over so the engine bails early.
+  function _yieldUnlessSuperseded(token) {
+    return new Promise(res => setTimeout(() => res(token === _buildToken), 0))
+  }
+
+  // Output rectangle of an already-written pivot, derived without re-aggregating
+  // the source: the output is a solid block anchored at (ar, ac), so walk the
+  // header row right and the row-label column down to the first gap. Scoped to
+  // the anchor so it never unions a neighbouring pivot's cells. Returns null
+  // when nothing is written at the anchor.
+  function _outputExtentAt(sheetName, ar, ac) {
+    const data = sheet.getRawData(sheetName)
+    const has = (r, c) => {
+      const v = data[cellId(r, c)]
+      return v !== undefined && v !== null && v !== ''
+    }
+    if (!has(ar, ac)) return null
+    let lastCol = ac
+    while (has(ar, lastCol + 1)) lastCol++
+    let lastRow = ar
+    while (has(lastRow + 1, ac)) lastRow++
+    return { r0: ar, c0: ac, r1: lastRow, c1: lastCol }
+  }
+
+  // Re-apply header/total banding over an extent (used on load so pivots made
+  // before this styling existed pick it up, without recomputing the table).
+  function _restyleHeaderAndTotal(outputSheet, ext) {
+    if (!formats?.set || !ext) return
+    for (let c = ext.c0; c <= ext.c1; c++) {
+      formats.set(cellId(ext.r0, c), PIVOT_HEADER_FORMAT, outputSheet)
+      if (ext.r1 > ext.r0) formats.set(cellId(ext.r1, c), PIVOT_HEADER_FORMAT, outputSheet)
+    }
+  }
+
+  // Apply the bold + #d9e0e8 banding to the header row (anchorRow) and the
+  // Grand Total row (last). Walks every column in the pivot width so the band
+  // is continuous even for cells the engine left empty (which writePivotToSheet
+  // skipped). Re-applied on every recompute since _clearPivotRect wipes formats
+  // first.
+  function _styleHeaderAndTotal(table, outputSheet, anchorRow = 0, anchorCol = 0) {
+    if (!formats?.set || !table.length) return
+    const cols = table[0]?.length || 0
+    const lastRow = anchorRow + table.length - 1
+    for (let c = 0; c < cols; c++) {
+      formats.set(cellId(anchorRow, anchorCol + c), PIVOT_HEADER_FORMAT, outputSheet)
+      if (lastRow > anchorRow) {
+        formats.set(cellId(lastRow, anchorCol + c), PIVOT_HEADER_FORMAT, outputSheet)
+      }
+    }
+  }
+
+  // Double-click drill-down: given a cell (r, c) on the current pivot output
+  // sheet, open the underlying source rows in a fresh sheet (Google Sheets
+  // behaviour). Returns true when it handled the cell so the grid skips the
+  // cell editor; false for non-pivot sheets or non-drillable cells.
+  function drillDownAt(r, c) {
+    const cfg = activePivotConfig.value
+    if (!cfg) return false
+    // The grid passes absolute (r, c); pivotDrillDown works in pivot-local
+    // coordinates, so translate by the pivot's anchor first.
+    const lr = r - (cfg.anchorRow || 0)
+    const lc = c - (cfg.anchorCol || 0)
+    if (lr < 0 || lc < 0) return false
+    const model = computePivotModel(cfg, (s, e, sh) => sheet.getRangeValues(s, e, sh))
+    const res = pivotDrillDown(model, lr, lc)
+    if (!res || !res.rows.length) return false
+
+    const existing = sheet.getSheetNames()
+    let name = 'Drill-down'; let n = 2
+    while (existing.includes(name)) name = `Drill-down ${n++}`
+    sheet.addSheet(name)
+    syncNames()
+
+    const table = [res.headers, ...res.rows]
+    for (let rr = 0; rr < table.length; rr++) {
+      const tr = table[rr]
+      for (let cc = 0; cc < tr.length; cc++) {
+        const v = tr[cc]
+        if (v === null || v === undefined || v === '') continue
+        sheet.setCell(cellId(rr, cc), typeof v === 'number' ? v : String(v), name)
+      }
+    }
+    if (formats?.set) {
+      for (let cc = 0; cc < res.headers.length; cc++) formats.set(cellId(0, cc), { bold: true }, name)
+    }
+
+    switchSheet(name)
+    repopulateGrid()
+    history.push(); isDirty.value = true
+    return true
+  }
+
+  async function recomputePivotsForSheet(srcSheet) {
     if (!pivot.affectsPivot(srcSheet)) return
     for (const cfg of pivot.list()) {
-      if (cfg.sourceSheet === srcSheet) _applyPivotOutput(cfg)
+      if (cfg.sourceSheet === srcSheet) await _applyPivotOutput(cfg)
     }
     repopulateGrid()
   }
 
-  function onPivotConfirm(config) {
+  async function onPivotConfirm(config) {
     const existing = sheet.getSheetNames()
+    let id, outputSheet
     if (config.id) {
       const old = pivot.get(config.id)
-      const outputSheet = old?.outputSheet || `Pivot – ${config.rows.join(', ')}`
+      outputSheet = old?.outputSheet || `Pivot – ${config.rows.join(', ')}`
       pivot.update(config.id, { ...config, outputSheet })
-      _applyPivotOutput({ ...config, outputSheet })
-      switchSheet(outputSheet)
+      id = config.id
     } else {
       const baseName = `Pivot – ${config.rows.join(', ')}`
-      let outputSheet = baseName; let n = 2
+      outputSheet = baseName; let n = 2
       while (existing.includes(outputSheet)) outputSheet = `${baseName} ${n++}`
       sheet.addSheet(outputSheet)
       syncNames()
-      config.outputSheet = outputSheet
-      pivot.add(config)
-      _applyPivotOutput({ ...config, outputSheet })
-      switchSheet(outputSheet)
+      id = pivot.add({ ...config, outputSheet })
     }
+    // Switch first so the user sees the output sheet (with a spinner) while it
+    // builds, then fill it in. Render from the stored config so _applyPivotOutput
+    // can read/write the pivot's _extent by id.
+    switchSheet(outputSheet)
+    await _applyPivotOutput(pivot.get(id))
     repopulateGrid()
     history.push(); isDirty.value = true
   }
 
+  // ── Copy/paste a pivot as a new live pivot ──────────────────────────────────
+
+  // If a selection overlaps a pivot's output on `sheetName`, return a portable
+  // blob (config minus identity/placement) the clipboard can stash so a paste
+  // can mint an independent copy. null when the selection touches no pivot.
+  function getPivotAt(sel, sheetName) {
+    const hit = pivot.list().find(p =>
+      p.outputSheet === sheetName && _rectIntersects(p._extent, sel))
+    if (!hit) return null
+    return {
+      sourceSheet: hit.sourceSheet,
+      sourceRange: hit.sourceRange,
+      rows:   [...(hit.rows   || [])],
+      cols:   [...(hit.cols   || [])],
+      values: (hit.values || []).map(v => ({ ...v })),
+    }
+  }
+
+  // Create a new, independent pivot from a pasted blob, anchored at the paste
+  // cell on `outputSheet` (the current sheet — the headline "multiple pivots on
+  // one page" case). History/dirty are owned by the caller (onDocPaste).
+  async function createPastedPivot(blob, anchorId, outputSheet) {
+    const anch = parseCellId(anchorId)
+    if (!anch) return
+    const id = pivot.add({ ...blob, outputSheet, anchorRow: anch.row, anchorCol: anch.col })
+    await _applyPivotOutput(pivot.get(id))
+    repopulateGrid()
+  }
+
   return {
-    pivotDialogOpen, pivotInitialRange, pivotEditId, pivotEditConfig, pivotVersion,
+    pivotDialogOpen, pivotInitialRange, pivotEditId, pivotEditConfig, pivotVersion, pivotBuilding,
     activePivotConfig, pivotFabStyle, pivotHighlightStyle, pivotBannerMenuOptions,
     isPivotSheet, openPivotDialog, onPivotEdit, onPivotRefresh, onPivotDelete, onPivotConfirm,
-    recomputePivotsForSheet,
+    recomputePivotsForSheet, drillDownAt, getPivotAt, createPastedPivot,
   }
 }

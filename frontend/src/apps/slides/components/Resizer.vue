@@ -64,6 +64,8 @@ const resizeHandles = computed(() => {
 			'bottom-left',
 			'bottom-right',
 		]
+	} else if (['image', 'video'].includes(props.elementType)) {
+		directions = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 	} else if (props.elementType === 'line') {
 		directions = ['line-left', 'line-right']
 	} else if (props.elementType === 'text') {

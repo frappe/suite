@@ -32,7 +32,7 @@ export class MediasoupManager {
 	private peerManager = new PeerManager();
 	private transportManager = new TransportManager();
 	private producerManager = new ProducerManager();
-	private consumerManager = new ConsumerManager();
+	consumerManager = new ConsumerManager();
 
 	private networkQualityListeners: Array<
 		(
@@ -185,7 +185,19 @@ export class MediasoupManager {
 	async removePeer(roomId: string, peerId: string): Promise<void> {
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) return;
+		const peer = room.peers.get(peerId);
 
+		for (const producerId of this.producerManager.getProducerIdsByPeer(
+			roomId,
+			peerId,
+		)) {
+			this.closeProducer(producerId);
+		}
+		this.consumerManager.closePeerConsumers(roomId, peerId);
+		this.transportManager.closePeerTransports(roomId, peerId);
+		peer?.producers.clear();
+		peer?.consumers.clear();
+		peer?.transports.clear();
 		this.peerManager.removePeer(room, peerId);
 		this.peerScores.delete(peerId);
 	}
@@ -485,6 +497,7 @@ export class MediasoupManager {
 		let appliedLayers:
 			| { spatialLayer: number | null; temporalLayer: number | null }
 			| undefined;
+		let previousSpatial: number | null = null;
 
 		if (consumer.kind === 'video') {
 			const spatialLayer = this.estimateSpatialLayer(
@@ -521,22 +534,7 @@ export class MediasoupManager {
 						layerResult.temporalLayer,
 					);
 					const currentLayers = consumer.currentLayers;
-					const previousSpatial = currentLayers?.spatialLayer ?? null;
-					if (
-						(previousSpatial !== null &&
-							layerResult.spatialLayer > previousSpatial) ||
-						wasPaused
-					) {
-						try {
-							await consumer.requestKeyFrame();
-						} catch (error) {
-							loggers.mediasoupManager.warn(
-								'Failed to request key frame for consumer %s: %s',
-								consumer.id,
-								(error as Error).message,
-							);
-						}
-					}
+					previousSpatial = currentLayers?.spatialLayer ?? null;
 				}
 			} else {
 				// Even if we didn't change layers, return the current state
@@ -553,6 +551,23 @@ export class MediasoupManager {
 						appliedLayers.temporalLayer,
 					);
 				}
+			}
+		}
+
+		const layerUpgraded =
+			appliedLayers &&
+			appliedLayers.spatialLayer !== null &&
+			previousSpatial !== null &&
+			appliedLayers.spatialLayer > previousSpatial;
+		if (consumer.kind === 'video' && (wasPaused || layerUpgraded)) {
+			try {
+				await consumer.requestKeyFrame();
+			} catch (error) {
+				loggers.mediasoupManager.warn(
+					'Failed to request key frame for consumer %s: %s',
+					consumer.id,
+					(error as Error).message,
+				);
 			}
 		}
 

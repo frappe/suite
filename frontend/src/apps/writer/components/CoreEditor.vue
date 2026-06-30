@@ -77,6 +77,8 @@ import { onKeyDown } from '@vueuse/core'
 import { v4 as uuidv4 } from 'uuid'
 
 import FloatingComments from './FloatingComments.vue'
+import ToC from './ToC.vue'
+import ToCMobile from './ToCMobile.vue'
 import { buildMenuButtons } from './core-editor/menu-buttons'
 import { bubbleMenuOptions } from './core-editor/bubble-menu'
 
@@ -265,8 +267,8 @@ const bubbleMenuOpts = computed(() =>
 const editorStyle = computed(() => ({
   fontFamily:
     props.settings?.font_family && `var(--font-${props.settings.font_family})`,
-  fontSize: `${props.settings?.font_size || 15}px`,
-  lineHeight: props.settings?.line_height || 1.5,
+  '--editor-font-size': `${props.settings?.font_size || 15}px`,
+  '--editor-line-height': props.settings?.line_height || 1.5,
   '--paragraph-spacing-before': `${props.settings?.paragraph_spacing_before || 0}px`,
   '--paragraph-spacing-after': `${props.settings?.paragraph_spacing_after || 0}px`,
 }))
@@ -294,7 +296,7 @@ const onEditorKeydown = async (e) => {
 
 const autoversion = async () => {
   if (!edited.value) return
-  const html = editor.value.getHTML()
+  const html = editor.value.getHTML()?.trim()
   if (!html || html === '<p></p>') return
   await props.document.newVersion.submit({ data: html })
   const err = props.document.newVersion.error
@@ -376,7 +378,7 @@ onKeyDown('p', (e) => {
 onKeyDown('s', (e) => {
   if (!props.editable || !isModKey(e) || e.shiftKey) return
   e.preventDefault()
-  manualSave(() => toast.success('Saved document', { duration: 0.75 }))
+  manualSave(() => toast.success('Saved document'))
 })
 
 onKeyDown('Enter', autorename)

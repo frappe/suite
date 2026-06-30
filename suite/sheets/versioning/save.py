@@ -187,9 +187,13 @@ def _validate_payload(sheets_data: str) -> str:
 	if not isinstance(sheets_data, str):
 		frappe.throw("sheets_data must be a JSON string")
 	plain = decode_sheets_data(sheets_data)
-	if len(plain.encode("utf-8")) > MAX_SHEETS_DATA_BYTES:
+	size = len(plain.encode("utf-8"))
+	if size > MAX_SHEETS_DATA_BYTES:
+		limit_mb = MAX_SHEETS_DATA_BYTES // (1024 * 1024)
 		frappe.throw(
-			f"Sheet exceeds the {MAX_SHEETS_DATA_BYTES // (1024 * 1024)} MB limit"
+			f"This spreadsheet is {_format_bytes(size)}, over the {limit_mb} MB limit. "
+			f"Formatting applied across a very large range is the usual cause — clear "
+			f"formatting you don't need, or split the data across sheets."
 		)
 	try:
 		json.loads(plain)

@@ -88,6 +88,27 @@ def get_context(context):
     context.sitename       = frappe.local.site
     context.socketio_port  = frappe.conf.get("socketio_port") or 9000
 
+    # AI Assist gating for the SPA topbar. `extend_bootinfo` is desk-only, so —
+    # like the collab flags above — these are seeded here into the SPA's boot:
+    #   * ai_assist_enabled gates the "Ask AI" entry point — true only when an
+    #     admin has both stored a key and flipped the toggle.
+    #   * ai_assist_can_configure gates the in-app "AI settings" menu item.
+    # The key itself never reaches the browser. Guarded so a missing /
+    # not-yet-migrated settings doctype degrades to "AI off" rather than 500.
+    context.ai_assist_enabled = False
+    context.ai_assist_can_configure = "System Manager" in frappe.get_roles()
+    try:
+        ai = frappe.get_cached_doc("Sheets AI Settings")
+        # The keyless "mock"/"demo" model counts as configured so the button
+        # shows for a local, no-spend trial.
+        model = (ai.model or "").strip().lower()
+        has_creds = model in ("mock", "demo") or bool(
+            ai.get_password("api_key", raise_exception=False)
+        )
+        context.ai_assist_enabled = bool(ai.enabled and has_creds)
+    except Exception:
+        pass
+
     # Vite-emitted hashed bundle URLs — see _asset_paths above.
     context.assets = _asset_paths()
 

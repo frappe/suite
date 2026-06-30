@@ -66,22 +66,18 @@ export function _parseCSV(text) {
  * @param {() => string}  opts.getCurrentTitle – current document title
  * @param {() => object|null} opts.getGrid     – returns the canvas grid or null
  * @param {(op: object) => void} opts.queueOp  – enqueue an operation
- * @param {() => void}    opts.markEdited      – push history + syncFlags + dirty
  * @param {() => void}    opts.repopulateGrid  – full canvas repaint
  * @param {() => void}    opts.syncFlags       – sync undo/redo button state
  * @param {import('vue').Ref<boolean>} opts.isDirty – dirty flag ref
- * @param {{ push: () => void }} opts.history  – history object
  */
 export function useExportImport({
   getSheet,
   getCurrentTitle,
   getGrid,
   queueOp,
-  markEdited,
   repopulateGrid,
   syncFlags,
   isDirty,
-  history,
 }) {
   function _diffRefs(before, after) {
     const ids = new Set([...Object.keys(before || {}), ...Object.keys(after || {})])
@@ -201,9 +197,6 @@ export function useExportImport({
       const text = ev.target.result
       const rows = _parseCSV(text)
       await _ingestRows(rows, file.name)
-      history.push()       // post-mutate snapshot
-      syncFlags()
-      isDirty.value = true
     }
     reader.readAsText(file)
     e.target.value = ''
@@ -218,9 +211,12 @@ export function useExportImport({
     const map       = await _rowsToCellMap(rows)
     if (grid) grid.clearAll()
     sheet.batchSetCells(map, currentSh)
-    markEdited()
-    // queueOp omitted on purpose — imports aren't undoable (Sheets parity)
-    // and a 100k-cell before/after snapshot was the dominant memory cost.
+    // No history entry: imports aren't undoable (Sheets parity). The old
+    // markEdited() path pushed a full-workbook snapshot here — a ~1.9s
+    // deepClone on a 2M-cell import, for an op the user can't even undo.
+    // Just flag dirty + refresh the toolbar so autosave picks it up.
+    syncFlags()
+    isDirty.value = true
     return fileName
   }
 

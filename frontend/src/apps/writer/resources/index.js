@@ -1,5 +1,6 @@
 import { useList, createResource, useCall } from 'frappe-ui'
 import { prettyData } from '@/apps/writer/utils'
+import { getAppSwitcherItems } from '@/apps/registry'
 
 export const getDocuments = useList({
   url: '/api/method/suite.writer.api.general.get_document_list',
@@ -38,8 +39,8 @@ export const updateComments = createResource({
 })
 
 
-export const apps = createResource({
-  url: 'frappe.apps.get_apps',
-  cache: 'apps',
-  transform: (data) => data.filter((app) => app.name !== 'writer'),
-})
+export const apps = {
+  get data() {
+    return getAppSwitcherItems('writer')
+  },
+}

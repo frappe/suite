@@ -70,7 +70,6 @@ const router = useRouter()
 const route = useRoute()
 notifCount.fetch()
 getTeams.fetch()
-apps.fetch()
 
 const teamExists = createResource({
   url: 'suite.drive.utils.get_default_team',

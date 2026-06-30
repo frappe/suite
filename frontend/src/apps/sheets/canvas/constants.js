@@ -2,11 +2,18 @@ export const COL_HEADER_H  = 24
 export const ROW_HEADER_W  = 50
 export const DEFAULT_COL_W = 100
 export const DEFAULT_ROW_H = 24
+// Default grid size a fresh/empty sub-sheet shows (Google-Sheets-like). The
+// live counts below grow past these when a sheet's data needs it, and reset
+// back to them per sub-sheet on switch so a 100k-row source doesn't leave every
+// new / pivot / drill-down sheet stuck at 100k empty rows.
+export const DEFAULT_TOTAL_ROWS = 1000
+export const DEFAULT_TOTAL_COLS = 26
+
 // Live bindings — `let` so the row/column count can grow at runtime via the
 // grid's `expandRows` / `expandCols` API. ES modules expose live bindings, so
 // importers always see the current value.
-export let TOTAL_ROWS = 1000
-export let TOTAL_COLS = 26    // A–Z (Google-Sheets default; more can be added on demand)
+export let TOTAL_ROWS = DEFAULT_TOTAL_ROWS
+export let TOTAL_COLS = DEFAULT_TOTAL_COLS    // A–Z; more can be added on demand
 export function setTotalRows(n) { TOTAL_ROWS = Math.max(1, Math.floor(n)) }
 export function setTotalCols(n) { TOTAL_COLS = Math.max(1, Math.floor(n)) }
 
@@ -33,4 +40,8 @@ export const COLORS = {
   // by being a *static dashed* outline in the softer ink-gray-7.
   pickerFill:   'rgba(23, 23, 23, 0.05)',   // --ink-gray-9 @ 5% — subtle wash
   pickerBorder: '#525252',                  // --ink-gray-7 — static dashed outline
+  // Data-validation dropdown chips
+  chipFill:     '#EDEDED',                  // --surface-gray-3 — neutral pill
+  chipCaret:    '#525252',                  // --ink-gray-7 — pill caret
+  invalidMark:  '#D93025',                  // red — value fails its validation rule
 }

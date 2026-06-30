@@ -20,10 +20,15 @@ import gzip
 import io
 import json
 
-# Cap on the *uncompressed* (effective workbook) byte size. Lifted from the
-# original 5 MB now that compression gives us roughly 5-10× headroom for the
-# same physical row size.
-MAX_SHEETS_DATA_BYTES = 30 * 1024 * 1024
+# Cap on the *uncompressed* (effective workbook) byte size. This is the real
+# constraint: the whole workbook is decompressed and parsed into memory on
+# every load, so the uncompressed size — not the on-disk compressed size —
+# bounds load RAM and parse time. The client now stores cells in a compact
+# row-major form (see frontend/src/utils/sheet-codec.js) that roughly halves
+# this number for the same data, so the cap is raised to 75 MB to give real
+# headroom (~6M cells of typical data) without inviting sheets so large they
+# lag on load.
+MAX_SHEETS_DATA_BYTES = 75 * 1024 * 1024
 
 # Hard upper bound on the size of a compressed base64 payload we are willing
 # to even *attempt* to decompress. Anything legitimately ≤ MAX_SHEETS_DATA_BYTES
@@ -108,9 +113,14 @@ def _bounded_decompress(b64_payload: str) -> bytes:
 def _throw_bomb(reason: str | None = None) -> None:
 	import frappe
 
+	limit_mb = MAX_SHEETS_DATA_BYTES // (1024 * 1024)
 	frappe.throw(
 		reason
-		or f"Sheet exceeds the {MAX_SHEETS_DATA_BYTES // (1024 * 1024)} MB limit"
+		or (
+			f"This spreadsheet is too large to save (over {limit_mb} MB uncompressed). "
+			f"This usually comes from formatting applied across a very large range — "
+			f"clear formatting you don't need, or split the data across sheets."
+		)
 	)
 
 

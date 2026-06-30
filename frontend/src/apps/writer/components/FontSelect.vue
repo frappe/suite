@@ -5,8 +5,8 @@
     :options="
       options.map((k) => ({
         ...k,
-        type: 'custom',
-        slotName: 'font',
+        value: k.key,
+        slot: 'font',
         onClick: () => (editor ? k.action(editor) : (selected = k.key)),
       }))
     "

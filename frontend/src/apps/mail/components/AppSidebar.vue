@@ -17,7 +17,7 @@
 				logo: branding.data?.brand_html || MailLogo,
 			}"
 			:sections="sidebarItems"
-			:class="{ 'fixed left-0 top-0 z-10 w-60': isMobile }"
+			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
 			<template #footer-items="{ isCollapsed }">
@@ -75,8 +75,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/icons'
 import { Check, Keyboard, User } from 'lucide-vue-next'
-import { Avatar, Button, Dropdown, Sidebar, SidebarItem, createResource } from 'frappe-ui'
+import { Avatar, Button, Dropdown, Sidebar, SidebarItem } from 'frappe-ui'
 
+import { getAppSwitcherItems } from '@/apps/registry'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
 import { useScreenSize, useSettings, useSidebar } from '@/apps/mail/utils/composables'
@@ -117,12 +118,7 @@ const { mailboxes } = store
 
 const user = inject('$user')
 
-const apps = createResource({
-	url: 'suite.mail.api.get_permitted_apps',
-	cache: 'otherApps',
-	auto: true,
-	transform: (data) => data.filter((app) => app.name !== 'mail'),
-})
+const apps = { get data() { return getAppSwitcherItems('mail') } }
 
 const { showSettings } = useSettings()
 const showFolderModal = ref(false)

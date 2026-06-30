@@ -13,7 +13,7 @@ from frappe.utils import now, time_diff_in_seconds
 from suite.mail.utils import reconnect_on_failure
 
 if TYPE_CHECKING:
-	from suite.server.doctype.server_ansible_play.server_ansible_play import ServerAnsiblePlay
+	from suite.mail.doctype.server_ansible_play.server_ansible_play import ServerAnsiblePlay
 
 
 class Ansible:

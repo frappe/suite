@@ -83,7 +83,7 @@ import { Button, ErrorMessage, FormControl, Switch, createResource } from 'frapp
 
 import { userStore } from '@/apps/mail/stores/user'
 
-const { accountId, user: sessionUser } = userStore()
+const { accountId } = userStore()
 
 const user = inject('$user')
 const socket = inject('$socket')
@@ -105,9 +105,9 @@ const filter = reactive({
 })
 
 const calendars = createResource({
-	url: 'suite.client.doctype.calendar.calendar.fetch_calendars',
+	url: 'suite.mail.doctype.calendar.calendar.fetch_calendars',
 	auto: true,
-	makeParams: () => ({ account: `${sessionUser}:${accountId}`, limit: 100 }),
+	makeParams: () => ({ account_id: accountId, limit: 100 }),
 })
 
 const calendarOptions = computed(() =>

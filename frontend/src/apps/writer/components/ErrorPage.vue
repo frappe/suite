@@ -2,9 +2,9 @@
   <div
     class="flex flex-col items-center h-screen p-6 text-center mt-[10%] w-full"
   >
-    <div class="rounded-full flex items-center justify-center">
-      <LucideFileUser v-if="error.type === 'PermissionError'" />
-      <LucideFileQuestionMark v-else />
+    <div class="size-16 rounded-full bg-surface-gray-2 flex items-center justify-center">
+      <LucideFileUser v-if="error.type === 'PermissionError'" class="size-8 text-ink-gray-5" />
+      <LucideFileQuestionMark v-else class="size-8 text-ink-gray-5" />
     </div>
     <h1 class="text-5xl-bold text-ink-gray-8 mt-4">Uh oh!</h1>
     <p class="text-xl text-ink-gray-5 mt-4">

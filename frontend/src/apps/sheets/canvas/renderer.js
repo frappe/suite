@@ -14,7 +14,7 @@ export function createRenderer(ctx, geometry) {
   const cellPainter   = createCellPainter(ctx, geometry)
   const headerPainter = createHeaderPainter(ctx, geometry)
 
-  function render({ cssW, cssH, data, sel, selEnd, selMode = 'cell', editing, getFormat,
+  function render({ cssW, cssH, getValue, sel, selEnd, selMode = 'cell', editing, getFormat,
                     freeze: frz = { rows: 0, cols: 0 }, getMergeInfo, isSlave,
                     getComment = null, getValidation = null, getCondFormat = null,
                     getRightInset = null, getDiffFor = null,
@@ -33,7 +33,7 @@ export function createRenderer(ctx, geometry) {
     const c1s    = lastVisCol(c0s, cssW), r1s = lastVisRow(r0s, cssH)
     const range  = _selRange(sel, selEnd)
 
-    const state = { cssW, cssH, data, getFormat, getMergeInfo, isSlave,
+    const state = { cssW, cssH, getValue, getFormat, getMergeInfo, isSlave,
                     getComment, getValidation, getCondFormat, getRightInset,
                     getDiffFor,
                     editing, range, marchAnts, marchPhase, pickerRect }
@@ -57,7 +57,7 @@ export function createRenderer(ctx, geometry) {
 
   function _renderRegion(r0, c0, r1, c1, clipX, clipY, clipW, clipH, state) {
     if (clipW <= 0 || clipH <= 0 || r1 < r0 || c1 < c0) return
-    const { cssW, cssH, data, getFormat, getMergeInfo, isSlave,
+    const { cssW, cssH, getValue, getFormat, getMergeInfo, isSlave,
             getComment, getValidation, getCondFormat, getRightInset,
             getDiffFor,
             editing, range, marchAnts, marchPhase, pickerRect } = state
@@ -65,7 +65,7 @@ export function createRenderer(ctx, geometry) {
     ctx.beginPath(); ctx.rect(clipX, clipY, clipW, clipH); ctx.clip()
     if (!editing) selPainter.drawSelFill(range)
     gridPainter.drawGridLines(r0, c0, r1, c1, cssW, cssH)
-    cellPainter.drawRegionCells(r0, c0, r1, c1, data, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor)
+    cellPainter.drawRegionCells(r0, c0, r1, c1, getValue, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor)
     cellPainter.drawRegionBorders(r0, c0, r1, c1, getFormat, getMergeInfo, isSlave)
     if (marchAnts)  selPainter.drawMarchingAnts(marchAnts, marchPhase)
     if (pickerRect) selPainter.drawPickerRect(pickerRect)

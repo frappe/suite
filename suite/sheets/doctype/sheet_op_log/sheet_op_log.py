@@ -32,6 +32,7 @@ VALID_OP_TYPES = {
 	"comment",
 	"cond-format",
 	"chart",         # chart add / edit / move / resize / delete
+	"ai_assist",     # cells written by an accepted AI Assist action plan
 }
 
 

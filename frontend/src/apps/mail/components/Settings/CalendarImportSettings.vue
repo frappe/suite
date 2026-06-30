@@ -58,7 +58,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useChunkedUpload } from '@/apps/mail/utils/useChunkedUpload'
 import { userStore } from '@/apps/mail/stores/user'
 
-const { accountId, user: sessionUser } = userStore()
+const { accountId } = userStore()
 
 const user = inject('$user')
 const socket = inject('$socket')
@@ -92,9 +92,9 @@ const onFileSelected = async (event: Event) => {
 }
 
 const calendars = createResource({
-	url: 'suite.client.doctype.calendar.calendar.fetch_calendars',
+	url: 'suite.mail.doctype.calendar.calendar.fetch_calendars',
 	auto: true,
-	makeParams: () => ({ account: `${sessionUser}:${accountId}`, limit: 100 }),
+	makeParams: () => ({ account_id: accountId, limit: 100 }),
 	onSuccess: (data: { id: string }[]) => {
 		if (!calendarImport.calendar && data?.length) calendarImport.calendar = data[0].id
 	},

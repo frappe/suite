@@ -25,6 +25,7 @@ const _cookies = _getCookies()
 export const fullName = ref(_cookies.full_name || '')
 export const imageURL = ref(_cookies.user_image || '')
 export const systemUser = ref(_cookies.system_user === 'yes')
+export const jmapUser = ref(false)
 
 export const userResource = createResource({
   url: 'suite.api.account.get_logged_in_user',
@@ -39,6 +40,7 @@ export const userResource = createResource({
     if (data.full_name) fullName.value = data.full_name as string
     if (data.avatar) imageURL.value = data.avatar as string
     systemUser.value = ((data.roles as string[]) ?? []).includes('System Manager')
+    jmapUser.value = !!data.is_jmap_configured
   },
 })
 
@@ -99,5 +101,6 @@ export function useCurrentUser() {
         ? ((userResource.data.roles as string[]) ?? []).includes('System Manager')
         : systemUser.value,
     ),
+    jmapUser: computed(() => (userResource.data ? !!userResource.data.is_jmap_configured : jmapUser.value)),
   }
 }

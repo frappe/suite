@@ -61,20 +61,44 @@ export function createHistory({ snapshot, restore, applyOp, revertOp, maxSize = 
 			revertOp?.(entry.op)
 			index--
 		} else {
-			// Snapshot path: step back, restore the previous snapshot. The
-			// touches hint travels with the entry being undone.
+			// Snapshot path: step back to the state of the previous entry.
+			// The touches hint travels with the entry being undone.
 			const undoingTouches = entry.touches || null
 			index--
-			// The entry we land on might also be an op — but a snapshot
-			// undo is "restore to that point in time" regardless, so we
-			// only restore from snapshot entries. If we land on an op
-			// entry, the engine state is already coherent (we just
-			// reverted the op above; there's no separate state to restore).
 			if (stack[index].kind === 'snap') {
+				// Previous entry is itself a snapshot — restore it directly.
 				restore?.(stack[index].snap, { touches: undoingTouches })
+			} else {
+				// Previous entry is an op, which stores only a {before,after}
+				// diff — there is no full snapshot of that point to restore.
+				// Reconstruct it from the nearest preceding snapshot, then
+				// replay the intervening ops forward. Without this the
+				// snapshot mutation being undone would never be reverted (the
+				// engine would stay in its post-mutation state) — e.g. type
+				// into a cell (op) then bold it (snapshot): the first undo
+				// must remove the bold.
+				_rebuildTo(index)
 			}
 		}
 		return true
+	}
+
+	// Bring the engine to the exact state after stack[target] by restoring
+	// the closest snapshot at or before `target` and replaying every op
+	// between it and `target`. Used when a snapshot-undo lands on an op
+	// entry (op entries carry a diff, not a full restorable state).
+	//
+	// This full-restore + replay reverts to a clean reconstructed state; in
+	// collab mode it does not honour the per-cell `touches` optimisation for
+	// this (rarer) path, trading a touch of collab precision for correctness
+	// over the previous behaviour, which silently did nothing.
+	function _rebuildTo(target) {
+		let base = target
+		while (base >= 0 && stack[base].kind !== 'snap') base--
+		if (base >= 0) restore?.(stack[base].snap, { touches: null })
+		for (let k = base + 1; k <= target; k++) {
+			if (stack[k].kind === 'op') applyOp?.(stack[k].op)
+		}
 	}
 
 	function redo() {

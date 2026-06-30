@@ -35,6 +35,12 @@ export function useChartIntegration({
 	const chartEditId       = ref('')
 	const chartEditConfig   = ref(null)
 	const chartVersion      = ref(0)
+	// Bumped when the source data should be re-pulled: on refresh AND on any
+	// sheet cell change (index.vue's onCellChanged/onCellsChanged) — but NOT on
+	// move/resize/scroll. The overlay keys its matrix cache on this so dragging a
+	// chart over a 100k-row source doesn't re-materialise the matrix every frame,
+	// while edits to the source range still refresh the chart.
+	const chartDataVersion  = ref(0)
 	const selectedChartId   = ref('')
 
 	// One source of reactive truth — bumped on every engine mutation so
@@ -151,8 +157,8 @@ export function useChartIntegration({
 	// Refresh isn't strictly needed (charts re-derive reactively from the
 	// sheet engine) but the explicit "refresh" button is reassuring.
 	function onChartRefresh(id) {
-		// Force a version bump — overlay re-fetches the matrix.
-		chartVersion.value++
+		// Invalidate the overlay's matrix cache so it re-pulls fresh source data.
+		chartDataVersion.value++
 	}
 
 	function selectChart(id) { selectedChartId.value = id }
@@ -166,7 +172,7 @@ export function useChartIntegration({
 
 	return {
 		chartDialogOpen, chartInitialRange, chartEditId, chartEditConfig,
-		charts, selectedChartId, chartVersion,
+		charts, selectedChartId, chartVersion, chartDataVersion,
 		openInsert, openEdit,
 		onChartConfirm, onChartDelete, onChartMove, onChartResize, onChartRefresh,
 		selectChart, getMatrix,

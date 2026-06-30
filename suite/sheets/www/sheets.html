@@ -36,6 +36,8 @@
         sentry_dsn:         {{ sentry_dsn         | tojson }},
         sentry_environment: {{ sentry_environment | tojson }},
         sentry_release:     {{ sentry_release     | tojson }},
+        ai_assist_enabled:        {{ ai_assist_enabled        | tojson }},
+        ai_assist_can_configure:  {{ ai_assist_can_configure  | tojson }},
       },
     };
   </script>

@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "creation": "2026-06-22 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "model",
+  "api_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable AI Assist",
+   "default": "0"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Model",
+   "default": "claude-opus-4-8"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "Anthropic API Key"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-22 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Sheets",
+ "name": "Sheets AI Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

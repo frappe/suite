@@ -203,7 +203,7 @@ const breadcrumbs = computed(() => [
 ])
 
 const deleteAddressBook = createResource({
-	url: 'suite.client.doctype.address_book.address_book.delete_address_books',
+	url: 'suite.mail.doctype.address_book.address_book.delete_address_books',
 	makeParams: () => ({ account_id: store.accountId, ids: [addressBookName] }),
 	onSuccess: () => {
 		showDeleteAddressBook.value = false
@@ -220,7 +220,7 @@ const deleteAddressBook = createResource({
 const listView = useTemplateRef('listView')
 
 const addContacts = createResource({
-	url: 'suite.client.doctype.contact_card.contact_card.contact_card_add_to_address_book',
+	url: 'suite.mail.doctype.contact_card.contact_card.contact_card_add_to_address_book',
 	makeParams: (ids) => ({ account_id: store.accountId, ids, address_book_id: addressBookName }),
 	onSuccess: () => {
 		raiseToast(__('Contacts added.'))
@@ -231,7 +231,7 @@ const addContacts = createResource({
 })
 
 const removeContacts = createResource({
-	url: 'suite.client.doctype.contact_card.contact_card.contact_card_remove_from_address_book',
+	url: 'suite.mail.doctype.contact_card.contact_card.contact_card_remove_from_address_book',
 	makeParams: () => ({
 		account_id: store.accountId,
 		ids: Array.from(listView.value?.selections),

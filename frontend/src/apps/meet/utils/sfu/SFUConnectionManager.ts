@@ -218,15 +218,20 @@ export class SFUConnectionManager {
 					const participantId = (info.participantId ??
 						info.user_id ??
 						info.userId) as string;
+					const producerId = info.id as string;
+
+					if (this.hasConsumerForProducer(participantId, producerId)) {
+						continue;
+					}
 
 					console.log("Subscribing to existing producer:", {
-						producerId: info.id,
+						producerId,
 						participantId,
 						kind: info.kind,
 						isScreen: !!info.isScreen,
 					});
 					await this.mediaManager.subscribeToRemoteProducer({
-						producerId: info.id as string,
+						producerId,
 						participantId,
 						isScreen: !!info.isScreen,
 					});
@@ -259,15 +264,7 @@ export class SFUConnectionManager {
 					continue;
 				}
 
-				const existingConsumers =
-					this.mediaManager.consumerManager.getConsumersByParticipant(
-						event.participantId as string,
-					);
-				const alreadySubscribed = existingConsumers.some((c) => {
-					return c.consumer.producerId === event.producerId;
-				});
-
-				if (alreadySubscribed) {
+				if (this.hasConsumerForProducer(event.participantId, event.producerId)) {
 					continue;
 				}
 
@@ -280,6 +277,39 @@ export class SFUConnectionManager {
 				console.warn("Failed to process buffered producer:", error);
 			}
 		}
+	}
+
+	async resetReceiveSide(): Promise<void> {
+		this.transportManager.closeReceiveTransport();
+		this.mediaManager.consumerManager.clear();
+		this.mediaManager.processedConsumers.clear();
+		this.mediaManager.isScreenShareActive = false;
+		await this.createReceiveTransport();
+		await this.requestExistingProducers();
+		await this.flushBufferedProducers();
+	}
+
+	async resyncProducers(): Promise<void> {
+		await this.createReceiveTransport();
+		await this.requestExistingProducers();
+		await this.flushBufferedProducers();
+	}
+
+	async resyncAfterRecovery(reason: string): Promise<void> {
+		const result = await this.recoveryManager.recoverTransportIce(reason);
+		if (result === "failed" || result === "skipped") {
+			await this.resetReceiveSide();
+		}
+	}
+
+	private hasConsumerForProducer(participantId: string, producerId: string): boolean {
+		const existingConsumers =
+			this.mediaManager.consumerManager.getConsumersByParticipant(participantId);
+		return existingConsumers.some(
+			(c) =>
+				!c.consumer.closed &&
+				(c.producerId === producerId || c.consumer.producerId === producerId),
+		);
 	}
 
 	private setupManagerEventHandlers(): void {
@@ -352,7 +382,7 @@ export class SFUConnectionManager {
 
 	private setupSFUEventHandlers(): void {
 		this.sfuClient.on("reconnect", () => {
-			this.recoveryManager.recoverTransportIce("socket_reconnect");
+			void this.resyncAfterRecovery("socket_reconnect");
 		});
 
 		this.sfuClient.on("participant_joined", (data: ParticipantData) => {

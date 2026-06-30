@@ -38,13 +38,13 @@
         class="pointer-events-none"
         :icon-left="h(LucideWifiOff, { class: 'size-4' })"
       />
-      <div v-if="file?.doc?.share_count" class="icon">
-        <LucideGlobe2 v-if="file.doc.share_count === -2" class="size-4" />
+      <div v-if="file?.doc?.share_count" class="flex items-center">
+        <LucideGlobe2 v-if="file.doc.share_count === -2" class="size-4 text-ink-gray-6" />
         <LucideBuilding2
           v-else-if="file.doc.share_count === -1"
-          class="size-4"
+          class="size-4 text-ink-gray-6"
         />
-        <LucideUsers v-else-if="file.doc.share_count > 0" class="size-4" />
+        <LucideUsers v-else-if="file.doc.share_count > 0" class="size-4 text-ink-gray-6" />
       </div>
       <LucideStar
         v-if="file?.doc?.is_favourite"
@@ -110,6 +110,12 @@ import LucideUsers from '~icons/lucide/users'
 import LucideBuilding2 from '~icons/lucide/building-2'
 import LucideGlobe2 from '~icons/lucide/globe-2'
 import LucideStar from '~icons/lucide/star'
+import LucideLock from '~icons/lucide/lock'
+import LucideFile from '~icons/lucide/file'
+import LucideFileText from '~icons/lucide/file-text'
+import LucideFolderArchive from '~icons/lucide/folder-archive'
+import LucideFileUser from '~icons/lucide/file-user'
+import LucideTrash from '~icons/lucide/trash'
 import LucideMoreHorizontal from '~icons/lucide/more-horizontal'
 import LucideShare2 from '~icons/lucide/share-2'
 import LucideDownload from '~icons/lucide/download'
@@ -146,7 +152,7 @@ const props = defineProps({
   },
 })
 
-const isOffline = inject('isOffline')
+const isOffline = inject('isOffline', ref(false))
 
 const showVersions = defineModel('showVersions')
 const showTemplates = defineModel('showTemplates')

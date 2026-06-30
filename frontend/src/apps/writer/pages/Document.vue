@@ -12,8 +12,8 @@
     v-model:showTemplates="showTemplates" :file :document
     :breadcrumbs="file.doc.breadcrumbs?.map((k) => ({ ...k, label: k.file_name }))">
     <template #content v-if="document.doc?.settings && file.doc.write">
-      <UsersBar v-if="editor?.storage?.collaborationCaret?.users?.length" :users="editor.storage.collaborationCaret.users.filter(
-        (k) => k.id !== currentUserId.value,
+      <UsersBar v-if="editor?.storage?.collaborationCaret?.users?.filter((k) => k.id !== currentUserId).length" :users="editor.storage.collaborationCaret.users.filter(
+        (k) => k.id !== currentUserId,
       )
         " />
 
@@ -143,7 +143,11 @@ const globalSettings = !isLoggedIn.value
     name: currentUserId.value,
     immediate: true,
     transform: (doc) => {
-      doc.writer_settings = JSON.parse(doc.writer_settings) || {}
+      if (typeof doc.writer_settings === 'string') {
+        doc.writer_settings = JSON.parse(doc.writer_settings) || {}
+      } else if (!doc.writer_settings) {
+        doc.writer_settings = {}
+      }
       return doc
     },
   })

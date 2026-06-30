@@ -7,7 +7,6 @@ from frappe.utils import now
 
 
 def mark_as_viewed(entity):
-    return
     if (
         frappe.session.user == "Guest"
         or not frappe.has_permission(

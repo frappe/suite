@@ -1,4 +1,5 @@
 import { createResource } from 'frappe-ui'
+import { getAppSwitcherItems } from '@/apps/registry'
 import { toast } from '@/apps/drive/utils/toasts'
 import { useSessionStore } from '@/boot/session'
 
@@ -69,31 +70,11 @@ export const isAdmin = createResource({
   url: 'suite.drive.api.product.is_site_admin',
 })
 
-export const apps = createResource({
-  url: 'frappe.apps.get_apps',
-  cache: 'apps',
-  transform: (data) => {
-    let apps = [
-      {
-        name: 'frappe',
-        logo: '/assets/frappe/images/framework.png',
-        title: 'Desk',
-        route: '/app',
-      },
-    ]
-    data.map((app) => {
-      if (app.name === 'drive') return
-      apps.push({
-        name: app.name,
-        logo: app.logo,
-        title: app.title,
-        route: app.route,
-      })
-    })
-
-    return apps
+export const apps = {
+  get data() {
+    return getAppSwitcherItems('drive')
   },
-})
+}
 
 export const diskSettings = createResource({
   url: 'suite.drive.api.product.disk_settings',

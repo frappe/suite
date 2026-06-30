@@ -44,7 +44,7 @@
         label="Create" variant="solid" :icon-left="h(LucidePlus, { class: 'size-4' })"
         @click="newExternal($route.name === 'drive-Documents' ? 'Document' : 'Presentation')" />
       <Button v-if="button" :disabled="!button.entities.data?.length" :theme="button.theme || 'gray'"
-        @click="openListDialog('cta-' + $route.name.toLowerCase())">
+        @click="openListDialog('cta-' + $route.name.replace('drive-', '').toLowerCase())">
         <template #prefix>
           <component :is="button.icon" class="size-4" />
         </template>
@@ -63,7 +63,7 @@ const { systemUser } = useCurrentUser()
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { getRecents, getTrash, toggleFav } from '@/apps/drive/resources/files'
+import { getRecents, getTrash, getFavourites, toggleFav } from '@/apps/drive/resources/files'
 import { apps } from '@/apps/drive/resources/permissions'
 import { useRoute } from 'vue-router'
 import {
@@ -269,6 +269,12 @@ const isPrivate = computed(() => (isHomeContext() ? 1 : 0))
 
 // Constants
 const possibleButtons = [
+  {
+    route: 'drive-Favourites',
+    label: __('Clear'),
+    icon: LucideStar,
+    entities: getFavourites,
+  },
   {
     route: 'drive-Recents',
     label: __('Clear'),

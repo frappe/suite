@@ -4,11 +4,11 @@ from contextlib import contextmanager
 import frappe
 from frappe import _
 
-from suite.client.doctype.mailbox_settings.mailbox_settings import get_mailbox_automation_rules
-from suite.client.doctype.screened_email_address.screened_email_address import (
+from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_automation_rules
+from suite.mail.doctype.screened_email_address.screened_email_address import (
 	get_screened_email_addresses,
 )
-from suite.client.doctype.sieve_script.sieve_script import SieveScript
+from suite.mail.doctype.sieve_script.sieve_script import SieveScript
 from suite.mail.jmap import (
 	get_mailbox_id_by_name,
 	get_mailbox_id_by_role,
@@ -182,7 +182,7 @@ def backfill_mailbox_automation_rules() -> None:
 	could drop them. Idempotent: re-running just rewrites the same backup.
 	"""
 
-	from suite.client.doctype.mailbox_settings.mailbox_settings import (
+	from suite.mail.doctype.mailbox_settings.mailbox_settings import (
 		automation_rules_to_settings,
 		set_mailbox_settings,
 	)
@@ -396,7 +396,7 @@ def get_screening_folder_path(account: str) -> str:
 	Screening is not a standard JMAP role, so it is a plain named mailbox looked up by name.
 	"""
 
-	from suite.client.doctype.mailbox.mailbox import add_mailbox
+	from suite.mail.doctype.mailbox.mailbox import add_mailbox
 	from suite.mail.jmap.services.core import CoreService
 
 	user, account_id = parse_account(account)

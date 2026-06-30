@@ -101,6 +101,23 @@ export class TransportManager {
 		return this.transports.size;
 	}
 
+	closePeerTransports(roomId: string, peerId: string): void {
+		for (const [transportId, transportData] of this.transports) {
+			if (transportData.roomId !== roomId || transportData.peerId !== peerId)
+				continue;
+			try {
+				transportData.transport.close();
+			} catch (error) {
+				loggers.transportManager.warn(
+					'Error closing transport %s: %s',
+					transportId,
+					(error as Error).message,
+				);
+			}
+			this.transports.delete(transportId);
+		}
+	}
+
 	cleanup(): void {
 		for (const [transportId, transportData] of this.transports) {
 			try {

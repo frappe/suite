@@ -58,11 +58,14 @@ export function useSheetTabs({ sheet, formats, extras = [], getGrid, activeCell,
     onSwitch?.()
   }
 
-  function addSheet() {
-    const name = 'Sheet' + (sheet.getSheetNames().length + 1)
+  // name is optional: callers normally let us auto-name the next sheet, but
+  // undo/redo passes an explicit name to recreate the exact sheet it removed.
+  function addSheet(name) {
+    name = name || ('Sheet' + (sheet.getSheetNames().length + 1))
     sheet.addSheet(name)
     sheetNames.value = sheet.getSheetNames()
     switchSheet(name)
+    return name
   }
 
   // Returns true on success, false on collision / invalid name.

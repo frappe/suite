@@ -38,9 +38,13 @@ class Sheet(Document):
 		if self.sheets_data:
 			if not isinstance(self.sheets_data, str):
 				frappe.throw("sheets_data must be a string")
-			if effective_size(self.sheets_data) > MAX_SHEETS_DATA_BYTES:
+			size = effective_size(self.sheets_data)
+			if size > MAX_SHEETS_DATA_BYTES:
+				limit_mb = MAX_SHEETS_DATA_BYTES // (1024 * 1024)
+				size_mb = size / (1024 * 1024)
 				frappe.throw(
-					f"Sheet exceeds the {MAX_SHEETS_DATA_BYTES // (1024 * 1024)} MB limit"
+					f"This spreadsheet is {size_mb:.1f} MB, over the {limit_mb} MB limit. "
+					f"Remove some data or split it across multiple spreadsheets."
 				)
 			try:
 				json.loads(decode_sheets_data(self.sheets_data))

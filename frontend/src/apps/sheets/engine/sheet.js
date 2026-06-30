@@ -20,6 +20,11 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	const deps     = createDepsEngine()
 	let   current  = 'Sheet1'
 	const circular = new Set()
+	// One-shot { sheet: {maxRow,maxCol} } set by restore() from the unpacked
+	// payload, consumed by the first repopulate so the grid sizes itself without
+	// re-parsing every cell id. Any cell mutation clears it (the extent may have
+	// changed), so a stale value can never drive a later repopulate.
+	let _restoreBounds = null
 	// Optional resolver injected after construction (named ranges live in
 	// a separate engine; we don't want a hard import circle). Returns
 	// `{ sheet, start, end }` or null for unknown names.
@@ -125,6 +130,7 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	// ── Mutation ──────────────────────────────────────────────────────────────
 
 	function setCell(id, value, sheet = current) {
+		_restoreBounds = null   // extent may change → drop the load-time bounds hint
 		if (!sheets[sheet]) sheets[sheet] = {}
 		if (value === '' || value == null) delete sheets[sheet][id]
 		else sheets[sheet][id] = value
@@ -158,6 +164,7 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	// Returns the diff (before/after) so callers can decide whether to
 	// queue an undo op.
 	function batchSetCells(map, sheet = current, { replace = true } = {}) {
+		_restoreBounds = null
 		if (!sheets[sheet]) sheets[sheet] = {}
 		const sh = sheets[sheet]
 		const before = {}
@@ -296,9 +303,11 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	function switchSheet(name) {
 		if (!sheets[name]) { sheets[name] = {}; deps.rebuild({}, name) }
 		current = name
-		// Notify all cells so the canvas is fully redrawn for the new sheet
-		for (const id of Object.keys(sheets[current]))
-			onCellChanged?.(id, getDisplayValue(id, current), current)
+		// No per-cell notify here. The host repaints the whole target sheet
+		// via its own switch handler (useSheetTabs onSwitch → _repopulateGrid),
+		// so firing onCellChanged for every cell of the target sheet just made
+		// the canvas paint it twice — and ran condFormat.invalidate() once per
+		// cell — doubling tab-switch cost on large sheets.
 	}
 
 	function addSheet(name) {
@@ -364,6 +373,20 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	function getCurrentSheet()              { return current }
 	function getSheetNames()                { return Object.keys(sheets) }
 	function getRawData(sheet = current)    { return sheets[sheet] || {} }
+	// Live reference to every sheet's cell map. Read-only by contract — the
+	// save path packs straight from this instead of snapshot()'s deepClone,
+	// which on a 2M-cell sheet was ~1.9s of pure waste before serializing.
+	function getAllRaw()                    { return sheets }
+	// Load-time { maxRow, maxCol } for a sheet, or null if unknown. One-shot: the
+	// post-restore repopulate reads it once, then it's gone, so no later
+	// repopulate (after edits / row inserts that bypass setCell) can act on a
+	// stale extent. Lets that one repopulate skip re-deriving bounds from ids.
+	function consumeBounds(sheet = current) {
+		if (!_restoreBounds) return null
+		const b = _restoreBounds[sheet] || null
+		delete _restoreBounds[sheet]
+		return b
+	}
 
 	// ── Snapshot / restore (for history) ─────────────────────────────────────
 
@@ -374,7 +397,7 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 		}
 	}
 
-	function restore(snap) {
+	function restore(snap, bounds = null) {
 		_clearAllMemo()
 		for (const key of Object.keys(sheets)) delete sheets[key]
 		for (const [name, data] of Object.entries(snap.sheets)) {
@@ -382,6 +405,9 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 			deps.rebuild(data, name)
 		}
 		current = snap.current
+		// Bounds (from the load path) let the next repopulate skip its per-cell
+		// id re-parse. Set AFTER deps.rebuild so nothing above clears it.
+		_restoreBounds = bounds
 		// One bulk notification instead of N per-cell ones. With 5k rows × 5
 		// cols a per-cell loop was a ~750ms tax on every page load — each
 		// onCellChanged invalidated the cond-format cache, did a format
@@ -398,7 +424,7 @@ export function createSheet({ onCellChanged, onCellsChanged } = {}) {
 	return {
 		setCell, batchSetCells, getCell, getDisplayValue, getCellValue, getRangeValues,
 		switchSheet, addSheet, renameSheet, duplicateSheet, deleteSheet, reorderSheets,
-		getSheetNames, getCurrentSheet, getRawData,
+		getSheetNames, getCurrentSheet, getRawData, getAllRaw, consumeBounds,
 		insertRow, deleteRow, insertCol, deleteCol,
 		snapshot, restore,
 		setNamedRangeResolver,

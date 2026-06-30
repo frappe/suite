@@ -135,9 +135,9 @@ const handleSetResponse = (response: string, updateAllInstances: boolean) => {
 }
 
 const editEventInstance = createResource({
-	url: 'suite.client.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ patch }) => ({
-		account: store.account,
+		account_id: store.accountId,
 		master_id: calendarEvent.master_id,
 		recurrence_id: calendarEvent.recurrence_id,
 		patch,
@@ -152,7 +152,7 @@ const editEventInstance = createResource({
 const editEvent = createResource({
 	url: 'suite.calendar.api.edit_calendar_event',
 	makeParams: ({ patch }) => ({
-		account: store.account,
+		account_id: store.accountId,
 		id: calendarEvent.master_id,
 		...patch,
 		send_scheduling_messages: true,
@@ -190,9 +190,9 @@ const handleDeleteEvent = () =>
 	})
 
 const deleteEventInstance = createResource({
-	url: 'suite.client.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
+	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_event_instance',
 	makeParams: () => ({
-		account: store.account,
+		account_id: store.accountId,
 		master_id: calendarEvent.master_id,
 		recurrence_id: calendarEvent.recurrence_id,
 	}),
@@ -203,8 +203,8 @@ const deleteEventInstance = createResource({
 })
 
 const deleteEvent = createResource({
-	url: 'suite.client.doctype.calendar_event.calendar_event.delete_calendar_events',
-	makeParams: () => ({ account: store.account, ids: [calendarEvent.master_id] }),
+	url: 'suite.mail.doctype.calendar_event.calendar_event.delete_calendar_events',
+	makeParams: () => ({ account_id: store.accountId, ids: [calendarEvent.master_id] }),
 	onSuccess: () => {
 		emit('reloadEvents')
 		close()

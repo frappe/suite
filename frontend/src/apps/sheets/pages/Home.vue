@@ -49,20 +49,20 @@
              one switches to `subtle` so it inverts against the row. -->
         <div class="home-viewtoggle" role="tablist" aria-label="View mode">
           <Button
-            :variant="viewMode === 'grid' ? 'subtle' : 'ghost'"
-            size="sm" icon="grid"
-            tooltip="Grid view"
-            role="tab"
-            :aria-selected="viewMode === 'grid'"
-            @click="setViewMode('grid')"
-          />
-          <Button
             :variant="viewMode === 'list' ? 'subtle' : 'ghost'"
             size="sm" icon="list"
             tooltip="List view"
             role="tab"
             :aria-selected="viewMode === 'list'"
             @click="setViewMode('list')"
+          />
+          <Button
+            :variant="viewMode === 'grid' ? 'subtle' : 'ghost'"
+            size="sm" icon="grid"
+            tooltip="Grid view"
+            role="tab"
+            :aria-selected="viewMode === 'grid'"
+            @click="setViewMode('grid')"
           />
         </div>
         <Button variant="solid" @click="newSheet()">New Sheet</Button>
@@ -265,17 +265,17 @@ function _flashError(msg) {
   setTimeout(() => { if (errorMessage.value === msg) errorMessage.value = '' }, 4000)
 }
 
-// Persisted view preference. Default to grid because the previews are the
-// existing visual identity of the page; users who want density opt in.
+// Persisted view preference. Default to list for a dense, scannable
+// listing; users who prefer the card previews opt into grid.
 const VIEW_KEY = 'frappe_sheets:home_view_mode'
 const viewMode = ref(_readViewMode())
 
 function _readViewMode() {
   try {
     const v = localStorage.getItem(VIEW_KEY)
-    return v === 'list' || v === 'grid' ? v : 'grid'
+    return v === 'list' || v === 'grid' ? v : 'list'
   } catch (_) {
-    return 'grid'
+    return 'list'
   }
 }
 
@@ -494,7 +494,7 @@ async function duplicate(sheet) {
   align-items: center;
   gap: 16px;
   padding: 0 32px;
-  height: 60px;
+  height: 48px;
   background: var(--surface-base);
   border-bottom: 1px solid var(--outline-gray-2);
   flex-shrink: 0;

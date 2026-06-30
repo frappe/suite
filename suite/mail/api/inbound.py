@@ -7,8 +7,8 @@ from frappe import _
 from frappe.utils import cint, convert_utc_to_system_timezone, create_batch, now, random_string
 
 from suite.mail.api.auth import validate_user
-from suite.client.doctype.mail_message.mail_message import fetch_blobs, fetch_messages
-from suite.client.doctype.mail_sync_history.mail_sync_history import get_mail_sync_history
+from suite.mail.doctype.mail_message.mail_message import fetch_blobs, fetch_messages
+from suite.mail.doctype.mail_sync_history.mail_sync_history import get_mail_sync_history
 from suite.mail.jmap import get_mailbox_id_by_role, parse_account
 from suite.mail.utils import get_config
 from suite.mail.utils.dt import convert_to_utc
@@ -17,7 +17,7 @@ from suite.mail.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import get_user_personal_account
 
 if TYPE_CHECKING:
-	from suite.client.doctype.mail_sync_history.mail_sync_history import MailSyncHistory
+	from suite.mail.doctype.mail_sync_history.mail_sync_history import MailSyncHistory
 
 
 @frappe.whitelist(methods=["GET"])
@@ -38,7 +38,7 @@ def fetch_blob(blob_id: str, as_bytes: bool = False) -> str | bytes:
 	try:
 		account = get_user_personal_account(frappe.session.user, raise_exception=True)
 
-		from suite.client.doctype.mail_message.mail_message import fetch_blob as _fetch_blob
+		from suite.mail.doctype.mail_message.mail_message import fetch_blob as _fetch_blob
 
 		blob = _fetch_blob(account, blob_id)
 		return blob if as_bytes else base64.b64encode(blob).decode("utf-8")

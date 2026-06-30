@@ -3,18 +3,22 @@
 import { colLabel, parseCellId } from '../utils/cells.js'
 import { adjustFormula } from './formula-adjust.js'
 
-export function createClipboard({ sheet, formats, condFormat = null, validation = null }) {
+export function createClipboard({ sheet, formats, condFormat = null, validation = null, getPivotAt = null, createPivotFromPaste = null }) {
 	let _data    = null   // { 'dr,dc': rawValue }
 	let _fmts    = null   // { 'dr,dc': formatObj }
 	let _vals    = null   // { 'dr,dc': validationRule | null }
 	let _mode    = null   // 'copy' | 'cut'
 	let _srcSel  = null   // { r0, c0, r1, c1 } of the source
+	let _pivot   = null   // portable pivot config when the source overlaps a pivot
 
 	// ── Capture ───────────────────────────────────────────────────────────────
 
 	function _capture(sel, mode) {
 		const { r0, c0, r1, c1 } = sel
 		_data = {}; _fmts = {}; _vals = {}; _mode = mode; _srcSel = sel
+		// If the copied range overlaps a pivot, remember its config so a paste
+		// can mint a new live pivot instead of dead values (Google Sheets UX).
+		_pivot = getPivotAt ? getPivotAt(sel, sheet.getCurrentSheet()) : null
 		for (let r = r0; r <= r1; r++) {
 			for (let c = c0; c <= c1; c++) {
 				const key = `${r - r0},${c - c0}`
@@ -111,6 +115,18 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 		const anch = parseCellId(anchorId)
 		if (!anch) return
 		const sh = sheet.getCurrentSheet()
+
+		// A full paste of a copied pivot mints a new live pivot at the anchor
+		// instead of writing static cells — the pivot renders its own output, so
+		// writing the copied values first would just be overwritten (and would
+		// drag the source sheet's formats along). Paste-special (values/formulas/
+		// formats) skips this and pastes dead cells — the "just the numbers" path.
+		// Returns the (async) render promise so the caller can await it before
+		// snapshotting history.
+		if (_pivot && kind === 'all' && createPivotFromPaste) {
+			return createPivotFromPaste(_pivot, anchorId, sh)
+		}
+
 		const targets = _resolveTargets(anch, destSel)
 
 		// Two-pass: build the cell-value map first, hand it to batchSetCells in
@@ -168,17 +184,23 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 		// Only consume the cut buffer when we actually moved content.
 		if (_mode === 'cut' && _srcSel && (kind === 'all' || kind === 'values' || kind === 'formulas')) {
 			const { r0, c0, r1, c1 } = _srcSel
+			// Cells that just received the paste — when source and destination
+			// overlap (e.g. cut C2:C7, paste at C3:C8) the clear pass must NOT
+			// touch these or it wipes the content we just wrote. Only the source
+			// cells outside the destination should be vacated.
+			const destIds = new Set(targets.map(({ r, c }) => colLabel(c) + (r + 1)))
 			const clears = {}
 			for (let r = r0; r <= r1; r++)
 				for (let c = c0; c <= c1; c++) {
 					const id = colLabel(c) + (r + 1)
+					if (destIds.has(id)) continue
 					clears[id] = ''
 					if (formats)    formats.clear(id, sh)
 					if (validation) validation.clear(id, sh)
 				}
 			if (sheet.batchSetCells) sheet.batchSetCells(clears, sh, { replace: false })
 			else                     for (const id of Object.keys(clears)) sheet.setCell(id, '', sh)
-			_data = _fmts = _vals = _mode = _srcSel = null
+			_data = _fmts = _vals = _mode = _srcSel = _pivot = null
 		}
 		// Post-mutate snapshot — history.push() must run after the data has
 		// settled so undo restores the correct state.
@@ -242,7 +264,11 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 	function hasData() { return !!_data }
 	function getMode() { return _mode }
 	function getSourceSel() { return _data ? _srcSel : null }
-	function clear() { _data = _fmts = _vals = _mode = _srcSel = null }
+	// The pivot config captured on copy, if the source overlapped a pivot. Lets
+	// the paste dispatcher branch its undo bookkeeping (a pivot paste needs a
+	// full snapshot, not the cell-diff op).
+	function getPivotBlob() { return _data ? _pivot : null }
+	function clear() { _data = _fmts = _vals = _mode = _srcSel = _pivot = null }
 
-	return { copy, cut, paste, pasteFromText, hasData, getMode, getSourceSel, clear }
+	return { copy, cut, paste, pasteFromText, hasData, getMode, getSourceSel, getPivotBlob, clear }
 }

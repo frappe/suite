@@ -422,7 +422,7 @@ def get_user_accounts(user: str) -> list[str]:
 
 	has_permission_for_user(user)
 
-	from suite.client.doctype.user_account.user_account import fetch_user_accounts
+	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
 
 	return [a["name"] for a in fetch_user_accounts(user, limit=None)]
 
@@ -433,7 +433,7 @@ def get_user_account_ids(user: str) -> list[str]:
 
 	has_permission_for_user(user)
 
-	from suite.client.doctype.user_account.user_account import fetch_user_accounts
+	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
 
 	return [a["id"] for a in fetch_user_accounts(user, limit=None)]
 

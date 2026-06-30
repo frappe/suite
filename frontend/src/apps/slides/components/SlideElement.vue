@@ -117,7 +117,10 @@ const isRotatable = computed(() => {
 })
 
 const getTransform = (rotation) => {
-	if (element.value.type == 'text') return element.value.transform
+	if (element.value.type == 'text') {
+		const t = element.value.transform
+		return t && t !== 'none' ? t : ''
+	}
 	if (!isRotatable.value) return ''
 	return `rotate(${rotation}deg)`
 }

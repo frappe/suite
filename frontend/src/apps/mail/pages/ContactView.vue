@@ -271,7 +271,7 @@ const contact = createDocumentResource({
 })
 
 const deleteContact = createResource({
-	url: 'suite.client.doctype.contact_card.contact_card.delete_contact_cards',
+	url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
 	makeParams: () => ({ account_id: accountId, ids: [contact.doc.id] }),
 	onSuccess: () => {
 		showDeleteContact.value = false

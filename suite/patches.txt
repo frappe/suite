@@ -11,6 +11,8 @@ execute:frappe.db.delete("Mail Cluster Store")
 # --- writer ---
 suite.writer.patches.remove_frappe_writer_module
 
+suite.mail.patches.delete_server_module
+suite.mail.patches.delete_client_module
 suite.mail.patches.capture_user_outgoing_settings
 suite.mail.patches.rebuild_rate_limit_unique_constraint
 suite.mail.patches.refactor_account_settings
@@ -23,6 +25,7 @@ suite.drive.patches.turn_on_flat_disk
 suite.drive.patches.add_modified_field
 suite.drive.patches.add_drive_user_role
 suite.drive.patches.add_search_index
+suite.drive.patches.migrate_s3_url_prefix
 # --- slides ---
 suite.slides.doctype.presentation.patches.sanitize_attachment_urls
 suite.slides.doctype.presentation.patches.move_attachments_to_private_folder

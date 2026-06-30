@@ -1,5 +1,6 @@
 import { ref }          from 'vue'
 import { parseCellId }  from '../../utils/cells.js'
+import { unpackSheet }  from '../../utils/sheet-codec.js'
 import * as _defaultApi from '../../services/versions.js'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ function applyEngineState(saved, title,
   const sortFilter = getSortFilter()
   const grid       = getGrid()
   if (saved.formats)    formats?.restore(saved.formats)
-  if (saved.sheet)      sheet?.restore(saved.sheet)
+  if (saved.sheet)      sheet?.restore(unpackSheet(saved.sheet))
   if (saved.merge      && merge?.restore)      merge.restore(saved.merge)
   if (saved.comments   && comments?.restore)   comments.restore(saved.comments)
   if (saved.validation && validation?.restore) validation.restore(saved.validation)

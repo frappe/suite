@@ -40,7 +40,7 @@ watch(
     setPageBreadcrumbs(
       [
         {
-          label: __(route.name),
+          label: __(route.name.replace('drive-', '')),
           name: route.name,
           route: { name: route.name },
         },

@@ -133,6 +133,30 @@ function _formatWith(map, variant, d) {
   return _dtFmt(cfg[0], cfg[1]).format(d)
 }
 
+// Coerce a cell value into a Date for date/time/datetime formatting, or null
+// if it isn't a date. Handles three shapes:
+//   • a Date instance
+//   • a number / bare numeric string → epoch milliseconds (the serial model)
+//   • a date string like "2026-03-15 14:50:30.789345" or "2026-03-15"
+// For strings we normalise "YYYY-MM-DD HH:mm:ss.ffffff": space→T and trim
+// sub-millisecond digits (JS Date only takes 3), and pin a bare date to local
+// midnight so an ISO date-only value isn't parsed as UTC and shifted a day.
+function _toDate(value) {
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value
+  if (typeof value === 'number') return isNaN(value) ? null : new Date(value)
+  const s = String(value).trim()
+  if (s === '') return null
+  if (/^-?\d+(\.\d+)?$/.test(s)) return new Date(parseFloat(s))
+  let norm = s.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(norm)) norm += 'T00:00:00'
+  let d = new Date(norm)
+  if (isNaN(d.getTime())) d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
+
+// Types whose value is a date, not a plain number to round/group.
+const DATE_LIKE = new Set(['date', 'time', 'datetime'])
+
 export function applyNumberFmt(value, format) {
   if (!format) return value
   const { type, variant, decimals } = parseNumberFmt(format)
@@ -141,7 +165,7 @@ export function applyNumberFmt(value, format) {
   // handled by the engine's strict-arithmetic — see toNumStrict.
   if (type === 'text') return value == null ? '' : String(value)
   const n = parseFloat(value)
-  if (isNaN(n) && type !== 'date') return value
+  if (isNaN(n) && !DATE_LIKE.has(type)) return value
   if (type === 'number') {
     const loc = NUMBER_LOCALES[variant] !== undefined ? NUMBER_LOCALES[variant] : undefined
     return _numFmt(loc, decimals).format(n)
@@ -154,21 +178,18 @@ export function applyNumberFmt(value, format) {
   }
   if (type === 'percentage') return (n * 100).toFixed(decimals ?? 2) + '%'
   if (type === 'date') {
-    const ms = parseFloat(value)
-    if (isNaN(ms)) return value
-    const d = new Date(ms)
+    const d = _toDate(value)
+    if (!d) return value
     return _formatWith(DATE_FORMATTERS, variant, d) ?? d.toLocaleDateString()
   }
   if (type === 'time') {
-    const ms = parseFloat(value)
-    if (isNaN(ms)) return value
-    const d = new Date(ms)
+    const d = _toDate(value)
+    if (!d) return value
     return _formatWith(TIME_FORMATTERS, variant, d) ?? d.toLocaleTimeString()
   }
   if (type === 'datetime') {
-    const ms = parseFloat(value)
-    if (isNaN(ms)) return value
-    const d = new Date(ms)
+    const d = _toDate(value)
+    if (!d) return value
     // Combined variant is `<dateKey>_<timeKey>` (e.g. dmy_hm12). Falls back
     // to the locale's default for either half if a token is missing/unknown.
     const [dv, tv] = String(variant || '').split('_')

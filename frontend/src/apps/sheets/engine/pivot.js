@@ -37,37 +37,113 @@ function _keyParts(key) { return key.split('\x00') }
 // ── Pivot computation (pure) ─────────────────────────────────────────────────
 
 export function computePivot(config, getRangeValues) {
-  const { sourceSheet, sourceRange, rows, cols, values } = config
-  if (!sourceRange || !rows.length || !values.length) return []
+  return computePivotModel(config, getRangeValues)?.table ?? []
+}
 
+// Like computePivot but returns the full intermediate model alongside the
+// rendered table: { table, headers, dataRows, rowIdxs, colIdxs, valCols,
+// rowKeyList, colKeyList, hasColFields }. Drill-down needs the keys + source
+// rows to map an output cell back to the rows that fed it. Returns null when
+// there's nothing to pivot. computePivot() is a thin wrapper over this.
+export function computePivotModel(config, getRangeValues) {
+  const { sourceSheet, sourceRange } = config
+  if (!sourceRange) return null
   const [start, end] = sourceRange.includes(':') ? sourceRange.split(':') : [sourceRange, sourceRange]
   const data = getRangeValues(start, end, sourceSheet)
-  if (!data || data.length < 2) return []
+  if (!data || data.length < 2) return null
 
-  const headers = data[0].map(h => String(h ?? ''))
+  const plan = _planPivot(config, data[0])
+  if (!plan) return null
   const dataRows = data.slice(1).filter(r => r.some(v => v !== null && v !== undefined && v !== ''))
-  if (!dataRows.length) return []
+  if (!dataRows.length) return null
 
+  // Single pass: collect ordered keys AND fill aggregation buckets together,
+  // computing each row's keys once instead of once per loop (this was two full
+  // walks of every source row — doubled the work on a 100k-row sheet).
+  const acc = _newAccumulator()
+  for (const row of dataRows) _accumulate(acc, row, plan)
+  return _finishModel(acc, dataRows, plan)
+}
+
+// Async variant: reads the source range in row blocks and aggregates each
+// block single-pass, yielding to the event loop between blocks so building a
+// pivot over a 100k-row sheet doesn't freeze the UI. Same getRangeValues
+// contract as the sync version. `onYield` is awaited between blocks and may
+// return false to cancel (e.g. a newer recompute superseded this one).
+export async function computePivotModelAsync(config, getRangeValues, { blockRows = 5000, onYield } = {}) {
+  const { sourceSheet, sourceRange } = config
+  if (!sourceRange) return null
+  const [start, end] = sourceRange.includes(':') ? sourceRange.split(':') : [sourceRange, sourceRange]
+  const s = parseCellId(start), e = parseCellId(end)
+  if (!s || !e) return null
+  const r0 = Math.min(s.row, e.row), rEnd = Math.max(s.row, e.row)
+  const c0 = Math.min(s.col, e.col), c1 = Math.max(s.col, e.col)
+
+  const headerRow = (getRangeValues(cellId(r0, c0), cellId(r0, c1), sourceSheet) || [])[0]
+  const plan = _planPivot(config, headerRow)
+  if (!plan || rEnd <= r0) return null
+
+  const acc = _newAccumulator()
+  const dataRows = []
+  for (let br = r0 + 1; br <= rEnd; br += blockRows) {
+    const be = Math.min(br + blockRows - 1, rEnd)
+    const block = getRangeValues(cellId(br, c0), cellId(be, c1), sourceSheet) || []
+    for (const row of block) {
+      if (!row.some(v => v !== null && v !== undefined && v !== '')) continue
+      _accumulate(acc, row, plan)
+      dataRows.push(row)
+    }
+    if (onYield) { const ok = await onYield(); if (ok === false) return null }
+  }
+  if (!dataRows.length) return null
+  return _finishModel(acc, dataRows, plan)
+}
+
+// Resolve field names → column indices from the header row, validating that
+// there's something to pivot. Returns null when the config can't produce a table.
+function _planPivot(config, headerRowRaw) {
+  const { rows, cols, values } = config
+  if (!rows?.length || !values?.length || !headerRowRaw) return null
+  const headers = headerRowRaw.map(h => String(h ?? ''))
   const rowIdxs = rows.map(f => headers.indexOf(f)).filter(i => i >= 0)
   const colIdxs = (cols || []).map(f => headers.indexOf(f)).filter(i => i >= 0)
   const valCols = values
     .map(v => ({ idx: headers.indexOf(v.field), agg: v.agg || 'sum', field: v.field }))
     .filter(v => v.idx >= 0)
-  if (!valCols.length || !rowIdxs.length) return []
+  if (!valCols.length || !rowIdxs.length) return null
+  return { headers, rows, rowIdxs, colIdxs, valCols, hasColFields: colIdxs.length > 0 }
+}
 
-  // Collect ordered unique row/col keys
-  const rowKeyList = [], colKeyList = []
-  const rowKeySet = new Set(), colKeySet = new Set()
-  const hasColFields = colIdxs.length > 0
-
-  for (const row of dataRows) {
-    const rk = _makeKey(row, rowIdxs)
-    const ck = hasColFields ? _makeKey(row, colIdxs) : ''
-    if (!rowKeySet.has(rk)) { rowKeySet.add(rk); rowKeyList.push(rk) }
-    if (hasColFields && !colKeySet.has(ck)) { colKeySet.add(ck); colKeyList.push(ck) }
+function _newAccumulator() {
+  return {
+    buckets: new Map(),                                   // rk\x01ck\x01vi → [values]
+    rowKeyList: [], colKeyList: [],
+    rowKeySet: new Set(), colKeySet: new Set(),
   }
+}
 
-  // Sort keys: numeric-looking keys numerically, otherwise alphabetically.
+function _accumulate(acc, row, plan) {
+  const { rowIdxs, colIdxs, valCols, hasColFields } = plan
+  const rk = _makeKey(row, rowIdxs)
+  const ck = hasColFields ? _makeKey(row, colIdxs) : ''
+  if (!acc.rowKeySet.has(rk)) { acc.rowKeySet.add(rk); acc.rowKeyList.push(rk) }
+  if (hasColFields && !acc.colKeySet.has(ck)) { acc.colKeySet.add(ck); acc.colKeyList.push(ck) }
+  for (let vi = 0; vi < valCols.length; vi++) {
+    const key = `${rk}\x01${ck}\x01${vi}`
+    let arr = acc.buckets.get(key)
+    if (!arr) { arr = []; acc.buckets.set(key, arr) }
+    const raw = row[valCols[vi].idx]
+    if (raw !== null && raw !== undefined && raw !== '') {
+      const n = Number(raw)
+      arr.push(isNaN(n) ? raw : n)
+    }
+  }
+}
+
+function _finishModel(acc, dataRows, plan) {
+  const { headers, rows, rowIdxs, colIdxs, valCols, hasColFields } = plan
+  const { buckets, rowKeyList, colKeyList } = acc
+
   const _sortKeys = list => list.sort((a, b) => {
     const an = Number(a), bn = Number(b)
     if (!isNaN(an) && !isNaN(bn)) return an - bn
@@ -76,24 +152,7 @@ export function computePivot(config, getRangeValues) {
   _sortKeys(rowKeyList)
   if (hasColFields) _sortKeys(colKeyList)
 
-  // Build aggregation buckets  rk\x01ck\x01vi → [values]
-  const buckets = new Map()
-  for (const row of dataRows) {
-    const rk = _makeKey(row, rowIdxs)
-    const ck = hasColFields ? _makeKey(row, colIdxs) : ''
-    for (let vi = 0; vi < valCols.length; vi++) {
-      const key = `${rk}\x01${ck}\x01${vi}`
-      if (!buckets.has(key)) buckets.set(key, [])
-      const raw = row[valCols[vi].idx]
-      if (raw !== null && raw !== undefined && raw !== '') {
-        const n = Number(raw)
-        buckets.get(key).push(isNaN(n) ? raw : n)
-      }
-    }
-  }
-
   const get = (rk, ck, vi) => buckets.get(`${rk}\x01${ck}\x01${vi}`) || []
-
   const table = []
 
   // ── Header row ────────────────────────────────────────────────────────────
@@ -159,19 +218,62 @@ export function computePivot(config, getRangeValues) {
   }
   table.push(totalRow)
 
-  return table
+  return { table, headers, dataRows, rowIdxs, colIdxs, valCols, rowKeyList, colKeyList, hasColFields }
+}
+
+// Map a clicked pivot output cell (r, c) back to the source rows that feed it.
+// Returns { headers, rows } (rows = matching source data rows) or null if the
+// cell isn't a drillable value/total/row-label cell. Which rows belong to a
+// group depends only on the row-key ∩ col-key — not on which value field is
+// aggregated — so we match on those two and ignore the value index.
+export function pivotDrillDown(model, r, c) {
+  if (!model) return null
+  const { headers, dataRows, rowIdxs, colIdxs, valCols, rowKeyList, colKeyList, hasColFields } = model
+  const nRowFields = rowIdxs.length
+  const nData = rowKeyList.length
+
+  // Row 0 is the header; rows 1..nData are groups; the last row is the grand
+  // total (rk = null → every row group).
+  if (r < 1 || r > nData + 1) return null
+  const rk = r === nData + 1 ? null : rowKeyList[r - 1]
+
+  let ck = null            // null → every column group
+  let drillable = false
+  if (c < nRowFields) {
+    drillable = true                                 // row-label cell → whole row group
+  } else if (hasColFields) {
+    const cp = c - nRowFields
+    const groupCount = colKeyList.length * valCols.length
+    if (cp < groupCount) { ck = colKeyList[Math.floor(cp / valCols.length)]; drillable = true }
+    else if (cp < groupCount + valCols.length) drillable = true   // totals block → all columns
+  } else {
+    const cp = c - nRowFields
+    const width = valCols.length + (valCols.length > 1 ? 1 : 0)   // +1 for the multi-value grand total
+    if (cp >= 0 && cp < width) drillable = true
+  }
+  if (!drillable) return null
+
+  const rows = dataRows.filter(row =>
+    (rk === null || _makeKey(row, rowIdxs) === rk) &&
+    (ck === null || _makeKey(row, colIdxs) === ck))
+  return { headers, rows }
 }
 
 // ── Write pivot output to sheet ──────────────────────────────────────────────
 
-export function writePivotToSheet(table, outputSheet, setCell, clearSheet) {
-  clearSheet(outputSheet)
+// Write a computed pivot table into the sheet, offset by `anchor` (so several
+// pivots can coexist on one sheet at different origins). `clearRect` wipes only
+// the pivot's *previous* output rectangle (`prevExtent`, or nothing on the
+// first render) instead of the whole sheet, so a rebuild never erases a
+// neighbouring pivot or user data.
+export function writePivotToSheet(table, outputSheet, setCell, clearRect, anchor = { row: 0, col: 0 }, prevExtent = null) {
+  clearRect(outputSheet, prevExtent)
   for (let r = 0; r < table.length; r++) {
     for (let c = 0; c < table[r].length; c++) {
       const v = table[r][c]
       if (v === null || v === undefined || v === '') continue
       // Preserve numeric type so values sort/formula-reference correctly.
-      setCell(cellId(r, c), typeof v === 'number' ? v : String(v), outputSheet)
+      setCell(cellId(anchor.row + r, anchor.col + c), typeof v === 'number' ? v : String(v), outputSheet)
     }
   }
 }
@@ -194,9 +296,19 @@ export function createPivotEngine() {
 
   function add(config) {
     const id = config.id || _newId()
-    _pivots[id] = { ...config, id }
+    // anchor defaults go before the spread so an explicit anchor in `config`
+    // wins, while callers that pass none (and old configs) default to A1.
+    _pivots[id] = { anchorRow: 0, anchorCol: 0, ...config, id }
     _notify()
     return id
+  }
+
+  // Record the last-written output rectangle for a pivot. This is transient
+  // render state (recomputed on every render) — it is NOT persisted by
+  // snapshot(), so it never goes stale across reload/undo. Mutates without
+  // notifying since overlays read it via renderVersion, not pivotVersion.
+  function setExtent(id, extent) {
+    if (_pivots[id]) _pivots[id]._extent = extent
   }
 
   function update(id, config) {
@@ -219,14 +331,30 @@ export function createPivotEngine() {
     return Object.values(_pivots).some(p => p.sourceSheet === sheetName)
   }
 
-  function snapshot() { return { pivots: deepClone(_pivots), nextId: _nextId } }
+  // Strip the transient `_extent` render cache from each config so it's never
+  // persisted — a stale rectangle surviving reload/undo would mis-clear cells.
+  function snapshot() {
+    const pivots = {}
+    for (const [id, p] of Object.entries(_pivots)) {
+      const { _extent, ...rest } = p
+      pivots[id] = deepClone(rest)
+    }
+    return { pivots, nextId: _nextId }
+  }
 
   function restore(data) {
     if (!data) return
     _pivots = deepClone(data.pivots || {})
+    // Configs saved before anchors existed lack anchorRow/anchorCol; default
+    // them to A1. restore() bypasses add(), so it must default them itself.
+    // Use == null so a legitimately-stored 0 isn't re-defaulted.
+    for (const p of Object.values(_pivots)) {
+      if (p.anchorRow == null) p.anchorRow = 0
+      if (p.anchorCol == null) p.anchorCol = 0
+    }
     _nextId  = data.nextId  || 1
     _notify()
   }
 
-  return { add, update, remove, list, get, affectsPivot, snapshot, restore, setOnChange }
+  return { add, update, remove, list, get, affectsPivot, snapshot, restore, setOnChange, setExtent }
 }

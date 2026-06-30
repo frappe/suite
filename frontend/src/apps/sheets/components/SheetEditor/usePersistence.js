@@ -1,6 +1,7 @@
 import { ref } from 'vue'
-import { call }            from '../../utils/api.js'
-import { encodeForUpload } from '../../utils/compress.js'
+import { call }                  from '../../utils/api.js'
+import { encodeForUpload, isDecompressionSupported, decodeFromDownload } from '../../utils/compress.js'
+import { packSheet, packSheetChunked, unpackSheet, boundsOf } from '../../utils/sheet-codec.js'
 
 // `merge` and the view-state getters/setters are optional — they were missing
 // from earlier versions and their absence caused merged cells / column widths /
@@ -16,10 +17,15 @@ export function usePersistence({ sheet, formats, merge, comments, validation, co
   async function loadSheet(name) {
     loadError.value = null
     try {
-      const doc    = await call('suite.sheets.api.get_sheet', { name })
-      const saved  = JSON.parse(doc.sheets_data || '{}')
+      const canGz  = isDecompressionSupported()
+      const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 })
+      const plain  = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
+      const saved  = JSON.parse(plain || '{}')
       if (saved.formats)    formats.restore(saved.formats)
-      sheet.restore(saved.sheet ?? { sheets: { Sheet1: {} }, current: 'Sheet1' })
+      sheet.restore(
+        unpackSheet(saved.sheet) ?? { sheets: { Sheet1: {} }, current: 'Sheet1' },
+        boundsOf(saved.sheet),
+      )
       if (saved.merge      && merge?.restore)      merge.restore(saved.merge)
       if (saved.comments   && comments?.restore)   comments.restore(saved.comments)
       if (saved.validation && validation?.restore) validation.restore(saved.validation)
@@ -91,8 +97,15 @@ export function usePersistence({ sheet, formats, merge, comments, validation, co
     // attempts, racing with the user's keystrokes.
     let args
     try {
+      // Pack straight from live cell data — the packer builds a fresh compact
+      // structure, so it's an independent payload without snapshot()'s
+      // deepClone. The chunked packer yields to the event loop so a 2M-cell
+      // pack doesn't block input for seconds; the keepalive/unmount save can't
+      // afford to yield (the page may die first), so it packs synchronously.
+      const live   = { sheets: sheet.getAllRaw(), current: sheet.getCurrentSheet() }
+      const packed = keepalive ? packSheet(live) : await packSheetChunked(live)
       const sheetsData = JSON.stringify({
-        sheet:      sheet.snapshot(),
+        sheet:      packed,
         formats:    formats.snapshot(),
         merge:      merge?.snapshot?.()      ?? null,
         comments:   comments?.snapshot?.()   ?? null,

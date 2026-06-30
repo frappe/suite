@@ -338,7 +338,7 @@ export function useThreadActions(deps: {
 	})
 
 	const bulkDelete = createResource({
-		url: 'suite.client.doctype.mail_message.mail_message.bulk_delete',
+		url: 'suite.mail.doctype.mail_message.mail_message.bulk_delete',
 		makeParams: ({ names }: { names: string[] }) => ({ names }),
 	})
 

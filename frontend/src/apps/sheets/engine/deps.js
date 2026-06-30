@@ -145,8 +145,18 @@ export function createDepsEngine() {
 		for (const cellId of Object.keys(depMap[sheet] || {})) removeEdges(cellId, sheet)
 		// reverseDep[sheet] still holds *inbound* edges from *other* sheets'
 		// formulas. Don't reset it wholesale.
-		for (const [cellId, value] of Object.entries(sheetData || {})) {
-			register(cellId, value, sheet)
+		//
+		// Only formula cells (value starting with '=') create edges, so skip
+		// everything else without paying the per-cell register/removeEdges cost.
+		// Iterate with for-in instead of Object.entries to avoid allocating a
+		// 2M-entry pair array — that allocation + its GC was ~1.4s of the cold
+		// load on a 2M-cell sheet (the rest of the cells aren't formulas).
+		if (!sheetData) return
+		for (const cellId in sheetData) {
+			const value = sheetData[cellId]
+			if (typeof value === 'string' && value.charCodeAt(0) === 61 /* '=' */) {
+				register(cellId, value, sheet)
+			}
 		}
 	}
 

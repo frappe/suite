@@ -6,6 +6,7 @@ import {
 	templateList,
 	inReadonlyMode,
 	presentationTheme,
+	transformElements,
 } from '@/apps/slides/stores/presentation'
 import { resetFocus } from '@/apps/slides/stores/element'
 import { saveChanges, dirty, markDirty } from '@/apps/slides/stores/saving'
@@ -164,6 +165,8 @@ const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
 	if (toDuplicate || !index) index = slideIndex.value
 
 	const newSlide = getNewSlide(toDuplicate, layoutObj)
+
+	if (!toDuplicate) newSlide.elements = await transformElements(newSlide.elements)
 
 	insertSlide(newSlide, index)
 }

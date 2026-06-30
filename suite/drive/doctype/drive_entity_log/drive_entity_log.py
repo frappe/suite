@@ -1,8 +1,9 @@
 # Copyright (c) 2023, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
-# import frappe
+import frappe
 from frappe.model.document import Document
+from suite.drive.api.permissions import user_has_permission
 
 
 class DriveEntityLog(Document):

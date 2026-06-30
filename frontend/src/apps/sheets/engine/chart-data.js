@@ -59,6 +59,13 @@ function _cartesianOption(config, headerRow, dataRows, encoding, kind) {
 		type:      isLineish ? 'line' : kind,
 		stack:     stacked ? 'total' : undefined,
 		smooth:    !!config.options?.smooth,
+		// Big-data rendering: LTTB downsamples line/area to roughly the pixel
+		// width (visually identical, but plotting 113k points instead of ~1k
+		// was the chart's main render cost); large-mode batches bar/scatter.
+		// Both only engage past their thresholds, so small charts are unaffected.
+		sampling:       isLineish ? 'lttb' : undefined,
+		large:          (kind === 'scatter' || kind === 'bar') || undefined,
+		largeThreshold: 2000,
 		// Line/area normally hide point symbols for a cleaner look — but
 		// ECharts anchors per-point labels on the symbol, so symbol:'none'
 		// silently kills labels too. When labels are on, draw a small dot at

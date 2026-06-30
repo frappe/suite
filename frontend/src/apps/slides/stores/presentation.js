@@ -61,8 +61,15 @@ const getElementDimensions = async (el) => {
 	tempDiv.style.position = 'absolute'
 	tempDiv.style.visibility = 'hidden'
 	tempDiv.style.height = 'auto'
-	tempDiv.style.width = 'auto'
-	tempDiv.style.whiteSpace = 'pre'
+	tempDiv.style.lineHeight = el.lineHeight || '1.5'
+
+	if (el.width) {
+		tempDiv.style.width = `${el.width}px`
+		tempDiv.style.whiteSpace = 'pre-wrap'
+	} else {
+		tempDiv.style.width = 'auto'
+		tempDiv.style.whiteSpace = 'pre'
+	}
 
 	tempDiv.innerHTML = el.content || ''
 	document.body.appendChild(tempDiv)
@@ -81,23 +88,30 @@ const transformElements = async (elements) => {
 	const newEls = []
 
 	for (const el of elements) {
-		if ('transform' in el || el.type !== 'text') {
+		if (el.type !== 'text') {
 			newEls.push(el)
 			continue
 		}
 
-		const { width, height } = await getElementDimensions(el)
+		if (el.transform === 'translate(-50%, -50%)') {
+			const { width, height } = await getElementDimensions(el)
 
-		const newLeft = el.left + width / 2
-		const newTop = el.top + height / 2
-
-		newEls.push({
-			...el,
-			transform: 'translate(-50%, -50%)',
-			transformOrigin: 'center center',
-			left: newLeft,
-			top: newTop,
-		})
+			newEls.push({
+				...el,
+				transform: 'none',
+				transformOrigin: 'top left',
+				left: el.left - width / 2,
+				top: el.top - height / 2,
+			})
+		} else if (!('transform' in el)) {
+			newEls.push({
+				...el,
+				transform: 'none',
+				transformOrigin: 'top left',
+			})
+		} else {
+			newEls.push(el)
+		}
 	}
 
 	return newEls
@@ -321,6 +335,7 @@ export {
 	applyReverseTransition,
 	createPresentationResource,
 	presentationDoc,
+	transformElements,
 	unsyncedPresentationRecord,
 	isPublicPresentation,
 	slidesLength,

@@ -1,12 +1,19 @@
 import { COLORS, TOTAL_COLS } from '../constants.js'
 import { cellId } from '../../utils/cells.js'
 import { getTextWrap, isWrapText } from '../../utils/text-wrap.js'
+import { CHIP, chipFont, chipColor, chipMetrics } from '../chip-geometry.js'
+import { checkRule } from '../../engine/validation.js'
 
 export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
   // ── Public API ───────────────────────────────────────────────────────────────
 
-  function drawRegionCells(r0, c0, r1, c1, data, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor) {
+  // `getVal(id)` returns a cell's display string. It abstracts over the
+  // value source: the legacy eager `data` map (id => data[id]) or the lazy
+  // engine-backed lookup. The painter only ever touches cells in the visible
+  // region, so the lazy path computes display strings for ~hundreds of cells
+  // per frame instead of materialising the whole sheet up front.
+  function drawRegionCells(r0, c0, r1, c1, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getRightInset, getDiffFor) {
     ctx.textBaseline = 'middle'
     // Two-pass paint: every cell's background + decorations first, then
     // every cell's text. Splitting the passes means an upstream cell's
@@ -17,12 +24,12 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     for (let r = r0; r <= r1; r++) {
       if (rh(r) === 0) continue
       for (let c = c0; c <= c1; c++)
-        _paintBgAt(r, c, data, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor)
+        _paintBgAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor)
     }
     for (let r = r0; r <= r1; r++) {
       if (rh(r) === 0) continue
       for (let c = c0; c <= c1; c++)
-        _paintTextAt(r, c, data, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset)
+        _paintTextAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset, getValidation)
     }
   }
 
@@ -44,13 +51,13 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
 
   // Shared per-cell geometry + format lookup. Both paint phases call this,
   // returns null for slave cells (so the caller knows to skip).
-  function _cellGeom(r, c, data, getFormat, getMergeInfo, isSlave, getCondFormat) {
+  function _cellGeom(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat) {
     const id = cellId(r, c)
     if (isSlave && isSlave(id)) return null
     const merge = getMergeInfo && getMergeInfo(id)
     const spanC = merge ? merge.colSpan : 1
     const spanR = merge ? merge.rowSpan : 1
-    const val   = data[id]
+    const val   = getVal(id)
     const fmt   = getFormat ? getFormat(id) : {}
     const x = colX(c), y = rowY(r)
     let w = 0, h = 0
@@ -60,27 +67,45 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     return { id, val, fmt, condFmt, merge, x, y, w, h }
   }
 
-  function _paintBgAt(r, c, data, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor) {
-    const g = _cellGeom(r, c, data, getFormat, getMergeInfo, isSlave, getCondFormat)
+  function _paintBgAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getComment, getValidation, getCondFormat, getDiffFor) {
+    const g = _cellGeom(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat)
     if (!g) return
-    const { id, fmt, condFmt, merge, x, y, w, h } = g
+    const { id, val, fmt, condFmt, merge, x, y, w, h } = g
     _drawCellBackground(x, y, w, h, merge, fmt, condFmt)
     // Data-bar between background and text so values stay readable on top.
     if (condFmt?.dataBar) _drawDataBar(x, y, w, h, condFmt.dataBar)
     if (getDiffFor && getDiffFor(id)) _drawDiffOverlay(x, y, w, h)
-    if (getComment?.(id))    _drawCommentTriangle(x, y, w)
-    if (getValidation?.(id)) _drawDropdownArrow(x, y, w, h)
+    if (getComment?.(id)) _drawCommentTriangle(x, y, w)
+    const rule = getValidation?.(id)
+    if (rule) {
+      const has = val != null && String(val) !== ''
+      const invalid = has && !checkRule(rule, val).valid
+      if (rule.type === 'list') {
+        // List rule → a Sheets-style dropdown affordance. With a value it's a
+        // chip (which owns the cell text — the text pass skips it); empty,
+        // it's a plain caret so you know it's a dropdown.
+        if (has) _drawValidationChip(x, y, w, h, String(val), fmt, !invalid)
+        else     _drawDropdownArrow(x, y, w, h)
+      } else if (invalid) {
+        // Number / text-length rules have no dropdown (matching Sheets) — they
+        // only surface a marker when the current value breaks the rule.
+        _drawInvalidTriangle(x, y)
+      }
+    }
     // Icon belongs in the bg pass — it's drawn before text and shifts the
     // text rect right. The text pass computes the same inset to position
     // text correctly without re-drawing the icon.
     if (condFmt?.icon) _drawCellIcon(x, y, h, condFmt.icon)
   }
 
-  function _paintTextAt(r, c, data, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset) {
-    const g = _cellGeom(r, c, data, getFormat, getMergeInfo, isSlave, getCondFormat)
+  function _paintTextAt(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat, getRightInset, getValidation) {
+    const g = _cellGeom(r, c, getVal, getFormat, getMergeInfo, isSlave, getCondFormat)
     if (!g) return
     const { id, val, fmt, condFmt, x, y, w, h } = g
     if (val == null || val === '') return
+    // List-validation cells render their value inside the chip drawn in the
+    // bg pass — don't paint it a second time on top.
+    if (getValidation?.(id)?.type === 'list') return
     const s = String(val)
     const baseFmt = condFmt ? { ...fmt, ...condFmt } : fmt
     const efmt = { ...baseFmt, align: baseFmt.align || _autoAlign(s) }
@@ -102,7 +127,7 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
       const textW = ctx.measureText(s).width + 8
       const inside = drawW - rightInset
       if (textW > inside) {
-        const ext = _overflowExtension(r, c, efmt.align, textW - inside, data, getFormat, getMergeInfo, isSlave)
+        const ext = _overflowExtension(r, c, efmt.align, textW - inside, getVal, getFormat, getMergeInfo, isSlave)
         drawX -= ext.left
         drawW += ext.left + ext.right
       }
@@ -114,12 +139,12 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
   // pixels of extra room we can use. Stops at the first cell with a value,
   // an explicit background fill, or the grid edge — mirroring Sheets' rule
   // that bg-styled cells block overflow even when otherwise empty.
-  function _overflowExtension(r, c, align, needed, data, getFormat, getMergeInfo, isSlave) {
+  function _overflowExtension(r, c, align, needed, getVal, getFormat, getMergeInfo, isSlave) {
     const out = { left: 0, right: 0 }
     if (align === 'left' || align === 'center') {
       let nc = c + 1, want = align === 'center' ? needed / 2 : needed
       while (out.right < want && nc < TOTAL_COLS) {
-        if (_blocksOverflow(r, nc, data, getFormat, getMergeInfo, isSlave)) break
+        if (_blocksOverflow(r, nc, getVal, getFormat, getMergeInfo, isSlave)) break
         out.right += cw(nc); nc++
       }
     }
@@ -129,19 +154,19 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
       const want = align === 'center' ? (needed - out.right) : needed
       let nc = c - 1
       while (out.left < want && nc >= 0) {
-        if (_blocksOverflow(r, nc, data, getFormat, getMergeInfo, isSlave)) break
+        if (_blocksOverflow(r, nc, getVal, getFormat, getMergeInfo, isSlave)) break
         out.left += cw(nc); nc--
       }
     }
     return out
   }
 
-  function _blocksOverflow(r, c, data, getFormat, getMergeInfo, isSlave) {
+  function _blocksOverflow(r, c, getVal, getFormat, getMergeInfo, isSlave) {
     if (c < 0 || c >= TOTAL_COLS) return true
     const id = cellId(r, c)
     if (isSlave?.(id)) return true
     if (getMergeInfo?.(id)) return true
-    const v = data[id]
+    const v = getVal(id)
     if (v != null && v !== '') return true
     const f = getFormat ? getFormat(id) : null
     if (f?.backgroundColor) return true
@@ -291,16 +316,92 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.restore()
   }
 
+  // Sheets-style dropdown chip: a rounded pill holding the cell value with a
+  // caret on its right. Drawn in the bg pass; the matching click zone lives in
+  // canvas/index.js (both measure through chip-geometry so they stay aligned).
+  function _drawValidationChip(x, y, w, h, text, fmt, valid) {
+    const chipH = Math.min(h - 4, CHIP.maxH)
+    if (chipH < CHIP.minH) { _drawDropdownArrow(x, y, w, h); return }  // row too short for a pill
+    ctx.save()
+    _setCellFont(fmt)
+    const textColor = fmt.color || COLORS.cellText
+    const { offsetX, chipW } = chipMetrics(ctx, text, fmt, w)
+    const chipX = x + offsetX
+    const chipY = y + (h - chipH) / 2
+    // Pill — known options get a stable pastel colour; an out-of-list value
+    // stays neutral grey (it isn't one of the choices).
+    _roundRectPath(chipX, chipY, chipW, chipH, chipH / 2)
+    ctx.fillStyle = valid ? chipColor(text) : COLORS.chipFill
+    ctx.fill()
+    // Value — ellipsised to the room left of the caret so a long option
+    // doesn't get hard-clipped mid-glyph.
+    ctx.fillStyle   = textColor
+    ctx.textAlign   = 'left'
+    ctx.textBaseline = 'middle'
+    const textRoom = chipW - CHIP.innerPad - CHIP.caretW
+    ctx.fillText(_ellipsize(text, textRoom), chipX + CHIP.innerPad, chipY + chipH / 2)
+    // Caret
+    const mx = chipX + chipW - CHIP.caretW / 2, my = chipY + chipH / 2
+    ctx.fillStyle = COLORS.chipCaret
+    ctx.beginPath()
+    ctx.moveTo(mx - 3, my - 1.5)
+    ctx.lineTo(mx + 3, my - 1.5)
+    ctx.lineTo(mx, my + 2.5)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+    if (!valid) _drawInvalidTriangle(x, y)
+  }
+
+  // Trim `text` to fit `maxW` px (current ctx.font), appending an ellipsis.
+  function _ellipsize(text, maxW) {
+    if (maxW <= 0) return ''
+    if (ctx.measureText(text).width <= maxW) return text
+    const ell = '…'
+    let lo = 0, hi = text.length
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (ctx.measureText(text.slice(0, mid) + ell).width <= maxW) lo = mid
+      else hi = mid - 1
+    }
+    return lo > 0 ? text.slice(0, lo) + ell : ell
+  }
+
+  // Rounded-rect path with a roundRect fallback for older canvas engines.
+  function _roundRectPath(x, y, w, h, r) {
+    ctx.beginPath()
+    if (ctx.roundRect) { ctx.roundRect(x, y, w, h, r); return }
+    r = Math.min(r, w / 2, h / 2)
+    ctx.moveTo(x + r, y)
+    ctx.arcTo(x + w, y,     x + w, y + h, r)
+    ctx.arcTo(x + w, y + h, x,     y + h, r)
+    ctx.arcTo(x,     y + h, x,     y,     r)
+    ctx.arcTo(x,     y,     x + w, y,     r)
+    ctx.closePath()
+  }
+
+  // Red corner triangle marking a value that fails its validation rule.
+  // Anchored top-LEFT to stay clear of the top-right comment triangle, so a
+  // cell with both a note and a bad value shows two distinct markers.
+  function _drawInvalidTriangle(x, y) {
+    const sz = 7
+    ctx.save()
+    ctx.fillStyle = COLORS.invalidMark
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(x + sz, y)
+    ctx.lineTo(x, y + sz)
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+  }
+
   function _autoAlign(s) {
     return s !== '' && !isNaN(Number(s)) ? 'right' : 'left'
   }
 
   function _setCellFont(fmt) {
-    const weight = fmt.bold   ? 'bold'   : 'normal'
-    const style  = fmt.italic ? 'italic' : 'normal'
-    const fontPx = Math.max(8, Math.min(72, fmt.fontSize || 13))
-    const family = fmt.fontFamily || 'InterVar, Inter, ui-sans-serif, system-ui, sans-serif'
-    ctx.font      = `${style} ${weight} ${fontPx}px ${family}`
+    ctx.font      = chipFont(fmt)
     ctx.fillStyle = fmt.color || (fmt.hyperlink ? '#007BE0' : COLORS.cellText)
     ctx.textAlign = fmt.align || 'left'
   }

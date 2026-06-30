@@ -31,8 +31,9 @@ export default function useDocument(docId: MaybeRefOrGetter<string>) {
       doctype: 'Writer Document',
       name: doc.content_docname,
       transform(doc) {
-        if (doc.settings) doc.settings = JSON.parse(doc.settings)
-        else doc.settings = {}
+        if (typeof doc.settings === 'string') doc.settings = JSON.parse(doc.settings)
+        else if (!doc.settings) doc.settings = {}
+        return doc
       },
       methods: {
         newVersion: 'new_version',

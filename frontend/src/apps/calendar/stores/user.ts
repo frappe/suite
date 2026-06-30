@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { createResource } from 'frappe-ui'
 
@@ -47,15 +47,11 @@ export const userStore = defineStore('calendar-user', () => {
 		auto: true,
 	})
 
-	const account = computed(
-		() => userResource.data?.accounts?.find((a) => a.id === accountId.value)?.name,
-	)
-
 	const identities = createResource({
 		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account: account.value }),
+		makeParams: () => ({ account_id: accountId.value }),
 		cache: ['identities', accountId.value],
 	})
 
-	return { accountId, account, resolveAccount, userResource, identities }
+	return { accountId, resolveAccount, userResource, identities }
 })

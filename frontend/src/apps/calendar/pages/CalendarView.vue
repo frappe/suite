@@ -48,7 +48,7 @@ watch(
 )
 
 watch(
-	() => store.account,
+	() => store.accountId,
 	() => {
 		calendars.reload()
 		events.reload()
@@ -118,7 +118,7 @@ const getEventRole = (event) => {
 
 const calendars = createResource({
 	url: 'suite.calendar.api.get_calendars',
-	makeParams: () => ({ account: store.account }),
+	makeParams: () => ({ account_id: store.accountId }),
 	auto: true,
 	onSuccess: (data) => (visibleCalendars.value = data.map((cal) => cal.name)),
 	onError: (error) => raiseToast(error.message, 'error'),
@@ -133,7 +133,7 @@ const events = createResource({
 			.year(calendarRef.value?.currentYear)
 			.month(calendarRef.value?.currentMonth)
 		return {
-			account: store.account,
+			account_id: store.accountId,
 			from_date: date.startOf('month').subtract(37, 'day').toDate(),
 			to_date: date.endOf('month').add(37, 'day').toDate(),
 			time_zone: dayjs.tz.guess(),
@@ -215,7 +215,7 @@ const submitEvent = (sendEmail: boolean) => {
 }
 
 const editEvent = createResource({
-	url: 'suite.client.doctype.calendar_event.calendar_event.update_calendar_event',
+	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		...eventToBeUpdated,
 		id: eventToBeUpdated.master_id,

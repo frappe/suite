@@ -1,39 +1,6 @@
 <template>
   <Navbar />
   <div class="flex-grow overflow-y-auto bg-surface-base">
-    <!-- <div v-if="templates.data?.length" class="px-15 py-5 bg-surface-gray-1">
-      <h3 class=" text-base-semibold mb-3">Templates</h3>
-      <div class="flex gap-10 overflow-x-scroll p-1">
-        <div
-          v-for="template in templates.data"
-          class="cursor-pointer rounded w-48"
-          @click="
-            createDocument.submit(
-              { template: template.name },
-              {
-                onSuccess: (d) =>
-                  $router.push({
-                    name: 'Document',
-                    params: { id: d.name },
-                  }),
-              },
-            )
-          "
-        >
-          <div
-            class="aspect-[37/50] cursor-pointer overflow-hidden rounded-md dark:bg-gray-900 bg-surface-base w-48 p-3 shadow-lg transition-shadow hover:shadow-xl"
-          >
-            <div
-              class="prose prose-sm pointer-events-none w-[200%] origin-top-left scale-[.35] prose-p:my-1 md:w-[250%] md:scale-[.19]"
-              v-html="template.content"
-            ></div>
-          </div>
-          <div class="pt-3 pl-1 text-ink-gray-7 text-base">
-            {{ template.title }}
-          </div>
-        </div>
-      </div>
-    </div> -->
     <RoundedListView v-if="groupedDocuments" :groups="groupedDocuments" :resource="getDocuments" />
     <LoadingIndicator v-else-if="getDocuments.loading" class="size-5 mx-auto mt-32" />
     <ErrorPage v-else error="There was an error fetching the documents." />
@@ -44,6 +11,7 @@ import { computed } from 'vue'
 
 import { getDocuments } from '@/apps/writer/resources/'
 import RoundedListView from '@/apps/writer/components/RoundedListView.vue'
+import Navbar from '@/apps/writer/components/Navbar.vue'
 import { LoadingIndicator, usePageMeta } from 'frappe-ui'
 import ErrorPage from '@/apps/writer/components/ErrorPage.vue'
 
