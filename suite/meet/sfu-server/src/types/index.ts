@@ -493,6 +493,7 @@ declare module 'socket.io' {
 		userId: string;
 		userName: string;
 		meetingId: string;
+		site?: string;
 		isHost: boolean;
 		isCohost: boolean;
 		roomId?: string;

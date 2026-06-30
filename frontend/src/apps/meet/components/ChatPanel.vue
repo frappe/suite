@@ -32,7 +32,19 @@
 								:key="message.id"
 								class="text-sm text-gray-900 whitespace-pre-wrap [overflow-wrap:anywhere] leading-4"
 							>
-								<span v-html="linkify(message.message)"></span>
+								<template
+									v-for="(token, i) in tokenizeChatMessage(message.message)"
+									:key="i"
+								>
+									<a
+										v-if="token.type === 'link'"
+										:href="token.url"
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-blue-500 underline"
+									>{{ token.text }}</a>
+									<span v-else>{{ token.text }}</span>
+								</template>
 							</div>
 						</div>
 					</div>
@@ -84,6 +96,7 @@ import {
 	toRefs,
 	watch,
 } from "vue";
+import { tokenizeChatMessage } from "../utils/chatMessageTokens";
 import EmojiPicker from "./EmojiPicker.vue";
 
 interface ChatMessage {
@@ -218,14 +231,6 @@ function time(ts) {
 	} catch {
 		return "";
 	}
-}
-
-function linkify(text) {
-	const urlRegex = /(https?:\/\/[^\s]+)/g;
-	return text.replace(
-		urlRegex,
-		'<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-500 underline">$1</a>',
-	);
 }
 
 const showEmojiPicker = computed(() => {

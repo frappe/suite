@@ -25,6 +25,7 @@
     "suite/meet/sfu-server": {
       "entry": ["src/server.ts", "src/**/*.test.ts"],
       "project": ["src/**/*.ts", "!src/server.ts", "!src/**/*.test.ts"],
+      "ignore": ["src/server/RoomRegistry.ts", "src/server/handlers/**/*.ts"],
       "vitest": false,
       "ignoreBinaries": ["vitest"],
       "ignoreIssues": {

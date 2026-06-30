@@ -56,6 +56,7 @@
 import { Avatar } from "frappe-ui";
 import { computed } from "vue";
 import type { ParticipantPreview } from "../types";
+import { getInitials } from "../utils/text";
 
 interface Props {
 	participants: ParticipantPreview[];
@@ -87,13 +88,4 @@ const formattedNames = computed((): string => {
 		return `${names[0]}, ${names[1]} and ${names[2]}`;
 	return names.join(", ");
 });
-
-const getInitials = (name: string): string => {
-	if (!name) return "?";
-	return name
-		.split(" ")
-		.map((part) => part.charAt(0).toUpperCase())
-		.slice(0, 2)
-		.join("");
-};
 </script>
