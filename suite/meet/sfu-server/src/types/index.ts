@@ -174,7 +174,12 @@ export interface ClientToServerEvents {
 		callback: (response: ConsumerResponse) => void,
 	) => void;
 	close_producer: (
-		data: { producerId: string },
+		data: {
+			producerId: string;
+			reason?: string;
+			source?: string;
+			details?: Record<string, unknown>;
+		},
 		callback: (response: CloseProducerResponse) => void,
 	) => void;
 	pause_producer: (

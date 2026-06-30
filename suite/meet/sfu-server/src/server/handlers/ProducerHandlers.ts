@@ -43,8 +43,18 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 		socket.on('close_producer', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				const { producerId } = data;
+				const { producerId, reason, source, details } = data;
 				const result = deps.mediasoup.closeProducer(producerId);
+
+				loggers.socketHandler.info(
+					'close_producer peer=%s producer=%s isScreen=%s reason=%s source=%s details=%o',
+					socket.participantId || socket.userId,
+					producerId,
+					!!result.isScreen,
+					reason || 'unspecified',
+					source || 'unspecified',
+					details || {},
+				);
 
 				callback({ success: true, ...result });
 
@@ -54,6 +64,9 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 					participantId: socket.userId,
 					producerId,
 					isScreen: !!result.isScreen,
+					reason,
+					source,
+					details,
 				});
 
 				try {

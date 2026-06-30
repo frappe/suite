@@ -145,6 +145,12 @@ interface MediaHandlerLike {
 	cleanup: () => void;
 }
 
+type ScreenShareStopReason =
+	| "user-click"
+	| "track-ended"
+	| "publish-failed"
+	| "cleanup";
+
 function getMediaHandler(
 	manager: SFUMeetingManager | null,
 ): MediaHandlerLike | null {
@@ -191,6 +197,23 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				onCancel: () => resolve(false),
 			});
 		});
+
+	const getScreenShareStopMetadata = (
+		reason: ScreenShareStopReason,
+		extra: Record<string, unknown> = {},
+	) => {
+		const screenTrack = mediaState.screenShareStream?.getVideoTracks?.()[0];
+		return {
+			reason,
+			source: "screen-share",
+			details: {
+				trackId: screenTrack?.id,
+				trackReadyState: screenTrack?.readyState,
+				trackSettings: screenTrack?.getSettings?.(),
+				...extra,
+			},
+		};
+	};
 
 	const replacePublishedVideoTrack = async (
 		stream: MediaStream | null,
@@ -1060,40 +1083,56 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	};
 
+	const stopScreenShare = async (
+		reason: ScreenShareStopReason,
+		extra: Record<string, unknown> = {},
+	) => {
+		const metadata = getScreenShareStopMetadata(reason, extra);
+		const mediaHandler = getMediaHandler(sfuManager.value);
+		const sp = mediaHandler?.screenProducer;
+
+		mediaState.isScreenSharing = false;
+
+		if (sp?.id) {
+			sp.close?.();
+
+			if (sfuClient.isConnected()) {
+				sfuClient.closeProducer(sp.id, {
+					...metadata,
+					producerId: sp.id,
+				}).catch(() => {});
+			}
+		}
+
+		mediaHandler?.stopScreenShare();
+
+		const tracks = mediaState.screenShareStream?.getTracks?.();
+		if (tracks) {
+			for (const t of tracks) {
+				t.stop();
+			}
+		}
+		const selfId = currentUser.currentUser.value?.user_id as string;
+		if (selfId && mediaState.screenShareStreams) {
+			if (mediaState.screenShareStreams[selfId]) {
+				delete mediaState.screenShareStreams[selfId];
+			}
+		}
+		mediaState.screenShareStream = null;
+
+		if (sfuClient.isConnected()) {
+			sfuClient.sendScreenShare("stop_share", {
+				...metadata,
+				producerId: sp?.id,
+				stoppedAt: Date.now(),
+			});
+		}
+	};
+
 	const toggleScreenShare = async () => {
 		try {
 			if (mediaState.isScreenSharing) {
-				const mediaHandler = getMediaHandler(sfuManager.value);
-				if (mediaHandler) {
-					const sp = mediaHandler.screenProducer;
-					if (sp?.id) {
-						sp.close?.();
-
-						if (sfuClient.isConnected()) {
-							sfuClient.closeProducer(sp.id);
-						}
-					}
-					mediaHandler.stopScreenShare();
-				}
-
-				const tracks = mediaState.screenShareStream?.getTracks?.();
-				if (tracks) {
-					for (const t of tracks) {
-						t.stop();
-					}
-				}
-				mediaState.isScreenSharing = false;
-				const selfId = currentUser.currentUser.value?.user_id as string;
-				if (selfId && mediaState.screenShareStreams) {
-					if (mediaState.screenShareStreams[selfId]) {
-						delete mediaState.screenShareStreams[selfId];
-					}
-				}
-				mediaState.screenShareStream = null;
-
-				if (sfuClient.isConnected()) {
-					sfuClient.sendScreenShare("stop_share");
-				}
+				await stopScreenShare("user-click");
 			} else {
 				const hasOngoingRemoteShare =
 					(mediaState.activeScreenShareConsumers || []).length > 0;
@@ -1173,6 +1212,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					}
 				} catch (pubErr) {
 					console.error("Failed to publish screen share producer:", pubErr);
+					if (sfuClient.isConnected()) {
+						sfuClient.sendScreenShare("stop_share", {
+							reason: "publish-failed",
+							source: "screen-share",
+							details: {
+								message: (pubErr as Error)?.message,
+							},
+							stoppedAt: Date.now(),
+						});
+					}
 					mediaState.isScreenSharing = false;
 					mediaState.screenShareStream = null;
 					for (const t of screenStream.getTracks()) {
@@ -1183,7 +1232,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 				screenStream.getVideoTracks()[0].addEventListener("ended", () => {
 					if (mediaState.isScreenSharing) {
-						toggleScreenShare();
+						stopScreenShare("track-ended");
 					}
 				});
 

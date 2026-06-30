@@ -541,8 +541,11 @@ export class SFUClient {
 		})) as SFUConsumerResponse;
 	}
 
-	async closeProducer(producerId: string): Promise<unknown> {
-		return this.sendRequest("close_producer", { producerId });
+	async closeProducer(
+		producerId: string,
+		metadata: Record<string, unknown> = {},
+	): Promise<unknown> {
+		return this.sendRequest("close_producer", { producerId, ...metadata });
 	}
 
 	async pauseProducer(producerId: string): Promise<unknown> {
