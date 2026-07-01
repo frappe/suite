@@ -39,11 +39,6 @@ type CommitRequestEnvelope = {
 };
 
 type TestRelay = {
-	emitToTarget: (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => void;
 	enqueueCommitRequest: (
 		roomId: string,
 		joiningSenderIds: number[],
@@ -53,18 +48,28 @@ type TestRelay = {
 };
 
 async function main(): Promise<void> {
-	// We can't easily mock socket.io's `io`, so we exercise the batching
-	// via the public enqueueCommitRequest path indirectly. The relay
-	// exposes `clearRoom` for the flush test; batching itself is verified
-	// by mocking io.to(...) and listening for emit calls.
-
 	const sent: Array<{ room: string; senderId: number; epoch: number }> = [];
+	const hostSocket = {
+		id: 'host-socket',
+		participantId: 'host-1',
+		emit: (_event: string, envelope: CommitRequestEnvelope) => {
+			if (envelope.type === 'commit-request') {
+				sent.push({
+					room: 'meeting-1',
+					senderId: envelope.joiningSenderIds?.[0] ?? -1,
+					epoch: envelope.epochNumber ?? 0,
+				});
+			}
+		},
+	};
 	const fakeIo = {
 		sockets: {
 			adapter: {
-				rooms: new Map<string, Set<string>>(),
+				rooms: new Map<string, Set<string>>([
+					['meeting-1', new Set(['host-socket'])],
+				]),
 			},
-			sockets: new Map<string, { id: string; data: { roomId?: string } }>(),
+			sockets: new Map<string, unknown>([['host-socket', hostSocket]]),
 		},
 	} as never;
 
@@ -76,27 +81,12 @@ async function main(): Promise<void> {
 		]),
 	);
 	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
-	await roster.add('meeting-1', makeEntry(7, { isHost: true }));
+	await roster.add(
+		'meeting-1',
+		makeEntry(7, { participantId: 'host-1', isHost: true }),
+	);
 	relay.setRoster(roster);
 	const testRelay = relay as unknown as TestRelay;
-
-	// Patch relay internals so we can observe emitted commit-requests
-	// without spinning up a real socket.io server.
-	const originalEmit = testRelay.emitToTarget.bind(relay);
-	testRelay.emitToTarget = (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => {
-		if (envelope.type === 'commit-request') {
-			sent.push({
-				room: roomId,
-				senderId: envelope.joiningSenderIds?.[0] ?? -1,
-				epoch: envelope.epochNumber ?? 0,
-			});
-		}
-		originalEmit(roomId, participantId, envelope);
-	};
 
 	// Two rapid key-package events for the same room+epoch.
 	testRelay.enqueueCommitRequest('meeting-1', [9], 1);

@@ -48,11 +48,6 @@ type PendingCommitRequest = {
 };
 
 type TestRelay = {
-	emitToTarget: (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => void;
 	enqueueCommitRequest: (
 		roomId: string,
 		joiningSenderIds: number[],
@@ -86,12 +81,31 @@ function makeRelay(): {
 		committerSenderId: number;
 		joiningSenderIds: number[];
 	}> = [];
+	const makeSocket = (id: string, participantId: string) => ({
+		id,
+		participantId,
+		emit: (_event: string, envelope: CommitRequestEnvelope) => {
+			if (envelope.type === 'commit-request') {
+				sent.push({
+					room: 'meeting-1',
+					target: participantId,
+					committerSenderId: envelope.committerSenderId ?? -1,
+					joiningSenderIds: envelope.joiningSenderIds ?? [],
+				});
+			}
+		},
+	});
 	const fakeIo = {
 		sockets: {
 			adapter: {
-				rooms: new Map<string, Set<string>>(),
+				rooms: new Map<string, Set<string>>([
+					['meeting-1', new Set(['host-socket', 'alice-socket'])],
+				]),
 			},
-			sockets: new Map<string, { id: string; data: { roomId?: string } }>(),
+			sockets: new Map<string, unknown>([
+				['host-socket', makeSocket('host-socket', 'host-1')],
+				['alice-socket', makeSocket('alice-socket', 'alice-1')],
+			]),
 		},
 	} as never;
 	const relay = new E2EEEpochRelay(
@@ -114,22 +128,6 @@ function makeRelay(): {
 	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
 	relay.setRoster(roster);
 	const testRelay = relay as unknown as TestRelay;
-	const originalEmit = testRelay.emitToTarget.bind(relay);
-	testRelay.emitToTarget = (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => {
-		if (envelope.type === 'commit-request') {
-			sent.push({
-				room: roomId,
-				target: participantId,
-				committerSenderId: envelope.committerSenderId ?? -1,
-				joiningSenderIds: envelope.joiningSenderIds ?? [],
-			});
-		}
-		originalEmit(roomId, participantId, envelope);
-	};
 	return { relay, testRelay, roster, sent };
 }
 
@@ -137,7 +135,10 @@ async function main(): Promise<void> {
 	// -------- Test 1: batched joiner disconnects before window fires --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
-		await roster.add('meeting-1', makeEntry(7, { isHost: true }));
+		await roster.add(
+			'meeting-1',
+			makeEntry(7, { participantId: 'host-1', isHost: true }),
+		);
 		testRelay.enqueueCommitRequest('meeting-1', [13], 1);
 		relay.removePendingJoiner('meeting-1', 13);
 		await new Promise((resolve) => setTimeout(resolve, 400));
@@ -152,7 +153,10 @@ async function main(): Promise<void> {
 	// -------- Test 2: pending commit request loses its last joiner --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
-		await roster.add('meeting-1', makeEntry(7, { isHost: true }));
+		await roster.add(
+			'meeting-1',
+			makeEntry(7, { participantId: 'host-1', isHost: true }),
+		);
 		await testRelay.requestCommitFromHost('meeting-1', [13], 1);
 		relay.removePendingJoiner('meeting-1', 13);
 		await testRelay.redesignate('meeting-1', 1);
@@ -170,8 +174,14 @@ async function main(): Promise<void> {
 	// -------- Test 3: multiple joiners, one disconnects --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
-		await roster.add('meeting-1', makeEntry(7, { isHost: true, joinedAt: 1 }));
-		await roster.add('meeting-1', makeEntry(9, { joinedAt: 2 }));
+		await roster.add(
+			'meeting-1',
+			makeEntry(7, { participantId: 'host-1', isHost: true, joinedAt: 1 }),
+		);
+		await roster.add(
+			'meeting-1',
+			makeEntry(9, { participantId: 'alice-1', joinedAt: 2 }),
+		);
 		await testRelay.requestCommitFromHost('meeting-1', [13, 15], 1);
 		relay.removePendingJoiner('meeting-1', 13);
 		await testRelay.redesignate('meeting-1', 1);
@@ -186,7 +196,10 @@ async function main(): Promise<void> {
 	// -------- Test 4: current committer disconnects with no replacement --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
-		await roster.add('meeting-1', makeEntry(7, { isHost: true }));
+		await roster.add(
+			'meeting-1',
+			makeEntry(7, { participantId: 'host-1', isHost: true }),
+		);
 		testRelay.participantToSender.set(
 			'meeting-1',
 			new Map<string, number>([

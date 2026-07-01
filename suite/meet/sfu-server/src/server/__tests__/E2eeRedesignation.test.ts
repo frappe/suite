@@ -58,11 +58,6 @@ type CommitEnvelope = {
 };
 
 type TestRelay = {
-	emitToTarget: (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => void;
 	requestCommitFromHost: (
 		roomId: string,
 		joiningSenderIds: number[],
@@ -97,12 +92,42 @@ async function main(): Promise<void> {
 		membershipDeltaId: string;
 		joiningSenderIds: number[];
 	}> = [];
+	const sentBySocket: Array<{
+		socketId: string;
+		envelope: CommitRequestEnvelope;
+	}> = [];
+	const makeSocket = (id: string, participantId: string) => ({
+		id,
+		participantId,
+		emit: (_event: string, envelope: CommitRequestEnvelope) => {
+			sentBySocket.push({ socketId: id, envelope });
+			if (envelope.type === 'commit-request') {
+				sent.push({
+					room: 'meeting-1',
+					target: participantId,
+					committerSenderId: envelope.committerSenderId ?? -1,
+					epochNumber: envelope.epochNumber ?? 0,
+					nextEpochNumber: envelope.nextEpochNumber ?? 0,
+					membershipDeltaId: envelope.membershipDeltaId ?? '',
+					joiningSenderIds: envelope.joiningSenderIds ?? [],
+				});
+			}
+		},
+	});
 	const fakeIo = {
 		sockets: {
 			adapter: {
-				rooms: new Map<string, Set<string>>(),
+				rooms: new Map<string, Set<string>>([
+					['meeting-1', new Set(['host-socket', 'alice-socket', 'bob-socket'])],
+					['meeting-empty', new Set(['host-empty-socket'])],
+				]),
 			},
-			sockets: new Map<string, { id: string; data: { roomId?: string } }>(),
+			sockets: new Map<string, unknown>([
+				['host-socket', makeSocket('host-socket', 'host-1')],
+				['alice-socket', makeSocket('alice-socket', 'alice-1')],
+				['bob-socket', makeSocket('bob-socket', 'bob-1')],
+				['host-empty-socket', makeSocket('host-empty-socket', 'host-empty')],
+			]),
 		},
 	} as never;
 
@@ -110,6 +135,7 @@ async function main(): Promise<void> {
 		fakeIo,
 		new Map<string, Set<string>>([
 			['meeting-1', new Set(['host-socket', 'alice-socket', 'bob-socket'])],
+			['meeting-empty', new Set(['host-empty-socket'])],
 		]),
 		new Map<string, Map<string, number>>([
 			[
@@ -123,31 +149,20 @@ async function main(): Promise<void> {
 		]),
 	);
 	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
-	await roster.add('meeting-1', makeEntry(7, { isHost: true, joinedAt: 1 }));
-	await roster.add('meeting-1', makeEntry(9, { joinedAt: 2 }));
-	await roster.add('meeting-1', makeEntry(11, { joinedAt: 3 }));
+	await roster.add(
+		'meeting-1',
+		makeEntry(7, { participantId: 'host-1', isHost: true, joinedAt: 1 }),
+	);
+	await roster.add(
+		'meeting-1',
+		makeEntry(9, { participantId: 'alice-1', joinedAt: 2 }),
+	);
+	await roster.add(
+		'meeting-1',
+		makeEntry(11, { participantId: 'bob-1', joinedAt: 3 }),
+	);
 	relay.setRoster(roster);
 	const testRelay = relay as unknown as TestRelay;
-
-	const originalEmit = testRelay.emitToTarget.bind(relay);
-	testRelay.emitToTarget = (
-		roomId: string,
-		participantId: string,
-		envelope: CommitRequestEnvelope,
-	) => {
-		if (envelope.type === 'commit-request') {
-			sent.push({
-				room: roomId,
-				target: participantId,
-				committerSenderId: envelope.committerSenderId ?? -1,
-				epochNumber: envelope.epochNumber ?? 0,
-				nextEpochNumber: envelope.nextEpochNumber ?? 0,
-				membershipDeltaId: envelope.membershipDeltaId ?? '',
-				joiningSenderIds: envelope.joiningSenderIds ?? [],
-			});
-		}
-		originalEmit(roomId, participantId, envelope);
-	};
 
 	// -------- Test 0: no committer keeps request pending --------
 	await roster.add('meeting-empty', makeEntry(13, { joinedAt: 1 }));
@@ -233,6 +248,24 @@ async function main(): Promise<void> {
 	assert(
 		sent[3].committerSenderId === 7,
 		`fresh key-package should make host eligible again, got ${sent[3].committerSenderId}`,
+	);
+	sent.splice(0, sent.length);
+	await roster.add(
+		'meeting-1',
+		makeEntry(17, {
+			participantId: 'stale-host',
+			isHost: true,
+			joinedAt: 0,
+		}),
+	);
+	await testRelay.requestCommitFromHost('meeting-1', [19], 1);
+	assert(
+		(sent as { length: number }).length === 1,
+		`expected stale roster host to be pruned and live host to receive commit-request, got ${(sent as { length: number }).length}`,
+	);
+	assert(
+		sent[0].target === 'host-1',
+		`expected commit-request to target live host-1 after pruning stale-host, got ${sent[0].target}`,
 	);
 	relay.clearRoom('meeting-1');
 

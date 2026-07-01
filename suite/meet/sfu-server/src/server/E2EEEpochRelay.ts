@@ -470,7 +470,7 @@ export class E2EEEpochRelay {
 			...pending.removedSenderIds,
 			...pending.alreadyTried,
 		];
-		const picked = (await this.roster?.pickCommitter(roomId, exclude)) ?? null;
+		const picked = await this.pickReachableRosterCommitter(roomId, exclude);
 		if (!picked) {
 			console.warn(
 				'[DEBUG-e2ee] SFU: no eligible committer; keeping request pending',
@@ -1092,6 +1092,32 @@ export class E2EEEpochRelay {
 		});
 	}
 
+	private async pickReachableRosterCommitter(
+		roomId: string,
+		excludeSenderIds: number[],
+	): Promise<{
+		participantId: string;
+		senderId: number;
+		isHost: boolean;
+	} | null> {
+		const excluded = new Set(excludeSenderIds);
+		while (true) {
+			const picked =
+				(await this.roster?.pickCommitter(roomId, [...excluded])) ?? null;
+			if (!picked) return null;
+			if (this.canEmitToTarget(roomId, picked.participantId)) return picked;
+
+			console.warn('[DEBUG-e2ee] SFU: pruning unreachable roster committer', {
+				roomId,
+				participantId: picked.participantId,
+				senderId: picked.senderId,
+				isHost: picked.isHost,
+			});
+			await this.roster?.remove(roomId, picked.senderId);
+			excluded.add(picked.senderId);
+		}
+	}
+
 	private isEpochNumber(value: unknown): value is number {
 		return typeof value === 'number' && Number.isInteger(value) && value >= 1;
 	}
@@ -1194,10 +1220,19 @@ export class E2EEEpochRelay {
 		participantId: string,
 		data: E2eeEpochEnvelope,
 	): void {
-		const socket = this.findSocketByParticipantId(roomId, participantId);
+		const socket = this.canEmitToTarget(roomId, participantId);
 		if (!socket) return;
-		if (!this.fullAccessSockets.get(roomId)?.has(socket.id)) return;
 		socket.emit('e2ee:epoch', data);
+	}
+
+	private canEmitToTarget(
+		roomId: string,
+		participantId: string,
+	): TypedSocket | null {
+		const socket = this.findSocketByParticipantId(roomId, participantId);
+		if (!socket) return null;
+		if (!this.fullAccessSockets.get(roomId)?.has(socket.id)) return null;
+		return socket;
 	}
 
 	private emitToFullAccessParticipants(
