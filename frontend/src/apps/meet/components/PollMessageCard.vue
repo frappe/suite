@@ -1,44 +1,51 @@
 <template>
     <div class="border border-gray-200 rounded-lg p-3">
-        <div class="flex items-start gap-2 mb-3 text-gray-900 font-medium">
-            <lucide-bar-chart-2 class="w-4 h-4 mt-0.5 text-gray-900 shrink-0" />
-            <h4 class="text-sm leading-tight">{{ livePoll.question }}</h4>
-        </div>
+        <div class="mb-4">
+    <h3 class="text-base font-semibold text-gray-900 leading-snug">{{ livePoll.question }}</h3>
+</div>
         
         <div class="space-y-2">
             <button
-                v-for="option in livePoll.options"
-                :key="option.id"
-                @click="handleVote(option.id)"
-                :disabled="hasVoted"
-                class="relative w-full text-left rounded-md overflow-hidden border border-gray-200 transition-colors focus:outline-none bg-gray-50"
-                :class="{ 
-                    'hover:border-gray-400 hover:bg-gray-100 cursor-pointer': !hasVoted,
-                    'border-gray-900 ring-1 ring-gray-900': localVotedOption === option.id,
-                    'opacity-75 cursor-default': hasVoted && localVotedOption !== option.id
-                }"
-            >
+    v-for="option in livePoll.options"
+    :key="option.id"
+    @click="handleVote(option.id)"
+    :disabled="hasVoted"
+    class="relative w-full text-left rounded-full overflow-hidden transition-colors focus:outline-none"
+    :class="{ 
+        'hover:bg-gray-200 cursor-pointer bg-gray-100': !hasVoted,
+        'bg-purple-100': hasVoted && localVotedOption === option.id,
+        'bg-gray-100 cursor-default': hasVoted && localVotedOption !== option.id
+    }"
+>
                 <div 
-                    class="absolute inset-y-0 left-0 bg-gray-200 transition-all duration-500 ease-out"
-                    :style="{ width: `${getPercentage(option.votes)}%` }"
-                ></div>
+    class="absolute inset-y-0 left-0 transition-all duration-500 ease-out"
+    :class="hasVoted && localVotedOption === option.id ? 'bg-purple-200' : 'bg-gray-200'"
+    :style="{ width: `${getPercentage(option.votes)}%` }"
+></div>
                 
-                <div class="relative px-3 py-2 flex justify-between items-center text-sm z-10">
-                    <span class="font-medium text-gray-900 truncate pr-2">
-                        {{ option.text }}
-                    </span>
-                    <span class="text-gray-600 text-xs shrink-0 font-medium">
-                        {{ getPercentage(option.votes) }}% 
-                        <span class="text-gray-400 font-normal">({{ option.votes }})</span>
-                    </span>
-                </div>
+                <div class="relative px-4 py-2.5 flex justify-between items-center text-sm z-10">
+    <div class="flex items-center gap-2 truncate pr-2">
+        <span class="font-medium text-gray-900">
+            {{ option.text }}
+        </span>
+        <lucide-circle-check-big 
+            v-if="hasVoted && localVotedOption === option.id" 
+            class="w-3 h-3 text-gray-800 shrink-0" 
+        />
+    </div>
+    
+    <div class="flex items-center gap-2 shrink-0">
+        <span class="text-gray-600 text-sm font-medium" v-if="hasVoted">
+            {{ option.votes }} {{ option.votes === 1 ? 'vote' : 'votes' }} • {{ getPercentage(option.votes) }}%
+        </span>
+    </div>
+</div>
             </button>
         </div>
 
-        <div class="mt-3 text-xs text-gray-500 flex justify-between items-center">
-            <span>Live Poll</span>
-            <span>{{ totalVotes }} {{ totalVotes === 1 ? 'vote' : 'votes' }}</span>
-        </div>
+        <div class="mt-4 text-sm text-gray-600">
+    {{ totalVotes }} {{ totalVotes === 1 ? 'vote' : 'votes' }}
+</div>
     </div>
 </template>
 
