@@ -435,6 +435,10 @@ export class E2EEEpochRelay {
 			existing.membershipDeltaId = membershipDeltaId;
 			existing.membershipDeltaHash = membershipDeltaHash;
 			existing.rosterHash = membershipDeltaHash;
+			if (joiningSenderIds.length > 0) {
+				existing.alreadyTried = [];
+				existing.attempts = 0;
+			}
 			await this.persistPendingCommitRequest(roomId, existing);
 			await this.tryAssignAndEmit(roomId, existing);
 			return;

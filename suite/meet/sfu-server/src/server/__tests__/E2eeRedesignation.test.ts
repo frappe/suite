@@ -75,6 +75,16 @@ type TestRelay = {
 		fromSenderId: number,
 		payload: CommitEnvelope,
 	) => Promise<void>;
+	relayKeyPackage: (
+		roomId: string,
+		fromParticipantId: string,
+		fromSenderId: number,
+		payload: {
+			type: string;
+			epochNumber: number;
+			keyPackage: string;
+		},
+	) => Promise<void>;
 };
 
 async function main(): Promise<void> {
@@ -208,6 +218,21 @@ async function main(): Promise<void> {
 	assert(
 		(sent as { length: number }).length === 3,
 		`expected no further commit-requests after MAX_REDESIGNATIONS, got ${(sent as { length: number }).length}`,
+	);
+
+	await testRelay.relayKeyPackage('meeting-1', 'joiner-13', 13, {
+		type: 'key-package',
+		epochNumber: 1,
+		keyPackage: Buffer.from([4, 5, 6]).toString('base64'),
+	});
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	assert(
+		(sent as { length: number }).length === 4,
+		`expected fresh key-package to restart admission after exhausted retries, got ${(sent as { length: number }).length}`,
+	);
+	assert(
+		sent[3].committerSenderId === 7,
+		`fresh key-package should make host eligible again, got ${sent[3].committerSenderId}`,
 	);
 	relay.clearRoom('meeting-1');
 
