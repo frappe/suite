@@ -354,7 +354,8 @@ export class SFUClient {
 			this.connectionDetails.codecStrategy = normalizeCodecStrategy(
 				response.codec_strategy || this.connectionDetails.codecStrategy,
 			);
-			this.connectionDetails.e2eeRequired = Boolean(response.e2ee_required);
+			this.connectionDetails.e2eeRequired =
+				this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
 
 			this.signalChannel.updateAuth(response.auth_token);
 

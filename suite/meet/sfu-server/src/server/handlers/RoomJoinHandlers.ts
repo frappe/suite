@@ -52,12 +52,14 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					participantId,
 				);
 				socket.senderId = senderId;
-				await deps.e2eeRoster.add(scopedRoomId, {
-					participantId,
-					senderId,
-					isHost: Boolean(socket.isHost),
-					joinedAt: Date.now(),
-				});
+				if (!socket.e2eeRequired) {
+					await deps.e2eeRoster.add(scopedRoomId, {
+						participantId,
+						senderId,
+						isHost: Boolean(socket.isHost),
+						joinedAt: Date.now(),
+					});
+				}
 				await deps.e2eeEpochRelay.retryPendingCommitRequests(scopedRoomId);
 
 				const existingPeer = deps.mediasoup
@@ -138,7 +140,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					e2ee,
 				});
 				callback({ success: true, senderId: socket.senderId });
-				requestEpochKeyPackageAfterJoin(
+				void requestEpochKeyPackageAfterJoin(
 					socket,
 					deps,
 					getRoomId(socket),
@@ -234,27 +236,41 @@ function enforceE2EEJoinPolicy(
 	socket.e2eeReady = true;
 }
 
-function requestEpochKeyPackageAfterJoin(
+async function requestEpochKeyPackageAfterJoin(
 	socket: Socket,
 	deps: HandlerDeps,
 	roomId: string,
 	participantId: string,
-): void {
+): Promise<void> {
 	if (socket.scope !== 'full' || !socket.e2eeRequired) return;
 	const epochNumber = deps.e2eeEpochRelay.getCurrentEpochNumber(roomId);
+	const admittedMembers = await deps.e2eeRoster.list(roomId);
 	console.log('[DEBUG-e2ee] SFU: requestEpochKeyPackageAfterJoin (post-ack)', {
 		roomId,
 		participantId,
 		isHost: socket.isHost,
 		assignedSenderId: socket.senderId,
 		epochNumber,
+		admittedMemberCount: admittedMembers.length,
 	});
-	if (deps.registry.getFullAccessSockets().get(roomId)?.size === 1) {
+	if (admittedMembers.length === 0) {
+		if (!socket.isHost) {
+			deps.e2eeEpochRelay.notifyEncryptionHostNeeded(
+				roomId,
+				participantId,
+				epochNumber,
+			);
+			return;
+		}
 		deps.e2eeEpochRelay.requestGenesisFromParticipant(roomId, participantId);
-		return;
-	}
-	if (socket.isHost) {
-		deps.e2eeEpochRelay.requestKeyPackages(roomId, epochNumber, 'enable');
+		if (socket.senderId !== undefined) {
+			deps.e2eeEpochRelay.requestKeyPackagesExceptSender(
+				roomId,
+				socket.senderId,
+				epochNumber,
+				'join',
+			);
+		}
 		return;
 	}
 	deps.e2eeEpochRelay.requestKeyPackageFromParticipant(

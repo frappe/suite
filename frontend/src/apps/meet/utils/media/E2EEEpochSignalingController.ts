@@ -141,6 +141,12 @@ export class E2EEEpochSignalingController {
 			genesis.epochNumber,
 			identity.signingKeyPair.privateKey,
 		);
+		this.deps.sfuClient.sendE2EEEpochEnvelope({
+			type: "ack",
+			fromParticipantId: userId,
+			fromSenderId: senderId,
+			epochNumber: genesis.epochNumber,
+		});
 		this.clearJoinStatus();
 	}
 
@@ -151,6 +157,7 @@ export class E2EEEpochSignalingController {
 			new CustomEvent("meet:e2ee-join-status", {
 				detail: {
 					status: data.status,
+					reason: data.reason,
 					epochNumber: data.epochNumber,
 					message: data.message,
 				},
@@ -426,6 +433,15 @@ export class E2EEEpochSignalingController {
 			!activeEpoch ||
 			activeEpoch.epochNumber !== commitEnvelope.previousEpochNumber
 		) {
+			if (
+				activeEpoch?.epochNumber === commitEnvelope.epochNumber &&
+				this.deps.sfuClient.getOwnSenderId() === commitEnvelope.fromSenderId
+			) {
+				console.log(
+					"[DEBUG-e2ee] processCommit: ignoring reflected self-authored commit",
+				);
+				return;
+			}
 			console.warn("[DEBUG-e2ee] processCommit: epoch mismatch, abort");
 			return;
 		}

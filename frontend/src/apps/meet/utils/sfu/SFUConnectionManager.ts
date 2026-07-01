@@ -17,6 +17,7 @@ import type { SFURecoveryManager } from "./SFURecoveryManager";
 interface SFUProducerEvent {
 	producerId: string;
 	participantId: string;
+	kind?: string;
 	isScreen?: boolean;
 }
 
@@ -402,6 +403,7 @@ export class SFUConnectionManager {
 		this.sfuClient.on("producer_created", async (data: unknown) => {
 			const d = data as SFUProducerEvent;
 			if (d.participantId === this.getCurrentUserId()) return;
+			this.updateParticipantMediaStateFromProducer(d);
 
 			if (
 				this.initialSyncInProgress ||
@@ -604,6 +606,22 @@ export class SFUConnectionManager {
 				this.eventHandlers.onActiveSpeakerChanged(d.participantIds);
 			}
 		});
+	}
+
+	private updateParticipantMediaStateFromProducer(event: SFUProducerEvent): void {
+		if (!event.participantId) return;
+		if (event.participantId === this.getCurrentUserId()) return;
+		if (event.kind === "audio") {
+			this.participantManager.updateMediaState(event.participantId, {
+				audioEnabled: true,
+			});
+			return;
+		}
+		if (event.kind === "video" && !event.isScreen) {
+			this.participantManager.updateMediaState(event.participantId, {
+				videoEnabled: true,
+			});
+		}
 	}
 
 	private ensureRef(obj: unknown): { value: unknown } {

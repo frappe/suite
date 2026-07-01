@@ -574,13 +574,6 @@ export class TransportManager {
 						remoteSenderId,
 						mediaType,
 					);
-					if (rawConsumerParams.producerId) {
-						const label = `e2ee-perf|${rawConsumerParams.producerId}`;
-						console.timeLog(label, "receiver-transform-setup-done", {
-							senderId: remoteSenderId,
-							mediaType,
-						});
-					}
 					if (mediaType === "video") {
 						void this.requestConsumerKeyFrameBurst(
 							consumer.id,

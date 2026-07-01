@@ -678,6 +678,19 @@ describe("E2EE signaling payloads", () => {
 		expect(client.connectionDetails.e2eeRequired).toBe(true);
 	});
 
+	it("does not downgrade local e2ee requirement during token refresh", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "tok-2",
+			expires_in: 3600,
+			codec_strategy: "svc",
+			e2ee_required: false,
+		});
+		const client = createClient();
+		client.connectionDetails.e2eeRequired = true;
+		await client.refreshToken();
+		expect(client.connectionDetails.e2eeRequired).toBe(true);
+	});
+
 	it("setE2EERequired updates connectionDetails for the realtime-event flow", () => {
 		const client = createClient();
 		client.connectionDetails.e2eeRequired = false;

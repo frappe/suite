@@ -80,6 +80,13 @@ type TestRelay = {
 			keyPackage: string;
 		},
 	) => Promise<void>;
+	recordAck: (
+		roomId: string,
+		fromParticipantId: string,
+		fromSenderId: number,
+		payload: { type: string; epochNumber: number },
+		isHost?: boolean,
+	) => Promise<void>;
 };
 
 async function main(): Promise<void> {
@@ -96,9 +103,14 @@ async function main(): Promise<void> {
 		socketId: string;
 		envelope: CommitRequestEnvelope;
 	}> = [];
-	const makeSocket = (id: string, participantId: string) => ({
+	const makeSocket = (
+		id: string,
+		participantId: string,
+		overrides: Record<string, unknown> = {},
+	) => ({
 		id,
 		participantId,
+		...overrides,
 		emit: (_event: string, envelope: CommitRequestEnvelope) => {
 			sentBySocket.push({ socketId: id, envelope });
 			if (envelope.type === 'commit-request') {
@@ -123,10 +135,19 @@ async function main(): Promise<void> {
 				]),
 			},
 			sockets: new Map<string, unknown>([
-				['host-socket', makeSocket('host-socket', 'host-1')],
+				[
+					'host-socket',
+					makeSocket('host-socket', 'host-1', { isHost: true, senderId: 7 }),
+				],
 				['alice-socket', makeSocket('alice-socket', 'alice-1')],
 				['bob-socket', makeSocket('bob-socket', 'bob-1')],
-				['host-empty-socket', makeSocket('host-empty-socket', 'host-empty')],
+				[
+					'host-empty-socket',
+					makeSocket('host-empty-socket', 'host-empty', {
+						isHost: true,
+						senderId: 7,
+					}),
+				],
 			]),
 		},
 	} as never;
@@ -164,25 +185,34 @@ async function main(): Promise<void> {
 	relay.setRoster(roster);
 	const testRelay = relay as unknown as TestRelay;
 
-	// -------- Test 0: no committer keeps request pending --------
-	await roster.add('meeting-empty', makeEntry(13, { joinedAt: 1 }));
+	// -------- Test 0: host genesis ack admits the host and retries pending joins --------
 	await testRelay.requestCommitFromHost('meeting-empty', [13], 1);
 	assert(
 		(sent as { length: number }).length === 0,
-		`expected no commit-request without an eligible committer, got ${(sent as { length: number }).length}`,
+		`expected pending request to wait before host ack, got ${(sent as { length: number }).length}`,
 	);
-	await roster.add(
+	await testRelay.recordAck(
 		'meeting-empty',
-		makeEntry(7, { participantId: 'host-empty', isHost: true, joinedAt: 2 }),
+		'host-empty',
+		7,
+		{ type: 'ack', epochNumber: 1 },
+		true,
 	);
-	await relay.retryPendingCommitRequests('meeting-empty');
 	assert(
 		(sent as { length: number }).length === 1,
-		`expected pending commit-request to retry after member joins, got ${(sent as { length: number }).length}`,
+		`expected admitted host to receive pending commit-request, got ${(sent as { length: number }).length}`,
 	);
 	assert(
 		sent[0].target === 'host-empty',
-		`expected retry to target host-empty, got ${sent[0].target}`,
+		`expected admitted host-empty to receive commit-request, got ${sent[0].target}`,
+	);
+	assert(
+		(await roster.get('meeting-empty', 7))?.participantId === 'host-empty',
+		'expected host ack to add host to roster',
+	);
+	assert(
+		(await roster.get('meeting-empty', 7))?.isHost === true,
+		'expected host ack to preserve host committer priority',
 	);
 	relay.clearRoom('meeting-empty');
 	sent.splice(0, sent.length);
@@ -266,6 +296,18 @@ async function main(): Promise<void> {
 	assert(
 		sent[0].target === 'host-1',
 		`expected commit-request to target live host-1 after pruning stale-host, got ${sent[0].target}`,
+	);
+	assert(
+		(await roster.get('meeting-1', 19)) === undefined,
+		'pending joiner should not be in roster before ack',
+	);
+	await testRelay.recordAck('meeting-1', 'joiner-19', 19, {
+		type: 'ack',
+		epochNumber: 2,
+	});
+	assert(
+		(await roster.get('meeting-1', 19))?.participantId === 'joiner-19',
+		'acked joiner should be promoted into roster',
 	);
 	relay.clearRoom('meeting-1');
 

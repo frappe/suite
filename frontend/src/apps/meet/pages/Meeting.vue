@@ -306,15 +306,29 @@ const e2eeJoinPendingMessage = ref("");
 
 function handleE2EEJoinStatus(event: Event): void {
 	const detail = (event as CustomEvent).detail as
-		| { status?: string; message?: string }
+		| { status?: string; reason?: string; message?: string }
 		| undefined;
 	if (detail?.status === "pending") {
-		e2eeJoinPendingMessage.value =
-			detail.message ||
-			"Waiting for an encrypted participant to admit you to the E2EE session.";
+		e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail);
 		return;
 	}
 	e2eeJoinPendingMessage.value = "";
+}
+
+function getE2EEJoinPendingMessage(detail: {
+	reason?: string;
+	message?: string;
+}): string {
+	if (detail.reason === "waiting-for-host") {
+		return (
+			detail.message ||
+			"This encrypted meeting needs the host to join before others can enter."
+		);
+	}
+	return (
+		detail.message ||
+		"Waiting for someone already in the encrypted meeting to let you in."
+	);
 }
 
 // --- Guest session ---

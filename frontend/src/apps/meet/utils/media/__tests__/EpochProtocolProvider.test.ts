@@ -121,6 +121,53 @@ describe("TsMlsEpochProtocolProvider", () => {
 		expect([...bob.meetingSecret]).toEqual([...carol.meetingSecret]);
 	});
 
+	it("lets existing members process add-member commits for later joiners", async () => {
+		const provider = new TsMlsEpochProtocolProvider();
+		const alice = await provider.createGenesisEpoch({
+			groupId: "meeting-vscl-sabe-ykvp",
+			userId: "alice@example.com",
+			deviceId: "alice-laptop",
+			senderId: 7,
+			signingPubKey,
+		});
+		const bobKeyPackage = await provider.generateKeyPackage({
+			groupId: "meeting-vscl-sabe-ykvp",
+			userId: "bob@example.com",
+			deviceId: "bob-phone",
+			senderId: 9,
+			signingPubKey,
+		});
+		const addBob = await provider.addMember(
+			alice.state,
+			bobKeyPackage.publicPackage,
+		);
+		const bob = await provider.joinFromWelcome(
+			addBob.welcome,
+			bobKeyPackage.publicPackage,
+			bobKeyPackage.privatePackage,
+			addBob.state.ratchetTree,
+		);
+		const carolKeyPackage = await provider.generateKeyPackage({
+			groupId: "meeting-vscl-sabe-ykvp",
+			userId: "carol@example.com",
+			deviceId: "carol-laptop",
+			senderId: 11,
+			signingPubKey,
+		});
+
+		const addCarol = await provider.addMember(
+			addBob.state,
+			carolKeyPackage.publicPackage,
+		);
+		const bobAfterCarol = await provider.processCommit(bob.state, addCarol.commit);
+
+		expect(addCarol.epochNumber).toBe(3);
+		expect(bobAfterCarol.epochNumber).toBe(3);
+		expect([...bobAfterCarol.meetingSecret]).toEqual([
+			...addCarol.meetingSecret,
+		]);
+	});
+
 	it("creates a genesis epoch with members and welcomes them all in one commit", async () => {
 		const provider = new TsMlsEpochProtocolProvider();
 		const bobMember = {

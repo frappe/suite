@@ -150,7 +150,11 @@ export class TsMlsEpochProtocolProvider implements EpochProtocolProvider {
 		);
 		const commit = await createCommit(
 			{ state, cipherSuite },
-			{ extraProposals: addProposals, ratchetTreeExtension: true },
+			{
+				extraProposals: addProposals,
+				ratchetTreeExtension: true,
+				wireAsPublicMessage: true,
+			},
 		);
 		commit.consumed.forEach(zeroOutUint8Array);
 		if (!commit.welcome) {
@@ -233,7 +237,11 @@ export class TsMlsEpochProtocolProvider implements EpochProtocolProvider {
 		}));
 		const commit = await createCommit(
 			{ state, cipherSuite },
-			{ extraProposals: addProposals, ratchetTreeExtension: true },
+			{
+				extraProposals: addProposals,
+				ratchetTreeExtension: true,
+				wireAsPublicMessage: true,
+			},
 		);
 		commit.consumed.forEach(zeroOutUint8Array);
 		if (!commit.welcome) {
@@ -260,7 +268,11 @@ export class TsMlsEpochProtocolProvider implements EpochProtocolProvider {
 		};
 		const commit = await createCommit(
 			{ state, cipherSuite },
-			{ extraProposals: [removeProposal], ratchetTreeExtension: true },
+			{
+				extraProposals: [removeProposal],
+				ratchetTreeExtension: true,
+				wireAsPublicMessage: true,
+			},
 		);
 		commit.consumed.forEach(zeroOutUint8Array);
 		return {

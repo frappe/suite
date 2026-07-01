@@ -326,6 +326,21 @@ export class E2EEHandshakeController {
 			keyVersion: genesis.epochNumber,
 			signingPrivateKey: identity.signingKeyPair.privateKey,
 		});
+		this.acknowledgeEpoch(genesis.epochNumber);
+	}
+
+	private acknowledgeEpoch(epochNumber: number): void {
+		const fromParticipantId = this.ownParticipantId();
+		const fromSenderId = this.sfuClient.getOwnSenderId?.();
+		if (!fromParticipantId || fromSenderId === null || fromSenderId === undefined) {
+			return;
+		}
+		this.sfuClient.sendE2EEEpochEnvelope({
+			type: "ack",
+			fromParticipantId,
+			fromSenderId,
+			epochNumber,
+		});
 	}
 
 	setMeetingContext(

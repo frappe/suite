@@ -488,6 +488,7 @@ export type E2eeEpochResyncRequest = {
 export type E2eeEpochJoinStatus = {
 	type: 'join-status';
 	status: 'pending';
+	reason?: 'waiting-for-admitter' | 'waiting-for-host';
 	epochNumber: number;
 	message: string;
 };

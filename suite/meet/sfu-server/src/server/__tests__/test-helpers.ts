@@ -195,6 +195,7 @@ interface ManagerHarness {
 	io: MockServer;
 	mediasoup: ReturnType<typeof createMockMediasoupManager>;
 	authManager: ReturnType<typeof createMockAuthManager>;
+	roster: E2eeRosterStore;
 	connect(socket: MockSocket): void;
 	createSocket(overrides?: Partial<TypedSocket>): MockSocket;
 }
@@ -237,5 +238,5 @@ export function createManager(): ManagerHarness {
 		return socket;
 	};
 
-	return { manager, io, mediasoup, authManager, connect, createSocket };
+	return { manager, io, mediasoup, authManager, roster, connect, createSocket };
 }

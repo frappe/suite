@@ -24,6 +24,7 @@ function emitJoin(
 		isGuest?: boolean;
 		audioEnabled?: boolean;
 		videoEnabled?: boolean;
+		e2ee?: { enabled?: boolean; capability?: { supported?: boolean } };
 	} = {},
 ): void {
 	socket.fire(
@@ -40,6 +41,7 @@ function emitJoin(
 				audio_enabled: opts.audioEnabled ?? true,
 				video_enabled: opts.videoEnabled ?? true,
 			},
+			e2ee: opts.e2ee,
 		},
 		() => {},
 	);
@@ -137,6 +139,165 @@ describe('SocketHandlerManager characterization', () => {
 		expect(socket.emitCalls.some((c) => c.event === 'participant_joined')).toBe(
 			false,
 		);
+	});
+
+	it('join_room does not add pending encrypted non-host joiners to the e2ee roster', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-joiner',
+			userId: 'joiner-1',
+			e2eeRequired: true,
+			isHost: false,
+		});
+
+		emitJoin(socket, {
+			userId: 'joiner-1',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		expect(socket.senderId).toBeTypeOf('number');
+		expect(await harness.roster.get('room-1', socket.senderId ?? -1)).toBe(
+			undefined,
+		);
+	});
+
+	it('join_room tells a lone encrypted non-host to wait for the host', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-returning-member',
+			userId: 'returning-member',
+			e2eeRequired: true,
+			isHost: false,
+		});
+
+		emitJoin(socket, {
+			userId: 'returning-member',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		expect(socket.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'join-status',
+				status: 'pending',
+				reason: 'waiting-for-host',
+				message:
+					'This encrypted meeting needs the host to join before others can enter.',
+			}),
+		});
+	});
+
+	it('join_room asks a lone encrypted host to start encryption with genesis', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-returning-host',
+			userId: 'host-1',
+			e2eeRequired: true,
+			isHost: true,
+		});
+
+		emitJoin(socket, {
+			userId: 'host-1',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		expect(socket.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'genesis-request',
+				epochNumber: 1,
+				message: 'Starting encryption for this meeting.',
+			}),
+		});
+	});
+
+	it('join_room lets the host start encryption after a non-host is already waiting', async () => {
+		const harness = createManager();
+		const nonHost = connectFullSocket(harness, {
+			id: 'sock-waiting-member',
+			userId: 'waiting-member',
+			e2eeRequired: true,
+			isHost: false,
+		});
+		emitJoin(nonHost, {
+			userId: 'waiting-member',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		nonHost.emitCalls.length = 0;
+		const host = connectFullSocket(harness, {
+			id: 'sock-returning-host-after-member',
+			userId: 'host-1',
+			e2eeRequired: true,
+			isHost: true,
+		});
+		emitJoin(host, {
+			userId: 'host-1',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		expect(host.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'genesis-request',
+				epochNumber: 1,
+			}),
+		});
+		expect(host.emitCalls).not.toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({ type: 'key-package-request' }),
+		});
+		expect(nonHost.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'key-package-request',
+				epochNumber: 1,
+				reason: 'join',
+			}),
+		});
+	});
+
+	it('join_room admits a returning encrypted host through the normal join flow when members are already admitted', async () => {
+		const harness = createManager();
+		await harness.roster.add('room-1', {
+			participantId: 'member-1',
+			senderId: 9,
+			isHost: false,
+			joinedAt: 1,
+		});
+		const host = connectFullSocket(harness, {
+			id: 'sock-returning-host-with-members',
+			userId: 'host-1',
+			e2eeRequired: true,
+			isHost: true,
+		});
+
+		emitJoin(host, {
+			userId: 'host-1',
+			e2ee: { enabled: true, capability: { supported: true } },
+		});
+		await new Promise((r) => setImmediate(r));
+
+		expect(host.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'key-package-request',
+				epochNumber: 1,
+				reason: 'join',
+			}),
+		});
+		expect(host.emitCalls).not.toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'key-package-request',
+				reason: 'enable',
+			}),
+		});
 	});
 
 	it('join_room returns an authentication error when socket identity fields are missing', async () => {

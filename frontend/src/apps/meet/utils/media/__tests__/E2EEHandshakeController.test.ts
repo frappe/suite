@@ -7,11 +7,12 @@ import { E2EEHandshakeController } from "../E2EEHandshakeController";
 function createController() {
 	return new E2EEHandshakeController({
 		meetingId: "meeting-1",
-		sfuClient: {
-			getOwnSenderId: vi.fn(() => 7),
-			setE2EERequired: vi.fn(),
-			isConnected: vi.fn(() => false),
-		} as never,
+			sfuClient: {
+				getOwnSenderId: vi.fn(() => 7),
+				setE2EERequired: vi.fn(),
+				isConnected: vi.fn(() => false),
+				sendE2EEEpochEnvelope: vi.fn(),
+			} as never,
 		sfuManager: shallowRef(null),
 		currentUser: {
 			currentUser: shallowRef({ user_id: "user-1" }),
@@ -65,6 +66,15 @@ describe("E2EEHandshakeController", () => {
 
 		expect(controller.keyVersion).toBe(1);
 		expect(installedSecret?.byteLength).toBe(32);
+		expect(
+			(controller as unknown as { sfuClient: { sendE2EEEpochEnvelope: ReturnType<typeof vi.fn> } }).sfuClient
+				.sendE2EEEpochEnvelope,
+		).toHaveBeenCalledWith({
+			type: "ack",
+			fromParticipantId: "user-1",
+			fromSenderId: 7,
+			epochNumber: 1,
+		});
 	});
 
 	it("broadcasts a key-package-request and authors a multi-joiner add commit when E2EE is enabled mid-meeting", async () => {

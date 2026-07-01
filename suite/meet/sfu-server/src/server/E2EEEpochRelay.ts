@@ -146,11 +146,48 @@ export class E2EEEpochRelay {
 		});
 	}
 
+	requestKeyPackagesExceptSender(
+		roomId: string,
+		excludedSenderId: number,
+		epochNumber: number,
+		reason: 'join' | 'reconnect',
+	): void {
+		const socketIds = this.fullAccessSockets.get(roomId);
+		if (!socketIds) return;
+		for (const socketId of socketIds) {
+			const socket = this.io.sockets.sockets.get(socketId) as
+				| TypedSocket
+				| undefined;
+			if (!socket?.participantId || socket.senderId === excludedSenderId)
+				continue;
+			this.emitToTarget(roomId, socket.participantId, {
+				type: 'key-package-request',
+				epochNumber,
+				reason,
+			});
+		}
+	}
+
 	requestGenesisFromParticipant(roomId: string, participantId: string): void {
 		this.emitToTarget(roomId, participantId, {
 			type: 'genesis-request',
 			epochNumber: 1,
-			message: 'Starting a fresh E2EE session for this empty encrypted room.',
+			message: 'Starting encryption for this meeting.',
+		});
+	}
+
+	notifyEncryptionHostNeeded(
+		roomId: string,
+		participantId: string,
+		epochNumber: number,
+	): void {
+		this.emitToTarget(roomId, participantId, {
+			type: 'join-status',
+			status: 'pending',
+			reason: 'waiting-for-host',
+			epochNumber,
+			message:
+				'This encrypted meeting needs the host to join before others can enter.',
 		});
 	}
 
@@ -298,6 +335,7 @@ export class E2EEEpochRelay {
 						fromParticipantId,
 						fromSenderId,
 						payload,
+						Boolean(socket.isHost),
 					);
 					return;
 				case 'resync-request':
@@ -576,9 +614,10 @@ export class E2EEEpochRelay {
 			this.emitToTarget(roomId, participantId, {
 				type: 'join-status',
 				status: 'pending',
+				reason: 'waiting-for-admitter',
 				epochNumber: pending.epochNumber,
 				message:
-					'Waiting for an encrypted participant to admit you to the E2EE session.',
+					'Waiting for someone already in the encrypted meeting to let you in.',
 			});
 		}
 	}
@@ -828,6 +867,7 @@ export class E2EEEpochRelay {
 		fromParticipantId: string,
 		fromSenderId: number,
 		payload: E2eeEpochPayload,
+		isHost = false,
 	): Promise<void> {
 		if (!this.isEpochNumber(payload.epochNumber)) return;
 		const retained = this.getRetainedEpoch(roomId, payload.epochNumber);
@@ -847,6 +887,19 @@ export class E2EEEpochRelay {
 			},
 			this.expiresAt(),
 		);
+		let promotedToRoster = false;
+		if (this.roster && !(await this.roster.get(roomId, fromSenderId))) {
+			await this.roster.add(roomId, {
+				participantId: fromParticipantId,
+				senderId: fromSenderId,
+				isHost,
+				joinedAt: Date.now(),
+			});
+			promotedToRoster = true;
+		}
+		if (promotedToRoster) {
+			await this.retryPendingCommitRequests(roomId);
+		}
 		this.emitToFullAccessParticipants(roomId, {
 			type: 'ack',
 			fromParticipantId,

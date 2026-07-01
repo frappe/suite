@@ -59,6 +59,7 @@ function createController(options: { isHost?: boolean } = {}) {
 		encodedState: new Uint8Array([10]),
 		meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 	}));
+	const processCommit = vi.fn();
 	const removeMember = vi.fn(async (state: unknown, leafIndex: number) => ({
 		commit: { id: "commit" } as never,
 		epoch: {
@@ -103,7 +104,7 @@ function createController(options: { isHost?: boolean } = {}) {
 			addMultipleMembers,
 			removeMember,
 			joinFromWelcome,
-			processCommit: vi.fn(),
+			processCommit,
 			exportMeetingSecret: vi.fn(),
 		},
 	});
@@ -115,6 +116,7 @@ function createController(options: { isHost?: boolean } = {}) {
 		addMultipleMembers,
 		removeMember,
 		joinFromWelcome,
+		processCommit,
 		createGenesisEpoch,
 	};
 }
@@ -147,14 +149,15 @@ describe("E2EEEpochSignalingController", () => {
 		expect(controller.getPendingKeyPackage(1)).not.toBeNull();
 	});
 
-	it("creates a fresh genesis epoch when the SFU requests one", async () => {
+	it("creates a fresh genesis epoch and acknowledges it when the SFU requests one", async () => {
 		wipeActiveEpochState();
-		const { controller, createGenesisEpoch } = createController();
+		const { controller, createGenesisEpoch, sendE2EEEpochEnvelope } =
+			createController();
 
 		await controller.handleEpochEnvelope({
 			type: "genesis-request",
 			epochNumber: 1,
-			message: "Starting a fresh E2EE session.",
+			message: "Starting encryption for this meeting.",
 		});
 
 		expect(createGenesisEpoch).toHaveBeenCalledWith({
@@ -165,6 +168,12 @@ describe("E2EEEpochSignalingController", () => {
 			signingPubKey: "signing-public-key",
 		});
 		expect(getActiveEpochState()?.epochNumber).toBe(1);
+		expect(sendE2EEEpochEnvelope).toHaveBeenCalledWith({
+			type: "ack",
+			fromParticipantId: "user-1",
+			fromSenderId: 7,
+			epochNumber: 1,
+		});
 		wipeActiveEpochState();
 	});
 
@@ -176,19 +185,17 @@ describe("E2EEEpochSignalingController", () => {
 		await controller.handleEpochEnvelope({
 			type: "join-status",
 			status: "pending",
+			reason: "waiting-for-host",
 			epochNumber: 1,
-			message: "Waiting for an encrypted participant to admit you.",
+			message: "This encrypted meeting needs the host to join before others can enter.",
 		});
 
-		expect(listener).toHaveBeenCalledWith(
-			expect.objectContaining({
-				detail: {
-					status: "pending",
-					epochNumber: 1,
-					message: "Waiting for an encrypted participant to admit you.",
-				},
-			}),
-		);
+		expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+			status: "pending",
+			reason: "waiting-for-host",
+			epochNumber: 1,
+			message: "This encrypted meeting needs the host to join before others can enter.",
+		});
 		document.removeEventListener("meet:e2ee-join-status", listener);
 	});
 
@@ -269,6 +276,35 @@ describe("E2EEEpochSignalingController", () => {
 			fromSenderId: 7,
 			epochNumber: 2,
 		});
+		wipeActiveEpochState();
+	});
+
+	it("quietly ignores reflected self-authored commits after local epoch advance", async () => {
+		installActiveEpochState({
+			epochNumber: 2,
+			state: { id: "epoch-2-state" } as never,
+			meetingSecret: new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const { controller, processCommit } = createController();
+
+		await controller.handleEpochEnvelope({
+			type: "commit",
+			fromParticipantId: "user-1",
+			fromSenderId: 7,
+			previousEpochNumber: 1,
+			epochNumber: 2,
+			membershipDeltaId: "delta-1",
+			membershipDeltaHash: "ZGVsdGE=",
+			rosterHash: "cm9zdGVy",
+			mlsCommit: "BAUG",
+		});
+
+		expect(processCommit).not.toHaveBeenCalled();
+		expect(warn).not.toHaveBeenCalledWith(
+			"[DEBUG-e2ee] processCommit: epoch mismatch, abort",
+		);
+		warn.mockRestore();
 		wipeActiveEpochState();
 	});
 
