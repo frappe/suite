@@ -122,6 +122,35 @@ function createController(options: { isHost?: boolean } = {}) {
 }
 
 describe("E2EEEpochSignalingController", () => {
+	it("rejects malformed epoch envelopes before processing", async () => {
+		const { controller, generateKeyPackage } = createController();
+
+		await controller.handleEpochEnvelope({
+			type: "key-package-request",
+			epochNumber: "1",
+			reason: "join",
+		});
+
+		expect(generateKeyPackage).not.toHaveBeenCalled();
+	});
+
+	it("logs only redacted epoch envelope metadata", async () => {
+		const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+		const { controller } = createController();
+
+		await controller.handleEpochEnvelope({
+			type: "key-package-request",
+			epochNumber: 1,
+			reason: "join",
+		});
+
+		expect(log).toHaveBeenCalledWith(
+			"[DEBUG-e2ee] epoch envelope received",
+			expect.not.objectContaining({ envelope: expect.anything() }),
+		);
+		log.mockRestore();
+	});
+
 	it("publishes an MLS key package when the SFU requests one", async () => {
 		const { controller, sendE2EEEpochEnvelope, generateKeyPackage } =
 			createController();

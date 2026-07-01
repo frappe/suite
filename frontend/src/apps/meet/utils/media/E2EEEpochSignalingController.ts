@@ -26,6 +26,12 @@ type PendingKeyPackage = Awaited<
 	ReturnType<EpochProtocolProvider["generateKeyPackage"]>
 >;
 
+const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
+const MAX_OPAQUE_MLS_BYTES = 64 * 1024;
+const MAX_DELTA_ID_LENGTH = 128;
+const MAX_JOIN_STATUS_MESSAGE = 500;
+const SENDER_ID_MAX = 0xffffffff;
+
 interface E2EEEpochSignalingControllerDeps {
 	meetingId: string;
 	sfuClient: SFUClient;
@@ -58,11 +64,12 @@ export class E2EEEpochSignalingController {
 		const ownSenderId = this.deps.sfuClient.getOwnSenderId();
 		console.log("[DEBUG-e2ee] epoch envelope received", {
 			type: data.type,
+			epochNumber: "epochNumber" in data ? data.epochNumber : undefined,
 			ownSenderId,
 			isHost: this.deps.isCurrentTabHost.value,
-			envelope: data,
 		});
-		switch (data.type) {
+		try {
+			switch (data.type) {
 			case "genesis-request":
 				await this.createGenesisIfNeeded(data);
 				return;
@@ -111,6 +118,13 @@ export class E2EEEpochSignalingController {
 				this.clearJoinStatus();
 				await this.processWelcome(data);
 				return;
+			}
+		} catch (error) {
+			console.warn("[DEBUG-e2ee] epoch envelope processing failed", {
+				type: data.type,
+				epochNumber: "epochNumber" in data ? data.epochNumber : undefined,
+				error: error instanceof Error ? error.message : "Unknown error",
+			});
 		}
 	}
 
@@ -362,10 +376,10 @@ export class E2EEEpochSignalingController {
 				leafIndex as never,
 			);
 			if (credential.credentialType !== "basic") continue;
-			const identity = JSON.parse(
+			const identity = this.parseCredentialIdentity(
 				new TextDecoder().decode(credential.identity),
 			);
-			if (typeof identity.senderId === "number") {
+			if (identity && typeof identity.senderId === "number") {
 				senderIdByLeafIndex.set(identity.senderId, leafIndex);
 			}
 		}
@@ -553,10 +567,11 @@ export class E2EEEpochSignalingController {
 		}
 		for (const leaf of members) {
 			if (leaf.credential.credentialType !== "basic") continue;
-			const identity = JSON.parse(
+			const identity = this.parseCredentialIdentity(
 				new TextDecoder().decode(leaf.credential.identity),
 			);
 			if (
+				!identity ||
 				typeof identity.senderId !== "number" ||
 				typeof identity.signingPubKey !== "string"
 			)
@@ -598,11 +613,133 @@ export class E2EEEpochSignalingController {
 	}
 
 	private isEpochEnvelope(value: unknown): value is E2eeEpochEnvelope {
+		if (typeof value !== "object" || value === null || !("type" in value)) {
+			return false;
+		}
+		const envelope = value as Record<string, unknown>;
+		switch (envelope.type) {
+			case "key-package-request":
+				return (
+					this.isEpochNumber(envelope.epochNumber) &&
+					(envelope.reason === "enable" ||
+						envelope.reason === "join" ||
+						envelope.reason === "reconnect")
+				);
+			case "genesis-request":
+				return (
+					envelope.epochNumber === 1 &&
+					this.isBoundedString(envelope.message, MAX_JOIN_STATUS_MESSAGE)
+				);
+			case "key-package":
+				return (
+					this.isBoundedString(envelope.fromParticipantId) &&
+					this.isSenderId(envelope.fromSenderId) &&
+					this.isEpochNumber(envelope.epochNumber) &&
+					this.isOpaqueMlsBytes(envelope.keyPackage)
+				);
+			case "commit-request":
+				return (
+					this.isEpochNumber(envelope.epochNumber) &&
+					this.isEpochNumber(envelope.nextEpochNumber) &&
+					envelope.nextEpochNumber === Number(envelope.epochNumber) + 1 &&
+					this.isBoundedString(envelope.membershipDeltaId, MAX_DELTA_ID_LENGTH) &&
+					this.isOpaqueMlsBytes(envelope.membershipDeltaHash) &&
+					this.isOpaqueMlsBytes(envelope.rosterHash) &&
+					this.isSenderId(envelope.committerSenderId) &&
+					this.isSenderIdArray(envelope.joiningSenderIds, true) &&
+					(envelope.removedSenderIds === undefined ||
+						this.isSenderIdArray(envelope.removedSenderIds, false))
+				);
+			case "commit":
+				return (
+					this.isBoundedString(envelope.fromParticipantId) &&
+					this.isSenderId(envelope.fromSenderId) &&
+					this.isEpochNumber(envelope.previousEpochNumber) &&
+					this.isEpochNumber(envelope.epochNumber) &&
+					envelope.epochNumber === Number(envelope.previousEpochNumber) + 1 &&
+					this.isBoundedString(envelope.membershipDeltaId, MAX_DELTA_ID_LENGTH) &&
+					this.isOpaqueMlsBytes(envelope.membershipDeltaHash) &&
+					this.isOpaqueMlsBytes(envelope.rosterHash) &&
+					this.isOpaqueMlsBytes(envelope.mlsCommit)
+				);
+			case "welcome":
+				return (
+					this.isBoundedString(envelope.fromParticipantId) &&
+					this.isSenderId(envelope.fromSenderId) &&
+					this.isBoundedString(envelope.toParticipantId) &&
+					this.isSenderId(envelope.toSenderId) &&
+					this.isEpochNumber(envelope.epochNumber) &&
+					this.isOpaqueMlsBytes(envelope.mlsWelcome)
+				);
+			case "ack":
+				return (
+					this.isBoundedString(envelope.fromParticipantId) &&
+					this.isSenderId(envelope.fromSenderId) &&
+					this.isEpochNumber(envelope.epochNumber)
+				);
+			case "resync-request":
+				return (
+					this.isBoundedString(envelope.fromParticipantId) &&
+					this.isSenderId(envelope.fromSenderId) &&
+					(envelope.knownEpochNumber === undefined ||
+						this.isEpochNumber(envelope.knownEpochNumber))
+				);
+			case "join-status":
+				return (
+					(envelope.status === "pending" || envelope.status === "failed") &&
+					(envelope.reason === undefined ||
+						envelope.reason === "waiting-for-admitter" ||
+						envelope.reason === "waiting-for-host") &&
+					this.isEpochNumber(envelope.epochNumber) &&
+					this.isBoundedString(envelope.message, MAX_JOIN_STATUS_MESSAGE)
+				);
+			default:
+				return false;
+		}
+	}
+
+	private isEpochNumber(value: unknown): value is number {
+		return typeof value === "number" && Number.isInteger(value) && value >= 1;
+	}
+
+	private isSenderId(value: unknown): value is number {
 		return (
-			typeof value === "object" &&
-			value !== null &&
-			"type" in value &&
-			typeof value.type === "string"
+			typeof value === "number" &&
+			Number.isInteger(value) &&
+			value >= 0 &&
+			value <= SENDER_ID_MAX
 		);
+	}
+
+	private isSenderIdArray(value: unknown, allowEmpty: boolean): value is number[] {
+		return (
+			Array.isArray(value) &&
+			(allowEmpty || value.length > 0) &&
+			value.every((id) => this.isSenderId(id))
+		);
+	}
+
+	private isBoundedString(value: unknown, max = 256): value is string {
+		return typeof value === "string" && value.length > 0 && value.length <= max;
+	}
+
+	private isOpaqueMlsBytes(value: unknown): value is string {
+		return (
+			typeof value === "string" &&
+			value.length > 0 &&
+			value.length <= MAX_OPAQUE_MLS_BYTES &&
+			BASE64_PATTERN.test(value)
+		);
+	}
+
+	private parseCredentialIdentity(
+		encoded: string,
+	): { senderId?: unknown; signingPubKey?: unknown } | null {
+		try {
+			const parsed = JSON.parse(encoded) as unknown;
+			return typeof parsed === "object" && parsed !== null ? parsed : null;
+		} catch {
+			return null;
+		}
 	}
 }
