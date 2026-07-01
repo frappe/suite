@@ -41,6 +41,7 @@ def _generate_sfu_token(
 	payload = {
 		"user_id": user_id,
 		"meeting_id": meeting_id,
+		"site": getattr(frappe.local, "site", None),
 		"scope": scope,
 		"exp": now + expires_in,
 		"iat": now,
