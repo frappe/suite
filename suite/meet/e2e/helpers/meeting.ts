@@ -15,7 +15,7 @@ export async function createMeetingViaApi(
 		data: {
 			meeting_type: meetingType,
 		},
-	);
+	});
 
 	if (!response.ok()) {
 		const responseBody = await response.text();
