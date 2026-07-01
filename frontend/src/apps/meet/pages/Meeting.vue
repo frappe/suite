@@ -550,8 +550,7 @@ const participantsForPeoplePanel = computed<Record<string, Participant>>(
 	() => participantStore.participants as Record<string, Participant>,
 );
 
-const { windowWidth } = useResponsiveGrid();
-const isMobile = computed(() => windowWidth.value < 768);
+const { isMobile } = useResponsiveGrid();
 
 const panelWidth = computed(() => {
 	if (!activePanel.value) return "0rem";
