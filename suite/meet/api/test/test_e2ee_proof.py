@@ -7,7 +7,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.meet.api.meeting import (
-	_assert_e2ee_metadata_complete,
 	_is_valid_e2ee_device_id,
 	convert_meeting_to_e2ee,
 	get_sfu_connection_details,
@@ -87,7 +86,6 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 		self.assertTrue(result["e2ee_enabled"])
 		meeting.reload()
 		self.assertTrue(meeting.e2ee_enabled)
-		_assert_e2ee_metadata_complete(meeting.name)
 
 	def test_sfu_connection_details_only_expose_e2ee_required(self):
 		meeting = self._create_meeting_as_host()

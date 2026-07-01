@@ -64,12 +64,6 @@ def _is_valid_e2ee_device_id(device_id: str | None) -> bool:
 	return 1 <= len(device_id) <= 64 and all(c.isalnum() or c in "-_." for c in device_id)
 
 
-def _assert_e2ee_metadata_complete(meeting_id: str) -> None:
-	"""Epoch E2EE has no persisted key metadata to validate."""
-	if not _is_e2ee_enabled(meeting_id):
-		return
-
-
 def _get_e2ee_metadata(meeting_id: str) -> dict:
 	return {"e2ee_required": _is_e2ee_enabled(meeting_id)}
 
@@ -566,7 +560,6 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 
 	if not frappe.db.exists("Sae Meeting", meeting_id):
 		frappe.throw(_("Meeting not found"))
-	frappe.get_doc("Sae Meeting", meeting_id)
 
 	return {
 		"sfu_url": sfu_config["sfu_server_url"],
@@ -629,8 +622,6 @@ def check_meeting_access(meeting_id: str) -> dict:
 		return {"allow_guest": allow_guest, "host_only_chat": bool(meeting.host_only_chat)}
 	except frappe.DoesNotExistError:
 		frappe.throw(_("Meeting not found"))
-	except Exception as e:
-		frappe.throw(str(e))
 
 
 @frappe.whitelist()
@@ -727,6 +718,7 @@ def register_e2ee_device(
 		doc.user = frappe.session.user
 		doc.device_id = device_id
 		doc.ed25519_public_key = ed25519_public_key
+		# Users may register only their own public E2EE device key through this validated API.
 		doc.insert(ignore_permissions=True)
 
 	return {"device_id": device_id, "ed25519_public_key": ed25519_public_key}
