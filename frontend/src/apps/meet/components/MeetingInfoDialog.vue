@@ -12,6 +12,14 @@
 					<ClickToCopyField :textContent="meetingUrl" :breakLines="false" />
 				</div>
 
+				<div v-if="e2eeFingerprint" class="space-y-2">
+					<label class="text-sm-medium text-gray-700">Encryption fingerprint</label>
+					<ClickToCopyField :textContent="e2eeFingerprint" :breakLines="false" />
+					<p class="text-xs text-gray-600">
+						Everyone in this encrypted meeting should see the same fingerprint.
+					</p>
+				</div>
+
 			</div>
 		</template>
 	</Dialog>
@@ -19,7 +27,8 @@
 
 <script setup lang="ts">
 import { Dialog } from "frappe-ui";
-import { computed } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { E2EEMeeting } from "../utils/media/E2EEMeeting";
 import ClickToCopyField from "./ClickToCopyField.vue";
 
 const props = defineProps<{
@@ -38,4 +47,30 @@ const show = computed({
 });
 
 const meetingUrl = computed(() => window.location.href);
+const e2eeFingerprint = ref<string | null>(null);
+
+async function loadE2EEFingerprint() {
+	e2eeFingerprint.value = await E2EEMeeting.instance.getSessionFingerprint();
+}
+
+function handleE2EEContextReady() {
+	void loadE2EEFingerprint();
+}
+
+watch(show, (visible) => {
+	if (visible) {
+		void loadE2EEFingerprint();
+	}
+});
+
+onMounted(() => {
+	document.addEventListener("meet:e2ee-context-ready", handleE2EEContextReady);
+});
+
+onUnmounted(() => {
+	document.removeEventListener(
+		"meet:e2ee-context-ready",
+		handleE2EEContextReady,
+	);
+});
 </script>

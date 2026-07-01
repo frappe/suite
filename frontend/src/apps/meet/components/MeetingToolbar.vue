@@ -329,6 +329,7 @@ const isDropdownOpen = ref(false);
 const dropdownContainer = ref(null);
 const showMeetingInfoDialog = ref(false);
 const showSettingsDialog = ref(false);
+const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
 
 const TOOLBAR_VISIBLE_HEIGHT = "5.5rem";
@@ -416,6 +417,17 @@ const handleDocumentClick = (event) => {
 	}
 };
 
+const handleHostE2EEEnabled = () => {
+	showMeetingInfoWhenE2EEReady.value = true;
+};
+
+const handleE2EEContextReady = () => {
+	if (!showMeetingInfoWhenE2EEReady.value) return;
+	showMeetingInfoWhenE2EEReady.value = false;
+	showMeetingInfoDialog.value = true;
+	showControls();
+};
+
 const handleReactionSelect = (emoji) => {
 	emit("toggle-reactions", emoji);
 
@@ -451,6 +463,8 @@ onMounted(() => {
 	document.addEventListener("touchmove", handleActivity);
 	document.addEventListener("keydown", handleShortcut);
 	document.addEventListener("click", handleDocumentClick);
+	document.addEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
+	document.addEventListener("meet:e2ee-context-ready", handleE2EEContextReady);
 });
 
 onUnmounted(() => {
@@ -464,5 +478,7 @@ onUnmounted(() => {
 	document.removeEventListener("touchmove", handleActivity);
 	document.removeEventListener("keydown", handleShortcut);
 	document.removeEventListener("click", handleDocumentClick);
+	document.removeEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
+	document.removeEventListener("meet:e2ee-context-ready", handleE2EEContextReady);
 });
 </script>

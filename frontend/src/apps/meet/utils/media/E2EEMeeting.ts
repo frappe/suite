@@ -102,6 +102,24 @@ export class E2EEMeeting {
 		return this.meetingSecret !== null && this.keyVersion !== null;
 	}
 
+	async getSessionFingerprint(): Promise<string | null> {
+		if (!this.meetingSecret || this.keyVersion === null) return null;
+		const subtle = getSubtle();
+		const prefix = new TextEncoder().encode(
+			`meet-e2ee-session|${this.keyVersion}|`,
+		);
+		const input = new Uint8Array(prefix.length + this.meetingSecret.length);
+		input.set(prefix, 0);
+		input.set(this.meetingSecret, prefix.length);
+		const digest = await subtle.digest("SHA-256", input);
+		return Array.from(new Uint8Array(digest))
+			.slice(0, 16)
+			.map((byte) => byte.toString(16).padStart(2, "0").toUpperCase())
+			.join("")
+			.match(/.{1,4}/g)
+			?.join(" ") ?? null;
+	}
+
 	setSenderSigningPub(senderId: number, signingPub: CryptoKey): void {
 		this.senderSigningPubs.set(senderId, signingPub);
 		this.receiverChain?.setSenderSigningPub(senderId, signingPub);

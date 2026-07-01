@@ -943,6 +943,22 @@ describe("E2EE chain registry", () => {
 		expect(meeting.hasMeetingContext()).toBe(false);
 	});
 
+	it("getSessionFingerprint is stable per encrypted epoch and changes on rotation", async () => {
+		const { generateMeetingSecret } = await import("../e2ee");
+		const meeting = E2EEMeeting.instance;
+		expect(await meeting.getSessionFingerprint()).toBeNull();
+
+		const firstSecret = await generateMeetingSecret();
+		meeting.setMeetingContext(firstSecret, 1);
+		const first = await meeting.getSessionFingerprint();
+		expect(first).toMatch(/^([0-9A-F]{4} ){7}[0-9A-F]{4}$/);
+		expect(await meeting.getSessionFingerprint()).toBe(first);
+
+		const secondSecret = await generateMeetingSecret();
+		meeting.setMeetingContext(secondSecret, 2);
+		expect(await meeting.getSessionFingerprint()).not.toBe(first);
+	});
+
 	it("wipeMeetingContext zeroes the meeting secret", async () => {
 		const { generateMeetingSecret } = await import("../e2ee");
 		const meeting = E2EEMeeting.instance;
