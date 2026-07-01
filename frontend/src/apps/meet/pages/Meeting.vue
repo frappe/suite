@@ -310,6 +310,12 @@ function handleE2EEJoinStatus(event: Event): void {
 		e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail);
 		return;
 	}
+	if (detail?.status === "failed") {
+		e2eeJoinPendingMessage.value =
+			detail.message ||
+			"Could not set up encryption for this meeting. Please leave and try again.";
+		return;
+	}
 	e2eeJoinPendingMessage.value = "";
 }
 

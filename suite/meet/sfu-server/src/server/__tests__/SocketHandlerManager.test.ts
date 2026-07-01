@@ -162,6 +162,55 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('join_room reports e2ee admission failures after the join callback succeeds', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'sock-failed-e2ee-admission',
+			userId: 'failed-admission-member',
+			e2eeRequired: true,
+			isHost: false,
+		});
+		vi.spyOn(harness.roster, 'list').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+
+		const callback = vi.fn();
+		socket.fire(
+			'join_room',
+			{
+				roomId: 'room-1',
+				userData: {
+					name: 'Failed Admission',
+					userId: 'failed-admission-member',
+					avatar: '',
+					is_guest: false,
+				},
+				mediaState: {
+					audio_enabled: true,
+					video_enabled: true,
+				},
+				e2ee: { enabled: true, capability: { supported: true } },
+			},
+			callback,
+		);
+		await new Promise((r) => setImmediate(r));
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			senderId: socket.senderId,
+		});
+		expect(socket.emitCalls).toContainEqual({
+			event: 'e2ee:epoch',
+			data: expect.objectContaining({
+				type: 'join-status',
+				status: 'failed',
+				message:
+					'Could not set up encryption for this meeting. Please leave and try again.',
+			}),
+		});
+	});
+
 	it('join_room tells a lone encrypted non-host to wait for the host', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {

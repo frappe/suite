@@ -145,7 +145,23 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					deps,
 					getRoomId(socket),
 					socket.userId,
-				);
+				).catch((error: unknown) => {
+					loggers.socketHandler.error(
+						'e2ee admission request failed for user %s in room %s: %s',
+						socket.userId,
+						getRoomId(socket),
+						(error as Error).message,
+					);
+					socket.emit('e2ee:epoch', {
+						type: 'join-status',
+						status: 'failed',
+						epochNumber: deps.e2eeEpochRelay.getCurrentEpochNumber(
+							getRoomId(socket),
+						),
+						message:
+							'Could not set up encryption for this meeting. Please leave and try again.',
+					});
+				});
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error joining room: %s',
