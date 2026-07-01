@@ -6,7 +6,6 @@ import { Server } from 'socket.io';
 import { MediasoupManager } from './mediasoup/MediasoupManager';
 import { AuthManager } from './server/AuthManager';
 import { InMemoryE2eeCoordinatorPersistence } from './server/E2eeCoordinatorPersistence';
-import { FileE2eeCoordinatorPersistence } from './server/E2eeCoordinatorPersistenceFile';
 import { InMemoryRosterPersistence } from './server/E2eeRosterPersistence';
 import { FileRosterPersistence } from './server/E2eeRosterPersistenceFile';
 import { E2eeRosterStore } from './server/E2eeRosterStore';
@@ -65,11 +64,7 @@ export class SFUServer {
 					)
 				: new InMemoryRosterPersistence(),
 		);
-		const e2eeCoordinatorPersistence = process.env.E2EE_ROSTER_PERSISTENCE_DIR
-			? new FileE2eeCoordinatorPersistence(
-					join(process.env.E2EE_ROSTER_PERSISTENCE_DIR, 'coordinator.json'),
-				)
-			: new InMemoryE2eeCoordinatorPersistence();
+		const e2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence();
 		this.socketHandlerManager = new SocketHandlerManager(
 			this.io,
 			this.mediasoup,
