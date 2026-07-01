@@ -50,7 +50,7 @@ const e2eeDescription = computed(() => {
 	if (isX25519Supported.value === false) {
 		return "E2EE requires X25519 support in WebCrypto. Update your browser to enable it.";
 	}
-	return "Convert this meeting to E2EE. The SFU sees only encrypted bytes; media is decrypted on participants' devices.";
+	return "Converts this meeting to E2EE for extra privacy. Only participants can access the meeting content.";
 });
 
 const isToggleDisabled = computed(
