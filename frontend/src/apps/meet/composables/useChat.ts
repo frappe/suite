@@ -65,6 +65,10 @@ function shouldEncryptChat(): boolean {
 	return E2EEMeeting.instance.hasMeetingContext();
 }
 
+function isE2EERequired(sfuClient: SFUClient): boolean {
+	return sfuClient.isE2EERequired?.() ?? false;
+}
+
 export function useChat(deps: {
 	chatStore: ChatStore;
 	currentUser: CurrentUser;
@@ -100,6 +104,8 @@ export function useChat(deps: {
 						plaintext = `[Encrypted: ${errName}]`;
 					}
 				}
+			} else if (isE2EERequired(sfuClient)) {
+				plaintext = "[Unencrypted message blocked]";
 			}
 
 			const message: ChatMessage = {
@@ -149,6 +155,20 @@ export function useChat(deps: {
 
 	const onSendChat = async (text: string) => {
 		try {
+			let messageToSend = text;
+			if (sfuClient.isConnected()) {
+				if (isE2EERequired(sfuClient) || shouldEncryptChat()) {
+					const key = await getChatKey();
+					if (!key) {
+						toast.error(
+							"Encrypted chat is not ready yet. Wait for encryption to finish, then try again.",
+						);
+						return;
+					}
+					messageToSend = await encryptChatMessage(key, text);
+				}
+			}
+
 			const message: ChatMessage = {
 				id: Date.now() + Math.random(),
 				user_id: currentUser.currentUser.value?.user_id as string,
@@ -162,15 +182,6 @@ export function useChat(deps: {
 			chatStore.addMessage(message);
 
 			if (sfuClient.isConnected()) {
-				let messageToSend = text;
-
-				if (shouldEncryptChat()) {
-					const key = await getChatKey();
-					if (key) {
-						messageToSend = await encryptChatMessage(key, text);
-					}
-				}
-
 				sfuClient.sendChatMessage(messageToSend, {
 					clientId: currentUser.currentUser.value?.user_id,
 				});
