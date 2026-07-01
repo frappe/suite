@@ -5,8 +5,8 @@
 		data-testid="meeting-layout"
 		:class="
 			mode === 'sidebar'
-				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2'
-				: 'relative h-full'
+				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2 rounded-lg'
+				: 'relative h-full rounded-lg overflow-hidden'
 		"
 	>
 		<!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->
@@ -24,15 +24,26 @@
 
 		<!-- ── Tile strip / full grid ─────────────────────────────────────── -->
 		<TransitionGroup
-			:name="isFlipAnimating ? '' : 'tile'"
+			name="tile"
 			tag="div"
-			class="h-full"
+			class="h-full gap-2 overflow-hidden"
 			:class="[
 				mode === 'sidebar'
-					? `grid gap-2 mt-3 sm:mt-0 sm:ml-3 ${containerClass}`
-					: 'relative call-grid',
+					? 'grid auto-rows-fr sm:auto-rows-[calc((100%-1.5rem)/4)] content-start mt-3 sm:mt-0 sm:ml-3'
+					: 'flex flex-wrap justify-center content-start',
+				mode === 'sidebar' && !isMobile
+					? gridColumns === 2
+						? 'w-72'
+						: 'w-64'
+					: '',
+				mode === 'sidebar' && isMobile ? 'max-h-[120px]' : '',
 			]"
-			:style="containerStyle"
+			:style="{
+				gridTemplateColumns:
+					mode === 'sidebar'
+						? `repeat(${gridColumns}, minmax(0, 1fr))`
+						: undefined,
+			}"
 		>
 			<!-- Local camera tile -->
 			<ParticipantTile
@@ -43,7 +54,6 @@
 				:isAudioEnabled="isMicOn"
 				:isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
 				:videoRef="setLocalVideoRef"
-				:tileCount="visibleTileCount"
 				:showReaction="pinnedTiles.length===0"
 				:style="tileStyle"
 			/>
@@ -91,6 +101,7 @@ import { type ComputedRef, computed, inject, ref, watch } from "vue";
 import { useLayout } from "../composables/useLayout";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import { usePinnedTileAnimation } from "../composables/usePinnedTileAnimation";
+import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { useScreenShareTiles } from "../composables/useScreenShareTiles";
 import { useTileAdaptiveStreaming } from "../composables/useTileAdaptiveStreaming";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -160,15 +171,13 @@ const displayScreenShares = computed(
 
 // ── Pinned area data ──────────────────────────────────────────────────────────
 
-// Unpin when the pinned participant leaves
+// Unpin when a pinned participant leaves.
 watch(
-	() => pinnedTiles.value.filter((t) => t.type === "participant"),
-	(pinnedParticipantTiles) => {
-		pinnedParticipantTiles.forEach((pTile) => {
-			if (!participants.value[pTile.id]) {
-				meetingCtx.gridLayout.unpinTile(pTile.type, pTile.id);
-			}
-		});
+	() => [pinnedTiles.value, participants.value] as const,
+	() => {
+		pinnedTiles.value
+			.filter((tile) => tile.type === "participant" && !participants.value[tile.id])
+			.forEach((tile) => meetingCtx.gridLayout.unpinTile(tile.type, tile.id));
 	},
 	{ deep: true },
 );
@@ -206,7 +215,6 @@ const getScreenShareTileBindings = (shareTile: {
 		isVideoEnabled: true,
 		isAudioEnabled: false,
 		videoRef: wrappedVideoRef,
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		class: isPinned ? "pinned-tile" : undefined,
 		style: isPinned
 			? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`]
@@ -242,7 +250,6 @@ const getParticipantTileBindings = (
 		isAudioEnabled: participant.audio_enabled,
 		isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
 		videoRef: getRemoteVideoRef(participant.user_id),
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		showReaction: pinnedTiles.value.length === 0,
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]
@@ -290,13 +297,13 @@ const extraTileCount = computed(() => {
 	return Math.max(0, allScreenShareTiles.value.length - 1);
 });
 
+const { isMobile } = useResponsiveGrid();
+
 // ── Layout composable ─────────────────────────────────────────────────────────
 
 const {
 	mode,
-	containerStyle,
-	containerClass,
-	tileStyle,
+	gridColumns,
 	displayParticipants,
 	allParticipants,
 	visibleTileCount,
@@ -316,7 +323,20 @@ const {
 	extraTileCount,
 );
 
-const { isFlipAnimating, pinnedTileStyles } = usePinnedTileAnimation({
+const tileStyle = computed(() => {
+	if (mode.value === "sidebar") return undefined;
+	const gap = "0.5rem";
+	const columns = gridColumns.value;
+	const rows = Math.ceil(visibleTileCount.value / columns) || 1;
+	return {
+		width: `calc((100% - ${columns - 1} * ${gap}) / ${columns})`,
+		height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
+		minWidth: "0",
+		minHeight: "0",
+	};
+});
+
+const { pinnedTileStyles } = usePinnedTileAnimation({
 	container,
 	pinnedPanelsMap,
 	pinnedTiles,

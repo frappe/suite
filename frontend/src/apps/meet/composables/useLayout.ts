@@ -20,105 +20,30 @@ interface LayoutParticipant extends Participant {
 	slotIndex: number;
 }
 
-interface ContainerStyle {
-	display: string;
-	"flex-wrap"?: string;
-	"justify-content"?: string;
-	"align-content"?: string;
-	gap?: string;
-	overflow?: string;
-	"grid-auto-rows"?: string;
-	maxHeight?: string;
-}
-
-interface TileStyle {
-	width?: string;
-	height?: string;
-	minWidth?: string;
-	minHeight?: string;
-	marginBottom?: string;
-	[key: string]: string | undefined;
-}
-
 interface UseLayoutReturn {
 	mode: ComputedRef<"grid" | "sidebar">;
-	containerStyle: ComputedRef<ContainerStyle>;
-	containerClass: ComputedRef<string>;
-	tileStyle: ComputedRef<TileStyle>;
+	gridColumns: ComputedRef<number>;
 	displayParticipants: ComputedRef<DisplayParticipantsResult>;
 	allParticipants: ComputedRef<LayoutParticipant[]>;
 	visibleTileCount: ComputedRef<number>;
 	hiddenParticipantsTooltip: ComputedRef<string>;
-	maxVisibleTiles: ComputedRef<number>;
 }
 
-/**
- * Layout composable for the video grid.
- *
- * Modes:
- *   - "grid"    (no pinnedTile) — full-width flex grid, 2-4 adaptive columns
- *   - "sidebar" (pinnedTile set) — pinned area fills the main space, participants
- *                                  collapse into a compact tile strip
- *
- * When a participant is pinned they are removed from the tile strip so
- * their video stream can be shown exclusively in the pinned area.
- */
 export function useLayout(
 	participants: Ref<Record<string, Participant>>,
 	pinnedTiles: Ref<PinnedTile[]>,
 	layoutDeps: LayoutDeps,
 	extraTiles: Ref<number>,
 ): UseLayoutReturn {
-	const { maxColumns, sidebarMaxColumns, windowWidth, BREAKPOINTS } =
-		useResponsiveGrid();
+	const { isMobile, maxColumns, sidebarMaxColumns } = useResponsiveGrid();
 
 	const mode = computed<"grid" | "sidebar">(() =>
 		pinnedTiles.value.length > 0 ? "sidebar" : "grid",
 	);
 
-	const isMobile = computed(() => windowWidth.value < BREAKPOINTS.md);
-
-	// ── Participants visible in the tile strip ────────────────────────────────
-	// All participants stay in the list — the pinned one is positioned absolutely
-	// over the pinned panel by MeetingLayout, so no exclusion needed.
 	const stripParticipants = computed<Record<string, Participant>>(() => {
 		return participants.value;
 	});
-
-	// ── Column helpers (grid mode) ────────────────────────────────────────────
-
-	/**
-	 * Number of columns = ceil(sqrt(n)), capped at maxCols.
-	 *
-	 * This gives a naturally square grid that grows its column count only
-	 * when it becomes more square to do so:
-	 *   n=1→1  n=2-4→2  n=5-9→3  n=10-16→4
-	 *
-	 * All rows are full (cols tiles) except the last row which holds the
-	 * remainder. Natural flex wrapping handles the layout — no break divs
-	 * are needed because tile width = (100% - (cols-1)*gap) / cols causes
-	 * the container to wrap at exactly cols tiles per row.
-	 */
-	const getGridColumns = (tileCount: number, maxCols: number): number => {
-		if (tileCount <= 0) return 1;
-		if (isMobile.value && tileCount === 2) return 1;
-		return Math.min(maxCols, Math.ceil(Math.sqrt(tileCount)));
-	};
-
-	const getRowDistribution = (
-		totalTiles: number,
-		maxCols: number,
-	): number[] => {
-		if (totalTiles <= 0) return [];
-		const cols = getGridColumns(totalTiles, maxCols);
-		const rows = Math.ceil(totalTiles / cols);
-		const remainder = totalTiles % cols;
-		return Array.from({ length: rows }, (_, i) =>
-			i < rows - 1 || remainder === 0 ? cols : remainder,
-		);
-	};
-
-	// ── Max visible tiles ─────────────────────────────────────────────────────
 
 	const maxVisibleTiles = computed<number>(() => {
 		if (mode.value === "sidebar") {
@@ -128,8 +53,19 @@ export function useLayout(
 		return maxColumns.value * 4;
 	});
 
+	const gridColumns = computed<number>(() => {
+		if (mode.value === "sidebar") {
+			if (isMobile.value) return 1;
+			const total = Object.keys(stripParticipants.value || {}).length + 1;
+			return Math.min(total > 4 ? 2 : 1, sidebarMaxColumns.value);
+		}
+		const count = visibleTileCount.value;
+		if (count <= 0) return 1;
+		if (isMobile.value && count === 2) return 1;
+		return Math.min(maxColumns.value, Math.ceil(Math.sqrt(count)));
+	});
+
 	// ── Slot persistence ──────────────────────────────────────────────────────
-	// Stable slot assignments keep tiles from jumping around when priority changes.
 
 	let slotAssignments: Map<string, number> = new Map();
 
@@ -379,91 +315,6 @@ export function useLayout(
 			(displayParticipants.value.extra > 0 ? 1 : 0),
 	);
 
-	// ── Grid mode layout ──────────────────────────────────────────────────────
-
-	const gridTileStyle = computed<TileStyle>(() => {
-		const total = visibleTileCount.value;
-		const distribution = getRowDistribution(total, maxColumns.value);
-		const firstRowCols = distribution[0] || 1;
-		const rows = distribution.length || 1;
-		// gap is set on the container via CSS gap (not marginBottom) so it only
-		// applies between rows — not after the last row. Height formula is exact.
-		const gap = "0.5rem";
-		return {
-			width: `calc((100% - ${firstRowCols - 1} * ${gap}) / ${firstRowCols})`,
-			height: `calc((100% - ${rows - 1} * ${gap}) / ${rows})`,
-			minWidth: "0",
-			minHeight: "0",
-		};
-	});
-
-	// ── Sidebar mode layout ───────────────────────────────────────────────────
-
-	const sidebarColumns = computed<number>(() => {
-		if (isMobile.value) return 1;
-		const total = Object.keys(stripParticipants.value || {}).length + 1; // +1 local
-		return Math.min(total > 4 ? 2 : 1, sidebarMaxColumns.value);
-	});
-
-	const sidebarContainerClass = computed<string>(() => {
-		if (isMobile.value) {
-			const visible = visibleTileCount.value;
-			const cols = Math.min(visible, 3);
-			return `w-full grid-cols-${cols} grid-rows-1`;
-		}
-		const widthClass = sidebarColumns.value === 2 ? "w-72" : "w-64";
-		return `${widthClass} grid-cols-${sidebarColumns.value}`;
-	});
-
-	const sidebarContainerStyle = computed<ContainerStyle>(() => {
-		if (isMobile.value) {
-			return { display: "grid", "grid-auto-rows": "1fr", maxHeight: "120px" };
-		}
-
-		const visible = visibleTileCount.value;
-		const cols = sidebarColumns.value;
-		const rows = Math.min(4, Math.ceil(visible / cols));
-		const gapTotal = (rows - 1) * 0.5;
-
-		if (cols === 1 && visible <= 4) {
-			const perRowBase = `calc((100% - ${visible - 1} * 0.5rem) / ${visible})`;
-			return { display: "grid", "grid-auto-rows": `min(25%, ${perRowBase})` };
-		}
-
-		return {
-			display: "grid",
-			"grid-auto-rows":
-				rows === 1
-					? "min(25%, 1fr)"
-					: `min(25%, calc((100% - ${gapTotal}rem) / ${rows}))`,
-		};
-	});
-
-	// ── Unified outputs ───────────────────────────────────────────────────────
-
-	const containerStyle = computed<ContainerStyle>(() => {
-		if (mode.value === "sidebar") return sidebarContainerStyle.value;
-		return {
-			display: "flex",
-			"flex-wrap": "wrap",
-			"justify-content": "center",
-			"align-content": "start",
-			gap: "0.5rem",
-			overflow: "hidden",
-		};
-	});
-
-	const containerClass = computed<string>(() => {
-		if (mode.value === "sidebar") return sidebarContainerClass.value;
-		return "call-grid";
-	});
-
-	// In sidebar mode tiles fill their CSS grid cells so no explicit sizing needed.
-	const tileStyle = computed<TileStyle>(() => {
-		if (mode.value === "sidebar") return {};
-		return gridTileStyle.value;
-	});
-
 	const allParticipants = computed<LayoutParticipant[]>(() => {
 		const { list, hidden } = displayParticipants.value;
 
@@ -496,13 +347,10 @@ export function useLayout(
 
 	return {
 		mode,
-		containerStyle,
-		containerClass,
-		tileStyle,
+		gridColumns,
 		displayParticipants,
 		allParticipants,
 		visibleTileCount,
 		hiddenParticipantsTooltip,
-		maxVisibleTiles,
 	};
 }
