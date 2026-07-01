@@ -381,6 +381,7 @@ export interface JWTPayload {
 	user_id: string;
 	user_name: string;
 	meeting_id: string;
+	site?: string;
 	user_avatar?: string;
 	is_host: boolean;
 	is_cohost?: boolean;
