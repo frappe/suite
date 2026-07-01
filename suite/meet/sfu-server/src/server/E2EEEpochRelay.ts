@@ -6,6 +6,12 @@ import type {
 	SocketData,
 } from '../types';
 import { loggers } from '../utils/logger';
+import {
+	E2EE_COORDINATOR_TTL_MS,
+	type E2eeCoordinatorPersistence,
+	InMemoryE2eeCoordinatorPersistence,
+	type PersistedE2eePendingCommitRequest,
+} from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
 
 type TypedSocket = Socket<
@@ -86,11 +92,13 @@ export class E2EEEpochRelay {
 		string,
 		PendingCommitRequest
 	>();
+	private hydratePromise: Promise<void> | null = null;
 
 	constructor(
 		io: Server<ClientToServerEvents, ServerToClientEvents>,
 		fullAccessSockets: Map<string, Set<string>>,
 		participantToSender: Map<string, Map<string, number>>,
+		private readonly persistence: E2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence(),
 	) {
 		this.io = io;
 		this.fullAccessSockets = fullAccessSockets;
@@ -151,6 +159,7 @@ export class E2EEEpochRelay {
 	}
 
 	async retryPendingCommitRequests(roomId: string): Promise<void> {
+		await this.hydrate();
 		const prefix = `${roomId}:`;
 		for (const [key, pending] of this.pendingCommitRequests) {
 			if (!key.startsWith(prefix)) continue;
@@ -166,6 +175,12 @@ export class E2EEEpochRelay {
 		this.retainedMaterial.delete(roomId);
 		this.flushPendingCommitRequests(roomId);
 		this.flushPendingCommitRequestsForRoom(roomId);
+		void this.persistence.clearRoom(roomId).catch((error: unknown) => {
+			loggers.socketHandler.warn(
+				'e2ee coordinator clear failed: %s',
+				(error as Error).message,
+			);
+		});
 	}
 
 	removePendingJoiner(roomId: string, senderId: number): void {
@@ -232,6 +247,7 @@ export class E2EEEpochRelay {
 		payload: E2eeEpochPayload,
 	): Promise<void> {
 		try {
+			await this.hydrate();
 			if (socket.scope !== 'full') return;
 			const roomId = socket.roomId;
 			const fromParticipantId = socket.participantId;
@@ -269,10 +285,20 @@ export class E2EEEpochRelay {
 					);
 					return;
 				case 'welcome':
-					this.relayWelcome(roomId, fromParticipantId, fromSenderId, payload);
+					await this.relayWelcome(
+						roomId,
+						fromParticipantId,
+						fromSenderId,
+						payload,
+					);
 					return;
 				case 'ack':
-					this.recordAck(roomId, fromParticipantId, fromSenderId, payload);
+					await this.recordAck(
+						roomId,
+						fromParticipantId,
+						fromSenderId,
+						payload,
+					);
 					return;
 				case 'resync-request':
 					await this.replayRetainedMaterial(roomId, fromSenderId, payload);
@@ -330,6 +356,15 @@ export class E2EEEpochRelay {
 				epochNumber: payload.epochNumber,
 			},
 		);
+		await this.persistence.retainKeyPackage(roomId, {
+			type: 'key-package',
+			fromParticipantId,
+			fromSenderId,
+			epochNumber: payload.epochNumber,
+			keyPackage: payload.keyPackage,
+			consumed: false,
+			expiresAt: this.expiresAt(),
+		});
 		this.emitToFullAccessParticipants(roomId, {
 			type: 'key-package',
 			fromParticipantId,
@@ -400,6 +435,7 @@ export class E2EEEpochRelay {
 			existing.membershipDeltaId = membershipDeltaId;
 			existing.membershipDeltaHash = membershipDeltaHash;
 			existing.rosterHash = membershipDeltaHash;
+			await this.persistPendingCommitRequest(roomId, existing);
 			await this.tryAssignAndEmit(roomId, existing);
 			return;
 		}
@@ -416,6 +452,7 @@ export class E2EEEpochRelay {
 			timer: setTimeout(() => undefined, 0), // placeholder; replaced below
 		};
 		this.pendingCommitRequests.set(key, pending);
+		await this.persistPendingCommitRequest(roomId, pending);
 		await this.tryAssignAndEmit(roomId, pending);
 	}
 
@@ -445,6 +482,7 @@ export class E2EEEpochRelay {
 		}
 		pending.alreadyTried.push(picked.senderId);
 		pending.attempts += 1;
+		await this.persistPendingCommitRequest(roomId, pending);
 		const nextEpochNumber = pending.epochNumber + 1;
 		console.log('[DEBUG-e2ee] SFU: dispatching commit-request', {
 			roomId,
@@ -499,13 +537,17 @@ export class E2EEEpochRelay {
 		await this.tryAssignAndEmit(roomId, pending);
 	}
 
-	private clearPendingCommitRequest(roomId: string, epochNumber: number): void {
+	private async clearPendingCommitRequest(
+		roomId: string,
+		epochNumber: number,
+	): Promise<void> {
 		const key = `${roomId}:${epochNumber}`;
 		const pending = this.pendingCommitRequests.get(key);
 		if (pending) {
 			clearTimeout(pending.timer);
 		}
 		this.pendingCommitRequests.delete(key);
+		await this.persistence.removePendingCommitRequest(roomId, epochNumber);
 	}
 
 	private notifyPendingJoiners(
@@ -719,23 +761,28 @@ export class E2EEEpochRelay {
 			rosterHash: payload.rosterHash,
 			mlsCommit: payload.mlsCommit,
 		};
-		this.retainCommit(roomId, commit);
+		await this.retainCommit(roomId, commit);
 		this.emitToFullAccessParticipants(roomId, commit);
+		await this.persistence.markKeyPackagesConsumed(
+			roomId,
+			payload.previousEpochNumber,
+			this.parseJoiningSenderIds(payload.membershipDeltaId),
+		);
 		// The committer responded successfully. Clear any pending
 		// commit-request for this delta so the redesignation timer is
 		// cancelled. We use the previous epoch number as the lookup
 		// key because that's what `dispatchCommitRequest` keyed on
 		// (the request was made for the current epoch, which becomes
 		// the previous epoch once the commit lands).
-		this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
+		await this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
 	}
 
-	private relayWelcome(
+	private async relayWelcome(
 		roomId: string,
 		fromParticipantId: string,
 		fromSenderId: number,
 		payload: E2eeEpochPayload,
-	): void {
+	): Promise<void> {
 		if (
 			!this.isSenderId(payload.toSenderId) ||
 			!this.isEpochNumber(payload.epochNumber) ||
@@ -757,16 +804,16 @@ export class E2EEEpochRelay {
 			epochNumber: payload.epochNumber,
 			mlsWelcome: payload.mlsWelcome,
 		};
-		this.retainWelcome(roomId, welcome);
+		await this.retainWelcome(roomId, welcome);
 		this.emitToTarget(roomId, toParticipantId, welcome);
 	}
 
-	private recordAck(
+	private async recordAck(
 		roomId: string,
 		fromParticipantId: string,
 		fromSenderId: number,
 		payload: E2eeEpochPayload,
-	): void {
+	): Promise<void> {
 		if (!this.isEpochNumber(payload.epochNumber)) return;
 		const retained = this.getRetainedEpoch(roomId, payload.epochNumber);
 		let epochAcks = retained.acks.get(payload.epochNumber);
@@ -775,6 +822,16 @@ export class E2EEEpochRelay {
 			retained.acks.set(payload.epochNumber, epochAcks);
 		}
 		epochAcks.add(fromSenderId);
+		await this.persistence.recordAck(
+			roomId,
+			{
+				type: 'ack',
+				fromParticipantId,
+				fromSenderId,
+				epochNumber: payload.epochNumber,
+			},
+			this.expiresAt(),
+		);
 		this.emitToFullAccessParticipants(roomId, {
 			type: 'ack',
 			fromParticipantId,
@@ -788,6 +845,7 @@ export class E2EEEpochRelay {
 		fromSenderId: number,
 		payload: E2eeEpochPayload,
 	): Promise<void> {
+		await this.hydrate();
 		if (
 			payload.knownEpochNumber !== undefined &&
 			!this.isEpochNumber(payload.knownEpochNumber)
@@ -801,6 +859,22 @@ export class E2EEEpochRelay {
 		if (!targetParticipantId) return;
 		const retainedByEpoch = this.retainedMaterial.get(roomId);
 		if (!retainedByEpoch) return;
+		if (
+			payload.knownEpochNumber !== undefined &&
+			!this.hasContiguousRetainedEpochs(
+				roomId,
+				payload.knownEpochNumber,
+				this.getCurrentEpochNumber(roomId),
+			)
+		) {
+			this.requestFreshKeyPackageForResync(
+				roomId,
+				fromSenderId,
+				targetParticipantId,
+				payload.knownEpochNumber,
+			);
+			return;
+		}
 		let sentAny = false;
 		for (const [epochNumber, retained] of retainedByEpoch.entries()) {
 			if (
@@ -820,44 +894,39 @@ export class E2EEEpochRelay {
 			}
 		}
 		if (!sentAny) {
-			console.log(
-				'[DEBUG-e2ee] SFU: resync-request had no retained material; requesting fresh key package',
-				{
-					roomId,
-					fromSenderId,
-					knownEpochNumber: payload.knownEpochNumber ?? null,
-				},
+			this.requestFreshKeyPackageForResync(
+				roomId,
+				fromSenderId,
+				targetParticipantId,
+				payload.knownEpochNumber,
 			);
-			const epochNumber = this.getCurrentEpochNumber(roomId);
-			this.emitToTarget(roomId, targetParticipantId, {
-				type: 'key-package-request',
-				epochNumber,
-				reason: 'reconnect',
-			});
 		}
 	}
 
-	private retainCommit(
+	private async retainCommit(
 		roomId: string,
 		commit: Extract<E2eeEpochEnvelope, { type: 'commit' }>,
-	): void {
+	): Promise<void> {
 		const currentEpoch = this.getCurrentEpochNumber(roomId);
 		if (commit.epochNumber > currentEpoch) {
 			this.currentEpochByRoom.set(roomId, commit.epochNumber);
+			await this.persistence.setCurrentEpoch(roomId, commit.epochNumber);
 		}
 		this.getRetainedEpoch(roomId, commit.epochNumber).commit = commit;
 		this.pruneRetainedMaterial(roomId);
+		await this.persistence.retainCommit(roomId, commit, this.expiresAt());
 	}
 
-	private retainWelcome(
+	private async retainWelcome(
 		roomId: string,
 		welcome: Extract<E2eeEpochEnvelope, { type: 'welcome' }>,
-	): void {
+	): Promise<void> {
 		this.getRetainedEpoch(roomId, welcome.epochNumber).welcomes.set(
 			welcome.toSenderId,
 			welcome,
 		);
 		this.pruneRetainedMaterial(roomId);
+		await this.persistence.retainWelcome(roomId, welcome, this.expiresAt());
 	}
 
 	private getRetainedEpoch(
@@ -884,6 +953,139 @@ export class E2EEEpochRelay {
 		for (const staleEpoch of retainedEpochs.slice(RETAINED_EPOCHS)) {
 			retainedByEpoch.delete(staleEpoch);
 		}
+	}
+
+	private async hydrate(): Promise<void> {
+		if (this.hydratePromise) return this.hydratePromise;
+		this.hydratePromise = (async () => {
+			const persisted = await this.persistence.loadAll();
+			for (const [roomId, state] of persisted) {
+				if (state.currentEpoch !== undefined) {
+					this.currentEpochByRoom.set(roomId, state.currentEpoch);
+				}
+				for (const commit of state.commits) {
+					const { expiresAt: _expiresAt, ...envelope } = commit;
+					this.getRetainedEpoch(roomId, envelope.epochNumber).commit = envelope;
+				}
+				for (const welcome of state.welcomes) {
+					const { expiresAt: _expiresAt, ...envelope } = welcome;
+					this.getRetainedEpoch(roomId, envelope.epochNumber).welcomes.set(
+						envelope.toSenderId,
+						envelope,
+					);
+				}
+				for (const ack of state.acks) {
+					const { expiresAt: _expiresAt, ...envelope } = ack;
+					let epochAcks = this.getRetainedEpoch(
+						roomId,
+						envelope.epochNumber,
+					).acks.get(envelope.epochNumber);
+					if (!epochAcks) {
+						epochAcks = new Set();
+						this.getRetainedEpoch(roomId, envelope.epochNumber).acks.set(
+							envelope.epochNumber,
+							epochAcks,
+						);
+					}
+					epochAcks.add(envelope.fromSenderId);
+				}
+				for (const request of state.pendingCommitRequests) {
+					const pending = this.pendingFromPersisted(request);
+					this.pendingCommitRequests.set(
+						`${roomId}:${pending.epochNumber}`,
+						pending,
+					);
+				}
+				this.pruneRetainedMaterial(roomId);
+			}
+		})();
+		return this.hydratePromise;
+	}
+
+	private async persistPendingCommitRequest(
+		roomId: string,
+		pending: PendingCommitRequest,
+	): Promise<void> {
+		await this.persistence.upsertPendingCommitRequest(roomId, {
+			joiningSenderIds: [...pending.joiningSenderIds],
+			removedSenderIds: [...pending.removedSenderIds],
+			epochNumber: pending.epochNumber,
+			membershipDeltaId: pending.membershipDeltaId,
+			membershipDeltaHash: pending.membershipDeltaHash,
+			rosterHash: pending.rosterHash,
+			alreadyTried: [...pending.alreadyTried],
+			attempts: pending.attempts,
+			expiresAt: this.expiresAt(),
+		});
+	}
+
+	private pendingFromPersisted(
+		persisted: PersistedE2eePendingCommitRequest,
+	): PendingCommitRequest {
+		return {
+			joiningSenderIds: [...persisted.joiningSenderIds],
+			removedSenderIds: [...persisted.removedSenderIds],
+			epochNumber: persisted.epochNumber,
+			membershipDeltaId: persisted.membershipDeltaId,
+			membershipDeltaHash: persisted.membershipDeltaHash,
+			rosterHash: persisted.rosterHash,
+			alreadyTried: [...persisted.alreadyTried],
+			attempts: persisted.attempts,
+			timer: setTimeout(() => undefined, 0),
+		};
+	}
+
+	private expiresAt(): number {
+		return Date.now() + E2EE_COORDINATOR_TTL_MS;
+	}
+
+	private parseJoiningSenderIds(membershipDeltaId: string): number[] {
+		if (!membershipDeltaId.startsWith('add-')) return [];
+		const body = membershipDeltaId.slice('add-'.length).split('-to-')[0];
+		if (!body) return [];
+		return body
+			.split('-')
+			.map((id) => Number.parseInt(id, 10))
+			.filter((id) => this.isSenderId(id));
+	}
+
+	private hasContiguousRetainedEpochs(
+		roomId: string,
+		knownEpochNumber: number,
+		currentEpochNumber: number,
+	): boolean {
+		if (knownEpochNumber >= currentEpochNumber) return true;
+		const retainedByEpoch = this.retainedMaterial.get(roomId);
+		if (!retainedByEpoch) return false;
+		for (
+			let epoch = knownEpochNumber + 1;
+			epoch <= currentEpochNumber;
+			epoch++
+		) {
+			if (!retainedByEpoch.get(epoch)?.commit) return false;
+		}
+		return true;
+	}
+
+	private requestFreshKeyPackageForResync(
+		roomId: string,
+		fromSenderId: number,
+		targetParticipantId: string,
+		knownEpochNumber: unknown,
+	): void {
+		console.log(
+			'[DEBUG-e2ee] SFU: resync-request cannot be replayed; requesting fresh key package',
+			{
+				roomId,
+				fromSenderId,
+				knownEpochNumber: knownEpochNumber ?? null,
+			},
+		);
+		this.emitToTarget(roomId, targetParticipantId, {
+			type: 'key-package-request',
+			epochNumber: this.getCurrentEpochNumber(roomId),
+			reason: 'reconnect',
+		});
 	}
 
 	private isEpochNumber(value: unknown): value is number {

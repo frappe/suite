@@ -5,6 +5,7 @@ import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
 import type { AuthManager } from './AuthManager';
 import { E2EEEpochRelay } from './E2EEEpochRelay';
+import type { E2eeCoordinatorPersistence } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
 import { registerChatHandlers } from './handlers/ChatHandlers';
@@ -38,6 +39,7 @@ export class SocketHandlerManager {
 		mediasoup: MediasoupManager,
 		authManager: AuthManager,
 		roster: E2eeRosterStore,
+		coordinatorPersistence?: E2eeCoordinatorPersistence,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
@@ -48,6 +50,7 @@ export class SocketHandlerManager {
 			io,
 			this.registry.getFullAccessSockets(),
 			this.registry.getParticipantToSender(),
+			coordinatorPersistence,
 		);
 		this.e2eeEpochRelay.setRoster(roster);
 
