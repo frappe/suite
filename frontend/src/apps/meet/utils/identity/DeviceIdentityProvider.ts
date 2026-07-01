@@ -12,8 +12,8 @@
 // host-signed envelope and cached per sender_id on the receiver.
 //
 // The private keys never leave the device; they're stored in
-// IndexedDB (Key format: JWK; CryptoKey can't be stored cross-realm
-// reliably).
+// IndexedDB as non-extractable CryptoKeys. Older JWK entries are migrated
+// in place when read.
 //
 // Meeting secrets and X25519 meeting private keys are deliberately not
 // persisted. Per ADR 0006, pagehide/reload requires a fresh ECDH.
@@ -57,19 +57,21 @@ function openDB(): Promise<IDBDatabase> {
 	});
 }
 
-async function idbGet(key: string): Promise<JsonWebKey | null> {
+type StoredIdentityKey = CryptoKey | JsonWebKey;
+
+async function idbGet(key: string): Promise<StoredIdentityKey | null> {
 	const db = await openDB();
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, "readonly");
 		const store = tx.objectStore(STORE_NAME);
 		const req = store.get(key);
 		req.onerror = () => reject(req.error);
-		req.onsuccess = () => resolve((req.result as JsonWebKey) ?? null);
+		req.onsuccess = () => resolve((req.result as StoredIdentityKey) ?? null);
 		tx.oncomplete = () => db.close();
 	});
 }
 
-async function idbPut(key: string, value: JsonWebKey): Promise<void> {
+async function idbPut(key: string, value: StoredIdentityKey): Promise<void> {
 	const db = await openDB();
 	return new Promise((resolve, reject) => {
 		const tx = db.transaction(STORE_NAME, "readwrite");
@@ -79,6 +81,42 @@ async function idbPut(key: string, value: JsonWebKey): Promise<void> {
 		req.onsuccess = () => resolve();
 		tx.oncomplete = () => db.close();
 	});
+}
+
+function isCryptoKey(value: StoredIdentityKey): value is CryptoKey {
+	return typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+}
+
+async function loadPrivateSigningKey(
+	privateKeyId: string,
+	stored: StoredIdentityKey,
+): Promise<CryptoKey> {
+	if (isCryptoKey(stored)) return stored;
+	const privateKey = await globalThis.crypto.subtle.importKey(
+		"jwk",
+		stored,
+		{ name: "Ed25519" },
+		false,
+		["sign"],
+	);
+	await idbPut(privateKeyId, privateKey);
+	return privateKey;
+}
+
+async function loadPublicVerifyKey(
+	publicKeyId: string,
+	stored: StoredIdentityKey,
+): Promise<CryptoKey> {
+	if (isCryptoKey(stored)) return stored;
+	const publicKey = await globalThis.crypto.subtle.importKey(
+		"jwk",
+		stored,
+		{ name: "Ed25519" },
+		true,
+		["verify"],
+	);
+	await idbPut(publicKeyId, publicKey);
+	return publicKey;
 }
 
 function generateDeviceId(): string {
@@ -103,37 +141,26 @@ async function loadOrCreateKeyPair(
 ): Promise<CryptoKeyPair> {
 	const privJwk = await idbGet(privateKeyId);
 	if (privJwk) {
-		const privateKey = await globalThis.crypto.subtle.importKey(
-			"jwk",
-			privJwk,
-			{ name: "Ed25519" },
-			false,
-			["sign"],
-		);
+		const privateKey = await loadPrivateSigningKey(privateKeyId, privJwk);
 		const pubJwk = await idbGet(publicKeyId);
 		const publicKey = pubJwk
-			? await globalThis.crypto.subtle.importKey(
-					"jwk",
-					pubJwk,
-					{ name: "Ed25519" },
-					true,
-					["verify"],
-				)
+			? await loadPublicVerifyKey(publicKeyId, pubJwk)
 			: (null as unknown as CryptoKey);
 		return { privateKey, publicKey };
 	}
 	const kp = await ed25519KeyPair();
-	await idbPut(
-		privateKeyId,
+	const privateKey = await globalThis.crypto.subtle.importKey(
+		"jwk",
 		await globalThis.crypto.subtle.exportKey("jwk", kp.privateKey),
+		{ name: "Ed25519" },
+		false,
+		["sign"],
 	);
+	await idbPut(privateKeyId, privateKey);
 	if (kp.publicKey) {
-		await idbPut(
-			publicKeyId,
-			await globalThis.crypto.subtle.exportKey("jwk", kp.publicKey),
-		);
+		await idbPut(publicKeyId, kp.publicKey);
 	}
-	return kp;
+	return { privateKey, publicKey: kp.publicKey };
 }
 
 export class IndexedDBDeviceIdentityProvider implements DeviceIdentityProvider {

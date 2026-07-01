@@ -132,7 +132,6 @@ watch(e2eeEnabled, async (val, oldVal) => {
 		document.dispatchEvent(
 			new CustomEvent("meet:e2ee-host-enabled", {
 				detail: {
-					hostSigningKeyPair: identity.signingKeyPair,
 					keyVersion: "v1-epoch",
 				},
 			}),

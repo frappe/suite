@@ -17,6 +17,42 @@ async function clearIndexedDB(): Promise<void> {
 	});
 }
 
+function openIdentityDB(): Promise<IDBDatabase> {
+	return new Promise((resolve, reject) => {
+		const req = indexedDB.open(DB_NAME, 3);
+		req.onerror = () => reject(req.error);
+		req.onsuccess = () => resolve(req.result);
+		req.onupgradeneeded = () => {
+			const db = req.result;
+			if (!db.objectStoreNames.contains("identity")) {
+				db.createObjectStore("identity");
+			}
+		};
+	});
+}
+
+async function getStoredIdentityValue(key: string): Promise<unknown> {
+	const db = await openIdentityDB();
+	return new Promise((resolve, reject) => {
+		const tx = db.transaction("identity", "readonly");
+		const req = tx.objectStore("identity").get(key);
+		req.onerror = () => reject(req.error);
+		req.onsuccess = () => resolve(req.result);
+		tx.oncomplete = () => db.close();
+	});
+}
+
+async function putStoredIdentityValue(key: string, value: unknown): Promise<void> {
+	const db = await openIdentityDB();
+	return new Promise((resolve, reject) => {
+		const tx = db.transaction("identity", "readwrite");
+		const req = tx.objectStore("identity").put(value, key);
+		req.onerror = () => reject(req.error);
+		req.onsuccess = () => resolve();
+		tx.oncomplete = () => db.close();
+	});
+}
+
 function clearLocalStorage(): void {
 	localStorage.removeItem(DEVICE_ID_STORAGE_KEY);
 }
@@ -160,6 +196,37 @@ describe("IndexedDBDeviceIdentityProvider", () => {
 		expect(identity2.deviceId).toBe(identity1.deviceId);
 		expect(identity2.authPublicKey).toBe(identity1.authPublicKey);
 		expect(identity2.signingPublicKey).toBe(identity1.signingPublicKey);
+	});
+
+	it("stores private device keys as non-extractable CryptoKeys", async () => {
+		const provider = new IndexedDBDeviceIdentityProvider();
+		const identity = await provider.getIdentity();
+
+		expect(identity.authKeyPair.privateKey.extractable).toBe(false);
+		expect(identity.signingKeyPair.privateKey.extractable).toBe(false);
+		expect(await getStoredIdentityValue("authKey")).toBeInstanceOf(CryptoKey);
+		expect(await getStoredIdentityValue("signingKey")).toBeInstanceOf(CryptoKey);
+	});
+
+	it("migrates legacy private JWKs to non-extractable CryptoKeys", async () => {
+		const keyPair = await crypto.subtle.generateKey(
+			{ name: "Ed25519" },
+			true,
+			["sign", "verify"],
+		);
+		localStorage.setItem(DEVICE_ID_STORAGE_KEY, "legacy-device");
+		await putStoredIdentityValue(
+			"authKey",
+			await crypto.subtle.exportKey("jwk", keyPair.privateKey),
+		);
+		await putStoredIdentityValue("authPub", keyPair.publicKey);
+
+		const provider = new IndexedDBDeviceIdentityProvider();
+		const identity = await provider.getIdentity();
+
+		expect(identity.deviceId).toBe("legacy-device");
+		expect(identity.authKeyPair.privateKey.extractable).toBe(false);
+		expect(await getStoredIdentityValue("authKey")).toBeInstanceOf(CryptoKey);
 	});
 
 	it("clearCache forces a re-read from disk on the next getIdentity call", async () => {
