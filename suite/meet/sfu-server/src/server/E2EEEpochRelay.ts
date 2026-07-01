@@ -406,6 +406,13 @@ export class E2EEEpochRelay {
 				epochNumber: payload.epochNumber,
 			},
 		);
+		if (await this.roster?.get(roomId, fromSenderId)) {
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: ignoring key-package from admitted sender %o',
+				{ roomId, fromParticipantId, fromSenderId },
+			);
+			return;
+		}
 		await this.persistence.retainKeyPackage(roomId, {
 			type: 'key-package',
 			fromParticipantId,

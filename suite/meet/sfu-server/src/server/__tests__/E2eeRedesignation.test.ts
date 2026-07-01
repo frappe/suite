@@ -217,7 +217,47 @@ async function main(): Promise<void> {
 	relay.clearRoom('meeting-empty');
 	sent.splice(0, sent.length);
 
-	// -------- Test 1: redesignation after timeout --------
+	// -------- Test 1: admitted member key-package is not treated as a joiner --------
+	await testRelay.relayKeyPackage('meeting-1', 'host-1', 7, {
+		type: 'key-package',
+		epochNumber: 1,
+		keyPackage: Buffer.from([1, 2, 3]).toString('base64'),
+	});
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	assert(
+		(sent as { length: number }).length === 0,
+		`expected admitted host key-package to be ignored, got ${(sent as { length: number }).length}`,
+	);
+	await testRelay.relayKeyPackage('meeting-1', 'joiner-13', 13, {
+		type: 'key-package',
+		epochNumber: 1,
+		keyPackage: Buffer.from([4, 5, 6]).toString('base64'),
+	});
+	await new Promise((resolve) => setTimeout(resolve, 400));
+	assert(
+		(sent as { length: number }).length === 1,
+		`expected real joiner key-package to dispatch one commit-request, got ${(sent as { length: number }).length}`,
+	);
+	assert(
+		sent[0].joiningSenderIds.length === 1 && sent[0].joiningSenderIds[0] === 13,
+		`expected real joiner request to include only [13], got ${JSON.stringify(sent[0].joiningSenderIds)}`,
+	);
+	relay.clearRoom('meeting-1');
+	await roster.add(
+		'meeting-1',
+		makeEntry(7, { participantId: 'host-1', isHost: true, joinedAt: 1 }),
+	);
+	await roster.add(
+		'meeting-1',
+		makeEntry(9, { participantId: 'alice-1', joinedAt: 2 }),
+	);
+	await roster.add(
+		'meeting-1',
+		makeEntry(11, { participantId: 'bob-1', joinedAt: 3 }),
+	);
+	sent.splice(0, sent.length);
+
+	// -------- Test 2: redesignation after timeout --------
 	await testRelay.requestCommitFromHost('meeting-1', [13], 1);
 	assert(
 		(sent as { length: number }).length === 1,

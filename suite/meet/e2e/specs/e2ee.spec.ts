@@ -4,15 +4,18 @@ import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
 async function openMeetingAccessSettings(page: Page): Promise<void> {
 	await page.getByTestId("toolbar-more").click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
-	await page.getByRole("tab", { name: "Meeting Access" }).click();
+	await page.getByRole("button", { name: "Meeting Access" }).click();
 }
 
 async function enableE2EEInSettings(page: Page): Promise<void> {
 	await openMeetingAccessSettings(page);
-	const toggle = page.getByTestId("e2ee-toggle");
-	await toggle.waitFor({ state: "visible" });
+	const toggle = page.getByRole("switch", { name: "End-to-end encryption" });
+	await expect(toggle).toBeVisible();
 	await toggle.click();
-	await expect(toggle).toBeDisabled({ timeout: 15_000 });
+	await expect(toggle).toBeChecked({ timeout: 15_000 });
+	await expect(page.getByText("Encryption fingerprint")).toBeVisible({
+		timeout: 30_000,
+	});
 }
 
 test.describe("E2EE (v2 ECDH handshake)", () => {
@@ -29,7 +32,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await enableE2EEInSettings(hostPage);
 
 		const guest = await createParticipant();
-		await guest.joinMeeting(meetingId);
+		await guest.joinAsGuest(meetingId, "Guest E2EE");
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 30_000,

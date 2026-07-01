@@ -14,7 +14,7 @@ import { clearMeetingCreateRateLimit, createMeetingViaApi, type MeetingType } fr
 const isCI = !!process.env.CI;
 const previewTimeout = isCI ? 45_000 : 20_000;
 const meetingReadyTimeout = isCI ? 60_000 : 20_000;
-const baseURL = process.env.BASE_URL ?? "http://localhost:8096";
+const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 
 function appUrl(pathname: string): string {
 	return new URL(pathname, baseURL).toString();
