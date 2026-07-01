@@ -1,8 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import type { Socket } from 'socket.io';
 import type { ActivePoll } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { randomUUID } from 'node:crypto';
 
 export function registerPollHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -25,6 +25,19 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				}
 
 				if (
+					typeof question !== 'string' ||
+					question.trim().length === 0 ||
+					question.length > 500
+				) {
+					if (callback)
+						callback({
+							success: false,
+							error: 'Question must be between 1 and 500 characters.',
+						});
+					return;
+				}
+
+				if (
 					!Array.isArray(options) ||
 					options.length < 2 ||
 					options.length > 10
@@ -39,13 +52,16 @@ export function registerPollHandlers(deps: HandlerDeps) {
 
 				if (
 					options.some(
-						(opt) => typeof opt?.text !== 'string' || !opt.text.trim(),
+						(opt) =>
+							typeof opt?.text !== 'string' ||
+							!opt.text.trim() ||
+							opt.text.length > 200,
 					)
 				) {
 					if (callback) {
 						callback({
 							success: false,
-							error: 'Poll options cannot be empty.',
+							error: 'Poll options must be between 1 and 200 characters.',
 						});
 					}
 					return;

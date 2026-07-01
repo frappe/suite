@@ -3,6 +3,7 @@ import type { SFUClient } from "../utils/SFUClient";
 import type { CurrentUser } from "./useCurrentUser";
 import { usePollStore } from "./usePollStore";
 import { PollPayloadFE } from "../types";
+import { getErrorMessage } from "../utils/error";
 
 interface PollAPI {
 	setupPollEvents: () => void;
@@ -52,11 +53,12 @@ export function usePoll(deps: {
 				}
 				toast.success("Poll created!");
 			} else {
+				
 				toast.error(response?.error || "Failed to create poll");
 			}
 		} catch (error) {
 			console.error("Failed to create poll:", error);
-			toast.error("Failed to create poll");
+			toast.error(getErrorMessage(error) || "Failed to create poll");
 		}
 	};
 
