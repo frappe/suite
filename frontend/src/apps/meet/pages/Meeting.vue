@@ -186,8 +186,6 @@
 			<RejectionOverlay v-if="isRejected && isGuestSession" @leave="goHome" />
 		</template>
 
-		<!-- Legacy passphrase dialog removed; E2EE uses ECDH handshake. -->
-
 		<!-- Chat notifications -->
 		<ChatNotificationQueue
 			ref="chatNotificationQueue"
