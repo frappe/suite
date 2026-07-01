@@ -184,7 +184,7 @@ const menuItems = computed(() => [
 			{
 				icon: Crown,
 				label: __('Admin Dashboard'),
-				onClick: () => router.push('/dashboard'),
+				onClick: () => router.push('/mail/dashboard'),
 				condition: () =>
 					user.data.is_jmap_configured &&
 					user.data.is_mail_admin &&
