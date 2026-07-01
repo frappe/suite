@@ -5,8 +5,8 @@
 		data-testid="meeting-layout"
 		:class="
 			mode === 'sidebar'
-				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2 rounded-lg'
-				: 'relative h-full rounded-lg overflow-hidden'
+				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2'
+				: 'relative h-full'
 		"
 	>
 		<!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->
@@ -29,7 +29,7 @@
 			class="h-full gap-2 overflow-hidden"
 			:class="[
 				mode === 'sidebar'
-					? 'grid auto-rows-fr sm:auto-rows-[calc((100%-1.5rem)/4)] content-start mt-3 sm:mt-0 sm:ml-3'
+					? 'grid auto-rows-fr content-start mt-3 sm:mt-0 sm:ml-3'
 					: 'flex flex-wrap justify-center content-start',
 				mode === 'sidebar' && !isMobile
 					? gridColumns === 2
@@ -54,6 +54,7 @@
 				:isAudioEnabled="isMicOn"
 				:isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
 				:videoRef="setLocalVideoRef"
+				:tileCount="visibleTileCount"
 				:showReaction="pinnedTiles.length===0"
 				:style="tileStyle"
 			/>
@@ -171,13 +172,15 @@ const displayScreenShares = computed(
 
 // ── Pinned area data ──────────────────────────────────────────────────────────
 
-// Unpin when a pinned participant leaves.
+// Unpin when the pinned participant leaves
 watch(
-	() => [pinnedTiles.value, participants.value] as const,
-	() => {
-		pinnedTiles.value
-			.filter((tile) => tile.type === "participant" && !participants.value[tile.id])
-			.forEach((tile) => meetingCtx.gridLayout.unpinTile(tile.type, tile.id));
+	() => pinnedTiles.value.filter((t) => t.type === "participant"),
+	(pinnedParticipantTiles) => {
+		pinnedParticipantTiles.forEach((pTile) => {
+			if (!participants.value[pTile.id]) {
+				meetingCtx.gridLayout.unpinTile(pTile.type, pTile.id);
+			}
+		});
 	},
 	{ deep: true },
 );
@@ -215,6 +218,7 @@ const getScreenShareTileBindings = (shareTile: {
 		isVideoEnabled: true,
 		isAudioEnabled: false,
 		videoRef: wrappedVideoRef,
+		tileCount: isPinned ? 1 : visibleTileCount.value,
 		class: isPinned ? "pinned-tile" : undefined,
 		style: isPinned
 			? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`]
@@ -250,6 +254,7 @@ const getParticipantTileBindings = (
 		isAudioEnabled: participant.audio_enabled,
 		isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
 		videoRef: getRemoteVideoRef(participant.user_id),
+		tileCount: isPinned ? 1 : visibleTileCount.value,
 		showReaction: pinnedTiles.value.length === 0,
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]

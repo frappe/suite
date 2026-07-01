@@ -23,22 +23,11 @@ export function useAudioStream(
 				if (audioTrack) {
 					stream.value = new MediaStream([audioTrack]);
 				}
-			} else {
-				if (sfuManager?.consumerManager) {
-					const audioConsumer =
-						sfuManager.consumerManager.getAudioConsumer(participantId);
-					if (audioConsumer?.track) {
-						stream.value = new MediaStream([audioConsumer.track]);
-						return;
-					}
-				}
-
-				if (sfuManager?.videoManager) {
-					const audioElement =
-						sfuManager.videoManager.audioElements.get(participantId);
-					if (audioElement?.srcObject) {
-						stream.value = audioElement.srcObject as MediaStream;
-					}
+			} else if (sfuManager?.consumerManager) {
+				const audioConsumer =
+					sfuManager.consumerManager.getAudioConsumer(participantId);
+				if (audioConsumer?.track) {
+					stream.value = new MediaStream([audioConsumer.track]);
 				}
 			}
 		} catch (error) {
