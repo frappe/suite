@@ -25,6 +25,9 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 		cls.host_email = "host-e2ee@example.com"
 		cls._ensure_user(cls.host_email, "HostE2EE")
 
+	def setUp(self):
+		frappe.conf.sfu_secret = "test-sfu-secret"
+
 	@classmethod
 	def _ensure_user(cls, email: str, first_name: str):
 		if frappe.db.exists("User", email):
@@ -53,7 +56,6 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 				"allow_guest": 1,
 			}
 		).insert(ignore_permissions=True)
-		meeting.add_member(self.host_email)
 		return meeting
 
 	def test_device_id_validator(self):
