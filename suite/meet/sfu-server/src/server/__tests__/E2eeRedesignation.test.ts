@@ -42,6 +42,8 @@ type CommitRequestEnvelope = {
 	epochNumber?: number;
 	nextEpochNumber?: number;
 	membershipDeltaId?: string;
+	membershipDeltaHash?: string;
+	rosterHash?: string;
 	joiningSenderIds?: number[];
 };
 
@@ -108,6 +110,8 @@ async function main(): Promise<void> {
 		epochNumber: number;
 		nextEpochNumber: number;
 		membershipDeltaId: string;
+		membershipDeltaHash: string;
+		rosterHash: string;
 		joiningSenderIds: number[];
 	}> = [];
 	const sentBySocket: Array<{
@@ -132,6 +136,8 @@ async function main(): Promise<void> {
 					epochNumber: envelope.epochNumber ?? 0,
 					nextEpochNumber: envelope.nextEpochNumber ?? 0,
 					membershipDeltaId: envelope.membershipDeltaId ?? '',
+					membershipDeltaHash: envelope.membershipDeltaHash ?? '',
+					rosterHash: envelope.rosterHash ?? '',
 					joiningSenderIds: envelope.joiningSenderIds ?? [],
 				});
 			}
@@ -385,6 +391,25 @@ async function main(): Promise<void> {
 		`expected one commit-request after fresh request, got ${(sent as { length: number }).length}`,
 	);
 	const first = sent[0];
+	const commitCountBefore = sentBySocket.filter(
+		(entry) => entry.envelope.type === 'commit',
+	).length;
+	await testRelay.relayCommit('meeting-1', 'alice-1', 9, {
+		type: 'commit',
+		fromParticipantId: 'alice-1',
+		fromSenderId: 9,
+		previousEpochNumber: first.epochNumber,
+		epochNumber: first.nextEpochNumber,
+		membershipDeltaId: first.membershipDeltaId,
+		membershipDeltaHash: first.membershipDeltaHash,
+		rosterHash: first.rosterHash,
+		mlsCommit: Buffer.from([9, 9, 9]).toString('base64'),
+	});
+	assert(
+		sentBySocket.filter((entry) => entry.envelope.type === 'commit').length ===
+			commitCountBefore,
+		'non-designated committer should not have its commit broadcast',
+	);
 
 	await testRelay.relayCommit('meeting-1', 'host-1', 7, {
 		type: 'commit',
@@ -393,8 +418,8 @@ async function main(): Promise<void> {
 		previousEpochNumber: first.epochNumber,
 		epochNumber: first.nextEpochNumber,
 		membershipDeltaId: first.membershipDeltaId,
-		membershipDeltaHash: 'YWFhYWE=',
-		rosterHash: 'YWFhYWE=',
+		membershipDeltaHash: first.membershipDeltaHash,
+		rosterHash: first.rosterHash,
 		mlsCommit: Buffer.from([1, 2, 3]).toString('base64'),
 	});
 

@@ -846,6 +846,24 @@ export class E2EEEpochRelay {
 			);
 			return;
 		}
+		const pending = this.pendingCommitRequests.get(
+			`${roomId}:${payload.previousEpochNumber}`,
+		);
+		if (
+			!pending ||
+			!this.matchesPendingCommitRequest(pending, fromSenderId, payload)
+		) {
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: rejecting commit without matching pending request %o',
+				{
+					roomId,
+					fromSenderId,
+					previousEpochNumber: payload.previousEpochNumber,
+					membershipDeltaId: payload.membershipDeltaId,
+				},
+			);
+			return;
+		}
 		const commit = {
 			type: 'commit' as const,
 			fromParticipantId,
@@ -871,6 +889,21 @@ export class E2EEEpochRelay {
 		// (the request was made for the current epoch, which becomes
 		// the previous epoch once the commit lands).
 		await this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
+	}
+
+	private matchesPendingCommitRequest(
+		pending: PendingCommitRequest,
+		fromSenderId: number,
+		payload: E2eeEpochPayload,
+	): boolean {
+		return (
+			pending.alreadyTried[pending.alreadyTried.length - 1] === fromSenderId &&
+			payload.previousEpochNumber === pending.epochNumber &&
+			payload.epochNumber === pending.epochNumber + 1 &&
+			payload.membershipDeltaId === pending.membershipDeltaId &&
+			payload.membershipDeltaHash === pending.membershipDeltaHash &&
+			payload.rosterHash === pending.rosterHash
+		);
 	}
 
 	private async relayWelcome(
