@@ -47,7 +47,7 @@ function makeVideoElement(): HTMLVideoElement {
 	return el;
 }
 
-describe("VideoElementManager.attachStream stale re-attach", () => {
+describe("VideoElementManager.attachStream", () => {
 	let manager: VideoElementManager;
 
 	beforeEach(() => {
@@ -85,7 +85,7 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		expect(el.srcObject).toBe(originalSrc);
 	});
 
-	it("re-attaches when the last attach is older than the stale threshold", async () => {
+	it("does not reload the same track after time passes", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(1_000_000));
 
@@ -98,7 +98,7 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		vi.setSystemTime(new Date(1_000_000 + 70_000));
 
 		await manager.attachStream("p1", makeStream([track1]), false);
-		expect(el.srcObject).not.toBe(originalSrc);
+		expect(el.srcObject).toBe(originalSrc);
 		expect((el.srcObject as MediaStream).getVideoTracks()[0].id).toBe(
 			"track-1",
 		);
@@ -121,7 +121,7 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 	});
 });
 
-describe("VideoElementManager.attachAudioStream stale re-attach", () => {
+describe("VideoElementManager.attachAudioStream", () => {
 	let manager: VideoElementManager;
 
 	beforeEach(() => {
@@ -132,7 +132,7 @@ describe("VideoElementManager.attachAudioStream stale re-attach", () => {
 		vi.useRealTimers();
 	});
 
-	it("re-attaches audio when the last attach is older than the stale threshold", () => {
+	it("does not reload the same audio track after time passes", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(1_000_000));
 
@@ -158,7 +158,7 @@ describe("VideoElementManager.attachAudioStream stale re-attach", () => {
 		vi.setSystemTime(new Date(1_000_000 + 70_000));
 
 		manager.attachAudioStream("p1", [track]);
-		expect(audioEl?.srcObject).not.toBe(originalSrc);
+		expect(audioEl?.srcObject).toBe(originalSrc);
 
 		createElementSpy.mockRestore();
 	});

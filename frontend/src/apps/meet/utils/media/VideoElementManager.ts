@@ -10,21 +10,15 @@ interface DeferredAttachment {
 	isLocal: boolean;
 }
 
-const STALE_REATTACH_MS = 60_000;
-
 export class VideoElementManager {
 	videoElements: Map<string, HTMLVideoElement>;
 	audioElements: Map<string, HTMLAudioElement>;
 	deferredAttachments: Map<string, DeferredAttachment>;
-	private lastVideoAttachAt: Map<string, number>;
-	private lastAudioAttachAt: Map<string, number>;
 
 	constructor() {
 		this.videoElements = new Map();
 		this.audioElements = new Map();
 		this.deferredAttachments = new Map();
-		this.lastVideoAttachAt = new Map();
-		this.lastAudioAttachAt = new Map();
 	}
 
 	registerVideoElement(participantId: string, element: HTMLElement): void {
@@ -101,20 +95,15 @@ export class VideoElementManager {
 				const existingVideoTrack = (
 					videoElement.srcObject as MediaStream | null
 				)?.getVideoTracks?.()?.[0];
-				const lastAttach = this.lastVideoAttachAt.get(participantId);
-				const isStale =
-					lastAttach !== undefined &&
-					Date.now() - lastAttach > STALE_REATTACH_MS;
 				const videoTrackChanged =
 					!existingVideoTrack || existingVideoTrack.id !== newVideoTrack.id;
 
-				if (!videoElement.srcObject || videoTrackChanged || isStale) {
+				if (!videoElement.srcObject || videoTrackChanged) {
 					console.time(perfLabel);
 					console.log(`Attaching video track for ${participantId}`, {
 						trackId: newVideoTrack.id,
 						hadExisting: !!existingVideoTrack,
 						changed: videoTrackChanged,
-						stale: isStale,
 					});
 					const videoStream = new MediaStream(videoTracks);
 					videoElement.srcObject = videoStream;
@@ -123,7 +112,6 @@ export class VideoElementManager {
 					});
 					// we have a separate audio element for audio playback
 					videoElement.muted = true;
-					this.lastVideoAttachAt.set(participantId, Date.now());
 					let timerEnded = false;
 					const endTimer = () => {
 						if (!timerEnded) {
@@ -198,16 +186,12 @@ export class VideoElementManager {
 		const existingAudioTrack = (
 			audioElement.srcObject as MediaStream | null
 		)?.getAudioTracks?.()?.[0];
-		const lastAttach = this.lastAudioAttachAt.get(participantId);
-		const isStale =
-			lastAttach !== undefined && Date.now() - lastAttach > STALE_REATTACH_MS;
 		const audioTrackChanged =
 			!existingAudioTrack || existingAudioTrack.id !== newAudioTrack.id;
 
-		if (!audioElement.srcObject || audioTrackChanged || isStale) {
+		if (!audioElement.srcObject || audioTrackChanged) {
 			const audioStream = new MediaStream(audioTracks);
 			audioElement.srcObject = audioStream;
-			this.lastAudioAttachAt.set(participantId, Date.now());
 
 			// Try to play audio
 			audioElement.play().catch((err: Error) => {
@@ -291,8 +275,6 @@ export class VideoElementManager {
 
 		this.videoElements.delete(participantId);
 		this.deferredAttachments.delete(participantId);
-		this.lastVideoAttachAt.delete(participantId);
-		this.lastAudioAttachAt.delete(participantId);
 
 		console.log(`Video/Audio elements removed for ${participantId}`, {
 			hadStream,
@@ -326,7 +308,5 @@ export class VideoElementManager {
 		this.videoElements.clear();
 		this.audioElements.clear();
 		this.deferredAttachments.clear();
-		this.lastVideoAttachAt.clear();
-		this.lastAudioAttachAt.clear();
 	}
 }
