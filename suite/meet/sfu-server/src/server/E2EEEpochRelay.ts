@@ -477,8 +477,12 @@ export class E2EEEpochRelay {
 				{
 					roomId,
 					membershipDeltaId: pending.membershipDeltaId,
+					joiningSenderIds: pending.joiningSenderIds,
+					removedSenderIds: pending.removedSenderIds,
+					exclude,
 					attempts: pending.attempts,
 					alreadyTried: pending.alreadyTried,
+					debugState: await this.getCommitterDebugState(roomId, exclude),
 				},
 			);
 			this.notifyPendingJoiners(roomId, pending);
@@ -494,7 +498,7 @@ export class E2EEEpochRelay {
 			committerSenderId: picked.senderId,
 			attempts: pending.attempts,
 		});
-		this.emitToTarget(roomId, picked.participantId, {
+		const emitted = this.emitToTarget(roomId, picked.participantId, {
 			type: 'commit-request',
 			epochNumber: pending.epochNumber,
 			nextEpochNumber,
@@ -507,6 +511,13 @@ export class E2EEEpochRelay {
 				pending.removedSenderIds.length > 0
 					? pending.removedSenderIds
 					: undefined,
+		});
+		console.log('[DEBUG-e2ee] SFU: commit-request emit result', {
+			roomId,
+			membershipDeltaId: pending.membershipDeltaId,
+			committerParticipantId: picked.participantId,
+			committerSenderId: picked.senderId,
+			emitted,
 		});
 		pending.timer = setTimeout(() => {
 			void this.redesignate(roomId, pending.epochNumber);
@@ -1118,6 +1129,46 @@ export class E2EEEpochRelay {
 		}
 	}
 
+	private async getCommitterDebugState(
+		roomId: string,
+		excludeSenderIds: number[],
+	): Promise<Record<string, unknown>> {
+		const rosterEntries = (await this.roster?.list(roomId)) ?? [];
+		const fullAccessSocketIds = Array.from(
+			this.fullAccessSockets.get(roomId) ?? [],
+		);
+		const roomSocketIds = Array.from(
+			this.io.sockets.adapter.rooms.get(roomId) ?? [],
+		);
+		return {
+			excludeSenderIds,
+			rosterEntries: rosterEntries.map((entry) => ({
+				participantId: entry.participantId,
+				senderId: entry.senderId,
+				isHost: entry.isHost,
+				joinedAt: entry.joinedAt,
+				reachable: Boolean(this.canEmitToTarget(roomId, entry.participantId)),
+			})),
+			fullAccessSocketIds,
+			participantToSender: Array.from(
+				this.participantToSender.get(roomId)?.entries() ?? [],
+			),
+			roomSockets: roomSocketIds.map((socketId) => {
+				const socket = this.io.sockets.sockets.get(socketId) as
+					| TypedSocket
+					| undefined;
+				return {
+					socketId,
+					participantId: socket?.participantId ?? null,
+					senderId: socket?.senderId ?? null,
+					isHost: socket?.isHost ?? null,
+					scope: socket?.scope ?? null,
+					fullAccess: fullAccessSocketIds.includes(socketId),
+				};
+			}),
+		};
+	}
+
 	private isEpochNumber(value: unknown): value is number {
 		return typeof value === 'number' && Number.isInteger(value) && value >= 1;
 	}
@@ -1219,10 +1270,22 @@ export class E2EEEpochRelay {
 		roomId: string,
 		participantId: string,
 		data: E2eeEpochEnvelope,
-	): void {
+	): boolean {
 		const socket = this.canEmitToTarget(roomId, participantId);
-		if (!socket) return;
+		if (!socket) {
+			console.warn('[DEBUG-e2ee] SFU: targeted epoch emit skipped', {
+				roomId,
+				participantId,
+				type: data.type,
+				hasRoom: this.io.sockets.adapter.rooms.has(roomId),
+				fullAccessSocketIds: Array.from(
+					this.fullAccessSockets.get(roomId) ?? [],
+				),
+			});
+			return false;
+		}
 		socket.emit('e2ee:epoch', data);
+		return true;
 	}
 
 	private canEmitToTarget(
