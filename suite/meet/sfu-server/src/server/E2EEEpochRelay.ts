@@ -133,12 +133,15 @@ export class E2EEEpochRelay {
 		epochNumber: number,
 		reason: 'join' | 'reconnect',
 	): void {
-		console.log('[DEBUG-e2ee] SFU: targeted key-package-request', {
-			roomId,
-			participantId,
-			epochNumber,
-			reason,
-		});
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: targeted key-package-request %o',
+			{
+				roomId,
+				participantId,
+				epochNumber,
+				reason,
+			},
+		);
 		this.emitToTarget(roomId, participantId, {
 			type: 'key-package-request',
 			epochNumber,
@@ -245,11 +248,14 @@ export class E2EEEpochRelay {
 				(id) => id !== senderId,
 			);
 
-			console.log('[DEBUG-e2ee] SFU: pending joiner removed', {
-				roomId,
-				senderId,
-				stillRemainingJoiners: pending.joiningSenderIds.length,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: pending joiner removed %o',
+				{
+					roomId,
+					senderId,
+					stillRemainingJoiners: pending.joiningSenderIds.length,
+				},
+			);
 
 			if (
 				pending.joiningSenderIds.length === 0 &&
@@ -257,8 +263,8 @@ export class E2EEEpochRelay {
 			) {
 				clearTimeout(pending.timer);
 				this.pendingCommitRequests.delete(key);
-				console.log(
-					'[DEBUG-e2ee] SFU: pending request dropped because last joiner left',
+				loggers.socketHandler.debug(
+					'[DEBUG-e2ee] SFU: pending request dropped because last joiner left %o',
 					{ roomId, senderId },
 				);
 				continue;
@@ -271,8 +277,8 @@ export class E2EEEpochRelay {
 			) {
 				clearTimeout(pending.timer);
 				this.pendingCommitRequests.delete(key);
-				console.log(
-					'[DEBUG-e2ee] SFU: pending request dropped because committer left and no replacement is available',
+				loggers.socketHandler.debug(
+					'[DEBUG-e2ee] SFU: pending request dropped because committer left and no replacement is available %o',
 					{ roomId, senderId },
 				);
 			}
@@ -289,13 +295,16 @@ export class E2EEEpochRelay {
 			const roomId = socket.roomId;
 			const fromParticipantId = socket.participantId;
 			const fromSenderId = socket.senderId;
-			console.log('[DEBUG-e2ee] SFU: epoch envelope received', {
-				type: payload.type,
-				roomId,
-				fromParticipantId,
-				fromSenderId,
-				isHost: socket.isHost,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: epoch envelope received %o',
+				{
+					type: payload.type,
+					roomId,
+					fromParticipantId,
+					fromSenderId,
+					isHost: socket.isHost,
+				},
+			);
 			if (!roomId || !fromParticipantId || fromSenderId === undefined) return;
 
 			switch (payload.type) {
@@ -377,16 +386,19 @@ export class E2EEEpochRelay {
 			!this.isEpochNumber(payload.epochNumber) ||
 			!this.isOpaqueMlsBytes(payload.keyPackage)
 		) {
-			console.warn('[DEBUG-e2ee] SFU: key-package rejected by validation', {
-				roomId,
-				fromParticipantId,
-				fromSenderId,
-				epochNumber: payload.epochNumber,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: key-package rejected by validation %o',
+				{
+					roomId,
+					fromParticipantId,
+					fromSenderId,
+					epochNumber: payload.epochNumber,
+				},
+			);
 			return;
 		}
-		console.log(
-			'[DEBUG-e2ee] SFU: relaying key-package and requesting host commit',
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: relaying key-package and requesting host commit %o',
 			{
 				roomId,
 				fromParticipantId,
@@ -510,8 +522,8 @@ export class E2EEEpochRelay {
 		];
 		const picked = await this.pickReachableRosterCommitter(roomId, exclude);
 		if (!picked) {
-			console.warn(
-				'[DEBUG-e2ee] SFU: no eligible committer; keeping request pending',
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: no eligible committer; keeping request pending %o',
 				{
 					roomId,
 					membershipDeltaId: pending.membershipDeltaId,
@@ -530,12 +542,15 @@ export class E2EEEpochRelay {
 		pending.attempts += 1;
 		await this.persistPendingCommitRequest(roomId, pending);
 		const nextEpochNumber = pending.epochNumber + 1;
-		console.log('[DEBUG-e2ee] SFU: dispatching commit-request', {
-			roomId,
-			membershipDeltaId: pending.membershipDeltaId,
-			committerSenderId: picked.senderId,
-			attempts: pending.attempts,
-		});
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: dispatching commit-request %o',
+			{
+				roomId,
+				membershipDeltaId: pending.membershipDeltaId,
+				committerSenderId: picked.senderId,
+				attempts: pending.attempts,
+			},
+		);
 		const emitted = this.emitToTarget(roomId, picked.participantId, {
 			type: 'commit-request',
 			epochNumber: pending.epochNumber,
@@ -550,13 +565,16 @@ export class E2EEEpochRelay {
 					? pending.removedSenderIds
 					: undefined,
 		});
-		console.log('[DEBUG-e2ee] SFU: commit-request emit result', {
-			roomId,
-			membershipDeltaId: pending.membershipDeltaId,
-			committerParticipantId: picked.participantId,
-			committerSenderId: picked.senderId,
-			emitted,
-		});
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: commit-request emit result %o',
+			{
+				roomId,
+				membershipDeltaId: pending.membershipDeltaId,
+				committerParticipantId: picked.participantId,
+				committerSenderId: picked.senderId,
+				emitted,
+			},
+		);
 		pending.timer = setTimeout(() => {
 			void this.redesignate(roomId, pending.epochNumber);
 		}, COMMITTER_TIMEOUT_MS);
@@ -573,20 +591,26 @@ export class E2EEEpochRelay {
 			return;
 		}
 		if (pending.attempts >= MAX_REDESIGNATIONS) {
-			console.warn('[DEBUG-e2ee] SFU: redesignation exhausted, giving up', {
-				roomId,
-				membershipDeltaId: pending.membershipDeltaId,
-				attempts: pending.attempts,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: redesignation exhausted, giving up %o',
+				{
+					roomId,
+					membershipDeltaId: pending.membershipDeltaId,
+					attempts: pending.attempts,
+				},
+			);
 			this.notifyPendingJoiners(roomId, pending);
 			return;
 		}
-		console.log('[DEBUG-e2ee] SFU: committer timed out, redesignating', {
-			roomId,
-			membershipDeltaId: pending.membershipDeltaId,
-			attempts: pending.attempts,
-			alreadyTried: pending.alreadyTried,
-		});
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: committer timed out, redesignating %o',
+			{
+				roomId,
+				membershipDeltaId: pending.membershipDeltaId,
+				attempts: pending.attempts,
+				alreadyTried: pending.alreadyTried,
+			},
+		);
 		await this.tryAssignAndEmit(roomId, pending);
 	}
 
@@ -628,7 +652,9 @@ export class E2EEEpochRelay {
 		epochNumber: number,
 	): Promise<void> {
 		if (joiningSenderIds.length === 0) {
-			console.warn('[DEBUG-e2ee] SFU: no joiners to add', { roomId });
+			loggers.socketHandler.debug('[DEBUG-e2ee] SFU: no joiners to add %o', {
+				roomId,
+			});
 			return;
 		}
 		await this.dispatchCommitRequest({
@@ -651,7 +677,10 @@ export class E2EEEpochRelay {
 		epochNumber: number,
 	): Promise<boolean> {
 		if (removedSenderIds.length === 0) {
-			console.warn('[DEBUG-e2ee] SFU: no removals requested', { roomId });
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: no removals requested %o',
+				{ roomId },
+			);
 			return false;
 		}
 		await this.dispatchCommitRequest({
@@ -699,11 +728,14 @@ export class E2EEEpochRelay {
 					epochNumber,
 				);
 			}, COMMIT_REQUEST_BATCH_MS);
-			console.log('[DEBUG-e2ee] SFU: batching commit-request', {
-				roomId,
-				epochNumber,
-				bufferedSenderIds: existing.joiningSenderIds,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: batching commit-request %o',
+				{
+					roomId,
+					epochNumber,
+					bufferedSenderIds: existing.joiningSenderIds,
+				},
+			);
 			return;
 		}
 		const batch: CommitRequestBatch = {
@@ -719,11 +751,14 @@ export class E2EEEpochRelay {
 			}, COMMIT_REQUEST_BATCH_MS),
 		};
 		this.commitRequestBatches.set(key, batch);
-		console.log('[DEBUG-e2ee] SFU: starting commit-request batch', {
-			roomId,
-			epochNumber,
-			joiningSenderIds,
-		});
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: starting commit-request batch %o',
+			{
+				roomId,
+				epochNumber,
+				joiningSenderIds,
+			},
+		);
 	}
 
 	private flushPendingCommitRequests(roomId: string): void {
@@ -798,8 +833,8 @@ export class E2EEEpochRelay {
 			return;
 		}
 		if (this.roster && !(await this.roster.get(roomId, fromSenderId))) {
-			console.warn(
-				'[DEBUG-e2ee] SFU: rejecting commit from non-roster senderId',
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: rejecting commit from non-roster senderId %o',
 				{ roomId, fromSenderId },
 			);
 			return;
@@ -1141,8 +1176,8 @@ export class E2EEEpochRelay {
 		targetParticipantId: string,
 		knownEpochNumber: unknown,
 	): void {
-		console.log(
-			'[DEBUG-e2ee] SFU: resync-request cannot be replayed; requesting fresh key package',
+		loggers.socketHandler.debug(
+			'[DEBUG-e2ee] SFU: resync-request cannot be replayed; requesting fresh key package %o',
 			{
 				roomId,
 				fromSenderId,
@@ -1171,12 +1206,15 @@ export class E2EEEpochRelay {
 			if (!picked) return null;
 			if (this.canEmitToTarget(roomId, picked.participantId)) return picked;
 
-			console.warn('[DEBUG-e2ee] SFU: pruning unreachable roster committer', {
-				roomId,
-				participantId: picked.participantId,
-				senderId: picked.senderId,
-				isHost: picked.isHost,
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: pruning unreachable roster committer %o',
+				{
+					roomId,
+					participantId: picked.participantId,
+					senderId: picked.senderId,
+					isHost: picked.isHost,
+				},
+			);
 			await this.roster?.remove(roomId, picked.senderId);
 			excluded.add(picked.senderId);
 		}
@@ -1326,15 +1364,18 @@ export class E2EEEpochRelay {
 	): boolean {
 		const socket = this.canEmitToTarget(roomId, participantId);
 		if (!socket) {
-			console.warn('[DEBUG-e2ee] SFU: targeted epoch emit skipped', {
-				roomId,
-				participantId,
-				type: data.type,
-				hasRoom: this.io.sockets.adapter.rooms.has(roomId),
-				fullAccessSocketIds: Array.from(
-					this.fullAccessSockets.get(roomId) ?? [],
-				),
-			});
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: targeted epoch emit skipped %o',
+				{
+					roomId,
+					participantId,
+					type: data.type,
+					hasRoom: this.io.sockets.adapter.rooms.has(roomId),
+					fullAccessSocketIds: Array.from(
+						this.fullAccessSockets.get(roomId) ?? [],
+					),
+				},
+			);
 			return false;
 		}
 		socket.emit('e2ee:epoch', data);

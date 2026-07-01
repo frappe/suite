@@ -245,14 +245,17 @@ async function requestEpochKeyPackageAfterJoin(
 	if (socket.scope !== 'full' || !socket.e2eeRequired) return;
 	const epochNumber = deps.e2eeEpochRelay.getCurrentEpochNumber(roomId);
 	const admittedMembers = await deps.e2eeRoster.list(roomId);
-	console.log('[DEBUG-e2ee] SFU: requestEpochKeyPackageAfterJoin (post-ack)', {
-		roomId,
-		participantId,
-		isHost: socket.isHost,
-		assignedSenderId: socket.senderId,
-		epochNumber,
-		admittedMemberCount: admittedMembers.length,
-	});
+	loggers.socketHandler.debug(
+		'[DEBUG-e2ee] SFU: requestEpochKeyPackageAfterJoin (post-ack) %o',
+		{
+			roomId,
+			participantId,
+			isHost: socket.isHost,
+			assignedSenderId: socket.senderId,
+			epochNumber,
+			admittedMemberCount: admittedMembers.length,
+		},
+	);
 	if (admittedMembers.length === 0) {
 		if (!socket.isHost) {
 			deps.e2eeEpochRelay.notifyEncryptionHostNeeded(
