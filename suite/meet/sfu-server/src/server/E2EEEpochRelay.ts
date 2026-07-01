@@ -912,6 +912,28 @@ export class E2EEEpochRelay {
 		isHost = false,
 	): Promise<void> {
 		if (!this.isEpochNumber(payload.epochNumber)) return;
+		const existingRosterEntry = await this.roster?.get(roomId, fromSenderId);
+		if (
+			this.roster &&
+			!existingRosterEntry &&
+			!this.hasAckAdmissionProof(
+				roomId,
+				fromSenderId,
+				payload.epochNumber,
+				isHost,
+			)
+		) {
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: rejecting ack without admission proof %o',
+				{
+					roomId,
+					fromParticipantId,
+					fromSenderId,
+					epochNumber: payload.epochNumber,
+				},
+			);
+			return;
+		}
 		const retained = this.getRetainedEpoch(roomId, payload.epochNumber);
 		let epochAcks = retained.acks.get(payload.epochNumber);
 		if (!epochAcks) {
@@ -930,7 +952,7 @@ export class E2EEEpochRelay {
 			this.expiresAt(),
 		);
 		let promotedToRoster = false;
-		if (this.roster && !(await this.roster.get(roomId, fromSenderId))) {
+		if (this.roster && !existingRosterEntry) {
 			await this.roster.add(roomId, {
 				participantId: fromParticipantId,
 				senderId: fromSenderId,
@@ -948,6 +970,21 @@ export class E2EEEpochRelay {
 			fromSenderId,
 			epochNumber: payload.epochNumber,
 		});
+	}
+
+	private hasAckAdmissionProof(
+		roomId: string,
+		fromSenderId: number,
+		epochNumber: number,
+		isHost: boolean,
+	): boolean {
+		if (isHost && epochNumber === 1) return true;
+		return (
+			this.retainedMaterial
+				.get(roomId)
+				?.get(epochNumber)
+				?.welcomes.get(fromSenderId)?.epochNumber === epochNumber
+		);
 	}
 
 	private async replayRetainedMaterial(

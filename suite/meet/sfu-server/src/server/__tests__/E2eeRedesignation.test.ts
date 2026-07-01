@@ -70,6 +70,17 @@ type TestRelay = {
 		fromSenderId: number,
 		payload: CommitEnvelope,
 	) => Promise<void>;
+	relayWelcome: (
+		roomId: string,
+		fromParticipantId: string,
+		fromSenderId: number,
+		payload: {
+			type: string;
+			toSenderId: number;
+			epochNumber: number;
+			mlsWelcome: string;
+		},
+	) => Promise<void>;
 	relayKeyPackage: (
 		roomId: string,
 		fromParticipantId: string,
@@ -165,6 +176,7 @@ async function main(): Promise<void> {
 					['host-1', 7],
 					['alice-1', 9],
 					['bob-1', 11],
+					['joiner-19', 19],
 				]),
 			],
 		]),
@@ -341,6 +353,20 @@ async function main(): Promise<void> {
 		(await roster.get('meeting-1', 19)) === undefined,
 		'pending joiner should not be in roster before ack',
 	);
+	await testRelay.recordAck('meeting-1', 'joiner-21', 21, {
+		type: 'ack',
+		epochNumber: 2,
+	});
+	assert(
+		(await roster.get('meeting-1', 21)) === undefined,
+		'joiner ack without retained welcome should not be promoted into roster',
+	);
+	await testRelay.relayWelcome('meeting-1', 'host-1', 7, {
+		type: 'welcome',
+		toSenderId: 19,
+		epochNumber: 2,
+		mlsWelcome: Buffer.from([9, 9, 9]).toString('base64'),
+	});
 	await testRelay.recordAck('meeting-1', 'joiner-19', 19, {
 		type: 'ack',
 		epochNumber: 2,
