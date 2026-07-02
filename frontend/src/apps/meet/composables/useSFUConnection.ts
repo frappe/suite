@@ -808,8 +808,6 @@ export function useSFUConnection(deps: {
 		realtimeListenersSetup.value = false;
 	});
 
-	// T4.4 chain-tip wipe on pagehide lives in useE2EEConnectionHandshake.
-
 	return {
 		sfuClient,
 		sfuManager,

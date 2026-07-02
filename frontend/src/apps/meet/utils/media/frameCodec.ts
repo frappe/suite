@@ -1,8 +1,6 @@
 // E2EE frame codec: shared per-frame encode/decode/sign/verify
 // routines, frame-header constants, and chain-key derivations.
 //
-// Slice 9 of docs/refactors/e2ee-deepening-plan.md.
-//
 // Both the main-thread `TransformStream` (in e2ee.ts) and the
 // RTCRtpScriptTransform worker (in e2eeTransformWorker.ts) import
 // from this module so the cryptographic invariants — header size,

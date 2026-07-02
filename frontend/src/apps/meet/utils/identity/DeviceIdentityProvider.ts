@@ -18,9 +18,8 @@
 // Meeting secrets and X25519 meeting private keys are deliberately not
 // persisted. Per ADR 0006, pagehide/reload requires a fresh ECDH.
 //
-// Slice 7 of docs/refactors/e2ee-deepening-plan.md: this module
-// owns the DeviceIdentityProvider port. Two implementations live
-// here: the production IndexedDB-backed provider and an in-memory
+// This module owns the DeviceIdentityProvider port. Two implementations
+// live here: the production IndexedDB-backed provider and an in-memory
 // provider for tests.
 
 import { ed25519KeyPair, exportEd25519PublicKey } from "../media/e2ee";

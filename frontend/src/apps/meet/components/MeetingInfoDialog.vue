@@ -27,8 +27,8 @@
 
 <script setup lang="ts">
 import { Dialog } from "frappe-ui";
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { E2EEMeeting } from "../utils/media/E2EEMeeting";
+import { computed } from "vue";
+import { useE2EEState } from "../composables/useE2EEState";
 import ClickToCopyField from "./ClickToCopyField.vue";
 
 const props = defineProps<{
@@ -47,30 +47,5 @@ const show = computed({
 });
 
 const meetingUrl = computed(() => window.location.href);
-const e2eeFingerprint = ref<string | null>(null);
-
-async function loadE2EEFingerprint() {
-	e2eeFingerprint.value = await E2EEMeeting.instance.getSessionFingerprint();
-}
-
-function handleE2EEContextReady() {
-	void loadE2EEFingerprint();
-}
-
-watch(show, (visible) => {
-	if (visible) {
-		void loadE2EEFingerprint();
-	}
-});
-
-onMounted(() => {
-	document.addEventListener("meet:e2ee-context-ready", handleE2EEContextReady);
-});
-
-onUnmounted(() => {
-	document.removeEventListener(
-		"meet:e2ee-context-ready",
-		handleE2EEContextReady,
-	);
-});
+const { sessionFingerprint: e2eeFingerprint } = useE2EEState();
 </script>

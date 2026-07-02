@@ -1,8 +1,6 @@
 // E2EE primitives: shared base64 codec, HKDF info-string helpers, and
 // the security domain separator constants.
 //
-// Slice 8 of docs/refactors/e2ee-deepening-plan.md.
-//
 // The "meet-e2ee|" prefix is a security domain separator for HKDF
 // calls. It lives in this one module. Any future Layer 3 epoch
 // transition, chain-tip wipe event, or new key-derivation site must

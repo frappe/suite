@@ -5,7 +5,10 @@
 // module-level singleton (E2EEMeeting.instance) or instantiate directly
 // in tests.
 
-import { notifyE2EEContextReady } from "./E2EEContextReady";
+import {
+	notifyE2EEContextReady,
+	resetE2EEContextReady,
+} from "./E2EEContextReady";
 import {
 	createDecryptionTransformStream,
 	createEncryptionTransformStream,
@@ -171,6 +174,7 @@ export class E2EEMeeting {
 		}
 		this.scriptTransformWorkers.clear();
 		this.chatKeyCache = null;
+		resetE2EEContextReady();
 	}
 
 	async getE2EEChatKey(): Promise<CryptoKey | null> {

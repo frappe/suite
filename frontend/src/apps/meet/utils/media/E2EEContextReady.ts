@@ -1,10 +1,18 @@
 import { E2EEMeeting } from "./E2EEMeeting";
+import { useE2EEState } from "../../composables/useE2EEState";
 
 const E2EE_CONTEXT_READY_EVENT = "meet:e2ee-context-ready";
 
 export function notifyE2EEContextReady(): void {
+	void E2EEMeeting.instance
+		.getSessionFingerprint()
+		.then((fingerprint) => useE2EEState().setContextReady(fingerprint));
 	if (typeof document === "undefined") return;
 	document.dispatchEvent(new CustomEvent(E2EE_CONTEXT_READY_EVENT));
+}
+
+export function resetE2EEContextReady(): void {
+	useE2EEState().reset();
 }
 
 export function waitForE2EEContextReady(timeoutMs = 15_000): Promise<void> {

@@ -222,6 +222,7 @@ import { useChat } from "../composables/useChat";
 import { useChatStore } from "../composables/useChatStore";
 import { useConnectionState } from "../composables/useConnectionState";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useE2EEState } from "../composables/useE2EEState";
 import { useGridLayout } from "../composables/useGridLayout";
 import { useKeyboardShortcuts } from "../composables/useKeyboardShortcuts";
 import { useLobby } from "../composables/useLobby";
@@ -301,6 +302,7 @@ const lobbyUsersForNotifications = computed(() => {
 });
 
 const e2eeJoinPendingMessage = ref("");
+const e2eeState = useE2EEState();
 
 function handleE2EEJoinStatus(event: Event): void {
 	const detail = (event as CustomEvent).detail as
@@ -712,6 +714,7 @@ onMounted(async () => {
 	raiseHandStore.$reset();
 	gridLayout.resetGridLayout();
 	currentUser.resetCurrentUser();
+	e2eeState.reset();
 
 	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
 	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);

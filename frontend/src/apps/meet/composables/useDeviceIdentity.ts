@@ -1,8 +1,7 @@
 // E2EE device identity accessor.
 //
-// Slice 7 of docs/refactors/e2ee-deepening-plan.md: thin wrapper
-// over the DeviceIdentityProvider port. Production callers receive
-// the IndexedDB-backed singleton; tests can construct a
+// Thin wrapper over the DeviceIdentityProvider port. Production callers
+// receive the IndexedDB-backed singleton; tests can construct a
 // MemoryDeviceIdentityProvider directly via the port module.
 //
 // Callers destructure `{ getIdentity, clearCache }` and call them
