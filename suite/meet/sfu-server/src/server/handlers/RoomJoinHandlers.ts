@@ -73,7 +73,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					);
 					await deps.mediasoup.removePeer(scopedRoomId, participantId);
 				}
-				deps.mediasoup.addPeer(scopedRoomId, participantId, userData);
+				deps.mediasoup.addPeer(scopedRoomId, participantId, {
+					...userData,
+					senderId: socket.senderId,
+					isHost: Boolean(socket.isHost),
+				});
 
 				if (isRealParticipant(userData.userId)) {
 					deps.registry.emitParticipantEvent(

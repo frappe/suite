@@ -2,6 +2,7 @@ import type { Ref } from "vue";
 import type { CurrentUser } from "../../composables/useCurrentUser";
 import type { MediaState } from "../../composables/useMediaState";
 import type { SFUClient } from "../SFUClient";
+import { waitForE2EEContextReady } from "./E2EEContextReady";
 import type { SFUMeetingManager } from "../SFUMeetingManager";
 import type { E2EEEpochSignalingController } from "./E2EEEpochSignalingController";
 import {
@@ -240,18 +241,27 @@ export class E2EEHandshakeController {
 	private async listCurrentNonHostSenderIds(): Promise<number[]> {
 		try {
 			const participants = (await this.deps.sfuClient.getRoomParticipants()) as
-				| Array<{ user_id?: string; sender_id?: number; is_host?: boolean }>
+				| Array<{
+						user_id?: string;
+						sender_id?: number;
+						senderId?: number;
+						is_host?: boolean;
+						isHost?: boolean;
+					}>
 				| undefined;
 			if (!Array.isArray(participants)) return [];
 			const hostParticipantId = this.ownParticipantId();
 			return participants
-				.filter(
-					(p) =>
-						typeof p.sender_id === "number" &&
+				.filter((p) => {
+					const senderId = p.sender_id ?? p.senderId;
+					return (
+						typeof senderId === "number" &&
 						p.is_host !== true &&
-						p.user_id !== hostParticipantId,
-				)
-				.map((p) => p.sender_id as number);
+						p.isHost !== true &&
+						p.user_id !== hostParticipantId
+					);
+				})
+				.map((p) => (p.sender_id ?? p.senderId) as number);
 		} catch (error) {
 			console.warn(
 				"[DEBUG-e2ee] listCurrentNonHostSenderIds: getRoomParticipants failed",
@@ -391,6 +401,16 @@ export class E2EEHandshakeController {
 		if (data.meeting_id !== this.meetingId) return;
 		if (this.deps.isCurrentTabHost.value) return;
 		this.sfuClient.setE2EERequired(true);
+		if (this.isReconfiguringForE2EE) return;
+		this.isReconfiguringForE2EE = true;
+		try {
+			await waitForE2EEContextReady();
+			await this.reconfigureMediaForE2EE();
+		} catch (error) {
+			console.error("Failed to reconfigure participant for E2EE:", error);
+		} finally {
+			this.isReconfiguringForE2EE = false;
+		}
 	}
 
 	private async reconfigureMediaForE2EE(): Promise<void> {

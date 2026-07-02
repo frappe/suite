@@ -10,6 +10,7 @@ import type {
 } from "../media/ParticipantManager";
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
+import { waitForE2EEContextReady } from "../media/E2EEContextReady";
 import type { SFUClient } from "../SFUClient";
 import type { SFUMediaManager } from "./SFUMediaManager";
 import type { SFURecoveryManager } from "./SFURecoveryManager";
@@ -142,6 +143,9 @@ export class SFUConnectionManager {
 
 	async createReceiveTransport(): Promise<boolean> {
 		try {
+			if (!(await this.waitForE2EEContextIfRequired())) {
+				return false;
+			}
 			await this.transportManager.createReceiveTransport();
 			return true;
 		} catch (error) {
@@ -213,6 +217,22 @@ export class SFUConnectionManager {
 					}),
 				);
 
+				if (!(await this.waitForE2EEContextIfRequired())) {
+					this.bufferedProducerEvents.push(
+						...existingProducers.map((producerInfo: unknown) => {
+							const info = producerInfo as Record<string, unknown>;
+							return {
+								producerId: info.id as string,
+								participantId: (info.participantId ??
+									info.user_id ??
+									info.userId) as string,
+								isScreen: !!info.isScreen,
+							};
+						}),
+					);
+					return existingProducers;
+				}
+
 				for (const producerInfo of existingProducers) {
 					const info = producerInfo as Record<string, unknown>;
 					const participantId = (info.participantId ??
@@ -252,6 +272,9 @@ export class SFUConnectionManager {
 			console.log("No buffered producer events to flush");
 			return;
 		}
+		if (!(await this.waitForE2EEContextIfRequired())) {
+			return;
+		}
 
 		console.log(
 			`Flushing ${this.bufferedProducerEvents.length} buffered producer events`,
@@ -284,6 +307,9 @@ export class SFUConnectionManager {
 		this.mediaManager.consumerManager.clear();
 		this.mediaManager.processedConsumers.clear();
 		this.mediaManager.isScreenShareActive = false;
+		if (!(await this.waitForE2EEContextIfRequired())) {
+			return;
+		}
 		await this.createReceiveTransport();
 		await this.requestExistingProducers();
 		await this.flushBufferedProducers();
@@ -310,6 +336,19 @@ export class SFUConnectionManager {
 				!c.consumer.closed &&
 				(c.producerId === producerId || c.consumer.producerId === producerId),
 		);
+	}
+
+	private async waitForE2EEContextIfRequired(): Promise<boolean> {
+		if (!this.sfuClient.isE2EERequired?.()) {
+			return true;
+		}
+		try {
+			await waitForE2EEContextReady();
+			return true;
+		} catch (error) {
+			console.warn("E2EE context not ready for media subscription:", error);
+			return false;
+		}
 	}
 
 	private setupManagerEventHandlers(): void {
@@ -410,12 +449,20 @@ export class SFUConnectionManager {
 				this.bufferedProducerEvents.push(d);
 				return;
 			}
+			if (!(await this.waitForE2EEContextIfRequired())) {
+				this.bufferedProducerEvents.push(d);
+				return;
+			}
 
-			await this.mediaManager.subscribeToRemoteProducer({
-				producerId: d.producerId,
-				participantId: d.participantId,
-				isScreen: !!d.isScreen,
-			});
+			try {
+				await this.mediaManager.subscribeToRemoteProducer({
+					producerId: d.producerId,
+					participantId: d.participantId,
+					isScreen: !!d.isScreen,
+				});
+			} catch (error) {
+				console.warn("Failed to subscribe to producer_created event:", error);
+			}
 		});
 
 		this.sfuClient.on("producer_closed", (data: unknown) => {

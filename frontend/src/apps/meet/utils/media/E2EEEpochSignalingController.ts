@@ -77,7 +77,7 @@ export class E2EEEpochSignalingController {
 				this.dispatchJoinStatus(data);
 				return;
 			case "key-package-request":
-				await this.publishKeyPackage(data.epochNumber);
+				await this.publishKeyPackage(data.epochNumber, data.reason);
 				return;
 			case "commit-request":
 				if (!this.shouldAuthorCommit(data.committerSenderId)) {
@@ -136,7 +136,12 @@ export class E2EEEpochSignalingController {
 		if (senderId === null) return;
 		const identity = await this.deps.getDeviceIdentity();
 		const userId = this.deps.currentUser.currentUser.value?.user_id;
-		if (!userId) return;
+		if (!userId) {
+			console.warn("[DEBUG-e2ee] publishKeyPackage aborted: user_id is missing", {
+				epochNumber,
+			});
+			return;
+		}
 
 		const genesis = await this.epochProtocolProvider.createGenesisEpoch({
 			groupId: this.deps.meetingId,
@@ -203,7 +208,11 @@ export class E2EEEpochSignalingController {
 		return this.receivedKeyPackagesBySenderId;
 	}
 
-	private async publishKeyPackage(epochNumber: number): Promise<void> {
+	private async publishKeyPackage(
+		epochNumber: number,
+		reason: "enable" | "join" | "reconnect",
+	): Promise<void> {
+		console.log("[DEBUG-e2ee] publishKeyPackage: enter", { epochNumber });
 		const senderId = this.deps.sfuClient.getOwnSenderId();
 		if (senderId === null) {
 			console.warn(
@@ -219,12 +228,18 @@ export class E2EEEpochSignalingController {
 		const userId = this.deps.currentUser.currentUser.value?.user_id;
 		if (!userId) return;
 
+		const startedAt = Date.now();
 		const keyPackage = await this.epochProtocolProvider.generateKeyPackage({
 			groupId: this.deps.meetingId,
 			userId,
 			deviceId: identity.deviceId,
 			senderId,
 			signingPubKey: identity.signingPublicKey,
+		});
+		console.log("[DEBUG-e2ee] publishKeyPackage: generated", {
+			epochNumber,
+			senderId,
+			elapsedMs: Date.now() - startedAt,
 		});
 		this.pendingKeyPackagesByEpoch.set(epochNumber, keyPackage);
 
@@ -233,9 +248,14 @@ export class E2EEEpochSignalingController {
 			fromParticipantId: userId,
 			fromSenderId: senderId,
 			epochNumber,
+			reason,
 			keyPackage: bufferToBase64(
 				this.epochProtocolProvider.encodeKeyPackage(keyPackage.publicPackage),
 			),
+		});
+		console.log("[DEBUG-e2ee] publishKeyPackage: sent", {
+			epochNumber,
+			senderId,
 		});
 	}
 
@@ -635,6 +655,10 @@ export class E2EEEpochSignalingController {
 					this.isBoundedString(envelope.fromParticipantId) &&
 					this.isSenderId(envelope.fromSenderId) &&
 					this.isEpochNumber(envelope.epochNumber) &&
+					(envelope.reason === undefined ||
+						envelope.reason === "enable" ||
+						envelope.reason === "join" ||
+						envelope.reason === "reconnect") &&
 					this.isOpaqueMlsBytes(envelope.keyPackage)
 				);
 			case "commit-request":

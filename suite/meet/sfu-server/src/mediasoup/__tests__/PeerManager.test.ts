@@ -46,6 +46,8 @@ describe('PeerManager', () => {
 				audio_enabled: false,
 				video_enabled: false,
 				is_guest: false,
+				senderId: undefined,
+				isHost: false,
 			});
 			expect(peer.transports.size).toBe(0);
 			expect(peer.producers.size).toBe(0);
@@ -75,7 +77,24 @@ describe('PeerManager', () => {
 				audio_enabled: true,
 				video_enabled: true,
 				is_guest: true,
+				senderId: undefined,
+				isHost: false,
 			});
+		});
+
+		it('preserves E2EE sender metadata used by room participant queries', () => {
+			const mgr = new PeerManager();
+			const room = makeRoom();
+
+			const peer = mgr.addPeer(room, 'host-1', {
+				name: 'Host',
+				userId: 'host-1',
+				senderId: 7,
+				isHost: true,
+			});
+
+			expect(peer.info.senderId).toBe(7);
+			expect(peer.info.isHost).toBe(true);
 		});
 
 		it('updates an existing peer in place when called twice for the same id', () => {

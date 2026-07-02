@@ -12,6 +12,9 @@ export interface UserData {
 export interface ParticipantInfo {
 	id: string;
 	user_id: string;
+	senderId?: number;
+	sender_id?: number;
+	is_host?: boolean;
 	info: {
 		name?: string;
 		userId: string;

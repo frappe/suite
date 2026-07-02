@@ -406,11 +406,26 @@ export class E2EEEpochRelay {
 				epochNumber: payload.epochNumber,
 			},
 		);
-		if (await this.roster?.get(roomId, fromSenderId)) {
+		const keyPackageReason = this.isKeyPackageReason(payload.reason)
+			? payload.reason
+			: undefined;
+		const isEnableCollection = keyPackageReason === 'enable';
+		if (!isEnableCollection && (await this.roster?.get(roomId, fromSenderId))) {
 			loggers.socketHandler.debug(
 				'[DEBUG-e2ee] SFU: ignoring key-package from admitted sender %o',
 				{ roomId, fromParticipantId, fromSenderId },
 			);
+			return;
+		}
+		if (isEnableCollection) {
+			this.emitToFullAccessParticipants(roomId, {
+				type: 'key-package',
+				fromParticipantId,
+				fromSenderId,
+				epochNumber: payload.epochNumber,
+				reason: keyPackageReason,
+				keyPackage: payload.keyPackage,
+			});
 			return;
 		}
 		await this.persistence.retainKeyPackage(roomId, {
@@ -427,6 +442,7 @@ export class E2EEEpochRelay {
 			fromParticipantId,
 			fromSenderId,
 			epochNumber: payload.epochNumber,
+			reason: keyPackageReason,
 			keyPackage: payload.keyPackage,
 		});
 		await this.enqueueCommitRequest(

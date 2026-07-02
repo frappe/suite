@@ -26,6 +26,7 @@ export type E2eeEpochKeyPackage = {
 	fromParticipantId: string;
 	fromSenderId: number;
 	epochNumber: number;
+	reason?: "enable" | "join" | "reconnect";
 	keyPackage: string;
 };
 

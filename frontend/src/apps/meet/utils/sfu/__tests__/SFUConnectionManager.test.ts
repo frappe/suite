@@ -1,12 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { E2EEMeeting } from "../../media/E2EEMeeting";
 import { ParticipantManager } from "../../media/ParticipantManager";
 import { SFUConnectionManager } from "../SFUConnectionManager";
 
-function createManager() {
+function createManager({ e2eeRequired = false } = {}) {
 	const participantManager = new ParticipantManager();
 	const handlers = new Map<string, (data: unknown) => unknown>();
 	const sfuClient = {
 		connect: vi.fn().mockResolvedValue(undefined),
+		isE2EERequired: vi.fn(() => e2eeRequired),
 		on: vi.fn((event: string, handler: (data: unknown) => unknown) => {
 			handlers.set(event, handler);
 		}),
@@ -36,6 +38,10 @@ function createManager() {
 }
 
 describe("SFUConnectionManager", () => {
+	afterEach(() => {
+		E2EEMeeting.instance.wipeMeetingContext();
+	});
+
 	it("subscribes to remote audio producers", async () => {
 		const { handlers, manager, mediaManager, participantManager } = createManager();
 		participantManager.addParticipant({
@@ -90,5 +96,33 @@ describe("SFUConnectionManager", () => {
 		});
 
 		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
+	it("waits for E2EE context before subscribing to remote producers", async () => {
+		const { handlers, manager, mediaManager } = createManager({
+			e2eeRequired: true,
+		});
+
+		await manager.connect("token");
+		const producerPromise = handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+		});
+
+		await Promise.resolve();
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		await producerPromise;
+
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			isScreen: false,
+		});
 	});
 });

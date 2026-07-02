@@ -322,7 +322,10 @@ export interface Peer {
 	joined: Date;
 }
 
-export interface PeerInfo extends UserData {}
+export interface PeerInfo extends UserData {
+	senderId?: number;
+	isHost?: boolean;
+}
 
 export interface TransportData {
 	roomId: string;
@@ -435,6 +438,7 @@ export type E2eeEpochKeyPackage = {
 	fromParticipantId: string;
 	fromSenderId: number;
 	epochNumber: number;
+	reason?: 'enable' | 'join' | 'reconnect';
 	keyPackage: string;
 };
 

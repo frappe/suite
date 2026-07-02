@@ -737,6 +737,9 @@ export class MediasoupManager {
 				return {
 					id: peerId,
 					user_id: peerId,
+					senderId: peer.info.senderId,
+					sender_id: peer.info.senderId,
+					is_host: peer.info.isHost || false,
 					info: {
 						name: peer.info.name,
 						userId: peer.info.userId,

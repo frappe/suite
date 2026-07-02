@@ -130,10 +130,11 @@ watch(e2eeEnabled, async (val, oldVal) => {
 		const identity = await getIdentity();
 		await registerE2EEDevice(identity);
 
-		// Broadcast to this tab and other tabs that E2EE is coming online.
-		// Other tabs receive meeting:e2ee_enabled via realtime; the local
-		// CustomEvent covers the host's own UI components that listen for
-		// "E2EE is now on" without going through the realtime channel.
+		await props.meetingDoc.enableE2ee.submit();
+		e2eeEnabled.value = true;
+
+		// Broadcast locally after the server-side meeting flag is enabled, so
+		// epoch collection runs against SFU/server state that already requires E2EE.
 		document.dispatchEvent(
 			new CustomEvent("meet:e2ee-host-enabled", {
 				detail: {
@@ -141,9 +142,6 @@ watch(e2eeEnabled, async (val, oldVal) => {
 				},
 			}),
 		);
-
-		await props.meetingDoc.enableE2ee.submit();
-		e2eeEnabled.value = true;
 
 		await props.meetingDoc.reload();
 		toast.success("Meeting is now end-to-end encrypted.");

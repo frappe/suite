@@ -173,6 +173,7 @@ describe("E2EEEpochSignalingController", () => {
 			fromParticipantId: "user-1",
 			fromSenderId: 7,
 			epochNumber: 1,
+			reason: "enable",
 			keyPackage: "AQID",
 		});
 		expect(controller.getPendingKeyPackage(1)).not.toBeNull();

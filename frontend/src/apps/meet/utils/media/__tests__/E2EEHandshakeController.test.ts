@@ -3,6 +3,7 @@ import { shallowRef } from "vue";
 import { E2EEEpochSignalingController } from "../E2EEEpochSignalingController";
 import { wipeActiveEpochState } from "../E2EEEpochStateStore";
 import { E2EEHandshakeController } from "../E2EEHandshakeController";
+import { E2EEMeeting } from "../E2EEMeeting";
 
 function createController() {
 	return new E2EEHandshakeController({
@@ -51,6 +52,7 @@ function createController() {
 describe("E2EEHandshakeController", () => {
 	afterEach(() => {
 		wipeActiveEpochState();
+		E2EEMeeting.instance.wipeMeetingContext();
 	});
 
 	it("installs the genesis epoch meeting secret when the host enables E2EE", async () => {
@@ -281,6 +283,69 @@ describe("E2EEHandshakeController", () => {
 			}),
 		);
 		expect(controller.keyVersion).toBe(3);
+	});
+
+	it("non-host E2EE enablement waits for context before reconfiguring media", async () => {
+		const sfuClient = {
+			getOwnSenderId: vi.fn(() => 9),
+			setE2EERequired: vi.fn(),
+			isConnected: vi.fn(() => true),
+			refreshToken: vi.fn(async () => undefined),
+			joinRoom: vi.fn(async () => undefined),
+			sendE2EEEpochEnvelope: vi.fn(),
+		} as never;
+		const sfuManager = shallowRef({
+			reconfigureForE2EE: vi.fn(async () => undefined),
+		} as never);
+		const controller = new E2EEHandshakeController({
+			meetingId: "meeting-1",
+			sfuClient,
+			sfuManager,
+			currentUser: {
+				currentUser: shallowRef({ user_id: "user-2", full_name: "User Two" }),
+			} as never,
+			mediaState: {
+				isCameraOn: true,
+				isMicOn: true,
+				localStream: {} as MediaStream,
+				processedStream: null,
+			} as never,
+			isCurrentTabHost: shallowRef(false),
+			getDeviceIdentity: vi.fn(),
+			epochProtocolProvider: {
+				createGenesisEpoch: vi.fn(),
+				createGenesisEpochWithMembers: vi.fn(),
+				generateKeyPackage: vi.fn(),
+				encodeKeyPackage: vi.fn(),
+				decodeKeyPackage: vi.fn(),
+				encodeCommit: vi.fn(),
+				encodeWelcome: vi.fn(),
+				decodeWelcome: vi.fn(),
+				addMember: vi.fn(),
+				addMultipleMembers: vi.fn(),
+				removeMember: vi.fn(),
+				joinFromWelcome: vi.fn(),
+				processCommit: vi.fn(),
+				exportMeetingSecret: vi.fn(),
+			} as never,
+		});
+
+		const enablePromise = controller.handleMeetingE2EEEnabled({
+			meeting_id: "meeting-1",
+		});
+		await Promise.resolve();
+		expect(sfuManager.value.reconfigureForE2EE).not.toHaveBeenCalled();
+
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		await enablePromise;
+
+		expect(sfuClient.setE2EERequired).toHaveBeenCalledWith(true);
+		expect(sfuClient.refreshToken).toHaveBeenCalled();
+		expect(sfuClient.joinRoom).toHaveBeenCalled();
+		expect(sfuManager.value.reconfigureForE2EE).toHaveBeenCalled();
 	});
 
 	it("hard reconnect (legacy) wipes runtime state before sending a resync-request", async () => {

@@ -18,6 +18,59 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 	});
 }
 
+async function expectRemoteVideoReceiving(
+	page: Page,
+	participantName: string,
+): Promise<void> {
+	const tile = page.locator("[data-testid^='participant-tile-']", {
+		hasText: participantName,
+	});
+	await expect(tile).toBeVisible({ timeout: 45_000 });
+	const video = tile.locator("video").first();
+	await expect(video).toBeVisible({ timeout: 45_000 });
+
+	await expect
+		.poll(
+			async () =>
+				video.evaluate((element) => {
+					const videoEl = element as HTMLVideoElement;
+					const quality = videoEl.getVideoPlaybackQuality?.();
+					const stream = videoEl.srcObject as MediaStream | null;
+					const videoTrack = stream?.getVideoTracks()[0] ?? null;
+					return {
+						currentTime: videoEl.currentTime,
+						decodedFrames: quality?.totalVideoFrames ?? 0,
+						height: videoEl.videoHeight,
+						readyState: videoEl.readyState,
+						trackState: videoTrack?.readyState ?? null,
+						width: videoEl.videoWidth,
+					};
+				}),
+			{ timeout: 45_000 },
+		)
+		.toMatchObject({
+			readyState: 4,
+			trackState: "live",
+		});
+
+	await expect
+		.poll(
+			async () =>
+				video.evaluate((element) => {
+					const videoEl = element as HTMLVideoElement;
+					const quality = videoEl.getVideoPlaybackQuality?.();
+					return (
+						videoEl.currentTime > 0 &&
+						(quality?.totalVideoFrames ?? 0) > 0 &&
+						videoEl.videoWidth > 0 &&
+						videoEl.videoHeight > 0
+					);
+				}),
+			{ timeout: 45_000 },
+		)
+		.toBe(true);
+}
+
 test.describe("E2EE (v2 ECDH handshake)", () => {
 	test("participants can join an E2EE meeting without a passphrase", async ({
 		hostPage,
@@ -40,5 +93,29 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 30_000,
 		});
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, "Guest E2EE");
+	});
+
+	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Convert E2EE";
+		const guest = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await enableE2EEInSettings(hostPage);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
 	});
 });
