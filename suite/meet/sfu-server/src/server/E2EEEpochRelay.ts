@@ -6,6 +6,7 @@ import type {
 	SocketData,
 } from '../types';
 import { loggers } from '../utils/logger';
+import type { RateLimiter } from '../utils/rateLimiter';
 import {
 	E2EE_COORDINATOR_TTL_MS,
 	type E2eeCoordinatorPersistence,
@@ -13,6 +14,7 @@ import {
 	type PersistedE2eePendingCommitRequest,
 } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
+import { checkSocketRateLimits } from './handlers/utils';
 
 type TypedSocket = Socket<
 	ClientToServerEvents,
@@ -52,6 +54,9 @@ const RETAINED_EPOCHS = 3;
 const COMMIT_REQUEST_BATCH_MS = 250;
 const COMMITTER_TIMEOUT_MS = 10_000;
 const MAX_REDESIGNATIONS = 3;
+const E2EE_EPOCH_USER_LIMIT = 60;
+const E2EE_EPOCH_IP_LIMIT = 240;
+const E2EE_EPOCH_RATE_WINDOW_MS = 60 * 1000;
 
 type RetainedEpochMaterial = {
 	commit?: Extract<E2eeEpochEnvelope, { type: 'commit' }>;
@@ -99,6 +104,7 @@ export class E2EEEpochRelay {
 		fullAccessSockets: Map<string, Set<string>>,
 		participantToSender: Map<string, Map<string, number>>,
 		private readonly persistence: E2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence(),
+		private readonly rateLimiter: RateLimiter | null = null,
 	) {
 		this.io = io;
 		this.fullAccessSockets = fullAccessSockets;
@@ -111,8 +117,28 @@ export class E2EEEpochRelay {
 
 	setup(socket: Socket): void {
 		socket.on('e2ee:epoch', (payload: E2eeEpochPayload) => {
+			if (!this.isWithinRateLimit(socket)) return;
 			void this.handle(socket, payload);
 		});
+	}
+
+	private isWithinRateLimit(socket: Socket): boolean {
+		if (!this.rateLimiter) return true;
+		const allowed = checkSocketRateLimits(
+			socket,
+			this.rateLimiter,
+			E2EE_EPOCH_USER_LIMIT,
+			E2EE_EPOCH_IP_LIMIT,
+			E2EE_EPOCH_RATE_WINDOW_MS,
+		);
+		if (!allowed) {
+			socket.emit('sfu_error', {
+				error: 'Too many encrypted epoch messages. Please try again later.',
+				code: 'RATE_LIMITED',
+				timestamp: new Date().toISOString(),
+			});
+		}
+		return allowed;
 	}
 
 	requestKeyPackages(

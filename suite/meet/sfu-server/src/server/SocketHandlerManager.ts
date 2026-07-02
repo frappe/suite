@@ -51,6 +51,7 @@ export class SocketHandlerManager {
 			this.registry.getFullAccessSockets(),
 			this.registry.getParticipantToSender(),
 			coordinatorPersistence,
+			this.rateLimiter,
 		);
 		this.e2eeEpochRelay.setRoster(roster);
 
