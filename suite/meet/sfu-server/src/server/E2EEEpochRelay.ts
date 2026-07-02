@@ -905,7 +905,21 @@ export class E2EEEpochRelay {
 		const hasMatchingPending =
 			!!pending &&
 			this.matchesPendingCommitRequest(pending, fromSenderId, payload);
-		if (!hasMatchingPending) {
+		if (pending && !hasMatchingPending) {
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: rejecting commit from non-designated committer %o',
+				{
+					roomId,
+					fromSenderId,
+					previousEpochNumber: payload.previousEpochNumber,
+					membershipDeltaId: payload.membershipDeltaId,
+					lastDesignatedSenderId:
+						pending.alreadyTried[pending.alreadyTried.length - 1],
+				},
+			);
+			return;
+		}
+		if (!pending) {
 			loggers.socketHandler.debug(
 				'[DEBUG-e2ee] SFU: accepting commit without matching pending request (host enable flow) %o',
 				{
