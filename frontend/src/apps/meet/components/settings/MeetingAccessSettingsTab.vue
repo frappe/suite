@@ -59,7 +59,7 @@
 
 <script setup lang="ts">
 import { debounce, FormControl, Switch, toast } from "frappe-ui";
-import { ref, watch } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { useChatStore } from "@/apps/meet/composables/useChatStore";
 import { useMeetingDoc } from "../../composables/useMeetingDoc";
 import E2EESettingsSection from "./E2EESettingsSection.vue";
@@ -87,15 +87,17 @@ const hostOnlyChat = ref<boolean>(chatStore.hostOnlyChat);
 
 const meetingDoc = getMeetingDoc(props.meetingId);
 
-watch(
-	() => meetingDoc.doc?.host_only_chat,
-	(value) => {
-		if (value !== undefined) {
-			hostOnlyChat.value = !!value;
+onMounted(async () => {
+	try {
+		allowGuest.value = globalAllowGuest.value;
+		meetingType.value = globalMeetingType.value;
+		if (meetingDoc.doc?.host_only_chat !== undefined) {
+			hostOnlyChat.value = !!meetingDoc.doc.host_only_chat;
 		}
-	},
-	{ immediate: true },
-);
+	} catch (error) {
+		console.error("Failed to load meeting settings");
+	}
+});
 
 const saveSettings = debounce(async () => {
 	if (meetingDoc.updateSettings.loading) return;

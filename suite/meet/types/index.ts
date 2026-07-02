@@ -41,10 +41,6 @@ export interface ScreenShareData {
 	streamId?: string;
 	kind?: "video";
 	isScreen?: boolean;
-	reason?: string;
-	source?: string;
-	producerId?: string;
-	details?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -92,9 +88,6 @@ export interface ProducerClosedEvent {
 	producerId: string;
 	participantId: string;
 	isScreen: boolean;
-	reason?: string;
-	source?: string;
-	details?: Record<string, unknown>;
 }
 
 export interface ConsumerClosedEvent {
@@ -124,7 +117,6 @@ export interface ScreenShareStartedEvent {
 export interface ScreenShareStoppedEvent {
 	participantId: string;
 	timestamp: string;
-	reason?: string;
 }
 
 export interface ActiveSpeakerEvent {

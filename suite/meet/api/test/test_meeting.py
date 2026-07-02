@@ -78,6 +78,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 			site="site-b.example.com",
 		)
 
+		decoded_a = jwt.decode(token_a, frappe.conf.sfu_secret, algorithms=["HS256"])
+		decoded_b = jwt.decode(token_b, frappe.conf.sfu_secret, algorithms=["HS256"])
+
+		self.assertEqual(decoded_a["meeting_id"], decoded_b["meeting_id"])
+		self.assertNotEqual(decoded_a["site"], decoded_b["site"])
+
 	def test_restricted_meeting_non_member_cannot_get_sfu_connection_details(self):
 		frappe.set_user(self.outsider_email)
 

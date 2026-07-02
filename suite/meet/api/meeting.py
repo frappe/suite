@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import base64
-import json
 import secrets
 import time
 from typing import TYPE_CHECKING
@@ -376,7 +375,6 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 	if not guest_id:
 		guest_id = f"guest_{secrets.token_urlsafe(16)}"
 		guest_name_clean = guest_name.strip()
-		session_token = secrets.token_urlsafe(32)
 
 		session_data = {
 			"guest_id": guest_id,
@@ -384,14 +382,8 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 			"meeting_id": meeting_id,
 			"ip_address": frappe.local.request_ip,
 			"joined_at": int(time.time()),
-			"session_token": session_token,
 		}
 		set_guest_session(guest_id, session_data, ttl=24 * 3600)
-
-	# Always re-read so the session_token is available regardless of
-	# whether this is a fresh join or a guest_id reuse.
-	session_data = get_guest_session(guest_id) or {}
-	session_token = session_data.get("session_token", "")
 
 	if meeting.is_user_banned(guest_id):
 		frappe.throw(_("You are banned from this meeting"))
@@ -414,7 +406,6 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				"meeting_id": meeting_id,
 				"guest_id": guest_id,
 				"guest_name": guest_name_clean,
-				"session_token": session_token,
 				"auth_token": auth_token,
 				"sfu_url": sfu_config["sfu_server_url"],
 				"sfu_port": sfu_config["sfu_server_port"],
@@ -430,7 +421,6 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 			"meeting_id": meeting_id,
 			"guest_id": guest_id,
 			"guest_name": guest_name_clean,
-			"session_token": session_token,
 			"message": "Waiting for host approval",
 			"host_only_chat": bool(meeting.host_only_chat),
 		}
@@ -453,7 +443,6 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		"meeting_id": meeting_id,
 		"guest_id": guest_id,
 		"guest_name": guest_name_clean,
-		"session_token": session_token,
 		"auth_token": auth_token,
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
@@ -465,36 +454,14 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=10, seconds=60 * 60)
-def get_approved_guest_connection_details(
-	meeting_id: str, guest_id: str, session_token: str | None = None
-) -> dict:
+def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dict:
 	"""
 	Get SFU connection details for an approved guest.
 	This is called after a guest receives approval notification.
-
-	The caller must present the `session_token` that was returned to
-	them when they originally called `join_meeting_as_guest`. This
-	binds the connection-details request to the same client that
-	created the guest session, preventing an attacker who has only
-	discovered the `guest_id` from minting a valid SFU token.
 	"""
 	session_data = get_guest_session(guest_id)
 	if not session_data:
 		frappe.throw(_("Guest session not found or expired"))
-
-	stored_token = session_data.get("session_token")
-	if not stored_token or not session_token:
-		frappe.throw(_("Guest session token is required"))
-	if not secrets.compare_digest(str(stored_token), str(session_token)):
-		frappe.logger("meet").warning(
-			"get_approved_guest_connection_details: bad session_token for %s from %s",
-			guest_id,
-			frappe.local.request_ip,
-		)
-		frappe.throw(_("Invalid guest session token"))
-
-	if session_data.get("meeting_id") != meeting_id:
-		frappe.throw(_("Session does not match meeting"))
 
 	if not frappe.db.exists("Sae Meeting", meeting_id):
 		frappe.throw(_("Meeting not found"))

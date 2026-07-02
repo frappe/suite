@@ -471,22 +471,11 @@ export function useSFUConnection(deps: {
 			try {
 				const resolvedGuestName =
 					guestName || sessionStorage.getItem("guest_name") || "Guest";
-				const sessionToken =
-					sessionStorage.getItem("guest_session_token") || "";
-				if (!sessionToken) {
-					console.error(
-						"Guest session_token missing from sessionStorage; cannot fetch connection details",
-					);
-					connectionState.connectionError =
-						"Session token missing. Please rejoin the meeting.";
-					return;
-				}
 				const response = await frappeRequest({
 					url: "suite.meet.api.meeting.get_approved_guest_connection_details",
 					params: {
 						meeting_id: meetingId,
 						guest_id: guestId,
-						session_token: sessionToken,
 					},
 				});
 				if (
@@ -689,12 +678,6 @@ export function useSFUConnection(deps: {
 			sessionStorage.setItem("guest_name", guestName);
 			sessionStorage.setItem("guest_meeting_id", meetingId);
 			sessionStorage.setItem("guest_status", joinResult.status as string);
-			if (joinResult.session_token) {
-				sessionStorage.setItem(
-					"guest_session_token",
-					joinResult.session_token as string,
-				);
-			}
 
 			connectionState.guestId = joinResult.guest_id as string;
 			connectionState.guestAuthToken =
