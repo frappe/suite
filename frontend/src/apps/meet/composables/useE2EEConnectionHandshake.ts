@@ -47,6 +47,12 @@ export function useE2EEConnectionHandshake(
 		currentUser,
 		isCurrentTabHost: deps.isCurrentTabHost,
 		getDeviceIdentity,
+		onWelcomeProcessed: () => {
+			void controller.handleMeetingE2EEEnabled({
+				meeting_id: meetingId,
+				e2ee_enabled: true,
+			});
+		},
 	});
 	const controller = new E2EEHandshakeController({
 		meetingId,

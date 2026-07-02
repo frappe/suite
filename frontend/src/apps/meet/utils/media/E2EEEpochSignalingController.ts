@@ -39,6 +39,7 @@ interface E2EEEpochSignalingControllerDeps {
 	isCurrentTabHost: Ref<boolean>;
 	getDeviceIdentity: () => Promise<DeviceIdentity>;
 	epochProtocolProvider?: EpochProtocolProvider;
+	onWelcomeProcessed?: () => void;
 }
 
 export class E2EEEpochSignalingController {
@@ -565,6 +566,7 @@ export class E2EEEpochSignalingController {
 		);
 		await this.syncSenderSigningPubs(nextEpoch.state);
 		this.pendingKeyPackagesByEpoch.delete(welcomeEnvelope.epochNumber - 1);
+		this.deps.onWelcomeProcessed?.();
 
 		const fromParticipantId = this.deps.currentUser.currentUser.value?.user_id;
 		if (!fromParticipantId) return;
@@ -576,7 +578,7 @@ export class E2EEEpochSignalingController {
 		});
 	}
 
-	private async syncSenderSigningPubs(
+	async syncSenderSigningPubs(
 		state: import("ts-mls").ClientState,
 	): Promise<void> {
 		let members: import("ts-mls").LeafNode[];

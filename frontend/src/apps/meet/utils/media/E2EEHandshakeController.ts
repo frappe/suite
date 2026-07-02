@@ -196,17 +196,22 @@ export class E2EEHandshakeController {
 			keyVersion: result.epoch.epochNumber,
 			signingPrivateKey: identity.signingKeyPair.privateKey,
 		});
+		await this.deps.epochSignalingController?.syncSenderSigningPubs(
+			result.epoch.state,
+		);
 		const fromParticipantId = userId;
 		const previousEpochNumber = activeEpoch.epochNumber;
 		const epochNumber = result.epoch.epochNumber;
 		const membershipDeltaId = `add-${collectedSenderIds.join("-")}-to-${epochNumber}`;
-		const membershipDeltaHash = Buffer.from(
-			JSON.stringify({
-				type: "add",
-				senderIds: collectedSenderIds,
-				nextEpochNumber: epochNumber,
-			}),
-		).toString("base64");
+		const membershipDeltaHash = bufferToBase64(
+			new TextEncoder().encode(
+				JSON.stringify({
+					type: "add",
+					senderIds: collectedSenderIds,
+					nextEpochNumber: epochNumber,
+				}),
+			),
+		);
 		this.deps.sfuClient.sendE2EEEpochEnvelope({
 			type: "commit",
 			fromParticipantId,
@@ -422,7 +427,14 @@ export class E2EEHandshakeController {
 			this.mediaState.processedStream || this.mediaState.localStream;
 		const audioStreamForRepublish = this.mediaState.localStream;
 
-		await this.sfuClient.refreshToken();
+		try {
+			await this.sfuClient.refreshToken();
+		} catch (error) {
+			console.warn(
+				"[DEBUG-e2ee] reconfigureMediaForE2EE: token refresh failed, proceeding with existing token",
+				error,
+			);
+		}
 		await this.sfuClient.joinRoom(
 			this.meetingId,
 			{

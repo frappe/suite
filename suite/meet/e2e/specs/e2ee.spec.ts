@@ -71,6 +71,24 @@ async function expectRemoteVideoReceiving(
 		.toBe(true);
 }
 
+function capturePageErrors(page: Page) {
+	const errors: string[] = [];
+	const onPageError = (error: Error) => errors.push(error.stack ?? error.message);
+	const onConsole = (message: { type(): string; text(): string }) => {
+		if (message.type() !== "error") return;
+		errors.push(message.text());
+	};
+	page.on("pageerror", onPageError);
+	page.on("console", onConsole);
+	return {
+		assertNoErrors() {
+			page.off("pageerror", onPageError);
+			page.off("console", onConsole);
+			expect(errors).toEqual([]);
+		},
+	};
+}
+
 test.describe("E2EE (v2 ECDH handshake)", () => {
 	test("participants can join an E2EE meeting without a passphrase", async ({
 		hostPage,
@@ -113,7 +131,9 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
 
+		const hostErrors = capturePageErrors(hostPage);
 		await enableE2EEInSettings(hostPage);
+		hostErrors.assertNoErrors();
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
