@@ -4,100 +4,91 @@ import { SFUConnectionManager } from "../SFUConnectionManager";
 
 function createManager() {
 	const participantManager = new ParticipantManager();
+	const handlers = new Map<string, (data: unknown) => unknown>();
+	const sfuClient = {
+		connect: vi.fn().mockResolvedValue(undefined),
+		on: vi.fn((event: string, handler: (data: unknown) => unknown) => {
+			handlers.set(event, handler);
+		}),
+	};
+	const mediaManager = {
+		subscribeToRemoteProducer: vi.fn().mockResolvedValue(undefined),
+		consumerManager: {
+			setEventHandlers: vi.fn(),
+			getConsumersByParticipant: vi.fn(() => []),
+		},
+		setEventHandlers: vi.fn(),
+	};
+	const transportManager = {
+		initialize: vi.fn(),
+		isDeviceLoaded: vi.fn(() => true),
+	};
 	const manager = new SFUConnectionManager({
-		sfuClient: {} as never,
+		sfuClient: sfuClient as never,
 		videoManager: {} as never,
 		participantManager,
-		transportManager: {} as never,
-		mediaManager: {} as never,
-		recoveryManager: {} as never,
+		transportManager: transportManager as never,
+		mediaManager: mediaManager as never,
+		recoveryManager: { setupTransportEventHandlers: vi.fn() } as never,
 	});
 	manager.currentUser = { value: { user_id: "me" } };
-	return { manager, participantManager };
+	return { handlers, manager, mediaManager, participantManager };
 }
 
 describe("SFUConnectionManager", () => {
-	it("marks a remote participant unmuted when an audio producer exists", () => {
-		const { manager, participantManager } = createManager();
+	it("subscribes to remote audio producers", async () => {
+		const { handlers, manager, mediaManager, participantManager } = createManager();
 		participantManager.addParticipant({
 			participantId: "remote-1",
 			userData: { name: "Remote", audio_enabled: false },
 		});
 
-		(
-			manager as unknown as {
-				updateParticipantMediaStateFromProducer: (event: {
-					participantId: string;
-					producerId: string;
-					kind: string;
-				}) => void;
-			}
-		).updateParticipantMediaStateFromProducer({
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
 			participantId: "remote-1",
 			producerId: "producer-1",
 			kind: "audio",
 		});
 
-		expect(participantManager.getParticipant("remote-1")?.audio_enabled).toBe(
-			true,
-		);
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			isScreen: false,
+		});
 	});
 
-	it("marks camera on for camera video producers but not screen share", () => {
-		const { manager, participantManager } = createManager();
+	it("passes the screen-share flag for screen video producers", async () => {
+		const { handlers, manager, mediaManager, participantManager } = createManager();
 		participantManager.addParticipant({
 			participantId: "remote-1",
 			userData: { name: "Remote", video_enabled: false },
 		});
-		const update = (
-			manager as unknown as {
-				updateParticipantMediaStateFromProducer: (event: {
-					participantId: string;
-					producerId: string;
-					kind: string;
-					isScreen?: boolean;
-				}) => void;
-			}
-		).updateParticipantMediaStateFromProducer.bind(manager);
 
-		update({
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
 			participantId: "remote-1",
 			producerId: "screen-producer",
 			kind: "video",
 			isScreen: true,
 		});
-		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
-			false,
-		);
 
-		update({
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
 			participantId: "remote-1",
-			producerId: "camera-producer",
-			kind: "video",
+			producerId: "screen-producer",
+			isScreen: true,
 		});
-		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(
-			true,
-		);
 	});
 
-	it("ignores producer events for the current user", () => {
-		const { manager, participantManager } = createManager();
-		const updateSpy = vi.spyOn(participantManager, "updateMediaState");
+	it("ignores producer events for the current user", async () => {
+		const { handlers, manager, mediaManager } = createManager();
 
-		(
-			manager as unknown as {
-				updateParticipantMediaStateFromProducer: (event: {
-					participantId: string;
-					producerId: string;
-					kind: string;
-				}) => void;
-			}
-		).updateParticipantMediaStateFromProducer({
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
 			participantId: "me",
 			producerId: "producer-1",
 			kind: "audio",
 		});
 
-		expect(updateSpy).not.toHaveBeenCalled();
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
 	});
 });

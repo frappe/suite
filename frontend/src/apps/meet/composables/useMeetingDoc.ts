@@ -24,6 +24,10 @@ interface DocumentResource {
 		submit(params: Record<string, unknown>): Promise<unknown>;
 		loading: boolean;
 	};
+	enableE2ee: {
+		submit(params?: Record<string, unknown>): Promise<unknown>;
+		loading: boolean;
+	};
 	get: {
 		loading: boolean;
 		error: unknown;
@@ -64,6 +68,7 @@ export function useMeetingDoc(): UseMeetingDocReturn {
 			auto: session.isLoggedIn,
 			whitelistedMethods: {
 				updateSettings: "update_settings",
+				enableE2ee: "enable_e2ee",
 			},
 		});
 

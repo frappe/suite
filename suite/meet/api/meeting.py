@@ -606,19 +606,6 @@ def get_meeting_e2ee_details(meeting_id: str) -> dict:
 
 
 @frappe.whitelist()
-def convert_meeting_to_e2ee(
-	meeting_id: str,
-) -> dict:
-	"""Enable epoch-based E2EE for a meeting."""
-	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
-	meeting.enable_e2ee()
-
-	return {
-		"e2ee_enabled": bool(getattr(meeting, "e2ee_enabled", False)),
-	}
-
-
-@frappe.whitelist()
 def register_e2ee_device(
 	device_id: str,
 	ed25519_public_key: str,

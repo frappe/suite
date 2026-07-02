@@ -31,6 +31,10 @@ interface E2EESettingsSectionProps {
 		doc?: MeetingDocument;
 		reload: () => Promise<void>;
 		updateSettings: { loading: boolean };
+		enableE2ee: {
+			submit: () => Promise<unknown>;
+			loading: boolean;
+		};
 		get: { loading: boolean };
 	};
 	globallyEnabled: boolean;
@@ -57,6 +61,7 @@ const isToggleDisabled = computed(
 	() =>
 		isConvertingToE2EE.value ||
 		props.meetingDoc.updateSettings.loading ||
+		props.meetingDoc.enableE2ee.loading ||
 		props.meetingDoc.get.loading ||
 		e2eeEnabled.value ||
 		isX25519Supported.value !== true,
@@ -137,18 +142,8 @@ watch(e2eeEnabled, async (val, oldVal) => {
 			}),
 		);
 
-		const response = (await frappeRequest({
-			url: "suite.meet.api.meeting.convert_meeting_to_e2ee",
-			params: {
-				meeting_id: props.meetingId,
-			},
-		})) as {
-			e2ee_enabled?: boolean;
-			message?: { e2ee_enabled?: boolean };
-		};
-
-		const payload = response.message || response;
-		e2eeEnabled.value = Boolean(payload.e2ee_enabled);
+		await props.meetingDoc.enableE2ee.submit();
+		e2eeEnabled.value = true;
 
 		await props.meetingDoc.reload();
 		toast.success("Meeting is now end-to-end encrypted.");

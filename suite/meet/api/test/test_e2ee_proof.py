@@ -8,7 +8,6 @@ from frappe.tests import IntegrationTestCase
 
 from suite.meet.api.meeting import (
 	_is_valid_e2ee_device_id,
-	convert_meeting_to_e2ee,
 	get_sfu_connection_details,
 	register_e2ee_device,
 )
@@ -80,18 +79,18 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 		)
 		self.assertEqual(stored, second_key)
 
-	def test_convert_meeting_to_e2ee_enables_epoch_room(self):
+	def test_enable_e2ee_enables_epoch_room(self):
 		meeting = self._create_meeting_as_host()
 
-		result = convert_meeting_to_e2ee(meeting.name)
+		result = meeting.enable_e2ee()
 
-		self.assertTrue(result["e2ee_enabled"])
+		self.assertTrue(result)
 		meeting.reload()
 		self.assertTrue(meeting.e2ee_enabled)
 
 	def test_sfu_connection_details_only_expose_e2ee_required(self):
 		meeting = self._create_meeting_as_host()
-		convert_meeting_to_e2ee(meeting.name)
+		meeting.enable_e2ee()
 
 		details = get_sfu_connection_details(meeting.name)
 
