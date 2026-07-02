@@ -1,7 +1,7 @@
 <template>
     <Dialog v-model="isOpen" :options="{ title: 'Create a Poll' }">
-        <template #body-content>
-            <div class="space-y-4 py-4">
+        <template #default>
+            <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Question</label>
                     <FormControl
@@ -45,6 +45,13 @@
                     >
                         Add Option
                     </Button>
+                </div>
+
+                <div class="rounded-md bg-gray-50 p-4 text-sm flex gap-4">
+                    <lucide-alert-triangle class="h-5 w-5    text-ink-gray-6"/>
+                    <span class="text-ink-gray-8"">
+                        Polls are temporary and will be deleted once everyone leaves the meeting.
+                    </span>
                 </div>
             </div>
         </template>
