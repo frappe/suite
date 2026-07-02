@@ -14,7 +14,6 @@ from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.utils import convert_html_to_text, user_context
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
-	get_session_account,
 	has_user_settings,
 	is_jmap_configured,
 	is_mail_admin,
@@ -99,7 +98,7 @@ def get_account_request(request_key: str) -> dict | None:
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
 def create_account(request_key: str, first_name: str, last_name: str, password: str) -> None:
-	"""Create a new user account"""
+	"""Create a new mail account"""
 
 	account_request = frappe.get_last_doc("Mail Account Request", {"request_key": request_key})
 	account_request.validate_expired()
@@ -157,19 +156,17 @@ def get_user_info() -> dict | None:
 	data.is_mail_admin = is_mail_admin(user)
 	data.is_system_manager = is_system_manager(user)
 	data.is_jmap_configured = is_jmap_configured(user)
-	data.accounts = frappe.get_all("User Account", filters={"user": user})
+	data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])
 
-	# Outgoing settings now live per-account on Account Settings (shared across the users
-	# of an account and named by the account ID); attach each account's default outgoing
-	# email (and its settings doc) so the compose UI can pick the default sender.
-	account_ids = [acc["id"] for acc in data.accounts]
 	settings_by_account = {
 		s["name"]: s
 		for s in frappe.get_all(
-			"Account Settings",
-			filters={"name": ["in", account_ids]},
+			"JMAP Account",
+			filters={"name": ["in", [account["account"] for account in data.accounts]]},
 			fields=[
 				"name",
+				"_name",
+				"is_personal",
 				"default_outgoing_email",
 				"on_mark_as_junk",
 				"enable_screening",
@@ -177,13 +174,16 @@ def get_user_info() -> dict | None:
 			],
 		)
 	}
-	for acc in data.accounts:
-		settings = settings_by_account.get(acc["id"])
-		acc["account_settings"] = settings["name"] if settings else None
-		acc["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
-		acc["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
-		acc["enable_screening"] = bool(settings["enable_screening"]) if settings else False
-		acc["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
+	for account in data.accounts:
+		settings = settings_by_account.get(account["account"])
+		account["id"] = account["account"]
+		account["_name"] = settings["_name"] if settings else None
+		account["is_personal"] = bool(settings["is_personal"]) if settings else False
+		account["jmap_account"] = settings["name"] if settings else None
+		account["default_outgoing_email"] = settings["default_outgoing_email"] if settings else None
+		account["on_mark_as_junk"] = settings["on_mark_as_junk"] if settings else "Junk Sender's Mail"
+		account["enable_screening"] = bool(settings["enable_screening"]) if settings else False
+		account["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
 
 	data.user_image = data.user_image or get_avatar_url(user)
 
@@ -255,7 +255,7 @@ def get_user_for_reset_password_key(key: str) -> str:
 
 @frappe.whitelist()
 def create_mail_import(
-	account_id: str,
+	account: str,
 	format: Literal["eml", "jmap", "mbox", "maildir", "maildir-nested"],
 	file: str,
 	mailbox: str | None = None,
@@ -265,7 +265,7 @@ def create_mail_import(
 
 	doc = frappe.new_doc("Mail Exchange")
 	doc.user = frappe.session.user
-	doc.account_id = account_id
+	doc.account = account
 	doc.operation = "Import"
 	doc.import_format = format
 	doc.import_file = file
@@ -277,7 +277,7 @@ def create_mail_import(
 
 @frappe.whitelist()
 def create_mail_export(
-	account_id: str,
+	account: str,
 	format: Literal["jmap", "mbox", "maildir", "maildir-nested"],
 	archive_type: Literal[".zip", ".tgz", ".tar.gz"],
 	sort: Literal["Received At (ASC)", "Received At (DESC)"],
@@ -288,7 +288,7 @@ def create_mail_export(
 
 	doc = frappe.new_doc("Mail Exchange")
 	doc.user = frappe.session.user
-	doc.account_id = account_id
+	doc.account = account
 	doc.operation = "Export"
 	doc.export_format = format
 	doc.export_archive_type = archive_type
@@ -304,7 +304,7 @@ def create_mail_export(
 
 @frappe.whitelist()
 def create_calendar_import(
-	account_id: str,
+	account: str,
 	format: Literal["ics", "jmap"],
 	file: str,
 	calendar: str | None = None,
@@ -313,7 +313,7 @@ def create_calendar_import(
 
 	doc = frappe.new_doc("Calendar Exchange")
 	doc.user = frappe.session.user
-	doc.account_id = account_id
+	doc.account = account
 	doc.operation = "Import"
 	doc.import_format = format
 	doc.import_file = file
@@ -325,7 +325,7 @@ def create_calendar_import(
 
 @frappe.whitelist()
 def create_calendar_export(
-	account_id: str,
+	account: str,
 	format: Literal["ics", "jmap"],
 	archive_type: Literal[".zip", ".tgz", ".tar.gz"],
 	sort: Literal["Start (ASC)", "Start (DESC)"],
@@ -336,7 +336,7 @@ def create_calendar_export(
 
 	doc = frappe.new_doc("Calendar Exchange")
 	doc.user = frappe.session.user
-	doc.account_id = account_id
+	doc.account = account
 	doc.operation = "Export"
 	doc.export_format = format
 	doc.export_archive_type = archive_type
@@ -373,10 +373,8 @@ def is_push_notification_relay_enabled() -> bool:
 
 
 @frappe.whitelist()
-def get_quota(account_id: str) -> dict:
+def get_quota(account: str) -> dict:
 	"""Return quota usage for the user"""
-
-	account = get_session_account(account_id)
 
 	result = {
 		"disk_quota": 0,
@@ -399,10 +397,8 @@ def get_quota(account_id: str) -> dict:
 
 
 @frappe.whitelist()
-def get_identities(account_id: str) -> list[dict]:
+def get_identities(account: str) -> list[dict]:
 	"""Return the email identities for the user"""
-
-	account = get_session_account(account_id)
 
 	return fetch_identities(account, page=1, limit=100)
 

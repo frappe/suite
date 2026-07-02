@@ -244,7 +244,7 @@ const handleSuccess = () => {
 const createEvent = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.add_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		...eventParams.value,
 		send_scheduling_messages: sendEmail,
 	}),
@@ -254,7 +254,7 @@ const createEvent = createResource({
 const editEventInstance = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		master_id: selectedEvent.calendarEvent.master_id,
 		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
 		patch: patch.value,
@@ -266,8 +266,9 @@ const editEventInstance = createResource({
 const editEvent = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account_id: store.accountId,
-		id: selectedEvent.calendarEvent.master_id,
+		account: store.accountId,
+		// master_id is only set on recurring events; fall back to the event's own id
+		id: selectedEvent.calendarEvent.master_id || selectedEvent.calendarEvent.id,
 		uid: selectedEvent.calendarEvent.uid,
 		...eventParams.value,
 		send_scheduling_messages: sendEmail,
@@ -346,7 +347,7 @@ const addAlertOptions = computed(() => [
 const mailContacts = createResource({
 	url: 'suite.mail.api.contacts.get_contacts',
 	makeParams: (text: string) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		filter: { operator: 'OR', conditions: [{ text }, { email: text }] },
 	}),
 	transform: (data) => data.map((o) => o.email),

@@ -217,7 +217,7 @@ const mailContacts = createResource({
 	url: 'suite.mail.api.contacts.get_contacts',
 	auto: false,
 	makeParams: (text: string) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		filter: { operator: 'OR', conditions: [{ text }, { email: text }] },
 	}),
 	transform: (data) =>

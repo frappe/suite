@@ -15,46 +15,10 @@ app_license = "agpl-3.0"
 # ============================================================================
 add_to_apps_screen = [
 	{
-		"name": "drive",
-		"logo": "/assets/suite/drive/images/icons/logo.svg",
-		"title": "Drive",
-		"route": "/drive",
-	},
-	{
-		"name": "slides",
-		"logo": "/assets/suite/slides/images/slides.svg",
-		"title": "Slides",
-		"route": "/slides",
-	},
-	{
-		"name": "writer",
-		"logo": "/assets/suite/writer/images/writer.png",
-		"title": "Writer",
-		"route": "/writer",
-	},
-	{
-		"name": "sheets",
-		"logo": "/assets/suite/sheets/logo.svg",
-		"title": "Sheets",
-		"route": "/sheets",
-	},
-	{
-		"name": "meet",
-		"logo": "/assets/suite/meet/images/meet.png",
-		"title": "Meet",
-		"route": "/meet",
-	},
-	{
-		"name": "mail",
-		"logo": "/assets/suite/mail/images/logo.svg",
-		"title": "Mail",
-		"route": "/mail",
-	},
-	{
-		"name": "calendar",
-		"logo": "/assets/suite/calendar/images/logo.svg",
-		"title": "Calendar",
-		"route": "/calendar",
+		"name": "suite",
+		"logo": "/assets/suite/frontend/logo.svg",
+		"title": "Frappe Suite",
+		"route": "/suite",
 	},
 ]
 
@@ -166,7 +130,7 @@ permission_query_conditions = {
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
 	# mail
-	"Account Settings": "suite.mail.doctype.account_settings.account_settings.get_permission_query_condition",
+	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.get_permission_query_condition",
 	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
 	"Calendar Exchange": "suite.mail.doctype.calendar_exchange.calendar_exchange.get_permission_query_condition",
 	"Junk Email Address": "suite.mail.doctype.junk_email_address.junk_email_address.get_permission_query_condition",
@@ -174,6 +138,7 @@ permission_query_conditions = {
 	"Mail Queue": "suite.mail.doctype.mail_queue.mail_queue.get_permission_query_condition",
 	"Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
 	"Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
+	"User Account": "suite.mail.doctype.user_account.user_account.get_permission_query_condition",
 	"User Settings": "suite.mail.doctype.user_settings.user_settings.get_permission_query_condition",
 }
 
@@ -191,7 +156,7 @@ has_permission = {
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
 	# mail
-	"Account Settings": "suite.mail.doctype.account_settings.account_settings.has_permission",
+	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
 	"Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
 	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.has_permission",
 	"Calendar": "suite.mail.doctype.calendar.calendar.has_permission",
@@ -261,6 +226,7 @@ doc_events = {
 		],
 		"on_trash": [
 			"suite.mail.events.delete_account",
+			"suite.mail.events.delete_user_accounts",
 			"suite.mail.events.delete_user_settings",
 		],
 	},
@@ -278,12 +244,14 @@ scheduler_events = {
 		"suite.sheets.versioning.tasks.rollup_snapshots",
 		"suite.sheets.versioning.tasks.truncate_op_log",
 		# mail
+		"suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
 		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
 		"suite.mail.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 	],
 	"hourly": [
 		# mail
 		"suite.mail.doctype.mail_exchange.mail_exchange.retry_stuck_mail_exchanges",
+		"suite.mail.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
 	],
 	"hourly_long": [
 		# mail
@@ -337,13 +305,17 @@ signup_form_template = "templates/signup.html"
 
 # mail — link integrity on delete
 ignore_links_on_delete = [
+	# drive
+	"Drive Team",
+	"Drive Settings",
 	# mail
 	"Mail Account Request",
 	"Mail Domain Request",
 	"Server Job",
 	"Server Ansible Play",
 	"Server Deployment",
-	"Account Settings",
+	"JMAP Account",
+	"User Account",
 	"Screened Email Address",
 	"Mail Exchange",
 	"Mail Queue",

@@ -114,8 +114,7 @@ frappe.ui.form.on('Mail Message', {
 		frappe.call({
 			method: 'suite.mail.jmap.get_mailboxes_for_account',
 			args: {
-				user: frm.doc.user,
-				account_id: frm.doc.account_id,
+				account: frm.doc.account,
 			},
 			freeze: true,
 			freeze_message: __('Loading Mailboxes...'),

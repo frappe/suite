@@ -14,7 +14,7 @@ class BlobStore(BaseStore):
 	"""A blob storage backed by the local file system.
 
 	Each account's blobs live in their own directory named by the account ID
-	(``<base_path>/<account_id>/``); files inside are named by their encoded blob key.
+	(``<base_path>/<account>/``); files inside are named by their encoded blob key.
 	"""
 
 	def __init__(
@@ -22,7 +22,7 @@ class BlobStore(BaseStore):
 		base_path: str,
 		key: str,
 	) -> None:
-		"""Initialize per-account blob storage rooted at ``<base_path>/<account_id>``."""
+		"""Initialize per-account blob storage rooted at ``<base_path>/<account>``."""
 
 		super().__init__(base_path=base_path, key=key)
 

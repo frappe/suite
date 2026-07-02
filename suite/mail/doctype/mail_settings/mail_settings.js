@@ -66,7 +66,7 @@ frappe.ui.form.on('Mail Settings', {
 			),
 			() => {
 				frappe.call({
-					method: 'mail.storage.destroy_data_store',
+					method: 'suite.mail.storage.destroy_data_store',
 					freeze: true,
 					freeze_message: __('Destroying Data Store…'),
 					callback: (r) => {
@@ -84,7 +84,7 @@ frappe.ui.form.on('Mail Settings', {
 			),
 			() => {
 				frappe.call({
-					method: 'mail.storage.destroy_blob_store',
+					method: 'suite.mail.storage.destroy_blob_store',
 					freeze: true,
 					freeze_message: __('Destroying Blob Store…'),
 					callback: (r) => {

@@ -8,9 +8,9 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
 
-from suite.mail.jmap import get_quota_service, parse_account
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.jmap import get_quota_service
 from suite.mail.utils import parse_filters
-from suite.mail.utils.validation import has_permission_for_user
 
 
 class Quota(Document):
@@ -23,7 +23,7 @@ class Quota(Document):
 		from frappe.types import DF
 
 		_name: DF.Data | None
-		account_id: DF.Literal[None]
+		account: DF.Link
 		description: DF.SmallText | None
 		hard_limit: DF.Int
 		id: DF.Data | None
@@ -32,21 +32,14 @@ class Quota(Document):
 		soft_limit: DF.Int
 		types: DF.JSON | None
 		used: DF.Int
-		user: DF.Link | None
 		warn_limit: DF.Int
 	# end: auto-generated types
-
-	@property
-	def account(self) -> str:
-		"""Full ``user:account_id`` JMAP handle, rebuilt from the selected user and account ID."""
-
-		return f"{self.user}:{self.account_id}"
 
 	def db_insert(self, *args, **kwargs) -> None:
 		raise NotImplementedError
 
 	def load_from_db(self) -> "Quota":
-		account, id = self.name.split("|")
+		account, id = parse_quota_name(self.name)
 		quota = get_quota(account, id)
 		return super(Document, self).__init__(quota)
 
@@ -61,8 +54,6 @@ class Quota(Document):
 		filters = parse_filters(filters)
 		id = filters.get("id")
 		account = filters.get("account")
-		if not account and filters.get("user") and filters.get("account_id"):
-			account = f"{filters['user']}:{filters['account_id']}"
 
 		if not account:
 			frappe.msgprint(_("Please select an account to view quotas."), alert=True)
@@ -84,11 +75,9 @@ class Quota(Document):
 	def get_count(filters=None, **kwargs) -> int:
 		filters = parse_filters(filters)
 		account = filters.get("account")
-		if not account and filters.get("user") and filters.get("account_id"):
-			account = f"{filters['user']}:{filters['account_id']}"
 
 		if account:
-			if has_permission_for_user(parse_account(account)[0], raise_exception=False):
+			if get_user_for_jmap_account(account, raise_exception=False):
 				return cint(frappe.cache.get_value(_get_total_cache_key(account)))
 
 		return 0
@@ -104,13 +93,18 @@ def _get_total_cache_key(account: str) -> str:
 	return f"{account}:quotas:total"
 
 
+def parse_quota_name(name: str) -> tuple[str, str]:
+	"""Splits a Quota name `account|id` into its bare `account` and `id`."""
+
+	account, id = name.split("|")
+	return account, id
+
+
 @frappe.whitelist()
 def get_quota(account: str, id: str, raise_exception: bool = True) -> dict | None:
-	"""Returns quota details for the given name in the format 'account|id'."""
+	"""Returns quota details for the given account and id."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_quota_service(*parse_account(account))
+	service = get_quota_service(account)
 
 	if quotas := service.get([id]):
 		return format_quota(account, quotas[0])
@@ -126,9 +120,7 @@ def get_quota(account: str, id: str, raise_exception: bool = True) -> dict | Non
 def fetch_quotas(account: str, page: int = 1, limit: int = 10) -> list:
 	"""Returns a list of quotas for the given account."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_quota_service(*parse_account(account))
+	service = get_quota_service(account)
 	quotas = service.get()
 	formatted_quotas = [format_quota(account, quota) for quota in quotas]
 	frappe.cache.set_value(_get_total_cache_key(account), len(quotas), expires_in_sec=600)
@@ -144,8 +136,7 @@ def format_quota(account: str, quota: dict) -> dict:
 
 	return {
 		"name": f"{account}|{quota['id']}",
-		"account_id": parse_account(account)[1],
-		"user": parse_account(account)[0],
+		"account": account,
 		"id": quota["id"],
 		"_name": quota["name"],
 		"resource_type": quota["resourceType"],
@@ -163,4 +154,4 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 	if doc.doctype != "Quota":
 		return False
 
-	return has_permission_for_user(parse_account(doc.account)[0], raise_exception=False)
+	return bool(get_user_for_jmap_account(doc.account, raise_exception=False))

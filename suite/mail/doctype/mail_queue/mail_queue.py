@@ -29,25 +29,72 @@ from frappe.utils import (
 	validate_email_address,
 )
 
-from suite.mail.jmap import get_email_service, get_identities, get_jmap_connection, parse_account
-from suite.mail.jmap.models import EmailAddress, EmailAttachment, EmailCreateModel, EmailHeader, EmailRecipient
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
+from suite.mail.jmap import get_email_service, get_identities, get_jmap_connection
+from suite.mail.jmap.models import (
+	EmailAddress,
+	EmailAttachment,
+	EmailCreateModel,
+	EmailHeader,
+	EmailRecipient,
+)
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.utils import get_config, log_error
 from suite.mail.utils.dt import parsedate_to_datetime
-from suite.mail.utils.user import is_administrator
-from suite.mail.utils.validation import has_permission_for_user
+from suite.mail.utils.user import is_administrator, is_jmap_configured
 
 
 class MailQueue(Document):
-	@property
-	def account(self) -> str:
-		"""The full `user:account_id` JMAP handle.
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
 
-		`user` provides the credentials used to authenticate with JMAP, while `account_id`
-		is the account this message is sent from."""
+	from typing import TYPE_CHECKING
 
-		return f"{self.user}:{self.account_id}"
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		_response: DF.JSON | None
+		account: DF.Link
+		attachments: DF.JSON | None
+		blob_id: DF.Data | None
+		delivery_mode: DF.Literal["Immediate", "Enqueue", "Batch"]
+		destroy_after_submit: DF.Check
+		drafted_at: DF.Datetime | None
+		error_log: DF.Code | None
+		forwarded_from_id: DF.Data | None
+		from_email: DF.Data | None
+		from_ip: DF.Data | None
+		from_name: DF.Data | None
+		headers: DF.JSON | None
+		html_body: DF.Code | None
+		id: DF.Data | None
+		in_reply_to: DF.Data | None
+		in_reply_to_id: DF.Data | None
+		mailbox_id: DF.Data | None
+		max_retries: DF.Int
+		message_id: DF.Data | None
+		newsletter: DF.Check
+		next_retry_after: DF.Datetime | None
+		priority: DF.Literal["", "Low", "Normal", "High"]
+		queued_at: DF.Datetime | None
+		raw_message: DF.Code | None
+		recipients: DF.JSON | None
+		reply_to: DF.JSON | None
+		retries: DF.Int
+		save_as_draft: DF.Check
+		sent_at: DF.Datetime | None
+		size: DF.Int
+		status: DF.Literal[
+			"", "Pending", "Queued", "Failed", "Drafted", "Failed to Draft", "Submitted", "Failed to Submit"
+		]
+		subject: DF.SmallText | None
+		submitted_at: DF.Datetime | None
+		text_body: DF.Code | None
+		thread_id: DF.Data | None
+		user: DF.Link
+		via_api: DF.Check
+	# end: auto-generated types
 
 	@staticmethod
 	def clear_old_logs(days: int = 3) -> None:
@@ -99,9 +146,8 @@ class MailQueue(Document):
 		kwargs = frappe._dict(kwargs)
 
 		doc = frappe.new_doc("Mail Queue")
-		# `account` is the "user:account_id" handle; store the credentials user and the bare
-		# account id separately (the full handle is exposed via the `account` property).
-		doc.user, doc.account_id = parse_account(kwargs.account)
+		doc.user = kwargs.user
+		doc.account = kwargs.account
 		doc.from_name = kwargs.from_name
 		doc.from_email = kwargs.from_email
 		doc.subject = kwargs.subject
@@ -161,7 +207,7 @@ class MailQueue(Document):
 		identity = {}
 
 		if self.from_email:
-			for i in get_identities(*parse_account(self.account)):
+			for i in get_identities(self.account):
 				if self.from_email.lower() == i.get("email").lower():
 					identity = i
 					break
@@ -222,7 +268,7 @@ class MailQueue(Document):
 		from suite.mail.doctype.mail_message.mail_message import _get_cached_blobs
 
 		if self.blob_id:
-			blobs = _get_cached_blobs(self.account, [self.blob_id])
+			blobs = _get_cached_blobs(f"{self.user}:{self.account}", [self.blob_id])
 			if content := blobs.get(self.blob_id):
 				return content.decode("utf-8")
 
@@ -262,6 +308,7 @@ class MailQueue(Document):
 	def validate(self) -> None:
 		if self.is_new():
 			self.validate_status()
+			self.validate_account()
 			self.validate_raw_message()
 			self.validate_from_email()
 			self.validate_from_name()
@@ -296,6 +343,17 @@ class MailQueue(Document):
 		elif self.delivery_mode == "Batch":
 			self.status = "Pending"
 			self.queued_at = None
+
+	def validate_account(self) -> None:
+		"""Validates the JMAP account."""
+
+		if not is_jmap_configured(self.user):
+			frappe.throw(
+				_("User {0} does not have JMAP settings configured.").format(frappe.bold(self.user)),
+				frappe.PermissionError,
+			)
+
+		is_jmap_account_belongs_to_user(self.account, self.user, raise_exception=True)
 
 	def validate_raw_message(self) -> None:
 		"""Validates the raw message."""
@@ -366,11 +424,10 @@ class MailQueue(Document):
 		if self.save_as_draft or self.destroy_after_submit:
 			return
 
-		account_id = self.account_id
 		if self.newsletter:
-			if frappe.db.get_value("Account Settings", account_id, "destroy_newsletter_after_submit"):
+			if frappe.db.get_value("JMAP Account", self.account, "destroy_newsletter_after_submit"):
 				self.destroy_after_submit = 1
-		elif frappe.db.get_value("Account Settings", account_id, "destroy_email_after_submit"):
+		elif frappe.db.get_value("JMAP Account", self.account, "destroy_email_after_submit"):
 			self.destroy_after_submit = 1
 
 	def validate_delivery_mode(self) -> None:
@@ -549,7 +606,7 @@ class MailQueue(Document):
 
 		if self.in_reply_to and not self.in_reply_to_id:
 			try:
-				service = get_email_service(*parse_account(self.account))
+				service = get_email_service(self.account)
 				result = service.query({"header": ["Message-ID", self.in_reply_to]})
 				if ids := result["ids"]:
 					self.in_reply_to_id = ids[0]
@@ -577,7 +634,7 @@ class MailQueue(Document):
 
 		from suite.mail.doctype.mail_message.mail_message import fetch_blob
 
-		return fetch_blob(self.account, self.blob_id).decode("utf-8")
+		return fetch_blob(f"{self.user}:{self.account}", self.blob_id).decode("utf-8")
 
 	def _process(self) -> None:
 		"""Create, Update or Submit the Email."""
@@ -586,8 +643,8 @@ class MailQueue(Document):
 
 		try:
 			connection = get_jmap_connection(self.user)
-			email_service = EmailService(self.account_id, connection)
-			mailbox_service = MailboxService(self.account_id, connection)
+			email_service = EmailService(self.account, connection)
+			mailbox_service = MailboxService(self.account, connection)
 
 			draft_mailbox_id = mailbox_service.get_mailbox_id_by_role(
 				"drafts", create_if_not_exists=True, raise_exception=True
@@ -871,17 +928,17 @@ def enqueue_process_pending_emails(batch_size: int | None = None, max_batch_size
 		log_error(_("Failed - Enqueue Process Pending Emails"), frappe.get_traceback(with_context=True))
 
 
-def get_permission_query_condition(user: str | None = None) -> str:
+def get_permission_query_condition(user: str | None = None) -> str | None:
 	user = user or frappe.session.user
-
 	if is_administrator(user):
 		return ""
 
-	return f"(`tabMail Queue`.user = '{user}')"
+	return f"""`tabMail Queue`.user = '{user}'"""
 
 
-def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
+def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
 	if doc.doctype != "Mail Queue":
 		return False
 
-	return has_permission_for_user(doc.user, raise_exception=False)
+	user = user or frappe.session.user
+	return doc.user == user or is_administrator(user)

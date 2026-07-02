@@ -33,6 +33,8 @@ export class PeerManager {
 					: false,
 			is_guest:
 				typeof peerInfo.is_guest === 'boolean' ? peerInfo.is_guest : false,
+			senderId: peerInfo.senderId,
+			isHost: peerInfo.isHost || false,
 		};
 
 		const peer: Peer = {

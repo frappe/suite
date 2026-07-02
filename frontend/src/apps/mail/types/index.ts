@@ -4,7 +4,7 @@ export * from './doctypes'
 
 export type COLOR_SCHEME = 'System Default' | 'Light Mode' | 'Dark Mode'
 
-// What happens to a sender when one of their messages is marked as Junk (Account Settings).
+// What happens to a sender when one of their messages is marked as Junk (JMAP Account).
 export type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 
 // A screened sender: how their future mail is handled. 'Reject' discards it silently; 'Spam' files
@@ -48,10 +48,10 @@ export interface User {
 
 	mailboxes: { id: string; name: string; role: string }[]
 	// `get_user_info` enriches each account with its per-account outgoing default and
-	// Account Settings doc name (the fields moved off User Settings).
+	// JMAP Account doc name (the fields moved off User Settings).
 	accounts: (UserAccount & {
 		default_outgoing_email?: string
-		account_settings?: string
+		jmap_account?: string
 		on_mark_as_junk?: OnMarkAsJunk
 		enable_screening?: boolean
 		block_remote_images?: boolean

@@ -49,14 +49,14 @@ class CoreService(CoreServiceHelper):
 
 	capabilities: ClassVar[list[str]] = ["urn:ietf:params:jmap:core"]
 
-	def __init__(self, account_id: str, connection: JMAPConnection) -> None:
+	def __init__(self, account: str, connection: JMAPConnection) -> None:
 		"""Initializes the CoreService with the provided account ID and JMAP connection.
 
-		The connection carries the authenticated user; only the JMAP ``account_id`` is needed
+		The connection carries the authenticated user; only the JMAP ``account`` is needed
 		to scope requests (and as the cache key, since account data is shared across the users
 		who have access to it)."""
 
-		self.account_id = account_id
+		self.account = account
 		self.connection = connection
 
 	def __post_init__(self) -> None:
@@ -67,16 +67,16 @@ class CoreService(CoreServiceHelper):
 
 	@classmethod
 	def invalidate_cache(
-		cls, account_id: str | None = None, key: Literal["identities", "mailboxes"] | None = None
+		cls, account: str | None = None, key: Literal["identities", "mailboxes"] | None = None
 	) -> None:
 		"""Invalidates the cache for a specific account and key, or for all accounts and keys if no parameters are provided."""
 
-		if account_id:
+		if account:
 			if key:
-				if account_id in cls._cache and key in cls._cache[account_id]:
-					del cls._cache[account_id][key]  # Remove the specific key from the account's cache
+				if account in cls._cache and key in cls._cache[account]:
+					del cls._cache[account][key]  # Remove the specific key from the account's cache
 			else:
-				cls._cache.pop(account_id, None)  # Remove the entire cache for the specified account
+				cls._cache.pop(account, None)  # Remove the entire cache for the specified account
 		else:
 			if key:
 				for account_cache in cls._cache.values():  # Remove the specific key from all account caches
@@ -99,12 +99,12 @@ class CoreService(CoreServiceHelper):
 	def cache(self) -> dict:
 		"""Returns the cache for the current account, creating a new cache entry if it does not exist."""
 
-		if self.account_id in self._cache:
-			return self._cache[self.account_id]
+		if self.account in self._cache:
+			return self._cache[self.account]
 
-		self._cache[self.account_id] = {}
+		self._cache[self.account] = {}
 
-		return self._cache[self.account_id]
+		return self._cache[self.account]
 
 	@property
 	def core(self) -> dict:
@@ -176,9 +176,9 @@ class CoreService(CoreServiceHelper):
 	def personal_account_id(self) -> str | None:
 		"""Returns the personal account ID for the logged-in user, if any, or None if no personal account is found."""
 
-		for account_id, details in self.connection.accounts.items():
+		for account, details in self.connection.accounts.items():
 			if details.get("isPersonal"):
-				return account_id
+				return account
 
 	@property
 	def identities(self) -> list[dict]:
@@ -189,7 +189,7 @@ class CoreService(CoreServiceHelper):
 
 		from suite.mail.jmap.services.mail.identity import IdentityService
 
-		identities = IdentityService(self.account_id, self.connection).get()
+		identities = IdentityService(self.account, self.connection).get()
 		self.cache["identities"] = identities
 
 		return identities
@@ -203,7 +203,7 @@ class CoreService(CoreServiceHelper):
 
 		from suite.mail.jmap.services.mail.mailbox import MailboxService
 
-		mailboxes = MailboxService(self.account_id, self.connection).get()
+		mailboxes = MailboxService(self.account, self.connection).get()
 		self.cache["mailboxes"] = mailboxes
 
 		return mailboxes
@@ -214,7 +214,7 @@ class CoreService(CoreServiceHelper):
 
 		from suite.mail.jmap.services.contacts.address_book import AddressBookService
 
-		return AddressBookService(self.account_id, self.connection).get()
+		return AddressBookService(self.account, self.connection).get()
 
 	@cached_property
 	def calendars(self) -> list[dict]:
@@ -222,7 +222,7 @@ class CoreService(CoreServiceHelper):
 
 		from suite.mail.jmap.services.calendars.calendar import CalendarService
 
-		return CalendarService(self.account_id, self.connection).get()
+		return CalendarService(self.account, self.connection).get()
 
 	@cached_property
 	def participant_identities(self) -> list[dict]:
@@ -230,7 +230,7 @@ class CoreService(CoreServiceHelper):
 
 		from suite.mail.jmap.services.calendars.participant_identity import ParticipantIdentityService
 
-		return ParticipantIdentityService(self.account_id, self.connection).get()
+		return ParticipantIdentityService(self.account, self.connection).get()
 
 	def validate_capabilities(self, required_capabilities: list[str], raise_exception: bool = False) -> bool:
 		"""Validates that the required capabilities are supported by the JMAP server."""
@@ -303,14 +303,31 @@ class CoreService(CoreServiceHelper):
 		session_state = response["sessionState"]
 		if self.connection.state != session_state:
 			self.connection._session_discovery()
+			self._sync_accounts_on_state_change()
 
 		return response
+
+	def _sync_accounts_on_state_change(self) -> None:
+		"""Resync the user's JMAP Accounts after the JMAP session state changes.
+
+		The session state only changes when the set of accounts available to the user changes
+		on the JMAP server, so a change here means the local JMAP Account documents and User
+		Account links may be stale and need reconciling against the freshly discovered session.
+		"""
+
+		if not self.connection.user:
+			return
+
+		# Lazy import to avoid a circular dependency (jmap_account -> suite.mail.jmap -> core).
+		from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
+
+		sync_jmap_accounts(self.connection.user, self.connection.accounts)
 
 	def _exec(self, action: Literal["get", "set", "query", "changes", "upload", "lookup"], **payload) -> dict:
 		payload = {**{k: v for k, v in payload.items() if v is not None}}
 
 		if self._type != "PushSubscription":
-			payload["accountId"] = self.account_id
+			payload["accountId"] = self.account
 
 		return self._call(
 			capabilities=self.capabilities,
@@ -366,7 +383,7 @@ class CoreService(CoreServiceHelper):
 	def upload_blob(self, blob: bytes | str, content_type: str = "message/rfc822") -> dict:
 		"""Uploads a blob to the JMAP server using the upload URL, and returns the response containing the blob ID and other metadata."""
 
-		upload_url = self.connection.upload_url.format(accountId=self.account_id)
+		upload_url = self.connection.upload_url.format(accountId=self.account)
 		return self.connection.request(
 			method="POST",
 			url=upload_url,
@@ -406,7 +423,7 @@ class CoreService(CoreServiceHelper):
 
 		name = name or "blob"
 		download_url = self.connection.download_url.format(
-			accountId=self.account_id, blobId=blob_id, name=name, type="application/octet-stream"
+			accountId=self.account, blobId=blob_id, name=name, type="application/octet-stream"
 		)
 		return self.connection.request(method="GET", url=download_url, return_json=False)
 
@@ -425,24 +442,3 @@ class CoreService(CoreServiceHelper):
 				results[blob_id] = future.result()
 
 		return results
-
-
-def parse_account(account: str) -> tuple[str, str]:
-	"""Helper method to parse the account string into user and account ID components, validating the format and content of the account string."""
-
-	if not isinstance(account, str):
-		raise ValueError("Account must be a string.")
-
-	parts = account.split(":")
-	if len(parts) != 2:
-		raise ValueError("Account must be in the format 'user:account_id'.")
-
-	user = parts[0].strip()
-	account_id = parts[1].strip()
-
-	if not user:
-		raise ValueError("User part of the account cannot be empty.")
-	if not account_id:
-		raise ValueError("Account ID part of the account cannot be empty.")
-
-	return user, account_id

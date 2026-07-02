@@ -20,8 +20,8 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			if (roomId && participantId) {
 				try {
-					socket.leave(`${roomId}:full`);
-					socket.leave(`${roomId}:preview`);
+					deps.registry.leaveScope(socket, roomId, 'full');
+					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 
 					if (socket.scope === 'full') {
 						const shouldCleanupPeer = deps.registry.releaseParticipant(
@@ -30,6 +30,14 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 							participantId,
 						);
 						if (shouldCleanupPeer) {
+							if (socket.senderId !== undefined) {
+								await deps.e2eeRoster.remove(roomId, socket.senderId);
+								deps.e2eeEpochRelay.removePendingJoiner(
+									roomId,
+									socket.senderId,
+								);
+							}
+							deps.registry.removeSender(roomId, participantId);
 							await deps.mediasoup.removePeer(roomId, participantId);
 
 							if (isRealParticipant(participantId)) {
@@ -63,6 +71,8 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 					if (deps.registry.isEmpty(roomId)) {
 						deps.registry.cleanupRoom(roomId);
+						deps.e2eeEpochRelay.clearRoom(roomId);
+						await deps.e2eeRoster.clearRoom(roomId);
 						deps.mediasoup.closeRoom(roomId);
 					}
 				} catch (error) {

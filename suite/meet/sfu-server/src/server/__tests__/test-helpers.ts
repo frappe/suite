@@ -8,6 +8,8 @@ import type {
 	SocketData,
 } from '../../types';
 import type { AuthManager } from '../AuthManager';
+import { InMemoryRosterPersistence } from '../E2eeRosterPersistence';
+import { E2eeRosterStore } from '../E2eeRosterStore';
 import { SocketHandlerManager } from '../SocketHandlerManager';
 
 export type TypedSocket = Socket<
@@ -159,6 +161,13 @@ function createMockMediasoupManager(): MediasoupManager {
 		addPeer: vi.fn(),
 		removePeer: vi.fn().mockResolvedValue(undefined),
 		peerExistsInRoom: vi.fn().mockReturnValue(true),
+		createWebRtcTransport: vi.fn().mockResolvedValue({
+			id: 'transport-1',
+			iceParameters: {},
+			iceCandidates: [],
+			dtlsParameters: {},
+		}),
+		connectWebRtcTransport: vi.fn().mockResolvedValue(undefined),
 		createProducer: vi.fn().mockResolvedValue({
 			id: 'producer-1',
 			kind: 'video',
@@ -167,7 +176,7 @@ function createMockMediasoupManager(): MediasoupManager {
 	} as unknown as MediasoupManager;
 }
 
-function createMockAuthManager(): AuthManager {
+function createMockAuthManager() {
 	return {
 		authenticateSocket: vi.fn().mockReturnValue(true),
 		ensureFullAccess: vi.fn(),
@@ -178,7 +187,7 @@ function createMockAuthManager(): AuthManager {
 		}),
 		triggerTokenExpiry: vi.fn(),
 		cleanupSocket: vi.fn(),
-	} as unknown as AuthManager;
+	};
 }
 
 interface ManagerHarness {
@@ -186,6 +195,7 @@ interface ManagerHarness {
 	io: MockServer;
 	mediasoup: ReturnType<typeof createMockMediasoupManager>;
 	authManager: ReturnType<typeof createMockAuthManager>;
+	roster: E2eeRosterStore;
 	connect(socket: MockSocket): void;
 	createSocket(overrides?: Partial<TypedSocket>): MockSocket;
 }
@@ -194,7 +204,13 @@ export function createManager(): ManagerHarness {
 	const io = createMockServer();
 	const mediasoup = createMockMediasoupManager();
 	const authManager = createMockAuthManager();
-	const manager = new SocketHandlerManager(io.io, mediasoup, authManager);
+	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
+	const manager = new SocketHandlerManager(
+		io.io,
+		mediasoup,
+		authManager as unknown as AuthManager,
+		roster,
+	);
 	manager.setupSocketHandlers();
 
 	const connect = (socket: MockSocket) => {
@@ -222,5 +238,5 @@ export function createManager(): ManagerHarness {
 		return socket;
 	};
 
-	return { manager, io, mediasoup, authManager, connect, createSocket };
+	return { manager, io, mediasoup, authManager, roster, connect, createSocket };
 }

@@ -2,9 +2,12 @@
 	<div class="h-[100dvh] bg-gray-900 flex flex-col" data-meeting-component>
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
-			<div class="flex items-center justify-center text-white space-x-4">
+			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
 				<Spinner class="h-12" />
-				<p class="text-xl">Joining meeting...</p>
+				<p class="text-lg">Joining meeting...</p>
+				<p v-if="e2eeJoinPendingMessage" class="max-w-md text-sm text-amber-100">
+					{{ e2eeJoinPendingMessage }}
+				</p>
 			</div>
 		</div>
 
@@ -50,6 +53,15 @@
 		<!-- Main meeting interface -->
 		<template v-else>
 			<div class="relative flex flex-1 min-h-0 overflow-hidden">
+				<div
+					v-if="e2eeJoinPendingMessage"
+					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
+					role="status"
+					data-testid="e2ee-join-pending-banner"
+				>
+					<Spinner class="h-4" />
+					<span>{{ e2eeJoinPendingMessage }}</span>
+				</div>
 				<div
 					class="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out relative"
 					:style="{
@@ -210,6 +222,7 @@ import { useChat } from "../composables/useChat";
 import { useChatStore } from "../composables/useChatStore";
 import { useConnectionState } from "../composables/useConnectionState";
 import { useCurrentUser } from "../composables/useCurrentUser";
+import { useE2EEState } from "../composables/useE2EEState";
 import { useGridLayout } from "../composables/useGridLayout";
 import { useKeyboardShortcuts } from "../composables/useKeyboardShortcuts";
 import { useLobby } from "../composables/useLobby";
@@ -290,6 +303,42 @@ const lobbyUsersForNotifications = computed(() => {
 			user_image: user.avatar,
 		}));
 });
+
+const e2eeJoinPendingMessage = ref("");
+const e2eeState = useE2EEState();
+
+function handleE2EEJoinStatus(event: Event): void {
+	const detail = (event as CustomEvent).detail as
+		| { status?: string; reason?: string; message?: string }
+		| undefined;
+	if (detail?.status === "pending") {
+		e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail);
+		return;
+	}
+	if (detail?.status === "failed") {
+		e2eeJoinPendingMessage.value =
+			detail.message ||
+			"Could not set up encryption for this meeting. Please leave and try again.";
+		return;
+	}
+	e2eeJoinPendingMessage.value = "";
+}
+
+function getE2EEJoinPendingMessage(detail: {
+	reason?: string;
+	message?: string;
+}): string {
+	if (detail.reason === "waiting-for-host") {
+		return (
+			detail.message ||
+			"This encrypted meeting needs the host to join before others can enter."
+		);
+	}
+	return (
+		detail.message ||
+		"Waiting for someone already in the encrypted meeting to let you in."
+	);
+}
 
 // --- Guest session ---
 const isGuestSession = computed(
@@ -627,6 +676,43 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 	await Promise.all(promises);
 };
 
+const handleE2EENeedsMediaRepublish = async () => {
+	if (!mediaState.isCameraOn && !mediaState.isMicOn) return;
+	try {
+		const { stream } = await mediaControls.acquireUserMedia(
+			mediaState.isCameraOn,
+			mediaState.isMicOn,
+		);
+		mediaState.localStream = stream;
+		if (mediaState.isCameraOn) {
+			mediaState.cameraPermissionGranted = true;
+			await mediaControls.applyBackgroundEffectsToLocalStream();
+		}
+		if (mediaState.isMicOn) {
+			mediaState.microphonePermissionGranted = true;
+		}
+		if (mediaState.localVideo) {
+			mediaControls.setLocalVideoRef(mediaState.localVideo);
+		}
+		if (mediaState.localStream && sfuConnection.sfuManager.value) {
+			const videoTracks = mediaState.processedStream
+				? mediaState.processedStream.getVideoTracks()
+				: mediaState.localStream.getVideoTracks();
+			const audioTracks = mediaState.localStream.getAudioTracks();
+			const streamToPublish = new MediaStream([...videoTracks, ...audioTracks]);
+			await sfuConnection.sfuManager.value.publishMedia(streamToPublish, {
+				publishVideo: mediaState.isCameraOn,
+				publishAudio: mediaState.isMicOn,
+			});
+		}
+	} catch (error) {
+		console.error(
+			"Failed to republish media after E2EE reconfiguration:",
+			error,
+		);
+	}
+};
+
 // --- Lifecycle ---
 onMounted(async () => {
 	// get wasJustCreated before resetting stores else it'll be reset to false
@@ -643,10 +729,16 @@ onMounted(async () => {
 	raiseHandStore.$reset();
 	gridLayout.resetGridLayout();
 	currentUser.resetCurrentUser();
+	e2eeState.reset();
 
 	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
 	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.addEventListener("fullscreenchange", syncFullscreenState);
+	document.addEventListener(
+		"meet:e2ee-needs-media-republish",
+		handleE2EENeedsMediaRepublish,
+	);
+	document.addEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
 	syncFullscreenState();
 
 	// Check meeting access for unauthenticated users
@@ -716,6 +808,11 @@ onUnmounted(() => {
 	window.removeEventListener("keydown", keyboardShortcuts.handleKeyDown);
 	window.removeEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.removeEventListener("fullscreenchange", syncFullscreenState);
+	document.removeEventListener(
+		"meet:e2ee-needs-media-republish",
+		handleE2EENeedsMediaRepublish,
+	);
+	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
 });
 
 // Watch for localVideo element and localStream connection

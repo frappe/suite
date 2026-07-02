@@ -6,9 +6,9 @@ CACHE_KEY = "migrate:user_outgoing_settings"
 def execute() -> None:
 	"""Capture the per-user Outgoing settings before they are dropped from User Settings.
 
-	The fields move to Account Settings (per-account). This patch runs pre_model_sync
+	The fields move to JMAP Account (per-account). This patch runs pre_model_sync
 	(the User Settings columns still exist); the values are stashed in cache and applied
-	to Account Settings by migrate_outgoing_settings_to_account in post_model_sync (once
+	to JMAP Account by migrate_outgoing_settings_to_account in post_model_sync (once
 	the new columns exist). The fields are already gone from the doctype meta but the
 	columns still exist in the table, so the query builder references them by column name.
 	"""

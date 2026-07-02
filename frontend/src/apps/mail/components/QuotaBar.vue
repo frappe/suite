@@ -36,7 +36,7 @@ const store = userStore()
 const quota = createResource({
 	url: 'suite.mail.api.account.get_quota',
 	auto: true,
-	makeParams: () => ({ account_id: store.accountId }),
+	makeParams: () => ({ account: store.accountId }),
 	cache: ['quota', store.accountId],
 })
 

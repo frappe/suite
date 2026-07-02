@@ -148,7 +148,7 @@ export const useBlockSender = () => {
 	const blockResource = createResource({
 		url: 'suite.mail.api.mail.screen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 			action: 'Reject',
 		}),
@@ -158,7 +158,7 @@ export const useBlockSender = () => {
 	const junkResource = createResource({
 		url: 'suite.mail.api.mail.screen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 			action: 'Spam',
 		}),
@@ -168,7 +168,7 @@ export const useBlockSender = () => {
 	const unjunkResource = createResource({
 		url: 'suite.mail.api.mail.unscreen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 		}),
 		onSuccess: () => screenedAddresses.reload(),
@@ -177,7 +177,7 @@ export const useBlockSender = () => {
 	const unblockResource = createResource({
 		url: 'suite.mail.api.mail.unscreen_email_addresses',
 		makeParams: ({ emails }: { emails: string[] }) => ({
-			account_id: store.accountId,
+			account: store.accountId,
 			emails,
 		}),
 		onSuccess: () => screenedAddresses.reload(),

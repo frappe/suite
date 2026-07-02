@@ -7,13 +7,11 @@ frappe.ui.form.on('Mail Queue', {
 			frm.disable_save()
 			frm.trigger('add_comments')
 			frm.trigger('add_actions')
-			frm.trigger('set_account_options')
 		}
 	},
 
 	user(frm) {
-		frm.set_value('account_id', null)
-		frm.trigger('set_account_options')
+		frm.set_value('account', null)
 	},
 
 	add_comments(frm) {
@@ -43,24 +41,6 @@ frappe.ui.form.on('Mail Queue', {
 				() => frm.trigger('get_mime_message'),
 				__('Actions'),
 			)
-		}
-	},
-
-	set_account_options(frm) {
-		if (frm.doc.user) {
-			frappe.call({
-				method: 'suite.mail.jmap.get_user_account_ids',
-				args: {
-					user: frm.doc.user,
-				},
-				callback: (r) => {
-					frm.set_df_property('account_id', 'options', r.message || [])
-					frm.refresh_field('account_id')
-				},
-			})
-		} else {
-			frm.set_df_property('account_id', 'options', [])
-			frm.refresh_field('account_id')
 		}
 	},
 

@@ -214,6 +214,7 @@ import {
 	watch,
 } from "vue";
 import LucideBug from "~icons/lucide/bug";
+import { useE2EEState } from "../composables/useE2EEState";
 import { useMeetingDoc } from "../composables/useMeetingDoc";
 import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
@@ -266,6 +267,7 @@ const emit = defineEmits<{
 }>();
 
 const { isMobile } = useResponsiveGrid();
+const { isContextReady: isE2EEContextReady } = useE2EEState();
 
 const moreOptions = computed(() => [
 	{
@@ -328,6 +330,7 @@ const isDropdownOpen = ref(false);
 const dropdownContainer = ref(null);
 const showMeetingInfoDialog = ref(false);
 const showSettingsDialog = ref(false);
+const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
 
 const TOOLBAR_VISIBLE_HEIGHT = "5.5rem";
@@ -415,6 +418,16 @@ const handleDocumentClick = (event) => {
 	}
 };
 
+const handleHostE2EEEnabled = () => {
+	showMeetingInfoWhenE2EEReady.value = true;
+};
+
+const showMeetingInfoForReadyE2EE = () => {
+	showMeetingInfoWhenE2EEReady.value = false;
+	showMeetingInfoDialog.value = true;
+	showControls();
+};
+
 const handleReactionSelect = (emoji) => {
 	emit("toggle-reactions", emoji);
 
@@ -428,6 +441,12 @@ const updateReactionPickerOpen = (value) => {
 };
 
 watch(isVisible, (val) => emit("visibility-change", val));
+
+watch([showMeetingInfoWhenE2EEReady, isE2EEContextReady], ([shouldShow, ready]) => {
+	if (shouldShow && ready) {
+		showMeetingInfoForReadyE2EE();
+	}
+});
 
 watch(autoHideToolbar, (shouldAutoHide) => {
 	if (!shouldAutoHide) {
@@ -450,6 +469,7 @@ onMounted(() => {
 	document.addEventListener("touchmove", handleActivity);
 	document.addEventListener("keydown", handleShortcut);
 	document.addEventListener("click", handleDocumentClick);
+	document.addEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 
 onUnmounted(() => {
@@ -463,5 +483,6 @@ onUnmounted(() => {
 	document.removeEventListener("touchmove", handleActivity);
 	document.removeEventListener("keydown", handleShortcut);
 	document.removeEventListener("click", handleDocumentClick);
+	document.removeEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 </script>

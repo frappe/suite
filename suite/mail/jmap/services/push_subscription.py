@@ -17,7 +17,7 @@ class PushSubscriptionService(CoreService):
 		self.connection = connection
 		# PushSubscription is not account-scoped (requests omit accountId); use a per-user
 		# cache key so subscriptions for different users don't collide.
-		self.account_id = f"{user}:{self.primary_account_id}"
+		self.account = f"{user}:{self.primary_account_id}"
 
 	def create(self, subscriptions: list[dict]) -> dict:
 		"""Public method to create push subscriptions, handling batching if the number of subscriptions exceeds the server's maximum allowed in a single 'set' call."""

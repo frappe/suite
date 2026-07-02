@@ -38,21 +38,6 @@ def is_valid_email_for_domain(email: str, domain_name: str, raise_exception: boo
 	return True
 
 
-def is_valid_cron_expression(expression: str, raise_exception: bool = False) -> bool:
-	"""Returns True if the expression is a valid Cron expression else False."""
-
-	try:
-		croniter(expression)
-		return True
-	except CroniterBadCronError:
-		if raise_exception:
-			frappe.throw(
-				_("{0} is not a valid Cron expression.").format(f"<code>{expression}</code>"),
-				title=_("Bad Cron Expression"),
-			)
-		return False
-
-
 def validate_jmap_structure(
 	base_dir: str, required_files: list[str] | None = None, raise_exception: bool = False
 ) -> list[str]:
@@ -205,52 +190,3 @@ def validate_nested_maildir_tree(base_dir: str, raise_exception: bool = False) -
 		)
 
 	return invalid_dirs
-
-
-def has_permission_for_user(user: str, raise_exception: bool = True) -> bool:
-	"""Checks if the current user has permission to access the given user."""
-
-	from suite.mail.utils.user import is_administrator
-
-	current_user = frappe.session.user
-	has_permission = user == current_user or is_administrator(current_user)
-
-	if not has_permission and raise_exception:
-		frappe.throw(_("You do not have permission to access this resource."), frappe.PermissionError)
-
-	return has_permission
-
-
-def ensure_local_user(user: str) -> None:
-	"""Ensures that the user is a managed user."""
-
-	from suite.mail.utils.user import is_local_user
-
-	if not is_local_user(user):
-		frappe.throw(_("User {0} is not a local user.").format(frappe.bold(user)))
-
-
-def ensure_access_to_backend() -> None:
-	"""Ensures that the current user has access to the mail backend."""
-
-	from suite.mail.utils.user import is_mail_admin, is_system_manager
-
-	user = frappe.session.user
-	if not is_mail_admin(user) and not is_system_manager(user):
-		frappe.throw(_("You do not have permission to access the mail backend."), frappe.PermissionError)
-
-
-def validate_wildcard_email(email: str, raise_exception: bool = True) -> bool:
-	"""Returns True if the email contains wildcard characters."""
-
-	wildcards = ["*", "?", "%"]
-	if any(w in email for w in wildcards):
-		if raise_exception:
-			frappe.throw(
-				_("Wildcard characters ({0}) are not allowed in email addresses.").format(
-					", ".join(frappe.bold(w) for w in wildcards)
-				)
-			)
-
-		return True
-	return False

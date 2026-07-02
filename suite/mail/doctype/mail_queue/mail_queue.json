@@ -6,7 +6,7 @@
  "field_order": [
   "section_break_zwhk",
   "user",
-  "account_id",
+  "account",
   "status",
   "from_name",
   "from_email",
@@ -543,24 +543,27 @@
    "set_only_once": 1
   },
   {
-   "description": "The JMAP account ID this message is sent from. Populated from the accounts the selected user can access.",
-   "fieldname": "account_id",
-   "fieldtype": "Select",
+   "description": "The user whose JMAP credentials are used to send this message.",
+   "fieldname": "user",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Account ID",
+   "label": "User",
+   "no_copy": 1,
+   "options": "User",
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
   },
   {
-   "description": "The user whose JMAP credentials are used to send this message.",
-   "fieldname": "user",
+   "fieldname": "account",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "User",
+   "label": "Account",
    "no_copy": 1,
-   "options": "User",
+   "options": "JMAP Account",
+   "reqd": 1,
    "search_index": 1,
    "set_only_once": 1
   }
@@ -568,7 +571,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-17 15:12:08.827171",
+ "modified": "2026-06-29 22:21:39.886790",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Queue",

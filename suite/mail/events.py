@@ -21,6 +21,13 @@ def create_user_settings(doc: Document, method: str | None = None) -> None:
 		settings.insert(ignore_permissions=True, ignore_mandatory=True)
 
 
+def delete_user_accounts(doc: Document, method: str | None = None) -> None:
+	"""Delete User Accounts when the user is deleted."""
+
+	for account in frappe.db.get_all("User Account", filters={"user": doc.name}, pluck="name"):
+		frappe.delete_doc("User Account", account, ignore_permissions=True, delete_permanently=True)
+
+
 def delete_user_settings(doc: Document, method: str | None = None) -> None:
 	"""Delete User Settings when the user is deleted."""
 

@@ -2,8 +2,9 @@
 import { computed, h, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Check, Eye, EyeOff, LayoutGrid, LogOut, Settings, User } from 'lucide-vue-next'
-import { Avatar, Sidebar, createResource } from 'frappe-ui'
+import { Avatar, Sidebar } from 'frappe-ui'
 
+import { getAppSwitcherItems } from '@/apps/registry'
 import { useSessionStore } from '@/boot/session'
 import { toTitleCase } from '@/apps/calendar/utils/format'
 import { brandingStore } from '@/apps/calendar/stores/branding'
@@ -38,12 +39,7 @@ const subtitle = computed(() => {
 	return currentAccount._name
 })
 
-const apps = createResource({
-	url: 'suite.mail.api.get_permitted_apps',
-	cache: 'otherApps',
-	auto: true,
-	transform: (data) => data.filter((app) => app.name !== 'calendar_app'),
-})
+const apps = { get data() { return getAppSwitcherItems('calendar') } }
 
 const showSettings = ref(false)
 

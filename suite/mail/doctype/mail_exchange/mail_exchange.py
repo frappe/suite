@@ -35,6 +35,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
 	freeze_jmap_push_notifications,
 	unfreeze_jmap_push_notifications,
 )
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.utils import (
@@ -487,7 +488,7 @@ class MailExchange(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		account_id: DF.Literal[None]
+		account: DF.Link
 		amended_from: DF.Link | None
 		completed_at: DF.Datetime | None
 		deduplicate_export: DF.Check
@@ -588,15 +589,7 @@ class MailExchange(Document):
 				frappe.PermissionError,
 			)
 
-		from suite.mail.jmap import get_user_account_ids
-
-		if self.account_id not in get_user_account_ids(self.user):
-			frappe.throw(
-				_("Account ID {0} is not accessible to user {1}.").format(
-					frappe.bold(self.account_id), frappe.bold(self.user)
-				),
-				frappe.PermissionError,
-			)
+		is_jmap_account_belongs_to_user(self.account, self.user, raise_exception=True)
 
 	def validate_import(self) -> None:
 		"""Validate the import parameters."""
@@ -656,7 +649,7 @@ class MailExchange(Document):
 				"key": "mail",
 				"operation": self.operation,
 				"user": self.user,
-				"account_id": self.account_id,
+				"account": self.account,
 			}
 		)
 
@@ -750,7 +743,7 @@ class MailExchange(Document):
 			logger.debug("import-source-prepared", base_dir=base_dir)
 			self._log_output(_("Prepared the source files for import."))
 
-			service = get_email_service(self.user, self.account_id)
+			service = get_email_service(self.account)
 
 			mailbox_map = {}
 			if self.import_format == "maildir-nested":
@@ -768,7 +761,7 @@ class MailExchange(Document):
 				frappe.throw(_("Import limit exceeded."))
 
 			self._import_batches(service, base_dir, meta, logger)
-			clear_sync_state(self.account_id, type="email")
+			clear_sync_state(self.account, type="email")
 
 			logger.info("import-completed", emails=len(meta))
 			self._log_output(_("Import completed successfully. {0} email(s) imported.").format(len(meta)))
@@ -803,7 +796,7 @@ class MailExchange(Document):
 
 		kwargs = {}
 		try:
-			service = get_email_service(self.user, self.account_id)
+			service = get_email_service(self.account)
 			total = service.query(self.export_filter_dict, limit=1)["total"]
 			limit = min(total, cint(self.export_limit or total))
 			logger.info("export-query-resolved", total=total, limit=limit, max_export=self.max_export)
@@ -920,7 +913,7 @@ class MailExchange(Document):
 				method_calls=[
 					[
 						f"{service.type}/import",
-						{"accountId": service.account_id, "emails": emails},
+						{"accountId": service.account, "emails": emails},
 						"0",
 					]
 				],
@@ -1069,7 +1062,7 @@ class MailExchange(Document):
 def get_permission_query_condition(user: str | None = None) -> str:
 	user = user or frappe.session.user
 
-	if is_system_manager(user) or is_mail_admin(user):
+	if is_mail_admin(user) or is_system_manager(user):
 		return ""
 
 	return f"(`tabMail Exchange`.user = '{user}')"
@@ -1080,22 +1073,18 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 		return False
 
 	user = user or frappe.session.user
-
-	if is_system_manager(user) or is_mail_admin(user):
-		return True
-
-	return doc.user == user
+	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def get_email_service(
 	user: str,
-	account_id: str,
+	account: str,
 	ignore_permissions: bool = False,
 ) -> EmailService:
 	"""Returns a EmailService configured with the longer exchange timeouts."""
 
 	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
-	return EmailService(account_id, connection)
+	return EmailService(account, connection)
 
 
 def extract_received_or_sent(msg: Message) -> datetime:

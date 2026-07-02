@@ -2,6 +2,7 @@ import json
 
 import frappe
 from frappe import _
+
 from suite.mail.doctype.calendar.calendar import fetch_calendars
 from suite.mail.doctype.calendar_event.calendar_event import (
 	fetch_calendar_events,
@@ -11,23 +12,20 @@ from suite.mail.doctype.calendar_event.calendar_event import (
 from suite.mail.doctype.calendar_event.calendar_event import (
 	get_calendar_events as get_calendar_events_by_ids,
 )
-from suite.mail.utils.user import resolve_account_handle
 
 
 @frappe.whitelist()
-def get_calendars(account_id: str) -> list[dict[str, str]]:
+def get_calendars(account: str) -> list[dict[str, str]]:
 	"""Returns a list of the specified account's calendars."""
 
-	calendars = fetch_calendars(account_id)
+	calendars = fetch_calendars(account)
 
 	return [{key: cal[key] for key in ["name", "_name"]} for cal in calendars]
 
 
 @frappe.whitelist()
-def get_calendar_events(account_id: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
+def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: str) -> list[dict]:
 	"""Fetches calendar events between from_date and to_date for the specified account."""
-
-	account = resolve_account_handle(account_id)
 
 	events = fetch_calendar_events(
 		account,
@@ -95,9 +93,7 @@ def get_avatar_url(email: str) -> str:
 
 
 @frappe.whitelist()
-def edit_calendar_event(account_id: str, id: str, **kwargs) -> None:
-	account = resolve_account_handle(account_id)
-
+def edit_calendar_event(account: str, id: str, **kwargs) -> None:
 	event = get_calendar_events_by_ids(account, [id])[0]
 
 	def resolve(key):

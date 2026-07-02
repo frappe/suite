@@ -857,7 +857,7 @@ const syncDisplayedPage = () => {
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		filter: route.query,
 		limit: PAGE_LENGTH,
 		start: page.value * PAGE_LENGTH,
@@ -894,7 +894,7 @@ const isMailboxLoaded = ref(false)
 const threads = createResource({
 	url: 'suite.mail.api.mail.get_threads',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		mailbox,
 		limit: PAGE_LENGTH + 1,
 		start: page.value * PAGE_LENGTH,
@@ -1185,7 +1185,7 @@ const showEmptyMailbox = ref(false)
 
 const emptyMailbox = createResource({
 	url: 'suite.mail.api.mail.empty_user_mailbox',
-	makeParams: () => ({ account_id: store.accountId, mailbox }),
+	makeParams: () => ({ account: store.accountId, mailbox }),
 	onSuccess: () => {
 		threadsResource.value.data = []
 		raiseToast(__('{0} emptied.', [mailboxName.value]))

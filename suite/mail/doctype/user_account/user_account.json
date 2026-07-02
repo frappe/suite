@@ -5,14 +5,10 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_ekq5",
+  "user_settings",
   "user",
   "column_break_ukmq",
-  "id",
-  "_name",
-  "is_personal",
-  "is_read_only",
-  "capabilities_section",
-  "capabilities"
+  "account"
  ],
  "fields": [
   {
@@ -20,6 +16,7 @@
    "fieldtype": "Section Break"
   },
   {
+   "fetch_from": "user_settings.user",
    "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -29,6 +26,7 @@
    "options": "User",
    "read_only": 1,
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {
@@ -36,80 +34,50 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Name",
-   "no_copy": 1,
-   "read_only": 1,
-   "reqd": 1,
-   "set_only_once": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "is_personal",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Personal",
-   "no_copy": 1,
-   "read_only": 1,
-   "set_only_once": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "is_read_only",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Readonly",
-   "no_copy": 1,
-   "read_only": 1,
-   "set_only_once": 1
-  },
-  {
-   "fieldname": "id",
-   "fieldtype": "Data",
+   "fieldname": "account",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Account ID",
+   "label": "Account",
    "no_copy": 1,
-   "read_only": 1,
+   "options": "JMAP Account",
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {
-   "collapsible": 1,
-   "fieldname": "capabilities_section",
-   "fieldtype": "Section Break",
-   "label": "Capabilities"
-  },
-  {
-   "depends_on": "eval: doc.capabilities && doc.capabilities != \"{}\"",
-   "fieldname": "capabilities",
-   "fieldtype": "JSON",
-   "label": "Capabilities",
+   "fieldname": "user_settings",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User Settings",
    "no_copy": 1,
-   "read_only": 1,
+   "options": "User Settings",
+   "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "is_virtual": 1,
  "links": [],
- "modified": "2026-04-15 08:27:17.244854",
+ "modified": "2026-06-29 21:05:31.556870",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Account",
  "owner": "Administrator",
  "permissions": [
   {
+   "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1
+   "share": 1,
+   "write": 1
   },
   {
    "read": 1,
@@ -120,5 +88,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "user"
 }

@@ -535,7 +535,7 @@ const thread = ref<Mail[]>([])
 
 const threadFallback = createResource({
 	url: 'suite.mail.api.mail.get_thread',
-	makeParams: () => ({ account_id: store.accountId, thread_id: threadID }),
+	makeParams: () => ({ account: store.accountId, thread_id: threadID }),
 	onSuccess: (mails: Mail[]) => {
 		// Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
 		if (!mails?.length) {
@@ -724,7 +724,7 @@ onMounted(() => loadThread())
 
 const unblockEmailAddress = createResource({
 	url: 'suite.mail.api.mail.unscreen_email_addresses',
-	makeParams: (email) => ({ account_id: store.accountId, emails: [email] }),
+	makeParams: (email) => ({ account: store.accountId, emails: [email] }),
 	onSuccess: () => {
 		raiseToast(__('Sender unblocked.'))
 		screenedAddresses.reload()
@@ -735,7 +735,7 @@ const unblockEmailAddress = createResource({
 const trustSender = createResource({
 	url: 'suite.mail.api.mail.screen_email_addresses',
 	makeParams: (email: string) => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		emails: [email],
 		action: 'Accepted',
 	}),

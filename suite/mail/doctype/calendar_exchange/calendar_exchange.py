@@ -30,6 +30,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
 	freeze_jmap_push_notifications,
 	unfreeze_jmap_push_notifications,
 )
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -120,7 +121,7 @@ class CalendarExchange(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		account_id: DF.Literal[None]
+		account: DF.Link
 		amended_from: DF.Link | None
 		completed_at: DF.Datetime | None
 		deduplicate_export: DF.Check
@@ -219,15 +220,7 @@ class CalendarExchange(Document):
 				frappe.PermissionError,
 			)
 
-		from suite.mail.jmap import get_user_account_ids
-
-		if self.account_id not in get_user_account_ids(self.user):
-			frappe.throw(
-				_("Account ID {0} is not accessible to user {1}.").format(
-					frappe.bold(self.account_id), frappe.bold(self.user)
-				),
-				frappe.PermissionError,
-			)
+		is_jmap_account_belongs_to_user(self.account, self.user, raise_exception=True)
 
 	def validate_import(self) -> None:
 		"""Validate the import parameters."""
@@ -286,7 +279,7 @@ class CalendarExchange(Document):
 				"kind": "calendar",
 				"operation": self.operation,
 				"user": self.user,
-				"account_id": self.account_id,
+				"account": self.account,
 			}
 		)
 
@@ -380,7 +373,7 @@ class CalendarExchange(Document):
 			logger.debug("import-source-prepared", base_dir=base_dir)
 			self._log_output(_("Prepared the source files for import."))
 
-			service = get_calendar_event_service(self.user, self.account_id)
+			service = get_calendar_event_service(self.account)
 
 			if self.import_format == "ics":
 				events = self._load_ics_events(service, base_dir, logger)
@@ -434,7 +427,7 @@ class CalendarExchange(Document):
 
 		kwargs = {}
 		try:
-			service = get_calendar_event_service(self.user, self.account_id)
+			service = get_calendar_event_service(self.account)
 
 			limit = min(self.max_export, cint(self.export_limit or self.max_export))
 			data = service.query(self.export_filter_dict, limit=limit, sort=self.export_sort_clause)
@@ -566,7 +559,7 @@ class CalendarExchange(Document):
 			if event.get("calendarIds"):
 				return event["calendarIds"]
 			if default_calendar_id is None:
-				default_calendar_id = CalendarService(service.account_id, service.connection).get_default(
+				default_calendar_id = CalendarService(service.account, service.connection).get_default(
 					raise_exception=True
 				)
 			return {default_calendar_id: True}
@@ -777,13 +770,13 @@ class CalendarExportWriter:
 
 def get_calendar_event_service(
 	user: str,
-	account_id: str,
+	account: str,
 	ignore_permissions: bool = False,
 ) -> CalendarEventService:
 	"""Returns a CalendarEventService configured with the longer exchange timeouts."""
 
 	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
-	return CalendarEventService(account_id, connection)
+	return CalendarEventService(account, connection)
 
 
 def _parse_local_datetime(value: str | None, time_zone: str | None) -> datetime | None:
@@ -1063,7 +1056,7 @@ def _build_components(event: dict, categories: list[str] | None = None) -> list:
 def get_permission_query_condition(user: str | None = None) -> str:
 	user = user or frappe.session.user
 
-	if is_system_manager(user) or is_mail_admin(user):
+	if is_mail_admin(user) or is_system_manager(user):
 		return ""
 
 	return f"(`tabCalendar Exchange`.user = '{user}')"
@@ -1074,11 +1067,7 @@ def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
 		return False
 
 	user = user or frappe.session.user
-
-	if is_system_manager(user) or is_mail_admin(user):
-		return True
-
-	return doc.user == user
+	return doc.user == user or is_mail_admin(user) or is_system_manager(user)
 
 
 def retry_stuck_calendar_exchanges() -> None:

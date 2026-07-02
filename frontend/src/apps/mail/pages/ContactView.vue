@@ -259,7 +259,7 @@ const store = userStore()
 
 const contact = createDocumentResource({
 	doctype: 'Contact Card',
-	name: `${store.user}:${store.accountId}|${contactName}`,
+	name: `${store.accountId}|${contactName}`,
 	onError: () => router.replace({ name: 'mail-contacts', params: { accountId } }),
 	setValue: {
 		onSuccess: () => raiseToast(__('Contact updated.')),
@@ -272,7 +272,7 @@ const contact = createDocumentResource({
 
 const deleteContact = createResource({
 	url: 'suite.mail.doctype.contact_card.contact_card.delete_contact_cards',
-	makeParams: () => ({ account_id: accountId, ids: [contact.doc.id] }),
+	makeParams: () => ({ account: accountId, ids: [contact.doc.id] }),
 	onSuccess: () => {
 		showDeleteContact.value = false
 		raiseToast(__('Contact deleted.'))

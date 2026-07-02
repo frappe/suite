@@ -59,13 +59,9 @@ export const userStore = defineStore('mail-user', () => {
 		auto: true,
 	})
 
-	// The logged-in user (the user component of every account handle is always the session user).
-	// Exposed so callers can rebuild a `user:account_id` virtual-doctype document name when needed.
-	const user = computed(() => userResource.data?.name)
-
 	const mailboxes = createResource({
 		url: 'suite.mail.api.mail.get_mailboxes',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['mailboxes', accountId.value],
 	})
 
@@ -89,13 +85,13 @@ export const userStore = defineStore('mail-user', () => {
 
 	const addressBooks = createResource({
 		url: 'suite.mail.api.contacts.get_address_books',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['addressBooks', accountId.value],
 	})
 
 	const identities = createResource({
 		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['identities', accountId.value],
 	})
 
@@ -103,13 +99,13 @@ export const userStore = defineStore('mail-user', () => {
 	// (discard incoming mail) or 'Spam' (file it into the Spam folder).
 	const screenedAddresses = createResource({
 		url: 'suite.mail.api.mail.get_screened_addresses',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['screenedAddresses', accountId.value],
 	})
 
 	const sieveScripts = createResource({
 		url: 'suite.mail.api.sieve.get_sieve_scripts',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['sieveScripts', accountId.value],
 	})
 
@@ -132,7 +128,6 @@ export const userStore = defineStore('mail-user', () => {
 
 	return {
 		accountId,
-		user,
 		resolveAccount,
 		userResource,
 		mailboxes,

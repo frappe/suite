@@ -137,7 +137,7 @@ const createMailExport = createResource({
 				.map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
 				.filter(([, v]) => Boolean(v)),
 		)
-		return { account_id: accountId, ...mailExport, filter: cleanedFilter }
+		return { account: accountId, ...mailExport, filter: cleanedFilter }
 	},
 	onSuccess: () => ongoingExport.reload(),
 })

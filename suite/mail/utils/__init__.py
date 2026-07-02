@@ -22,6 +22,7 @@ from bs4 import BeautifulSoup, Comment
 from frappe import _
 from frappe.types.filter import FilterTuple
 from frappe.utils import cint, get_bench_path
+from frappe.utils.caching import request_cache
 from markdown_it import MarkdownIt
 from MySQLdb import OperationalError
 from passlib.hash import sha512_crypt
@@ -116,8 +117,12 @@ def reconnect_on_failure(max_retries: int = 3) -> callable:
 	return wrapper
 
 
+@request_cache
 def get_config(key: str | None = None) -> dict[str, Any] | Any:
-	"""Fetches configuration values, prioritizing Mail Settings over global config."""
+	"""Fetches configuration values, prioritizing Mail Settings over global config.
+
+	Cached per request: the returned dict is shared, so callers must treat it as read-only.
+	"""
 
 	mail_conf = frappe.conf.mail or {}
 	settings = frappe.get_cached_doc("Mail Settings")
@@ -156,171 +161,6 @@ def is_stalwart_configured(raise_exception: bool = False) -> bool:
 	return False
 
 
-def is_probable_hash(s: str) -> bool:
-	"""Return True if string looks like a known password hash."""
-
-	s = s.strip()
-
-	modular_patterns = [
-		r"^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$",  # bcrypt
-		r"^\$argon2(id|i|d)\$v=\d+\$.*",  # Argon2
-		r"^\$pbkdf2-sha(1|256|512)\$\d+\$[A-Za-z0-9./]+\$[A-Za-z0-9./]+$",  # PBKDF2 (Passlib)
-		r"^\$scrypt\$.*",  # scrypt
-		r"^\$5\$.+\$.+",  # SHA-256 crypt
-		r"^\$6\$.+\$.+",  # SHA-512 crypt
-	]
-	for p in modular_patterns:
-		if re.match(p, s):
-			return True
-
-	hex_lengths = {
-		32,  # MD5
-		40,  # SHA-1
-		56,  # SHA-224
-		64,  # SHA-256
-		96,  # SHA-384
-		128,  # SHA-512
-	}
-	if len(s) in hex_lengths and re.fullmatch(r"[A-Fa-f0-9]+", s):
-		return True
-
-	if len(s) > 40 and re.fullmatch(r"[A-Za-z0-9+/=._-]+", s):
-		return True
-
-	return False
-
-
-def hash_password(password: str) -> str:
-	"""Generate a bcrypt hash for a given password."""
-
-	salt = bcrypt.gensalt()
-	hashed = bcrypt.hashpw(password.encode(), salt)
-	return hashed.decode()
-
-
-def verify_password(password: str, hashed_password: str) -> bool:
-	"""Verify if a password matches the stored bcrypt hash."""
-
-	return bcrypt.checkpw(password.encode(), hashed_password.encode())
-
-
-def generate_random_phrase() -> str:
-	"""Generate a random passphrase consisting of 5 words."""
-
-	return " ".join(["".join(random.choices(string.ascii_lowercase, k=l)) for l in (5, 4, 4, 4, 3)])
-
-
-def generate_app_password(app_name: str | None = None, password: str | None = None) -> str:
-	"""Generates an app password hash with metadata."""
-
-	app_name = app_name or "app_pass"
-	password = password or os.urandom(32)
-
-	timestamp = datetime.now(UTC).isoformat()
-	b64_part = base64.b64encode(f"{app_name}${timestamp}".encode()).decode()
-	hash_value = sha512_crypt.hash(password)
-	parts = hash_value.split("$", 3)
-	method = parts[1]
-	salt = parts[2]
-	hashed_password = parts[3]
-
-	return f"$app${b64_part}$${method}${salt}${hashed_password}"
-
-
-def generate_dkim_keys(
-	algorithm: Literal["rsa-sha256", "ed25519-sha256"], rsa_key_size: int = 2048
-) -> tuple[str, str]:
-	"""Generates the DKIM Keys for the specified algorithm."""
-
-	def get_filtered_dkim_key(key_pem: str) -> str:
-		"""Returns the filtered DKIM Key."""
-
-		key_pem = "".join(key_pem.split())
-		key_pem = (
-			key_pem.replace("-----BEGINPUBLICKEY-----", "")
-			.replace("-----ENDPUBLICKEY-----", "")
-			.replace("-----BEGINRSAPRIVATEKEY-----", "")
-			.replace("-----ENDRSAPRIVATEKEY-----", "")
-			.replace("-----BEGINPRIVATEKEY-----", "")
-			.replace("-----ENDPRIVATEKEY-----", "")
-		)
-
-		return key_pem
-
-	from cryptography.hazmat.primitives import serialization
-
-	if algorithm == "rsa-sha256":
-		from cryptography.hazmat.backends import default_backend
-		from cryptography.hazmat.primitives.asymmetric import rsa
-
-		private_key = rsa.generate_private_key(
-			public_exponent=65537, key_size=rsa_key_size, backend=default_backend()
-		)
-		public_key = private_key.public_key()
-
-		private_key_pem = private_key.private_bytes(
-			encoding=serialization.Encoding.PEM,
-			format=serialization.PrivateFormat.TraditionalOpenSSL,
-			encryption_algorithm=serialization.NoEncryption(),
-		).decode()
-		public_key_pem = public_key.public_bytes(
-			encoding=serialization.Encoding.PEM,
-			format=serialization.PublicFormat.SubjectPublicKeyInfo,
-		).decode()
-
-		return private_key_pem, get_filtered_dkim_key(public_key_pem)
-
-	elif algorithm == "ed25519-sha256":
-		import base64
-
-		from cryptography.hazmat.primitives.asymmetric import ed25519
-
-		private_key = ed25519.Ed25519PrivateKey.generate()
-		public_key = private_key.public_key()
-
-		private_key_pem = private_key.private_bytes(
-			encoding=serialization.Encoding.PEM,
-			format=serialization.PrivateFormat.PKCS8,
-			encryption_algorithm=serialization.NoEncryption(),
-		).decode()
-		public_key_raw = public_key.public_bytes(
-			encoding=serialization.Encoding.Raw,
-			format=serialization.PublicFormat.Raw,
-		)
-		public_key_encoded = base64.b64encode(public_key_raw).decode()
-
-		return private_key_pem, public_key_encoded
-
-	else:
-		frappe.throw(_("Unsupported algorithm. Use 'rsa-sha256' or 'ed25519-sha256'."))
-
-
-def reformat_pbkdf2_hash(passlib_hash: str, dklen: int | None = None) -> str:
-	"""Normalize a PBKDF2 hash into a consistent format."""
-
-	prefix, iterations, salt_mod, hash_mod = passlib_hash.strip("$").split("$")
-	iterations = int(iterations)
-
-	def b64decode_mod(s: str) -> bytes:
-		s = s.replace(".", "+").replace("-", "/")
-		pad_len = (-len(s)) % 4
-		return base64.b64decode(s + ("=" * pad_len))
-
-	def b64encode_std(b: bytes) -> str:
-		return base64.b64encode(b).decode().rstrip("=")
-
-	salt_bytes = b64decode_mod(salt_mod)
-	salt_b64 = b64encode_std(salt_bytes)
-
-	hash_bytes = b64decode_mod(hash_mod)
-	if dklen is None:
-		dklen = len(hash_bytes)
-	hash_clean = b64encode_std(hash_bytes)
-
-	formatted_hash = f"${prefix}$i={iterations},l={dklen}${salt_b64}${hash_clean}"
-	return formatted_hash
-
-
 def log_error(title: str | None = None, message: str | None = None, **kwargs) -> None:
 	"""Logs an error, prefixing the title with "[Mail]" so Mail app errors can be filtered out.
 
@@ -355,6 +195,7 @@ def user_context(user: str) -> Generator[None, None, None]:
 	"""Context manager to temporarily switch the user context."""
 
 	session_user = frappe.session.user
+	session_sid = frappe.session.sid
 	session_data = frappe.session.data.copy()
 
 	if session_user == user:
@@ -365,7 +206,10 @@ def user_context(user: str) -> Generator[None, None, None]:
 		frappe.set_user(user)
 		yield
 	finally:
+		# frappe.set_user() overwrites session.sid with the username and wipes session.data,
+		# so restore both alongside the user to avoid corrupting the original session.
 		frappe.set_user(session_user)
+		frappe.session.sid = session_sid
 		frappe.session.data = session_data
 
 
@@ -376,129 +220,12 @@ def snake_to_camel(input) -> str:
 	return parts[0] + "".join(word.capitalize() for word in parts[1:])
 
 
-def encode_image_to_base64(image_path: str) -> str:
-	"""Encodes an image to a base64 string with line breaks every 76 characters."""
-
-	image_path = os.path.abspath(image_path)
-	with open(image_path, "rb") as image:
-		image_base64 = base64.b64encode(image.read()).decode("utf-8")
-
-	chunk_size = 76
-	parts = [image_base64[i : i + chunk_size] for i in range(0, len(image_base64), chunk_size)]
-	return "\n".join(parts)
-
-
-def get_base64_image_data_uri(image_path: str) -> str:
-	"""Generates a base64 data URI for an image."""
-
-	image_base64 = encode_image_to_base64(image_path)
-	image_format = image_path.split(".")[-1]
-	return f"data:image/{image_format};base64,{image_base64}"
-
-
 def generate_otp(length=5) -> int:
 	"""Generates a random OTP."""
 
 	lower_bound = 10 ** (length - 1)
 	upper_bound = 10**length
 	return int.from_bytes(os.urandom(length), byteorder="big") % (upper_bound - lower_bound) + lower_bound
-
-
-def generate_secret(length: int = 32) -> str:
-	"""Generates a random secret key."""
-
-	characters = string.ascii_letters + string.digits
-	return "".join(secrets.choice(characters) for _ in range(length))
-
-
-def parse_token(token: str) -> dict:
-	"""
-	Parses token formats like:
-	$app$<base64>$<hash...>
-	$app$<base64>$$<hash...>
-
-	Extracts:
-	- raw_base64
-	- decoded_metadata
-	- bcrypt details if recognizable
-	"""
-
-	if not token.startswith("$app$"):
-		raise ValueError("Invalid token format: must start with $app$")
-
-	parts = token.split("$")
-
-	if len(parts) < 4:
-		raise ValueError("Invalid token format structure")
-
-	raw_base64 = parts[2]
-	bcrypt_raw = "$".join(parts[3:]).lstrip("$")
-
-	try:
-		decoded_str = base64.b64decode(raw_base64).decode("utf-8")
-	except Exception:
-		raise ValueError("Invalid Base64 metadata")
-
-	bcrypt_parts = bcrypt_raw.split("$")
-	bcrypt_info = {
-		"version": None,
-		"cost": None,
-		"salt_hash": bcrypt_raw,
-		"raw": bcrypt_raw,
-	}
-
-	if len(bcrypt_parts) >= 3 and bcrypt_parts[0] in ("2a", "2b", "2y"):
-		bcrypt_info["version"] = bcrypt_parts[0]
-		bcrypt_info["cost"] = int(bcrypt_parts[1])
-		bcrypt_info["salt_hash"] = "$".join(bcrypt_parts[2:])
-
-	elif len(bcrypt_parts) >= 3:
-		bcrypt_info["version"] = bcrypt_parts[0]
-		bcrypt_info["cost"] = bcrypt_parts[1]
-		bcrypt_info["salt_hash"] = "$".join(bcrypt_parts[2:])
-
-	return {
-		"raw_base64": raw_base64,
-		"decoded_metadata": decoded_str,
-		"bcrypt": bcrypt_info,
-	}
-
-
-def load_compressed_file(file_path: str | None = None, file_data: bytes | None = None) -> str:
-	"""Load content from a compressed file (ZIP or GZIP) or a bytes object."""
-
-	def extract_zip_content(zip_source) -> str | None:
-		with zipfile.ZipFile(zip_source, "r") as zip_file:
-			file_name = zip_file.namelist()[0]
-			with zip_file.open(file_name) as file:
-				return file.read().decode()
-
-	def extract_gzip_content(gzip_source) -> str | None:
-		with gzip.open(gzip_source, "rt") as gz_file:
-			return gz_file.read()
-
-	if not file_path and not file_data:
-		frappe.throw(_("Either file path or file data is required."))
-
-	if file_path:
-		if zipfile.is_zipfile(file_path):
-			return extract_zip_content(file_path)
-		return extract_gzip_content(file_path)
-
-	if isinstance(file_data, str):
-		file_data = file_data.encode()
-
-	try:
-		return extract_zip_content(BytesIO(file_data))
-	except zipfile.BadZipFile:
-		pass
-
-	try:
-		return extract_gzip_content(BytesIO(file_data))
-	except OSError:
-		pass
-
-	frappe.throw(_("Failed to load content from the compressed file."))
 
 
 def extract_compressed_file(file_path: str, destination: str) -> None:
@@ -589,18 +316,6 @@ def enqueue_job(
 	frappe.enqueue(method, job_id=job_id, deduplicate=deduplicate, **kwargs)
 
 
-def rename_keys(data: dict, rename_map: dict) -> dict:
-	"""
-	Rename keys in a dictionary based on a given mapping.
-
-	:param data: The original dictionary.
-	:param rename_map: A dictionary mapping old keys to new keys.
-	:return: A new dictionary with renamed keys.
-	"""
-
-	return {rename_map.get(k, k): v for k, v in data.items()}
-
-
 def clean_text(text: str) -> str:
 	"""Collapse multiple spaces into a single space and trim leading/trailing spaces."""
 
@@ -612,13 +327,6 @@ def clean_text(text: str) -> str:
 	text = re.sub(r"([,.!?])(?=\w)", r"\1 ", text)
 
 	return re.sub(r"\s+", " ", text).strip()
-
-
-def is_html(content: str) -> bool:
-	"""Naive check if content looks like HTML."""
-
-	soup = BeautifulSoup(content, "html.parser")
-	return bool(soup.find())
 
 
 def convert_html_to_text(html: str) -> str:
@@ -642,96 +350,6 @@ def convert_html_to_text(html: str) -> str:
 	return clean_text(text)
 
 
-def convert_text_to_html(text: str) -> str:
-	"""Convert plain text to HTML."""
-
-	parsed_html = MarkdownIt().render(text)
-	return BeautifulSoup(parsed_html, "html.parser").prettify()
-
-
-def ensure_html(content: str | None = None) -> str | None:
-	"""Ensure content is in HTML format."""
-
-	if content and not is_html(content):
-		content = convert_text_to_html(content)
-
-	return content
-
-
-def ensure_text(content: str | None = None) -> str | None:
-	"""Ensure content is in plain text format."""
-
-	if content and is_html(content):
-		content = convert_html_to_text(content)
-
-	return content
-
-
-def extract_latest_email_body(html: str) -> str:
-	"""Extract the latest visible message from an HTML email, removing quoted replies and signatures."""
-
-	if not html:
-		return html
-
-	soup = BeautifulSoup(html, "html.parser")
-
-	# 1. Remove scripts, styles, hidden elements, and comments
-	for tag in soup(["script", "style", "head", "title", "meta", "link"]):
-		tag.decompose()
-	for el in soup.select('[style*="display:none"], [style*="visibility:hidden"], [class*="hidden"]'):
-		el.decompose()
-	for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
-		comment.extract()
-
-	# 2. Remove known quoted/previous message containers
-	for selector in [
-		".frappe_mail_quote",
-		"blockquote",
-		".gmail_quote",
-		".yahoo_quoted",
-		".OutlookMessageHeader",
-		"div[id^='divRplyFwdMsg']",
-		"hr[style*='width:100%']",
-	]:
-		for el in soup.select(selector):
-			el.decompose()
-
-	# 3. Remove common plain-text reply markers (e.g. “On Mon, John Doe wrote:”)
-	text = str(soup)
-	reply_markers = [
-		r"(?im)^\s*on\s.+?wrote[:\-]\s*$",
-		r"(?im)^from:\s.+$",
-		r"(?im)^sent:\s.+$",
-		r"(?im)^subject:\s.+$",
-	]
-	for pat in reply_markers:
-		m = re.search(pat, text)
-		if m:
-			text = text[: m.start()].strip()
-			break
-
-	# 4. Return cleaned, properly wrapped HTML
-	cleaned = text.strip()
-	if not cleaned:
-		return None
-
-	return f"<!DOCTYPE html>\n<html>\n<body>\n{cleaned}\n</body>\n</html>"
-
-
-def extract_filter_values(filters: list, conditions: list[dict]) -> tuple:
-	"""Extracts specific filter values from a filter list based on given conditions."""
-
-	values = {next(iter(condition)): None for condition in conditions}
-	condition_map = {next(iter(condition)): next(iter(condition.values())) for condition in conditions}
-
-	for f in filters:
-		key, operator, value = f[1], f[2], f[3]
-		if key in condition_map and operator == condition_map[key]:
-			values[key] = value.replace("%", "") if operator == "like" else value
-
-	return tuple(values[key] for key in values)
-
-
 def parse_filters(filters: list | None) -> dict:
 	"""Parses a list of filters into a dictionary of fieldname-value pairs for equality conditions."""
 
@@ -747,42 +365,6 @@ def parse_filters(filters: list | None) -> dict:
 			result[f.fieldname] = f.value
 
 	return result
-
-
-def sanitize_cli_output(text: str) -> str:
-	"""Remove ANSI escape sequences and control characters from text."""
-
-	if text:
-		ansi_escape = re.compile(r"(?:\x1B[@-Z\\-_]|\x1B\[[0-?]*[ -/]*[@-~])")
-
-		# Remove ANSI escape codes
-		text = ansi_escape.sub("", text)
-
-		# Remove other control characters except newline/tab
-		text = re.sub(r"[^\x20-\x7E\n\t]", "", text)
-
-		return text.strip()
-
-	return text
-
-
-def remove_subaddressing(email: str) -> str:
-	"""Removes subaddressing from an email address.
-
-	Example:
-	    input: "user+filter@example.com"
-	    output: "user@example.com"
-	"""
-	match = re.match(r"([^+]+)(?:\+[^@]*)?(@.+)", email)
-	return f"{match.group(1)}{match.group(2)}" if match else email
-
-
-def normalize_email(email: str) -> str:
-	"""Normalize email by removing dots before the @."""
-
-	local, domain = email.split("@", 1)
-	normalized_local = re.sub(r"\.", "", local)
-	return f"{normalized_local}@{domain}"
 
 
 def flatten_dict(d, parent_key="", sep=".") -> dict:
@@ -802,12 +384,6 @@ def password_or_none(doc, field: str) -> str | None:
 	"""Returns the password if the field is set, otherwise returns None."""
 
 	return doc.get_password(field) if doc.get(field) else None
-
-
-def get_dotted_path(func: Callable) -> str:
-	"""Returns the dotted path of a function."""
-
-	return f"{func.__module__}.{func.__qualname__}"
 
 
 def generate_uuid_style_hash(input_str: str) -> str:
@@ -872,30 +448,6 @@ def get_stalwart_cli_path(raise_exception: bool = False) -> str:
 		frappe.throw(_("Stalwart CLI not found at {0}.").format(relpath))
 
 	return cli_path
-
-
-def get_dkim_host(domain_name: str, type: Literal["rsa", "ed25519"]) -> str:
-	"""
-	Returns DKIM host.
-	e.g. example-com-r for RSA and example-com-e for Ed25519.
-	"""
-
-	return f"{domain_name.replace('.', '-')}-{type[0]}"
-
-
-def get_dkim_selector(key_type: Literal["rsa", "ed25519"]) -> str:
-	"""
-	Returns DKIM selector.
-	e.g. frappemail-r for RSA and frappemail-e for Ed25519.
-	"""
-
-	return f"frappemail-{key_type[0]}"
-
-
-def is_catch_all_address(address: str) -> bool:
-	"""Check if the email address is a catch-all address (starts with '@')."""
-
-	return address.startswith("@")
 
 
 def get_stalwart_version() -> str:

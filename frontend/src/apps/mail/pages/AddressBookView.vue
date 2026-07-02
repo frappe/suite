@@ -133,7 +133,7 @@ const showRemoveContacts = ref(false)
 
 const addressBook = createDocumentResource({
 	doctype: 'Address Book',
-	name: `${store.user}:${store.accountId}|${addressBookName}`,
+	name: `${store.accountId}|${addressBookName}`,
 	onError: () => router.replace({ name: 'mail-address-books', params: { accountId } }),
 	setValue: {
 		onSuccess: () => {
@@ -154,7 +154,7 @@ const contacts = createResource({
 	url: 'suite.mail.api.contacts.get_contact_cards',
 	auto: true,
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		filter: { inAddressBook: addressBookName, text: search.value },
 		limit: limit.value,
 	}),
@@ -175,7 +175,7 @@ const contacts = createResource({
 const totalContacts = createResource({
 	url: 'suite.mail.api.contacts.get_address_book_contact_count',
 	auto: true,
-	makeParams: () => ({ account_id: store.accountId, address_book: addressBookName }),
+	makeParams: () => ({ account: store.accountId, address_book: addressBookName }),
 	cache: ['addressBookContactCount', addressBookName],
 })
 
@@ -204,7 +204,7 @@ const breadcrumbs = computed(() => [
 
 const deleteAddressBook = createResource({
 	url: 'suite.mail.doctype.address_book.address_book.delete_address_books',
-	makeParams: () => ({ account_id: store.accountId, ids: [addressBookName] }),
+	makeParams: () => ({ account: store.accountId, ids: [addressBookName] }),
 	onSuccess: () => {
 		showDeleteAddressBook.value = false
 		raiseToast(__('Address book deleted.'))
@@ -221,7 +221,7 @@ const listView = useTemplateRef('listView')
 
 const addContacts = createResource({
 	url: 'suite.mail.doctype.contact_card.contact_card.contact_card_add_to_address_book',
-	makeParams: (ids) => ({ account_id: store.accountId, ids, address_book_id: addressBookName }),
+	makeParams: (ids) => ({ account: store.accountId, ids, address_book_id: addressBookName }),
 	onSuccess: () => {
 		raiseToast(__('Contacts added.'))
 		contacts.reload()
@@ -233,7 +233,7 @@ const addContacts = createResource({
 const removeContacts = createResource({
 	url: 'suite.mail.doctype.contact_card.contact_card.contact_card_remove_from_address_book',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		ids: Array.from(listView.value?.selections),
 		address_book_id: addressBookName,
 	}),

@@ -11,6 +11,15 @@
 					<label class="text-sm-medium text-gray-700">Meeting URL</label>
 					<ClickToCopyField :textContent="meetingUrl" :breakLines="false" />
 				</div>
+
+				<div v-if="e2eeFingerprint" class="space-y-2">
+					<label class="text-sm-medium text-gray-700">Encryption fingerprint</label>
+					<ClickToCopyField :textContent="e2eeFingerprint" :breakLines="false" />
+					<p class="text-xs text-gray-600">
+						Everyone in this encrypted meeting should see the same fingerprint.
+					</p>
+				</div>
+
 			</div>
 		</template>
 	</Dialog>
@@ -19,6 +28,7 @@
 <script setup lang="ts">
 import { Dialog } from "frappe-ui";
 import { computed } from "vue";
+import { useE2EEState } from "../composables/useE2EEState";
 import ClickToCopyField from "./ClickToCopyField.vue";
 
 const props = defineProps<{
@@ -37,4 +47,5 @@ const show = computed({
 });
 
 const meetingUrl = computed(() => window.location.href);
+const { sessionFingerprint: e2eeFingerprint } = useE2EEState();
 </script>

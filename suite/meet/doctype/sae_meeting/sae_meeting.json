@@ -4,21 +4,25 @@
  "creation": "2025-06-25 15:44:00.661051",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "section_break_voms",
-  "meeting_type",
-  "allow_guest",
-  "host_only_chat",
-  "members",
-  "co_hosts",
-  "waiting_room",
-  "banned_users",
-  "column_break_1"
- ],
+  "field_order": [
+   "section_break_voms",
+   "meeting_type",
+   "allow_guest",
+   "host_only_chat",
+   "column_break_1",
+   "e2ee_section",
+    "e2ee_enabled",
+    "users_section",
+   "co_hosts",
+   "members",
+   "banned_users",
+   "waiting_room"
+  ],
  "fields": [
   {
    "fieldname": "section_break_voms",
-   "fieldtype": "Section Break"
+   "fieldtype": "Section Break",
+   "label": "General"
   },
   {
    "default": "open",
@@ -36,17 +40,23 @@
    "label": "Allow Guest"
   },
   {
-    "default":"0",
-    "fieldname":"host_only_chat",
-    "fieldtype":"Check",
-    "label": "Host Only Chat"
+   "default": "0",
+   "fieldname": "host_only_chat",
+   "fieldtype": "Check",
+   "label": "Host Only Chat"
   },
   {
-   "fieldname": "members",
-   "fieldtype": "Table",
-   "label": "Members",
-   "options": "Sae Meeting User",
-   "read_only": 1
+   "default": "0",
+   "fieldname": "e2ee_enabled",
+   "fieldtype": "Check",
+   "label": "E2EE Enabled"
+  },
+  {
+    "fieldname": "members",
+    "fieldtype": "Table",
+    "label": "Members",
+    "options": "Sae Meeting User",
+    "read_only": 1
   },
   {
    "fieldname": "co_hosts",
@@ -71,12 +81,22 @@
   {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "e2ee_section",
+   "fieldtype": "Section Break",
+   "label": "E2EE"
+  },
+  {
+   "fieldname": "users_section",
+   "fieldtype": "Section Break",
+   "label": "Users"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-13 11:18:08.997581",
+ "modified": "2026-06-04 12:36:16.782160",
  "modified_by": "Administrator",
  "module": "Meet",
  "name": "Sae Meeting",

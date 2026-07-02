@@ -11,7 +11,12 @@ type MockSfuClient = {
 };
 
 function createManager(
-	opts: { connected?: boolean; restartResult?: boolean } = {},
+	opts: {
+		connected?: boolean;
+		restartResult?: boolean;
+		onRecovered?: ReturnType<typeof vi.fn>;
+		onFailed?: ReturnType<typeof vi.fn>;
+	} = {},
 ) {
 	const sfuClient: MockSfuClient = {
 		isConnected: vi.fn().mockReturnValue(opts.connected ?? true),
@@ -26,6 +31,8 @@ function createManager(
 		sfuClient: sfuClient as never,
 		transportManager: transportManager as never,
 		meetingId: () => "meeting-1",
+		onRecovered: opts.onRecovered,
+		onFailed: opts.onFailed,
 	});
 	return { manager, sfuClient, transportManager };
 }
@@ -153,6 +160,65 @@ describe("SFURecoveryManager", () => {
 			manager.handleTransportConnectionStateChange("send", "failed");
 			await vi.advanceTimersByTimeAsync(0);
 			expect(transportManager.restartAllTransportIce).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe("recoverTransportIce", () => {
+		it("separates recovered, failed, and skipped states", async () => {
+			const recovered = createManager();
+			await expect(recovered.manager.recoverTransportIce("test")).resolves.toBe(
+				"recovered",
+			);
+
+			const failed = createManager({ restartResult: false });
+			await expect(failed.manager.recoverTransportIce("test")).resolves.toBe(
+				"failed",
+			);
+
+			const skipped = createManager({ connected: false });
+			await expect(skipped.manager.recoverTransportIce("test")).resolves.toBe(
+				"skipped",
+			);
+		});
+
+		it("shares the active recovery so concurrent callers observe the same outcome", async () => {
+			const { manager, transportManager } = createManager({
+				restartResult: false,
+			});
+
+			const first = manager.recoverTransportIce("first");
+			await expect(manager.recoverTransportIce("second")).resolves.toBe(
+				"failed",
+			);
+			await first;
+			expect(transportManager.restartAllTransportIce).toHaveBeenCalledTimes(1);
+		});
+
+		it("runs the failed callback for transport-triggered recovery failures", async () => {
+			const onFailed = vi.fn();
+			const { manager } = createManager({
+				restartResult: false,
+				onFailed,
+			});
+
+			manager.handleTransportConnectionStateChange("recv", "failed");
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(onFailed).toHaveBeenCalledTimes(1);
+		});
+
+		it("runs one failed callback when multiple transport failures share a recovery", async () => {
+			const onFailed = vi.fn();
+			const { manager } = createManager({
+				restartResult: false,
+				onFailed,
+			});
+
+			manager.handleTransportConnectionStateChange("send", "failed");
+			manager.handleTransportConnectionStateChange("recv", "failed");
+
+			await vi.advanceTimersByTimeAsync(0);
+			expect(onFailed).toHaveBeenCalledTimes(1);
 		});
 	});
 });

@@ -12,11 +12,10 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from suite.mail.doctype.calendar.calendar import validate_calendar_name_format
-from suite.mail.jmap import get_calendar_event_service, parse_account
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.jmap import get_calendar_event_service
 from suite.mail.utils import parse_filters
 from suite.mail.utils.dt import convert_to_utc, parse_iso_datetime, utcnow
-from suite.mail.utils.user import resolve_account_handle
-from suite.mail.utils.validation import has_permission_for_user
 
 
 class CalendarEvent(Document):
@@ -27,13 +26,14 @@ class CalendarEvent(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
+
 		from suite.mail.doctype.event_alert.event_alert import EventAlert
 		from suite.mail.doctype.event_calendar.event_calendar import EventCalendar
 		from suite.mail.doctype.event_link.event_link import EventLink
 		from suite.mail.doctype.event_location.event_location import EventLocation
 		from suite.mail.doctype.event_participant.event_participant import EventParticipant
 
-		account_id: DF.Literal[None]
+		account: DF.Link
 		after: DF.Datetime | None
 		alerts: DF.Table[EventAlert]
 		before: DF.Datetime | None
@@ -66,14 +66,7 @@ class CalendarEvent(Document):
 		uid: DF.Data | None
 		updated_utc: DF.Data | None
 		use_default_alerts: DF.Check
-		user: DF.Link | None
 	# end: auto-generated types
-
-	@property
-	def account(self) -> str:
-		"""Full ``user:account_id`` JMAP handle, rebuilt from the selected user and account ID."""
-
-		return f"{self.user}:{self.account_id}"
 
 	@property
 	def calendar_ids(self) -> list[str]:
@@ -150,7 +143,7 @@ class CalendarEvent(Document):
 
 	def db_insert(self, *args, **kwargs) -> None:
 		self.id = add_calendar_event(
-			account_id=self.account,
+			account=self.account,
 			organizer=self.organizer,
 			calendar_ids=self.calendar_ids,
 			status=self.status,
@@ -175,7 +168,7 @@ class CalendarEvent(Document):
 		self.reload()
 
 	def load_from_db(self) -> "CalendarEvent":
-		account, id = self.name.split("|")
+		account, id = parse_calendar_event_name(self.name)
 		if events := get_calendar_events(account, [id]):
 			return super(Document, self).__init__(events[0])
 
@@ -187,9 +180,10 @@ class CalendarEvent(Document):
 		)
 
 	def db_update(self) -> None:
+		account, id = parse_calendar_event_name(self.name)
 		update_calendar_event(
-			account_id=self.account,
-			id=self.id,
+			account=account,
+			id=id,
 			uid=self.uid,
 			organizer=self.organizer,
 			calendar_ids=self.calendar_ids,
@@ -214,10 +208,10 @@ class CalendarEvent(Document):
 		self.reload()
 
 	def delete(self) -> None:
+		account, id = parse_calendar_event_name(self.name)
 		if self.get("recurrence_id") and self.get("uid"):
-			delete_calendar_event_instance(self.account, self.uid, self.recurrence_id)
+			delete_calendar_event_instance(account, self.uid, self.recurrence_id)
 		else:
-			account, id = self.name.split("|")
 			delete_calendar_events(account, [id])
 
 	@staticmethod
@@ -227,8 +221,6 @@ class CalendarEvent(Document):
 		title = filters.get("title")
 		calendar = filters.get("calendar")
 		account = filters.get("account")
-		if not account and filters.get("user") and filters.get("account_id"):
-			account = f"{filters['user']}:{filters['account_id']}"
 
 		if not account:
 			frappe.msgprint(_("Please select an account to view calendar events."), alert=True)
@@ -264,11 +256,9 @@ class CalendarEvent(Document):
 	def get_count(filters=None, **kwargs) -> int:
 		filters = parse_filters(filters)
 		account = filters.get("account")
-		if not account and filters.get("user") and filters.get("account_id"):
-			account = f"{filters['user']}:{filters['account_id']}"
 
 		if account:
-			if has_permission_for_user(parse_account(account)[0], raise_exception=False):
+			if get_user_for_jmap_account(account, raise_exception=False):
 				return cint(frappe.cache.get_value(_get_total_cache_key(account)))
 
 		return 0
@@ -300,8 +290,7 @@ class CalendarEvent(Document):
 
 		for c in self.calendars or []:
 			validate_calendar_name_format(c.calendar)
-			_account, calendar_id = c.calendar.split("|")
-			c.calendar_id = calendar_id
+			c.calendar_id = c.calendar.split("|")[1]
 
 	def validate_send_scheduling_messages(self) -> None:
 		"""Disables sending scheduling messages for draft events."""
@@ -316,6 +305,13 @@ def _get_total_cache_key(account: str) -> str:
 	return f"{account}:calendar_events:total"
 
 
+def parse_calendar_event_name(name: str) -> tuple[str, str]:
+	"""Splits a Calendar Event name `account|id` into its bare `account` and `id`."""
+
+	account, id = name.split("|")
+	return account, id
+
+
 @frappe.whitelist()
 def bulk_delete(names: str | list[str]) -> None:
 	"""Deletes calendar events for the given list of names."""
@@ -323,12 +319,12 @@ def bulk_delete(names: str | list[str]) -> None:
 	if isinstance(names, str):
 		names = json.loads(names)
 
-	account_ids_map = {}
+	accounts_map = {}
 	for name in names:
-		account, id = name.split("|")
-		account_ids_map.setdefault(account, []).append(id)
+		account, id = parse_calendar_event_name(name)
+		accounts_map.setdefault(account, []).append(id)
 
-	for account, ids in account_ids_map.items():
+	for account, ids in accounts_map.items():
 		delete_calendar_events(account, ids)
 
 	frappe.msgprint(_("Calendar Events deleted successfully."), alert=True)
@@ -336,7 +332,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 @frappe.whitelist()
 def add_calendar_event(
-	account_id: str,
+	account: str,
 	organizer: str | None = None,
 	calendar_ids: list[str] | None = None,
 	status: Literal["Tentative", "Confirmed", "Cancelled"] = "Confirmed",
@@ -358,10 +354,6 @@ def add_calendar_event(
 	send_scheduling_messages: bool = False,
 ) -> str:
 	"""Adds a calendar event for the given account and returns the event ID."""
-
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 
 	uid = uuid7().hex
 	creation_id = str(uuid7())
@@ -388,7 +380,7 @@ def add_calendar_event(
 		"use_default_alerts": use_default_alerts,
 	}
 
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	response = service.create([event], send_scheduling_messages=send_scheduling_messages)
 
 	title = _("Calendar Event Creation Error")
@@ -412,11 +404,8 @@ def fetch_calendar_events(
 ) -> list:
 	"""Returns a list of calendar events for the given account based on the provided filters."""
 
-	has_permission_for_user(parse_account(account)[0])
-
 	calendar_events = []
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	data = service.query(filter, position, limit, sort, time_zone, expand_recurrences)
 
 	ids = data.get("ids", [])
@@ -431,9 +420,7 @@ def fetch_calendar_events(
 def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 	"""Returns a list of calendar events for the specified account and IDs."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	calendar_map = {c["id"]: c["name"] for c in service.calendars}
 
 	events = {}
@@ -448,11 +435,8 @@ def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 def get_master_events_by_uids(account: str, uids: list[str]) -> dict:
 	"""Returns a dictionary of master calendar events for the specified account and UIDs."""
 
-	has_permission_for_user(parse_account(account)[0])
-
 	events = {}
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 
 	if master_ids := service.get_master_ids(uids):
 		calendar_map = {c["id"]: c["name"] for c in service.calendars}
@@ -466,7 +450,7 @@ def get_master_events_by_uids(account: str, uids: list[str]) -> dict:
 
 @frappe.whitelist()
 def update_calendar_event(
-	account_id: str,
+	account: str,
 	id: str,
 	uid: str | None = None,
 	organizer: str | None = None,
@@ -491,10 +475,6 @@ def update_calendar_event(
 ) -> None:
 	"""Updates a calendar event for the given account and event ID."""
 
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
 	event = {
 		"id": id,
 		"uid": uid,
@@ -518,7 +498,7 @@ def update_calendar_event(
 		"use_default_alerts": use_default_alerts,
 	}
 
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	response = service.update([event], send_scheduling_messages=send_scheduling_messages)
 
 	title = _("Calendar Event Update Error")
@@ -531,7 +511,7 @@ def update_calendar_event(
 
 @frappe.whitelist()
 def update_calendar_event_instance(
-	account_id: str,
+	account: str,
 	master_id: str,
 	recurrence_id: str,
 	patch: dict,
@@ -539,11 +519,7 @@ def update_calendar_event_instance(
 ) -> None:
 	"""Updates a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	response = service.update_instance(
 		master_id, recurrence_id, patch, send_scheduling_messages=send_scheduling_messages
 	)
@@ -557,14 +533,10 @@ def update_calendar_event_instance(
 
 
 @frappe.whitelist()
-def delete_calendar_events(account_id: str, ids: list[str]) -> None:
+def delete_calendar_events(account: str, ids: list[str]) -> None:
 	"""Deletes a calendar event for the given account by its ID."""
 
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	response = service.delete(ids)
 
 	if response.get("notDestroyed"):
@@ -576,19 +548,12 @@ def delete_calendar_events(account_id: str, ids: list[str]) -> None:
 			title=_("Calendar Event Deletion Error"),
 		)
 
-	if response.get("notDestroyed"):
-		frappe.throw(_(response["notDestroyed"][id]["description"]), title=_("Calendar Event Deletion Error"))
-
 
 @frappe.whitelist()
-def delete_calendar_event_instance(account_id: str, master_id: str, recurrence_id: str) -> None:
+def delete_calendar_event_instance(account: str, master_id: str, recurrence_id: str) -> None:
 	"""Deletes a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
 
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_calendar_event_service(*parse_account(account))
+	service = get_calendar_event_service(account)
 	response = service.delete_instance(master_id, recurrence_id)
 
 	title = _("Calendar Event Instance Deletion Error")
@@ -597,34 +562,6 @@ def delete_calendar_event_instance(account_id: str, master_id: str, recurrence_i
 			frappe.throw(_(response["notUpdated"][master_id]["description"]), title=title)
 		else:
 			frappe.throw(_(response["description"]), title=title)
-
-
-@frappe.whitelist()
-def parse_ics(account: str, ics_data: bytes | str) -> list[dict]:
-	"""Parses ICS data and returns calendar event details."""
-
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_calendar_event_service(*parse_account(account))
-	blob_id = service.upload_blob(ics_data, content_type="text/calendar; charset=utf-8").get("blobId")
-
-	if not blob_id:
-		frappe.throw(_("Failed to upload ICS data."), title=_("ICS Upload Error"))
-
-	response = service.parse([blob_id])
-
-	title = _("ICS Parsing Error")
-	if parsed := response.get("parsed"):
-		events = parsed.get(blob_id)
-		if not events:
-			frappe.throw(_("No calendar event parsed from the provided ICS data."), title=title)
-
-		return events
-
-	elif response.get("notParsable"):
-		frappe.throw(_(response["notParsable"][blob_id]["description"]), title=title)
-	elif response.get("notFound"):
-		frappe.throw(_(response["notFound"][blob_id]["description"]), title=title)
 
 
 def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict:
@@ -682,8 +619,7 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 	organizer = (
 		event.get("organizerCalendarAddress")
 		and event["organizerCalendarAddress"].lower().replace("mailto:", "")
-		or ""
-	)
+	) or ""
 
 	created = event.get("created")
 	updated = event.get("updated")
@@ -692,14 +628,13 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 
 	return {
 		"name": f"{account}|{event['id']}",
-		"account_id": parse_account(account)[1],
-		"user": parse_account(account)[0],
+		"account": account,
 		"id": event["id"],
 		"uid": event["uid"],
 		"recurrence_id": event.get("recurrenceId"),
 		"organizer": organizer,
 		"calendars": calendars,
-		"status": event.get("status") and event["status"].title() or "Confirmed",
+		"status": (event.get("status") and event["status"].title()) or "Confirmed",
 		"draft": cint(event.get("isDraft") or False),
 		"title": event.get("title") or "",
 		"start": event.get("start") or "",
@@ -708,8 +643,8 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
 		"recurrence_id_time_zone": event.get("recurrenceIdTimeZone") or "",
 		"recurrence_rule": json.dumps(event.get("recurrenceRule", {}), indent=2),
 		"show_without_time": cint(event.get("showWithoutTime") or False),
-		"privacy": event.get("privacy") and event["privacy"].title() or "",
-		"free_busy_status": event.get("freeBusyStatus") and event["freeBusyStatus"].title() or "",
+		"privacy": (event.get("privacy") and event["privacy"].title()) or "",
+		"free_busy_status": (event.get("freeBusyStatus") and event["freeBusyStatus"].title()) or "",
 		"description": event.get("description") or "",
 		"locations": locations,
 		"links": links,
@@ -732,4 +667,4 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 	if doc.doctype != "Calendar Event":
 		return False
 
-	return has_permission_for_user(parse_account(doc.account)[0], raise_exception=False)
+	return bool(get_user_for_jmap_account(doc.account, raise_exception=False))

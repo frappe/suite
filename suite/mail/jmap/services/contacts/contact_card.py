@@ -223,7 +223,7 @@ class ContactCardService(ContactsService):
 					[
 						f"{self.type}/set",
 						{
-							"accountId": self.account_id,
+							"accountId": self.account,
 							"update": {id: payload for id in batch},
 						},
 						"0",

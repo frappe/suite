@@ -7,14 +7,11 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.address_book.address_book import fetch_address_books
 from suite.mail.doctype.contact_card.contact_card import bulk_add_contact_cards, fetch_contact_cards
 from suite.mail.jmap import get_default_address_book_id
-from suite.mail.utils.user import get_session_account
 
 
 @frappe.whitelist()
-def get_address_books(account_id: str) -> list[dict]:
+def get_address_books(account: str) -> list[dict]:
 	"""Returns the address books for the given account."""
-
-	account = get_session_account(account_id)
 
 	if not (address_books := fetch_address_books(account, 1, 50)):
 		return []
@@ -24,10 +21,8 @@ def get_address_books(account_id: str) -> list[dict]:
 
 
 @frappe.whitelist()
-def get_contact_cards(account_id: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
+def get_contact_cards(account: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
 	"""Returns the contact cards for the given account."""
-
-	account = get_session_account(account_id)
 
 	if filter:
 		filter = {k: v for k, v in filter.items() if v}
@@ -40,11 +35,11 @@ def get_contact_cards(account_id: str, filter: dict | None = None, limit: int = 
 
 
 @frappe.whitelist()
-def get_contacts(account_id: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
+def get_contacts(account: str, filter: dict | None = None, limit: int = 50) -> list[dict]:
 	"""Returns the emails contacts for the given account."""
 
 	contacts = []
-	contact_cards = get_contact_cards(account_id, filter, limit)
+	contact_cards = get_contact_cards(account, filter, limit)
 
 	for card in contact_cards:
 		if emails := card.get("emails"):
@@ -74,10 +69,8 @@ def enrich_contacts_with_user_images(contacts: list[dict]) -> list[dict]:
 
 
 @frappe.whitelist()
-def get_address_book_contact_count(account_id: str, address_book: str) -> int:
+def get_address_book_contact_count(account: str, address_book: str) -> int:
 	"""Returns the total no. of contacts for the given address book."""
-
-	account = get_session_account(account_id)
 
 	return fetch_contact_cards(account, {"inAddressBook": address_book}, 0, 1)[1]
 
@@ -85,11 +78,7 @@ def get_address_book_contact_count(account_id: str, address_book: str) -> int:
 def create_contacts_if_not_exists(account: str, recipients: list[dict] | str) -> None:
 	"""Creates contacts for the given recipients if they do not exist."""
 
-	from suite.mail.jmap import parse_account
-
-	if not frappe.db.get_value(
-		"Account Settings", parse_account(account)[1], "create_contacts_after_email_submit"
-	):
+	if not frappe.db.get_value("JMAP Account", account, "create_contacts_after_email_submit"):
 		return
 
 	if isinstance(recipients, str):
@@ -105,8 +94,7 @@ def create_contacts_if_not_exists(account: str, recipients: list[dict] | str) ->
 	contact_cards = []
 	for email in new_emails:
 		contact_card = {
-			"account": account,
-			"address_book_ids": [get_default_address_book_id(*parse_account(account))],
+			"address_book_ids": [get_default_address_book_id(account)],
 			"full_name": extract_name_from_email(email),
 			"kind": "Individual",
 			"emails": [{"address": email, "type": "Personal"}],

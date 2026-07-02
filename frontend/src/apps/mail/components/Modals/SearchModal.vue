@@ -173,7 +173,10 @@ import type { Recipient } from '@/apps/mail/types'
 
 const show = defineModel<boolean>()
 
-const { accountId, mailboxes } = userStore()
+// Read store.accountId live in makeParams; destructuring would snapshot the
+// unwrapped value and miss account switches while this modal stays mounted.
+const store = userStore()
+const { mailboxes } = store
 
 const route = useRoute()
 const { isMobile } = useScreenSize()
@@ -224,7 +227,7 @@ const mailboxOptions = computed(() =>
 
 const results = createResource({
 	url: 'suite.mail.api.mail.search_mails',
-	makeParams: () => ({ account_id: accountId, filter: filteredFilter.value }),
+	makeParams: () => ({ account: store.accountId, filter: filteredFilter.value }),
 })
 
 const noOfAttachments = (result) =>

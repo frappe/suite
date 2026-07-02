@@ -85,7 +85,7 @@ const { sieveScripts } = store
 
 const rebuildAutomation = createResource({
 	url: 'suite.mail.api.sieve.rebuild_automation_script_for_account',
-	makeParams: () => ({ account_id: store.accountId }),
+	makeParams: () => ({ account: store.accountId }),
 	onSuccess: () => {
 		raiseToast(__('Folder automation rebuilt from your saved rules.'))
 		sieveScripts.reload()

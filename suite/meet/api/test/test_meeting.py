@@ -35,21 +35,22 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 		self.assertEqual(result["user_id"], self.member_email)
 		self.assertEqual(result["meeting_id"], self.meeting.name)
 		self.assertTrue(result["auth_token"])
+		self.assertFalse(result["e2ee_required"])
+		self.assertNotIn("e2ee_host_public_key", result)
+		self.assertIn("is_host", result)
+		self.assertFalse(result["is_host"])
+		self.assertIn("is_cohost", result)
+		self.assertFalse(result["is_cohost"])
 
-	def test_restricted_meeting_non_member_cannot_get_sfu_connection_details(self):
-		frappe.set_user(self.outsider_email)
+	def test_host_gets_is_host_from_sfu_connection_details(self):
+		self.meeting.add_user_to_table("members", self.host_email, save=True, ignore_permissions=True)
 
-		with self.assertRaises(frappe.PermissionError):
-			get_sfu_connection_details(self.meeting.name)
-
-	def test_sfu_token_includes_site_claim(self):
-		"""The SFU JWT must carry the source site so the SFU can namespace rooms
-		across multiple frappe sites sharing one SFU instance."""
-		self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
-
-		frappe.set_user(self.member_email)
+		frappe.set_user(self.host_email)
 
 		result = get_sfu_connection_details(self.meeting.name)
+
+		self.assertTrue(result["is_host"])
+		self.assertFalse(result["is_cohost"])
 
 		decoded = jwt.decode(
 			result["auth_token"],
@@ -82,6 +83,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 
 		self.assertEqual(decoded_a["meeting_id"], decoded_b["meeting_id"])
 		self.assertNotEqual(decoded_a["site"], decoded_b["site"])
+
+	def test_restricted_meeting_non_member_cannot_get_sfu_connection_details(self):
+		frappe.set_user(self.outsider_email)
+
+		with self.assertRaises(frappe.PermissionError):
+			get_sfu_connection_details(self.meeting.name)
 
 	def _ensure_user(self, email: str, first_name: str):
 		if frappe.db.exists("User", email):

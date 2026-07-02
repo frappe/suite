@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+from contextlib import suppress
 from typing import Literal
 
 import frappe
@@ -54,29 +55,31 @@ def get_domains(txt: str | None = None, is_enabled: bool | None = None) -> list[
 	"""Returns the list of domains configured in Stalwart, with optional filtering by name/description and enabled status"""
 
 	user = frappe.session.user
-	if not is_mail_admin(user):
-		frappe.throw(_("User {0} does not have Mail Admin role.").format(frappe.bold(user)))
+	if not is_mail_admin(user) and not is_system_manager(user):
+		frappe.throw(_("User {0} does not have permission to view domains.").format(frappe.bold(user)))
 
 	result = []
-	for domain in get_stalwart_domains():
-		if txt and (
-			txt.lower() not in domain["name"].lower()
-			and txt.lower() not in (domain.get("description") or "").lower()
-		):
-			continue
 
-		if is_enabled is not None and domain["isEnabled"] != bool(is_enabled):
-			continue
+	with suppress(Exception):
+		for domain in get_stalwart_domains():
+			if txt and (
+				txt.lower() not in domain["name"].lower()
+				and txt.lower() not in (domain.get("description") or "").lower()
+			):
+				continue
 
-		result.append(
-			{
-				"id": domain["id"],
-				"name": domain["name"],
-				"description": domain.get("description", ""),
-				"is_enabled": domain["isEnabled"],
-				"created_at": domain["createdAt"],
-			}
-		)
+			if is_enabled is not None and domain["isEnabled"] != bool(is_enabled):
+				continue
+
+			result.append(
+				{
+					"id": domain["id"],
+					"name": domain["name"],
+					"description": domain.get("description", ""),
+					"is_enabled": domain["isEnabled"],
+					"created_at": domain["createdAt"],
+				}
+			)
 
 	return result
 
@@ -164,8 +167,8 @@ def delete_domain(domain_id: str) -> None:
 	"""Deletes a domain identified by Stalwart domain ID."""
 
 	user = frappe.session.user
-	if not is_mail_admin(user):
-		frappe.throw(_("User {0} does not have Mail Admin role.").format(frappe.bold(user)))
+	if not is_mail_admin(user) and not is_system_manager(user):
+		frappe.throw(_("User {0} does not have permission to delete domains.").format(frappe.bold(user)))
 
 	execute_with_logging(
 		func=lambda: delete_stalwart_domain(domain_id),
@@ -179,7 +182,10 @@ def delete_domain(domain_id: str) -> None:
 def get_enabled_domains() -> list[str]:
 	"""Returns the list of enabled domains"""
 
-	return list(set([d["name"] for d in get_stalwart_domains() if d["isEnabled"]]))
+	try:
+		return list(set([d["name"] for d in get_stalwart_domains() if d["isEnabled"]]))
+	except Exception:
+		return []
 
 
 @frappe.whitelist()
@@ -251,8 +257,8 @@ def add_member(
 def get_members(search: str | None = None, is_admin: bool | None = None) -> list:
 	user = frappe.session.user
 
-	if not is_mail_admin(user):
-		frappe.throw(_("User {0} does not have Mail Admin role.").format(frappe.bold(user)))
+	if not is_mail_admin(user) and not is_system_manager(user):
+		frappe.throw(_("User {0} does not have permission to view members.").format(frappe.bold(user)))
 
 	USER = frappe.qb.DocType("User")
 	HAS_ROLE = frappe.qb.DocType("Has Role")
@@ -303,6 +309,13 @@ def get_account_requests(
 ) -> list[dict]:
 	"""Returns the list of account invites"""
 
+	user = frappe.session.user
+
+	if not is_mail_admin(user) and not is_system_manager(user):
+		frappe.throw(
+			_("User {0} does not have permission to view account requests.").format(frappe.bold(user))
+		)
+
 	ACC_REQ = frappe.qb.DocType("Mail Account Request")
 	query = (
 		frappe.qb.from_(ACC_REQ)
@@ -344,3 +357,17 @@ def delete_account_requests(names: list) -> None:
 
 	for d in names:
 		frappe.delete_doc("Mail Account Request", d)
+
+
+@frappe.whitelist()
+def delete_members(names: list) -> None:
+	"""Delete member users. The User on_trash hooks cascade to their Stalwart account and settings."""
+
+	user = frappe.session.user
+	if not is_mail_admin(user) and not is_system_manager(user):
+		frappe.throw(_("User {0} does not have permission to delete members.").format(frappe.bold(user)))
+
+	for name in names:
+		if name == user:
+			frappe.throw(_("You cannot delete your own account."))
+		frappe.delete_doc("User", name)

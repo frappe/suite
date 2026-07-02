@@ -194,8 +194,14 @@
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-06-06 19:49:33.456329",
+ "links": [
+  {
+   "group": "Reference",
+   "link_doctype": "User Account",
+   "link_fieldname": "user_settings"
+  }
+ ],
+ "modified": "2026-06-29 21:05:00.517406",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

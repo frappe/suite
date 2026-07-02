@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { E2EEMeeting } from "../E2EEMeeting";
+import { DefaultE2EETransformPolicy } from "../E2EETransformPolicy";
 import { TransportManager } from "../TransportManager";
 
 vi.mock("../codecStrategy", () => ({
@@ -9,6 +11,7 @@ import { resolveCodecStrategy } from "../codecStrategy";
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	E2EEMeeting.instance = new E2EEMeeting();
 });
 
 function createManager() {
@@ -18,6 +21,8 @@ function createManager() {
 function mockSfuClient(getCodecStrategy?: () => string) {
 	return {
 		getCodecStrategy: getCodecStrategy ?? (() => "svc"),
+		getE2EEMode: vi.fn(() => "none"),
+		isE2EERequired: vi.fn(() => false),
 		getRouterRtpCapabilities: vi.fn(),
 		createWebRtcTransport: vi.fn(),
 		connectWebRtcTransport: vi.fn(),
@@ -134,6 +139,67 @@ describe("getVideoEncodingConfig", () => {
 		expect(config.decision.scalabilityMode).toBeNull();
 		expect(config.encodings).toHaveLength(1);
 		expect(config.encodings[0].maxBitrate).toBe(2_000_000);
+	});
+});
+
+describe("E2EE transport options", () => {
+	it("enables legacy encodedInsertableStreams only for legacy mode", () => {
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		const policy = new DefaultE2EETransformPolicy({
+			...mockSfuClient(),
+			isE2EERequired: vi.fn(() => true),
+			getE2EEMode: vi.fn(() => "insertable-streams"),
+		} as never);
+		const manager = new TransportManager(policy);
+
+		expect(manager.e2eePolicy.legacyInsertableStreamsEnabled).toBe(true);
+	});
+
+	it("does not enable legacy encodedInsertableStreams for RTCRtpScriptTransform", () => {
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		const policy = new DefaultE2EETransformPolicy({
+			...mockSfuClient(),
+			isE2EERequired: vi.fn(() => true),
+			getE2EEMode: vi.fn(() => "rtp-script-transform"),
+		} as never);
+		const manager = new TransportManager(policy);
+
+		expect(manager.e2eePolicy.legacyInsertableStreamsEnabled).toBe(false);
+	});
+
+	it("passes sender transform setup through onRtpSender before produce resolves", async () => {
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		const policy = new DefaultE2EETransformPolicy({
+			...mockSfuClient(),
+			isE2EERequired: vi.fn(() => true),
+			getE2EEMode: vi.fn(() => "rtp-script-transform"),
+			getOwnSenderId: vi.fn(() => 7),
+		} as never);
+		const manager = new TransportManager(policy);
+		manager.device = { canProduce: vi.fn(() => true) } as never;
+		const produce = vi.fn(async () => ({ rtpSender: {} }));
+		manager.sendTransport = { produce } as never;
+
+		await manager.createProducer({
+			id: "track-1",
+			kind: "audio",
+			readyState: "live",
+		} as MediaStreamTrack);
+
+		expect(produce).toHaveBeenCalledWith(
+			expect.objectContaining({
+				onRtpSender: expect.any(Function),
+			}),
+		);
 	});
 });
 
@@ -369,5 +435,65 @@ describe("getNetworkStats", () => {
 		} as never;
 		await manager.getNetworkStats();
 		expect(getStats).not.toHaveBeenCalled();
+	});
+
+	it("does not double-count RTT from candidate-pair and remote-inbound-rtp on the same transport", async () => {
+		const manager = createManager();
+		manager.sendTransport = {
+			id: "s",
+			connectionState: "connected",
+			getStats: vi.fn().mockResolvedValue(
+				new Map([
+					[
+						"pair1",
+						{
+							type: "candidate-pair",
+							state: "succeeded",
+							currentRoundTripTime: 0.1,
+						},
+					],
+					[
+						"remote1",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+					[
+						"remote2",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+					[
+						"remote3",
+						{ type: "remote-inbound-rtp", roundTripTime: 0.1 },
+					],
+				]),
+			),
+		} as never;
+		manager.recvTransport = null;
+		const stats = await manager.getNetworkStats();
+		expect(stats.rtt).toBe(100);
+		expect(stats.isValid).toBe(true);
+	});
+
+	it("falls back to candidate-pair RTT when remote-inbound-rtp is unavailable on the send transport", async () => {
+		const manager = createManager();
+		manager.sendTransport = {
+			id: "s",
+			connectionState: "connected",
+			getStats: vi.fn().mockResolvedValue(
+				new Map([
+					[
+						"pair1",
+						{
+							type: "candidate-pair",
+							state: "succeeded",
+							currentRoundTripTime: 0.15,
+						},
+					],
+				]),
+			),
+		} as never;
+		manager.recvTransport = null;
+		const stats = await manager.getNetworkStats();
+		expect(stats.rtt).toBe(150);
+		expect(stats.isValid).toBe(true);
 	});
 });

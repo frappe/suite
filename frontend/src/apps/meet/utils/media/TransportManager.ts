@@ -1,11 +1,10 @@
-/**
- * Transport Manager
- * Handles mediasoup-client Device and Transport management
- */
-
 import type { Consumer, Producer } from "mediasoup-client/types";
 import type { SFUClient } from "../SFUClient";
 import { resolveCodecStrategy } from "./codecStrategy";
+import {
+	DefaultE2EETransformPolicy,
+	type E2EETransformPolicy,
+} from "./E2EETransformPolicy";
 import {
 	audioCodecOptions,
 	screenEncodings,
@@ -53,6 +52,7 @@ type ConsumerParams = {
 	appData?: {
 		type?: string;
 	};
+	senderId?: number;
 };
 
 type RouterCapabilities = {
@@ -105,6 +105,10 @@ async function applyScreenShareSenderPreferences(producer: {
 	await sender.setParameters(parameters);
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class TransportManager {
 	sendTransport: TransportLike | null;
 	recvTransport: TransportLike | null;
@@ -113,8 +117,9 @@ export class TransportManager {
 	routerRtpCapabilities: RouterCapabilities;
 	activeVideoStrategy: string;
 	eventHandlers: EventHandlers;
+	e2eePolicy: E2EETransformPolicy;
 
-	constructor() {
+	constructor(e2eePolicy?: E2EETransformPolicy) {
 		this.sendTransport = null;
 		this.recvTransport = null;
 		this.device = null;
@@ -122,6 +127,7 @@ export class TransportManager {
 		this.routerRtpCapabilities = null;
 		this.activeVideoStrategy = "svc";
 		this.eventHandlers = {};
+		this.e2eePolicy = e2eePolicy ?? new DefaultE2EETransformPolicy();
 	}
 
 	setEventHandlers(handlers: EventHandlers = {}) {
@@ -176,6 +182,7 @@ export class TransportManager {
 
 	initialize(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
+		this.e2eePolicy.setSFUClient(sfuClient);
 	}
 
 	private getClient(): SFUClient {
@@ -212,16 +219,25 @@ export class TransportManager {
 
 	async createSendTransport() {
 		if (this.sendTransport) return this.sendTransport;
+		this.e2eePolicy.assertContextReady("create send transport");
 		if (!this.device) await this.initializeDevice();
 		if (!this.device) throw new Error("Device failed to initialize");
 		const client = this.getClient();
 		const rawTransportParams = await client.createWebRtcTransport("send");
+		const shouldEnableLegacyInsertableStreams =
+			this.e2eePolicy.legacyInsertableStreamsEnabled;
+
+		const additionalSettings: Record<string, unknown> = {};
+		if (shouldEnableLegacyInsertableStreams) {
+			additionalSettings.encodedInsertableStreams = true;
+		}
 
 		this.sendTransport = this.device.createSendTransport({
 			id: rawTransportParams.id,
 			iceParameters: rawTransportParams.iceParameters,
 			iceCandidates: rawTransportParams.iceCandidates,
 			dtlsParameters: rawTransportParams.dtlsParameters,
+			additionalSettings,
 		});
 		this.setupSendTransportHandlers();
 
@@ -280,16 +296,25 @@ export class TransportManager {
 
 	async createReceiveTransport() {
 		if (this.recvTransport) return this.recvTransport;
+		this.e2eePolicy.assertContextReady("create receive transport");
 		if (!this.device) await this.initializeDevice();
 		if (!this.device) throw new Error("Device failed to initialize");
 		const client = this.getClient();
 		const rawTransportParams = await client.createWebRtcTransport("recv");
+		const shouldEnableLegacyInsertableStreams =
+			this.e2eePolicy.legacyInsertableStreamsEnabled;
+
+		const additionalSettings: Record<string, unknown> = {};
+		if (shouldEnableLegacyInsertableStreams) {
+			additionalSettings.encodedInsertableStreams = true;
+		}
 
 		this.recvTransport = this.device.createRecvTransport({
 			id: rawTransportParams.id,
 			iceParameters: rawTransportParams.iceParameters,
 			iceCandidates: rawTransportParams.iceCandidates,
 			dtlsParameters: rawTransportParams.dtlsParameters,
+			additionalSettings,
 		});
 		this.setupReceiveTransportHandlers();
 		return this.recvTransport;
@@ -376,10 +401,35 @@ export class TransportManager {
 			appData: safeAppData,
 		});
 
+		const e2eeWantedBeforeProduce = this.e2eePolicy.transformsEnabled;
 		const produceOptions: Record<string, unknown> = {
 			track,
-			appData: safeAppData,
+			appData: {
+				...safeAppData,
+				e2eeStartPaused: e2eeWantedBeforeProduce,
+			},
+			stopTracks: false,
 		};
+		let senderTransformSetupStarted = false;
+		const setupProducerSenderTransform = async (
+			sender: RTCRtpSender | undefined,
+		) => {
+			if (!e2eeWantedBeforeProduce || !sender || senderTransformSetupStarted) {
+				return false;
+			}
+			senderTransformSetupStarted = true;
+			const senderId = this.e2eePolicy.ownSenderId;
+			const mediaType = track?.kind ?? "video";
+			return this.e2eePolicy
+				.setupSenderTransform(sender, senderId, mediaType)
+				.catch((error) => {
+					console.warn("Failed to setup E2EE sender transform:", error);
+					return false;
+				});
+		};
+		if (e2eeWantedBeforeProduce) {
+			produceOptions.onRtpSender = setupProducerSenderTransform;
+		}
 
 		if (track?.kind === "video") {
 			const source = safeAppData.type === "screen" ? "screen" : "camera";
@@ -406,6 +456,7 @@ export class TransportManager {
 			produceOptions.codecOptions = videoCodecOptions;
 			produceOptions.appData = {
 				...safeAppData,
+				e2eeStartPaused: e2eeWantedBeforeProduce,
 				codecStrategy: encodingConfig.decision.strategy,
 				scalabilityMode: encodingConfig.decision.scalabilityMode,
 			};
@@ -416,6 +467,23 @@ export class TransportManager {
 		}
 
 		const producer = await this.sendTransport.produce(produceOptions);
+		const e2eeGate = this.e2eePolicy.transformsEnabled;
+		const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false;
+		const hasContext = this.e2eePolicy.hasContext;
+		console.log("[E2EE] createProducer gate", {
+			e2eeGate,
+			e2eeRequired,
+			hasContext,
+			hasRtpSender: !!producer.rtpSender,
+			kind: track?.kind,
+			senderId: this.e2eePolicy.ownSenderId,
+		});
+		if (e2eeGate && producer.rtpSender) {
+			await setupProducerSenderTransform(producer.rtpSender);
+		}
+		if (e2eeWantedBeforeProduce) {
+			await this.sfuClient?.resumeProducer?.(producer.id);
+		}
 
 		if (safeAppData.type === "screen") {
 			try {
@@ -453,17 +521,26 @@ export class TransportManager {
 			rawConsumerParams.isScreen ||
 			rawConsumerParams?.appData?.type === "screen"
 		);
+		const e2eeWanted = this.e2eePolicy.transformsEnabled;
 
 		let consumer: Consumer | null = null;
 		let firstError: unknown = null;
 		try {
-			const consumeArgs = {
+			const consumeArgs: Record<string, unknown> = {
 				id: rawConsumerParams.id,
 				producerId: rawConsumerParams.producerId,
 				kind: rawConsumerParams.kind,
 				rtpParameters: rawConsumerParams.rtpParameters,
 				...(isScreen ? { appData: { type: "screen" } } : {}),
 			};
+			if (e2eeWanted) {
+				consumeArgs.onRtpReceiver = (receiver: RTCRtpReceiver) => {
+					console.log("[E2EE] onRtpReceiver callback fired", {
+						producerId: rawConsumerParams.producerId,
+					});
+					this.e2eePolicy.preCreateReceiverStreams(receiver);
+				};
+			}
 			consumer = await recvTransport.consume(consumeArgs);
 		} catch (err) {
 			firstError = err;
@@ -475,7 +552,64 @@ export class TransportManager {
 			console.info("Screen share consumer created", {
 				consumerId: consumer.id,
 			});
+
+		if (consumer) {
+			const e2eeRequired = this.sfuClient?.isE2EERequired?.() ?? false;
+			const hasContext = this.e2eePolicy.hasContext;
+			console.log("[E2EE] createConsumer gate", {
+				e2eeGate: e2eeWanted,
+				e2eeRequired,
+				hasContext,
+				hasRtpReceiver: !!consumer.rtpReceiver,
+				producerId: rawConsumerParams.producerId,
+				remoteSenderId: rawConsumerParams.senderId,
+				mediaType: rawConsumerParams.kind,
+			});
+			if (e2eeWanted && consumer.rtpReceiver) {
+				try {
+					const remoteSenderId = rawConsumerParams.senderId ?? 0;
+					const mediaType = rawConsumerParams.kind ?? "video";
+					await this.e2eePolicy.setupReceiverTransform(
+						consumer.rtpReceiver,
+						remoteSenderId,
+						mediaType,
+					);
+					if (mediaType === "video") {
+						void this.requestConsumerKeyFrameBurst(
+							consumer.id,
+							rawConsumerParams.producerId,
+						);
+					}
+				} catch (error) {
+					console.warn("Failed to setup E2EE receiver transform:", error);
+				}
+			}
+		}
 		return consumer;
+	}
+
+	private async requestConsumerKeyFrameBurst(
+		consumerId: string,
+		producerId: string,
+	): Promise<void> {
+		const delays = [0, 120, 350, 800];
+		for (const delay of delays) {
+			if (delay > 0) {
+				await sleep(delay);
+			}
+			try {
+				const result =
+					await this.sfuClient?.requestConsumerKeyFrame?.(consumerId);
+				console.log("[E2EE] consumer keyframe requested", {
+					producerId,
+					consumerId,
+					delay,
+					result,
+				});
+			} catch (error) {
+				console.warn("Failed to request E2EE consumer keyframe:", error);
+			}
+		}
 	}
 
 	getDeviceCapabilities() {
@@ -513,23 +647,31 @@ export class TransportManager {
 		}
 
 		try {
-			let totalRtt = 0;
-			let rttCount = 0;
 			let packetsSent = 0;
 			let packetsLost = 0;
 			let validStatsFound = false;
 
-			const processStats = (stats: Map<string, TransportStatReport>) => {
+			// One RTT sample per transport, from a single report type.
+			const transportRtt: number[] = [];
+
+			const processStats = (
+				stats: Map<string, TransportStatReport>,
+				preferRemoteInbound: boolean,
+			) => {
+				let remoteRttSum = 0;
+				let remoteRttCount = 0;
+				let pairRttSum = 0;
+				let pairRttCount = 0;
+
 				for (const report of stats.values()) {
-					// Check RTT from candidate pairs
 					if (
 						report.type === "candidate-pair" &&
 						report.state === "succeeded"
 					) {
 						if (report.currentRoundTripTime !== undefined) {
 							// Convert exact seconds to ms
-							totalRtt += report.currentRoundTripTime * 1000;
-							rttCount++;
+							pairRttSum += report.currentRoundTripTime * 1000;
+							pairRttCount++;
 							if (report.availableOutgoingBitrate) {
 								result.availableOutgoingBitrate =
 									report.availableOutgoingBitrate;
@@ -537,13 +679,11 @@ export class TransportManager {
 						}
 					}
 
-					// Outbound RTP (local sending): check fraction lost from RTCP (remote-inbound-rtp usually, or inside outbound-rtp in some browsers)
 					if (report.type === "outbound-rtp") {
 						validStatsFound = true;
-						// Some browsers may put it directly here or in a linked remote-inbound-rtp
 					}
 
-					// Inbound RTP (local receiving): we can calculate packet loss we are seeing
+					// Inbound RTP (local receiving): downlink loss we see.
 					if (report.type === "inbound-rtp") {
 						validStatsFound = true;
 						if (
@@ -555,14 +695,25 @@ export class TransportManager {
 						}
 					}
 
-					// Remote Inbound RTP (remote receiving our media): tells us about the uplink loss
-					if (report.type === "remote-inbound-rtp") {
-						if (report.roundTripTime !== undefined) {
-							// Note: this is typically per-stream RTT
-							totalRtt += report.roundTripTime * 1000;
-							rttCount++;
-						}
+					// Remote Inbound RTP: SFU's view of our outbound streams.
+					// Per-stream RTT.
+					if (
+						report.type === "remote-inbound-rtp" &&
+						report.roundTripTime !== undefined
+					) {
+						remoteRttSum += report.roundTripTime * 1000;
+						remoteRttCount++;
 					}
+				}
+
+				// Pick one source per transport. remote-inbound-rtp is
+				// the per-stream RTT the SFU measured and is only
+				// available on the send transport; recv falls back to
+				// candidate-pair.
+				if (preferRemoteInbound && remoteRttCount > 0) {
+					transportRtt.push(remoteRttSum / remoteRttCount);
+				} else if (pairRttCount > 0) {
+					transportRtt.push(pairRttSum / pairRttCount);
 				}
 			};
 
@@ -572,7 +723,7 @@ export class TransportManager {
 					this.sendTransport.connectionState === "completed")
 			) {
 				const sendStats = await this.sendTransport.getStats();
-				processStats(sendStats);
+				processStats(sendStats, true);
 			}
 
 			if (
@@ -581,16 +732,17 @@ export class TransportManager {
 					this.recvTransport.connectionState === "completed")
 			) {
 				const recvStats = await this.recvTransport.getStats();
-				processStats(recvStats);
+				processStats(recvStats, false);
 			}
 
-			if (rttCount > 0) {
-				result.rtt = totalRtt / rttCount;
+			if (transportRtt.length > 0) {
+				const total = transportRtt.reduce((sum, v) => sum + v, 0);
+				result.rtt = total / transportRtt.length;
 				validStatsFound = true;
 			}
 
 			if (packetsSent > 0) {
-				result.packetLoss = (packetsLost / packetsSent) * 100; // Percentage 0-100
+				result.packetLoss = (packetsLost / packetsSent) * 100;
 			}
 
 			result.isValid = validStatsFound;

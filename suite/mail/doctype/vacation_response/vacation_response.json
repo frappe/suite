@@ -6,7 +6,7 @@
  "field_order": [
   "section_break_bvdc",
   "user",
-  "account_id",
+  "account",
   "column_break_ksnk",
   "enabled",
   "section_break_rrca",
@@ -83,10 +83,11 @@
    "label": "HTML"
   },
   {
-   "fieldname": "account_id",
-   "fieldtype": "Select",
+   "fieldname": "account",
+   "fieldtype": "Link",
    "in_standard_filter": 1,
-   "label": "Account ID"
+   "label": "Account",
+   "options": "JMAP Account"
   },
   {
    "description": "The user this vacation response belongs to.",

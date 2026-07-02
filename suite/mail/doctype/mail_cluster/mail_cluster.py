@@ -237,15 +237,3 @@ class MailCluster(Document):
 		]
 
 		return operations
-
-
-def get_storage_labels() -> dict:
-	"""Returns the storage labels."""
-
-	return {
-		"storage_directory": _("Directory Storage"),
-		"storage_data": _("Data Storage"),
-		"storage_blob": _("Blob Storage"),
-		"storage_fts": _("Full Text Index Storage"),
-		"storage_lookup": _("In-Memory Storage"),
-	}

@@ -7,6 +7,8 @@ import type {
 } from '../../types';
 import type { RateLimiter } from '../../utils/rateLimiter';
 import type { AuthManager } from '../AuthManager';
+import type { E2EEEpochRelay } from '../E2EEEpochRelay';
+import type { E2eeRosterStore } from '../E2eeRosterStore';
 import type { RoomRegistry } from '../RoomRegistry';
 
 export type TypedSocket = Socket<
@@ -22,4 +24,6 @@ export interface HandlerDeps {
 	mediasoup: MediasoupManager;
 	authManager: AuthManager;
 	rateLimiter: RateLimiter;
+	e2eeEpochRelay: E2EEEpochRelay;
+	e2eeRoster: E2eeRosterStore;
 }

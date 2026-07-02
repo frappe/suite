@@ -50,7 +50,10 @@ const show = defineModel<boolean>()
 
 const emit = defineEmits(['insert'])
 
-const { addressBooks, accountId } = userStore()
+// Read store.accountId live in makeParams; destructuring would snapshot the
+// unwrapped value and miss account switches while this modal stays mounted.
+const store = userStore()
+const { addressBooks } = store
 
 const listView = useTemplateRef('listView')
 
@@ -102,7 +105,7 @@ const contacts = createResource({
 					? filters[0]
 					: { operator: 'AND', conditions: filters }
 
-		return { account_id: accountId, filter, limit: limit.value }
+		return { account: store.accountId, filter, limit: limit.value }
 	},
 	transform: (data) =>
 		data.map((c) => ({ ...c, full_name: c.full_name || extractNameFromEmail(c.email) })),

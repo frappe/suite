@@ -56,7 +56,7 @@ import {
 import { Button, Dialog } from 'frappe-ui'
 
 import { useSettings } from '@/apps/mail/utils/composables'
-import AccountSettings from '@/apps/mail/components/Settings/AccountSettings.vue'
+import Account from '@/apps/mail/components/Settings/Account.vue'
 import AdvancedSettings from '@/apps/mail/components/Settings/AdvancedSettings.vue'
 import AppearanceSettings from '@/apps/mail/components/Settings/AppearanceSettings.vue'
 import AutomationSettings from '@/apps/mail/components/Settings/AutomationSettings.vue'
@@ -84,7 +84,7 @@ const tabs = computed(() => {
 		{
 			label: __('Account'),
 			icon: Mailbox,
-			component: markRaw(AccountSettings),
+			component: markRaw(Account),
 			condition: user.data.is_jmap_configured,
 		},
 		{

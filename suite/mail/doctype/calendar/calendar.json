@@ -6,8 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_fgkh",
-  "user",
-  "account_id",
+  "account",
   "column_break_pjqh",
   "subscribed",
   "visible",
@@ -230,20 +229,15 @@
    "read_only_depends_on": "eval: !doc.may_admin"
   },
   {
-   "fieldname": "account_id",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Account ID",
-   "set_only_once": 1
-  },
-  {
-   "description": "The user this calendar belongs to.",
-   "fieldname": "user",
+   "fieldname": "account",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "User",
+   "label": "Account",
    "no_copy": 1,
-   "options": "User",
+   "options": "JMAP Account",
+   "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   }
  ],
@@ -256,7 +250,7 @@
    "link_fieldname": "calendar"
   }
  ],
- "modified": "2026-06-29 13:37:39.428021",
+ "modified": "2026-06-30 10:19:37.522414",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Calendar",

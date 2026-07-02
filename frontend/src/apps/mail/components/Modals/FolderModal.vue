@@ -230,7 +230,7 @@ const isNotDirty = computed(() => {
 const createFolder = createResource({
 	url: 'suite.mail.api.mail.create_mailbox',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		...folder,
 		automation_rules: isDefaultAutomation.value ? null : automationRules,
 	}),
@@ -246,7 +246,7 @@ const createFolder = createResource({
 const updateFolder = createResource({
 	url: 'suite.mail.api.mail.update_mailbox',
 	makeParams: () => ({
-		account_id: store.accountId,
+		account: store.accountId,
 		...folder,
 		old_name: original.name,
 		automation_rules: isDefaultAutomation.value ? null : automationRules,
@@ -262,7 +262,7 @@ const updateFolder = createResource({
 
 const createAutomationScript = createResource({
 	url: 'suite.mail.api.sieve.create_automation_script',
-	makeParams: () => ({ account_id: store.accountId, active: true }),
+	makeParams: () => ({ account: store.accountId, active: true }),
 	onSuccess: () => {
 		raiseToast(__('Folder Automation enabled.'))
 		sieveScripts.reload()

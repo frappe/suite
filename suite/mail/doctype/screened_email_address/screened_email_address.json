@@ -1,11 +1,11 @@
 {
  "actions": [],
- "creation": "2026-06-22 12:00:00.000000",
+ "creation": "2026-06-22 12:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "section_break_gl6l",
-  "account_id",
+  "account",
   "action",
   "column_break_20of",
   "email"
@@ -14,18 +14,6 @@
   {
    "fieldname": "section_break_gl6l",
    "fieldtype": "Section Break"
-  },
-  {
-   "description": "The shared JMAP account ID this block belongs to. The block list is the same for everyone with access to the account.",
-   "fieldname": "account_id",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Account ID",
-   "no_copy": 1,
-   "reqd": 1,
-   "search_index": 1,
-   "set_only_once": 1
   },
   {
    "fieldname": "column_break_20of",
@@ -54,12 +42,25 @@
    "no_copy": 1,
    "options": "Spam\nReject\nAccepted",
    "reqd": 1
+  },
+  {
+   "description": "The shared JMAP account this screened email belongs to. The screened list is the same for everyone with access to the account.",
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Account",
+   "no_copy": 1,
+   "options": "JMAP Account",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-23 00:00:00.000000",
+ "modified": "2026-06-30 09:33:32.977548",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Screened Email Address",

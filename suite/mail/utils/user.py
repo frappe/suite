@@ -6,7 +6,6 @@ from frappe.core.doctype.user.user import generate_keys
 from frappe.query_builder import Table
 from frappe.utils.caching import request_cache
 
-from suite.mail.jmap.services.core import parse_account
 from suite.mail.storage import get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.mail.utils import reconnect_on_failure, user_context
@@ -71,93 +70,37 @@ def is_jmap_configured(user: str, raise_exception: bool = False) -> bool:
 	return False
 
 
-def get_jmap_username(user: str) -> str | None:
-	"""Returns the JMAP username of the user."""
-
-	return frappe.db.get_value("User Settings", {"user": user}, "username")
-
-
 @request_cache
 def get_user_account_ids(user: str) -> list[str]:
 	"""Returns the JMAP account IDs the user has access to.
 
 	The IDs are read from the user's cached JMAP session (populated whenever a JMAP
-	connection is established). This is the source of truth for which Account Settings
+	connection is established). This is the source of truth for which JMAP Account
 	a user may read/write, since those documents are shared per JMAP account ID.
 	"""
 
-	from suite.mail.jmap import get_jmap_session_manager
+	from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 
-	session = get_jmap_session_manager(user).get_session() or {}
-	return list((session.get("accounts") or {}).keys())
+	return get_user_jmap_accounts(user)
 
 
-def get_session_account(account_id: str) -> str:
-	"""Rebuild the full ``user:account_id`` JMAP handle for the current session user.
+def get_account_user(account: str, user: str | None = None) -> str:
+	"""Resolve the user whose JMAP connection authenticates requests for ``account``.
 
-	The frontend sends only the bare ``account_id``; the user component of the handle is
-	always the logged-in user. Internal code keeps using the full handle as the canonical
-	account identifier, so API endpoints reconstruct it here at the boundary.
+	Defaults to the explicitly provided ``user`` or the session user. An Administrator or
+	System Manager may not personally have JMAP access to the account, so for them we fall
+	back to any user linked to the account via User Account.
 	"""
 
-	if not account_id:
-		frappe.throw(_("Account ID is required."))
+	if user:
+		return user
 
-	return f"{frappe.session.user}:{account_id}"
-
-
-def resolve_account_handle(account: str) -> str:
-	"""Resolve an account reference to a full ``user:account_id`` handle.
-
-	Accepts either a full ``user:account_id`` handle (passed positionally by internal
-	callers) or a bare ``account_id`` (sent by the frontend), so dual-use whitelisted
-	functions work in both contexts. Account IDs never contain a colon, so its presence
-	reliably distinguishes the two forms.
-	"""
-
-	if not account:
-		frappe.throw(_("Account is required."))
-
-	return account if ":" in account else f"{frappe.session.user}:{account}"
-
-
-def get_account_scoped_permission_query(
-	doctype: str, column: str = "account_id", user: str | None = None
-) -> str:
-	"""Permission query condition for doctypes shared by JMAP account.
-
-	Restricts non-admins to rows whose `column` (the bare JMAP account ID) is one of the
-	accounts the user has access to. `column="name"` is used by doctypes named directly by
-	the account ID (e.g. Account Settings).
-	"""
-
-	user = user or frappe.session.user
-
+	user = frappe.session.user
 	if is_system_manager(user):
-		return ""
+		if linked := frappe.db.get_value("User Account", {"account": account}, "user"):
+			return linked
 
-	account_ids = get_user_account_ids(user)
-	if not account_ids:
-		return "1=0"
-
-	ids = ", ".join(frappe.db.escape(account_id) for account_id in account_ids)
-	return f"(`tab{doctype}`.`{column}` in ({ids}))"
-
-
-def has_account_scoped_permission(doc, column: str = "account_id", user: str | None = None) -> bool:
-	"""Document-level permission for doctypes shared by JMAP account.
-
-	Grants access when the user is a System Manager or has JMAP access to the account the
-	document is scoped to.
-	"""
-
-	user = user or frappe.session.user
-
-	if is_system_manager(user):
-		return True
-
-	value = doc.name if column == "name" else doc.get(column)
-	return value in get_user_account_ids(user)
+	return user
 
 
 def get_account_emails(account: str) -> list[str]:
@@ -166,58 +109,10 @@ def get_account_emails(account: str) -> list[str]:
 	from suite.mail.jmap import get_identities
 
 	emails = []
-	for identity in get_identities(*parse_account(account)):
+	for identity in get_identities(account):
 		emails.append(identity["email"])
 
 	return emails
-
-
-def get_user_personal_account(
-	user: str, property: str | None = None, raise_exception: bool = False
-) -> str | None:
-	"""Returns the personal account of the user."""
-
-	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
-
-	for account in fetch_user_accounts(user, limit=None):
-		if account["is_personal"]:
-			return account[property or "name"]
-
-	if raise_exception:
-		frappe.throw(_("User {0} does not have a personal account configured.").format(frappe.bold(user)))
-
-
-def get_user_emails(user: str) -> list[str]:
-	"""Returns the list of email addresses associated with the user."""
-
-	emails = []
-
-	from suite.mail.doctype.user_account.user_account import fetch_user_accounts
-
-	for account in [a["name"] for a in fetch_user_accounts(user, limit=None)]:
-		emails.extend(get_account_emails(account))
-
-	return emails
-
-
-def get_user_hashed_password(user: str) -> str | None:
-	"""Returns the hashed password for a given user."""
-
-	Auth = Table("__Auth")
-	result = (
-		frappe.qb.from_(Auth)
-		.select(Auth.password)
-		.where(
-			(Auth.doctype == "User")
-			& (Auth.name == user)
-			& (Auth.fieldname == "password")
-			& (Auth.encrypted == 0)
-		)
-		.limit(1)
-		.run()
-	)
-	if result:
-		return result[0][0]
 
 
 def get_user_email_address(user: str) -> str | None:
@@ -241,13 +136,8 @@ def generate_user_keys(user: str) -> dict:
 def get_sync_state(account: str, type: Literal["email"]) -> str | None:
 	"""Returns the Sync State for the given account and type."""
 
-	from suite.mail.doctype.account_settings.account_settings import get_or_create_account_settings
-
-	store = get_data_store(parse_account(account)[1])
+	store = get_data_store(account)
 	value = store.get(Entity.STATE, f"{type}_current_state")
-
-	if not value:
-		get_or_create_account_settings(account)
 
 	return value
 
@@ -259,8 +149,7 @@ def update_sync_state(account: str, type: Literal["email"], state: str) -> None:
 	the per-account data store, shared across every user of the account.
 	"""
 
-	store = get_data_store(parse_account(account)[1])
-
+	store = get_data_store(account)
 	current_state = store.get(Entity.STATE, f"{type}_current_state")
 	store.set_many(
 		Entity.STATE,
@@ -273,10 +162,10 @@ def update_sync_state(account: str, type: Literal["email"], state: str) -> None:
 
 
 @reconnect_on_failure()
-def clear_sync_state(account_id: str, type: Literal["email"]) -> None:
-	"""Clear the Sync State for the given account ID and type."""
+def clear_sync_state(account: str, type: Literal["email"]) -> None:
+	"""Clear the Sync State for the given account and type."""
 
-	store = get_data_store(account_id)
+	store = get_data_store(account)
 	store.delete(Entity.STATE, f"{type}_current_state")
 	store.delete(Entity.STATE, f"{type}_previous_state")
 	store.delete(Entity.STATE, f"{type}_state_last_update")

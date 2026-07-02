@@ -5,25 +5,13 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "account_id",
+  "account",
   "source",
   "column_break_6jsu",
   "last_received_at",
   "last_received_mail"
  ],
  "fields": [
-  {
-   "description": "The shared JMAP account ID this sync watermark belongs to. It is the same for everyone with access to the account.",
-   "fieldname": "account_id",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Account ID",
-   "no_copy": 1,
-   "reqd": 1,
-   "search_index": 1,
-   "set_only_once": 1
-  },
   {
    "fieldname": "column_break_6jsu",
    "fieldtype": "Column Break"
@@ -48,11 +36,24 @@
    "fieldname": "last_received_mail",
    "fieldtype": "Data",
    "label": "Last Received Mail"
+  },
+  {
+   "description": "The shared JMAP account this sync watermark belongs to. It is the same for everyone with access to the account.",
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Account",
+   "no_copy": 1,
+   "options": "JMAP Account",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-17 15:13:21.304742",
+ "modified": "2026-07-02 17:30:27.274690",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Sync History",

@@ -29,6 +29,8 @@ export class AuthManager {
 			socket.isHost = decoded.is_host || false;
 			socket.isCohost = decoded.is_cohost || false;
 			socket.scope = decoded.scope || 'presence-preview';
+			socket.e2eeRequired = Boolean(decoded.e2ee_required);
+			socket.e2eeReady = !socket.e2eeRequired;
 			socket.currentToken = token;
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 			socket.isGuest = decoded.is_guest || false;
@@ -51,6 +53,8 @@ export class AuthManager {
 
 	updateSocketToken(socket: Socket, token: string): void {
 		const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+		const wasE2EERequired = socket.e2eeRequired === true;
+		const wasE2EEReady = socket.e2eeReady === true;
 
 		if (!decoded.meeting_id || decoded.meeting_id !== socket.meetingId) {
 			throw new Error('Token meeting mismatch');
@@ -66,6 +70,10 @@ export class AuthManager {
 
 		socket.currentToken = token;
 		socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
+		socket.e2eeRequired = Boolean(decoded.e2ee_required);
+		socket.e2eeReady = socket.e2eeRequired
+			? wasE2EERequired && wasE2EEReady
+			: true;
 
 		if (socket.handshake?.auth) {
 			socket.handshake.auth.token = token;
@@ -127,6 +135,8 @@ export class AuthManager {
 	cleanupSocket(socket: Socket): void {
 		socket.currentToken = undefined;
 		socket.tokenExpiresAt = undefined;
+		socket.e2eeReady = undefined;
+		socket.e2eeRequired = undefined;
 	}
 
 	ensurePresenceAccess(socket: Socket): void {

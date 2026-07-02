@@ -5,10 +5,13 @@ import { getRoomId } from './utils';
 
 export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
+		const encryptedWebRtcTransportIds = new Set<string>();
+
 		socket.on('create_webrtc_transport', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				const { direction } = data;
+				const { direction, encryptionEnabled } = data;
+				enforceE2EETransportPolicy(socket, encryptionEnabled);
 				const roomId = getRoomId(socket);
 				const userId = socket.userId;
 
@@ -17,6 +20,9 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					userId,
 					direction,
 				);
+				if (socket.e2eeRequired && encryptionEnabled) {
+					encryptedWebRtcTransportIds.add(transportParams.id);
+				}
 
 				callback({ success: true, ...transportParams });
 			} catch (error) {
@@ -32,6 +38,14 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const { transportId, dtlsParameters } = data;
+				if (
+					socket.e2eeRequired &&
+					!encryptedWebRtcTransportIds.has(transportId)
+				) {
+					throw new Error(
+						'Plain transport is not allowed when E2EE is required',
+					);
+				}
 				await deps.mediasoup.connectWebRtcTransport(
 					transportId,
 					dtlsParameters,
@@ -93,4 +107,17 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			}
 		});
 	};
+}
+
+function enforceE2EETransportPolicy(
+	socket: Socket,
+	encryptionEnabled?: boolean,
+): void {
+	if (!socket.e2eeRequired) return;
+	if (!socket.e2eeReady) {
+		throw new Error('E2EE join handshake not completed');
+	}
+	if (!encryptionEnabled) {
+		throw new Error('Encrypted transport is required for this room');
+	}
 }

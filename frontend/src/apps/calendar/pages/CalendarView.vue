@@ -118,7 +118,7 @@ const getEventRole = (event) => {
 
 const calendars = createResource({
 	url: 'suite.calendar.api.get_calendars',
-	makeParams: () => ({ account_id: store.accountId }),
+	makeParams: () => ({ account: store.accountId }),
 	auto: true,
 	onSuccess: (data) => (visibleCalendars.value = data.map((cal) => cal.name)),
 	onError: (error) => raiseToast(error.message, 'error'),
@@ -133,7 +133,7 @@ const events = createResource({
 			.year(calendarRef.value?.currentYear)
 			.month(calendarRef.value?.currentMonth)
 		return {
-			account_id: store.accountId,
+			account: store.accountId,
 			from_date: date.startOf('month').subtract(37, 'day').toDate(),
 			to_date: date.endOf('month').add(37, 'day').toDate(),
 			time_zone: dayjs.tz.guess(),
@@ -218,7 +218,8 @@ const editEvent = createResource({
 	url: 'suite.mail.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		...eventToBeUpdated,
-		id: eventToBeUpdated.master_id,
+		// master_id is only set on recurring events; fall back to the event's own id
+		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
 		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: () => {

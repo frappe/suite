@@ -7,7 +7,7 @@ export function registerErrorHandlers(_deps: HandlerDeps) {
 		socket.on('error', (error) => {
 			loggers.socketHandler.error('Socket error for %s: %s', socket.id, error);
 			socket.emit('sfu_error', {
-				error: (error as Error).message,
+				error: 'An unexpected error occurred',
 				timestamp: new Date().toISOString(),
 			});
 		});

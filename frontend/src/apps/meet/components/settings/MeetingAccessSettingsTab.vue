@@ -37,15 +37,21 @@
 				</div>
 
 				<div class="space-y-3">
-                    <Switch
-                        class="w-full !px-0"
-                        label="Host Only Chat"
-                        description="Restrict chat so only hosts and co-hosts can send messages"
-                        v-model="hostOnlyChat"
-                        :disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
-                    />
-                </div>
+					<Switch
+						class="w-full !px-0"
+						label="Host Only Chat"
+						description="Restrict chat so only hosts and co-hosts can send messages"
+						v-model="hostOnlyChat"
+						:disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
+					/>
+				</div>
 
+				<!-- E2EE Toggle -->
+				<E2EESettingsSection
+					:meeting-id="props.meetingId"
+					:meeting-doc="meetingDoc"
+					:globally-enabled="globalE2EEEnabled"
+				/>
 			</div>
 		</template>
 	</SettingsLayoutBase>
@@ -56,6 +62,7 @@ import { debounce, FormControl, Switch, toast } from "frappe-ui";
 import { onMounted, ref, watch } from "vue";
 import { useChatStore } from "@/apps/meet/composables/useChatStore";
 import { useMeetingDoc } from "../../composables/useMeetingDoc";
+import E2EESettingsSection from "./E2EESettingsSection.vue";
 import SettingsLayoutBase from "./SettingsLayoutBase.vue";
 
 const props = defineProps({
@@ -69,6 +76,7 @@ const {
 	getMeetingDoc,
 	allowGuest: globalAllowGuest,
 	meetingType: globalMeetingType,
+	e2eeEnabled: globalE2EEEnabled,
 } = useMeetingDoc();
 
 const chatStore = useChatStore();

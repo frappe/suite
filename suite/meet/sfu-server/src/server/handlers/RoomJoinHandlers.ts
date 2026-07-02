@@ -7,9 +7,14 @@ import { getRoomId, isRealParticipant } from './utils';
 export function registerRoomJoinHandlers(deps: HandlerDeps) {
 	async function handleJoinRoom(
 		socket: Socket,
-		data: { roomId: string; participantId: string; userData: UserData },
+		data: {
+			roomId: string;
+			participantId: string;
+			userData: UserData;
+			e2ee?: { enabled?: boolean; capability?: { supported?: boolean } };
+		},
 	): Promise<void> {
-		const { roomId, participantId, userData } = data;
+		const { roomId, participantId, userData, e2ee } = data;
 
 		try {
 			if (socket.meetingId && socket.meetingId !== roomId) {
@@ -19,6 +24,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 
 			const scopedRoomId = getRoomId(socket);
+			if (socket.scope === 'full') {
+				enforceE2EEJoinPolicy(socket, e2ee);
+			}
 
 			await deps.mediasoup.createRoom(
 				scopedRoomId,
@@ -39,7 +47,37 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
 				deps.registry.claimParticipant(socket, scopedRoomId, participantId);
-				deps.mediasoup.addPeer(scopedRoomId, participantId, userData);
+				const senderId = deps.registry.assignSenderId(
+					scopedRoomId,
+					participantId,
+				);
+				socket.senderId = senderId;
+				if (!socket.e2eeRequired) {
+					await deps.e2eeRoster.add(scopedRoomId, {
+						participantId,
+						senderId,
+						isHost: Boolean(socket.isHost),
+						joinedAt: Date.now(),
+					});
+				}
+				await deps.e2eeEpochRelay.retryPendingCommitRequests(scopedRoomId);
+
+				const existingPeer = deps.mediasoup
+					.getRoomPeers?.(scopedRoomId)
+					?.get(participantId);
+				if (existingPeer) {
+					loggers.socketHandler.info(
+						'Peer %s already in room %s — clearing stale transports/producers before rejoin',
+						participantId,
+						scopedRoomId,
+					);
+					await deps.mediasoup.removePeer(scopedRoomId, participantId);
+				}
+				deps.mediasoup.addPeer(scopedRoomId, participantId, {
+					...userData,
+					senderId: socket.senderId,
+					isHost: Boolean(socket.isHost),
+				});
 
 				if (isRealParticipant(userData.userId)) {
 					deps.registry.emitParticipantEvent(
@@ -122,7 +160,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				const { roomId, userData, mediaState } = data;
+				const { roomId, userData, mediaState, e2ee } = data;
 				await handleJoinRoom(socket, {
 					roomId,
 					participantId: socket.userId,
@@ -134,8 +172,31 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						video_enabled: mediaState.video_enabled,
 						is_guest: userData.is_guest,
 					},
+					e2ee,
 				});
-				callback({ success: true });
+				callback({ success: true, senderId: socket.senderId });
+				void requestEpochKeyPackageAfterJoin(
+					socket,
+					deps,
+					getRoomId(socket),
+					socket.userId,
+				).catch((error: unknown) => {
+					loggers.socketHandler.error(
+						'e2ee admission request failed for user %s in room %s: %s',
+						socket.userId,
+						getRoomId(socket),
+						(error as Error).message,
+					);
+					socket.emit('e2ee:epoch', {
+						type: 'join-status',
+						status: 'failed',
+						epochNumber: deps.e2eeEpochRelay.getCurrentEpochNumber(
+							getRoomId(socket),
+						),
+						message:
+							'Could not set up encryption for this meeting. Please leave and try again.',
+					});
+				});
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error joining room: %s',
@@ -157,6 +218,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						participantId,
 					);
 					if (shouldCleanupPeer) {
+						if (socket.senderId !== undefined) {
+							await deps.e2eeRoster.remove(roomId, socket.senderId);
+							deps.e2eeEpochRelay.removePendingJoiner(roomId, socket.senderId);
+						}
+						deps.registry.removeSender(roomId, participantId);
 						await deps.mediasoup.removePeer(roomId, participantId);
 
 						if (isRealParticipant(participantId)) {
@@ -180,11 +246,13 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					}
 
 					socket.leave(roomId);
-					socket.leave(`${roomId}:full`);
-					socket.leave(`${roomId}:preview`);
+					deps.registry.leaveScope(socket, roomId, 'full');
+					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 					socket.roomId = undefined;
 					if (deps.registry.isEmpty(roomId)) {
 						deps.registry.cleanupRoom(roomId);
+						deps.e2eeEpochRelay.clearRoom(roomId);
+						await deps.e2eeRoster.clearRoom(roomId);
 						deps.mediasoup.closeRoom(roomId);
 					}
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
@@ -197,4 +265,72 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 		});
 	};
+}
+
+function enforceE2EEJoinPolicy(
+	socket: Socket,
+	e2ee?: { enabled?: boolean; capability?: { supported?: boolean } },
+): void {
+	if (!socket.e2eeRequired) {
+		socket.e2eeReady = true;
+		return;
+	}
+
+	if (!e2ee?.enabled) {
+		throw new Error('E2EE is required for this room');
+	}
+
+	if (!e2ee.capability?.supported) {
+		throw new Error('Client does not support required E2EE capabilities');
+	}
+
+	socket.e2eeReady = true;
+}
+
+async function requestEpochKeyPackageAfterJoin(
+	socket: Socket,
+	deps: HandlerDeps,
+	roomId: string,
+	participantId: string,
+): Promise<void> {
+	if (socket.scope !== 'full' || !socket.e2eeRequired) return;
+	const epochNumber = deps.e2eeEpochRelay.getCurrentEpochNumber(roomId);
+	const admittedMembers = await deps.e2eeRoster.list(roomId);
+	loggers.socketHandler.debug(
+		'[DEBUG-e2ee] SFU: requestEpochKeyPackageAfterJoin (post-ack) %o',
+		{
+			roomId,
+			participantId,
+			isHost: socket.isHost,
+			assignedSenderId: socket.senderId,
+			epochNumber,
+			admittedMemberCount: admittedMembers.length,
+		},
+	);
+	if (admittedMembers.length === 0) {
+		if (!socket.isHost) {
+			deps.e2eeEpochRelay.notifyEncryptionHostNeeded(
+				roomId,
+				participantId,
+				epochNumber,
+			);
+			return;
+		}
+		deps.e2eeEpochRelay.requestGenesisFromParticipant(roomId, participantId);
+		if (socket.senderId !== undefined) {
+			deps.e2eeEpochRelay.requestKeyPackagesExceptSender(
+				roomId,
+				socket.senderId,
+				epochNumber,
+				'join',
+			);
+		}
+		return;
+	}
+	deps.e2eeEpochRelay.requestKeyPackageFromParticipant(
+		roomId,
+		participantId,
+		epochNumber,
+		'join',
+	);
 }

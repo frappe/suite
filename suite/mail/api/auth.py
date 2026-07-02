@@ -1,20 +1,9 @@
 import frappe
 from frappe import _
 
+from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
-from suite.mail.utils.user import (
-	get_account_emails,
-	get_user_personal_account,
-	is_jmap_configured,
-	is_system_manager,
-)
-
-
-def check_app_permission() -> bool:
-	"""Returns True if the user has permission to access the app else False."""
-
-	user = frappe.session.user
-	return is_jmap_configured(user) or is_system_manager(user)
+from suite.mail.utils.user import get_account_emails, is_jmap_configured
 
 
 @frappe.whitelist(methods=["POST"])
@@ -39,13 +28,14 @@ def validate_email_ownership(email: str) -> None:
 	if not email:
 		frappe.throw(_("Email address is required."), frappe.MandatoryError)
 
-	user = frappe.session.user
-	account = get_user_personal_account(user, raise_exception=True)
+	accounts = get_user_jmap_accounts()
+	for account in accounts:
+		if email in get_account_emails(account):
+			return
 
-	if email not in get_account_emails(account):
-		frappe.throw(
-			_("Email address '{0}' is not associated with any account of the user '{1}'.").format(
-				email, user
-			),
-			frappe.PermissionError,
-		)
+	frappe.throw(
+		_("Email address '{0}' is not associated with any account of the user '{1}'.").format(
+			email, frappe.bold(frappe.session.user)
+		),
+		frappe.PermissionError,
+	)

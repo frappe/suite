@@ -50,7 +50,7 @@ const store = userStore()
 const router = useRouter()
 
 const defaultAddressBook = {
-	account_id: store.accountId,
+	account: store.accountId,
 	name: '',
 	description: '',
 	default: false,

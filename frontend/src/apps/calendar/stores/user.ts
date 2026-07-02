@@ -49,7 +49,7 @@ export const userStore = defineStore('calendar-user', () => {
 
 	const identities = createResource({
 		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account_id: accountId.value }),
+		makeParams: () => ({ account: accountId.value }),
 		cache: ['identities', accountId.value],
 	})
 

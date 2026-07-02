@@ -12,6 +12,9 @@ export interface UserData {
 export interface ParticipantInfo {
 	id: string;
 	user_id: string;
+	senderId?: number;
+	sender_id?: number;
+	is_host?: boolean;
 	info: {
 		name?: string;
 		userId: string;
@@ -41,6 +44,10 @@ export interface ScreenShareData {
 	streamId?: string;
 	kind?: "video";
 	isScreen?: boolean;
+	reason?: string;
+	source?: string;
+	producerId?: string;
+	details?: Record<string, unknown>;
 	[key: string]: unknown;
 }
 
@@ -88,6 +95,9 @@ export interface ProducerClosedEvent {
 	producerId: string;
 	participantId: string;
 	isScreen: boolean;
+	reason?: string;
+	source?: string;
+	details?: Record<string, unknown>;
 }
 
 export interface ConsumerClosedEvent {
@@ -117,6 +127,7 @@ export interface ScreenShareStartedEvent {
 export interface ScreenShareStoppedEvent {
 	participantId: string;
 	timestamp: string;
+	reason?: string;
 }
 
 export interface ActiveSpeakerEvent {
@@ -157,14 +168,29 @@ export interface MediaState {
 	video_enabled: boolean;
 }
 
+export type E2EEMode = "insertable-streams" | "none";
+
+export interface E2EECapability {
+	supported: boolean;
+	mode: E2EEMode;
+}
+
+export interface E2EESessionMetadata {
+	enabled: boolean;
+	capability: E2EECapability;
+	ecdhPublicKey?: string;
+}
+
 export interface JoinRoomRequest {
 	roomId: string;
 	userData: UserData;
 	mediaState: MediaState;
+	e2ee?: E2EESessionMetadata;
 }
 
 export interface CreateWebRtcTransportRequest {
 	direction: "send" | "recv";
+	encryptionEnabled?: boolean;
 }
 
 export interface MediaControlRequest {

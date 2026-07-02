@@ -28,7 +28,7 @@ def push_notification() -> dict:
 	try:
 		logger.debug("push-received")
 
-		user = frappe.request.args.get("user") or frappe.request.args.get("account")
+		user = frappe.request.args.get("user")
 		if not user:
 			logger.warning("missing-user")
 			return {"status": "error", "message": _("Missing user query parameter.")}
@@ -81,22 +81,21 @@ def push_notification() -> dict:
 		elif event_type == "StateChange":
 			logger.debug("state-change-received")
 
-			for account_id, changes in request_data.get("changed", {}).items():
-				account = f"{user}:{account_id}"
+			for account, changes in request_data.get("changed", {}).items():
 				ctx["account"] = account
 
 				for entity, state in changes.items():
 					if entity == "Email":
 						logger.debug("queueing-email-sync", entity=entity, state=state)
-						enqueue_fetch_changes(account, state, ctx=ctx)
+						enqueue_fetch_changes(user, account, state, ctx=ctx)
 
 					elif entity == "Mailbox":
 						logger.debug("invalidating-mailbox-cache", entity=entity, state=state)
-						invalidate_jmap_mailboxes_cache(account_id)
+						invalidate_jmap_mailboxes_cache(account)
 
 					elif entity == "Identity":
 						logger.debug("invalidating-identity-cache", entity=entity, state=state)
-						invalidate_jmap_identities_cache(account_id)
+						invalidate_jmap_identities_cache(account)
 
 					else:
 						logger.warning("unhandled-state-change-entity", entity=entity)

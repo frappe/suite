@@ -10,10 +10,13 @@ from werkzeug.utils import secure_filename
 
 from suite.mail.api.auth import validate_user
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
+from suite.mail.doctype.user_account.user_account import (
+	get_user_for_jmap_account,
+	get_user_personal_jmap_account,
+)
 from suite.mail.utils import get_config, get_messages_directory
 from suite.mail.utils.logger import get_outbound_logger
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
-from suite.mail.utils.user import get_user_personal_account
 
 
 @frappe.whitelist(methods=["POST"])
@@ -89,11 +92,12 @@ def send(
 	logger = get_outbound_logger(ctx)
 
 	logger.debug("send-started", is_newsletter=is_newsletter, save_as_draft=save_as_draft)
-	account = get_user_personal_account(frappe.session.user, raise_exception=True)
+	account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
 
 	try:
 		from_name, from_email = parseaddr(from_)
 		doc = MailQueue._create(
+			user=get_user_for_jmap_account(account, raise_exception=True),
 			account=account,
 			from_name=from_name,
 			from_email=from_email,
@@ -291,9 +295,10 @@ def _enqueue_mail(
 	if not raw_message:
 		frappe.throw(_("The raw message is required."), frappe.MandatoryError)
 
-	account = get_user_personal_account(frappe.session.user, raise_exception=True)
+	account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
 
 	doc = MailQueue._create(
+		user=get_user_for_jmap_account(account, raise_exception=True),
 		account=account,
 		from_name=from_name,
 		from_email=from_email,

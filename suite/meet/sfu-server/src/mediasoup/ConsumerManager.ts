@@ -73,6 +73,28 @@ export class ConsumerManager {
 				await consumer.resume();
 			}
 
+			if (consumer.kind === 'video') {
+				// Fire-and-forget. PLI/RPLI is a UDP-side signal to the producer;
+				// awaiting it blocks createConsumer's return on the mediasoup
+				// internal round-trip with no observable benefit. Errors are
+				// logged but do not affect consumer readiness.
+				consumer
+					.requestKeyFrame()
+					.then(() => {
+						loggers.consumerManager.debug(
+							'Initial key frame requested for consumer %s',
+							consumer.id,
+						);
+					})
+					.catch((error) => {
+						loggers.consumerManager.warn(
+							'Failed to request key frame for consumer %s: %s',
+							consumer.id,
+							(error as Error).message,
+						);
+					});
+			}
+
 			return {
 				id: consumer.id,
 				producerId,
@@ -126,6 +148,30 @@ export class ConsumerManager {
 		return Array.from(this.consumers.values()).filter(
 			(c) => c.consumer.producerId === producerId,
 		);
+	}
+	getConsumersByPeer(roomId: string, peerId: string): ConsumerData[] {
+		return Array.from(this.consumers.values()).filter(
+			(c) => c.roomId === roomId && c.peerId === peerId,
+		);
+	}
+
+	async requestConsumerKeyFrame(consumerId: string): Promise<boolean> {
+		const consumerData = this.consumers.get(consumerId);
+		if (!consumerData || consumerData.consumer.kind !== 'video') {
+			return false;
+		}
+
+		try {
+			await consumerData.consumer.requestKeyFrame();
+			return true;
+		} catch (error) {
+			loggers.consumerManager.warn(
+				'Failed to request key frame for consumer %s: %s',
+				consumerId,
+				(error as Error).message,
+			);
+			return false;
+		}
 	}
 
 	getConsumerCount(): number {

@@ -1,9 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type {
-	AudioLevelObserver,
-	Router,
-	Worker,
-} from 'mediasoup/node/lib/types';
+import type { AudioLevelObserver, Router, Worker } from 'mediasoup/types';
 import { describe, expect, it, vi } from 'vitest';
 import type { Room, RtpCodecCapability } from '../../types';
 import { RoomManager } from '../RoomManager';
@@ -52,7 +48,13 @@ function addPeersTo(room: Room, ...peerIds: string[]): void {
 
 describe('RoomManager', () => {
 	const codecs: RtpCodecCapability[] = [
-		{ kind: 'audio', mimeType: 'audio/opus', clockRate: 48000, channels: 2 },
+		{
+			kind: 'audio',
+			mimeType: 'audio/opus',
+			clockRate: 48000,
+			channels: 2,
+			preferredPayloadType: 111,
+		},
 	];
 
 	it('createRoom creates a router and an audio level observer; second call returns the same room', async () => {

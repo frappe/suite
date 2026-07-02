@@ -13,8 +13,7 @@ from frappe.utils import cint, today
 from suite.mail.jmap import get_push_subscription_service
 from suite.mail.utils import generate_uuid_style_hash, parse_filters
 from suite.mail.utils.dt import parse_iso_datetime
-from suite.mail.utils.user import is_jmap_configured
-from suite.mail.utils.validation import has_permission_for_user
+from suite.mail.utils.user import is_jmap_configured, is_system_manager
 
 
 class PushSubscription(Document):
@@ -137,7 +136,7 @@ def add_push_subscription(
 	"""Adds a push subscription subscription for the given user and returns the subscription ID."""
 
 	if not ignore_permissions:
-		has_permission_for_user(user)
+		has_permission_for_user(user, raise_exception=True)
 
 	device_client_id = device_client_id or generate_uuid_style_hash(
 		f"frappe-{frappe.local.site.replace('.', '-')}-{user}"
@@ -170,7 +169,7 @@ def add_push_subscription(
 def get_push_subscription(user: str, id: str, raise_exception: bool = True) -> dict | None:
 	"""Returns push subscription details for the given name in the format 'user|id'."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=raise_exception)
 
 	service = get_push_subscription_service(user)
 	if subscriptions := service.get([id]):
@@ -210,7 +209,7 @@ def verify_push_subscription(user: str, id: str, verification_code: str) -> None
 def renew_push_subscription(user: str, id: str) -> None:
 	"""Renews a push subscription subscription for the given user and subscription ID."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	response = service.update([{"id": id}])
@@ -227,7 +226,7 @@ def renew_push_subscription(user: str, id: str) -> None:
 def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 	"""Deletes push subscriptions for the given user and list of subscription IDs."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	response = service.delete(ids)
@@ -246,7 +245,7 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 def fetch_push_subscriptions(user: str, page: int = 1, limit: int = 10) -> list:
 	"""Fetches push subscriptions for the given user with pagination."""
 
-	has_permission_for_user(user)
+	has_permission_for_user(user, raise_exception=True)
 
 	service = get_push_subscription_service(user)
 	subscriptions = service.get()
@@ -459,3 +458,16 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 		return False
 
 	return has_permission_for_user(doc.user, raise_exception=False)
+
+
+def has_permission_for_user(user: str, raise_exception: bool = True) -> bool:
+	"""Checks if the current session user has permission to manage push subscriptions for the given user."""
+
+	if user != frappe.session.user and not is_system_manager(frappe.session.user):
+		if raise_exception:
+			frappe.throw(
+				_("You do not have permission to add a push subscription for user {0}.").format(
+					frappe.bold(user)
+				),
+				frappe.PermissionError,
+			)

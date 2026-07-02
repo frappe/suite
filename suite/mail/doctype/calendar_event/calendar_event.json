@@ -5,8 +5,7 @@
  "engine": "InnoDB",
  "field_order": [
   "section_break_nfos",
-  "user",
-  "account_id",
+  "account",
   "created_utc",
   "updated_utc",
   "after",
@@ -403,20 +402,15 @@
    "set_only_once": 1
   },
   {
-   "fieldname": "account_id",
-   "fieldtype": "Select",
-   "in_standard_filter": 1,
-   "label": "Account ID",
-   "set_only_once": 1
-  },
-  {
-   "description": "The user this event belongs to.",
-   "fieldname": "user",
+   "fieldname": "account",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "User",
+   "label": "Account",
    "no_copy": 1,
-   "options": "User",
+   "options": "JMAP Account",
+   "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   }
  ],
@@ -424,7 +418,7 @@
  "index_web_pages_for_search": 1,
  "is_virtual": 1,
  "links": [],
- "modified": "2026-06-29 13:37:33.327664",
+ "modified": "2026-06-30 10:17:57.813611",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Calendar Event",

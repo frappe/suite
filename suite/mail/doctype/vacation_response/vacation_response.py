@@ -14,11 +14,10 @@ from suite.mail.doctype.sieve_script.sieve_script import (
 	get_active_sieve_script_id,
 	set_last_active_sieve_script_id,
 )
-from suite.mail.jmap import get_vacation_response_service, parse_account
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.jmap import get_vacation_response_service
 from suite.mail.utils import convert_html_to_text
 from suite.mail.utils.dt import convert_to_utc
-from suite.mail.utils.user import resolve_account_handle
-from suite.mail.utils.validation import has_permission_for_user
 
 
 class VacationResponse(Document):
@@ -30,7 +29,7 @@ class VacationResponse(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		account_id: DF.Literal[None]
+		account: DF.Link | None
 		enabled: DF.Check
 		from_date: DF.Datetime | None
 		html_body: DF.TextEditor | None
@@ -40,29 +39,20 @@ class VacationResponse(Document):
 		user: DF.Link | None
 	# end: auto-generated types
 
-	@property
-	def account(self) -> str | None:
-		"""Full ``user:account_id`` JMAP handle, rebuilt from the selected user and account ID."""
-
-		if self.get("user") and self.get("account_id"):
-			return f"{self.user}:{self.account_id}"
-
-		return None
-
 	def db_insert(self, *args, **kwargs) -> None:
 		raise NotImplementedError
 
 	@frappe.whitelist()
 	def load_from_db(self) -> "VacationResponse":
-		if not self.account:
+		if not self.get("account"):
 			frappe.msgprint(_("Please select an account to view vacation response details."), alert=True)
 			return super(Document, self).__init__({"creation": today(), "modified": today()})
 
-		vc = get_vacation_response(self.account)
-		return super(Document, self).__init__(vc)
+		vr = get_vacation_response(self.account, user=self.get("user"))
+		return super(Document, self).__init__(vr)
 
 	def on_update(self) -> None:
-		if not self.account:
+		if not self.get("account"):
 			return
 
 		update_vacation_response(
@@ -73,6 +63,7 @@ class VacationResponse(Document):
 			self.subject,
 			self.text_body,
 			self.html_body,
+			user=self.get("user"),
 		)
 		self.reload()
 
@@ -93,21 +84,17 @@ class VacationResponse(Document):
 
 
 @frappe.whitelist()
-def get_vacation_response(account_id: str) -> dict:
+def get_vacation_response(account: str) -> dict:
 	"""Returns the vacation response settings for the given account."""
 
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_vacation_response_service(*parse_account(account))
-	vc = service.get()
-	return format_vacation_response(account, vc)
+	service = get_vacation_response_service(account)
+	vr = service.get()
+	return format_vacation_response(account, vr)
 
 
 @frappe.whitelist()
 def update_vacation_response(
-	account_id: str,
+	account: str,
 	enabled: bool | int,
 	from_date: datetime | str | None = None,
 	to_date: datetime | str | None = None,
@@ -116,10 +103,6 @@ def update_vacation_response(
 	html_body: str | None = None,
 ) -> None:
 	"""Updates the vacation response settings for the given account."""
-
-	account = resolve_account_handle(account_id)
-
-	has_permission_for_user(parse_account(account)[0])
 
 	enabled = bool(enabled)
 	from_date = convert_to_utc(from_date).isoformat() if from_date else None
@@ -133,7 +116,7 @@ def update_vacation_response(
 
 	current_active_sieve_script_id = get_active_sieve_script_id(account)
 
-	service = get_vacation_response_service(*parse_account(account))
+	service = get_vacation_response_service(account)
 	previous_vacation_response = service.get()
 	vacation_update_result = service.update(
 		{
@@ -154,31 +137,30 @@ def update_vacation_response(
 			activate_last_active_sieve_script(account)
 
 
-def format_vacation_response(account, vc: dict) -> dict:
+def format_vacation_response(account: str, vr: dict) -> dict:
 	"""Formats the vacation response data."""
 
-	from_date = vc.get("fromDate", None)
+	from_date = vr.get("fromDate", None)
 	local_from_date = convert_utc_to_system_timezone(get_datetime(from_date)) if from_date else None
 
-	to_date = vc.get("toDate", None)
+	to_date = vr.get("toDate", None)
 	local_to_date = convert_utc_to_system_timezone(get_datetime(to_date)) if to_date else None
 
 	return {
-		"account_id": parse_account(account)[1],
-		"user": parse_account(account)[0],
-		"enabled": cint(vc.get("isEnabled")),
+		"account": account,
+		"enabled": cint(vr.get("isEnabled")),
 		"from_date": local_from_date,
 		"to_date": local_to_date,
-		"subject": vc.get("subject"),
-		"text_body": vc.get("textBody"),
-		"html_body": vc.get("htmlBody"),
+		"subject": vr.get("subject"),
+		"text_body": vr.get("textBody"),
+		"html_body": vr.get("htmlBody"),
 		"creation": today(),
 		"modified": today(),
 	}
 
 
 def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool:
-	if doc.doctype != "Vacation Response" or not doc.account:
+	if doc.doctype != "Vacation Response" or not doc.get("account"):
 		return False
 
-	return has_permission_for_user(parse_account(doc.account)[0], raise_exception=False)
+	return bool(get_user_for_jmap_account(doc.account, raise_exception=False))

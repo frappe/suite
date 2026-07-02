@@ -1,54 +1,62 @@
 const { io } = require("socket.io-client");
 const jwt = require("jsonwebtoken");
-const { parseArgs } = require("node:util");
+const yargs = require("yargs/yargs");
+const { hideBin } = require("yargs/helpers");
 const { spawn } = require("child_process");
 
-const { values: argv } = parseArgs({
-	options: {
-		meeting: { type: "string", short: "m" },
-		count: { type: "string", short: "c", default: "5" },
-		"sfu-url": { type: "string", default: "http://localhost" },
-		"sfu-port": { type: "string", default: "3000" },
-		secret: { type: "string", short: "s", default: process.env.JWT_SECRET || "" },
-		"with-producers": { type: "boolean", default: false },
-		"auto-toggle": { type: "boolean", default: false },
-		lifetime: { type: "string", short: "l", default: "0" },
-		help: { type: "boolean", short: "h" },
-	},
-	strict: true,
-});
+const argv = yargs(hideBin(process.argv))
+	.option("meeting", {
+		type: "string",
+		demandOption: true,
+		describe: "Meeting ID / room ID to join",
+	})
+	.option("count", {
+		type: "number",
+		default: 5,
+		describe: "Number of fake users to spawn",
+	})
+	.option("sfu-url", {
+		type: "string",
+		default: "http://localhost",
+		describe: "Base SFU URL (protocol+host)",
+	})
+	.option("sfu-port", {
+		type: "number",
+		default: 3000,
+		describe: "SFU port if not implicit in URL",
+	})
+	.option("secret", {
+		type: "string",
+		default: process.env.JWT_SECRET,
+		describe: "JWT signing secret used by SFU (required)",
+	})
+	.option("with-producers", {
+		type: "boolean",
+		default: false,
+		describe: "Create real fake audio/video producers using FFmpeg",
+	})
+	.option("auto-toggle", {
+		type: "boolean",
+		default: false,
+		describe: "Periodically send media_control events",
+	})
+	.option("lifetime", {
+		type: "number",
+		default: 0,
+		describe: "Milliseconds before disconnecting (0 = keep alive)",
+	})
+	.help().argv;
 
-if (argv.help) {
-	console.log(`
-Usage: node scripts/spawn-fake-users.js --meeting <id> [options]
-
-Options:
-  --meeting, -m       Meeting ID / room ID to join (required)
-  --count, -c         Number of fake users to spawn (default: 5)
-  --sfu-url           Base SFU URL (default: http://localhost)
-  --sfu-port          SFU port (default: 3000)
-  --secret, -s        JWT signing secret (or set JWT_SECRET env var)
-  --with-producers    Create real fake audio/video producers using FFmpeg
-  --auto-toggle       Periodically send media_control events
-  --lifetime, -l      Milliseconds before disconnecting (0 = keep alive)
-  --help, -h          Show this help
-`);
-	process.exit(0);
-}
-
-if (!argv.meeting) {
-	console.error("Error: --meeting is required. Use --help for usage.");
-	process.exit(1);
-}
-
-const meetingId = argv.meeting;
-const count = Number(argv.count);
-const sfuUrl = argv["sfu-url"];
-const sfuPort = Number(argv["sfu-port"]);
-const secret = argv.secret;
-const withProducers = argv["with-producers"];
-const autoToggle = argv["auto-toggle"];
-const lifetime = Number(argv.lifetime);
+const {
+	meeting: meetingId,
+	count,
+	sfuUrl,
+	sfuPort,
+	secret,
+	withProducers,
+	autoToggle,
+	lifetime,
+} = argv;
 
 if (!secret) {
 	console.error("Error: JWT secret is required. Provide --secret or set JWT_SECRET environment variable.");
@@ -100,33 +108,33 @@ const dgram = require("dgram");
 function createOpusPacket(seq, ts, ssrc, isSpeaking) {
 	// Audio level: 0 = loudest (speaking), 127 = silence
 	const audioLevel = isSpeaking ? 30 : 127; // 30 is "fairly loud"
-	
+
 	// RTP Header (12 bytes) + Header Extension (4 + 4 bytes)
 	const header = Buffer.alloc(20);
-	
+
 	// RTP fixed header
 	header.writeUInt8(0x90, 0); // Version 2, no padding, HAS extension (X=1), no CSRC
 	header.writeUInt8(111, 1);  // Payload type 111 (Opus), Marker=0
 	header.writeUInt16BE(seq % 65536, 2);
 	header.writeUInt32BE(ts % 4294967296, 4);
 	header.writeUInt32BE(ssrc, 8);
-	
+
 	// RTP Header Extension (RFC 5285 one-byte header)
 	header.writeUInt16BE(0xBEDE, 12); // One-byte header profile
 	header.writeUInt16BE(1, 14);       // Length: 1 word (4 bytes)
-	
+
 	// Extension element: ID=1 (ssrc-audio-level), Length=0 (1 byte data)
 	// Format: 4-bit ID | 4-bit length-1, then data bytes
 	header.writeUInt8(0x10, 16);       // ID=1, Length=0 (means 1 byte)
 	header.writeUInt8(0x80 | audioLevel, 17); // V=1 (voice activity), Level
 	header.writeUInt8(0x00, 18);       // Padding
 	header.writeUInt8(0x00, 19);       // Padding
-	
+
 	// Opus payload: TOC byte + minimal data
-	const opus = isSpeaking 
+	const opus = isSpeaking
 		? Buffer.from([0xF8, 0x7F, 0x7F, 0x7F, 0x7F]) // "loud" noise
 		: Buffer.from([0xF8, 0x00, 0x00, 0x00, 0x00]); // silence
-	
+
 	return Buffer.concat([header, opus]);
 }
 
@@ -177,28 +185,28 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	const audioPort = audioTransport.port;
 	const audioSsrc = 111111 + index;
 	const udpSocket = dgram.createSocket("udp4");
-	
+
 	let seq = 0;
 	let ts = 0;
 	let isSpeaking = false;
 	let nextToggle = Date.now() + 1000 + Math.random() * 3000;
-	
+
 	const audioInterval = setInterval(() => {
 		// Toggle speaking state randomly
 		if (Date.now() > nextToggle) {
 			isSpeaking = !isSpeaking;
-			const duration = isSpeaking 
+			const duration = isSpeaking
 				? 2000 + Math.random() * 4000  // Talk 2-6s
 				: 3000 + Math.random() * 6000; // Pause 3-9s
 			nextToggle = Date.now() + duration;
 			if (isSpeaking) console.log(`[#${index}] 🗣️ Speaking...`);
 		}
-		
+
 		const packet = createOpusPacket(seq++, ts, audioSsrc, isSpeaking);
 		udpSocket.send(packet, audioPort, audioIp);
 		ts += 960; // 20ms @ 48kHz
 	}, 20);
-	
+
 	console.log(`[#${index}] 🔊 Audio streaming started`);
 
 	// Video via FFmpeg (only if needed for visual debugging)
@@ -218,11 +226,11 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	videoFfmpeg.stderr.on("data", () => {}); // Suppress output
 	console.log(`[#${index}] 📺 Video streaming started`);
 
-	return { 
-		stop: () => { 
-			clearInterval(audioInterval); 
+	return {
+		stop: () => {
+			clearInterval(audioInterval);
 			udpSocket.close();
-			videoFfmpeg.kill("SIGTERM"); 
+			videoFfmpeg.kill("SIGTERM");
 		}
 	};
 }

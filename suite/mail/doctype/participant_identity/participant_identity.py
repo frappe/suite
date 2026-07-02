@@ -9,12 +9,27 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
 
-from suite.mail.jmap import get_participant_identity_service, parse_account
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.jmap import get_participant_identity_service
 from suite.mail.utils import parse_filters
-from suite.mail.utils.validation import has_permission_for_user
 
 
 class ParticipantIdentity(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		_name: DF.Data | None
+		account: DF.Link
+		default: DF.Check
+		email: DF.Data
+		id: DF.Data | None
+	# end: auto-generated types
+
 	@property
 	def calendar_address(self) -> str:
 		"""Returns the calendar address in mailto format."""
@@ -71,7 +86,7 @@ class ParticipantIdentity(Document):
 		account = filters.get("account")
 
 		if account:
-			if has_permission_for_user(parse_account(account)[0], raise_exception=False):
+			if get_user_for_jmap_account(account, raise_exception=False):
 				return cint(frappe.cache.get_value(_get_total_cache_key(account)))
 
 		return 0
@@ -94,12 +109,12 @@ def bulk_delete(names: str | list[str]) -> None:
 	if isinstance(names, str):
 		names = json.loads(names)
 
-	account_ids_map = {}
+	accounts_map = {}
 	for name in names:
 		account, id = name.split("|")
-		account_ids_map.setdefault(account, []).append(id)
+		accounts_map.setdefault(account, []).append(id)
 
-	for account, ids in account_ids_map.items():
+	for account, ids in accounts_map.items():
 		delete_participant_identities(account, ids)
 
 	frappe.msgprint(_("Participant Identities deleted successfully."), alert=True)
@@ -109,8 +124,6 @@ def bulk_delete(names: str | list[str]) -> None:
 def add_participant_identity(account: str, name: str, email: str, default: bool = False) -> str:
 	"""Adds a participant identity for the given account and returns the identity ID."""
 
-	has_permission_for_user(parse_account(account)[0])
-
 	creation_id = str(uuid7())
 	participant_identity = {
 		"creation_id": creation_id,
@@ -119,7 +132,7 @@ def add_participant_identity(account: str, name: str, email: str, default: bool 
 		"is_default": default,
 	}
 
-	service = get_participant_identity_service(*parse_account(account))
+	service = get_participant_identity_service(account)
 	response = service.create([participant_identity])
 
 	title = _("Participant Identity Creation Error")
@@ -135,9 +148,7 @@ def add_participant_identity(account: str, name: str, email: str, default: bool 
 def get_participant_identity(account: str, id: str) -> dict:
 	"""Returns participant identity details for the given account and identity ID."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_participant_identity_service(*parse_account(account))
+	service = get_participant_identity_service(account)
 	if identities := service.get([id]):
 		return format_participant_identity(account, identities[0])
 
@@ -153,8 +164,6 @@ def get_participant_identity(account: str, id: str) -> dict:
 def update_participant_identity(account: str, id: str, name: str, email: str, default: bool = False) -> None:
 	"""Updates an existing participant identity with the given parameters."""
 
-	has_permission_for_user(parse_account(account)[0])
-
 	participant_identity = {
 		"id": id,
 		"name": name,
@@ -162,7 +171,7 @@ def update_participant_identity(account: str, id: str, name: str, email: str, de
 		"is_default": default,
 	}
 
-	service = get_participant_identity_service(*parse_account(account))
+	service = get_participant_identity_service(account)
 	response = service.update([participant_identity])
 
 	if not response.get("updated"):
@@ -177,9 +186,7 @@ def update_participant_identity(account: str, id: str, name: str, email: str, de
 def delete_participant_identities(account: str, ids: list[str]) -> None:
 	"""Deletes participant identities for the specified account and ID(s)."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_participant_identity_service(*parse_account(account))
+	service = get_participant_identity_service(account)
 	response = service.delete(ids)
 
 	if response.get("notDestroyed"):
@@ -196,9 +203,7 @@ def delete_participant_identities(account: str, ids: list[str]) -> None:
 def fetch_participant_identities(account: str, page: int = 1, limit: int = 10) -> list:
 	"""Fetches and returns all participant identities for the given account."""
 
-	has_permission_for_user(parse_account(account)[0])
-
-	service = get_participant_identity_service(*parse_account(account))
+	service = get_participant_identity_service(account)
 	identities = service.get()
 	formatted_identities = [format_participant_identity(account, identity) for identity in identities]
 	frappe.cache.set_value(_get_total_cache_key(account), len(identities), expires_in_sec=600)
@@ -228,4 +233,4 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 	if doc.doctype != "Participant Identity":
 		return False
 
-	return has_permission_for_user(parse_account(doc.account)[0], raise_exception=False)
+	return bool(get_user_for_jmap_account(doc.account, raise_exception=False))

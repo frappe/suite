@@ -6,10 +6,8 @@ import { createResource } from 'frappe-ui'
 // suite's shared main.ts does not run them, so trigger them on writer module
 // load. Backend method paths preserved as-is.
 import { allUsers } from '@/apps/drive/ui/drive/js/resources'
-import { apps } from '@/apps/writer/resources/'
 
 allUsers.fetch()
-apps.fetch()
 
 /**
  * Writer route module — mounted by the suite router under the '/writer' prefix.

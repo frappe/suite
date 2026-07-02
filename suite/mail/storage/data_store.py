@@ -87,12 +87,7 @@ class DataStore(BaseStore):
 		map_size: int | None = None,
 		**_legacy: Any,
 	) -> None:
-		"""Initialize the store for the given base path and ``account`` key.
-
-		``**_legacy`` absorbs parameters from the previous RocksDB implementation
-		(acquire_timeout, lock_timeout, max_retries, retry_delay, shard_count) so existing
-		callers keep working; they no longer have any effect.
-		"""
+		"""Initialize the store for the given base path and ``account`` key."""
 
 		super().__init__(base_path=base_path, key=key)
 
