@@ -26,7 +26,10 @@ export class E2eeRosterStore {
 				this.entriesByRoom.set(roomId, map);
 			}
 			this.hydrated = true;
-		})();
+		})().catch((error: unknown) => {
+			this.hydrationPromise = null;
+			throw error;
+		});
 		return this.hydrationPromise;
 	}
 

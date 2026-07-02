@@ -1229,7 +1229,10 @@ export class E2EEEpochRelay {
 				}
 				this.pruneRetainedMaterial(roomId);
 			}
-		})();
+		})().catch((error: unknown) => {
+			this.hydratePromise = null;
+			throw error;
+		});
 		return this.hydratePromise;
 	}
 
