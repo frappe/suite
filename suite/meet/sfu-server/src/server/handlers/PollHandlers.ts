@@ -4,6 +4,24 @@ import type { ActivePoll } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 
+const E2EE_POLL_TEXT_PREFIX = 'e2ee:';
+const MAX_POLL_QUESTION_LENGTH = 500;
+const MAX_POLL_OPTION_LENGTH = 200;
+const MAX_ENCRYPTED_POLL_QUESTION_LENGTH = 4096;
+const MAX_ENCRYPTED_POLL_OPTION_LENGTH = 2048;
+
+function isValidPollText(
+	text: unknown,
+	maxPlaintextLength: number,
+	maxEncryptedLength: number,
+): text is string {
+	if (typeof text !== 'string' || !text.trim()) return false;
+	const maxLength = text.startsWith(E2EE_POLL_TEXT_PREFIX)
+		? maxEncryptedLength
+		: maxPlaintextLength;
+	return text.length <= maxLength;
+}
+
 export function registerPollHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('poll:create', (data, callback) => {
@@ -24,16 +42,13 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				if (typeof question !== 'string' || question.trim().length === 0) {
-					if (callback)
-						callback({
-							success: false,
-							error: 'Question must be between 1 and 500 characters.',
-						});
-					return;
-				}
-
-				if (question.length > 500 && !socket.e2eeRequired) {
+				if (
+					!isValidPollText(
+						question,
+						MAX_POLL_QUESTION_LENGTH,
+						MAX_ENCRYPTED_POLL_QUESTION_LENGTH,
+					)
+				) {
 					if (callback)
 						callback({
 							success: false,
@@ -57,21 +72,13 @@ export function registerPollHandlers(deps: HandlerDeps) {
 
 				if (
 					options.some(
-						(opt) => typeof opt?.text !== 'string' || !opt.text.trim(),
+						(opt) =>
+							!isValidPollText(
+								opt?.text,
+								MAX_POLL_OPTION_LENGTH,
+								MAX_ENCRYPTED_POLL_OPTION_LENGTH,
+							),
 					)
-				) {
-					if (callback) {
-						callback({
-							success: false,
-							error: 'Poll options must be between 1 and 200 characters.',
-						});
-					}
-					return;
-				}
-
-				if (
-					!socket.e2eeRequired &&
-					options.some((opt) => opt.text.length > 200)
 				) {
 					if (callback) {
 						callback({
@@ -204,9 +211,20 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				if (!roomId || !pollId || typeof question !== 'string') {
+				if (
+					!roomId ||
+					!pollId ||
+					!isValidPollText(
+						question,
+						MAX_POLL_QUESTION_LENGTH,
+						MAX_ENCRYPTED_POLL_QUESTION_LENGTH,
+					)
+				) {
 					if (callback)
-						callback({ success: false, error: 'Invalid poll data' });
+						callback({
+							success: false,
+							error: 'Question must be between 1 and 500 characters.',
+						});
 					return;
 				}
 
@@ -231,8 +249,11 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					const existing = poll.options.find((opt) => opt.id === option.id);
 					if (
 						!existing ||
-						typeof option.text !== 'string' ||
-						!option.text.trim()
+						!isValidPollText(
+							option.text,
+							MAX_POLL_OPTION_LENGTH,
+							MAX_ENCRYPTED_POLL_OPTION_LENGTH,
+						)
 					) {
 						throw new Error('Invalid poll option');
 					}
