@@ -9,6 +9,7 @@ const MAX_POLL_QUESTION_LENGTH = 500;
 const MAX_POLL_OPTION_LENGTH = 200;
 const MAX_ENCRYPTED_POLL_QUESTION_LENGTH = 4096;
 const MAX_ENCRYPTED_POLL_OPTION_LENGTH = 2048;
+const MAX_ACTIVE_POLLS_PER_ROOM = 10;
 
 function isValidPollText(
 	text: unknown,
@@ -91,6 +92,15 @@ export function registerPollHandlers(deps: HandlerDeps) {
 
 				const activePollsMap =
 					deps.registry.getActivePolls(roomId) || new Map<string, ActivePoll>();
+
+				if (activePollsMap.size >= MAX_ACTIVE_POLLS_PER_ROOM) {
+					if (callback)
+						callback({
+							success: false,
+							error: 'A meeting can have up to 10 active polls.',
+						});
+					return;
+				}
 
 				const pollId = `poll-${randomUUID()}`;
 
