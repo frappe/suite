@@ -20,7 +20,7 @@ import {
 	type TransformableReceiver,
 	type TransformableSender,
 } from "./e2ee";
-import { encodeInfo, INFO_CHAT } from "./e2eePrimitives";
+import { encodeInfo, INFO_CHAT, INFO_POLL } from "./e2eePrimitives";
 
 function getSubtle(): SubtleCrypto {
 	const subtle = globalThis.crypto?.subtle;
@@ -66,6 +66,10 @@ export class E2EEMeeting {
 	private readonly activeReceiverTransforms = new WeakSet<RTCRtpReceiver>();
 	private readonly scriptTransformWorkers = new Set<Worker>();
 	private chatKeyCache: {
+		meetingSecretVersion: number;
+		key: CryptoKey;
+	} | null = null;
+	private pollKeyCache: {
 		meetingSecretVersion: number;
 		key: CryptoKey;
 	} | null = null;
@@ -174,6 +178,7 @@ export class E2EEMeeting {
 		}
 		this.scriptTransformWorkers.clear();
 		this.chatKeyCache = null;
+		this.pollKeyCache = null;
 		resetE2EEContextReady();
 	}
 
@@ -209,6 +214,41 @@ export class E2EEMeeting {
 			["encrypt", "decrypt"],
 		);
 		this.chatKeyCache = { meetingSecretVersion: this.keyVersion, key };
+		return key;
+	}
+
+	async getE2EEPollKey(): Promise<CryptoKey | null> {
+		if (!this.meetingSecret) return null;
+		if (
+			this.pollKeyCache &&
+			this.pollKeyCache.meetingSecretVersion === this.keyVersion
+		) {
+			return this.pollKeyCache.key;
+		}
+		const subtle = getSubtle();
+		const ikm = this.meetingSecret;
+		const salt = new Uint8Array(32);
+		const info = encodeInfo(INFO_POLL);
+		const hkdfKey = await subtle.importKey(
+			"raw",
+			ikm as BufferSource,
+			"HKDF",
+			false,
+			["deriveBits"],
+		);
+		const bits = await subtle.deriveBits(
+			{ name: "HKDF", hash: "SHA-256", salt, info: info as BufferSource },
+			hkdfKey,
+			256,
+		);
+		const key = await subtle.importKey(
+			"raw",
+			bits,
+			{ name: "AES-GCM" },
+			false,
+			["encrypt", "decrypt"],
+		);
+		this.pollKeyCache = { meetingSecretVersion: this.keyVersion, key };
 		return key;
 	}
 

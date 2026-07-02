@@ -10,7 +10,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const roomId = socket.roomId;
-				const { question, options } = data;
+				const { question, createdByName, options } = data;
 
 				if (!socket.isHost && !socket.isCohost) {
 					if (callback)
@@ -24,11 +24,16 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				if (
-					typeof question !== 'string' ||
-					question.trim().length === 0 ||
-					question.length > 500
-				) {
+				if (typeof question !== 'string' || question.trim().length === 0) {
+					if (callback)
+						callback({
+							success: false,
+							error: 'Question must be between 1 and 500 characters.',
+						});
+					return;
+				}
+
+				if (question.length > 500 && !socket.e2eeRequired) {
 					if (callback)
 						callback({
 							success: false,
@@ -52,11 +57,21 @@ export function registerPollHandlers(deps: HandlerDeps) {
 
 				if (
 					options.some(
-						(opt) =>
-							typeof opt?.text !== 'string' ||
-							!opt.text.trim() ||
-							opt.text.length > 200,
+						(opt) => typeof opt?.text !== 'string' || !opt.text.trim(),
 					)
+				) {
+					if (callback) {
+						callback({
+							success: false,
+							error: 'Poll options must be between 1 and 200 characters.',
+						});
+					}
+					return;
+				}
+
+				if (
+					!socket.e2eeRequired &&
+					options.some((opt) => opt.text.length > 200)
 				) {
 					if (callback) {
 						callback({
@@ -75,6 +90,10 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				const newPoll: ActivePoll = {
 					pollId,
 					createdBy: socket.participantId,
+					createdByName:
+						typeof createdByName === 'string' && createdByName.trim()
+							? createdByName.trim()
+							: socket.participantId,
 					question,
 					options: options.map((opt: { id?: string; text: string }) => ({
 						id: `opt-${randomUUID()}`,
@@ -83,6 +102,7 @@ export function registerPollHandlers(deps: HandlerDeps) {
 					})),
 					votedUsers: new Set(),
 					isActive: true,
+					createdAt: new Date().toISOString(),
 				};
 
 				activePollsMap.set(pollId, newPoll);
@@ -91,9 +111,11 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				const payloadFE = {
 					pollId: newPoll.pollId,
 					createdBy: newPoll.createdBy,
+					createdByName: newPoll.createdByName,
 					question: newPoll.question,
 					options: newPoll.options,
 					isActive: newPoll.isActive,
+					createdAt: newPoll.createdAt,
 				};
 
 				if (callback) callback({ success: true, poll: payloadFE });
@@ -146,9 +168,11 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				const payloadFE = {
 					pollId: poll.pollId,
 					createdBy: poll.createdBy,
+					createdByName: poll.createdByName,
 					question: poll.question,
 					options: poll.options,
 					isActive: poll.isActive,
+					createdAt: poll.createdAt,
 				};
 
 				if (callback) callback({ success: true });
@@ -165,6 +189,121 @@ export function registerPollHandlers(deps: HandlerDeps) {
 				);
 				if (callback)
 					callback({ success: false, error: (error as Error).message });
+			}
+		});
+
+		socket.on('poll:sync_encrypted', (data, callback) => {
+			try {
+				deps.authManager.ensureFullAccess(socket);
+				const roomId = socket.roomId;
+				const { pollId, question, options } = data;
+
+				if (!socket.isHost && !socket.isCohost) {
+					if (callback)
+						callback({ success: false, error: 'Only hosts can sync polls' });
+					return;
+				}
+
+				if (!roomId || !pollId || typeof question !== 'string') {
+					if (callback)
+						callback({ success: false, error: 'Invalid poll data' });
+					return;
+				}
+
+				if (
+					!Array.isArray(options) ||
+					options.length < 2 ||
+					options.length > 10
+				) {
+					if (callback)
+						callback({
+							success: false,
+							error: 'Poll must have between 2 and 10 options',
+						});
+					return;
+				}
+
+				const roomPolls = deps.registry.getActivePolls(roomId);
+				const poll = roomPolls?.get(pollId);
+				if (!poll) throw new Error('Poll not found');
+
+				for (const option of options) {
+					const existing = poll.options.find((opt) => opt.id === option.id);
+					if (
+						!existing ||
+						typeof option.text !== 'string' ||
+						!option.text.trim()
+					) {
+						throw new Error('Invalid poll option');
+					}
+				}
+
+				poll.question = question;
+				for (const option of options) {
+					const existing = poll.options.find((opt) => opt.id === option.id);
+					if (existing) existing.text = option.text;
+				}
+
+				const payloadFE = {
+					pollId: poll.pollId,
+					createdBy: poll.createdBy,
+					createdByName: poll.createdByName,
+					question: poll.question,
+					options: poll.options,
+					isActive: poll.isActive,
+					createdAt: poll.createdAt,
+				};
+
+				if (callback) callback({ success: true });
+				deps.registry.emitToFullAccessParticipants(
+					roomId,
+					'poll:update',
+					payloadFE,
+				);
+			} catch (error) {
+				loggers.socketHandler.warn(
+					'poll:sync_encrypted failed: %s',
+					(error as Error).message,
+				);
+				if (callback)
+					callback({ success: false, error: (error as Error).message });
+			}
+		});
+
+		socket.on('get_existing_polls', (_data, callback) => {
+			try {
+				deps.authManager.ensureFullAccess(socket);
+				const roomId = socket.roomId;
+				if (!roomId || !socket.participantId) {
+					if (callback) callback({ success: false, error: 'Not in a room' });
+					return;
+				}
+
+				const roomPolls = deps.registry.getActivePolls(roomId);
+				if (!roomPolls || roomPolls.size === 0) {
+					if (callback) callback({ success: true, polls: [] });
+					return;
+				}
+
+				const polls = Array.from(roomPolls.values()).map((poll) => ({
+					pollId: poll.pollId,
+					createdBy: poll.createdBy,
+					createdByName: poll.createdByName,
+					question: poll.question,
+					options: poll.options,
+					isActive: poll.isActive,
+					hasVoted: poll.votedUsers.has(socket.participantId!),
+					createdAt: poll.createdAt,
+				}));
+
+				if (callback) callback({ success: true, polls });
+			} catch (error) {
+				loggers.socketHandler.warn(
+					'get_existing_polls failed: %s',
+					(error as Error).message,
+				);
+				if (callback)
+					callback({ success: false, error: 'Internal Server Error' });
 			}
 		});
 	};

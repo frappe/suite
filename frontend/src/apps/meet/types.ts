@@ -75,8 +75,10 @@ export interface PollOption {
 export interface PollPayloadFE {
     pollId: string;
     createdBy: string;
+    createdByName?: string;
     question: string;
     options: PollOption[];
     isActive: boolean;
     hasVoted?: boolean;
+    createdAt?: string;
 }

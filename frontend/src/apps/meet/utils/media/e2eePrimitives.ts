@@ -56,6 +56,8 @@ export const INFO_ENVELOPE_CONTEXT = (
 
 export const INFO_CHAT = "meet-e2ee|chat";
 
+export const INFO_POLL = "meet-e2ee|poll";
+
 export function encodeInfo(s: string): Uint8Array<ArrayBuffer> {
 	const src = new TextEncoder().encode(s);
 	const out = new Uint8Array(src.length);
