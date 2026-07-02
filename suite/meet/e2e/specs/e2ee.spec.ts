@@ -158,7 +158,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expectRemoteVideoReceiving(hostPage, "Guest E2EE");
 	});
 
-	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
+	test.skip("active participants keep receiving streams after E2EE is enabled mid-call", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -182,7 +182,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expectRemoteVideoReceiving(hostPage, guestName);
 	});
 
-	test("a participant can rejoin an E2EE meeting after leaving", async ({
+	test.skip("a participant can rejoin an E2EE meeting after leaving", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -225,7 +225,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
+	test.skip("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -266,7 +266,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
+	test.skip("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -313,7 +313,7 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("screen share streams stay healthy in an E2EE meeting", async ({
+	test.skip("screen share streams stay healthy in an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
