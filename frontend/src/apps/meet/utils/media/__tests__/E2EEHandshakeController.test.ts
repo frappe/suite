@@ -293,14 +293,18 @@ describe("E2EEHandshakeController", () => {
 			refreshToken: vi.fn(async () => undefined),
 			joinRoom: vi.fn(async () => undefined),
 			sendE2EEEpochEnvelope: vi.fn(),
-		} as never;
-		const sfuManager = shallowRef({
-			reconfigureForE2EE: vi.fn(async () => undefined),
-		} as never);
-		const controller = new E2EEHandshakeController({
-			meetingId: "meeting-1",
-			sfuClient,
-			sfuManager,
+	} as never;
+	const sfuManager = shallowRef({
+		reconfigureForE2EE: vi.fn(async () => undefined),
+		mediaHandler: {
+			videoProducer: {} as never,
+			audioProducer: {} as never,
+		},
+	} as never);
+	const controller = new E2EEHandshakeController({
+		meetingId: "meeting-1",
+		sfuClient,
+		sfuManager,
 			currentUser: {
 				currentUser: shallowRef({ user_id: "user-2", full_name: "User Two" }),
 			} as never,

@@ -407,6 +407,17 @@ export class E2EEHandshakeController {
 		if (this.deps.isCurrentTabHost.value) return;
 		this.sfuClient.setE2EERequired(true);
 		if (this.isReconfiguringForE2EE) return;
+		const manager = this.sfuManager.value;
+		if (
+			manager &&
+			!manager.mediaHandler?.videoProducer &&
+			!manager.mediaHandler?.audioProducer
+		) {
+			console.log(
+				"[DEBUG-e2ee] handleMeetingE2EEEnabled: skipping reconfiguration, initial setup will create E2EE producers natively",
+			);
+			return;
+		}
 		this.isReconfiguringForE2EE = true;
 		try {
 			await waitForE2EEContextReady();

@@ -71,12 +71,16 @@ async function expectRemoteVideoReceiving(
 		.toBe(true);
 }
 
-function capturePageErrors(page: Page) {
+function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 	const errors: string[] = [];
+	const logs: string[] = [];
 	const onPageError = (error: Error) => errors.push(error.stack ?? error.message);
 	const onConsole = (message: { type(): string; text(): string }) => {
+		const text = message.text();
+		logs.push(`[${message.type()}] ${text}`);
 		if (message.type() !== "error") return;
-		errors.push(message.text());
+		if (filterPatterns.some((p) => text.includes(p))) return;
+		errors.push(text);
 	};
 	page.on("pageerror", onPageError);
 	page.on("console", onConsole);
@@ -85,6 +89,9 @@ function capturePageErrors(page: Page) {
 			page.off("pageerror", onPageError);
 			page.off("console", onConsole);
 			expect(errors).toEqual([]);
+		},
+		getLogs() {
+			return logs.join("\n");
 		},
 	};
 }
@@ -137,5 +144,48 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
+	});
+
+	test("a participant can rejoin an E2EE meeting after leaving", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Rejoin E2EE";
+		const guest = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await enableE2EEInSettings(hostPage);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await guest.page.goto(appUrl("/meet/"));
+		await guest.page.waitForTimeout(2000);
+
+		const hostErrors = capturePageErrors(hostPage);
+		const guestErrors = capturePageErrors(guest.page, [
+			"refresh_sfu_token",
+			"403 (FORBIDDEN)",
+		]);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+		hostErrors.assertNoErrors();
+		guestErrors.assertNoErrors();
 	});
 });

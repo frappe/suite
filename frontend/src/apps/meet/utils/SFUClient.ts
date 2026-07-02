@@ -373,7 +373,7 @@ export class SFUClient {
 
 			return response.auth_token;
 		} catch (error) {
-			console.error("Token refresh failed:", error);
+			console.warn("Token refresh failed:", error);
 			throw error;
 		} finally {
 			this.isRefreshingToken = false;

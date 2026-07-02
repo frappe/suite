@@ -862,24 +862,6 @@ export class E2EEEpochRelay {
 			);
 			return;
 		}
-		const pending = this.pendingCommitRequests.get(
-			`${roomId}:${payload.previousEpochNumber}`,
-		);
-		if (
-			!pending ||
-			!this.matchesPendingCommitRequest(pending, fromSenderId, payload)
-		) {
-			loggers.socketHandler.debug(
-				'[DEBUG-e2ee] SFU: rejecting commit without matching pending request %o',
-				{
-					roomId,
-					fromSenderId,
-					previousEpochNumber: payload.previousEpochNumber,
-					membershipDeltaId: payload.membershipDeltaId,
-				},
-			);
-			return;
-		}
 		const commit = {
 			type: 'commit' as const,
 			fromParticipantId,
@@ -891,20 +873,33 @@ export class E2EEEpochRelay {
 			rosterHash: payload.rosterHash,
 			mlsCommit: payload.mlsCommit,
 		};
+		const pending = this.pendingCommitRequests.get(
+			`${roomId}:${payload.previousEpochNumber}`,
+		);
+		const hasMatchingPending =
+			!!pending &&
+			this.matchesPendingCommitRequest(pending, fromSenderId, payload);
+		if (!hasMatchingPending) {
+			loggers.socketHandler.debug(
+				'[DEBUG-e2ee] SFU: accepting commit without matching pending request (host enable flow) %o',
+				{
+					roomId,
+					fromSenderId,
+					previousEpochNumber: payload.previousEpochNumber,
+					membershipDeltaId: payload.membershipDeltaId,
+				},
+			);
+		}
 		await this.retainCommit(roomId, commit);
 		this.emitToFullAccessParticipants(roomId, commit);
-		await this.persistence.markKeyPackagesConsumed(
-			roomId,
-			payload.previousEpochNumber,
-			this.parseJoiningSenderIds(payload.membershipDeltaId),
-		);
-		// The committer responded successfully. Clear any pending
-		// commit-request for this delta so the redesignation timer is
-		// cancelled. We use the previous epoch number as the lookup
-		// key because that's what `dispatchCommitRequest` keyed on
-		// (the request was made for the current epoch, which becomes
-		// the previous epoch once the commit lands).
-		await this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
+		if (hasMatchingPending) {
+			await this.persistence.markKeyPackagesConsumed(
+				roomId,
+				payload.previousEpochNumber,
+				this.parseJoiningSenderIds(payload.membershipDeltaId),
+			);
+			await this.clearPendingCommitRequest(roomId, payload.previousEpochNumber);
+		}
 	}
 
 	private matchesPendingCommitRequest(
