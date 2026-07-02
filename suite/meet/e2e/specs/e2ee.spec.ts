@@ -18,6 +18,20 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 	});
 }
 
+async function openMeetingInformation(page: Page): Promise<void> {
+	await page.getByTestId("toolbar-more").click();
+	await page.getByRole("menuitem", { name: "Meeting information" }).click();
+}
+
+async function readFingerprint(page: Page): Promise<string> {
+	await openMeetingInformation(page);
+	const section = page
+		.locator("label", { hasText: "Encryption fingerprint" })
+		.locator("xpath=..");
+	await expect(section).toBeVisible({ timeout: 30_000 });
+	return (await section.locator("pre").innerText()).trim();
+}
+
 async function expectRemoteVideoReceiving(
 	page: Page,
 	participantName: string,
@@ -231,5 +245,58 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expectRemoteVideoReceiving(hostPage, guestName);
 		hostErrors.assertNoErrors();
 		guestErrors.assertNoErrors();
+	});
+
+	test("multiple participants can join an active E2EE meeting and see the same fingerprint", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestAName = "Guest Fingerprint A";
+		const guestBName = "Guest Fingerprint B";
+		const guestCName = "Guest Fingerprint C";
+		const guestA = await createParticipant();
+		const guestB = await createParticipant();
+		const guestC = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guestA.joinAsGuest(meetingId, guestAName);
+
+		await expectRemoteVideoReceiving(guestA.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestAName);
+
+		await enableE2EEInSettings(hostPage);
+
+		await expectRemoteVideoReceiving(guestA.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestAName);
+
+		await guestB.joinAsGuest(meetingId, guestBName);
+		await guestC.joinAsGuest(meetingId, guestCName);
+
+		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(4, {
+			timeout: 45_000,
+		});
+		await expect(guestA.page.locator("[data-participant-id]")).toHaveCount(4, {
+			timeout: 45_000,
+		});
+		await expect(guestB.page.locator("[data-participant-id]")).toHaveCount(4, {
+			timeout: 45_000,
+		});
+		await expect(guestC.page.locator("[data-participant-id]")).toHaveCount(4, {
+			timeout: 45_000,
+		});
+
+		await expectRemoteVideoReceiving(hostPage, guestAName);
+		await expectRemoteVideoReceiving(hostPage, guestBName);
+		await expectRemoteVideoReceiving(hostPage, guestCName);
+		await expectRemoteVideoReceiving(guestA.page, "Administrator");
+		await expectRemoteVideoReceiving(guestB.page, "Administrator");
+		await expectRemoteVideoReceiving(guestC.page, "Administrator");
+
+		const guestAFingerprint = await readFingerprint(guestA.page);
+		expect(await readFingerprint(guestB.page)).toBe(guestAFingerprint);
+		expect(await readFingerprint(guestC.page)).toBe(guestAFingerprint);
 	});
 });
