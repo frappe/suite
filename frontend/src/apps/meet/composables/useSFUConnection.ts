@@ -132,15 +132,17 @@ export function useSFUConnection(deps: {
 			return;
 		}
 
+		const isRejoin = !!participantStore.participants[participantId];
+
 		participantStore.addParticipant(participant);
+
+		if (isRejoin || sfuManager.value?.initialSyncInProgress) {
+			return;
+		}
 
 		audioNotificationManager.playJoinNotification(
 			participant.participantId as string,
 		);
-
-		if (sfuManager.value?.initialSyncInProgress) {
-			return;
-		}
 
 		const LucideUserIcon = defineAsyncComponent(
 			() => import("~icons/lucide/user"),
