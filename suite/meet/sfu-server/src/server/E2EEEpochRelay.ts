@@ -382,6 +382,11 @@ export class E2EEEpochRelay {
 				'e2ee:epoch relay failed: %s',
 				(error as Error).message,
 			);
+			socket.emit('sfu_error', {
+				error: 'Failed to process encrypted epoch message',
+				code: 'E2EE_RELAY_ERROR',
+				timestamp: new Date().toISOString(),
+			});
 		}
 	}
 
@@ -771,11 +776,17 @@ export class E2EEEpochRelay {
 			}
 			existing.timer = setTimeout(() => {
 				this.commitRequestBatches.delete(key);
-				void this.requestCommitFromHost(
+				this.requestCommitFromHost(
 					roomId,
 					existing.joiningSenderIds,
 					epochNumber,
-				);
+				).catch((error: unknown) => {
+					loggers.socketHandler.warn(
+						'Batch commit request failed for room %s: %s',
+						roomId,
+						(error as Error).message,
+					);
+				});
 			}, COMMIT_REQUEST_BATCH_MS);
 			loggers.socketHandler.debug(
 				'[DEBUG-e2ee] SFU: batching commit-request %o',
@@ -792,11 +803,17 @@ export class E2EEEpochRelay {
 			epochNumber,
 			timer: setTimeout(() => {
 				this.commitRequestBatches.delete(key);
-				void this.requestCommitFromHost(
+				this.requestCommitFromHost(
 					roomId,
 					batch.joiningSenderIds,
 					epochNumber,
-				);
+				).catch((error: unknown) => {
+					loggers.socketHandler.warn(
+						'Batch commit request failed for room %s: %s',
+						roomId,
+						(error as Error).message,
+					);
+				});
 			}, COMMIT_REQUEST_BATCH_MS),
 		};
 		this.commitRequestBatches.set(key, batch);
@@ -1346,7 +1363,15 @@ export class E2EEEpochRelay {
 					isHost: picked.isHost,
 				},
 			);
-			await this.roster?.remove(roomId, picked.senderId);
+			try {
+				await this.roster?.remove(roomId, picked.senderId);
+			} catch (error) {
+				loggers.socketHandler.warn(
+					'Failed to remove unreachable roster entry for senderId %d: %s',
+					picked.senderId,
+					(error as Error).message,
+				);
+			}
 			excluded.add(picked.senderId);
 		}
 	}
@@ -1421,7 +1446,12 @@ export class E2EEEpochRelay {
 	}
 
 	private isHash(value: unknown): value is string {
-		return typeof value === 'string' && value.length > 0 && value.length <= 256 && HASH_PATTERN.test(value);
+		return (
+			typeof value === 'string' &&
+			value.length > 0 &&
+			value.length <= 256 &&
+			HASH_PATTERN.test(value)
+		);
 	}
 
 	private isOpaqueMlsBytes(value: unknown): value is string {

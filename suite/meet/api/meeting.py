@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import base64
+import binascii
 import secrets
 import time
 from typing import TYPE_CHECKING
@@ -620,7 +621,7 @@ def register_e2ee_device(
 
 	try:
 		raw = base64.b64decode(ed25519_public_key, validate=True)
-	except Exception:
+	except (binascii.Error, TypeError):
 		frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
 	if len(raw) != 32:
 		frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
