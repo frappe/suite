@@ -51,5 +51,6 @@ suite.mail.patches.configure_inbound_outbound_log
 suite.mail.patches.configure_exchange_log
 suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.destroy_data_store
+suite.mail.patches.backfill_screened_email_address_account
 # --- calendar ---
 # (no patches)
