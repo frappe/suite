@@ -158,11 +158,12 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, "Guest E2EE");
 	});
 
-	test.skip("active participants keep receiving streams after E2EE is enabled mid-call", async ({
+	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Convert E2EE";
 		const guest = await createParticipant();
@@ -182,11 +183,12 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, guestName);
 	});
 
-	test.skip("a participant can rejoin an E2EE meeting after leaving", async ({
+	test("a participant can rejoin an E2EE meeting after leaving", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Rejoin E2EE";
 		const guest = await createParticipant();
@@ -225,11 +227,12 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test.skip("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
+	test("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Reconnect E2EE";
 		const guest = await createParticipant();
@@ -266,11 +269,12 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test.skip("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
+	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Host Rejoin E2EE";
 		const guest = await createParticipant();
@@ -313,11 +317,12 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test.skip("screen share streams stay healthy in an E2EE meeting", async ({
+	test("screen share streams stay healthy in an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Screen E2EE";
 		const guest = await createParticipant();
@@ -347,6 +352,7 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestAName = "Guest Fingerprint A";
 		const guestBName = "Guest Fingerprint B";
