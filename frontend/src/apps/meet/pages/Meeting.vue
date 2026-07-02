@@ -113,7 +113,8 @@
 								"
 								:isHost="isCurrentUserHost"
 								:isCohost="isCurrentUserCohost"
-                                :hostOnlyChat="chatStore.hostOnlyChat"
+								:isGuest="isGuestSession"
+								:hostOnlyChat="chatStore.hostOnlyChat"
 								@close="toggleChat"
 								@send="chat.onSendChat"
 							/>
@@ -769,7 +770,7 @@ onMounted(async () => {
 	chat.setupChatEvents(chatNotificationQueue.value);
 	reactions.setupReactionEvents();
 	raiseHand.setupRaiseHandEvents();
-	poll.setupPollEvents();
+	poll.setupPollEvents(chatNotificationQueue.value);
 
 	// Setup notification context watchers
 

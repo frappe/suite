@@ -18,12 +18,14 @@
 			<div class="p-4">
 				<div class="flex items-start gap-3">
 					<div class="flex-shrink-0 mt-0.5">
-						<lucide-message-square-dot class="w-5 h-5 text-blue-400" />
+						<lucide-chart-column v-if="notification.type === 'poll'" class="w-5 h-5 text-blue-400" />
+						<lucide-message-square-dot v-else class="w-5 h-5 text-blue-400" />
 					</div>
 
 					<div class="flex-1 min-w-0">
-						<p class="text-sm-medium text-white mb-1">
-							{{ notification.fromName || notification.fromUser }}
+						<p class="text-sm-medium text-white mb-1 flex items-center gap-2">
+							<span class="truncate">{{ notification.fromName || notification.fromUser }}</span>
+							<span v-if="notification.type === 'poll'" class="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-200">Poll</span>
 						</p>
 						<p class="text-sm text-gray-300 break-words line-clamp-2">
 							{{ notification.message }}
@@ -43,6 +45,7 @@ interface Notification {
 	fromUser: string;
 	fromName?: string;
 	timestamp?: string;
+	type?: "chat" | "poll";
 }
 
 const props = defineProps<{

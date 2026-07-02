@@ -28,6 +28,7 @@ interface NotificationItem {
 	fromUser: string;
 	fromName: string;
 	timestamp: string;
+	type?: "chat" | "poll";
 	originalData: Record<string, unknown>;
 }
 
@@ -56,6 +57,7 @@ const addNotification = (messageData) => {
 		fromUser: messageData.fromUser || "unknown",
 		fromName: messageData.fromName || messageData.fromUser || "Unknown",
 		timestamp: messageData.timestamp || new Date().toISOString(),
+		type: messageData.type,
 		originalData: messageData,
 	};
 

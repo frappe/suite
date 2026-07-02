@@ -25,25 +25,27 @@
                             :placeholder="`Option ${index + 1}`"
                             class="flex-1"
                         />
-                        <Button 
+                        <Button
                             v-if="options.length > 2"
-                            variant="ghost" 
-                            icon="trash-2" 
+                            variant="ghost"
                             @click="removeOption(index)"
-                            class="text-red-500 hover:text-red-700"
-                        />
+                            class="text-ink-gray-4 hover:text-ink-gray-7 shrink-0"
+                        >
+                            <lucide-x class="w-4 h-4" />
+                        </Button>
                     </div>
                 </div>
 
-                <Button 
-                    v-if="options.length <10"
-                    variant="subtle" 
-                    class="w-full mt-2" 
-                    @click="addOption"
-                    icon-left="plus"
-                >
-                    Add Option
-                </Button>
+                <div class="flex justify-start mt-2">
+                    <Button
+                        v-if="options.length < 10"
+                        variant="subtle"
+                        @click="addOption"
+                        icon-left="plus"
+                    >
+                        Add Option
+                    </Button>
+                </div>
             </div>
         </template>
 
