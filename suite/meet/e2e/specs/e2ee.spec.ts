@@ -132,7 +132,7 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 	};
 }
 
-test.describe("E2EE (v2 ECDH handshake)", () => {
+test.describe("E2EE", () => {
 	test("participants can join an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
