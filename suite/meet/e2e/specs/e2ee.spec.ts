@@ -158,12 +158,14 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, "Guest E2EE");
 	});
 
+	test.describe("heavy coverage", () => {
+		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
+
 	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Convert E2EE";
 		const guest = await createParticipant();
@@ -188,7 +190,6 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Rejoin E2EE";
 		const guest = await createParticipant();
@@ -232,7 +233,6 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Reconnect E2EE";
 		const guest = await createParticipant();
@@ -274,7 +274,6 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Host Rejoin E2EE";
 		const guest = await createParticipant();
@@ -322,7 +321,6 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestName = "Guest Screen E2EE";
 		const guest = await createParticipant();
@@ -352,7 +350,6 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		const meetingId = await createMeeting();
 		const guestAName = "Guest Fingerprint A";
 		const guestBName = "Guest Fingerprint B";
@@ -399,5 +396,6 @@ test.describe("E2EE", () => {
 		const guestAFingerprint = await readFingerprint(guestA.page);
 		expect(await readFingerprint(guestB.page)).toBe(guestAFingerprint);
 		expect(await readFingerprint(guestC.page)).toBe(guestAFingerprint);
+	});
 	});
 });
