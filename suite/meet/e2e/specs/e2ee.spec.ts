@@ -71,6 +71,12 @@ async function expectRemoteVideoReceiving(
 		.toBe(true);
 }
 
+async function forceSFUReconnect(page: Page): Promise<void> {
+	await page.context().setOffline(true);
+	await page.waitForTimeout(1500);
+	await page.context().setOffline(false);
+}
+
 function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 	const errors: string[] = [];
 	const logs: string[] = [];
@@ -90,14 +96,11 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 			page.off("console", onConsole);
 			expect(errors).toEqual([]);
 		},
-		getLogs() {
-			return logs.join("\n");
-		},
 	};
 }
 
 test.describe("E2EE (v2 ECDH handshake)", () => {
-	test("participants can join an E2EE meeting without a passphrase", async ({
+	test("participants can join an E2EE meeting", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -176,6 +179,47 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 			"403 (FORBIDDEN)",
 		]);
 		await guest.joinAsGuest(meetingId, guestName);
+
+		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 30_000,
+		});
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+		hostErrors.assertNoErrors();
+		guestErrors.assertNoErrors();
+	});
+
+	test("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Reconnect E2EE";
+		const guest = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await enableE2EEInSettings(hostPage);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		const guestErrors = capturePageErrors(guest.page, [
+			"refresh_sfu_token",
+			"403 (FORBIDDEN)",
+			"request_consumer_keyframe",
+		]);
+		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
+		await forceSFUReconnect(guest.page);
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 30_000,

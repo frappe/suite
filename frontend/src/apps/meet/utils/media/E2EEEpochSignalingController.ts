@@ -598,7 +598,6 @@ export class E2EEEpochSignalingController {
 				typeof identity.signingPubKey !== "string"
 			)
 				continue;
-			if (E2EEMeeting.instance.hasSenderSigningPub(identity.senderId)) continue;
 			const rawKey = bytesFromBase64(identity.signingPubKey);
 			const cryptoKey = await crypto.subtle.importKey(
 				"raw",
