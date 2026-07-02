@@ -1421,7 +1421,7 @@ export class E2EEEpochRelay {
 	}
 
 	private isHash(value: unknown): value is string {
-		return typeof value === 'string' && HASH_PATTERN.test(value);
+		return typeof value === 'string' && value.length > 0 && value.length <= 256 && HASH_PATTERN.test(value);
 	}
 
 	private isOpaqueMlsBytes(value: unknown): value is string {
