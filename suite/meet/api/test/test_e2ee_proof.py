@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import base64
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -78,6 +79,31 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 			"ed25519_public_key",
 		)
 		self.assertEqual(stored, second_key)
+
+	def test_register_e2ee_device_recovers_from_concurrent_insert_race(self):
+		frappe.set_user(self.host_email)
+		public_key = _b64(b"\x33" * 32)
+		fake_doc = MagicMock()
+		fake_doc.insert.side_effect = frappe.DuplicateEntryError
+
+		with (
+			patch(
+				"suite.meet.api.meeting.frappe.db.get_value",
+				side_effect=[None, "existing-row"],
+			),
+			patch("suite.meet.api.meeting.frappe.new_doc", return_value=fake_doc),
+			patch("suite.meet.api.meeting.frappe.db.set_value") as set_value,
+		):
+			result = register_e2ee_device("race-device", public_key)
+
+		self.assertEqual(result, {"device_id": "race-device", "ed25519_public_key": public_key})
+		set_value.assert_called_once_with(
+			"E2EE Device Key",
+			"existing-row",
+			"ed25519_public_key",
+			public_key,
+			update_modified=False,
+		)
 
 	def test_enable_e2ee_enables_epoch_room(self):
 		meeting = self._create_meeting_as_host()

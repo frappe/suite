@@ -625,24 +625,34 @@ def register_e2ee_device(
 	if len(raw) != 32:
 		frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
 
+	user = frappe.session.user
 	# Upsert the (user, device_id) pair into the E2EE Device Key DocType.
-	existing_name = frappe.db.get_value(
-		"E2EE Device Key", {"user": frappe.session.user, "device_id": device_id}, "name"
-	)
-	if existing_name:
-		frappe.db.set_value(
-			"E2EE Device Key",
-			existing_name,
-			"ed25519_public_key",
-			ed25519_public_key,
-			update_modified=False,
-		)
-	else:
+	if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
 		doc = frappe.new_doc("E2EE Device Key")
-		doc.user = frappe.session.user
+		doc.user = user
 		doc.device_id = device_id
 		doc.ed25519_public_key = ed25519_public_key
 		# Users may register only their own public E2EE device key through this validated API.
-		doc.insert(ignore_permissions=True)
+		try:
+			doc.insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			# Lost a concurrent insert race after the initial lookup. The DB unique
+			# constraint guarantees there is now exactly one row to update.
+			if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
+				raise
 
 	return {"device_id": device_id, "ed25519_public_key": ed25519_public_key}
+
+
+def _update_e2ee_device_key(user: str, device_id: str, ed25519_public_key: str) -> bool:
+	existing_name = frappe.db.get_value("E2EE Device Key", {"user": user, "device_id": device_id}, "name")
+	if not existing_name:
+		return False
+	frappe.db.set_value(
+		"E2EE Device Key",
+		existing_name,
+		"ed25519_public_key",
+		ed25519_public_key,
+		update_modified=False,
+	)
+	return True
