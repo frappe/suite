@@ -277,7 +277,7 @@
   {
    "group": "Mail",
    "link_doctype": "Mail Sync History",
-   "link_fieldname": "account_id"
+   "link_fieldname": "account"
   },
   {
    "group": "Calendar",
@@ -330,7 +330,7 @@
    "link_fieldname": "account"
   }
  ],
- "modified": "2026-07-02 11:40:45.047633",
+ "modified": "2026-07-02 17:31:11.002220",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "JMAP Account",

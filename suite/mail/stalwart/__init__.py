@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import random_string
 from frappe.utils.caching import redis_cache
 
+from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart.account import (
 	Account,
 	AccountService,
@@ -17,9 +18,8 @@ from suite.mail.stalwart.account import (
 from suite.mail.stalwart.app_password import AppPassword, AppPasswordService
 from suite.mail.stalwart.domain import DkimSignatureService, Domain, DomainService
 from suite.mail.stalwart.role import RoleService
-from suite.mail.utils import get_config, is_stalwart_configured
+from suite.mail.utils import get_config
 from suite.mail.utils.dt import utcnow
-from suite.mail.utils.user import get_user_personal_account
 
 
 def _resolve_alias(alias: str) -> tuple[str, str]:
@@ -232,12 +232,12 @@ def update_password(user: str | None = None, new_password: str | None = None) ->
 	if not new_password:
 		frappe.throw(_("New password is required to update password on Stalwart server."))
 
-	account = get_user_personal_account(user, raise_exception=False)
+	account = get_user_personal_jmap_account(user, raise_exception=False)
 	AccountService().update_password(account, new_password)
 
 
 def delete_account(user: str) -> None:
 	"""Deletes the personal account of the specified user from the Stalwart server."""
 
-	account = get_user_personal_account(user, raise_exception=False)
+	account = get_user_personal_jmap_account(user, raise_exception=False)
 	AccountService().delete([account])

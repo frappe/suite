@@ -445,7 +445,7 @@ def create_mail(
 		]
 
 	doc = MailQueue._create(
-		user=get_user_for_jmap_account(account),
+		user=get_user_for_jmap_account(account, raise_exception=True),
 		account=account,
 		from_email=from_email,
 		from_name=from_name,

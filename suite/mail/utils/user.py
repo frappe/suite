@@ -115,14 +115,6 @@ def get_account_emails(account: str) -> list[str]:
 	return emails
 
 
-def get_user_personal_account(user: str, raise_exception: bool = False) -> str | None:
-	"""Returns the personal account of the user."""
-
-	from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
-
-	return get_user_personal_jmap_account(user, raise_exception=raise_exception)
-
-
 def get_user_email_address(user: str) -> str | None:
 	"""Returns the primary email address of the user."""
 

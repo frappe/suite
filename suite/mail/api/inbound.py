@@ -9,12 +9,12 @@ from frappe.utils import cint, convert_utc_to_system_timezone, create_batch, now
 from suite.mail.api.auth import validate_user
 from suite.mail.doctype.mail_message.mail_message import fetch_blobs, fetch_messages
 from suite.mail.doctype.mail_sync_history.mail_sync_history import get_mail_sync_history
+from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.utils import get_config
 from suite.mail.utils.dt import convert_to_utc
 from suite.mail.utils.logger import get_inbound_logger
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
-from suite.mail.utils.user import get_user_personal_account
 
 if TYPE_CHECKING:
 	from suite.mail.doctype.mail_sync_history.mail_sync_history import MailSyncHistory
@@ -36,7 +36,7 @@ def fetch_blob(blob_id: str, as_bytes: bool = False) -> str | bytes:
 	validate_user()
 
 	try:
-		account = get_user_personal_account(frappe.session.user, raise_exception=True)
+		account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
 
 		from suite.mail.doctype.mail_message.mail_message import fetch_blob as _fetch_blob
 
@@ -74,7 +74,7 @@ def pull(
 		source = get_source()
 		mailbox = mailbox or "inbox"
 		last_received_at = convert_to_system_timezone(last_received_at)
-		account = get_user_personal_account(frappe.session.user, raise_exception=True)
+		account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
 		sync_history = get_mail_sync_history(account, source)
 		result = get_mails(account, mailbox, limit, last_received_at or sync_history.last_received_at)
 		update_mail_sync_history(sync_history, result["last_received_at"], result["last_received_mail"])
@@ -113,7 +113,7 @@ def pull_raw(
 		source = get_source()
 		mailbox = mailbox or "inbox"
 		last_received_at = convert_to_system_timezone(last_received_at)
-		account = get_user_personal_account(frappe.session.user, raise_exception=True)
+		account = get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
 		sync_history = get_mail_sync_history(account, source)
 		result = get_raw_mails(account, mailbox, limit, last_received_at or sync_history.last_received_at)
 		update_mail_sync_history(sync_history, result["last_received_at"], result["last_received_mail"])

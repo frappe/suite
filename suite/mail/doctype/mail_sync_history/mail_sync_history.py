@@ -1,6 +1,8 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from uuid import uuid7
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -10,8 +12,25 @@ from suite.mail.utils.user import is_system_manager
 
 
 class MailSyncHistory(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+
+		account: DF.Link
+		last_received_at: DF.Datetime | None
+		last_received_mail: DF.Data | None
+		source: DF.Data
+	# end: auto-generated types
+
 	"""Per-source inbound-pull watermark, shared per JMAP account ID — every user with
 	access to the account shares the same last-received state for a given source."""
+
+	def autoname(self) -> None:
+		self.name = str(uuid7())
 
 	def before_insert(self) -> None:
 		self.validate_duplicate()

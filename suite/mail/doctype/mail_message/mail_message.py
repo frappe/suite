@@ -527,7 +527,7 @@ class MailMessage(Document):
 				)
 
 		return MailQueue._create(
-			user=get_user_for_jmap_account(self.account, allow_system_manager=False, raise_exception=True),
+			user=get_user_for_jmap_account(self.account, raise_exception=True),
 			account=self.account,
 			subject=f"Fwd: {self.subject}" if not self.subject.lower().startswith("fwd:") else self.subject,
 			html_body=forward_html_body,
@@ -605,7 +605,7 @@ class MailMessage(Document):
 		]
 
 		return MailQueue._create(
-			user=get_user_for_jmap_account(self.account, allow_system_manager=False, raise_exception=True),
+			user=get_user_for_jmap_account(self.account, raise_exception=True),
 			account=self.account,
 			from_name=self.from_name,
 			from_email=self.from_email,
@@ -632,7 +632,7 @@ class MailMessage(Document):
 			subject = f"Re: {self.subject}" if not self.subject.lower().startswith("re:") else self.subject
 
 		return MailQueue._create(
-			user=get_user_for_jmap_account(self.account, allow_system_manager=False, raise_exception=True),
+			user=get_user_for_jmap_account(self.account, raise_exception=True),
 			account=self.account,
 			subject=subject,
 			recipients=recipients,
