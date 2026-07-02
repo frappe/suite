@@ -64,15 +64,6 @@ def _is_valid_e2ee_device_id(device_id: str | None) -> bool:
 	return 1 <= len(device_id) <= 64 and all(c.isalnum() or c in "-_." for c in device_id)
 
 
-def _get_e2ee_metadata(meeting_id: str) -> dict:
-	return {"e2ee_required": _is_e2ee_enabled(meeting_id)}
-
-
-def _add_e2ee_metadata(payload: dict, meeting_id: str) -> dict:
-	payload.update(_get_e2ee_metadata(meeting_id))
-	return payload
-
-
 def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 	"""Return (fullname, avatar, is_host, is_cohost) for a signed-in user."""
 	fullname, avatar = frappe.db.get_value("User", user, ["full_name", "user_image"]) or (
@@ -123,6 +114,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 	sfu_config = get_sfu_config()
 
 	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	auth_token = _generate_sfu_token(
 		user_id=user,
@@ -131,7 +123,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 		user_avatar=user_avatar,
 		is_host=is_host,
 		is_cohost=is_cohost,
-		**_get_e2ee_metadata(meeting_id),
+		e2ee_required=e2ee_required,
 	)
 
 	return {
@@ -143,7 +135,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 		"is_host": is_host,
 		"is_cohost": is_cohost,
 		"codec_strategy": _get_codec_strategy(),
-		"e2ee_required": _is_e2ee_enabled(meeting_id),
+		"e2ee_required": e2ee_required,
 		"user_data": {
 			"name": user_fullname,
 			"email": user,
@@ -284,6 +276,7 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 		frappe.throw(_("Not a meeting member"))
 
 	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	auth_token = _generate_sfu_token(
 		user_id=frappe.session.user,
@@ -292,14 +285,14 @@ def refresh_sfu_token(meeting_id: str) -> dict:
 		user_avatar=user_avatar,
 		is_host=is_host,
 		is_cohost=is_cohost,
-		**_get_e2ee_metadata(meeting_id),
+		e2ee_required=e2ee_required,
 	)
 
 	return {
 		"auth_token": auth_token,
 		"expires_in": 3600,
 		"codec_strategy": _get_codec_strategy(),
-		"e2ee_required": _is_e2ee_enabled(meeting_id),
+		"e2ee_required": e2ee_required,
 	}
 
 
@@ -389,6 +382,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		frappe.throw(_("You are banned from this meeting"))
 
 	sfu_config = get_sfu_config()
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	if meeting.meeting_type == "restricted":
 		if meeting.is_user_approved(guest_id):
@@ -399,7 +393,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				user_name=guest_name_clean,
 				is_host=False,
 				is_guest=True,
-				**_get_e2ee_metadata(meeting_id),
+				e2ee_required=e2ee_required,
 			)
 			return {
 				"status": "joined",
@@ -410,7 +404,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				"sfu_url": sfu_config["sfu_server_url"],
 				"sfu_port": sfu_config["sfu_server_port"],
 				"host_only_chat": bool(meeting.host_only_chat),
-				"e2ee_required": _is_e2ee_enabled(meeting_id),
+				"e2ee_required": e2ee_required,
 				"message": "Successfully joined meeting",
 			}
 		elif guest_id not in meeting.get_waiting_room():
@@ -433,7 +427,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		user_name=guest_name_clean,
 		is_host=False,
 		is_guest=True,
-		**_get_e2ee_metadata(meeting_id),
+		e2ee_required=e2ee_required,
 	)
 
 	meeting.add_guest_to_members(guest_id)
@@ -447,7 +441,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
 		"host_only_chat": bool(meeting.host_only_chat),
-		"e2ee_required": _is_e2ee_enabled(meeting_id),
+		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",
 	}
 
@@ -477,6 +471,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 	sfu_config = get_sfu_config()
 
 	guest_name = session_data.get("guest_name", f"Guest-{guest_id[:8]}")
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
 	auth_token = _generate_sfu_token(
 		user_id=guest_id,
@@ -485,7 +480,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 		user_name=guest_name,
 		is_host=False,
 		is_guest=True,
-		**_get_e2ee_metadata(meeting_id),
+		e2ee_required=e2ee_required,
 	)
 
 	return {
@@ -497,7 +492,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
 		"host_only_chat": bool(meeting.host_only_chat),
-		"e2ee_required": _is_e2ee_enabled(meeting_id),
+		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",
 	}
 
@@ -616,33 +611,7 @@ def convert_meeting_to_e2ee(
 ) -> dict:
 	"""Enable epoch-based E2EE for a meeting."""
 	meeting: SaeMeeting = frappe.get_doc("Sae Meeting", meeting_id)
-
-	if not meeting.is_host_or_cohost(frappe.session.user):
-		frappe.throw(_("Only hosts and co-hosts can convert meetings to E2EE"), frappe.PermissionError)
-
 	meeting.enable_e2ee()
-
-	users_notified = set()
-	for member in meeting.members:
-		user = member.user
-		if not user or user in users_notified:
-			continue
-		users_notified.add(user)
-		payload = {"meeting_id": meeting_id, "e2ee_enabled": True}
-		if user.startswith("guest_"):
-			frappe.publish_realtime(
-				"meeting:e2ee_enabled",
-				payload,
-				room=f"guest:{user}",
-				after_commit=True,
-			)
-		else:
-			frappe.publish_realtime(
-				"meeting:e2ee_enabled",
-				payload,
-				user=user,
-				after_commit=True,
-			)
 
 	return {
 		"e2ee_enabled": bool(getattr(meeting, "e2ee_enabled", False)),
