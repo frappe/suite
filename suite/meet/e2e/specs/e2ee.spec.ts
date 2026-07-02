@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
 
 async function openMeetingAccessSettings(page: Page): Promise<void> {
@@ -43,7 +43,10 @@ async function expectRemoteVideoReceiving(
 		hasText: participantName,
 	});
 	await expect(tile).toBeVisible({ timeout: 45_000 });
-	const video = tile.locator("video").first();
+	await expectVideoReceiving(tile.locator("video").first());
+}
+
+async function expectVideoReceiving(video: Locator): Promise<void> {
 	await expect(video).toBeVisible({ timeout: 45_000 });
 
 	await expect
@@ -86,6 +89,19 @@ async function expectRemoteVideoReceiving(
 			{ timeout: 45_000 },
 		)
 		.toBe(true);
+}
+
+async function expectScreenShareReceiving(page: Page): Promise<void> {
+	const tile = page.locator("[data-tile-id^='screenshare-']");
+	await expect(tile).toHaveCount(1, { timeout: 45_000 });
+	await expect(page.getByText("Administrator's screen")).toBeVisible();
+	await expectVideoReceiving(tile.locator("video").first());
+}
+
+async function clickScreenShare(page: Page): Promise<void> {
+	await page
+		.getByTestId("toolbar-screen-share")
+		.evaluate((button) => (button as HTMLButtonElement).click());
 }
 
 async function forceSFUReconnect(page: Page): Promise<void> {
@@ -293,6 +309,35 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
+		hostErrors.assertNoErrors();
+		guestErrors.assertNoErrors();
+	});
+
+	test("screen share streams stay healthy in an E2EE meeting", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Screen E2EE";
+		const guest = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await enableE2EEInSettings(hostPage);
+
+		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
+		const guestErrors = capturePageErrors(guest.page, ["request_consumer_keyframe"]);
+		await clickScreenShare(hostPage);
+
+		await expectScreenShareReceiving(guest.page);
+		await clickScreenShare(hostPage);
+		await expect(guest.page.locator("[data-tile-id^='screenshare-']")).toHaveCount(0);
 		hostErrors.assertNoErrors();
 		guestErrors.assertNoErrors();
 	});
