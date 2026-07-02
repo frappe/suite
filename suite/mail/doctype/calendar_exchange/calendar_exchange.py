@@ -373,7 +373,7 @@ class CalendarExchange(Document):
 			logger.debug("import-source-prepared", base_dir=base_dir)
 			self._log_output(_("Prepared the source files for import."))
 
-			service = get_calendar_event_service(self.user, self.account)
+			service = get_calendar_event_service(self.account)
 
 			if self.import_format == "ics":
 				events = self._load_ics_events(service, base_dir, logger)
@@ -427,7 +427,7 @@ class CalendarExchange(Document):
 
 		kwargs = {}
 		try:
-			service = get_calendar_event_service(self.user, self.account)
+			service = get_calendar_event_service(self.account)
 
 			limit = min(self.max_export, cint(self.export_limit or self.max_export))
 			data = service.query(self.export_filter_dict, limit=limit, sort=self.export_sort_clause)

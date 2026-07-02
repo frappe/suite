@@ -743,7 +743,7 @@ class MailExchange(Document):
 			logger.debug("import-source-prepared", base_dir=base_dir)
 			self._log_output(_("Prepared the source files for import."))
 
-			service = get_email_service(self.user, self.account)
+			service = get_email_service(self.account)
 
 			mailbox_map = {}
 			if self.import_format == "maildir-nested":
@@ -796,7 +796,7 @@ class MailExchange(Document):
 
 		kwargs = {}
 		try:
-			service = get_email_service(self.user, self.account)
+			service = get_email_service(self.account)
 			total = service.query(self.export_filter_dict, limit=1)["total"]
 			limit = min(total, cint(self.export_limit or total))
 			logger.info("export-query-resolved", total=total, limit=limit, max_export=self.max_export)

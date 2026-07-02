@@ -75,7 +75,7 @@ class JMAPAccount(Document):
 			return None
 
 		try:
-			return get_core_service(self._user, self.name)
+			return get_core_service(self.name)
 		except Exception:
 			frappe.msgprint(f"Error getting JMAP core service for account {self.name}")
 			return None

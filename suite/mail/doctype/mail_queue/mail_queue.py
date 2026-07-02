@@ -606,7 +606,7 @@ class MailQueue(Document):
 
 		if self.in_reply_to and not self.in_reply_to_id:
 			try:
-				service = get_email_service(self.user, self.account)
+				service = get_email_service(self.account)
 				result = service.query({"header": ["Message-ID", self.in_reply_to]})
 				if ids := result["ids"]:
 					self.in_reply_to_id = ids[0]
