@@ -16,6 +16,9 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 	await expect(page.getByText("Encryption fingerprint")).toBeVisible({
 		timeout: 30_000,
 	});
+	await page.keyboard.press("Escape");
+	await page.waitForTimeout(150);
+	await page.keyboard.press("Escape");
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
@@ -241,6 +244,53 @@ test.describe("E2EE (v2 ECDH handshake)", () => {
 		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 30_000,
 		});
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+		hostErrors.assertNoErrors();
+		guestErrors.assertNoErrors();
+	});
+
+	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Host Rejoin E2EE";
+		const guest = await createParticipant();
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+		await guest.joinAsGuest(meetingId, guestName);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await enableE2EEInSettings(hostPage);
+
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(hostPage, guestName);
+
+		await hostPage.goto(appUrl("/meet/"));
+
+		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(1, {
+			timeout: 30_000,
+		});
+		await expect(guest.page.getByTestId("meeting-toolbar")).toBeVisible();
+
+		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
+		const guestErrors = capturePageErrors(guest.page, ["request_consumer_keyframe"]);
+
+		await hostPage.goto(appUrl(`/meet/${meetingId}`));
+		await joinFromPreview(hostPage);
+
+		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 45_000,
+		});
+		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
+			timeout: 45_000,
+		});
+
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
 		hostErrors.assertNoErrors();
