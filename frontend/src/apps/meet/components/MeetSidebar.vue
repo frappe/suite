@@ -4,6 +4,7 @@ import { computed, h, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
+import { getAppSwitcherItems } from "@/apps/registry";
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 
@@ -24,31 +25,7 @@ const userResource = createResource({
 	auto: true,
 });
 
-const apps = createResource({
-	url: "frappe.apps.get_apps",
-	cache: "apps",
-	auto: true,
-	transform: (data: any[]) => {
-		const list = [
-			{
-				name: "frappe",
-				logo: "/assets/frappe/images/framework.png",
-				title: "Desk",
-				route: "/app",
-			},
-		];
-		for (const app of data) {
-			if (app.name === "meet") continue;
-			list.push({
-				name: app.name,
-				logo: app.logo,
-				title: app.title,
-				route: app.route,
-			});
-		}
-		return list;
-	},
-});
+const apps = { get data() { return getAppSwitcherItems("meet"); } };
 
 const userName = computed(
 	() => userResource.data?.full_name || userResource.data?.name || "User",
