@@ -1,19 +1,19 @@
 <template>
-    <Dialog v-model="isOpen" :options="{ title: 'Create a Poll' }">
+    <Dialog v-model="isOpen" title="Create a Poll">
         <template #default>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-ink-gray-8 mb-1">Question</label>
                     <FormControl
-                        type="text"
+                        type="textarea"
                         v-model="question"
                         placeholder="Ask your audience something..."
-                        autocomplete="off"
+                        required
+                        label="Question"
                     />
                 </div>
 
                 <div class="space-y-2">
-                    <label class="block text-sm font-medium text-ink-gray-8 mb-1">Options</label>
+                    <label class="block text-sm font-medium text-ink-gray-7 mb-1">Options</label>
                     <div 
                         v-for="(option, index) in options" 
                         :key="index" 

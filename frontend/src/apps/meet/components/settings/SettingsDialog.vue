@@ -1,9 +1,10 @@
 <template>
 	<Dialog
 		v-model="show"
-		:options="{ size: '5xl' }"
+		size="5xl"
+		bare
 	>
-		<template #body>
+		<template #default>
 	<div class="flex flex-col md:flex-row" :style="{ height: 'calc(100vh - 8rem)' }">
 			<div class="w-full" v-if="isMobile()">
 				<h3

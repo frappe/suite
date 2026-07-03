@@ -60,7 +60,7 @@
 			:title="'Join with meeting code'"
 			:dismissable="true"
 		>
-			<template #body-content>
+			<template #default>
 				<FormControl
 					v-model="meetingCode"
 					placeholder="abcd-efgh-ijkl"
