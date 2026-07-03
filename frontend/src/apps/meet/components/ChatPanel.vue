@@ -33,12 +33,30 @@
 				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7" data-testid="chat-messages">
 					<div class="flex flex-col gap-5">
 						<template v-for="item in chatItems" :key="item.key">
-							<div v-if="item.type === 'poll'" class="min-w-0">
-								<div class="mb-1 flex items-center gap-1 text-[11px] tracking-[0.11px]">
-									<span class="truncate text-ink-gray-7">{{ pollCreatorName(item.poll) }}</span>
-									<span class="shrink-0 text-ink-gray-5">· {{ time(item.timestamp) }}</span>
+							<div
+								v-if="item.type === 'poll'"
+								class="flex min-w-0 gap-2"
+								:class="item.poll.createdBy === userId ? 'justify-end' : 'justify-start'"
+							>
+								<Avatar
+									v-if="item.poll.createdBy !== userId"
+									size="lg"
+									:label="item.poll.createdByName || item.poll.createdBy"
+									class="mt-6 shrink-0"
+								/>
+								<div
+									class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
+									:class="item.poll.createdBy === userId ? 'items-end' : 'items-start'"
+								>
+									<div class="flex max-w-full items-center gap-1 text-[11px] tracking-[0.11px]">
+										<template v-if="item.poll.createdBy !== userId">
+											<span class="truncate text-ink-gray-7">{{ pollCreatorName(item.poll) }}</span>
+											<span class="shrink-0 text-ink-gray-5">·</span>
+										</template>
+										<span class="shrink-0 text-ink-gray-5">{{ time(item.timestamp) }}</span>
+									</div>
+									<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
 								</div>
-								<PollMessageCard :poll="item.poll" :is-guest="isGuest" />
 							</div>
 
 							<div
@@ -46,12 +64,12 @@
 							class="flex min-w-0 gap-2"
 							:class="item.group.isOwn ? 'justify-end' : 'justify-start'"
 						>
-							<div
+							<Avatar
 								v-if="!item.group.isOwn"
-								class="mt-6 flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-gray-3 text-xs text-ink-gray-7"
-							>
-								{{ getInitials(item.group.user_name) }}
-							</div>
+								size="lg"
+								:label="item.group.user_name"
+								class="mt-6 shrink-0"
+							/>
 
 							<div
 								class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
@@ -61,6 +79,7 @@
 									<span class="truncate text-ink-gray-7">{{ item.group.user_name }}</span>
 									<span class="shrink-0 text-ink-gray-5">· {{ time(item.group.timestamp) }}</span>
 								</div>
+								<span v-else class="text-[11px] tracking-[0.11px] text-ink-gray-5">{{ time(item.group.timestamp) }}</span>
 
 								<div class="flex flex-col gap-2.5" :class="item.group.isOwn ? 'items-end' : 'items-start'">
 									<div
@@ -101,24 +120,20 @@
 							data-testid="chat-input-wrapper"
 							@click="focusInput"
 						>
-							<TextEditor
-								ref="textEditor"
-								content=""
+							<Editor
+								ref="editorRef"
+								v-model="draft"
 								placeholder="Type a message"
-								class="chat-composer-editor min-w-0 flex-1"
-								editor-class="chat-composer-prose max-w-none text-sm text-ink-gray-8 tracking-[0.28px]"
-								@keydown.space.stop
-								@keyup.space.stop
-								@keydown.shift.enter.prevent.stop="insertLineBreak"
-								@keydown.meta.enter.prevent.stop="insertLineBreak"
-								@keydown.ctrl.enter.prevent.stop="insertLineBreak"
-								@keydown.enter.exact.capture="handleComposerEnter"
-								@change="handleEditorChange"
+								:extensions="editorExtensions"
 							>
-								<template #editor="{ editor }">
-									<EditorContent :editor="editor" data-testid="chat-input" />
+								<template #default="{ editor }">
+									<EditorContent
+										:editor="editor"
+										class="chat-composer-editor min-w-0 flex-1 text-sm text-ink-gray-8 tracking-[0.28px]"
+										data-testid="chat-input"
+									/>
 								</template>
-							</TextEditor>
+							</Editor>
 							<Button
 								type="submit"
 								variant="subtle"
@@ -147,9 +162,9 @@
 </template>
 
 <script setup lang="ts">
-import { EditorContent } from "@tiptap/vue-3";
-import type { Editor } from "@tiptap/core";
-import { Button, Dropdown, TextEditor } from "frappe-ui";
+import { Extension } from "@tiptap/core";
+import { Avatar, Button, Dropdown } from "frappe-ui";
+import { Editor, EditorContent, CommentKit } from "frappe-ui/editor";
 import {
 	computed,
 	inject,
@@ -160,7 +175,6 @@ import {
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
-import { getInitials } from "../utils/text";
 import { usePollStore } from "../composables/usePollStore";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
@@ -239,8 +253,33 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
-const textEditor = ref<InstanceType<typeof TextEditor> | null>(null);
+const editorRef = ref();
 const draft = ref("");
+
+const editorExtensions = computed(() => [
+	CommentKit.configure({
+		starterKit: { heading: false },
+		emoji: {},
+		mention: false,
+		tag: false,
+		image: false,
+		video: false,
+		table: false,
+		contentPaste: false,
+	}),
+	Extension.create({
+		name: "enterToSend",
+		addKeyboardShortcuts() {
+			return {
+				Enter: ({ editor }) => {
+					if (editor.view.dom.querySelector(".suggestion")) return false;
+					handleSend();
+					return true;
+				},
+			};
+		},
+	}),
+]);
 
 const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
@@ -327,48 +366,19 @@ function pollCreatorName(poll: PollPayloadFE) {
 	return poll.createdByName || poll.createdBy;
 }
 
-function handleEditorChange() {
-	draft.value = getEditorText();
-}
-
-function handleComposerEnter(event: KeyboardEvent) {
-	event.stopPropagation();
-	if (event.defaultPrevented) return;
-	if (isEmojiSuggestionActive()) return;
-	event.preventDefault();
-	handleSend();
-}
-
-function insertLineBreak() {
-	getEditor()?.commands.setHardBreak();
-}
-
 function handleSend() {
-	const text = getEditorText().trim();
+	const editor = editorRef.value?.editor;
+	if (!editor) return;
+	const text = editor.getText().trim();
 	if (!canSendMessages.value) return;
 	if (!text) return;
 	emit("send", text);
 	draft.value = "";
-	const editor = getEditor();
-	editor?.commands.clearContent();
-	nextTick(() => editor?.commands.focus());
+	nextTick(() => editor.commands.focus());
 }
 
 function focusInput() {
-	getEditor()?.commands.focus("end");
-}
-
-function getEditor(): Editor | null {
-	return textEditor.value?.editor || null;
-}
-
-function getEditorText() {
-	return getEditor()?.getText() || "";
-}
-
-function isEmojiSuggestionActive() {
-	const editor = getEditor();
-	return !!editor?.view.dom.querySelector(".suggestion");
+	editorRef.value?.editor?.commands.focus("end");
 }
 
 async function scrollToBottom() {
@@ -381,7 +391,7 @@ watch([chatItems], scrollToBottom, { deep: true });
 </script>
 
 <style scoped>
-.chat-composer-editor :deep(.ProseMirror) {
+:deep(.chat-composer-editor) {
 	min-height: 20px;
 	max-height: 48px;
 	overflow-y: auto;
@@ -389,15 +399,15 @@ watch([chatItems], scrollToBottom, { deep: true });
 	caret-color: var(--ink-gray-8);
 }
 
-.chat-composer-editor :deep(.ProseMirror p) {
+:deep(.chat-composer-editor p) {
 	margin: 0;
 }
 
-.chat-composer-editor :deep(.ProseMirror p.is-editor-empty::before) {
+:deep(.chat-composer-editor p.is-editor-empty::before) {
 	color: var(--ink-gray-5);
 }
 
-.chat-composer-editor :deep(.ProseMirror-focused) {
+:deep(.chat-composer-editor.ProseMirror-focused) {
 	outline: none;
 }
 </style>

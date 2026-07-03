@@ -3,7 +3,7 @@
         <template #default>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Question</label>
+                    <label class="block text-sm font-medium text-ink-gray-8 mb-1">Question</label>
                     <FormControl
                         type="text"
                         v-model="question"
@@ -13,7 +13,7 @@
                 </div>
 
                 <div class="space-y-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Options</label>
+                    <label class="block text-sm font-medium text-ink-gray-8 mb-1">Options</label>
                     <div 
                         v-for="(option, index) in options" 
                         :key="index" 
@@ -34,17 +34,16 @@
                             <lucide-x class="w-4 h-4" />
                         </Button>
                     </div>
-                </div>
-
-                <div class="flex justify-start mt-2">
-                    <Button
-                        v-if="options.length < 10"
-                        variant="subtle"
-                        @click="addOption"
-                        icon-left="plus"
-                    >
-                        Add Option
-                    </Button>
+                    <div class="flex justify-start">
+                        <Button
+                            v-if="options.length < 10"
+                            variant="subtle"
+                            @click="addOption"
+                            icon-left="plus"
+                        >
+                            Add Option
+                        </Button>
+                    </div>
                 </div>
 
                 <div class="rounded-md border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm flex gap-4">
