@@ -181,20 +181,6 @@ export {
 	initSenderChain,
 } from "./frameCodec";
 
-export async function featureDetectX25519(): Promise<boolean> {
-	if (typeof globalThis.crypto?.subtle === "undefined") {
-		return false;
-	}
-	try {
-		const subtle = globalThis.crypto.subtle;
-		const test = new Uint8Array(32);
-		await subtle.importKey("raw", test, "X25519", true, []);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 export class SenderChainState {
 	readonly senderId: number;
 	readonly mediaType: string;

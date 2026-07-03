@@ -113,13 +113,6 @@ describe("Crypto primitives (T1.1)", () => {
 			expect(reExported).toBe(b64);
 		});
 	});
-
-	describe("Browser support detection", () => {
-		it("featureDetectX25519 returns true on supported runtimes", async () => {
-			const { featureDetectX25519 } = await import("../e2ee");
-			await expect(featureDetectX25519()).resolves.toBe(true);
-		});
-	});
 });
 
 describe("Chain derivation (T1.3)", () => {
