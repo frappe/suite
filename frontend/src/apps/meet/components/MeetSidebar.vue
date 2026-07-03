@@ -10,7 +10,6 @@ import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
-import LucideBadgeHelp from "~icons/lucide/badge-help";
 import LucideKeyboard from "~icons/lucide/keyboard";
 import LucideLayoutGrid from "~icons/lucide/layout-grid";
 
@@ -30,10 +29,6 @@ const apps = { get data() { return getAppSwitcherItems("meet"); } };
 const userName = computed(
 	() => userResource.data?.full_name || userResource.data?.name || "User",
 );
-
-function openHelp() {
-	window.open("https://docs.frappe.io/meet", "_blank");
-}
 
 const settingsItems = computed(() => [
 	{
@@ -128,19 +123,7 @@ useShortcut({
 			logo: FrappeMeetingLogo,
 		}"
 		:sections="sidebarSections"
-	>
-		<template #footer-items="{ isCollapsed }">
-			<div class="flex items-center gap-1 px-1 py-1">
-				<button
-					class="flex items-center justify-center p-1.5 rounded-lg hover:bg-surface-gray-2 text-ink-gray-7"
-					@click="openHelp"
-					:title="isCollapsed ? 'Help' : ''"
-				>
-					<LucideBadgeHelp class="size-4" />
-				</button>
-			</div>
-		</template>
-	</Sidebar>
+	/>
 
 	<KeyboardShortcutsModal v-model:open="showShortcutsDialog" />
 </template>
