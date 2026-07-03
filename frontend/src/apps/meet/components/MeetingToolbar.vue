@@ -244,7 +244,7 @@ const { isContextReady: isE2EEContextReady } = useE2EEState();
 
 const moreOptions = computed(() => [
 	{
-		icon: "settings",
+		icon: "lucide-settings",
 		label: "Settings",
 		onClick: () => {
 			showSettingsDialog.value = true;
@@ -252,7 +252,7 @@ const moreOptions = computed(() => [
 		},
 	},
 	{
-		icon: "info",
+		icon: "lucide-info",
 		label: "Meeting information",
 		onClick: () => {
 			showMeetingInfoDialog.value = true;
@@ -260,7 +260,7 @@ const moreOptions = computed(() => [
 		},
 	},
 	{
-		icon: props.isFullscreen ? "minimize" : "maximize",
+		icon: props.isFullscreen ? "lucide-minimize" : "lucide-maximize",
 		label: props.isFullscreen ? "Exit full screen" : "Enter full screen",
 		onClick: () => {
 			emit("toggle-fullscreen");
@@ -278,14 +278,14 @@ const moreOptions = computed(() => [
 	...(isMobile.value
 		? [
 				{
-					icon: "users",
+					icon: "lucide-users",
 					label: "People",
 					onClick: () => {
 						emit("toggle-people");
 					},
 				},
 				{
-					icon: "message-square",
+					icon: "lucide-message-square",
 					label: "Chat",
 					onClick: () => {
 						emit("toggle-chat");

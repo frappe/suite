@@ -53,8 +53,13 @@
 					</FormControl>
 
 					<div>
-						<Button class="mt-3" v-if="selectedSpeakerIdLocal" @click="testSpeaker" :loading="isTestingAudio"
-							icon-left="volume-2">
+						<Button 
+						class="mt-3" 
+						v-if="selectedSpeakerIdLocal" 
+						@click="testSpeaker" 
+						:loading="isTestingAudio"
+						icon-left="lucide-volume-2"
+						>
 							Test
 						</Button>
 					</div>
@@ -134,7 +139,7 @@ const cameraSelectOptions = computed(() =>
 	cameraOptions.value.map((camera) => ({
 		label: camera.label,
 		value: camera.deviceId,
-		icon: "camera",
+		icon: "lucide-camera",
 	})),
 );
 
@@ -142,7 +147,7 @@ const micSelectOptions = computed(() =>
 	micOptions.value.map((mic) => ({
 		label: mic.label,
 		value: mic.deviceId,
-		icon: "mic",
+		icon: "lucide-mic",
 	})),
 );
 
@@ -150,7 +155,7 @@ const speakerSelectOptions = computed(() =>
 	speakerOptions.value.map((speaker) => ({
 		label: speaker.label,
 		value: speaker.deviceId,
-		icon: "volume-2",
+		icon: "lucide-volume-2",
 	})),
 );
 

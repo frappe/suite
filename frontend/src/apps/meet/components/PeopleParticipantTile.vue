@@ -134,27 +134,27 @@ const handleKickConfirm = (ban: boolean) => {
 
 const hostOptions = computed(() => {
 	return [
-		{
-			icon: "mic-off",
-			label: "Mute",
+        {
+            icon: "lucide-mic-off",
+            label: "Mute",
 			condition: () => !!props.participant.audio_enabled,
 			onClick: () => emit("muteParticipant", props.participant.user_id),
 		},
 		{
-			icon: "slash", // TODO: switch to `hand` if we integrate Lucide instead of FeatherIcon
+            icon: "lucide-hand",
 			label: "Lower Hand",
 			condition: () => isHandRaised.value,
 			onClick: () => emit("lowerHand", props.participant.user_id),
 		},
 		{
-			icon: "user-plus",
-			label: "Promote to Co-host",
+            icon: "lucide-user-plus",
+            label: "Promote to Co-host",
 			condition: () => props.canPromoteToCohost,
 			onClick: () => emit("promoteToCohost", props.participant.user_id),
 		},
 		{
-			icon: "user-x",
-			label: "Remove",
+            icon: "lucide-user-x",
+            label: "Remove",
 			onClick: () => {
 				showKickDialog.value = true;
 			},

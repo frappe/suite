@@ -39,7 +39,7 @@
                             v-if="options.length < 10"
                             variant="subtle"
                             @click="addOption"
-                            icon-left="plus"
+                            icon-left="lucide-plus"
                         >
                             Add Option
                         </Button>

@@ -16,7 +16,7 @@ import LucideLayoutGrid from "~icons/lucide/layout-grid";
 const route = useRoute();
 const sessionStore = useSessionStore();
 
-const isCollapsed = useStorage("meet-sidebar-collapsed", false);
+const isCollapsed = useStorage("meet-sidebar-collapsed", true);
 
 const userResource = createResource({
 	url: "suite.api.account.get_logged_in_user",
@@ -75,7 +75,7 @@ const settingsItems = computed(() => [
 		hideLabel: true,
 		items: [
 			{
-				icon: "log-out",
+				icon: "lucide-log-out",
 				label: "Log out",
 				onClick: () => sessionStore.logout.submit(),
 			},

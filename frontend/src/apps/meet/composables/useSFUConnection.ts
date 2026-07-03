@@ -148,15 +148,14 @@ export function useSFUConnection(deps: {
 			() => import("~icons/lucide/user"),
 		);
 
-		toast.create({
-			message: `${participantName} joined the meeting`,
+		toast(`${participantName} joined the meeting`, {
 			icon: participant.avatar
 				? h("img", {
 						src: participant.avatar as string,
-						class: "h-4 w-4 rounded-full object-cover",
+						class: "h-5 w-5 rounded-full object-cover",
 					})
 				: h(LucideUserIcon),
-			duration: 3,
+			duration: 3000,
 		});
 	};
 
@@ -180,15 +179,14 @@ export function useSFUConnection(deps: {
 			() => import("~icons/lucide/user"),
 		);
 
-		toast.create({
-			message: `${participantName} left the meeting`,
+		toast(`${participantName} left the meeting`, {
 			icon: participant?.avatar
 				? h("img", {
 						src: participant.avatar as string,
 						class: "h-4 w-4 rounded-full object-cover",
 					})
 				: h(LucideUserIcon),
-			duration: 3,
+			duration: 3000,
 		});
 	};
 
