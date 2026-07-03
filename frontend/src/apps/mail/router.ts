@@ -96,6 +96,13 @@ function installMailGuard(r: Router) {
 
 		// Validate mailbox param for mailbox routes.
 		if (to.name === 'mail-mailbox' || to.name === 'mail-mail') {
+			// The screener mailbox has its own dedicated view (Allow/Block UI). Redirect its
+			// plain mailbox URL to the screener route so direct navigation and reloads land on
+			// the screener view, matching the sidebar link (which already targets 'mail-screener').
+			const screenerId = userStore().mailboxIds.screener
+			if (screenerId && to.params.mailbox === screenerId)
+				return { name: 'mail-screener', params: { accountId } }
+
 			const mailboxExists =
 				mailboxes.data?.some((m: { id: string }) => m.id === to.params.mailbox) ||
 				['starred', 'search'].includes(to.params.mailbox as string)
