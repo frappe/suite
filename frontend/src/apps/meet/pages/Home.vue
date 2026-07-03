@@ -91,7 +91,7 @@ import {
 	createResource,
 	toast,
 } from "frappe-ui";
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 
 import { useConnectionState } from "../composables/useConnectionState";
@@ -175,5 +175,11 @@ const isMeetingCodeValid = (code: string) => {
 	return regex.test(code);
 };
 
+onMounted(() => {
+	document.documentElement.style.overflow = "hidden";
+});
+onUnmounted(() => {
+	document.documentElement.style.overflow = "";
+});
 
 </script>

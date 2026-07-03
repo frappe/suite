@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden overscroll-none bg-surface-base text-ink-gray-9"
+		class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden bg-surface-base text-ink-gray-9"
 		data-meeting-component
 		data-theme="dark"
 	>
