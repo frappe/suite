@@ -845,7 +845,6 @@ onUnmounted(() => {
 		handleE2EENeedsMediaRepublish,
 	);
 	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
-	document.documentElement.removeAttribute("data-theme");
 });
 
 // Watch for localVideo element and localStream connection
