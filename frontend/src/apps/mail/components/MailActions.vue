@@ -42,7 +42,12 @@ import {
 } from 'lucide-vue-next'
 import { Button, Dropdown, createResource, toast } from 'frappe-ui'
 
-import { downloadUrlAsFile, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
+import {
+	downloadUrlAsFile,
+	matchesScreenedValue,
+	raisePromiseToast,
+	raiseToast,
+} from '@/apps/mail/utils'
 import { useBlockSender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -87,10 +92,11 @@ const { setUndoAction, undo } = useUndo()
 const { promptBlockSenders, willJunkSenders } = useBlockSender()
 const user = inject('$user')
 
-// A sender is "blocked" when screened with the Reject action (their mail is discarded).
+// A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
+// exact address or by a '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
 	screenedAddresses.data?.some(
-		(a: ScreenedAddress) => a.email === email && a.action === 'Reject',
+		(a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
 	)
 
 const primaryActions = (mail: Mail): MailAction[] => [

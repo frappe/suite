@@ -695,13 +695,40 @@ def remove_sieve_block(script: str, block_name: str) -> str:
 	return result
 
 
+def _escape_sieve_string(value: str) -> str:
+	"""Escape a value for embedding in a Sieve quoted string (RFC 5228): backslash then double-quote."""
+
+	return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _sender_match_condition(value: str) -> str | None:
+	"""Return the Sieve `address` test that matches a screened value, or None when it is blank.
+
+	A `@domain` entry matches every sender from that domain (`address :domain :is "from" "example.com"`);
+	anything else is matched as a full address (`address :is "from" "john@example.com"`). Values are
+	escaped before being embedded so a stray quote or backslash can't corrupt the generated script.
+	"""
+
+	from suite.mail.utils.validation import is_domain_entry
+
+	value = (value or "").strip()
+	if not value:
+		return None
+
+	if is_domain_entry(value):
+		domain = value[1:].strip()
+		return f'address :domain :is "from" "{_escape_sieve_string(domain)}"' if domain else None
+
+	return f'address :is "from" "{_escape_sieve_string(value)}"'
+
+
 def _build_screening_block(block_name: str, emails: list[str], action_lines: list[str]) -> str:
 	"""Build a labeled sieve block matching the given senders and running `action_lines`.
 
 	Returns an empty string when there are no senders to match.
 	"""
 
-	conditions = [f'address :is "from" "{e.strip()}"' for e in emails if e and e.strip()]
+	conditions = [c for c in (_sender_match_condition(e) for e in emails) if c]
 	if not conditions:
 		return ""
 
@@ -747,9 +774,16 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
 
 	trusted = list(dict.fromkeys(e.strip() for e in [*accepted_emails, *own_emails] if e and e.strip()))
 
-	if trusted:
-		joined = ",\n  ".join(f'"{e}"' for e in trusted)
-		condition_block = f'if not address :is "from" [\n  {joined}\n] {{'
+	# `accepted_emails` may hold `@domain` entries, so build one address test per trusted value (own
+	# identity emails are always plain addresses). The gate lets mail through when the sender matches
+	# any trusted value, so the tests are OR-ed and the whole thing negated.
+	conditions = [c for c in (_sender_match_condition(e) for e in trusted) if c]
+
+	if len(conditions) == 1:
+		condition_block = f"if not {conditions[0]} {{"
+	elif conditions:
+		joined = ",\n  ".join(conditions)
+		condition_block = f"if not anyof (\n  {joined}\n) {{"
 	else:
 		# Nothing trusted yet → screen everything (only reached after the Reject/Spam blocks).
 		condition_block = 'if exists "from" {'

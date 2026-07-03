@@ -55,6 +55,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.utils import convert_html_to_text, get_config, log_error
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
+from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
@@ -903,9 +904,15 @@ def _screen_email_addresses(
 	if action not in ("Spam", "Reject", "Accepted"):
 		frappe.throw(_("Invalid screening action: {0}").format(action))
 
+	# Normalise + validate here too: bulk_insert below bypasses the doctype's validate hook, and this
+	# is the choke point every screening flow (settings UI, mark-as-junk, auto-accept) funnels through.
+	emails = [normalize_screened_value(email) for email in emails]
 	emails = [email for email in dict.fromkeys(emails) if email]  # de-duplicate, drop empties
 	if not emails:
 		return
+
+	for email in emails:
+		validate_screened_value(email, raise_exception=True)
 
 	existing = {
 		row.email: row

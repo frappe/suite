@@ -243,6 +243,31 @@ export const convertHtmlToText = (html: string) => {
 
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 
+// A domain entry, prefixed with @ (e.g. @example.com). Used by screening to trust/block a whole domain.
+// Mirrors the backend's DOMAIN_NAME_PATTERN: 1-63 char labels of letters/digits/hyphens (no leading or
+// trailing hyphen), joined by dots, at most 253 chars overall — so the Add button never enables a value
+// the API would reject.
+export const isDomain = (s: string) =>
+	/^@(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$/.test(s)
+
+// A screened value: either a full email address or a whole domain (@example.com).
+export const isEmailOrDomain = (s: string) => isEmail(s) || isDomain(s)
+
+// Whether `email` is covered by the screened value `value` — either an exact address match, or a
+// '@domain' entry (@example.com) that matches every sender from that domain. Case-insensitive, mirroring
+// the backend's sieve matching so a sender from an accepted/blocked domain is treated consistently.
+export const matchesScreenedValue = (email: string, value: string) => {
+	const normalizedEmail = (email ?? '').trim().toLowerCase()
+	const normalizedValue = (value ?? '').trim().toLowerCase()
+	if (!normalizedEmail || !normalizedValue) return false
+
+	if (normalizedValue.startsWith('@')) {
+		return normalizedEmail.split('@').pop() === normalizedValue.slice(1)
+	}
+
+	return normalizedEmail === normalizedValue
+}
+
 // An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
 // data: URIs are part of the message, so they're never remote.
 const REMOTE_URL = /^\s*(?:https?:)?\/\//i

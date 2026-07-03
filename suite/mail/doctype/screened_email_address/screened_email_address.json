@@ -20,13 +20,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "The email address whose mail is blocked (discarded) for the account.",
+   "description": "The screened sender: either an email address (john@example.com) or a domain prefixed with @ (@example.com), which applies to every sender from that domain.",
    "fieldname": "email",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Email",
+   "label": "Email or Domain",
    "no_copy": 1,
-   "options": "Email",
    "reqd": 1,
    "search_index": 1,
    "set_only_once": 1

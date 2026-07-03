@@ -32,7 +32,16 @@ class ScreenedEmailAddress(Document):
 		self.name = str(uuid7())
 
 	def validate(self) -> None:
+		self.validate_email()
 		self.validate_duplicate_email()
+
+	def validate_email(self) -> None:
+		"""Normalise and validate the screened value — a full email address or an '@domain' entry."""
+
+		from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
+
+		self.email = normalize_screened_value(self.email)
+		validate_screened_value(self.email, raise_exception=True)
 
 	def on_update(self) -> None:
 		from suite.mail.doctype.sieve_script.sieve_script import maybe_build_automation_sieve

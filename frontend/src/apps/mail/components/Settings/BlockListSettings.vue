@@ -9,7 +9,7 @@
 				v-model="email"
 				type="text"
 				variant="outline"
-				:placeholder="__('Enter email address')"
+				:placeholder="__('Enter email or domain (e.g. @example.com)')"
 				class="flex-1"
 				@keydown.enter="screenEmailAddress.submit()"
 			/>
@@ -27,7 +27,7 @@
 				:label="__('Add')"
 				variant="solid"
 				:loading="screenEmailAddress.loading"
-				:disabled="!isEmail(email) || isAlreadyScreened"
+				:disabled="!isEmailOrDomain(email) || isAlreadyScreened"
 				@click="screenEmailAddress.submit()"
 			/>
 		</div>
@@ -74,7 +74,7 @@ import {
 	createResource,
 } from 'frappe-ui'
 
-import { isEmail, raiseToast } from '@/apps/mail/utils'
+import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
@@ -100,8 +100,17 @@ const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
 	Spam: __('Move to Junk'),
 }
 
+// Mirror the backend's normalisation (trim; lowercase a '@domain' entry) so '@Frappe.io' is caught as
+// a duplicate of a stored '@frappe.io'.
+const normalizeScreenedValue = (value: string) => {
+	const trimmed = value.trim()
+	return trimmed.startsWith('@') ? '@' + trimmed.slice(1).toLowerCase() : trimmed
+}
+
 const isAlreadyScreened = computed(() =>
-	(screenedAddresses.data ?? []).some((a: ScreenedAddress) => a.email === email.value),
+	(screenedAddresses.data ?? []).some(
+		(a: ScreenedAddress) => a.email === normalizeScreenedValue(email.value),
+	),
 )
 
 const rows = computed(() =>
@@ -151,11 +160,11 @@ const removeModalOptions = computed(() => ({
 // `fr` units (numbers) so the columns share the row width instead of overflowing (percentages plus the
 // checkbox column would exceed 100% and add a horizontal scrollbar).
 const COLUMNS = [
-	{ label: __('Email Address'), key: 'email', width: 4 },
+	{ label: __('Email or Domain'), key: 'email', width: 4 },
 	{ label: __('Action'), key: 'action', width: 1 },
 ]
 
 const MESSAGE = __(
-	'Screen specific senders to either reject their messages or send them straight to Spam.',
+	'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Spam.',
 )
 </script>

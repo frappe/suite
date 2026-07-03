@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
-import { raisePromiseToast, raiseToast } from '@/apps/mail/utils'
+import { matchesScreenedValue, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -129,16 +129,16 @@ export const useBlockSender = () => {
 	// and de-duplicate by email (keeping the first occurrence's display name).
 	const blockableSenders = (senders: { name?: string; email?: string }[]) => {
 		const own = new Set((identities.data ?? []).map((i: Identity) => i.email))
-		// "Already blocked" = screened with the Reject action (their mail is discarded).
-		const blocked = new Set<string>(
-			(screenedAddresses.data ?? [])
-				.filter((a: ScreenedAddress) => a.action === 'Reject')
-				.map((a: ScreenedAddress) => a.email),
-		)
+		// "Already blocked" = screened with the Reject action (their mail is discarded), whether by their
+		// exact address or by a '@domain' entry covering them.
+		const blockedValues = (screenedAddresses.data ?? [])
+			.filter((a: ScreenedAddress) => a.action === 'Reject')
+			.map((a: ScreenedAddress) => a.email)
+		const isBlocked = (email: string) => blockedValues.some((v) => matchesScreenedValue(email, v))
 		const seen = new Set<string>()
 		const result: BlockableSender[] = []
 		for (const { name, email } of senders) {
-			if (!email || own.has(email) || blocked.has(email) || seen.has(email)) continue
+			if (!email || own.has(email) || isBlocked(email) || seen.has(email)) continue
 			seen.add(email)
 			result.push({ name, email })
 		}
