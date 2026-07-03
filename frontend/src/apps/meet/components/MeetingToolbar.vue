@@ -40,7 +40,6 @@
 				<!-- Screen Share -->
 				<ToolbarButton
 					v-if="canScreenShare()"
-					:active="isScreenSharing"
 					:variant="isScreenSharing ? 'muted' : 'default'"
 					title="Toggle Screen Share"
 					test-id="toolbar-screen-share"
@@ -117,7 +116,7 @@
 				<ToolbarButton
 					v-if="!isMobile"
 					:active="isPeopleOpen"
-					:variant="isPeopleOpen ? 'muted' : 'default'"
+					variant="default"
 					title="Show Participants"
 					test-id="toolbar-people"
 					@click="$emit('toggle-people')"
@@ -133,7 +132,7 @@
 				<ToolbarButton
 					v-if="!isMobile"
 					:active="isChatOpen"
-					:variant="isChatOpen ? 'muted' : 'default'"
+					variant="default"
 					title="Show Chat"
 					test-id="toolbar-chat"
 					@click="$emit('toggle-chat')"

@@ -31,14 +31,13 @@ defineEmits<{
 		theme="gray"
 		:data-testid="testId"
 		:tooltip="title"
-		class="relative"
+		:class="['relative', { '!bg-surface-gray-3': active }]"
 		@click="$emit('click')"
 	>
 		<template #icon>
 			<span
 				:class="{
-					'text-red-500': variant === 'active',
-					'text-[#FBDB73]': variant === 'muted',
+					'text-ink-red-8': variant === 'active' || variant === 'muted',
 				}"
 			>
 				<slot />
