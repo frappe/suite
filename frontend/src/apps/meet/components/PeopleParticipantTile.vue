@@ -47,7 +47,8 @@
 				class="flex items-center justify-center p-1.5 text-ink-gray-6"
 				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
 			>
-				<MeetCameraIcon :class="participant.video_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
+				<MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
+				<MeetCameraOffIcon v-else class="size-4 text-[#FBDB73]" />
 			</span>
 
 			<!-- Audio Status -->
@@ -55,7 +56,8 @@
 				class="flex items-center justify-center p-1.5 text-ink-gray-6"
 				:title="participant.audio_enabled ? 'Microphone on' : 'Microphone off'"
 			>
-				<MeetMicIcon :class="participant.audio_enabled ? 'size-4' : 'size-4 text-[#E54E17]'" />
+				<MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
+				<MeetMicOffIcon v-else class="size-4 text-[#FBDB73]" />
 			</span>
 
 			<!-- Host Controls -->
@@ -89,7 +91,9 @@ import { Avatar, Dropdown } from "frappe-ui";
 import { computed, ref } from "vue";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
 

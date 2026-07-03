@@ -20,7 +20,8 @@
 					test-id="preview-toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
-					<MeetMicIcon />
+					<MeetMicIcon v-if="isMicOn" />
+					<MeetMicOffIcon v-else />
 				</ToolbarButton>
 
 				<!-- Camera -->
@@ -30,7 +31,8 @@
 					test-id="preview-toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
-					<MeetCameraIcon />
+					<MeetCameraIcon v-if="isCameraOn" />
+					<MeetCameraOffIcon v-else />
 				</ToolbarButton>
 
 				<!-- Settings -->
@@ -57,7 +59,9 @@
 <script setup lang="ts">
 import { usePlatform } from "../composables/usePlatform";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
 import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
 import ToolbarButton from "./ToolbarButton.vue";

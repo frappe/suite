@@ -22,7 +22,8 @@
 					test-id="toolbar-microphone"
 					@click="$emit('toggle-microphone')"
 				>
-					<MeetMicIcon />
+					<MeetMicIcon v-if="isMicOn" />
+					<MeetMicOffIcon v-else />
 				</ToolbarButton>
 
 				<!-- Camera -->
@@ -32,31 +33,42 @@
 					test-id="toolbar-camera"
 					@click="$emit('toggle-camera')"
 				>
-					<MeetCameraIcon />
+					<MeetCameraIcon v-if="isCameraOn" />
+					<MeetCameraOffIcon v-else />
 				</ToolbarButton>
 
 				<!-- Screen Share -->
 				<ToolbarButton
 					v-if="canScreenShare()"
 					:active="isScreenSharing"
+					:variant="isScreenSharing ? 'muted' : 'default'"
 					title="Toggle Screen Share"
 					test-id="toolbar-screen-share"
 					@click="$emit('toggle-screen-share')"
 				>
-					<MeetPresentIcon />
+					<MeetPresentPauseIcon v-if="isScreenSharing" />
+					<MeetPresentIcon v-else />
+				</ToolbarButton>
+
+				<!-- Raise Hand -->
+				<ToolbarButton
+					:variant="isHandRaised ? 'muted' : 'default'"
+					title="Raise Hand"
+					test-id="toolbar-raise-hand"
+					@click="$emit('toggle-raise-hand')"
+				>
+					<MeetHandIcon />
 				</ToolbarButton>
 
 				<!-- Reactions -->
 				<ReactionPicker
 					:is-open="isReactionPickerOpen"
-					:is-hand-raised="isHandRaised"
 					@select="handleReactionSelect"
-					@toggle-raise-hand="$emit('toggle-raise-hand')"
 					@update:open="updateReactionPickerOpen"
 				>
 					<template #trigger>
 						<ToolbarButton
-							title="Reactions & Raise Hand"
+							title="Reactions"
 							test-id="toolbar-reactions"
 							@click="() => {}"
 						>
@@ -104,6 +116,7 @@
 				<!-- People -->
 				<ToolbarButton
 					:active="isPeopleOpen"
+					:variant="isPeopleOpen ? 'muted' : 'default'"
 					title="Show Participants"
 					test-id="toolbar-people"
 					@click="$emit('toggle-people')"
@@ -118,6 +131,7 @@
 				<!-- Chat -->
 				<ToolbarButton
 					:active="isChatOpen"
+					:variant="isChatOpen ? 'muted' : 'default'"
 					title="Show Chat"
 					test-id="toolbar-chat"
 					@click="$emit('toggle-chat')"
@@ -164,11 +178,15 @@ import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { autoHideToolbar } from "../data/mediaPreferences";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetChatIcon from "../icons/MeetChatIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetHandIcon from "../icons/MeetHandIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
 import MeetPeopleIcon from "../icons/MeetPeopleIcon.vue";
 import MeetPhoneOffIcon from "../icons/MeetPhoneOffIcon.vue";
 import MeetPresentIcon from "../icons/MeetPresentIcon.vue";
+import MeetPresentPauseIcon from "../icons/MeetPresentPauseIcon.vue";
 import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
 import MeetSmileIcon from "../icons/MeetSmileIcon.vue";
 import { canScreenShare } from "../utils/device";

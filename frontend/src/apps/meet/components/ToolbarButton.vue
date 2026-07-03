@@ -38,7 +38,7 @@ defineEmits<{
 			<span
 				:class="{
 					'text-red-500': variant === 'active',
-					'text-[#E54E17]': variant === 'muted',
+					'text-[#FBDB73]': variant === 'muted',
 				}"
 			>
 				<slot />
