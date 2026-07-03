@@ -5,7 +5,7 @@
 			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
 				<Spinner class="h-12" />
 				<p class="text-lg">Joining meeting...</p>
-				<p v-if="e2eeJoinPendingMessage" class="max-w-md text-sm text-amber-100">
+				<p v-if="e2eeJoinPendingMessage" class="mt-2 text-base text-ink-gray-2">
 					{{ e2eeJoinPendingMessage }}
 				</p>
 			</div>
