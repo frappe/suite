@@ -12,10 +12,12 @@ test.describe("Multi participant", () => {
 		await guestTwo.joinAsGuest(meetingId, `Guest Two ${test.info().parallelIndex}`);
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(3);
-		await expectRemoteVideoReceiving(hostPage, "Guest One");
-		await expectRemoteVideoReceiving(hostPage, "Guest Two");
-		await expectRemoteVideoReceiving(guestOne.page, "Administrator");
-		await expectRemoteVideoReceiving(guestTwo.page, "Administrator");
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, "Guest One"),
+			expectRemoteVideoReceiving(hostPage, "Guest Two"),
+			expectRemoteVideoReceiving(guestOne.page, "Administrator"),
+			expectRemoteVideoReceiving(guestTwo.page, "Administrator"),
+		]);
 		await hostPage.getByTestId("toolbar-people").click();
 
 		const peoplePanel = hostPage.getByTestId("people-panel");
