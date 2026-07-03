@@ -16,7 +16,7 @@
 import { frappeRequest, Switch, toast } from "frappe-ui";
 import { computed, onMounted, ref, watch } from "vue";
 import { useDeviceIdentity } from "../../composables/useDeviceIdentity";
-import { featureDetectX25519 } from "../../utils/media/e2ee";
+import { getE2EETransformCapability } from "../../utils/media/e2ee";
 
 interface MeetingDocument {
 	allow_guest?: boolean;
@@ -46,13 +46,13 @@ const { getIdentity } = useDeviceIdentity();
 
 const e2eeEnabled = ref<boolean>(props.globallyEnabled);
 const isConvertingToE2EE = ref(false);
-const isX25519Supported = ref<boolean | null>(null);
+const isE2EEMediaSupported = ref<boolean | null>(null);
 
 let detailsLoaded = false;
 
 const e2eeDescription = computed(() => {
-	if (isX25519Supported.value === false) {
-		return "E2EE requires X25519 support in WebCrypto. Update your browser to enable it.";
+	if (isE2EEMediaSupported.value === false) {
+		return "E2EE requires encoded media transform support. Update your browser to enable it.";
 	}
 	return "Converts this meeting to E2EE for extra privacy. Only participants can access the meeting content.";
 });
@@ -64,12 +64,12 @@ const isToggleDisabled = computed(
 		props.meetingDoc.enableE2ee.loading ||
 		props.meetingDoc.get.loading ||
 		e2eeEnabled.value ||
-		isX25519Supported.value !== true,
+		isE2EEMediaSupported.value !== true,
 );
 
 onMounted(async () => {
 	try {
-		isX25519Supported.value = await featureDetectX25519();
+		isE2EEMediaSupported.value = getE2EETransformCapability() !== "none";
 		e2eeEnabled.value = props.globallyEnabled;
 		if (e2eeEnabled.value) {
 			await loadE2EEDetails();
@@ -117,10 +117,10 @@ watch(e2eeEnabled, async (val, oldVal) => {
 	if (!detailsLoaded) return;
 	if (!val || oldVal) return;
 	if (isConvertingToE2EE.value) return;
-	if (!(await featureDetectX25519())) {
+	if (getE2EETransformCapability() === "none") {
 		e2eeEnabled.value = false;
-		isX25519Supported.value = false;
-		toast.error("E2EE requires a newer browser with X25519 support.");
+		isE2EEMediaSupported.value = false;
+		toast.error("E2EE requires encoded media transform support.");
 		return;
 	}
 
