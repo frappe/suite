@@ -11,13 +11,13 @@ class PushSubscriptionService(CoreService):
 
 	type: ClassVar[str] = "PushSubscription"
 
-	def __init__(self, user: str, connection: "JMAPConnection") -> None:
-		"""Initializes the PushSubscriptionService with the provided user and JMAP connection."""
+	def __init__(self, connection: "JMAPConnection") -> None:
+		"""Initializes the PushSubscriptionService with the provided JMAP connection."""
 
 		self.connection = connection
-		# PushSubscription is not account-scoped (requests omit accountId); use a per-user
-		# cache key so subscriptions for different users don't collide.
-		self.account = f"{user}:{self.primary_account_id}"
+		# PushSubscription is user-scoped, not account-scoped (requests omit accountId); key the
+		# cache by the connection's user so subscriptions for different users don't collide.
+		self.account = connection.user
 
 	def create(self, subscriptions: list[dict]) -> dict:
 		"""Public method to create push subscriptions, handling batching if the number of subscriptions exceeds the server's maximum allowed in a single 'set' call."""

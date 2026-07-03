@@ -232,7 +232,7 @@ def get_push_subscription_service(
 	"""Returns an instance of PushSubscriptionService for handling push subscription-related operations for the specified user."""
 
 	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions)
-	return PushSubscriptionService(user, connection)
+	return PushSubscriptionService(connection)
 
 
 def get_quota_service(

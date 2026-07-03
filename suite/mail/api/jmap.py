@@ -100,7 +100,7 @@ def push_notification() -> dict:
 					else:
 						logger.warning("unhandled-state-change-entity", entity=entity)
 
-				return {"status": "processed"}
+			return {"status": "processed"}
 
 		else:
 			logger.warning("unknown-push-type")
