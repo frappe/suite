@@ -52,9 +52,9 @@ export const videoCodecOptions: CodecOptions = {
 
 export const audioCodecOptions: CodecOptions = {
 	// ref: https://mediasoup.org/documentation/v3/mediasoup-client/api/#ProducerCodecOptions
-	opusStereo: 0, // disable stereo to save bandwidth, as most meetings are voice-only
+	opusStereo: 1,
 	opusDtx: 1, // enable DTX to save bandwidth during silence periods
 	opusFec: 1, // enable FEC to improve audio quality in case of packet loss
-	opusMaxAverageBitrate: 96000, // more headroom for fuller speech while staying efficient for mono voice
+	opusMaxAverageBitrate: 128000, // more headroom for stereo voice while staying efficient
 	opusMaxPlaybackRate: 48000, // allow fullband Opus instead of forcing 24 kHz wideband
 };
