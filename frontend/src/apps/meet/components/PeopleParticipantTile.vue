@@ -48,7 +48,7 @@
 				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
 			>
 				<MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
-				<MeetCameraOffIcon v-else class="size-4 text-[#FBDB73]" />
+				<MeetCameraOffIcon v-else class="size-4" />
 			</span>
 
 			<!-- Audio Status -->
@@ -57,7 +57,7 @@
 				:title="participant.audio_enabled ? 'Microphone on' : 'Microphone off'"
 			>
 				<MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
-				<MeetMicOffIcon v-else class="size-4 text-[#FBDB73]" />
+				<MeetMicOffIcon v-else class="size-4" />
 			</span>
 
 			<!-- Host Controls -->
