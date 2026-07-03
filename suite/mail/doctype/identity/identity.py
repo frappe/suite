@@ -294,6 +294,8 @@ def format_identity(account: str, identity: dict) -> dict:
 		"html_signature": identity["htmlSignature"],
 		"text_signature": identity["textSignature"],
 		"may_delete": cint(identity["mayDelete"]),
+		"owner": frappe.session.user,
+		"modified_by": frappe.session.user,
 		"creation": today(),
 		"modified": today(),
 	}
