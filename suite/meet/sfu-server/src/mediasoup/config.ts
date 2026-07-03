@@ -112,9 +112,9 @@ const webRtcTransportOptions: WebRTCTransportOptions = {
 		max: Number.parseInt(process.env.RTC_MAX_PORT || '49999', 10),
 	},
 	// Add additional WebRTC options for better connectivity
-	maxIncomingBitrate: 3000000,
-	maxOutgoingBitrate: 3000000,
-	initialAvailableOutgoingBitrate: 1000000,
+	maxIncomingBitrate: 5000000,
+	maxOutgoingBitrate: 5000000,
+	initialAvailableOutgoingBitrate: 2500000,
 	// Add ICE server configurations for NAT traversal
 	iceServers: [
 		{
