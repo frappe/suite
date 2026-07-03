@@ -574,7 +574,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		const constraints: Record<string, unknown> = {};
 
 		const audioConstraints = {
-			channelCount: 1,
+			channelCount: { ideal: 2 },
 			echoCancellation: true,
 			noiseSuppression: true,
 			autoGainControl: true,

@@ -138,7 +138,7 @@ describe("getVideoEncodingConfig", () => {
 		expect(config.decision.strategy).toBe("single");
 		expect(config.decision.scalabilityMode).toBeNull();
 		expect(config.encodings).toHaveLength(1);
-		expect(config.encodings[0].maxBitrate).toBe(2_000_000);
+		expect(config.encodings[0].maxBitrate).toBe(4_000_000);
 	});
 });
 
