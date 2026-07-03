@@ -11,7 +11,7 @@ test.describe("Chat", () => {
 
 		await hostPage.getByTestId("toolbar-chat").click();
 		await hostPage.getByTestId("chat-input-wrapper").click();
-		const hostChatInput = hostPage.getByTestId("chat-input").locator("[contenteditable='true']");
+		const hostChatInput = hostPage.getByTestId("chat-input");
 		await expect(hostChatInput).toBeFocused();
 		await hostChatInput.fill(message);
 		await hostPage.getByTestId("chat-send").click();
@@ -38,7 +38,7 @@ test.describe("Chat", () => {
 		await expect(unreadBadge).toHaveCount(0);
 
 		await guest.page.getByTestId("toolbar-chat").click();
-		await guest.page.getByTestId("chat-input").locator("[contenteditable='true']").fill(message);
+		await guest.page.getByTestId("chat-input").fill(message);
 		await guest.page.getByTestId("chat-send").click();
 
 		await expect(unreadBadge).toHaveCount(1);
