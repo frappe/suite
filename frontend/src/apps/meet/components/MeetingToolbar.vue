@@ -115,6 +115,7 @@
 			>
 				<!-- People -->
 				<ToolbarButton
+					v-if="!isMobile"
 					:active="isPeopleOpen"
 					:variant="isPeopleOpen ? 'muted' : 'default'"
 					title="Show Participants"
@@ -130,6 +131,7 @@
 
 				<!-- Chat -->
 				<ToolbarButton
+					v-if="!isMobile"
 					:active="isChatOpen"
 					:variant="isChatOpen ? 'muted' : 'default'"
 					title="Show Chat"
