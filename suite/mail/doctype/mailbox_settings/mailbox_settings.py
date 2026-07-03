@@ -55,7 +55,8 @@ class MailboxSettings(Document):
 		if any(self.has_value_changed(field) for field in AUTOMATION_FIELDS):
 			from suite.mail.doctype.sieve_script.sieve_script import maybe_build_automation_sieve
 
-			maybe_build_automation_sieve(self.account)
+			# Activate the automation script so the new rules take effect (unless vacation is active).
+			maybe_build_automation_sieve(self.account, activate=True)
 
 	def validate_duplicate(self) -> None:
 		"""Checks for duplicate Mailbox Settings for the same account and mailbox ID."""

@@ -131,7 +131,7 @@ class SieveScript(Document):
 		if not content or not content.strip():
 			frappe.throw(_("Sieve script content cannot be empty."))
 
-		if name == "frappe_mail_automation" and not frappe.flags.allow_automation_script_creation:
+		if name == AUTOMATION_SCRIPT_NAME and not frappe.flags.allow_automation_script_creation:
 			frappe.throw(_("Not allowed to create automation script."))
 
 		creation_id = str(uuid7())
@@ -318,6 +318,20 @@ def get_active_sieve_script_id(account: str) -> str | None:
 		return query_result["ids"][0]
 
 
+def is_vacation_script_active(account: str) -> bool:
+	"""Whether the account's currently active sieve script is the read-only vacation script.
+
+	Used to keep the automation sieve from being activated over an active vacation auto-responder.
+	"""
+
+	active_id = get_active_sieve_script_id(account)
+	if not active_id:
+		return False
+
+	scripts = SieveScript._get_sieve_scripts(account, [active_id])
+	return bool(scripts) and bool(scripts[0].get("read_only"))
+
+
 def activate_last_active_sieve_script(account: str) -> None:
 	"""Activates the last active sieve script for the given account, if any, and clears the last active sieve script setting."""
 
@@ -396,13 +410,23 @@ def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
 
 
 def build_automation_sieve(account: str, activate: bool = False) -> None:
-	"""Build the automation sieve script for the given account and optionally activate it."""
+	"""Build the automation sieve script for the given account and optionally activate it.
+
+	Activation is skipped while the vacation sieve script is active, so rebuilding the automation
+	script (e.g. from a Mailbox Settings / Screened Email Address change) never disables the
+	vacation auto-responder. The vacation flow reactivates the last active script once vacation ends.
+	"""
 
 	def _build_automation_sieve(account: str, activate: bool = False) -> None:
 		doc = frappe.get_doc("Sieve Script", get_automation_script_name(account))
 		doc.content = _build_automation_content(account)
 
-		if activate:
+		# Activate the automation script unless vacation is active. `doc.active` is the freshly loaded
+		# state (load_from_db just fetched it), and only one script can be active at a time — so an
+		# already-active automation script means vacation isn't, and we skip the vacation lookup. That
+		# keeps the hot document-save path (where automation is already active) free of the two extra
+		# JMAP round-trips `is_vacation_script_active` would otherwise make.
+		if activate and not doc.active and not is_vacation_script_active(account):
 			doc.active = True
 
 		doc.save()

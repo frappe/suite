@@ -42,12 +42,13 @@ class ScreenedEmailAddress(Document):
 		# Spam <-> Reject in Desk), since that moves the sender between sieve blocks. Skipped when a
 		# caller paused builds for a bulk write (it rebuilds once at the end instead).
 		if self.has_value_changed("action"):
-			maybe_build_automation_sieve(self.account)
+			# Activate the automation script so the screening rule takes effect (unless vacation is active).
+			maybe_build_automation_sieve(self.account, activate=True)
 
 	def after_delete(self) -> None:
 		from suite.mail.doctype.sieve_script.sieve_script import maybe_build_automation_sieve
 
-		maybe_build_automation_sieve(self.account)
+		maybe_build_automation_sieve(self.account, activate=True)
 
 	def validate_duplicate_email(self) -> None:
 		"""Validates that the same email address is not screened more than once for the same account."""

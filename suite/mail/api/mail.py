@@ -807,7 +807,7 @@ def create_mailbox(
 			**automation_rules_to_settings(automation_rules),
 		)
 
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
@@ -840,7 +840,7 @@ def update_mailbox(
 			**automation_rules_to_settings(automation_rules),
 		)
 
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
@@ -849,7 +849,7 @@ def delete_mailbox(account: str, id: str, name: str) -> None:
 
 	delete_mailboxes(account, [id])
 	frappe.db.delete("Mailbox Settings", {"account": account, "mailbox_id": id})
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 @frappe.whitelist()
@@ -944,7 +944,7 @@ def _screen_email_addresses(
 		changed = True
 
 	if changed:
-		build_automation_sieve(account)
+		build_automation_sieve(account, activate=True)
 
 
 def auto_accept_recipients(account: str, recipients: list) -> None:
@@ -993,7 +993,7 @@ def unscreen_email_addresses(account: str, emails: list[str]) -> None:
 		return
 
 	frappe.db.delete("Screened Email Address", {"name": ["in", deleted]})
-	build_automation_sieve(account)
+	build_automation_sieve(account, activate=True)
 
 
 # --- Screener (the screening folder view) ---------------------------------------------------------
