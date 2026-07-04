@@ -40,14 +40,20 @@ const formatMeetingTime = (event: any) => {
 	return `${start.format('h:mma')} - ${end.format('h:mma')}`
 }
 
-const eventParticipants = (event: any): ParticipantPreview[] =>
-	(event.participants || []).map((participant: any) => ({
-		user_id: participant.email,
-		full_name: participant._name || participant.email || '?',
-		avatar_url: participant.user_image,
-		has_video: false,
-		has_audio: false,
-	}))
+const eventParticipants = (event: any): ParticipantPreview[] => {
+	const participantsByEmail = new Map<string, ParticipantPreview>()
+	for (const participant of event.participants || []) {
+		if (!participant.email || participantsByEmail.has(participant.email)) continue
+		participantsByEmail.set(participant.email, {
+			user_id: participant.email,
+			full_name: participant._name || participant.email || '?',
+			avatar_url: participant.user_image,
+			has_video: false,
+			has_audio: false,
+		})
+	}
+	return [...participantsByEmail.values()]
+}
 
 const isJoinable = (event: any) => {
 	const start = dayjs(event.start)
