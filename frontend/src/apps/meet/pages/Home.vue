@@ -97,7 +97,7 @@
 		</Dialog>
 
 		<Dialog v-model="showScheduleDialog" :title="'Schedule meet'" :dismissable="true">
-			<template #body-content>
+			<template #default>
 				<div class="space-y-4">
 					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
 					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">

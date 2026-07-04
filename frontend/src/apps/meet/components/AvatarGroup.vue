@@ -7,7 +7,7 @@
 			</p>
 		</div>
 		<div v-else-if="participants.length > 0" class="flex flex-col items-center">
-			<div class="relative flex mx-auto" :class="spacingClass">
+			<div class="relative isolate flex mx-auto" :class="spacingClass">
 				<div
 					v-for="(participant, index) in displayedParticipants"
 					:key="participant.user_id"
