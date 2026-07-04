@@ -6,7 +6,6 @@ import { Button, createResource } from 'frappe-ui'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
-import type { ParticipantPreview } from '@/apps/meet/types'
 
 const router = useRouter()
 const calendarStore = useCalendarUserStore()
@@ -40,16 +39,14 @@ const formatMeetingTime = (event: any) => {
 	return `${start.format('h:mma')} - ${end.format('h:mma')}`
 }
 
-const eventParticipants = (event: any): ParticipantPreview[] => {
-	const participantsByEmail = new Map<string, ParticipantPreview>()
+const eventParticipants = (event: any) => {
+	const participantsByEmail = new Map<string, { user_id: string; full_name: string; avatar_url?: string }>()
 	for (const participant of event.participants || []) {
 		if (!participant.email || participantsByEmail.has(participant.email)) continue
 		participantsByEmail.set(participant.email, {
 			user_id: participant.email,
 			full_name: participant._name || participant.email || '?',
 			avatar_url: participant.user_image,
-			has_video: false,
-			has_audio: false,
 		})
 	}
 	return [...participantsByEmail.values()]

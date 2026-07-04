@@ -62,14 +62,19 @@
 <script setup lang="ts">
 import { Avatar } from "frappe-ui";
 import { computed } from "vue";
-import type { ParticipantPreview } from "../types";
 import { getInitials } from "../utils/text";
 
 type AvatarGroupSize = "sm" | "md" | "lg" | "xl" | "2xl";
 type StackDirection = "left" | "right";
 
+interface AvatarGroupParticipant {
+	user_id: string;
+	full_name: string;
+	avatar_url?: string;
+}
+
 interface Props {
-	participants: ParticipantPreview[];
+	participants: AvatarGroupParticipant[];
 	error: string | null;
 	maxDisplayed: number;
 	size?: AvatarGroupSize;
