@@ -64,11 +64,7 @@
 						</button>
 					</div>
 
-					<UpcomingMeetings
-						:meetings="upcomingMeetings"
-						:current-user-email="currentUserEmail"
-						@join="joinScheduledMeeting"
-					/>
+					<UpcomingMeetings ref="upcomingMeetingsRef" />
 				</div>
 			</div>
 		</div>
@@ -167,6 +163,7 @@ const scheduleDate = ref(dayjs().format("YYYY-MM-DD"));
 const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:mm"));
 const scheduleEndTime = ref(dayjs().add(2, "hour").startOf("hour").format("HH:mm"));
 const scheduleParticipants = ref<any[]>([]);
+const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null);
 
 const userResource = createResource({
 	url: "suite.api.account.get_logged_in_user",
@@ -193,18 +190,6 @@ const createMeeting = createResource({
 		console.error("Error creating meeting:", error);
 		toast.error("Failed to create meeting. Please try again.");
 	},
-});
-
-const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-const upcomingEvents = createResource({
-	url: "suite.calendar.api.get_calendar_events",
-	makeParams: () => ({
-		account: calendarStore.accountId,
-		from_date: dayjs().startOf("day").format("YYYY-MM-DD[T]HH:mm:ss"),
-		to_date: dayjs().add(2, "day").endOf("day").format("YYYY-MM-DD[T]HH:mm:ss"),
-		time_zone: timezone(),
-	}),
 });
 
 const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`));
@@ -254,25 +239,18 @@ const scheduleMeeting = createResource({
 		title: scheduleTitle.value,
 		start: scheduleStart.value.format("YYYY-MM-DD[T]HH:mm:ss"),
 		duration: scheduledDuration.value,
-		time_zone: timezone(),
+		time_zone: dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone,
 		participants: scheduledParticipants.value,
 		send_scheduling_messages: scheduledParticipants.value.length > 1,
 	}),
 	onSuccess: () => {
 		showScheduleDialog.value = false;
 		toast.success("Meeting scheduled.");
-		loadUpcomingMeetings();
+		upcomingMeetingsRef.value?.reload();
 	},
 	onError: (error: any) => {
 		console.error("Error scheduling meeting:", error);
 	},
-});
-
-const upcomingMeetings = computed(() => {
-	return [...(upcomingEvents.data || [])]
-		.filter((event: any) => getMeetingUrl(event))
-		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
-		.slice(0, 4);
 });
 
 const startInstantMeeting = () => {
@@ -346,46 +324,8 @@ const isMeetingCodeValid = (code: string) => {
 	return regex.test(code);
 };
 
-const getMeetingUrl = (event: any) => {
-	const link = event.links?.find((item: any) => getTrustedMeetUrl(item?.href));
-	if (link?.href) return getTrustedMeetUrl(link.href);
-	const match = event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/);
-	return getTrustedMeetUrl(match?.[0]);
-};
-
-const getTrustedMeetUrl = (url?: string) => {
-	if (!url) return "";
-	const value = url.replace(/\W+$/, "");
-	if (value.startsWith("/meet/")) return value;
-
-	try {
-		const parsed = new URL(value);
-		if (parsed.origin === window.location.origin && parsed.pathname.startsWith("/meet/")) return parsed.href;
-	} catch {
-		return "";
-	}
-
-	return "";
-};
-
-const getMeetingId = (event: any) =>
-	getMeetingUrl(event).split("/meet/").pop()?.replace(/\W+$/, "") || "";
-
-const joinScheduledMeeting = (event: any) => {
-	const meetingId = getMeetingId(event);
-	if (!meetingId) return;
-	router.push({ name: "meet-meeting", params: { meetingId } });
-};
-
-const loadUpcomingMeetings = () => {
-	if (calendarStore.accountId) upcomingEvents.reload();
-};
-
 onMounted(() => {
 	document.documentElement.style.overflow = "hidden";
-	calendarStore.userResource.promise
-		.then(loadUpcomingMeetings)
-		.catch((error: any) => console.warn("Could not load upcoming calendar meetings:", error));
 });
 onUnmounted(() => {
 	document.documentElement.style.overflow = "";

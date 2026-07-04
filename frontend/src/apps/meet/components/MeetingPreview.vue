@@ -64,12 +64,12 @@
  						</div>
  
  						<!-- Avatar group for current participants -->
- 						<ParticipantAvatarGroup
- 							v-if="!isGuest"
- 							:participants="[...participants]"
- 							:error="presenceError"
- 							:maxDisplayed="3"
- 						/>
+						<AvatarGroup
+							v-if="!isGuest"
+							:participants="[...participants]"
+							:error="presenceError"
+							:maxDisplayed="3"
+						/>
  							</div>
  
  							<form class="space-y-3" @submit.prevent="handleJoin">
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { Button, createResource, FormControl, toast } from "frappe-ui";
 import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
-import ParticipantAvatarGroup from "../components/ParticipantAvatarGroup.vue";
+import AvatarGroup from "../components/AvatarGroup.vue";
 import ParticipantTile from "../components/ParticipantTile.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";

@@ -1,16 +1,35 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { Button, createResource } from 'frappe-ui'
 
+import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
+import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
+import type { ParticipantPreview } from '@/apps/meet/types'
 
-const { meetings, currentUserEmail } = defineProps<{
-	meetings: any[]
-	currentUserEmail?: string
-}>()
+const router = useRouter()
+const calendarStore = useCalendarUserStore()
 
-defineEmits<{
-	join: [meeting: any]
-}>()
+const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
+
+const upcomingEvents = createResource({
+	url: 'suite.calendar.api.get_calendar_events',
+	cache: 'UpcomingMeetings',
+	makeParams: () => ({
+		account: calendarStore.accountId,
+		from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+		to_date: dayjs().add(2, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+		time_zone: timezone(),
+	}),
+})
+
+const meetings = computed(() => {
+	return [...(upcomingEvents.data || [])]
+		.filter((event: any) => getMeetingUrl(event))
+		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
+		.slice(0, 4)
+})
 
 const formatMeetingMonth = (event: any) => dayjs(event.start).format('MMM')
 const formatMeetingDay = (event: any) => dayjs(event.start).format('D')
@@ -18,14 +37,17 @@ const formatMeetingDay = (event: any) => dayjs(event.start).format('D')
 const formatMeetingTime = (event: any) => {
 	const start = dayjs(event.start)
 	const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-	return `${start.format('h:mma')}-${end.format('h:mm a')}`
+	return `${start.format('h:mma')} - ${end.format('h:mma')}`
 }
 
-const visibleParticipants = (event: any) =>
-	(event.participants || []).filter((participant: any) => participant.email !== currentUserEmail)
-
-const participantInitial = (participant: any) =>
-	(participant._name || participant.email || '?').trim().charAt(0).toUpperCase()
+const eventParticipants = (event: any): ParticipantPreview[] =>
+	(event.participants || []).map((participant: any) => ({
+		user_id: participant.email,
+		full_name: participant._name || participant.email || '?',
+		avatar_url: participant.user_image,
+		has_video: false,
+		has_audio: false,
+	}))
 
 const isJoinable = (event: any) => {
 	const start = dayjs(event.start)
@@ -33,6 +55,50 @@ const isJoinable = (event: any) => {
 	const now = dayjs()
 	return start.diff(now, 'minute') <= 10 && end.isAfter(now)
 }
+
+const getMeetingUrl = (event: any) => {
+	const link = event.links?.find((item: any) => getTrustedMeetUrl(item?.href))
+	if (link?.href) return getTrustedMeetUrl(link.href)
+	const match = event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/)
+	return getTrustedMeetUrl(match?.[0])
+}
+
+const getTrustedMeetUrl = (url?: string) => {
+	if (!url) return ''
+	const value = url.replace(/\W+$/, '')
+	if (value.startsWith('/meet/')) return value
+
+	try {
+		const parsed = new URL(value)
+		if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
+			return parsed.href
+	} catch {
+		return ''
+	}
+
+	return ''
+}
+
+const getMeetingId = (event: any) =>
+	getMeetingUrl(event).split('/meet/').pop()?.replace(/\W+$/, '') || ''
+
+const joinMeeting = (event: any) => {
+	const meetingId = getMeetingId(event)
+	if (!meetingId) return
+	router.push({ name: 'meet-meeting', params: { meetingId } })
+}
+
+const reload = () => {
+	if (calendarStore.accountId) upcomingEvents.reload()
+}
+
+onMounted(() => {
+	calendarStore.userResource.promise
+		.then(reload)
+		.catch((error: any) => console.warn('Could not load upcoming calendar meetings:', error))
+})
+
+defineExpose({ reload })
 </script>
 
 <template>
@@ -78,36 +144,20 @@ const isJoinable = (event: any) => {
 							class="mt-1.5 flex min-w-0 items-center gap-0.5 text-sm leading-[1.15] tracking-[0.28px] text-ink-gray-6"
 						>
 							<span class="shrink-0">{{ formatMeetingTime(event) }}</span>
-							<span v-if="visibleParticipants(event).length" class="shrink-0">・</span>
-							<div
-								v-if="visibleParticipants(event).length"
-								class="flex isolate items-center overflow-hidden"
-							>
-								<div
-									v-for="(participant, participantIndex) in visibleParticipants(event).slice(0, 2)"
-									:key="participant.email || participantIndex"
-									class="relative -mr-0.5 flex size-4 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-outline-gray-1 bg-surface-gray-2 text-[9px] font-medium uppercase text-ink-gray-7"
-									:style="{ zIndex: 5 - participantIndex }"
-								>
-									<img
-										v-if="participant.user_image"
-										:src="participant.user_image"
-										class="size-full rounded-full object-cover"
-									/>
-									<span v-else>{{ participantInitial(participant) }}</span>
-								</div>
-								<div
-									v-if="visibleParticipants(event).length > 2"
-									class="relative flex size-4 shrink-0 items-center justify-center rounded-full border-2 border-outline-gray-1 bg-surface-gray-2 text-[10px] font-medium text-ink-gray-7"
-								>
-									{{ visibleParticipants(event).length - 2 }}
-								</div>
-							</div>
+							<span v-if="eventParticipants(event).length" class="shrink-0">・</span>
+							<AvatarGroup
+								v-if="eventParticipants(event).length"
+								:participants="eventParticipants(event)"
+								:error="null"
+								:max-displayed="2"
+								size="sm"
+								stack-direction="left"
+							/>
 						</div>
 					</div>
 				</div>
 
-				<Button v-if="isJoinable(event)" variant="outline" @click="$emit('join', event)">
+				<Button v-if="isJoinable(event)" variant="outline" @click="joinMeeting(event)">
 					Join
 				</Button>
 			</div>
