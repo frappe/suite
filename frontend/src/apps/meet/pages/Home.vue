@@ -14,62 +14,62 @@
 						</p>
 					</div>
 
-				<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="startInstantMeeting"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideZap class="size-6 text-ink-gray-8" />
+					<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
+						<button
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							@click="startInstantMeeting"
+						>
+							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+									<LucideZap class="size-6 text-ink-gray-8" />
+								</div>
 							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
-					</button>
+							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Instant meet</span>
+						</button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="startRestrictedMeeting"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideLock class="size-6 text-ink-gray-8" />
+						<button
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							@click="startRestrictedMeeting"
+						>
+							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+									<LucideLock class="size-6 text-ink-gray-8" />
+								</div>
 							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
-					</button>
+							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Restricted meet</span>
+						</button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="openScheduleDialog"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideCalendarPlus class="size-6 text-ink-gray-8" />
+						<button
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							@click="openScheduleDialog"
+						>
+							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+									<LucideCalendarPlus class="size-6 text-ink-gray-8" />
+								</div>
 							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
-					</button>
+							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
+						</button>
 
-					<button
-						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
-						@click="showJoinDialog = true"
-					>
-						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
-							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
-								<LucideLink class="size-6 text-ink-gray-8" />
+						<button
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							@click="showJoinDialog = true"
+						>
+							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+								<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+									<LucideLink class="size-6 text-ink-gray-8" />
+								</div>
 							</div>
-						</div>
-						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
-					</button>
+							<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
+						</button>
+					</div>
+
+					<UpcomingMeetings
+						:meetings="upcomingMeetings"
+						:current-user-email="currentUserEmail"
+						@join="joinScheduledMeeting"
+					/>
 				</div>
-
-				<UpcomingMeetings
-					:meetings="upcomingMeetings"
-					:current-user-email="currentUserEmail"
-					@join="joinScheduledMeeting"
-				/>
-			</div>
 			</div>
 		</div>
 
@@ -119,7 +119,12 @@
 			</template>
 			<template #actions>
 				<div class="flex justify-end">
-					<Button variant="solid" :loading="scheduleMeeting.loading" @click="submitScheduledMeeting">
+					<Button
+						variant="solid"
+						:loading="scheduleMeeting.loading"
+						:disabled="!isScheduleTimeValid"
+						@click="submitScheduledMeeting"
+					>
 						Schedule
 					</Button>
 				</div>
@@ -202,9 +207,20 @@ const upcomingEvents = createResource({
 	}),
 });
 
+const scheduleStart = computed(() => dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`));
+const scheduleEnd = computed(() => dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`));
+
+const isScheduleTimeValid = computed(
+	() =>
+		Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
+		scheduleStart.value.isValid() &&
+		scheduleEnd.value.isValid(),
+);
+
 const scheduledDuration = computed(() => {
-	const start = dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`);
-	let end = dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`);
+	if (!isScheduleTimeValid.value) return "";
+	const start = scheduleStart.value;
+	let end = scheduleEnd.value;
 	if (!end.isAfter(start)) end = start.add(1, "hour");
 	const diff = dayjs.duration(end.diff(start));
 	return dayjs.duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() }).toISOString();
@@ -235,9 +251,8 @@ const scheduleMeeting = createResource({
 	url: "suite.meet.api.schedule.create_scheduled_meeting",
 	makeParams: () => ({
 		account: calendarStore.accountId,
-		organizer: calendarStore.userResource.data?.name || userResource.data?.name,
 		title: scheduleTitle.value,
-		start: dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`).format("YYYY-MM-DD[T]HH:mm:ss"),
+		start: scheduleStart.value.format("YYYY-MM-DD[T]HH:mm:ss"),
 		duration: scheduledDuration.value,
 		time_zone: timezone(),
 		participants: scheduledParticipants.value,
@@ -295,6 +310,10 @@ const submitScheduledMeeting = () => {
 		toast.error("Set up Calendar before scheduling a Meet.");
 		return;
 	}
+	if (!isScheduleTimeValid.value) {
+		toast.error("Enter a valid date, start time, and end time.");
+		return;
+	}
 	toast.promise(scheduleMeeting.submit(), {
 		loading: "Scheduling meeting...",
 		error: "Failed to schedule meeting. Please try again.",
@@ -328,10 +347,25 @@ const isMeetingCodeValid = (code: string) => {
 };
 
 const getMeetingUrl = (event: any) => {
-	const link = event.links?.find((item: any) => item?.href?.includes("/meet/"));
-	if (link?.href) return link.href;
+	const link = event.links?.find((item: any) => getTrustedMeetUrl(item?.href));
+	if (link?.href) return getTrustedMeetUrl(link.href);
 	const match = event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/);
-	return match?.[0] || "";
+	return getTrustedMeetUrl(match?.[0]);
+};
+
+const getTrustedMeetUrl = (url?: string) => {
+	if (!url) return "";
+	const value = url.replace(/\W+$/, "");
+	if (value.startsWith("/meet/")) return value;
+
+	try {
+		const parsed = new URL(value);
+		if (parsed.origin === window.location.origin && parsed.pathname.startsWith("/meet/")) return parsed.href;
+	} catch {
+		return "";
+	}
+
+	return "";
 };
 
 const getMeetingId = (event: any) =>

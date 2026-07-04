@@ -89,14 +89,30 @@ const participants = computed(() => {
 })
 
 const meetUrl = computed(() => {
-	const link = calendarEvent.links?.find((item: any) => item?.href?.includes('/meet/'))
-	if (link?.href) return link.href
+	const link = calendarEvent.links?.find((item: any) => getMeetUrl(item?.href))
+	if (link?.href) return getMeetUrl(link.href)
 
 	const match = calendarEvent.description?.match(
 		/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/,
 	)
-	return match?.[0]?.replace(/\W+$/, '') || ''
+	return getMeetUrl(match?.[0])
 })
+
+const getMeetUrl = (url?: string) => {
+	if (!url) return ''
+	const value = url.replace(/\W+$/, '')
+	if (value.startsWith('/meet/')) return value
+
+	try {
+		const parsed = new URL(value)
+		if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
+			return parsed.href
+	} catch {
+		return ''
+	}
+
+	return ''
+}
 
 const options = computed(() => {
 	const opts = [{ label: __('Edit'), icon: Edit2, onClick: () => openEditModal() }]
