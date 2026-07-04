@@ -37,10 +37,10 @@ const getParticipantStatusValues = (status: string) => {
 				<Avatar :image="p.user_image" :label="p._name || p.email" size="xl" />
 				<div class="flex flex-col space-y-0.5">
 					<div class="flex items-center space-x-1">
-						<span class="text-sm-medium">
+						<span class="text-ink-gray-8 text-sm-medium">
 							{{ extractNameFromEmail(p._name || p.email) }}
 						</span>
-						<span v-if="p.email === organizer" class="text-ink-gray-4 text-xs">
+						<span v-if="p.email === organizer" class="text-ink-gray-5 text-xs">
 							({{ __('Organizer') }})
 						</span>
 
@@ -57,7 +57,7 @@ const getParticipantStatusValues = (status: string) => {
 							/>
 						</div>
 					</div>
-					<span class="text-ink-gray-4 text-sm">{{ p.email }}</span>
+					<span class="text-ink-gray-6 text-sm">{{ p.email }}</span>
 				</div>
 			</div>
 

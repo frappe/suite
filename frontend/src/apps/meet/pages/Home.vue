@@ -5,16 +5,16 @@
 		<div class="flex flex-1 flex-col overflow-auto">
 			<div class="flex flex-1 items-start justify-center pt-[100px]">
 				<div class="w-[760px] max-w-full px-6">
-				<div class="mb-2 flex flex-col gap-0.5">
-					<h1 class="text-xl-semibold text-ink-gray-8 tracking-[0.2px]">
-						Hey {{ firstName }},
-					</h1>
-					<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
-						Start an open meeting, create a restricted meeting, or join with a code.
-					</p>
-				</div>
+					<div class="mb-2 flex flex-col gap-0.5">
+						<h1 class="text-xl-semibold text-ink-gray-8 tracking-[0.2px]">
+							Hey {{ firstName }},
+						</h1>
+						<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">
+							Start an open meeting, create a restricted meeting, or join with a code.
+						</p>
+					</div>
 
-				<div class="mt-[42px] flex gap-4">
+				<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
 					<button
 						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 						@click="startInstantMeeting"
@@ -41,6 +41,18 @@
 
 					<button
 						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+						@click="openScheduleDialog"
+					>
+						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
+							<div class="flex h-11 w-11 items-center justify-center rounded-[30px] bg-surface-base text-ink-gray-8 transition-transform group-hover:scale-105">
+								<LucideCalendarPlus class="size-6 text-ink-gray-8" />
+							</div>
+						</div>
+						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Schedule meet</span>
+					</button>
+
+					<button
+						class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 						@click="showJoinDialog = true"
 					>
 						<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
@@ -51,6 +63,12 @@
 						<span class="text-sm-medium w-full truncate text-center text-ink-gray-8 tracking-[0.21px]">Join with code</span>
 					</button>
 				</div>
+
+				<UpcomingMeetings
+					:meetings="upcomingMeetings"
+					:current-user-email="currentUserEmail"
+					@join="joinScheduledMeeting"
+				/>
 			</div>
 			</div>
 		</div>
@@ -81,6 +99,32 @@
 				</div>
 			</template>
 		</Dialog>
+
+		<Dialog v-model="showScheduleDialog" :title="'Schedule meet'" :dismissable="true">
+			<template #body-content>
+				<div class="space-y-4">
+					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />
+					<div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+						<FormControl v-model="scheduleDate" label="Date" type="date" />
+						<FormControl v-model="scheduleStartTime" label="Start" type="time" />
+						<FormControl v-model="scheduleEndTime" label="End" type="time" />
+					</div>
+					<ParticipantSelector
+						v-model="scheduleParticipants"
+						:account="calendarStore.accountId"
+						:display-participants="scheduledParticipants"
+						:excluded-emails="currentUserEmail ? [currentUserEmail] : []"
+					/>
+				</div>
+			</template>
+			<template #actions>
+				<div class="flex justify-end">
+					<Button variant="solid" :loading="scheduleMeeting.loading" @click="submitScheduledMeeting">
+						Schedule
+					</Button>
+				</div>
+			</template>
+		</Dialog>
 	</div>
 </template>
 
@@ -95,17 +139,29 @@ import {
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 
+import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
+import dayjs from "@/apps/calendar/utils/dayjs";
+import ParticipantSelector from "@/apps/calendar/components/ParticipantSelector.vue";
 import { useConnectionState } from "../composables/useConnectionState";
 import MeetSidebar from "../components/MeetSidebar.vue";
+import UpcomingMeetings from "../components/UpcomingMeetings.vue";
+import LucideCalendarPlus from "~icons/lucide/calendar-plus";
 import LucideZap from "~icons/lucide/zap";
 import LucideLink from "~icons/lucide/link";
 import LucideLock from "~icons/lucide/lock";
 
 const router = useRouter();
 const connectionState = useConnectionState();
+const calendarStore = useCalendarUserStore();
 const meetingCode = ref("");
 const meetingCodeError = ref("");
 const showJoinDialog = ref(false);
+const showScheduleDialog = ref(false);
+const scheduleTitle = ref("");
+const scheduleDate = ref(dayjs().format("YYYY-MM-DD"));
+const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:mm"));
+const scheduleEndTime = ref(dayjs().add(2, "hour").startOf("hour").format("HH:mm"));
+const scheduleParticipants = ref<any[]>([]);
 
 const userResource = createResource({
 	url: "suite.api.account.get_logged_in_user",
@@ -134,6 +190,76 @@ const createMeeting = createResource({
 	},
 });
 
+const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+const upcomingEvents = createResource({
+	url: "suite.calendar.api.get_calendar_events",
+	makeParams: () => ({
+		account: calendarStore.accountId,
+		from_date: dayjs().startOf("day").format("YYYY-MM-DD[T]HH:mm:ss"),
+		to_date: dayjs().add(2, "day").endOf("day").format("YYYY-MM-DD[T]HH:mm:ss"),
+		time_zone: timezone(),
+	}),
+});
+
+const scheduledDuration = computed(() => {
+	const start = dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`);
+	let end = dayjs(`${scheduleDate.value}T${scheduleEndTime.value}`);
+	if (!end.isAfter(start)) end = start.add(1, "hour");
+	const diff = dayjs.duration(end.diff(start));
+	return dayjs.duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() }).toISOString();
+});
+
+const currentUserEmail = computed(() => calendarStore.userResource.data?.name || userResource.data?.name);
+
+const scheduledParticipants = computed(() => {
+	const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name;
+	const currentImage = calendarStore.userResource.data?.user_image || userResource.data?.user_image;
+	const participants = currentUserEmail.value
+		? [
+				{
+					email: currentUserEmail.value,
+					_name: currentName,
+					user_image: currentImage,
+					participation_status: "ACCEPTED",
+				},
+			]
+		: [];
+
+	participants.push(...scheduleParticipants.value);
+
+	return participants;
+});
+
+const scheduleMeeting = createResource({
+	url: "suite.meet.api.schedule.create_scheduled_meeting",
+	makeParams: () => ({
+		account: calendarStore.accountId,
+		organizer: calendarStore.userResource.data?.name || userResource.data?.name,
+		title: scheduleTitle.value,
+		start: dayjs(`${scheduleDate.value}T${scheduleStartTime.value}`).format("YYYY-MM-DD[T]HH:mm:ss"),
+		duration: scheduledDuration.value,
+		time_zone: timezone(),
+		participants: scheduledParticipants.value,
+		send_scheduling_messages: scheduledParticipants.value.length > 1,
+	}),
+	onSuccess: () => {
+		showScheduleDialog.value = false;
+		toast.success("Meeting scheduled.");
+		loadUpcomingMeetings();
+	},
+	onError: (error: any) => {
+		console.error("Error scheduling meeting:", error);
+	},
+});
+
+const upcomingMeetings = computed(() => {
+	return [...(upcomingEvents.data || [])]
+		.filter((event: any) => getMeetingUrl(event))
+		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
+		.slice(0, 4);
+});
+
 const startInstantMeeting = () => {
 	toast.promise(createMeeting.submit({ meeting_type: "open" }), {
 		loading: "Creating meeting...",
@@ -147,6 +273,31 @@ const startRestrictedMeeting = () => {
 		loading: "Creating restricted meeting...",
 		success: "Restricted meeting created successfully!",
 		error: "Failed to create meeting. Please try again.",
+	});
+};
+
+const openScheduleDialog = async () => {
+	try {
+		await calendarStore.userResource.promise;
+		if (!calendarStore.accountId) {
+			toast.error("Set up Calendar before scheduling a Meet.");
+			return;
+		}
+		showScheduleDialog.value = true;
+	} catch (error) {
+		console.error("Failed to load calendar account:", error);
+		toast.error("Could not load Calendar account.");
+	}
+};
+
+const submitScheduledMeeting = () => {
+	if (!calendarStore.accountId) {
+		toast.error("Set up Calendar before scheduling a Meet.");
+		return;
+	}
+	toast.promise(scheduleMeeting.submit(), {
+		loading: "Scheduling meeting...",
+		error: "Failed to schedule meeting. Please try again.",
 	});
 };
 
@@ -176,8 +327,31 @@ const isMeetingCodeValid = (code: string) => {
 	return regex.test(code);
 };
 
+const getMeetingUrl = (event: any) => {
+	const link = event.links?.find((item: any) => item?.href?.includes("/meet/"));
+	if (link?.href) return link.href;
+	const match = event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/);
+	return match?.[0] || "";
+};
+
+const getMeetingId = (event: any) =>
+	getMeetingUrl(event).split("/meet/").pop()?.replace(/\W+$/, "") || "";
+
+const joinScheduledMeeting = (event: any) => {
+	const meetingId = getMeetingId(event);
+	if (!meetingId) return;
+	router.push({ name: "meet-meeting", params: { meetingId } });
+};
+
+const loadUpcomingMeetings = () => {
+	if (calendarStore.accountId) upcomingEvents.reload();
+};
+
 onMounted(() => {
 	document.documentElement.style.overflow = "hidden";
+	calendarStore.userResource.promise
+		.then(loadUpcomingMeetings)
+		.catch((error: any) => console.warn("Could not load upcoming calendar meetings:", error));
 });
 onUnmounted(() => {
 	document.documentElement.style.overflow = "";

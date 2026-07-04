@@ -553,15 +553,7 @@ provide("hostControls", {
 	kickParticipant: (...args: unknown[]) =>
 		handleKickParticipant(args[0] as string, args[1] as boolean),
 });
-provide(
-	"meetingTitle",
-	computed(() => {
-		if (!session.isLoggedIn) {
-			return meetingId.value;
-		}
-		return meetingTitle.value;
-	}),
-);
+provide("meetingTitle", computed(() => meetingTitle.value));
 
 provide("poll", poll);
 

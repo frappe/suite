@@ -101,7 +101,7 @@
 					test-id="toolbar-end-call"
 					@click="$emit('end-call')"
 				>
-					<MeetPhoneOffIcon />
+					<MeetPhoneOffIcon class="text-ink-red-6 size-5" />
 				</ToolbarButton>
 			</div>
 
