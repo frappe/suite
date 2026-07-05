@@ -934,19 +934,14 @@ let previousThemeMode: string | null = null;
 let previousBodyTheme: string | null = null;
 let previousBodyThemeMode: string | null = null;
 let themeObserver: MutationObserver | null = null;
+let userChangedTheme = false;
 
 const forceDarkTheme = () => {
 	if (document.documentElement.getAttribute("data-theme") !== "dark") {
 		document.documentElement.setAttribute("data-theme", "dark");
 	}
-	if (document.documentElement.getAttribute("data-theme-mode") !== "dark") {
-		document.documentElement.setAttribute("data-theme-mode", "dark");
-	}
 	if (document.body.getAttribute("data-theme") !== "dark") {
 		document.body.setAttribute("data-theme", "dark");
-	}
-	if (document.body.getAttribute("data-theme-mode") !== "dark") {
-		document.body.setAttribute("data-theme-mode", "dark");
 	}
 };
 
@@ -956,15 +951,25 @@ onMounted(() => {
 	previousBodyTheme = document.body.getAttribute("data-theme");
 	previousBodyThemeMode = document.body.getAttribute("data-theme-mode");
 	forceDarkTheme();
+	document.documentElement.setAttribute("data-theme-mode", "dark");
+	document.body.setAttribute("data-theme-mode", "dark");
 
 	themeObserver = new MutationObserver(forceDarkTheme);
 	themeObserver.observe(document.documentElement, {
 		attributes: true,
-		attributeFilter: ["data-theme", "data-theme-mode"],
+		attributeFilter: ["data-theme"],
 	});
 	themeObserver.observe(document.body, {
 		attributes: true,
-		attributeFilter: ["data-theme", "data-theme-mode"],
+		attributeFilter: ["data-theme"],
+	});
+
+	const modeObserver = new MutationObserver(() => {
+		userChangedTheme = true;
+	});
+	modeObserver.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ["data-theme-mode"],
 	});
 });
 
@@ -972,28 +977,42 @@ onUnmounted(() => {
 	themeObserver?.disconnect();
 	themeObserver = null;
 
-	if (previousTheme) {
-		document.documentElement.setAttribute("data-theme", previousTheme);
+	if (userChangedTheme) {
+		const mode = document.documentElement.getAttribute("data-theme-mode") || "light";
+		const resolved =
+			mode === "automatic"
+				? window.matchMedia("(prefers-color-scheme: dark)").matches
+					? "dark"
+					: "light"
+				: mode;
+		document.documentElement.setAttribute("data-theme", resolved);
+		document.documentElement.setAttribute("data-theme-mode", mode);
+		document.body.setAttribute("data-theme", resolved);
+		document.body.setAttribute("data-theme-mode", mode);
 	} else {
-		document.documentElement.removeAttribute("data-theme");
-	}
+		if (previousTheme) {
+			document.documentElement.setAttribute("data-theme", previousTheme);
+		} else {
+			document.documentElement.removeAttribute("data-theme");
+		}
 
-	if (previousThemeMode) {
-		document.documentElement.setAttribute("data-theme-mode", previousThemeMode);
-	} else {
-		document.documentElement.removeAttribute("data-theme-mode");
-	}
+		if (previousThemeMode) {
+			document.documentElement.setAttribute("data-theme-mode", previousThemeMode);
+		} else {
+			document.documentElement.removeAttribute("data-theme-mode");
+		}
 
-	if (previousBodyTheme) {
-		document.body.setAttribute("data-theme", previousBodyTheme);
-	} else {
-		document.body.removeAttribute("data-theme");
-	}
+		if (previousBodyTheme) {
+			document.body.setAttribute("data-theme", previousBodyTheme);
+		} else {
+			document.body.removeAttribute("data-theme");
+		}
 
-	if (previousBodyThemeMode) {
-		document.body.setAttribute("data-theme-mode", previousBodyThemeMode);
-	} else {
-		document.body.removeAttribute("data-theme-mode");
+		if (previousBodyThemeMode) {
+			document.body.setAttribute("data-theme-mode", previousBodyThemeMode);
+		} else {
+			document.body.removeAttribute("data-theme-mode");
+		}
 	}
 });
 </script>
