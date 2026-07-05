@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { KeyboardShortcutsModal, Sidebar, createResource, useShortcut } from "frappe-ui";
-import { computed, h, ref } from "vue";
+import { Sidebar, createResource, frappeRequest } from "frappe-ui";
+import { computed, h, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
@@ -12,6 +12,11 @@ import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
 import LucideKeyboard from "~icons/lucide/keyboard";
 import LucideLayoutGrid from "~icons/lucide/layout-grid";
+import LucideSunMoon from "~icons/lucide/sun-moon";
+import LucideSun from "~icons/lucide/sun";
+import LucideMoon from "~icons/lucide/moon";
+import LucideMonitor from "~icons/lucide/monitor";
+import LucideCheck from "~icons/lucide/check";
 
 const route = useRoute();
 const sessionStore = useSessionStore();
@@ -23,6 +28,41 @@ const userResource = createResource({
 	cache: "User",
 	auto: true,
 });
+
+function getThemeMode() {
+	return document.documentElement.getAttribute("data-theme-mode") || "light";
+}
+
+function applyTheme(mode: string) {
+	const root = document.documentElement;
+	const preference = mode.toLowerCase();
+	const resolved =
+		preference === "automatic"
+			? window.matchMedia("(prefers-color-scheme: dark)").matches
+				? "dark"
+				: "light"
+			: preference;
+	root.style.colorScheme = resolved;
+	root.setAttribute("data-theme", resolved);
+	root.setAttribute("data-theme-mode", preference);
+}
+
+function switchTheme(theme: string) {
+	applyTheme(theme);
+	if (sessionStore.isLoggedIn) {
+		frappeRequest({
+			url: "frappe.core.doctype.user.user.switch_theme",
+			params: { theme },
+		});
+	}
+}
+
+const themeMode = ref(getThemeMode());
+
+function selectTheme(theme: string) {
+	switchTheme(theme);
+	themeMode.value = theme.toLowerCase();
+}
 
 const apps = { get data() { return getAppSwitcherItems("meet"); } };
 
@@ -68,6 +108,27 @@ const settingsItems = computed(() => [
 				label: "Shortcuts",
 				onClick: () => (showShortcutsDialog.value = true),
 			},
+			{
+				icon: LucideSunMoon,
+				label: "Theme",
+				submenu: [
+					{
+						label: "Light",
+						icon: themeMode.value === "light" ? LucideCheck : LucideSun,
+						onClick: () => selectTheme("Light"),
+					},
+					{
+						label: "Dark",
+						icon: themeMode.value === "dark" ? LucideCheck : LucideMoon,
+						onClick: () => selectTheme("Dark"),
+					},
+					{
+						label: "Automatic",
+						icon: themeMode.value === "automatic" ? LucideCheck : LucideMonitor,
+						onClick: () => selectTheme("Automatic"),
+					},
+				],
+			},
 		],
 	},
 	{
@@ -101,15 +162,7 @@ const sidebarSections = computed(() => [
 	},
 ]);
 
-const showShortcutsDialog = ref(false);
-
-useShortcut({
-	key: "?",
-	description: "View shortcuts",
-	group: "General",
-	allowInDialog: true,
-	handler: () => (showShortcutsDialog.value = true),
-});
+const showShortcutsDialog = inject("showShortcutsDialog") as unknown as ReturnType<typeof ref<boolean>>;
 </script>
 
 <template>
@@ -125,5 +178,4 @@ useShortcut({
 		:sections="sidebarSections"
 	/>
 
-	<KeyboardShortcutsModal v-model:open="showShortcutsDialog" />
 </template>

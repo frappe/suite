@@ -1,15 +1,15 @@
 import { useShortcut } from "frappe-ui";
+import { reactive } from "vue";
 import { pushToTalkEnabled } from "../data/mediaPreferences";
-import type { MediaState } from "./useMediaState";
 
-export function useKeyboardShortcuts(deps: {
-	mediaControls: {
-		toggleMicrophone: () => Promise<void>;
-		toggleCamera: () => Promise<void>;
-	};
-	mediaState: MediaState;
-}) {
-	const { mediaControls, mediaState } = deps;
+export const meetingControls = reactive({
+	toggleMicrophone: async () => {},
+	toggleCamera: async () => {},
+	isMicOn: false,
+});
+
+export function useKeyboardShortcuts(isActive?: () => boolean) {
+	const isActiveFn = isActive || (() => true);
 
 	let unmutedByPushToTalk = false;
 
@@ -20,7 +20,9 @@ export function useKeyboardShortcuts(deps: {
 			description: "Toggle microphone",
 			group: "Meeting controls",
 			condition: isNotTyping,
-			handler: () => mediaControls.toggleMicrophone(),
+			handler: () => {
+				if (isActiveFn()) meetingControls.toggleMicrophone();
+			},
 		},
 		{
 			key: "e",
@@ -28,25 +30,27 @@ export function useKeyboardShortcuts(deps: {
 			description: "Toggle camera",
 			group: "Meeting controls",
 			condition: isNotTyping,
-			handler: () => mediaControls.toggleCamera(),
+			handler: () => {
+				if (isActiveFn()) meetingControls.toggleCamera();
+			},
 		},
 		{
 			key: " ",
 			description: "Push to talk",
 			group: "Meeting controls",
 			triggeredOn: "hold",
-			condition: () => pushToTalkEnabled.value && isNotTyping(),
+			condition: isNotTyping,
 			onHold: () => {
-				if (!mediaState.isMicOn) {
+				if (isActiveFn() && pushToTalkEnabled.value && !meetingControls.isMicOn) {
 					unmutedByPushToTalk = true;
-					mediaControls.toggleMicrophone();
+					meetingControls.toggleMicrophone();
 				}
 			},
 			onRelease: () => {
-				if (unmutedByPushToTalk) {
+				if (isActiveFn() && unmutedByPushToTalk) {
 					unmutedByPushToTalk = false;
-					if (mediaState.isMicOn) {
-						mediaControls.toggleMicrophone();
+					if (meetingControls.isMicOn) {
+						meetingControls.toggleMicrophone();
 					}
 				}
 			},
