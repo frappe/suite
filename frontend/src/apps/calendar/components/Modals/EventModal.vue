@@ -104,6 +104,20 @@ const duration = computed(() => {
 	return dayjs.duration({ hours, minutes }).toISOString()
 })
 
+const startsAt = computed(() =>
+	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
+)
+const endsAt = computed(() =>
+	dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`),
+)
+
+const isDateTimeValid = computed(() => {
+	if (!event.startDate || !event.endDate) return false
+	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
+	if (!startsAt.value.isValid() || !endsAt.value.isValid()) return false
+	return endsAt.value.isAfter(startsAt.value)
+})
+
 const participants = computed(() =>
 	getReorderedParticipants(
 		event.participants,
@@ -120,9 +134,7 @@ const eventParams = computed(() => {
 	const params: Record<string, any> = {
 		user: user.data.name,
 		organizer: event.organizer,
-		start: dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`).format(
-			'YYYY-MM-DD[T]HH:mm:ss',
-		),
+		start: startsAt.value.format('YYYY-MM-DD[T]HH:mm:ss'),
 		duration: duration.value,
 	}
 
@@ -294,6 +306,11 @@ const showNotifyParticipantsModal = ref(false)
 const showRecurringEventModal = ref(false)
 
 const handleSave = () => {
+	if (!isDateTimeValid.value) {
+		toast.error(__('Enter a valid date and an end time after the start time.'))
+		return
+	}
+
 	const needsEmail =
 		hasParticipantsOtherThanUser(selectedEvent?.calendarEvent?.participants) ||
 		hasParticipantsOtherThanUser(event.participants)
@@ -345,6 +362,7 @@ const addAlertOptions = computed(() => [
 const disableSave = computed(() => {
 	if (createEvent.loading || editEvent.loading || editEventInstance.loading) return true
 	if (createMeetEvent.loading) return true
+	if (!isDateTimeValid.value) return true
 	if (!isNew.value && !Object.keys(patch.value).length) return true
 	return false
 })

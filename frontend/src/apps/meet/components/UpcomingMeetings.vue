@@ -165,7 +165,7 @@ defineExpose({ reload })
 			</div>
 		</div>
 		<p v-else class="rounded-xl border border-outline-gray-1 bg-surface-gray-1 px-4 py-5 text-sm text-ink-gray-6">
-			No upcoming Meet meetings.
+			No upcoming Meet meetings
 		</p>
 	</div>
 </template>
