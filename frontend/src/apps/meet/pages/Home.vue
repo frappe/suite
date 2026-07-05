@@ -199,14 +199,14 @@ const isScheduleTimeValid = computed(
 	() =>
 		Boolean(scheduleDate.value && scheduleStartTime.value && scheduleEndTime.value) &&
 		scheduleStart.value.isValid() &&
-		scheduleEnd.value.isValid(),
+		scheduleEnd.value.isValid() &&
+		scheduleEnd.value.isAfter(scheduleStart.value),
 );
 
 const scheduledDuration = computed(() => {
 	if (!isScheduleTimeValid.value) return "";
 	const start = scheduleStart.value;
-	let end = scheduleEnd.value;
-	if (!end.isAfter(start)) end = start.add(1, "hour");
+	const end = scheduleEnd.value;
 	const diff = dayjs.duration(end.diff(start));
 	return dayjs.duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() }).toISOString();
 });
@@ -289,7 +289,7 @@ const submitScheduledMeeting = () => {
 		return;
 	}
 	if (!isScheduleTimeValid.value) {
-		toast.error("Enter a valid date, start time, and end time.");
+		toast.error("Enter a valid date and an end time after the start time.");
 		return;
 	}
 	toast.promise(scheduleMeeting.submit(), {

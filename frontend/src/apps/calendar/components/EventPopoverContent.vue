@@ -101,12 +101,11 @@ const meetUrl = computed(() => {
 const getMeetUrl = (url?: string) => {
 	if (!url) return ''
 	const value = url.replace(/\W+$/, '')
-	if (value.startsWith('/meet/')) return value
 
 	try {
-		const parsed = new URL(value)
+		const parsed = new URL(value, window.location.origin)
 		if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
-			return parsed.href
+			return parsed.pathname + parsed.search + parsed.hash
 	} catch {
 		return ''
 	}
