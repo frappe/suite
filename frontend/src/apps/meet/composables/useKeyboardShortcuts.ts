@@ -47,7 +47,7 @@ export function useKeyboardShortcuts(isActive?: () => boolean) {
 				}
 			},
 			onRelease: () => {
-				if (isActiveFn() && unmutedByPushToTalk) {
+				if (unmutedByPushToTalk) {
 					unmutedByPushToTalk = false;
 					if (meetingControls.isMicOn) {
 						meetingControls.toggleMicrophone();
