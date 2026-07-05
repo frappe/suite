@@ -48,34 +48,27 @@ def create_scheduled_meeting(
 	else:
 		description = meet_description
 
-	try:
-		event_id = add_calendar_event(
-			account=account,
-			organizer=organizer,
-			calendar_ids=calendar_ids,
-			status=status,
-			draft=draft,
-			title=title,
-			start=start,
-			duration=duration,
-			time_zone=time_zone,
-			recurrence_rule=recurrence_rule,
-			show_without_time=show_without_time,
-			free_busy_status=free_busy_status,
-			privacy=privacy,
-			description=description,
-			locations=locations,
-			links=[{"href": meet_url, "content_type": "text/html"}],
-			participants=participants,
-			alerts=alerts,
-			use_default_alerts=use_default_alerts,
-			send_scheduling_messages=send_scheduling_messages,
-		)
-	except Exception:
-		try:
-			frappe.delete_doc("Sae Meeting", meeting_id, ignore_permissions=True)
-		except Exception:
-			frappe.log_error("Failed to clean up scheduled Meet room", "Scheduled Meet Cleanup")
-		raise
+	event_id = add_calendar_event(
+		account=account,
+		organizer=organizer,
+		calendar_ids=calendar_ids,
+		status=status,
+		draft=draft,
+		title=title,
+		start=start,
+		duration=duration,
+		time_zone=time_zone,
+		recurrence_rule=recurrence_rule,
+		show_without_time=show_without_time,
+		free_busy_status=free_busy_status,
+		privacy=privacy,
+		description=description,
+		locations=locations,
+		links=[{"href": meet_url, "content_type": "text/html"}],
+		participants=participants,
+		alerts=alerts,
+		use_default_alerts=use_default_alerts,
+		send_scheduling_messages=send_scheduling_messages,
+	)
 
 	return {"meeting_id": meeting_id, "meeting_url": meet_url, "event_id": event_id}
