@@ -115,6 +115,7 @@ const isDateTimeValid = computed(() => {
 	if (!event.startDate || !event.endDate) return false
 	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
 	if (!startsAt.value.isValid() || !endsAt.value.isValid()) return false
+	if (event.isAllDay) return !endsAt.value.isBefore(startsAt.value, 'day')
 	return endsAt.value.isAfter(startsAt.value)
 })
 
