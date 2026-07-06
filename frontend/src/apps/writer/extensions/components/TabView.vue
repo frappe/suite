@@ -1,21 +1,31 @@
 <script setup>
 import { NodeViewWrapper, NodeViewContent } from '@tiptap/vue-3'
-import { computed } from 'vue'
-import { focusDirective as vFocus } from 'frappe-ui'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   node: Object,
   editor: Object,
 })
 
-const isActive = computed(() => {
-  return props.editor.storage.tab.activeTabId === props.node.attrs.id
+const isActive = ref(props.editor.storage.tab.activeTabId === props.node.attrs.id)
+
+onMounted(() => {
+  // Re-read storage in case changeTab fired before this node view mounted
+  isActive.value = props.editor.storage.tab.activeTabId === props.node.attrs.id
+
+  const handleTabChange = (e) => {
+    isActive.value = e.detail.tabId === props.node.attrs.id
+  }
+
+  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  onBeforeUnmount(() => {
+    props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+  })
 })
 </script>
 
 <template>
   <node-view-wrapper
-    v-focus
     as="div"
     :data-tab-id="node.attrs.id"
     :data-tab-label="node.attrs.label"

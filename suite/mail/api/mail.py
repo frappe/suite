@@ -930,7 +930,7 @@ def _screen_email_addresses(
 		if row:
 			if override and row.action != action:
 				frappe.db.set_value(
-					"Screened Email Address", row.name, "action", action, update_modified=False
+					"Screened Email Address", row.name, "action", action, update_modified=True
 				)
 				changed = True
 			continue

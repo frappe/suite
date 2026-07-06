@@ -16,10 +16,10 @@
 					<FormControl label="Camera" type="autocomplete" v-model="selectedCameraIdLocal"
 						:options="cameraSelectOptions" placeholder="Select camera">
 						<template #prefix>
-							<lucide-camera class="mr-2 h-4 w-4" />
+							<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 				</div>
@@ -28,16 +28,16 @@
 					<FormControl class="w-full" label="Microphone" type="autocomplete" v-model="selectedMicIdLocal"
 						:options="micSelectOptions" placeholder="Select microphone">
 						<template #prefix>
-							<lucide-mic class="mr-2 h-4 w-4" />
+							<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 
 					<div v-if="selectedMicIdLocal" class="w-5">
 						<AudioIndicator class="mt-2" :device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
-							:max-height="40" activeColorClass="bg-gray-800" />
+							:max-height="40" activeColorClass="bg-ink-gray-6" />
 					</div>
 				</div>
 
@@ -45,16 +45,21 @@
 					<FormControl class="w-full" label="Speaker" type="autocomplete" v-model="selectedSpeakerIdLocal"
 						:options="speakerSelectOptions" placeholder="Select speaker">
 						<template #prefix>
-							<lucide-speaker class="mr-2 h-4 w-4" />
+							<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
 						</template>
 						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4" />
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
 						</template>
 					</FormControl>
 
 					<div>
-						<Button class="mt-3" v-if="selectedSpeakerIdLocal" @click="testSpeaker" :loading="isTestingAudio"
-							icon-left="volume-2">
+						<Button 
+						class="mt-3" 
+						v-if="selectedSpeakerIdLocal" 
+						@click="testSpeaker" 
+						:loading="isTestingAudio"
+						icon-left="lucide-volume-2"
+						>
 							Test
 						</Button>
 					</div>
@@ -134,7 +139,7 @@ const cameraSelectOptions = computed(() =>
 	cameraOptions.value.map((camera) => ({
 		label: camera.label,
 		value: camera.deviceId,
-		icon: "camera",
+		icon: "lucide-camera",
 	})),
 );
 
@@ -142,7 +147,7 @@ const micSelectOptions = computed(() =>
 	micOptions.value.map((mic) => ({
 		label: mic.label,
 		value: mic.deviceId,
-		icon: "mic",
+		icon: "lucide-mic",
 	})),
 );
 
@@ -150,7 +155,7 @@ const speakerSelectOptions = computed(() =>
 	speakerOptions.value.map((speaker) => ({
 		label: speaker.label,
 		value: speaker.deviceId,
-		icon: "volume-2",
+		icon: "lucide-volume-2",
 	})),
 );
 

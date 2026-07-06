@@ -66,7 +66,7 @@
           {{ __('Manage') }}
         </Button>
       </div>
-      <LoadingIndicator v-if="!getGeneralAccess.data?.type" class="size-4 mx-auto my-1" />
+      <Skeleton v-if="!getGeneralAccess.data?.type" class="h-3 w-40 my-2" />
       <ul v-else class="space-y-3 text-sm py-2">
         <li class="flex">
           <span class="inline-block w-24 text-ink-gray-5">{{ __('General') }}:</span>
@@ -123,7 +123,7 @@
 import {
   Dialog,
   Button,
-  LoadingIndicator,
+  Skeleton,
   createResource,
 } from 'frappe-ui'
 import { ref, inject } from 'vue'

@@ -1,85 +1,86 @@
 <template>
 	<Dialog
 		v-model="show"
-		:options="{ size: '5xl' }"
+		size="5xl"
+		bare
 	>
-		<template #body>
-			<div class="flex flex-col md:flex-row z-50" :style="{ height: 'calc(100vh - 8rem)' }">
-				<div class="w-full" v-if="isMobile()">
-					<h3
-						class="text-4xl-semibold leading-6 text-ink-gray-9 px-4 py-6">
-						Settings
-					</h3>
-					<FTabs :tabs="flatTabs" v-model="tabIndex" as="div">
-						<template #tab-item="{ tab, selected }">
-							<div
-								class="flex cursor-pointer items-center gap-1.5 py-3 text-base transition"
-								:class="selected ? 'text-ink-gray-9' : 'text-ink-gray-5'"
-							>
-								<component v-if="tab.icon" :is="tab.icon" class="h-4 w-4" />
-								{{ tab.label }}
-							</div>
-						</template>
-						<template #tab-panel="{ tab }">
-							<div class="flex flex-1 flex-col bg-surface-elevation-2 max-w-[816px] w-full">
-								<component
-									:is="tab.component"
-									class="h-full flex flex-col w-full"
-									@device-changed="$emit('device-changed', $event)"
-									:is-visible="show"
-									:meeting-id="meetingId"
-								/>
-							</div>
-						</template>
-					</FTabs>
-				</div>
-				<div class="w-full flex" v-else>
-					<div
-						class="flex w-52 shrink-0 flex-col bg-surface-gray-1 p-2 md:overflow-y-auto hide-scrollbar border-outline-gray-2 border-r"
-					>
-						<h1 class="px-2 pt-2 text-xl-semibold mb-2">
-							Settings
-						</h1>
-						<div v-for="tab in tabs">
-							<div
-								v-if="!tab.hideLabel"
-								class="mb-2 ml-1 mt-3 hidden md:flex gap-1.5 px-1 text-base-medium text-ink-gray-5"
-							>
-								<span>{{ tab.label }}</span>
-							</div>
-							<nav class="md:space-y-1">
-								<button
-									v-for="item in tab.items"
-									:key="item.label"
-									type="button"
-									class="flex h-7 w-full items-center gap-2 rounded px-2 py-1"
-									:class="[
-										activeTab?.label === item.label
-											? 'bg-surface-base shadow-sm'
-											: 'hover:bg-surface-gray-2',
-									]"
-									@click="() => onTabChange(item)"
-								>
-									<component :is="item.icon" class="h-4 w-4 text-ink-gray-7" />
-									<span class="text-base text-ink-gray-8">
-										{{ item.label }}
-									</span>
-								</button>
-							</nav>
+		<template #default>
+	<div class="flex flex-col md:flex-row" :style="{ height: 'calc(100vh - 8rem)' }">
+			<div class="w-full" v-if="isMobile()">
+				<h3
+					class="text-4xl-semibold leading-6 text-ink-gray-9 px-4 py-6">
+					Settings
+				</h3>
+				<FTabs :tabs="flatTabs" v-model="tabIndex" as="div">
+					<template #tab-item="{ tab, selected }">
+						<div
+							class="flex cursor-pointer items-center gap-1.5 py-3 text-base transition"
+							:class="selected ? 'text-ink-gray-9' : 'text-ink-gray-5'"
+						>
+							<component v-if="tab.icon" :is="tab.icon" class="h-4 w-4" />
+							{{ tab.label }}
 						</div>
+					</template>
+					<template #tab-panel="{ tab }">
+						<div class="flex flex-1 flex-col bg-surface-elevation-1 max-w-[816px] w-full">
+							<component
+								:is="tab.component"
+								class="h-full flex flex-col w-full"
+								@device-changed="$emit('device-changed', $event)"
+								:is-visible="show"
+								:meeting-id="meetingId"
+							/>
+						</div>
+					</template>
+				</FTabs>
+			</div>
+			<div class="w-full flex" v-else>
+				<div
+					class="flex w-52 shrink-0 flex-col bg-surface-gray-1 p-2 md:overflow-y-auto hide-scrollbar border-outline-gray-2 border-r"
+				>
+					<h1 class="px-2 pt-2 text-base-semibold text-ink-gray-8 mb-2">
+						Settings
+					</h1>
+					<div v-for="tab in tabs">
+						<div
+							v-if="!tab.hideLabel"
+							class="mb-2 ml-1 mt-3 hidden md:flex gap-1.5 px-1 text-sm-medium text-ink-gray-5"
+						>
+							<span>{{ tab.label }}</span>
+						</div>
+						<nav class="md:space-y-1">
+							<button
+								v-for="item in tab.items"
+								:key="item.label"
+								type="button"
+								class="flex h-7 w-full items-center gap-2 rounded-lg px-2 py-1"
+								:class="[
+									activeTab?.label === item.label
+										? 'bg-surface-base shadow-sm'
+										: 'hover:bg-surface-gray-2',
+								]"
+								@click="() => onTabChange(item)"
+							>
+								<component :is="item.icon" class="h-4 w-4 text-ink-gray-7" />
+								<span class="text-sm text-ink-gray-8">
+									{{ item.label }}
+								</span>
+							</button>
+						</nav>
 					</div>
-					<div class="flex flex-1 flex-col bg-surface-elevation-2 max-w-[816px] w-full">
-						<component
-							:is="activeTab?.component"
-							v-if="activeTab"
-							class="h-full flex flex-col w-full"
-							@device-changed="$emit('device-changed', $event)"
-							:is-visible="show"
-							:meeting-id="meetingId"
-						/>
-					</div>
+				</div>
+				<div class="flex flex-1 flex-col bg-surface-elevation-1 max-w-[816px] w-full">
+					<component
+						:is="activeTab?.component"
+						v-if="activeTab"
+						class="h-full flex flex-col w-full"
+						@device-changed="$emit('device-changed', $event)"
+						:is-visible="show"
+						:meeting-id="meetingId"
+					/>
 				</div>
 			</div>
+		</div>
 		</template>
 	</Dialog>
 </template>

@@ -1,4 +1,8 @@
 import { test, expect, joinFromPreview } from "../fixtures/test";
+import {
+	expectRemoteVideoReceiving,
+	expectVideoReceiving,
+} from "../helpers/media";
 
 test.describe("Media controls", () => {
 	test("camera and microphone toggles are reflected remotely", async ({ hostPage, meetingId, createParticipant }) => {
@@ -7,6 +11,7 @@ test.describe("Media controls", () => {
 		await hostPage.goto(`/meet/${meetingId}`);
 		await joinFromPreview(hostPage);
 		await guest.joinAsGuest(meetingId, `Guest Media ${test.info().parallelIndex}`);
+		await expectRemoteVideoReceiving(guest.page, "Administrator");
 
 		await hostPage.getByTestId("toolbar-camera").click();
 		await hostPage.getByTestId("toolbar-microphone").click();
@@ -28,6 +33,9 @@ test.describe("Media controls", () => {
 
 		await expect(guest.page.locator("[data-tile-id^='screenshare-']")).toHaveCount(1);
 		await expect(guest.page.getByText("Administrator's screen")).toBeVisible();
+		await expectVideoReceiving(
+			guest.page.locator("[data-tile-id^='screenshare-'] video").first(),
+		);
 
 		await hostPage.getByTestId("toolbar-screen-share").click();
 

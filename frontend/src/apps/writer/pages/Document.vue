@@ -44,7 +44,17 @@
     </div>
   </div>
   <ErrorPage v-if="file.error" :error="file.error" />
-  <LoadingIndicator v-else-if="!document.doc && document.loading" size="lg" />
+  <div v-else-if="!document?.doc" class="flex-1 overflow-y-auto flex justify-center">
+    <div class="w-full md:min-w-[48rem] md:max-w-[48rem] px-5 pt-10 space-y-3">
+      <Skeleton class="h-7 w-2/5 rounded" />
+      <div class="h-3" />
+      <Skeleton v-for="(w, i) in ['92%', '78%', '85%', '65%', '88%', '40%', '80%', '70%', '60%', '84%']" :key="i"
+        class="h-3.5 rounded" :style="{ width: w }" />
+      <div class="h-4" />
+      <Skeleton v-for="(w, i) in ['88%', '72%', '90%', '55%', '76%']" :key="'p' + i" class="h-3.5 rounded"
+        :style="{ width: w }" />
+    </div>
+  </div>
   <div v-else-if="document?.doc" class="flex w-full h-full overflow-hidden" v-show="!showVersions">
     <NonCollabEditor v-if="!document.doc?.collab" ref="editorEl" v-model:versionPreview="versionPreview"
       v-model:showSettings="showSettings" :file="file.doc" :document :settings :editable />
@@ -67,14 +77,13 @@ import {
   defineAsyncComponent,
   provide,
   watch,
-  h,
   computed,
   useTemplateRef,
 } from 'vue'
 import { useSessionStore } from '@/boot/session'
 const currentUserId = computed(() => useSessionStore().user)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
-import { Button, LoadingIndicator, useDoc, usePageMeta } from 'frappe-ui'
+import { Button, Skeleton, useDoc, usePageMeta } from 'frappe-ui'
 
 import VersionsSidebar from '@/apps/writer/components/VersionsSidebar.vue'
 import WriterSettings from '@/apps/writer/components/WriterSettings.vue'

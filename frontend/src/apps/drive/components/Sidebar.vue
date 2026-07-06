@@ -200,7 +200,7 @@ const sidebarItems = computed(() => {
           to: { name: 'drive-Inbox' },
           isActive: active('drive-Inbox'),
           accessKey: 'i',
-          suffix: notifCount.data,
+          suffix: notifCount.data ? String(notifCount.data) : undefined,
         },
       ],
     },

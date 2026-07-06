@@ -1,40 +1,28 @@
 <template>
-  <Dialog
-    v-model:open="open"
-    title="Create a folder"
-    size="xs"
-    :actions="[
-      {
-        label: 'Create',
-        variant: 'solid',
-        disabled: folderName.length === 0,
-        loading: createFolder.loading,
-        onClick: submit,
-      },
-    ]"
-    @close="dialogType = ''"
-  >
-    <FormControl
-        v-model="folderName"
-        v-focus
-        label="Name:"
-        @keyup.enter="submit"
-        @keydown="createFolder.error = null"
-      >
-        <template #prefix>
-          <LucideFolderClosed class="size-4" />
-        </template>
-      </FormControl>
-      <div v-if="createFolder.error" class="pt-4 text-base font-sm text-ink-red-6">
-        {{ createFolder.error.messages[0] }}
-      </div>
+  <Dialog v-model:open="open" title="Create a folder" size="xs" :actions="[
+    {
+      label: 'Create',
+      variant: 'solid',
+      disabled: folderName.length === 0,
+      loading: createFolder.loading,
+      onClick: submit,
+    },
+  ]" @close="dialogType = ''">
+    <FormControl v-model="folderName" autofocus label="Name:" @keyup.enter="submit"
+      @keydown="createFolder.error = null">
+      <template #prefix>
+        <LucideFolderClosed class="size-4" />
+      </template>
+    </FormControl>
+    <div v-if="createFolder.error" class="pt-4 text-base font-sm text-ink-red-6">
+      {{ createFolder.error.messages[0] }}
+    </div>
   </Dialog>
 </template>
 
 <script setup>
-import { default as vFocus } from '@/apps/drive/utils/focus'
 import { ref } from 'vue'
-import { Dialog, createResource, FormControl} from 'frappe-ui'
+import { Dialog, createResource, FormControl } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()

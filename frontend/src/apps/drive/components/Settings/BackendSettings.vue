@@ -6,7 +6,12 @@
     <Button label="Sync" class="ml-auto mr-4" @click="confirmSync" />
   </div>
   <div class="overflow-y-auto ps-1">
-    <LoadingIndicator v-if="getDiskSettings.loading" class="size-5 mx-auto my-10" />
+    <div v-if="getDiskSettings.loading" class="flex flex-col gap-4 pb-5 pr-5">
+      <div v-for="i in 4" :key="i" class="flex flex-col gap-1.5">
+        <Skeleton class="h-3 rounded w-24" />
+        <Skeleton class="h-7 rounded w-full" />
+      </div>
+    </div>
     <div v-else class="flex flex-col gap-4 pb-5 pr-5">
       <FormControl
         v-model="generalSettings.root_folder"
@@ -85,7 +90,7 @@
 
 <script setup>
 import { ref, reactive, watch, markRaw } from 'vue'
-import { FormControl, Button, createResource, LoadingIndicator } from 'frappe-ui'
+import { FormControl, Button, createResource, Skeleton } from 'frappe-ui'
 import { toast } from '@/apps/drive/utils/toasts'
 import { createDialog } from '@/apps/drive/utils/dialogs'
 import { getDiskSettings } from '@/apps/drive/resources/permissions'

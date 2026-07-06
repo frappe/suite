@@ -105,7 +105,7 @@ export const useUndo = () => {
 }
 
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
-// <BlockSenderModal> (rendered in MailboxView) reacts to this, so any view can open it.
+// <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
 export interface BlockableSender {
 	name?: string
 	email: string

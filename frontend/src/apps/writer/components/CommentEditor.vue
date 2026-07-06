@@ -1,90 +1,52 @@
 <template>
-  <div
-    class="w-full"
-    @keydown.ctrl.enter.capture.stop="
+  <div class="w-full" @keydown.ctrl.enter.capture.stop="
+    !disabled && !isEmpty && $emit('submit', editor)
+    " @keydown.meta.enter.capture.stop="
       !disabled && !isEmpty && $emit('submit', editor)
-    "
-    @keydown.meta.enter.capture.stop="
-      !disabled && !isEmpty && $emit('submit', editor)
-    "
-    @keydown.esc.stop="$emit('cancel', editor)"
-  >
-    <TextEditor
-      ref="textEditor"
-      :autofocus="true"
-      :editable="editable"
-      :content="content"
-      :mentions="allUsers.data"
-      class="editor flex"
-      :class="editable && 'border rounded'"
-      :editor-class="[
-        'min-w-2 flex-grow prose prose-sm',
-        editable && 'pl-2.5 py-1.5',
-      ]"
-      :placeholder
-      :bubble-menu="[
-        'Bold',
-        'Italic',
-        'Strikethrough',
-        'Separator',
-        'Code',
-        'Blockquote',
-        'Separator',
-        ['Bullet List', 'Numbered List'],
-      ]"
-      @change="
-        (val) => {
-          $emit('change')
-          editorContent = val
-        }
-      "
-    >
-      <template #bottom="{ editor }">
-        <div
-          v-if="editable"
-          class="self-end me-1 flex-shrink-0 flex gap-1 mb-1.5"
-        >
-          <Button
-            v-if="!isEmpty"
-            :disabled
-            variant="ghost"
-            class="!h-5 !w-5 !text-xs !rounded-sm"
-            @click="$emit('submit', editor)"
-          >
-            <template #icon>
-              <LucideMessageCircleReply class="size-3.5" />
-            </template>
-          </Button>
-          <Button
-            v-if="!isEmpty"
-            variant="ghost"
-            class="!h-5 !w-5 !text-xs !rounded-sm"
-            @click="$emit('cancel', editor)"
-          >
-            <template #icon>
-              <LucideX class="w-3.5" />
-            </template>
-          </Button>
-        </div>
-      </template>
-    </TextEditor>
+      " @keydown.esc.stop="$emit('cancel', editor)">
+    <div class="flex" :class="editable && 'border rounded'">
+      <Editor ref="textEditor" v-model="editorContent" :autofocus="true" :editable="editable" :extensions
+        @change="(val) => { modelValue = val; $emit('change') }">
+        <template #default="{ editor }">
+          <EditorBubbleMenu :editor :items="bubbleItems" />
+          <EditorTableMenu :editor />
+          <EditorContent :editor class="min-w-2 flex-grow prose prose-sm prose-v3" :class="editable && 'pl-2.5 py-1.5'"
+            :placeholder style="--editor-font-size: 14px" />
+          <div v-if="editable" class="self-end me-1 flex-shrink-0 flex gap-1 mb-1.5">
+            <Button v-if="!isEmpty" :disabled size="xs" variant="ghost" :icon="LucideMessageCircleReply"
+              @click="$emit('submit', editor)" />
+            <Button v-if="!isEmpty" size="xs" variant="ghost" :icon="LucideX" @click="$emit('cancel', editor)" />
+          </div>
+        </template>
+      </Editor>
+    </div>
   </div>
 </template>
+
 <script setup>
-import { TextEditor, Button } from 'frappe-ui'
+import {
+  Editor,
+  EditorContent,
+  EditorBubbleMenu,
+  EditorTableMenu,
+  RichTextKit,
+  Bold,
+  Italic,
+  Strike,
+  InlineCode,
+  Blockquote,
+  BulletList,
+  OrderedList,
+  InsertLink,
+  Separator,
+} from 'frappe-ui/editor'
+import { Button } from 'frappe-ui'
 import { allUsers } from '@/apps/drive/ui/drive/js/resources'
 import { computed, ref } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
 import LucideX from '~icons/lucide/x'
 
-const editorContent = defineModel({ type: String })
-
-const textEditor = ref('textEditor')
-const editor = computed(() => {
-  return textEditor.value?.editor
-})
-
-defineProps({
+const props = defineProps({
   placeholder: String,
   isEmpty: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
@@ -92,9 +54,25 @@ defineProps({
   content: { type: String, default: '' },
 })
 defineEmits(['submit', 'cancel', 'change'])
+
+const modelValue = defineModel({ type: String })
+// Local ref mirrors the old v0 pattern: content prop sets initial display,
+// modelValue (commentContents) is only updated when the user edits.
+const editorContent = ref(props.content || '')
+
+const textEditor = ref('textEditor')
+const editor = computed(() => textEditor.value?.editor)
+
+const extensions = [RichTextKit.configure({ mention: { items: () => allUsers.data ?? [] } })]
+
+const bubbleItems = [
+  Bold,
+  Italic,
+  Strike,
+  Separator,
+  InlineCode,
+  Blockquote,
+  Separator,
+  { type: 'group', label: 'List', icon: 'lucide-list', items: [BulletList, OrderedList] },
+]
 </script>
-<style>
-.editor > div:first-child {
-  flex-grow: 1;
-}
-</style>

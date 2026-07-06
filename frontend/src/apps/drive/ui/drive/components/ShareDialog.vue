@@ -143,8 +143,15 @@
               </div>
             </div>
           </div>
-          <div v-else class="flex min-h-[19.2vh] w-full">
-            <LoadingIndicator class="w-7 h-auto text-ink-gray-7 mx-auto" />
+          <div v-else class="flex flex-col gap-4 min-h-[19.2vh] py-4 mb-3">
+            <div v-for="i in 3" :key="i" class="flex items-center gap-3 pr-1">
+              <Skeleton class="size-10 rounded-full shrink-0" />
+              <div class="flex flex-col gap-1.5 flex-1">
+                <Skeleton class="h-3.5 rounded w-28" />
+                <Skeleton class="h-3 rounded w-36" />
+              </div>
+              <Skeleton class="ml-auto h-7 w-20 rounded" />
+            </div>
           </div>
           <div class="w-full flex items-center justify-end">
             <div class="flex gap-2">
@@ -178,7 +185,7 @@ const currentUserId = computed(() => useSessionStore().user)
 import {
   Avatar,
   Dialog,
-  LoadingIndicator,
+  Skeleton,
   createResource, Button} from 'frappe-ui'
 import Select from './Select/Select.vue'
 import TeamSelector from './TeamSelector.vue'

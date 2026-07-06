@@ -11,7 +11,7 @@ def execute() -> None:
 	if not frappe.utils.get_url().startswith("https://"):
 		return
 
-	for user in frappe.db.get_all("User Settings", {"username": ["!=", ""]}, pluck="name"):
+	for user in frappe.db.get_all("User Settings", {"username": ["!=", ""]}, pluck="user"):
 		try:
 			service = get_push_subscription_service(user, ignore_permissions=True)
 

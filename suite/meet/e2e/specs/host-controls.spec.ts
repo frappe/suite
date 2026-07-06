@@ -8,15 +8,32 @@ test.describe("Host controls", () => {
 		await hostPage.goto(`/meet/${meetingId}`);
 		await joinFromPreview(hostPage);
 		await guest.joinAsGuest(meetingId, guestName);
+		const guestSelfTile = guest.page
+			.locator("[data-testid^='participant-tile-guest_']")
+			.first();
+		if ((await guestSelfTile.getAttribute("data-audio-enabled")) === "false") {
+			await guest.page.getByTestId("toolbar-microphone").click();
+			await expect(guestSelfTile).toHaveAttribute("data-audio-enabled", "true");
+		}
 
+		await hostPage.getByTestId("toolbar-people").click();
+		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
+
+		const guestRow = hostPage
+			.getByTestId("people-panel")
+			.locator("[data-testid^='people-participant-']")
+			.filter({ hasText: guestName })
+			.first();
 		const guestTileOnHost = hostPage
 			.locator("[data-testid^='participant-tile-']")
 			.filter({ hasText: guestName })
 			.first();
 
+		await expect(guestRow).toBeVisible();
+		await expect(guestRow).toHaveAttribute("data-audio-enabled", "true");
 		await expect(guestTileOnHost).toBeVisible();
-		await guestTileOnHost.hover();
-		await guestTileOnHost.getByRole("button", { name: "Mute participant" }).click();
+		await guestRow.getByRole("button", { name: /Actions for/ }).click();
+		await hostPage.getByRole("menuitem", { name: "Mute" }).click();
 
 		await expect(guestTileOnHost).toHaveAttribute("data-audio-enabled", "false");
 		await expect(
@@ -32,16 +49,23 @@ test.describe("Host controls", () => {
 		await joinFromPreview(hostPage);
 		await guest.joinAsGuest(meetingId, guestName);
 
+		await hostPage.getByTestId("toolbar-people").click();
+		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
+
+		const guestRow = hostPage
+			.getByTestId("people-panel")
+			.locator("[data-testid^='people-participant-']")
+			.filter({ hasText: guestName })
+			.first();
 		const guestTileOnHost = hostPage
 			.locator("[data-testid^='participant-tile-']")
 			.filter({ hasText: guestName })
 			.first();
 
+		await expect(guestRow).toBeVisible();
 		await expect(guestTileOnHost).toBeVisible();
-		await guestTileOnHost.hover();
-		await guestTileOnHost
-			.getByRole("button", { name: "Remove participant" })
-			.click();
+		await guestRow.getByRole("button", { name: /Actions for/ }).click();
+		await hostPage.getByRole("menuitem", { name: "Remove" }).click();
 
 		await expect(hostPage.getByText("Remove Participant")).toBeVisible();
 		await hostPage.getByRole("button", { name: "Remove", exact: true }).click();

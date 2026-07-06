@@ -1,9 +1,10 @@
 <template>
 	<div
-		class="absolute bg-black/60 text-white rounded-full pointer-events-none max-w-[calc(100%-0.5rem)] whitespace-nowrap overflow-hidden text-ellipsis w-fit"
+		class="absolute bg-black/60 text-white rounded-full pointer-events-none max-w-[calc(100%-0.5rem)] whitespace-nowrap overflow-hidden w-fit flex items-center gap-2"
 		:class="pillClasses"
 	>
-		{{ name }}
+		<span class="min-w-0 truncate">{{ name }}</span>
+		<slot />
 	</div>
 </template>
 

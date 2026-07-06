@@ -109,7 +109,7 @@ export default defineConfig(({ mode }) => ({
     allowedHosts: [defaultSite, 'suite.localhost'],
     fs: {
       // Allow the bench + frappe-ui source paths used by the dev proxy/build.
-      allow: ['..', 'node_modules', '../../..'],
+      allow: ['..', 'node_modules', '../../..', '../frappe-ui'],
     },
   },
   optimizeDeps: {

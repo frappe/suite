@@ -7,12 +7,17 @@
   ],
   "scripts": {
     "build": "yarn workspace @suite/frontend build",
-    "watch": "yarn workspace @suite/frontend dev",
+    "dev": "yarn workspace @suite/frontend dev",
     "knip:e2e": "knip --workspace suite/meet/e2e",
     "knip:frontend": "knip --workspace frontend",
     "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
     "knip:sheets-collab": "knip --workspace suite/sheets/collab-server",
     "knip": "knip"
+  },
+  "resolutions": {
+    "@tiptap/core": "3.26.0",
+    "@tiptap/pm": "3.26.0",
+    "@tiptap/vue-3": "3.26.0"
   },
   "devDependencies": {
     "knip": "^6.4.1",

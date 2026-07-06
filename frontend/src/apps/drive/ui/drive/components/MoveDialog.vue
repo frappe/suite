@@ -24,90 +24,47 @@
         <Tabs v-model="tabIndex" as="div" :tabs="tabs">
           <template #tab-panel>
             <div class="py-1 h-64 overflow-auto flex flex-col">
-              <TeamSelector
-                v-if="tabIndex === 1"
-                v-model="chosenTeam"
-                class="py-2 px-1"
-              />
-              <Tree
-                v-for="k in tree.children"
-                :key="k.value"
-                node-key="value"
-                :node="k"
-              >
-                <template
-                  #node="{ node, hasChildren, isCollapsed, toggleCollapsed }"
-                >
-                  <div
-                    class="flex items-center cursor-pointer select-none gap-1 h-7 shrink-0"
-                    @click="openEntity(node)"
-                  >
-                    <div
-                      ref="iconRef"
-                      @click="
-                        (e) => {
-                          if (isCollapsed)
-                            node.children.forEach((k) =>
-                              fetchFolderContents(
-                                k,
-                                { entity_name: k.value },
-                                true,
-                              ),
-                            )
-                          toggleCollapsed(e)
-                        }
-                      "
-                    >
-                      <LucideChevronDown
-                        v-if="hasChildren && !isCollapsed"
-                        class="size-3.5"
-                      />
-                      <LucideChevronRight
-                        v-else-if="hasChildren"
-                        class="size-3.5"
-                      />
+              <TeamSelector v-if="tabIndex === 1" v-model="chosenTeam" class="py-2 px-1" />
+              <Tree v-for="k in tree.children" :key="k.value" node-key="value" :node="k">
+                <template #node="{ node, hasChildren, isCollapsed, toggleCollapsed }">
+                  <div class="flex items-center cursor-pointer select-none gap-1 h-7 shrink-0"
+                    @click="openEntity(node)">
+                    <div ref="iconRef" @click="
+                      (e) => {
+                        if (isCollapsed)
+                          node.children.forEach((k) =>
+                            fetchFolderContents(
+                              k,
+                              { entity_name: k.value },
+                              true,
+                            ),
+                          )
+                        toggleCollapsed(e)
+                      }
+                    ">
+                      <LucideChevronDown v-if="hasChildren && !isCollapsed" class="size-3.5" />
+                      <LucideChevronRight v-else-if="hasChildren" class="size-3.5" />
                       <div v-else class="ps-3.5" />
                     </div>
-                    <div
-                      class="flex-grow rounded-sm text-base truncate h-full flex items-center pl-1"
-                      :class="[
-                        selected === node.value
-                          ? 'bg-surface-gray-3'
-                          : 'hover:bg-surface-gray-2',
-                        entities[0].folder === node.value
-                          ? 'cursor-not-allowed hover:bg-surface-base'
-                          : 'group',
-                      ]"
-                    >
-                      <LucideFolderClosed
-                        v-if="isCollapsed"
-                        class="mr-1 size-4"
-                      />
+                    <div class="flex-grow rounded-sm text-base truncate h-full flex items-center pl-1" :class="[
+                      selected === node.value
+                        ? 'bg-surface-gray-3'
+                        : 'hover:bg-surface-gray-2',
+                      entities[0].folder === node.value
+                        ? 'cursor-not-allowed hover:bg-surface-base'
+                        : 'group',
+                    ]">
+                      <LucideFolderClosed v-if="isCollapsed" class="mr-1 size-4" />
                       <LucideFolder v-else class="mr-1 size-4" />
                       <div v-if="node.value === null" class="overflow-visible">
-                        <Input
-                          v-model="node.label"
-                          v-focus
-                          type="text"
-                          input-class=" !h-6"
-                          @click.stop
-                          @keydown.enter="openEntity(node)"
-                        />
+                        <Input v-model="node.label" autofocus type="text" input-class=" !h-6" @click.stop
+                          @keydown.enter="openEntity(node)" />
                       </div>
-                      <span v-else
-                        >{{ node.label }}
-                        <span
-                          v-if="entities[0].folder === node.value"
-                          class="text-ink-gray-5"
-                          >(current)</span
-                        ></span
-                      >
-                      <Button
-                        class="shrink hidden group-hover:block ml-auto"
-                        :class="{
-                          '!bg-surface-gray-3': selected === node.value,
-                        }"
-                        @click.stop="
+                      <span v-else>{{ node.label }}
+                        <span v-if="entities[0].folder === node.value" class="text-ink-gray-5">(current)</span></span>
+                      <Button class="shrink hidden group-hover:block ml-auto" :class="{
+                        '!bg-surface-gray-3': selected === node.value,
+                      }" @click.stop="
                           (e) => {
                             let obj = {
                               parent: node.value,
@@ -117,27 +74,22 @@
                             node.children.push(obj)
                             if (isCollapsed) toggleCollapsed(e)
                           }
-                        "
-                      >
+                        ">
                         <LucideFolderPlus class="size-4" />
                       </Button>
                     </div>
                   </div>
                 </template>
               </Tree>
-              <div
-                v-if="tree.loading"
-                class="text-base flex justify-center flex-1"
-              >
-                <LoadingIndicator class="w-4.5" />
+              <div v-if="tree.loading" class="space-y-1 py-1">
+                <div v-for="i in 4" :key="i" class="flex items-center gap-1.5 h-7 px-1">
+                  <Skeleton class="size-3.5 rounded shrink-0" />
+                  <Skeleton class="size-4 rounded shrink-0" />
+                  <Skeleton class="h-3 rounded" :style="{ width: folderWidths[(i - 1) % folderWidths.length] }" />
+                </div>
               </div>
-              <div
-                v-else-if="!tree.children.length"
-                class="flex justify-center flex-1"
-              >
-                <div
-                  class="self-center text-sm text-ink-gray-6 flex flex-col gap-2"
-                >
+              <div v-else-if="!tree.children.length" class="flex justify-center flex-1">
+                <div class="self-center text-sm text-ink-gray-6 flex flex-col gap-2">
                   <LucideFolderClosed class="size-5 self-center" />
                   No folders found
                 </div>
@@ -148,59 +100,31 @@
         <div class="flex items-center justify-between pt-4">
           <div class="flex items-center my-auto justify-start">
             <p class="text-sm pr-0.5 shrink-0">Moving to:</p>
-            <Dropdown
-              v-if="dropDownBreadcrumbs.length"
-              class="h-7"
-              :options="dropDownBreadcrumbs"
-            >
+            <Dropdown v-if="dropDownBreadcrumbs.length" class="h-7" :options="dropDownBreadcrumbs">
               <Button variant="ghost">
                 <LucideEllipsis class="size-3.5" />
               </Button>
             </Dropdown>
-            <span
-              v-if="dropDownBreadcrumbs.length"
-              class="text-ink-gray-5 mx-0.5"
-            >
+            <span v-if="dropDownBreadcrumbs.length" class="text-ink-gray-5 mx-0.5">
               {{ '/' }}
             </span>
             <div class="flex w-48 overflow-auto">
-              <div
-                v-for="(crumb, index) in slicedBreadcrumbs"
-                :key="index"
-                class="flex items-center"
-              >
-                <span
-                  v-if="breadcrumbs.length > 1 && index > 0"
-                  class="text-ink-gray-5 mx-0.5"
-                >
+              <div v-for="(crumb, index) in slicedBreadcrumbs" :key="index" class="flex items-center">
+                <span v-if="breadcrumbs.length > 1 && index > 0" class="text-ink-gray-5 mx-0.5">
                   {{ '/' }}
                 </span>
-                <button
-                  class="text-base cursor-pointer truncate max-w-20"
-                  :title="crumb.file_name"
-                  :class="
-                    index === slicedBreadcrumbs.length - 1
-                      ? 'text-ink-gray-9 text-base font-medium p-1'
-                      : 'text-ink-gray-5 text-base rounded-[6px] hover:bg-surface-gray-2 p-1'
-                  "
-                  @click="closeEntity(crumb.name)"
-                >
+                <button class="text-base cursor-pointer truncate max-w-20" :title="crumb.file_name" :class="index === slicedBreadcrumbs.length - 1
+                    ? 'text-ink-gray-9 text-base font-medium p-1'
+                    : 'text-ink-gray-5 text-base rounded-[6px] hover:bg-surface-gray-2 p-1'
+                  " @click="closeEntity(crumb.name)">
                   {{ crumb.file_name }}
                 </button>
               </div>
             </div>
           </div>
-          <Button
-            variant="solid"
-            class="ml-auto"
-            size="sm"
-            :disabled="
-              entities[0].folder !== selected &&
-              chosenTeam === entities[0].team
-            "
-            :loading="move.loading"
-            @click="moveFile"
-          >
+          <Button variant="solid" class="ml-auto" size="sm" :disabled="entities[0].folder !== selected &&
+            chosenTeam === entities[0].team
+            " :loading="move.loading" @click="moveFile">
             <template #prefix>
               <LucideArrowLeftRight class="size-4" />
             </template>
@@ -212,7 +136,6 @@
   </Dialog>
 </template>
 <script setup>
-import { default as vFocus } from '@/apps/drive/utils/focus'
 import { watch, computed, h, ref, reactive } from 'vue'
 
 import {
@@ -223,7 +146,7 @@ import {
   Dropdown,
   Tree,
   Input,
-  LoadingIndicator,
+  Skeleton,
   toast,
 } from 'frappe-ui'
 import { move, getTeams } from '../js/resources'
@@ -241,6 +164,8 @@ import LucideX from '~icons/lucide/x'
 import LucideArrowLeftRight from '~icons/lucide/arrow-left-right'
 import LucideEllipsis from '~icons/lucide/ellipsis'
 import TeamSelector from './TeamSelector.vue'
+
+const folderWidths = ['45%', '60%', '38%', '52%']
 
 const props = defineProps({
   entities: {

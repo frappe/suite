@@ -28,10 +28,10 @@ export const getEditorPos = (relativePos, editor) => {
   )
 }
 
-const createDecorations = (editor, yDoc, comments, active, showResolved) => {
+const createDecorations = (state, yDoc, comments, active, showResolved) => {
   try {
     if (!comments._map.size) return DecorationSet.empty
-    const ystate = ySyncPluginKey.getState(editor.state)
+    const ystate = ySyncPluginKey.getState(state)
     const decos = []
     comments.forEach((comment) => {
       if (!comment.anchor.from || (!showResolved && comment.resolved) || !ystate) return
@@ -57,7 +57,7 @@ const createDecorations = (editor, yDoc, comments, active, showResolved) => {
         }),
       )
     })
-    return DecorationSet.create(editor.state.doc, decos)
+    return DecorationSet.create(state.doc, decos)
   } catch (e) {
     return DecorationSet.empty
   }
@@ -85,7 +85,7 @@ export const CommentExtension = Extension.create({
           init(_, state) {
             const { doc, comments, activeComment, showResolved, onDecorationsPainted } = ext.options
             const decos = createDecorations(
-              ext.editor,
+              state,
               doc,
               comments,
               activeComment.value,
@@ -98,16 +98,15 @@ export const CommentExtension = Extension.create({
             return decos
           },
 
-          apply(tr, oldSet) {
+          apply(tr, oldSet, oldState, newState) {
             const { doc, comments, activeComment, showResolved } = ext.options
-            const rebuild = tr.getMeta(commentPluginKey)?.rebuild
-            if ((!tr.docChanged && !rebuild) || !comments._map.size) return oldSet
+            const shouldRebuild = tr.getMeta(commentPluginKey)?.rebuild
+            if ((!tr.docChanged && !shouldRebuild) || !comments._map.size) return oldSet
 
             const isRemote = tr.getMeta('y-sync$')?.isChangeOrigin
-            if (isRemote || rebuild) {
-              const ySyncMeta = tr.getMeta('y-sync$')
+            if (isRemote || shouldRebuild) {
               return createDecorations(
-                ext.editor,
+                newState,
                 doc,
                 comments,
                 activeComment.value,

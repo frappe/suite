@@ -1,25 +1,10 @@
 <template>
 	<Dialog
 		v-model="showDialog"
-		:options="{
-			title: 'Remove Participant',
-			size: 'sm',
-			actions: [
-				{
-					label: 'Cancel',
-					variant: 'subtle',
-					onClick: () => { showDialog = false; }
-				},
-				{
-					label: 'Remove',
-					variant: 'solid',
-					theme: 'red',
-					onClick: handleKickConfirm
-				}
-			]
-		}"
+		title="Remove Participant"
+		size="sm"
 	>
-		<template #body-content>
+		<template #default>
 			<div class="space-y-4">
 				<p class="text-base text-ink-gray-7">
 					Are you sure you want to remove <strong>{{ participantName }}</strong> from the meeting?
@@ -31,11 +16,17 @@
 				/>
 			</div>
 		</template>
+		<template #actions>
+			<div class="flex justify-end gap-2 w-full">
+				<Button variant="subtle" @click="showDialog = false">Cancel</Button>
+				<Button variant="solid" theme="red" @click="handleKickConfirm">Remove</Button>
+			</div>
+		</template>
 	</Dialog>
 </template>
 
 <script setup lang="ts">
-import { Dialog, FormControl } from "frappe-ui";
+import { Button, Dialog, FormControl } from "frappe-ui";
 import { computed, ref } from "vue";
 
 interface Props {

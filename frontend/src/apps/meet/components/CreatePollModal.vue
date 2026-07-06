@@ -1,19 +1,19 @@
 <template>
-    <Dialog v-model="isOpen" :options="{ title: 'Create a Poll' }">
+    <Dialog v-model="isOpen" title="Create a Poll">
         <template #default>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Question</label>
                     <FormControl
-                        type="text"
+                        type="textarea"
                         v-model="question"
                         placeholder="Ask your audience something..."
-                        autocomplete="off"
+                        required
+                        label="Question"
                     />
                 </div>
 
                 <div class="space-y-2">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Options</label>
+                    <label class="block text-sm font-medium text-ink-gray-7 mb-1">Options</label>
                     <div 
                         v-for="(option, index) in options" 
                         :key="index" 
@@ -34,20 +34,19 @@
                             <lucide-x class="w-4 h-4" />
                         </Button>
                     </div>
+                    <div class="flex justify-start">
+                        <Button
+                            v-if="options.length < 10"
+                            variant="subtle"
+                            @click="addOption"
+                            icon-left="lucide-plus"
+                        >
+                            Add Option
+                        </Button>
+                    </div>
                 </div>
 
-                <div class="flex justify-start mt-2">
-                    <Button
-                        v-if="options.length < 10"
-                        variant="subtle"
-                        @click="addOption"
-                        icon-left="plus"
-                    >
-                        Add Option
-                    </Button>
-                </div>
-
-                <div class="rounded-md bg-gray-50 p-4 text-sm flex gap-4">
+                <div class="rounded-md border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm flex gap-4">
                     <lucide-alert-triangle class="h-5 w-5 text-ink-gray-6"/>
                     <span class="text-ink-gray-8">
                         Polls are temporary and will be deleted once everyone leaves the meeting.

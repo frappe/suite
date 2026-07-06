@@ -1,9 +1,13 @@
+import { TextSelection } from '@tiptap/pm/state'
+
 // Positions the bubble menu to the right of the editor, vertically
 // centered between the start and end of the current selection.
 export function bubbleMenuOptions({ editor, comments }) {
   return {
-    shouldShow: ({ from, to }) => {
+    shouldShow: ({ state, from, to }) => {
       if (from === to) return false
+      // Only show for text selections — not node selections (images) or cell selections (tables)
+      if (!(state.selection instanceof TextSelection)) return false
       let hide = false
       comments.forEach((k) => (k.new || k.edit) && (hide = true))
       return !hide

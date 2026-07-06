@@ -6,10 +6,11 @@ import { cellId, colLabel, parseCellId } from '../utils/cells.js'
 import { AC_FUNS, AC_FUN_KEYS, parseAcToken } from '../utils/formula-ac.js'
 import { isWrapText } from '../utils/text-wrap.js'
 import { CHIP, chipMetrics } from './chip-geometry.js'
+import { checkboxRect } from './checkbox-geometry.js'
 
 export { colLabel, cellId, parseCellId } from '../utils/cells.js'
 
-export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getRightInset, onHyperlinkClick, onDropdownClick, onPivotDrill, onResizeEnd, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false } = {}) {
+export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getFormat, onFill, onBatchCommit, getMergeInfo, isSlave, getMasterId, getComment, getValidation, getCondFormat, getRightInset, onHyperlinkClick, onDropdownClick, onCheckboxToggle, onPivotDrill, onResizeEnd, getSheetNames, getCurrentSheet, getEditingHomeSheet, getDisplay, getCellIds, lazyValues = false } = {}) {
   const ctx = canvas.getContext('2d')
   const dpr = window.devicePixelRatio || 1
 
@@ -1031,11 +1032,28 @@ export function createGrid(canvas, { onSelect, onCommit, onInput, onCancel, getF
       return
     }
 
+    const vrule = getValidation?.(hId)
+
+    // Click on the tickbox of a checkbox-validated cell → toggle it. Clicking
+    // elsewhere in the cell falls through to a normal selection.
+    if (vrule?.type === 'checkbox') {
+      const x = geo.colX(h.c), y = geo.rowY(h.r)
+      const w = geo.cw(h.c), hh = geo.rh(h.r)
+      const box = checkboxRect(w, hh)
+      const lx = (e.clientX - rect.left) / _zoom - x
+      const ly = (e.clientY - rect.top)  / _zoom - y
+      if (lx >= box.x && lx <= box.x + box.size && ly >= box.y && ly <= box.y + box.size) {
+        e.stopPropagation()
+        moveSel(h.r, h.c)
+        onCheckboxToggle?.(hId)
+        return
+      }
+    }
+
     // Click on the dropdown caret of a list-validated cell → open dropdown.
     // The caret zone tracks the chip when one is drawn (list rule + value),
     // else it's the plain arrow box at the cell's right edge. Only list rules
     // get a dropdown — number/length rules fall through to normal selection.
-    const vrule = getValidation?.(hId)
     if (vrule?.type === 'list') {
       const x = geo.colX(h.c), y = geo.rowY(h.r)
       const w = geo.cw(h.c), cellRight = x + w

@@ -2,7 +2,7 @@
   <Navbar />
   <div class="flex-grow overflow-y-auto bg-surface-base">
     <RoundedListView v-if="groupedDocuments" :groups="groupedDocuments" :resource="getDocuments" />
-    <LoadingIndicator v-else-if="getDocuments.loading" class="size-5 mx-auto mt-32" />
+    <WriterDocumentsSkeleton v-else-if="getDocuments.loading" />
     <ErrorPage v-else error="There was an error fetching the documents." />
   </div>
 </template>
@@ -12,8 +12,9 @@ import { computed } from 'vue'
 import { getDocuments } from '@/apps/writer/resources/'
 import RoundedListView from '@/apps/writer/components/RoundedListView.vue'
 import Navbar from '@/apps/writer/components/Navbar.vue'
-import { LoadingIndicator, usePageMeta } from 'frappe-ui'
+import { usePageMeta } from 'frappe-ui'
 import ErrorPage from '@/apps/writer/components/ErrorPage.vue'
+import WriterDocumentsSkeleton from '@/apps/writer/components/WriterDocumentsSkeleton.vue'
 
 const groupedDocuments = computed(() => getDocuments.data && groupByTime(getDocuments.data))
 getDocuments.fetch()
@@ -33,11 +34,7 @@ function groupByTime(entities) {
     Earlier: [],
   }
   entities.forEach((k) => {
-    // remove complex logic; replace with something smarter?
-    const modified = new Date(k.modified)
-    const accessed = new Date(k.accessed)
-    k.recentDate = accessed
-    return k
+    k.recentDate = new Date(k.accessed || k.modified)
   })
   entities
     .sort((a, b) => b.recentDate - a.recentDate)

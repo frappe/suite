@@ -75,14 +75,20 @@ def get_screened_email_addresses(account: str, action: str | None = None) -> lis
 	"""Returns the screened email addresses (with their action) for the given account.
 
 	Keyed on `account` so every user with access to a shared account sees the same list. Pass
-	`action` to restrict to a single action (e.g. only the Reject rules).
+	`action` to restrict to a single action (e.g. only the Reject rules). `creation` and `modified`
+	are included so the settings UI can sort by when a rule was added or last changed (default order).
 	"""
 
 	filters = {"account": account}
 	if action:
 		filters["action"] = action
 
-	return frappe.db.get_all("Screened Email Address", filters=filters, fields=["email", "action"])
+	return frappe.db.get_all(
+		"Screened Email Address",
+		filters=filters,
+		fields=["email", "action", "creation", "modified"],
+		order_by="modified desc",
+	)
 
 
 def get_permission_query_condition(user: str | None = None) -> str | None:

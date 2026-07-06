@@ -3,10 +3,6 @@
 @import url('./print.css');
 @import 'frappe-ui/editor-style.css';
 
-.prose-sm {
-  caret-color: theme('colors.blue.600');
-}
-
 .prose.ProseMirror {
   font-size: var(--editor-font-size, 15px);
   line-height: var(--editor-line-height, 1.5);

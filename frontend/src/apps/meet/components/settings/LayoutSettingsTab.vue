@@ -9,8 +9,8 @@
 			<div class="space-y-6">
 				<Switch
 					class="w-full !px-0"
-					label="Auto-hide toolbar"
-					description="Automatically hide the toolbar after 10 seconds of inactivity"
+					label="Auto-hide header and controls"
+					description="Automatically hide the header and toolbar after 10 seconds of inactivity"
 					v-model="autoHideToolbarLocal"
 				/>
 			</div>

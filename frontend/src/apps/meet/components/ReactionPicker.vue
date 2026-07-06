@@ -9,32 +9,20 @@
 				:side="'top'"
 				:align="'center'"
 				:side-offset="12"
-				class="bg-black/90 rounded-2xl p-3 shadow-xl border border-white/10 max-w-sm w-full z-[70]"
+				class="rounded-2xl bg-surface-base p-3 shadow-xl max-w-sm w-full z-[70]"
 				data-testid="reaction-picker"
 			>
-				<div class="text-center">
-					<div class="grid grid-cols-5 gap-3 mb-4">
-						<button
-							v-for="emoji in reactionEmojis"
-							:key="emoji"
-							type="button"
-							@click="handleReactionSelect(emoji)"
-							class="mx-auto flex items-center justify-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 transition-colors text-4xl"
-							:aria-label="`Send ${emoji} reaction`"
-							:data-testid="`reaction-${emoji}`"
-						>
-							{{ emoji }}
-						</button>
-					</div>
+				<div class="grid grid-cols-7 gap-2">
 					<button
+						v-for="emoji in reactionEmojis"
+						:key="emoji"
 						type="button"
-						@click="handleRaiseHand"
-						class="w-full py-2 px-4 bg-white/10 hover:bg-opacity-100 rounded-lg transition-colors flex items-center justify-center gap-3 font-medium text-white"
-						:class="{ '!bg-gray-800 hover:!bg-gray-800': isHandRaised }"
-						data-testid="toggle-raise-hand"
+						@click="handleReactionSelect(emoji)"
+						class="mx-auto flex items-center justify-center size-9 rounded-lg bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors text-xl"
+						:aria-label="`Send ${emoji} reaction`"
+						:data-testid="`reaction-${emoji}`"
 					>
-						<lucide-hand class="w-5 h-5" />
-						{{ isHandRaised ? "Lower Hand" : "Raise Hand" }}
+						{{ emoji }}
 					</button>
 				</div>
 			</PopoverContent>
@@ -52,13 +40,11 @@ import {
 
 const props = defineProps<{
 	isOpen?: boolean;
-	isHandRaised?: boolean;
 }>();
 
 const emit = defineEmits<{
 	select: [emoji: string];
 	"update:open": [value: boolean];
-	"toggle-raise-hand": [];
 }>();
 
 const reactionEmojis = [
@@ -71,7 +57,6 @@ const reactionEmojis = [
 	"🤔",
 	"😮",
 	"😢",
-	"😡",
 	"🤝",
 	"✨",
 	"🔥",
@@ -81,11 +66,6 @@ const reactionEmojis = [
 
 const handleReactionSelect = (emoji) => {
 	emit("select", emoji);
-};
-
-const handleRaiseHand = () => {
-	emit("toggle-raise-hand");
-	updateOpen(false);
 };
 
 const updateOpen = (value) => {

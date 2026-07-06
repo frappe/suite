@@ -8,60 +8,42 @@
 		leave-to-class="opacity-0 transform translate-y-4"
 	>
 		<div
-			class="z-5 pointer-events-none w-auto max-w-3xl px-4 md:px-0 bottom-4 left-1/2 transform -translate-x-1/2 absolute"
+			class="z-5 pointer-events-none mt-4 flex w-full justify-center px-4 md:px-0"
 		>
 			<div
-				class="flex items-center gap-3 p-4 bg-black/80 backdrop-blur-md rounded-full border border-white/10 shadow-xl pointer-events-auto transition-all duration-300 mx-auto"
+				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-300 mx-auto px-2 py-1"
 			>
 				<!-- Microphone -->
-				<Button
-					@click="$emit('toggle-microphone')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isMicOn,
-					}"
+				<ToolbarButton
+					:variant="isMicOn ? 'default' : 'muted'"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
+					test-id="preview-toolbar-microphone"
+					@click="$emit('toggle-microphone')"
 				>
-					<template #icon>
-						<lucide-mic-off v-if="!isMicOn" class="w-5 h-5 text-white" />
-						<lucide-mic v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetMicIcon v-if="isMicOn" />
+					<MeetMicOffIcon v-else />
+				</ToolbarButton>
 
 				<!-- Camera -->
-				<Button
-					@click="$emit('toggle-camera')"
-					variant="solid"
-					theme="gray"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isCameraOn,
-					}"
+				<ToolbarButton
+					:variant="isCameraOn ? 'default' : 'muted'"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
+					test-id="preview-toolbar-camera"
+					@click="$emit('toggle-camera')"
 				>
-					<template #icon>
-						<lucide-video-off v-if="!isCameraOn" class="w-5 h-5 text-white" />
-						<lucide-video v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetCameraIcon v-if="isCameraOn" />
+					<MeetCameraOffIcon v-else />
+				</ToolbarButton>
 
 				<!-- Settings -->
-				<Button
+				<ToolbarButton
 					v-if="cameraPermissionGranted || microphonePermissionGranted"
-					@click="showSettingsDialog = true"
-					variant="solid"
-					theme="gray"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
 					title="Settings"
+					test-id="preview-toolbar-settings"
+					@click="showSettingsDialog = true"
 				>
-					<template #icon>
-						<lucide-settings class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetSettingsIcon />
+				</ToolbarButton>
 			</div>
 		</div>
 	</Transition>
@@ -75,9 +57,14 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from "frappe-ui";
 import { usePlatform } from "../composables/usePlatform";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
+import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
+import ToolbarButton from "./ToolbarButton.vue";
 
 const $platform = usePlatform();
 

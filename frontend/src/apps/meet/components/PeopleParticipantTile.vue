@@ -1,78 +1,80 @@
 <template>
-	<div class="flex items-center gap-3 py-3 mx-4 border-b border-gray-200 last:border-b-0 transition-colors">
-		<div class="flex-shrink-0">
-			<div
-				class="relative flex items-center justify-center rounded-full overflow-hidden bg-gradient-to-br from-gray-500 to-gray-600 text-white shadow-inner w-10 h-10"
-			>
-				<img
-					v-if="participant.avatar"
-					:src="participant.avatar"
-					:alt="participant.user_name"
-					class="w-full h-full object-cover"
-					draggable="false"
-				/>
-				<span v-else class=" text-sm-semibold select-none">
-					{{ participant.initials }}
-				</span>
-			</div>
-		</div>
+	<div
+		class="flex min-h-11 items-center gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-surface-gray-2"
+		:data-testid="`people-participant-${participant.user_id}`"
+		:data-audio-enabled="participant.audio_enabled ? 'true' : 'false'"
+	>
+		<Avatar
+			size="lg"
+			:image="participant.avatar"
+			:label="participant.user_name || participant.user_id"
+		/>
 
-		<div class="flex-1 min-w-0">
+		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
-				<span class="text-sm-medium text-ink-black truncate">
+				<span class="truncate text-sm text-ink-gray-8 tracking-[0.28px]">
 					{{ participant.user_name }}
 				</span>
 				<span v-if="isCurrentUser" class="text-xs text-ink-gray-5">(You)</span>
-				<Badge v-if="isHost" theme="gray" size="sm">Host</Badge>
-				<Badge v-if="participant.is_guest" theme="gray" size="sm">Guest</Badge>
 			</div>
 		</div>
 
-		<div class="flex items-center gap-2 flex-shrink-0">
+		<div class="ml-auto flex shrink-0 items-center justify-end gap-1">
+			<span
+				v-if="isHost"
+				class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+			>
+				Host
+			</span>
+			<span
+				v-if="participant.is_guest"
+				class="rounded-full bg-surface-gray-4 px-1.5 py-px text-xs text-ink-gray-6 tracking-[0.24px]"
+			>
+				Guest
+			</span>
+		</div>
+
+		<div class="flex flex-shrink-0 items-center gap-1">
 			<!-- Raised Hand Indicator -->
-			<div v-if="isHandRaised" class="w-8 h-8 flex items-center justify-center">
-				<div
-					class="rounded-full bg-[#e54e17] text-white p-1"
-					:title="`${participant.user_name || participant.user_id} has raised their hand`"
-				>
-					<lucide-hand class="w-4 h-4" />
+			<div v-if="isHandRaised" class="flex items-center justify-center p-1.5 rounded-lg" :title="`${participant.user_name || participant.user_id} has raised their hand`">
+				<div class="rounded-full bg-amber-500 p-0.5">
+					<lucide-hand class="w-3.5 h-3.5 text-ink-gray-9" />
 				</div>
 			</div>
 
-			<!-- Audio Indicator -->
-			<div class="w-8 h-8 flex items-center justify-center">
-				<lucide-mic-off v-if="!participant.audio_enabled" class="w-4 h-4 text-ink-gray-4" />
-                <AudioIndicator
-                    v-else-if="stream"
-                    :mediaStream="stream"
-                    :isActive="true"
-                    :maxHeight="16"
-                    :sensitivity="3.0"
-                    activeColorClass="bg-gray-900"
-                />
-			</div>
+			<!-- Video Status -->
+			<span
+				class="flex items-center justify-center p-1.5 text-ink-gray-6"
+				:title="participant.video_enabled ? 'Camera on' : 'Camera off'"
+			>
+				<MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
+				<MeetCameraOffIcon v-else class="size-4" />
+			</span>
 
-			<!-- Video Indicator -->
-			<div class="w-8 h-8 flex items-center justify-center">
-				<lucide-video v-if="participant.video_enabled" class="w-4 h-4 text-ink-gray-7" />
-				<lucide-video-off v-else class="w-4 h-4 text-ink-gray-4" />
-			</div>
+			<!-- Audio Status -->
+			<span
+				class="flex items-center justify-center p-1.5 text-ink-gray-6"
+				:title="participant.audio_enabled ? 'Microphone on' : 'Microphone off'"
+			>
+				<MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
+				<MeetMicOffIcon v-else class="size-4" />
+			</span>
 
-			<div v-if="showHostControls" class="relative">
+			<!-- Host Controls -->
+			<div v-if="canControlParticipant" class="relative">
 				<Dropdown :options="hostOptions" placement="bottom-end">
 					<template #default>
-						<Button
-							variant="ghost"
-							size="sm"
-							class="w-8 h-8"
+						<button
+							class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"
+							:aria-label="`Actions for ${participant.user_name || participant.user_id}`"
+							:data-testid="`people-participant-actions-${participant.user_id}`"
 						>
-							<template #icon>
-								<lucide-more-vertical class="w-4 h-4 text-ink-gray-6" />
-							</template>
-						</Button>
+							<lucide-more-horizontal class="w-4 h-4" />
+						</button>
 					</template>
 				</Dropdown>
 			</div>
+			<div v-else class="w-7 shrink-0" aria-hidden="true" />
 		</div>
 	</div>
 
@@ -85,12 +87,14 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, Dropdown } from "frappe-ui";
+import { Avatar, Dropdown } from "frappe-ui";
 import { computed, ref } from "vue";
-import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
-import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
 
 interface Props {
@@ -116,16 +120,7 @@ const emit = defineEmits<{
 }>();
 
 const meetingCtx = useMeetingContext();
-const { stream } = useAudioStream(props.participant.user_id, {
-	mediaState: meetingCtx?.mediaState,
-	currentUser: meetingCtx?.currentUser,
-});
-
 const showKickDialog = ref(false);
-
-const showHostControls = computed(() => {
-	return props.canControlParticipant;
-});
 
 const isHandRaised = computed(() => {
 	if (!meetingCtx?.raiseHandStore?.raisedHands) return false;
@@ -139,27 +134,27 @@ const handleKickConfirm = (ban: boolean) => {
 
 const hostOptions = computed(() => {
 	return [
-		{
-			icon: "mic-off",
-			label: "Mute",
+        {
+            icon: "lucide-mic-off",
+            label: "Mute",
 			condition: () => !!props.participant.audio_enabled,
 			onClick: () => emit("muteParticipant", props.participant.user_id),
 		},
 		{
-			icon: "slash", // TODO: switch to `hand` if we integrate Lucide instead of FeatherIcon
+            icon: "lucide-hand",
 			label: "Lower Hand",
 			condition: () => isHandRaised.value,
 			onClick: () => emit("lowerHand", props.participant.user_id),
 		},
 		{
-			icon: "user-plus",
-			label: "Promote to Co-host",
+            icon: "lucide-user-plus",
+            label: "Promote to Co-host",
 			condition: () => props.canPromoteToCohost,
 			onClick: () => emit("promoteToCohost", props.participant.user_id),
 		},
 		{
-			icon: "user-x",
-			label: "Remove",
+            icon: "lucide-user-x",
+            label: "Remove",
 			onClick: () => {
 				showKickDialog.value = true;
 			},

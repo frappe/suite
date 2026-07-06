@@ -1,170 +1,93 @@
 <template>
 	<div
 		class="pointer-events-none w-full overflow-hidden shrink-0 transition-[height,margin] duration-500 ease-in-out"
-		:class="{ 'mt-2 mb-2': isVisible }"
-		:style="{ height: toolbarHeight }"
+		:class="isVisible ? 'h-[3.75rem]' : 'h-0'"
 	>
 		<div
-			class="flex justify-center px-4 transition-transform duration-500 ease-in-out"
+			class="grid h-full w-full grid-cols-[1fr_auto_1fr] items-end px-4 transition-transform duration-500 ease-in-out pb-2"
 			:class="isVisible ? 'translate-y-0' : 'translate-y-full'"
 		>
 			<div
-				class="flex items-center gap-3 p-4 bg-black/80 backdrop-blur-md rounded-full border border-white/10 shadow-xl pointer-events-auto transition-all duration-500"
+				class="col-start-2 flex items-center gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				role="toolbar"
+				aria-label="Meeting controls"
 				@mouseenter="onMouseEnter"
 				@mouseleave="onMouseLeave"
 				data-testid="meeting-toolbar"
 			>
 				<!-- Microphone -->
-				<Button
-					@click="$emit('toggle-microphone')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isMicOn,
-					}"
+				<ToolbarButton
+					:variant="isMicOn ? 'default' : 'muted'"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
-					data-testid="toolbar-microphone"
+					test-id="toolbar-microphone"
+					@click="$emit('toggle-microphone')"
 				>
-					<template #icon>
-						<lucide-mic-off v-if="!isMicOn" class="w-5 h-5 text-white" />
-						<lucide-mic v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetMicIcon v-if="isMicOn" />
+					<MeetMicOffIcon v-else />
+				</ToolbarButton>
 
 				<!-- Camera -->
-				<Button
-					@click="$emit('toggle-camera')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': !isCameraOn,
-					}"
+				<ToolbarButton
+					:variant="isCameraOn ? 'default' : 'muted'"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
-					data-testid="toolbar-camera"
+					test-id="toolbar-camera"
+					@click="$emit('toggle-camera')"
 				>
-					<template #icon>
-						<lucide-video-off v-if="!isCameraOn" class="w-5 h-5 text-white" />
-						<lucide-video v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetCameraIcon v-if="isCameraOn" />
+					<MeetCameraOffIcon v-else />
+				</ToolbarButton>
 
 				<!-- Screen Share -->
-				<Button
+				<ToolbarButton
 					v-if="canScreenShare()"
-					@click="$emit('toggle-screen-share')"
-					variant="solid"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-					:class="{
-						'!bg-[#e54e17] hover:!bg-[#e54e17]': isScreenSharing,
-					}"
+					:variant="isScreenSharing ? 'muted' : 'default'"
 					title="Toggle Screen Share"
-					data-testid="toolbar-screen-share"
+					test-id="toolbar-screen-share"
+					@click="$emit('toggle-screen-share')"
 				>
-					<template #icon>
-						<lucide-monitor-up v-if="!isScreenSharing" class="w-5 h-5 text-white" />
-						<lucide-monitor-pause v-else class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetPresentPauseIcon v-if="isScreenSharing" />
+					<MeetPresentIcon v-else />
+				</ToolbarButton>
+
+				<!-- Raise Hand -->
+				<ToolbarButton
+					:variant="isHandRaised ? 'muted' : 'default'"
+					title="Raise Hand"
+					test-id="toolbar-raise-hand"
+					@click="$emit('toggle-raise-hand')"
+				>
+					<MeetHandIcon />
+				</ToolbarButton>
 
 				<!-- Reactions -->
 				<ReactionPicker
 					:is-open="isReactionPickerOpen"
-					:is-hand-raised="isHandRaised"
 					@select="handleReactionSelect"
-					@toggle-raise-hand="$emit('toggle-raise-hand')"
 					@update:open="updateReactionPickerOpen"
 				>
 					<template #trigger>
-						<Button
-							variant="solid"
-							theme="gray"
-							size="lg"
-							class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-							:class="{
-								'!bg-gray-800 hover:!bg-gray-800': isReactionPickerOpen,
-							}"
-							title="Reactions & Raise Hand"
-							data-testid="toolbar-reactions"
+						<ToolbarButton
+							title="Reactions"
+							test-id="toolbar-reactions"
+							@click="() => {}"
 						>
-							<template #icon>
-								<lucide-smile class="w-5 h-5 text-white" />
-							</template>
-						</Button>
+							<MeetSmileIcon />
+						</ToolbarButton>
 					</template>
 				</ReactionPicker>
 
-				<!-- Chat -->
-				<div v-if="!isMobile" class="relative">
-					<Button
-						@click="$emit('toggle-chat')"
-						variant="solid"
-						size="lg"
-						theme="gray"
-						class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-						:class="{
-							'!bg-gray-800 hover:!bg-gray-800': isChatOpen,
-						}"
-						title="Show Chat"
-						data-testid="toolbar-chat"
-					>
-						<template #icon>
-							<lucide-message-square-off
-								v-if="isChatOpen"
-								class="w-5 h-5 text-white"
-							/>
-							<lucide-message-square v-else class="w-5 h-5 text-white" />
-						</template>
-					</Button>
-
-					<!-- Unread Badge -->
-					<div
-						v-if="hasUnread && !isChatOpen"
-						class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"
-					/>
-				</div>
-
-				<!-- People -->
-				<div class="relative" v-if="!isMobile">
-					<Button
-						@click="$emit('toggle-people')"
-						variant="solid"
-						size="lg"
-						theme="gray"
-						class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-						:class="{
-							'!bg-gray-800 hover:!bg-gray-800': isPeopleOpen,
-						}"
-						title="Show Participants"
-						data-testid="toolbar-people"
-					>
-						<template #icon>
-							<lucide-users class="w-5 h-5 text-white" />
-						</template>
-					</Button>
-
-					<div
-						v-if="lobbyUserCount > 0"
-						class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"
-					/>
-				</div>
-
 				<!-- More Options -->
-				<div class="relative" ref="dropdownContainer" @click="handleDropdownClick">
+				<div class="relative">
 					<Dropdown :options="moreOptions" placement="top">
 						<template #default>
 							<Button
-								variant="solid"
-								theme="gray"
 								size="lg"
-								class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95"
-								title="More options"
+								variant="ghost"
 								data-testid="toolbar-more"
+								tooltip="More options"
 							>
 								<template #icon>
-									<lucide-more-horizontal class="w-5 h-5 text-white" />
+									<MeetSettingsIcon />
 								</template>
 							</Button>
 						</template>
@@ -172,19 +95,55 @@
 				</div>
 
 				<!-- End Call -->
-				<Button
-					@click="$emit('end-call')"
-					variant="solid"
-					theme="red"
-					size="lg"
-					class="!rounded-full p-0 !bg-opacity-90 hover:!bg-opacity-100 transition-all duration-200 hover:scale-105 active:scale-95 !bg-red-600 hover:!bg-red-500"
+				<ToolbarButton
+					variant="active"
 					title="End Call"
-					data-testid="toolbar-end-call"
+					test-id="toolbar-end-call"
+					@click="$emit('end-call')"
 				>
-					<template #icon>
-						<lucide-phone-off class="w-5 h-5 text-white" />
-					</template>
-				</Button>
+					<MeetPhoneOffIcon class="text-ink-red-6 size-5" />
+				</ToolbarButton>
+			</div>
+
+			<div
+				class="col-start-3 flex items-center justify-self-end gap-1.5 pointer-events-auto transition-all duration-500 px-2 py-1"
+				role="group"
+				aria-label="Meeting side panels"
+				@mouseenter="onMouseEnter"
+				@mouseleave="onMouseLeave"
+			>
+				<!-- People -->
+				<ToolbarButton
+					v-if="!isMobile"
+					:active="isPeopleOpen"
+					variant="default"
+					title="Show Participants"
+					test-id="toolbar-people"
+					@click="$emit('toggle-people')"
+				>
+					<MeetPeopleIcon />
+					<span
+						v-if="lobbyUserCount && lobbyUserCount > 0"
+						class="absolute top-1 right-1 w-1.5 h-1.5 bg-red-500 rounded-full"
+					/>
+				</ToolbarButton>
+
+				<!-- Chat -->
+				<ToolbarButton
+					v-if="!isMobile"
+					:active="isChatOpen"
+					variant="default"
+					title="Show Chat"
+					test-id="toolbar-chat"
+					@click="$emit('toggle-chat')"
+				>
+					<MeetChatIcon />
+					<span
+						v-if="hasUnread && !isChatOpen"
+						data-testid="toolbar-chat-unread"
+						class="absolute top-2 right-2 w-1.5 h-1.5 bg-red-500 rounded-full"
+					/>
+				</ToolbarButton>
 			</div>
 		</div>
 	</div>
@@ -219,10 +178,23 @@ import { useMeetingDoc } from "../composables/useMeetingDoc";
 import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
 import { autoHideToolbar } from "../data/mediaPreferences";
+import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
+import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
+import MeetChatIcon from "../icons/MeetChatIcon.vue";
+import MeetMicIcon from "../icons/MeetMicIcon.vue";
+import MeetHandIcon from "../icons/MeetHandIcon.vue";
+import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
+import MeetPeopleIcon from "../icons/MeetPeopleIcon.vue";
+import MeetPhoneOffIcon from "../icons/MeetPhoneOffIcon.vue";
+import MeetPresentIcon from "../icons/MeetPresentIcon.vue";
+import MeetPresentPauseIcon from "../icons/MeetPresentPauseIcon.vue";
+import MeetSettingsIcon from "../icons/MeetSettingsIcon.vue";
+import MeetSmileIcon from "../icons/MeetSmileIcon.vue";
 import { canScreenShare } from "../utils/device";
 import MeetingInfoDialog from "./MeetingInfoDialog.vue";
 import ReactionPicker from "./ReactionPicker.vue";
 import SettingsDialog from "./settings/SettingsDialog.vue";
+import ToolbarButton from "./ToolbarButton.vue";
 
 const $platform = usePlatform();
 
@@ -271,7 +243,7 @@ const { isContextReady: isE2EEContextReady } = useE2EEState();
 
 const moreOptions = computed(() => [
 	{
-		icon: "settings",
+		icon: "lucide-settings",
 		label: "Settings",
 		onClick: () => {
 			showSettingsDialog.value = true;
@@ -279,7 +251,7 @@ const moreOptions = computed(() => [
 		},
 	},
 	{
-		icon: "info",
+		icon: "lucide-info",
 		label: "Meeting information",
 		onClick: () => {
 			showMeetingInfoDialog.value = true;
@@ -287,7 +259,7 @@ const moreOptions = computed(() => [
 		},
 	},
 	{
-		icon: props.isFullscreen ? "minimize" : "maximize",
+		icon: props.isFullscreen ? "lucide-minimize" : "lucide-maximize",
 		label: props.isFullscreen ? "Exit full screen" : "Enter full screen",
 		onClick: () => {
 			emit("toggle-fullscreen");
@@ -305,19 +277,17 @@ const moreOptions = computed(() => [
 	...(isMobile.value
 		? [
 				{
-					icon: "users",
+					icon: "lucide-users",
 					label: "People",
 					onClick: () => {
 						emit("toggle-people");
-						isVisible.value = false;
 					},
 				},
 				{
-					icon: "message-square",
+					icon: "lucide-message-square",
 					label: "Chat",
 					onClick: () => {
 						emit("toggle-chat");
-						isVisible.value = false;
 					},
 				},
 			]
@@ -326,17 +296,10 @@ const moreOptions = computed(() => [
 
 const isVisible = ref(true);
 const isHovering = ref(false);
-const isDropdownOpen = ref(false);
-const dropdownContainer = ref(null);
 const showMeetingInfoDialog = ref(false);
 const showSettingsDialog = ref(false);
 const showMeetingInfoWhenE2EEReady = ref(false);
 let hideTimeout = null;
-
-const TOOLBAR_VISIBLE_HEIGHT = "5.5rem";
-const toolbarHeight = computed(() =>
-	isVisible.value ? TOOLBAR_VISIBLE_HEIGHT : "0px",
-);
 
 const showControls = () => {
 	isVisible.value = true;
@@ -355,7 +318,7 @@ const resetHideTimer = (force = false) => {
 
 	if (
 		!force &&
-		(isDropdownOpen.value || isHovering.value || props.isReactionPickerOpen)
+		(isHovering.value || props.isReactionPickerOpen)
 	) {
 		return;
 	}
@@ -392,32 +355,6 @@ const handleShortcut = (event) => {
 	}
 };
 
-const handleDropdownClick = (_event) => {
-	isDropdownOpen.value = !isDropdownOpen.value;
-
-	if (isDropdownOpen.value) {
-		if (hideTimeout) {
-			clearTimeout(hideTimeout);
-			hideTimeout = null;
-		}
-		isVisible.value = true;
-	} else {
-		resetHideTimer();
-	}
-};
-
-const handleDocumentClick = (event) => {
-	if (
-		dropdownContainer.value &&
-		!dropdownContainer.value.contains(event.target)
-	) {
-		if (isDropdownOpen.value) {
-			isDropdownOpen.value = false;
-			resetHideTimer();
-		}
-	}
-};
-
 const handleHostE2EEEnabled = () => {
 	showMeetingInfoWhenE2EEReady.value = true;
 };
@@ -427,7 +364,6 @@ const showMeetingInfoForReadyE2EE = () => {
 	showMeetingInfoDialog.value = true;
 	showControls();
 };
-
 const handleReactionSelect = (emoji) => {
 	emit("toggle-reactions", emoji);
 
@@ -468,7 +404,6 @@ onMounted(() => {
 	document.addEventListener("touchstart", handleActivity);
 	document.addEventListener("touchmove", handleActivity);
 	document.addEventListener("keydown", handleShortcut);
-	document.addEventListener("click", handleDocumentClick);
 	document.addEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 
@@ -482,7 +417,6 @@ onUnmounted(() => {
 	document.removeEventListener("touchstart", handleActivity);
 	document.removeEventListener("touchmove", handleActivity);
 	document.removeEventListener("keydown", handleShortcut);
-	document.removeEventListener("click", handleDocumentClick);
 	document.removeEventListener("meet:e2ee-host-enabled", handleHostE2EEEnabled);
 });
 </script>

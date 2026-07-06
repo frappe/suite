@@ -27,9 +27,11 @@ test.describe("Restricted meeting", () => {
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
 		).toBeVisible({ timeout: lobbyTransitionTimeout });
 
-		await hostPage.getByTestId("toolbar-people").click();
-		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
-		await hostPage.getByRole("button", { name: "Admit all" }).click();
+		const joinRequest = hostPage
+			.locator("[data-testid^='join-request-']")
+			.filter({ hasText: guestName });
+		await expect(joinRequest).toBeVisible({ timeout: lobbyTransitionTimeout });
+		await joinRequest.getByRole("button", { name: "Admit" }).click();
 
 		await expect(guest.page.getByTestId("meeting-layout")).toBeVisible();
 		await expect(guest.page.getByTestId("toolbar-end-call")).toBeVisible();
@@ -59,21 +61,12 @@ test.describe("Restricted meeting", () => {
 			guest.page.getByRole("heading", { name: "Waiting to be admitted" }),
 		).toBeVisible({ timeout: lobbyTransitionTimeout });
 
-		await hostPage.getByTestId("toolbar-people").click();
-		await expect(hostPage.getByTestId("people-panel")).toBeVisible();
-
-		const waitingGuestRows = hostPage
-			.getByTestId("people-panel")
-			.locator("[data-testid^='waiting-user-']")
+		const joinRequest = hostPage
+			.locator("[data-testid^='join-request-']")
 			.filter({ hasText: guestName });
-		const waitingGuestRow = waitingGuestRows.first();
-
-		await expect(waitingGuestRows).toHaveCount(1, {
-			timeout: lobbyTransitionTimeout,
-		});
-		await expect(waitingGuestRow).toBeVisible();
-		await waitingGuestRow.locator("[data-testid^='reject-waiting-user-']").click();
-		await expect(waitingGuestRows).toHaveCount(0, {
+		await expect(joinRequest).toBeVisible({ timeout: lobbyTransitionTimeout });
+		await joinRequest.getByRole("button", { name: "Deny" }).click();
+		await expect(joinRequest).toHaveCount(0, {
 			timeout: lobbyTransitionTimeout,
 		});
 

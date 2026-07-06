@@ -1,6 +1,6 @@
 <template>
 	<div v-if="lobbyUsers.length > 0" class="">
-		<div class="px-4 py-2 text-xs-medium text-ink-gray-5 tracking-wide bg-surface-gray-1 flex items-center justify-between">
+		<div class="px-3 py-2 text-xs-medium text-ink-gray-5 tracking-wide bg-surface-gray-1 flex items-center justify-between">
 			<span>Waiting to join</span>
 			<Button
 				variant="ghost"
@@ -14,22 +14,15 @@
 		<div
 			v-for="lobbyUser in lobbyUsers"
 			:key="lobbyUser.userId"
-			class="flex items-center justify-between mx-4 py-3 border-b last:border-b-0 border-outline-gray-1"
+			class="flex min-h-11 items-center justify-between gap-3 px-3 py-1.5 transition-colors hover:bg-surface-gray-2"
 			:data-testid="`waiting-user-${lobbyUser.userId}`"
 		>
-			<div class="flex items-center gap-3">
-				<img
-					v-if="lobbyUser.avatar"
-					:src="lobbyUser.avatar"
-					:alt="lobbyUser.name || lobbyUser.userId || 'Guest'"
-					class="w-9 h-9 rounded-full object-cover"
+			<div class="flex min-w-0 items-center gap-3">
+				<Avatar
+					size="lg"
+					:image="lobbyUser.avatar"
+					:label="lobbyUser.name || lobbyUser.userId || 'Guest'"
 				/>
-				<div
-					v-else
-					class="w-9 h-9 rounded-full bg-surface-gray-3 flex items-center justify-center text-sm-medium text-ink-gray-7"
-				>
-					{{ getInitials(lobbyUser.name || lobbyUser.userId || 'Guest') }}
-				</div>
 				<div class="flex items-center gap-2">
 					<div class="text-sm-medium text-ink-gray-8 truncate max-w-40">
 						{{ lobbyUser.name || lobbyUser.userId || 'Guest' }}
@@ -41,18 +34,14 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<Button
-					variant="outline"
 					size="sm"
-					theme="green"
 					@click="$emit('approve', lobbyUser.userId)"
 					:data-testid="`approve-waiting-user-${lobbyUser.userId}`"
 				>
 					<lucide-check class="w-4 h-4" />
 				</Button>
 				<Button
-					variant="outline"
 					size="sm"
-					theme="red"
 					@click="$emit('reject', lobbyUser.userId)"
 					:data-testid="`reject-waiting-user-${lobbyUser.userId}`"
 				>
@@ -64,8 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button } from "frappe-ui";
-import { getInitials } from "../utils/text";
+import { Avatar, Badge, Button } from "frappe-ui";
 
 interface LobbyUser {
 	userId: string;

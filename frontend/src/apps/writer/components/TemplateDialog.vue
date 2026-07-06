@@ -1,6 +1,6 @@
 <template>
-  <Dialog v-model:open="show" size="xl" position="top" @after-leave="resetState">
-    <template #body>
+  <Dialog v-model:open="show" size="xl" position="top" bare @after-leave="resetState">
+    <template #default>
       <div class="flex flex-col">
         <div class="relative">
           <div class="p-1.5">

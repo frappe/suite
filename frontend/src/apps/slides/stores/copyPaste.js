@@ -14,7 +14,8 @@ import {
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML, generateUniqueId } from '@/apps/slides/utils/helpers'
+import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
 const { activeEditor } = useTextEditor()
@@ -134,6 +135,14 @@ const handlePastedSlideJSON = async (json) => {
 			slideJSON.elements = JSON.parse(slideJSON.elements)
 		}
 	}
+
+	// Give each paste a fresh identity so repeated pastes don't share ids.
+	// refId (cross-slide transition key) is intentionally kept.
+	slideJSON.clientId = uuid4()
+	slideJSON.elements = (slideJSON.elements || []).map((el) => ({
+		...el,
+		id: generateUniqueId(),
+	}))
 
 	insertSlide(slideJSON, index)
 }

@@ -5,38 +5,39 @@
 		data-testid="meeting-layout"
 		:class="
 			mode === 'sidebar'
-				? 'relative flex flex-col sm:flex-row overflow-hidden mb-2'
-				: 'relative h-full'
+				? 'relative flex flex-col md:flex-row overflow-hidden mb-2 rounded-lg'
+				: 'relative h-full rounded-lg overflow-hidden'
 		"
 	>
 		<!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->
 		<div
-            v-if="mode === 'sidebar' && pinnedTiles.length > 0"
-            class="relative flex-1 sm:flex-1 flex gap-3 min-h-0 pointer-events-none"
-        >
-            <div
-                v-for="tile in pinnedTiles"
-                :key="`${tile.type}-${tile.id}`"
-                :ref="(el) => setPinnedPanelRef(el, tile)"
-                class="relative rounded-lg overflow-hidden flex-1 h-full"
-            ></div>
-        </div>
+			v-if="mode === 'sidebar' && pinnedTiles.length > 0"
+			class="relative flex flex-1 gap-3 min-h-0 pointer-events-none"
+		>
+			<div
+				v-for="tile in pinnedTiles"
+				:key="`${tile.type}-${tile.id}`"
+				:ref="(el) => setPinnedPanelRef(el, tile)"
+				class="relative rounded-lg overflow-hidden flex-1 h-full"
+			></div>
+		</div>
 
 		<!-- ── Tile strip / full grid ─────────────────────────────────────── -->
 		<TransitionGroup
 			name="tile"
 			tag="div"
-			class="h-full gap-2 overflow-hidden"
+			class="gap-2"
 			:class="[
-				mode === 'sidebar'
-					? 'grid auto-rows-fr content-start mt-3 sm:mt-0 sm:ml-3'
-					: 'flex flex-wrap justify-center content-start',
+				mode === 'sidebar' && isMobile
+					? 'flex shrink-0 h-[120px] max-h-[120px] mt-3 overflow-x-auto overflow-y-hidden'
+					: mode === 'sidebar'
+					? 'grid auto-rows-fr md:auto-rows-[calc((100%-1.5rem)/4)] content-start mt-3 md:mt-0 md:ml-3 overflow-hidden'
+					: 'flex h-full flex-wrap justify-center content-start overflow-hidden',
 				mode === 'sidebar' && !isMobile
 					? gridColumns === 2
 						? 'w-72'
 						: 'w-64'
 					: '',
-				mode === 'sidebar' && isMobile ? 'max-h-[120px]' : '',
 			]"
 			:style="{
 				gridTemplateColumns:
@@ -54,7 +55,6 @@
 				:isAudioEnabled="isMicOn"
 				:isActiveSpeaker="activeSpeakerIds.includes(localParticipant.user_id)"
 				:videoRef="setLocalVideoRef"
-				:tileCount="visibleTileCount"
 				:showReaction="pinnedTiles.length===0"
 				:style="tileStyle"
 			/>
@@ -172,15 +172,13 @@ const displayScreenShares = computed(
 
 // ── Pinned area data ──────────────────────────────────────────────────────────
 
-// Unpin when the pinned participant leaves
+// Unpin when a pinned participant leaves.
 watch(
-	() => pinnedTiles.value.filter((t) => t.type === "participant"),
-	(pinnedParticipantTiles) => {
-		pinnedParticipantTiles.forEach((pTile) => {
-			if (!participants.value[pTile.id]) {
-				meetingCtx.gridLayout.unpinTile(pTile.type, pTile.id);
-			}
-		});
+	() => [pinnedTiles.value, participants.value] as const,
+	() => {
+		pinnedTiles.value
+			.filter((tile) => tile.type === "participant" && !participants.value[tile.id])
+			.forEach((tile) => meetingCtx.gridLayout.unpinTile(tile.type, tile.id));
 	},
 	{ deep: true },
 );
@@ -218,7 +216,6 @@ const getScreenShareTileBindings = (shareTile: {
 		isVideoEnabled: true,
 		isAudioEnabled: false,
 		videoRef: wrappedVideoRef,
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		class: isPinned ? "pinned-tile" : undefined,
 		style: isPinned
 			? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`]
@@ -254,7 +251,6 @@ const getParticipantTileBindings = (
 		isAudioEnabled: participant.audio_enabled,
 		isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
 		videoRef: getRemoteVideoRef(participant.user_id),
-		tileCount: isPinned ? 1 : visibleTileCount.value,
 		showReaction: pinnedTiles.value.length === 0,
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]
@@ -329,7 +325,17 @@ const {
 );
 
 const tileStyle = computed(() => {
-	if (mode.value === "sidebar") return undefined;
+	if (mode.value === "sidebar") {
+		if (!isMobile.value) return undefined;
+
+		return {
+			flex: "0 0 calc((100% - 1rem) / 3)",
+			height: "100%",
+			minWidth: "0",
+			minHeight: "0",
+		};
+	}
+
 	const gap = "0.5rem";
 	const columns = gridColumns.value;
 	const rows = Math.ceil(visibleTileCount.value / columns) || 1;

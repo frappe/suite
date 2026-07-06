@@ -1,6 +1,8 @@
 <template>
-	<div class="relative rounded-lg border-2 border-gray-200 bg-gray-100 p-3">
-		<div class="select-all break-all text-xs text-gray-800">
+	<div
+		class="relative rounded-lg border border-outline-gray-2 bg-surface-gray-2 p-3"
+	>
+		<div class="select-all break-all text-xs text-ink-gray-8">
 			<pre
 				:class="{
 					'whitespace-pre-wrap': breakLines,
@@ -15,8 +17,7 @@
 		</div>
 		<button
 			type="button"
-			class="absolute right-2 top-2 rounded-sm border border-gray-200 bg-white p-1 text-xs text-gray-600"
-			variant="outline"
+			class="absolute right-2 top-2 rounded-sm border border-outline-gray-2 bg-surface-gray-1 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
 			@click="copyTextContentToClipboard"
 		>
 			{{ copied ? "copied" : "copy" }}

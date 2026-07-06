@@ -1,71 +1,65 @@
+import { useShortcut } from "frappe-ui";
+import { reactive } from "vue";
 import { pushToTalkEnabled } from "../data/mediaPreferences";
-import type { MediaState } from "./useMediaState";
 
-interface KeyboardShortcutsAPI {
-	handleKeyDown: (event: KeyboardEvent) => void;
-	handleKeyUp: (event: KeyboardEvent) => void;
-}
+export const meetingControls = reactive({
+	toggleMicrophone: async () => {},
+	toggleCamera: async () => {},
+	isMicOn: false,
+});
 
-export function useKeyboardShortcuts(deps: {
-	mediaControls: {
-		toggleMicrophone: () => Promise<void>;
-		toggleCamera: () => Promise<void>;
-	};
-	mediaState: MediaState;
-}): KeyboardShortcutsAPI {
-	const { mediaControls, mediaState } = deps;
+export function useKeyboardShortcuts(isActive?: () => boolean) {
+	const isActiveFn = isActive || (() => true);
 
 	let unmutedByPushToTalk = false;
 
-	const handleKeyDown = (event: KeyboardEvent) => {
-		const targetTag = (event.target as HTMLElement)?.tagName?.toLowerCase();
-		const isInput =
-			targetTag === "input" ||
-			targetTag === "textarea" ||
-			(event.target as HTMLElement)?.isContentEditable;
-
-		if (
-			pushToTalkEnabled.value &&
-			event.code === "Space" &&
-			!isInput &&
-			!event.repeat
-		) {
-			event.preventDefault();
-			if (!mediaState.isMicOn) {
-				unmutedByPushToTalk = true;
-				mediaControls.toggleMicrophone();
-			}
-		}
-
-		if ((event.metaKey || event.ctrlKey) && event.key === "d") {
-			event.preventDefault();
-			mediaControls.toggleMicrophone();
-		}
-		if ((event.metaKey || event.ctrlKey) && event.key === "e") {
-			event.preventDefault();
-			mediaControls.toggleCamera();
-		}
-	};
-
-	const handleKeyUp = (event: KeyboardEvent) => {
-		const targetTag = (event.target as HTMLElement)?.tagName?.toLowerCase();
-		const isInput =
-			targetTag === "input" ||
-			targetTag === "textarea" ||
-			(event.target as HTMLElement)?.isContentEditable;
-
-		if (pushToTalkEnabled.value && event.code === "Space" && !isInput) {
-			if (unmutedByPushToTalk) {
-				unmutedByPushToTalk = false;
-				if (mediaState.isMicOn) {
-					mediaControls.toggleMicrophone();
+	useShortcut([
+		{
+			key: "d",
+			ctrl: true,
+			description: "Toggle microphone",
+			group: "Meeting controls",
+			condition: isNotTyping,
+			handler: () => {
+				if (isActiveFn()) meetingControls.toggleMicrophone();
+			},
+		},
+		{
+			key: "e",
+			ctrl: true,
+			description: "Toggle camera",
+			group: "Meeting controls",
+			condition: isNotTyping,
+			handler: () => {
+				if (isActiveFn()) meetingControls.toggleCamera();
+			},
+		},
+		{
+			key: " ",
+			description: "Push to talk",
+			group: "Meeting controls",
+			triggeredOn: "hold",
+			condition: isNotTyping,
+			onHold: () => {
+				if (isActiveFn() && pushToTalkEnabled.value && !meetingControls.isMicOn) {
+					unmutedByPushToTalk = true;
+					meetingControls.toggleMicrophone();
 				}
-			}
-		}
-	};
+			},
+			onRelease: () => {
+				if (unmutedByPushToTalk) {
+					unmutedByPushToTalk = false;
+					if (meetingControls.isMicOn) {
+						meetingControls.toggleMicrophone();
+					}
+				}
+			},
+		},
+	]);
+}
 
-	return {
-		handleKeyDown,
-		handleKeyUp,
-	};
+function isNotTyping() {
+	return !document.activeElement?.closest(
+		'input, textarea, [contenteditable="true"], [contenteditable=""]',
+	);
 }

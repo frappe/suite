@@ -5,8 +5,9 @@
  "doctype": "DocType",
  "engine": "InnoDB",
   "field_order": [
-   "section_break_voms",
-   "meeting_type",
+    "section_break_voms",
+    "title",
+    "meeting_type",
    "allow_guest",
    "host_only_chat",
    "column_break_1",
@@ -23,6 +24,12 @@
    "fieldname": "section_break_voms",
    "fieldtype": "Section Break",
    "label": "General"
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title"
   },
   {
    "default": "open",

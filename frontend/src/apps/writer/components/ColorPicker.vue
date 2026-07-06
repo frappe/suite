@@ -1,11 +1,10 @@
 <template>
   <Popover
-    transition="default"
     placement="left"
     class="!block w-full"
     popover-class="!min-w-fit !mr-[30px]"
   >
-    <template #target="{ togglePopover, isOpen }">
+    <template #trigger="{ togglePopover, isOpen }">
       <slot
         name="target"
         :toggle-popover="
@@ -17,7 +16,7 @@
         :is-open="isOpen"
       />
     </template>
-    <template #body>
+    <template #default>
       <div ref="colorPicker" class="rounded-lg bg-surface-base p-3 shadow-lg dark:bg-zinc-900">
         <div
           ref="colorMap"

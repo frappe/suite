@@ -2,6 +2,7 @@
 // Rule shape: { type: 'list',        options: ['A','B','C'], message? }
 //             { type: 'number',      operator: 'between'|'gt'|'gte'|'lt'|'lte'|'eq'|'neq'|'not_between', min, max?, message? }
 //             { type: 'text_length', operator: 'between'|'gt'|'gte'|'lt'|'lte'|'eq'|'neq'|'not_between', min, max?, message? }
+//             { type: 'checkbox',    message? }  — cell holds TRUE / FALSE, painted as a tickbox
 // Pure state, no DOM dependency.
 
 import { parseCellId, colLabel } from '../utils/cells.js'
@@ -45,6 +46,12 @@ export function checkRule(rule, value) {
     const len = String(value == null ? '' : value).length
     const ok = _checkNumOp(len, rule.operator, rule.min, rule.max)
     return { valid: ok, message: ok ? null : (rule.message || 'Text length out of allowed range') }
+  }
+
+  if (rule.type === 'checkbox') {
+    const up = String(value).toUpperCase()
+    const ok = up === 'TRUE' || up === 'FALSE'
+    return { valid: ok, message: ok ? null : (rule.message || 'Value must be TRUE or FALSE') }
   }
 
   return { valid: true }

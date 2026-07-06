@@ -1,7 +1,7 @@
 <template>
-	<div class="w-full border border-gray-200 rounded-lg p-3 flex flex-col gap-3">
+	<div class="w-full border border-outline-gray-2 rounded-lg p-3 flex flex-col gap-3">
 		<div>
-			<h3 class="text-base text-gray-900 leading-snug">{{ livePoll.question }}</h3>
+			<h3 class="text-base text-ink-gray-9 leading-snug">{{ livePoll.question }}</h3>
 		</div>
 
 		<div class="space-y-2">
@@ -13,37 +13,37 @@
 				@click="handleVote(option.id)"
 				class="relative overflow-hidden rounded-full w-full text-left transition-colors text-sm"
 				:class="{
-					'hover:bg-gray-50 cursor-pointer': !isSelectionDisabled,
+					'hover:bg-surface-gray-2 cursor-pointer': !isSelectionDisabled,
 					'opacity-60 cursor-not-allowed': isGuest && !hasVoted,
-					'bg-[#f7f6fe] cursor-default': hasVoted && localVotedOption === option.id,
-					'bg-gray-50 cursor-default': hasVoted && localVotedOption !== option.id,
+					'bg-surface-violet-2 cursor-default': hasVoted && localVotedOption === option.id,
+					'bg-surface-gray-1 cursor-default': hasVoted && localVotedOption !== option.id,
 				}"
 			>
 				<div
 					class="absolute inset-y-0 left-0 transition-all duration-500 ease-out rounded-l-full"
 					:class="{
-						'bg-[#d2c5fc]': hasVoted && localVotedOption === option.id,
-						'bg-gray-200': hasVoted && localVotedOption !== option.id,
+						'bg-surface-violet-5': hasVoted && localVotedOption === option.id,
+						'bg-surface-gray-3': hasVoted && localVotedOption !== option.id,
 					}"
 					:style="{ width: hasVoted ? `${getPercentage(option.votes)}%` : '0%' }"
 				/>
 				<div class="relative z-10 flex items-center gap-2 px-3.5 py-2">
-					<span v-if="!hasVoted" class="size-4 aspect-square rounded-full border border-gray-500 shrink-0" />
+					<span v-if="!hasVoted" class="size-4 aspect-square rounded-full border border-outline-gray-4 shrink-0" />
 					<span
-						class="flex-1 min-w-0 truncate text-gray-900 leading-snug"
-						:class="hasVoted && localVotedOption === option.id ? 'font-semibold' : 'font-normal'"
+						class="flex-1 min-w-0 truncate leading-snug flex items-center gap-2"
+						:class="hasVoted && localVotedOption === option.id ? 'font-semibold text-ink-gray-9' : 'font-normal text-ink-gray-9'"
 					>
 						{{ option.text }}
+						<lucide-circle-check-big v-if="hasVoted && localVotedOption === option.id" class="w-3 h-3 shrink-0" />
 					</span>
 					<template v-if="hasVoted">
-						<span class="text-xs text-gray-500 font-medium shrink-0">{{ option.votes }} votes &bull; {{ getPercentage(option.votes) }}%</span>
-						<lucide-circle-check-big v-if="localVotedOption === option.id" class="w-3 h-3 text-gray-800 shrink-0" />
+						<span class="text-xs text-ink-gray-6 font-medium shrink-0">{{ option.votes }} votes &bull; {{ getPercentage(option.votes) }}%</span>
 					</template>
 				</div>
 			</button>
 		</div>
 
-		<div class="text-sm text-gray-500">
+		<div class="text-sm text-ink-gray-6">
 			{{ totalVotes }} {{ totalVotes === 1 ? 'vote' : 'votes' }}
 			<span v-if="isGuest">&bull; Guests can't vote in polls</span>
 		</div>

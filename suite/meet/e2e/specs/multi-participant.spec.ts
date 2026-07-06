@@ -1,4 +1,5 @@
 import { test, expect, joinFromPreview } from "../fixtures/test";
+import { expectRemoteVideoReceiving } from "../helpers/media";
 
 test.describe("Multi participant", () => {
 	test("host and two guests see the same meeting", async ({ hostPage, meetingId, createParticipant }) => {
@@ -11,7 +12,18 @@ test.describe("Multi participant", () => {
 		await guestTwo.joinAsGuest(meetingId, `Guest Two ${test.info().parallelIndex}`);
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(3);
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, "Guest One"),
+			expectRemoteVideoReceiving(hostPage, "Guest Two"),
+			expectRemoteVideoReceiving(guestOne.page, "Administrator"),
+			expectRemoteVideoReceiving(guestTwo.page, "Administrator"),
+		]);
 		await hostPage.getByTestId("toolbar-people").click();
-		await expect(hostPage.getByTestId("people-panel")).toContainText("People (3)");
+
+		const peoplePanel = hostPage.getByTestId("people-panel");
+		await expect(peoplePanel).toContainText("People");
+		await expect(peoplePanel).toContainText("Administrator");
+		await expect(peoplePanel).toContainText("Guest One");
+		await expect(peoplePanel).toContainText("Guest Two");
 	});
 });

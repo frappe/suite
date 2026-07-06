@@ -1,29 +1,14 @@
 <template>
-  <Navbar v-if="!verify?.error && !getEntities.error" :root-resource="verify"
-    :breadcrumbs="pageBreadcrumbs"
+  <Navbar v-if="!verify?.error && !getEntities.error" :root-resource="verify" :breadcrumbs="pageBreadcrumbs"
     :entities="activeEntity ? [activeEntity] : selectedEntitities" />
 
   <ErrorPage v-if="verify?.error || getEntities.error" :error="verify?.error || getEntities.error" />
 
-  <div
-    v-else
-    id="drop-area"
-    ref="container"
-    class="flex flex-col overflow-auto min-h-full bg-surface-base"
-  >
-    <DriveToolBar
-      v-model:sort-order="sortOrder"
-      v-model:search="search"
-      v-model:filters="filters"
-      v-model:team="team"
-      :action-items="actionItems"
-      :selections="selectedEntitities"
-      :get-entities="getEntities || { data: [] }"
-    />
+  <div v-else id="drop-area" ref="container" class="flex flex-col overflow-auto min-h-full bg-surface-base">
+    <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters" v-model:team="team"
+      :action-items="actionItems" :selections="selectedEntitities" :get-entities="getEntities || { data: [] }" />
 
-    <div v-if="!props.getEntities.data" class="m-auto" style="transform: translate(0, -88.5px)">
-      <LoadingIndicator class="size-5 text-ink-gray-9" />
-    </div>
+    <DriveListSkeleton v-if="!props.getEntities.data" />
     <NoFilesSection v-else-if="!props.getEntities.data?.length" :icon="icon" v-bind="empty" />
     <ListView v-else-if="view === 'list'" v-model="selections" :folder-contents="rows && grouper(rows)"
       :action-items="actionItems" :root-entity="verify?.data" @dropped="onDrop" />
@@ -39,12 +24,8 @@
     leave-from-class="translate-y-0 opacity-100" leave-to-class="translate-y-1 opacity-0">
     <UploadTracker />
   </Transition>
-  <ListDialogs
-    v-model="listDialog"
-    :list="props.getEntities"
-    :parent="route.params.entityName"
-    :entities="activeEntity ? [activeEntity] : selectedEntitities"
-  />
+  <ListDialogs v-model="listDialog" :list="props.getEntities" :parent="route.params.entityName"
+    :entities="activeEntity ? [activeEntity] : selectedEntitities" />
 </template>
 <script setup>
 import ListView from '@/apps/drive/components/ListView.vue'
@@ -79,7 +60,7 @@ import { view, getSortOrder, setSortOrder } from '@/apps/drive/data/prefs'
 import { setCurrentFolder } from '@/apps/drive/data/currentFolder'
 import { toast } from '@/apps/drive/utils/toasts'
 import { move } from '@/apps/drive/resources/files'
-import { LoadingIndicator } from 'frappe-ui'
+import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
 import { settings } from '@/apps/drive/resources/permissions'
 import emitter from '@/apps/drive/emitter'
 import { getFileLink } from '@/apps/drive/ui/drive/js/utils'
@@ -325,7 +306,7 @@ const actionItems = computed(() => {
         action: ([entity]) => {
           window.open(
             '/api/method/suite.drive.api.files.redirect_to_original?file_id=' +
-              entity.name,
+            entity.name,
             '_blank'
           )
         },

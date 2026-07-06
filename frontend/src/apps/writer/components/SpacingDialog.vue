@@ -1,9 +1,9 @@
 <template>
-  <Popover transition="default">
-    <template #target="{ togglePopover, isOpen }">
+  <Popover>
+    <template #trigger="{ togglePopover, isOpen }">
       <slot v-bind="{ onClick: () => togglePopover(), isActive: isOpen }"></slot>
     </template>
-    <template #body-main>
+    <template #default>
       <div class="p-4 flex flex-col gap-4 w-64">
         <FormControl
           type="number"

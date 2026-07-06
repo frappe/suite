@@ -14,6 +14,8 @@ export type ScreeningAction = 'Reject' | 'Spam' | 'Accepted'
 export interface ScreenedAddress {
 	email: string
 	action: ScreeningAction
+	creation: string
+	modified: string
 }
 
 // A row in the Screener: one unique sender in the Screening folder, summarised by their latest mail.

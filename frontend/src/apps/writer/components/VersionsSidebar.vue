@@ -103,29 +103,29 @@
       <div v-if="!versionPreview" class="text-base border-b text-ink-gray-8 p-3 select-none">
         This is the current version.
       </div>
-      <TextEditor
+      <Editor
         v-if="editor?.getHTML"
         class="diff-view prose prose-sm md:min-w-[48rem] md:max-w-[48rem] mx-auto py-8 px-10 h-full overflow-y-auto"
-        :extensions="[...COMMON_EXTENSIONS, DiffTag]"
+        :extensions="[RichTextKit, ...COMMON_EXTENSIONS, DiffTag]"
         :editable="false"
-        :content="
+        :model-value="
           versionPreview
             ? generateHTMLDiff(versionPreview[0]?.snapshot, versionPreview[1]?.snapshot)
             : generateHTMLDiff(editor.getHTML(), versions.data[versions.data.length - 1]?.snapshot)
         "
       >
-        <template #editor="{ editor }">
+        <template #default="{ editor }">
           <EditorContent
-            class="prose-sm prose-v2"
+            class="prose-sm prose-v3"
             :style="{
               fontFamily: `var(--font-${settings?.font_family})`,
               fontSize: `${settings?.font_size || 15}px`,
               lineHeight: settings?.line_height || 1.5,
             }"
-            :editor="editor"
+            :editor
           />
         </template>
-      </TextEditor>
+      </Editor>
     </div>
   </div>
 </template>
@@ -211,10 +211,10 @@ import LucidePlus from '~icons/lucide/plus'
 import { onKeyDown } from '@vueuse/core'
 import { computed, ref, h, watch, inject } from 'vue'
 import emitter from '@/apps/writer/emitter'
-import { Button, createResource, Tabs, TextEditor, toast, useList } from 'frappe-ui'
+import { Button, createResource, Tabs, toast, useList } from 'frappe-ui'
+import { Editor, EditorContent, RichTextKit } from 'frappe-ui/editor'
 import { clearDialogs, createDialog } from '@/apps/writer/utils/dialogs'
 import NewVersionDialog from './NewVersionDialog.vue'
-import { EditorContent } from '@tiptap/vue-3'
 
 const props = defineProps({
   settings: Object,

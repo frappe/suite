@@ -59,7 +59,7 @@ const menuItems = computed(() => [
 						},
 						[
 							h('img', { src: app.logo, class: 'size-6' }),
-							h('span', { class: 'max-w-18 text-sm w-full truncate' }, app.title),
+							h('span', { class: 'text-ink-gray-8 max-w-18 text-sm w-full truncate' }, app.title),
 						],
 					),
 				})),

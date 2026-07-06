@@ -78,7 +78,7 @@ def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
-def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
+def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
 	"""Create a new meeting with specified type"""
 	global_settings = frappe.get_cached_doc("Sae Settings")
 	if not global_settings.allow_guest:
@@ -87,6 +87,7 @@ def create(meeting_type: str = "open", allow_guest: bool = True) -> str:
 	meeting: SaeMeeting = frappe.get_doc(
 		{
 			"doctype": "Sae Meeting",
+			"title": title,
 			"meeting_type": meeting_type,
 			"allow_guest": allow_guest,
 		}

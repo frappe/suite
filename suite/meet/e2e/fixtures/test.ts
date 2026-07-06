@@ -62,10 +62,7 @@ async function joinFromPreview(page: Page): Promise<void> {
 	const meetingLayout = page.getByTestId("meeting-layout");
 	const joinButton = page.getByTestId("join-meeting-preview-button");
 
-	await Promise.race([
-		preview.waitFor({ state: "visible", timeout: previewTimeout }),
-		meetingLayout.waitFor({ state: "visible", timeout: previewTimeout }),
-	]);
+	await expect(preview.or(meetingLayout)).toBeVisible({ timeout: previewTimeout });
 
 	if (
 		!(await meetingLayout.isVisible().catch(() => false)) &&
@@ -96,10 +93,9 @@ async function createMeetingViaUi(
 	await page.getByTestId("home-page").waitFor({ state: "visible", timeout: 20_000 });
 
 	if (meetingType === "open") {
-		await page.getByTestId("create-open-meeting-button").click();
+		await page.getByRole("button", { name: "Instant meet" }).click();
 	} else {
-		await page.getByTestId("create-meeting-options").click();
-		await page.getByRole("menuitem", { name: "Create a restricted meeting" }).click();
+		await page.getByRole("button", { name: "Restricted meet" }).click();
 	}
 
 	await page.waitForURL(/\/meet\/[a-z0-9-]+$/);

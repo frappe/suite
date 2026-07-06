@@ -10,7 +10,10 @@ test.describe("Chat", () => {
 		await guest.joinAsGuest(meetingId, `Guest Chat ${test.info().parallelIndex}`);
 
 		await hostPage.getByTestId("toolbar-chat").click();
-		await hostPage.getByPlaceholder("Type a message").fill(message);
+		await hostPage.getByTestId("chat-input-wrapper").click();
+		const hostChatInput = hostPage.getByTestId("chat-input");
+		await expect(hostChatInput).toBeFocused();
+		await hostChatInput.fill(message);
 		await hostPage.getByTestId("chat-send").click();
 
 		await guest.page.getByTestId("toolbar-chat").click();
@@ -30,14 +33,12 @@ test.describe("Chat", () => {
 		await guest.joinAsGuest(meetingId, `Guest Unread ${test.info().parallelIndex}`);
 
 		const chatButton = hostPage.getByTestId("toolbar-chat");
-		const unreadBadge = chatButton.locator(
-			"xpath=ancestor::div[contains(@class,'relative')][1]/div[contains(@class,'bg-red-500')]",
-		);
+		const unreadBadge = hostPage.getByTestId("toolbar-chat-unread");
 
 		await expect(unreadBadge).toHaveCount(0);
 
 		await guest.page.getByTestId("toolbar-chat").click();
-		await guest.page.getByPlaceholder("Type a message").fill(message);
+		await guest.page.getByTestId("chat-input").fill(message);
 		await guest.page.getByTestId("chat-send").click();
 
 		await expect(unreadBadge).toHaveCount(1);

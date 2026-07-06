@@ -1,5 +1,31 @@
 <template>
-	<div class="h-[100dvh] bg-gray-900 flex flex-col" data-meeting-component>
+	<div
+		class="fixed inset-0 h-[100dvh] flex flex-col overflow-hidden bg-surface-base text-ink-gray-9"
+		data-meeting-component
+		data-theme="dark"
+	>
+		<div
+			v-if="!hasConnectionError"
+			class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
+			:class="headerVisible ? 'h-11' : 'h-0'"
+		>
+			<MeetingHeader
+				:meetingId="meetingId"
+				:meetingTitle="meetingTitle"
+			>
+				<template #right>
+					<Button
+						v-if="showPreview && !session.isLoggedIn"
+						variant="ghost"
+						size="sm"
+						@click="redirectToLogin"
+					>
+						Sign In
+					</Button>
+				</template>
+			</MeetingHeader>
+		</div>
+
 		<!-- Loading state -->
 		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
 			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
@@ -22,37 +48,38 @@
 			</div>
 		</div>
 
-		<!-- Preview mode -->
-		<MeetingPreview
-			v-else-if="showPreview"
-			:meetingId="meetingId"
-			:isCameraOn="mediaState.isCameraOn"
-			:isMicOn="mediaState.isMicOn"
-			:cameraPermissionGranted="mediaState.cameraPermissionGranted"
-			:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-			:isConnecting="connectionState.isConnecting"
-			:userInitials="currentUser.userInitials.value"
-			:userAvatar="currentUser.userAvatar.value"
-			:currentUserName="
-				currentUser.currentUser.value?.full_name ||
-				currentUser.currentUser.value?.name ||
-				'You'
-			"
-			:guestAuthToken="connectionState.guestAuthToken"
-			:isWaitingForApproval="lobbyStore.isWaitingForApproval"
-			:setLocalVideoRef="mediaControls.setLocalVideoRef"
-			@toggle-microphone="mediaControls.toggleMicrophone()"
-			@toggle-camera="mediaControls.toggleCamera()"
-			@join-from-preview="joinMeetingFromPreview"
-			@guest-join-complete="handleGuestJoinComplete"
-			@leave-waiting-room="leaveWaitingRoom"
-			@try-join-again="tryJoinAgain"
-			@device-changed="handleDeviceChanged"
-		/>
-
-		<!-- Main meeting interface -->
 		<template v-else>
-			<div class="relative flex flex-1 min-h-0 overflow-hidden">
+			<!-- Preview mode -->
+			<MeetingPreview
+				v-if="showPreview"
+				:meetingId="meetingId"
+				:isCameraOn="mediaState.isCameraOn"
+				:isMicOn="mediaState.isMicOn"
+				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
+				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
+				:isConnecting="connectionState.isConnecting"
+				:userInitials="currentUser.userInitials.value"
+				:userAvatar="currentUser.userAvatar.value"
+				:currentUserName="
+					currentUser.currentUser.value?.full_name ||
+					currentUser.currentUser.value?.name ||
+					'You'
+				"
+				:guestAuthToken="connectionState.guestAuthToken"
+				:isWaitingForApproval="lobbyStore.isWaitingForApproval"
+				:setLocalVideoRef="mediaControls.setLocalVideoRef"
+				@toggle-microphone="mediaControls.toggleMicrophone()"
+				@toggle-camera="mediaControls.toggleCamera()"
+				@join-from-preview="joinMeetingFromPreview"
+				@guest-join-complete="handleGuestJoinComplete"
+				@leave-waiting-room="leaveWaitingRoom"
+				@try-join-again="tryJoinAgain"
+				@device-changed="handleDeviceChanged"
+			/>
+
+			<!-- Main meeting interface -->
+			<template v-else>
+			<div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
 				<div
 					v-if="e2eeJoinPendingMessage"
 					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
@@ -69,37 +96,32 @@
 						gridTemplateColumns: 'minmax(0, 1fr) var(--panel-width)',
 					}"
 				>
-					<!-- Video column — padding-bottom mirrors the toolbar height so tiles
-                 reclaim the space when the toolbar hides, without affecting panels -->
-					<div
-						class="flex flex-col min-h-0 transition-[padding-bottom] duration-500 ease-in-out"
-						:style="{ paddingBottom: isToolbarVisible ? '6rem' : '0' }"
-					>
+					<div class="flex flex-col min-h-0 relative">
 						<!-- Video area -->
-						<div class="p-4 flex flex-col flex-1 min-h-0 text-white">
+						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white">
 							<MeetingLayout @open-people-panel="togglePeople" />
 						</div>
 					</div>
 
 					<!-- Panel Container -->
 					<Transition
-						enter-active-class="transition-all duration-300 ease-out"
-						enter-from-class="opacity-0 transform translate-x-full w-0"
-						enter-to-class="opacity-100 transform translate-x-0"
-						leave-active-class="transition-all duration-300 ease-in"
-						leave-from-class="opacity-100 transform translate-x-0"
-						leave-to-class="opacity-0 transform translate-x-full"
+						enter-active-class="transition-opacity duration-300 ease-out"
+						enter-from-class="opacity-0"
+						enter-to-class="opacity-100"
+						leave-active-class="transition-opacity duration-300 ease-in"
+						leave-from-class="opacity-100"
+						leave-to-class="opacity-0"
 					>
-						<div
-							v-if="activePanel"
-							class="h-full overflow-hidden z-50 md:z-auto bg-black/30 backdrop-blur-sm md:bg-transparent"
-							:class="{
-								'absolute inset-0 w-full': isMobile,
-								relative: !isMobile,
-								'md:relative': true,
-							}"
-							:style="{ width: isMobile ? '100%' : '24rem' }"
-						>
+					<div
+						v-if="activePanel"
+						class="h-full overflow-hidden z-50 md:z-auto bg-surface-base/50 backdrop-blur-sm md:bg-transparent"
+						:class="{
+							'absolute inset-0 w-full': isMobile,
+							relative: !isMobile,
+							'md:relative': true,
+						}"
+						:style="{ width: isMobile ? '100%' : '24rem' }"
+					>
 							<!-- Chat Panel -->
 							<ChatPanel
 								v-if="activePanel === 'chat'"
@@ -143,8 +165,8 @@
 					</Transition>
 				</div>
 
-				<!-- Meeting controls are anchored to the meeting viewport so side panels do not shift them -->
-				<div class="pointer-events-none absolute inset-x-0 bottom-0">
+				<!-- Meeting controls live in their own row so tiles resize without JS padding -->
+				<div class="pointer-events-none min-h-0">
 					<!-- Meeting controls -->
 					<MeetingToolbar
 						:isChatOpen="chatStore.isChatOpen"
@@ -185,6 +207,7 @@
 			/>
 
 			<RejectionOverlay v-if="isRejected && isGuestSession" @leave="goHome" />
+			</template>
 		</template>
 
 		<!-- Chat notifications -->
@@ -214,6 +237,7 @@ import JoinRequestNotifications from "../components/JoinRequestNotifications.vue
 import LobbyOverlay from "../components/LobbyOverlay.vue";
 import MeetingLayout from "../components/MeetingLayout.vue";
 import MeetingPreview from "../components/MeetingPreview.vue";
+import MeetingHeader from "../components/MeetingHeader.vue";
 import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
@@ -225,7 +249,6 @@ import { useConnectionState } from "../composables/useConnectionState";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { useE2EEState } from "../composables/useE2EEState";
 import { useGridLayout } from "../composables/useGridLayout";
-import { useKeyboardShortcuts } from "../composables/useKeyboardShortcuts";
 import { useLobby } from "../composables/useLobby";
 import { useLobbyStore } from "../composables/useLobbyStore";
 import { useMediaControls } from "../composables/useMediaControls";
@@ -248,6 +271,7 @@ import {
 	useSFUConnection,
 } from "../composables/useSFUConnection";
 import {
+	autoHideToolbar,
 	selectedCameraId,
 	selectedMicId,
 	selectedSpeakerId,
@@ -263,6 +287,13 @@ import { usePollStore } from "../composables/usePollStore.js";
 const route = useRoute();
 const router = useRouter();
 const meetingId = computed(() => route.params.meetingId as string);
+
+function redirectToLogin() {
+	const path = window.location.pathname.startsWith("/meet")
+		? window.location.pathname
+		: `/meet${window.location.pathname}`;
+	window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`;
+}
 
 // --- Stores (singletons) ---
 const connectionState = useConnectionState();
@@ -443,6 +474,16 @@ const mediaControls = useMediaControls({
 	},
 });
 
+import { meetingControls } from "../composables/useKeyboardShortcuts";
+
+meetingControls.toggleMicrophone = () => mediaControls.toggleMicrophone();
+meetingControls.toggleCamera = () => mediaControls.toggleCamera();
+watch(
+	() => mediaState.isMicOn,
+	(val) => (meetingControls.isMicOn = val),
+	{ immediate: true },
+);
+
 // --- Chat ---
 const chat = useChat({
 	chatStore,
@@ -481,15 +522,6 @@ const lobby = useLobby({
 
 type AccessData = { allow_guest?: boolean; host_only_chat?: boolean };
 
-// --- Keyboard Shortcuts ---
-const keyboardShortcuts = useKeyboardShortcuts({
-	mediaControls: {
-		toggleMicrophone: () => mediaControls.toggleMicrophone(),
-		toggleCamera: () => mediaControls.toggleCamera(),
-	},
-	mediaState,
-});
-
 // --- Provide meeting context for child components ---
 provideMeetingContext({
 	mediaState,
@@ -521,15 +553,7 @@ provide("hostControls", {
 	kickParticipant: (...args: unknown[]) =>
 		handleKickParticipant(args[0] as string, args[1] as boolean),
 });
-provide(
-	"meetingTitle",
-	computed(() => {
-		if (!session.isLoggedIn) {
-			return meetingId.value;
-		}
-		return meetingTitle.value;
-	}),
-);
+provide("meetingTitle", computed(() => meetingTitle.value));
 
 provide("poll", poll);
 
@@ -593,6 +617,9 @@ const chatNotificationQueue = ref<InstanceType<
 const isReactionPickerOpen = ref(false);
 const isFullscreen = ref(false);
 const isToolbarVisible = ref(true);
+const headerVisible = computed(
+	() => showPreview.value || isConnecting.value || !autoHideToolbar.value || isToolbarVisible.value,
+);
 
 // --- Extracted handlers ---
 const handlers = useMeetingHandlers({
@@ -732,8 +759,6 @@ onMounted(async () => {
 	currentUser.resetCurrentUser();
 	e2eeState.reset();
 
-	window.addEventListener("keydown", keyboardShortcuts.handleKeyDown);
-	window.addEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.addEventListener("fullscreenchange", syncFullscreenState);
 	document.addEventListener(
 		"meet:e2ee-needs-media-republish",
@@ -806,8 +831,6 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-	window.removeEventListener("keydown", keyboardShortcuts.handleKeyDown);
-	window.removeEventListener("keyup", keyboardShortcuts.handleKeyUp);
 	document.removeEventListener("fullscreenchange", syncFullscreenState);
 	document.removeEventListener(
 		"meet:e2ee-needs-media-republish",
@@ -905,4 +928,91 @@ watch(
 		}
 	},
 );
+
+let previousTheme: string | null = null;
+let previousThemeMode: string | null = null;
+let previousBodyTheme: string | null = null;
+let previousBodyThemeMode: string | null = null;
+let themeObserver: MutationObserver | null = null;
+let userChangedTheme = false;
+
+const forceDarkTheme = () => {
+	if (document.documentElement.getAttribute("data-theme") !== "dark") {
+		document.documentElement.setAttribute("data-theme", "dark");
+	}
+	if (document.body.getAttribute("data-theme") !== "dark") {
+		document.body.setAttribute("data-theme", "dark");
+	}
+};
+
+onMounted(() => {
+	previousTheme = document.documentElement.getAttribute("data-theme");
+	previousThemeMode = document.documentElement.getAttribute("data-theme-mode");
+	previousBodyTheme = document.body.getAttribute("data-theme");
+	previousBodyThemeMode = document.body.getAttribute("data-theme-mode");
+	forceDarkTheme();
+	document.documentElement.setAttribute("data-theme-mode", "dark");
+	document.body.setAttribute("data-theme-mode", "dark");
+
+	themeObserver = new MutationObserver(forceDarkTheme);
+	themeObserver.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ["data-theme"],
+	});
+	themeObserver.observe(document.body, {
+		attributes: true,
+		attributeFilter: ["data-theme"],
+	});
+
+	const modeObserver = new MutationObserver(() => {
+		userChangedTheme = true;
+	});
+	modeObserver.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ["data-theme-mode"],
+	});
+});
+
+onUnmounted(() => {
+	themeObserver?.disconnect();
+	themeObserver = null;
+
+	if (userChangedTheme) {
+		const mode = document.documentElement.getAttribute("data-theme-mode") || "light";
+		const resolved =
+			mode === "automatic"
+				? window.matchMedia("(prefers-color-scheme: dark)").matches
+					? "dark"
+					: "light"
+				: mode;
+		document.documentElement.setAttribute("data-theme", resolved);
+		document.documentElement.setAttribute("data-theme-mode", mode);
+		document.body.setAttribute("data-theme", resolved);
+		document.body.setAttribute("data-theme-mode", mode);
+	} else {
+		if (previousTheme) {
+			document.documentElement.setAttribute("data-theme", previousTheme);
+		} else {
+			document.documentElement.removeAttribute("data-theme");
+		}
+
+		if (previousThemeMode) {
+			document.documentElement.setAttribute("data-theme-mode", previousThemeMode);
+		} else {
+			document.documentElement.removeAttribute("data-theme-mode");
+		}
+
+		if (previousBodyTheme) {
+			document.body.setAttribute("data-theme", previousBodyTheme);
+		} else {
+			document.body.removeAttribute("data-theme");
+		}
+
+		if (previousBodyThemeMode) {
+			document.body.setAttribute("data-theme-mode", previousBodyThemeMode);
+		} else {
+			document.body.removeAttribute("data-theme-mode");
+		}
+	}
+});
 </script>

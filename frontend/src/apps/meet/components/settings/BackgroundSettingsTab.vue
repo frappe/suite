@@ -8,7 +8,7 @@
 		<template #content>
 			<!-- Video Preview -->
 			<div class="flex justify-center mb-4">
-				<div class="w-96 h-auto aspect-video bg-gray-900 rounded-lg overflow-hidden shadow-sm relative">
+				<div class="w-96 h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
 					<video
 						ref="videoPreviewRef"
 						autoplay
@@ -36,25 +36,25 @@
 				<div class="grid grid-cols-4 gap-3">
 					<div v-for="option in allBackgroundOptionsTyped" :key="option.name"
 						@click="handleBackgroundOptionClick(option)"
-						class="relative cursor-pointer rounded-lg border overflow-hidden transition-all duration-200 hover:shadow-sm group"
+						class="relative cursor-pointer rounded-lg border-2 overflow-hidden transition-all duration-200 hover:shadow-sm group"
 						:class="[
 							selectedBackgroundOption === option.name
-								? 'border-gray-900 ring-gray-300'
-								: 'border-gray-200 hover:border-gray-300',
+								? 'border-outline-gray-3 ring-1 ring-outline-gray-2'
+								: 'border-outline-gray-1 hover:border-outline-gray-2',
 						]">
-						<div class="aspect-video bg-gray-100 relative">
+						<div class="aspect-video bg-surface-gray-2 relative">
 							<!-- For blur option -->
 							<div v-if="option.type === 'blur'" class="absolute inset-0 flex items-center justify-center"
 								:class="option.name === 'blur-low'
 									? 'bg-[radial-gradient(circle_at_center,theme(colors.blue.200),theme(colors.blue.300),theme(colors.blue.500))]'
 									: 'bg-[radial-gradient(circle_at_center,theme(colors.blue.300),theme(colors.blue.400),theme(colors.blue.600))]'">
-								<lucide-circle-user-round class="w-8 h-8 text-gray-50" />
+								<lucide-circle-user-round class="w-8 h-8 text-ink-gray-9" />
 							</div>
 
 							<!-- For add custom option -->
 							<div v-else-if="option.isAddButton"
-								class="absolute inset-0 bg-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors">
-								<lucide-plus class="w-8 h-8 text-gray-400" />
+								class="absolute inset-0 bg-surface-gray-2 flex items-center justify-center border-2 border-dashed border-outline-gray-2 hover:border-outline-gray-3 transition-colors">
+								<lucide-plus class="w-8 h-8 text-ink-gray-5" />
 							</div>
 
 							<!-- For image options -->
@@ -62,26 +62,26 @@
 								class="w-full h-full object-cover" @error="handleImageError" />
 
 							<!-- For none option -->
-							<div v-else class="absolute inset-0 bg-gray-50 flex items-center justify-center">
-								<lucide-circle-user-round class="w-8 h-8 text-gray-400" />
+							<div v-else class="absolute inset-0 bg-surface-gray-1 flex items-center justify-center">
+								<lucide-circle-user-round class="w-8 h-8 text-ink-gray-5" />
 							</div>
 
 							<!-- Selected indicator -->
 							<div v-if="selectedBackgroundOption === option.name"
-								class="absolute top-1 right-1 w-5 h-5 bg-gray-900 rounded-full flex items-center justify-center">
-								<lucide-check class="w-3 h-3 text-white" />
+								class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-9 rounded-full flex items-center justify-center">
+								<lucide-check class="w-3 h-3 text-ink-gray-1" />
 							</div>
 
 							<!-- Delete button for custom images -->
 							<div v-if="option.isCustom" @click.stop="handleDeleteCustomImage(option.name)"
-								class="absolute top-1 right-1 w-5 h-5 bg-gray-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-gray-600">
-								<lucide-x class="w-3 h-3 text-white" />
+								class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-surface-gray-6">
+								<lucide-x class="w-3 h-3 text-ink-gray-9" />
 							</div>
 						</div>
 
 						<!-- Label -->
-						<div class="p-2 bg-white">
-							<p class="text-sm-medium text-center text-gray-900 truncate">
+						<div class="p-2 bg-surface-gray-1">
+							<p class="text-sm-medium text-center text-ink-gray-8 truncate">
 								{{ option.label }}
 							</p>
 						</div>
@@ -89,19 +89,19 @@
 				</div>
 			</div>
 
-			<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4">
+			<div class="bg-surface-amber-2 border border-outline-amber-2 rounded-lg p-3 mt-4">
 				<div class="flex">
 					<div class="flex-shrink-0">
-						<lucide-alert-triangle class="h-5 w-5 text-yellow-400" />
+						<lucide-alert-triangle class="h-5 w-5 text-ink-amber-5" />
 					</div>
 					<div class="ml-3">
-						<p class="text-sm text-yellow-800">
+						<p class="text-sm text-ink-amber-8">
 							<strong>Performance Warning:</strong> Enabling background effects may slow down your computer,
 							especially on older devices.
-					</p>
+						</p>
+					</div>
 				</div>
 			</div>
-		</div>
 		</template>
 	</SettingsLayoutBase>
 </template>

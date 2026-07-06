@@ -1,5 +1,6 @@
 <template>
   <CoreEditor
+    v-if="contentReady"
     ref="textEditor"
     v-model:show-settings="showSettings"
     v-model:edited="edited"
@@ -25,7 +26,7 @@
 
 <script setup>
 import { debounce } from 'frappe-ui'
-import { computed, ref, onBeforeUnmount, watch, inject, provide } from 'vue'
+import { computed, ref, onBeforeUnmount, provide } from 'vue'
 import { useComments } from '@/apps/writer/composables/useYjs'
 import CoreEditor from './CoreEditor.vue'
 
@@ -39,6 +40,7 @@ const props = defineProps({
   editable: Boolean,
 })
 const rawContent = ref(props.document.doc.html)
+const contentReady = ref(!props.file.write)
 const emit = defineEmits(['saveComment', 'saveDocument'])
 
 const textEditor = ref('textEditor')
@@ -61,29 +63,31 @@ onBeforeUnmount(() => {
 })
 
 // Local saving with IndexedDB
-const db = ref()
-watch(db, (db) => {
-  if (!props.file.write) return
-  db
-    .transaction(['content'])
-    .objectStore('content')
-    .get(props.file.name).onsuccess = (val) => {
-    if (
-      val.target.result?.val?.length > 20 &&
-      val.target.result.saved > new Date(props.file.modified)
-    )
-      rawContent.value = val.target.result.val
-  }
-})
+const db = ref(null)
 
 if (props.file.write) {
   const request = window.indexedDB.open('Writer', 1)
-  request.onsuccess = (event) => {
-    db.value = event.target.result
-  }
   request.onupgradeneeded = () => {
     if (!request.result.objectStoreNames.contains('content'))
       request.result.createObjectStore('content')
+  }
+  request.onsuccess = (event) => {
+    const database = event.target.result
+    db.value = database
+    database
+      .transaction(['content'])
+      .objectStore('content')
+      .get(props.file.name).onsuccess = (val) => {
+      if (
+        val.target.result?.val?.length > 20 &&
+        val.target.result.saved > new Date(props.file.modified)
+      )
+        rawContent.value = val.target.result.val
+      contentReady.value = true
+    }
+  }
+  request.onerror = () => {
+    contentReady.value = true
   }
 }
 </script>

@@ -14,6 +14,10 @@
 				<LucideWifiOff class="mr-1 size-3.5 stroke-[1.5]" />
 				<span>Offline</span>
 			</Badge>
+			<Badge v-if="saveFailed && isOnline" variant="subtle" theme="orange" size="md">
+				<LucideCloudOff class="mr-1 size-3.5 stroke-[1.5]" />
+				<span>Save failed. Keep this tab open.</span>
+			</Badge>
 			<SharePopover v-if="presentationDoc" />
 		</template>
 	</Navbar>
@@ -30,6 +34,7 @@ import PresentationHeader from '@/apps/slides/components/PresentationHeader.vue'
 import SharePopover from '@/apps/slides/components/SharePopover.vue'
 
 import { presentationDoc } from '@/apps/slides/stores/presentation'
+import { saveFailed } from '@/apps/slides/stores/saving'
 import { useRoute } from 'vue-router'
 
 const isOnline = inject('isOnline', ref(false))

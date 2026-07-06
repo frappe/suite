@@ -220,21 +220,111 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 		return sheet.getDisplayValue(srcId)
 	}
 
+	// Parse an HTML fragment's first <table> into a 2D grid of cell strings, or
+	// null if there's no usable table. External apps (Gameplan, Google Sheets,
+	// Excel Online, web pages) put a full <table> on the `text/html` clipboard
+	// flavor — richer than their `text/plain` flavor, which some editors emit
+	// without tab delimiters (so it collapses into a single column). colspan is
+	// honored by padding blanks; rowspan is left as-is (rare, and its cell text
+	// simply lands in the top row of the span).
+	function parseHTMLTable(html) {
+		if (!html || typeof DOMParser === 'undefined') return null
+		const doc   = new DOMParser().parseFromString(html, 'text/html')
+		const table = doc.querySelector('table')
+		if (!table) return null
+		const grid = []
+		// Only the outer table's own rows/cells — a bare querySelectorAll('tr')
+		// descends into any nested <table> inside a cell (common in web-page
+		// clipboard HTML) and bleeds its rows into the outer grid. A nested
+		// table's text still lands in the parent cell via textContent, which is
+		// what we want.
+		const rows = table.querySelectorAll(
+			':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr',
+		)
+		for (const tr of rows) {
+			const row = []
+			for (const cell of tr.querySelectorAll(':scope > th, :scope > td')) {
+				const text = (cell.textContent ?? '').replace(/\s+/g, ' ').trim()
+				row.push(text)
+				const span = parseInt(cell.getAttribute('colspan') || '1', 10)
+				for (let i = 1; i < span; i++) row.push('')
+			}
+			grid.push(row)
+		}
+		// Drop trailing all-empty rows some editors append.
+		while (grid.length && grid[grid.length - 1].every(c => c === '')) grid.pop()
+		return grid.length ? grid : null
+	}
+
+	// Paste an HTML-table grid (from an external app's `text/html` flavor).
+	// Shares the placement/tiling/bulk-write path with pasteFromText.
+	function pasteFromHTML(html, anchorId, historyPush, destSel = null) {
+		const grid = parseHTMLTable(html)
+		if (!grid) return false
+		return _pasteGrid(grid, anchorId, historyPush, destSel)
+	}
+
 	// Paste raw text (from system clipboard / external app).  Honors destSel so
 	// pasting a single token into a multi-cell selection fills the whole range.
 	function pasteFromText(text, anchorId, historyPush, destSel = null) {
 		if (!text?.trim()) return
-		const anch = parseCellId(anchorId)
-		if (!anch) return
+		return _pasteGrid(_textToGrid(text), anchorId, historyPush, destSel)
+	}
+
+	// Split raw clipboard text into a 2D grid (tab = column, newline = row).
+	// Shared by pasteFromText and measureTextPaste so the write and the undo
+	// capture agree on exactly what a text paste covers.
+	function _textToGrid(text) {
 		const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd().split('\n')
-		const grid  = lines.map(l => l.split('\t'))
+		return lines.map(l => l.split('\t'))
+	}
+
+	// Geometry of a grid paste: its source dimensions and whether it tiles across
+	// the destination. Single source of truth for both the write (_pasteGrid) and
+	// the undo-capture bounds (_gridRect) — an external paste's extent must never
+	// be computed two different ways, or undo silently under-covers the write.
+	function _gridGeometry(grid, anch, destSel) {
 		const srcRows = grid.length
 		const srcCols = grid.reduce((m, r) => Math.max(m, r.length), 0)
-
 		const tileable = destSel
 			&& !(destSel.r0 === destSel.r1 && destSel.c0 === destSel.c1)
 			&& ((destSel.r1 - destSel.r0 + 1) % srcRows === 0)
 			&& ((destSel.c1 - destSel.c0 + 1) % srcCols === 0)
+		return { srcRows, srcCols, tileable }
+	}
+
+	// The destination rect a grid paste will actually write. A tiled paste fills
+	// exactly destSel; otherwise it's the anchor plus the grid's own dimensions.
+	function _gridRect(grid, anchorId, destSel = null) {
+		const anch = parseCellId(anchorId)
+		if (!anch) return null
+		const { srcRows, srcCols, tileable } = _gridGeometry(grid, anch, destSel)
+		if (tileable) return { r0: destSel.r0, c0: destSel.c0, r1: destSel.r1, c1: destSel.c1 }
+		return { r0: anch.row, c0: anch.col, r1: anch.row + srcRows - 1, c1: anch.col + srcCols - 1 }
+	}
+
+	// Extent an external text paste would cover, WITHOUT writing anything. Lets
+	// the editor size its undo capture to the full pasted block instead of just
+	// the clicked cell (the internal copy/paste path gets this from
+	// getSourceSel(); an external paste has no source selection to read).
+	function measureTextPaste(text, anchorId, destSel = null) {
+		if (!text?.trim()) return null
+		return _gridRect(_textToGrid(text), anchorId, destSel)
+	}
+
+	// Extent an external HTML-table paste would cover, WITHOUT writing anything.
+	function measureHTMLPaste(html, anchorId, destSel = null) {
+		const grid = parseHTMLTable(html)
+		if (!grid) return null
+		return _gridRect(grid, anchorId, destSel)
+	}
+
+	// Place a 2D grid of cell strings at the anchor (or tiled across destSel),
+	// then ship one bulk write. Shared by pasteFromText and pasteFromHTML.
+	function _pasteGrid(grid, anchorId, historyPush, destSel = null) {
+		const anch = parseCellId(anchorId)
+		if (!anch) return false
+		const { srcRows, srcCols, tileable } = _gridGeometry(grid, anch, destSel)
 
 		// Build the cell map first, then ship one bulk write — same reason as
 		// paste() above. Big external pastes (Excel/CSV via system clipboard)
@@ -258,6 +348,7 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 		if (sheet.batchSetCells) sheet.batchSetCells(writes, sn, { replace: false })
 		else                     for (const [id, v] of Object.entries(writes)) sheet.setCell(id, v, sn)
 		historyPush?.()   // post-mutate snapshot
+		return true
 	}
 
 	// Expand selection to fit pasted content (used for visual feedback).
@@ -270,5 +361,5 @@ export function createClipboard({ sheet, formats, condFormat = null, validation 
 	function getPivotBlob() { return _data ? _pivot : null }
 	function clear() { _data = _fmts = _vals = _mode = _srcSel = _pivot = null }
 
-	return { copy, cut, paste, pasteFromText, hasData, getMode, getSourceSel, getPivotBlob, clear }
+	return { copy, cut, paste, pasteFromText, pasteFromHTML, measureTextPaste, measureHTMLPaste, hasData, getMode, getSourceSel, getPivotBlob, clear }
 }

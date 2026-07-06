@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="group relative rounded-lg overflow-hidden min-h-0"
+		class="group relative rounded-md overflow-hidden min-h-0"
 		:class="tileBackgroundClass"
 		:data-testid="`participant-tile-${participant.user_id}`"
 		:data-audio-enabled="String(isAudioEnabled)"
@@ -43,10 +43,10 @@
 			class="absolute inset-0 flex items-center justify-center pointer-events-none"
 			:class="avatarBackgroundClass"
 		>
-			<MeetingAvatar
-				:label="participant.initials"
+			<Avatar
+				size="3xl"
 				:image="participant.avatar"
-				:tiles="tileCount"
+				:label="participant.user_name || participant.initials"
 			/>
 		</div>
 
@@ -54,7 +54,19 @@
 			:name="resolvedDisplayName"
 			:size="labelSize"
 			:position="labelPosition"
-		/>
+		>
+			<template v-if="showAudioState">
+				<AudioIndicator
+					v-if="isAudioEnabled && stream"
+					:mediaStream="stream"
+					:isActive="true"
+					:maxHeight="12"
+					:sensitivity="3.0"
+					activeColorClass="bg-white"
+				/>
+				<lucide-mic-off v-else-if="!isAudioEnabled" class="w-3 h-3 shrink-0 text-white" />
+			</template>
+		</NamePill>
 
 		<!-- Reaction -->
 		<div
@@ -77,31 +89,11 @@
 		</div>
 
 		<div
-			v-if="showAudioState && isAudioEnabled && stream"
-			class="absolute top-2 right-2 rounded-full bg-gray-700 p-1.5"
-		>
-			<AudioIndicator
-				:mediaStream="stream"
-				:isActive="true"
-				:maxHeight="16"
-				:sensitivity="3.0"
-				activeColorClass="bg-gray-100"
-			/>
-		</div>
-
-		<div
 			v-if="showNetworkState && showNetworkIndicator"
-			class="absolute top-2 right-12 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
+			class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
 			:title="networkQualityMessage"
 		>
 			<WifiAlertIcon class="w-4 h-4 text-white" />
-		</div>
-
-		<div
-			v-if="showAudioState && !isAudioEnabled"
-			class="absolute top-2 right-2 bg-gray-700 rounded-full p-1.5 ring-1 ring-gray-800"
-		>
-			<lucide-mic-off class="w-4 h-4 text-white" />
 		</div>
 
 		<!-- Participant action toolbar -->
@@ -110,35 +102,44 @@
 			class="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-gray-700 p-0.5 text-white opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity ring-1 ring-gray-800"
 			@click.stop
 		>
-			<button
+			<Button
 				v-if="canShowPinButton"
-				type="button"
-				class="rounded-full p-1.5 hover:bg-gray-600 transition-colors"
-				:class="{ 'bg-gray-600': isPinned }"
-				:title="isPinned ? 'Unpin participant' : 'Pin participant'"
+				variant="ghost"
+				size="xs"
+				class="!rounded-full !text-white hover:!bg-gray-600"
+				:class="{ '!bg-gray-600': isPinned }"
+				:tooltip="isPinned ? 'Unpin participant' : 'Pin participant'"
 				@click="togglePin"
 			>
-				<lucide-pin-off v-if="isPinned" class="w-3.5 h-3.5" />
-				<lucide-pin v-else class="w-3.5 h-3.5" />
-			</button>
-			<button
+				<template #icon>
+					<lucide-pin-off v-if="isPinned" class="w-3.5 h-3.5" />
+					<lucide-pin v-else class="w-3.5 h-3.5" />
+				</template>
+			</Button>
+			<Button
 				v-if="canShowHostControls && isAudioEnabled"
-				type="button"
-				class="rounded-full p-1.5 hover:bg-gray-600 transition-colors"
-				title="Mute participant"
+				variant="ghost"
+				size="xs"
+				class="!rounded-full !text-white hover:!bg-gray-600"
+				tooltip="Mute participant"
 				@click="handleMute"
 			>
-				<lucide-mic-off class="w-3.5 h-3.5" />
-			</button>
-			<button
+				<template #icon>
+					<lucide-mic-off class="w-3.5 h-3.5" />
+				</template>
+			</Button>
+			<Button
 				v-if="canShowHostControls"
-				type="button"
-				class="rounded-full p-1.5 hover:bg-gray-600 transition-colors"
-				title="Remove participant"
+				variant="ghost"
+				size="xs"
+				class="!rounded-full !text-white hover:!bg-gray-600"
+				tooltip="Remove participant"
 				@click="showKickDialog = true"
 			>
-				<lucide-user-x class="w-3.5 h-3.5" />
-			</button>
+				<template #icon>
+					<lucide-user-x class="w-3.5 h-3.5" />
+				</template>
+			</Button>
 		</div>
 
 		<!-- Kick Confirmation Dialog -->
@@ -152,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import { Avatar, Button } from "frappe-ui";
 import { type ComputedRef, computed, inject, type Ref, ref, watch } from "vue";
 import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
@@ -160,7 +162,6 @@ import WifiAlertIcon from "../icons/WifiAlertIcon.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
-import MeetingAvatar from "./MeetingAvatar.vue";
 import NamePill from "./NamePill.vue";
 
 type TileSize = "xs" | "sm" | "md";
@@ -173,7 +174,6 @@ interface Props {
 	isAudioEnabled?: boolean;
 	isActiveSpeaker?: boolean;
 	videoRef: (el: unknown) => void;
-	tileCount?: number;
 	labelSize?: TileSize;
 	labelPosition?: TilePosition;
 	pinType?: "screenshare" | "participant";
@@ -196,7 +196,6 @@ const props = withDefaults(defineProps<Props>(), {
 	isVideoEnabled: true,
 	isAudioEnabled: true,
 	isActiveSpeaker: false,
-	tileCount: 1,
 	labelSize: "md",
 	labelPosition: "bottom-left",
 	pinType: "participant",
@@ -207,8 +206,8 @@ const props = withDefaults(defineProps<Props>(), {
 	showRaisedHand: true,
 	showAudioState: true,
 	showNetworkState: true,
-	tileBackgroundClass: "bg-gray-800",
-	avatarBackgroundClass: "bg-gray-700",
+	tileBackgroundClass: "bg-surface-gray-3",
+	avatarBackgroundClass: "bg-surface-gray-3",
 	videoObjectFitClass: "object-cover",
 	videoBackgroundClass: "",
 	displayName: "",

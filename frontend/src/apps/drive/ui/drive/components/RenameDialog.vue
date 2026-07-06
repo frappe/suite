@@ -1,41 +1,25 @@
 <template>
-  <Dialog
-    v-model:open="open"
-    title="Rename"
-    size="xs"
-    :actions="[
-      {
-        label: 'Confirm',
-        variant: 'solid',
-        disabled: !newTitle || newTitle === entity.file_name || rename.loading,
-        onClick: submit,
-      },
-    ]"
-    @close="dialogType = ''"
-  >
+  <Dialog v-model:open="open" title="Rename" size="xs" :actions="[
+    {
+      label: 'Confirm',
+      variant: 'solid',
+      disabled: !newTitle || newTitle === entity.file_name || rename.loading,
+      onClick: submit,
+    },
+  ]" @close="dialogType = ''">
     <div class="flex gap-3">
-        <FormControl
-          v-model="newTitle"
-          v-focus
-          class="grow"
-          type="text"
-          @keyup.enter="submit"
-        />
-        <div
-          v-if="file_ext"
-          disabled
-          class="w-12 text-ink-gray-7 bg-surface-gray-2 rounded text-center self-center py-1.5 text-sm"
-        >
-          {{ file_ext }}
-        </div>
+      <FormControl v-model="newTitle" autofocus class="grow" type="text" @keyup.enter="submit" />
+      <div v-if="file_ext" disabled
+        class="w-12 text-ink-gray-7 bg-surface-gray-2 rounded text-center self-center py-1.5 text-sm">
+        {{ file_ext }}
       </div>
+    </div>
   </Dialog>
 </template>
 
 <script setup>
-import { default as vFocus } from '@/apps/drive/utils/focus'
 import { ref } from 'vue'
-import { Dialog, FormControl} from 'frappe-ui'
+import { Dialog, FormControl } from 'frappe-ui'
 import { rename } from '../js/resources'
 
 const props = defineProps({ entity: Object, modelValue: String })

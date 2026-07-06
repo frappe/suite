@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { presentationId, savePresentationDoc } from '@/apps/slides/stores/presentation'
+import { presentationId, savePresentationDoc, presentationDoc } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 
@@ -94,27 +94,27 @@ const markClean = () => {
 
 const isSaving = ref(false)
 
+// true when an online save to the server failed; drives the "Not saved" indicator
+const saveFailed = ref(false)
+
 const syncSnapshotToServer = async (snapshot) => {
 	await savePresentationDoc(snapshot.content)
 
-	// after successful sync, make sure local copy is marked as clean so it's not synced again
+	// mark local copy clean; baseModified tracks the server version we're now in sync with
 	await savePresentationToLocalDB({
 		...snapshot,
 		dirty: false,
 		updatedAt: Date.now(),
+		baseModified: presentationDoc.value?.modified,
 	})
 }
 
 const syncPresentationToServer = async () => {
-	try {
-		const snapshot = await getPresentationFromLocalDB(presentationId.value)
-		if (!snapshot || !snapshot.dirty) return
+	const snapshot = await getPresentationFromLocalDB(presentationId.value)
+	if (!snapshot || !snapshot.dirty) return
 
-		// if there's an unsynced snapshot locally, sync it to server
-		await syncSnapshotToServer(snapshot)
-	} catch (err) {
-		console.error('Sync to server failed: ', err)
-	}
+	// throws on failure so the caller keeps the state dirty and retries
+	await syncSnapshotToServer(snapshot)
 }
 
 const getLatestSlideContent = () => {
@@ -131,23 +131,26 @@ const saveCurrentState = async () => {
 	try {
 		const content = getLatestSlideContent()
 
-		// save latest content to indexedDB with dirty flag since it's not yet synced to server
+		// save to indexedDB as dirty (not yet synced); baseModified = server version these build on
 		await savePresentationToLocalDB({
 			id: presentationId.value,
 			content: content,
 			updatedAt: Date.now(),
 			dirty: true,
+			baseModified: presentationDoc.value?.modified,
 		})
 
-		// changes are persisted locally (and queued for sync), so the editor
-		// state is no longer ahead of storage
-		markClean()
-
-		// if offline, do not attempt to sync to server
+		// if offline, stay dirty so we retry once back online
 		if (!navigator.onLine) return
 
-		// if online, sync to server
+		// only mark clean once the server actually has the changes
 		await syncPresentationToServer()
+		markClean()
+		saveFailed.value = false
+	} catch (err) {
+		// keep dirty so autosave retries and beforeunload warns; log once per outage
+		if (!saveFailed.value) console.error('Save failed: ', err)
+		saveFailed.value = true
 	} finally {
 		isSaving.value = false
 	}
@@ -158,4 +161,13 @@ const saveChanges = async () => {
 	await saveCurrentState()
 }
 
-export { saveCurrentState, saveChanges, isSaving, dirty, markDirty, markClean }
+export {
+	saveCurrentState,
+	saveChanges,
+	isSaving,
+	dirty,
+	markDirty,
+	markClean,
+	saveFailed,
+	getPresentationFromLocalDB,
+}

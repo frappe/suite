@@ -7,22 +7,22 @@
 		leave-from-class="opacity-100 transform translate-x-0"
 		leave-to-class="opacity-0 transform translate-x-full"
 	>
-		<div v-show="open" class="h-full py-4 flex justify-end" data-testid="people-panel-wrapper">
+		<div v-show="open" class="h-full flex justify-end py-2.5" data-testid="people-panel-wrapper">
 			<div
-				class="w-80 sm:w-96 bg-white border border-gray-200 shadow-xl flex flex-col z-40 h-full rounded-lg mr-4"
+				class="w-[380px] bg-surface-gray-1 flex flex-col z-40 h-full rounded-md mr-2 overflow-hidden"
 				data-testid="people-panel"
 			>
-				<div class="flex items-center justify-between p-4 border-b border-gray-200">
-					<div class="text-ink-gray-900 text-base-medium">
-						People ({{ totalParticipantCount }})
+				<div class="flex items-center justify-between px-4 py-5 shrink-0">
+					<div class="text-sm-medium text-ink-gray-8">
+						People
 					</div>
 					<lucide-x
 						@click="$emit('close')"
-						class="w-4 h-4 text-gray-900 cursor-pointer hover:text-gray-600"
+						class="w-4 h-4 text-ink-gray-8 cursor-pointer hover:text-ink-gray-6"
 					/>
 				</div>
 
-				<div class="p-4">
+				<div class="px-2 pb-2 shrink-0">
 					<FormControl
 						v-model="searchQuery"
 						type="text"
@@ -36,7 +36,7 @@
 					</FormControl>
 				</div>
 
-				<div class="flex-1 overflow-y-auto">
+				<div class="flex-1 overflow-y-auto px-2">
 					<PeopleWaitingSection
 						v-if="isCreator"
 						:lobbyUsers="filteredLobbyUsers"
@@ -45,11 +45,13 @@
 						@approve-all="handleApproveAllLobbyUsers"
 					/>
 
+					<div
+						v-if="filteredLobbyUsers.length > 0 && allVisibleParticipants.length > 0"
+						class="my-2 border-t border-outline-gray-2"
+					/>
+
 					<!-- All Participants -->
-					<div v-if="allVisibleParticipants.length > 0">
-						<div class="px-4 py-2 text-xs-medium text-ink-gray-5 tracking-wide bg-surface-gray-1">
-							Participants
-						</div>
+					<div v-if="allVisibleParticipants.length > 0" class="flex flex-col gap-1">
 						<PeopleParticipantTile
 							v-for="participant in allVisibleParticipants"
 							:key="participant.user_id"
@@ -100,6 +102,7 @@ interface CurrentUser {
 	name?: string;
 	avatar?: string;
 	initials?: string;
+	is_guest?: boolean;
 }
 
 interface Props {
@@ -265,6 +268,7 @@ const currentUserData = computed<Participant>(() => ({
 	),
 	audio_enabled: props.isMicOn,
 	video_enabled: props.isCameraOn,
+	is_guest: props.currentUser?.is_guest || false,
 }));
 
 const totalParticipantCount = computed(() => {

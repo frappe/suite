@@ -9,14 +9,14 @@ import {
 	transformElements,
 } from '@/apps/slides/stores/presentation'
 import { resetFocus } from '@/apps/slides/stores/element'
-import { saveChanges, dirty, markDirty } from '@/apps/slides/stores/saving'
+import { saveChanges, dirty, saveFailed } from '@/apps/slides/stores/saving'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { generateUniqueId, cloneObj } from '@/apps/slides/utils/helpers'
 import { router } from '@/apps/slides/router'
 
 import { toast } from 'frappe-ui'
 import { inSlideShowMode } from './slideshow'
-import { addSlideCommand, removeSlideCommand } from './commands'
+import { addSlideCommand, removeSlideCommand, editSlideCommand } from './commands'
 
 const slides = ref([])
 
@@ -69,9 +69,7 @@ const getNewSlide = (toDuplicate = false, layoutObject) => {
 	} else {
 		layout = layoutObject || null
 		layout.elements =
-			typeof layout?.elements === 'string'
-				? JSON.parse(layout.elements)
-				: layout?.elements || []
+			typeof layout?.elements === 'string' ? JSON.parse(layout.elements) : layout?.elements || []
 	}
 
 	let slide = {}
@@ -122,7 +120,12 @@ const resetAndSave = async () => {
 		success: () => `Saved`,
 		error: () => 'Could not save presentation. Please try again.',
 	}
-	toast.promise(saveChanges(), toastProps)
+	toast.promise(
+		saveChanges().then(() => {
+			if (saveFailed.value) throw new Error('Save failed')
+		}),
+		toastProps,
+	)
 }
 
 const saveSlide = (e) => {
@@ -132,16 +135,24 @@ const saveSlide = (e) => {
 
 const deleteSlide = (deleteActive) => {
 	let deleteIndex = focusedSlide.value
-	if (!deleteIndex && deleteActive) deleteIndex = slideIndex.value
+	if (deleteIndex == null && deleteActive) deleteIndex = slideIndex.value
 	if (deleteIndex == null) return
 
 	// if there is only one slide, reset the slide state instead of deleting
 	const totalLength = slides.value.length
 
 	if (totalLength == 1) {
-		slides.value[0].elements = []
+		// clearing the only slide's contents must go through history so it stays undoable
+		const slide = slides.value[0]
+		commandHistory.execute(
+			editSlideCommand({
+				slideId: slide.clientId,
+				property: 'elements',
+				oldValue: cloneObj(slide.elements),
+				newValue: [],
+			}),
+		)
 		focusedSlide.value = null
-		markDirty()
 		return
 	}
 
@@ -162,7 +173,7 @@ const changeEditorSlide = async (index, focus = true) => {
 }
 
 const insertDuplicateSlide = async (index, layoutObj, toDuplicate) => {
-	if (toDuplicate || !index) index = slideIndex.value
+	if (toDuplicate || index == null) index = slideIndex.value
 
 	const newSlide = getNewSlide(toDuplicate, layoutObj)
 
@@ -184,26 +195,9 @@ const addEmptySlide = (e, index) => {
 	if (layout) handleInsertSlide(index, cloneObj(layout))
 }
 
-const replaceSlide = (layoutObj) => {
-	const index = slideIndex.value
-	const newSlide = getNewSlide(false, layoutObj)
-
-	slides.value.splice(index, 1, newSlide)
-	slides.value.forEach((slide, index) => {
-		slide.idx = index + 1
-	})
-
-	markDirty()
-}
-
 const handleInsertSlide = (index, layoutObj) => {
-	// TODO: change this to use replace
-	let replace = false
-	if (replace) {
-		replaceSlide(layoutObj)
-	} else {
-		insertDuplicateSlide(index, layoutObj)
-	}
+	// TODO: support replacing the current slide (must route through command history)
+	insertDuplicateSlide(index, layoutObj)
 }
 
 export {

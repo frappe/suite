@@ -63,7 +63,6 @@ export const TabsExtension = Node.create({
         (node) => node.type.name === 'tab' && tabs.push(node.attrs.id),
       )
       if (!tabToChange || !tabs.includes(tabToChange)) tabToChange = tabs[0]
-
       if (tabToChange) {
         this.storage.hasInitialized = true
         this.editor.commands.changeTab(tabToChange, false)

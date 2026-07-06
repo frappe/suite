@@ -2,6 +2,7 @@ import { COLORS, TOTAL_COLS } from '../constants.js'
 import { cellId } from '../../utils/cells.js'
 import { getTextWrap, isWrapText } from '../../utils/text-wrap.js'
 import { CHIP, chipFont, chipColor, chipMetrics } from '../chip-geometry.js'
+import { checkboxRect, CHECKBOX } from '../checkbox-geometry.js'
 import { checkRule } from '../../engine/validation.js'
 
 export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
@@ -86,6 +87,12 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
         // it's a plain caret so you know it's a dropdown.
         if (has) _drawValidationChip(x, y, w, h, String(val), fmt, !invalid)
         else     _drawDropdownArrow(x, y, w, h)
+      } else if (rule.type === 'checkbox') {
+        // Checkbox rule → a tickbox that owns the cell (the text pass skips
+        // it). Empty reads as unchecked; a value that isn't TRUE/FALSE still
+        // gets the invalid marker below.
+        _drawCheckbox(x, y, w, h, String(val).toUpperCase() === 'TRUE')
+        if (invalid) _drawInvalidTriangle(x, y)
       } else if (invalid) {
         // Number / text-length rules have no dropdown (matching Sheets) — they
         // only surface a marker when the current value breaks the rule.
@@ -103,9 +110,10 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     if (!g) return
     const { id, val, fmt, condFmt, x, y, w, h } = g
     if (val == null || val === '') return
-    // List-validation cells render their value inside the chip drawn in the
-    // bg pass — don't paint it a second time on top.
-    if (getValidation?.(id)?.type === 'list') return
+    // List / checkbox cells render their value as a chip or tickbox in the bg
+    // pass — don't paint the raw text a second time on top.
+    const vtype = getValidation?.(id)?.type
+    if (vtype === 'list' || vtype === 'checkbox') return
     const s = String(val)
     const baseFmt = condFmt ? { ...fmt, ...condFmt } : fmt
     const efmt = { ...baseFmt, align: baseFmt.align || _autoAlign(s) }
@@ -313,6 +321,38 @@ export function createCellPainter(ctx, { cw, rh, colX, rowY }) {
     ctx.lineTo(mx, my + 2.5)
     ctx.closePath()
     ctx.fill()
+    ctx.restore()
+  }
+
+  // Sheets-style checkbox: a rounded grey square centred in the cell. Checked
+  // is filled with a white tick; unchecked is a hollow outline. Geometry comes
+  // from checkbox-geometry so the painted box matches the click zone in
+  // canvas/index.js exactly.
+  function _drawCheckbox(x, y, w, h, checked) {
+    const { x: ox, y: oy, size } = checkboxRect(w, h)
+    if (size < CHECKBOX.minSize) return   // row too short for a legible box
+    const bx = x + ox, by = y + oy
+    const grey = '#6b7280'
+    ctx.save()
+    _roundRectPath(bx, by, size, size, 3)
+    if (checked) {
+      ctx.fillStyle = grey
+      ctx.fill()
+      // Tick — three-point polyline scaled to the box.
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = Math.max(1.5, size / 8)
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(bx + size * 0.26, by + size * 0.52)
+      ctx.lineTo(bx + size * 0.44, by + size * 0.70)
+      ctx.lineTo(bx + size * 0.74, by + size * 0.32)
+      ctx.stroke()
+    } else {
+      ctx.strokeStyle = grey
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+    }
     ctx.restore()
   }
 

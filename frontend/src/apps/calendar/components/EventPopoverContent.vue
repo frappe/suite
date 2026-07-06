@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, useTemplateRef } from 'vue'
-import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users } from 'lucide-vue-next'
+import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users, Video } from 'lucide-vue-next'
 import { Button, Dropdown, createResource, toast } from 'frappe-ui'
 
 import { getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
@@ -87,6 +87,31 @@ const participants = computed(() => {
 		parts.length ? `(${parts.join(', ')})` : '',
 	])
 })
+
+const meetUrl = computed(() => {
+	const link = calendarEvent.links?.find((item: any) => getMeetUrl(item?.href))
+	if (link?.href) return getMeetUrl(link.href)
+
+	const match = calendarEvent.description?.match(
+		/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/,
+	)
+	return getMeetUrl(match?.[0])
+})
+
+const getMeetUrl = (url?: string) => {
+	if (!url) return ''
+	const value = url.replace(/\W+$/, '')
+
+	try {
+		const parsed = new URL(value, window.location.origin)
+		if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/meet/'))
+			return parsed.pathname + parsed.search + parsed.hash
+	} catch {
+		return ''
+	}
+
+	return ''
+}
 
 const options = computed(() => {
 	const opts = [{ label: __('Edit'), icon: Edit2, onClick: () => openEditModal() }]
@@ -216,11 +241,16 @@ const openUrl = (location: string) => {
 	if (isUrl(location)) window.open(location, '_blank')
 }
 
+const joinMeet = () => {
+	if (!meetUrl.value) return
+	window.location.href = meetUrl.value
+}
+
 const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), DECLINED: __('No') }
 </script>
 
 <template>
-	<div class="bg-surface-elevation-2 text-ink-gray-8 w-[32rem] rounded-lg" @click.stop>
+	<div class="calendar-event-popover-content bg-surface-elevation-2 text-ink-gray-8 w-[32rem] rounded-lg" @click.stop>
 		<!-- Header: title, date, and actions -->
 		<div class="flex justify-between border-b p-5">
 			<div class="space-y-2">
@@ -315,6 +345,15 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 					{{ calendarEvent.organizer }}
 				</span>
 			</div>
+
+			<div v-if="meetUrl" class="flex justify-end">
+				<Button variant="outline" @click="joinMeet">
+					<template #prefix>
+						<Video class="h-4 w-4" />
+					</template>
+					{{ __('Join Meet') }}
+				</Button>
+			</div>
 		</div>
 
 		<!-- RSVP -->
@@ -353,3 +392,11 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 		</div>
 	</div>
 </template>
+
+<style scoped>
+/* override z-index for calendar event popover content
+to ensure the dropdown menu is not hidden */
+:global([data-slot='content']:has(.calendar-event-popover-content)) {
+	z-index: auto !important;
+}
+</style>

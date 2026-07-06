@@ -12,76 +12,55 @@
       {{ __('Edit profile') }}
     </Button>
   </div>
-  <Dialog
-    v-model:open="editProfileDialog"
-    :title="__('Edit Profile')"
-    size="md"
-    :actions="[
-      {
-        label: __('Confirm'),
-        variant: 'solid',
-        onClick: updateProfile,
-      },
-    ]"
-  >
+  <Dialog v-model:open="editProfileDialog" :title="__('Edit Profile')" size="md" :actions="[
+    {
+      label: __('Confirm'),
+      variant: 'solid',
+      onClick: updateProfile,
+    },
+  ]">
     <div class="flex flex-col items-start justify-start gap-y-2">
-        <span class="text-base text-ink-gray-5">Profile Photo</span>
-        <div class="flex items-center justify-between w-full">
-          <Avatar :image="newImageUrl" size="3xl" :label="newFullName" class="w-20 h-20" />
+      <span class="text-base text-ink-gray-5">Profile Photo</span>
+      <div class="flex items-center justify-between w-full">
+        <Avatar :image="newImageUrl" size="3xl" :label="newFullName" class="w-20 h-20" />
 
-          <div
-            v-if="newImageUrl"
-            class="flex items-center justify-between bg-surface-gray-2 h-7 pl-2 text-base rounded"
-          >
-            <LucideLink class="mr-2 size-4" />
-            <a
-              :href="newImageUrl"
-              class="truncate max-w-56 underline"
-            >{{ newImageUrl }}</a>
+        <div v-if="newImageUrl" class="flex items-center justify-between bg-surface-gray-2 h-7 pl-2 text-base rounded">
+          <LucideLink class="mr-2 size-4" />
+          <a :href="newImageUrl" class="truncate max-w-56 underline">{{ newImageUrl }}</a>
 
-            <Button @click="newImageUrl = null">
-              <template #icon>
-                <LucideX class="stroke-1 h-4" />
-              </template>
-            </Button>
-          </div>
-          <FileUploader
-            v-else
-            file-types="image/png, image/jpeg, image/jpg"
-            :validate-file="validateFile"
-            @success="
-              (file) => {
-                newImageUrl = file.file_url
-              }
-            "
-          >
-            <template #default="{ openFileSelector }">
-              <Button @click="openFileSelector">
-                {{ __('Add Image') }}
-              </Button>
+          <Button @click="newImageUrl = null">
+            <template #icon>
+              <LucideX class="stroke-1 h-4" />
             </template>
-          </FileUploader>
+          </Button>
         </div>
-        <div class="w-full flex flex-col gap-y-2 my-2">
-          <span class="text-base text-ink-gray-5">{{ __('First Name') }}</span>
-          <Input v-model="newFirstName" v-focus />
-          <span class="text-base text-ink-gray-5">{{ __('Last Name') }}</span>
-          <Input v-model="newLastName" />
-        </div>
+        <FileUploader v-else file-types="image/png, image/jpeg, image/jpg" :validate-file="validateFile" @success="
+          (file) => {
+            newImageUrl = file.file_url
+          }
+        ">
+          <template #default="{ openFileSelector }">
+            <Button @click="openFileSelector">
+              {{ __('Add Image') }}
+            </Button>
+          </template>
+        </FileUploader>
       </div>
+      <div class="w-full flex flex-col gap-y-2 my-2">
+        <span class="text-base text-ink-gray-5">{{ __('First Name') }}</span>
+        <Input v-model="newFirstName" autofocus />
+        <span class="text-base text-ink-gray-5">{{ __('Last Name') }}</span>
+        <Input v-model="newLastName" />
+      </div>
+    </div>
   </Dialog>
   <h1 class="font-semibold mt-12 mb-4 text-ink-gray-8">
     {{ __('Preferences') }}
   </h1>
 
-  <Switch
-    v-model="detectLinks"
-    label="Automatically detect links"
-    class="!px-0 hover:!bg-inherit"
-  />
+  <Switch v-model="detectLinks" label="Automatically detect links" />
 </template>
 <script setup>
-import { default as vFocus } from '@/apps/drive/utils/focus'
 import {
   Button,
   Input,
