@@ -64,7 +64,6 @@ website_route_rules = [
 
 # mail — website redirects
 website_redirects = [
-	{"source": "/", "target": "/suite"},
 	{
 		"source": "/auth/validate",
 		"target": "/api/method/suite.mail.api.auth.validate",
