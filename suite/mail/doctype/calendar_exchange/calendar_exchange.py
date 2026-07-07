@@ -30,7 +30,10 @@ from suite.mail.doctype.push_subscription.push_subscription import (
 	freeze_jmap_push_notifications,
 	unfreeze_jmap_push_notifications,
 )
-from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
+from suite.mail.doctype.user_account.user_account import (
+	get_user_for_jmap_account,
+	is_jmap_account_belongs_to_user,
+)
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -769,12 +772,12 @@ class CalendarExportWriter:
 
 
 def get_calendar_event_service(
-	user: str,
 	account: str,
 	ignore_permissions: bool = False,
 ) -> CalendarEventService:
 	"""Returns a CalendarEventService configured with the longer exchange timeouts."""
 
+	user = get_user_for_jmap_account(account, raise_exception=True)
 	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
 	return CalendarEventService(account, connection)
 
