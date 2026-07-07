@@ -33,6 +33,8 @@ from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.storage import get_blob_store, get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.mail.utils import (
+	clean_text,
+	convert_html_to_text,
 	enqueue_job,
 	get_config,
 	log_error,
@@ -44,6 +46,8 @@ from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.lock import acquire_lock, release_lock
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
+
+PREVIEW_MAX_LENGTH = 256
 
 
 class MailMessage(Document):
@@ -1157,7 +1161,6 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
 		"subject": message["subject"],
 		"thread_id": message["threadId"],
 		"name": f"{account}|{message['id']}",
-		"preview": message.get("preview", ""),
 		"has_attachment": cint(message["hasAttachment"]),
 		"keywords": json.dumps(message["keywords"], indent=4),
 		"received_after": time_diff_in_seconds(received_at, sent_at),
@@ -1188,6 +1191,14 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
 			else None
 		)
 		formatted_message[field] = value
+
+	if html_body := formatted_message["html_body"]:
+		preview = convert_html_to_text(html_body)
+	elif text_body := formatted_message["text_body"]:
+		preview = clean_text(text_body)
+	else:
+		preview = message.get("preview") or ""
+	formatted_message["preview"] = preview[:PREVIEW_MAX_LENGTH]
 
 	formatted_message["mailboxes"] = []
 	for mailbox_id, value in message["mailboxIds"].items():
