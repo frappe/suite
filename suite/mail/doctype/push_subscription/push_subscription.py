@@ -276,14 +276,34 @@ def format_push_subscription(user: str, push_subscription: dict) -> dict:
 
 
 def get_push_subscription_keys() -> dict | None:
-	"""Returns the JMAP push subscription encryption keys from Mail Settings, or None if not configured."""
+	"""Returns the JMAP push subscription encryption keys from Mail Settings, or None if encryption is disabled or the keys are not configured."""
 
 	settings = frappe.get_cached_doc("Mail Settings")
+	if not settings.get("enable_jmap_push_encryption"):
+		return None
+
 	p256dh = (settings.get("jmap_push_p256dh") or "").strip()
 	auth = (settings.get_password("jmap_push_auth") if settings.get("jmap_push_auth") else "").strip()
 
 	if p256dh and auth:
 		return {"p256dh": p256dh, "auth": auth}
+
+
+
+
+def _decode_encrypted_push_body(raw_body: bytes) -> bytes:
+	"""Returns the raw aes128gcm ciphertext from a push request body."""
+
+	_B64URL_BYTES = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=")
+
+	stripped = raw_body.strip()
+	if not stripped or any(byte not in _B64URL_BYTES for byte in stripped):
+		return raw_body
+
+	try:
+		return base64.urlsafe_b64decode(stripped + b"=" * (-len(stripped) % 4))
+	except Exception:
+		return raw_body
 
 
 def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
@@ -326,6 +346,8 @@ def decrypt_jmap_push_payload(raw_body: bytes) -> dict:
 		private_key = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP256R1())
 	except Exception:
 		frappe.throw(_("Failed to construct EC private key."))
+
+	raw_body = _decode_encrypted_push_body(raw_body)
 
 	if len(raw_body) < 21:
 		frappe.throw(_("Encrypted push payload is too short."))

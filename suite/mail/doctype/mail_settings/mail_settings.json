@@ -95,10 +95,11 @@
   "dns_provider_private_zone",
   "jmap_push_tab",
   "section_break_qvpk",
-  "jmap_push_p256dh",
-  "jmap_push_private_key",
+  "enable_jmap_push_encryption",
   "column_break_wpvf",
-  "jmap_push_auth"
+  "jmap_push_auth",
+  "jmap_push_private_key",
+  "jmap_push_p256dh"
  ],
  "fields": [
   {
@@ -136,6 +137,13 @@
   {
    "fieldname": "section_break_qvpk",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
+   "fieldname": "enable_jmap_push_encryption",
+   "fieldtype": "Check",
+   "label": "Enable Push Encryption"
   },
   {
    "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
@@ -726,7 +734,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-23 17:16:11.209239",
+ "modified": "2026-07-09 15:48:38.043660",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

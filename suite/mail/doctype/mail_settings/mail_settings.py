@@ -14,6 +14,84 @@ from suite.mail.utils import is_stalwart_configured
 
 
 class MailSettings(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+		from suite.mail.doctype.mail_client_configuration.mail_client_configuration import MailClientConfiguration
+
+		allow_signup: DF.Check
+		ansible_play_timeout: DF.Int
+		default_disk_quota_gb: DF.Int
+		default_dns_ttl: DF.Int
+		default_gravatar: DF.Literal["404"]
+		dns_provider: DF.Literal["", "AmazonRoute53", "DigitalOcean", "Cloudflare", "Hetzner", "Linode", "Namecheap", "GoDaddy"]
+		dns_provider_access_key: DF.Data | None
+		dns_provider_access_secret: DF.Password | None
+		dns_provider_client_ip: DF.Data | None
+		dns_provider_key: DF.Data | None
+		dns_provider_private_zone: DF.Check
+		dns_provider_secret: DF.Password | None
+		dns_provider_token: DF.Password | None
+		dns_provider_username: DF.Data | None
+		dns_provider_zone_id: DF.Data | None
+		enable_gravatar: DF.Check
+		enable_jmap_push_encryption: DF.Check
+		exchange_export_batch_size: DF.Int
+		exchange_export_timeout: DF.Int
+		exchange_import_timeout: DF.Int
+		exchange_log_file_count: DF.Int
+		exchange_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		exchange_log_max_file_size: DF.Int
+		exchange_max_export: DF.Int
+		exchange_max_import: DF.Int
+		fetch_lock_timeout: DF.Int
+		inbound_log_file_count: DF.Int
+		inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		inbound_log_max_file_size: DF.Int
+		jmap_push_auth: DF.Password | None
+		jmap_push_p256dh: DF.Data | None
+		jmap_push_private_key: DF.Password | None
+		lock_acquire_timeout: DF.Int
+		lock_timeout: DF.Int
+		mail_client_configurations: DF.Table[MailClientConfiguration]
+		max_email_sync: DF.Int
+		max_message_payload_size_mb: DF.Int
+		max_push_notifications: DF.Int
+		outbound_log_file_count: DF.Int
+		outbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		outbound_log_max_file_size: DF.Int
+		password: DF.Password | None
+		process_pending_emails_batch_size: DF.Int
+		process_pending_emails_max_batch_size: DF.Int
+		process_pending_emails_timeout: DF.Int
+		push_log_file_count: DF.Int
+		push_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		push_log_max_file_size: DF.Int
+		root_domain_name: DF.Data | None
+		scan_message_timeout: DF.Int
+		server_deployment_timeout: DF.Int
+		server_job_timeout: DF.Int
+		server_url: DF.Data | None
+		show_mail_client_config: DF.Check
+		signup_domains: DF.SmallText | None
+		spamd_host: DF.Data | None
+		spamd_hybrid_scanning_threshold: DF.Float
+		spamd_port: DF.Int
+		spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
+		stalwart_cli_command_timeout: DF.Int
+		stalwart_cli_version: DF.Data
+		stalwart_version: DF.Data
+		storage_log_file_count: DF.Int
+		storage_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
+		storage_log_max_file_size: DF.Int
+		username: DF.Data | None
+		verify_ssl: DF.Check
+	# end: auto-generated types
+
 	def validate(self) -> None:
 		if not frappe.flags.in_migrate:
 			self.validate_root_domain_name()
@@ -115,6 +193,13 @@ class MailSettings(Document):
 			frappe.throw(
 				_(
 					"JMAP Push Subscription keys are incomplete. Use Actions → Generate JMAP Push Keys to regenerate them."
+				)
+			)
+
+		if self.enable_jmap_push_encryption and set_count != 3:
+			frappe.throw(
+				_(
+					"Push encryption is enabled but the JMAP Push Subscription keys are not configured. Use Actions → Generate JMAP Push Keys to generate them, or disable Enable Push Encryption."
 				)
 			)
 
