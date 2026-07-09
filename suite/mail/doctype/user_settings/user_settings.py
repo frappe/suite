@@ -74,11 +74,16 @@ class UserSettings(Document):
 		"""Returns a JMAP connection for the user if the username and app password are set, otherwise returns None."""
 
 		if self.username and self.get_password("app_password"):
-			server_url = get_config("server_url")
+			server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
 
 			try:
 				return JMAPConnection(
-					JMAPConnectionInfo(server_url, self.username, self.get_password("app_password"))
+					JMAPConnectionInfo(
+						server_url,
+						self.username,
+						self.get_password("app_password"),
+						verify_ssl=bool(verify_ssl),
+					)
 				)
 			except Exception:
 				pass

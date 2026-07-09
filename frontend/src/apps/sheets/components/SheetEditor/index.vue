@@ -1092,6 +1092,8 @@ import { h, ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount
 import { createGrid }          from '../../canvas/index.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
 import { call } from '../../utils/api.js'
+import { useCurrentUser } from '@/boot/session'
+import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
 import { computeFillDown, computeFillRight } from '../../engine/fill-series.js'
@@ -1862,29 +1864,12 @@ const titleInputWidth = computed(() => {
 })
 
 
-// window.frappe is now seeded by sheets.html (see www/sheets.py).
-// Read it lazily into refs and refresh on mount so the avatar reflects
-// the actual logged-in user instead of the "U" fallback if Frappe's
-// own boot script later re-populates the global.
-const userEmail    = ref(window.frappe?.session?.user || '')
-const userFullName = ref(window.frappe?.session?.user_fullname || '')
-const userImage    = ref(window.frappe?.session?.user_image || '')
-const userInitial  = computed(() => {
-  // Prefer initials from full name ("Asif Mulani" → "AM"); fall back to
-  // the first letter of the email, then the literal "U" so the avatar
-  // never collapses into something empty.
-  const fn = userFullName.value.trim()
-  if (fn) {
-    const parts = fn.split(/\s+/)
-    return ((parts[0][0] || '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
-  }
-  return (userEmail.value ? userEmail.value[0] : 'U').toUpperCase()
-})
-onMounted(() => {
-  userEmail.value    = window.frappe?.session?.user          || userEmail.value
-  userFullName.value = window.frappe?.session?.user_fullname || userFullName.value
-  userImage.value    = window.frappe?.session?.user_image    || userImage.value
-})
+// The logged-in user for the top-right avatar, from the shared suite session
+// store (cookie-backed, refreshed by userResource — see @/boot/session). The
+// old window.frappe.session reads only worked on the standalone www page; the
+// suite shell never sets window.frappe, so the avatar collapsed to "U".
+const { user: userEmail, fullName: userFullName, imageURL: userImage } = useCurrentUser()
+const userInitial = computed(() => userInitials(userFullName.value, userEmail.value))
 
 // Collaboration — presence + sharing
 const shareOpen   = ref(false)

@@ -59,13 +59,15 @@ def get_jmap_connection(
 		frappe.throw(_("User {0} does not have JMAP settings configured.").format(frappe.bold(user)))
 
 	user_settings = frappe.get_cached_doc("User Settings", settings)
+	server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
 
 	return JMAPConnection(
 		JMAPConnectionInfo(
-			get_config("server_url"),
+			server_url,
 			user_settings.username,
 			user_settings.get_password("app_password"),
 			timeout,
+			verify_ssl=bool(verify_ssl),
 		),
 		session_manager=get_jmap_session_manager(user),
 		user=user,

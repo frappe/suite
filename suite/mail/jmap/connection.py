@@ -16,12 +16,15 @@ class JMAPConnectionInfo:
 	- username: The username for authentication.
 	- password: The password for authentication.
 	- timeout: A tuple specifying the connection and read timeouts for requests (default: (30.0, 60.0)).
+	- verify_ssl: Whether to verify the server's SSL certificate (default: True). Disable only for local
+	  development against a server with a self-signed certificate.
 	"""
 
 	url: str
 	username: str
 	password: str
 	timeout: tuple[float, float] = (30.0, 60.0)
+	verify_ssl: bool = True
 
 
 class JMAPSessionManager:
@@ -71,6 +74,7 @@ class JMAPConnection:
 		self.__info = info
 		self.__session = requests.Session()
 		self.__session.auth = (self.__info.username, self.__info.password)
+		self.__session.verify = self.__info.verify_ssl
 		self.__session_manager = session_manager
 		self.user = user
 

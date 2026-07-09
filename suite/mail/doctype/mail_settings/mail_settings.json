@@ -7,9 +7,13 @@
   "config_tab",
   "jmap_section",
   "server_url",
+  "verify_ssl",
   "column_break_xvlo",
   "username",
   "password",
+  "mail_client_config_section",
+  "show_mail_client_config",
+  "mail_client_configurations",
   "spamassassin_section",
   "spamd_host",
   "spamd_port",
@@ -91,10 +95,11 @@
   "dns_provider_private_zone",
   "jmap_push_tab",
   "section_break_qvpk",
-  "jmap_push_p256dh",
-  "jmap_push_private_key",
+  "enable_jmap_push_encryption",
   "column_break_wpvf",
-  "jmap_push_auth"
+  "jmap_push_auth",
+  "jmap_push_private_key",
+  "jmap_push_p256dh"
  ],
  "fields": [
   {
@@ -132,6 +137,13 @@
   {
    "fieldname": "section_break_qvpk",
    "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
+   "fieldname": "enable_jmap_push_encryption",
+   "fieldtype": "Check",
+   "label": "Enable Push Encryption"
   },
   {
    "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
@@ -271,6 +283,13 @@
    "label": "Server URL",
    "options": "URL",
    "placeholder": "https://mail.frappemail.com"
+  },
+  {
+   "default": "1",
+   "description": "Verify the server's SSL certificate. Disable only for local development against a server with a self-signed certificate.",
+   "fieldname": "verify_ssl",
+   "fieldtype": "Check",
+   "label": "Verify SSL"
   },
   {
    "fieldname": "config_tab",
@@ -554,6 +573,28 @@
   {
    "collapsible": 1,
    "collapsible_depends_on": "eval: true",
+   "fieldname": "mail_client_config_section",
+   "fieldtype": "Section Break",
+   "label": "Mail Client Configuration"
+  },
+  {
+   "default": "1",
+   "description": "Show the SMTP/IMAP/POP connection details in the Mail UI so users can set up third-party mail clients. When unchecked, nothing is shown.",
+   "fieldname": "show_mail_client_config",
+   "fieldtype": "Check",
+   "label": "Show Connection Details in Mail UI"
+  },
+  {
+   "depends_on": "eval: doc.show_mail_client_config",
+   "description": "Connection endpoints shown to users. Leave empty to fall back to the domain's DNS records.",
+   "fieldname": "mail_client_configurations",
+   "fieldtype": "Table",
+   "label": "Mail Client Configuration",
+   "options": "Mail Client Configuration"
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval: true",
    "fieldname": "spamassassin_section",
    "fieldtype": "Section Break",
    "label": "SpamAssassin"
@@ -693,7 +734,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-06-23 17:16:11.209239",
+ "modified": "2026-07-09 15:48:38.043660",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

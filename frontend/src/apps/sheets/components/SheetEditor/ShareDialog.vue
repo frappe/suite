@@ -109,12 +109,12 @@
       <div v-else class="sd-member-list">
         <!-- Owner always first -->
         <div class="sd-member-row">
-          <Avatar :label="ownerInitials" size="md" :tooltip="ownerFullName" />
+          <Avatar :label="ownerInitials" :image="ownerImage || undefined" size="md" :tooltip="ownerFullName" />
           <div class="sd-member-info">
             <span class="sd-member-name">{{ ownerFullName }}</span>
             <span v-if="props.ownerId !== ownerFullName" class="sd-member-email">{{ props.ownerId }}</span>
           </div>
-          <span class="sd-role-label">Owner (you)</span>
+          <span class="sd-role-label">{{ _ownerIsMe ? 'Owner (you)' : 'Owner' }}</span>
         </div>
 
         <div v-for="s in shares" :key="s.user" class="sd-member-row">
@@ -160,6 +160,8 @@
 import { ref, computed, watch } from 'vue'
 import { Badge, Button, Dialog, Spinner, Dropdown, Avatar } from 'frappe-ui'
 import { call } from '../../utils/api.js'
+import { useCurrentUser } from '@/boot/session'
+import { userInitials } from '../../utils/session.js'
 
 const props = defineProps({
   modelValue:  { type: Boolean, default: false },
@@ -186,6 +188,7 @@ watch(show, (open) => {
     searchQuery.value = ''
     searchResults.value = []
     fetchShares()
+    fetchOwnerInfo()
   }
 })
 
@@ -205,15 +208,35 @@ function _flashError(err) {
 
 // ── owner ──────────────────────────────────────────────────────────────────
 
+const currentUser = useCurrentUser()
+
+// A read-only member can open this dialog for a sheet they don't own (see the
+// error-banner note below), so the owner is often *not* the current user. When
+// it is, read the name/image from the shared session store; otherwise fetch the
+// owner's User record — the same way the invite autocomplete resolves people —
+// so the owner row shows a real name instead of the raw email.
+const ownerInfo = ref(null)   // { full_name, user_image } for a non-self owner
+async function fetchOwnerInfo() {
+  ownerInfo.value = null
+  if (!props.ownerId || props.ownerId === currentUser.user.value) return
+  try {
+    ownerInfo.value = await call('frappe.client.get_value', {
+      doctype: 'User', filters: props.ownerId, fieldname: ['full_name', 'user_image'],
+    })
+  } catch (_) { /* fall back to the id below */ }
+}
+
+const _ownerIsMe = computed(() => !!props.ownerId && props.ownerId === currentUser.user.value)
 const ownerFullName = computed(() =>
-  window.frappe?.session?.user_fullname
-  || window.frappe?.boot?.user_info?.[props.ownerId]?.fullname
+  (_ownerIsMe.value && currentUser.fullName.value)
+  || ownerInfo.value?.full_name
   || props.ownerId
   || 'You'
 )
-const ownerInitials = computed(() =>
-  ownerFullName.value.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase()
+const ownerImage = computed(() =>
+  (_ownerIsMe.value ? currentUser.imageURL.value : ownerInfo.value?.user_image) || ''
 )
+const ownerInitials = computed(() => userInitials(ownerFullName.value, props.ownerId))
 
 // ── general access ─────────────────────────────────────────────────────────
 

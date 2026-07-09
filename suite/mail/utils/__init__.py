@@ -42,6 +42,7 @@ CONFIG_KEYS = [
 	"server_url",
 	"username",
 	"password",
+	"verify_ssl",
 	# SpamAssassin
 	"spamd_host",
 	"spamd_port",
@@ -118,7 +119,7 @@ def reconnect_on_failure(max_retries: int = 3) -> callable:
 
 
 @request_cache
-def get_config(key: str | None = None) -> dict[str, Any] | Any:
+def get_config(key: str | tuple[str, ...] | None = None) -> dict[str, Any] | tuple | Any:
 	"""Fetches configuration values, prioritizing Mail Settings over global config.
 
 	Cached per request: the returned dict is shared, so callers must treat it as read-only.
@@ -135,10 +136,14 @@ def get_config(key: str | None = None) -> dict[str, Any] | Any:
 			config[field] = settings.get(field) or mail_conf.get(field)
 
 	if key:
-		if key not in config:
-			frappe.throw(_("Mail config key '{0}' not found").format(key))
+		if isinstance(key, str):
+			key = [key]
 
-		return config[key]
+		for k in key:
+			if k not in config:
+				frappe.throw(_("Mail config key '{0}' not found").format(k))
+
+		return tuple(config[k] for k in key) if len(key) > 1 else config[key[0]]
 
 	return config
 

@@ -245,6 +245,7 @@ scheduler_events = {
 		# mail
 		"suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
 		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
+		"suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
 		"suite.mail.doctype.calendar_exchange.calendar_exchange.clean_calendar_import_export_directories",
 	],
 	"hourly": [

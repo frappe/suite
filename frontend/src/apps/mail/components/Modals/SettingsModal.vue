@@ -41,6 +41,7 @@
 import { computed, inject, markRaw, ref, watch } from 'vue'
 import {
 	Ban,
+	BellRing,
 	Code,
 	Feather,
 	Fingerprint,
@@ -65,6 +66,7 @@ import FolderSettings from '@/apps/mail/components/Settings/FolderSettings.vue'
 import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.vue'
 import ImportSettings from '@/apps/mail/components/Settings/ImportSettings.vue'
 import ProfileSettings from '@/apps/mail/components/Settings/ProfileSettings.vue'
+import PushSubscriptionSettings from '@/apps/mail/components/Settings/PushSubscriptionSettings.vue'
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
@@ -126,6 +128,12 @@ const tabs = computed(() => {
 			label: __('Screened Senders'),
 			icon: Ban,
 			component: markRaw(ScreenedEmailAddressSettings),
+			condition: user.data.is_jmap_configured,
+		},
+		{
+			label: __('Push Subscriptions'),
+			icon: BellRing,
+			component: markRaw(PushSubscriptionSettings),
 			condition: user.data.is_jmap_configured,
 		},
 		{

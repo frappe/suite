@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "creation": "2026-07-09 00:00:00",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "protocol",
+  "hostname",
+  "column_break_port",
+  "port",
+  "connection_security"
+ ],
+ "fields": [
+  {
+   "fieldname": "protocol",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Protocol",
+   "options": "SMTP\nIMAP\nPOP3",
+   "reqd": 1
+  },
+  {
+   "fieldname": "hostname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Hostname",
+   "placeholder": "mail.example.com",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_port",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "port",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Port",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "SSL/TLS",
+   "fieldname": "connection_security",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Connection Security",
+   "options": "SSL/TLS\nSTARTTLS\nNone",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-09 11:06:31.416111",
+ "modified_by": "Administrator",
+ "module": "Mail",
+ "name": "Mail Client Configuration",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
