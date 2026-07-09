@@ -1,7 +1,7 @@
 import config from '../../../frontend/tailwind.config'
 
 module.exports = {
-	content: ['./mail/templates/emails/*.html'],
+	content: ['./templates/emails/*.html'],
 	important: true,
 	theme: Object.assign(config.theme, {
 		screens: {
