@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Frappe Suite VERSION\n"
 "Report-Msgid-Bugs-To: developers@frappe.io\n"
-"POT-Creation-Date: 2026-07-03 09:56+0553\n"
-"PO-Revision-Date: 2026-07-03 09:56+0553\n"
+"POT-Creation-Date: 2026-07-09 17:23+0553\n"
+"PO-Revision-Date: 2026-07-09 17:23+0553\n"
 "Last-Translator: developers@frappe.io\n"
 "Language-Team: developers@frappe.io\n"
 "MIME-Version: 1.0\n"
@@ -21,11 +21,11 @@ msgstr ""
 msgid " Save as Draft"
 msgstr ""
 
-#: suite/mail/api/mail.py:565
+#: suite/mail/api/mail.py:566
 msgid "'Fail'"
 msgstr ""
 
-#: suite/mail/api/mail.py:565
+#: suite/mail/api/mail.py:566
 msgid "'Pass'"
 msgstr ""
 
@@ -63,7 +63,7 @@ msgstr ""
 msgid "1 item selected"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:522
+#: frontend/src/apps/mail/components/MailThread.vue:524
 msgid "1 new message"
 msgstr ""
 
@@ -122,6 +122,10 @@ msgstr ""
 #. Option for the 'Type' (Select) field in DocType 'DNS Record'
 #: suite/mail/doctype/dns_record/dns_record.json
 msgid "A"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:38
+msgid "A StateChange notification is sent only when one of these types changes."
 msgstr ""
 
 #. Description of the 'Color' (Color) field in DocType 'Calendar'
@@ -253,12 +257,12 @@ msgstr ""
 msgid "AbsoluteTrigger"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:93
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:98
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:62
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:107
 msgid "Accept"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:206
+#: frontend/src/apps/mail/components/MailActions.vue:212
 msgid "Accept Sender"
 msgstr ""
 
@@ -281,7 +285,7 @@ msgstr ""
 msgid "Accepted lets the sender's mail reach the inbox (used by screening). Spam files incoming mail into the Spam (Junk) folder. Reject discards incoming mail from the sender silently."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:395
+#: frontend/src/apps/mail/components/MailActions.vue:401
 msgid "Accepting sender..."
 msgstr ""
 
@@ -303,8 +307,8 @@ msgstr ""
 msgid "Access Secret"
 msgstr ""
 
-#: suite/meet/api/meeting.py:113 suite/meet/api/meeting.py:202
-#: suite/meet/api/meeting.py:247 suite/meet/api/meeting.py:317
+#: suite/meet/api/meeting.py:114 suite/meet/api/meeting.py:203
+#: suite/meet/api/meeting.py:248 suite/meet/api/meeting.py:318
 msgid "Access denied"
 msgstr ""
 
@@ -337,7 +341,7 @@ msgstr ""
 #. Label of the account (Link) field in DocType 'Sieve Script'
 #. Label of the account (Link) field in DocType 'User Account'
 #. Label of the account (Link) field in DocType 'Vacation Response'
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:85
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:87
 #: suite/mail/doctype/address_book/address_book.json
 #: suite/mail/doctype/calendar/calendar.json
 #: suite/mail/doctype/calendar_event/calendar_event.json
@@ -374,26 +378,26 @@ msgstr ""
 msgid "Account Request"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:851
-#: suite/mail/doctype/mail_message/mail_message.py:980
-#: suite/mail/doctype/mail_message/mail_message.py:1013
-#: suite/mail/doctype/mail_message/mail_message.py:1046
+#: suite/mail/doctype/mail_message/mail_message.py:855
+#: suite/mail/doctype/mail_message/mail_message.py:984
+#: suite/mail/doctype/mail_message/mail_message.py:1017
+#: suite/mail/doctype/mail_message/mail_message.py:1050
 msgid "Account and Mail IDs are required."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:869
+#: suite/mail/doctype/mail_message/mail_message.py:873
 msgid "Account and Mailbox ID are required."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:914
+#: suite/mail/doctype/mail_message/mail_message.py:918
 msgid "Account and Mails are required."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:825
+#: suite/mail/doctype/mail_message/mail_message.py:829
 msgid "Account and Thread IDs are required."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:765
+#: suite/mail/doctype/mail_message/mail_message.py:769
 msgid "Account and filter are required."
 msgstr ""
 
@@ -401,7 +405,7 @@ msgstr ""
 msgid "Account domain {0} does not match with domain {1}."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1083
+#: suite/mail/doctype/mail_message/mail_message.py:1087
 msgid "Account is required."
 msgstr ""
 
@@ -435,15 +439,16 @@ msgstr ""
 msgid "Accounts"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:895
-#: suite/mail/doctype/mail_message/mail_message.py:942
-#: suite/mail/doctype/mail_message/mail_message.py:961
+#: suite/mail/doctype/mail_message/mail_message.py:899
+#: suite/mail/doctype/mail_message/mail_message.py:946
+#: suite/mail/doctype/mail_message/mail_message.py:965
 msgid "Accounts, Mail IDs, and Mailbox ID are required."
 msgstr ""
 
 #. Label of the action (Select) field in DocType 'Event Alert'
 #. Label of the action (Select) field in DocType 'Screened Email Address'
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:155
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:31
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:213
 #: suite/mail/doctype/event_alert/event_alert.json
 #: suite/mail/doctype/screened_email_address/screened_email_address.json
 msgid "Action"
@@ -459,13 +464,17 @@ msgstr ""
 msgid "Action failed."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:132
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:171
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:182
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:190
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:290
-#: frontend/src/apps/mail/components/MailActions.vue:346
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:157
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:196
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:207
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:215
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:301
+#: frontend/src/apps/mail/components/MailActions.vue:352
 msgid "Action failed. Please try again in some time."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:165
+msgid "Action updated."
 msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/ShortcutsModal.vue:66
@@ -540,7 +549,7 @@ msgstr ""
 #: frontend/src/apps/drive/components/Settings/UserListSettings.vue:356
 #: frontend/src/apps/mail/components/DashboardCard.vue:16
 #: frontend/src/apps/mail/components/Modals/AddAddressBookContactsModal.vue:52
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:27
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:8
 #: suite/mail/doctype/mail_message/mail_message.js:142
 msgid "Add"
 msgstr ""
@@ -553,7 +562,7 @@ msgstr ""
 msgid "Add Address Book"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:514
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:519
 msgid "Add Alert"
 msgstr ""
 
@@ -575,11 +584,15 @@ msgstr ""
 msgid "Add Email"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:372
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:377
 msgid "Add Event"
 msgstr ""
 
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:60
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:545
+msgid "Add Frappe Meet link"
+msgstr ""
+
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:44
 msgid "Add Image"
 msgstr ""
 
@@ -745,7 +758,7 @@ msgstr ""
 msgid "Admin Dashboard"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:144
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:152
 msgid "Advanced"
 msgstr ""
 
@@ -828,7 +841,7 @@ msgstr ""
 msgid "All Contacts"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:422
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:427
 msgid "All Day"
 msgstr ""
 
@@ -1002,7 +1015,7 @@ msgstr ""
 msgid "App Password"
 msgstr ""
 
-#: suite/mail/doctype/user_settings/user_settings.py:106
+#: suite/mail/doctype/user_settings/user_settings.py:111
 msgid "App Password is required to validate JMAP settings."
 msgstr ""
 
@@ -1016,7 +1029,7 @@ msgstr ""
 #. Settings'
 #: frontend/src/apps/calendar/components/Modals/SettingsModal.vue:57
 #: frontend/src/apps/calendar/components/Settings/AppearanceSettings.vue:2
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:97
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:99
 #: frontend/src/apps/mail/components/Settings/AppearanceSettings.vue:2
 #: suite/mail/doctype/user_settings/user_settings.json
 msgid "Appearance"
@@ -1073,13 +1086,13 @@ msgstr ""
 msgid "Archive Type"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:257
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:627
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:260
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:630
 msgid "Archive Type is required."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:325
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:552
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:364
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:565
 msgid "Are you attending?"
 msgstr ""
 
@@ -1097,6 +1110,10 @@ msgstr ""
 
 #: frontend/src/apps/mail/pages/dashboard/UsersView.vue:188
 msgid "Are you sure you want to delete the selected members? This action cannot be undone."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:166
+msgid "Are you sure you want to delete the selected push subscriptions?"
 msgstr ""
 
 #: frontend/src/apps/mail/pages/dashboard/DomainView.vue:213
@@ -1127,7 +1144,7 @@ msgstr ""
 msgid "Are you sure you want to remove the selected phones?"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:140
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:198
 msgid "Are you sure you want to remove the selected senders from your screened list?"
 msgstr ""
 
@@ -1138,6 +1155,10 @@ msgstr ""
 #. Label of the as_guest (Check) field in DocType 'Drive User Invitation'
 #: suite/drive/doctype/drive_user_invitation/drive_user_invitation.json
 msgid "As Guest"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:30
+msgid "Ascending"
 msgstr ""
 
 #. Option for the 'On Mark As Junk' (Select) field in DocType 'JMAP Account'
@@ -1158,7 +1179,7 @@ msgstr ""
 msgid "Attach"
 msgstr ""
 
-#: suite/mail/api/mail.py:509
+#: suite/mail/api/mail.py:510
 msgid "Attachment with cid {0} not found in the current draft."
 msgstr ""
 
@@ -1190,7 +1211,7 @@ msgstr ""
 msgid "Audio Preview"
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:127
+#: suite/mail/doctype/mail_settings/mail_settings.py:212
 msgid "Auth"
 msgstr ""
 
@@ -1219,6 +1240,10 @@ msgstr ""
 #. Label of the auto_detect_links (Check) field in DocType 'Drive Settings'
 #: suite/drive/doctype/drive_settings/drive_settings.json
 msgid "Auto Detect Links"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:32
+msgid "Auto-generated if left blank"
 msgstr ""
 
 #: frontend/src/apps/mail/components/Settings/VacationResponseSettings.vue:7
@@ -1280,7 +1305,7 @@ msgstr ""
 #. Label of the automation_section (Section Break) field in DocType 'Mailbox
 #. Settings'
 #: frontend/src/apps/mail/components/Modals/FolderModal.vue:188
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:120
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:122
 #: suite/mail/doctype/mailbox_settings/mailbox_settings.json
 msgid "Automation"
 msgstr ""
@@ -1291,7 +1316,7 @@ msgstr ""
 msgid "Automation rules for this mailbox. Kept as the source of truth so the frappe_mail_automation Sieve script can be regenerated even if it is deleted by a third-party client."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:524
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:529
 msgid "Availability"
 msgstr ""
 
@@ -1299,7 +1324,7 @@ msgstr ""
 msgid "Available"
 msgstr ""
 
-#: suite/mail/api/mail.py:752
+#: suite/mail/api/mail.py:753
 msgid "Avatar not found."
 msgstr ""
 
@@ -1308,7 +1333,7 @@ msgstr ""
 msgid "Azure"
 msgstr ""
 
-#: suite/mail/api/mail.py:581
+#: suite/mail/api/mail.py:582
 msgid "BCC"
 msgstr ""
 
@@ -1421,7 +1446,7 @@ msgstr ""
 msgid "Blob ID"
 msgstr ""
 
-#: suite/mail/api/mail.py:257
+#: suite/mail/api/mail.py:258
 msgid "Blob ID is required."
 msgstr ""
 
@@ -1443,9 +1468,9 @@ msgstr ""
 msgid "Blobs"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:104
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:94
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:99
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:63
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:104
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:108
 #: frontend/src/apps/mail/pages/ScreenerView.vue:98
 #: frontend/src/apps/mail/pages/ScreenerView.vue:144
 msgid "Block"
@@ -1461,11 +1486,11 @@ msgstr ""
 msgid "Block Remote Images"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:218
+#: frontend/src/apps/mail/components/MailActions.vue:224
 msgid "Block Sender"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:94
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:94
 msgid "Block {0}?"
 msgstr ""
 
@@ -1479,7 +1504,7 @@ msgstr ""
 msgid "Blocked IPs"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:422
+#: frontend/src/apps/mail/components/MailActions.vue:428
 msgid "Blocking sender..."
 msgstr ""
 
@@ -1541,12 +1566,12 @@ msgid "Bulk Delete"
 msgstr ""
 
 #. Option for the 'Free Busy Status' (Select) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:385
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:390
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Busy"
 msgstr ""
 
-#: suite/mail/api/mail.py:580
+#: suite/mail/api/mail.py:581
 msgid "CC"
 msgstr ""
 
@@ -1577,7 +1602,7 @@ msgstr ""
 msgid "Calendar Creation Error"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:660
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:663
 msgid "Calendar Data {0} {1}"
 msgstr ""
 
@@ -1702,8 +1727,8 @@ msgstr ""
 msgid "Can contain whatever meta value needed for the access log. Ex: Used to store access level 1,2,3 etc on a DriveDocShare"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:577
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:100
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:581
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:100
 #: frontend/src/apps/mail/components/Modals/SetSieveScriptStateModal.vue:37
 msgid "Cancel"
 msgstr ""
@@ -1761,6 +1786,10 @@ msgstr ""
 #. Label of the cell_refs (Long Text) field in DocType 'Sheet Op Log'
 #: suite/sheets/doctype/sheet_op_log/sheet_op_log.json
 msgid "Cell refs (JSON array)"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:50
+msgid "Change Action"
 msgstr ""
 
 #: frontend/src/apps/calendar/components/Modals/ChangePasswordModal.vue:51
@@ -1881,6 +1910,7 @@ msgid "Clearing JMAP Session..."
 msgstr ""
 
 #: frontend/src/apps/mail/components/DNSRecords.vue:22
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:52
 msgid "Click to copy"
 msgstr ""
 
@@ -2083,12 +2113,13 @@ msgid "Configures the search store backend."
 msgstr ""
 
 #: frontend/src/apps/calendar/components/Modals/ChangePasswordModal.vue:54
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:21
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:17
 #: frontend/src/apps/mail/components/Modals/ChangePasswordModal.vue:54
 #: frontend/src/apps/mail/components/Modals/DeleteFolderModal.vue:11
 #: frontend/src/apps/mail/components/Modals/DeleteSieveScriptModal.vue:9
 #: frontend/src/apps/mail/components/Modals/SetSieveScriptStateModal.vue:32
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:143
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:169
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:201
 #: frontend/src/apps/mail/pages/AddressBookView.vue:257
 #: frontend/src/apps/mail/pages/AddressBookView.vue:264
 #: frontend/src/apps/mail/pages/ContactView.vue:291
@@ -2113,6 +2144,18 @@ msgstr ""
 #. Option for the 'Status' (Select) field in DocType 'Calendar Event'
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Confirmed"
+msgstr ""
+
+#. Label of the connection_security (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "Connection Security"
+msgstr ""
+
+#. Description of the 'Mail Client Configuration' (Table) field in DocType
+#. 'Mail Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Connection endpoints shown to users. Leave empty to fall back to the domain's DNS records."
 msgstr ""
 
 #. Description of the 'Timeout (Seconds)' (Float) field in DocType 'Mail
@@ -2277,7 +2320,7 @@ msgstr ""
 msgid "Copy Code"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:299
+#: frontend/src/apps/drive/components/GenericPage.vue:280
 #: frontend/src/apps/drive/components/Navbar.vue:190
 #: frontend/src/apps/writer/components/Navbar.vue:206
 msgid "Copy Link"
@@ -2327,6 +2370,10 @@ msgstr ""
 msgid "Country"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:8
+msgid "Create"
+msgstr ""
+
 #: frontend/src/apps/mail/pages/InviteSetupView.vue:38
 msgid "Create Account"
 msgstr ""
@@ -2356,6 +2403,7 @@ msgid "Create a document to get started."
 msgstr ""
 
 #. Option for the 'Type' (Select) field in DocType 'Event Notification'
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:117
 #: suite/mail/doctype/event_notification/event_notification.json
 msgid "Created"
 msgstr ""
@@ -2384,7 +2432,7 @@ msgstr ""
 msgid "Created On"
 msgstr ""
 
-#: suite/mail/api/mail.py:571
+#: suite/mail/api/mail.py:572
 msgid "Created at"
 msgstr ""
 
@@ -2396,7 +2444,7 @@ msgstr ""
 msgid "Creating Job..."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:285
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:296
 msgid "Creating event..."
 msgstr ""
 
@@ -2441,7 +2489,7 @@ msgid "DECLINED"
 msgstr ""
 
 #. Label of the dkim_pass (Check) field in DocType 'Mail Message'
-#: suite/mail/api/mail.py:590 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:591 suite/mail/doctype/mail_message/mail_message.json
 msgid "DKIM"
 msgstr ""
 
@@ -2451,7 +2499,7 @@ msgid "DKIM Description"
 msgstr ""
 
 #. Label of the dmarc_pass (Check) field in DocType 'Mail Message'
-#: suite/mail/api/mail.py:592 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:593 suite/mail/doctype/mail_message/mail_message.json
 msgid "DMARC"
 msgstr ""
 
@@ -2489,7 +2537,7 @@ msgid "DNS Record with the same host and type already exists."
 msgstr ""
 
 #: frontend/src/apps/mail/pages/dashboard/DomainView.vue:19
-#: suite/mail/doctype/mail_settings/mail_settings.py:201
+#: suite/mail/doctype/mail_settings/mail_settings.py:286
 msgid "DNS Records"
 msgstr ""
 
@@ -2566,11 +2614,11 @@ msgstr ""
 msgid "Deactivate"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:428
+#: suite/mail/doctype/push_subscription/push_subscription.py:492
 msgid "Decrypted payload exceeds maximum allowed size."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:435
+#: suite/mail/doctype/push_subscription/push_subscription.py:499
 msgid "Decrypted push payload is not valid JSON."
 msgstr ""
 
@@ -2828,13 +2876,14 @@ msgstr ""
 msgid "Defines the sort order of calendars when presented in the client's UI."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:96
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:107
-#: frontend/src/apps/drive/components/GenericPage.vue:403
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:121
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:132
+#: frontend/src/apps/drive/components/GenericPage.vue:384
 #: frontend/src/apps/drive/components/Navbar.vue:253
 #: frontend/src/apps/mail/components/AppSidebar.vue:302
 #: frontend/src/apps/mail/components/Settings/AutomationSettings.vue:132
 #: frontend/src/apps/mail/components/Settings/FolderSettings.vue:90
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:40
 #: frontend/src/apps/mail/components/Settings/SignatureSettings.vue:88
 #: frontend/src/apps/mail/pages/AddressBookView.vue:278
 #: frontend/src/apps/mail/pages/ContactView.vue:414
@@ -2874,7 +2923,7 @@ msgstr ""
 msgid "Delete Members"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:194
+#: frontend/src/apps/mail/components/MailActions.vue:200
 msgid "Delete Message"
 msgstr ""
 
@@ -2884,6 +2933,10 @@ msgstr ""
 
 #: frontend/src/apps/mail/pages/MailboxView.vue:37
 msgid "Delete Now"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:165
+msgid "Delete Push Subscriptions"
 msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/DeleteSieveScriptModal.vue:5
@@ -2920,17 +2973,17 @@ msgstr ""
 msgid "Delete {0} {1} permanently?"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:169
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:188
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:194
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:213
 msgid "Deleting event..."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:180
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:188
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:205
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:213
 msgid "Deleting events..."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:344
+#: frontend/src/apps/mail/components/MailActions.vue:350
 msgid "Deleting..."
 msgstr ""
 
@@ -2956,6 +3009,10 @@ msgstr ""
 msgid "Depth"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:30
+msgid "Descending"
+msgstr ""
+
 #. Description of the 'Type' (Select) field in DocType 'Event Notification'
 #: suite/mail/doctype/event_notification/event_notification.json
 msgid "Describes the nature of the event change."
@@ -2969,7 +3026,7 @@ msgstr ""
 #. Label of the description (Small Text) field in DocType 'Mail Cluster Store
 #. HTTP Auth'
 #. Label of the description (Small Text) field in DocType 'Quota'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:540
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:553
 #: frontend/src/apps/mail/components/Modals/AddAddressBookModal.vue:26
 #: frontend/src/apps/mail/components/Modals/AddDomainModal.vue:33
 #: frontend/src/apps/mail/components/Modals/EditAddressBookModal.vue:13
@@ -3002,7 +3059,7 @@ msgstr ""
 msgid "Description of this quota."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:16
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:16
 msgid "Deselect all"
 msgstr ""
 
@@ -3061,6 +3118,8 @@ msgid "Developer"
 msgstr ""
 
 #. Label of the device_client_id (Data) field in DocType 'Push Subscription'
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:31
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:180
 #: suite/mail/doctype/push_subscription/push_subscription.json
 msgid "Device Client ID"
 msgstr ""
@@ -3160,7 +3219,7 @@ msgstr ""
 msgid "Do not mimic folder/file structure"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:404
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:409
 #: frontend/src/apps/calendar/pages/CalendarView.vue:234
 msgid "Do you want to update just this instance, or all events in the series?"
 msgstr ""
@@ -3234,7 +3293,7 @@ msgstr ""
 msgid "Domain {0} already exists."
 msgstr ""
 
-#: suite/mail/api/account.py:49
+#: suite/mail/api/account.py:61
 msgid "Domain {0} is not allowed for signup."
 msgstr ""
 
@@ -3255,14 +3314,14 @@ msgstr ""
 msgid "Domains allowed for signup."
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:305
+#: frontend/src/apps/drive/components/GenericPage.vue:286
 #: frontend/src/apps/drive/components/Navbar.vue:182
 #: frontend/src/apps/mail/components/AttachmentViewer.vue:107
 #: frontend/src/apps/writer/components/Navbar.vue:200
 msgid "Download"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:239
+#: frontend/src/apps/mail/components/MailActions.vue:245
 msgid "Download Email"
 msgstr ""
 
@@ -3469,7 +3528,7 @@ msgstr ""
 msgid "ECDH P-256 private key used to decrypt incoming encrypted push notifications."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:357
+#: suite/mail/doctype/push_subscription/push_subscription.py:421
 msgid "ECDH key exchange failed."
 msgstr ""
 
@@ -3484,8 +3543,8 @@ msgstr ""
 msgid "ERROR"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:92
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:473
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:117
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:478
 #: frontend/src/apps/drive/components/Settings/UserListSettings.vue:413
 #: frontend/src/apps/mail/components/Settings/AutomationSettings.vue:127
 #: frontend/src/apps/mail/components/Settings/SignatureSettings.vue:83
@@ -3494,11 +3553,11 @@ msgstr ""
 msgid "Edit"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:110
+#: frontend/src/apps/mail/components/MailActions.vue:116
 msgid "Edit Draft"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:372
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:377
 msgid "Edit Event"
 msgstr ""
 
@@ -3518,7 +3577,7 @@ msgstr ""
 msgid "Edit Photo"
 msgstr ""
 
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:17
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:15
 msgid "Edit Profile"
 msgstr ""
 
@@ -3570,12 +3629,12 @@ msgstr ""
 #. Label of the email (Data) field in DocType 'Identity'
 #. Label of the email (Data) field in DocType 'Mail Message Recipient'
 #. Label of the email (Data) field in DocType 'Participant Identity'
-#. Label of the email (Data) field in DocType 'Screened Email Address'
 #: frontend/src/apps/mail/components/IdentitySettingsListView.vue:55
 #: frontend/src/apps/mail/components/Modals/AddAddressBookContactsModal.vue:103
 #: frontend/src/apps/mail/components/Modals/ContactsModal.vue:130
 #: frontend/src/apps/mail/components/Settings/IdentitySettings.vue:10
 #: frontend/src/apps/mail/components/Settings/IdentitySettings.vue:124
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:118
 #: frontend/src/apps/mail/pages/AddressBookView.vue:287
 #: frontend/src/apps/mail/pages/ContactsView.vue:146
 #: frontend/src/apps/mail/pages/ForgotPasswordView.vue:18
@@ -3592,12 +3651,10 @@ msgstr ""
 #: suite/mail/doctype/identity/identity.json
 #: suite/mail/doctype/mail_message_recipient/mail_message_recipient.json
 #: suite/mail/doctype/participant_identity/participant_identity.json
-#: suite/mail/doctype/screened_email_address/screened_email_address.json
 msgid "Email"
 msgstr ""
 
 #. Name of a DocType
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:154
 #: suite/mail/doctype/email_address/email_address.json
 msgid "Email Address"
 msgstr ""
@@ -3635,16 +3692,23 @@ msgstr ""
 msgid "Email does not have a blob ID."
 msgstr ""
 
-#: suite/mail/utils/validation.py:32
+#: suite/mail/utils/validation.py:80
 msgid "Email domain {0} does not match with domain {1}."
 msgstr ""
 
-#: suite/mail/api/mail.py:724
+#: suite/mail/api/mail.py:725
 msgid "Email is required to fetch avatar."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:1126
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:1129
 msgid "Email must have a valid non-future Received or Date header."
+msgstr ""
+
+#. Label of the email (Data) field in DocType 'Screened Email Address'
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:23
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:212
+#: suite/mail/doctype/screened_email_address/screened_email_address.json
+msgid "Email or Domain"
 msgstr ""
 
 #: suite/mail/doctype/mail_queue/mail_queue.py:861
@@ -3702,6 +3766,12 @@ msgstr ""
 msgid "Enable Gravatar"
 msgstr ""
 
+#. Label of the enable_jmap_push_encryption (Check) field in DocType 'Mail
+#. Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Enable Push Encryption"
+msgstr ""
+
 #: frontend/src/apps/mail/components/PWASettings.vue:16
 msgid "Enable Push Notifications"
 msgstr ""
@@ -3736,11 +3806,11 @@ msgstr ""
 msgid "Enabling Push Notifications..."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:347
+#: suite/mail/doctype/push_subscription/push_subscription.py:411
 msgid "Encrypted payload missing ciphertext data."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:331
+#: suite/mail/doctype/push_subscription/push_subscription.py:395
 msgid "Encrypted push payload is too short."
 msgstr ""
 
@@ -3751,12 +3821,12 @@ msgstr ""
 msgid "End"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:442
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:447
 #: frontend/src/apps/calendar/components/Modals/EventRepeatSettingsModal.vue:240
 msgid "End Date"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:449
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:454
 msgid "End Time"
 msgstr ""
 
@@ -3798,17 +3868,17 @@ msgstr ""
 msgid "Enqueue"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:12
-msgid "Enter email address"
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:311
+msgid "Enter a valid date and an end time after the start time."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:562
+#: frontend/src/apps/calendar/components/ParticipantSelector.vue:18
 msgid "Enter participants"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:104
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:118
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:598
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:129
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:143
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:602
 #: frontend/src/apps/calendar/pages/CalendarView.vue:283
 msgid "Entire series"
 msgstr ""
@@ -3881,7 +3951,7 @@ msgstr ""
 msgid "Event Calendar"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:413
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:418
 msgid "Event Details"
 msgstr ""
 
@@ -3943,26 +4013,26 @@ msgstr ""
 msgid "Event Patch"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:285
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:296
 msgid "Event created."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:170
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:189
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:195
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:214
 msgid "Event deleted."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:542
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:555
 msgid "Event description"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:286
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:297
 #: frontend/src/apps/calendar/pages/CalendarView.vue:226
 msgid "Event updated."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:181
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:189
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:206
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:214
 msgid "Events deleted."
 msgstr ""
 
@@ -4041,6 +4111,7 @@ msgid "Expired"
 msgstr ""
 
 #. Label of the expires (Datetime) field in DocType 'Push Subscription'
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:183
 #: suite/mail/doctype/push_subscription/push_subscription.json
 msgid "Expires"
 msgstr ""
@@ -4059,7 +4130,7 @@ msgstr ""
 
 #. Option for the 'Operation' (Select) field in DocType 'Calendar Exchange'
 #. Option for the 'Operation' (Select) field in DocType 'Mail Exchange'
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:138
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:146
 #: frontend/src/apps/mail/components/Settings/ExportSettings.vue:2
 #: frontend/src/apps/mail/pages/CalendarExchangesView.vue:148
 #: frontend/src/apps/mail/pages/MailExchangesView.vue:145
@@ -4076,13 +4147,13 @@ msgstr ""
 msgid "Export JSON"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:267
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:637
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:270
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:640
 msgid "Export Limit cannot exceed {0}."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:265
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:635
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:268
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:638
 msgid "Export Limit must be greater than zero."
 msgstr ""
 
@@ -4090,21 +4161,21 @@ msgstr ""
 msgid "Export Zone File"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:846
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:849
 msgid "Export completed successfully. {0} email(s) exported."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:473
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:476
 msgid "Export completed successfully. {0} event(s) exported."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:477
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:850
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:480
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:853
 msgid "Export failed. See the error details below."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:254
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:624
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:257
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:627
 msgid "Export filter must be valid JSON."
 msgstr ""
 
@@ -4113,11 +4184,11 @@ msgstr ""
 msgid "Export in progress. We'll email you when it's ready."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:808
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:811
 msgid "Export limit exceeded."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:969
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:972
 msgid "Exported {0} of {1} email(s)."
 msgstr ""
 
@@ -4176,15 +4247,15 @@ msgstr ""
 msgid "Failed to add domain {0}"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:951
+#: suite/mail/doctype/mail_message/mail_message.py:955
 msgid "Failed to add mail(s) to mailbox"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:954
+#: suite/mail/doctype/mail_message/mail_message.py:958
 msgid "Failed to add mail(s) to mailbox."
 msgstr ""
 
-#: suite/mail/api/mail.py:969
+#: suite/mail/api/mail.py:976
 msgid "Failed to auto-accept recipients for account {0}"
 msgstr ""
 
@@ -4196,7 +4267,7 @@ msgstr ""
 msgid "Failed to configure Mail Server {0}"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:328
+#: suite/mail/doctype/push_subscription/push_subscription.py:390
 msgid "Failed to construct EC private key."
 msgstr ""
 
@@ -4236,7 +4307,7 @@ msgstr ""
 msgid "Failed to create user, check error log for details."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:412
+#: suite/mail/doctype/push_subscription/push_subscription.py:476
 msgid "Failed to decrypt push payload (authentication failed)."
 msgstr ""
 
@@ -4260,11 +4331,11 @@ msgstr ""
 msgid "Failed to delete invites."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:859
+#: suite/mail/doctype/mail_message/mail_message.py:863
 msgid "Failed to delete mail(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:862
+#: suite/mail/doctype/mail_message/mail_message.py:866
 msgid "Failed to delete mail(s)."
 msgstr ""
 
@@ -4272,11 +4343,19 @@ msgstr ""
 msgid "Failed to delete members."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:885
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:160
+msgid "Failed to delete."
+msgstr ""
+
+#: suite/mail/api/account.py:279
+msgid "Failed to derive mail client config from DNS"
+msgstr ""
+
+#: suite/mail/doctype/mail_message/mail_message.py:889
 msgid "Failed to empty mailbox"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:888
+#: suite/mail/doctype/mail_message/mail_message.py:892
 msgid "Failed to empty mailbox."
 msgstr ""
 
@@ -4296,11 +4375,11 @@ msgstr ""
 msgid "Failed to fetch accounts"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1118
+#: suite/mail/doctype/mail_message/mail_message.py:1122
 msgid "Failed to fetch blob(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1121
+#: suite/mail/doctype/mail_message/mail_message.py:1125
 msgid "Failed to fetch blob(s)."
 msgstr ""
 
@@ -4308,7 +4387,7 @@ msgstr ""
 msgid "Failed to fetch blob. Please check the error logs for details."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1414
+#: suite/mail/doctype/mail_message/mail_message.py:1425
 msgid "Failed to fetch changes"
 msgstr ""
 
@@ -4324,8 +4403,8 @@ msgstr ""
 msgid "Failed to fetch emails. Please check the error logs for details."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:843
-#: suite/mail/doctype/mail_message/mail_message.py:844
+#: suite/mail/doctype/mail_message/mail_message.py:847
+#: suite/mail/doctype/mail_message/mail_message.py:848
 msgid "Failed to fetch message IDs."
 msgstr ""
 
@@ -4353,11 +4432,11 @@ msgstr ""
 msgid "Failed to load attachment"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:904
+#: suite/mail/doctype/mail_message/mail_message.py:908
 msgid "Failed to move mail(s) to mailbox"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:907
+#: suite/mail/doctype/mail_message/mail_message.py:911
 msgid "Failed to move mail(s) to mailbox."
 msgstr ""
 
@@ -4369,19 +4448,35 @@ msgstr ""
 msgid "Failed to parse domain ID"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:970
+#: suite/mail/doctype/mail_message/mail_message.py:974
 msgid "Failed to remove mail(s) from mailbox"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:973
+#: suite/mail/doctype/mail_message/mail_message.py:977
 msgid "Failed to remove mail(s) from mailbox."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:932
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:192
+msgid "Failed to remove senders."
+msgstr ""
+
+#: suite/mail/doctype/push_subscription/push_subscription.py:265
+msgid "Failed to renew push subscriptions for user {0}: {1}"
+msgstr ""
+
+#: suite/mail/doctype/push_subscription/push_subscription.py:260
+msgid "Failed to renew push subscriptions for user {0}:<br>{1}"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:139
+msgid "Failed to renew."
+msgstr ""
+
+#: suite/mail/doctype/mail_message/mail_message.py:936
 msgid "Failed to restore mailbox membership for mail(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:935
+#: suite/mail/doctype/mail_message/mail_message.py:939
 msgid "Failed to restore mailbox membership for mail(s)."
 msgstr ""
 
@@ -4393,28 +4488,32 @@ msgstr ""
 msgid "Failed to send raw email. Please check the error logs for details."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1036
+#: suite/mail/doctype/mail_message/mail_message.py:1040
 msgid "Failed to set flagged status for mail(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1039
+#: suite/mail/doctype/mail_message/mail_message.py:1043
 msgid "Failed to set flagged status for mail(s)."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1003
+#: suite/mail/doctype/mail_message/mail_message.py:1007
 msgid "Failed to set seen status for mail(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1006
+#: suite/mail/doctype/mail_message/mail_message.py:1010
 msgid "Failed to set seen status for mail(s)."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1067
+#: suite/mail/doctype/mail_message/mail_message.py:1071
 msgid "Failed to set spam status for mail(s)"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:1070
+#: suite/mail/doctype/mail_message/mail_message.py:1074
 msgid "Failed to set spam status for mail(s)."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:170
+msgid "Failed to update action."
 msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/EditInviteModal.vue:117
@@ -4442,7 +4541,7 @@ msgstr ""
 msgid "Failures"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:364
+#: frontend/src/apps/drive/components/GenericPage.vue:345
 #: frontend/src/apps/drive/components/Navbar.vue:224
 #: frontend/src/apps/writer/components/Navbar.vue:234
 msgid "Favourite"
@@ -4487,7 +4586,7 @@ msgstr ""
 msgid "File URL"
 msgstr ""
 
-#: suite/mail/utils/__init__.py:260
+#: suite/mail/utils/__init__.py:265
 msgid "File not found: {0}"
 msgstr ""
 
@@ -4534,7 +4633,7 @@ msgid "First"
 msgstr ""
 
 #: frontend/src/apps/calendar/components/Settings/ProfileSettings.vue:17
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:66
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:50
 #: frontend/src/apps/mail/components/Modals/AddMemberModal.vue:66
 #: frontend/src/apps/mail/components/Settings/ProfileSettings.vue:17
 #: frontend/src/apps/mail/pages/InviteSetupView.vue:14
@@ -4582,7 +4681,7 @@ msgstr ""
 msgid "Folder updated."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:102
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:104
 #: frontend/src/apps/mail/components/Settings/FolderSettings.vue:3
 msgid "Folders"
 msgstr ""
@@ -4620,12 +4719,12 @@ msgid "Format JSON"
 msgstr ""
 
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:506
-#: frontend/src/apps/mail/components/MailActions.vue:152
-#: frontend/src/apps/mail/components/MailThread.vue:772
+#: frontend/src/apps/mail/components/MailActions.vue:158
+#: frontend/src/apps/mail/components/MailThread.vue:774
 msgid "Forward"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:773
+#: frontend/src/apps/mail/components/MailThread.vue:775
 msgid "Forward (F)"
 msgstr ""
 
@@ -4643,19 +4742,19 @@ msgstr ""
 msgid "Forwarded From (Email ID)"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:804
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:807
 msgid "Found {0} email(s) matching the filter; exporting up to {1}."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:756
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:759
 msgid "Found {0} email(s) to import."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:438
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:441
 msgid "Found {0} event(s) matching the filter; exporting up to {1}."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:384
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:387
 msgid "Found {0} event(s) to import."
 msgstr ""
 
@@ -4673,7 +4772,7 @@ msgid "Frappe Calendar"
 msgstr ""
 
 #. Option for the 'Free Busy Status' (Select) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:384
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:389
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Free"
 msgstr ""
@@ -4690,7 +4789,7 @@ msgstr ""
 #. Label of the _from (Data) field in DocType 'Mail Message'
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:26
 #: frontend/src/apps/mail/components/Modals/SearchModal.vue:55
-#: suite/mail/api/mail.py:578 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:579 suite/mail/doctype/mail_message/mail_message.json
 msgid "From"
 msgstr ""
 
@@ -4818,7 +4917,7 @@ msgstr ""
 msgid "Go to Starred"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:323
+#: frontend/src/apps/drive/components/GenericPage.vue:304
 #: frontend/src/apps/drive/components/Navbar.vue:171
 msgid "Go to original"
 msgstr ""
@@ -4885,19 +4984,19 @@ msgstr ""
 msgid "Guest is banned from this meeting"
 msgstr ""
 
-#: suite/meet/api/meeting.py:467
+#: suite/meet/api/meeting.py:468
 msgid "Guest not approved"
 msgstr ""
 
-#: suite/meet/api/meeting.py:459
+#: suite/meet/api/meeting.py:460
 msgid "Guest session not found or expired"
 msgstr ""
 
-#: suite/meet/api/meeting.py:515
+#: suite/meet/api/meeting.py:516
 msgid "Guest token has expired"
 msgstr ""
 
-#: suite/meet/api/meeting.py:358
+#: suite/meet/api/meeting.py:359
 msgid "Guests are not allowed in this meeting"
 msgstr ""
 
@@ -4982,7 +5081,7 @@ msgstr ""
 msgid "Headers"
 msgstr ""
 
-#: suite/mail/templates/emails/generic.html:13
+#: suite/templates/emails/generic.html:13
 msgid "Hello,"
 msgstr ""
 
@@ -5031,9 +5130,12 @@ msgstr ""
 msgid "Host Only Chat"
 msgstr ""
 
+#. Label of the hostname (Data) field in DocType 'Mail Client Configuration'
 #. Label of the hostname (Data) field in DocType 'Mail Cluster'
 #. Label of the hostname (Data) field in DocType 'Mail Server'
 #: frontend/src/apps/mail/components/DNSRecords.vue:50
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:105
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
 #: suite/mail/doctype/mail_cluster/mail_cluster.json
 #: suite/mail/doctype/mail_server/mail_server.json
 msgid "Hostname"
@@ -5076,6 +5178,12 @@ msgstr ""
 #. 'JMAP Account'
 #: suite/mail/doctype/jmap_account/jmap_account.json
 msgid "ID of the Sieve script that was active before a vacation auto-reply was enabled; it is re-activated when the vacation response is turned off."
+msgstr ""
+
+#. Option for the 'Protocol' (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "IMAP"
 msgstr ""
 
 #. Option for the 'Push Log Level' (Select) field in DocType 'Mail Settings'
@@ -5151,7 +5259,7 @@ msgstr ""
 #. Name of a DocType
 #. Label of a Workspace Sidebar Item
 #: frontend/src/apps/mail/components/Modals/SetDefaultSignatureModal.vue:7
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:91
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:93
 #: frontend/src/apps/mail/components/Settings/IdentitySettings.vue:5
 #: suite/mail/doctype/identity/identity.json
 #: suite/mail/workspace_sidebar/client.json
@@ -5230,7 +5338,7 @@ msgstr ""
 
 #. Option for the 'Operation' (Select) field in DocType 'Calendar Exchange'
 #. Option for the 'Operation' (Select) field in DocType 'Mail Exchange'
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:132
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:140
 #: frontend/src/apps/mail/components/Settings/ImportSettings.vue:2
 #: frontend/src/apps/mail/pages/CalendarExchangesView.vue:147
 #: frontend/src/apps/mail/pages/MailExchangesView.vue:144
@@ -5239,26 +5347,26 @@ msgstr ""
 msgid "Import"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:231
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:600
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:234
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:603
 msgid "Import File is required."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:229
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:598
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:232
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:601
 msgid "Import Format is required."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:767
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:770
 msgid "Import completed successfully. {0} email(s) imported."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:395
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:398
 msgid "Import completed. {0} created, {1} skipped (already present), {2} failed."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:402
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:771
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:405
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:774
 msgid "Import failed. See the error details below."
 msgstr ""
 
@@ -5267,16 +5375,16 @@ msgstr ""
 msgid "Import in progress. We'll email you when it's ready."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:389
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:761
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:392
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:764
 msgid "Import limit exceeded."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:924
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:927
 msgid "Imported {0} of {1} email(s)."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:606
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:609
 msgid "Imported {0} of {1} event(s)."
 msgstr ""
 
@@ -5508,32 +5616,32 @@ msgstr ""
 msgid "Invalid Content-Encoding. Expected 'aes128gcm'."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:154
+#: suite/mail/doctype/mail_settings/mail_settings.py:239
 msgid "Invalid JMAP Push Subscription keys: {0}"
 msgstr ""
 
-#: suite/mail/utils/validation.py:71
+#: suite/mail/utils/validation.py:119
 msgid "Invalid JMAP Structure"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:323
+#: suite/mail/doctype/push_subscription/push_subscription.py:385
 msgid "Invalid JMAP push private key length (must be 32 bytes)."
 msgstr ""
 
-#: suite/mail/utils/validation.py:102 suite/mail/utils/validation.py:131
-#: suite/mail/utils/validation.py:189
+#: suite/mail/utils/validation.py:150 suite/mail/utils/validation.py:179
+#: suite/mail/utils/validation.py:237
 msgid "Invalid Maildir"
 msgstr ""
 
-#: suite/mail/utils/validation.py:128 suite/mail/utils/validation.py:186
+#: suite/mail/utils/validation.py:176 suite/mail/utils/validation.py:234
 msgid "Invalid Maildir format in the following directories: {0}"
 msgstr ""
 
-#: suite/mail/utils/validation.py:99
+#: suite/mail/utils/validation.py:147
 msgid "Invalid Maildir format: at least one of {0} must exist and contain files."
 msgstr ""
 
-#: suite/mail/api/account.py:73
+#: suite/mail/api/account.py:85
 msgid "Invalid OTP. Please try again."
 msgstr ""
 
@@ -5541,11 +5649,11 @@ msgstr ""
 msgid "Invalid Push Notification @type = {0}"
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:93
+#: suite/mail/doctype/mail_settings/mail_settings.py:171
 msgid "Invalid Signup Domains format. Please provide one domain per line."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:320
+#: suite/mail/doctype/push_subscription/push_subscription.py:382
 msgid "Invalid base64 encoding in JMAP push keys."
 msgstr ""
 
@@ -5557,7 +5665,7 @@ msgstr ""
 msgid "Invalid delivery mode: {0}"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:218
+#: frontend/src/apps/calendar/components/ParticipantSelector.vue:45
 msgid "Invalid email address"
 msgstr ""
 
@@ -5583,7 +5691,7 @@ msgstr ""
 msgid "Invalid guest ID format"
 msgstr ""
 
-#: suite/meet/api/meeting.py:517
+#: suite/meet/api/meeting.py:518
 msgid "Invalid guest token"
 msgstr ""
 
@@ -5591,15 +5699,15 @@ msgstr ""
 msgid "Invalid meeting type"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:388
+#: suite/mail/doctype/push_subscription/push_subscription.py:452
 msgid "Invalid nonce base length derived."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:423
+#: suite/mail/doctype/push_subscription/push_subscription.py:487
 msgid "Invalid padding delimiter in decrypted record."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:419
+#: suite/mail/doctype/push_subscription/push_subscription.py:483
 msgid "Invalid padding in decrypted record."
 msgstr ""
 
@@ -5607,15 +5715,15 @@ msgstr ""
 msgid "Invalid password"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:338
+#: suite/mail/doctype/push_subscription/push_subscription.py:402
 msgid "Invalid record size in encrypted payload."
 msgstr ""
 
-#: suite/mail/api/mail.py:904
+#: suite/mail/api/mail.py:905
 msgid "Invalid screening action: {0}"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:352
+#: suite/mail/doctype/push_subscription/push_subscription.py:416
 msgid "Invalid sender public key in encrypted payload."
 msgstr ""
 
@@ -5741,15 +5849,15 @@ msgstr ""
 msgid "JMAP Push Private Key"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:314
+#: suite/mail/doctype/push_subscription/push_subscription.py:376
 msgid "JMAP Push Subscription decryption keys are not configured in Mail Settings."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:116
+#: suite/mail/doctype/mail_settings/mail_settings.py:194
 msgid "JMAP Push Subscription keys are incomplete. Use Actions → Generate JMAP Push Keys to regenerate them."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:161
+#: suite/mail/doctype/mail_settings/mail_settings.py:246
 msgid "JMAP Push keys generated successfully."
 msgstr ""
 
@@ -5777,6 +5885,10 @@ msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/AddContactModal.vue:25
 msgid "John Doe"
+msgstr ""
+
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:354
+msgid "Join Meet"
 msgstr ""
 
 #: suite/meet/doctype/sae_meeting/sae_meeting.js:6
@@ -5808,7 +5920,7 @@ msgstr ""
 msgid "Key Prefix"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:385
+#: suite/mail/doctype/push_subscription/push_subscription.py:449
 msgid "Key derivation failed."
 msgstr ""
 
@@ -5859,7 +5971,7 @@ msgstr ""
 msgid "Language"
 msgstr ""
 
-#: frontend/src/apps/drive/components/ListView.vue:164
+#: frontend/src/apps/drive/components/ListView.vue:162
 msgid "Last Accessed"
 msgstr ""
 
@@ -5887,12 +5999,14 @@ msgstr ""
 msgid "Last Interaction"
 msgstr ""
 
-#: frontend/src/apps/drive/components/ListView.vue:156
+#: frontend/src/apps/drive/components/ListView.vue:154
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:116
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:214
 msgid "Last Modified"
 msgstr ""
 
 #: frontend/src/apps/calendar/components/Settings/ProfileSettings.vue:18
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:68
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:52
 #: frontend/src/apps/mail/components/Modals/AddMemberModal.vue:71
 #: frontend/src/apps/mail/components/Settings/ProfileSettings.vue:18
 #: frontend/src/apps/mail/pages/InviteSetupView.vue:21
@@ -6050,7 +6164,7 @@ msgstr ""
 
 #. Option for the 'Kind' (Select) field in DocType 'Event Participant'
 #. Label of the location (Data) field in DocType 'Mail Message Part'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:486
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:491
 #: suite/mail/doctype/event_participant/event_participant.json
 #: suite/mail/doctype/mail_message_part/mail_message_part.json
 msgid "Location"
@@ -6058,7 +6172,7 @@ msgstr ""
 
 #. Label of the locations (Table) field in DocType 'Calendar Event'
 #. Label of the locations_tab (Tab Break) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:485
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:490
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Locations"
 msgstr ""
@@ -6155,6 +6269,17 @@ msgid "Mail Admin"
 msgstr ""
 
 #. Name of a DocType
+#. Label of the mail_client_config_section (Section Break) field in DocType
+#. 'Mail Settings'
+#. Label of the mail_client_configurations (Table) field in DocType 'Mail
+#. Settings'
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:25
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Mail Client Configuration"
+msgstr ""
+
+#. Name of a DocType
 #: suite/mail/doctype/mail_cluster/mail_cluster.json
 msgid "Mail Cluster"
 msgstr ""
@@ -6177,7 +6302,7 @@ msgstr ""
 msgid "Mail Cluster {0} is disabled."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:1027
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:1030
 msgid "Mail Data {0} {1}"
 msgstr ""
 
@@ -6228,15 +6353,15 @@ msgstr ""
 msgid "Mail Message Recipient"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:545
+#: suite/mail/doctype/mail_message/mail_message.py:549
 msgid "Mail Message does not have a blob ID."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:349
+#: suite/mail/doctype/mail_message/mail_message.py:353
 msgid "Mail Message {0} is a draft. Please send it before performing this action."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:587
+#: suite/mail/doctype/mail_message/mail_message.py:591
 msgid "Mail Message {0} is not a draft."
 msgstr ""
 
@@ -6244,7 +6369,7 @@ msgstr ""
 msgid "Mail Messages"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:672
+#: suite/mail/doctype/mail_message/mail_message.py:676
 msgid "Mail Messages deleted successfully."
 msgstr ""
 
@@ -6296,27 +6421,27 @@ msgstr ""
 msgid "Mail Sync History already exists for this account and source."
 msgstr ""
 
-#: suite/mail/utils/__init__.py:139
+#: suite/mail/utils/__init__.py:144
 msgid "Mail config key '{0}' not found"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:345
+#: frontend/src/apps/mail/components/MailActions.vue:351
 msgid "Mail deleted."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:292
+#: frontend/src/apps/mail/components/MailActions.vue:298
 msgid "Mail marked as Junk."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:293
+#: frontend/src/apps/mail/components/MailActions.vue:299
 msgid "Mail marked as Not Junk."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:324
+#: frontend/src/apps/mail/components/MailActions.vue:330
 msgid "Mail moved back to {0}."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:331
+#: frontend/src/apps/mail/components/MailActions.vue:337
 msgid "Mail moved to {0}."
 msgstr ""
 
@@ -6338,7 +6463,7 @@ msgstr ""
 msgid "Mailbox"
 msgstr ""
 
-#: suite/mail/doctype/sieve_script/sieve_script.py:520
+#: suite/mail/doctype/sieve_script/sieve_script.py:525
 msgid "Mailbox '{0}' not found in account '{1}'."
 msgstr ""
 
@@ -6371,7 +6496,7 @@ msgid "Mailbox Name"
 msgstr ""
 
 #: suite/mail/doctype/mailbox/mailbox.py:189
-#: suite/mail/doctype/sieve_script/sieve_script.py:523
+#: suite/mail/doctype/sieve_script/sieve_script.py:528
 msgid "Mailbox Not Found"
 msgstr ""
 
@@ -6400,7 +6525,7 @@ msgstr ""
 msgid "Mailbox cannot be a parent of itself."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:336
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:339
 msgid "Mailbox not found for folder {0}"
 msgstr ""
 
@@ -6418,11 +6543,11 @@ msgstr ""
 msgid "Mailboxes deleted successfully."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:353
+#: frontend/src/apps/mail/components/MailActions.vue:359
 msgid "Mails"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:290
+#: frontend/src/apps/mail/components/MailActions.vue:296
 msgid "Mails from sender will go to Junk."
 msgstr ""
 
@@ -6432,7 +6557,7 @@ msgstr ""
 msgid "Make all uploaded files to be managed through Drive, instead of Framework."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:341
+#: suite/mail/doctype/push_subscription/push_subscription.py:405
 msgid "Malformed encrypted payload (invalid key length)."
 msgstr ""
 
@@ -6457,11 +6582,11 @@ msgstr ""
 msgid "Mark Sender as Trusted"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:200
+#: frontend/src/apps/mail/components/MailActions.vue:206
 msgid "Mark Unread from Here"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:176
+#: frontend/src/apps/mail/components/MailActions.vue:182
 #: frontend/src/apps/mail/components/Modals/ShortcutsModal.vue:72
 msgid "Mark as Junk"
 msgstr ""
@@ -6471,7 +6596,7 @@ msgstr ""
 msgid "Mark as Junk (!)"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:182
+#: frontend/src/apps/mail/components/MailActions.vue:188
 #: frontend/src/apps/mail/components/ThreadHeader.vue:209
 #: frontend/src/apps/mail/pages/MailboxView.vue:766
 msgid "Mark as Not Junk"
@@ -6490,7 +6615,7 @@ msgstr ""
 msgid "Mark as Read (Shift+U)"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:200
+#: frontend/src/apps/mail/components/MailActions.vue:206
 #: frontend/src/apps/mail/components/MailListItemActions.vue:38
 #: frontend/src/apps/mail/components/Modals/ShortcutsModal.vue:73
 msgid "Mark as Unread"
@@ -6501,11 +6626,11 @@ msgstr ""
 msgid "Mark as Unread (U)"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:300
+#: frontend/src/apps/mail/components/MailActions.vue:306
 msgid "Marking as Junk..."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:300
+#: frontend/src/apps/mail/components/MailActions.vue:306
 msgid "Marking as Not Junk..."
 msgstr ""
 
@@ -6711,8 +6836,8 @@ msgstr ""
 msgid "May Write Own"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:219
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:379
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:249
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:384
 msgid "Maybe"
 msgstr ""
 
@@ -6726,17 +6851,17 @@ msgstr ""
 msgid "Meeting Type"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:489
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:494
 msgid "Meeting location {0}"
 msgstr ""
 
-#: suite/meet/api/meeting.py:311 suite/meet/api/meeting.py:352
-#: suite/meet/api/meeting.py:462 suite/meet/api/meeting.py:526
-#: suite/meet/api/meeting.py:588
+#: suite/meet/api/meeting.py:312 suite/meet/api/meeting.py:353
+#: suite/meet/api/meeting.py:463 suite/meet/api/meeting.py:527
+#: suite/meet/api/meeting.py:589
 msgid "Meeting not found"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:418
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:423
 msgid "Meeting with Team"
 msgstr ""
 
@@ -6792,7 +6917,7 @@ msgstr ""
 
 #. Label of the message_id (Data) field in DocType 'Mail Message'
 #. Label of the message_id (Data) field in DocType 'Mail Queue'
-#: suite/mail/api/mail.py:569 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:570 suite/mail/doctype/mail_message/mail_message.json
 #: suite/mail/doctype/mail_queue/mail_queue.json
 msgid "Message ID"
 msgstr ""
@@ -6806,7 +6931,7 @@ msgstr ""
 msgid "Message Queue"
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:249
+#: suite/mail/doctype/mail_message/mail_message.py:253
 msgid "Message not found or you do not have permission to view it."
 msgstr ""
 
@@ -6842,7 +6967,7 @@ msgstr ""
 msgid "Metadata"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:245
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:248
 msgid "Metadata must be valid JSON."
 msgstr ""
 
@@ -6893,7 +7018,7 @@ msgstr ""
 msgid "Minutes"
 msgstr ""
 
-#: suite/mail/utils/validation.py:68
+#: suite/mail/utils/validation.py:116
 msgid "Missing required files/directories for JMAP format: {0}"
 msgstr ""
 
@@ -6938,7 +7063,7 @@ msgstr ""
 msgid "More Info"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:356
+#: frontend/src/apps/drive/components/GenericPage.vue:337
 #: frontend/src/apps/drive/components/Navbar.vue:218
 #: frontend/src/apps/writer/components/Navbar.vue:217
 #: suite/mail/doctype/mail_message/mail_message.js:132
@@ -6963,12 +7088,12 @@ msgstr ""
 msgid "Move to Inbox"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:95
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:100
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:64
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:109
 msgid "Move to Junk"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:188
+#: frontend/src/apps/mail/components/MailActions.vue:194
 #: frontend/src/apps/mail/components/MailListItemActions.vue:56
 #: frontend/src/apps/mail/components/Modals/ShortcutsModal.vue:75
 msgid "Move to Trash"
@@ -6983,7 +7108,7 @@ msgstr ""
 msgid "Move unscreened messages?"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:330
+#: frontend/src/apps/mail/components/MailActions.vue:336
 msgid "Moving to {0}..."
 msgstr ""
 
@@ -7009,7 +7134,7 @@ msgstr ""
 #. Label of the _name (Data) field in DocType 'Quota'
 #. Label of the _name (Data) field in DocType 'Sieve Script'
 #: frontend/src/apps/drive/components/DriveToolBar.vue:177
-#: frontend/src/apps/drive/components/ListView.vue:101
+#: frontend/src/apps/drive/components/ListView.vue:99
 #: frontend/src/apps/mail/components/Modals/AddAddressBookContactsModal.vue:102
 #: frontend/src/apps/mail/components/Modals/AddAddressBookModal.vue:20
 #: frontend/src/apps/mail/components/Modals/AddContactModal.vue:24
@@ -7094,6 +7219,8 @@ msgstr ""
 #: frontend/src/apps/drive/components/Settings/UserListSettings.vue:9
 #: frontend/src/apps/mail/components/Settings/AutomationSettings.vue:14
 #: frontend/src/apps/mail/components/Settings/FolderSettings.vue:4
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:15
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:7
 #: frontend/src/apps/mail/components/Settings/SignatureSettings.vue:4
 msgid "New"
 msgstr ""
@@ -7119,6 +7246,10 @@ msgstr ""
 #: frontend/src/apps/mail/components/Modals/ChangePasswordModal.vue:15
 #: frontend/src/apps/mail/pages/ResetPasswordView.vue:12
 msgid "New Password"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:5
+msgid "New Push Subscription"
 msgstr ""
 
 #: frontend/src/apps/mail/components/Settings/IdentitySettings.vue:110
@@ -7189,21 +7320,21 @@ msgstr ""
 msgid "Next op-log sequence"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:219
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:380
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:249
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:385
 #: frontend/src/apps/mail/components/Settings/MailImportSettings.vue:107
 msgid "No"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:144
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:147
 msgid "No .eml files found"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:499
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:502
 msgid "No .ics files found."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:194
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:197
 msgid "No .mbox files found"
 msgstr ""
 
@@ -7251,15 +7382,15 @@ msgstr ""
 msgid "No answer for {0}."
 msgstr ""
 
-#: suite/mail/api/mail.py:363
+#: suite/mail/api/mail.py:364
 msgid "No attachments to download."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:444
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:447
 msgid "No calendar events found for export."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:387
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:390
 msgid "No calendar events found for import."
 msgstr ""
 
@@ -7308,11 +7439,11 @@ msgstr ""
 msgid "No domains found."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:812
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:815
 msgid "No emails found for export."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:759
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:762
 msgid "No emails found for import."
 msgstr ""
 
@@ -7374,7 +7505,7 @@ msgstr ""
 msgid "No members found."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:325
+#: suite/mail/doctype/mail_message/mail_message.py:329
 msgid "No messages found."
 msgstr ""
 
@@ -7386,8 +7517,12 @@ msgstr ""
 msgid "No phones."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:70
+#: suite/mail/doctype/push_subscription/push_subscription.py:74
 msgid "No push subscriptions found."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:51
+msgid "No push subscriptions."
 msgstr ""
 
 #: suite/mail/doctype/quota/quota.py:70
@@ -7403,7 +7538,11 @@ msgstr ""
 msgid "No rows."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:56
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:64
+msgid "No screened senders match your search."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:68
 msgid "No screened senders."
 msgstr ""
 
@@ -7428,9 +7567,12 @@ msgstr ""
 
 #. Option for the 'Include In Availability' (Select) field in DocType
 #. 'Calendar'
+#. Option for the 'Connection Security' (Select) field in DocType 'Mail Client
+#. Configuration'
 #. Option for the 'Group Messages By' (Select) field in DocType 'User Settings'
 #: frontend/src/apps/mail/components/Settings/AppearanceSettings.vue:80
 #: suite/mail/doctype/calendar/calendar.json
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
 #: suite/mail/doctype/user_settings/user_settings.json
 msgid "None"
 msgstr ""
@@ -7445,11 +7587,11 @@ msgstr ""
 msgid "Not Keyword"
 msgstr ""
 
-#: suite/meet/api/meeting.py:520
+#: suite/meet/api/meeting.py:521
 msgid "Not a guest token"
 msgstr ""
 
-#: suite/meet/api/meeting.py:110 suite/meet/api/meeting.py:277
+#: suite/meet/api/meeting.py:111 suite/meet/api/meeting.py:278
 msgid "Not a meeting member"
 msgstr ""
 
@@ -7465,7 +7607,7 @@ msgstr ""
 msgid "Not permitted"
 msgstr ""
 
-#: suite/mail/jmap/__init__.py:437 suite/mail/jmap/__init__.py:452
+#: suite/mail/jmap/__init__.py:439 suite/mail/jmap/__init__.py:454
 msgid "Not permitted to view accounts for user {0}."
 msgstr ""
 
@@ -7474,7 +7616,7 @@ msgstr ""
 msgid "Notification is not yet finalized or delivered to the user."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:394
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:399
 #: frontend/src/apps/calendar/pages/CalendarView.vue:238
 msgid "Notify Participants"
 msgstr ""
@@ -7574,7 +7716,7 @@ msgstr ""
 msgid "On Mark As Junk"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:334
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:350
 msgid "On specific date"
 msgstr ""
 
@@ -7595,7 +7737,7 @@ msgstr ""
 msgid "Only applies if S3 is turned on."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:330
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:333
 msgid "Only calendar exchange with status 'Queued', 'In Progress', or 'Failed' can be retried."
 msgstr ""
 
@@ -7624,11 +7766,11 @@ msgstr ""
 msgid "Only hosts and co-hosts can reject join requests"
 msgstr ""
 
-#: suite/meet/api/meeting.py:602
+#: suite/meet/api/meeting.py:603
 msgid "Only hosts and co-hosts can view E2EE details"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:700
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:703
 msgid "Only mail exchange with status 'Queued', 'In Progress', or 'Failed' can be retried."
 msgstr ""
 
@@ -7636,11 +7778,11 @@ msgstr ""
 msgid "Only one {0} store is allowed."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:327
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:330
 msgid "Only submitted calendar exchange can be retried."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:697
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:700
 msgid "Only submitted mail exchange can be retried."
 msgstr ""
 
@@ -7652,8 +7794,8 @@ msgstr ""
 msgid "Only the meeting host or co-host can update settings"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:236
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:605
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:239
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:608
 msgid "Only {0} files are supported for import."
 msgstr ""
 
@@ -7675,7 +7817,7 @@ msgstr ""
 msgid "Opaque base64-encoded Y.Doc binary update. Written and read exclusively by the collab server via the internal collab endpoints; never edited directly."
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:287
+#: frontend/src/apps/drive/components/GenericPage.vue:268
 msgid "Open"
 msgstr ""
 
@@ -7687,7 +7829,7 @@ msgstr ""
 msgid "Open Settings"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:335
+#: frontend/src/apps/drive/components/GenericPage.vue:316
 #: frontend/src/apps/drive/components/Navbar.vue:165
 msgid "Open in Desk"
 msgstr ""
@@ -7731,7 +7873,7 @@ msgstr ""
 msgid "Options"
 msgstr ""
 
-#: frontend/src/apps/drive/components/ListView.vue:126
+#: frontend/src/apps/drive/components/ListView.vue:124
 msgid "Organization"
 msgstr ""
 
@@ -7798,7 +7940,7 @@ msgid "Output"
 msgstr ""
 
 #: frontend/src/apps/drive/components/DriveToolBar.vue:181
-#: frontend/src/apps/drive/components/ListView.vue:137
+#: frontend/src/apps/drive/components/ListView.vue:135
 #: frontend/src/apps/drive/ui/drive/components/InfoDialog.vue:11
 msgid "Owner"
 msgstr ""
@@ -7809,15 +7951,21 @@ msgstr ""
 msgid "P-256 ECDH public key for JMAP PushSubscription encryption."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:125
+#: suite/mail/doctype/mail_settings/mail_settings.py:210
 msgid "P256DH"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:841
+#. Option for the 'Protocol' (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "POP3"
+msgstr ""
+
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:844
 msgid "Packaging exported emails into a {0} archive."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:468
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:471
 msgid "Packaging exported events into a {0} archive."
 msgstr ""
 
@@ -7831,7 +7979,7 @@ msgstr ""
 msgid "Parent ID"
 msgstr ""
 
-#: suite/mail/doctype/sieve_script/sieve_script.py:545
+#: suite/mail/doctype/sieve_script/sieve_script.py:550
 msgid "Parent Mailbox Not Found"
 msgstr ""
 
@@ -7840,7 +7988,7 @@ msgstr ""
 msgid "Parent Sheet"
 msgstr ""
 
-#: suite/mail/doctype/sieve_script/sieve_script.py:542
+#: suite/mail/doctype/sieve_script/sieve_script.py:547
 msgid "Parent mailbox with ID '{0}' not found in account '{1}'."
 msgstr ""
 
@@ -7884,7 +8032,7 @@ msgstr ""
 
 #. Label of the participants (Table) field in DocType 'Calendar Event'
 #. Label of the participants_tab (Tab Break) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:559
+#: frontend/src/apps/calendar/components/ParticipantSelector.vue:17
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Participants"
 msgstr ""
@@ -8035,7 +8183,7 @@ msgstr ""
 msgid "Playbook {0} does not exist."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:88
+#: suite/mail/doctype/mail_settings/mail_settings.py:166
 msgid "Please add at least one Signup Domain."
 msgstr ""
 
@@ -8056,7 +8204,7 @@ msgstr ""
 msgid "Please enter a contact email"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:59
+#: suite/mail/doctype/push_subscription/push_subscription.py:63
 msgid "Please select a user to view push subscriptions."
 msgstr ""
 
@@ -8088,7 +8236,7 @@ msgstr ""
 msgid "Please select an account to view mailboxes."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:266
+#: suite/mail/doctype/mail_message/mail_message.py:270
 msgid "Please select an account to view messages."
 msgstr ""
 
@@ -8108,23 +8256,23 @@ msgstr ""
 msgid "Please select an account to view vacation response details."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:49
+#: suite/mail/doctype/mail_settings/mail_settings.py:127
 msgid "Please set the DNS Provider Access Key and Secret."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:60
+#: suite/mail/doctype/mail_settings/mail_settings.py:138
 msgid "Please set the DNS Provider Key and Secret."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:53
+#: suite/mail/doctype/mail_settings/mail_settings.py:131
 msgid "Please set the DNS Provider Token."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:56
+#: suite/mail/doctype/mail_settings/mail_settings.py:134
 msgid "Please set the DNS Provider Username and Client IP."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:44
+#: suite/mail/doctype/mail_settings/mail_settings.py:122
 msgid "Please set the Root Domain Name before configuring the DNS Provider."
 msgstr ""
 
@@ -8150,7 +8298,7 @@ msgstr ""
 msgid "Please verify the SSH connection before installing Stalwart."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:203
+#: suite/mail/doctype/mail_settings/mail_settings.py:288
 msgid "Please verify the {0} for the new {1}."
 msgstr ""
 
@@ -8203,8 +8351,11 @@ msgstr ""
 msgid "Pop Out"
 msgstr ""
 
+#. Label of the port (Int) field in DocType 'Mail Client Configuration'
 #. Label of the port (Int) field in DocType 'Mail Cluster Store'
 #. Label of the spamd_port (Int) field in DocType 'Mail Settings'
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:106
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
 #: suite/mail/doctype/mail_cluster_store/mail_cluster_store.json
 #: suite/mail/doctype/mail_settings/mail_settings.json
 msgid "Port"
@@ -8242,7 +8393,7 @@ msgstr ""
 msgid "PostgreSql"
 msgstr ""
 
-#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:74
+#: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:58
 msgid "Preferences"
 msgstr ""
 
@@ -8251,8 +8402,8 @@ msgstr ""
 msgid "Prefix"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:374
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:744
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:377
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:747
 msgid "Prepared the source files for import."
 msgstr ""
 
@@ -8271,7 +8422,7 @@ msgstr ""
 #. Label of the preview (Code) field in DocType 'Mail Message'
 #. Label of the section_break_frkm (Section Break) field in DocType 'Mail
 #. Message Part'
-#: frontend/src/apps/drive/components/GenericPage.vue:281
+#: frontend/src/apps/drive/components/GenericPage.vue:262
 #: suite/mail/doctype/mail_message/mail_message.json
 #: suite/mail/doctype/mail_message_part/mail_message_part.json
 msgid "Preview"
@@ -8327,14 +8478,14 @@ msgid "Privacy"
 msgstr ""
 
 #. Option for the 'Privacy' (Select) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:390
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:395
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Private"
 msgstr ""
 
 #. Label of the ssh_private_key (Password) field in DocType 'Mail Cluster'
 #: suite/mail/doctype/mail_cluster/mail_cluster.json
-#: suite/mail/doctype/mail_settings/mail_settings.py:126
+#: suite/mail/doctype/mail_settings/mail_settings.py:211
 msgid "Private Key"
 msgstr ""
 
@@ -8371,7 +8522,7 @@ msgstr ""
 #: frontend/src/apps/calendar/components/Modals/SettingsModal.vue:52
 #: frontend/src/apps/calendar/components/Settings/ProfileSettings.vue:2
 #: frontend/src/apps/drive/components/Settings/ProfileSettings.vue:3
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:80
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:82
 #: frontend/src/apps/mail/components/Settings/ProfileSettings.vue:2
 #: suite/mail/doctype/mail_cluster_store/mail_cluster_store.json
 msgid "Profile"
@@ -8390,6 +8541,11 @@ msgstr ""
 #. Option for the 'Status' (Select) field in DocType 'Drive User Invitation'
 #: suite/drive/doctype/drive_user_invitation/drive_user_invitation.json
 msgid "Proposed"
+msgstr ""
+
+#. Label of the protocol (Select) field in DocType 'Mail Client Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "Protocol"
 msgstr ""
 
 #. Label of the protocol_version (Select) field in DocType 'Mail Cluster Store'
@@ -8428,8 +8584,8 @@ msgstr ""
 
 #. Label of the public (Check) field in DocType 'Drive Team'
 #. Option for the 'Privacy' (Select) field in DocType 'Calendar Event'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:389
-#: frontend/src/apps/drive/components/ListView.vue:122
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:394
+#: frontend/src/apps/drive/components/ListView.vue:120
 #: suite/drive/doctype/drive_team/drive_team.json
 #: suite/mail/doctype/calendar_event/calendar_event.json
 msgid "Public"
@@ -8511,7 +8667,7 @@ msgstr ""
 msgid "Push Subscription"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:159
+#: suite/mail/doctype/push_subscription/push_subscription.py:163
 msgid "Push Subscription Creation Error"
 msgstr ""
 
@@ -8519,11 +8675,11 @@ msgstr ""
 msgid "Push Subscription Creation Failed"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:240
+#: suite/mail/doctype/push_subscription/push_subscription.py:284
 msgid "Push Subscription Deletion Error"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:239
+#: suite/mail/doctype/push_subscription/push_subscription.py:283
 msgid "Push Subscription Deletion Error(s):<br>{0}"
 msgstr ""
 
@@ -8532,21 +8688,35 @@ msgstr ""
 msgid "Push Subscription ID"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:183
+#: suite/mail/doctype/push_subscription/push_subscription.py:187
 msgid "Push Subscription Not Found"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:200
-#: suite/mail/doctype/push_subscription/push_subscription.py:217
+#: suite/mail/doctype/push_subscription/push_subscription.py:204
+#: suite/mail/doctype/push_subscription/push_subscription.py:221
 msgid "Push Subscription Renewal Error"
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:180
+#: suite/mail/doctype/push_subscription/push_subscription.py:259
+#: suite/mail/doctype/push_subscription/push_subscription.py:264
+msgid "Push Subscription Renewal Failed"
+msgstr ""
+
+#: suite/mail/doctype/push_subscription/push_subscription.py:184
 msgid "Push Subscription with ID {0} not found for user {1}."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:125
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:134
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:6
+msgid "Push Subscriptions"
+msgstr ""
+
+#: suite/mail/doctype/push_subscription/push_subscription.py:129
 msgid "Push Subscriptions deleted successfully."
+msgstr ""
+
+#: suite/mail/doctype/mail_settings/mail_settings.py:201
+msgid "Push encryption is enabled but the JMAP Push Subscription keys are not configured. Use Actions → Generate JMAP Push Keys to generate them, or disable Enable Push Encryption."
 msgstr ""
 
 #: suite/mail/api/jmap.py:43
@@ -8559,6 +8729,14 @@ msgstr ""
 
 #: frontend/src/apps/mail/components/PWASettings.vue:58
 msgid "Push notifications have been disabled on your site"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:94
+msgid "Push subscription created."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:186
+msgid "Push subscriptions let your devices receive real-time notifications when your mail changes. Create one to register this or another client."
 msgstr ""
 
 #. Option for the 'Status' (Select) field in DocType 'Calendar Exchange'
@@ -8613,7 +8791,7 @@ msgstr ""
 msgid "Quota with ID {0} not found in account {1}."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:548
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:561
 msgid "RSVP"
 msgstr ""
 
@@ -8817,6 +8995,10 @@ msgstr ""
 msgid "Referrer ID"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:11
+msgid "Refresh"
+msgstr ""
+
 #. Label of the regenerate_bootstrap_ndjson (Button) field in DocType 'Mail
 #. Server'
 #: suite/mail/doctype/mail_server/mail_server.json
@@ -8849,11 +9031,11 @@ msgstr ""
 msgid "Reject"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:212
+#: frontend/src/apps/mail/components/MailActions.vue:218
 msgid "Reject Sender"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:395
+#: frontend/src/apps/mail/components/MailActions.vue:401
 msgid "Rejecting sender..."
 msgstr ""
 
@@ -8862,7 +9044,7 @@ msgstr ""
 msgid "Relative To"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:322
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:338
 msgid "Relative to event"
 msgstr ""
 
@@ -8880,7 +9062,7 @@ msgid "Remote content hidden to protect your privacy."
 msgstr ""
 
 #: frontend/src/apps/mail/components/ListCard.vue:17
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:49
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:57
 #: frontend/src/apps/mail/pages/AddressBookView.vue:55
 #: frontend/src/apps/mail/pages/ContactView.vue:50
 #: frontend/src/apps/mail/pages/ContactView.vue:79
@@ -8916,7 +9098,7 @@ msgstr ""
 msgid "Remove Phones"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:139
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:197
 msgid "Remove Screened Senders"
 msgstr ""
 
@@ -8928,7 +9110,7 @@ msgstr ""
 msgid "Remove from Address Books"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:390
+#: frontend/src/apps/drive/components/GenericPage.vue:371
 msgid "Remove from Recents"
 msgstr ""
 
@@ -8937,20 +9119,21 @@ msgstr ""
 msgid "Removed"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:827
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:830
 msgid "Removed {0} duplicate(s); {1} unique email(s) remain."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:458
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:461
 msgid "Removed {0} duplicate(s); {1} unique event(s) remain."
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:350
+#: frontend/src/apps/drive/components/GenericPage.vue:331
 #: frontend/src/apps/drive/components/Navbar.vue:212
 #: frontend/src/apps/writer/components/Navbar.vue:223
 msgid "Rename"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:33
 #: suite/mail/doctype/push_subscription/push_subscription.js:13
 msgid "Renew"
 msgstr ""
@@ -8959,7 +9142,7 @@ msgstr ""
 msgid "Renewing..."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:461
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:466
 msgid "Repeat"
 msgstr ""
 
@@ -8979,18 +9162,18 @@ msgstr ""
 msgid "Repeat Settings"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:460
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:465
 msgid "Repeat: {0}"
 msgstr ""
 
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:499
-#: frontend/src/apps/mail/components/MailActions.vue:116
-#: frontend/src/apps/mail/components/MailActions.vue:140
-#: frontend/src/apps/mail/components/MailThread.vue:759
+#: frontend/src/apps/mail/components/MailActions.vue:122
+#: frontend/src/apps/mail/components/MailActions.vue:146
+#: frontend/src/apps/mail/components/MailThread.vue:761
 msgid "Reply"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:760
+#: frontend/src/apps/mail/components/MailThread.vue:762
 msgid "Reply (R)"
 msgstr ""
 
@@ -8999,13 +9182,13 @@ msgid "Reply / Forward"
 msgstr ""
 
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:501
-#: frontend/src/apps/mail/components/MailActions.vue:116
-#: frontend/src/apps/mail/components/MailActions.vue:146
-#: frontend/src/apps/mail/components/MailThread.vue:765
+#: frontend/src/apps/mail/components/MailActions.vue:122
+#: frontend/src/apps/mail/components/MailActions.vue:152
+#: frontend/src/apps/mail/components/MailThread.vue:767
 msgid "Reply All"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:766
+#: frontend/src/apps/mail/components/MailThread.vue:768
 msgid "Reply All (Shift+R)"
 msgstr ""
 
@@ -9053,7 +9236,7 @@ msgstr ""
 msgid "Rescued"
 msgstr ""
 
-#: suite/mail/api/account.py:236
+#: suite/mail/api/account.py:326
 msgid "Reset Password"
 msgstr ""
 
@@ -9076,7 +9259,7 @@ msgstr ""
 msgid "Response"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:131
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:156
 msgid "Response sent."
 msgstr ""
 
@@ -9235,12 +9418,18 @@ msgstr ""
 msgid "SAS Token, when not using accessKey based authentication."
 msgstr ""
 
-#: suite/meet/api/meeting.py:38 suite/meet/api/meeting.py:510
+#: suite/meet/api/meeting.py:38 suite/meet/api/meeting.py:511
 msgid "SFU secret not configured"
 msgstr ""
 
+#. Option for the 'Protocol' (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "SMTP"
+msgstr ""
+
 #. Label of the spf_pass (Check) field in DocType 'Mail Message'
-#: suite/mail/api/mail.py:586 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:587 suite/mail/doctype/mail_message/mail_message.json
 msgid "SPF"
 msgstr ""
 
@@ -9285,6 +9474,18 @@ msgstr ""
 msgid "SSL setup job has been created."
 msgstr ""
 
+#. Option for the 'Connection Security' (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "SSL/TLS"
+msgstr ""
+
+#. Option for the 'Connection Security' (Select) field in DocType 'Mail Client
+#. Configuration'
+#: suite/mail/doctype/mail_client_configuration/mail_client_configuration.json
+msgid "STARTTLS"
+msgstr ""
+
 #. Name of a DocType
 #: suite/meet/doctype/sae_meeting/sae_meeting.json
 msgid "Sae Meeting"
@@ -9304,7 +9505,7 @@ msgstr ""
 msgid "Sat"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:579
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:583
 #: frontend/src/apps/calendar/components/Settings/AppearanceSettings.vue:11
 #: frontend/src/apps/calendar/components/Settings/ProfileSettings.vue:21
 #: frontend/src/apps/mail/components/Modals/AddAddressBookModal.vue:8
@@ -9367,8 +9568,12 @@ msgstr ""
 msgid "Screen Pop-up"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:158
-msgid "Screen specific senders to either reject their messages or send them straight to Spam."
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:5
+msgid "Screen a Sender"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:217
+msgid "Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Spam."
 msgstr ""
 
 #. Name of a DocType
@@ -9376,8 +9581,8 @@ msgstr ""
 msgid "Screened Email Address"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:126
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:5
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:128
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:6
 msgid "Screened Senders"
 msgstr ""
 
@@ -9386,7 +9591,7 @@ msgstr ""
 msgid "Screener"
 msgstr ""
 
-#: suite/mail/api/mail.py:968
+#: suite/mail/api/mail.py:975
 msgid "Screening Auto-Accept Error"
 msgstr ""
 
@@ -9440,6 +9645,10 @@ msgstr ""
 
 #: suite/drive/public/js/FileUploader.vue:36
 msgid "Search results"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:17
+msgid "Search screened senders"
 msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/AddAddressBookContactsModal.vue:5
@@ -9496,7 +9705,7 @@ msgstr ""
 msgid "Security token for temporary credentials."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:245
+#: frontend/src/apps/mail/components/MailActions.vue:251
 msgid "See MIME Message"
 msgstr ""
 
@@ -9530,7 +9739,7 @@ msgstr ""
 msgid "Select a team"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:16
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:16
 msgid "Select all"
 msgstr ""
 
@@ -9544,6 +9753,14 @@ msgstr ""
 msgid "Select from contacts"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:152
+msgid "Selected subscriptions deleted."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:135
+msgid "Selected subscriptions renewed."
+msgstr ""
+
 #: frontend/src/apps/mail/components/ComposeMailToolbar.vue:45
 msgid "Send"
 msgstr ""
@@ -9552,7 +9769,7 @@ msgstr ""
 msgid "Send ({0}+Enter)"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:607
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:611
 #: frontend/src/apps/calendar/pages/CalendarView.vue:293
 msgid "Send Email"
 msgstr ""
@@ -9586,11 +9803,11 @@ msgstr ""
 msgid "Send Verification Email"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:397
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:402
 msgid "Send an email to let attendees know they've been invited?"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:398
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:403
 #: frontend/src/apps/calendar/pages/CalendarView.vue:240
 msgid "Send an email to let attendees know this event has been updated?"
 msgstr ""
@@ -9605,32 +9822,32 @@ msgstr ""
 msgid "Sender Name"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:396
+#: frontend/src/apps/mail/components/MailActions.vue:402
 msgid "Sender accepted."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:415
+#: frontend/src/apps/mail/components/MailActions.vue:421
 msgid "Sender blocked."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:743
+#: frontend/src/apps/mail/components/MailThread.vue:745
 msgid "Sender marked as trusted."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:396
+#: frontend/src/apps/mail/components/MailActions.vue:402
 msgid "Sender rejected."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:118
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:86
 msgid "Sender screened."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:415
-#: frontend/src/apps/mail/components/MailThread.vue:729
+#: frontend/src/apps/mail/components/MailActions.vue:421
+#: frontend/src/apps/mail/components/MailThread.vue:731
 msgid "Sender unblocked."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Settings/BlockListSettings.vue:131
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:184
 msgid "Senders removed."
 msgstr ""
 
@@ -9639,7 +9856,7 @@ msgstr ""
 msgid "Sending Record"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:130
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:155
 msgid "Sending response..."
 msgstr ""
 
@@ -9827,7 +10044,7 @@ msgstr ""
 
 #. Option for the 'Type' (Select) field in DocType 'Drive Notification'
 #. Label of the share (Check) field in DocType 'Drive Permission'
-#: frontend/src/apps/drive/components/GenericPage.vue:343
+#: frontend/src/apps/drive/components/GenericPage.vue:324
 #: frontend/src/apps/drive/components/Navbar.vue:206
 #: frontend/src/apps/writer/components/Navbar.vue:192
 #: suite/drive/doctype/drive_notification/drive_notification.json
@@ -9845,7 +10062,7 @@ msgstr ""
 msgid "Shared"
 msgstr ""
 
-#: frontend/src/apps/drive/components/ListView.vue:130
+#: frontend/src/apps/drive/components/ListView.vue:128
 msgid "Shared with {0} users"
 msgstr ""
 
@@ -9930,7 +10147,13 @@ msgstr ""
 msgid "Show App Password"
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:293
+#. Label of the show_mail_client_config (Check) field in DocType 'Mail
+#. Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Show Connection Details in Mail UI"
+msgstr ""
+
+#: frontend/src/apps/drive/components/GenericPage.vue:274
 #: frontend/src/apps/drive/components/Navbar.vue:195
 #: frontend/src/apps/writer/components/Navbar.vue:229
 msgid "Show Info"
@@ -9957,8 +10180,14 @@ msgstr ""
 msgid "Show a preview pane beside the email list for quick reading."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:306
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:336
 msgid "Show more"
+msgstr ""
+
+#. Description of the 'Show Connection Details in Mail UI' (Check) field in
+#. DocType 'Mail Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Show the SMTP/IMAP/POP connection details in the Mail UI so users can set up third-party mail clients. When unchecked, nothing is shown."
 msgstr ""
 
 #: frontend/src/apps/mail/components/Modals/SearchModal.vue:142
@@ -10051,6 +10280,10 @@ msgstr ""
 msgid "Sign Up"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:67
+msgid "Sign in using your existing mail account password."
+msgstr ""
+
 #. Label of the signature_section (Section Break) field in DocType 'Identity'
 #: frontend/src/apps/mail/components/Modals/SetDefaultSignatureModal.vue:19
 #: suite/mail/doctype/identity/identity.json
@@ -10082,7 +10315,7 @@ msgstr ""
 msgid "Signature updated."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:108
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:110
 #: frontend/src/apps/mail/components/Settings/SignatureSettings.vue:3
 msgid "Signatures"
 msgstr ""
@@ -10106,7 +10339,7 @@ msgstr ""
 msgid "Signup Domains"
 msgstr ""
 
-#: suite/mail/api/account.py:46
+#: suite/mail/api/account.py:58
 msgid "Signup is disabled."
 msgstr ""
 
@@ -10120,7 +10353,7 @@ msgstr ""
 #. Label of the size (Int) field in DocType 'Mail Message Part'
 #. Label of the size (Int) field in DocType 'Mail Queue'
 #: frontend/src/apps/drive/components/DriveToolBar.vue:189
-#: frontend/src/apps/drive/components/ListView.vue:172
+#: frontend/src/apps/drive/components/ListView.vue:170
 #: frontend/src/apps/drive/ui/drive/components/InfoDialog.vue:21
 #: suite/mail/doctype/mail_message/mail_message.json
 #: suite/mail/doctype/mail_message_part/mail_message_part.json
@@ -10133,7 +10366,7 @@ msgstr ""
 msgid "Size of the write buffer in bytes, used to batch writes to the store."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:605
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:609
 #: frontend/src/apps/calendar/pages/CalendarView.vue:291
 msgid "Skip"
 msgstr ""
@@ -10203,6 +10436,10 @@ msgstr ""
 #: suite/mail/doctype/calendar/calendar.json
 #: suite/mail/doctype/mailbox/mailbox.json
 msgid "Sort Order"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue:123
+msgid "Sort: {0}"
 msgstr ""
 
 #: frontend/src/apps/calendar/components/EventAlertList.vue:21
@@ -10290,7 +10527,7 @@ msgstr ""
 msgid "Stalwart CLI Version"
 msgstr ""
 
-#: suite/mail/utils/__init__.py:448
+#: suite/mail/utils/__init__.py:453
 msgid "Stalwart CLI not found at {0}."
 msgstr ""
 
@@ -10303,7 +10540,7 @@ msgstr ""
 msgid "Stalwart credentials are not configured."
 msgstr ""
 
-#: suite/mail/utils/__init__.py:159
+#: suite/mail/utils/__init__.py:164
 msgid "Stalwart server is not properly configured. Please check your Mail Settings."
 msgstr ""
 
@@ -10316,8 +10553,8 @@ msgstr ""
 msgid "Stalwart/JMAP"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:104
-#: frontend/src/apps/mail/components/MailActions.vue:170
+#: frontend/src/apps/mail/components/MailActions.vue:110
+#: frontend/src/apps/mail/components/MailActions.vue:176
 msgid "Star"
 msgstr ""
 
@@ -10361,7 +10598,7 @@ msgstr ""
 msgid "Start (DESC)"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:427
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:432
 msgid "Start Date"
 msgstr ""
 
@@ -10370,7 +10607,7 @@ msgstr ""
 msgid "Start From"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:434
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:439
 msgid "Start Time"
 msgstr ""
 
@@ -10437,13 +10674,13 @@ msgstr ""
 msgid "Started At - Queued At"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:424
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:793
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:427
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:796
 msgid "Starting export to {0} format."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:361
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:731
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:364
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:734
 msgid "Starting import from the uploaded {0} file."
 msgstr ""
 
@@ -10550,7 +10787,7 @@ msgstr ""
 msgid "Sub-sheet name"
 msgstr ""
 
-#: suite/mail/utils/validation.py:18
+#: suite/mail/utils/validation.py:66
 msgid "Subaddressing is not allowed in the email address."
 msgstr ""
 
@@ -10560,7 +10797,7 @@ msgstr ""
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:111
 #: frontend/src/apps/mail/components/Modals/SearchModal.vue:54
 #: frontend/src/apps/mail/components/Settings/VacationResponseSettings.vue:24
-#: suite/mail/api/mail.py:577 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:578 suite/mail/doctype/mail_message/mail_message.json
 #: suite/mail/doctype/mail_queue/mail_queue.json
 #: suite/mail/doctype/vacation_response/vacation_response.json
 msgid "Subject"
@@ -10609,6 +10846,10 @@ msgstr ""
 #: suite/mail/doctype/calendar/calendar.json
 #: suite/mail/doctype/mailbox/mailbox.json
 msgid "Subscribed"
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:181
+msgid "Subscription ID"
 msgstr ""
 
 #. Option for the 'Status' (Select) field in DocType 'Server Ansible Play'
@@ -10797,7 +11038,7 @@ msgstr ""
 msgid "Team Domain"
 msgstr ""
 
-#: suite/mail/templates/emails/generic.html:18
+#: suite/templates/emails/generic.html:18
 msgid "Team Frappe"
 msgstr ""
 
@@ -10928,11 +11169,11 @@ msgstr ""
 msgid "The ID of the script."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:149
+#: suite/mail/doctype/mail_settings/mail_settings.py:234
 msgid "The JMAP Push Subscription Private Key does not correspond to the P256DH public key."
 msgstr ""
 
-#: suite/mail/doctype/mail_settings/mail_settings.py:131
+#: suite/mail/doctype/mail_settings/mail_settings.py:216
 msgid "The JMAP Push Subscription {0} key must be URL-safe base64 encoded."
 msgstr ""
 
@@ -10981,7 +11222,7 @@ msgstr ""
 msgid "The URI pointing to the linked resource."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:95
+#: suite/mail/doctype/push_subscription/push_subscription.py:99
 msgid "The URL must start with 'https://'."
 msgstr ""
 
@@ -11051,12 +11292,7 @@ msgstr ""
 msgid "The email address associated with the participant."
 msgstr ""
 
-#. Description of the 'Email' (Data) field in DocType 'Screened Email Address'
-#: suite/mail/doctype/screened_email_address/screened_email_address.json
-msgid "The email address whose mail is blocked (discarded) for the account."
-msgstr ""
-
-#: suite/mail/doctype/screened_email_address/screened_email_address.py:61
+#: suite/mail/doctype/screened_email_address/screened_email_address.py:70
 msgid "The email address {0} is already screened for this account."
 msgstr ""
 
@@ -11266,6 +11502,12 @@ msgstr ""
 #. Description of the 'Schedule ID' (Data) field in DocType 'Event Participant'
 #: suite/mail/doctype/event_participant/event_participant.json
 msgid "The scheduling identifier used to uniquely identify this participant in scheduling messages."
+msgstr ""
+
+#. Description of the 'Email or Domain' (Data) field in DocType 'Screened Email
+#. Address'
+#: suite/mail/doctype/screened_email_address/screened_email_address.json
+msgid "The screened sender: either an email address (john@example.com) or a domain prefixed with @ (@example.com), which applies to every sender from that domain."
 msgstr ""
 
 #. Description of the 'Secret Key' (Password) field in DocType 'Mail Cluster
@@ -11529,11 +11771,11 @@ msgstr ""
 msgid "This account request is already verified."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:101
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:126
 msgid "This and following instances"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:99
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:124
 msgid "This instance"
 msgstr ""
 
@@ -11543,6 +11785,10 @@ msgstr ""
 
 #: suite/mail/doctype/mail_account_request/mail_account_request.py:146
 msgid "This request has expired. Please create a new one."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:35
+msgid "This sender is already screened."
 msgstr ""
 
 #: frontend/src/apps/mail/components/MailThread.vue:218
@@ -11643,15 +11889,17 @@ msgstr ""
 
 #. Label of the title (Small Text) field in DocType 'Drive Team'
 #. Label of the title (Data) field in DocType 'Calendar Event'
+#. Label of the title (Data) field in DocType 'Sae Meeting'
 #. Label of the title (Data) field in DocType 'Sheet'
 #. Label of the title (Data) field in DocType 'Presentation'
 #. Label of the title (Data) field in DocType 'Writer Doc Version'
 #. Label of the title (Data) field in DocType 'Writer Template'
 #. Label of the title (Data) field in DocType 'Writer Version'
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:417
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:422
 #: frontend/src/apps/mail/components/Settings/CalendarExportSettings.vue:30
 #: suite/drive/doctype/drive_team/drive_team.json
 #: suite/mail/doctype/calendar_event/calendar_event.json
+#: suite/meet/doctype/sae_meeting/sae_meeting.json
 #: suite/sheets/doctype/sheet/sheet.json
 #: suite/slides/doctype/presentation/presentation.json
 #: suite/writer/doctype/writer_doc_version/writer_doc_version.json
@@ -11664,7 +11912,7 @@ msgstr ""
 #. Option for the 'Type' (Select) field in DocType 'Mail Message Recipient'
 #: frontend/src/apps/mail/components/ComposeMailEditor.vue:61
 #: frontend/src/apps/mail/components/Modals/SearchModal.vue:56
-#: suite/mail/api/mail.py:579 suite/mail/doctype/mail_message/mail_message.json
+#: suite/mail/api/mail.py:580 suite/mail/doctype/mail_message/mail_message.json
 #: suite/mail/doctype/mail_message_recipient/mail_message_recipient.json
 msgid "To"
 msgstr ""
@@ -11712,7 +11960,7 @@ msgstr ""
 msgid "Token"
 msgstr ""
 
-#: suite/meet/api/meeting.py:523
+#: suite/meet/api/meeting.py:524
 msgid "Token meeting ID does not match"
 msgstr ""
 
@@ -11873,6 +12121,8 @@ msgstr ""
 
 #. Label of the types (JSON) field in DocType 'Push Subscription'
 #. Label of the types (JSON) field in DocType 'Quota'
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:36
+#: frontend/src/apps/mail/components/Settings/PushSubscriptionSettings.vue:182
 #: suite/mail/doctype/push_subscription/push_subscription.json
 #: suite/mail/doctype/quota/quota.json
 msgid "Types"
@@ -11901,6 +12151,7 @@ msgstr ""
 #. Label of the url (Data) field in DocType 'Mail Cluster Store'
 #. Label of the url (Data) field in DocType 'Mail Message Part'
 #. Label of the url (Data) field in DocType 'Push Subscription'
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:23
 #: suite/mail/doctype/mail_cluster_store/mail_cluster_store.json
 #: suite/mail/doctype/mail_message_part/mail_message_part.json
 #: suite/mail/doctype/push_subscription/push_subscription.json
@@ -11937,7 +12188,7 @@ msgstr ""
 msgid "URLs"
 msgstr ""
 
-#: suite/mail/doctype/user_settings/user_settings.py:110
+#: suite/mail/doctype/user_settings/user_settings.py:115
 msgid "Unable to connect to the JMAP server with the provided username and app password. Please check your settings."
 msgstr ""
 
@@ -11956,11 +12207,11 @@ msgstr ""
 msgid "Unblock"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:227
+#: frontend/src/apps/mail/components/MailActions.vue:233
 msgid "Unblock Sender"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:422
+#: frontend/src/apps/mail/components/MailActions.vue:428
 msgid "Unblocking sender..."
 msgstr ""
 
@@ -11968,13 +12219,13 @@ msgstr ""
 msgid "Undo Last Action"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:295
-#: frontend/src/apps/mail/components/MailActions.vue:323
-#: frontend/src/apps/mail/components/MailActions.vue:417
+#: frontend/src/apps/mail/components/MailActions.vue:301
+#: frontend/src/apps/mail/components/MailActions.vue:329
+#: frontend/src/apps/mail/components/MailActions.vue:423
 msgid "Undoing..."
 msgstr ""
 
-#: frontend/src/apps/drive/components/GenericPage.vue:377
+#: frontend/src/apps/drive/components/GenericPage.vue:358
 #: frontend/src/apps/drive/components/Navbar.vue:235
 #: frontend/src/apps/writer/components/Navbar.vue:243
 msgid "Unfavourite"
@@ -11988,6 +12239,10 @@ msgstr ""
 #. Description of the 'Mailbox ID' (Data) field in DocType 'Mailbox Settings'
 #: suite/mail/doctype/mailbox_settings/mailbox_settings.json
 msgid "Unique identifier of the mailbox associated with the account."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue:33
+msgid "Uniquely identifies the client and device."
 msgstr ""
 
 #: frontend/src/apps/mail/components/QuotaProgressBar.vue:33
@@ -12023,7 +12278,7 @@ msgstr ""
 msgid "Unread Threads"
 msgstr ""
 
-#: suite/mail/utils/__init__.py:247 suite/mail/utils/__init__.py:256
+#: suite/mail/utils/__init__.py:252 suite/mail/utils/__init__.py:261
 msgid "Unsafe file path detected: {0}"
 msgstr ""
 
@@ -12032,8 +12287,8 @@ msgstr ""
 msgid "Unscreened messages moved to Inbox."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:98
-#: frontend/src/apps/mail/components/MailActions.vue:163
+#: frontend/src/apps/mail/components/MailActions.vue:104
+#: frontend/src/apps/mail/components/MailActions.vue:169
 msgid "Unstar"
 msgstr ""
 
@@ -12053,16 +12308,16 @@ msgstr ""
 msgid "Unsupported architecture: {0}"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:712
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:382
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:715
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:385
 msgid "Unsupported export format: {0}"
 msgstr ""
 
-#: suite/mail/utils/__init__.py:274
+#: suite/mail/utils/__init__.py:279
 msgid "Unsupported file format: {0}"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:114
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:117
 msgid "Unsupported import format: {0}"
 msgstr ""
 
@@ -12070,11 +12325,11 @@ msgstr ""
 msgid "Unsupported operating system: {0}"
 msgstr ""
 
-#: suite/mail/utils/__init__.py:305
+#: suite/mail/utils/__init__.py:310
 msgid "Unsupported output file format. Supported formats are .zip, .tgz, and .tar.gz."
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:402
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:407
 #: frontend/src/apps/calendar/pages/CalendarView.vue:232
 msgid "Update Recurring Event"
 msgstr ""
@@ -12103,7 +12358,7 @@ msgstr ""
 msgid "Updates"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:286
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:297
 msgid "Updating event..."
 msgstr ""
 
@@ -12169,6 +12424,10 @@ msgstr ""
 #. Description of the 'Use TLS' (Check) field in DocType 'Mail Cluster Store'
 #: suite/mail/doctype/mail_cluster_store/mail_cluster_store.json
 msgid "Use TLS to connect to the store."
+msgstr ""
+
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:28
+msgid "Use these details to connect a third-party mail client such as Thunderbird or the Gmail app."
 msgstr ""
 
 #. Label of the used (Int) field in DocType 'Quota'
@@ -12253,7 +12512,7 @@ msgstr ""
 msgid "User associated email address to use when adding this participant to an event."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:191
+#: suite/mail/doctype/push_subscription/push_subscription.py:195
 msgid "User does not exist or is disabled."
 msgstr ""
 
@@ -12286,12 +12545,12 @@ msgstr ""
 msgid "User {0} does not exist or is disabled."
 msgstr ""
 
-#: suite/mail/api/account.py:202
+#: suite/mail/api/account.py:292
 msgid "User {0} does not exist."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:219
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:588
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:222
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:591
 #: suite/mail/doctype/mail_queue/mail_queue.py:352
 #: suite/mail/jmap/__init__.py:59 suite/mail/utils/user.py:68
 msgid "User {0} does not have JMAP settings configured."
@@ -12348,6 +12607,7 @@ msgstr ""
 #. Label of the username (Data) field in DocType 'Mail Settings'
 #. Label of the username (Data) field in DocType 'User Settings'
 #: frontend/src/apps/mail/components/Modals/AddMemberModal.vue:20
+#: frontend/src/apps/mail/components/Settings/AdvancedSettings.vue:65
 #: frontend/src/apps/mail/pages/SignupView.vue:6
 #: suite/mail/doctype/mail_cluster/mail_cluster.json
 #: suite/mail/doctype/mail_cluster_store_http_auth/mail_cluster_store_http_auth.json
@@ -12356,7 +12616,7 @@ msgstr ""
 msgid "Username"
 msgstr ""
 
-#: suite/mail/api/account.py:30
+#: suite/mail/api/account.py:42
 msgid "Username already taken."
 msgstr ""
 
@@ -12390,7 +12650,7 @@ msgid "Users"
 msgstr ""
 
 #. Name of a DocType
-#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:114
+#: frontend/src/apps/mail/components/Modals/SettingsModal.vue:116
 #: frontend/src/apps/mail/components/Settings/VacationResponseSettings.vue:3
 #: suite/mail/doctype/vacation_response/vacation_response.json
 msgid "Vacation Response"
@@ -12474,6 +12734,16 @@ msgstr ""
 msgid "Verify SSH Connection"
 msgstr ""
 
+#. Label of the verify_ssl (Check) field in DocType 'Mail Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Verify SSL"
+msgstr ""
+
+#. Description of the 'Verify SSL' (Check) field in DocType 'Mail Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "Verify the server's SSL certificate. Disable only for local development against a server with a self-signed certificate."
+msgstr ""
+
 #: suite/mail/doctype/dns_record/dns_record.js:50
 msgid "Verifying DNS Record..."
 msgstr ""
@@ -12499,8 +12769,8 @@ msgstr ""
 msgid "View Shortcuts"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:672
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:1039
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:675
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:1042
 msgid "View details for this exchange."
 msgstr ""
 
@@ -12511,7 +12781,7 @@ msgstr ""
 msgid "View history"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:251
+#: frontend/src/apps/mail/components/MailActions.vue:257
 #: frontend/src/apps/mail/pages/CalendarExchangeView.vue:112
 #: frontend/src/apps/mail/pages/MailExchangeView.vue:112
 msgid "View in Desk"
@@ -12525,12 +12795,12 @@ msgstr ""
 msgid "View remaining attachments"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:673
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:1040
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:676
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:1043
 msgid "View {0}"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:531
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:536
 msgid "Visibility"
 msgstr ""
 
@@ -12607,6 +12877,12 @@ msgstr ""
 #. Account'
 #: suite/mail/doctype/jmap_account/jmap_account.json
 msgid "When enabled, mail from senders not on the Accepted list is filed into the Screening folder instead of the inbox (Hey-style screening). Only senders you accept reach the inbox."
+msgstr ""
+
+#. Description of the 'Enable Push Encryption' (Check) field in DocType 'Mail
+#. Settings'
+#: suite/mail/doctype/mail_settings/mail_settings.json
+msgid "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON."
 msgstr ""
 
 #. Description of the 'Block Remote Images' (Check) field in DocType 'JMAP
@@ -12736,7 +13012,7 @@ msgstr ""
 msgid "Writer Version"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:465
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:468
 msgid "Wrote {0} event(s) to the export directory."
 msgstr ""
 
@@ -12745,8 +13021,8 @@ msgstr ""
 msgid "Y.Doc binary state (base64)"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:219
-#: frontend/src/apps/calendar/components/Modals/EventModal.vue:378
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:249
+#: frontend/src/apps/calendar/components/Modals/EventModal.vue:383
 #: frontend/src/apps/mail/components/Settings/MailImportSettings.vue:106
 msgid "Yes"
 msgstr ""
@@ -12755,14 +13031,14 @@ msgstr ""
 msgid "Yesterday"
 msgstr ""
 
-#: frontend/src/apps/drive/components/ListView.vue:141
+#: frontend/src/apps/drive/components/ListView.vue:139
 #: frontend/src/apps/drive/components/Settings/StorageSettings.vue:19
 msgid "You"
 msgstr ""
 
-#: suite/meet/api/meeting.py:107 suite/meet/api/meeting.py:155
-#: suite/meet/api/meeting.py:314 suite/meet/api/meeting.py:383
-#: suite/meet/api/meeting.py:470
+#: suite/meet/api/meeting.py:108 suite/meet/api/meeting.py:156
+#: suite/meet/api/meeting.py:315 suite/meet/api/meeting.py:384
+#: suite/meet/api/meeting.py:471
 msgid "You are banned from this meeting"
 msgstr ""
 
@@ -12770,7 +13046,7 @@ msgstr ""
 msgid "You are not authorized to perform this action."
 msgstr ""
 
-#: suite/mail/api/mail.py:1212
+#: suite/mail/api/mail.py:1219
 msgid "You can only upload JPG, PNG, GIF, PDF, TXT, CSV or Microsoft documents."
 msgstr ""
 
@@ -12782,7 +13058,7 @@ msgstr ""
 msgid "You do not have permission to access the JMAPConnection for user {0}."
 msgstr ""
 
-#: suite/mail/doctype/push_subscription/push_subscription.py:469
+#: suite/mail/doctype/push_subscription/push_subscription.py:533
 msgid "You do not have permission to add a push subscription for user {0}."
 msgstr ""
 
@@ -12790,7 +13066,7 @@ msgstr ""
 msgid "You do not have permission to clear the cache for this account."
 msgstr ""
 
-#: suite/mail/doctype/mail_message/mail_message.py:270
+#: suite/mail/doctype/mail_message/mail_message.py:274
 msgid "You do not have permission to view messages for this account."
 msgstr ""
 
@@ -12823,11 +13099,11 @@ msgstr ""
 msgid "You have no new senders to screen."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:96
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:96
 msgid "You won't receive future messages from the selected senders."
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:97
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:97
 msgid "You won't receive future messages from {0}."
 msgstr ""
 
@@ -12846,11 +13122,11 @@ msgstr ""
 #: frontend/src/apps/mail/components/ThreadHeader.vue:15
 #: frontend/src/apps/mail/pages/ScreenerView.vue:74
 #: frontend/src/apps/mail/pages/ScreenerView.vue:138
-#: suite/mail/doctype/mail_message/mail_message.py:1378
+#: suite/mail/doctype/mail_message/mail_message.py:1389
 msgid "[No subject]"
 msgstr ""
 
-#: frontend/src/apps/calendar/components/EventPopoverContent.vue:228
+#: frontend/src/apps/calendar/components/EventPopoverContent.vue:258
 msgid "[No title]"
 msgstr ""
 
@@ -12958,15 +13234,15 @@ msgstr ""
 #: suite/mail/doctype/mailbox/mailbox.py:376
 #: suite/mail/doctype/participant_identity/participant_identity.py:144
 #: suite/mail/doctype/participant_identity/participant_identity.py:182
-#: suite/mail/doctype/push_subscription/push_subscription.py:165
-#: suite/mail/doctype/push_subscription/push_subscription.py:205
-#: suite/mail/doctype/push_subscription/push_subscription.py:222
+#: suite/mail/doctype/push_subscription/push_subscription.py:169
+#: suite/mail/doctype/push_subscription/push_subscription.py:209
+#: suite/mail/doctype/push_subscription/push_subscription.py:226
 #: suite/mail/doctype/sieve_script/sieve_script.py:153
 #: suite/mail/doctype/sieve_script/sieve_script.py:246
 msgid "description"
 msgstr ""
 
-#: suite/meet/api/meeting.py:620
+#: suite/meet/api/meeting.py:621
 msgid "device_id must be 1-64 chars of [a-zA-Z0-9._-]"
 msgstr ""
 
@@ -12984,11 +13260,11 @@ msgstr ""
 msgid "ed25519 Public Key (base64)"
 msgstr ""
 
-#: suite/meet/api/meeting.py:625
+#: suite/meet/api/meeting.py:626
 msgid "ed25519_public_key must be base64"
 msgstr ""
 
-#: suite/meet/api/meeting.py:627
+#: suite/meet/api/meeting.py:628
 msgid "ed25519_public_key must decode to 32 bytes"
 msgstr ""
 
@@ -12998,7 +13274,7 @@ msgstr ""
 msgid "edit"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:124
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:127
 msgid "emails.json not found in the import directory."
 msgstr ""
 
@@ -13015,11 +13291,11 @@ msgstr ""
 msgid "enabled"
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:533
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:536
 msgid "events.json must contain a list of calendar events."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:527
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:530
 msgid "events.json not found in the import directory."
 msgstr ""
 
@@ -13070,24 +13346,28 @@ msgstr ""
 msgid "jmap"
 msgstr ""
 
+#: frontend/src/apps/mail/components/Modals/AddScreenedSenderModal.vue:24
+msgid "john@example.com or @example.com"
+msgstr ""
+
 #. Option for the 'Role' (Select) field in DocType 'Mailbox'
 #: suite/mail/doctype/mailbox/mailbox.json
 msgid "junk"
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:135
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:138
 msgid "mailboxIds are required in Metadata for EML format."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:613
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:616
 msgid "mailboxIds are required in Metadata for EML, MBOX, and Maildir formats."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:198
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:201
 msgid "mailboxIds are required in Metadata for MBOX format."
 msgstr ""
 
-#: suite/mail/doctype/mail_exchange/mail_exchange.py:263
+#: suite/mail/doctype/mail_exchange/mail_exchange.py:266
 msgid "mailboxIds are required in Metadata for Maildir format."
 msgstr ""
 
@@ -13143,7 +13423,7 @@ msgstr ""
 #: suite/mail/doctype/identity/identity.py:190
 #: suite/mail/doctype/mailbox/mailbox.py:173
 #: suite/mail/doctype/participant_identity/participant_identity.py:142
-#: suite/mail/doctype/push_subscription/push_subscription.py:163
+#: suite/mail/doctype/push_subscription/push_subscription.py:167
 #: suite/mail/doctype/sieve_script/sieve_script.py:151
 msgid "notCreateddescription"
 msgstr ""
@@ -13158,8 +13438,8 @@ msgstr ""
 #: suite/mail/doctype/identity/identity.py:237
 #: suite/mail/doctype/mailbox/mailbox.py:223
 #: suite/mail/doctype/participant_identity/participant_identity.py:180
-#: suite/mail/doctype/push_subscription/push_subscription.py:203
-#: suite/mail/doctype/push_subscription/push_subscription.py:220
+#: suite/mail/doctype/push_subscription/push_subscription.py:207
+#: suite/mail/doctype/push_subscription/push_subscription.py:224
 #: suite/mail/doctype/sieve_script/sieve_script.py:244
 msgid "notUpdateddescription"
 msgstr ""
@@ -13234,7 +13514,7 @@ msgstr ""
 msgid "selected"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:94
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:94
 msgid "senders"
 msgstr ""
 
@@ -13317,7 +13597,7 @@ msgstr ""
 msgid "verified"
 msgstr ""
 
-#: suite/mail/api/mail.py:572
+#: suite/mail/api/mail.py:573
 msgid "{0} (Delivered after {1} seconds)"
 msgstr ""
 
@@ -13347,8 +13627,12 @@ msgstr ""
 msgid "{0} emptied."
 msgstr ""
 
-#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:518
+#: suite/mail/doctype/calendar_exchange/calendar_exchange.py:521
 msgid "{0} file(s) could not be parsed and were skipped."
+msgstr ""
+
+#: suite/mail/utils/validation.py:52
+msgid "{0} is not a valid email address or domain. Enter an email address (e.g. john@example.com) or a domain prefixed with @ (e.g. @example.com)."
 msgstr ""
 
 #: suite/mail/doctype/rate_limit/rate_limit.py:49
@@ -13363,7 +13647,7 @@ msgstr ""
 msgid "{0} job has been created."
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailActions.vue:353
+#: frontend/src/apps/mail/components/MailActions.vue:359
 msgid "{0} marked as unread."
 msgstr ""
 
@@ -13379,7 +13663,7 @@ msgstr ""
 msgid "{0} more messages"
 msgstr ""
 
-#: frontend/src/apps/mail/components/MailThread.vue:523
+#: frontend/src/apps/mail/components/MailThread.vue:525
 msgid "{0} new messages"
 msgstr ""
 
@@ -13399,7 +13683,7 @@ msgstr ""
 msgid "{0} of Month"
 msgstr ""
 
-#: frontend/src/apps/mail/components/Modals/BlockSenderModal.vue:19
+#: frontend/src/apps/mail/components/Modals/ScreenedEmailAddressModal.vue:19
 msgid "{0} of {1} selected"
 msgstr ""
 
@@ -13415,7 +13699,7 @@ msgstr ""
 msgid "{0} type must be one of {1}."
 msgstr ""
 
-#: suite/mail/api/mail.py:587
+#: suite/mail/api/mail.py:588
 msgid "{0} with IP {1}"
 msgstr ""
 
