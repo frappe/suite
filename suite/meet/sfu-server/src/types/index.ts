@@ -398,14 +398,8 @@ export interface RouterConfig {
 }
 
 export interface WebRTCTransportOptions {
-	enableUdp: boolean;
 	enableTcp: boolean;
-	preferUdp: boolean;
-	maxIncomingBitrate: number;
-	maxOutgoingBitrate: number;
 	initialAvailableOutgoingBitrate: number;
-	iceServers: Array<{ urls: string[] }>;
-	iceTransportPolicy: string;
 }
 
 export interface WebRTCServerOptions {

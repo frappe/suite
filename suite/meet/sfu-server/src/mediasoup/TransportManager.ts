@@ -33,9 +33,7 @@ export class TransportManager {
 
 		const transport = await router.createWebRtcTransport({
 			webRtcServer,
-			enableUdp: options.enableUdp,
 			enableTcp: options.enableTcp,
-			preferUdp: options.preferUdp,
 			initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate,
 		});
 

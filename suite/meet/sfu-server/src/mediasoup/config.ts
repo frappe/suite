@@ -41,32 +41,7 @@ function getAnnouncedAddress(listenIp: string): string {
 		return listenIp;
 	}
 
-	const announcedEnv = process.env.WEBRTC_ANNOUNCED_IP;
-	if (announcedEnv) {
-		const ips = Array.from(
-			new Set(
-				announcedEnv
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean),
-			),
-		);
-		if (ips.length === 0) {
-			loggers.config.warn(
-				'WEBRTC_ANNOUNCED_IP provided but empty after parsing; falling back to auto-detect',
-			);
-		} else {
-			if (ips.length > 1) {
-				loggers.config.warn(
-					'WEBRTC_ANNOUNCED_IP has multiple values; WebRtcServer uses the first one: %s',
-					ips[0],
-				);
-			}
-			return ips[0]!;
-		}
-	}
-
-	return getServerIP();
+	return process.env.WEBRTC_ANNOUNCED_IP?.trim() || getServerIP();
 }
 
 function getListenIp(): string {
@@ -137,23 +112,8 @@ const mediaCodecs = [
 ];
 
 const webRtcTransportOptions: WebRTCTransportOptions = {
-	enableUdp: true,
 	enableTcp: false,
-	preferUdp: true,
-	// Add additional WebRTC options for better connectivity
-	maxIncomingBitrate: 5000000,
-	maxOutgoingBitrate: 5000000,
 	initialAvailableOutgoingBitrate: 2500000,
-	// Add ICE server configurations for NAT traversal
-	iceServers: [
-		{
-			urls: ['stun:stun.l.google.com:19302'],
-		},
-		{
-			urls: ['stun:global.stun.twilio.com:3478'],
-		},
-	],
-	iceTransportPolicy: 'all',
 };
 
 const workerSettings: WorkerSettings = {
