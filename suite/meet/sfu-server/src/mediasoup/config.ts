@@ -33,9 +33,9 @@ function hasWildcardListenIp(): boolean {
 }
 
 function getAnnouncedAddress(listenIp: string): string {
-	if (hasWildcardListenIp()) {
+	if (hasWildcardListenIp() && process.env.NODE_ENV === 'development') {
 		loggers.config.warn(
-			'Ignoring WEBRTC_ANNOUNCED_IP because WEBRTC_LISTEN_IP=0.0.0.0 was replaced with %s',
+			'Ignoring WEBRTC_ANNOUNCED_IP in development because WEBRTC_LISTEN_IP=0.0.0.0 was replaced with %s',
 			listenIp,
 		);
 		return listenIp;
@@ -116,6 +116,15 @@ const webRtcTransportOptions: WebRTCTransportOptions = {
 	initialAvailableOutgoingBitrate: 2500000,
 };
 
+function resolveNumWorkers(): number {
+	const envVal = Number.parseInt(process.env.MEDIASOUP_NUM_WORKERS || '', 10);
+	if (!Number.isNaN(envVal) && envVal > 0) return envVal;
+	const cpuCount = os.cpus()?.length || 2;
+	return Math.max(1, cpuCount);
+}
+
+const numWorkers = resolveNumWorkers();
+
 const workerSettings: WorkerSettings = {
 	logLevel: (process.env.MEDIASOUP_WORKER_LOGLEVEL as WorkerLogLevel) || 'warn',
 	logTags: [
@@ -132,19 +141,12 @@ const workerSettings: WorkerSettings = {
 		'svc',
 		'sctp',
 	],
-	rtcMinPort: webRtcServerOptions.basePort,
-	rtcMaxPort: webRtcServerOptions.basePort + 1000,
+	rtcMinPort: webRtcServerOptions.basePort + numWorkers,
+	rtcMaxPort: webRtcServerOptions.basePort + numWorkers + 1000,
 };
 
-function resolveNumWorkers(): number {
-	const envVal = Number.parseInt(process.env.MEDIASOUP_NUM_WORKERS || '', 10);
-	if (!Number.isNaN(envVal) && envVal > 0) return envVal;
-	const cpuCount = os.cpus()?.length || 2;
-	return Math.max(1, cpuCount);
-}
-
 export const mediasoupConfig: MediasoupConfig = {
-	numWorkers: resolveNumWorkers(),
+	numWorkers,
 	worker: workerSettings,
 	router: { mediaCodecs },
 	webRtcTransport: webRtcTransportOptions,
