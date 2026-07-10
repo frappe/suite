@@ -28,7 +28,19 @@ function getServerIP(): string {
 	return '127.0.0.1';
 }
 
-function getAnnouncedAddress(): string {
+function hasWildcardListenIp(): boolean {
+	return process.env.WEBRTC_LISTEN_IP?.trim() === '0.0.0.0';
+}
+
+function getAnnouncedAddress(listenIp: string): string {
+	if (hasWildcardListenIp()) {
+		loggers.config.warn(
+			'Ignoring WEBRTC_ANNOUNCED_IP because WEBRTC_LISTEN_IP=0.0.0.0 was replaced with %s',
+			listenIp,
+		);
+		return listenIp;
+	}
+
 	const announcedEnv = process.env.WEBRTC_ANNOUNCED_IP;
 	if (announcedEnv) {
 		const ips = Array.from(
@@ -57,9 +69,23 @@ function getAnnouncedAddress(): string {
 	return getServerIP();
 }
 
+function getListenIp(): string {
+	const listenIp = process.env.WEBRTC_LISTEN_IP?.trim();
+	if (listenIp && listenIp !== '0.0.0.0') return listenIp;
+	if (hasWildcardListenIp()) {
+		loggers.config.warn(
+			'WEBRTC_LISTEN_IP=0.0.0.0 is not supported with WebRtcServer; auto-detecting a concrete interface IP',
+		);
+	}
+	if (process.env.NODE_ENV === 'development') return '127.0.0.1';
+	return getServerIP();
+}
+
+const listenIp = getListenIp();
+
 const webRtcServerOptions: WebRTCServerOptions = {
-	listenIp: process.env.WEBRTC_LISTEN_IP || getServerIP(),
-	announcedAddress: getAnnouncedAddress(),
+	listenIp,
+	announcedAddress: getAnnouncedAddress(listenIp),
 	basePort: Number.parseInt(process.env.WEBRTC_SERVER_PORT || '40000', 10),
 };
 
