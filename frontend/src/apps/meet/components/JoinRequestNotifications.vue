@@ -14,6 +14,7 @@
 								size="2xl"
 								:image="request.user_image"
 								:label="request.user_name || request.user_id"
+								:theme="getAvatarTheme(request.user_name || request.user_id)"
 							/>
 
 							<div class="flex-1 min-w-0">
@@ -71,6 +72,7 @@
 <script setup lang="ts">
 import { Avatar, Button } from "frappe-ui";
 import { computed, ref, watch } from "vue";
+import { getAvatarTheme } from "../utils/avatarTheme";
 
 interface WaitingUser {
 	user_id: string;

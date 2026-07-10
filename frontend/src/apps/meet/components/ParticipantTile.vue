@@ -47,6 +47,7 @@
 				size="3xl"
 				:image="participant.avatar"
 				:label="participant.user_name || participant.initials"
+				:theme="getAvatarTheme(participant.user_name || participant.user_id || participant.initials)"
 			/>
 		</div>
 
@@ -159,6 +160,7 @@ import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import { useNetworkQuality } from "../composables/useNetworkQuality";
 import WifiAlertIcon from "../icons/WifiAlertIcon.vue";
+import { getAvatarTheme } from "../utils/avatarTheme";
 import type { Participant } from "../utils/media/ParticipantManager";
 import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";

@@ -42,6 +42,7 @@
 									v-if="item.poll.createdBy !== userId"
 									size="lg"
 									:label="item.poll.createdByName || item.poll.createdBy"
+									:theme="getAvatarTheme(item.poll.createdByName || item.poll.createdBy)"
 									class="mt-6 shrink-0"
 								/>
 								<div
@@ -68,6 +69,7 @@
 								v-if="!item.group.isOwn"
 								size="lg"
 								:label="item.group.user_name"
+								:theme="getAvatarTheme(item.group.user_name || item.group.user_id)"
 								class="mt-6 shrink-0"
 							/>
 
@@ -176,6 +178,7 @@ import {
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
 import { usePollStore } from "../composables/usePollStore";
+import { getAvatarTheme } from "../utils/avatarTheme";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
 import PollMessageCard from "./PollMessageCard.vue";
