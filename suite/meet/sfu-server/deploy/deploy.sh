@@ -117,7 +117,13 @@ check_env() {
     # Informational
     info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
     info "SFU Port: ${PORT:-3000}"
-    info "WebRTC ports: ${RTC_MIN_PORT:-40000}-${RTC_MAX_PORT:-40200} UDP"
+    if [ -n "${MEDIASOUP_NUM_WORKERS:-}" ]; then
+        local media_port_start="${WEBRTC_SERVER_PORT:-40000}"
+        local media_port_end=$((media_port_start + MEDIASOUP_NUM_WORKERS - 1))
+        info "WebRTC UDP ports: ${media_port_start}-${media_port_end}"
+    else
+        info "WebRTC UDP ports: ${WEBRTC_SERVER_PORT:-40000} + one port per CPU worker"
+    fi
 
     if [ "$errors" = true ]; then
         echo ""

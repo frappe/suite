@@ -16,6 +16,7 @@ export class TransportManager {
 		roomId: string,
 		peerId: string,
 		router: mediasoup.types.Router,
+		webRtcServer: mediasoup.types.WebRtcServer,
 		direction: 'send' | 'recv',
 		options: WebRTCTransportOptions,
 	): Promise<{
@@ -30,7 +31,13 @@ export class TransportManager {
 			peerId,
 		);
 
-		const transport = await router.createWebRtcTransport(options);
+		const transport = await router.createWebRtcTransport({
+			webRtcServer,
+			enableUdp: options.enableUdp,
+			enableTcp: options.enableTcp,
+			preferUdp: options.preferUdp,
+			initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate,
+		});
 
 		const _transportKey = `${direction}-${Date.now()}`;
 		const transportData: TransportData = {

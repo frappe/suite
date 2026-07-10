@@ -1,6 +1,7 @@
 import * as os from 'node:os';
 import type {
 	MediasoupConfig,
+	WebRTCServerOptions,
 	WebRTCTransportOptions,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -27,8 +28,7 @@ function getServerIP(): string {
 	return '127.0.0.1';
 }
 
-function buildListenIps(): Array<{ ip: string; announcedIp: string }> {
-	const baseListenIp = process.env.WEBRTC_LISTEN_IP || '0.0.0.0';
+function getAnnouncedAddress(): string {
 	const announcedEnv = process.env.WEBRTC_ANNOUNCED_IP;
 	if (announcedEnv) {
 		const ips = Array.from(
@@ -44,16 +44,24 @@ function buildListenIps(): Array<{ ip: string; announcedIp: string }> {
 				'WEBRTC_ANNOUNCED_IP provided but empty after parsing; falling back to auto-detect',
 			);
 		} else {
-			loggers.config.info(
-				'Using announced IP list from env: %s',
-				ips.join(', '),
-			);
-			return ips.map((ip) => ({ ip: baseListenIp, announcedIp: ip }));
+			if (ips.length > 1) {
+				loggers.config.warn(
+					'WEBRTC_ANNOUNCED_IP has multiple values; WebRtcServer uses the first one: %s',
+					ips[0],
+				);
+			}
+			return ips[0]!;
 		}
 	}
-	// Fallback single entry
-	return [{ ip: baseListenIp, announcedIp: getServerIP() }];
+
+	return getServerIP();
 }
+
+const webRtcServerOptions: WebRTCServerOptions = {
+	listenIp: process.env.WEBRTC_LISTEN_IP || '0.0.0.0',
+	announcedAddress: getAnnouncedAddress(),
+	basePort: Number.parseInt(process.env.WEBRTC_SERVER_PORT || '40000', 10),
+};
 
 const mediaCodecs = [
 	{
@@ -103,14 +111,9 @@ const mediaCodecs = [
 ];
 
 const webRtcTransportOptions: WebRTCTransportOptions = {
-	listenIps: buildListenIps(),
 	enableUdp: true,
-	enableTcp: true,
+	enableTcp: false,
 	preferUdp: true,
-	portRange: {
-		min: Number.parseInt(process.env.RTC_MIN_PORT || '40000', 10),
-		max: Number.parseInt(process.env.RTC_MAX_PORT || '49999', 10),
-	},
 	// Add additional WebRTC options for better connectivity
 	maxIncomingBitrate: 5000000,
 	maxOutgoingBitrate: 5000000,
@@ -143,8 +146,8 @@ const workerSettings: WorkerSettings = {
 		'svc',
 		'sctp',
 	],
-	rtcMinPort: Number.parseInt(process.env.RTC_MIN_PORT || '40000', 10),
-	rtcMaxPort: Number.parseInt(process.env.RTC_MAX_PORT || '49999', 10),
+	rtcMinPort: webRtcServerOptions.basePort,
+	rtcMaxPort: webRtcServerOptions.basePort + 1000,
 };
 
 function resolveNumWorkers(): number {
@@ -159,4 +162,5 @@ export const mediasoupConfig: MediasoupConfig = {
 	worker: workerSettings,
 	router: { mediaCodecs },
 	webRtcTransport: webRtcTransportOptions,
+	webRtcServer: webRtcServerOptions,
 };

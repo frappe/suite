@@ -11,6 +11,7 @@ export class RoomManager {
 	async createRoom(
 		roomId: string,
 		worker: mediasoup.types.Worker,
+		webRtcServer: mediasoup.types.WebRtcServer,
 		mediaCodecs: RtpCodecCapability[],
 		onActiveSpeaker?: (roomId: string, participantIds: string[]) => void,
 	): Promise<Room> {
@@ -54,6 +55,7 @@ export class RoomManager {
 		const room: Room = {
 			id: roomId,
 			router,
+			webRtcServer,
 			audioLevelObserver,
 			peers: new Map(),
 			created: new Date(),

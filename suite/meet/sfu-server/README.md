@@ -9,7 +9,7 @@ Mediasoup-based Selective Forwarding Unit (SFU) for Frappe Meet.
 
 - A server with Docker and Docker Compose v2 installed
 - A domain pointing to the server (e.g., `sfu.example.com`)
-- Ports open: `80/tcp`, `443/tcp`, `40000-40200/udp`
+- Ports open: `80/tcp`, `443/tcp`, and the SFU media UDP ports. By default this starts at `40000/udp` and uses one port per mediasoup worker.
 
 ### Quick Start
 
@@ -28,6 +28,8 @@ Set the required values in `.env`:
 |---|---|---|
 | `JWT_SECRET` | Shared secret with Frappe (generate: `openssl rand -base64 32`) | `a1B2c3D4...` |
 | `WEBRTC_ANNOUNCED_IP` | Server's public IP (find: `curl -4 ifconfig.me`) | `203.0.113.10` |
+| `WEBRTC_SERVER_PORT` | First UDP port for WebRTC media | `40000` |
+| `MEDIASOUP_NUM_WORKERS` | Number of mediasoup workers; media uses one UDP port per worker | `4` |
 | `DOMAIN` | Domain pointing to this server | `sfu.example.com` |
 | `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@example.com` |
 
@@ -77,4 +79,4 @@ cd /opt/meet-sfu
 |---|---|---|
 | 80 | TCP | HTTP / ACME challenges |
 | 443 | TCP | HTTPS |
-| 40000-40200 | UDP | WebRTC media |
+| 40000 to 40000 + workers - 1 | UDP | WebRTC media, one fixed UDP port per mediasoup worker |
