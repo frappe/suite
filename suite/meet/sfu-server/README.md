@@ -27,6 +27,7 @@ Set the required values in `.env`:
 | Variable | Description | Example |
 |---|---|---|
 | `JWT_SECRET` | Shared secret with Frappe (generate: `openssl rand -base64 32`) | `a1B2c3D4...` |
+| `WEBRTC_LISTEN_IP` | Local interface IP for SFU media sockets; leave blank to auto-detect | `10.0.1.12` |
 | `WEBRTC_ANNOUNCED_IP` | Server's public IP (find: `curl -4 ifconfig.me`) | `203.0.113.10` |
 | `WEBRTC_SERVER_PORT` | First UDP port for WebRTC media | `40000` |
 | `MEDIASOUP_NUM_WORKERS` | Number of mediasoup workers; media uses one UDP port per worker | `4` |

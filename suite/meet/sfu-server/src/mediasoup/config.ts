@@ -58,7 +58,7 @@ function getAnnouncedAddress(): string {
 }
 
 const webRtcServerOptions: WebRTCServerOptions = {
-	listenIp: process.env.WEBRTC_LISTEN_IP || '0.0.0.0',
+	listenIp: process.env.WEBRTC_LISTEN_IP || getServerIP(),
 	announcedAddress: getAnnouncedAddress(),
 	basePort: Number.parseInt(process.env.WEBRTC_SERVER_PORT || '40000', 10),
 };

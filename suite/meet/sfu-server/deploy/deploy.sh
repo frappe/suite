@@ -102,6 +102,12 @@ check_env() {
         ok "WEBRTC_ANNOUNCED_IP = $WEBRTC_ANNOUNCED_IP"
     fi
 
+    if [ "${WEBRTC_LISTEN_IP:-}" = "0.0.0.0" ]; then
+        err "WEBRTC_LISTEN_IP must be a concrete local interface IP, not 0.0.0.0."
+        echo "  Leave it blank to auto-detect, or set it to the server's private IP."
+        errors=true
+    fi
+
     if [ -z "${DOMAIN:-}" ]; then
         err "DOMAIN must be set (e.g., sfu.meet.example.com)."
         errors=true
