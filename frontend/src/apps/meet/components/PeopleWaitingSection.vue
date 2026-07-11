@@ -18,11 +18,10 @@
 			:data-testid="`waiting-user-${lobbyUser.userId}`"
 		>
 			<div class="flex min-w-0 items-center gap-3">
-				<Avatar
+				<MeetAvatar
 					size="lg"
 					:image="lobbyUser.avatar"
 					:label="lobbyUser.name || lobbyUser.userId || 'Guest'"
-					:theme="getAvatarTheme(lobbyUser.name || lobbyUser.userId || 'Guest')"
 				/>
 				<div class="flex items-center gap-2">
 					<div class="text-sm-medium text-ink-gray-8 truncate max-w-40">
@@ -54,8 +53,8 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Badge, Button } from "frappe-ui";
-import { getAvatarTheme } from "../utils/avatarTheme";
+import { Badge, Button } from "frappe-ui";
+import MeetAvatar from "./MeetAvatar.vue";
 
 interface LobbyUser {
 	userId: string;

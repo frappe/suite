@@ -43,11 +43,10 @@
 			class="absolute inset-0 flex items-center justify-center pointer-events-none"
 			:class="avatarBackgroundClass"
 		>
-			<Avatar
+			<MeetAvatar
 				size="3xl"
 				:image="participant.avatar"
 				:label="participant.user_name || participant.initials"
-				:theme="getAvatarTheme(participant.user_name || participant.user_id || participant.initials)"
 			/>
 		</div>
 
@@ -154,16 +153,16 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Button } from "frappe-ui";
+import { Button } from "frappe-ui";
 import { type ComputedRef, computed, inject, type Ref, ref, watch } from "vue";
 import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import { useNetworkQuality } from "../composables/useNetworkQuality";
 import WifiAlertIcon from "../icons/WifiAlertIcon.vue";
-import { getAvatarTheme } from "../utils/avatarTheme";
 import type { Participant } from "../utils/media/ParticipantManager";
 import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
+import MeetAvatar from "./MeetAvatar.vue";
 import NamePill from "./NamePill.vue";
 
 type TileSize = "xs" | "sm" | "md";

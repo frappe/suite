@@ -17,12 +17,11 @@
 						class="ring-2 ring-outline-gray-1 rounded-full overflow-hidden flex items-center justify-center"
 						:class="avatarWrapperClasses"
 					>
-						<Avatar
+						<MeetAvatar
 							:image="participant.avatar_url"
 							:label="participant.full_name"
 							:size="size"
 							shape="circle"
-							:theme="getAvatarTheme(participant.full_name || participant.user_id)"
 						/>
 					</div>
 				</div>
@@ -60,9 +59,8 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar } from "frappe-ui";
 import { computed } from "vue";
-import { getAvatarTheme } from "../utils/avatarTheme";
+import MeetAvatar from "./MeetAvatar.vue";
 
 type AvatarGroupSize = "sm" | "md" | "lg" | "xl" | "2xl";
 type StackDirection = "left" | "right";

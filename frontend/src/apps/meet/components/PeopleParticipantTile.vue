@@ -4,11 +4,10 @@
 		:data-testid="`people-participant-${participant.user_id}`"
 		:data-audio-enabled="participant.audio_enabled ? 'true' : 'false'"
 	>
-		<Avatar
+		<MeetAvatar
 			size="lg"
 			:image="participant.avatar"
 			:label="participant.user_name || participant.user_id"
-			:theme="getAvatarTheme(participant.user_name || participant.user_id)"
 		/>
 
 		<div class="min-w-0 flex-1">
@@ -88,16 +87,16 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Dropdown } from "frappe-ui";
+import { Dropdown } from "frappe-ui";
 import { computed, ref } from "vue";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import MeetCameraIcon from "../icons/MeetCameraIcon.vue";
 import MeetCameraOffIcon from "../icons/MeetCameraOffIcon.vue";
 import MeetMicIcon from "../icons/MeetMicIcon.vue";
 import MeetMicOffIcon from "../icons/MeetMicOffIcon.vue";
-import { getAvatarTheme } from "../utils/avatarTheme";
 import type { Participant } from "../utils/media/ParticipantManager";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
+import MeetAvatar from "./MeetAvatar.vue";
 
 interface Props {
 	participant: Participant;
