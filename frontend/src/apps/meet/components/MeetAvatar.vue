@@ -7,7 +7,7 @@
 		:shape="shape"
 		:theme="getAvatarTheme(label)"
 	>
-		<slot />
+		<template v-if="$slots.default"><slot /></template>
 		<template v-if="$slots.indicator" #indicator><slot name="indicator" /></template>
 	</Avatar>
 </template>
