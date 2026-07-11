@@ -3,18 +3,6 @@ import { defineConfig, devices } from "@playwright/test";
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 const isCI = !!process.env.CI;
 
-// Weight-balanced shards (not Playwright --shard=N/M). Select with --project=shard-N.
-const shardTestMatch: Record<string, RegExp[]> = {
-	"shard-1": [
-		/chat\.spec\.ts/,
-		/engagement\.spec\.ts/,
-		/host-controls\.spec\.ts/,
-		/join-and-leave\.spec\.ts/,
-	],
-	"shard-2": [/restricted-meeting\.spec\.ts/, /media-controls\.spec\.ts/],
-	"shard-3": [/e2ee\.spec\.ts/, /multi-participant\.spec\.ts/],
-};
-
 const chromiumUse = {
 	...devices["Desktop Chrome"],
 	channel: "chrome" as const,
@@ -22,8 +10,6 @@ const chromiumUse = {
 		args: [
 			"--use-fake-ui-for-media-stream",
 			// Chrome's built-in fake camera/mic (do NOT override getUserMedia).
-			// File-based y4m is optional; the default fake device encodes reliably
-			// on headless Linux and produces decoded frames (readyState 4).
 			"--use-fake-device-for-media-stream",
 			"--disable-background-timer-throttling",
 			"--disable-backgrounding-occluded-windows",
@@ -40,6 +26,8 @@ const chromiumUse = {
 
 export default defineConfig({
 	testDir: "./specs",
+	// CI: one worker per job; parallelize across GH Actions with --shard=N/M
+	// so every specs/*.ts file is always included (no hardcoded allow-list).
 	fullyParallel: !isCI,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,
@@ -66,17 +54,11 @@ export default defineConfig({
 		actionTimeout: 15_000,
 		navigationTimeout: 30_000,
 	},
-	projects: isCI
-		? Object.entries(shardTestMatch).map(([name, testMatch]) => ({
-				name,
-				testMatch,
-				use: chromiumUse,
-			}))
-		: [
-				{
-					name: "chromium",
-					use: chromiumUse,
-				},
-			],
+	projects: [
+		{
+			name: "chromium",
+			use: chromiumUse,
+		},
+	],
 	globalSetup: "./global-setup.ts",
 });
