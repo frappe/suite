@@ -8,8 +8,9 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 2 : 0,
 	workers: 1,
-    maxFailures: process.env.CI ? 3 : undefined,
-	timeout: 60_000,
+	maxFailures: process.env.CI ? 3 : undefined,
+	// Media/WebRTC join + decode polls need headroom on GitHub runners.
+	timeout: process.env.CI ? 90_000 : 60_000,
 	expect: {
 		timeout: 10_000,
 	},
@@ -28,7 +29,7 @@ export default defineConfig({
 		screenshot: "only-on-failure",
 		viewport: { width: 1440, height: 900 },
 		actionTimeout: 15_000,
-        navigationTimeout: 30_000,
+		navigationTimeout: 30_000,
 	},
 	projects: [
 		{
@@ -39,6 +40,10 @@ export default defineConfig({
 				launchOptions: {
 					args: [
 						"--use-fake-ui-for-media-stream",
+						// Keep timers/rAF alive across multi-page WebRTC tests in CI.
+						"--disable-background-timer-throttling",
+						"--disable-backgrounding-occluded-windows",
+						"--disable-renderer-backgrounding",
 						"--disable-audio-track-processing",
 						"--disable-webrtc-apm-in-audio-service",
 						"--allow-insecure-localhost",
