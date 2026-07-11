@@ -394,7 +394,12 @@ export function useSFUConnection(deps: {
 			await manager.createReceiveTransport();
 			if (await stopIfCancelled()) return;
 
-			if (mediaState.localStream) {
+			// Send path (local publish) and recv path (existing remotes) are
+			// independent once the device + receive transport exist.
+			const publishLocal = async () => {
+				if (!mediaState.localStream) {
+					return;
+				}
 				try {
 					const videoTracks = mediaState.processedStream
 						? mediaState.processedStream.getVideoTracks()
@@ -411,16 +416,18 @@ export function useSFUConnection(deps: {
 						publishVideo: mediaState.isCameraOn,
 						publishAudio: mediaState.isMicOn,
 					});
-					if (await stopIfCancelled()) return;
 				} catch (error) {
 					console.warn(
 						"Media publishing failed, continuing without media:",
 						(error as Error).message,
 					);
 				}
-			}
+			};
 
-			await manager.setupExistingParticipants();
+			await Promise.all([
+				publishLocal(),
+				manager.setupExistingParticipants(),
+			]);
 			if (await stopIfCancelled()) return;
 
 			connectionState.isSetupComplete = true;
