@@ -27,85 +27,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Build frontend + SFU once; shards only restore artifacts (no yarn/bench rebuild).
-  prepare:
-    runs-on: ubuntu-latest
-    name: Prepare build artifacts
-    timeout-minutes: 30
-
-    steps:
-      - name: Clone
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          check-latest: true
-
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
-
-      - name: Cache yarn
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
-
-      # frontend/vite.config.ts resolves benchRoot as frontend/../../.. and reads
-      # sites/common_site_config.json for __SITE_NAME__ / socketio port. Outside a
-      # real bench that path is missing (ENOENT on /home/runner/work/sites/...).
-      - name: Stub bench common_site_config for Vite
-        run: |
-          BENCH_ROOT="$(node -e "console.log(require('path').resolve('frontend', '../../..'))")"
-          mkdir -p "$BENCH_ROOT/sites"
-          cat > "$BENCH_ROOT/sites/common_site_config.json" <<'EOF'
-          {
-            "default_site": "meet.test",
-            "webserver_port": 8000,
-            "socketio_port": 9000
-          }
-          EOF
-          echo "Wrote $BENCH_ROOT/sites/common_site_config.json"
-          cat "$BENCH_ROOT/sites/common_site_config.json"
-
-      - name: Build Suite frontend
-        run: |
-          yarn install --frozen-lockfile --non-interactive
-          yarn build
-        env:
-          CI: "Yes"
-
-      - name: Build SFU Server
-        working-directory: ${{ github.workspace }}/suite/meet/sfu-server
-        run: |
-          yarn install --frozen-lockfile
-          yarn build
-
-      - name: Upload frontend assets
-        uses: actions/upload-artifact@v4
-        with:
-          name: meet-e2e-frontend
-          path: suite/public/frontend/
-          retention-days: 1
-          compression-level: 6
-
-      - name: Upload SFU dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: meet-e2e-sfu-dist
-          path: suite/meet/sfu-server/dist/
-          retention-days: 1
-          compression-level: 6
-
   e2e:
-    needs: prepare
     runs-on: ubuntu-latest
-    # Playwright --shard=N/M splits the full suite automatically — new specs
-    # under specs/ are included without editing an allow-list. workers=1 per job.
+    # Playwright --shard=N/M splits the suite; each job is self-contained.
     strategy:
       fail-fast: false
       matrix:
@@ -190,33 +114,22 @@ jobs:
             bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
           fi
 
-      # get-app without --skip-assets runs: yarn install + `node esbuild --run-build-command`
-      # (full vite production build). Prepare already built assets; skip that here.
-      - name: Install Suite (no frontend rebuild)
+      - name: Install Suite
         working-directory: /home/runner/frappe-bench
         run: |
           rm -rf apps/suite sites/meet.test sites/assets/suite
-          bench get-app suite $GITHUB_WORKSPACE --skip-assets
+          bench get-app suite $GITHUB_WORKSPACE
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin meet.test
-          # Python/DB install only — no asset pipeline (get-app already skipped it).
           bench --site meet.test install-app suite
+          cd apps/suite
+          yarn install --frozen-lockfile --non-interactive
+          yarn build
+          cd /home/runner/frappe-bench
+          bench build
         env:
           CI: "Yes"
-
-      - name: Download frontend assets
-        uses: actions/download-artifact@v4
-        with:
-          name: meet-e2e-frontend
-          path: /home/runner/frappe-bench/apps/suite/suite/public/frontend
-
-      - name: Link assets (bench build only)
-        working-directory: /home/runner/frappe-bench
-        run: |
-          test -f apps/suite/suite/public/frontend/index.html
-          # Copies app public/ into sites/assets — no yarn/vite rebuild.
-          bench build --app suite
 
       - name: Configure Site for E2E
         working-directory: /home/runner/frappe-bench
@@ -228,17 +141,11 @@ jobs:
           bench --site meet.test set-config allow_tests true
           bench --site meet.test set-config host_name "http://meet.test:8000"
 
-      - name: Download SFU dist
-        uses: actions/download-artifact@v4
-        with:
-          name: meet-e2e-sfu-dist
-          path: ${{ github.workspace }}/suite/meet/sfu-server/dist
-
-      - name: Install SFU runtime deps
+      - name: Build SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
         run: |
           yarn install --frozen-lockfile
-          test -f dist/sfu-server/src/server.js
+          yarn build
 
       - name: Install E2E Dependencies
         working-directory: ${{ github.workspace }}/suite/meet/e2e
@@ -271,7 +178,6 @@ jobs:
           JWT_SECRET: e2e-test-secret-key-12345
           WEBRTC_LISTEN_IP: 127.0.0.1
           WEBRTC_ANNOUNCED_IP: 127.0.0.1
-          # One Playwright worker per shard; single mediasoup worker is enough.
           MEDIASOUP_NUM_WORKERS: 1
 
       - name: Run E2E Tests
