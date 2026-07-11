@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+	clearRecentEmojis,
 	findColonQuery,
 	insertEmojiAtQuery,
+	rememberEmoji,
 	suggestEmojis,
 } from "../emojiSuggest";
+
+afterEach(() => {
+	clearRecentEmojis();
+});
 
 describe("findColonQuery", () => {
 	it("finds trailing colon query", () => {
@@ -27,8 +33,55 @@ describe("suggestEmojis", () => {
 		expect(hits[0].emoji).toBe("🔥");
 	});
 
-	it("limits results", () => {
-		expect(suggestEmojis("", 5)).toHaveLength(5);
+	it("empty query with no recents falls back to default suggestions", () => {
+		const defaults = suggestEmojis("");
+		expect(defaults).toHaveLength(5);
+		// Same ranking as the old empty-query filter (shortest matching names first).
+		expect(defaults.every((d) => d.emoji && d.name)).toBe(true);
+	});
+
+	it("empty query puts recents first and pads to five with defaults", () => {
+		rememberEmoji({ name: "fire", emoji: "🔥" });
+		rememberEmoji({ name: "thumbsup", emoji: "👍" });
+		const hits = suggestEmojis("");
+		expect(hits).toHaveLength(5);
+		expect(hits[0]).toEqual({ name: "thumbsup", emoji: "👍" });
+		expect(hits[1]).toEqual({ name: "fire", emoji: "🔥" });
+		// No duplicate glyphs when padding.
+		const glyphs = hits.map((h) => h.emoji);
+		expect(new Set(glyphs).size).toBe(glyphs.length);
+	});
+
+	it("keeps only the last five recents, most recent first", () => {
+		for (const [name, emoji] of [
+			["one", "1️⃣"],
+			["two", "2️⃣"],
+			["three", "3️⃣"],
+			["four", "4️⃣"],
+			["five", "5️⃣"],
+			["six", "6️⃣"],
+		] as const) {
+			rememberEmoji({ name, emoji });
+		}
+		const recent = suggestEmojis("");
+		expect(recent).toHaveLength(5);
+		expect(recent.map((r) => r.name)).toEqual([
+			"six",
+			"five",
+			"four",
+			"three",
+			"two",
+		]);
+	});
+
+	it("moves a re-used emoji to the front", () => {
+		rememberEmoji({ name: "fire", emoji: "🔥" });
+		rememberEmoji({ name: "wave", emoji: "👋" });
+		rememberEmoji({ name: "fire", emoji: "🔥" });
+		const hits = suggestEmojis("");
+		expect(hits).toHaveLength(5);
+		expect(hits[0]).toEqual({ name: "fire", emoji: "🔥" });
+		expect(hits[1]).toEqual({ name: "wave", emoji: "👋" });
 	});
 });
 

@@ -204,6 +204,7 @@ import { tokenizeChatMessage } from "../utils/chatMessageTokens";
 import {
 	findColonQuery,
 	insertEmojiAtQuery,
+	rememberEmoji,
 	suggestEmojis,
 	type EmojiSuggestion,
 } from "../utils/emojiSuggest";
@@ -414,6 +415,7 @@ function selectEmoji(item: EmojiSuggestion) {
 		item.emoji,
 	);
 	draft.value = text;
+	rememberEmoji(item);
 	closeEmojiMenu();
 	nextTick(() => {
 		el.focus();
