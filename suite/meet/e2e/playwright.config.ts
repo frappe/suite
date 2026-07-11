@@ -5,12 +5,13 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	// Per-test meetings keep rooms isolated so workers can run in parallel.
-	fullyParallel: true,
+	// Serial on CI: 2 workers caused MariaDB deadlocks on meeting create, 500s,
+	// and WebRTC/media starvation on ubuntu-latest. Keep per-test isolation so
+	// workers can be re-enabled later for non-media shards.
+	fullyParallel: !isCI,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,
-	// Two concurrent WebRTC meetings is the practical limit on ubuntu-latest.
-	workers: isCI ? 2 : undefined,
+	workers: isCI ? 1 : undefined,
 	maxFailures: isCI ? 3 : undefined,
 	// Media/WebRTC join + decode polls need headroom on GitHub runners.
 	timeout: isCI ? 90_000 : 60_000,
