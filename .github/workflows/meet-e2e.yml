@@ -268,6 +268,7 @@ jobs:
           PORT: 3000
           HOST: 0.0.0.0
           JWT_SECRET: e2e-test-secret-key-12345
+          WEBRTC_LISTEN_IP: 127.0.0.1
           WEBRTC_ANNOUNCED_IP: 127.0.0.1
           # One Playwright worker per shard; single mediasoup worker is enough.
           MEDIASOUP_NUM_WORKERS: 1
