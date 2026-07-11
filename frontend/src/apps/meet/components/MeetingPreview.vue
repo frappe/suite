@@ -118,6 +118,7 @@ import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";
 import { session } from "@/boot/session";
 import { getErrorMessage } from "../utils/error";
+import { getInitials } from "../utils/text";
 import type { Participant } from "../utils/media/ParticipantManager";
 interface VideoElement {
 	$el?:
@@ -172,11 +173,18 @@ const meetingTitle = inject("meetingTitle");
 
 const isGuest = computed(() => !session.isLoggedIn && !props.guestAuthToken);
 
+const previewName = computed(() => {
+	if (isGuest.value && guestName.value.trim()) {
+		return guestName.value.trim();
+	}
+	return props.currentUserName || props.userInitials || "You";
+});
+
 const previewParticipant = computed<Participant>(() => ({
 	user_id: "preview-local-user",
-	user_name: props.currentUserName || props.userInitials || "You",
+	user_name: previewName.value,
 	avatar: props.userAvatar || null,
-	initials: props.userInitials || "",
+	initials: getInitials(previewName.value),
 	audio_enabled: props.isMicOn,
 	video_enabled: props.isCameraOn,
 }));
