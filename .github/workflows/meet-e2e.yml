@@ -189,14 +189,17 @@ jobs:
             bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
           fi
 
+      # get-app without --skip-assets runs: yarn install + `node esbuild --run-build-command`
+      # (full vite production build). Prepare already built assets; skip that here.
       - name: Install Suite (no frontend rebuild)
         working-directory: /home/runner/frappe-bench
         run: |
           rm -rf apps/suite sites/meet.test sites/assets/suite
-          bench get-app suite $GITHUB_WORKSPACE
+          bench get-app suite $GITHUB_WORKSPACE --skip-assets
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin meet.test
+          # Python/DB install only — no asset pipeline (get-app already skipped it).
           bench --site meet.test install-app suite
         env:
           CI: "Yes"
