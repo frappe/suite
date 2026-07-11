@@ -1,13 +1,15 @@
 /**
- * Fake camera/display media for Playwright.
+ * E2E media helpers.
  *
- * Prefer MediaStreamTrackGenerator + VideoFrame when available: those produce
- * real encoded-friendly frames on headless Linux CI. canvas.captureStream alone
- * often yields live tracks with readyState stuck at 0 on GitHub runners (while
- * the same tests pass on macOS). Fall back to captureStream + requestFrame.
+ * Camera/mic: do NOT override getUserMedia. Playwright launches Chrome with
+ * --use-fake-device-for-media-stream and --use-file-for-fake-video-capture so
+ * getUserMedia returns a real capture pipeline that mediasoup can encode on
+ * headless Linux (canvas/MediaStreamTrackGenerator tracks often stay "live"
+ * with zero decoded frames on CI).
  *
- * Fresh stream per getUserMedia / getDisplayMedia so stopping one call does not
- * end tracks for other participants.
+ * Screen share: Chrome has no fake display device — stub getDisplayMedia only.
+ * Do not stub enumerateDevices: fake device IDs must match Chrome's so the app
+ * can open the camera with deviceId constraints.
  */
 export const STUB_MEDIA_SCRIPT = `(() => {
 	window.localStorage.setItem("mediaPref.autoHideToolbar", "0");
@@ -19,15 +21,20 @@ export const STUB_MEDIA_SCRIPT = `(() => {
 		});
 	}
 
-	function createCanvas(label) {
+	function createFakeDisplayStream(label) {
 		const canvas = document.createElement("canvas");
 		canvas.width = 640;
 		canvas.height = 360;
 		canvas.style.cssText =
 			"position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;";
 		document.documentElement.appendChild(canvas);
-		const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+
+		const context = canvas.getContext("2d", {
+			alpha: false,
+			desynchronized: true,
+		});
 		let tick = 0;
+
 		const draw = () => {
 			if (!context) return;
 			const hue = (tick * 17) % 360;
@@ -40,199 +47,74 @@ export const STUB_MEDIA_SCRIPT = `(() => {
 			context.fillText(String(++tick), 24, 84);
 			context.fillRect(24 + (tick % 40) * 8, 120, 40, 40);
 		};
-		return { canvas, draw };
-	}
 
-	function createGeneratorStream(label) {
+		draw();
+
+		// Prefer VideoFrame generator — better for WebRTC encode on Linux.
 		if (
-			typeof MediaStreamTrackGenerator === "undefined" ||
-			typeof VideoFrame === "undefined"
+			typeof MediaStreamTrackGenerator !== "undefined" &&
+			typeof VideoFrame !== "undefined"
 		) {
-			return null;
-		}
+			const generator = new MediaStreamTrackGenerator({ kind: "video" });
+			const writer = generator.writable.getWriter();
+			let frameCount = 0;
+			let closed = false;
 
-		const { canvas, draw } = createCanvas(label);
-		draw();
+			const push = async () => {
+				if (closed) return;
+				try {
+					draw();
+					const frame = new VideoFrame(canvas, {
+						timestamp: frameCount * (1_000_000 / 15),
+					});
+					frameCount += 1;
+					await writer.write(frame);
+					frame.close();
+				} catch {}
+			};
 
-		const generator = new MediaStreamTrackGenerator({ kind: "video" });
-		const writer = generator.writable.getWriter();
-		let frameCount = 0;
-		let closed = false;
-
-		const push = async () => {
-			if (closed) return;
-			try {
-				draw();
-				const frame = new VideoFrame(canvas, {
-					timestamp: frameCount * (1_000_000 / 15),
-				});
-				frameCount += 1;
-				await writer.write(frame);
-				frame.close();
-			} catch {
-				// Writer may close when the track ends.
-			}
-		};
-
-		const intervalId = window.setInterval(() => {
+			const intervalId = window.setInterval(() => {
+				void push();
+			}, 1000 / 15);
 			void push();
-		}, 1000 / 15);
-		void push();
 
-		const stream = new MediaStream([generator]);
+			const stop = () => {
+				if (closed) return;
+				closed = true;
+				window.clearInterval(intervalId);
+				try {
+					void writer.close();
+				} catch {}
+				canvas.remove();
+			};
 
-		const stop = () => {
-			if (closed) return;
-			closed = true;
-			window.clearInterval(intervalId);
-			try {
-				void writer.close();
-			} catch {}
-			canvas.remove();
-		};
-
-		generator.addEventListener("ended", stop, { once: true });
-
-		try {
-			const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-			if (AudioContextCtor) {
-				const audioContext = new AudioContextCtor();
-				const oscillator = audioContext.createOscillator();
-				const gainNode = audioContext.createGain();
-				const destination = audioContext.createMediaStreamDestination();
-				gainNode.gain.value = 0.001;
-				oscillator.frequency.value = 440;
-				oscillator.connect(gainNode);
-				gainNode.connect(destination);
-				oscillator.start();
-				for (const track of destination.stream.getAudioTracks()) {
-					stream.addTrack(track);
-					track.addEventListener(
-						"ended",
-						() => {
-							try {
-								oscillator.stop();
-								audioContext.close();
-							} catch {}
-							stop();
-						},
-						{ once: true },
-					);
-				}
-			}
-		} catch {}
-
-		return stream;
-	}
-
-	function createCaptureStream(label) {
-		const { canvas, draw } = createCanvas(label);
-		draw();
-
-		const probeStream = canvas.captureStream(0);
-		const probeTrack = probeStream.getVideoTracks()[0];
-		const canRequestFrame =
-			probeTrack && typeof probeTrack.requestFrame === "function";
-
-		let stream;
-		let videoTrack;
-		if (canRequestFrame) {
-			stream = probeStream;
-			videoTrack = probeTrack;
-		} else {
-			for (const track of probeStream.getTracks()) {
-				track.stop();
-			}
-			stream = canvas.captureStream(15);
-			videoTrack = stream.getVideoTracks()[0];
+			generator.addEventListener("ended", stop, { once: true });
+			return new MediaStream([generator]);
 		}
 
-		const pushFrame = () => {
+		const stream = canvas.captureStream(15);
+		const videoTrack = stream.getVideoTracks()[0];
+		const intervalId = window.setInterval(() => {
 			draw();
 			if (videoTrack && typeof videoTrack.requestFrame === "function") {
 				try {
 					videoTrack.requestFrame();
 				} catch {}
 			}
-		};
+		}, 1000 / 15);
 
-		const intervalId = window.setInterval(pushFrame, 1000 / 15);
-		pushFrame();
-
-		const stopCapture = () => {
-			window.clearInterval(intervalId);
-			canvas.remove();
-		};
-
-		for (const track of stream.getVideoTracks()) {
-			track.addEventListener("ended", stopCapture, { once: true });
-		}
-
-		try {
-			const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-			if (AudioContextCtor) {
-				const audioContext = new AudioContextCtor();
-				const oscillator = audioContext.createOscillator();
-				const gainNode = audioContext.createGain();
-				const destination = audioContext.createMediaStreamDestination();
-				gainNode.gain.value = 0.001;
-				oscillator.frequency.value = 440;
-				oscillator.connect(gainNode);
-				gainNode.connect(destination);
-				oscillator.start();
-				for (const track of destination.stream.getAudioTracks()) {
-					stream.addTrack(track);
-					track.addEventListener(
-						"ended",
-						() => {
-							try {
-								oscillator.stop();
-								audioContext.close();
-							} catch {}
-						},
-						{ once: true },
-					);
-				}
-			}
-		} catch {}
+		videoTrack?.addEventListener(
+			"ended",
+			() => {
+				window.clearInterval(intervalId);
+				canvas.remove();
+			},
+			{ once: true },
+		);
 
 		return stream;
 	}
 
-	function createFakeStream(label) {
-		return createGeneratorStream(label) || createCaptureStream(label);
-	}
-
-	navigator.mediaDevices.getUserMedia = async () => createFakeStream("camera");
-	navigator.mediaDevices.getDisplayMedia = async () => createFakeStream("screen");
-
-	navigator.mediaDevices.enumerateDevices = async () => [
-		{
-			deviceId: "fake-camera",
-			groupId: "fake-group",
-			kind: "videoinput",
-			label: "Fake Camera",
-			toJSON() {
-				return this;
-			},
-		},
-		{
-			deviceId: "fake-mic",
-			groupId: "fake-group",
-			kind: "audioinput",
-			label: "Fake Microphone",
-			toJSON() {
-				return this;
-			},
-		},
-		{
-			deviceId: "fake-speaker",
-			groupId: "fake-group",
-			kind: "audiooutput",
-			label: "Fake Speaker",
-			toJSON() {
-				return this;
-			},
-		},
-	];
+	navigator.mediaDevices.getDisplayMedia = async () =>
+		createFakeDisplayStream("screen");
 })();`;

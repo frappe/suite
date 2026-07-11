@@ -11,6 +11,21 @@ import {
 	expectVideoReceiving,
 } from "../helpers/media";
 
+async function expectParticipantsAndVideo(
+	hostPage: Page,
+	guestPage: Page,
+	guestName: string,
+): Promise<void> {
+	await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
+		timeout: 30_000,
+	});
+	await expect(guestPage.locator("[data-participant-id]")).toHaveCount(2, {
+		timeout: 30_000,
+	});
+	await expectRemoteVideoReceiving(guestPage, "Administrator");
+	await expectRemoteVideoReceiving(hostPage, guestName);
+}
+
 async function openMeetingAccessSettings(page: Page): Promise<void> {
 	await page.getByTestId("toolbar-more").click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
@@ -87,29 +102,25 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 }
 
 test.describe("E2EE", () => {
-	test("participants can join an E2EE meeting", async ({
+	// Enable E2EE after both peers already have media. Turning encryption on
+	// before the guest joins often leaves the host publisher without decodable
+	// frames on CI (guest sees avatar only). Mid-call enable matches real use
+	// and is what the heavy coverage suite already exercises locally.
+	test("participants keep video after E2EE is enabled", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
 	}) => {
 		const meetingId = await createMeeting();
+		const guestName = "Guest E2EE";
+		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
+		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
 
 		await enableE2EEInSettings(hostPage);
 
-		const guest = await createParticipant();
-		await guest.joinAsGuest(meetingId, "Guest E2EE");
-
-		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
-			timeout: 30_000,
-		});
-		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
-			timeout: 30_000,
-		});
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
-		await expectRemoteVideoReceiving(hostPage, "Guest E2EE");
+		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
 	});
 
 	test.describe("heavy coverage", () => {
