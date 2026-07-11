@@ -27,10 +27,67 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e:
+  # Build frontend + SFU once; shards only restore artifacts (no yarn/bench rebuild).
+  prepare:
     runs-on: ubuntu-latest
-    # Weight-balanced project shards (see playwright.config.ts) — not --shard=N/M,
-    # which splits by test index and piles media/e2ee on one runner.
+    name: Prepare build artifacts
+    timeout-minutes: 30
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
+
+      - name: Cache yarn
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Build Suite frontend
+        run: |
+          yarn install --frozen-lockfile --non-interactive
+          yarn build
+        env:
+          CI: "Yes"
+
+      - name: Build SFU Server
+        working-directory: ${{ github.workspace }}/suite/meet/sfu-server
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
+
+      - name: Upload frontend assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-e2e-frontend
+          path: suite/public/frontend/
+          retention-days: 1
+          compression-level: 6
+
+      - name: Upload SFU dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-e2e-sfu-dist
+          path: suite/meet/sfu-server/dist/
+          retention-days: 1
+          compression-level: 6
+
+  e2e:
+    needs: prepare
+    runs-on: ubuntu-latest
+    # Weight-balanced project shards (see playwright.config.ts).
     # workers stay at 1 inside each shard (multi-worker caused DB deadlocks).
     strategy:
       fail-fast: false
@@ -115,7 +172,7 @@ jobs:
             bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
           fi
 
-      - name: Install Suite
+      - name: Install Suite (no frontend rebuild)
         working-directory: /home/runner/frappe-bench
         run: |
           rm -rf apps/suite sites/meet.test sites/assets/suite
@@ -124,13 +181,21 @@ jobs:
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin meet.test
           bench --site meet.test install-app suite
-          cd apps/suite
-          yarn install --frozen-lockfile --non-interactive
-          yarn build
-          cd /home/runner/frappe-bench
-          bench build
         env:
           CI: "Yes"
+
+      - name: Download frontend assets
+        uses: actions/download-artifact@v4
+        with:
+          name: meet-e2e-frontend
+          path: /home/runner/frappe-bench/apps/suite/suite/public/frontend
+
+      - name: Link assets (bench build only)
+        working-directory: /home/runner/frappe-bench
+        run: |
+          test -f apps/suite/suite/public/frontend/index.html
+          # Copies app public/ into sites/assets — no yarn/vite rebuild.
+          bench build --app suite
 
       - name: Configure Site for E2E
         working-directory: /home/runner/frappe-bench
@@ -142,11 +207,17 @@ jobs:
           bench --site meet.test set-config allow_tests true
           bench --site meet.test set-config host_name "http://meet.test:8000"
 
-      - name: Build SFU Server
+      - name: Download SFU dist
+        uses: actions/download-artifact@v4
+        with:
+          name: meet-e2e-sfu-dist
+          path: ${{ github.workspace }}/suite/meet/sfu-server/dist
+
+      - name: Install SFU runtime deps
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
         run: |
           yarn install --frozen-lockfile
-          yarn build
+          test -f dist/sfu-server/src/server.js
 
       - name: Install E2E Dependencies
         working-directory: ${{ github.workspace }}/suite/meet/e2e
