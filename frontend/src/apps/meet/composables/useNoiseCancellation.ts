@@ -1,7 +1,7 @@
 import {
 	createNoiseSuppressionAudioWorklet,
 	type NoiseSuppressionAudioWorkletHandle,
-} from "@workadventure/noise-suppression/audio-worklet";
+} from "@/shims/noise-suppression-audio-worklet";
 import { onUnmounted, type Ref, ref } from "vue";
 
 const DTLN_SAMPLE_RATE = 16000;
