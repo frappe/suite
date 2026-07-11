@@ -28,9 +28,11 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 		}
 	});
 
-	// Single poll: live track + enough decoded media to prove remote video works.
-	// readyState >= 2 (HAVE_CURRENT_DATA) is enough; requiring 4 (HAVE_ENOUGH_DATA)
-	// is flaky under CI load even when frames are clearly rendering.
+	// Live track + evidence of actual decode/playback.
+	// Do not treat videoWidth/Height alone as success — browsers can set those from
+	// SDP/track metadata (HAVE_METADATA) before any frame is decoded.
+	// readyState >= 2 is HAVE_CURRENT_DATA (frame data for the current position);
+	// requiring 4 (HAVE_ENOUGH_DATA) is flaky under CI load.
 	await expect
 		.poll(
 			async () =>
@@ -40,17 +42,18 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 					const stream = videoEl.srcObject as MediaStream | null;
 					const videoTrack = stream?.getVideoTracks()[0] ?? null;
 					const decodedFrames = quality?.totalVideoFrames ?? 0;
-					const hasPixels = videoEl.videoWidth > 0 && videoEl.videoHeight > 0;
-					const hasPlayback =
-						videoEl.currentTime > 0 || decodedFrames > 0 || hasPixels;
+					// currentTime advancing or decoded frames — not dimensions alone.
+					const hasDecodedPlayback =
+						decodedFrames > 0 || videoEl.currentTime > 0;
 					return {
+						currentTime: videoEl.currentTime,
 						decodedFrames,
-						hasPlayback,
+						hasDecodedPlayback,
 						height: videoEl.videoHeight,
 						ok:
 							videoTrack?.readyState === "live" &&
 							videoEl.readyState >= 2 &&
-							hasPlayback,
+							hasDecodedPlayback,
 						readyState: videoEl.readyState,
 						trackState: videoTrack?.readyState ?? null,
 						width: videoEl.videoWidth,
