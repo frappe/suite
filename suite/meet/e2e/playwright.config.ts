@@ -3,31 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 const isCI = !!process.env.CI;
 
-const chromiumUse = {
-	...devices["Desktop Chrome"],
-	channel: "chrome" as const,
-	launchOptions: {
-		args: [
-			"--use-fake-ui-for-media-stream",
-			// Chrome's built-in fake camera/mic (do NOT override getUserMedia).
-			"--use-fake-device-for-media-stream",
-			"--disable-background-timer-throttling",
-			"--disable-backgrounding-occluded-windows",
-			"--disable-renderer-backgrounding",
-			"--disable-audio-track-processing",
-			"--disable-webrtc-apm-in-audio-service",
-			"--allow-insecure-localhost",
-			"--autoplay-policy=no-user-gesture-required",
-			`--unsafely-treat-insecure-origin-as-secure=${baseURL}`,
-		],
-	},
-	permissions: ["camera", "microphone"],
-};
-
 export default defineConfig({
 	testDir: "./specs",
-	// CI: one worker per job; parallelize across GH Actions with --shard=N/M
-	// so every specs/*.ts file is always included (no hardcoded allow-list).
+	// CI: one worker per job; --shard=N/M on GH splits the suite automatically.
 	fullyParallel: !isCI,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,
@@ -57,7 +35,20 @@ export default defineConfig({
 	projects: [
 		{
 			name: "chromium",
-			use: chromiumUse,
+			use: {
+				...devices["Desktop Chrome"],
+				channel: "chrome",
+				launchOptions: {
+					args: [
+						"--use-fake-ui-for-media-stream",
+						"--use-fake-device-for-media-stream",
+						"--allow-insecure-localhost",
+						"--autoplay-policy=no-user-gesture-required",
+						`--unsafely-treat-insecure-origin-as-secure=${baseURL}`,
+					],
+				},
+				permissions: ["camera", "microphone"],
+			},
 		},
 	],
 	globalSetup: "./global-setup.ts",

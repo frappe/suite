@@ -102,10 +102,7 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 }
 
 test.describe("E2EE", () => {
-	// Enable E2EE after both peers already have media. Turning encryption on
-	// before the guest joins often leaves the host publisher without decodable
-	// frames on CI (guest sees avatar only). Mid-call enable matches real use
-	// and is what the heavy coverage suite already exercises locally.
+	// Join first so media is healthy, then enable E2EE (avoids host-only avatar on CI).
 	test("participants keep video after E2EE is enabled", async ({
 		hostPage,
 		createMeeting,
