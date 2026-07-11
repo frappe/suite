@@ -11,7 +11,7 @@ import type {
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
 import { waitForE2EEContextReady } from "../media/E2EEContextReady";
-import type { SFUClient } from "../SFUClient";
+import type { ConnectionDetails, SFUClient } from "../SFUClient";
 import type { SFUMediaManager } from "./SFUMediaManager";
 import type { SFURecoveryManager } from "./SFURecoveryManager";
 
@@ -99,13 +99,20 @@ export class SFUConnectionManager {
 		this.eventHandlers = eventHandlers || {};
 	}
 
-	async connect(authToken: string | null = null): Promise<boolean> {
+	async connect(
+		authToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
+	): Promise<boolean> {
 		if (this.isConnected) {
 			return true;
 		}
 
 		try {
-			await this.sfuClient.connect(this.meetingId ?? "", authToken);
+			await this.sfuClient.connect(
+				this.meetingId ?? "",
+				authToken,
+				prefetchedDetails,
+			);
 			this.isConnected = true;
 
 			this.transportManager.initialize(this.sfuClient);

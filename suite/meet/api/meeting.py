@@ -76,6 +76,50 @@ def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 	return fullname, avatar, is_host, is_cohost
 
 
+def _build_sfu_connection_details(meeting: "SaeMeeting", user: str) -> dict:
+	"""SFU JWT + endpoint payload for a signed-in user.
+
+	Callers must enforce membership / join ACL first. Mints a full-scope media
+	token from server-side identity only (never client-supplied claims).
+	"""
+	if not user or user == "Guest":
+		frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+
+	sfu_config = get_sfu_config()
+	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
+	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
+
+	auth_token = _generate_sfu_token(
+		user_id=user,
+		meeting_id=meeting.name,
+		scope="full",
+		user_name=user_fullname,
+		user_avatar=user_avatar,
+		is_host=is_host,
+		is_cohost=is_cohost,
+		e2ee_required=e2ee_required,
+	)
+
+	return {
+		"sfu_url": sfu_config["sfu_server_url"],
+		"sfu_port": sfu_config["sfu_server_port"],
+		"auth_token": auth_token,
+		"user_id": user,
+		"meeting_id": meeting.name,
+		"is_host": is_host,
+		"is_cohost": is_cohost,
+		"codec_strategy": _get_codec_strategy(),
+		"e2ee_required": e2ee_required,
+		"user_data": {
+			"name": user_fullname,
+			"email": user,
+			"avatar": user_avatar,
+		},
+		"expires_in": 3600,
+		"host_only_chat": bool(meeting.host_only_chat),
+	}
+
+
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
 def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
@@ -113,39 +157,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 	if not meeting.can_join(user):
 		frappe.throw(_("Access denied"), frappe.PermissionError)
 
-	sfu_config = get_sfu_config()
-
-	user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
-	e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
-
-	auth_token = _generate_sfu_token(
-		user_id=user,
-		meeting_id=meeting_id,
-		user_name=user_fullname,
-		user_avatar=user_avatar,
-		is_host=is_host,
-		is_cohost=is_cohost,
-		e2ee_required=e2ee_required,
-	)
-
-	return {
-		"sfu_url": sfu_config["sfu_server_url"],
-		"sfu_port": sfu_config["sfu_server_port"],
-		"auth_token": auth_token,
-		"user_id": user,
-		"meeting_id": meeting_id,
-		"is_host": is_host,
-		"is_cohost": is_cohost,
-		"codec_strategy": _get_codec_strategy(),
-		"e2ee_required": e2ee_required,
-		"user_data": {
-			"name": user_fullname,
-			"email": user,
-			"avatar": user_avatar,
-		},
-		"expires_in": 3600,
-		"host_only_chat": bool(meeting.host_only_chat),
-	}
+	return _build_sfu_connection_details(meeting, user)
 
 
 @frappe.whitelist()
@@ -189,15 +201,17 @@ def join_meeting(meeting_id: str) -> dict:
 					},
 				}
 			elif result.get("status") == "joined":
-				is_host = meeting.owner == frappe.session.user
-				is_cohost = meeting.is_host_or_cohost(frappe.session.user) and not is_host
+				user = frappe.session.user
+				# Full media token only after membership is real (not lobby).
+				if user not in meeting.get_members():
+					frappe.throw(_("Not a meeting member"), frappe.PermissionError)
+				# Bundle SFU JWT so the client can skip a second
+				# get_sfu_connection_details round-trip on the critical path.
+				details = _build_sfu_connection_details(meeting, user)
 				return {
 					"status": "joined",
-					"meeting_id": meeting_id,
 					"message": result.get("message", "Successfully joined meeting"),
-					"is_host": is_host,
-					"is_cohost": is_cohost,
-					"host_only_chat": bool(meeting.host_only_chat),
+					**details,
 				}
 	else:
 		frappe.throw(_("Access denied"))
@@ -405,6 +419,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 				"auth_token": auth_token,
 				"sfu_url": sfu_config["sfu_server_url"],
 				"sfu_port": sfu_config["sfu_server_port"],
+				"codec_strategy": _get_codec_strategy(),
 				"host_only_chat": bool(meeting.host_only_chat),
 				"e2ee_required": e2ee_required,
 				"message": "Successfully joined meeting",
@@ -442,6 +457,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 		"auth_token": auth_token,
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
+		"codec_strategy": _get_codec_strategy(),
 		"host_only_chat": bool(meeting.host_only_chat),
 		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",
@@ -493,6 +509,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
 		"auth_token": auth_token,
 		"sfu_url": sfu_config["sfu_server_url"],
 		"sfu_port": sfu_config["sfu_server_port"],
+		"codec_strategy": _get_codec_strategy(),
 		"host_only_chat": bool(meeting.host_only_chat),
 		"e2ee_required": e2ee_required,
 		"message": "Successfully joined meeting",

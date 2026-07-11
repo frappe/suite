@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SFUClient } from "../SFUClient";
+import {
+	connectionDetailsFromJoinPayload,
+	SFUClient,
+} from "../SFUClient";
 
 const mockSignalChannel = () => ({
 	connect: vi.fn(),
@@ -344,7 +347,88 @@ describe("scheduleTokenRefresh", () => {
 	});
 });
 
+describe("connectionDetailsFromJoinPayload", () => {
+	it("rejects waiting-room / lobby_token payloads", () => {
+		expect(
+			connectionDetailsFromJoinPayload({
+				status: "waiting_for_approval",
+				lobby_token: "preview-only",
+				sfu_url: "https://sfu.example.com",
+				meeting_id: "meet-1",
+			}),
+		).toBeNull();
+	});
+
+	it("maps a valid joined payload", () => {
+		const details = connectionDetailsFromJoinPayload(
+			{
+				status: "joined",
+				auth_token: "tok",
+				sfu_url: "https://sfu.example.com",
+				sfu_port: "443",
+				meeting_id: "meet-1",
+				user_id: "u1",
+				is_host: true,
+			},
+			{ expectedMeetingId: "meet-1" },
+		);
+		expect(details?.authToken).toBe("tok");
+		expect(details?.userId).toBe("u1");
+		expect(details?.isHost).toBe(true);
+	});
+});
+
 describe("getConnectionDetails", () => {
+	it("uses prefetched join payload without an extra API call", async () => {
+		const client = createClient();
+		const details = await client.getConnectionDetails("meet-1", null, {
+			authToken: "pre-tok",
+			meetingId: "meet-1",
+			userId: "usr-1",
+			sfuUrl: "https://sfu.example.com",
+			sfuPort: "443",
+			tokenExpiresAt: Date.now() + 3600_000,
+			codecStrategy: "svc",
+			e2eeRequired: false,
+			isHost: true,
+			isCohost: false,
+		});
+		expect(details.authToken).toBe("pre-tok");
+		expect(details.isHost).toBe(true);
+		expect(frappeRequest).not.toHaveBeenCalled();
+	});
+
+	it("ignores prefetched details for a different meeting id", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "tok-1",
+			meeting_id: "meet-1",
+			user_id: "usr-1",
+			sfu_url: "https://sfu.example.com",
+			sfu_port: "443",
+			user_data: { name: "Alice" },
+			expires_in: 3600,
+			codec_strategy: "svc",
+			e2ee_required: false,
+			is_host: false,
+			is_cohost: false,
+		});
+		const client = createClient();
+		const details = await client.getConnectionDetails("meet-1", null, {
+			authToken: "wrong-room-tok",
+			meetingId: "meet-OTHER",
+			userId: "usr-1",
+			sfuUrl: "https://sfu.example.com",
+			sfuPort: "443",
+			tokenExpiresAt: Date.now() + 3600_000,
+			codecStrategy: "svc",
+			e2eeRequired: false,
+			isHost: false,
+			isCohost: false,
+		});
+		expect(details.authToken).toBe("tok-1");
+		expect(frappeRequest).toHaveBeenCalled();
+	});
+
 	it("fetches regular connection details", async () => {
 		vi.mocked(frappeRequest).mockResolvedValue({
 			auth_token: "tok-1",

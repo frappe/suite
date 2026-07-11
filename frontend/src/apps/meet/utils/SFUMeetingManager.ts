@@ -12,7 +12,7 @@ import { ConsumerManager } from "./media/ConsumerManager";
 import { ParticipantManager } from "./media/ParticipantManager";
 import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
-import type { SFUClient } from "./SFUClient";
+import type { ConnectionDetails, SFUClient } from "./SFUClient";
 import {
 	SFUConnectionManager,
 	type SFUEventHandlers,
@@ -82,8 +82,11 @@ export class SFUMeetingManager {
 		);
 	}
 
-	async connect(authToken: string | null = null): Promise<boolean> {
-		return this.connectionManager.connect(authToken);
+	async connect(
+		authToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
+	): Promise<boolean> {
+		return this.connectionManager.connect(authToken, prefetchedDetails);
 	}
 
 	async joinRoom(userData: unknown, mediaState: unknown): Promise<boolean> {

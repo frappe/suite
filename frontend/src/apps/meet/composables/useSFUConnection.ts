@@ -12,7 +12,11 @@ import audioNotificationManager from "../utils/audioNotifications";
 import { getErrorMessage } from "../utils/error";
 import { waitForE2EEContextReady } from "../utils/media/E2EEContextReady";
 import { SocketIOSignalChannel } from "../utils/media/SignalChannel";
-import { SFUClient } from "../utils/SFUClient";
+import {
+	type ConnectionDetails,
+	connectionDetailsFromJoinPayload,
+	SFUClient,
+} from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { useChatStore } from "./useChatStore";
 import type { ConnectionState } from "./useConnectionState";
@@ -297,6 +301,7 @@ export function useSFUConnection(deps: {
 		guestName: string | null = null,
 		initialIsHost = false,
 		initialIsCohost = false,
+		prefetchedDetails: ConnectionDetails | null = null,
 	) => {
 		setupCancelled = false;
 		let isHost = initialIsHost;
@@ -329,7 +334,10 @@ export function useSFUConnection(deps: {
 			// receive their host envelope immediately after sending their hello.
 			setupFrappeRealtimeEventListeners();
 
-			await manager.connect(connectionState.guestAuthToken);
+			await manager.connect(
+				connectionState.guestAuthToken,
+				prefetchedDetails,
+			);
 			if (await stopIfCancelled()) return;
 			connectionState.codecStrategy = sfuClient.getCodecStrategy() || "svc";
 			if (!guestName) {
@@ -503,14 +511,24 @@ export function useSFUConnection(deps: {
 							.host_only_chat;
 					}
 
-					connectionState.guestAuthToken = (response as Record<string, unknown>)
-						.auth_token as string;
-					connectionState.guestSfuUrl =
-						((response as Record<string, unknown>).sfu_url as string) || null;
+					const approved = response as Record<string, unknown>;
+					connectionState.guestAuthToken = approved.auth_token as string;
+					connectionState.guestSfuUrl = (approved.sfu_url as string) || null;
 					connectionState.guestSfuPort =
-						((response as Record<string, unknown>).sfu_port as string) || null;
+						(approved.sfu_port as string) || null;
 
-					await setupSFUConnection(resolvedGuestName);
+					const prefetched = connectionDetailsFromJoinPayload(approved, {
+						guestAuthToken: approved.auth_token as string,
+						guestId,
+						guestName: resolvedGuestName,
+						expectedMeetingId: meetingId,
+					});
+					await setupSFUConnection(
+						resolvedGuestName,
+						false,
+						false,
+						prefetched,
+					);
 
 					connectionState.isInPreview = false;
 				} else {
@@ -596,10 +614,15 @@ export function useSFUConnection(deps: {
 				});
 
 				if (sfuResult) {
+					const details = sfuResult as Record<string, unknown>;
+					const prefetched = connectionDetailsFromJoinPayload(details, {
+						expectedMeetingId: meetingId,
+					});
 					await setupSFUConnection(
 						null,
-						(sfuResult as Record<string, unknown>).is_host as boolean,
-						(sfuResult as Record<string, unknown>).is_cohost as boolean,
+						details.is_host as boolean,
+						details.is_cohost as boolean,
+						prefetched,
 					);
 					connectionState.isInPreview = false;
 				} else {
@@ -716,7 +739,13 @@ export function useSFUConnection(deps: {
 			// Show meeting shell immediately; SFU setup continues in the background.
 			connectionState.isInPreview = false;
 			connectionState.isConnecting = true;
-			await setupSFUConnection(guestName, false, false);
+			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
+				guestAuthToken: connectionState.guestAuthToken,
+				guestId: connectionState.guestId,
+				guestName,
+				expectedMeetingId: meetingId,
+			});
+			await setupSFUConnection(guestName, false, false, prefetched);
 			setupFrappeRealtimeEventListeners();
 			connectionState.isConnecting = false;
 		} catch (error) {
@@ -756,15 +785,19 @@ export function useSFUConnection(deps: {
 				return;
 			}
 
+			if (joinResult?.host_only_chat !== undefined) {
+				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
+			}
+
+			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
+				expectedMeetingId: meetingId,
+			});
 			await setupSFUConnection(
 				null,
 				(joinResult?.is_host || false) as boolean,
 				(joinResult?.is_cohost || false) as boolean,
+				prefetched,
 			);
-
-			if (joinResult?.host_only_chat !== undefined) {
-				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
-			}
 
 			setupFrappeRealtimeEventListeners();
 			connectionState.isConnecting = false;
