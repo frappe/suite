@@ -1,13 +1,21 @@
-import { test, expect, joinFromPreview } from "../fixtures/test";
+import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
 test.describe("Chat", () => {
-	test("messages are delivered between host and guest", async ({ hostPage, meetingId, createParticipant }) => {
+	test("messages are delivered between host and guest", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const message = `hello-${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, `Guest Chat ${test.info().parallelIndex}`);
+		await joinHostAndGuest(
+			hostPage,
+			guest,
+			meetingId,
+			`Guest Chat ${test.info().parallelIndex}`,
+		);
 
 		await hostPage.getByTestId("toolbar-chat").click();
 		await hostPage.getByTestId("chat-input-wrapper").click();
@@ -22,15 +30,19 @@ test.describe("Chat", () => {
 
 	test("unread badge appears when chat is closed and clears when opened", async ({
 		hostPage,
-		meetingId,
+		createMeeting,
 		createParticipant,
 	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const message = `unread-${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, `Guest Unread ${test.info().parallelIndex}`);
+		await joinHostAndGuest(
+			hostPage,
+			guest,
+			meetingId,
+			`Guest Unread ${test.info().parallelIndex}`,
+		);
 
 		const chatButton = hostPage.getByTestId("toolbar-chat");
 		const unreadBadge = hostPage.getByTestId("toolbar-chat-unread");

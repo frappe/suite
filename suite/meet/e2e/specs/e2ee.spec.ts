@@ -1,5 +1,11 @@
 import type { Page } from "@playwright/test";
-import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
+import {
+	test,
+	expect,
+	joinFromPreview,
+	joinHostAndGuest,
+	appUrl,
+} from "../fixtures/test";
 import {
 	expectRemoteVideoReceiving,
 	expectVideoReceiving,
@@ -118,9 +124,7 @@ test.describe("E2EE", () => {
 		const guestName = "Guest Convert E2EE";
 		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
@@ -142,9 +146,7 @@ test.describe("E2EE", () => {
 		const guestName = "Guest Rejoin E2EE";
 		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
@@ -185,9 +187,7 @@ test.describe("E2EE", () => {
 		const guestName = "Guest Reconnect E2EE";
 		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
@@ -226,9 +226,7 @@ test.describe("E2EE", () => {
 		const guestName = "Guest Host Rejoin E2EE";
 		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
@@ -273,9 +271,7 @@ test.describe("E2EE", () => {
 		const guestName = "Guest Screen E2EE";
 		const guest = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await expectRemoteVideoReceiving(guest.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestName);
@@ -306,9 +302,7 @@ test.describe("E2EE", () => {
 		const guestB = await createParticipant();
 		const guestC = await createParticipant();
 
-		await hostPage.goto(appUrl(`/meet/${meetingId}`));
-		await joinFromPreview(hostPage);
-		await guestA.joinAsGuest(meetingId, guestAName);
+		await joinHostAndGuest(hostPage, guestA, meetingId, guestAName);
 
 		await expectRemoteVideoReceiving(guestA.page, "Administrator");
 		await expectRemoteVideoReceiving(hostPage, guestAName);

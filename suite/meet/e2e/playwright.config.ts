@@ -1,20 +1,23 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
+const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	fullyParallel: false,
-	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
-	workers: 1,
-	maxFailures: process.env.CI ? 3 : undefined,
+	// Per-test meetings keep rooms isolated so workers can run in parallel.
+	fullyParallel: true,
+	forbidOnly: isCI,
+	retries: isCI ? 2 : 0,
+	// Two concurrent WebRTC meetings is the practical limit on ubuntu-latest.
+	workers: isCI ? 2 : undefined,
+	maxFailures: isCI ? 3 : undefined,
 	// Media/WebRTC join + decode polls need headroom on GitHub runners.
-	timeout: process.env.CI ? 90_000 : 60_000,
+	timeout: isCI ? 90_000 : 60_000,
 	expect: {
 		timeout: 10_000,
 	},
-	reporter: process.env.CI
+	reporter: isCI
 		? [
 				["list"],
 				["github"],

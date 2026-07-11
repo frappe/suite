@@ -1,15 +1,26 @@
-import { test, expect, joinFromPreview } from "../fixtures/test";
+import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
 import { expectRemoteVideoReceiving } from "../helpers/media";
 
 test.describe("Multi participant", () => {
-	test("host and two guests see the same meeting", async ({ hostPage, meetingId, createParticipant }) => {
+	test("host and two guests see the same meeting", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guestOne = await createParticipant();
 		const guestTwo = await createParticipant();
+		const guestOneName = `Guest One ${test.info().parallelIndex}`;
+		const guestTwoName = `Guest Two ${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guestOne.joinAsGuest(meetingId, `Guest One ${test.info().parallelIndex}`);
-		await guestTwo.joinAsGuest(meetingId, `Guest Two ${test.info().parallelIndex}`);
+		await Promise.all([
+			(async () => {
+				await hostPage.goto(appUrl(`/meet/${meetingId}`));
+				await joinFromPreview(hostPage);
+			})(),
+			guestOne.joinAsGuest(meetingId, guestOneName),
+			guestTwo.joinAsGuest(meetingId, guestTwoName),
+		]);
 
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(3);
 		await Promise.all([
