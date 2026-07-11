@@ -98,6 +98,7 @@ export function useSFUConnection(deps: {
 	const joiningInProgress = shallowRef(false);
 	const hasShownE2EEKeyMismatchToast = shallowRef(false);
 	const isCurrentTabHost = shallowRef(false);
+	let setupCancelled = false;
 
 	const e2eeHandshake: E2EEConnectionHandshake = useE2EEConnectionHandshake({
 		meetingId,
@@ -297,6 +298,7 @@ export function useSFUConnection(deps: {
 		initialIsHost = false,
 		initialIsCohost = false,
 	) => {
+		setupCancelled = false;
 		let isHost = initialIsHost;
 		let isCohost = initialIsCohost;
 		isCurrentTabHost.value = isHost;
@@ -314,12 +316,21 @@ export function useSFUConnection(deps: {
 				eventHandlers: createSFUEventHandlers(),
 			});
 			sfuManager.value = manager;
+			const stopIfCancelled = async () => {
+				if (!setupCancelled) return false;
+				await manager.cleanup();
+				if (sfuManager.value === manager) {
+					sfuManager.value = null;
+				}
+				return true;
+			};
 
 			// Register SFU signaling handlers before connect/join. E2EE joiners can
 			// receive their host envelope immediately after sending their hello.
 			setupFrappeRealtimeEventListeners();
 
 			await manager.connect(connectionState.guestAuthToken);
+			if (await stopIfCancelled()) return;
 			connectionState.codecStrategy = sfuClient.getCodecStrategy() || "svc";
 			if (!guestName) {
 				const effectiveIsHost = sfuClient.connectionDetails.isHost || isHost;
@@ -364,12 +375,16 @@ export function useSFUConnection(deps: {
 				audio_enabled: mediaState.isMicOn,
 				video_enabled: mediaState.isCameraOn,
 			});
+			if (await stopIfCancelled()) return;
 			if (sfuClient.isE2EERequired()) {
 				await waitForE2EEContextReady(0);
+				if (await stopIfCancelled()) return;
 			}
 
 			await manager.initializeDevice();
+			if (await stopIfCancelled()) return;
 			await manager.createReceiveTransport();
+			if (await stopIfCancelled()) return;
 
 			if (mediaState.localStream) {
 				try {
@@ -388,6 +403,7 @@ export function useSFUConnection(deps: {
 						publishVideo: mediaState.isCameraOn,
 						publishAudio: mediaState.isMicOn,
 					});
+					if (await stopIfCancelled()) return;
 				} catch (error) {
 					console.warn(
 						"Media publishing failed, continuing without media:",
@@ -397,6 +413,7 @@ export function useSFUConnection(deps: {
 			}
 
 			await manager.setupExistingParticipants();
+			if (await stopIfCancelled()) return;
 
 			connectionState.isSetupComplete = true;
 
@@ -463,6 +480,7 @@ export function useSFUConnection(deps: {
 			stopGuestApprovalListener();
 
 			lobbyStore.isWaitingForApproval = false;
+			connectionState.isConnecting = true;
 
 			try {
 				const resolvedGuestName =
@@ -495,7 +513,6 @@ export function useSFUConnection(deps: {
 					await setupSFUConnection(resolvedGuestName);
 
 					connectionState.isInPreview = false;
-					connectionState.isConnecting = false;
 				} else {
 					console.error(
 						"Failed to get connection details after approval:",
@@ -510,6 +527,8 @@ export function useSFUConnection(deps: {
 					error,
 				);
 				connectionState.connectionError = "Failed to connect after approval";
+			} finally {
+				connectionState.isConnecting = false;
 			}
 		}
 
@@ -694,10 +713,11 @@ export function useSFUConnection(deps: {
 				return;
 			}
 
+			// Show meeting shell immediately; SFU setup continues in the background.
+			connectionState.isInPreview = false;
 			connectionState.isConnecting = true;
 			await setupSFUConnection(guestName, false, false);
 			setupFrappeRealtimeEventListeners();
-			connectionState.isInPreview = false;
 			connectionState.isConnecting = false;
 		} catch (error) {
 			console.error("Failed to complete guest join:", error);
@@ -715,6 +735,8 @@ export function useSFUConnection(deps: {
 			joiningInProgress.value = true;
 			connectionState.isConnecting = true;
 			connectionState.connectionError = null;
+			// Optimistic UI: leave preview shell while join/SFU work runs.
+			connectionState.isInPreview = false;
 
 			connectionState.guestAuthToken = null;
 			connectionState.guestSfuUrl = null;
@@ -729,7 +751,6 @@ export function useSFUConnection(deps: {
 
 			if (joinResult.status === "waiting_for_approval") {
 				lobbyStore.isWaitingForApproval = true;
-				connectionState.isInPreview = false;
 				connectionState.isConnecting = false;
 				setupFrappeRealtimeEventListeners();
 				return;
@@ -746,7 +767,6 @@ export function useSFUConnection(deps: {
 			}
 
 			setupFrappeRealtimeEventListeners();
-			connectionState.isInPreview = false;
 			connectionState.isConnecting = false;
 		} catch (error) {
 			console.error("Failed to join meeting:", error);
@@ -759,6 +779,7 @@ export function useSFUConnection(deps: {
 
 	const endCall = async () => {
 		try {
+			setupCancelled = true;
 			stopGuestApprovalListener();
 
 			if (activeSpeakerTimeout.value) {
@@ -782,6 +803,7 @@ export function useSFUConnection(deps: {
 	};
 
 	onUnmounted(async () => {
+		setupCancelled = true;
 		hasShownE2EEKeyMismatchToast.value = false;
 
 		if (activeSpeakerTimeout.value) {
