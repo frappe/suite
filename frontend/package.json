@@ -10,7 +10,6 @@
     "preview": "vite preview",
     "test": "vitest run"
   },
-  "comment": "Minimal foundation deps only — enough to build the shell+router+stubs (the Phase 5 foundation gate). The full 94+42 union merged from the 7 source apps is preserved in package.union.json; each per-app port re-adds its real deps from there.",
   "dependencies": {
     "@floating-ui/dom": "^1.7.4",
     "@headlessui-float/vue": "^0.13.3",
