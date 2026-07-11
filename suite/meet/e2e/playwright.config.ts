@@ -5,9 +5,9 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	// Serial on CI: 2 workers caused MariaDB deadlocks on meeting create, 500s,
-	// and WebRTC/media starvation on ubuntu-latest. Keep per-test isolation so
-	// workers can be re-enabled later for non-media shards.
+	// CI runs serially *within* each GH Actions shard (--shard=N/3). Multiple
+	// Playwright workers on one runner caused MariaDB deadlocks and media
+	// starvation; sharding spreads load across fresh runners instead.
 	fullyParallel: !isCI,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,

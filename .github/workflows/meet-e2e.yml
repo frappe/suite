@@ -29,7 +29,13 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    name: E2E Tests
+    # Fresh runner per shard keeps WebRTC/media tests from fighting accumulated load.
+    # workers stay at 1 inside each shard (multi-worker caused DB deadlocks).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    name: E2E Tests (${{ matrix.shard }}/3)
     timeout-minutes: 60
 
     services:
@@ -171,12 +177,12 @@ jobs:
           HOST: 0.0.0.0
           JWT_SECRET: e2e-test-secret-key-12345
           WEBRTC_ANNOUNCED_IP: 127.0.0.1
-          # One Playwright worker in CI; single mediasoup worker is enough.
+          # One Playwright worker per shard; single mediasoup worker is enough.
           MEDIASOUP_NUM_WORKERS: 1
 
       - name: Run E2E Tests
         working-directory: ${{ github.workspace }}/suite/meet/e2e
-        run: yarn test
+        run: yarn test --shard=${{ matrix.shard }}/3
         env:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
@@ -186,9 +192,10 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: meet-playwright-report
+          name: meet-playwright-report-shard-${{ matrix.shard }}
           path: |
             suite/meet/e2e/playwright-report/
             suite/meet/e2e/test-results/
+            suite/meet/e2e/results.xml
           compression-level: 1
           retention-days: 7
