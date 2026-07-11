@@ -29,13 +29,14 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    # Fresh runner per shard keeps WebRTC/media tests from fighting accumulated load.
+    # Weight-balanced project shards (see playwright.config.ts) — not --shard=N/M,
+    # which splits by test index and piles media/e2ee on one runner.
     # workers stay at 1 inside each shard (multi-worker caused DB deadlocks).
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    name: E2E Tests (${{ matrix.shard }}/3)
+    name: E2E Tests (shard-${{ matrix.shard }})
     timeout-minutes: 60
 
     services:
@@ -182,7 +183,7 @@ jobs:
 
       - name: Run E2E Tests
         working-directory: ${{ github.workspace }}/suite/meet/e2e
-        run: yarn test --shard=${{ matrix.shard }}/3
+        run: yarn test --project=shard-${{ matrix.shard }}
         env:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
