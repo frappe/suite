@@ -70,7 +70,12 @@ function addModuleOnce(
   }
   let pending = byUrl.get(moduleUrl)
   if (pending) return pending
-  pending = context.audioWorklet.addModule(moduleUrl)
+  // Drop failed loads from the cache so a missing file / transient fetch
+  // error can succeed on a later call (e.g. after prebuild copies the asset).
+  pending = context.audioWorklet.addModule(moduleUrl).catch((err) => {
+    byUrl.delete(moduleUrl)
+    throw err
+  })
   byUrl.set(moduleUrl, pending)
   return pending
 }

@@ -26,8 +26,15 @@ const serveNoiseSuppressionAssets = () => {
     configureServer(server: { middlewares: { use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void } }) {
       server.middlewares.use('/noise-suppression', (req, res, next) => {
         const rel = (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
-        const filePath = path.join(noiseDir, rel)
-        if (!filePath.startsWith(noiseDir) || !fs.existsSync(filePath)) {
+        const filePath = path.resolve(noiseDir, rel)
+        // Directory containment (not string prefix): avoid
+        // /noise-suppression/../noise-suppression-sibling/secret.js escapes.
+        const relative = path.relative(noiseDir, filePath)
+        if (
+          relative.startsWith('..') ||
+          path.isAbsolute(relative) ||
+          !fs.existsSync(filePath)
+        ) {
           next()
           return
         }
