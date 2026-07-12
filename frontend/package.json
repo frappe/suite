@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/unlink-frappe-ui.mjs && vite --host",
-    "dev:frappe-ui": "node scripts/link-frappe-ui.mjs && vite --host",
+    "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
+    "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
+    "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
-  "comment": "Minimal foundation deps only — enough to build the shell+router+stubs (the Phase 5 foundation gate). The full 94+42 union merged from the 7 source apps is preserved in package.union.json; each per-app port re-adds its real deps from there.",
   "dependencies": {
     "@floating-ui/dom": "^1.7.4",
     "@headlessui-float/vue": "^0.13.3",
@@ -61,7 +62,7 @@
     "feather-icons": "^4.29.2",
     "file-saver": "^2.0.5",
     "firebase": "^12.2.1",
-    "frappe-ui": "^1.0.0-beta.19",
+    "frappe-ui": "1.0.0-beta.24",
     "fuzzysort": "^3.1.0",
     "gemoji": "^8.1.0",
     "hast-util-to-html": "^9.0.5",

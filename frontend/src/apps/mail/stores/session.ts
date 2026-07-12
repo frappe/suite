@@ -43,7 +43,6 @@ export const sessionStore = defineStore('mail-session', () => {
 		url: 'suite.mail.api.get_branding',
 		cache: 'brand',
 		auto: true,
-		onSuccess: (data) => (document.querySelector("link[rel='icon']").href = data.favicon),
 	})
 
 	// Called when a request fails with an auth/permission error: sign the user out (clear state,

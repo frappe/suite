@@ -1,14 +1,20 @@
 import * as mediasoup from 'mediasoup';
-import type { WorkerSettings } from '../types';
+import type { WebRTCServerOptions, WorkerSettings } from '../types';
 import { loggers } from '../utils/logger';
 
+interface WorkerEntry {
+	worker: mediasoup.types.Worker;
+	webRtcServer: mediasoup.types.WebRtcServer;
+}
+
 export class WorkerManager {
-	private workers: mediasoup.types.Worker[] = [];
+	private workers: WorkerEntry[] = [];
 	private nextWorkerIndex = 0;
 
 	async initialize(
 		numWorkers: number,
 		workerSettings: WorkerSettings,
+		webRtcServerOptions: WebRTCServerOptions,
 	): Promise<void> {
 		loggers.workerManager.info('Initializing Mediasoup workers');
 
@@ -35,27 +41,44 @@ export class WorkerManager {
 					});
 			});
 
-			this.workers.push(worker);
-			loggers.workerManager.info('Created worker %d/%d', i + 1, numWorkers);
+			const webRtcServer = await worker.createWebRtcServer({
+				listenInfos: [
+					{
+						protocol: 'udp',
+						ip: webRtcServerOptions.listenIp,
+						announcedAddress: webRtcServerOptions.announcedAddress,
+						port: webRtcServerOptions.basePort + i,
+					},
+				],
+			});
+
+			this.workers.push({ worker, webRtcServer });
+			loggers.workerManager.info(
+				'Created worker %d/%d with WebRtcServer on UDP port %d',
+				i + 1,
+				numWorkers,
+				webRtcServerOptions.basePort + i,
+			);
 		}
 
 		loggers.workerManager.info('Mediasoup workers initialized successfully');
 	}
 
-	getNextWorker(): mediasoup.types.Worker {
+	getNextWorker(): WorkerEntry {
 		const worker = this.workers[this.nextWorkerIndex];
 		this.nextWorkerIndex = (this.nextWorkerIndex + 1) % this.workers.length;
 		return worker;
 	}
 
-	getAllWorkers(): mediasoup.types.Worker[] {
+	getAllWorkers(): WorkerEntry[] {
 		return this.workers;
 	}
 
 	async cleanup(): Promise<void> {
 		loggers.workerManager.info('Closing %d workers', this.workers.length);
-		for (const worker of this.workers) {
+		for (const { worker, webRtcServer } of this.workers) {
 			try {
+				webRtcServer.close();
 				worker.close();
 			} catch (error) {
 				loggers.workerManager.warn(

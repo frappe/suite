@@ -71,7 +71,7 @@
 
 <script setup lang="ts">
 import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/icons'
 import { Check, Keyboard, User } from 'lucide-vue-next'
@@ -147,10 +147,10 @@ const menuItems = computed(() => [
 				label: __('Apps'),
 				submenu: apps.data?.map?.((app) => ({
 					component: h(
-						'a',
+						app.spa ? RouterLink : 'a',
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-							href: app.route,
+							...(app.spa ? { to: app.route } : { href: app.route }),
 						},
 						[
 							h('img', { src: app.logo, class: 'size-6' }),

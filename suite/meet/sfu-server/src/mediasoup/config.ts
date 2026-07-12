@@ -1,6 +1,7 @@
 import * as os from 'node:os';
 import type {
 	MediasoupConfig,
+	WebRTCServerOptions,
 	WebRTCTransportOptions,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -27,33 +28,41 @@ function getServerIP(): string {
 	return '127.0.0.1';
 }
 
-function buildListenIps(): Array<{ ip: string; announcedIp: string }> {
-	const baseListenIp = process.env.WEBRTC_LISTEN_IP || '0.0.0.0';
-	const announcedEnv = process.env.WEBRTC_ANNOUNCED_IP;
-	if (announcedEnv) {
-		const ips = Array.from(
-			new Set(
-				announcedEnv
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean),
-			),
-		);
-		if (ips.length === 0) {
-			loggers.config.warn(
-				'WEBRTC_ANNOUNCED_IP provided but empty after parsing; falling back to auto-detect',
-			);
-		} else {
-			loggers.config.info(
-				'Using announced IP list from env: %s',
-				ips.join(', '),
-			);
-			return ips.map((ip) => ({ ip: baseListenIp, announcedIp: ip }));
-		}
-	}
-	// Fallback single entry
-	return [{ ip: baseListenIp, announcedIp: getServerIP() }];
+function hasWildcardListenIp(): boolean {
+	return process.env.WEBRTC_LISTEN_IP?.trim() === '0.0.0.0';
 }
+
+function getAnnouncedAddress(listenIp: string): string {
+	if (hasWildcardListenIp() && process.env.NODE_ENV === 'development') {
+		loggers.config.warn(
+			'Ignoring WEBRTC_ANNOUNCED_IP in development because WEBRTC_LISTEN_IP=0.0.0.0 was replaced with %s',
+			listenIp,
+		);
+		return listenIp;
+	}
+
+	return process.env.WEBRTC_ANNOUNCED_IP?.trim() || getServerIP();
+}
+
+function getListenIp(): string {
+	const listenIp = process.env.WEBRTC_LISTEN_IP?.trim();
+	if (listenIp && listenIp !== '0.0.0.0') return listenIp;
+	if (hasWildcardListenIp()) {
+		loggers.config.warn(
+			'WEBRTC_LISTEN_IP=0.0.0.0 is not supported with WebRtcServer; auto-detecting a concrete interface IP',
+		);
+	}
+	if (process.env.NODE_ENV === 'development') return '127.0.0.1';
+	return getServerIP();
+}
+
+const listenIp = getListenIp();
+
+const webRtcServerOptions: WebRTCServerOptions = {
+	listenIp,
+	announcedAddress: getAnnouncedAddress(listenIp),
+	basePort: Number.parseInt(process.env.WEBRTC_SERVER_PORT || '40000', 10),
+};
 
 const mediaCodecs = [
 	{
@@ -103,29 +112,18 @@ const mediaCodecs = [
 ];
 
 const webRtcTransportOptions: WebRTCTransportOptions = {
-	listenIps: buildListenIps(),
-	enableUdp: true,
-	enableTcp: true,
-	preferUdp: true,
-	portRange: {
-		min: Number.parseInt(process.env.RTC_MIN_PORT || '40000', 10),
-		max: Number.parseInt(process.env.RTC_MAX_PORT || '49999', 10),
-	},
-	// Add additional WebRTC options for better connectivity
-	maxIncomingBitrate: 5000000,
-	maxOutgoingBitrate: 5000000,
+	enableTcp: false,
 	initialAvailableOutgoingBitrate: 2500000,
-	// Add ICE server configurations for NAT traversal
-	iceServers: [
-		{
-			urls: ['stun:stun.l.google.com:19302'],
-		},
-		{
-			urls: ['stun:global.stun.twilio.com:3478'],
-		},
-	],
-	iceTransportPolicy: 'all',
 };
+
+function resolveNumWorkers(): number {
+	const envVal = Number.parseInt(process.env.MEDIASOUP_NUM_WORKERS || '', 10);
+	if (!Number.isNaN(envVal) && envVal > 0) return envVal;
+	const cpuCount = os.cpus()?.length || 2;
+	return Math.max(1, cpuCount);
+}
+
+const numWorkers = resolveNumWorkers();
 
 const workerSettings: WorkerSettings = {
 	logLevel: (process.env.MEDIASOUP_WORKER_LOGLEVEL as WorkerLogLevel) || 'warn',
@@ -143,20 +141,14 @@ const workerSettings: WorkerSettings = {
 		'svc',
 		'sctp',
 	],
-	rtcMinPort: Number.parseInt(process.env.RTC_MIN_PORT || '40000', 10),
-	rtcMaxPort: Number.parseInt(process.env.RTC_MAX_PORT || '49999', 10),
+	rtcMinPort: webRtcServerOptions.basePort + numWorkers,
+	rtcMaxPort: webRtcServerOptions.basePort + numWorkers + 1000,
 };
 
-function resolveNumWorkers(): number {
-	const envVal = Number.parseInt(process.env.MEDIASOUP_NUM_WORKERS || '', 10);
-	if (!Number.isNaN(envVal) && envVal > 0) return envVal;
-	const cpuCount = os.cpus()?.length || 2;
-	return Math.max(1, cpuCount);
-}
-
 export const mediasoupConfig: MediasoupConfig = {
-	numWorkers: resolveNumWorkers(),
+	numWorkers,
 	worker: workerSettings,
 	router: { mediaCodecs },
 	webRtcTransport: webRtcTransportOptions,
+	webRtcServer: webRtcServerOptions,
 };

@@ -29,7 +29,13 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    name: E2E Tests
+    # Playwright --shard=N/M splits the suite; each job is self-contained.
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2, 3]
+        shardTotal: [3]
+    name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     timeout-minutes: 60
 
     services:
@@ -170,12 +176,13 @@ jobs:
           PORT: 3000
           HOST: 0.0.0.0
           JWT_SECRET: e2e-test-secret-key-12345
-          MEDIASOUP_ANNOUNCED_IP: 127.0.0.1
+          WEBRTC_LISTEN_IP: 127.0.0.1
+          WEBRTC_ANNOUNCED_IP: 127.0.0.1
           MEDIASOUP_NUM_WORKERS: 1
 
       - name: Run E2E Tests
         working-directory: ${{ github.workspace }}/suite/meet/e2e
-        run: yarn test
+        run: yarn test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
         env:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
@@ -185,9 +192,10 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: meet-playwright-report
+          name: meet-playwright-report-shard-${{ matrix.shardIndex }}
           path: |
             suite/meet/e2e/playwright-report/
             suite/meet/e2e/test-results/
+            suite/meet/e2e/results.xml
           compression-level: 1
           retention-days: 7

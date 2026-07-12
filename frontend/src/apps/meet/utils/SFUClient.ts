@@ -7,7 +7,7 @@ import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
 import { getE2EETransformCapability } from "./media/e2ee";
 import type { SignalChannel } from "./media/SignalChannel";
 
-interface ConnectionDetails {
+export interface ConnectionDetails {
 	authToken: string | null;
 	meetingId: string | null;
 	userId: string | null;
@@ -19,6 +19,100 @@ interface ConnectionDetails {
 	isHost: boolean;
 	isCohost: boolean;
 	userData?: Record<string, unknown>;
+}
+
+/**
+ * Map a join/API payload that already includes SFU fields into ConnectionDetails.
+ * Prefer this over a second Frappe round-trip when join_meeting already returned
+ * auth_token + sfu_url. Lobby-only payloads (lobby_token / waiting) return null.
+ */
+export function connectionDetailsFromJoinPayload(
+	payload: Record<string, unknown>,
+	options: {
+		guestAuthToken?: string | null;
+		guestId?: string | null;
+		guestName?: string | null;
+		expectedMeetingId?: string | null;
+	} = {},
+): ConnectionDetails | null {
+	if (payload.lobby_token && !payload.auth_token && !options.guestAuthToken) {
+		return null;
+	}
+	if (payload.status === "waiting_for_approval") {
+		return null;
+	}
+
+	const authToken =
+		(typeof payload.auth_token === "string" && payload.auth_token) ||
+		(typeof options.guestAuthToken === "string" && options.guestAuthToken) ||
+		null;
+	const sfuUrl =
+		typeof payload.sfu_url === "string" && payload.sfu_url
+			? payload.sfu_url
+			: null;
+	if (!authToken || !sfuUrl) {
+		return null;
+	}
+
+	const meetingId =
+		typeof payload.meeting_id === "string" ? payload.meeting_id : null;
+	if (
+		options.expectedMeetingId &&
+		meetingId &&
+		meetingId !== options.expectedMeetingId
+	) {
+		return null;
+	}
+
+	const expiresInSeconds =
+		typeof payload.expires_in === "number" && payload.expires_in > 0
+			? payload.expires_in
+			: 3600;
+
+	const isGuest = Boolean(
+		options.guestId ||
+			options.guestAuthToken ||
+			payload.guest_id ||
+			(payload.user_data as Record<string, unknown> | undefined)?.is_guest,
+	);
+
+	if (options.guestId) {
+		const payloadGuestId =
+			typeof payload.guest_id === "string" ? payload.guest_id : null;
+		if (payloadGuestId && payloadGuestId !== options.guestId) {
+			return null;
+		}
+	}
+
+	const userId = options.guestId
+		? options.guestId
+		: (typeof payload.user_id === "string" && payload.user_id) || null;
+
+	return {
+		authToken,
+		meetingId: meetingId || options.expectedMeetingId || null,
+		userId,
+		sfuUrl,
+		sfuPort:
+			payload.sfu_port != null && payload.sfu_port !== ""
+				? String(payload.sfu_port)
+				: null,
+		userData:
+			(payload.user_data as Record<string, unknown> | undefined) ||
+			(isGuest
+				? {
+						name: options.guestName || payload.guest_name || "Guest",
+						is_guest: true,
+					}
+				: undefined),
+		tokenExpiresAt: Date.now() + expiresInSeconds * 1000,
+		codecStrategy: normalizeCodecStrategy(
+			(payload.codec_strategy as string) || "svc",
+		),
+		e2eeRequired: Boolean(payload.e2ee_required),
+		isHost: Boolean(payload.is_host),
+		isCohost: Boolean(payload.is_cohost),
+	};
 }
 
 interface ConnectionStatus {
@@ -146,11 +240,13 @@ export class SFUClient {
 	async connect(
 		meetingId: string,
 		guestAuthToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
 	): Promise<boolean> {
 		if (this.connected) {
 			const connectionDetails = await this.getConnectionDetails(
 				meetingId,
 				guestAuthToken,
+				prefetchedDetails,
 			);
 			this.connectionDetails = connectionDetails;
 			this.signalChannel.updateAuth(connectionDetails.authToken ?? "");
@@ -162,6 +258,7 @@ export class SFUClient {
 			const connectionDetails = await this.getConnectionDetails(
 				meetingId,
 				guestAuthToken,
+				prefetchedDetails,
 			);
 			this.connectionDetails = connectionDetails;
 			this.scheduleTokenRefresh();
@@ -186,7 +283,20 @@ export class SFUClient {
 	async getConnectionDetails(
 		meetingId: string,
 		guestAuthToken: string | null = null,
+		prefetchedDetails: ConnectionDetails | null = null,
 	): Promise<ConnectionDetails> {
+		if (
+			prefetchedDetails?.authToken &&
+			prefetchedDetails?.sfuUrl &&
+			(!prefetchedDetails.meetingId ||
+				prefetchedDetails.meetingId === meetingId)
+		) {
+			return {
+				...prefetchedDetails,
+				meetingId,
+			};
+		}
+
 		if (guestAuthToken) {
 			const guestId = sessionStorage.getItem("guest_id");
 			const guestName = sessionStorage.getItem("guest_name");

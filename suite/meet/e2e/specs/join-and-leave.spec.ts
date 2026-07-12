@@ -1,7 +1,10 @@
 import { test, expect, joinFromPreview } from "../fixtures/test";
 
 test.describe("Joining and leaving", () => {
-	test("host can join a new meeting and leave it", async ({ hostPage, createMeetingViaUi }) => {
+	test("host can join a new meeting and leave it", async ({
+		hostPage,
+		createMeetingViaUi,
+	}) => {
 		const meetingId = await createMeetingViaUi();
 
 		await hostPage.goto(`/meet/${meetingId}`);
@@ -13,7 +16,11 @@ test.describe("Joining and leaving", () => {
 		await expect(hostPage.getByTestId("home-page")).toBeVisible();
 	});
 
-	test("guest can join an open meeting from the preview", async ({ createParticipant, meetingId }) => {
+	test("guest can join an open meeting from the preview", async ({
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 
 		await guest.joinAsGuest(meetingId, `Guest ${test.info().parallelIndex}`);

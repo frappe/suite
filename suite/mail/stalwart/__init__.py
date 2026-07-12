@@ -241,3 +241,25 @@ def delete_account(user: str) -> None:
 
 	account = get_user_personal_jmap_account(user, raise_exception=False)
 	AccountService().delete([account])
+
+
+def add_account_role(user: str, role: str) -> None:
+	"""Applies a Stalwart role (identified by its description) to the specified user's personal account."""
+
+	account = get_user_personal_jmap_account(user, raise_exception=False)
+	if not account:
+		return
+
+	role_id = get_role_by_description(role, raise_exception=True)["id"]
+	AccountService().add_roles(account, [role_id])
+
+
+def remove_account_role(user: str, role: str) -> None:
+	"""Removes a Stalwart role (identified by its description) from the specified user's personal account."""
+
+	account = get_user_personal_jmap_account(user, raise_exception=False)
+	if not account:
+		return
+
+	role_id = get_role_by_description(role, raise_exception=True)["id"]
+	AccountService().remove_roles(account, [role_id])

@@ -5,7 +5,7 @@ import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 
-from suite.meet.api.meeting import get_sfu_connection_details
+from suite.meet.api.meeting import get_sfu_connection_details, join_meeting
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -89,6 +89,45 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			get_sfu_connection_details(self.meeting.name)
+
+	def test_join_meeting_returns_sfu_connection_details(self):
+		"""join_meeting bundles SFU JWT so clients skip a second RTT."""
+		self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+		self.meeting.db_set("meeting_type", "open")
+
+		frappe.set_user(self.member_email)
+		result = join_meeting(self.meeting.name)
+
+		self.assertEqual(result["status"], "joined")
+		self.assertTrue(result.get("auth_token"))
+		self.assertEqual(result["user_id"], self.member_email)
+		self.assertEqual(result["meeting_id"], self.meeting.name)
+		self.assertIn("sfu_url", result)
+		self.assertIn("codec_strategy", result)
+
+		decoded = jwt.decode(
+			result["auth_token"],
+			frappe.conf.sfu_secret,
+			algorithms=["HS256"],
+		)
+		self.assertEqual(decoded["user_id"], self.member_email)
+		self.assertEqual(decoded["meeting_id"], self.meeting.name)
+		self.assertEqual(decoded.get("scope", "full"), "full")
+
+	def test_restricted_waiting_join_does_not_return_full_media_token(self):
+		frappe.set_user(self.outsider_email)
+		result = join_meeting(self.meeting.name)
+
+		self.assertEqual(result["status"], "waiting_for_approval")
+		self.assertNotIn("auth_token", result)
+		self.assertIn("lobby_token", result)
+
+		decoded = jwt.decode(
+			result["lobby_token"],
+			frappe.conf.sfu_secret,
+			algorithms=["HS256"],
+		)
+		self.assertEqual(decoded["scope"], "presence-preview")
 
 	def _ensure_user(self, email: str, first_name: str):
 		if frappe.db.exists("User", email):

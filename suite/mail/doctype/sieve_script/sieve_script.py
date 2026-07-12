@@ -397,7 +397,9 @@ def has_permission(doc: "Document", ptype: str, user: str | None = None) -> bool
 
 SCREENER_MAILBOX_NAME = "Screener"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
-AUTOMATION_SCRIPT_REQUIRE = 'require ["fileinto", "imap4flags"];'
+AUTOMATION_SCRIPT_REQUIRE = (
+	'require ["fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
+)
 
 
 def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
@@ -632,8 +634,10 @@ def _apply_screening_blocks(account: str, content: str) -> str:
 	Rebuilt from the Screened Email Address list (+ JMAP Account) in one pass. The blocks are
 	ordered by precedence: Reject (discard) sits at the very top, right after `require`, so it wins
 	outright. The mailbox automation rules come next, so an explicit mailbox rule can still route mail.
-	Spam (file to Junk) and the Screening gate (`if not <trusted>` → Screening) are fallbacks below the
-	mailbox rules — Spam first, then the catch-all Screening gate at the very bottom. The final order is
+	Spam (file to Junk) and the Screening gate are fallbacks below the mailbox rules — Spam first, then
+	the catch-all Screening gate at the very bottom. The Screening gate routes accepted senders to the
+	Inbox, screens the rest unless the mail is classified as spam, and otherwise lets the server's
+	default filtering assign the mailbox (see `build_screening_gate`). The final order is
 	Reject → Mailbox → Spam → Screening. A sender has at most one screening rule (uniqueness is on the
 	address), so the blocks never conflict.
 	"""
@@ -685,10 +689,15 @@ def _apply_screening_blocks(account: str, content: str) -> str:
 
 
 def remove_sieve_block(script: str, block_name: str) -> str:
-	"""Remove an entire Sieve filter block by its block name comment."""
+	"""Remove an entire Sieve filter block, identified by its `# <block_name>` comment header.
 
-	pattern = rf"# {re.escape(block_name)}\n.*?stop;\n}}\n?"
-	result = re.sub(pattern, "", script, flags=re.DOTALL)
+	A block runs from its header line up to the next block's `# ` header (or the end of the script), so
+	this removes blocks that contain more than one `stop;` — such as the Screening gate's `if`/`elsif` —
+	just as reliably as single-action blocks.
+	"""
+
+	pattern = rf"^# {re.escape(block_name)}\n.*?(?=^# |\Z)"
+	result = re.sub(pattern, "", script, flags=re.DOTALL | re.MULTILINE)
 	result = re.sub(r"\n{3,}", "\n\n", result)
 	result = result.rstrip() + "\n"
 
@@ -750,6 +759,15 @@ def get_junk_mailbox_path(account: str) -> str:
 	return get_mailbox_path(account, mailbox_name, raise_exception=True)
 
 
+def get_inbox_mailbox_path(account: str) -> str:
+	"""Return the mailbox path of the account's Inbox mailbox (for sieve `fileinto`)."""
+
+	mailbox_id = get_mailbox_id_by_role(account, "inbox", create_if_not_exists=True, raise_exception=True)
+	mailbox_name = get_mailbox_name_by_id(account, mailbox_id, raise_exception=True)
+
+	return get_mailbox_path(account, mailbox_name, raise_exception=True)
+
+
 def is_screening_enabled(account: str) -> bool:
 	"""Whether Hey-style screening is enabled for the account (JMAP Account.enable_screening)."""
 
@@ -757,12 +775,22 @@ def is_screening_enabled(account: str) -> bool:
 
 
 def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
-	"""Build the screening gate: file mail from senders not on the accepted list into Screening.
+	"""Build the screening gate — the catch-all fallback that is the last block in the script.
 
-	The account's own identity emails are always trusted, so self-addressed and identity mail is
-	never screened. This block is the last in the script — the catch-all fallback after Reject, Spam,
-	and the mailbox automation rules — so trusted and mailbox-routed mail is handled before it, and only
-	mail from an unrecognised sender that nothing else matched falls into Screening.
+	It routes mail that no earlier block (Reject, Spam, or a mailbox automation rule) already claimed:
+
+	- Accepted senders — and the account's own identity emails, which are always trusted — are
+	  delivered straight to the Inbox, so accepted mail always reaches the inbox regardless of its
+	  spam score.
+	- Otherwise, mail the server has not classified as spam is filed into Screening.
+	- Otherwise (an unrecognised sender whose mail is classified as spam) nothing is done, so the
+	  server's default filtering assigns the mailbox (e.g. Junk once the spam score exceeds the
+	  configured threshold).
+
+	Spam classification is read with the `spamtest` extension (RFC 5235), not the `X-Spam-Status`
+	header: Stalwart injects the verdict into the Sieve runtime before the user's script runs, but only
+	stamps the header afterwards, so the header is not visible here. `spamtest` returns a 0-10 value
+	(Ham -> 1, Spam -> 10), so `:value "ge" "2"` treats anything above ham as spam.
 	"""
 
 	screening_mailbox_path = get_screening_mailbox_path(account)
@@ -775,29 +803,47 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
 	trusted = list(dict.fromkeys(e.strip() for e in [*accepted_emails, *own_emails] if e and e.strip()))
 
 	# `accepted_emails` may hold `@domain` entries, so build one address test per trusted value (own
-	# identity emails are always plain addresses). The gate lets mail through when the sender matches
-	# any trusted value, so the tests are OR-ed and the whole thing negated.
+	# identity emails are always plain addresses). Accepted mail is let through to the Inbox when the
+	# sender matches any trusted value, so the tests are OR-ed.
 	conditions = [c for c in (_sender_match_condition(e) for e in trusted) if c]
 
 	if len(conditions) == 1:
-		condition_block = f"if not {conditions[0]} {{"
+		accepted_test = conditions[0]
 	elif conditions:
 		joined = ",\n  ".join(conditions)
-		condition_block = f"if not anyof (\n  {joined}\n) {{"
+		accepted_test = f"anyof (\n  {joined}\n)"
 	else:
-		# Nothing trusted yet → screen everything (only reached after the Reject/Spam blocks).
-		condition_block = 'if exists "from" {'
+		accepted_test = None
 
-	return "\n".join(
-		[
-			"# Screening",
-			condition_block,
-			f'  fileinto "{screening_mailbox_path}";',
+	# Mail the server has not classified as spam (spamtest value below 2, i.e. ham or unchecked) is
+	# screened; spam falls through to the server's default filtering.
+	not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "2"'
+
+	lines = ["# Screening"]
+	if accepted_test:
+		# Resolve the Inbox path only when there is an accepted branch to file into — accounts with no
+		# trusted senders yet never reach it, so this avoids the extra lookups (and the risk of an inbox
+		# lookup/creation failure breaking a gate that does not even need the Inbox path).
+		inbox_mailbox_path = get_inbox_mailbox_path(account)
+		lines += [
+			f"if {accepted_test} {{",
+			f'  fileinto "{inbox_mailbox_path}";',
 			"  stop;",
 			"}",
-			"\n",
+			f"elsif {not_spam_test} {{",
 		]
-	)
+	else:
+		# Nothing trusted yet → screen every non-spam sender (only reached after the Reject/Spam blocks).
+		lines.append(f"if {not_spam_test} {{")
+
+	lines += [
+		f'  fileinto "{screening_mailbox_path}";',
+		"  stop;",
+		"}",
+		"\n",
+	]
+
+	return "\n".join(lines)
 
 
 def get_screening_mailbox_path(account: str) -> str:

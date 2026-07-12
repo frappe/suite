@@ -1,9 +1,4 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { request } from "@playwright/test";
 import type { FullConfig } from "@playwright/test";
-import { loginViaApi } from "./helpers/auth";
-import { createMeetingViaApi } from "./helpers/meeting";
 
 async function waitForService(url: string, name: string): Promise<void> {
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -20,13 +15,6 @@ async function waitForService(url: string, name: string): Promise<void> {
 	throw new Error(`${name} did not become ready: ${url}`);
 }
 
-export const MEETINGS_STATE_FILE = path.join(__dirname, ".state", "meetings.json");
-
-export interface MeetingsState {
-	openMeetingId: string;
-	restrictedMeetingId: string;
-}
-
 export default async function globalSetup(config: FullConfig): Promise<void> {
 	const projectUse = config.projects[0]?.use ?? {};
 	const baseURL = String(
@@ -37,21 +25,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 		? sfuBaseURL
 		: `${sfuBaseURL.replace(/\/$/, "")}/health`;
 
+	// Meetings are created per-test for worker isolation; only health-check here.
 	await waitForService(baseURL, "Frappe Meet");
 	await waitForService(sfuHealthURL, "SFU server");
-
-	// Create shared meetings once for the entire test run
-	const apiContext = await request.newContext({ baseURL });
-	await loginViaApi(apiContext);
-	const openMeetingId = await createMeetingViaApi(apiContext, "open");
-	const restrictedMeetingId = await createMeetingViaApi(apiContext, "restricted");
-	await apiContext.dispose();
-
-	const stateDir = path.dirname(MEETINGS_STATE_FILE);
-	if (!fs.existsSync(stateDir)) {
-		fs.mkdirSync(stateDir, { recursive: true });
-	}
-
-	const state: MeetingsState = { openMeetingId, restrictedMeetingId };
-	fs.writeFileSync(MEETINGS_STATE_FILE, JSON.stringify(state, null, 2));
 }

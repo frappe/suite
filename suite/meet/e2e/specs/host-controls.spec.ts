@@ -1,13 +1,16 @@
-import { test, expect, joinFromPreview } from "../fixtures/test";
+import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
 test.describe("Host controls", () => {
-	test("host can mute a guest participant", async ({ hostPage, meetingId, createParticipant }) => {
+	test("host can mute a guest participant", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const guestName = `Guest Mute ${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 		const guestSelfTile = guest.page
 			.locator("[data-testid^='participant-tile-guest_']")
 			.first();
@@ -37,17 +40,22 @@ test.describe("Host controls", () => {
 
 		await expect(guestTileOnHost).toHaveAttribute("data-audio-enabled", "false");
 		await expect(
-			guest.page.locator("[data-testid^='participant-tile-guest_'][data-audio-enabled='false']"),
+			guest.page.locator(
+				"[data-testid^='participant-tile-guest_'][data-audio-enabled='false']",
+			),
 		).toHaveCount(1);
 	});
 
-	test("host can remove a guest participant", async ({ hostPage, meetingId, createParticipant }) => {
+	test("host can remove a guest participant", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
 		const guest = await createParticipant();
 		const guestName = `Guest Remove ${test.info().parallelIndex}`;
 
-		await hostPage.goto(`/meet/${meetingId}`);
-		await joinFromPreview(hostPage);
-		await guest.joinAsGuest(meetingId, guestName);
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
 		await hostPage.getByTestId("toolbar-people").click();
 		await expect(hostPage.getByTestId("people-panel")).toBeVisible();

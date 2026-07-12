@@ -26,19 +26,8 @@
 			</MeetingHeader>
 		</div>
 
-		<!-- Loading state -->
-		<div v-if="isConnecting" class="flex-1 flex items-center justify-center">
-			<div class="flex flex-col items-center justify-center text-white gap-3 px-6 text-center">
-				<Spinner class="h-12" />
-				<p class="text-lg">Joining meeting...</p>
-				<p v-if="e2eeJoinPendingMessage" class="mt-2 text-base text-ink-gray-2">
-					{{ e2eeJoinPendingMessage }}
-				</p>
-			</div>
-		</div>
-
 		<!-- Error state -->
-		<div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
+		<div v-if="hasConnectionError" class="flex-1 flex items-center justify-center">
 			<div class="text-center text-white">
 				<div class="text-red-500 mb-4">
 					<lucide-alert-circle class="w-12 h-12 mx-auto" />
@@ -585,6 +574,66 @@ const showPreview = computed(() => {
 	return inPreview || joinRequestRejected;
 });
 
+// Soft connecting feedback: only if join takes longer than 5s (no full-page spinner).
+const CONNECTING_TOAST_ID = "meet-connecting";
+const CONNECTING_TOAST_DELAY_MS = 5000;
+let connectingToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+const clearConnectingToast = () => {
+	if (connectingToastTimer) {
+		clearTimeout(connectingToastTimer);
+		connectingToastTimer = null;
+	}
+	toast.dismiss(CONNECTING_TOAST_ID);
+};
+
+watch(
+	[
+		isConnecting,
+		showPreview,
+		isWaitingForApproval,
+		isInLobby,
+		hasConnectionError,
+		e2eeJoinPendingMessage,
+	],
+	([connecting, preview, waiting, lobby, error, e2eePending]) => {
+		const shouldTrack =
+			connecting &&
+			!preview &&
+			!waiting &&
+			!lobby &&
+			!error &&
+			!e2eePending;
+
+		if (!shouldTrack) {
+			clearConnectingToast();
+			return;
+		}
+
+		if (connectingToastTimer) {
+			return;
+		}
+
+		connectingToastTimer = setTimeout(() => {
+			connectingToastTimer = null;
+			if (
+				!connectionState.isConnecting ||
+				connectionState.isInPreview ||
+				lobbyStore.isWaitingForApproval ||
+				lobbyStore.isInLobby ||
+				connectionState.connectionError ||
+				e2eeJoinPendingMessage.value
+			) {
+				return;
+			}
+			toast.loading("Connecting…", {
+				id: CONNECTING_TOAST_ID,
+				duration: Number.POSITIVE_INFINITY,
+			});
+		}, CONNECTING_TOAST_DELAY_MS);
+	},
+);
+
 const isPeopleOpen = ref(false);
 
 const activePanel = computed(() => {
@@ -831,6 +880,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+	clearConnectingToast();
 	document.removeEventListener("fullscreenchange", syncFullscreenState);
 	document.removeEventListener(
 		"meet:e2ee-needs-media-republish",

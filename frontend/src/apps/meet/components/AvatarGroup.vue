@@ -14,16 +14,15 @@
 					:style="{ zIndex: avatarZIndex(index) }"
 				>
 					<div
-						class="ring-2 ring-outline-gray-1 rounded-full overflow-hidden bg-surface-gray-1 text-ink-gray-7 flex items-center justify-center text-base-semibold"
+						class="ring-2 ring-outline-gray-1 rounded-full overflow-hidden flex items-center justify-center"
 						:class="avatarWrapperClasses"
 					>
-						<Avatar
-							v-if="participant.avatar_url"
+						<MeetAvatar
 							:image="participant.avatar_url"
+							:label="participant.full_name"
 							:size="size"
 							shape="circle"
 						/>
-						<span v-else>{{ getInitials(participant.full_name) }}</span>
 					</div>
 				</div>
 				<div
@@ -60,9 +59,8 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar } from "frappe-ui";
 import { computed } from "vue";
-import { getInitials } from "../utils/text";
+import MeetAvatar from "./MeetAvatar.vue";
 
 type AvatarGroupSize = "sm" | "md" | "lg" | "xl" | "2xl";
 type StackDirection = "left" | "right";

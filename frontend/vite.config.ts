@@ -2,7 +2,6 @@ import fs from 'fs'
 import path from 'path'
 
 import vue from '@vitejs/plugin-vue'
-import { noiseSuppressionAudioWorkletVitePlugin } from '@workadventure/noise-suppression/vite'
 import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -17,6 +16,36 @@ const emitSlidesServiceWorker = () => ({
     fs.copyFileSync(swSource, swOutput)
   },
 })
+
+/** Serve suite/public/noise-suppression at /noise-suppression in Vite dev (not via publicDir — that would re-emit 17MB into the SPA build). */
+const serveNoiseSuppressionAssets = () => {
+  const noiseDir = path.resolve(__dirname, '../suite/public/noise-suppression')
+  return {
+    name: 'serve-noise-suppression-assets',
+    apply: 'serve' as const,
+    configureServer(server: { middlewares: { use: (path: string, fn: (req: any, res: any, next: () => void) => void) => void } }) {
+      server.middlewares.use('/noise-suppression', (req, res, next) => {
+        const rel = (req.url || '/').split('?')[0].replace(/^\//, '') || 'audio-worklet-processor.js'
+        const filePath = path.resolve(noiseDir, rel)
+        // Directory containment (not string prefix): avoid
+        // /noise-suppression/../noise-suppression-sibling/secret.js escapes.
+        const relative = path.relative(noiseDir, filePath)
+        if (
+          relative.startsWith('..') ||
+          path.isAbsolute(relative) ||
+          !fs.existsSync(filePath)
+        ) {
+          next()
+          return
+        }
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/javascript')
+        res.setHeader('Cache-Control', 'no-cache')
+        fs.createReadStream(filePath).pipe(res)
+      })
+    },
+  }
+}
 
 const benchRoot = path.resolve(__dirname, '../../..')
 const commonSiteConfig = JSON.parse(
@@ -37,7 +66,11 @@ export default defineConfig(({ mode }) => ({
   // ../suite/public/frontend -> exposed as /assets/suite/frontend).
   base: mode === 'production' ? '/assets/suite/frontend/' : '/',
   plugins: [
-    noiseSuppressionAudioWorkletVitePlugin(),
+    // Noise-suppression worklet lives under suite/public/noise-suppression
+    // (see scripts/copy-noise-suppression-assets.mjs + src/shims/...).
+    // Do not reintroduce @workadventure/noise-suppression/vite — that path
+    // re-pulls the processor into the Rollup graph via import.meta.url.
+    serveNoiseSuppressionAssets(),
     frappeui({
       // frappe-ui/vite wires the dev proxy to the local bench, injects the
       // CSRF/boot data, and emits the Jinja-templated index html.

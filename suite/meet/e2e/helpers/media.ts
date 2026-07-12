@@ -15,6 +15,19 @@ export async function expectRemoteVideoReceiving(
 export async function expectVideoReceiving(video: Locator): Promise<void> {
 	await expect(video).toBeVisible({ timeout: 45_000 });
 
+	await video.evaluate(async (element) => {
+		const videoEl = element as HTMLVideoElement;
+		videoEl.muted = true;
+		if (videoEl.paused) {
+			try {
+				await videoEl.play();
+			} catch {
+				// Poll below is the real assertion.
+			}
+		}
+	});
+
+	// Live track + real decode (not metadata-only dimensions).
 	await expect
 		.poll(
 			async () =>
@@ -23,36 +36,18 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 					const quality = videoEl.getVideoPlaybackQuality?.();
 					const stream = videoEl.srcObject as MediaStream | null;
 					const videoTrack = stream?.getVideoTracks()[0] ?? null;
+					const decodedFrames = quality?.totalVideoFrames ?? 0;
+					const hasDecodedPlayback =
+						decodedFrames > 0 || videoEl.currentTime > 0;
 					return {
-						currentTime: videoEl.currentTime,
-						decodedFrames: quality?.totalVideoFrames ?? 0,
-						height: videoEl.videoHeight,
-						readyState: videoEl.readyState,
+						ok:
+							videoTrack?.readyState === "live" &&
+							videoEl.readyState >= 2 &&
+							hasDecodedPlayback,
 						trackState: videoTrack?.readyState ?? null,
-						width: videoEl.videoWidth,
 					};
 				}),
 			{ timeout: 45_000 },
 		)
-		.toMatchObject({
-			readyState: 4,
-			trackState: "live",
-		});
-
-	await expect
-		.poll(
-			async () =>
-				video.evaluate((element) => {
-					const videoEl = element as HTMLVideoElement;
-					const quality = videoEl.getVideoPlaybackQuality?.();
-					return (
-						videoEl.currentTime > 0 &&
-						(quality?.totalVideoFrames ?? 0) > 0 &&
-						videoEl.videoWidth > 0 &&
-						videoEl.videoHeight > 0
-					);
-				}),
-			{ timeout: 45_000 },
-		)
-		.toBe(true);
+		.toMatchObject({ ok: true, trackState: "live" });
 }

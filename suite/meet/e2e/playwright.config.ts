@@ -1,19 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
+const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	fullyParallel: false,
-	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
-	workers: 1,
-    maxFailures: process.env.CI ? 3 : undefined,
-	timeout: 60_000,
+	// CI: one worker per job; --shard=N/M on GH splits the suite automatically.
+	fullyParallel: !isCI,
+	forbidOnly: isCI,
+	retries: isCI ? 2 : 0,
+	workers: isCI ? 1 : undefined,
+	maxFailures: isCI ? 3 : undefined,
+	timeout: isCI ? 90_000 : 60_000,
 	expect: {
 		timeout: 10_000,
 	},
-	reporter: process.env.CI
+	reporter: isCI
 		? [
 				["list"],
 				["github"],
@@ -28,7 +30,7 @@ export default defineConfig({
 		screenshot: "only-on-failure",
 		viewport: { width: 1440, height: 900 },
 		actionTimeout: 15_000,
-        navigationTimeout: 30_000,
+		navigationTimeout: 30_000,
 	},
 	projects: [
 		{
@@ -39,8 +41,7 @@ export default defineConfig({
 				launchOptions: {
 					args: [
 						"--use-fake-ui-for-media-stream",
-						"--disable-audio-track-processing",
-						"--disable-webrtc-apm-in-audio-service",
+						"--use-fake-device-for-media-stream",
 						"--allow-insecure-localhost",
 						"--autoplay-policy=no-user-gesture-required",
 						`--unsafely-treat-insecure-origin-as-secure=${baseURL}`,

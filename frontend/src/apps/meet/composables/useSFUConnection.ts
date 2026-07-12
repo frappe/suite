@@ -12,7 +12,11 @@ import audioNotificationManager from "../utils/audioNotifications";
 import { getErrorMessage } from "../utils/error";
 import { waitForE2EEContextReady } from "../utils/media/E2EEContextReady";
 import { SocketIOSignalChannel } from "../utils/media/SignalChannel";
-import { SFUClient } from "../utils/SFUClient";
+import {
+	type ConnectionDetails,
+	connectionDetailsFromJoinPayload,
+	SFUClient,
+} from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { useChatStore } from "./useChatStore";
 import type { ConnectionState } from "./useConnectionState";
@@ -98,6 +102,7 @@ export function useSFUConnection(deps: {
 	const joiningInProgress = shallowRef(false);
 	const hasShownE2EEKeyMismatchToast = shallowRef(false);
 	const isCurrentTabHost = shallowRef(false);
+	let setupCancelled = false;
 
 	const e2eeHandshake: E2EEConnectionHandshake = useE2EEConnectionHandshake({
 		meetingId,
@@ -296,7 +301,9 @@ export function useSFUConnection(deps: {
 		guestName: string | null = null,
 		initialIsHost = false,
 		initialIsCohost = false,
+		prefetchedDetails: ConnectionDetails | null = null,
 	) => {
+		setupCancelled = false;
 		let isHost = initialIsHost;
 		let isCohost = initialIsCohost;
 		isCurrentTabHost.value = isHost;
@@ -314,12 +321,24 @@ export function useSFUConnection(deps: {
 				eventHandlers: createSFUEventHandlers(),
 			});
 			sfuManager.value = manager;
+			const stopIfCancelled = async () => {
+				if (!setupCancelled) return false;
+				await manager.cleanup();
+				if (sfuManager.value === manager) {
+					sfuManager.value = null;
+				}
+				return true;
+			};
 
 			// Register SFU signaling handlers before connect/join. E2EE joiners can
 			// receive their host envelope immediately after sending their hello.
 			setupFrappeRealtimeEventListeners();
 
-			await manager.connect(connectionState.guestAuthToken);
+			await manager.connect(
+				connectionState.guestAuthToken,
+				prefetchedDetails,
+			);
+			if (await stopIfCancelled()) return;
 			connectionState.codecStrategy = sfuClient.getCodecStrategy() || "svc";
 			if (!guestName) {
 				const effectiveIsHost = sfuClient.connectionDetails.isHost || isHost;
@@ -364,14 +383,23 @@ export function useSFUConnection(deps: {
 				audio_enabled: mediaState.isMicOn,
 				video_enabled: mediaState.isCameraOn,
 			});
+			if (await stopIfCancelled()) return;
 			if (sfuClient.isE2EERequired()) {
 				await waitForE2EEContextReady(0);
+				if (await stopIfCancelled()) return;
 			}
 
 			await manager.initializeDevice();
+			if (await stopIfCancelled()) return;
 			await manager.createReceiveTransport();
+			if (await stopIfCancelled()) return;
 
-			if (mediaState.localStream) {
+			// Send path (local publish) and recv path (existing remotes) are
+			// independent once the device + receive transport exist.
+			const publishLocal = async () => {
+				if (!mediaState.localStream) {
+					return;
+				}
 				try {
 					const videoTracks = mediaState.processedStream
 						? mediaState.processedStream.getVideoTracks()
@@ -394,9 +422,13 @@ export function useSFUConnection(deps: {
 						(error as Error).message,
 					);
 				}
-			}
+			};
 
-			await manager.setupExistingParticipants();
+			await Promise.all([
+				publishLocal(),
+				manager.setupExistingParticipants(),
+			]);
+			if (await stopIfCancelled()) return;
 
 			connectionState.isSetupComplete = true;
 
@@ -463,6 +495,7 @@ export function useSFUConnection(deps: {
 			stopGuestApprovalListener();
 
 			lobbyStore.isWaitingForApproval = false;
+			connectionState.isConnecting = true;
 
 			try {
 				const resolvedGuestName =
@@ -485,17 +518,26 @@ export function useSFUConnection(deps: {
 							.host_only_chat;
 					}
 
-					connectionState.guestAuthToken = (response as Record<string, unknown>)
-						.auth_token as string;
-					connectionState.guestSfuUrl =
-						((response as Record<string, unknown>).sfu_url as string) || null;
+					const approved = response as Record<string, unknown>;
+					connectionState.guestAuthToken = approved.auth_token as string;
+					connectionState.guestSfuUrl = (approved.sfu_url as string) || null;
 					connectionState.guestSfuPort =
-						((response as Record<string, unknown>).sfu_port as string) || null;
+						(approved.sfu_port as string) || null;
 
-					await setupSFUConnection(resolvedGuestName);
+					const prefetched = connectionDetailsFromJoinPayload(approved, {
+						guestAuthToken: approved.auth_token as string,
+						guestId,
+						guestName: resolvedGuestName,
+						expectedMeetingId: meetingId,
+					});
+					await setupSFUConnection(
+						resolvedGuestName,
+						false,
+						false,
+						prefetched,
+					);
 
 					connectionState.isInPreview = false;
-					connectionState.isConnecting = false;
 				} else {
 					console.error(
 						"Failed to get connection details after approval:",
@@ -510,6 +552,8 @@ export function useSFUConnection(deps: {
 					error,
 				);
 				connectionState.connectionError = "Failed to connect after approval";
+			} finally {
+				connectionState.isConnecting = false;
 			}
 		}
 
@@ -577,10 +621,15 @@ export function useSFUConnection(deps: {
 				});
 
 				if (sfuResult) {
+					const details = sfuResult as Record<string, unknown>;
+					const prefetched = connectionDetailsFromJoinPayload(details, {
+						expectedMeetingId: meetingId,
+					});
 					await setupSFUConnection(
 						null,
-						(sfuResult as Record<string, unknown>).is_host as boolean,
-						(sfuResult as Record<string, unknown>).is_cohost as boolean,
+						details.is_host as boolean,
+						details.is_cohost as boolean,
+						prefetched,
 					);
 					connectionState.isInPreview = false;
 				} else {
@@ -694,10 +743,17 @@ export function useSFUConnection(deps: {
 				return;
 			}
 
-			connectionState.isConnecting = true;
-			await setupSFUConnection(guestName, false, false);
-			setupFrappeRealtimeEventListeners();
+			// Show meeting shell immediately; SFU setup continues in the background.
 			connectionState.isInPreview = false;
+			connectionState.isConnecting = true;
+			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
+				guestAuthToken: connectionState.guestAuthToken,
+				guestId: connectionState.guestId,
+				guestName,
+				expectedMeetingId: meetingId,
+			});
+			await setupSFUConnection(guestName, false, false, prefetched);
+			setupFrappeRealtimeEventListeners();
 			connectionState.isConnecting = false;
 		} catch (error) {
 			console.error("Failed to complete guest join:", error);
@@ -715,6 +771,8 @@ export function useSFUConnection(deps: {
 			joiningInProgress.value = true;
 			connectionState.isConnecting = true;
 			connectionState.connectionError = null;
+			// Optimistic UI: leave preview shell while join/SFU work runs.
+			connectionState.isInPreview = false;
 
 			connectionState.guestAuthToken = null;
 			connectionState.guestSfuUrl = null;
@@ -729,24 +787,26 @@ export function useSFUConnection(deps: {
 
 			if (joinResult.status === "waiting_for_approval") {
 				lobbyStore.isWaitingForApproval = true;
-				connectionState.isInPreview = false;
 				connectionState.isConnecting = false;
 				setupFrappeRealtimeEventListeners();
 				return;
 			}
 
-			await setupSFUConnection(
-				null,
-				(joinResult?.is_host || false) as boolean,
-				(joinResult?.is_cohost || false) as boolean,
-			);
-
 			if (joinResult?.host_only_chat !== undefined) {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
 			}
 
+			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
+				expectedMeetingId: meetingId,
+			});
+			await setupSFUConnection(
+				null,
+				(joinResult?.is_host || false) as boolean,
+				(joinResult?.is_cohost || false) as boolean,
+				prefetched,
+			);
+
 			setupFrappeRealtimeEventListeners();
-			connectionState.isInPreview = false;
 			connectionState.isConnecting = false;
 		} catch (error) {
 			console.error("Failed to join meeting:", error);
@@ -759,6 +819,7 @@ export function useSFUConnection(deps: {
 
 	const endCall = async () => {
 		try {
+			setupCancelled = true;
 			stopGuestApprovalListener();
 
 			if (activeSpeakerTimeout.value) {
@@ -782,6 +843,7 @@ export function useSFUConnection(deps: {
 	};
 
 	onUnmounted(async () => {
+		setupCancelled = true;
 		hasShownE2EEKeyMismatchToast.value = false;
 
 		if (activeSpeakerTimeout.value) {

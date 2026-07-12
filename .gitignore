@@ -13,6 +13,8 @@ yarn-error.log
 /suite/**/public/frontend/
 /suite/**/public/dist/
 /suite/sheets/public/sheets/
+# Meet DTLN worklet (~17MB) — copied from node_modules by frontend prebuild
+/suite/public/noise-suppression/
 # Built www entrypoints (one per app); sheets.html is a hand-written template
 /suite/**/www/*.html
 !/suite/sheets/www/sheets.html

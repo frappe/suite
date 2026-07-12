@@ -34,6 +34,7 @@ export interface SuiteAppSwitcherItem {
   title: string
   route: string
   logo: string
+  spa: boolean
 }
 
 export const SUITE_LOGO = suiteLogo
@@ -53,6 +54,7 @@ export const SUITE_APP_SWITCHER_ITEMS: SuiteAppSwitcherItem[] = SUITE_APPS.map((
   title: app.name,
   route: app.prefix,
   logo: app.logo,
+  spa: true,
 }))
 
 export const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
@@ -60,6 +62,7 @@ export const DESK_APP_SWITCHER_ITEM: SuiteAppSwitcherItem = {
   title: 'Desk',
   route: '/app',
   logo: '/assets/frappe/images/framework.png',
+  spa: false,
 }
 
 export function getAppSwitcherItems(currentApp: string): SuiteAppSwitcherItem[] {

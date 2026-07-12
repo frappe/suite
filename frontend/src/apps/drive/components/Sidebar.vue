@@ -53,7 +53,7 @@ import ShortcutsDialog from '@/apps/drive/components/ShortcutsDialog.vue'
 import emitter from '@/apps/drive/emitter'
 import { ref, computed, watch, h } from 'vue'
 import AppsIcon from '@/apps/drive/components/AppsIcon.vue'
-import { useRouter, useRoute } from 'vue-router'
+import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { move } from '@/apps/drive/resources/files'
 
 import LucideBook from '~icons/lucide/book'
@@ -110,11 +110,11 @@ const settingsItems = computed(() => [
           label: app.title,
           icon: app.logo,
           component: h(
-            'a',
+            app.spa ? RouterLink : 'a',
             {
               class:
                 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-              href: app.route,
+              ...(app.spa ? { to: app.route } : { href: app.route }),
             },
             [
               h('img', { src: app.logo, class: 'size-6' }),

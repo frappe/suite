@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h, inject, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { Check, Eye, EyeOff, LayoutGrid, LogOut, Settings, User } from 'lucide-vue-next'
 import { Avatar, Sidebar } from 'frappe-ui'
 
@@ -52,10 +52,10 @@ const menuItems = computed(() => [
 				label: __('Apps'),
 				submenu: apps.data?.map?.((app) => ({
 					component: h(
-						'a',
+						app.spa ? RouterLink : 'a',
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2',
-							href: app.route,
+							...(app.spa ? { to: app.route } : { href: app.route }),
 						},
 						[
 							h('img', { src: app.logo, class: 'size-6' }),

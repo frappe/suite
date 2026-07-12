@@ -38,7 +38,7 @@
 								class="flex min-w-0 gap-2"
 								:class="item.poll.createdBy === userId ? 'justify-end' : 'justify-start'"
 							>
-								<Avatar
+								<MeetAvatar
 									v-if="item.poll.createdBy !== userId"
 									size="lg"
 									:label="item.poll.createdByName || item.poll.createdBy"
@@ -64,7 +64,7 @@
 							class="flex min-w-0 gap-2"
 							:class="item.group.isOwn ? 'justify-end' : 'justify-start'"
 						>
-							<Avatar
+							<MeetAvatar
 								v-if="!item.group.isOwn"
 								size="lg"
 								:label="item.group.user_name"
@@ -116,24 +116,52 @@
 				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
 						<div
-							class="flex cursor-text items-end gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-2 shadow-sm transition-colors focus-within:border-outline-gray-3"
+							class="chat-composer relative flex cursor-text items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-outline-gray-3 focus-within:shadow-[0_0_0_1px_var(--outline-gray-3)]"
 							data-testid="chat-input-wrapper"
 							@click="focusInput"
 						>
-							<Editor
-								ref="editorRef"
-								v-model="draft"
-								placeholder="Type a message"
-								:extensions="editorExtensions"
+							<div
+								v-if="emojiMenuActive"
+								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-modal p-1 shadow-lg"
+								role="listbox"
+								aria-label="Emoji suggestions"
+								data-testid="chat-emoji-suggestions"
 							>
-								<template #default="{ editor }">
-									<EditorContent
-										:editor="editor"
-										class="chat-composer-editor min-w-0 flex-1 text-sm text-ink-gray-8 tracking-[0.28px]"
-										data-testid="chat-input"
-									/>
-								</template>
-							</Editor>
+								<button
+									v-for="(item, index) in emojiSuggestions"
+									:key="item.name"
+									type="button"
+									role="option"
+									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+									:class="
+										index === emojiSelectedIndex
+											? 'bg-surface-gray-3'
+											: 'hover:bg-surface-gray-2'
+									"
+									:aria-selected="index === emojiSelectedIndex"
+									@mousedown.prevent="selectEmoji(item)"
+									@mouseenter="emojiSelectedIndex = index"
+								>
+									<span class="text-base leading-none">{{ item.emoji }}</span>
+									<span class="truncate text-ink-gray-4">{{ item.name }}</span>
+								</button>
+								<div
+									v-if="emojiSuggestions.length === 0"
+									class="px-2 py-1.5 text-sm text-ink-gray-4"
+								>
+									No results
+								</div>
+							</div>
+							<textarea
+								ref="inputEl"
+								v-model="draft"
+								rows="1"
+								placeholder="Type a message"
+								class="chat-composer-input min-w-0 flex-1 resize-none border-0 bg-transparent py-0 text-sm leading-5 text-ink-gray-8 tracking-[0.28px] shadow-none outline-none ring-0 placeholder:text-ink-gray-5 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+								data-testid="chat-input"
+								@input="onInput"
+								@keydown="onKeydown"
+							/>
 							<Button
 								type="submit"
 								variant="subtle"
@@ -162,9 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { Extension } from "@tiptap/core";
-import { Avatar, Button, Dropdown } from "frappe-ui";
-import { Editor, EditorContent, CommentKit } from "frappe-ui/editor";
+import { Button, Dropdown } from "frappe-ui";
 import {
 	computed,
 	inject,
@@ -175,9 +201,17 @@ import {
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
+import {
+	findColonQuery,
+	insertEmojiAtQuery,
+	rememberEmoji,
+	suggestEmojis,
+	type EmojiSuggestion,
+} from "../utils/emojiSuggest";
 import { usePollStore } from "../composables/usePollStore";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
+import MeetAvatar from "./MeetAvatar.vue";
 import PollMessageCard from "./PollMessageCard.vue";
 import LucideChartColumn from "~icons/lucide/chart-column";
 
@@ -253,33 +287,14 @@ const emit = defineEmits<{
 	send: [text: string];
 }>();
 const listEl = ref<HTMLElement | null>(null);
-const editorRef = ref();
+const inputEl = ref<HTMLTextAreaElement | null>(null);
 const draft = ref("");
 
-const editorExtensions = computed(() => [
-	CommentKit.configure({
-		starterKit: { heading: false },
-		emoji: {},
-		mention: false,
-		tag: false,
-		image: false,
-		video: false,
-		table: false,
-		contentPaste: false,
-	}),
-	Extension.create({
-		name: "enterToSend",
-		addKeyboardShortcuts() {
-			return {
-				Enter: ({ editor }) => {
-					if (editor.view.dom.querySelector(".suggestion")) return false;
-					handleSend();
-					return true;
-				},
-			};
-		},
-	}),
-]);
+const emojiSuggestions = ref<EmojiSuggestion[]>([]);
+const emojiSelectedIndex = ref(0);
+const emojiQueryStart = ref<number | null>(null);
+/** True while a trailing `:query` is active at the caret (incl. empty query after `:`). */
+const emojiMenuActive = computed(() => emojiQueryStart.value !== null);
 
 const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
@@ -366,24 +381,121 @@ function pollCreatorName(poll: PollPayloadFE) {
 	return poll.createdByName || poll.createdBy;
 }
 
+function syncEmojiMenu() {
+	const el = inputEl.value;
+	if (!el) {
+		closeEmojiMenu();
+		return;
+	}
+	const caret = el.selectionStart ?? draft.value.length;
+	const found = findColonQuery(draft.value, caret);
+	if (!found) {
+		closeEmojiMenu();
+		return;
+	}
+	emojiQueryStart.value = found.start;
+	emojiSuggestions.value = suggestEmojis(found.query);
+	emojiSelectedIndex.value = 0;
+}
+
+function closeEmojiMenu() {
+	emojiQueryStart.value = null;
+	emojiSuggestions.value = [];
+	emojiSelectedIndex.value = 0;
+}
+
+function selectEmoji(item: EmojiSuggestion) {
+	const el = inputEl.value;
+	if (!el || emojiQueryStart.value === null) return;
+	const caret = el.selectionStart ?? draft.value.length;
+	const { text, caret: nextCaret } = insertEmojiAtQuery(
+		draft.value,
+		caret,
+		emojiQueryStart.value,
+		item.emoji,
+	);
+	draft.value = text;
+	rememberEmoji(item);
+	closeEmojiMenu();
+	nextTick(() => {
+		el.focus();
+		el.setSelectionRange(nextCaret, nextCaret);
+		autosize();
+	});
+}
+
+function onInput() {
+	autosize();
+	syncEmojiMenu();
+}
+
+function onKeydown(event: KeyboardEvent) {
+	if (emojiMenuActive.value) {
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			if (emojiSuggestions.value.length === 0) return;
+			emojiSelectedIndex.value =
+				(emojiSelectedIndex.value + 1) % emojiSuggestions.value.length;
+			return;
+		}
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			if (emojiSuggestions.value.length === 0) return;
+			emojiSelectedIndex.value =
+				(emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) %
+				emojiSuggestions.value.length;
+			return;
+		}
+		if (event.key === "Escape") {
+			event.preventDefault();
+			closeEmojiMenu();
+			return;
+		}
+		if (
+			(event.key === "Enter" || event.key === "Tab") &&
+			!event.shiftKey &&
+			emojiSuggestions.value.length > 0
+		) {
+			event.preventDefault();
+			selectEmoji(emojiSuggestions.value[emojiSelectedIndex.value]);
+			return;
+		}
+	}
+
+	if (event.key === "Enter" && !event.shiftKey) {
+		event.preventDefault();
+		handleSend();
+	}
+}
+
 function handleSend() {
-	const editor = editorRef.value?.editor;
-	if (!editor) return;
-	const text = editor.getText().trim();
+	const text = draft.value.trim();
 	if (!canSendMessages.value) return;
 	if (!text) return;
 	emit("send", text);
 	draft.value = "";
-	nextTick(() => editor.commands.focus());
+	closeEmojiMenu();
+	nextTick(() => {
+		autosize();
+		focusInput();
+	});
 }
 
 function focusInput() {
-	editorRef.value?.editor?.commands.focus("end");
+	inputEl.value?.focus();
+}
+
+function autosize() {
+	const el = inputEl.value;
+	if (!el) return;
+	el.style.height = "auto";
+	el.style.height = `${Math.min(el.scrollHeight, 44)}px`;
 }
 
 async function scrollToBottom() {
 	await nextTick();
 	const el = listEl.value;
+	if (!el) return;
 	el.scrollTop = el.scrollHeight;
 }
 
@@ -391,23 +503,23 @@ watch([chatItems], scrollToBottom, { deep: true });
 </script>
 
 <style scoped>
-:deep(.chat-composer-editor) {
-	min-height: 20px;
-	max-height: 48px;
-	overflow-y: auto;
-	background: transparent;
-	caret-color: var(--ink-gray-8);
-}
-
-:deep(.chat-composer-editor p) {
+.chat-composer-input {
+	min-height: 1.375rem;
+	max-height: 44px;
+	padding: 0;
 	margin: 0;
+	overflow-y: auto;
+	caret-color: var(--ink-gray-8);
+	/* Kill UA / form focus chrome; the wrapper owns focus affordance. */
+	outline: none !important;
+	box-shadow: none !important;
+	-webkit-appearance: none;
+	appearance: none;
 }
 
-:deep(.chat-composer-editor p.is-editor-empty::before) {
-	color: var(--ink-gray-5);
-}
-
-:deep(.chat-composer-editor.ProseMirror-focused) {
-	outline: none;
+.chat-composer-input:focus,
+.chat-composer-input:focus-visible {
+	outline: none !important;
+	box-shadow: none !important;
 }
 </style>

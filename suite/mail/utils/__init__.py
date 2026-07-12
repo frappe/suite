@@ -51,6 +51,7 @@ CONFIG_KEYS = [
 	# Defaults
 	"default_dns_ttl",
 	"default_disk_quota_gb",
+	"disabled_account_role",
 	"enable_gravatar",
 	"default_gravatar",
 	"stalwart_version",

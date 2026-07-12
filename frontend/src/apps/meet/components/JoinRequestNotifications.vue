@@ -10,7 +10,7 @@
 				>
 					<div class="flex items-start justify-between mb-4">
 						<div class="flex items-center space-x-3 flex-1 min-w-0">
-							<Avatar
+							<MeetAvatar
 								size="2xl"
 								:image="request.user_image"
 								:label="request.user_name || request.user_id"
@@ -69,8 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Button } from "frappe-ui";
+import { Button } from "frappe-ui";
 import { computed, ref, watch } from "vue";
+import MeetAvatar from "./MeetAvatar.vue";
 
 interface WaitingUser {
 	user_id: string;

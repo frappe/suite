@@ -12,14 +12,17 @@
 				class="w-[380px] bg-surface-gray-1 flex flex-col z-40 h-full rounded-md mr-2 overflow-hidden"
 				data-testid="people-panel"
 			>
-				<div class="flex items-center justify-between px-4 py-5 shrink-0">
-					<div class="text-sm-medium text-ink-gray-8">
+				<div class="flex items-center justify-between gap-3 px-4 py-5 shrink-0">
+					<div class="min-w-0 truncate text-sm-medium text-ink-gray-8 tracking-[0.21px]">
 						People
 					</div>
-					<lucide-x
+					<Button
+						variant="ghost"
+						class="text-ink-gray-6 hover:bg-surface-gray-2"
 						@click="$emit('close')"
-						class="w-4 h-4 text-ink-gray-8 cursor-pointer hover:text-ink-gray-6"
-					/>
+					>
+						<lucide-x class="h-4 w-4 text-ink-gray-8" />
+					</Button>
 				</div>
 
 				<div class="px-2 pb-2 shrink-0">
@@ -79,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { FormControl } from "frappe-ui";
+import { Button, FormControl } from "frappe-ui";
 import { computed, ref } from "vue";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import type { Participant } from "../utils/media/ParticipantManager";

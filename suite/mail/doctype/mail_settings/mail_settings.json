@@ -23,6 +23,7 @@
   "defaults_section",
   "default_dns_ttl",
   "default_disk_quota_gb",
+  "disabled_account_role",
   "enable_gravatar",
   "default_gravatar",
   "column_break_cuxv",
@@ -427,6 +428,12 @@
    "fieldtype": "Int",
    "label": "Default Disk Quota (GB)",
    "reqd": 1
+  },
+  {
+   "description": "Stalwart role (by description) applied to a user's mail account when the user is disabled. The role must be created manually on Stalwart with the appropriate allowed/disabled permissions. Leave blank to skip applying a role on disable.",
+   "fieldname": "disabled_account_role",
+   "fieldtype": "Data",
+   "label": "Disabled Account Role"
   },
   {
    "default": "0",

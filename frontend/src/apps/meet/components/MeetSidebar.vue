@@ -2,7 +2,7 @@
 import { Sidebar, createResource, frappeRequest } from "frappe-ui";
 import { computed, h, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
-import { useRoute } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 
 import { getAppSwitcherItems } from "@/apps/registry";
 import { useSessionStore } from "../../../boot/session";
@@ -83,11 +83,11 @@ const settingsItems = computed(() => [
 						label: app.title,
 						icon: app.logo,
 						component: h(
-							"a",
+							app.spa ? RouterLink : "a",
 							{
 								class:
 									"flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2",
-								href: app.route,
+								...(app.spa ? { to: app.route } : { href: app.route }),
 							},
 							[
 								h("img", { src: app.logo, class: "size-6" }),

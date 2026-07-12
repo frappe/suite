@@ -11,6 +11,7 @@ import type {
 	RtpCapabilities,
 	RtpCodecCapability,
 	RtpParameters,
+	WebRtcServer,
 	WebRtcTransport,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -98,6 +99,7 @@ export type {
 	SFUScope,
 	UpdateTokenRequest,
 	UserData,
+	WebRtcServer,
 	WebRtcTransport,
 	WorkerLogLevel,
 	WorkerSettings,
@@ -335,6 +337,7 @@ export interface ExistingProducer {
 export interface Room {
 	id: string;
 	router: Router;
+	webRtcServer: WebRtcServer;
 	audioLevelObserver: AudioLevelObserver;
 	peers: Map<string, Peer>;
 	created: Date;
@@ -387,6 +390,7 @@ export interface MediasoupConfig {
 	worker: WorkerSettings;
 	router: RouterConfig;
 	webRtcTransport: WebRTCTransportOptions;
+	webRtcServer: WebRTCServerOptions;
 }
 
 export interface RouterConfig {
@@ -394,16 +398,14 @@ export interface RouterConfig {
 }
 
 export interface WebRTCTransportOptions {
-	listenIps: Array<{ ip: string; announcedIp: string }>;
-	enableUdp: boolean;
 	enableTcp: boolean;
-	preferUdp: boolean;
-	portRange: { min: number; max: number };
-	maxIncomingBitrate: number;
-	maxOutgoingBitrate: number;
 	initialAvailableOutgoingBitrate: number;
-	iceServers: Array<{ urls: string[] }>;
-	iceTransportPolicy: string;
+}
+
+export interface WebRTCServerOptions {
+	listenIp: string;
+	announcedAddress: string;
+	basePort: number;
 }
 
 // JWT types

@@ -46,6 +46,12 @@ def is_mail_admin(user: str) -> bool:
 	return has_role(user, "Mail Admin")
 
 
+def is_user_enabled(user: str) -> bool:
+	"""Returns True if the user account is enabled else False."""
+
+	return bool(frappe.db.get_value("User", user, "enabled"))
+
+
 def has_user_settings(user: str, raise_exception: bool = False) -> bool:
 	"""Returns True if the user has User Settings else False."""
 

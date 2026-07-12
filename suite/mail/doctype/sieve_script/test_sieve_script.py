@@ -46,3 +46,51 @@ class IntegrationTestSieveScript(IntegrationTestCase):
 		self.assertIn('address :domain :is "from" "bad-domain.io"', block)
 		self.assertIn("if anyof (", block)
 		self.assertIn("# Rejected Emails", block)
+
+	def test_remove_sieve_block_removes_multi_stop_block(self):
+		from suite.mail.doctype.sieve_script.sieve_script import remove_sieve_block
+
+		# The Screening gate is an if/elsif block with two `stop;` statements; removal must strip the
+		# whole thing, not just up to the first `stop;`.
+		script = (
+			'require ["fileinto"];\n\n'
+			"# Screening\n"
+			'if address :is "from" "boss@work.com" {\n'
+			'  fileinto "INBOX";\n'
+			"  stop;\n"
+			"}\n"
+			'elsif not spamtest :value "ge" :comparator "i;ascii-numeric" "2" {\n'
+			'  fileinto "Screener";\n'
+			"  stop;\n"
+			"}\n"
+		)
+
+		result = remove_sieve_block(script, "Screening")
+
+		self.assertNotIn("# Screening", result)
+		self.assertNotIn("elsif", result)
+		self.assertNotIn("Screener", result)
+		self.assertIn('require ["fileinto"];', result)
+
+	def test_remove_sieve_block_preserves_following_block(self):
+		from suite.mail.doctype.sieve_script.sieve_script import remove_sieve_block
+
+		script = (
+			"# Rejected Emails\n"
+			'if address :is "from" "x@bad.com" {\n'
+			"  discard;\n"
+			"  stop;\n"
+			"}\n\n"
+			"# Mailbox: Work\n"
+			'if address :is "from" "team@work.com" {\n'
+			'  fileinto "Work";\n'
+			"  stop;\n"
+			"}\n"
+		)
+
+		result = remove_sieve_block(script, "Rejected Emails")
+
+		self.assertNotIn("# Rejected Emails", result)
+		self.assertNotIn("x@bad.com", result)
+		self.assertIn("# Mailbox: Work", result)
+		self.assertIn("team@work.com", result)

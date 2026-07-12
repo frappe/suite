@@ -95,6 +95,21 @@
 						</button>
 					</Dropdown>
 					<p v-else class="pb-[2px]">{{ title }}</p>
+					<Button
+						v-if="!selections.length"
+						class="ml-1.5"
+						variant="ghost"
+						:tooltip="__('Refresh')"
+						:disabled="threadsResource?.loading"
+						@click="reloadThreads()"
+					>
+						<template #icon>
+							<RefreshCw
+								class="icon"
+								:class="{ 'animate-spin': threadsResource?.loading }"
+							/>
+						</template>
+					</Button>
 					<div class="-mr-1.5 ml-auto flex items-center space-x-1.5 sm:space-x-3">
 						<div
 							v-if="!selections.length && displayTotal"
@@ -351,6 +366,18 @@
 						: __('You have no mails in this folder.')
 				}}
 			</p>
+			<Button
+				v-if="mailbox !== 'search'"
+				class="mt-3"
+				variant="ghost"
+				:label="__('Refresh')"
+				:disabled="threadsResource?.loading"
+				@click="reloadThreads()"
+			>
+				<template #prefix>
+					<RefreshCw class="icon" :class="{ 'animate-spin': threadsResource?.loading }" />
+				</template>
+			</Button>
 		</div>
 	</div>
 
