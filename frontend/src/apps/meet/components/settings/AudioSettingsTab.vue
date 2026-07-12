@@ -4,19 +4,19 @@
 		description="Configure your audio and microphone settings"
 	/>
 	<AppSettingsBody>
-		<div class="space-y-6">
-			<Switch
-				class="w-full !px-0"
-				label="Noise Cancellation"
+		<div class="divide-y divide-outline-gray-1">
+			<SettingsRow
+				title="Noise Cancellation"
 				description="Reduce background noise from your microphone"
-				v-model="noiseCancellationEnabledLocal"
-			/>
-			<Switch
-				class="w-full !px-0"
-				label="Push to Talk"
+			>
+				<Switch v-model="noiseCancellationEnabledLocal" />
+			</SettingsRow>
+			<SettingsRow
+				title="Push to Talk"
 				description="Hold spacebar to unmute your microphone"
-				v-model="pushToTalkEnabledLocal"
-			/>
+			>
+				<Switch v-model="pushToTalkEnabledLocal" />
+			</SettingsRow>
 		</div>
 	</AppSettingsBody>
 </template>
@@ -24,7 +24,7 @@
 <script setup lang="ts">
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { Switch } from 'frappe-ui';
+import { SettingsRow, Switch } from "frappe-ui";
 import { type Ref, ref, watch } from "vue";
 import {
 	noiseCancellationEnabled,
