@@ -4,13 +4,13 @@
 		description="Customize notification sounds for meeting events"
 	/>
 	<AppSettingsBody>
-		<div class="divide-y divide-outline-gray-1">
-			<SettingsRow
-				title="Enable notification sounds"
+		<div class="space-y-6">
+			<Switch
+				class="w-full"
+				label="Enable notification sounds"
 				description="Play sounds for all meeting events"
-			>
-				<Switch v-model="notificationChimesEnabledLocal" />
-			</SettingsRow>
+				v-model="notificationChimesEnabledLocal"
+			/>
 		</div>
 	</AppSettingsBody>
 </template>
@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { SettingsRow, Switch } from "frappe-ui";
+import { Switch } from "frappe-ui";
 import { type Ref, ref, watch } from "vue";
 import {
 	notificationChimesEnabled,
