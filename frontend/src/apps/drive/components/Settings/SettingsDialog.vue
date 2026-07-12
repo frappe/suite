@@ -1,47 +1,37 @@
 <template>
-  <Dialog v-model:open="open" title="Settings" size="5xl">
-    <template #body>
-      <div class="flex" :style="{ height: '80vh' }">
-        <div class="flex w-52 shrink-0 flex-col bg-surface-sidebar py-3 p-4 border-r">
-          <div class="flex justify-between items-center">
-            <h1 class="text-3xl-semibold leading-6 text-ink-gray-9 pr-2">
-              {{ __('Settings') }}
-            </h1>
-            <!-- <Button
-              class="ml-auto text-sm"
-              variant="ghost"
-              label="Exit"
-              @click="$emit('update:modelValue', false)"
-            /> -->
-          </div>
-          <div class="mt-3 space-y-1">
-            <template v-for="tab in tabs" :key="tab.label">
-              <button
-                v-if="tab.enabled?.value !== false"
-                class="flex h-7 w-full items-center gap-2 rounded-sm px-2 py-1 focus-visible:outline-none"
-                :class="[
-                  activeTab?.label == tab.label ? 'bg-surface-gray-4' : 'hover:bg-surface-gray-2',
-                ]"
-                @click="activeTab = tab"
-              >
-                <component :is="tab.icon" class="size-4 text-ink-gray-7 stroke-[1.5]" />
-                <span class="text-base text-ink-gray-8">
-                  {{ __(tab.label) }}
-                </span>
-              </button>
-            </template>
-          </div>
-        </div>
-        <div class="flex flex-1 flex-col px-6 py-4">
-          <component :is="activeTab.component" v-if="activeTab" />
-        </div>
-      </div>
-    </template>
-  </Dialog>
+  <UiSettingsDialog v-model="open" v-model:tab="activeTab" size="5xl" :shortcut="false">
+    <template #title>{{ __('Settings') }}</template>
+    <SettingsSidebar>
+      <SettingsNavGroup>
+        <SettingsNavItem
+          v-for="tab in visibleTabs"
+          :key="tab.value"
+          :value="tab.value"
+        >
+          <template #prefix>
+            <component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6 stroke-[1.5]" />
+          </template>
+          {{ __(tab.label) }}
+        </SettingsNavItem>
+      </SettingsNavGroup>
+    </SettingsSidebar>
+    <SettingsContent>
+      <SettingsPanel v-for="tab in visibleTabs" :key="tab.value" :value="tab.value">
+        <component :is="tab.component" />
+      </SettingsPanel>
+    </SettingsContent>
+  </UiSettingsDialog>
 </template>
 <script setup>
-import { ref, markRaw, computed } from 'vue'
-import { Dialog, Button } from 'frappe-ui'
+import { ref, markRaw, computed, watch } from 'vue'
+import {
+  SettingsContent,
+  SettingsDialog as UiSettingsDialog,
+  SettingsNavGroup,
+  SettingsNavItem,
+  SettingsPanel,
+  SettingsSidebar,
+} from 'frappe-ui'
 import { isAdmin } from '@/apps/drive/resources/permissions'
 import ProfileSettings from '@/apps/drive/components/Settings/ProfileSettings.vue'
 import StorageSettings from './StorageSettings.vue'
@@ -55,22 +45,26 @@ import BackendSettings from './BackendSettings.vue'
 const tabs = [
   {
     label: 'Profile',
+    value: 'profile',
     icon: LucideUser,
     component: markRaw(ProfileSettings),
   },
   {
     label: 'Teams',
+    value: 'teams',
     icon: LucideUserPlus,
     component: markRaw(UserListSettings),
   },
   {
     label: 'Statistics',
+    value: 'statistics',
     icon: LucideChartBar,
     component: markRaw(StorageSettings),
   },
   {
-    enabled: computed(() => isAdmin.data?.is_admin || false),
+    adminOnly: true,
     label: 'Storage',
+    value: 'storage',
     icon: LucideCloudCog,
     component: markRaw(BackendSettings),
   },
@@ -82,7 +76,13 @@ const props = defineProps({
   modelValue: Boolean,
   suggestedTab: Number,
 })
-const activeTab = ref(tabs[props.suggestedTab])
+
+const visibleTabs = computed(() =>
+  tabs.filter((tab) => !tab.adminOnly || isAdmin.data?.is_admin),
+)
+
+const initialIndex = props.suggestedTab ?? 0
+const activeTab = ref(tabs[initialIndex]?.value ?? 'profile')
 
 const open = computed({
   get() {
@@ -92,4 +92,24 @@ const open = computed({
     emit('update:modelValue', newValue)
   },
 })
+
+watch(
+  () => props.suggestedTab,
+  (index) => {
+    if (index == null) return
+    const tab = tabs[index]
+    if (tab) activeTab.value = tab.value
+  },
+)
+
+watch(
+  visibleTabs,
+  (list) => {
+    if (!list.length) return
+    if (!list.some((tab) => tab.value === activeTab.value)) {
+      activeTab.value = list[0].value
+    }
+  },
+  { immediate: true },
+)
 </script>

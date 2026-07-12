@@ -1,9 +1,9 @@
 <template>
+	<AppSettingsHeader :title="__('Identity')" />
+	<AppSettingsBody>
 	<template v-if="identities?.data?.length">
 		<div class="flex min-h-full flex-col">
 			<div class="flex-1 space-y-4 overflow-y-auto">
-				<h1>{{ __('Identity') }}</h1>
-
 				<FormControl
 					v-model="identityName"
 					type="combobox"
@@ -137,6 +137,7 @@
 			</Dialog>
 		</div>
 	</template>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -149,6 +150,8 @@ import {
 	createDocumentResource,
 	useList,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
 import { useTextEditorButtons } from '@/apps/mail/utils/composables'

@@ -1,16 +1,21 @@
 <template>
-  <div class="flex items-center mb-4">
-    <h1 class="font-semibold text-ink-gray-9">
-      {{ __('Teams') }}
-    </h1>
-    <Button
-      variant="solid"
-      :icon-left="h(LucidePlus, { class: 'size-4' })"
-      :label="__('New')"
-      class="ml-auto"
-      @click="showAddTeam = true"
-    />
-  </div>
+  <AppSettingsHeader :title="__('Teams')">
+    <template #actions>
+      <Button
+        v-if="team"
+        :label="__('Invite')"
+        :icon-left="h(LucideMail, { class: 'size-4' })"
+        @click="showInvite = true"
+      />
+      <Button
+        variant="solid"
+        :icon-left="h(LucidePlus, { class: 'size-4' })"
+        :label="__('New')"
+        @click="showAddTeam = true"
+      />
+    </template>
+  </AppSettingsHeader>
+  <AppSettingsBody>
   <Alert v-if="invite" type="info" :icon="LucideMail" class="mb-4">
     <template #actions>
       <Button
@@ -49,7 +54,7 @@
       </div>
     </div>
   </Alert>
-  <div v-if="Object.values(getTeams.data).length" class="flex gap-2 mb-2">
+  <div v-if="hasTeams" class="flex gap-2 mb-2">
     <TeamSelector v-model="team" />
     <Dropdown
       v-if="team"
@@ -82,12 +87,6 @@
           },
         ])
       "
-    />
-    <Button
-      label="Invite"
-      :icon-left="h(LucideMail, { class: 'size-4' })"
-      class="ml-auto"
-      @click="showInvite = true"
     />
   </div>
   <div v-else class="text-ink-gray-8 text-center text-p-sm py-4">
@@ -414,6 +413,7 @@
       </Button>
     </template>
   </Dialog>
+  </AppSettingsBody>
 </template>
 
 <script setup>
@@ -433,7 +433,11 @@ import {
   createResource,
   FormControl,
   FormLabel,
-  Checkbox, Button} from 'frappe-ui'
+  Checkbox,
+  Button,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import SyncBreakdown from '@/apps/drive/components/SyncBreakdown.vue'
 import { createDialog } from '@/apps/drive/utils/dialogs'
 import { teamUsers, getDiskSettings } from '@/apps/drive/resources/permissions'
@@ -469,6 +473,7 @@ const isAdmin = createResource({
 const team = ref(route.params.team || (getTeams.data ? Object.keys(getTeams.data)[0] : null))
 
 const teamData = computed(() => getTeams.data?.[team.value] || {})
+const hasTeams = computed(() => Object.keys(getTeams.data || {}).length > 0)
 watch(
   team,
   (team) => {

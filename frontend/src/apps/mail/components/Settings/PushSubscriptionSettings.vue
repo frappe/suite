@@ -1,60 +1,61 @@
 <template>
-	<!-- A single h-full flex column gives the ListView a bounded flex parent so it fills the panel and
-	scrolls within itself, instead of taking a small intrinsic height with empty space below. -->
-	<div class="flex min-h-0 flex-1 flex-col gap-4">
-		<div class="flex items-center justify-between">
-			<h1>{{ __('Push Subscriptions') }}</h1>
-			<div class="flex gap-2">
-				<Button
-					variant="outline"
-					icon="lucide-refresh-cw"
-					:tooltip="__('Refresh')"
-					:loading="pushSubscriptions.loading"
-					@click="pushSubscriptions.reload()"
-				/>
-				<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-			</div>
-		</div>
-
-		<template v-if="rows.length">
-			<ListView
-				ref="listView"
-				class="min-h-0 flex-1"
-				:columns="COLUMNS"
-				:rows="rows"
-				row-key="name"
-			>
-				<ListHeader />
-				<ListRows />
-				<ListSelectBanner>
-					<template #actions>
-						<Button
-							variant="ghost"
-							:label="__('Renew')"
-							:loading="renewing"
-							@click="renewSelected"
-						/>
-						<Button
-							variant="ghost"
-							theme="red"
-							:label="__('Delete')"
-							@click="showDeleteModal = true"
-						/>
-					</template>
-				</ListSelectBanner>
-			</ListView>
+	<AppSettingsHeader :title="__('Push Subscriptions')">
+		<template #actions>
+			<Button
+				variant="outline"
+				icon="lucide-refresh-cw"
+				:tooltip="__('Refresh')"
+				:loading="pushSubscriptions.loading"
+				@click="pushSubscriptions.reload()"
+			/>
+			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 		</template>
-		<div
-			v-else-if="!pushSubscriptions.loading"
-			class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
-		>
-			<p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
-			<p>{{ MESSAGE }}</p>
-		</div>
+	</AppSettingsHeader>
+	<AppSettingsBody>
+		<div class="flex min-h-0 flex-1 flex-col gap-4">
+			<template v-if="rows.length">
+				<ListView
+					ref="listView"
+					class="min-h-0 flex-1"
+					:columns="COLUMNS"
+					:rows="rows"
+					row-key="name"
+				>
+					<ListHeader />
+					<ListRows />
+					<ListSelectBanner>
+						<template #actions>
+							<Button
+								variant="ghost"
+								:label="__('Renew')"
+								:loading="renewing"
+								@click="renewSelected"
+							/>
+							<Button
+								variant="ghost"
+								theme="red"
+								:label="__('Delete')"
+								@click="showDeleteModal = true"
+							/>
+						</template>
+					</ListSelectBanner>
+				</ListView>
+			</template>
+			<div
+				v-else-if="!pushSubscriptions.loading"
+				class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
+			>
+				<p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
+				<p>{{ MESSAGE }}</p>
+			</div>
 
-		<AddPushSubscriptionModal v-model="showAddModal" @created="pushSubscriptions.reload()" />
-		<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
-	</div>
+			<AddPushSubscriptionModal
+				v-model="showAddModal"
+				@created="pushSubscriptions.reload()"
+			/>
+			<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
+		</div>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -69,6 +70,8 @@ import {
 	call,
 	createResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'

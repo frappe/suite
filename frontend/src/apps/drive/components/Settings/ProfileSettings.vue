@@ -1,7 +1,6 @@
 <template>
-  <h1 class="font-semibold mb-8 text-ink-gray-9">
-    {{ __('Profile') }}
-  </h1>
+  <AppSettingsHeader :title="__('Profile')" />
+  <AppSettingsBody>
   <div class="flex justify-start w-full items-center gap-x-4">
     <Avatar :image="newImageUrl" size="3xl" :label="fullName" class="w-20 h-20" />
     <div class="flex flex-col">
@@ -54,11 +53,12 @@
       </div>
     </div>
   </Dialog>
-  <h1 class="font-semibold mt-12 mb-4 text-ink-gray-8">
+  <h2 class="text-base-semibold mt-12 mb-4 text-ink-gray-8">
     {{ __('Preferences') }}
-  </h1>
+  </h2>
 
   <Switch v-model="detectLinks" label="Automatically detect links" />
+  </AppSettingsBody>
 </template>
 <script setup>
 import {
@@ -70,6 +70,8 @@ import {
   Switch,
   createDocumentResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import LucideLink from '~icons/lucide/link'
 import LucideX from '~icons/lucide/x'
 

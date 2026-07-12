@@ -1,11 +1,9 @@
 <template>
-	<SettingsLayoutBase
-		:description="'Customize your video background with blur effects or virtual backgrounds'"
-	>
-		<template #title>
-			Background
-		</template>
-		<template #content>
+	<AppSettingsHeader
+		title="Background"
+		description="Customize your video background with blur effects or virtual backgrounds"
+	/>
+	<AppSettingsBody>
 			<!-- Video Preview -->
 			<div class="flex justify-center mb-4">
 				<div class="w-96 h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
@@ -102,12 +100,13 @@
 					</div>
 				</div>
 			</div>
-		</template>
-	</SettingsLayoutBase>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { toast } from "frappe-ui";
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import { toast } from 'frappe-ui';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useBackgroundEffects } from "../../composables/useBackgroundEffects";
 import { useMeetingContext } from "../../composables/useMeetingContext";
@@ -127,7 +126,6 @@ import {
 	setSelectedBackgroundImage,
 } from "../../data/backgroundEffects";
 import { selectedCameraId } from "../../data/mediaPreferences";
-import SettingsLayoutBase from "./SettingsLayoutBase.vue";
 
 interface BackgroundOption {
 	name: string;

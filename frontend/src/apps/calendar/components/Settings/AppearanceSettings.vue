@@ -1,24 +1,34 @@
 <template>
-	<h1>{{ __('Appearance') }}</h1>
-	<FormControl
-		v-model="colorScheme"
-		:label="__('Color Scheme')"
-		type="select"
-		variant="outline"
-		:options="COLOR_SCHEMES"
-	/>
-	<Button
-		:label="__('Save')"
-		variant="solid"
-		:loading="saveSettings.loading"
-		:disabled="isNotDirty"
-		@click="() => saveSettings.submit()"
-	/>
+	<AppSettingsHeader :title="__('Appearance')" />
+	<AppSettingsBody>
+		<div class="flex flex-col gap-5">
+			<FormControl
+				v-model="colorScheme"
+				:label="__('Color Scheme')"
+				type="select"
+				variant="outline"
+				:options="COLOR_SCHEMES"
+			/>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:loading="saveSettings.loading"
+				:disabled="isNotDirty"
+				@click="() => saveSettings.submit()"
+			/>
+		</div>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { Button, FormControl, createResource } from 'frappe-ui'
+import {
+	Button,
+	FormControl,
+	createResource,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/calendar/utils'
 

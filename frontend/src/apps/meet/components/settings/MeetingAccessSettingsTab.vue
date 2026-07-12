@@ -1,9 +1,9 @@
 <template>
-	<SettingsLayoutBase
+	<AppSettingsHeader
 		title="Meeting Access"
 		description="Manage how participants can join and interact in the meeting."
-	>
-		<template #content>
+	/>
+	<AppSettingsBody>
 			<div class="space-y-6">
 				<!-- Allow Guest Toggle -->
 				<div class="space-y-3">
@@ -53,17 +53,22 @@
 					:globally-enabled="globalE2EEEnabled"
 				/>
 			</div>
-		</template>
-	</SettingsLayoutBase>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { debounce, FormControl, Switch, toast } from "frappe-ui";
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import {
+	debounce,
+	FormControl,
+	Switch,
+	toast,
+} from 'frappe-ui';
 import { onMounted, ref, watch } from "vue";
 import { useChatStore } from "@/apps/meet/composables/useChatStore";
 import { useMeetingDoc } from "../../composables/useMeetingDoc";
 import E2EESettingsSection from "./E2EESettingsSection.vue";
-import SettingsLayoutBase from "./SettingsLayoutBase.vue";
 
 const props = defineProps({
 	meetingId: {
