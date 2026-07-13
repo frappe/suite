@@ -295,6 +295,7 @@ watch(showPasswordDialog, (open) => {
 		currentPassword.value = ''
 		newPassword.value = ''
 		confirmPassword.value = ''
+		updatePassword.reset()
 	}
 })
 </script>
