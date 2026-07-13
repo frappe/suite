@@ -51,7 +51,7 @@
 									{{ displayName }}
 								</div>
 								<p class="text-base text-ink-gray-6 truncate">
-									{{ uploading ? __('Uploading…') : user.doc.email || userName }}
+									{{ uploading ? __('Uploading…') : user.doc.email || userId }}
 								</p>
 								<ErrorMessage v-if="error" class="mt-1" :message="error" />
 							</div>
@@ -65,6 +65,7 @@
 						:label="__('First name')"
 						variant="outline"
 						class="w-full"
+						autocomplete="given-name"
 						:disabled="user.setValue.loading"
 						@blur="saveName"
 					/>
@@ -73,13 +74,14 @@
 						:label="__('Last name')"
 						variant="outline"
 						class="w-full"
+						autocomplete="family-name"
 						:disabled="user.setValue.loading"
 						@blur="saveName"
 					/>
 				</div>
 			</section>
 
-			<div v-if="showChangePassword" class="divide-y divide-outline-gray-1">
+			<div class="divide-y divide-outline-gray-1">
 				<SettingsRow
 					:title="__('Password')"
 					:description="__('Manage password and account access')"
@@ -92,12 +94,25 @@
 		</div>
 	</AppSettingsBody>
 
-	<Dialog v-if="showChangePassword" v-model="showPasswordDialog" :options="passwordDialogOptions">
+	<Dialog v-model="showPasswordDialog" :options="passwordDialogOptions">
 		<template #body-content>
-			<div class="space-y-4">
+			<form class="space-y-4" @submit.prevent>
+				<!-- Capture username here so Chrome doesn't fill profile last name -->
+				<input
+					type="text"
+					name="username"
+					autocomplete="username"
+					tabindex="-1"
+					aria-hidden="true"
+					:value="userId || ''"
+					readonly
+					class="pointer-events-none absolute h-0 w-0 opacity-0"
+				/>
 				<FormControl
 					v-model="currentPassword"
 					type="password"
+					name="current-password"
+					autocomplete="current-password"
 					:label="__('Current Password')"
 					placeholder="••••••••"
 					variant="outline"
@@ -105,6 +120,8 @@
 				<FormControl
 					v-model="newPassword"
 					type="password"
+					name="new-password"
+					autocomplete="new-password"
 					:label="__('New Password')"
 					placeholder="••••••••"
 					variant="outline"
@@ -112,12 +129,14 @@
 				<FormControl
 					v-model="confirmPassword"
 					type="password"
+					name="confirm-password"
+					autocomplete="new-password"
 					:label="__('Confirm New Password')"
 					placeholder="••••••••"
 					variant="outline"
 				/>
 				<ErrorMessage :message="passwordError" />
-			</div>
+			</form>
 		</template>
 	</Dialog>
 </template>
@@ -141,22 +160,15 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { useSessionStore, userResource } from '@/boot/session'
 
-withDefaults(
-	defineProps<{
-		showChangePassword?: boolean
-	}>(),
-	{ showChangePassword: true },
-)
-
 const AUTOSAVE_TOAST_ID = 'suite-profile-autosave'
 
 const session = useSessionStore()
-const userName = computed(() => session.user as string)
+const userId = session.user as string
 
 // Gameplan-style: edit the User document resource and persist via setValue
 const user = createDocumentResource({
 	doctype: 'User',
-	name: userName.value,
+	name: userId,
 	auto: true,
 	setValue: {
 		onSuccess: () => {
@@ -172,9 +184,9 @@ const confirmPassword = ref('')
 
 const displayName = computed(() => {
 	const doc = user?.doc
-	if (!doc) return userName.value
+	if (!doc) return userId
 	const name = [doc.first_name, doc.last_name].filter(Boolean).join(' ')
-	return name || doc.email || userName.value
+	return name || doc.email || userId
 })
 
 function avatarMenuOptions(openFileSelector: () => void) {

@@ -108,14 +108,8 @@ const tabGroups = computed(() =>
 
 const visibleTabs = computed(() => tabGroups.value.flatMap((group) => group.items))
 
-const flatTabsByIndex = computed(() =>
-  allGroups.flatMap((group) =>
-    group.adminOnly && !isAdmin.data?.is_admin ? [] : group.items,
-  ),
-)
-
 const initialIndex = props.suggestedTab ?? 0
-const activeTab = ref(flatTabsByIndex.value[initialIndex]?.value ?? 'profile')
+const activeTab = ref(visibleTabs.value[initialIndex]?.value ?? 'profile')
 
 const open = computed({
   get() {
@@ -130,7 +124,7 @@ watch(
   () => props.suggestedTab,
   (index) => {
     if (index == null) return
-    const tab = flatTabsByIndex.value[index]
+    const tab = visibleTabs.value[index]
     if (tab) activeTab.value = tab.value
   },
 )
