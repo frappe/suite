@@ -1,5 +1,15 @@
 <template>
-	<AppSettingsHeader :title="__('Appearance')" />
+	<AppSettingsHeader :title="__('Appearance')">
+		<template #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:loading="saveSettings.loading"
+				:disabled="isNotDirty"
+				@click="() => saveSettings.submit()"
+			/>
+		</template>
+	</AppSettingsHeader>
 	<AppSettingsBody>
 		<div class="flex flex-col gap-5">
 			<FormControl
@@ -26,13 +36,6 @@
 					@update:model-value="(v) => (groupMessagesBy = v)"
 				/>
 			</template>
-			<Button
-				:label="__('Save')"
-				variant="solid"
-				:loading="saveSettings.loading"
-				:disabled="isNotDirty"
-				@click="() => saveSettings.submit()"
-			/>
 		</div>
 	</AppSettingsBody>
 </template>

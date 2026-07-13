@@ -1,7 +1,7 @@
 <template>
 	<AppSettingsHeader :title="__('Profile')" />
 	<AppSettingsBody>
-		<div class="space-y-11">
+		<div class="space-y-6">
 			<section class="space-y-6">
 				<FileUploader
 					file-types="image/png,image/jpeg,image/jpg"
@@ -46,16 +46,12 @@
 									/>
 								</button>
 							</div>
-							<div>
-								<div class="text-base-medium text-ink-gray-8">
-									{{ __('Profile picture') }}
+							<div class="min-w-0">
+								<div class="text-3xl-semibold text-ink-gray-8 truncate">
+									{{ displayName }}
 								</div>
-								<p class="text-p-sm text-ink-gray-5">
-									{{
-										uploading
-											? __('Uploading…')
-											: __('Helps people recognise you')
-									}}
+								<p class="text-base text-ink-gray-6 truncate">
+									{{ uploading ? __('Uploading…') : email }}
 								</p>
 								<ErrorMessage v-if="error" class="mt-1" :message="error" />
 							</div>
@@ -83,17 +79,14 @@
 				</div>
 			</section>
 
-			<section v-if="showChangePassword">
-				<h2 class="text-lg-semibold text-ink-gray-8">{{ __('Account') }}</h2>
-				<div class="mt-2 divide-y divide-outline-gray-1">
-					<SettingsRow
-						:title="__('Password')"
-						:description="__('Manage password and account access')"
-					>
-						<Button :label="__('Update Password')" @click="showPasswordDialog = true" />
-					</SettingsRow>
-				</div>
-			</section>
+			<div v-if="showChangePassword" class="divide-y divide-outline-gray-1">
+				<SettingsRow
+					:title="__('Password')"
+					:description="__('Manage password and account access')"
+				>
+					<Button :label="__('Update Password')" @click="showPasswordDialog = true" />
+				</SettingsRow>
+			</div>
 
 			<slot />
 		</div>

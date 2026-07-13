@@ -11,34 +11,41 @@
 			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 		</template>
 	</AppSettingsHeader>
-	<div class="flex min-h-0 flex-1 flex-col gap-4 px-[4.4rem] pb-16 pt-6">
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden px-[4.4rem] pb-8 pt-6">
 		<template v-if="rows.length">
-			<ListView
-				ref="listView"
-				class="min-h-0 flex-1"
-				:columns="COLUMNS"
-				:rows="rows"
-				row-key="name"
-			>
-				<ListHeader />
-				<ListRows />
-				<ListSelectBanner>
-					<template #actions>
-						<Button
-							variant="ghost"
-							:label="__('Renew')"
-							:loading="renewing"
-							@click="renewSelected"
-						/>
-						<Button
-							variant="ghost"
-							theme="red"
-							:label="__('Delete')"
-							@click="showDeleteModal = true"
-						/>
-					</template>
-				</ListSelectBanner>
-			</ListView>
+			<div class="relative min-h-0 flex-1">
+				<!-- Force ListView root to full panel height so overflow-x scrollbar is at the bottom -->
+				<div
+					class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
+				>
+					<ListView
+						ref="listView"
+						class="h-full min-h-0"
+						:columns="COLUMNS"
+						:rows="rows"
+						row-key="name"
+					>
+						<ListHeader />
+						<ListRows />
+						<ListSelectBanner>
+							<template #actions>
+								<Button
+									variant="ghost"
+									:label="__('Renew')"
+									:loading="renewing"
+									@click="renewSelected"
+								/>
+								<Button
+									variant="ghost"
+									theme="red"
+									:label="__('Delete')"
+									@click="showDeleteModal = true"
+								/>
+							</template>
+						</ListSelectBanner>
+					</ListView>
+				</div>
+			</div>
 		</template>
 		<div
 			v-else-if="!pushSubscriptions.loading"

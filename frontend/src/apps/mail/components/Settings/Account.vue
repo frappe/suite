@@ -1,5 +1,15 @@
 <template>
-	<AppSettingsHeader :title="__('Account')" />
+	<AppSettingsHeader :title="__('Account')">
+		<template v-if="jmapAccount.doc" #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:disabled="loading || !isDirty"
+				:loading="saving"
+				@click="save"
+			/>
+		</template>
+	</AppSettingsHeader>
 	<AppSettingsBody>
 	<template v-if="jmapAccount.doc">
 		<div class="flex flex-col gap-5">
@@ -73,14 +83,6 @@
 		</template>
 
 		<ErrorMessage :message="jmapAccount.save.error || userSettings.save.error" />
-		<Button
-			:label="__('Save')"
-			variant="solid"
-			:disabled="loading || !isDirty"
-			:loading="saving"
-			class="min-h-7"
-			@click="save"
-		/>
 
 		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
 		</div>

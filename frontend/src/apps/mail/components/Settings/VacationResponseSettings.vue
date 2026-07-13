@@ -1,5 +1,18 @@
 <template>
-	<AppSettingsHeader :title="__('Vacation Response')" />
+	<AppSettingsHeader :title="__('Vacation Response')">
+		<template v-if="vacationResponse.data" #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:disabled="
+					vacationResponse.loading ||
+					JSON.stringify(vacationResponse.data) === JSON.stringify(original)
+				"
+				:loading="updateVacationResponse.loading"
+				@click="handleSave"
+			/>
+		</template>
+	</AppSettingsHeader>
 	<AppSettingsBody>
 		<div v-if="vacationResponse.data" class="flex flex-col gap-5">
 			<Switch
@@ -36,17 +49,6 @@
 					@change="(val: string) => (vacationResponse.data.html_body = val)"
 				/>
 			</div>
-			<Button
-				:label="__('Save')"
-				variant="solid"
-				:disabled="
-					vacationResponse.loading ||
-					JSON.stringify(vacationResponse.data) === JSON.stringify(original)
-				"
-				:loading="updateVacationResponse.loading"
-				class="min-h-7"
-				@click="handleSave"
-			/>
 			<SetSieveScriptStateModal
 				v-model="showConfirmDialog"
 				:script="{ _name: 'vacation', active: 0 }"

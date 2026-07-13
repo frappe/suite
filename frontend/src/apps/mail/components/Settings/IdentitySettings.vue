@@ -1,9 +1,22 @@
 <template>
-	<AppSettingsHeader :title="__('Identity')" />
+	<AppSettingsHeader :title="__('Identity')">
+		<template v-if="identity?.doc && !identity.loading" #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:disabled="
+					identity.get.loading ||
+					JSON.stringify(identity.doc) === JSON.stringify(identity.originalDoc)
+				"
+				:loading="identity.save.loading"
+				@click="save"
+			/>
+		</template>
+	</AppSettingsHeader>
 	<AppSettingsBody>
 	<template v-if="identities?.data?.length">
 		<div class="flex min-h-full flex-col">
-			<div class="flex-1 space-y-4 overflow-y-auto">
+			<div class="flex-1 space-y-4">
 				<FormControl
 					v-model="identityName"
 					type="combobox"
@@ -85,23 +98,6 @@
 						/>
 					</div>
 				</template>
-			</div>
-
-			<div
-				v-if="identity?.doc && !identity.loading"
-				class="bg-surface-elevation-2 sticky bottom-0 py-4"
-			>
-				<Button
-					:label="__('Save')"
-					variant="solid"
-					:disabled="
-						identity.get.loading ||
-						JSON.stringify(identity.doc) === JSON.stringify(identity.originalDoc)
-					"
-					:loading="identity.save.loading"
-					class="min-h-7 w-full"
-					@click="save"
-				/>
 			</div>
 
 			<Dialog

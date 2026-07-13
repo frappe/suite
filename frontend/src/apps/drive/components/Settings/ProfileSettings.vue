@@ -1,10 +1,12 @@
 <template>
 	<UserProfileSettings>
-		<section class="mt-6 space-y-4 border-t border-outline-gray-2 pt-6">
-			<h2 class="text-base-semibold text-ink-gray-8">
+		<section>
+			<h2 class="text-lg-semibold text-ink-gray-8">
 				{{ __('Preferences') }}
 			</h2>
-			<Switch v-model="detectLinks" :label="__('Automatically detect links')" />
+			<div class="mt-2">
+				<Switch v-model="detectLinks" :label="__('Automatically detect links')" />
+			</div>
 		</section>
 	</UserProfileSettings>
 </template>

@@ -4,9 +4,9 @@
 			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 		</template>
 	</AppSettingsHeader>
-	<div class="flex min-h-0 flex-1 flex-col gap-4 px-[4.4rem] pb-16 pt-6">
+	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-[4.4rem] pb-8 pt-6">
 		<template v-if="screenedAddresses.data?.length">
-			<div class="flex gap-2">
+			<div class="flex shrink-0 gap-2">
 				<FormControl
 					v-model="search"
 					type="text"
@@ -33,34 +33,39 @@
 				/>
 			</div>
 
-			<ListView
-				v-if="rows.length"
-				ref="listView"
-				class="min-h-0 flex-1"
-				:columns="COLUMNS"
-				:rows="rows"
-				row-key="email"
-			>
-				<ListHeader />
-				<ListRows />
-				<ListSelectBanner>
-					<template #actions>
-						<Dropdown :options="bulkActionOptions">
-							<Button
-								variant="ghost"
-								:label="__('Change Action')"
-								icon-right="lucide-chevron-down"
-							/>
-						</Dropdown>
-						<Button
-							variant="ghost"
-							theme="red"
-							:label="__('Remove')"
-							@click="showRemoveModal = true"
-						/>
-					</template>
-				</ListSelectBanner>
-			</ListView>
+			<div v-if="rows.length" class="relative min-h-0 flex-1">
+				<div
+					class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
+				>
+					<ListView
+						ref="listView"
+						class="h-full min-h-0"
+						:columns="COLUMNS"
+						:rows="rows"
+						row-key="email"
+					>
+						<ListHeader />
+						<ListRows />
+						<ListSelectBanner>
+							<template #actions>
+								<Dropdown :options="bulkActionOptions">
+									<Button
+										variant="ghost"
+										:label="__('Change Action')"
+										icon-right="lucide-chevron-down"
+									/>
+								</Dropdown>
+								<Button
+									variant="ghost"
+									theme="red"
+									:label="__('Remove')"
+									@click="showRemoveModal = true"
+								/>
+							</template>
+						</ListSelectBanner>
+					</ListView>
+				</div>
+			</div>
 			<div v-else class="text-ink-gray-6 text-sm">
 				<p>{{ __('No screened senders match your search.') }}</p>
 			</div>
