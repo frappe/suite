@@ -1,7 +1,7 @@
 <template>
 	<AppSettingsHeader :title="__('Profile')" />
 	<AppSettingsBody>
-		<div class="space-y-6">
+		<div v-if="user?.doc" class="space-y-6">
 			<section class="space-y-6">
 				<FileUploader
 					file-types="image/png,image/jpeg,image/jpg"
@@ -12,7 +12,7 @@
 						<div class="flex items-center gap-4">
 							<div>
 								<Dropdown
-									v-if="userImage"
+									v-if="user.doc.user_image"
 									:options="avatarMenuOptions(openFileSelector)"
 									placement="right"
 								>
@@ -20,10 +20,10 @@
 										type="button"
 										class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 										:aria-label="__('Profile picture options')"
-										:disabled="uploading || savingPhoto"
+										:disabled="uploading || user.setValue.loading"
 									>
 										<Avatar
-											:image="userImage"
+											:image="user.doc.user_image"
 											:label="displayName"
 											size="3xl"
 											class="!h-16 !w-16"
@@ -35,11 +35,11 @@
 									type="button"
 									class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
 									:aria-label="__('Upload profile picture')"
-									:disabled="uploading || savingPhoto"
+									:disabled="uploading || user.setValue.loading"
 									@click="openFileSelector"
 								>
 									<Avatar
-										:image="userImage"
+										:image="user.doc.user_image"
 										:label="displayName"
 										size="3xl"
 										class="!h-16 !w-16"
@@ -51,7 +51,7 @@
 									{{ displayName }}
 								</div>
 								<p class="text-base text-ink-gray-6 truncate">
-									{{ uploading ? __('Uploading…') : email }}
+									{{ uploading ? __('Uploading…') : user.doc.email || userName }}
 								</p>
 								<ErrorMessage v-if="error" class="mt-1" :message="error" />
 							</div>
@@ -61,19 +61,19 @@
 
 				<div class="grid gap-6 sm:grid-cols-2">
 					<FormControl
-						v-model="firstName"
+						v-model="user.doc.first_name"
 						:label="__('First name')"
 						variant="outline"
 						class="w-full"
-						:disabled="savingName"
+						:disabled="user.setValue.loading"
 						@blur="saveName"
 					/>
 					<FormControl
-						v-model="lastName"
+						v-model="user.doc.last_name"
 						:label="__('Last name')"
 						variant="outline"
 						class="w-full"
-						:disabled="savingName"
+						:disabled="user.setValue.loading"
 						@blur="saveName"
 					/>
 				</div>
@@ -133,7 +133,7 @@ import {
 	FileUploader,
 	FormControl,
 	SettingsRow,
-	call,
+	createDocumentResource,
 	createResource,
 	toast,
 } from 'frappe-ui'
@@ -153,22 +153,28 @@ const AUTOSAVE_TOAST_ID = 'suite-profile-autosave'
 const session = useSessionStore()
 const userName = computed(() => session.user as string)
 
-const firstName = ref('')
-const lastName = ref('')
-const email = ref('')
-const userImage = ref<string | null>(null)
-const savedFirstName = ref('')
-const savedLastName = ref('')
-const savingName = ref(false)
-const savingPhoto = ref(false)
+// Gameplan-style: edit the User document resource and persist via setValue
+const user = createDocumentResource({
+	doctype: 'User',
+	name: userName.value,
+	auto: true,
+	setValue: {
+		onSuccess: () => {
+			userResource.reload()
+		},
+	},
+})
+
 const showPasswordDialog = ref(false)
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 
 const displayName = computed(() => {
-	const name = [firstName.value, lastName.value].filter(Boolean).join(' ')
-	return name || email.value || userName.value
+	const doc = user?.doc
+	if (!doc) return userName.value
+	const name = [doc.first_name, doc.last_name].filter(Boolean).join(' ')
+	return name || doc.email || userName.value
 })
 
 function avatarMenuOptions(openFileSelector: () => void) {
@@ -193,107 +199,49 @@ function validateAvatarFile(file: File) {
 	}
 }
 
-function applyUserDoc(data: Record<string, string | null>) {
-	firstName.value = (data.first_name as string) || ''
-	lastName.value = (data.last_name as string) || ''
-	savedFirstName.value = firstName.value
-	savedLastName.value = lastName.value
-	email.value = (data.email as string) || userName.value
-	userImage.value = (data.user_image as string) || null
-}
-
-const userDoc = createResource({
-	url: 'frappe.client.get',
-	makeParams: () => ({
-		doctype: 'User',
-		name: userName.value,
-	}),
-	auto: false,
-	onSuccess: applyUserDoc,
-})
-
-watch(
-	userName,
-	(name) => {
-		if (name) userDoc.fetch()
-	},
-	{ immediate: true },
-)
-
 async function saveName() {
-	if (!userName.value || savingName.value) return
+	if (!user?.doc || user.setValue.loading) return
 
-	const nextFirst = firstName.value.trim()
-	const nextLast = lastName.value.trim()
+	const nextFirst = (user.doc.first_name || '').trim()
+	const nextLast = (user.doc.last_name || '').trim()
 	if (!nextFirst) {
 		toast.error(__('First name is required'))
-		firstName.value = savedFirstName.value
+		user.doc.first_name = user.originalDoc?.first_name || ''
 		return
 	}
-	if (nextFirst === savedFirstName.value && nextLast === savedLastName.value) return
 
-	savingName.value = true
+	const prevFirst = user.originalDoc?.first_name || ''
+	const prevLast = user.originalDoc?.last_name || ''
+	if (nextFirst === prevFirst && nextLast === prevLast) return
+
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'User',
-			name: userName.value,
-			fieldname: {
-				first_name: nextFirst,
-				last_name: nextLast,
-			},
+		await user.setValue.submit({
+			first_name: nextFirst,
+			last_name: nextLast,
 		})
-		firstName.value = nextFirst
-		lastName.value = nextLast
-		savedFirstName.value = nextFirst
-		savedLastName.value = nextLast
-		userResource.reload()
 		toast.success(__('Name saved'), { id: AUTOSAVE_TOAST_ID })
 	} catch {
 		toast.error(__('Could not save name'))
-		firstName.value = savedFirstName.value
-		lastName.value = savedLastName.value
-	} finally {
-		savingName.value = false
 	}
 }
 
 async function onAvatarUploaded(file: { file_url: string }) {
-	if (!userName.value) return
-	savingPhoto.value = true
+	if (!user?.doc) return
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'User',
-			name: userName.value,
-			fieldname: 'user_image',
-			value: file.file_url,
-		})
-		userImage.value = file.file_url
-		userResource.reload()
+		await user.setValue.submit({ user_image: file.file_url })
 		toast.success(__('Profile picture updated'), { id: AUTOSAVE_TOAST_ID })
 	} catch {
 		toast.error(__('Could not update profile picture'))
-	} finally {
-		savingPhoto.value = false
 	}
 }
 
 async function removeAvatar() {
-	if (!userName.value || savingPhoto.value || !userImage.value) return
-	savingPhoto.value = true
+	if (!user?.doc?.user_image || user.setValue.loading) return
 	try {
-		await call('frappe.client.set_value', {
-			doctype: 'User',
-			name: userName.value,
-			fieldname: 'user_image',
-			value: null,
-		})
-		userImage.value = null
-		userResource.reload()
+		await user.setValue.submit({ user_image: null })
 		toast.success(__('Profile picture removed'), { id: AUTOSAVE_TOAST_ID })
 	} catch {
 		toast.error(__('Could not remove profile picture'))
-	} finally {
-		savingPhoto.value = false
 	}
 }
 
