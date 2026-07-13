@@ -121,7 +121,7 @@ const tabs = computed((): TabGroup[] => {
 			label: "Meeting",
 			items: [
 				{
-					label: "Meeting Access",
+					label: "Controls",
 					value: "meeting-access",
 					icon: h(LucideUser),
 					component: markRaw(MeetingAccessSettingsTab),
@@ -130,42 +130,49 @@ const tabs = computed((): TabGroup[] => {
 		});
 	}
 
-	allTabs.push({
-		label: "General",
-		items: [
-			{
-				label: "Devices",
-				value: "devices",
-				icon: h(LucideMonitorSmartphone),
-				component: markRaw(DeviceSettingsTab),
-			},
-			{
-				label: "Audio",
-				value: "audio",
-				icon: h(LucideAudioLines),
-				component: markRaw(AudioSettingsTab),
-			},
-			{
-				label: "Background",
-				value: "background",
-				icon: h(LucideCamera),
-				component: markRaw(BackgroundSettingsTab),
-			},
-			{
-				label: "Notifications",
-				value: "notifications",
-				icon: h(LucideBell),
-				component: markRaw(NotificationSettingsTab),
-			},
-			{
-				label: "Layout",
-				value: "layout",
-				icon: h(LucideLayoutDashboard),
-				condition: () => !props.isPreview,
-				component: markRaw(LayoutSettingsTab),
-			},
-		],
-	});
+	allTabs.push(
+		{
+			label: "Media",
+			items: [
+				{
+					label: "Devices",
+					value: "devices",
+					icon: h(LucideMonitorSmartphone),
+					component: markRaw(DeviceSettingsTab),
+				},
+				{
+					label: "Audio",
+					value: "audio",
+					icon: h(LucideAudioLines),
+					component: markRaw(AudioSettingsTab),
+				},
+				{
+					label: "Background",
+					value: "background",
+					icon: h(LucideCamera),
+					component: markRaw(BackgroundSettingsTab),
+				},
+			],
+		},
+		{
+			label: "Interface",
+			items: [
+				{
+					label: "Notifications",
+					value: "notifications",
+					icon: h(LucideBell),
+					component: markRaw(NotificationSettingsTab),
+				},
+				{
+					label: "Layout",
+					value: "layout",
+					icon: h(LucideLayoutDashboard),
+					condition: () => !props.isPreview,
+					component: markRaw(LayoutSettingsTab),
+				},
+			],
+		},
+	);
 
 	return allTabs
 		.map((group) => ({

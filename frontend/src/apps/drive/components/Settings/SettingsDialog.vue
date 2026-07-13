@@ -2,9 +2,13 @@
   <UiSettingsDialog v-model="open" v-model:tab="activeTab" size="5xl" :shortcut="false">
     <template #title>{{ __('Settings') }}</template>
     <SettingsSidebar>
-      <SettingsNavGroup>
+      <SettingsNavGroup
+        v-for="group in tabGroups"
+        :key="group.label"
+        :label="__(group.label)"
+      >
         <SettingsNavItem
-          v-for="tab in visibleTabs"
+          v-for="tab in group.items"
           :key="tab.value"
           :value="tab.value"
         >
@@ -42,31 +46,46 @@ import LucideUser from '~icons/lucide/user'
 import LucideUserPlus from '~icons/lucide/user-plus'
 import BackendSettings from './BackendSettings.vue'
 
-const tabs = [
+const allGroups = [
   {
-    label: 'Profile',
-    value: 'profile',
-    icon: LucideUser,
-    component: markRaw(ProfileSettings),
+    label: 'General',
+    items: [
+      {
+        label: 'Profile',
+        value: 'profile',
+        icon: LucideUser,
+        component: markRaw(ProfileSettings),
+      },
+    ],
   },
   {
-    label: 'Teams',
-    value: 'teams',
-    icon: LucideUserPlus,
-    component: markRaw(UserListSettings),
+    label: 'Workspace',
+    items: [
+      {
+        label: 'Teams',
+        value: 'teams',
+        icon: LucideUserPlus,
+        component: markRaw(UserListSettings),
+      },
+      {
+        label: 'Statistics',
+        value: 'statistics',
+        icon: LucideChartBar,
+        component: markRaw(StorageSettings),
+      },
+    ],
   },
   {
-    label: 'Statistics',
-    value: 'statistics',
-    icon: LucideChartBar,
-    component: markRaw(StorageSettings),
-  },
-  {
+    label: 'Administration',
     adminOnly: true,
-    label: 'Storage',
-    value: 'storage',
-    icon: LucideCloudCog,
-    component: markRaw(BackendSettings),
+    items: [
+      {
+        label: 'Storage',
+        value: 'storage',
+        icon: LucideCloudCog,
+        component: markRaw(BackendSettings),
+      },
+    ],
   },
 ]
 if (!isAdmin.data) isAdmin.fetch()
@@ -77,12 +96,26 @@ const props = defineProps({
   suggestedTab: Number,
 })
 
-const visibleTabs = computed(() =>
-  tabs.filter((tab) => !tab.adminOnly || isAdmin.data?.is_admin),
+const tabGroups = computed(() =>
+  allGroups
+    .filter((group) => !group.adminOnly || isAdmin.data?.is_admin)
+    .map((group) => ({
+      label: group.label,
+      items: group.items,
+    }))
+    .filter((group) => group.items.length > 0),
+)
+
+const visibleTabs = computed(() => tabGroups.value.flatMap((group) => group.items))
+
+const flatTabsByIndex = computed(() =>
+  allGroups.flatMap((group) =>
+    group.adminOnly && !isAdmin.data?.is_admin ? [] : group.items,
+  ),
 )
 
 const initialIndex = props.suggestedTab ?? 0
-const activeTab = ref(tabs[initialIndex]?.value ?? 'profile')
+const activeTab = ref(flatTabsByIndex.value[initialIndex]?.value ?? 'profile')
 
 const open = computed({
   get() {
@@ -97,7 +130,7 @@ watch(
   () => props.suggestedTab,
   (index) => {
     if (index == null) return
-    const tab = tabs[index]
+    const tab = flatTabsByIndex.value[index]
     if (tab) activeTab.value = tab.value
   },
 )

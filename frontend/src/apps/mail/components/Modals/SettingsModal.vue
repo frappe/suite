@@ -2,8 +2,12 @@
 	<SettingsDialog v-model="show" v-model:tab="activeTab" size="5xl" :shortcut="false">
 		<template #title>{{ __('Settings') }}</template>
 		<SettingsSidebar>
-			<SettingsNavGroup>
-				<SettingsNavItem v-for="tab in tabs" :key="tab.value" :value="tab.value">
+			<SettingsNavGroup
+				v-for="group in tabGroups"
+				:key="group.label"
+				:label="group.label"
+			>
+				<SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
 					<template #prefix>
 						<component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6" />
 					</template>
@@ -19,7 +23,7 @@
 	</SettingsDialog>
 </template>
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, watch } from 'vue'
+import { computed, inject, markRaw, ref, watch, type Component } from 'vue'
 import {
 	Ban,
 	BellRing,
@@ -59,105 +63,153 @@ import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/Screen
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 
+type SettingsTab = {
+	label: string
+	value: string
+	icon: Component
+	component: ReturnType<typeof markRaw>
+	condition?: boolean
+}
+
+type SettingsTabGroup = {
+	label: string
+	items: SettingsTab[]
+}
+
 const show = defineModel<boolean>()
 const { settingsTab } = useSettings()
 
 const user = inject('$user') as { data: Record<string, any> }
 
-const tabs = computed(() => {
-	const allTabs = [
+const tabGroups = computed((): SettingsTabGroup[] => {
+	const jmap = !!user.data.is_jmap_configured
+
+	const groups: SettingsTabGroup[] = [
 		{
-			label: __('Profile'),
-			value: 'profile',
-			icon: User,
-			component: markRaw(ProfileSettings),
+			label: __('General'),
+			items: [
+				{
+					label: __('Profile'),
+					value: 'profile',
+					icon: User,
+					component: markRaw(ProfileSettings),
+				},
+				{
+					label: __('Account'),
+					value: 'account',
+					icon: Mailbox,
+					component: markRaw(Account),
+					condition: jmap,
+				},
+				{
+					label: __('Identity'),
+					value: 'identity',
+					icon: Fingerprint,
+					component: markRaw(IdentitySettings),
+					condition: jmap,
+				},
+				{
+					label: __('Appearance'),
+					value: 'appearance',
+					icon: Palette,
+					component: markRaw(AppearanceSettings),
+				},
+			],
 		},
 		{
-			label: __('Account'),
-			value: 'account',
-			icon: Mailbox,
-			component: markRaw(Account),
-			condition: user.data.is_jmap_configured,
+			label: __('Mail'),
+			items: [
+				{
+					label: __('Folders'),
+					value: 'folders',
+					icon: Folders,
+					component: markRaw(FolderSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Signatures'),
+					value: 'signatures',
+					icon: Feather,
+					component: markRaw(SignatureSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Vacation Response'),
+					value: 'vacation-response',
+					icon: TreePalm,
+					component: markRaw(VacationResponseSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Automation'),
+					value: 'automation',
+					icon: Zap,
+					component: markRaw(AutomationSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Push Subscriptions'),
+					value: 'push-subscriptions',
+					icon: BellRing,
+					component: markRaw(PushSubscriptionSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Identity'),
-			value: 'identity',
-			icon: Fingerprint,
-			component: markRaw(IdentitySettings),
-			condition: user.data.is_jmap_configured,
+			label: __('Privacy'),
+			items: [
+				{
+					label: __('Screened Senders'),
+					value: 'screened-senders',
+					icon: Ban,
+					component: markRaw(ScreenedEmailAddressSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Appearance'),
-			value: 'appearance',
-			icon: Palette,
-			component: markRaw(AppearanceSettings),
+			label: __('Data'),
+			items: [
+				{
+					label: __('Import'),
+					value: 'import',
+					icon: HardDriveDownload,
+					component: markRaw(ImportSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Export'),
+					value: 'export',
+					icon: HardDriveUpload,
+					component: markRaw(ExportSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Folders'),
-			value: 'folders',
-			icon: Folders,
-			component: markRaw(FolderSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Signatures'),
-			value: 'signatures',
-			icon: Feather,
-			component: markRaw(SignatureSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Vacation Response'),
-			value: 'vacation-response',
-			icon: TreePalm,
-			component: markRaw(VacationResponseSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Automation'),
-			value: 'automation',
-			icon: Zap,
-			component: markRaw(AutomationSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Screened Senders'),
-			value: 'screened-senders',
-			icon: Ban,
-			component: markRaw(ScreenedEmailAddressSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Push Subscriptions'),
-			value: 'push-subscriptions',
-			icon: BellRing,
-			component: markRaw(PushSubscriptionSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Import'),
-			value: 'import',
-			icon: HardDriveDownload,
-			component: markRaw(ImportSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Export'),
-			value: 'export',
-			icon: HardDriveUpload,
-			component: markRaw(ExportSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Advanced'),
-			value: 'advanced',
-			icon: Code,
-			component: markRaw(AdvancedSettings),
-			condition: user.data.is_jmap_configured,
+			label: __('Developer'),
+			items: [
+				{
+					label: __('Advanced'),
+					value: 'advanced',
+					icon: Code,
+					component: markRaw(AdvancedSettings),
+					condition: jmap,
+				},
+			],
 		},
 	]
-	return allTabs.filter((tab) => tab.condition === undefined || tab.condition)
+
+	return groups
+		.map((group) => ({
+			...group,
+			items: group.items.filter((tab) => tab.condition === undefined || tab.condition),
+		}))
+		.filter((group) => group.items.length > 0)
 })
+
+const tabs = computed(() => tabGroups.value.flatMap((group) => group.items))
 
 const activeTab = ref(tabs.value[0]?.value ?? 'profile')
 

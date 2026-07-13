@@ -4,77 +4,75 @@
 			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 		</template>
 	</AppSettingsHeader>
-	<AppSettingsBody>
-		<div class="flex min-h-0 flex-1 flex-col gap-4">
-			<template v-if="screenedAddresses.data?.length">
-				<div class="flex gap-2">
-					<FormControl
-						v-model="search"
-						type="text"
-						variant="outline"
-						:placeholder="__('Search screened senders')"
-						class="flex-1"
-					>
-						<template #prefix>
-							<FeatherIcon name="search" class="text-ink-gray-5 w-4" />
-						</template>
-					</FormControl>
-					<Dropdown :options="sortOptions">
-						<Button
-							variant="outline"
-							:label="sortLabel"
-							icon-right="lucide-chevron-down"
-						/>
-					</Dropdown>
+	<div class="flex min-h-0 flex-1 flex-col gap-4 px-[4.4rem] pb-16 pt-6">
+		<template v-if="screenedAddresses.data?.length">
+			<div class="flex gap-2">
+				<FormControl
+					v-model="search"
+					type="text"
+					variant="outline"
+					:placeholder="__('Search screened senders')"
+					class="flex-1"
+				>
+					<template #prefix>
+						<FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+					</template>
+				</FormControl>
+				<Dropdown :options="sortOptions">
 					<Button
 						variant="outline"
-						:icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
-						:tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
-						@click="toggleSortDir"
+						:label="sortLabel"
+						icon-right="lucide-chevron-down"
 					/>
-				</div>
-
-				<ListView
-					v-if="rows.length"
-					ref="listView"
-					class="min-h-0 flex-1"
-					:columns="COLUMNS"
-					:rows="rows"
-					row-key="email"
-				>
-					<ListHeader />
-					<ListRows />
-					<ListSelectBanner>
-						<template #actions>
-							<Dropdown :options="bulkActionOptions">
-								<Button
-									variant="ghost"
-									:label="__('Change Action')"
-									icon-right="lucide-chevron-down"
-								/>
-							</Dropdown>
-							<Button
-								variant="ghost"
-								theme="red"
-								:label="__('Remove')"
-								@click="showRemoveModal = true"
-							/>
-						</template>
-					</ListSelectBanner>
-				</ListView>
-				<div v-else class="text-ink-gray-6 text-sm">
-					<p>{{ __('No screened senders match your search.') }}</p>
-				</div>
-			</template>
-			<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-				<p class="text-base font-medium">{{ __('No screened senders.') }}</p>
-				<p>{{ MESSAGE }}</p>
+				</Dropdown>
+				<Button
+					variant="outline"
+					:icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
+					:tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
+					@click="toggleSortDir"
+				/>
 			</div>
 
-			<AddScreenedSenderModal v-model="showAddModal" />
-			<Dialog v-model="showRemoveModal" :options="removeModalOptions" />
+			<ListView
+				v-if="rows.length"
+				ref="listView"
+				class="min-h-0 flex-1"
+				:columns="COLUMNS"
+				:rows="rows"
+				row-key="email"
+			>
+				<ListHeader />
+				<ListRows />
+				<ListSelectBanner>
+					<template #actions>
+						<Dropdown :options="bulkActionOptions">
+							<Button
+								variant="ghost"
+								:label="__('Change Action')"
+								icon-right="lucide-chevron-down"
+							/>
+						</Dropdown>
+						<Button
+							variant="ghost"
+							theme="red"
+							:label="__('Remove')"
+							@click="showRemoveModal = true"
+						/>
+					</template>
+				</ListSelectBanner>
+			</ListView>
+			<div v-else class="text-ink-gray-6 text-sm">
+				<p>{{ __('No screened senders match your search.') }}</p>
+			</div>
+		</template>
+		<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
+			<p class="text-base font-medium">{{ __('No screened senders.') }}</p>
+			<p>{{ MESSAGE }}</p>
 		</div>
-	</AppSettingsBody>
+
+		<AddScreenedSenderModal v-model="showAddModal" />
+		<Dialog v-model="showRemoveModal" :options="removeModalOptions" />
+	</div>
 </template>
 
 <script setup lang="ts">
@@ -92,7 +90,6 @@ import {
 	createResource,
 } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

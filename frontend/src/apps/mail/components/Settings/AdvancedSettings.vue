@@ -12,7 +12,7 @@
 				{{ __(`You don't have an API key yet. Generate one to access the API.`) }}
 			</p>
 			<Button
-				class="min-h-7"
+				class="min-h-7 self-start"
 				:label="user.data?.api_key ? __('Regenerate Secret') : __('Generate Keys')"
 				@click="generateKeys.submit()"
 			/>

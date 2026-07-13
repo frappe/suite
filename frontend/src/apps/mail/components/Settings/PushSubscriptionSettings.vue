@@ -11,51 +11,49 @@
 			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
 		</template>
 	</AppSettingsHeader>
-	<AppSettingsBody>
-		<div class="flex min-h-0 flex-1 flex-col gap-4">
-			<template v-if="rows.length">
-				<ListView
-					ref="listView"
-					class="min-h-0 flex-1"
-					:columns="COLUMNS"
-					:rows="rows"
-					row-key="name"
-				>
-					<ListHeader />
-					<ListRows />
-					<ListSelectBanner>
-						<template #actions>
-							<Button
-								variant="ghost"
-								:label="__('Renew')"
-								:loading="renewing"
-								@click="renewSelected"
-							/>
-							<Button
-								variant="ghost"
-								theme="red"
-								:label="__('Delete')"
-								@click="showDeleteModal = true"
-							/>
-						</template>
-					</ListSelectBanner>
-				</ListView>
-			</template>
-			<div
-				v-else-if="!pushSubscriptions.loading"
-				class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
+	<div class="flex min-h-0 flex-1 flex-col gap-4 px-[4.4rem] pb-16 pt-6">
+		<template v-if="rows.length">
+			<ListView
+				ref="listView"
+				class="min-h-0 flex-1"
+				:columns="COLUMNS"
+				:rows="rows"
+				row-key="name"
 			>
-				<p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
-				<p>{{ MESSAGE }}</p>
-			</div>
-
-			<AddPushSubscriptionModal
-				v-model="showAddModal"
-				@created="pushSubscriptions.reload()"
-			/>
-			<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
+				<ListHeader />
+				<ListRows />
+				<ListSelectBanner>
+					<template #actions>
+						<Button
+							variant="ghost"
+							:label="__('Renew')"
+							:loading="renewing"
+							@click="renewSelected"
+						/>
+						<Button
+							variant="ghost"
+							theme="red"
+							:label="__('Delete')"
+							@click="showDeleteModal = true"
+						/>
+					</template>
+				</ListSelectBanner>
+			</ListView>
+		</template>
+		<div
+			v-else-if="!pushSubscriptions.loading"
+			class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
+		>
+			<p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
+			<p>{{ MESSAGE }}</p>
 		</div>
-	</AppSettingsBody>
+
+		<AddPushSubscriptionModal
+			v-model="showAddModal"
+			@created="pushSubscriptions.reload()"
+		/>
+		<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
+	</div>
 </template>
 
 <script setup lang="ts">
@@ -71,7 +69,6 @@ import {
 	createResource,
 } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'
