@@ -38,10 +38,12 @@ import {
 } from 'frappe-ui'
 import { isAdmin } from '@/apps/drive/resources/permissions'
 import ProfileSettings from '@/apps/drive/components/Settings/ProfileSettings.vue'
+import PreferencesSettings from '@/apps/drive/components/Settings/PreferencesSettings.vue'
 import StorageSettings from './StorageSettings.vue'
 import UserListSettings from './UserListSettings.vue'
 import LucideCloudCog from '~icons/lucide/cloud-cog'
 import LucideChartBar from '~icons/lucide/chart-bar'
+import LucideSlidersHorizontal from '~icons/lucide/sliders-horizontal'
 import LucideUser from '~icons/lucide/user'
 import LucideUserPlus from '~icons/lucide/user-plus'
 import BackendSettings from './BackendSettings.vue'
@@ -55,6 +57,12 @@ const allGroups = [
         value: 'profile',
         icon: LucideUser,
         component: markRaw(ProfileSettings),
+      },
+      {
+        label: 'Preferences',
+        value: 'preferences',
+        icon: LucideSlidersHorizontal,
+        component: markRaw(PreferencesSettings),
       },
     ],
   },
@@ -93,7 +101,8 @@ if (!isAdmin.data) isAdmin.fetch()
 const emit = defineEmits(['update:modelValue'])
 const props = defineProps({
   modelValue: Boolean,
-  suggestedTab: Number,
+  /** Tab value (preferred) or legacy numeric index into visible tabs. */
+  suggestedTab: [String, Number],
 })
 
 const tabGroups = computed(() =>
@@ -108,8 +117,18 @@ const tabGroups = computed(() =>
 
 const visibleTabs = computed(() => tabGroups.value.flatMap((group) => group.items))
 
-const initialIndex = props.suggestedTab ?? 0
-const activeTab = ref(visibleTabs.value[initialIndex]?.value ?? 'profile')
+function resolveTab(suggestion) {
+  if (suggestion == null || suggestion === '') return null
+  if (typeof suggestion === 'number') {
+    return visibleTabs.value[suggestion]?.value ?? null
+  }
+  if (visibleTabs.value.some((tab) => tab.value === suggestion)) {
+    return suggestion
+  }
+  return null
+}
+
+const activeTab = ref(resolveTab(props.suggestedTab) ?? 'profile')
 
 const open = computed({
   get() {
@@ -122,10 +141,9 @@ const open = computed({
 
 watch(
   () => props.suggestedTab,
-  (index) => {
-    if (index == null) return
-    const tab = visibleTabs.value[index]
-    if (tab) activeTab.value = tab.value
+  (suggestion) => {
+    const value = resolveTab(suggestion)
+    if (value) activeTab.value = value
   },
 )
 
