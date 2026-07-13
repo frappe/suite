@@ -19,10 +19,14 @@
         }
           " class="absolute rounded shadow w-64 comment-group scroll-m-24 bg-surface-base dark:border" :class="[
             activeComment === comment.id && 'shadow-xl ',
-            comment.top
+            isCommentPositioned(comment.top)
               ? 'opacity-100 pointer-events-auto'
               : 'opacity-0 pointer-events-none',
-          ]" :style="`top: ${comment.top}px;`" @click="activeComment = comment.id">
+          ]" :style="{
+            top: isCommentPositioned(comment.top)
+              ? `${comment.top}px`
+              : undefined,
+          }" @click="activeComment = comment.id">
         <div v-show="activeComment === comment.id &&
           currentUserId !== 'Guest' &&
           !comment.new &&
@@ -201,6 +205,11 @@ const currentUserId = computed(() => useSessionStore().user)
 import { useUsers } from '@/apps/writer/composables/useUsers'
 import CommentEditor from './CommentEditor.vue'
 import { rebuild, getEditorPos } from '@/apps/writer/extensions/comments'
+import {
+  getCommentAnchorTop,
+  isCommentPositioned,
+  stackCommentTop,
+} from '@/apps/writer/utils/commentPosition'
 
 // Template compat: standalone app exposed `$store` (Vuex) and `$user` globals.
 const $store = store
@@ -270,7 +279,9 @@ const filteredComments = computed(() => {
 })
 
 const hasVisibleCards = computed(() =>
-  filteredComments.value.some((comment) => comment.top),
+  filteredComments.value.some((comment) =>
+    isCommentPositioned(comment.top),
+  ),
 )
 watch(
   () => props.showResolved,
@@ -387,19 +398,20 @@ const setCommentHeights = useDebounceFn(() => {
         const el =
           document.querySelector(`[data-comment-name="${comment.id}"]`) ||
           document.querySelector(`[data-comment-id="${comment.id}"]`)
-        let anchorTop
-        if (comment.new && comment.owner !== currentUserId.value) anchorTop = 0
+        let anchorTop = null
+        if (comment.new && comment.owner !== currentUserId.value)
+          anchorTop = null
         else if (!el && comment.anchorText) {
           comment.detached = 1
-          anchorTop = props.showUnanchored ? 48 : 0
+          anchorTop = props.showUnanchored ? 48 : null
         } else {
           const elTop = el.getBoundingClientRect().top
-          anchorTop = elTop ? elTop - containerTop : 0
+          anchorTop = getCommentAnchorTop(elTop, containerTop)
           comment.detached = 0
         }
-        const adjustedTop = anchorTop ? Math.max(anchorTop, lastBottom) : 0
+        const adjustedTop = stackCommentTop(anchorTop, lastBottom)
         comment.top = adjustedTop
-        if (adjustedTop)
+        if (isCommentPositioned(adjustedTop))
           lastBottom = adjustedTop + commentRefs[comment.id].offsetHeight + 12
       } catch (e) {
         console.log(e)
