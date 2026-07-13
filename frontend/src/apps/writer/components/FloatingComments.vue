@@ -1,7 +1,7 @@
 <template>
   <div ref="scrollContainer"
-    class="sticky hidden md:flex flex-col gap-8 justify-start self-stretch px-5 bg-surface-base w-72">
-    <slot />
+    class="sticky hidden md:flex flex-col gap-8 justify-start self-stretch bg-surface-base transition-[width,padding] duration-200"
+    :class="showComments && hasVisibleCards ? 'w-72 shrink-0 px-5' : 'w-0'">
     <template v-if="showComments" v-for="comment in filteredComments" :key="comment.id">
       <div :id="'comment-' + comment.id" :ref="(el) => {
         if (el) commentRefs[comment.id] = el
@@ -268,6 +268,10 @@ const filteredComments = computed(() => {
     : comments.value.filter((k) => !k.resolved)
   return filtered
 })
+
+const hasVisibleCards = computed(() =>
+  filteredComments.value.some((comment) => comment.top),
+)
 watch(
   () => props.showResolved,
   () => rebuild(props.editor),

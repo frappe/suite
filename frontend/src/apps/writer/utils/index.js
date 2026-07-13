@@ -627,7 +627,12 @@ export function toast(obj) {
   })
 }
 
-export const COMMON_EXTENSIONS = [EmbedExtension, ExtendedParagraph]
+export const COMMON_EXTENSIONS = [
+  FontSize,
+  FontFamily,
+  EmbedExtension,
+  ExtendedParagraph,
+]
 
 export async function downloadMD(editor, foldername) {
   let html = editor.value.getHTML()

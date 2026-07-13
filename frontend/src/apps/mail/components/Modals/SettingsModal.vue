@@ -1,44 +1,29 @@
 <template>
-	<Dialog v-model="show" :options="{ title: __('Settings'), size: '4xl' }">
-		<template #body>
-			<div class="flex" :style="{ height: 'calc(100vh - 9rem)' }">
-				<div class="bg-surface-sidebar flex w-52 shrink-0 flex-col border-r p-4 py-3">
-					<h1 class="px-2 text-3xl leading-6">{{ __('Settings') }}</h1>
-					<div class="mt-3 space-y-1">
-						<button
-							v-for="tab in tabs"
-							:key="tab.label"
-							class="flex h-7 w-full items-center gap-2 rounded px-2 py-1"
-							:class="[
-								activeTab.label == tab.label
-									? 'bg-surface-gray-3'
-									: 'hover:bg-surface-gray-2',
-							]"
-							@click="activeTab = tab"
-						>
-							<component
-								:is="tab.icon"
-								class="text-ink-gray-6 h-4 w-4 stroke-[1.5]"
-							/>
-							<span class="text-ink-gray-7 text-base"> {{ tab.label }} </span>
-						</button>
-					</div>
-				</div>
-				<div class="flex flex-1 flex-col space-y-5 overflow-y-auto p-12">
-					<component :is="activeTab.component" v-if="activeTab" />
-				</div>
-				<Button
-					class="absolute right-0 my-3 mr-4"
-					variant="ghost"
-					icon="x"
-					@click="show = false"
-				/>
-			</div>
-		</template>
-	</Dialog>
+	<SettingsDialog v-model="show" v-model:tab="activeTab" size="5xl" :shortcut="false">
+		<template #title>{{ __('Settings') }}</template>
+		<SettingsSidebar>
+			<SettingsNavGroup
+				v-for="group in tabGroups"
+				:key="group.label"
+				:label="group.label"
+			>
+				<SettingsNavItem v-for="tab in group.items" :key="tab.value" :value="tab.value">
+					<template #prefix>
+						<component :is="tab.icon" class="size-4 shrink-0 text-ink-gray-6" />
+					</template>
+					{{ tab.label }}
+				</SettingsNavItem>
+			</SettingsNavGroup>
+		</SettingsSidebar>
+		<SettingsContent>
+			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
+				<component :is="tab.component" />
+			</SettingsPanel>
+		</SettingsContent>
+	</SettingsDialog>
 </template>
 <script setup lang="ts">
-import { computed, inject, markRaw, ref, watch } from 'vue'
+import { computed, inject, markRaw, ref, watch, type Component } from 'vue'
 import {
 	Ban,
 	BellRing,
@@ -54,7 +39,14 @@ import {
 	User,
 	Zap,
 } from 'lucide-vue-next'
-import { Button, Dialog } from 'frappe-ui'
+import {
+	SettingsContent,
+	SettingsDialog,
+	SettingsNavGroup,
+	SettingsNavItem,
+	SettingsPanel,
+	SettingsSidebar,
+} from 'frappe-ui'
 
 import { useSettings } from '@/apps/mail/utils/composables'
 import Account from '@/apps/mail/components/Settings/Account.vue'
@@ -71,99 +63,176 @@ import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/Screen
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 
+type SettingsTab = {
+	label: string
+	value: string
+	icon: Component
+	component: ReturnType<typeof markRaw>
+	condition?: boolean
+}
+
+type SettingsTabGroup = {
+	label: string
+	items: SettingsTab[]
+}
+
 const show = defineModel<boolean>()
 const { settingsTab } = useSettings()
 
-const user = inject('$user')
+const user = inject('$user') as { data: Record<string, any> }
 
-const tabs = computed(() => {
-	const allTabs = [
+const tabGroups = computed((): SettingsTabGroup[] => {
+	const jmap = !!user.data.is_jmap_configured
+
+	const groups: SettingsTabGroup[] = [
 		{
-			label: __('Profile'),
-			icon: User,
-			component: markRaw(ProfileSettings),
+			label: __('General'),
+			items: [
+				{
+					label: __('Profile'),
+					value: 'profile',
+					icon: User,
+					component: markRaw(ProfileSettings),
+				},
+				{
+					label: __('Account'),
+					value: 'account',
+					icon: Mailbox,
+					component: markRaw(Account),
+					condition: jmap,
+				},
+				{
+					label: __('Identity'),
+					value: 'identity',
+					icon: Fingerprint,
+					component: markRaw(IdentitySettings),
+					condition: jmap,
+				},
+				{
+					label: __('Appearance'),
+					value: 'appearance',
+					icon: Palette,
+					component: markRaw(AppearanceSettings),
+				},
+			],
 		},
 		{
-			label: __('Account'),
-			icon: Mailbox,
-			component: markRaw(Account),
-			condition: user.data.is_jmap_configured,
+			label: __('Mail'),
+			items: [
+				{
+					label: __('Folders'),
+					value: 'folders',
+					icon: Folders,
+					component: markRaw(FolderSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Signatures'),
+					value: 'signatures',
+					icon: Feather,
+					component: markRaw(SignatureSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Vacation Response'),
+					value: 'vacation-response',
+					icon: TreePalm,
+					component: markRaw(VacationResponseSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Automation'),
+					value: 'automation',
+					icon: Zap,
+					component: markRaw(AutomationSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Push Subscriptions'),
+					value: 'push-subscriptions',
+					icon: BellRing,
+					component: markRaw(PushSubscriptionSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Identity'),
-			icon: Fingerprint,
-			component: markRaw(IdentitySettings),
-			condition: user.data.is_jmap_configured,
+			label: __('Privacy'),
+			items: [
+				{
+					label: __('Screened Senders'),
+					value: 'screened-senders',
+					icon: Ban,
+					component: markRaw(ScreenedEmailAddressSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Appearance'),
-			icon: Palette,
-			component: markRaw(AppearanceSettings),
+			label: __('Data'),
+			items: [
+				{
+					label: __('Import'),
+					value: 'import',
+					icon: HardDriveDownload,
+					component: markRaw(ImportSettings),
+					condition: jmap,
+				},
+				{
+					label: __('Export'),
+					value: 'export',
+					icon: HardDriveUpload,
+					component: markRaw(ExportSettings),
+					condition: jmap,
+				},
+			],
 		},
 		{
-			label: __('Folders'),
-			icon: Folders,
-			component: markRaw(FolderSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Signatures'),
-			icon: Feather,
-			component: markRaw(SignatureSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Vacation Response'),
-			icon: TreePalm,
-			component: markRaw(VacationResponseSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Automation'),
-			icon: Zap,
-			component: markRaw(AutomationSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Screened Senders'),
-			icon: Ban,
-			component: markRaw(ScreenedEmailAddressSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Push Subscriptions'),
-			icon: BellRing,
-			component: markRaw(PushSubscriptionSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Import'),
-			icon: HardDriveDownload,
-			component: markRaw(ImportSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Export'),
-			icon: HardDriveUpload,
-			component: markRaw(ExportSettings),
-			condition: user.data.is_jmap_configured,
-		},
-		{
-			label: __('Advanced'),
-			icon: Code,
-			component: markRaw(AdvancedSettings),
-			condition: user.data.is_jmap_configured,
+			label: __('Developer'),
+			items: [
+				{
+					label: __('Advanced'),
+					value: 'advanced',
+					icon: Code,
+					component: markRaw(AdvancedSettings),
+					condition: jmap,
+				},
+			],
 		},
 	]
-	return allTabs.filter((tab) => tab.condition === undefined || tab.condition)
-})
-const activeTab = ref(tabs.value[0])
 
-// When opened via useSettings().openSettings('<label>'), jump to that tab.
+	return groups
+		.map((group) => ({
+			...group,
+			items: group.items.filter((tab) => tab.condition === undefined || tab.condition),
+		}))
+		.filter((group) => group.items.length > 0)
+})
+
+const tabs = computed(() => tabGroups.value.flatMap((group) => group.items))
+
+const activeTab = ref(tabs.value[0]?.value ?? 'profile')
+
 watch(show, (open) => {
 	if (!open || !settingsTab.value) return
-	const match = tabs.value.find((tab) => tab.label === settingsTab.value)
-	if (match) activeTab.value = match
+	const raw = settingsTab.value
+	if (raw === __('Block List') || raw === 'Block List') {
+		activeTab.value = 'screened-senders'
+	} else {
+		const match = tabs.value.find((tab) => tab.label === raw || tab.value === raw)
+		if (match) activeTab.value = match.value
+	}
 	settingsTab.value = ''
 })
+
+watch(
+	tabs,
+	(newTabs) => {
+		if (!newTabs.length) return
+		if (!newTabs.some((tab) => tab.value === activeTab.value)) {
+			activeTab.value = newTabs[0].value
+		}
+	},
+	{ immediate: true },
+)
 </script>

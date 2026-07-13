@@ -97,6 +97,11 @@ export const routes: RouteRecordRaw[] = [
 		component: () => import('@/apps/mail/pages/MailLayout.vue'),
 		children: [
 			{
+				path: 'all-inboxes',
+				name: 'mail-all-inboxes',
+				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
+			},
+			{
 				path: 'account/:accountId/mailbox/:mailbox',
 				name: 'mail-mailbox',
 				component: () => import('@/apps/mail/pages/MailboxView.vue'),
@@ -161,6 +166,19 @@ export const routes: RouteRecordRaw[] = [
 				path: 'calendar-exchanges/:id',
 				name: 'mail-calendar-exchange',
 				component: () => import('@/apps/mail/pages/CalendarExchangeView.vue'),
+				meta: { noLayout: true },
+				props: true,
+			},
+			{
+				path: 'contacts-exchanges',
+				name: 'mail-contacts-exchanges',
+				component: () => import('@/apps/mail/pages/ContactsExchangesView.vue'),
+				meta: { noLayout: true },
+			},
+			{
+				path: 'contacts-exchanges/:id',
+				name: 'mail-contacts-exchange',
+				component: () => import('@/apps/mail/pages/ContactsExchangeView.vue'),
 				meta: { noLayout: true },
 				props: true,
 			},

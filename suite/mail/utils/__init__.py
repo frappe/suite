@@ -445,6 +445,22 @@ def get_calendar_export_directory() -> str:
 	return directory
 
 
+def get_contacts_import_directory() -> str:
+	"""Returns the path to the contacts import directory for the current site."""
+
+	directory = os.path.join(get_bench_path(), "sites", frappe.local.site, "contacts-exchange", "import")
+	os.makedirs(directory, exist_ok=True)
+	return directory
+
+
+def get_contacts_export_directory() -> str:
+	"""Returns the path to the contacts export directory for the current site."""
+
+	directory = os.path.join(get_bench_path(), "sites", frappe.local.site, "contacts-exchange", "export")
+	os.makedirs(directory, exist_ok=True)
+	return directory
+
+
 def get_stalwart_cli_path(raise_exception: bool = False) -> str:
 	"""Returns the path to the Stalwart CLI tool, raising an error if not found."""
 

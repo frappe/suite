@@ -30,10 +30,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
 	freeze_jmap_push_notifications,
 	unfreeze_jmap_push_notifications,
 )
-from suite.mail.doctype.user_account.user_account import (
-	get_user_for_jmap_account,
-	is_jmap_account_belongs_to_user,
-)
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -376,7 +373,7 @@ class CalendarExchange(Document):
 			logger.debug("import-source-prepared", base_dir=base_dir)
 			self._log_output(_("Prepared the source files for import."))
 
-			service = get_calendar_event_service(self.account)
+			service = get_calendar_event_service(self.user, self.account)
 
 			if self.import_format == "ics":
 				events = self._load_ics_events(service, base_dir, logger)
@@ -430,7 +427,7 @@ class CalendarExchange(Document):
 
 		kwargs = {}
 		try:
-			service = get_calendar_event_service(self.account)
+			service = get_calendar_event_service(self.user, self.account)
 
 			limit = min(self.max_export, cint(self.export_limit or self.max_export))
 			data = service.query(self.export_filter_dict, limit=limit, sort=self.export_sort_clause)
@@ -772,12 +769,12 @@ class CalendarExportWriter:
 
 
 def get_calendar_event_service(
+	user: str,
 	account: str,
 	ignore_permissions: bool = False,
 ) -> CalendarEventService:
 	"""Returns a CalendarEventService configured with the longer exchange timeouts."""
 
-	user = get_user_for_jmap_account(account, raise_exception=True)
 	connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
 	return CalendarEventService(account, connection)
 

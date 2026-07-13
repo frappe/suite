@@ -63,7 +63,7 @@
 					<Button
 						variant="ghost"
 						:tooltip="__('Previous Thread (↑/K)')"
-						:disabled="threadID === threads[0] && !canGoPrev"
+						:disabled="threadID === threads[0]"
 						@click="emit('prevThread')"
 					>
 						<template #icon>
@@ -115,10 +115,9 @@ import { userStore } from '@/apps/mail/stores/user'
 
 import type { Mail, MailboxData } from '@/apps/mail/types'
 
-const { thread, threads, canGoPrev, canGoNext } = defineProps<{
+const { thread, threads, canGoNext } = defineProps<{
 	thread: Mail[]
 	threads: string[]
-	canGoPrev?: boolean
 	canGoNext?: boolean
 }>()
 const emit = defineEmits([

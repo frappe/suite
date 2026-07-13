@@ -1,15 +1,12 @@
 <template>
-	<!-- A single h-full flex column gives the ListView a bounded flex parent so it fills the panel and
-	scrolls within itself, instead of taking a small intrinsic height with empty space below. -->
-	<div class="flex min-h-0 flex-1 flex-col gap-4">
-		<div class="flex items-center justify-between">
-			<h1>{{ __('Screened Senders') }}</h1>
+	<AppSettingsHeader :title="__('Screened Senders')">
+		<template #actions>
 			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-		</div>
-
+		</template>
+	</AppSettingsHeader>
+	<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-[4.4rem] pb-8 pt-6">
 		<template v-if="screenedAddresses.data?.length">
-			<!-- Search filters the list client-side; the sort control sits on the right. -->
-			<div class="flex gap-2">
+			<div class="flex shrink-0 gap-2">
 				<FormControl
 					v-model="search"
 					type="text"
@@ -22,7 +19,11 @@
 					</template>
 				</FormControl>
 				<Dropdown :options="sortOptions">
-					<Button variant="outline" :label="sortLabel" icon-right="lucide-chevron-down" />
+					<Button
+						variant="outline"
+						:label="sortLabel"
+						icon-right="lucide-chevron-down"
+					/>
 				</Dropdown>
 				<Button
 					variant="outline"
@@ -32,34 +33,39 @@
 				/>
 			</div>
 
-			<ListView
-				v-if="rows.length"
-				ref="listView"
-				class="min-h-0 flex-1"
-				:columns="COLUMNS"
-				:rows="rows"
-				row-key="email"
-			>
-				<ListHeader />
-				<ListRows />
-				<ListSelectBanner>
-					<template #actions>
-						<Dropdown :options="bulkActionOptions">
-							<Button
-								variant="ghost"
-								:label="__('Change Action')"
-								icon-right="lucide-chevron-down"
-							/>
-						</Dropdown>
-						<Button
-							variant="ghost"
-							theme="red"
-							:label="__('Remove')"
-							@click="showRemoveModal = true"
-						/>
-					</template>
-				</ListSelectBanner>
-			</ListView>
+			<div v-if="rows.length" class="relative min-h-0 flex-1">
+				<div
+					class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
+				>
+					<ListView
+						ref="listView"
+						class="h-full min-h-0"
+						:columns="COLUMNS"
+						:rows="rows"
+						row-key="email"
+					>
+						<ListHeader />
+						<ListRows />
+						<ListSelectBanner>
+							<template #actions>
+								<Dropdown :options="bulkActionOptions">
+									<Button
+										variant="ghost"
+										:label="__('Change Action')"
+										icon-right="lucide-chevron-down"
+									/>
+								</Dropdown>
+								<Button
+									variant="ghost"
+									theme="red"
+									:label="__('Remove')"
+									@click="showRemoveModal = true"
+								/>
+							</template>
+						</ListSelectBanner>
+					</ListView>
+				</div>
+			</div>
 			<div v-else class="text-ink-gray-6 text-sm">
 				<p>{{ __('No screened senders match your search.') }}</p>
 			</div>
@@ -88,6 +94,7 @@ import {
 	ListView,
 	createResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

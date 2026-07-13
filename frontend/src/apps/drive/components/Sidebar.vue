@@ -79,8 +79,8 @@ const teamExists = createResource({
 
 const showSettings = ref(false)
 const showShortcuts = ref(false)
-const suggestedTab = ref(0)
-emitter.on('showSettings', (val = 0) => {
+const suggestedTab = ref('profile')
+emitter.on('showSettings', (val = 'profile') => {
   if (val === -1) showSettings.value = false
   else {
     showSettings.value = true

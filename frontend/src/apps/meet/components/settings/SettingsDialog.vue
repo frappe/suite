@@ -1,93 +1,58 @@
 <template>
-	<Dialog
+	<UiSettingsDialog
 		v-model="show"
+		v-model:tab="activeTabValue"
 		size="5xl"
-		bare
+		:shortcut="false"
 	>
-		<template #default>
-	<div class="flex flex-col md:flex-row" :style="{ height: 'calc(100vh - 8rem)' }">
-			<div class="w-full" v-if="isMobile()">
-				<h3
-					class="text-4xl-semibold leading-6 text-ink-gray-9 px-4 py-6">
-					Settings
-				</h3>
-				<FTabs :tabs="flatTabs" v-model="tabIndex" as="div">
-					<template #tab-item="{ tab, selected }">
-						<div
-							class="flex cursor-pointer items-center gap-1.5 py-3 text-base transition"
-							:class="selected ? 'text-ink-gray-9' : 'text-ink-gray-5'"
-						>
-							<component v-if="tab.icon" :is="tab.icon" class="h-4 w-4" />
-							{{ tab.label }}
-						</div>
-					</template>
-					<template #tab-panel="{ tab }">
-						<div class="flex flex-1 flex-col bg-surface-elevation-1 max-w-[816px] w-full">
-							<component
-								:is="tab.component"
-								class="h-full flex flex-col w-full"
-								@device-changed="$emit('device-changed', $event)"
-								:is-visible="show"
-								:meeting-id="meetingId"
-							/>
-						</div>
-					</template>
-				</FTabs>
-			</div>
-			<div class="w-full flex" v-else>
-				<div
-					class="flex w-52 shrink-0 flex-col bg-surface-gray-1 p-2 md:overflow-y-auto hide-scrollbar border-outline-gray-2 border-r"
+		<template #title>Settings</template>
+		<SettingsSidebar>
+			<SettingsNavGroup
+				v-for="group in tabs"
+				:key="group.label"
+				:label="group.label"
+			>
+				<SettingsNavItem
+					v-for="item in group.items"
+					:key="item.value"
+					:value="item.value"
 				>
-					<h1 class="px-2 pt-2 text-base-semibold text-ink-gray-8 mb-2">
-						Settings
-					</h1>
-					<div v-for="tab in tabs">
-						<div
-							v-if="!tab.hideLabel"
-							class="mb-2 ml-1 mt-3 hidden md:flex gap-1.5 px-1 text-sm-medium text-ink-gray-5"
-						>
-							<span>{{ tab.label }}</span>
-						</div>
-						<nav class="md:space-y-1">
-							<button
-								v-for="item in tab.items"
-								:key="item.label"
-								type="button"
-								class="flex h-7 w-full items-center gap-2 rounded-lg px-2 py-1"
-								:class="[
-									activeTab?.label === item.label
-										? 'bg-surface-base shadow-sm'
-										: 'hover:bg-surface-gray-2',
-								]"
-								@click="() => onTabChange(item)"
-							>
-								<component :is="item.icon" class="h-4 w-4 text-ink-gray-7" />
-								<span class="text-sm text-ink-gray-8">
-									{{ item.label }}
-								</span>
-							</button>
-						</nav>
-					</div>
-				</div>
-				<div class="flex flex-1 flex-col bg-surface-elevation-1 max-w-[816px] w-full">
-					<component
-						:is="activeTab?.component"
-						v-if="activeTab"
-						class="h-full flex flex-col w-full"
-						@device-changed="$emit('device-changed', $event)"
-						:is-visible="show"
-						:meeting-id="meetingId"
-					/>
-				</div>
-			</div>
-		</div>
-		</template>
-	</Dialog>
+					<template #prefix>
+						<component
+							:is="item.icon"
+							class="size-4 shrink-0 text-ink-gray-6"
+						/>
+					</template>
+					{{ item.label }}
+				</SettingsNavItem>
+			</SettingsNavGroup>
+		</SettingsSidebar>
+		<SettingsContent>
+			<SettingsPanel
+				v-for="item in flatTabs"
+				:key="item.value"
+				:value="item.value"
+			>
+				<component
+					:is="item.component"
+					@device-changed="$emit('device-changed', $event)"
+					:is-visible="show && activeTabValue === item.value"
+					:meeting-id="meetingId"
+				/>
+			</SettingsPanel>
+		</SettingsContent>
+	</UiSettingsDialog>
 </template>
 
-
 <script setup lang="ts">
-import { Dialog, Tabs as FTabs } from "frappe-ui";
+import {
+	SettingsContent,
+	SettingsDialog as UiSettingsDialog,
+	SettingsNavGroup,
+	SettingsNavItem,
+	SettingsPanel,
+	SettingsSidebar,
+} from "frappe-ui";
 import { type Component, computed, h, markRaw, ref, watch } from "vue";
 import LucideAudioLines from "~icons/lucide/audio-lines";
 import LucideBell from "~icons/lucide/bell";
@@ -96,7 +61,6 @@ import LucideLayoutDashboard from "~icons/lucide/layout-dashboard";
 import LucideMonitorSmartphone from "~icons/lucide/monitor-smartphone";
 import LucideUser from "~icons/lucide/user";
 import { useMeetingDoc } from "../../composables/useMeetingDoc";
-import { isMobile } from "../../utils/device";
 import AudioSettingsTab from "./AudioSettingsTab.vue";
 import BackgroundSettingsTab from "./BackgroundSettingsTab.vue";
 import DeviceSettingsTab from "./DeviceSettingsTab.vue";
@@ -110,8 +74,6 @@ interface TabItem {
 	icon: Component;
 	component: ReturnType<typeof markRaw>;
 	condition?: () => boolean;
-	hideLabel?: boolean;
-	groupLabel?: string;
 }
 
 interface TabGroup {
@@ -144,13 +106,12 @@ const show = computed({
 	set: (value) => emit("update:modelValue", value),
 });
 
-function isTabVisible(tab) {
+function isTabVisible(tab: TabItem) {
 	return typeof tab.condition === "function" ? tab.condition() : true;
 }
 
-// Settings tabs structure
-const tabs = computed(() => {
-	const allTabs = [];
+const tabs = computed((): TabGroup[] => {
+	const allTabs: TabGroup[] = [];
 
 	if (
 		(isCurrentUserHost.value || isCurrentUserCohost.value) &&
@@ -160,7 +121,7 @@ const tabs = computed(() => {
 			label: "Meeting",
 			items: [
 				{
-					label: "Meeting Access",
+					label: "Controls",
 					value: "meeting-access",
 					icon: h(LucideUser),
 					component: markRaw(MeetingAccessSettingsTab),
@@ -169,42 +130,49 @@ const tabs = computed(() => {
 		});
 	}
 
-	allTabs.push({
-		label: "General",
-		items: [
-			{
-				label: "Devices",
-				value: "devices",
-				icon: h(LucideMonitorSmartphone),
-				component: markRaw(DeviceSettingsTab),
-			},
-			{
-				label: "Audio",
-				value: "audio",
-				icon: h(LucideAudioLines),
-				component: markRaw(AudioSettingsTab),
-			},
-			{
-				label: "Background",
-				value: "background",
-				icon: h(LucideCamera),
-				component: markRaw(BackgroundSettingsTab),
-			},
-			{
-				label: "Notifications",
-				value: "notifications",
-				icon: h(LucideBell),
-				component: markRaw(NotificationSettingsTab),
-			},
-			{
-				label: "Layout",
-				value: "layout",
-				icon: h(LucideLayoutDashboard),
-				condition: () => !props.isPreview,
-				component: markRaw(LayoutSettingsTab),
-			},
-		],
-	});
+	allTabs.push(
+		{
+			label: "Media",
+			items: [
+				{
+					label: "Devices",
+					value: "devices",
+					icon: h(LucideMonitorSmartphone),
+					component: markRaw(DeviceSettingsTab),
+				},
+				{
+					label: "Audio",
+					value: "audio",
+					icon: h(LucideAudioLines),
+					component: markRaw(AudioSettingsTab),
+				},
+				{
+					label: "Background",
+					value: "background",
+					icon: h(LucideCamera),
+					component: markRaw(BackgroundSettingsTab),
+				},
+			],
+		},
+		{
+			label: "Interface",
+			items: [
+				{
+					label: "Notifications",
+					value: "notifications",
+					icon: h(LucideBell),
+					component: markRaw(NotificationSettingsTab),
+				},
+				{
+					label: "Layout",
+					value: "layout",
+					icon: h(LucideLayoutDashboard),
+					condition: () => !props.isPreview,
+					component: markRaw(LayoutSettingsTab),
+				},
+			],
+		},
+	);
 
 	return allTabs
 		.map((group) => ({
@@ -215,37 +183,16 @@ const tabs = computed(() => {
 });
 
 const flatTabs = computed(() =>
-	tabs.value.flatMap((group) =>
-		group.items.map((item) => ({
-			...item,
-			groupLabel: group.label,
-		})),
-	),
+	tabs.value.flatMap((group) => group.items),
 );
 
-const activeTabValue = ref(null);
-const tabIndex = computed({
-	get: () => {
-		const index = flatTabs.value.findIndex(
-			(tab) => tab.value === activeTabValue.value,
-		);
-
-		return index === -1 ? 0 : index;
-	},
-	set: (index) => {
-		activeTabValue.value = flatTabs.value[index]?.value ?? null;
-	},
-});
-const activeTab = computed(
-	() =>
-		flatTabs.value.find((tab) => tab.value === activeTabValue.value) ?? null,
-);
+const activeTabValue = ref<string | undefined>(undefined);
 
 watch(
 	flatTabs,
 	(newTabs) => {
 		if (!newTabs.length) {
-			activeTabValue.value = null;
+			activeTabValue.value = undefined;
 			return;
 		}
 
@@ -255,10 +202,4 @@ watch(
 	},
 	{ immediate: true },
 );
-
-function onTabChange(tab) {
-	if (flatTabs.value.some((item) => item.value === tab.value)) {
-		activeTabValue.value = tab.value;
-	}
-}
 </script>

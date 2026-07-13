@@ -101,6 +101,7 @@ import Globe from '~icons/lucide/globe'
 import LayoutGrid from '~icons/lucide/layout-grid'
 import LogOut from '~icons/lucide/log-out'
 import Mailbox from '~icons/lucide/mailbox'
+import Mails from '~icons/lucide/mails'
 import Plus from '~icons/lucide/plus'
 import Settings from '~icons/lucide/settings'
 import Star from '~icons/lucide/star'
@@ -114,7 +115,7 @@ const { isSidebarOpen, closeSidebar } = useSidebar()
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 const { logout, branding } = sessionStore()
 const store = userStore()
-const { mailboxes } = store
+const { mailboxes, allInboxesUnread } = store
 
 const user = inject('$user')
 
@@ -373,9 +374,24 @@ const sidebarItems = computed(() => {
 		{ label: __('Custom'), items: customItems },
 		{ label: __('People'), items: contactsItems },
 	]
-	// Screener is its own nameless group, pinned first — only when screening is enabled.
-	if (screenerItem && screeningEnabled.value)
-		groups.unshift({ label: '', items: [screenerItem] })
+
+	// All Inboxes and Screener share one nameless group pinned above the folders, so they sit at
+	// item spacing (not the wider section gap two separate groups would create). All Inboxes first
+	// (broadest scope: all accounts), then Screener (active account). Each is conditional:
+	// All Inboxes only with more than one account, Screener only when screening is enabled.
+	const pinnedItems = []
+	if (user.data.accounts?.length > 1)
+		pinnedItems.push({
+			label: __('All Inboxes'),
+			icon: Mails,
+			to: { name: 'mail-all-inboxes' },
+			activeFor: ['mail-all-inboxes'],
+			suffix: allInboxesUnread.data ? String(allInboxesUnread.data) : '',
+		})
+	if (screenerItem && screeningEnabled.value) pinnedItems.push(screenerItem)
+
+	if (pinnedItems.length) groups.unshift({ label: '', items: pinnedItems })
+
 	return groups
 })
 

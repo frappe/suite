@@ -3,23 +3,24 @@
     <TextEditorFixedMenu v-if="editable"
       class="w-full max-w-[100vw] py-1.5 !px-4 md:px-0 overflow-x-auto flex shrink-0 border-b border-outline-elevation-2"
       :editor="editor" :items="menuButtons" />
-    <div class="flex flex-1 overflow-auto">
+    <div class="relative flex flex-1 min-h-0 overflow-hidden">
       <ToC v-if="editor" :editor :anchors />
-      <div id="editor-scroll-container" class="flex w-full overflow-y-auto relative">
-        <div class="h-full flex flex-col flex-grow min-h-full" @click="onBackgroundClick" @keydown="onEditorKeydown">
+      <div id="editor-scroll-container" class="flex w-full min-w-0 overflow-y-auto overflow-x-hidden relative">
+        <div class="self-start flex flex-col flex-grow min-h-full border-x border-outline-gray-2"
+          @click="onBackgroundClick" @keydown="onEditorKeydown">
           <FTextEditor ref="textEditor" :upload-function="uploadFunction"
             :autofocus="true" v-model="localContent" placeholder="Start thinking..." :extensions="editorExtensions"
             :editable @change="(val) => emit('editor-change', val)">
             <template #default="{ editor }">
               <EditorBubbleMenu :editor :items="bubbleMenuButtons" :options="bubbleMenuOpts" />
               <EditorTableMenu :editor />
-              <EditorDropZone :editor :disabled="!editable">
+              <EditorDropZone :editor :disabled="!editable" class="grow flex flex-col">
                 <EditorContent :editor
-                  class="md:mx-auto bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
+                  class="grow w-full md:mx-auto bg-surface-base overflow-x-auto pt-10 pb-24 px-5 prose prose-sm prose-v3 prose-table:table-fixed prose-td:p-2 prose-th:p-2 prose-td:border prose-th:border prose-td:relative prose-th:relative prose-th:bg-surface-gray-2"
                   :class="[
                     settings?.wide
-                      ? 'md:min-w-[100ch] md:max-w-[100ch]'
-                      : 'md:min-w-[48rem] md:max-w-[48rem]',
+                      ? 'md:max-w-[100ch]'
+                      : 'md:max-w-[48rem]',
                     isPainting && 'cursor-crosshair',
                   ]" :style="editorStyle" />
               </EditorDropZone>
@@ -28,15 +29,12 @@
         </div>
 
         <FloatingComments v-if="commentsPainted" v-model:active-comment="activeComment" :y-comments="comments" :file
-          :show-comments :show-resolved :show-unanchored :editor @save="saveComments">
-          <div v-if="comments._map.size" class="sticky self-end top-4 right-4 z-10">
-            <Dropdown :options="commentFilterOptions" placement="right">
-              <Button :icon="LucideMessageSquareQuote" variant="outline" />
-            </Dropdown>
-          </div>
-        </FloatingComments>
-
-        <div v-if="!commentsPainted" class="w-72" />
+          :show-comments :show-resolved :show-unanchored :editor @save="saveComments" />
+      </div>
+      <div v-if="commentsPainted && comments._map.size" class="absolute top-4 right-4 z-10">
+        <Dropdown :options="commentFilterOptions" placement="right">
+          <Button :icon="LucideMessageSquareQuote" variant="outline" />
+        </Dropdown>
       </div>
     </div>
     <ToCMobile v-if="editor" :editor />

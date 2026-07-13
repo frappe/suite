@@ -7,7 +7,7 @@ import { getIcon, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
 import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
-import type { Mail, Thread } from '@/apps/mail/types'
+import type { Mail, Mailbox, Thread } from '@/apps/mail/types'
 
 export type SetSeenParams = {
 	0?: string[]
@@ -34,7 +34,14 @@ export function useThreadActions(deps: {
 	threadID: ComputedRef<string>
 	selections: Ref<string[]>
 	mailThreadRef: Ref<MailThreadInstance | null>
-	reloadThreads: (reloadMailboxes?: boolean, mailboxRoles?: string[]) => void
+	// Refetch only the first window, replacing the list and scrolling to top (mailbox switch, undo, …).
+	resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: string[]) => void
+	// Refresh selections + sidebar counts only, without refetching the loaded list.
+	syncAfterAction: () => void
+	// Drop the given threads from the loaded list optimistically; returns the removed rows for undo.
+	removeThreadsFromList: (threadIds: string[]) => Thread[]
+	// Re-insert threads at their sorted position (undo of a move/junk) without jumping to top.
+	restoreThreadsToList: (threads: Thread[]) => void
 	goToMailbox: () => void
 	goToNextThreadOrMailbox: (excludedThreads?: string[]) => void
 }) {
@@ -44,7 +51,10 @@ export function useThreadActions(deps: {
 		threadID,
 		selections,
 		mailThreadRef,
-		reloadThreads,
+		resetThreads,
+		syncAfterAction,
+		removeThreadsFromList,
+		restoreThreadsToList,
 		goToMailbox,
 		goToNextThreadOrMailbox,
 	} = deps
@@ -204,11 +214,37 @@ export function useThreadActions(deps: {
 			})),
 	)
 
+	// Optimistically reflect an add/remove of a mailbox on the loaded list rows (thread summary + its
+	// nested messages) so MailListItem's folder tags update immediately, without waiting for a refetch.
+	// Mirrors MailThread.syncMailboxMembership, which does the same for the open thread's reading pane.
+	const syncListMailboxMembership = (mailboxId: string, threadIds: string[], add: boolean) => {
+		const mb = mailboxes.data?.find((m) => m.id === mailboxId)
+		if (!mb) return
+		const entry: Mailbox = { mailbox: mb.name, mailbox_id: mb.id, mailbox_name: mb._name }
+		const apply = (item: { mailboxes: Mailbox[] }) => {
+			if (add) {
+				if (!item.mailboxes.some((m) => m.mailbox_id === mailboxId))
+					item.mailboxes.push({ ...entry })
+			} else if (item.mailboxes.length > 1) {
+				item.mailboxes = item.mailboxes.filter((m) => m.mailbox_id !== mailboxId)
+			}
+		}
+		threadsResource.value.data
+			?.filter((t: Thread) => threadIds.includes(t.thread_id))
+			.forEach((t: Thread) => {
+				apply(t)
+				t.messages?.forEach(apply)
+			})
+	}
+
 	const handleAddThreadsToMailbox = (mailboxId: string, threadIds: string[], isUndo = false) => {
 		const mailboxName = mailboxes.data?.find((m) => m.id === mailboxId)?._name
 		const action = async () => {
 			await addMails.submit({ ids: allMailIds(threadIds), mailbox_id: mailboxId })
-			reloadThreads()
+			// The threads stay in the current view (only gain another mailbox) — no list refetch; update
+			// the list rows' folder tags in place instead, and refresh selections + sidebar counts.
+			syncListMailboxMembership(mailboxId, threadIds, true)
+			syncAfterAction()
 			if (threadID.value && threadIds.includes(threadID.value))
 				mailThreadRef.value?.syncMailboxMembership(mailboxId, true)
 		}
@@ -263,7 +299,11 @@ export function useThreadActions(deps: {
 				.filter(isRemovable)
 				.map((m) => m.id)
 			await removeMails.submit({ ids, mailbox_id: mailboxId })
-			reloadThreads()
+			// Removing from the current mailbox drops the threads from the view; removing from another
+			// mailbox leaves them here (they just lose that membership) — drop the tag from the list rows.
+			if (mailboxId === mailbox.value) removeThreadsFromList(threadIdsToBeUpdated)
+			else syncListMailboxMembership(mailboxId, threadIdsToBeUpdated, false)
+			syncAfterAction()
 			if (threadID.value && threadIdsToBeUpdated.includes(threadID.value)) {
 				if (mailboxId === mailbox.value) goToNextThreadOrMailbox(threadIdsToBeUpdated)
 				else mailThreadRef.value?.syncMailboxMembership(mailboxId, false)
@@ -342,19 +382,27 @@ export function useThreadActions(deps: {
 		makeParams: ({ names }: { names: string[] }) => ({ names }),
 	})
 
+	// Removes the given threads from the loaded list and returns them (so an undo can re-insert the exact
+	// rows in place). Empty for the search/starred path, which resets instead.
 	const handleSuccessAndRemoveFromList = (
 		thread_ids: string[] | SetSeenParams,
 		excludeCommonMailboxes: boolean = true,
-	) => {
-		reloadThreads()
+	): Thread[] => {
+		// In search/starred, membership is server-determined (a moved thread may still be starred / still
+		// match the query), so reset to top and let the server decide rather than removing locally.
+		if (excludeCommonMailboxes && ['search', 'starred'].includes(mailbox.value)) {
+			resetThreads()
+			return []
+		}
 
-		if (excludeCommonMailboxes && ['search', 'starred'].includes(mailbox.value)) return
 		if (!Array.isArray(thread_ids)) thread_ids = Object.values(thread_ids).flat()
+		// Navigate off a removed open thread before dropping it, so the "next thread" is resolved
+		// against the still-complete list.
 		if (threadID.value && thread_ids.includes(threadID.value))
 			goToNextThreadOrMailbox(thread_ids)
-		threadsResource.value.data = threadsResource.value.data?.filter(
-			(thread: Thread) => !thread_ids.includes(thread.thread_id),
-		)
+		const removed = removeThreadsFromList(thread_ids)
+		syncAfterAction()
+		return removed
 	}
 
 	const handleSetSeen = (threadIDs: SetSeenParams, silent = false, mailIds?: string[]) => {
@@ -491,16 +539,22 @@ export function useThreadActions(deps: {
 		const keptInList =
 			mailbox.value === mailboxIds.sent && Object.keys(threadIDs).every((t) => !movesAll(t))
 
+		// The rows removed from the list on success, captured so undo can put them back in place.
+		let removedThreads: Thread[] = []
+
 		const action = async () => {
 			for (const op of forward) await op()
-			if (keptInList) reloadThreads()
-			else handleSuccessAndRemoveFromList(threadIDs)
+			if (keptInList) syncAfterAction()
+			else removedThreads = handleSuccessAndRemoveFromList(threadIDs)
 		}
 
 		setUndoAction(() => {
 			const undoAction = async () => {
 				await setMailsMailboxes.submit({ mails: snapshot })
-				reloadThreads()
+				// Re-insert the exact rows at their original position (no jump to top). The search/starred
+				// path removed nothing locally, so fall back to a reset there.
+				removedThreads.length ? restoreThreadsToList(removedThreads) : resetThreads()
+				mailboxes.reload()
 			}
 			raisePromiseToast(
 				undoAction,
@@ -545,9 +599,12 @@ export function useThreadActions(deps: {
 		// the same call as the mailbox restore.
 		const screenForward = spam ? (willJunkSenders(senders) ? 'Spam' : null) : 'Accepted'
 
+		// The rows removed from the list on success, captured so undo can put them back in place.
+		let removedThreads: Thread[] = []
+
 		const action = async () => {
 			await setMailsSpam.submit({ ids, spam, screen_action: screenForward })
-			handleSuccessAndRemoveFromList(threadIDs)
+			removedThreads = handleSuccessAndRemoveFromList(threadIDs)
 			// 'Ask to Block Sender' mode: junking still prompts to fully block the sender (Reject).
 			if (spam && !screenForward) promptBlockSenders(senders)
 		}
@@ -558,7 +615,10 @@ export function useThreadActions(deps: {
 					mails: snapshot,
 					screen_action: screenForward ? (spam ? 'Accepted' : 'Spam') : null,
 				})
-				reloadThreads()
+				// Re-insert the exact rows at their original position (no jump to top). The search/starred
+				// path removed nothing locally, so fall back to a reset there.
+				removedThreads.length ? restoreThreadsToList(removedThreads) : resetThreads()
+				mailboxes.reload()
 			}
 			// Undo flips the junk status back — name the resulting state, like the forward toast does.
 			const restored =

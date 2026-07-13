@@ -1,47 +1,52 @@
 <template>
-	<div class="flex items-center justify-between">
-		<h1>{{ __('Signatures') }}</h1>
-		<Button icon-left="plus" :label="__('New')" @click="showAddSignature = true" />
-	</div>
-	<div v-if="signatures?.data?.length">
-		<div
-			v-for="signature in signatures?.data"
-			:key="signature.name"
-			class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded px-3 py-1"
-			@click="editSignature(signature.name)"
-		>
-			<span class="text-base">{{ signature.signature_name }}</span>
-			<Dropdown :options="signatureOptions(signature)">
-				<Button variant="" @click.stop>
-					<template #icon>
-						<Ellipsis class="text-ink-gray-5 h-4 w-4" />
-					</template>
-				</Button>
-			</Dropdown>
+	<AppSettingsHeader :title="__('Signatures')">
+		<template #actions>
+			<Button icon-left="plus" :label="__('New')" @click="showAddSignature = true" />
+		</template>
+	</AppSettingsHeader>
+	<AppSettingsBody>
+		<div v-if="signatures?.data?.length">
+			<div
+				v-for="signature in signatures?.data"
+				:key="signature.name"
+				class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded px-3 py-1"
+				@click="editSignature(signature.name)"
+			>
+				<span class="text-base">{{ signature.signature_name }}</span>
+				<Dropdown :options="signatureOptions(signature)">
+					<Button variant="" @click.stop>
+						<template #icon>
+							<Ellipsis class="text-ink-gray-5 h-4 w-4" />
+						</template>
+					</Button>
+				</Dropdown>
+			</div>
 		</div>
-	</div>
 
-	<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-		<p class="text-base-medium">{{ __('No signatures found.') }}</p>
+		<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
+			<p class="text-base-medium">{{ __('No signatures found.') }}</p>
 
-		<p>
-			{{ __('Signatures let you automatically add personalized content to your emails.') }}
-		</p>
-	</div>
+			<p>
+				{{ __('Signatures let you automatically add personalized content to your emails.') }}
+			</p>
+		</div>
 
-	<AddSignatureModal v-model="showAddSignature" @reload-signatures="signatures.reload()" />
-	<SetDefaultSignatureModal v-model="showSetSignature" :signature="selectedSignature" />
-	<EditSignatureModal
-		v-model="showEditSignature"
-		:signature-i-d="selectedSignature"
-		@reload-signatures="signatures.reload()"
-	/>
+		<AddSignatureModal v-model="showAddSignature" @reload-signatures="signatures.reload()" />
+		<SetDefaultSignatureModal v-model="showSetSignature" :signature="selectedSignature" />
+		<EditSignatureModal
+			v-model="showEditSignature"
+			:signature-i-d="selectedSignature"
+			@reload-signatures="signatures.reload()"
+		/>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { inject, ref } from 'vue'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { Button, Dropdown, useList } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
 import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'

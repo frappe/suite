@@ -1,7 +1,6 @@
 <template>
-	<div class="flex items-center justify-between">
-		<h1>{{ __('Sieve Scripts') }}</h1>
-		<div class="flex items-center gap-2">
+	<AppSettingsHeader :title="__('Automation')">
+		<template #actions>
 			<Button
 				icon-left="refresh-cw"
 				:label="__('Rebuild Automation')"
@@ -12,9 +11,9 @@
 				@click="rebuildAutomation.submit()"
 			/>
 			<Button icon-left="plus" :label="__('New')" @click="addScript" />
-		</div>
-	</div>
-
+		</template>
+	</AppSettingsHeader>
+	<AppSettingsBody>
 	<div v-if="filteredScripts.length">
 		<div
 			v-for="script in filteredScripts"
@@ -65,12 +64,20 @@
 		v-model="showDeleteScript"
 		:script="selectedScript"
 	/>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Ellipsis } from 'lucide-vue-next'
-import { Badge, Button, Dropdown, createResource } from 'frappe-ui'
+import {
+	Badge,
+	Button,
+	Dropdown,
+	createResource,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

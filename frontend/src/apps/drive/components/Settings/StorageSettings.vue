@@ -1,8 +1,6 @@
 <template>
-  <h1 class="font-semibold mb-4 text-ink-gray-9">
-    {{ __('Storage') }}
-  </h1>
-
+  <AppSettingsHeader :title="__('Statistics')" />
+  <AppSettingsBody>
   <div class="flex items-center justify-between w-full mb-2">
     <span class="text-base-medium text-ink-gray-8"
       >{{ showFileStorage ? 'You have' : 'Your team has' }} used
@@ -106,10 +104,17 @@
       </div>
     </div>
   </div>
+  </AppSettingsBody>
 </template>
 <script setup>
 import { formatSize, base2BlockSize, COLOR_MAP, formatPercent } from '@/apps/drive/utils/format'
-import { Tooltip, TabButtons, Button } from 'frappe-ui'
+import {
+  Tooltip,
+  TabButtons,
+  Button,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { getIconUrl, openEntity, MIME_LIST_MAP } from '@/apps/drive/utils/files'
 import { createResource } from 'frappe-ui'
 import { ref, watch } from 'vue'

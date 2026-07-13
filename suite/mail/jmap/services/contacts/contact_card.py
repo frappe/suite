@@ -178,6 +178,93 @@ class ContactCardService(ContactsService):
 
 		return {}
 
+	def parse(self, blob_ids: list[str]) -> dict:
+		"""Public method to parse vCard blobs into JSContact Cards via the JMAP 'ContactCard/parse' method.
+
+		The number of blob ids allowed per 'ContactCard/parse' call is capped well below
+		'maxObjectsInGet' and is not advertised in the session capabilities, so we start from the
+		general object limit and halve the batch whenever the server responds with 'requestTooLarge',
+		reusing the largest size that succeeds for the remaining blobs. Any other error is raised so
+		the caller can fall back to local parsing."""
+
+		result = {"parsed": {}, "notFound": {}, "notParsable": {}}
+
+		remaining = list(blob_ids)
+		batch_size = min(len(remaining), self.max_objects_in_get) or 1
+		while remaining:
+			batch = remaining[:batch_size]
+			response = self._call(
+				self.capabilities,
+				[
+					[
+						f"{self.type}/parse",
+						{
+							"accountId": self.account,
+							"blobIds": batch,
+						},
+						"0",
+					]
+				],
+			)
+
+			method_responses = response.get("methodResponses")
+			if not method_responses:
+				break
+
+			name, body = method_responses[0][0], method_responses[0][1]
+			if name == "error":
+				if body.get("type") == "requestTooLarge" and batch_size > 1:
+					batch_size = max(1, batch_size // 2)
+					continue
+				raise RuntimeError(f"ContactCard/parse failed: {body}")
+
+			result["parsed"].update(body.get("parsed", {}))
+			if not_found := body.get("notFound", {}):
+				result["notFound"].update(not_found)
+			if not_parsable := body.get("notParsable", {}):
+				result["notParsable"].update(not_parsable)
+
+			remaining = remaining[batch_size:]
+
+		return result
+
+	def get_master_ids(self, uids: list[str]) -> list[str]:
+		"""Public method to get contact card IDs for a list of UIDs.
+
+		The UIDs are batched into separate OR queries so the filter stays within server limits, and
+		each batch is fully paginated using the reported ``total``. We cannot rely on the generic
+		``query`` helper here: it stops as soon as a page returns fewer IDs than requested, but a
+		server may cap a query page below that, which would silently drop matches after the first
+		page and let a re-run create duplicate cards."""
+
+		if not uids:
+			return []
+
+		ids: list[str] = []
+		for batch in self.create_batches(uids, self.max_objects_in_get):
+			filter = {"operator": "OR", "conditions": [{"uid": uid} for uid in batch]}
+			position = 0
+			total = None
+			while True:
+				response = self._query(filter, position, len(batch), calculate_total=total is None)
+
+				method_responses = response.get("methodResponses")
+				if not method_responses:
+					break
+
+				query_response = method_responses[0][1]
+				page = query_response.get("ids", [])
+				ids.extend(page)
+
+				if total is None:
+					total = query_response.get("total")
+
+				position += len(page)
+				if not page or (total is not None and position >= total):
+					break
+
+		return ids
+
 	def update_address_book_ids(
 		self,
 		ids: list[str],

@@ -1,6 +1,19 @@
 <template>
+	<AppSettingsHeader :title="__('Account')">
+		<template v-if="jmapAccount.doc" #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:disabled="loading || !isDirty"
+				:loading="saving"
+				@click="save"
+			/>
+		</template>
+	</AppSettingsHeader>
+	<AppSettingsBody>
 	<template v-if="jmapAccount.doc">
-		<h1>{{ __('Outgoing') }}</h1>
+		<div class="flex flex-col gap-5">
+		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Outgoing') }}</h2>
 		<FormControl
 			v-model="jmapAccount.doc.default_outgoing_email"
 			type="combobox"
@@ -32,7 +45,7 @@
 			class="!p-0"
 		/>
 
-		<h1>{{ __('Incoming') }}</h1>
+		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
 		<Switch
 			v-model="enableScreening"
 			:label="__('Screen New Senders')"
@@ -58,7 +71,7 @@
 		/>
 
 		<template v-if="userSettings.doc">
-			<h1>{{ __('Recovery') }}</h1>
+			<h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
 			<FormControl
 				v-model="userSettings.doc.backup_email"
 				:label="__('Backup Email')"
@@ -70,17 +83,11 @@
 		</template>
 
 		<ErrorMessage :message="jmapAccount.save.error || userSettings.save.error" />
-		<Button
-			:label="__('Save')"
-			variant="solid"
-			:disabled="loading || !isDirty"
-			:loading="saving"
-			class="min-h-7"
-			@click="save"
-		/>
 
 		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
+		</div>
 	</template>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
@@ -94,6 +101,8 @@ import {
 	createDocumentResource,
 	createResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

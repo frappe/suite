@@ -4,7 +4,6 @@
 			v-if="!readonly"
 			:threads
 			:thread
-			:can-go-prev="canGoPrev"
 			:can-go-next="canGoNext"
 			@set-flagged="(ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)"
 			@set-seen="setThreadSeen"
@@ -416,12 +415,11 @@ import type {
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
-const { mailbox, threadID, threads, messages, canGoPrev, canGoNext, readonly } = defineProps<{
+const { mailbox, threadID, threads, messages, canGoNext, readonly } = defineProps<{
 	mailbox: string
 	threadID?: string
 	threads: string[]
 	messages?: Mail[]
-	canGoPrev?: boolean
 	canGoNext?: boolean
 	// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
 	// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.

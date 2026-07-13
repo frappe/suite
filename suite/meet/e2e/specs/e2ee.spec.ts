@@ -29,7 +29,8 @@ async function expectParticipantsAndVideo(
 async function openMeetingAccessSettings(page: Page): Promise<void> {
 	await page.getByTestId("toolbar-more").click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
-	await page.getByRole("button", { name: "Meeting Access" }).click();
+	// Tab renamed to "Controls"; SettingsNavItem is role=tab (frappe-ui TabsTrigger)
+	await page.getByRole("tab", { name: "Controls" }).click();
 }
 
 async function enableE2EEInSettings(page: Page): Promise<void> {

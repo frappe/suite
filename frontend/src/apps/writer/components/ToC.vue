@@ -1,15 +1,15 @@
 <template>
-  <div v-if="editor"
-    class="px-2.5 pt-3 gap-2 hidden md:block sticky top-0 self-start overflow-y-auto flex-shrink-0 h-full w-64"
-    :class="show && 'border-r border-outline-gray-2'">
-    <div v-if="(tabs.length || anchors.length > 1) && !show">
+  <div v-if="editor && (hasContent || editor.isEditable)"
+    class="px-2.5 pt-3 gap-2 hidden md:block overflow-y-auto overflow-x-hidden flex-shrink-0 h-full transition-[width] duration-200"
+    :class="show ? 'w-64' : 'w-12'">
+    <div v-if="!show">
       <Button variant="ghost" :icon="h(show ? LucidePanelLeftClose : LucideTableOfContents, {
         class: 'text-ink-gray-6',
       })
         " :tooltip="show ? 'Hide' : 'Table of Contents'" @click="show = !show" />
     </div>
-    <div v-if="show && (anchors.length > 1 || tabs.length)" class="grow flex flex-col gap-0.5">
-      <div class="flex justify-between items-center ps-2 pr-1 pb-1">
+    <div v-if="show" class="grow flex flex-col gap-0.5">
+      <div v-if="hasContent" class="flex justify-between items-center ps-2 pr-1 pb-1">
         <span class="text-base-medium text-ink-gray-8 select-none">Table of Contents</span>
         <Button :icon="LucideLeftClose" variant="ghost" @click="show = !show"
           :tooltip="show ? 'Hide' : 'Table of Contents'" />
@@ -78,13 +78,16 @@
           </a>
         </div>
       </div>
-      <Button v-if="editor.isEditable" class="!justify-start text-xs opacity-50 hover:opacity-100"
-        :icon-left="h(LucidePlus, { class: 'size-4' })" :label="tabs.length ? 'Add tab' : 'Create tab'" variant="ghost"
-        @click="
-          tabs.length
-            ? editor.commands.createTab({ label: 'Untitled' })
-            : editor.commands.wrapInTab()
-          " />
+      <div v-if="editor.isEditable" class="flex items-center gap-1 pr-1">
+        <Button class="grow !justify-start text-xs opacity-50 hover:opacity-100"
+          :icon-left="h(LucidePlus, { class: 'size-4' })" :label="tabs.length ? 'Add tab' : 'Create tab'"
+          variant="ghost" @click="
+            tabs.length
+              ? editor.commands.createTab({ label: 'Untitled' })
+              : editor.commands.wrapInTab()
+            " />
+        <Button v-if="!hasContent" :icon="LucideLeftClose" variant="ghost" @click="show = !show" tooltip="Hide" />
+      </div>
     </div>
   </div>
 </template>
@@ -113,6 +116,10 @@ const props = defineProps({
     default: () => [],
   },
 })
+
+const hasContent = computed(
+  () => tabs.value.length > 0 || props.anchors.length > 1,
+)
 
 const show = ref(JSON.parse(localStorage.getItem('showToc') || 'false'))
 watch(show, (v) => localStorage.setItem('showToc', v))

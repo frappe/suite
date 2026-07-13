@@ -1,41 +1,55 @@
 <template>
-	<h1>{{ __('Appearance') }}</h1>
-	<FormControl
-		v-model="colorScheme"
-		:label="__('Color Scheme')"
-		type="select"
-		variant="outline"
-		:options="COLOR_SCHEMES"
-	/>
-	<template v-if="user.data.is_jmap_configured">
-		<Switch
-			:model-value="showReadingPane"
-			:label="__('Show Reading Pane')"
-			:description="__('Preview emails alongside the message list.')"
-			class="!p-0"
-			@update:model-value="(v) => (showReadingPane = v)"
-		/>
-		<FormControl
-			:model-value="groupMessagesBy"
-			:label="__('Group Messages By')"
-			type="select"
-			variant="outline"
-			:options="GROUP_MESSAGES_OPTIONS"
-			@update:model-value="(v) => (groupMessagesBy = v)"
-		/>
-	</template>
-	<Button
-		:label="__('Save')"
-		variant="solid"
-		:loading="saveSettings.loading"
-		:disabled="isNotDirty"
-		@click="() => saveSettings.submit()"
-	/>
+	<AppSettingsHeader :title="__('Appearance')">
+		<template #actions>
+			<Button
+				:label="__('Save')"
+				variant="solid"
+				:loading="saveSettings.loading"
+				:disabled="isNotDirty"
+				@click="() => saveSettings.submit()"
+			/>
+		</template>
+	</AppSettingsHeader>
+	<AppSettingsBody>
+		<div class="flex flex-col gap-5">
+			<FormControl
+				v-model="colorScheme"
+				:label="__('Color Scheme')"
+				type="select"
+				variant="outline"
+				:options="COLOR_SCHEMES"
+			/>
+			<template v-if="user.data.is_jmap_configured">
+				<Switch
+					:model-value="showReadingPane"
+					:label="__('Show Reading Pane')"
+					:description="__('Preview emails alongside the message list.')"
+					class="!p-0"
+					@update:model-value="(v) => (showReadingPane = v)"
+				/>
+				<FormControl
+					:model-value="groupMessagesBy"
+					:label="__('Group Messages By')"
+					type="select"
+					variant="outline"
+					:options="GROUP_MESSAGES_OPTIONS"
+					@update:model-value="(v) => (groupMessagesBy = v)"
+				/>
+			</template>
+		</div>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { Button, FormControl, Switch, createResource } from 'frappe-ui'
+import {
+	Button,
+	FormControl,
+	Switch,
+	createResource,
+} from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 

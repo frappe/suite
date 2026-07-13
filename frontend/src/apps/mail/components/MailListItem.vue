@@ -2,7 +2,11 @@
 	<router-link
 		:to="{
 			name: 'mail-mail',
-			params: { accountId: $route.params.accountId, mailbox, threadID: mail.thread_id },
+			params: {
+				accountId: accountId || $route.params.accountId,
+				mailbox,
+				threadID: mail.thread_id,
+			},
 			query: $route.query,
 		}"
 		class="sm:hover:bg-surface-gray-1 group flex cursor-default select-none space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5"
@@ -22,7 +26,7 @@
 			:class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
 		>
 			<div
-				v-if="!isMobile"
+				v-if="!isMobile && selectable"
 				class="checkbox-hitbox -m-3 cursor-pointer p-3"
 				@click.stop.prevent="emit('setSelected', !isSelected)"
 			>
@@ -36,7 +40,7 @@
 				<Check class="text-ink-base m-auto h-5 w-5 stroke-[3px]" />
 			</div>
 			<Avatar
-				v-show="!isSelected && isMobile"
+				v-show="!isSelected && (isMobile || !selectable)"
 				:label="getFirstAlphabet(mail.from_name) || getFirstAlphabet(mail.from_email)"
 				:image="mail.user_image"
 				size="xl"
@@ -61,6 +65,13 @@
 					>
 						{{ header }}
 					</h3>
+					<Badge
+						v-if="accountLabel"
+						size="sm"
+						:label="accountLabel"
+						theme="gray"
+						class="shrink-0"
+					/>
 					<Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
 				</div>
 				<MailDate v-if="!isFullWidth" :datetime="mail.received_at" :in-list="true" />
@@ -229,10 +240,24 @@ import MailListItemActions from '@/apps/mail/components/MailListItemActions.vue'
 
 import type { Attachment, Thread } from '@/apps/mail/types'
 
-const { mailbox, mail, isSelected } = defineProps<{
+const {
+	mailbox,
+	mail,
+	isSelected,
+	accountId,
+	accountLabel,
+	selectable = true,
+} = defineProps<{
 	mailbox: string
 	mail: Thread
 	isSelected: boolean
+	// Set by the All Inboxes view: the row's owning account (overrides the route's accountId in the
+	// thread link) and a short label chip identifying which account the mail belongs to.
+	accountId?: string
+	accountLabel?: string
+	// When false, the desktop selection checkbox is replaced by the sender avatar (the All Inboxes
+	// view has no cross-account bulk selection).
+	selectable?: boolean
 }>()
 
 const emit = defineEmits([

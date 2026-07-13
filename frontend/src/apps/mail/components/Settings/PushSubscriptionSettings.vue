@@ -1,48 +1,51 @@
 <template>
-	<!-- A single h-full flex column gives the ListView a bounded flex parent so it fills the panel and
-	scrolls within itself, instead of taking a small intrinsic height with empty space below. -->
-	<div class="flex min-h-0 flex-1 flex-col gap-4">
-		<div class="flex items-center justify-between">
-			<h1>{{ __('Push Subscriptions') }}</h1>
-			<div class="flex gap-2">
-				<Button
-					variant="outline"
-					icon="lucide-refresh-cw"
-					:tooltip="__('Refresh')"
-					:loading="pushSubscriptions.loading"
-					@click="pushSubscriptions.reload()"
-				/>
-				<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-			</div>
-		</div>
-
+	<AppSettingsHeader :title="__('Push Subscriptions')">
+		<template #actions>
+			<Button
+				variant="outline"
+				icon="lucide-refresh-cw"
+				:tooltip="__('Refresh')"
+				:loading="pushSubscriptions.loading"
+				@click="pushSubscriptions.reload()"
+			/>
+			<Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
+		</template>
+	</AppSettingsHeader>
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden px-[4.4rem] pb-8 pt-6">
 		<template v-if="rows.length">
-			<ListView
-				ref="listView"
-				class="min-h-0 flex-1"
-				:columns="COLUMNS"
-				:rows="rows"
-				row-key="name"
-			>
-				<ListHeader />
-				<ListRows />
-				<ListSelectBanner>
-					<template #actions>
-						<Button
-							variant="ghost"
-							:label="__('Renew')"
-							:loading="renewing"
-							@click="renewSelected"
-						/>
-						<Button
-							variant="ghost"
-							theme="red"
-							:label="__('Delete')"
-							@click="showDeleteModal = true"
-						/>
-					</template>
-				</ListSelectBanner>
-			</ListView>
+			<div class="relative min-h-0 flex-1">
+				<!-- Force ListView root to full panel height so overflow-x scrollbar is at the bottom -->
+				<div
+					class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
+				>
+					<ListView
+						ref="listView"
+						class="h-full min-h-0"
+						:columns="COLUMNS"
+						:rows="rows"
+						row-key="name"
+					>
+						<ListHeader />
+						<ListRows />
+						<ListSelectBanner>
+							<template #actions>
+								<Button
+									variant="ghost"
+									:label="__('Renew')"
+									:loading="renewing"
+									@click="renewSelected"
+								/>
+								<Button
+									variant="ghost"
+									theme="red"
+									:label="__('Delete')"
+									@click="showDeleteModal = true"
+								/>
+							</template>
+						</ListSelectBanner>
+					</ListView>
+				</div>
+			</div>
 		</template>
 		<div
 			v-else-if="!pushSubscriptions.loading"
@@ -52,7 +55,10 @@
 			<p>{{ MESSAGE }}</p>
 		</div>
 
-		<AddPushSubscriptionModal v-model="showAddModal" @created="pushSubscriptions.reload()" />
+		<AddPushSubscriptionModal
+			v-model="showAddModal"
+			@created="pushSubscriptions.reload()"
+		/>
 		<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
 	</div>
 </template>
@@ -69,6 +75,7 @@ import {
 	call,
 	createResource,
 } from 'frappe-ui'
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'

@@ -50,6 +50,8 @@ export const userStore = defineStore('mail-user', () => {
 		url: 'suite.mail.api.account.get_user_info',
 		onSuccess: (data) => {
 			if (data?.is_mail_admin) domains.fetch()
+			// The unified All Inboxes badge only applies when there's more than one account to merge.
+			if ((data?.accounts?.length ?? 0) > 1) allInboxesUnread.fetch()
 			resolveAccount(data?.accounts)
 		},
 		onError: (error) => {
@@ -59,10 +61,22 @@ export const userStore = defineStore('mail-user', () => {
 		auto: true,
 	})
 
+	// Total unread across every account's Inbox — drives the "All Inboxes" sidebar badge. Not scoped to
+	// the active account, so (unlike the per-account resources) it isn't re-fetched in setAccount().
+	const allInboxesUnread = createResource({ url: 'suite.mail.api.mail.get_all_inbox_unread_count' })
+
+	// Keep the unified badge in step with the per-account mailbox counts: refresh it whenever the active
+	// account's mailboxes reload — i.e. after any thread action (read, move, archive, trash, …) and on
+	// the periodic poll, since every one of those calls mailboxes.reload(). Only relevant with >1 account.
+	const reloadAllInboxesUnread = () => {
+		if ((userResource.data?.accounts?.length ?? 0) > 1) allInboxesUnread.reload()
+	}
+
 	const mailboxes = createResource({
 		url: 'suite.mail.api.mail.get_mailboxes',
 		makeParams: () => ({ account: accountId.value }),
 		cache: ['mailboxes', accountId.value],
+		onSuccess: reloadAllInboxesUnread,
 	})
 
 	const mailboxIds = computed(() => {
@@ -124,6 +138,7 @@ export const userStore = defineStore('mail-user', () => {
 		screenedAddresses.reset()
 		sieveScripts.reset()
 		domains.reset()
+		allInboxesUnread.reset()
 	}
 
 	return {
@@ -137,6 +152,7 @@ export const userStore = defineStore('mail-user', () => {
 		domains,
 		sieveScripts,
 		screenedAddresses,
+		allInboxesUnread,
 		reset,
 	}
 })

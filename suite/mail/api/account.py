@@ -458,6 +458,68 @@ def normalize_calendar_filter(filter: dict) -> dict:
 
 
 @frappe.whitelist()
+def create_contacts_import(
+	account: str,
+	format: Literal["vcf", "jmap"],
+	file: str,
+	address_book: str | None = None,
+) -> None:
+	"""Creates contacts exchange of operation import"""
+
+	doc = frappe.new_doc("Contacts Exchange")
+	doc.user = frappe.session.user
+	doc.account = account
+	doc.operation = "Import"
+	doc.import_format = format
+	doc.import_file = file
+	if address_book:
+		doc.import_metadata = json.dumps({"addressBookIds": {address_book: True}})
+	doc.insert()
+	doc.submit()
+
+
+@frappe.whitelist()
+def create_contacts_export(
+	account: str,
+	format: Literal["jmap", "vcf"],
+	archive_type: Literal[".zip", ".tgz", ".tar.gz"],
+	limit: int | None = None,
+	filter: dict | None = None,
+) -> None:
+	"""Creates contacts exchange of operation export"""
+
+	doc = frappe.new_doc("Contacts Exchange")
+	doc.user = frappe.session.user
+	doc.account = account
+	doc.operation = "Export"
+	doc.export_format = format
+	doc.export_archive_type = archive_type
+	doc.export_limit = limit
+	if filter:
+		filter = {k: v for k, v in filter.items() if v}
+		if normalized := normalize_contacts_filter(filter):
+			doc.export_filter = json.dumps(normalized)
+	doc.insert()
+	doc.submit()
+
+
+def normalize_contacts_filter(filter: dict) -> dict:
+	"""Normalize a contacts export filter into a JMAP ContactCard/query FilterCondition."""
+
+	normalized = {}
+	if text := filter.get("text"):
+		normalized["text"] = text
+	if name := filter.get("name"):
+		normalized["name"] = name
+	if email := filter.get("email"):
+		normalized["email"] = email
+	if in_address_book := filter.get("inAddressBook"):
+		normalized["inAddressBook"] = in_address_book
+
+	return normalized
+
+
+@frappe.whitelist()
 def is_push_notification_relay_enabled() -> bool:
 	return frappe.db.get_single_value("Push Notification Settings", "enable_push_notification_relay")
 

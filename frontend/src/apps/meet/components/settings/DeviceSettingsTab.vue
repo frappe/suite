@@ -1,76 +1,79 @@
 <template>
-	<SettingsLayoutBase
-		:description="'Select your preferred camera, microphone, and speaker'"
-	>
-		<template #title>
-			Devices
-		</template>
-		<template #content>
-			<LoadingText
-				v-if="!cameraSelectOptions.length && !micSelectOptions.length && !speakerSelectOptions.length"
-				class="mx-auto w-max my-32"
-				:text="'Loading devices...'"
-			/>
-			<div v-else class="space-y-6">
-				<div class="space-y-2">
-					<FormControl label="Camera" type="autocomplete" v-model="selectedCameraIdLocal"
-						:options="cameraSelectOptions" placeholder="Select camera">
-						<template #prefix>
-							<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
-						</template>
-						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
-						</template>
-					</FormControl>
-				</div>
+	<AppSettingsHeader
+		title="Devices"
+		description="Select your preferred camera, microphone, and speaker"
+	/>
+	<AppSettingsBody>
+		<LoadingText
+			v-if="!cameraSelectOptions.length && !micSelectOptions.length && !speakerSelectOptions.length"
+			class="mx-auto w-max my-32"
+			:text="'Loading devices...'"
+		/>
+		<div v-else class="space-y-6">
+			<div class="space-y-2">
+				<FormControl label="Camera" type="autocomplete" v-model="selectedCameraIdLocal"
+					:options="cameraSelectOptions" placeholder="Select camera">
+					<template #prefix>
+						<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
+					</template>
+					<template #item-prefix="{ selected }">
+						<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
+					</template>
+				</FormControl>
+			</div>
 
-				<div class="space-y-2 flex gap-4 items-center">
-					<FormControl class="w-full" label="Microphone" type="autocomplete" v-model="selectedMicIdLocal"
-						:options="micSelectOptions" placeholder="Select microphone">
-						<template #prefix>
-							<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
-						</template>
-						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
-						</template>
-					</FormControl>
+			<div class="space-y-2 flex gap-4 items-center">
+				<FormControl class="w-full" label="Microphone" type="autocomplete" v-model="selectedMicIdLocal"
+					:options="micSelectOptions" placeholder="Select microphone">
+					<template #prefix>
+						<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
+					</template>
+					<template #item-prefix="{ selected }">
+						<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
+					</template>
+				</FormControl>
 
-					<div v-if="selectedMicIdLocal" class="w-5">
-						<AudioIndicator class="mt-2" :device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
-							:max-height="40" activeColorClass="bg-ink-gray-6" />
-					</div>
-				</div>
-
-				<div class="space-y-2 flex gap-2">
-					<FormControl class="w-full" label="Speaker" type="autocomplete" v-model="selectedSpeakerIdLocal"
-						:options="speakerSelectOptions" placeholder="Select speaker">
-						<template #prefix>
-							<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
-						</template>
-						<template #item-prefix="{ selected }">
-							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
-						</template>
-					</FormControl>
-
-					<div>
-						<Button 
-						class="mt-3" 
-						v-if="selectedSpeakerIdLocal" 
-						@click="testSpeaker" 
-						:loading="isTestingAudio"
-						icon-left="lucide-volume-2"
-						>
-							Test
-						</Button>
-					</div>
+				<div v-if="selectedMicIdLocal" class="w-5">
+					<AudioIndicator class="mt-2" :device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
+						:max-height="40" activeColorClass="bg-surface-gray-7" />
 				</div>
 			</div>
-		</template>
-	</SettingsLayoutBase>
+
+			<div class="space-y-2 flex gap-2">
+				<FormControl class="w-full" label="Speaker" type="autocomplete" v-model="selectedSpeakerIdLocal"
+					:options="speakerSelectOptions" placeholder="Select speaker">
+					<template #prefix>
+						<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
+					</template>
+					<template #item-prefix="{ selected }">
+						<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
+					</template>
+				</FormControl>
+
+				<div>
+					<Button
+					class="mt-3"
+					v-if="selectedSpeakerIdLocal"
+					@click="testSpeaker"
+					:loading="isTestingAudio"
+					icon-left="lucide-volume-2"
+					>
+						Test
+					</Button>
+				</div>
+			</div>
+		</div>
+	</AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import { Button, FormControl, LoadingText } from "frappe-ui";
+import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import {
+	Button,
+	FormControl,
+	LoadingText,
+} from 'frappe-ui';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import LucideCamera from "~icons/lucide/camera";
 import LucideCheck from "~icons/lucide/check";
@@ -85,7 +88,6 @@ import {
 } from "../../data/mediaPreferences";
 import { deviceManager } from "../../utils/media/DeviceManager";
 import AudioIndicator from "../AudioIndicator.vue";
-import SettingsLayoutBase from "./SettingsLayoutBase.vue";
 
 interface DeviceInfo {
 	label: string;
