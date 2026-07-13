@@ -1,100 +1,103 @@
 <template>
 	<AppSettingsHeader :title="__('Profile')" />
 	<AppSettingsBody>
-		<div class="flex flex-col gap-5">
-			<div class="flex w-full items-center">
-				<Avatar
-					:image="userImage"
-					:label="displayName"
-					size="3xl"
-					class="h-16 w-16"
-				/>
-				<div class="mx-4 flex min-w-0 flex-col">
-					<span class="text-3xl-semibold text-ink-gray-8 truncate">{{ displayName }}</span>
-					<span class="text-base text-ink-gray-6 truncate">{{ email }}</span>
-				</div>
-				<Button
-					:label="__('Edit Photo')"
-					class="ml-auto shrink-0"
-					@click="showEditPhoto = true"
-				/>
-			</div>
+		<div class="space-y-11">
+			<section class="space-y-6">
+				<FileUploader
+					file-types="image/png,image/jpeg,image/jpg"
+					:validate-file="validateAvatarFile"
+					@success="onAvatarUploaded"
+				>
+					<template #default="{ openFileSelector, uploading, error }">
+						<div class="flex items-center gap-4">
+							<div>
+								<Dropdown
+									v-if="userImage"
+									:options="avatarMenuOptions(openFileSelector)"
+									placement="right"
+								>
+									<button
+										type="button"
+										class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+										:aria-label="__('Profile picture options')"
+										:disabled="uploading || savingPhoto"
+									>
+										<Avatar
+											:image="userImage"
+											:label="displayName"
+											size="3xl"
+											class="!h-16 !w-16"
+										/>
+									</button>
+								</Dropdown>
+								<button
+									v-else
+									type="button"
+									class="flex rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+									:aria-label="__('Upload profile picture')"
+									:disabled="uploading || savingPhoto"
+									@click="openFileSelector"
+								>
+									<Avatar
+										:image="userImage"
+										:label="displayName"
+										size="3xl"
+										class="!h-16 !w-16"
+									/>
+								</button>
+							</div>
+							<div>
+								<div class="text-base-medium text-ink-gray-8">
+									{{ __('Profile picture') }}
+								</div>
+								<p class="text-p-sm text-ink-gray-5">
+									{{
+										uploading
+											? __('Uploading…')
+											: __('Helps people recognise you')
+									}}
+								</p>
+								<ErrorMessage v-if="error" class="mt-1" :message="error" />
+							</div>
+						</div>
+					</template>
+				</FileUploader>
 
-			<FormControl
-				v-model="firstName"
-				:label="__('First Name')"
-				variant="outline"
-			/>
-			<FormControl
-				v-model="lastName"
-				:label="__('Last Name')"
-				variant="outline"
-			/>
-			<ErrorMessage :message="saveError" />
-			<div class="flex flex-wrap gap-2">
-				<Button
-					:label="__('Save')"
-					class="min-h-7"
-					variant="solid"
-					:disabled="!canSave"
-					:loading="saving"
-					@click="saveProfile"
-				/>
-				<Button
-					v-if="showChangePassword"
-					class="min-h-7"
-					:label="__('Change Password')"
-					@click="showPasswordDialog = true"
-				/>
-			</div>
+				<div class="grid gap-6 sm:grid-cols-2">
+					<FormControl
+						v-model="firstName"
+						:label="__('First name')"
+						variant="outline"
+						class="w-full"
+						:disabled="savingName"
+						@blur="saveName"
+					/>
+					<FormControl
+						v-model="lastName"
+						:label="__('Last name')"
+						variant="outline"
+						class="w-full"
+						:disabled="savingName"
+						@blur="saveName"
+					/>
+				</div>
+			</section>
+
+			<section v-if="showChangePassword">
+				<h2 class="text-lg-semibold text-ink-gray-8">{{ __('Account') }}</h2>
+				<div class="mt-2 divide-y divide-outline-gray-1">
+					<SettingsRow
+						:title="__('Password')"
+						:description="__('Manage password and account access')"
+					>
+						<Button :label="__('Update Password')" @click="showPasswordDialog = true" />
+					</SettingsRow>
+				</div>
+			</section>
 
 			<slot />
 		</div>
 	</AppSettingsBody>
-
-	<Dialog v-model="showEditPhoto" :options="{ title: __('Edit Photo'), size: 'sm' }">
-		<template #body-content>
-			<FileUploader
-				class="mb-2 w-full"
-				:file-types="['image/*']"
-				@success="(file) => setPhoto(file.file_url)"
-			>
-				<template #default="{ error, uploading, openFileSelector }">
-					<div class="flex flex-col items-center space-y-4">
-						<div
-							class="bg-surface-gray-2 flex h-64 w-64 items-center justify-center rounded-full"
-						>
-							<img
-								v-if="userImage"
-								:src="userImage"
-								class="h-full w-full rounded-full object-cover"
-							/>
-							<span
-								v-else
-								class="lucide-user text-ink-gray-4 size-40"
-								aria-hidden="true"
-							/>
-						</div>
-						<ErrorMessage :message="error" />
-						<Button
-							:label="__('Upload New Photo')"
-							variant="solid"
-							class="w-full"
-							:disabled="uploading || saving"
-							@click="openFileSelector"
-						/>
-						<Button
-							v-if="userImage"
-							:label="__('Remove Current Photo')"
-							class="w-full"
-							:disabled="uploading || saving"
-							@click="setPhoto(null)"
-						/>
-					</div>
-				</template>
-			</FileUploader>
-		</template>
-	</Dialog>
 
 	<Dialog v-if="showChangePassword" v-model="showPasswordDialog" :options="passwordDialogOptions">
 		<template #body-content>
@@ -132,9 +135,11 @@ import {
 	Avatar,
 	Button,
 	Dialog,
+	Dropdown,
 	ErrorMessage,
 	FileUploader,
 	FormControl,
+	SettingsRow,
 	call,
 	createResource,
 	toast,
@@ -150,6 +155,8 @@ withDefaults(
 	{ showChangePassword: true },
 )
 
+const AUTOSAVE_TOAST_ID = 'suite-profile-autosave'
+
 const session = useSessionStore()
 const userName = computed(() => session.user as string)
 
@@ -159,9 +166,8 @@ const email = ref('')
 const userImage = ref<string | null>(null)
 const savedFirstName = ref('')
 const savedLastName = ref('')
-const saving = ref(false)
-const saveError = ref<string | null>(null)
-const showEditPhoto = ref(false)
+const savingName = ref(false)
+const savingPhoto = ref(false)
 const showPasswordDialog = ref(false)
 const currentPassword = ref('')
 const newPassword = ref('')
@@ -172,11 +178,27 @@ const displayName = computed(() => {
 	return name || email.value || userName.value
 })
 
-const canSave = computed(
-	() =>
-		!!firstName.value.trim() &&
-		(firstName.value !== savedFirstName.value || lastName.value !== savedLastName.value),
-)
+function avatarMenuOptions(openFileSelector: () => void) {
+	return [
+		{
+			label: __('Change image'),
+			icon: 'lucide-image-up',
+			onClick: openFileSelector,
+		},
+		{
+			label: __('Remove image'),
+			icon: 'lucide-trash-2',
+			onClick: removeAvatar,
+		},
+	]
+}
+
+function validateAvatarFile(file: File) {
+	const ext = file.name.split('.').pop()?.toLowerCase()
+	if (!ext || !['png', 'jpg', 'jpeg'].includes(ext)) {
+		return __('Only PNG and JPG images are allowed')
+	}
+}
 
 function applyUserDoc(data: Record<string, string | null>) {
 	firstName.value = (data.first_name as string) || ''
@@ -205,50 +227,80 @@ watch(
 	{ immediate: true },
 )
 
-async function saveProfile() {
-	if (!canSave.value || !userName.value) return
-	saving.value = true
-	saveError.value = null
+async function saveName() {
+	if (!userName.value || savingName.value) return
+
+	const nextFirst = firstName.value.trim()
+	const nextLast = lastName.value.trim()
+	if (!nextFirst) {
+		toast.error(__('First name is required'))
+		firstName.value = savedFirstName.value
+		return
+	}
+	if (nextFirst === savedFirstName.value && nextLast === savedLastName.value) return
+
+	savingName.value = true
 	try {
 		await call('frappe.client.set_value', {
 			doctype: 'User',
 			name: userName.value,
 			fieldname: {
-				first_name: firstName.value,
-				last_name: lastName.value,
+				first_name: nextFirst,
+				last_name: nextLast,
 			},
 		})
-		toast.success(__('Profile updated.'))
-		savedFirstName.value = firstName.value
-		savedLastName.value = lastName.value
+		firstName.value = nextFirst
+		lastName.value = nextLast
+		savedFirstName.value = nextFirst
+		savedLastName.value = nextLast
 		userResource.reload()
-		await userDoc.fetch()
-	} catch (e: any) {
-		saveError.value = e?.messages?.[0] || e?.message || __('Failed to update profile.')
+		toast.success(__('Name saved'), { id: AUTOSAVE_TOAST_ID })
+	} catch {
+		toast.error(__('Could not save name'))
+		firstName.value = savedFirstName.value
+		lastName.value = savedLastName.value
 	} finally {
-		saving.value = false
+		savingName.value = false
 	}
 }
 
-async function setPhoto(image: string | null) {
+async function onAvatarUploaded(file: { file_url: string }) {
 	if (!userName.value) return
-	saving.value = true
+	savingPhoto.value = true
 	try {
 		await call('frappe.client.set_value', {
 			doctype: 'User',
 			name: userName.value,
 			fieldname: 'user_image',
-			value: image,
+			value: file.file_url,
 		})
-		userImage.value = image
-		toast.success(__('Profile photo updated.'))
-		showEditPhoto.value = false
+		userImage.value = file.file_url
 		userResource.reload()
-		await userDoc.fetch()
-	} catch (e: any) {
-		toast.error(e?.messages?.[0] || e?.message || __('Failed to update photo.'))
+		toast.success(__('Profile picture updated'), { id: AUTOSAVE_TOAST_ID })
+	} catch {
+		toast.error(__('Could not update profile picture'))
 	} finally {
-		saving.value = false
+		savingPhoto.value = false
+	}
+}
+
+async function removeAvatar() {
+	if (!userName.value || savingPhoto.value || !userImage.value) return
+	savingPhoto.value = true
+	try {
+		await call('frappe.client.set_value', {
+			doctype: 'User',
+			name: userName.value,
+			fieldname: 'user_image',
+			value: null,
+		})
+		userImage.value = null
+		userResource.reload()
+		toast.success(__('Profile picture removed'), { id: AUTOSAVE_TOAST_ID })
+	} catch {
+		toast.error(__('Could not remove profile picture'))
+	} finally {
+		savingPhoto.value = false
 	}
 }
 
