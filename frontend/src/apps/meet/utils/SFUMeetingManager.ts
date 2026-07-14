@@ -61,13 +61,20 @@ export class SFUMeetingManager {
 			},
 			onFailed: async (_reason, result) => {
 				try {
+					const recoveries: Promise<unknown>[] = [];
 					if (result.send === "failed") {
 						this.connectionManager?.reportRecoveryState("recovering_send", _reason);
-						await this.mediaManager.rebuildSendSide();
+						recoveries.push(this.mediaManager.rebuildSendSide());
 					}
 					if (result.recv === "failed") {
 						this.connectionManager?.reportRecoveryState("recovering_receive", _reason);
-						await this.connectionManager?.resetReceiveSide();
+						recoveries.push(this.connectionManager.resetReceiveSide());
+					}
+					const failedRecovery = (await Promise.allSettled(recoveries)).find(
+						(result) => result.status === "rejected",
+					);
+					if (failedRecovery?.status === "rejected") {
+						throw failedRecovery.reason;
 					}
 					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
