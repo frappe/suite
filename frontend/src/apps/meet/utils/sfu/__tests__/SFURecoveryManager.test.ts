@@ -250,5 +250,15 @@ describe("SFURecoveryManager", () => {
 				recv: "restarted",
 			});
 		});
+
+		it("does not run failed-direction recovery when post-recovery sync throws", async () => {
+			const onRecovered = vi.fn().mockRejectedValue(new Error("sync failed"));
+			const onFailed = vi.fn();
+			const { manager } = createManager({ onRecovered, onFailed });
+
+			await expect(manager.recoverTransportIce("test")).resolves.toBe("failed");
+
+			expect(onFailed).not.toHaveBeenCalled();
+		});
 	});
 });

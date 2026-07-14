@@ -91,14 +91,20 @@ export class SFURecoveryManager {
 				}
 
 				console.log("SFU transport ICE restart completed", { reason });
-				await this.onRecovered?.(reason, restartResult);
-				return "recovered";
 			} catch (error) {
 				console.error("SFU transport ICE restart failed:", error);
 				await this.notifyFailed(reason, {
 					send: "failed",
 					recv: "failed",
 				});
+				return "failed";
+			}
+
+			try {
+				await this.onRecovered?.(reason, restartResult);
+				return "recovered";
+			} catch (error) {
+				console.error("SFU post-recovery sync failed:", error);
 				return "failed";
 			} finally {
 				this.recoveryInProgress = false;
