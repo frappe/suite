@@ -806,6 +806,17 @@ export class MediasoupManager {
 		return this.peerManager;
 	}
 
+	getResourceCounts(): Record<string, number> {
+		return {
+			rooms: this.roomManager.getRoomCount(),
+			peers: this.peerManager.getPeerCount(),
+			transports: this.transportManager.getTransportCount(),
+			producers: this.producerManager.getProducerCount(),
+			consumers: this.consumerManager.getConsumerCount(),
+			workers: this.workerManager.getAllWorkers().length,
+		};
+	}
+
 	async cleanup(): Promise<void> {
 		loggers.mediasoupManager.info('Starting MediaSoup cleanup');
 

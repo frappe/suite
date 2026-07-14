@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
+import type { Telemetry } from '../../telemetry/Telemetry';
 import type {
 	ClientToServerEvents,
 	ServerToClientEvents,
@@ -26,4 +27,5 @@ export interface HandlerDeps {
 	rateLimiter: RateLimiter;
 	e2eeEpochRelay: E2EEEpochRelay;
 	e2eeRoster: E2eeRosterStore;
+	telemetry: Telemetry;
 }

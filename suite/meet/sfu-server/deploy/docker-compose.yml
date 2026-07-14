@@ -23,6 +23,7 @@ services:
     network_mode: host
     environment:
       - JWT_SECRET=${JWT_SECRET}
+      - METRICS_TOKEN=${METRICS_TOKEN:-}
       - PORT=${PORT:-3000}
       - HOST=${HOST:-127.0.0.1}
       - WEBRTC_LISTEN_IP=${WEBRTC_LISTEN_IP:-}

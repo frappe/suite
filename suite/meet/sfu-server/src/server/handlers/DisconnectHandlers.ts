@@ -1,11 +1,18 @@
 import type { Socket } from 'socket.io';
+import { normalizeDisconnectReason } from '../../telemetry/Telemetry';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 import { isRealParticipant } from './utils';
 
 export function registerDisconnectHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
-		socket.on('disconnect', async () => {
+		socket.on('disconnect', async (reason) => {
+			const normalizedReason = normalizeDisconnectReason(reason);
+			deps.telemetry.socketDisconnects.inc({ reason: normalizedReason });
+			loggers.telemetry.event('socket_disconnect', {
+				reason: normalizedReason,
+				scope: socket.scope,
+			});
 			deps.authManager.cleanupSocket(socket);
 
 			loggers.socketHandler.info(

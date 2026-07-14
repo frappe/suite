@@ -1,4 +1,5 @@
 import type { Socket } from 'socket.io';
+import { direction } from '../../telemetry/Telemetry';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 import { getRoomId } from './utils';
@@ -6,8 +7,11 @@ import { getRoomId } from './utils';
 export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		const encryptedWebRtcTransportIds = new Set<string>();
+		const transportDirections = new Map<string, ReturnType<typeof direction>>();
 
 		socket.on('create_webrtc_transport', async (data, callback) => {
+			const startedAt = performance.now();
+			const transportDirection = direction(data.direction);
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const { direction, encryptionEnabled } = data;
@@ -23,9 +27,26 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				if (socket.e2eeRequired && encryptionEnabled) {
 					encryptedWebRtcTransportIds.add(transportParams.id);
 				}
+				transportDirections.set(transportParams.id, transportDirection);
 
 				callback({ success: true, ...transportParams });
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'create',
+						direction: transportDirection,
+						outcome: 'success',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 			} catch (error) {
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'create',
+						direction: transportDirection,
+						outcome: 'failure',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 				loggers.socketHandler.error(
 					'Error creating WebRTC transport: %s',
 					(error as Error).message,
@@ -35,6 +56,9 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 		});
 
 		socket.on('connect_webrtc_transport', async (data, callback) => {
+			const startedAt = performance.now();
+			const transportDirection =
+				transportDirections.get(data.transportId) ?? 'unknown';
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const { transportId, dtlsParameters } = data;
@@ -52,7 +76,23 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				);
 
 				callback({ success: true });
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'connect',
+						direction: transportDirection,
+						outcome: 'success',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 			} catch (error) {
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'connect',
+						direction: transportDirection,
+						outcome: 'failure',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 				loggers.socketHandler.error(
 					'Error connecting WebRTC transport: %s',
 					(error as Error).message,
@@ -62,6 +102,9 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 		});
 
 		socket.on('restart_webrtc_transport_ice', async (data, callback) => {
+			const startedAt = performance.now();
+			const transportDirection =
+				transportDirections.get(data.transportId) ?? 'unknown';
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const { transportId } = data;
@@ -69,7 +112,23 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					await deps.mediasoup.restartWebRtcTransportIce(transportId);
 
 				callback({ success: true, iceParameters });
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'restart_ice',
+						direction: transportDirection,
+						outcome: 'success',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 			} catch (error) {
+				deps.telemetry.recordTransportOperation(
+					{
+						operation: 'restart_ice',
+						direction: transportDirection,
+						outcome: 'failure',
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 				loggers.socketHandler.error(
 					'Error restarting WebRTC transport ICE: %s',
 					(error as Error).message,

@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import { vi } from 'vitest';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
+import { Telemetry } from '../../telemetry/Telemetry';
 import type {
 	ClientToServerEvents,
 	ServerToClientEvents,
@@ -196,6 +197,7 @@ interface ManagerHarness {
 	mediasoup: ReturnType<typeof createMockMediasoupManager>;
 	authManager: ReturnType<typeof createMockAuthManager>;
 	roster: E2eeRosterStore;
+	telemetry: Telemetry;
 	connect(socket: MockSocket): void;
 	createSocket(overrides?: Partial<TypedSocket>): MockSocket;
 }
@@ -205,10 +207,12 @@ export function createManager(): ManagerHarness {
 	const mediasoup = createMockMediasoupManager();
 	const authManager = createMockAuthManager();
 	const roster = new E2eeRosterStore(new InMemoryRosterPersistence());
+	const telemetry = new Telemetry();
 	const manager = new SocketHandlerManager(
 		io.io,
 		mediasoup,
 		authManager as unknown as AuthManager,
+		telemetry,
 		roster,
 	);
 	manager.setupSocketHandlers();
@@ -238,5 +242,14 @@ export function createManager(): ManagerHarness {
 		return socket;
 	};
 
-	return { manager, io, mediasoup, authManager, roster, connect, createSocket };
+	return {
+		manager,
+		io,
+		mediasoup,
+		authManager,
+		roster,
+		telemetry,
+		connect,
+		createSocket,
+	};
 }

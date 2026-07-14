@@ -11,6 +11,7 @@ import { FileRosterPersistence } from './server/E2eeRosterPersistenceFile';
 import { E2eeRosterStore } from './server/E2eeRosterStore';
 import { RouteManager } from './server/RouteManager';
 import { SocketHandlerManager } from './server/SocketHandlerManager';
+import { Telemetry } from './telemetry/Telemetry';
 import type { ServerConfig } from './types';
 import { loggers } from './utils/logger';
 
@@ -28,6 +29,7 @@ export class SFUServer {
 	private routeManager: RouteManager;
 	private socketHandlerManager: SocketHandlerManager;
 	private config: ServerConfig;
+	private telemetry: Telemetry;
 
 	constructor() {
 		const jwtSecret = process.env.JWT_SECRET;
@@ -60,8 +62,14 @@ export class SFUServer {
 		});
 
 		this.mediasoup = new MediasoupManager();
+		this.telemetry = new Telemetry();
 		this.authManager = new AuthManager(this.config.jwtSecret);
-		this.routeManager = new RouteManager(this.app, this.mediasoup);
+		this.routeManager = new RouteManager(
+			this.app,
+			this.mediasoup,
+			this.telemetry,
+			() => this.io.sockets.sockets.size,
+		);
 		const e2eeRoster = new E2eeRosterStore(
 			process.env.E2EE_ROSTER_PERSISTENCE_DIR
 				? new FileRosterPersistence(
@@ -74,6 +82,7 @@ export class SFUServer {
 			this.io,
 			this.mediasoup,
 			this.authManager,
+			this.telemetry,
 			e2eeRoster,
 			e2eeCoordinatorPersistence,
 		);

@@ -15,6 +15,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 		},
 	): Promise<void> {
 		const { roomId, participantId, userData, e2ee } = data;
+		const startedAt = performance.now();
+		const scope = socket.scope ?? 'unknown';
+		const rejoin = Boolean(
+			deps.mediasoup.getRoomPeers?.(getRoomId(socket))?.get(participantId),
+		);
 
 		try {
 			if (socket.meetingId && socket.meetingId !== roomId) {
@@ -136,7 +141,15 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					});
 				}
 			}
+			deps.telemetry.recordRoomJoin(
+				{ scope, rejoin, outcome: 'success' },
+				(performance.now() - startedAt) / 1000,
+			);
 		} catch (error) {
+			deps.telemetry.recordRoomJoin(
+				{ scope, rejoin, outcome: 'failure' },
+				(performance.now() - startedAt) / 1000,
+			);
 			loggers.socketHandler.error(
 				'Error in handleJoinRoom for user %s: %s',
 				participantId,
