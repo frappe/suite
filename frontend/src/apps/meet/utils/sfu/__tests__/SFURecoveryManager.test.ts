@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TransportIceRestartResult } from "../../media/TransportManager";
 import { SFURecoveryManager } from "../SFURecoveryManager";
 
 type MockTransportManager = {
@@ -13,7 +14,7 @@ type MockSfuClient = {
 function createManager(
 	opts: {
 		connected?: boolean;
-		restartResult?: boolean;
+		restartResult?: TransportIceRestartResult;
 		onRecovered?: ReturnType<typeof vi.fn>;
 		onFailed?: ReturnType<typeof vi.fn>;
 	} = {},
@@ -22,9 +23,11 @@ function createManager(
 		isConnected: vi.fn().mockReturnValue(opts.connected ?? true),
 	};
 	const transportManager: MockTransportManager = {
-		restartAllTransportIce: vi
-			.fn()
-			.mockResolvedValue(opts.restartResult ?? true),
+			restartAllTransportIce: vi
+				.fn()
+				.mockResolvedValue(
+					opts.restartResult ?? { send: "restarted", recv: "restarted" },
+				),
 		setEventHandlers: vi.fn(),
 	};
 	const manager = new SFURecoveryManager({
@@ -170,7 +173,9 @@ describe("SFURecoveryManager", () => {
 				"recovered",
 			);
 
-			const failed = createManager({ restartResult: false });
+			const failed = createManager({
+				restartResult: { send: "failed", recv: "restarted" },
+			});
 			await expect(failed.manager.recoverTransportIce("test")).resolves.toBe(
 				"failed",
 			);
@@ -183,7 +188,7 @@ describe("SFURecoveryManager", () => {
 
 		it("shares the active recovery so concurrent callers observe the same outcome", async () => {
 			const { manager, transportManager } = createManager({
-				restartResult: false,
+				restartResult: { send: "failed", recv: "restarted" },
 			});
 
 			const first = manager.recoverTransportIce("first");
@@ -197,7 +202,7 @@ describe("SFURecoveryManager", () => {
 		it("runs the failed callback for transport-triggered recovery failures", async () => {
 			const onFailed = vi.fn();
 			const { manager } = createManager({
-				restartResult: false,
+				restartResult: { send: "restarted", recv: "failed" },
 				onFailed,
 			});
 
@@ -210,7 +215,7 @@ describe("SFURecoveryManager", () => {
 		it("runs one failed callback when multiple transport failures share a recovery", async () => {
 			const onFailed = vi.fn();
 			const { manager } = createManager({
-				restartResult: false,
+				restartResult: { send: "failed", recv: "failed" },
 				onFailed,
 			});
 
@@ -219,6 +224,14 @@ describe("SFURecoveryManager", () => {
 
 			await vi.advanceTimersByTimeAsync(0);
 			expect(onFailed).toHaveBeenCalledTimes(1);
+		});
+
+		it("fails recovery when one active direction cannot restart", async () => {
+			const { manager } = createManager({
+				restartResult: { send: "failed", recv: "restarted" },
+			});
+
+			await expect(manager.recoverTransportIce("test")).resolves.toBe("failed");
 		});
 	});
 });

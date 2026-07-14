@@ -67,9 +67,15 @@ export class SFURecoveryManager {
 					meetingId: this.getMeetingId(),
 				});
 
-				const restarted =
+				const restartResult =
 					await this.transportManager.restartAllTransportIce();
-				if (!restarted) {
+				const didRestart = Object.values(restartResult).some(
+					(result) => result === "restarted",
+				);
+				const didFail = Object.values(restartResult).some(
+					(result) => result === "failed",
+				);
+				if (!didRestart || didFail) {
 					return "failed";
 				}
 
