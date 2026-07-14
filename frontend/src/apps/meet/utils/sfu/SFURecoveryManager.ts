@@ -19,6 +19,7 @@ interface RecoveryManagerOptions {
 		reason: string,
 		result: TransportIceRestartResult,
 	) => Promise<void> | void;
+	onStarted?: (reason: string) => void;
 }
 
 type TransportDirection = "send" | "recv";
@@ -30,6 +31,7 @@ export class SFURecoveryManager {
 	private getMeetingId: () => string | null;
 	private onRecovered?: RecoveryManagerOptions["onRecovered"];
 	private onFailed?: RecoveryManagerOptions["onFailed"];
+	private onStarted?: RecoveryManagerOptions["onStarted"];
 	private recoveryInProgress = false;
 	private activeRecovery: Promise<RecoveryResult> | null = null;
 	private lastRecoveryAt = 0;
@@ -45,6 +47,7 @@ export class SFURecoveryManager {
 		this.getMeetingId = options.meetingId;
 		this.onRecovered = options.onRecovered;
 		this.onFailed = options.onFailed;
+		this.onStarted = options.onStarted;
 	}
 
 	get isRecovering(): boolean {
@@ -65,6 +68,7 @@ export class SFURecoveryManager {
 
 		this.recoveryInProgress = true;
 		this.lastRecoveryAt = now;
+		this.onStarted?.(reason);
 
 		this.activeRecovery = (async (): Promise<RecoveryResult> => {
 			let restartResult: TransportIceRestartResult;

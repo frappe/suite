@@ -50,13 +50,29 @@ export class SFUMeetingManager {
 			sfuClient,
 			transportManager: this.transportManager,
 			meetingId: () => this.connectionManager?.meetingId ?? null,
-			onRecovered: () => this.connectionManager?.resetReceiveSide(),
+			onStarted: (reason) =>
+				this.connectionManager?.reportRecoveryState(
+					reason.includes("send") ? "recovering_send" : "recovering_receive",
+					reason,
+				),
+			onRecovered: async (reason) => {
+				await this.connectionManager?.resetReceiveSide();
+				this.connectionManager?.reportRecoveryState("healthy", reason);
+			},
 			onFailed: async (_reason, result) => {
-				if (result.send === "failed") {
-					await this.mediaManager.rebuildSendSide();
-				}
-				if (result.recv === "failed") {
-					await this.connectionManager?.resetReceiveSide();
+				try {
+					if (result.send === "failed") {
+						this.connectionManager?.reportRecoveryState("recovering_send", _reason);
+						await this.mediaManager.rebuildSendSide();
+					}
+					if (result.recv === "failed") {
+						this.connectionManager?.reportRecoveryState("recovering_receive", _reason);
+						await this.connectionManager?.resetReceiveSide();
+					}
+					this.connectionManager?.reportRecoveryState("healthy", _reason);
+				} catch (error) {
+					this.connectionManager?.reportRecoveryState("failed", _reason);
+					throw error;
 				}
 			},
 		});

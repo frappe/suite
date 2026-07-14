@@ -17,6 +17,7 @@ function createManager(
 		restartResult?: TransportIceRestartResult;
 		onRecovered?: ReturnType<typeof vi.fn>;
 		onFailed?: ReturnType<typeof vi.fn>;
+		onStarted?: ReturnType<typeof vi.fn>;
 	} = {},
 ) {
 	const sfuClient: MockSfuClient = {
@@ -36,11 +37,21 @@ function createManager(
 		meetingId: () => "meeting-1",
 		onRecovered: opts.onRecovered,
 		onFailed: opts.onFailed,
+		onStarted: opts.onStarted,
 	});
 	return { manager, sfuClient, transportManager };
 }
 
 describe("SFURecoveryManager", () => {
+	it("reports the recovery reason before restarting ICE", async () => {
+		const onStarted = vi.fn();
+		const { manager } = createManager({ onStarted });
+
+		await manager.recoverTransportIce("transport_send_failed");
+
+		expect(onStarted).toHaveBeenCalledWith("transport_send_failed");
+	});
+
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});

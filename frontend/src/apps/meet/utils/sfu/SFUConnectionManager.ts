@@ -54,6 +54,16 @@ export interface SFUEventHandlers {
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onHostMutedYou?: () => void;
 	onHostKickedYou?: (data: unknown) => void;
+	onRecoveryStateChange?: (
+		state:
+			| "reconnecting"
+			| "rejoining"
+			| "recovering_send"
+			| "recovering_receive"
+			| "healthy"
+			| "failed",
+		detail?: string,
+	) => void;
 }
 
 interface ConnectionManagerOptions {
@@ -343,6 +353,13 @@ export class SFUConnectionManager {
 		}
 	}
 
+	reportRecoveryState(
+		state: Parameters<NonNullable<SFUEventHandlers["onRecoveryStateChange"]>>[0],
+		detail?: string,
+	): void {
+		this.eventHandlers.onRecoveryStateChange?.(state, detail);
+	}
+
 	async rejoinAfterSignalingReconnect(): Promise<void> {
 		if (this.activeRejoin) return this.activeRejoin;
 		if (!this.meetingId || !this.lastJoinUserData) {
@@ -350,6 +367,7 @@ export class SFUConnectionManager {
 		}
 
 		const rejoin = (async () => {
+			this.reportRecoveryState("rejoining", "signaling reconnected");
 			this.transportManager.closeReceiveTransport();
 			this.mediaManager.consumerManager.clear();
 			this.mediaManager.processedConsumers.clear();
@@ -370,9 +388,15 @@ export class SFUConnectionManager {
 			}
 			await this.mediaManager.rebuildSendSide();
 			await this.setupExistingParticipants();
-		})().finally(() => {
-			this.activeRejoin = null;
-		});
+			this.reportRecoveryState("healthy", "session rebuilt");
+		})()
+			.catch((error) => {
+				this.reportRecoveryState("failed", "session rebuild failed");
+				throw error;
+			})
+			.finally(() => {
+				this.activeRejoin = null;
+			});
 		this.activeRejoin = rejoin;
 
 		return rejoin;
@@ -485,7 +509,16 @@ export class SFUConnectionManager {
 	}
 
 	private setupSFUEventHandlers(): void {
+		this.sfuClient.on("reconnect_attempt", () => {
+			this.reportRecoveryState("reconnecting", "signaling reconnect attempt");
+		});
+
+		this.sfuClient.on("reconnect_failed", () => {
+			this.reportRecoveryState("failed", "signaling reconnect failed");
+		});
+
 		this.sfuClient.on("reconnect", () => {
+			this.reportRecoveryState("reconnecting", "signaling reconnected");
 			void this.rejoinAfterSignalingReconnect().catch((error) => {
 				console.warn("Failed to rejoin after signaling reconnect:", error);
 			});
