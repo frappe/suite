@@ -50,8 +50,38 @@ export class SFUMeetingManager {
 			sfuClient,
 			transportManager: this.transportManager,
 			meetingId: () => this.connectionManager?.meetingId ?? null,
-			onRecovered: () => this.connectionManager?.resetReceiveSide(),
-			onFailed: () => this.connectionManager?.resetReceiveSide(),
+			onStarted: (reason) =>
+				this.connectionManager?.reportRecoveryState(
+					reason.includes("send") ? "recovering_send" : "recovering_receive",
+					reason,
+				),
+			onRecovered: async (reason) => {
+				await this.connectionManager?.resetReceiveSide();
+				this.connectionManager?.reportRecoveryState("healthy", reason);
+			},
+			onFailed: async (_reason, result) => {
+				try {
+					const recoveries: Promise<unknown>[] = [];
+					if (result.send === "failed") {
+						this.connectionManager?.reportRecoveryState("recovering_send", _reason);
+						recoveries.push(this.mediaManager.rebuildSendSide());
+					}
+					if (result.recv === "failed") {
+						this.connectionManager?.reportRecoveryState("recovering_receive", _reason);
+						recoveries.push(this.connectionManager.resetReceiveSide());
+					}
+					const failedRecovery = (await Promise.allSettled(recoveries)).find(
+						(result) => result.status === "rejected",
+					);
+					if (failedRecovery?.status === "rejected") {
+						throw failedRecovery.reason;
+					}
+					this.connectionManager?.reportRecoveryState("healthy", _reason);
+				} catch (error) {
+					this.connectionManager?.reportRecoveryState("failed", _reason);
+					throw error;
+				}
+			},
 		});
 
 		this.mediaManager = new SFUMediaManager(

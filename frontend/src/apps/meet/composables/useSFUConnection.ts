@@ -207,6 +207,10 @@ export function useSFUConnection(deps: {
 
 	const createSFUEventHandlers = () => {
 		return {
+			onRecoveryStateChange: (
+				state: Parameters<typeof connectionState.setRecoveryState>[0],
+				detail?: string,
+			) => connectionState.setRecoveryState(state, detail),
 			onParticipantJoined: handleParticipantJoined,
 			onParticipantLeft: handleParticipantLeft,
 			onParticipantUpdated: handleParticipantUpdated,

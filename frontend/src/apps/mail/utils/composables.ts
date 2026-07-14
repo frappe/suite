@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { createResource } from 'frappe-ui'
 
-import { matchesScreenedValue, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
+import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, Identity, ScreenedAddress } from '@/apps/mail/types'
@@ -183,6 +183,26 @@ export const useBlockSender = () => {
 		onSuccess: () => screenedAddresses.reload(),
 	})
 
+	// Optimistically reflect the senders' blocked state so the immediate toast isn't lying, mirroring the
+	// backend exactly: blocking adds an exact-address 'Reject' entry per sender (overriding any existing
+	// rule); unblocking removes the exact-address entries — '@domain' rules that also cover a sender are
+	// left in place, just as the unscreen API leaves them. Returns a revert to restore the list on failure.
+	const applyScreenOptimistic = (emails: string[], block: boolean) => {
+		const prev = screenedAddresses.data
+		if (!prev) return () => {}
+		const isExact = (a: ScreenedAddress) =>
+			!a.email.startsWith('@') && emails.some((email) => matchesScreenedValue(email, a.email))
+		const kept = prev.filter((a: ScreenedAddress) => !isExact(a))
+		const blocked: ScreenedAddress[] = emails.map((email) => ({
+			email,
+			action: 'Reject',
+			creation: '',
+			modified: '',
+		}))
+		screenedAddresses.data = block ? [...kept, ...blocked] : kept
+		return () => (screenedAddresses.data = prev)
+	}
+
 	// Block the senders chosen in the prompt ('Ask to Block Sender' confirm). Blocking becomes the new
 	// undo action: Cmd+Z unblocks (it does not also reverse the junk move, which stays).
 	const blockSenders = (senders: BlockableSender[]) => {
@@ -190,15 +210,31 @@ export const useBlockSender = () => {
 		if (!emails.length) return
 
 		setUndoAction(() => {
-			const undoAction = () => unblockResource.submit({ emails })
+			const revert = applyScreenOptimistic(emails, false) // optimistic: unblock reflected at once
+			const forward = (async () => {
+				try {
+					await unblockResource.submit({ emails })
+				} catch (error) {
+					revert()
+					throw error
+				}
+			})()
 			const restored =
 				emails.length === 1 ? __('Sender unblocked.') : __('Senders unblocked.')
-			raisePromiseToast(undoAction, __('Undoing...'), restored)
+			raiseOptimisticToast(forward, restored)
 		})
 
-		const action = () => blockResource.submit({ emails })
+		const revert = applyScreenOptimistic(emails, true) // optimistic: senders shown blocked at once
+		const forward = (async () => {
+			try {
+				await blockResource.submit({ emails })
+			} catch (error) {
+				revert()
+				throw error
+			}
+		})()
 		const success = emails.length === 1 ? __('Sender blocked.') : __('Senders blocked.')
-		raisePromiseToast(action, __('Blocking...'), success, undo)
+		raiseOptimisticToast(forward, success, undo)
 	}
 
 	// File the senders' future mail into Junk (the default 'Junk Sender's Mail'). Side effect only — the
@@ -272,8 +308,8 @@ export const useTheme = () => {
 			name: userResource.data?.user_settings,
 			fieldname: { color_scheme },
 		}),
-		onSuccess: (data: { color_scheme: COLOR_SCHEME }) => {
-			raiseToast(__('Color scheme updated to {0}.', [data.color_scheme]))
+		onSuccess: () => {
+			// Reconcile the optimistic value against server truth (sets the same value; harmless).
 			userResource.reload()
 		},
 	})
@@ -283,7 +319,18 @@ export const useTheme = () => {
 		const current = userResource.data?.color_scheme
 		const idx = COLOR_SCHEME_CYCLE.indexOf(current as COLOR_SCHEME)
 		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-		updateColorScheme.submit(next)
+
+		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
+		const prev = current
+		if (userResource.data) userResource.data.color_scheme = next
+		raiseToast(__('Color scheme updated to {0}.', [next]))
+
+		updateColorScheme.submit(next, {
+			onError: () => {
+				if (userResource.data) userResource.data.color_scheme = prev
+				raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+			},
+		})
 	}
 
 	return { dataTheme, cycleTheme }

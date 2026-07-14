@@ -118,6 +118,9 @@
 												emit('setFlagged', [id], flagged)
 										"
 										@sync-unseen="handleSyncUnseen"
+										@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+										@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
+										@delete-mail="(m: Mail) => emit('deleteMail', m)"
 									/>
 								</div>
 								<div
@@ -196,6 +199,9 @@
 														emit('setFlagged', [id], flagged)
 												"
 												@sync-unseen="handleSyncUnseen"
+												@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
+												@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
+												@delete-mail="(m: Mail) => emit('deleteMail', m)"
 											/>
 										</div>
 									</div>
@@ -266,25 +272,30 @@
 									<div v-if="filteredAttachments(mail).length" class="mt-8">
 										<div
 											v-if="zippableAttachments(mail).length > 1"
-											class="mb-3 flex items-center justify-between"
+											class="text-ink-gray-5 mb-3 flex items-center gap-1.5 text-sm"
 										>
-											<span class="text-ink-gray-5 text-sm">
+											<span>
 												{{
 													__('{0} attachments', [
 														String(filteredAttachments(mail).length),
 													])
 												}}
 											</span>
-											<Button
-												variant="ghost"
-												:icon="Download"
-												:label="__('Download all')"
-												:tooltip="__('Download all')"
-												:loading="downloadingZipMail === mail.name"
+											<span aria-hidden="true">·</span>
+											<button
+												class="hover:text-ink-gray-8 disabled:opacity-70"
+												:disabled="downloadingZipMail === mail.name"
+												:title="__('Download all')"
 												@click.stop.prevent="
 													downloadAttachmentsAsZip(mail)
 												"
-											/>
+											>
+												<LoaderCircle
+													v-if="downloadingZipMail === mail.name"
+													class="h-3.5 w-3.5 animate-spin"
+												/>
+												<Download v-else class="h-3.5 w-3.5" />
+											</button>
 										</div>
 										<div class="flex flex-wrap">
 											<AttachmentCapsule
@@ -347,9 +358,9 @@
 		/>
 	</div>
 
-	<div v-else class="h-full overflow-hidden">
+	<div v-else class="h-full overflow-hidden p-5">
 		<div
-			class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-md"
+			class="bg-surface-gray-1 flex h-full items-center justify-center rounded-md"
 		>
 			<div class="flex flex-col items-center space-y-3">
 				<NoMails class="text-ink-gray-2 h-16 w-16" />
@@ -374,7 +385,7 @@ import {
 	watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, Download, Forward, Reply, ReplyAll } from 'lucide-vue-next'
+import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
 import { Alert, Avatar, Badge, Button, createResource } from 'frappe-ui'
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
@@ -439,6 +450,9 @@ const emit = defineEmits([
 	'prevThread',
 	'nextThread',
 	'syncUnseen',
+	'moveMail',
+	'markMailSpam',
+	'deleteMail',
 ])
 
 const { isMobile } = useScreenSize()
@@ -548,10 +562,15 @@ const threadFallback = createResource({
 	onError: () => goToMailbox(),
 })
 
+// Mails optimistically removed from the pane (per-message trash/junk/delete) whose request is still in
+// flight. The server still returns them for a moment, so any re-derive — our own reload, the 30s poll,
+// or the new-mail socket — would otherwise re-add them here. Cleared when the open thread changes.
+const removedMailIds = new Set<string>()
+
 const transformThreadMails = (mails: Mail[]) =>
 	mails
 		// Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
-		.filter((mail) => readonly || filterRelevantMails(mail))
+		.filter((mail) => readonly || (!removedMailIds.has(mail.id) && filterRelevantMails(mail)))
 		.map((mail) => ({
 			...mail,
 			groupedRecipients: getGroupedRecipients(mail.recipients, false),
@@ -702,6 +721,7 @@ watch(
 	() => threadID,
 	() => {
 		resetCollapsedGroup()
+		removedMailIds.clear()
 		thread.value = []
 		loadThread()
 	},
@@ -933,7 +953,28 @@ const syncMailboxMembership = (mailboxId: string, add: boolean) => {
 		)
 }
 
-defineExpose({ syncFlagged, syncMailboxMembership })
+// Optimistically drop a message from the pane (per-message trash/junk/delete) before its request
+// fires. Returns whether that emptied the visible thread (so the caller can close the pane + drop the
+// row from the list) and a rollback that restores the message in place. Action-agnostic.
+const removeMailFromView = (mailId: string): { emptied: boolean; rollback: () => void } => {
+	const idx = thread.value.findIndex((m: Mail) => m.id === mailId)
+	if (idx === -1) return { emptied: false, rollback: () => {} }
+	const [removed] = thread.value.splice(idx, 1)
+	removedMailIds.add(mailId)
+	return {
+		emptied: thread.value.length === 0,
+		rollback: () => {
+			removedMailIds.delete(mailId)
+			// Only re-insert into the pane if it's STILL showing this mail's thread. If the removal
+			// emptied the thread, the pane navigated to a different thread by now — splicing the mail in
+			// there would append it to an unrelated conversation. The undo restores the thread to the
+			// list instead; re-opening it reloads its messages fresh.
+			if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed)
+		},
+	}
+}
+
+defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)

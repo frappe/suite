@@ -1,4 +1,5 @@
 import type { SFUClient } from "../SFUClient";
+import type { RecoveryTimelineEntry } from "../../composables/useConnectionState";
 import { getConsoleLogLines, getConsoleLogSummary } from "./consoleBuffer";
 
 type TransportStats = {
@@ -26,6 +27,7 @@ type BuildProblemReportMailtoOptions = {
 	sfuClient?: SFUClient | null;
 	consoleLogLimit?: number;
 	maxBodyChars?: number;
+	recoveryTimeline?: RecoveryTimelineEntry[];
 };
 
 function getTransportStats(
@@ -60,6 +62,7 @@ async function buildProblemReportMailto(
 		sfuClient = null,
 		consoleLogLimit = 40,
 		maxBodyChars = 7000,
+		recoveryTimeline = [],
 	} = options;
 
 	const connectionStatus = sfuClient?.getConnectionStatus?.() || {
@@ -77,6 +80,7 @@ async function buildProblemReportMailto(
 	const consoleLogLines = getConsoleLogLines(consoleLogLimit);
 	const consoleSummary = getConsoleLogSummary();
 	const consoleHeader = `Console logs (last ${consoleLogLines.length}):`;
+	const recoveryHeader = `Recovery timeline (last ${recoveryTimeline.length}):`;
 
 	const bodyLines = [
 		"Hi,",
@@ -119,6 +123,11 @@ async function buildProblemReportMailto(
 		}`,
 		`- Console logs captured: ${consoleSummary.total}`,
 		`- Console errors/warnings: ${consoleSummary.error}/${consoleSummary.warn}`,
+		"",
+		recoveryHeader,
+		...recoveryTimeline.map(
+			(entry) => `- ${entry.at}: ${entry.state}${entry.detail ? ` (${entry.detail})` : ""}`,
+		),
 		"",
 		consoleHeader,
 		...consoleLogLines,

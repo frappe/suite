@@ -113,8 +113,8 @@ export function useE2EEConnectionHandshake(
 
 	function teardownRealtimeEventListeners(): void {
 		if (!realtimeListenersAttached) return;
-		sfuClient.off("e2ee:epoch");
-		sfuClient.off("reconnect");
+		sfuClient.off("e2ee:epoch", handleEpochMessageBound);
+		sfuClient.off("reconnect", handleSFUReconnectBound);
 		document.removeEventListener(
 			"meet:e2ee-host-enabled",
 			handleHostE2EEKeySetBound,

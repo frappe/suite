@@ -8,20 +8,31 @@ function createManager({ e2eeRequired = false } = {}) {
 	const handlers = new Map<string, (data: unknown) => unknown>();
 	const sfuClient = {
 		connect: vi.fn().mockResolvedValue(undefined),
+		getExistingProducers: vi.fn().mockResolvedValue([]),
+		getRoomParticipants: vi.fn().mockResolvedValue([]),
 		isE2EERequired: vi.fn(() => e2eeRequired),
+		joinRoom: vi.fn().mockResolvedValue(undefined),
 		on: vi.fn((event: string, handler: (data: unknown) => unknown) => {
 			handlers.set(event, handler);
 		}),
 	};
 	const mediaManager = {
+		rebuildSendSide: vi.fn().mockResolvedValue({}),
 		subscribeToRemoteProducer: vi.fn().mockResolvedValue(undefined),
+		processedConsumers: new Set<string>(),
+		isScreenShareActive: false,
+		mediaHandler: { localStream: null },
 		consumerManager: {
+			clear: vi.fn(),
 			setEventHandlers: vi.fn(),
 			getConsumersByParticipant: vi.fn(() => []),
 		},
 		setEventHandlers: vi.fn(),
 	};
 	const transportManager = {
+		closeReceiveTransport: vi.fn(),
+		createReceiveTransport: vi.fn().mockResolvedValue(undefined),
+		initializeDevice: vi.fn().mockResolvedValue(undefined),
 		initialize: vi.fn(),
 		isDeviceLoaded: vi.fn(() => true),
 	};
@@ -31,10 +42,21 @@ function createManager({ e2eeRequired = false } = {}) {
 		participantManager,
 		transportManager: transportManager as never,
 		mediaManager: mediaManager as never,
-		recoveryManager: { setupTransportEventHandlers: vi.fn() } as never,
+		recoveryManager: {
+			setupTransportEventHandlers: vi.fn(),
+			reset: vi.fn(),
+		} as never,
 	});
 	manager.currentUser = { value: { user_id: "me" } };
-	return { handlers, manager, mediaManager, participantManager };
+	return {
+		handlers,
+		manager,
+		mediaManager,
+		participantManager,
+		sfuClient,
+		transportManager,
+		recoveryManager: manager.recoveryManager,
+	};
 }
 
 describe("SFUConnectionManager", () => {
@@ -124,5 +146,62 @@ describe("SFUConnectionManager", () => {
 			producerId: "producer-1",
 			isScreen: false,
 		});
+	});
+
+	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
+		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
+			createManager();
+		manager.initialize("meeting-1", { user_id: "me" });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+
+		await manager.rejoinAfterSignalingReconnect();
+
+		expect(sfuClient.joinRoom).toHaveBeenNthCalledWith(
+			2,
+			"meeting-1",
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
+		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
+		expect(transportManager.initializeDevice).toHaveBeenCalledTimes(1);
+		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
+		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
+	});
+
+	it("uses current live tracks for rejoin media state", async () => {
+		const { manager, mediaManager, sfuClient } = createManager();
+		mediaManager.mediaHandler.localStream = {
+			getAudioTracks: () => [{ readyState: "live" }],
+			getVideoTracks: () => [{ readyState: "ended" }],
+		};
+		manager.initialize("meeting-1", { user_id: "me" });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+
+		await manager.rejoinAfterSignalingReconnect();
+
+		expect(sfuClient.joinRoom).toHaveBeenLastCalledWith(
+			"meeting-1",
+			expect.anything(),
+			{ audio_enabled: true, video_enabled: false },
+		);
+	});
+
+	it("starts a session rebuild when signaling reconnects", async () => {
+		const { handlers, manager } = createManager();
+		const rejoin = vi
+			.spyOn(manager, "rejoinAfterSignalingReconnect")
+			.mockResolvedValue(undefined);
+
+		await manager.connect("token");
+		handlers.get("reconnect")?.({});
+
+		expect(rejoin).toHaveBeenCalledTimes(1);
 	});
 });

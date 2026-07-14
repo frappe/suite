@@ -15,6 +15,13 @@ import {
 
 type Direction = "send" | "recv";
 
+export type IceRestartDirectionResult = "restarted" | "not-needed" | "failed";
+
+export type TransportIceRestartResult = Record<
+	Direction,
+	IceRestartDirectionResult
+>;
+
 type TransportStatReport = {
 	type?: string;
 	state?: string;
@@ -330,6 +337,16 @@ export class TransportManager {
 		this.recvTransport = null;
 	}
 
+	closeSendTransport() {
+		if (!this.sendTransport) return;
+		try {
+			this.sendTransport.close();
+		} catch (_e) {
+			/* ignore */
+		}
+		this.sendTransport = null;
+	}
+
 	setupReceiveTransportHandlers() {
 		if (!this.recvTransport) return;
 		const client = this.getClient();
@@ -372,15 +389,28 @@ export class TransportManager {
 		return true;
 	}
 
-	async restartAllTransportIce() {
-		const results = await Promise.allSettled([
-			this.restartTransportIce("send"),
-			this.restartTransportIce("recv"),
-		]);
+	async restartAllTransportIce(): Promise<TransportIceRestartResult> {
+		const restartDirection = async (
+			direction: Direction,
+		): Promise<IceRestartDirectionResult> => {
+			const transport =
+				direction === "send" ? this.sendTransport : this.recvTransport;
+			if (!transport) return "not-needed";
 
-		return results.some(
-			(result) => result.status === "fulfilled" && result.value === true,
-		);
+			try {
+				return (await this.restartTransportIce(direction))
+					? "restarted"
+					: "failed";
+			} catch {
+				return "failed";
+			}
+		};
+
+		const [send, recv] = await Promise.all([
+			restartDirection("send"),
+			restartDirection("recv"),
+		]);
+		return { send, recv };
 	}
 
 	async createProducer(

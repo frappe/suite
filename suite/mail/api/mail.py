@@ -371,24 +371,20 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 
 	first = thread_messages[0]
 	latest = latest or messages[-1]
+	# The row's identity + state come from the thread's representative message in the CURRENT mailbox
+	# (`messages` is scoped to it), so its folder tags and junk/flag/seen reflect THIS view — not a
+	# sibling message that was moved to Junk/Trash/Sent. The activity fields (preview/date/sender) still
+	# come from `latest` (most recent activity across the whole conversation). For single-mailbox threads
+	# `current` and `latest` are the same message, so nothing changes.
+	current = messages[-1]
 
-	thread_fields = [
-		"name",
-		"id",
-		"thread_id",
-		"mailboxes",
-		"from_name",
-		"from_email",
-		"received_at",
-		"recipients",
-		"seen",
-		"draft",
-		"junk",
-		"flagged",
-		"preview",
-	]
+	# From the current-mailbox message: identity + state (so star/junk actions target the right mail).
+	current_fields = ["name", "id", "mailboxes", "seen", "junk", "flagged"]
+	# From the most recent activity: what the row displays.
+	activity_fields = ["thread_id", "from_name", "from_email", "received_at", "recipients", "draft", "preview"]
 	return {
-		**{field: latest[field] for field in thread_fields},
+		**{field: current[field] for field in current_fields},
+		**{field: latest[field] for field in activity_fields},
 		"subject": first["subject"],
 		"attachments": serialize_attachments(latest.get("attachments", [])),
 		"messages": [serialize_mail(message) for message in thread_messages],

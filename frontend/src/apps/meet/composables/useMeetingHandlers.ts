@@ -309,6 +309,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 			transportManager:
 				deps.sfuConnection.sfuManager.value?.transportManager || null,
 			sfuClient: deps.sfuConnection.sfuClient,
+			recoveryTimeline: deps.connectionState.recoveryTimeline,
 		});
 	};
 

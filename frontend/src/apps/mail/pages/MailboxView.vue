@@ -22,15 +22,7 @@
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
-	<div
-		v-if="
-			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
-			!threadsResource.data?.loading &&
-			threadsResource.data?.length &&
-			(showReadingPane || !threadID)
-		"
-		class="space-x-1 border-b px-3 py-2.5 sm:px-5"
-	>
+	<div v-if="showDeleteBanner" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
 		<span class="text-ink-gray-5">
 			{{ __('Items in this mailbox will be automatically deleted after 30 days.') }}
 		</span>
@@ -40,7 +32,7 @@
 	<div
 		class="relative flex"
 		:class="
-			[mailboxIds.trash, mailboxIds.junk].includes(mailbox) || showScreenerBanner
+			showDeleteBanner || showScreenerBanner
 				? 'h-[calc(100dvh-6.1rem)]'
 				: 'h-[calc(100dvh-3.05rem)]'
 		"
@@ -323,6 +315,9 @@
 								: handleSetSpamStatus({ 0: [threadID!] })
 					"
 					@delete-thread="junkOrDeleteThreads([threadID!], false)"
+					@move-mail="handleMailMove"
+					@mark-mail-spam="handleMailSpam"
+					@delete-mail="handleMailDelete"
 					@prev-thread="goToThreadByOffset(-1)"
 					@next-thread="goToThreadByOffset(1)"
 				/>
@@ -802,6 +797,9 @@ const selectActions = computed((): SelectAction[] => [
 const PAGE_LENGTH = 25
 const hasMore = ref(false) // lookahead: the last fetched window returned an extra row, so more exist
 const loadingMore = ref(false) // an append fetch is in flight (drives the bottom spinner)
+// An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
+// mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
+const refillPending = ref(false)
 // Bumped on every reset-to-top; an in-flight append captures it and discards its result if it changed
 // meanwhile, so a stale window can't land on a freshly reset list.
 const epoch = ref(0)
@@ -814,6 +812,10 @@ let refreshEpoch = 0 // epoch captured when the refresh was triggered (dropped i
 // transform), not refresh-start, so it reflects any optimistic removals/undo-inserts that happened
 // while the refresh was in flight — otherwise a thread archived mid-refresh would reappear.
 let refreshSnapshot: Thread[] = []
+// Thread ids optimistically removed by an action whose request is still in flight. The server still
+// returns these for a moment, so a refresh/append landing in that window would re-insert the row; the
+// merges below skip them. Cleared on rollback (restoreThreadsToList) and after a short timeout.
+const recentlyRemoved = new Set<string>()
 // Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
 // detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
@@ -864,7 +866,9 @@ const onResetSuccess = () => {
 		const prevHeight = el?.scrollHeight ?? 0
 		const freshWindow = threadsResource.value.data ?? []
 		const existing = new Set(refreshSnapshot.map((t) => t.thread_id))
-		const fresh = freshWindow.filter((t: Thread) => !existing.has(t.thread_id))
+		const fresh = freshWindow.filter(
+			(t: Thread) => !existing.has(t.thread_id) && !recentlyRemoved.has(t.thread_id),
+		)
 		threadsResource.value.data = [...fresh, ...refreshSnapshot]
 		// Keep the reader where they were: shift scroll by the height the prepended rows added. If they
 		// were already at the top, leave them there so the new mail is visible.
@@ -938,6 +942,17 @@ const threads = createResource({
 
 const threadsResource = computed(() => (mailbox === 'search' ? searchResults : threads))
 
+// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
+// mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
+// The layout below reserves height for it only when it's actually rendered, so the two stay in sync.
+const showDeleteBanner = computed(
+	() =>
+		[mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
+		!threadsResource.value.data?.loading &&
+		(!!threadsResource.value.data?.length || !!filter.value) &&
+		(showReadingPane.value || !threadID),
+)
+
 // ── Infinite scroll ─────────────────────────────────────────────────────────────────────────────
 // Two fetch paths that both write `threadsResource.value.data` — the single accumulated list every
 // consumer reads: the reset resources above replace it (start:0); the append resources below push the
@@ -951,7 +966,9 @@ const appendThreads = (rows: Thread[]) => {
 	// Discard a stale window that resolved after a reset began (mailbox switch, refresh, undo, …).
 	if (loadEpoch !== epoch.value) return
 	const seen = new Set(threadsResource.value.data.map((t: Thread) => t.thread_id))
-	const fresh = rows.slice(0, PAGE_LENGTH).filter((t) => !seen.has(t.thread_id))
+	const fresh = rows
+		.slice(0, PAGE_LENGTH)
+		.filter((t) => !seen.has(t.thread_id) && !recentlyRemoved.has(t.thread_id))
 	// Stop auto-loading if the window added nothing new (offset stuck behind heavy front-inserted mail);
 	// the next reset (poll/refresh/socket) reconciles. Guards against a tight reload loop while the
 	// sentinel stays in view.
@@ -1009,6 +1026,7 @@ const canGoNext = computed(() => hasMore.value)
 const isLoading = computed(() => {
 	if (!isMailboxLoaded.value) return true
 	if (emptyMailbox.loading) return true
+	if (refillPending.value) return true
 	return !threadsResource.value.data.length && threadsResource.value?.loading
 })
 
@@ -1025,6 +1043,9 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 ) => {
 	if (mailboxRoles.length && !mailboxRoles.map((m) => mailboxIds[m]).includes(mailbox)) return
 
+	// This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
+	// the resource's `loading` drives isLoading, so the flag has done its job.
+	refillPending.value = false
 	refreshMode.value = false
 	epoch.value++
 	resetSelections()
@@ -1059,16 +1080,32 @@ const syncAfterAction = () => {
 
 // Drops threads from the loaded list optimistically and returns the removed rows (so an undo can put
 // them back). Their server rows leave the current view too, so the append offset (data.length) stays
-// aligned. If the list empties while more remain, reset to top (the sentinel unmounts with an empty
-// list and couldn't otherwise re-trigger a load).
+// aligned.
 const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
 	const data = threadsResource.value.data ?? []
 	const removed = data.filter((thread: Thread) => thread_ids.includes(thread.thread_id))
 	threadsResource.value.data = data.filter(
 		(thread: Thread) => !thread_ids.includes(thread.thread_id),
 	)
-	if (!threadsResource.value.data.length && hasMore.value) resetThreads()
+	// Suppress re-insertion by an in-flight refresh/append until the server-side removal lands.
+	thread_ids.forEach((id) => {
+		recentlyRemoved.add(id)
+		setTimeout(() => recentlyRemoved.delete(id), 15000)
+	})
+	// If this emptied the list but more exist, a refill is coming (refillIfEmpty, once the mutation
+	// lands) — flag it so the empty state doesn't flash in the meantime.
+	if (!threadsResource.value.data.length && hasMore.value) refillPending.value = true
 	return removed
+}
+
+// When an optimistic removal empties the loaded list while more threads exist server-side (e.g. select
+// all + delete/move), refetch the first window so the view refills — the sentinel unmounts with an empty
+// list and couldn't otherwise re-trigger a load. Must run *after* the server mutation lands: a reset
+// mid-request refetches start:0 and gets the same not-yet-removed rows back (they'd reappear).
+const refillIfEmpty = () => {
+	if (!threadsResource.value.data.length && hasMore.value) resetThreads()
+	// resetThreads sets the resource loading (so isLoading holds the spinner from here); clear the flag.
+	refillPending.value = false
 }
 
 // Re-insert threads (after undoing a move/junk) at their correct position by received_at, so they
@@ -1076,6 +1113,10 @@ const removeThreadsFromList = (thread_ids: string[]): Thread[] => {
 // scroll-anchoring holds the viewport as rows reappear above it.
 const restoreThreadsToList = (restored: Thread[]) => {
 	if (!restored.length) return
+	// Rows are back (removal failed / undo), so no refill is coming — drop the pending-refill hold.
+	refillPending.value = false
+	// A restored thread should be visible again — lift any removal suppression.
+	restored.forEach((t: Thread) => recentlyRemoved.delete(t.thread_id))
 	const list = [...(threadsResource.value.data ?? [])]
 	const present = new Set(list.map((t: Thread) => t.thread_id))
 	for (const thread of restored) {
@@ -1214,6 +1255,9 @@ const {
 	handleAddThreadsToMailbox,
 	handleRemoveThreadsFromMailbox,
 	junkOrDeleteThreads,
+	handleMailMove,
+	handleMailSpam,
+	handleMailDelete,
 	setFlagged,
 	moveToOptions,
 	addToOptions,
@@ -1232,6 +1276,7 @@ const {
 	syncAfterAction,
 	removeThreadsFromList,
 	restoreThreadsToList,
+	refillIfEmpty,
 	goToMailbox,
 	goToNextThreadOrMailbox,
 })

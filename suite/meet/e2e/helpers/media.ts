@@ -27,27 +27,48 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 		}
 	});
 
-	// Live track + real decode (not metadata-only dimensions).
+	const getPlaybackState = async () =>
+		video.evaluate((element) => {
+			const videoEl = element as HTMLVideoElement;
+			const quality = videoEl.getVideoPlaybackQuality?.();
+			const stream = videoEl.srcObject as MediaStream | null;
+			const videoTrack = stream?.getVideoTracks()[0] ?? null;
+			const decodedFrames = quality?.totalVideoFrames ?? 0;
+			const hasDecodedPlayback =
+				decodedFrames > 0 || videoEl.currentTime > 0;
+			return {
+				currentTime: videoEl.currentTime,
+				decodedFrames,
+				hasDecodedPlayback,
+				isLive: videoTrack?.readyState === "live",
+				isReady: videoEl.readyState >= 2,
+			};
+		});
+
+	// A live track with dimensions can still be a frozen frame, so first wait
+	// for playback and then require it to progress from a fresh baseline.
 	await expect
 		.poll(
-			async () =>
-				video.evaluate((element) => {
-					const videoEl = element as HTMLVideoElement;
-					const quality = videoEl.getVideoPlaybackQuality?.();
-					const stream = videoEl.srcObject as MediaStream | null;
-					const videoTrack = stream?.getVideoTracks()[0] ?? null;
-					const decodedFrames = quality?.totalVideoFrames ?? 0;
-					const hasDecodedPlayback =
-						decodedFrames > 0 || videoEl.currentTime > 0;
-					return {
-						ok:
-							videoTrack?.readyState === "live" &&
-							videoEl.readyState >= 2 &&
-							hasDecodedPlayback,
-						trackState: videoTrack?.readyState ?? null,
-					};
-				}),
+			getPlaybackState,
 			{ timeout: 45_000 },
 		)
-		.toMatchObject({ ok: true, trackState: "live" });
+		.toMatchObject({
+			hasDecodedPlayback: true,
+			isLive: true,
+			isReady: true,
+		});
+
+	const baseline = await getPlaybackState();
+	await expect
+		.poll(
+			async () => {
+				const current = await getPlaybackState();
+				return (
+					current.currentTime > baseline.currentTime ||
+					current.decodedFrames > baseline.decodedFrames
+				);
+			},
+			{ timeout: 10_000 },
+		)
+		.toBe(true);
 }

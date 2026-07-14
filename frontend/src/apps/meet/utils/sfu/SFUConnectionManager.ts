@@ -54,6 +54,16 @@ export interface SFUEventHandlers {
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onHostMutedYou?: () => void;
 	onHostKickedYou?: (data: unknown) => void;
+	onRecoveryStateChange?: (
+		state:
+			| "reconnecting"
+			| "rejoining"
+			| "recovering_send"
+			| "recovering_receive"
+			| "healthy"
+			| "failed",
+		detail?: string,
+	) => void;
 }
 
 interface ConnectionManagerOptions {
@@ -79,6 +89,9 @@ export class SFUConnectionManager {
 	initialSyncInProgress = false;
 	bufferedProducerEvents: SFUProducerEvent[] = [];
 	eventHandlers: SFUEventHandlers = {};
+	private lastJoinUserData: unknown = null;
+	private lastJoinMediaState: Record<string, unknown> = {};
+	private activeRejoin: Promise<void> | null = null;
 
 	constructor(options: ConnectionManagerOptions) {
 		this.sfuClient = options.sfuClient;
@@ -130,6 +143,11 @@ export class SFUConnectionManager {
 	async joinRoom(userData: unknown, mediaState: unknown): Promise<boolean> {
 		try {
 			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState);
+			this.lastJoinUserData = userData;
+			this.lastJoinMediaState =
+				mediaState && typeof mediaState === "object"
+					? { ...(mediaState as Record<string, unknown>) }
+					: {};
 			console.log("Successfully joined room:", this.meetingId);
 			return true;
 		} catch (error) {
@@ -330,9 +348,59 @@ export class SFUConnectionManager {
 
 	async resyncAfterRecovery(reason: string): Promise<void> {
 		const result = await this.recoveryManager.recoverTransportIce(reason);
-		if (result === "failed" || result === "skipped") {
+		if (result === "skipped") {
 			await this.resetReceiveSide();
 		}
+	}
+
+	reportRecoveryState(
+		state: Parameters<NonNullable<SFUEventHandlers["onRecoveryStateChange"]>>[0],
+		detail?: string,
+	): void {
+		this.eventHandlers.onRecoveryStateChange?.(state, detail);
+	}
+
+	async rejoinAfterSignalingReconnect(): Promise<void> {
+		if (this.activeRejoin) return this.activeRejoin;
+		if (!this.meetingId || !this.lastJoinUserData) {
+			throw new Error("Cannot rejoin before joining a meeting");
+		}
+		this.recoveryManager.reset();
+
+		const rejoin = (async () => {
+			this.reportRecoveryState("rejoining", "signaling reconnected");
+			this.transportManager.closeReceiveTransport();
+			this.mediaManager.consumerManager.clear();
+			this.mediaManager.processedConsumers.clear();
+			this.mediaManager.isScreenShareActive = false;
+
+			await this.sfuClient.joinRoom(
+				this.meetingId as string,
+				this.lastJoinUserData,
+				this.getCurrentRejoinMediaState(),
+			);
+			if (!(await this.waitForE2EEContextIfRequired())) {
+				throw new Error("E2EE context is not ready after signaling reconnect");
+			}
+
+			await this.transportManager.initializeDevice();
+			if (!(await this.createReceiveTransport())) {
+				throw new Error("Failed to recreate receive transport after reconnect");
+			}
+			await this.mediaManager.rebuildSendSide();
+			await this.setupExistingParticipants();
+			this.reportRecoveryState("healthy", "session rebuilt");
+		})()
+			.catch((error) => {
+				this.reportRecoveryState("failed", "session rebuild failed");
+				throw error;
+			})
+			.finally(() => {
+				this.activeRejoin = null;
+			});
+		this.activeRejoin = rejoin;
+
+		return rejoin;
 	}
 
 	private hasConsumerForProducer(participantId: string, producerId: string): boolean {
@@ -343,6 +411,21 @@ export class SFUConnectionManager {
 				!c.consumer.closed &&
 				(c.producerId === producerId || c.consumer.producerId === producerId),
 		);
+	}
+
+	private getCurrentRejoinMediaState(): Record<string, unknown> {
+		const localStream = this.mediaManager.mediaHandler.localStream;
+		if (!localStream) return this.lastJoinMediaState;
+
+		return {
+			...this.lastJoinMediaState,
+			audio_enabled: localStream
+				.getAudioTracks()
+				.some((track) => track.readyState === "live"),
+			video_enabled: localStream
+				.getVideoTracks()
+				.some((track) => track.readyState === "live"),
+		};
 	}
 
 	private async waitForE2EEContextIfRequired(): Promise<boolean> {
@@ -427,8 +510,19 @@ export class SFUConnectionManager {
 	}
 
 	private setupSFUEventHandlers(): void {
+		this.sfuClient.on("reconnect_attempt", () => {
+			this.reportRecoveryState("reconnecting", "signaling reconnect attempt");
+		});
+
+		this.sfuClient.on("reconnect_failed", () => {
+			this.reportRecoveryState("failed", "signaling reconnect failed");
+		});
+
 		this.sfuClient.on("reconnect", () => {
-			void this.resyncAfterRecovery("socket_reconnect");
+			this.reportRecoveryState("reconnecting", "signaling reconnected");
+			void this.rejoinAfterSignalingReconnect().catch((error) => {
+				console.warn("Failed to rejoin after signaling reconnect:", error);
+			});
 		});
 
 		this.sfuClient.on("participant_joined", (data: ParticipantData) => {
@@ -696,5 +790,8 @@ export class SFUConnectionManager {
 		this.eventHandlers = {};
 		this.isConnected = false;
 		this.initialSyncInProgress = false;
+		this.lastJoinUserData = null;
+		this.lastJoinMediaState = {};
+		this.activeRejoin = null;
 	}
 }

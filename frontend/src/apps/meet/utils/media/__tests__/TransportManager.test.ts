@@ -261,7 +261,7 @@ describe("emitTransportConnectionState", () => {
 });
 
 describe("restartAllTransportIce", () => {
-	it("returns true if at least one transport ice restart succeeds", async () => {
+	it("reports a restarted send transport and no receive transport", async () => {
 		const manager = createManager();
 		manager.sfuClient = mockSfuClient() as never;
 		const restartIce = vi.fn();
@@ -277,10 +277,10 @@ describe("restartAllTransportIce", () => {
 				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
 		).mockResolvedValue({ iceParams: true });
 		const result = await manager.restartAllTransportIce();
-		expect(result).toBe(true);
+		expect(result).toEqual({ send: "restarted", recv: "not-needed" });
 	});
 
-	it("returns false when all ice restarts fail", async () => {
+	it("reports a failed transport restart", async () => {
 		const manager = createManager();
 		manager.sfuClient = mockSfuClient() as never;
 		manager.sendTransport = {
@@ -295,7 +295,127 @@ describe("restartAllTransportIce", () => {
 				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
 		).mockRejectedValue(new Error("fail"));
 		const result = await manager.restartAllTransportIce();
-		expect(result).toBe(false);
+		expect(result).toEqual({ send: "failed", recv: "not-needed" });
+	});
+
+	it("reports send success and receive failure independently", async () => {
+		const manager = createManager();
+		manager.sfuClient = mockSfuClient() as never;
+		manager.sendTransport = {
+			id: "send-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		manager.recvTransport = {
+			id: "recv-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		vi.mocked(
+			(manager.sfuClient as unknown as Record<string, unknown>)
+				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
+		).mockImplementation((transportId: string) => {
+			return transportId === "send-tp"
+				? Promise.resolve({ iceParams: true })
+				: Promise.reject(new Error("recv failed"));
+		});
+
+		await expect(manager.restartAllTransportIce()).resolves.toEqual({
+			send: "restarted",
+			recv: "failed",
+		});
+	});
+
+	it("reports both active directions as restarted", async () => {
+		const manager = createManager();
+		manager.sfuClient = mockSfuClient() as never;
+		manager.sendTransport = {
+			id: "send-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		manager.recvTransport = {
+			id: "recv-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		vi.mocked(
+			(manager.sfuClient as unknown as Record<string, unknown>)
+				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
+		).mockResolvedValue({ iceParams: true });
+
+		await expect(manager.restartAllTransportIce()).resolves.toEqual({
+			send: "restarted",
+			recv: "restarted",
+		});
+	});
+
+	it("reports send failure and receive success independently", async () => {
+		const manager = createManager();
+		manager.sfuClient = mockSfuClient() as never;
+		manager.sendTransport = {
+			id: "send-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		manager.recvTransport = {
+			id: "recv-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		vi.mocked(
+			(manager.sfuClient as unknown as Record<string, unknown>)
+				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
+		).mockImplementation((transportId: string) => {
+			return transportId === "send-tp"
+				? Promise.reject(new Error("send failed"))
+				: Promise.resolve({ iceParams: true });
+		});
+
+		await expect(manager.restartAllTransportIce()).resolves.toEqual({
+			send: "failed",
+			recv: "restarted",
+		});
+	});
+
+	it("reports both active directions as failed when neither can restart", async () => {
+		const manager = createManager();
+		manager.sfuClient = mockSfuClient() as never;
+		manager.sendTransport = {
+			id: "send-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		manager.recvTransport = {
+			id: "recv-tp",
+			connectionState: "connected",
+			restartIce: vi.fn(),
+			close: vi.fn(),
+			getStats: vi.fn(),
+		} as never;
+		vi.mocked(
+			(manager.sfuClient as unknown as Record<string, unknown>)
+				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
+		).mockRejectedValue(new Error("restart failed"));
+
+		await expect(manager.restartAllTransportIce()).resolves.toEqual({
+			send: "failed",
+			recv: "failed",
+		});
 	});
 });
 
