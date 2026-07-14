@@ -161,26 +161,41 @@ export class SFUMediaManager {
 
 	async rebuildSendSide(): Promise<Record<string, unknown>> {
 		const localStream = this.mediaHandler.localStream;
+		const screenTrack = this.mediaHandler.screenProducer?.track;
+		const hasLiveScreen = screenTrack?.readyState === "live";
 		this.transportManager.closeSendTransport();
 		this.mediaHandler.setProducers({
 			audioProducer: null,
 			videoProducer: null,
+			screenProducer: null,
 		});
 
-		if (!localStream) return {};
+		if (!localStream && !hasLiveScreen) return {};
 
-		const hasLiveVideo = localStream
-			.getVideoTracks()
-			.some((track) => track.readyState === "live");
-		const hasLiveAudio = localStream
-			.getAudioTracks()
-			.some((track) => track.readyState === "live");
-		if (!hasLiveVideo && !hasLiveAudio) return {};
+		const hasLiveVideo =
+			localStream?.getVideoTracks().some((track) => track.readyState === "live") ??
+			false;
+		const hasLiveAudio =
+			localStream?.getAudioTracks().some((track) => track.readyState === "live") ??
+			false;
+		if (!hasLiveVideo && !hasLiveAudio && !hasLiveScreen) return {};
 
-		return this.publishMedia(localStream, {
-			publishAudio: hasLiveAudio,
-			publishVideo: hasLiveVideo,
-		});
+		const results = localStream
+			? await this.publishMedia(localStream, {
+					publishAudio: hasLiveAudio,
+					publishVideo: hasLiveVideo,
+				})
+			: (await this.transportManager.createSendTransport(), {});
+
+		if (hasLiveScreen && screenTrack) {
+			const screenProducer = await this.transportManager.createProducer(screenTrack, {
+				type: "screen",
+			});
+			this.mediaHandler.setProducers({ screenProducer });
+			results.screenProducer = screenProducer;
+		}
+
+		return results;
 	}
 
 	async subscribeToProducer(

@@ -110,6 +110,21 @@ describe("SFUMediaManager.rebuildSendSide", () => {
 		expect(transportManager.createSendTransport).not.toHaveBeenCalled();
 		expect(transportManager.createProducer).not.toHaveBeenCalled();
 	});
+
+	it("republishes a live screen share after rebuilding the send transport", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const screenTrack = { kind: "video", readyState: "live" };
+		mediaManager.mediaHandler.setProducers({
+			screenProducer: { track: screenTrack } as never,
+		});
+
+		await mediaManager.rebuildSendSide();
+
+		expect(transportManager.createSendTransport).toHaveBeenCalledTimes(1);
+		expect(transportManager.createProducer).toHaveBeenCalledWith(screenTrack, {
+			type: "screen",
+		});
+	});
 });
 
 describe("SFUMediaManager.handleConsumerLost", () => {
