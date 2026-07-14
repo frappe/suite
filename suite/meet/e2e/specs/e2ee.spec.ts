@@ -187,45 +187,6 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("participants recover streams after an SFU reconnect in an E2EE meeting", async ({
-		hostPage,
-		createMeeting,
-		createParticipant,
-	}) => {
-		const meetingId = await createMeeting();
-		const guestName = "Guest Reconnect E2EE";
-		const guest = await createParticipant();
-
-		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
-
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
-		await expectRemoteVideoReceiving(hostPage, guestName);
-
-		await enableE2EEInSettings(hostPage);
-
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
-		await expectRemoteVideoReceiving(hostPage, guestName);
-
-		const guestErrors = capturePageErrors(guest.page, [
-			"refresh_sfu_token",
-			"403 (FORBIDDEN)",
-			"request_consumer_keyframe",
-		]);
-		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
-		await forceSFUReconnect(guest.page);
-
-		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(2, {
-			timeout: 30_000,
-		});
-		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
-			timeout: 30_000,
-		});
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
-		await expectRemoteVideoReceiving(hostPage, guestName);
-		hostErrors.assertNoErrors();
-		guestErrors.assertNoErrors();
-	});
-
 	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
 		hostPage,
 		createMeeting,
@@ -348,5 +309,32 @@ test.describe("E2EE", () => {
 		expect(await readFingerprint(guestB.page)).toBe(guestAFingerprint);
 		expect(await readFingerprint(guestC.page)).toBe(guestAFingerprint);
 	});
+	});
+
+	test("participants recover advancing streams after an SFU reconnect in an E2EE meeting", async ({
+		hostPage,
+		createMeeting,
+		createParticipant,
+	}) => {
+		const meetingId = await createMeeting();
+		const guestName = "Guest Reconnect E2EE";
+		const guest = await createParticipant();
+
+		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
+		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
+		await enableE2EEInSettings(hostPage);
+		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
+
+		const guestErrors = capturePageErrors(guest.page, [
+			"refresh_sfu_token",
+			"403 (FORBIDDEN)",
+			"request_consumer_keyframe",
+		]);
+		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
+		await forceSFUReconnect(guest.page);
+
+		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
+		hostErrors.assertNoErrors();
+		guestErrors.assertNoErrors();
 	});
 });
