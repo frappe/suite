@@ -73,39 +73,41 @@ export class SFURecoveryManager {
 		this.activeRecovery = (async (): Promise<RecoveryResult> => {
 			let restartResult: TransportIceRestartResult;
 			try {
-				console.warn("Restarting SFU transport ICE", {
-					reason,
-					meetingId: this.getMeetingId(),
-				});
+				try {
+					console.warn("Restarting SFU transport ICE", {
+						reason,
+						meetingId: this.getMeetingId(),
+					});
 
-				restartResult = await this.transportManager.restartAllTransportIce();
-				const didRestart = Object.values(restartResult).some(
-					(result) => result === "restarted",
-				);
-				const didFail = Object.values(restartResult).some(
-					(result) => result === "failed",
-				);
-				if (!didRestart || didFail) {
-					await this.notifyFailed(reason, restartResult);
+					restartResult = await this.transportManager.restartAllTransportIce();
+					const didRestart = Object.values(restartResult).some(
+						(result) => result === "restarted",
+					);
+					const didFail = Object.values(restartResult).some(
+						(result) => result === "failed",
+					);
+					if (!didRestart || didFail) {
+						await this.notifyFailed(reason, restartResult);
+						return "failed";
+					}
+
+					console.log("SFU transport ICE restart completed", { reason });
+				} catch (error) {
+					console.error("SFU transport ICE restart failed:", error);
+					await this.notifyFailed(reason, {
+						send: "failed",
+						recv: "failed",
+					});
 					return "failed";
 				}
 
-				console.log("SFU transport ICE restart completed", { reason });
-			} catch (error) {
-				console.error("SFU transport ICE restart failed:", error);
-				await this.notifyFailed(reason, {
-					send: "failed",
-					recv: "failed",
-				});
-				return "failed";
-			}
-
-			try {
-				await this.onRecovered?.(reason, restartResult);
-				return "recovered";
-			} catch (error) {
-				console.error("SFU post-recovery sync failed:", error);
-				return "failed";
+				try {
+					await this.onRecovered?.(reason, restartResult);
+					return "recovered";
+				} catch (error) {
+					console.error("SFU post-recovery sync failed:", error);
+					return "failed";
+				}
 			} finally {
 				this.recoveryInProgress = false;
 				this.activeRecovery = null;

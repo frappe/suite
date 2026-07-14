@@ -260,5 +260,15 @@ describe("SFURecoveryManager", () => {
 
 			expect(onFailed).not.toHaveBeenCalled();
 		});
+
+		it("clears recovery state after an ICE restart failure", async () => {
+			const { manager } = createManager({
+				restartResult: { send: "failed", recv: "failed" },
+			});
+
+			await manager.recoverTransportIce("test");
+
+			expect(manager.isRecovering).toBe(false);
+		});
 	});
 });
