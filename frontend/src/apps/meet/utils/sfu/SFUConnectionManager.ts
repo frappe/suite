@@ -365,6 +365,7 @@ export class SFUConnectionManager {
 		if (!this.meetingId || !this.lastJoinUserData) {
 			throw new Error("Cannot rejoin before joining a meeting");
 		}
+		this.recoveryManager.reset();
 
 		const rejoin = (async () => {
 			this.reportRecoveryState("rejoining", "signaling reconnected");

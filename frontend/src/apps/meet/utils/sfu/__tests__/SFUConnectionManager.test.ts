@@ -42,7 +42,10 @@ function createManager({ e2eeRequired = false } = {}) {
 		participantManager,
 		transportManager: transportManager as never,
 		mediaManager: mediaManager as never,
-		recoveryManager: { setupTransportEventHandlers: vi.fn() } as never,
+		recoveryManager: {
+			setupTransportEventHandlers: vi.fn(),
+			reset: vi.fn(),
+		} as never,
 	});
 	manager.currentUser = { value: { user_id: "me" } };
 	return {
@@ -52,6 +55,7 @@ function createManager({ e2eeRequired = false } = {}) {
 		participantManager,
 		sfuClient,
 		transportManager,
+		recoveryManager: manager.recoveryManager,
 	};
 }
 
@@ -145,7 +149,7 @@ describe("SFUConnectionManager", () => {
 	});
 
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
-		const { manager, mediaManager, sfuClient, transportManager } =
+		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
 			createManager();
 		manager.initialize("meeting-1", { user_id: "me" });
 		await manager.joinRoom(
@@ -162,6 +166,7 @@ describe("SFUConnectionManager", () => {
 			{ audio_enabled: true, video_enabled: true },
 		);
 		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
+		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
 		expect(transportManager.initializeDevice).toHaveBeenCalledTimes(1);
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);

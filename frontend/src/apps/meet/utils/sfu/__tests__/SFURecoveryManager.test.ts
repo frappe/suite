@@ -270,5 +270,22 @@ describe("SFURecoveryManager", () => {
 
 			expect(manager.isRecovering).toBe(false);
 		});
+
+		it("cancels an in-flight recovery when reset", async () => {
+			let resolveRestart: (result: TransportIceRestartResult) => void;
+			const restart = new Promise<TransportIceRestartResult>((resolve) => {
+				resolveRestart = resolve;
+			});
+			const onRecovered = vi.fn();
+			const { manager, transportManager } = createManager({ onRecovered });
+			transportManager.restartAllTransportIce.mockReturnValue(restart);
+
+			const recovery = manager.recoverTransportIce("test");
+			manager.reset();
+			resolveRestart!({ send: "restarted", recv: "restarted" });
+
+			await expect(recovery).resolves.toBe("skipped");
+			expect(onRecovered).not.toHaveBeenCalled();
+		});
 	});
 });

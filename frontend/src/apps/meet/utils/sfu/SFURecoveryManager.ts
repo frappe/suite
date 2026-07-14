@@ -34,6 +34,7 @@ export class SFURecoveryManager {
 	private onStarted?: RecoveryManagerOptions["onStarted"];
 	private recoveryInProgress = false;
 	private activeRecovery: Promise<RecoveryResult> | null = null;
+	private recoveryGeneration = 0;
 	private lastRecoveryAt = 0;
 	private static readonly RECOVERY_COOLDOWN_MS = 7000;
 	private static readonly DISCONNECTED_GRACE_MS = 3000;
@@ -69,6 +70,7 @@ export class SFURecoveryManager {
 		this.recoveryInProgress = true;
 		this.lastRecoveryAt = now;
 		this.onStarted?.(reason);
+		const recoveryGeneration = ++this.recoveryGeneration;
 
 		this.activeRecovery = (async (): Promise<RecoveryResult> => {
 			let restartResult: TransportIceRestartResult;
@@ -80,6 +82,7 @@ export class SFURecoveryManager {
 					});
 
 					restartResult = await this.transportManager.restartAllTransportIce();
+					if (recoveryGeneration !== this.recoveryGeneration) return "skipped";
 					const didRestart = Object.values(restartResult).some(
 						(result) => result === "restarted",
 					);
@@ -93,6 +96,7 @@ export class SFURecoveryManager {
 
 					console.log("SFU transport ICE restart completed", { reason });
 				} catch (error) {
+					if (recoveryGeneration !== this.recoveryGeneration) return "skipped";
 					console.error("SFU transport ICE restart failed:", error);
 					await this.notifyFailed(reason, {
 						send: "failed",
@@ -102,6 +106,7 @@ export class SFURecoveryManager {
 				}
 
 				try {
+					if (recoveryGeneration !== this.recoveryGeneration) return "skipped";
 					await this.onRecovered?.(reason, restartResult);
 					return "recovered";
 				} catch (error) {
@@ -109,8 +114,10 @@ export class SFURecoveryManager {
 					return "failed";
 				}
 			} finally {
-				this.recoveryInProgress = false;
-				this.activeRecovery = null;
+				if (recoveryGeneration === this.recoveryGeneration) {
+					this.recoveryInProgress = false;
+					this.activeRecovery = null;
+				}
 			}
 		})();
 
@@ -196,7 +203,9 @@ export class SFURecoveryManager {
 	}
 
 	reset(): void {
+		this.recoveryGeneration++;
 		this.recoveryInProgress = false;
+		this.activeRecovery = null;
 		this.lastRecoveryAt = 0;
 		this.disconnectedSince.clear();
 		if (this.watchdogHandle !== null) {
