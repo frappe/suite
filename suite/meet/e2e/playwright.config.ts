@@ -5,11 +5,11 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	// CI: one worker per job; --shard=N/M on GH splits the suite automatically.
+	// Calls share a local SFU, so run serially; CI shards jobs independently.
 	fullyParallel: !isCI,
 	forbidOnly: isCI,
 	retries: isCI ? 2 : 0,
-	workers: isCI ? 1 : undefined,
+	workers: 1,
 	maxFailures: isCI ? 3 : undefined,
 	timeout: isCI ? 90_000 : 60_000,
 	expect: {
