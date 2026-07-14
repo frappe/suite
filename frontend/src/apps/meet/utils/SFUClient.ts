@@ -196,6 +196,20 @@ interface SFUParticipantsResponse {
 
 type SFUEventHandler = (...args: unknown[]) => void;
 
+export type SFURequestErrorCode = "DISCONNECTED" | "TIMEOUT";
+
+export class SFURequestError extends Error {
+	readonly code: SFURequestErrorCode;
+
+	constructor(code: SFURequestErrorCode, message: string) {
+		super(message);
+		this.name = "SFURequestError";
+		this.code = code;
+	}
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+
 export class SFUClient {
 	signalChannel: SignalChannel;
 	connected: boolean;
@@ -204,6 +218,7 @@ export class SFUClient {
 	isRefreshingToken: boolean;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
 	ownSenderId: number | null;
+	private pendingRequestRejectors: Set<(error: SFURequestError) => void>;
 
 	constructor(signalChannel: SignalChannel) {
 		this.signalChannel = signalChannel;
@@ -224,6 +239,7 @@ export class SFUClient {
 		this.isRefreshingToken = false;
 		this.tokenRefreshTimer = null;
 		this.ownSenderId = null;
+		this.pendingRequestRejectors = new Set();
 		this.setupDefaultHandlers();
 	}
 
@@ -384,6 +400,9 @@ export class SFUClient {
 	}
 
 	disconnect(): void {
+		this.rejectPendingRequests(
+			new SFURequestError("DISCONNECTED", "Disconnected from SFU"),
+		);
 		this.signalChannel.disconnect();
 		this.clearTokenRefreshTimer();
 		this.connected = false;
@@ -847,45 +866,71 @@ export class SFUClient {
 
 	sendRaiseHand(raised: boolean): Promise<unknown> {
 		if (!this.connected) {
-			throw new Error("Not connected to SFU");
+			throw new SFURequestError("DISCONNECTED", "Not connected to SFU");
 		}
-
-		return new Promise((resolve, reject) => {
-			this.signalChannel.emit(
-				"raise_hand",
-				{ raised },
-				(response: Record<string, unknown>) => {
-					if (response?.success) {
-						resolve(response);
-					} else {
-						reject(
-							new Error((response?.error as string) || "Failed to raise hand"),
-						);
-					}
-				},
-			);
-		});
+		return this.sendRequest("raise_hand", { raised });
 	}
 
 	// ==================== UTILITY METHODS ====================
 
-	async sendRequest(event: string, data: unknown): Promise<unknown> {
+	async sendRequest(
+		event: string,
+		data: unknown,
+		timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+	): Promise<unknown> {
 		return new Promise((resolve, reject) => {
 			if (!this.connected) {
-				reject(new Error("Not connected to SFU"));
+				reject(new SFURequestError("DISCONNECTED", "Not connected to SFU"));
 				return;
 			}
 
-			this.signalChannel.emit(event, data, (response: SFUResponse) => {
-				if (response.success) {
-					resolve(response);
-				} else {
-					const error = new Error(response.error || `Request failed: ${event}`);
-					console.error(`SFU request failed (${event}):`, response.error);
-					reject(error);
-				}
-			});
+			let settled = false;
+			const finish = (callback: () => void) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timeout);
+				this.pendingRequestRejectors.delete(rejectPending);
+				callback();
+			};
+			const rejectPending = (error: SFURequestError) => {
+				finish(() => reject(error));
+			};
+			const timeout = setTimeout(() => {
+				rejectPending(
+					new SFURequestError(
+						"TIMEOUT",
+						`SFU request timed out: ${event}`,
+					),
+				);
+			}, timeoutMs);
+			this.pendingRequestRejectors.add(rejectPending);
+
+			try {
+				this.signalChannel.emit(event, data, (response: SFUResponse) => {
+					finish(() => {
+						if (response.success) {
+							resolve(response);
+						} else {
+							const error = new Error(
+								response.error || `Request failed: ${event}`,
+							);
+							console.error(`SFU request failed (${event}):`, response.error);
+							reject(error);
+						}
+					});
+				});
+			} catch (error) {
+				finish(() => reject(error));
+			}
 		});
+	}
+
+	private rejectPendingRequests(error: SFURequestError): void {
+		const pending = Array.from(this.pendingRequestRejectors);
+		this.pendingRequestRejectors.clear();
+		for (const reject of pending) {
+			reject(error);
+		}
 	}
 
 	sendEvent(event: string, data: unknown): void {

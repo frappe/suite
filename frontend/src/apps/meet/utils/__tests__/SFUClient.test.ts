@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	connectionDetailsFromJoinPayload,
 	SFUClient,
+	SFURequestError,
 } from "../SFUClient";
 
 const mockSignalChannel = () => ({
@@ -175,6 +176,54 @@ describe("sendRequest", () => {
 			cb({ success: false, error: "nope" }),
 		);
 		await expect(client.sendRequest("test", {})).rejects.toThrow("nope");
+	});
+
+	it("rejects with TIMEOUT when an acknowledgement does not arrive", async () => {
+		const client = createClient();
+		client.connected = true;
+		client.signalChannel.emit = vi.fn();
+
+		const request = client.sendRequest("test", {}, 100);
+		const assertion = expect(request).rejects.toMatchObject<SFURequestError>({
+			code: "TIMEOUT",
+			message: "SFU request timed out: test",
+		});
+		await vi.advanceTimersByTimeAsync(100);
+
+		await assertion;
+	});
+
+	it("rejects pending requests when the client disconnects", async () => {
+		const client = createClient();
+		client.connected = true;
+		client.signalChannel.emit = vi.fn();
+
+		const request = client.sendRequest("test", {});
+		const assertion = expect(request).rejects.toMatchObject<SFURequestError>({
+			code: "DISCONNECTED",
+			message: "Disconnected from SFU",
+		});
+		client.disconnect();
+
+		await assertion;
+	});
+
+	it("ignores a late acknowledgement after timing out", async () => {
+		const client = createClient();
+		client.connected = true;
+		let acknowledge: ((response: { success: boolean }) => void) | undefined;
+		client.signalChannel.emit = vi.fn((_event, _data, callback) => {
+			acknowledge = callback;
+		});
+
+		const request = client.sendRequest("test", {}, 100);
+		const assertion = expect(request).rejects.toMatchObject<SFURequestError>({
+			code: "TIMEOUT",
+		});
+		await vi.advanceTimersByTimeAsync(100);
+		acknowledge?.({ success: true });
+
+		await assertion;
 	});
 });
 
