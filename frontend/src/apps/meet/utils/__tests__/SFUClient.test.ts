@@ -106,6 +106,20 @@ describe("isConnected / getters", () => {
 	});
 });
 
+describe("event handler registration", () => {
+	it("registers pre-connect handlers with SignalChannel only once", () => {
+		const signalChannel = mockSignalChannel();
+		const client = new SFUClient(signalChannel);
+		client.on("custom_event", vi.fn());
+
+		client.registerEventHandlers();
+
+		expect(
+			signalChannel.on.mock.calls.filter(([event]) => event === "custom_event"),
+		).toHaveLength(1);
+	});
+});
+
 describe("isTokenExpiringSoon", () => {
 	it("returns false when tokenExpiresAt is far in the future", () => {
 		const client = createClient();
@@ -335,6 +349,7 @@ describe("on / off event handling", () => {
 		const client = createClient();
 		const handler = vi.fn();
 		client.on("participant_joined", handler);
+		client.registerEventHandlers();
 		const dispatcher = client.eventHandlers.get("participant_joined");
 		dispatcher?.();
 		expect(handler).toHaveBeenCalledTimes(1);

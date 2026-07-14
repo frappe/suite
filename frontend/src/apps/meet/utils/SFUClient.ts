@@ -608,7 +608,7 @@ export class SFUClient {
 	on(event: string, handler: SFUEventHandler): void {
 		const hadDispatcher = this.eventHandlers.has(event);
 		this.addEventListener(event, handler);
-		if (!this.connected || !hadDispatcher) {
+		if (this.connected && !hadDispatcher) {
 			this.signalChannel.on(event, this.eventHandlers.get(event) as SFUEventHandler);
 		}
 	}
