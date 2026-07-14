@@ -179,6 +179,8 @@ jobs:
           WEBRTC_LISTEN_IP: 127.0.0.1
           WEBRTC_ANNOUNCED_IP: 127.0.0.1
           MEDIASOUP_NUM_WORKERS: 1
+          SOCKET_PING_INTERVAL: 1000
+          SOCKET_PING_TIMEOUT: 3000
 
       - name: Run E2E Tests
         working-directory: ${{ github.workspace }}/suite/meet/e2e
@@ -187,6 +189,8 @@ jobs:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
           CI: true
+          SFU_E2E_DISCONNECT_TEST: true
+          SFU_E2E_DISCONNECT_WAIT_MS: 7000
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
