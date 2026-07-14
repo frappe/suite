@@ -4,14 +4,21 @@
  */
 
 import type { TransportManager } from "../media/TransportManager";
+import type { TransportIceRestartResult } from "../media/TransportManager";
 import type { SFUClient } from "../SFUClient";
 
 interface RecoveryManagerOptions {
 	sfuClient: SFUClient;
 	transportManager: TransportManager;
 	meetingId: () => string | null;
-	onRecovered?: (reason: string) => Promise<void> | void;
-	onFailed?: (reason: string) => Promise<void> | void;
+	onRecovered?: (
+		reason: string,
+		result: TransportIceRestartResult,
+	) => Promise<void> | void;
+	onFailed?: (
+		reason: string,
+		result: TransportIceRestartResult,
+	) => Promise<void> | void;
 }
 
 type TransportDirection = "send" | "recv";
@@ -21,11 +28,10 @@ export class SFURecoveryManager {
 	private sfuClient: SFUClient;
 	private transportManager: TransportManager;
 	private getMeetingId: () => string | null;
-	private onRecovered?: (reason: string) => Promise<void> | void;
-	private onFailed?: (reason: string) => Promise<void> | void;
+	private onRecovered?: RecoveryManagerOptions["onRecovered"];
+	private onFailed?: RecoveryManagerOptions["onFailed"];
 	private recoveryInProgress = false;
 	private activeRecovery: Promise<RecoveryResult> | null = null;
-	private failedRecoveryCallback: Promise<RecoveryResult> | null = null;
 	private lastRecoveryAt = 0;
 	private static readonly RECOVERY_COOLDOWN_MS = 7000;
 	private static readonly DISCONNECTED_GRACE_MS = 3000;
@@ -61,14 +67,14 @@ export class SFURecoveryManager {
 		this.lastRecoveryAt = now;
 
 		this.activeRecovery = (async (): Promise<RecoveryResult> => {
+			let restartResult: TransportIceRestartResult;
 			try {
 				console.warn("Restarting SFU transport ICE", {
 					reason,
 					meetingId: this.getMeetingId(),
 				});
 
-				const restartResult =
-					await this.transportManager.restartAllTransportIce();
+				restartResult = await this.transportManager.restartAllTransportIce();
 				const didRestart = Object.values(restartResult).some(
 					(result) => result === "restarted",
 				);
@@ -76,14 +82,19 @@ export class SFURecoveryManager {
 					(result) => result === "failed",
 				);
 				if (!didRestart || didFail) {
+					await this.notifyFailed(reason, restartResult);
 					return "failed";
 				}
 
 				console.log("SFU transport ICE restart completed", { reason });
-				await this.onRecovered?.(reason);
+				await this.onRecovered?.(reason, restartResult);
 				return "recovered";
 			} catch (error) {
 				console.error("SFU transport ICE restart failed:", error);
+				await this.notifyFailed(reason, {
+					send: "failed",
+					recv: "failed",
+				});
 				return "failed";
 			} finally {
 				this.recoveryInProgress = false;
@@ -92,6 +103,17 @@ export class SFURecoveryManager {
 		})();
 
 		return this.activeRecovery;
+	}
+
+	private async notifyFailed(
+		reason: string,
+		result: TransportIceRestartResult,
+	): Promise<void> {
+		try {
+			await this.onFailed?.(reason, result);
+		} catch (error) {
+			console.warn("SFU recovery failure fallback failed:", error);
+		}
 	}
 
 	private recoverTransportFailure(
@@ -103,17 +125,6 @@ export class SFURecoveryManager {
 			.then(async (result) => {
 				if (result === "recovered") {
 					onRecovered?.();
-				}
-
-				if (result === "failed") {
-					if (this.failedRecoveryCallback === recovery) return;
-					this.failedRecoveryCallback = recovery;
-					await this.onFailed?.(reason);
-				}
-			})
-			.finally(() => {
-				if (this.failedRecoveryCallback === recovery) {
-					this.failedRecoveryCallback = null;
 				}
 			})
 			.catch((error) => {
@@ -174,7 +185,6 @@ export class SFURecoveryManager {
 
 	reset(): void {
 		this.recoveryInProgress = false;
-		this.failedRecoveryCallback = null;
 		this.lastRecoveryAt = 0;
 		this.disconnectedSince.clear();
 		if (this.watchdogHandle !== null) {

@@ -51,7 +51,14 @@ export class SFUMeetingManager {
 			transportManager: this.transportManager,
 			meetingId: () => this.connectionManager?.meetingId ?? null,
 			onRecovered: () => this.connectionManager?.resetReceiveSide(),
-			onFailed: () => this.connectionManager?.resetReceiveSide(),
+			onFailed: async (_reason, result) => {
+				if (result.send === "failed") {
+					await this.mediaManager.rebuildSendSide();
+				}
+				if (result.recv === "failed") {
+					await this.connectionManager?.resetReceiveSide();
+				}
+			},
 		});
 
 		this.mediaManager = new SFUMediaManager(

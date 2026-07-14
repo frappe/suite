@@ -227,11 +227,17 @@ describe("SFURecoveryManager", () => {
 		});
 
 		it("fails recovery when one active direction cannot restart", async () => {
+			const onFailed = vi.fn();
 			const { manager } = createManager({
 				restartResult: { send: "failed", recv: "restarted" },
+				onFailed,
 			});
 
 			await expect(manager.recoverTransportIce("test")).resolves.toBe("failed");
+			expect(onFailed).toHaveBeenCalledWith("test", {
+				send: "failed",
+				recv: "restarted",
+			});
 		});
 	});
 });

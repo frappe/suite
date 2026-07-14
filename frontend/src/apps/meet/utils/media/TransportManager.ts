@@ -337,6 +337,16 @@ export class TransportManager {
 		this.recvTransport = null;
 	}
 
+	closeSendTransport() {
+		if (!this.sendTransport) return;
+		try {
+			this.sendTransport.close();
+		} catch (_e) {
+			/* ignore */
+		}
+		this.sendTransport = null;
+	}
+
 	setupReceiveTransportHandlers() {
 		if (!this.recvTransport) return;
 		const client = this.getClient();

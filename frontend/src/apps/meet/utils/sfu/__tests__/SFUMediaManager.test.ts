@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SFUMediaManager } from "../SFUMediaManager";
 
 type MockTransportManager = {
+	closeSendTransport: ReturnType<typeof vi.fn>;
+	createProducer: ReturnType<typeof vi.fn>;
+	createSendTransport: ReturnType<typeof vi.fn>;
 	createConsumer: ReturnType<typeof vi.fn>;
 };
 type MockParticipantManager = {
@@ -18,6 +21,9 @@ function createManager(
 	participantManager: MockParticipantManager;
 } {
 	const transportManager: MockTransportManager = {
+		closeSendTransport: vi.fn(),
+		createProducer: vi.fn().mockResolvedValue({}),
+		createSendTransport: vi.fn(),
 		createConsumer: vi.fn().mockResolvedValue({
 			id: "new-c1",
 			producerId: "producer-1",
@@ -64,6 +70,47 @@ function createManager(
 		participantManager,
 	};
 }
+
+describe("SFUMediaManager.rebuildSendSide", () => {
+	it("recreates the send transport and republishes live local tracks", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const videoTrack = { kind: "video", readyState: "live" };
+		const audioTrack = { kind: "audio", readyState: "live" };
+		mediaManager.mediaHandler.localStream = {
+			getAudioTracks: () => [audioTrack],
+			getVideoTracks: () => [videoTrack],
+		} as never;
+		mediaManager.mediaHandler.setProducers({
+			audioProducer: { close: vi.fn() } as never,
+			videoProducer: { close: vi.fn() } as never,
+		});
+
+		await mediaManager.rebuildSendSide();
+
+		expect(transportManager.closeSendTransport).toHaveBeenCalledTimes(1);
+		expect(transportManager.createSendTransport).toHaveBeenCalledTimes(1);
+		expect(transportManager.createProducer).toHaveBeenCalledWith(videoTrack, {
+			type: "camera",
+		});
+		expect(transportManager.createProducer).toHaveBeenCalledWith(audioTrack, {
+			type: "microphone",
+		});
+	});
+
+	it("does not create a send transport without live local tracks", async () => {
+		const { mediaManager, transportManager } = createManager();
+		mediaManager.mediaHandler.localStream = {
+			getAudioTracks: () => [],
+			getVideoTracks: () => [{ kind: "video", readyState: "ended" }],
+		} as never;
+
+		await expect(mediaManager.rebuildSendSide()).resolves.toEqual({});
+
+		expect(transportManager.closeSendTransport).toHaveBeenCalledTimes(1);
+		expect(transportManager.createSendTransport).not.toHaveBeenCalled();
+		expect(transportManager.createProducer).not.toHaveBeenCalled();
+	});
+});
 
 describe("SFUMediaManager.handleConsumerLost", () => {
 	beforeEach(() => {

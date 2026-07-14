@@ -330,7 +330,7 @@ export class SFUConnectionManager {
 
 	async resyncAfterRecovery(reason: string): Promise<void> {
 		const result = await this.recoveryManager.recoverTransportIce(reason);
-		if (result === "failed" || result === "skipped") {
+		if (result === "skipped") {
 			await this.resetReceiveSide();
 		}
 	}
