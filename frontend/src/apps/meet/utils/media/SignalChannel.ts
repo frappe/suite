@@ -35,6 +35,12 @@ export interface SignalChannel {
 
 export class SocketIOSignalChannel implements SignalChannel {
 	private socket: Socket | null = null;
+	private static readonly MANAGER_EVENTS = new Set([
+		"reconnect_attempt",
+		"reconnect_error",
+		"reconnect_failed",
+		"reconnect",
+	]);
 
 	async connect(config: SignalChannelConfig): Promise<void> {
 		this.socket = io(config.origin, {
@@ -105,11 +111,23 @@ export class SocketIOSignalChannel implements SignalChannel {
 
 	on(event: string, handler: (...args: unknown[]) => void): void {
 		if (!this.socket) return;
+		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
+			this.socket.io.on(event, handler);
+			return;
+		}
 		this.socket.on(event, handler);
 	}
 
 	off(event: string, handler?: (...args: unknown[]) => void): void {
 		if (!this.socket) return;
+		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
+			if (handler) {
+				this.socket.io.off(event, handler);
+			} else {
+				this.socket.io.off(event);
+			}
+			return;
+		}
 		if (handler) {
 			this.socket.off(event, handler);
 		} else {
