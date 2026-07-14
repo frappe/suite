@@ -215,6 +215,7 @@ export class SFUClient {
 	connected: boolean;
 	connectionDetails: ConnectionDetails;
 	eventHandlers: Map<string, SFUEventHandler>;
+	private eventListeners: Map<string, Set<SFUEventHandler>>;
 	isRefreshingToken: boolean;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
 	ownSenderId: number | null;
@@ -236,6 +237,7 @@ export class SFUClient {
 			isCohost: false,
 		};
 		this.eventHandlers = new Map();
+		this.eventListeners = new Map();
 		this.isRefreshingToken = false;
 		this.tokenRefreshTimer = null;
 		this.ownSenderId = null;
@@ -593,7 +595,7 @@ export class SFUClient {
 		};
 
 		for (const [event, handler] of Object.entries(defaultHandlers)) {
-			this.eventHandlers.set(event, handler);
+			this.addEventListener(event, handler);
 		}
 	}
 
@@ -604,16 +606,42 @@ export class SFUClient {
 	}
 
 	on(event: string, handler: SFUEventHandler): void {
-		this.eventHandlers.set(event, handler);
-		this.signalChannel.on(event, handler);
+		const hadDispatcher = this.eventHandlers.has(event);
+		this.addEventListener(event, handler);
+		if (!this.connected || !hadDispatcher) {
+			this.signalChannel.on(event, this.eventHandlers.get(event) as SFUEventHandler);
+		}
 	}
 
-	off(event: string): void {
-		const handler = this.eventHandlers.get(event);
+	off(event: string, handler?: SFUEventHandler): void {
 		if (handler) {
-			this.signalChannel.off(event, handler);
+			const listeners = this.eventListeners.get(event);
+			listeners?.delete(handler);
+			if (listeners?.size) return;
+		}
+
+		const dispatcher = this.eventHandlers.get(event);
+		if (dispatcher) {
+			this.signalChannel.off(event, dispatcher);
 		}
 		this.eventHandlers.delete(event);
+		this.eventListeners.delete(event);
+	}
+
+	private addEventListener(event: string, handler: SFUEventHandler): void {
+		let listeners = this.eventListeners.get(event);
+		if (!listeners) {
+			listeners = new Set();
+			this.eventListeners.set(event, listeners);
+		}
+		listeners.add(handler);
+
+		if (this.eventHandlers.has(event)) return;
+		this.eventHandlers.set(event, (...args: unknown[]) => {
+			for (const listener of this.eventListeners.get(event) || []) {
+				listener(...args);
+			}
+		});
 	}
 
 	// ==================== WEBRTC OPERATIONS ====================
