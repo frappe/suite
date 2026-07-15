@@ -18,11 +18,9 @@
 					</div>
 					<Button
 						variant="ghost"
-						class="text-ink-gray-6 hover:bg-surface-gray-2"
+						icon="lucide-x"
 						@click="$emit('close')"
-					>
-						<lucide-x class="h-4 w-4 text-ink-gray-8" />
-					</Button>
+					/>
 				</div>
 
 				<div class="px-2 pb-2 shrink-0">
