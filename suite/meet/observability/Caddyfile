@@ -1,0 +1,4 @@
+{$GRAFANA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy grafana:3000
+}

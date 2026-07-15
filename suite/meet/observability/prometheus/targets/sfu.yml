@@ -1,0 +1,4 @@
+- targets:
+    - sfu.example.com
+  labels:
+    environment: production
