@@ -55,7 +55,8 @@ Set these values in `.env`:
 
 ```env
 GRAFANA_DOMAIN=localhost
-GRAFANA_ROOT_URL=http://localhost:3000
+GRAFANA_ROOT_URL=http://localhost:3001
+GRAFANA_PORT=3001
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=local-test-password
 PROMETHEUS_RETENTION=7d
@@ -85,7 +86,7 @@ cd ../observability
 docker compose up -d prometheus grafana
 ```
 
-Open Prometheus at `http://localhost:9090/targets` and Grafana at `http://localhost:3000`. The `frappe-meet-sfu` target should be `UP`. Test the datasource in Grafana Explore with:
+Open Prometheus at `http://localhost:9090/targets` and Grafana at `http://localhost:3001`. The `frappe-meet-sfu` target should be `UP`. Test the datasource in Grafana Explore with:
 
 ```promql
 up{job="frappe-meet-sfu"}
