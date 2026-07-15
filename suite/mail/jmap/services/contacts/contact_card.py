@@ -2,7 +2,7 @@ from typing import ClassVar
 from uuid import uuid7
 
 from suite.mail.jmap.services.contacts.contacts import ContactsService
-from suite.mail.utils.dt import utcnow
+from suite.utils.dt import utcnow
 
 
 class ContactCardService(ContactsService):

@@ -8,7 +8,7 @@ from frappe import _
 from frappe.utils import random_string
 
 from suite.mail.stalwart.cli import StalwartCLI
-from suite.mail.utils import snake_to_camel
+from suite.utils import snake_to_camel
 
 
 class CredentialType(Enum):

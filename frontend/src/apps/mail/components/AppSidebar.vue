@@ -222,10 +222,15 @@ const menuItems = computed(() => [
 						{
 							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
 							onClick: async () => {
-								router.push({
-									name: route.name,
-									params: { ...route.params, accountId: a.id },
-								})
+								// Account-scoped routes carry an accountId, so swap it in place to stay in the
+								// same section. Account-agnostic routes (All Inboxes) have no accountId param —
+								// reusing their name would go nowhere, so route through the account shortcut,
+								// which the guard resolves to that account's default mailbox.
+								router.push(
+									route.params.accountId
+										? { name: route.name, params: { ...route.params, accountId: a.id } }
+										: { name: 'mail-account-shortcut', params: { accountId: a.id } },
+								)
 							},
 						},
 						[

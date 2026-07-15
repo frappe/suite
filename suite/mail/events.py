@@ -10,8 +10,9 @@ from suite.mail.stalwart import add_account_role as add_stalwart_account_role
 from suite.mail.stalwart import delete_account as delete_stalwart_account
 from suite.mail.stalwart import remove_account_role as remove_stalwart_account_role
 from suite.mail.stalwart import update_password as update_stalwart_password
-from suite.mail.utils import execute_with_logging, get_config, is_stalwart_configured
+from suite.mail.utils import get_config, is_stalwart_configured
 from suite.mail.utils.user import is_jmap_configured
+from suite.utils import execute_with_logging
 
 
 def create_user_settings(doc: Document, method: str | None = None) -> None:

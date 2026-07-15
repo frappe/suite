@@ -33,21 +33,19 @@ from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.contacts.address_book import AddressBookService
 from suite.mail.jmap.services.contacts.contact_card import ContactCardService
 from suite.mail.utils import (
-	compress_directory,
-	extract_compressed_file,
 	get_config,
 	get_contacts_export_directory,
 	get_contacts_import_directory,
-	reconnect_on_failure,
 )
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import (
 	get_user_email_address,
-	is_administrator,
 	is_jmap_configured,
 	is_mail_admin,
-	is_system_manager,
 )
+from suite.utils import reconnect_on_failure
+from suite.utils.file import compress_directory, extract_compressed_file
+from suite.utils.user import is_administrator, is_system_manager
 
 # JSContact (RFC 9553) Name component kind -> its position in the vCard 4.0 "N" property
 # (Family;Given;Additional;Prefixes;Suffixes), plus the two surname/given halves JSContact splits out.

@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils.caching import request_cache
 
-from suite.mail.utils.user import is_administrator, is_system_manager
+from suite.utils.user import is_administrator, is_system_manager
 
 
 class UserAccount(Document):

@@ -12,9 +12,11 @@ from frappe.model.document import Document
 from frappe.utils import cint, today
 
 from suite.mail.jmap import get_push_subscription_service
-from suite.mail.utils import generate_uuid_style_hash, log_error, parse_filters
-from suite.mail.utils.dt import get_utc_now, parse_iso_datetime
-from suite.mail.utils.user import is_jmap_configured, is_system_manager
+from suite.mail.utils import generate_uuid_style_hash, log_mail_error
+from suite.mail.utils.user import is_jmap_configured
+from suite.utils import parse_filters
+from suite.utils.dt import get_utc_now, parse_iso_datetime
+from suite.utils.user import is_system_manager
 
 # Renew push subscriptions that expire within this many days of the scheduled run.
 RENEW_THRESHOLD_DAYS = 3
@@ -255,12 +257,12 @@ def renew_expiring_push_subscriptions() -> None:
 			response = service.update([{"id": id} for id in expiring_ids])
 			if not_updated := response.get("notUpdated"):
 				errors = "<br>".join(f"{id}: {error['description']}" for id, error in not_updated.items())
-				log_error(
+				log_mail_error(
 					_("Push Subscription Renewal Failed"),
 					_("Failed to renew push subscriptions for user {0}:<br>{1}").format(user, errors),
 				)
 		except Exception as e:
-			log_error(
+			log_mail_error(
 				_("Push Subscription Renewal Failed"),
 				_("Failed to renew push subscriptions for user {0}: {1}").format(user, str(e)),
 			)

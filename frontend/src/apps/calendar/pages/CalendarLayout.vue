@@ -47,7 +47,17 @@ const cycleTheme = () => {
 
 	const idx = COLOR_SCHEME_CYCLE.indexOf(current)
 	const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
-	updateColorScheme.submit(next)
+
+	// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
+	userResource.data.color_scheme = next
+	raiseToast(__('Color scheme updated to {0}.', [next]))
+
+	updateColorScheme.submit(next, {
+		onError: () => {
+			userResource.data.color_scheme = current
+			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+		},
+	})
 }
 
 const updateColorScheme = createResource({
@@ -57,8 +67,8 @@ const updateColorScheme = createResource({
 		name: userResource.data.user_settings,
 		fieldname: { color_scheme },
 	}),
-	onSuccess: (data) => {
-		raiseToast(__('Color scheme updated to {0}.', [data.color_scheme]))
+	onSuccess: () => {
+		// Reconcile the optimistic value against server truth (sets the same value; harmless).
 		userResource.reload()
 	},
 })

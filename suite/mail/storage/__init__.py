@@ -38,7 +38,7 @@ def get_data_store(account: str) -> DataStore:
 def destroy_data_store() -> None:
 	"""Utility function to destroy the data store."""
 
-	from suite.mail.utils.user import is_system_manager
+	from suite.utils.user import is_system_manager
 
 	if is_system_manager(frappe.session.user):
 		base_path = _get_data_base_path()

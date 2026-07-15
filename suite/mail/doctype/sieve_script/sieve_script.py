@@ -21,8 +21,8 @@ from suite.mail.jmap import (
 	get_mailboxes,
 	get_sieve_script_service,
 )
-from suite.mail.utils import execute_with_logging, parse_filters
 from suite.mail.utils.user import get_account_emails
+from suite.utils import execute_with_logging, parse_filters
 
 
 class SieveScript(Document):

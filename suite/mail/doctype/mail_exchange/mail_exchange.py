@@ -39,29 +39,22 @@ from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs
 from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.utils import (
-	compress_directory,
-	extract_compressed_file,
 	get_config,
 	get_mail_export_directory,
 	get_mail_import_directory,
 	get_mbox_files,
-	reconnect_on_failure,
 )
-from suite.mail.utils.dt import parse_iso_datetime
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
-from suite.mail.utils.user import (
-	clear_sync_state,
-	get_user_email_address,
-	is_administrator,
-	is_jmap_configured,
-	is_mail_admin,
-	is_system_manager,
-)
+from suite.mail.utils.user import clear_sync_state, get_user_email_address, is_jmap_configured, is_mail_admin
 from suite.mail.utils.validation import (
 	validate_jmap_structure,
 	validate_maildir_or_maildirpp,
 	validate_nested_maildir_tree,
 )
+from suite.utils import reconnect_on_failure
+from suite.utils.dt import parse_iso_datetime
+from suite.utils.file import compress_directory, extract_compressed_file
+from suite.utils.user import is_administrator, is_system_manager
 
 MAILDIR_FLAG_MAP: dict[str, str] = {
 	"$seen": "S",

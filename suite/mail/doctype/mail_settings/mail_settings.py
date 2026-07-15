@@ -21,14 +21,20 @@ class MailSettings(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
-		from suite.mail.doctype.mail_client_configuration.mail_client_configuration import MailClientConfiguration
+
+		from suite.mail.doctype.mail_client_configuration.mail_client_configuration import (
+			MailClientConfiguration,
+		)
 
 		allow_signup: DF.Check
 		ansible_play_timeout: DF.Int
 		default_disk_quota_gb: DF.Int
 		default_dns_ttl: DF.Int
 		default_gravatar: DF.Literal["404"]
-		dns_provider: DF.Literal["", "AmazonRoute53", "DigitalOcean", "Cloudflare", "Hetzner", "Linode", "Namecheap", "GoDaddy"]
+		disabled_account_role: DF.Data | None
+		dns_provider: DF.Literal[
+			"", "AmazonRoute53", "DigitalOcean", "Cloudflare", "Hetzner", "Linode", "Namecheap", "GoDaddy"
+		]
 		dns_provider_access_key: DF.Data | None
 		dns_provider_access_secret: DF.Password | None
 		dns_provider_client_ip: DF.Data | None
@@ -48,15 +54,12 @@ class MailSettings(Document):
 		exchange_log_max_file_size: DF.Int
 		exchange_max_export: DF.Int
 		exchange_max_import: DF.Int
-		fetch_lock_timeout: DF.Int
 		inbound_log_file_count: DF.Int
 		inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
 		inbound_log_max_file_size: DF.Int
 		jmap_push_auth: DF.Password | None
 		jmap_push_p256dh: DF.Data | None
 		jmap_push_private_key: DF.Password | None
-		lock_acquire_timeout: DF.Int
-		lock_timeout: DF.Int
 		mail_client_configurations: DF.Table[MailClientConfiguration]
 		max_email_sync: DF.Int
 		max_message_payload_size_mb: DF.Int

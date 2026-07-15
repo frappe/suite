@@ -12,7 +12,12 @@
 				]"
 			/>
 		</div>
-		<HeaderActions @reload-mails="resetThreads(true, ['drafts', 'sent'])" />
+		<HeaderActions
+			v-model:show-search="showSearchModal"
+			v-model:show-advanced="showSearchAdvanced"
+			v-model:edit-filter="searchEditFilter"
+			@reload-mails="resetThreads(true, ['drafts', 'sent'])"
+		/>
 	</header>
 
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
@@ -45,17 +50,71 @@
 			</div>
 		</div>
 
-		<template v-else-if="threadsResource?.data?.length || filter">
+		<template v-else-if="threadsResource?.data?.length || filter || mailbox === 'search'">
 			<div
 				ref="mailSidebar"
 				class="sticky top-16 flex flex-col border-r"
 				:class="!isMobile && showReadingPane ? 'w-1/3' : 'w-full'"
 			>
+				<!-- Search header: the query (click to edit) + removable filter pills, above the results toolbar. -->
+				<div
+					v-if="mailbox === 'search'"
+					class="flex flex-col gap-2.5 border-b border-l-transparent px-3.5 py-3 sm:border-l sm:px-5"
+				>
+					<FormControl
+						type="text"
+						size="sm"
+						class="w-full cursor-pointer [&_input]:cursor-pointer"
+						:class="{ 'max-w-2xl': isMobile || !showReadingPane }"
+						:model-value="searchQuery"
+						:placeholder="__('Search')"
+						:aria-label="__('Edit search')"
+						readonly
+						variant="outline"
+						@mousedown.prevent="openSearch()"
+					>
+						<template #prefix>
+							<Search class="text-ink-gray-5 size-4" />
+						</template>
+						<template #suffix>
+							<button
+								class="text-ink-gray-5 hover:text-ink-gray-8 -m-1 flex p-1"
+								:aria-label="__('Filters')"
+								@mousedown.stop.prevent="openSearch(true)"
+							>
+								<SlidersHorizontal class="size-4" />
+							</button>
+						</template>
+					</FormControl>
+					<div v-if="searchFilterChips.length" class="flex flex-wrap items-center gap-1.5">
+						<span
+							v-for="chip in searchFilterChips"
+							:key="chip.key"
+							class="bg-surface-gray-2 inline-flex h-7 items-center gap-1 rounded pl-2 pr-1 text-xs"
+							:class="{
+								'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key),
+							}"
+							@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
+						>
+							<span class="max-w-40 truncate">{{ chip.label }}</span>
+							<button
+								class="text-ink-gray-5 hover:text-ink-gray-8 rounded p-1"
+								:aria-label="__('Remove filter')"
+								@click.stop="removeSearchFilter(chip.key)"
+							>
+								<X class="size-3" />
+							</button>
+						</span>
+
+						<Button variant="ghost" class="text-xs" :label="__('Clear all')" @click="clearSearch" />
+					</div>
+				</div>
+
 				<!-- Toolbar/Actions -->
 				<div
 					class="relative flex items-center border-b border-l-transparent px-3.5 py-2.5 sm:border-l sm:px-5"
 				>
-					<div class="mr-5 max-sm:ml-3">
+					<div v-if="!isAllAccountsSearch" class="mr-5 max-sm:ml-3">
 						<Tooltip
 							:text="
 								isAllSelected
@@ -180,6 +239,7 @@
 								@click="toggleGroupCollapse(key)"
 							>
 								<div
+									v-if="!isAllAccountsSearch"
 									class="pr-7.5 checkbox-hitbox -m-3 cursor-pointer py-3 pl-6 sm:pl-3"
 									@click.stop.prevent="
 										toggleSelect(getGroupThreads(key), !isGroupSelected(key))
@@ -214,38 +274,27 @@
 							<MailListItem
 								v-for="mail in group"
 								ref="mailItems"
-								:key="mail.name"
+								:key="isAllAccountsSearch ? `${mail.account}:${mail.name}` : mail.name"
 								:mailbox
 								:mail
+								:account-id="isAllAccountsSearch ? mail.account : undefined"
+								:account-label="isAllAccountsSearch ? mail.account_name : undefined"
+								:selectable="!isAllAccountsSearch"
 								:is-selected="selections.includes(mail.thread_id)"
 								class="border-l-transparent sm:border-l"
 								:class="{
 									'!bg-surface-blue-1': mail.thread_id === threadID && !isMobile,
 									'!border-l-blue-500': mail.thread_id === threadInFocus,
 								}"
-								@set-seen="
-									(seen: boolean) =>
-										handleSetSeen({ [Number(seen)]: [mail.thread_id] })
-								"
-								@archive-thread="
-									mailbox === mailboxIds.sent
-										? handleAddThreadsToMailbox(mailboxIds.archive, [
-												mail.thread_id,
-											])
-										: handleMoveThreads({
-												[mailboxIds.archive]: [mail.thread_id],
-											})
-								"
-								@trash-thread="
-									handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
-								"
+								@set-seen="(seen: boolean) => rowSetSeen(mail, seen)"
+								@archive-thread="rowArchive(mail)"
+								@trash-thread="rowTrash(mail)"
 								@delete-thread="junkOrDeleteThreads([mail.thread_id], false)"
-								@set-flagged="
-									(flagged: boolean) =>
-										setFlaggedByThreadIDs([mail.thread_id], flagged)
-								"
+								@set-flagged="(flagged: boolean) => rowSetFlagged(mail, flagged)"
 								@set-selected="
-									(selected: boolean) => toggleSelect([mail.thread_id], selected)
+									(selected: boolean) =>
+										!isAllAccountsSearch &&
+										toggleSelect([mail.thread_id], selected)
 								"
 							/>
 						</template>
@@ -260,7 +309,11 @@
 				</div>
 				<div v-else class="flex h-full items-center justify-center">
 					<p class="text-ink-gray-5">
-						{{ __('No mails found for the selected filter.') }}
+						{{
+							mailbox === 'search'
+								? __('No results found for the given query.')
+								: __('No mails found for the selected filter.')
+						}}
 					</p>
 				</div>
 			</div>
@@ -324,16 +377,10 @@
 			</div>
 		</template>
 
-		<!-- No mails -->
+		<!-- No mails (the search view keeps its header and shows an inline message instead) -->
 		<div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
 			<NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-			<p>
-				{{
-					mailbox === 'search'
-						? __('No results found for the given query.')
-						: __('You have no mails in this folder.')
-				}}
-			</p>
+			<p>{{ __('You have no mails in this folder.') }}</p>
 		</div>
 	</div>
 
@@ -362,9 +409,12 @@ import {
 	Mails,
 	Paperclip,
 	RefreshCw,
+	Search,
+	SlidersHorizontal,
 	Star,
 	StarOff,
 	Trash2,
+	X,
 } from 'lucide-vue-next'
 import {
 	Breadcrumbs,
@@ -372,12 +422,22 @@ import {
 	Checkbox,
 	Dialog,
 	Dropdown,
+	FormControl,
 	Tooltip,
+	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
 
-import { getFormattedDate, isMac, raiseToast, shouldIgnoreKeypress, startResizing } from '@/apps/mail/utils'
+import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
+import {
+	getFormattedDate,
+	isMac,
+	raisePromiseToast,
+	raiseToast,
+	shouldIgnoreKeypress,
+	startResizing,
+} from '@/apps/mail/utils'
 import { useScreenSize, useSidebar, useUndo } from '@/apps/mail/utils/composables'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
@@ -596,6 +656,7 @@ const handleGMenuNavigation = (e: KeyboardEvent, key: string) => {
 		s: mailboxIds.sent,
 		d: mailboxIds.drafts,
 		j: mailboxIds.junk,
+		a: mailboxIds.archive,
 		t: mailboxIds.trash,
 	}
 
@@ -881,6 +942,15 @@ const onResetSuccess = () => {
 	scrollListToTop()
 }
 
+// Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
+// the query (kept out of the filter conditions on the server). The merged results carry their owning
+// account, so each row opens in — and acts within — its own account (see the row-action wrappers).
+const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
+
+// Null while a search is pending — the count is only known once the fetch resolves (set in the
+// searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
+const searchTotal = ref<number | null>(null)
+
 // Reset resource for search: always the first window, over-fetching one row to drive `hasMore`.
 const searchResults = createResource({
 	url: 'suite.mail.api.mail.search_mails',
@@ -889,15 +959,22 @@ const searchResults = createResource({
 		filter: route.query,
 		limit: PAGE_LENGTH + 1,
 		start: 0,
+		all_accounts: isAllAccountsSearch.value,
 	}),
 	transform: (data: [Thread[], number]) => {
 		if (refreshMode.value) refreshSnapshot = threadsResource.value.data ?? []
 		hasMore.value = data[0].length > PAGE_LENGTH
+		searchTotal.value = data[1] ?? 0
 		return data[0].slice(0, PAGE_LENGTH)
 	},
 	onSuccess: () => {
 		onResetSuccess()
 		if (mailbox === 'search') isMailboxLoaded.value = true
+	},
+	// On failure the count never arrives, so clear the pending state instead of leaving the title stuck
+	// on "Searching…" — the empty result list then reads as "0 results".
+	onError: () => {
+		searchTotal.value = 0
 	},
 })
 
@@ -997,6 +1074,7 @@ const loadMoreSearch = createResource({
 		filter: route.query,
 		limit: PAGE_LENGTH + 1,
 		start: threadsResource.value.data.length,
+		all_accounts: isAllAccountsSearch.value,
 	}),
 	onSuccess: (data: [Thread[], number]) => appendThreads(data[0]),
 	onError: () => (loadingMore.value = false),
@@ -1049,6 +1127,8 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	refreshMode.value = false
 	epoch.value++
 	resetSelections()
+	// Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
+	if (mailbox === 'search') searchTotal.value = null
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
@@ -1130,7 +1210,12 @@ const restoreThreadsToList = (restored: Thread[]) => {
 
 watch(
 	() => [mailbox, accountId],
-	() => {
+	(_new, old) => {
+		// Opening a result in an all-accounts search switches the route's account (so the reading pane
+		// loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
+		// every account, so a mere account switch mustn't reset it — keep the results and scroll position.
+		if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
+
 		isMailboxLoaded.value = false
 		threadsResource.value.data = []
 		filter.value = localStorage.getItem(`user:${user.data.name}:filter:${mailbox}`) || null
@@ -1281,6 +1366,94 @@ const {
 	goToNextThreadOrMailbox,
 })
 
+// ── Cross-account search row actions ──────────────────────────────────────────────────────────────
+// In an all-accounts search the merged rows can belong to any account, so the shared handlers above
+// (which target the single active account) can't drive them. These act on each row's own account via
+// stateless call()s — mirroring the All Inboxes view — with the active account left untouched. Star and
+// read/unread update optimistically in place; archive/trash re-run the search on success, since a
+// result's membership is server-determined (an archived mail may still match the query). Delete is
+// account-agnostic (it targets Mail Message names), so it stays on the shared junk/delete flow below.
+const crossAccountSetSeen = (mail: Thread, seen: boolean) => {
+	if (mail.seen === (seen ? 1 : 0)) return
+	mail.seen = seen ? 1 : 0
+	call('suite.mail.api.mail.set_mails_seen', { account: mail.account, ids: [mail.id], seen })
+		.then(() => mailboxes.reload())
+		.catch((error) => {
+			mail.seen = seen ? 0 : 1 // revert the optimistic update
+			raiseToast(error?.messages?.[0] || error?.message, 'error')
+		})
+}
+
+const crossAccountSetFlagged = (mail: Thread, flagged: boolean) => {
+	if (mail.flagged === (flagged ? 1 : 0)) return
+	mail.flagged = flagged ? 1 : 0
+	call('suite.mail.api.mail.set_flagged', {
+		account: mail.account,
+		ids: [mail.id],
+		flagged,
+	}).catch((error) => {
+		mail.flagged = flagged ? 0 : 1 // revert the optimistic update
+		raiseToast(error?.messages?.[0] || error?.message, 'error')
+	})
+}
+
+const crossAccountMoveOut = (
+	mail: Thread,
+	target: string | undefined,
+	loading: string,
+	success: string,
+	missing: string,
+) => {
+	if (!target) return raiseToast(missing, 'error')
+	raisePromiseToast(
+		() =>
+			call('suite.mail.api.mail.move_mails', {
+				account: mail.account,
+				ids: [mail.id],
+				mailbox: target,
+				clear_junk: true,
+			}).then(() => resetThreads(false)),
+		loading,
+		success,
+	)
+}
+
+// Route a list row's action to the cross-account handler in an all-accounts search, else to the shared
+// active-account handler (keeping single-account search behaviour identical).
+const rowSetSeen = (mail: Thread, seen: boolean) =>
+	isAllAccountsSearch.value
+		? crossAccountSetSeen(mail, seen)
+		: handleSetSeen({ [Number(seen)]: [mail.thread_id] })
+
+const rowSetFlagged = (mail: Thread, flagged: boolean) =>
+	isAllAccountsSearch.value
+		? crossAccountSetFlagged(mail, flagged)
+		: setFlaggedByThreadIDs([mail.thread_id], flagged)
+
+const rowArchive = (mail: Thread) =>
+	isAllAccountsSearch.value
+		? crossAccountMoveOut(
+				mail,
+				mail.archive,
+				__('Archiving...'),
+				__('Thread archived.'),
+				__('No Archive folder for this account.'),
+			)
+		: mailbox === mailboxIds.sent
+			? handleAddThreadsToMailbox(mailboxIds.archive, [mail.thread_id])
+			: handleMoveThreads({ [mailboxIds.archive]: [mail.thread_id] })
+
+const rowTrash = (mail: Thread) =>
+	isAllAccountsSearch.value
+		? crossAccountMoveOut(
+				mail,
+				mail.trash,
+				__('Moving to Trash...'),
+				__('Thread moved to Trash.'),
+				__('No Trash folder for this account.'),
+			)
+		: handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+
 const showEmptyMailbox = ref(false)
 
 const emptyMailbox = createResource({
@@ -1373,6 +1546,14 @@ const title = computed(() => {
 			? __('1 item selected')
 			: __('{0} items selected', [String(selections.value.length)])
 
+	if (mailbox === 'search') {
+		// Null until the current search resolves — show a neutral label rather than a stale/zero count.
+		if (searchTotal.value === null) return __('Searching…')
+		return searchTotal.value === 1
+			? __('1 result')
+			: __('{0} results', [String(searchTotal.value)])
+	}
+
 	switch (filter.value) {
 		case 'unread':
 			return __('Unread Mails')
@@ -1384,6 +1565,100 @@ const title = computed(() => {
 			return __('All Mails')
 	}
 })
+
+// Search-results header. The free-text term is shown as a chip you click to reopen the search modal
+// (showSearchModal, bound to HeaderActions); the advanced filters show as removable pills below, and
+// searchTotal drives the result count. Labels mirror the search dialog.
+const showSearchModal = ref(false)
+const showSearchAdvanced = ref(false)
+// Set when a filter chip is clicked; the modal reopens that filter inline for editing (see editSearchFilter).
+const searchEditFilter = ref('')
+// Open the search modal — to the filter form when `advanced` (clicking a pill / "Add filter"), or to the
+// plain search input otherwise (clicking the query).
+const openSearch = (advanced = false) => {
+	showSearchAdvanced.value = advanced
+	showSearchModal.value = true
+}
+// Filter chips whose value can be edited inline in the modal (operator-backed: folder + contacts). The
+// rest (subject/dates) have no inline form, so their chips only remove — matching the modal, where only
+// these keys are clickable.
+const EDITABLE_FILTER_KEYS = ['inMailbox', 'from', 'to', 'cc', 'bcc']
+const isEditableChip = (key: string) => EDITABLE_FILTER_KEYS.includes(key)
+// Two-state chips (attachment/read) flip between their values on click — With ↔ Without Attachments,
+// Read ↔ Unread — instead of opening the modal.
+const TOGGLEABLE_FILTER_KEYS = ['hasAttachment', 'isRead']
+const isToggleableChip = (key: string) => TOGGLEABLE_FILTER_KEYS.includes(key)
+const isClickableChip = (key: string) => isEditableChip(key) || isToggleableChip(key)
+// Route a chip click to editing (operator chips) or toggling (attachment/read chips); non-clickable
+// chips only expose the remove button.
+const handleChipClick = (key: string) => {
+	if (isToggleableChip(key)) return toggleSearchFilter(key)
+	if (isEditableChip(key)) return editSearchFilter(key)
+}
+// Clicking an editable chip opens the modal (plain search view) with that filter dropped back into the
+// query as an editable token — the same effect as clicking the chip inside the modal.
+const editSearchFilter = (key: string) => {
+	showSearchAdvanced.value = false
+	searchEditFilter.value = key
+	showSearchModal.value = true
+}
+// Re-run the search with the chip's value flipped between its two states ('true' ⇄ 'false').
+const toggleSearchFilter = (key: string) => {
+	const query = { ...route.query } as Record<string, string>
+	query[key] = query[key] === 'true' ? 'false' : 'true'
+	searchWith(query)
+}
+
+const SEARCH_FILTER_LABELS: Record<string, string> = {
+	inMailbox: __('In'),
+	subject: __('Subject'),
+	from: __('From'),
+	to: __('To'),
+	cc: __('Cc'),
+	bcc: __('Bcc'),
+	after: __('After'),
+	before: __('Before'),
+}
+const optionLabel = (options: { label: string; value: string }[], value: string) =>
+	options.find((o) => o.value === value)?.label ?? value
+
+const searchQuery = computed(() => (route.query.text as string) || '')
+
+const searchFilterChips = computed(() => {
+	const query = route.query
+	const chips: { key: string; label: string }[] = []
+	for (const key of Object.keys(SEARCH_FILTER_LABELS)) {
+		const value = query[key]
+		if (!value) continue
+		const display =
+			key === 'inMailbox'
+				? (mailboxes.data?.find((m: MailboxData) => m.id === value)?._name ?? String(value))
+				: String(value)
+		chips.push({ key, label: `${SEARCH_FILTER_LABELS[key]}: ${display}` })
+	}
+	// Attachment/read values ("Without Attachments", "Unread") are self-descriptive — show them on their own.
+	if (query.hasAttachment)
+		chips.push({ key: 'hasAttachment', label: optionLabel(getAttachmentOptions(), String(query.hasAttachment)) })
+	if (query.isRead)
+		chips.push({ key: 'isRead', label: optionLabel(getReadStatusOptions(), String(query.isRead)) })
+	return chips
+})
+
+// Re-run the search with one filter (or all filters) dropped. When nothing is left to search, leave the
+// search view for the Inbox.
+const searchWith = (query: Record<string, string>) => {
+	if (!Object.keys(query).length) return exitSearch()
+	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: 'search' }, query })
+}
+const removeSearchFilter = (key: string) => {
+	const query = { ...route.query } as Record<string, string>
+	delete query[key]
+	searchWith(query)
+}
+const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
+
+const exitSearch = () =>
+	router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
 </script>
 
 <style scoped>

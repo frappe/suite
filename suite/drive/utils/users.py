@@ -34,12 +34,6 @@ def mark_as_viewed(entity):
 	return doc
 
 
-def generate_otp():
-	"""Generates a cryptographically secure random OTP"""
-
-	return int.from_bytes(os.urandom(5), byteorder="big") % 900000 + 100000
-
-
 def get_country_info():
 	ip = frappe.local.request_ip
 

@@ -29,7 +29,7 @@ from suite.mail.jmap.services.websocket.websocket import WebSocketService
 from suite.mail.storage import get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.mail.utils import get_config
-from suite.mail.utils.user import is_system_manager
+from suite.utils.user import is_system_manager
 
 
 @request_cache

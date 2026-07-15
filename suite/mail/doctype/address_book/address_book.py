@@ -11,7 +11,7 @@ from frappe.utils import cint, today
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_address_book_service
-from suite.mail.utils import parse_filters
+from suite.utils import parse_filters
 
 
 class AddressBook(Document):

@@ -33,19 +33,15 @@ from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.storage import get_blob_store, get_data_store
 from suite.mail.storage.data_store import Entity
 from suite.mail.utils import (
-	clean_text,
-	convert_html_to_text,
-	enqueue_job,
 	get_config,
-	log_error,
-	parse_filters,
-	user_context,
+	log_mail_error,
 )
-from suite.mail.utils.dt import convert_to_utc, parse_iso_datetime, to_iso8601_z
 from suite.mail.utils.email_parser import EmailParser
-from suite.mail.utils.lock import acquire_lock, release_lock
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
+from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
+from suite.utils.dt import convert_to_utc, parse_iso_datetime, to_iso8601_z
+from suite.utils.lock import acquire_lock, release_lock
 
 PREVIEW_MAX_LENGTH = 256
 
@@ -844,7 +840,7 @@ def get_message_ids(
 			return [email["id"] for email in emails if not set(mailbox_id).isdisjoint(email["mailboxIds"])]
 
 	except Exception:
-		log_error(_("Failed to fetch message IDs."), frappe.get_traceback(with_context=True))
+		log_mail_error(_("Failed to fetch message IDs."), frappe.get_traceback(with_context=True))
 		frappe.throw(_("Failed to fetch message IDs."))
 
 
@@ -859,7 +855,7 @@ def delete_messages(account: str, ids: list[str]) -> None:
 		service.delete(ids)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to delete mail(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -885,7 +881,7 @@ def empty_mailbox(account: str, mailbox_id: str) -> None:
 			service.delete(ids)
 			_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to empty mailbox"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -904,7 +900,7 @@ def move_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> N
 		service.update(emails, replace_mailboxes=True)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to move mail(s) to mailbox"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -932,7 +928,7 @@ def set_messages_mailboxes(account: str, mails: list[dict]) -> None:
 		service.update(emails, replace_keywords=False, replace_mailboxes=True)
 		_remove_cached_messages(account, [mail["id"] for mail in mails])
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to restore mailbox membership for mail(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -951,7 +947,7 @@ def add_messages_to_mailbox(account: str, ids: list[str], mailbox_id: str) -> No
 		service.update(emails, replace_mailboxes=False)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to add mail(s) to mailbox"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -970,7 +966,7 @@ def remove_messages_from_mailbox(account: str, ids: list[str], mailbox_id: str) 
 		service.update(emails, replace_mailboxes=False)
 		_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to remove mail(s) from mailbox"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1003,7 +999,7 @@ def set_seen_status(account: str, ids: list[str], seen: bool = True) -> None:
 			_cache_messages(account, messages_to_cache)
 
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to set seen status for mail(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1036,7 +1032,7 @@ def set_flagged_status(account: str, ids: list[str], flagged: bool = True) -> No
 			_cache_messages(account, messages_to_cache)
 
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to set flagged status for mail(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1067,7 +1063,7 @@ def set_spam_status(account: str, ids: list[str], spam: bool = True) -> None:
 
 		_remove_cached_messages(account, ids)
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to set spam status for mail(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1118,7 +1114,7 @@ def fetch_blobs(account: str, blobs: list[str] | list[tuple[str, str | None]]) -
 
 		return result
 	except Exception:
-		log_error(
+		log_mail_error(
 			_("Failed to fetch blob(s)"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1421,7 +1417,7 @@ def fetch_changes(user: str, account: str, email_state: str | None = None, ctx: 
 
 	except Exception:
 		logger.error("fetch-changes-failed")
-		log_error(
+		log_mail_error(
 			_("Failed to fetch changes"),
 			frappe.get_traceback(with_context=True),
 		)
@@ -1454,8 +1450,7 @@ def enqueue_fetch_changes(
 	logger.debug("enqueueing-fetch-changes")
 
 	lockname = f"fetch_changes:{user}:{account}"
-	fetch_lock_timeout = cint(get_config("fetch_lock_timeout"))
-	identifier = acquire_lock(lockname, acquire_timeout=0, lock_timeout=fetch_lock_timeout)
+	identifier = acquire_lock(lockname, acquire_timeout=0)
 
 	if not identifier:
 		logger.debug("fetch-changes-lock-not-acquired")

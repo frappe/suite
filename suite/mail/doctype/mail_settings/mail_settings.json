@@ -70,10 +70,6 @@
   "column_break_wvdy",
   "exchange_export_timeout",
   "exchange_import_timeout",
-  "column_break_jotg",
-  "fetch_lock_timeout",
-  "lock_acquire_timeout",
-  "lock_timeout",
   "signup_tab",
   "allow_signup",
   "column_break_daqm",
@@ -340,33 +336,8 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_jotg",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "300",
-   "fieldname": "fetch_lock_timeout",
-   "fieldtype": "Int",
-   "label": "Fetch Lock Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "0",
-   "fieldname": "lock_acquire_timeout",
-   "fieldtype": "Int",
-   "label": "Lock Acquire Timeout",
-   "reqd": 1
-  },
-  {
    "fieldname": "column_break_rtlq",
    "fieldtype": "Column Break"
-  },
-  {
-   "default": "10",
-   "fieldname": "lock_timeout",
-   "fieldtype": "Int",
-   "label": "Lock Timeout",
-   "reqd": 1
   },
   {
    "default": "120",
@@ -741,7 +712,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-09 15:48:38.043660",
+ "modified": "2026-07-15 18:46:42.475053",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

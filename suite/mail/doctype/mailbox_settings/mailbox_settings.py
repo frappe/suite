@@ -8,7 +8,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.mail.utils.user import is_system_manager
+from suite.utils.user import is_system_manager
 
 # Fields that feed the Mailbox section of the frappe_mail_automation sieve script; a change to any of
 # them regenerates the script.

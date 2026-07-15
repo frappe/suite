@@ -12,9 +12,9 @@ from suite.mail.doctype.mail_sync_history.mail_sync_history import get_mail_sync
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.jmap import get_mailbox_id_by_role
 from suite.mail.utils import get_config
-from suite.mail.utils.dt import convert_to_utc
 from suite.mail.utils.logger import get_inbound_logger
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.dt import convert_to_utc
 
 if TYPE_CHECKING:
 	from suite.mail.doctype.mail_sync_history.mail_sync_history import MailSyncHistory

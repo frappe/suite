@@ -1,9 +1,5 @@
 import frappe
-from frappe.apps import get_apps
 from frappe.translate import get_all_translations
-from frappe.utils.caching import redis_cache
-
-from suite.mail.utils.user import is_jmap_configured, is_system_manager
 
 
 @frappe.whitelist(allow_guest=True)

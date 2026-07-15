@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { createResource } from 'frappe-ui'
+import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'
@@ -83,7 +83,14 @@ export const useVisualViewport = (calc: (viewport: VisualViewport) => string) =>
 const undoAction = ref<() => void>()
 
 export const useUndo = () => {
-	const setUndoAction = (action?: () => void) => (undoAction.value = action)
+	const setUndoAction = (action?: () => void) => {
+		undoAction.value = action
+		// Clearing the undo with no replacement toast (e.g. leaving the mailbox) leaves a lingering toast
+		// whose "Undo" button is now dead — dismiss toasts. When a new action is set instead, the toast it
+		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the removeAll, and doing it
+		// here too would dismiss the reconcile paths' in-flight loading toast — so only clear on undefined.
+		if (!action) toast.removeAll()
+	}
 
 	const undo = () => {
 		if (!undoAction.value) return

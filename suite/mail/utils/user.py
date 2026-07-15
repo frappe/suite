@@ -2,41 +2,12 @@ from typing import Literal
 
 import frappe
 from frappe import _
-from frappe.core.doctype.user.user import generate_keys
-from frappe.query_builder import Table
 from frappe.utils.caching import request_cache
 
 from suite.mail.storage import get_data_store
 from suite.mail.storage.data_store import Entity
-from suite.mail.utils import reconnect_on_failure, user_context
-
-
-def is_administrator(user: str) -> bool:
-	"""Returns True if the user is Administrator else False."""
-
-	return user == "Administrator"
-
-
-@request_cache
-def has_role(user: str, roles: str | list) -> bool:
-	"""Returns True if the user has any of the given roles else False."""
-
-	if isinstance(roles, str):
-		roles = [roles]
-
-	user_roles = frappe.get_roles(user)
-	for role in roles:
-		if role in user_roles:
-			return True
-
-	return False
-
-
-@request_cache
-def is_system_manager(user: str) -> bool:
-	"""Returns True if the user is Administrator or System Manager else False."""
-
-	return is_administrator(user) or has_role(user, "System Manager")
+from suite.utils import reconnect_on_failure
+from suite.utils.user import has_role, is_system_manager
 
 
 @request_cache
@@ -44,12 +15,6 @@ def is_mail_admin(user: str) -> bool:
 	"""Returns True if the user is a Mail Admin else False."""
 
 	return has_role(user, "Mail Admin")
-
-
-def is_user_enabled(user: str) -> bool:
-	"""Returns True if the user account is enabled else False."""
-
-	return bool(frappe.db.get_value("User", user, "enabled"))
 
 
 def has_user_settings(user: str, raise_exception: bool = False) -> bool:
@@ -125,18 +90,6 @@ def get_user_email_address(user: str) -> str | None:
 	"""Returns the primary email address of the user."""
 
 	return frappe.db.get_value("User", user, "email")
-
-
-@frappe.whitelist(methods=["POST"])
-def generate_user_keys(user: str) -> dict:
-	"""Generates API and Secret keys for the user."""
-
-	session_user = frappe.session.user
-	if is_system_manager(session_user) or session_user == user:
-		with user_context("Administrator"):
-			return generate_keys(user)
-
-	frappe.throw(_("Not permitted"), frappe.PermissionError)
 
 
 def get_sync_state(account: str, type: Literal["email"]) -> str | None:

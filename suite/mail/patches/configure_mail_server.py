@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from suite.mail.utils import execute_with_logging
+from suite.utils import execute_with_logging
 
 
 def execute() -> None:

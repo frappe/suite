@@ -14,10 +14,12 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.stalwart import create_domain as create_stalwart_domain
 from suite.mail.stalwart import delete_domain as delete_stalwart_domain
 from suite.mail.stalwart import get_domains as get_stalwart_domains
-from suite.mail.utils import execute_with_logging, get_config
+from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
-from suite.mail.utils.user import is_mail_admin, is_system_manager, is_user_enabled
+from suite.mail.utils.user import is_mail_admin
+from suite.utils import execute_with_logging
+from suite.utils.user import is_system_manager, is_user_enabled
 
 
 def check_admin_permission(action: str) -> str:

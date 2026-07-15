@@ -145,12 +145,6 @@ export interface MailSettings extends DocType {
   exchange_export_timeout: number;
   /** Mail Exchange Import Timeout: Int */
   exchange_import_timeout: number;
-  /** Fetch Lock Timeout: Int */
-  fetch_lock_timeout: number;
-  /** Lock Acquire Timeout: Int */
-  lock_acquire_timeout: number;
-  /** Lock Timeout: Int */
-  lock_timeout: number;
   /** Scan Message Timeout: Int */
   scan_message_timeout: number;
   /** Server Deployment Timeout: Int */

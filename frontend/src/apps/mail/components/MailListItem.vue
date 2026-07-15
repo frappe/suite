@@ -62,16 +62,16 @@
 					<h3
 						class="truncate text-[15px] !font-medium sm:text-base"
 						:class="{ '!font-semibold': !mail.seen }"
-					>
-						{{ header }}
-					</h3>
-					<Badge
-						v-if="accountLabel"
-						size="sm"
-						:label="accountLabel"
-						theme="gray"
-						class="shrink-0"
+						v-html="highlight(header)"
 					/>
+					<!-- All Inboxes: which account received this mail. -->
+					<div
+						v-if="accountLabel"
+						class="text-ink-gray-4 flex shrink-0 items-center gap-1 text-xs"
+					>
+						<span aria-hidden="true">·</span>
+						<span>{{ __('in {0}', [accountLabel]) }}</span>
+					</div>
 					<Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
 				</div>
 				<MailDate v-if="!isFullWidth" :datetime="mail.received_at" :in-list="true" />
@@ -84,7 +84,7 @@
 					'!font-semibold': !mail.seen,
 				}"
 			>
-				{{ mail.subject || __('[No subject]') }}
+				<span v-html="highlight(mail.subject || __('[No subject]'))" />
 			</h4>
 			<div
 				class="flex items-center justify-between truncate"
@@ -94,7 +94,7 @@
 					class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
 					:class="{ italic: !mail.preview, '!text-base': isFullWidth }"
 				>
-					{{ mail.preview || __('— No message body —') }}
+					<span v-html="highlight(mail.preview || __('— No message body —'))" />
 				</h5>
 
 				<div v-if="!isFullWidth" class="ml-3.5 flex space-x-3.5">
@@ -226,6 +226,7 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { Check, Download, Loader } from 'lucide-vue-next'
 import { Avatar, Badge, Checkbox, Popover, Tooltip } from 'frappe-ui'
 
@@ -291,6 +292,28 @@ const header = computed(() => {
 		? getFormattedRecipients(mail.recipients) || __('To:')
 		: mail.from_name || mail.from_email
 })
+
+// In search results, highlight the matched query term. Escape the text first (so any markup in the
+// content is neutralized), then wrap matches in <mark> — the only HTML we inject — for safe v-html.
+const route = useRoute()
+const searchTerm = computed(() =>
+	mailbox === 'search' ? ((route.query.text as string) || '').trim() : '',
+)
+const escapeHtml = (s: string) =>
+	s.replace(
+		/[&<>"']/g,
+		(c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+	)
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const highlight = (text?: string) => {
+	const escaped = escapeHtml(text ?? '')
+	const term = searchTerm.value
+	if (!term) return escaped
+	return escaped.replace(
+		new RegExp(`(${escapeRegExp(escapeHtml(term))})`, 'gi'),
+		'<mark class="bg-surface-yellow-5 text-ink-gray-9">$1</mark>',
+	)
+}
 
 const isHovered = ref(false)
 

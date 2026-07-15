@@ -22,9 +22,10 @@ if TYPE_CHECKING:
 
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.mail.utils import execute_with_logging
-from suite.mail.utils.lock import acquire_lock, release_lock
-from suite.mail.utils.user import get_account_emails, is_system_manager
+from suite.mail.utils.user import get_account_emails
+from suite.utils import execute_with_logging
+from suite.utils.lock import acquire_lock, release_lock
+from suite.utils.user import is_system_manager
 
 
 class JMAPAccount(Document):
@@ -253,8 +254,8 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
 	"""
 
 	lockname = f"sync_jmap_accounts:{user}"
-	lock_id = acquire_lock(lockname)
-	if not lock_id:
+	identifier = acquire_lock(lockname, acquire_timeout=0)
+	if not identifier:
 		return
 
 	try:
@@ -268,7 +269,7 @@ def sync_jmap_accounts(user: str, accounts: dict[str, dict]) -> None:
 			create_archive_mailbox(account)
 			build_automation_sieve(account, activate=True)
 	finally:
-		release_lock(lockname, lock_id)
+		release_lock(lockname, identifier)
 
 
 def _ensure_jmap_account_docs(user: str, accounts: dict[str, dict]) -> list[str]:

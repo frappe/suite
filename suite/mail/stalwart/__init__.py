@@ -19,7 +19,7 @@ from suite.mail.stalwart.app_password import AppPassword, AppPasswordService
 from suite.mail.stalwart.domain import DkimSignatureService, Domain, DomainService
 from suite.mail.stalwart.role import RoleService
 from suite.mail.utils import get_config
-from suite.mail.utils.dt import utcnow
+from suite.utils.dt import utcnow
 
 
 def _resolve_alias(alias: str) -> tuple[str, str]:

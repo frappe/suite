@@ -41,9 +41,6 @@ CONFIG_KEY_FIELD_MAP = {
 	"stalwart_cli_command_timeout": None,
 	"exchange_export_timeout": None,
 	"exchange_import_timeout": None,
-	"fetch_lock_timeout": None,
-	"lock_acquire_timeout": None,
-	"lock_timeout": None,
 }
 
 

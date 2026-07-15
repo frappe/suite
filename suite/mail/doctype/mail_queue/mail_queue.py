@@ -40,9 +40,10 @@ from suite.mail.jmap.models import (
 )
 from suite.mail.jmap.services.mail.email import EmailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
-from suite.mail.utils import get_config, log_error
+from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
-from suite.mail.utils.user import is_administrator, is_jmap_configured
+from suite.mail.utils.user import is_jmap_configured
+from suite.utils.user import is_administrator
 
 
 class MailQueue(Document):
@@ -612,7 +613,7 @@ class MailQueue(Document):
 					self.in_reply_to_id = ids[0]
 			except Exception:
 				self.in_reply_to_id = None
-				log_error(_("Failed to fetch In Reply To ID"), frappe.get_traceback(with_context=True))
+				log_mail_error(_("Failed to fetch In Reply To ID"), frappe.get_traceback(with_context=True))
 
 	@frappe.whitelist()
 	def retry(self) -> None:
@@ -925,7 +926,7 @@ def enqueue_process_pending_emails(batch_size: int | None = None, max_batch_size
 			enqueue_process_pending_emails(batch_size, max_batch_size)
 
 	except Exception:
-		log_error(_("Failed - Enqueue Process Pending Emails"), frappe.get_traceback(with_context=True))
+		log_mail_error(_("Failed - Enqueue Process Pending Emails"), frappe.get_traceback(with_context=True))
 
 
 def get_permission_query_condition(user: str | None = None) -> str | None:

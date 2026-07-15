@@ -9,8 +9,9 @@ from frappe.model.document import Document
 from frappe.utils import cint, now
 
 from suite.mail.doctype.dns_record.dns_provider import DNSProvider
-from suite.mail.utils import enqueue_job, get_config, password_or_none, user_context
+from suite.mail.utils import get_config, password_or_none
 from suite.mail.utils.dns import verify_dns_record
+from suite.utils import enqueue_job, user_context
 
 
 class DNSRecord(Document):

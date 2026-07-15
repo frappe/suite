@@ -21,12 +21,10 @@
 							v-if="isHost || isCohost"
 							:options="pollMenuOptions"
 						>
-							<Button variant="ghost" icon="lucide-more-horizontal" class="text-ink-gray-6 hover:bg-surface-gray-2" />
+							<Button variant="ghost" icon="lucide-more-horizontal" />
 						</Dropdown>
 
-						<Button variant="ghost" class="text-ink-gray-6 hover:bg-surface-gray-2" @click="$emit('close')">
-							<lucide-x class="h-4 w-4 text-ink-gray-8" />
-						</Button>
+						<Button variant="ghost" icon="lucide-x" @click="$emit('close')" />
 					</div>
 				</div>
 

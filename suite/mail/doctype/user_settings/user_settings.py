@@ -13,8 +13,8 @@ from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
 from suite.mail.jmap import get_jmap_session_manager
 from suite.mail.jmap.connection import JMAPConnection, JMAPConnectionInfo
 from suite.mail.utils import get_config
-from suite.mail.utils.dt import timestamp_to_datetime
-from suite.mail.utils.user import is_system_manager
+from suite.utils.dt import timestamp_to_datetime
+from suite.utils.user import is_system_manager
 
 
 class UserSettings(Document):

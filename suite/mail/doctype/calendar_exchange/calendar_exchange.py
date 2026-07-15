@@ -35,21 +35,19 @@ from suite.mail.jmap import get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.mail.utils import (
-	compress_directory,
-	extract_compressed_file,
 	get_calendar_export_directory,
 	get_calendar_import_directory,
 	get_config,
-	reconnect_on_failure,
 )
 from suite.mail.utils.logger import ExchangeLogger, get_exchange_logger
 from suite.mail.utils.user import (
 	get_user_email_address,
-	is_administrator,
 	is_jmap_configured,
 	is_mail_admin,
-	is_system_manager,
 )
+from suite.utils import reconnect_on_failure
+from suite.utils.file import compress_directory, extract_compressed_file
+from suite.utils.user import is_administrator, is_system_manager
 
 # JSCalendar (RFC 8984) -> iCalendar (RFC 5545) value maps.
 STATUS_MAP: dict[str, str] = {

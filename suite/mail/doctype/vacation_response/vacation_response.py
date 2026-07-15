@@ -16,8 +16,8 @@ from suite.mail.doctype.sieve_script.sieve_script import (
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_vacation_response_service
-from suite.mail.utils import convert_html_to_text
-from suite.mail.utils.dt import convert_to_utc
+from suite.utils import convert_html_to_text
+from suite.utils.dt import convert_to_utc
 
 
 class VacationResponse(Document):

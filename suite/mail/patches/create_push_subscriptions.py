@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from suite.mail.jmap import get_push_subscription_service
-from suite.mail.utils import log_error
+from suite.mail.utils import log_mail_error
 
 
 def execute() -> None:
@@ -23,7 +23,7 @@ def execute() -> None:
 			ps.user = user
 			ps.insert(ignore_permissions=True)
 		except Exception as e:
-			log_error(
+			log_mail_error(
 				_("Push Subscription Creation Failed"),
 				_("Failed to create push subscription for user {0}: {1}").format(user, str(e)),
 			)

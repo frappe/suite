@@ -32,6 +32,12 @@ const emit = defineEmits(['setSeen', 'archiveThread', 'trashThread', 'deleteThre
 const { isMobile } = useScreenSize()
 const { mailboxIds } = userStore()
 
+// Prefer the row's own Archive/Trash ids when present (merged All Inboxes / cross-account search rows,
+// which can belong to a different account than the active one) so the Archive/Trash/Delete options
+// reflect where the mail actually lives. Falls back to the active account for a normal single-account view.
+const archiveId = computed(() => mail.archive ?? mailboxIds.archive)
+const trashId = computed(() => mail.trash ?? mailboxIds.trash)
+
 const actions = computed(() =>
 	[
 		{
@@ -50,19 +56,19 @@ const actions = computed(() =>
 			label: __('Archive Thread'),
 			onClick: () => emit('archiveThread'),
 			icon: Archive,
-			condition: !mail.mailboxes.some((m) => m.mailbox_id === mailboxIds.archive),
+			condition: !mail.mailboxes.some((m) => m.mailbox_id === archiveId.value),
 		},
 		{
 			label: __('Move to Trash'),
 			onClick: () => emit('trashThread'),
 			icon: Trash2,
-			condition: !mail.mailboxes.some((m) => m.mailbox_id === mailboxIds.trash),
+			condition: !mail.mailboxes.some((m) => m.mailbox_id === trashId.value),
 		},
 		{
 			label: __('Delete Thread'),
 			onClick: () => emit('deleteThread'),
 			icon: Trash2,
-			condition: mail.mailboxes.some((m) => m.mailbox_id === mailboxIds.trash),
+			condition: mail.mailboxes.some((m) => m.mailbox_id === trashId.value),
 		},
 	].filter((action) => action.condition),
 )

@@ -7,7 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from suite.mail.doctype.user_account.user_account import get_user_jmap_accounts
-from suite.mail.utils.user import is_system_manager
+from suite.utils.user import is_system_manager
 
 # Screening actions: what happens to future mail from a screened sender.
 REJECT = "Reject"  # discard the incoming mail silently

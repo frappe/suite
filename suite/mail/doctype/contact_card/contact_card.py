@@ -14,9 +14,9 @@ from suite.mail.doctype.user_account.user_account import get_user_for_jmap_accou
 from suite.mail.jmap import get_contact_card_service
 from suite.mail.storage import get_data_store
 from suite.mail.storage.data_store import Entity
-from suite.mail.utils import parse_filters
-from suite.mail.utils.dt import parse_iso_datetime
 from suite.mail.utils.user import get_account_user
+from suite.utils import parse_filters
+from suite.utils.dt import parse_iso_datetime
 
 
 class ContactCard(Document):

@@ -1,7 +1,7 @@
 import frappe
 
 from suite.mail.doctype.jmap_account.jmap_account import sync_jmap_accounts
-from suite.mail.utils import log_error
+from suite.mail.utils import log_mail_error
 
 
 def execute() -> None:
@@ -58,7 +58,7 @@ def sync_configured_users() -> None:
 			frappe.db.commit()
 		except Exception:
 			frappe.db.rollback()
-			log_error("JMAP Account Sync Error", f"Failed to sync JMAP accounts for user {user}")
+			log_mail_error("JMAP Account Sync Error", f"Failed to sync JMAP accounts for user {user}")
 
 
 def backfill_identity_fields(accounts: dict[str, dict]) -> None:

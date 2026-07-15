@@ -12,15 +12,16 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.stalwart import get_domains
-from suite.mail.utils import convert_html_to_text, is_stalwart_configured, log_error, user_context
+from suite.mail.utils import is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
 	has_user_settings,
 	is_jmap_configured,
 	is_mail_admin,
-	is_system_manager,
 )
+from suite.utils import convert_html_to_text, user_context
+from suite.utils.user import is_system_manager
 
 # SRV service label -> (protocol, connection security). See RFC 6186.
 _SRV_SERVICE_MAP = {
@@ -276,7 +277,9 @@ def _get_client_config_from_dns() -> list[dict]:
 
 		return config
 	except Exception:
-		log_error(title=_("Failed to derive mail client config from DNS"), message=frappe.get_traceback())
+		log_mail_error(
+			title=_("Failed to derive mail client config from DNS"), message=frappe.get_traceback()
+		)
 		return []
 
 
@@ -443,7 +446,7 @@ def create_calendar_export(
 def normalize_calendar_filter(filter: dict) -> dict:
 	"""Normalize a calendar export filter into a JMAP CalendarEvent/query FilterCondition."""
 
-	from suite.mail.utils.dt import convert_to_utc
+	from suite.utils.dt import convert_to_utc
 
 	normalized = {}
 	if title := filter.get("title"):

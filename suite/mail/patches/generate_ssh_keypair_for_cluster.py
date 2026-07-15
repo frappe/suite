@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 
-from suite.mail.utils import log_error
+from suite.mail.utils import log_mail_error
 
 
 def execute() -> None:
@@ -10,4 +10,4 @@ def execute() -> None:
 		try:
 			frappe.get_doc("Mail Cluster", cluster).generate_ssh_keypair(save=True)
 		except Exception:
-			log_error(_("Failed to generate SSH keypair"), frappe.get_traceback(with_context=False))
+			log_mail_error(_("Failed to generate SSH keypair"), frappe.get_traceback(with_context=False))

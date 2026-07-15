@@ -156,9 +156,9 @@ export interface ComposeMailData {
 export interface Thread {
 	name: string
 	account: string
-	// Populated only by the All Inboxes view (get_all_inbox_threads): the owning account's display
-	// name and its Inbox/Archive/Trash mailbox ids, so a merged row can be opened in / acted on
-	// within the correct JMAP account.
+	// Populated by the cross-account views (All Inboxes' get_all_inbox_threads and search's
+	// search_mails): the owning account's display name and its Inbox/Archive/Trash mailbox ids, so a
+	// merged row can be opened in / acted on within the correct JMAP account.
 	account_name?: string
 	inbox?: string
 	archive?: string

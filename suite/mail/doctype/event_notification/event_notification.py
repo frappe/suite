@@ -9,8 +9,8 @@ from frappe.utils import cint
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_notification_service
-from suite.mail.utils import parse_filters
-from suite.mail.utils.dt import parse_iso_datetime
+from suite.utils import parse_filters
+from suite.utils.dt import parse_iso_datetime
 
 
 class EventNotification(Document):

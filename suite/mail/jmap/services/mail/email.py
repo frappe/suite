@@ -8,7 +8,7 @@ from suite.mail.jmap.services.core import CallIdGenerator
 from suite.mail.jmap.services.mail.mail import MailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
-from suite.mail.utils.dt import convert_to_utc
+from suite.utils.dt import convert_to_utc
 
 
 class EmailService(MailService):
