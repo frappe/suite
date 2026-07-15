@@ -50,6 +50,44 @@ export class Telemetry {
 		buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
 		registers: [this.registry],
 	});
+	readonly clientEvents = new Counter({
+		name: 'meet_sfu_client_events_total',
+		help: 'Accepted sampled browser outcome events',
+		labelNames: ['event'] as const,
+		registers: [this.registry],
+	});
+	readonly clientEventsRejected = new Counter({
+		name: 'meet_sfu_client_events_rejected_total',
+		help: 'Rejected browser telemetry events',
+		labelNames: ['reason'] as const,
+		registers: [this.registry],
+	});
+	readonly firstRemoteMediaDuration = new Histogram({
+		name: 'meet_sfu_first_remote_media_duration_seconds',
+		help: 'Time from meeting connection setup to first remote media',
+		labelNames: ['media'] as const,
+		buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
+		registers: [this.registry],
+	});
+	readonly clientMediaStalls = new Counter({
+		name: 'meet_sfu_client_media_stalls_total',
+		help: 'Sampled browser-detected receive stalls',
+		labelNames: ['media'] as const,
+		registers: [this.registry],
+	});
+	readonly clientRecoveries = new Counter({
+		name: 'meet_sfu_client_recoveries_total',
+		help: 'Sampled browser recovery outcomes',
+		labelNames: ['direction', 'trigger', 'outcome'] as const,
+		registers: [this.registry],
+	});
+	readonly clientRecoveryDuration = new Histogram({
+		name: 'meet_sfu_client_recovery_duration_seconds',
+		help: 'Sampled browser recovery duration',
+		labelNames: ['direction', 'trigger', 'outcome'] as const,
+		buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
+		registers: [this.registry],
+	});
 	private resources = new Gauge({
 		name: 'meet_sfu_resources',
 		help: 'Current SFU resource counts',

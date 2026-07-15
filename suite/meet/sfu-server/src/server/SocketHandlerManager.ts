@@ -10,6 +10,7 @@ import type { E2eeCoordinatorPersistence } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
 import { registerChatHandlers } from './handlers/ChatHandlers';
+import { registerClientTelemetryHandlers } from './handlers/ClientTelemetryHandlers';
 import { registerConsumerHandlers } from './handlers/ConsumerHandlers';
 import { registerDisconnectHandlers } from './handlers/DisconnectHandlers';
 import { registerErrorHandlers } from './handlers/ErrorHandlers';
@@ -73,6 +74,7 @@ export class SocketHandlerManager {
 
 		this.registerHandlers = [
 			registerAuthHandlers(deps),
+			registerClientTelemetryHandlers(deps),
 			registerRoomJoinHandlers(deps),
 			registerRoomQueryHandlers(deps),
 			registerWebRtcTransportHandlers(deps),

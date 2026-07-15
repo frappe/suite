@@ -32,4 +32,21 @@ describe('Telemetry', () => {
 		expect(direction('send')).toBe('send');
 		expect(direction('sideways')).toBe('unknown');
 	});
+
+	it('exports sampled browser outcomes without identifier labels', async () => {
+		const telemetry = new Telemetry();
+		telemetry.clientEvents.inc({ event: 'recovery' });
+		telemetry.clientRecoveries.inc({
+			direction: 'both',
+			trigger: 'signaling',
+			outcome: 'success',
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_client_recoveries_total{direction="both",trigger="signaling",outcome="success"} 1',
+		);
+		expect(output).not.toMatch(/meetingId|participantId|socketId|transportId/);
+	});
 });

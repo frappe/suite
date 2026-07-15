@@ -91,4 +91,4 @@ Set `METRICS_TOKEN` to enable Prometheus metrics. The endpoint returns `404` whe
 curl -H "Authorization: Bearer $METRICS_TOKEN" https://sfu.example.com/metrics
 ```
 
-Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, and current SFU resource counts. Lifecycle logs for the same events are emitted as JSON without meeting, participant, socket, or transport identifiers.
+Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.

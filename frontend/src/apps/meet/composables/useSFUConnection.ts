@@ -18,6 +18,7 @@ import {
 	SFUClient,
 } from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
+import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
 import { useChatStore } from "./useChatStore";
 import type { ConnectionState } from "./useConnectionState";
 import type { CurrentUser } from "./useCurrentUser";
@@ -96,6 +97,7 @@ export function useSFUConnection(deps: {
 
 	const signalChannel = new SocketIOSignalChannel();
 	const sfuClient = new SFUClient(signalChannel);
+	const clientTelemetry = getClientTelemetry(sfuClient);
 	const sfuManager = shallowRef<SFUMeetingManager | null>(null);
 
 	const realtimeListenersSetup = shallowRef(false);
@@ -210,7 +212,10 @@ export function useSFUConnection(deps: {
 			onRecoveryStateChange: (
 				state: Parameters<typeof connectionState.setRecoveryState>[0],
 				detail?: string,
-			) => connectionState.setRecoveryState(state, detail),
+			) => {
+				connectionState.setRecoveryState(state, detail);
+				clientTelemetry.recordRecoveryState(state, detail);
+			},
 			onParticipantJoined: handleParticipantJoined,
 			onParticipantLeft: handleParticipantLeft,
 			onParticipantUpdated: handleParticipantUpdated,
@@ -308,6 +313,7 @@ export function useSFUConnection(deps: {
 		prefetchedDetails: ConnectionDetails | null = null,
 	) => {
 		setupCancelled = false;
+		clientTelemetry.startSession();
 		let isHost = initialIsHost;
 		let isCohost = initialIsCohost;
 		isCurrentTabHost.value = isHost;

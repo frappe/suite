@@ -132,6 +132,7 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	client_telemetry: (data: ClientTelemetryEvent) => void;
 	'auth:update_token': (
 		data: UpdateTokenRequest,
 		callback: (response: SFUResponse) => void,
@@ -243,6 +244,21 @@ export interface ClientToServerEvents {
 	leave_room: (data?: LeaveRoomRequest) => void;
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
 }
+
+export type ClientTelemetryEvent =
+	| {
+			event: 'first_remote_media';
+			media: 'audio' | 'video';
+			durationMs: number;
+	  }
+	| { event: 'media_stall'; media: 'audio' | 'video' }
+	| {
+			event: 'recovery';
+			direction: 'send' | 'recv' | 'both';
+			trigger: 'signaling' | 'ice' | 'stall';
+			outcome: 'success' | 'failure';
+			durationMs: number;
+	  };
 
 export interface SocketData {
 	userId: string;

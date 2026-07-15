@@ -6,6 +6,7 @@ import { normalizeCodecStrategy } from "./media/codecStrategy";
 import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
 import { getE2EETransformCapability } from "./media/e2ee";
 import type { SignalChannel } from "./media/SignalChannel";
+import type { ClientTelemetryEvent } from "./telemetry/ClientTelemetry";
 
 export interface ConnectionDetails {
 	authToken: string | null;
@@ -840,6 +841,9 @@ export class SFUClient {
 	}
 
 	// ==================== SIGNALING OPERATIONS ====================
+	sendClientTelemetry(event: ClientTelemetryEvent): void {
+		this.sendEvent("client_telemetry", event);
+	}
 
 	sendWebRtcOffer(targetUser: unknown, signalData: unknown): void {
 		this.sendEvent("webrtc_offer", { targetUser, signalData });
