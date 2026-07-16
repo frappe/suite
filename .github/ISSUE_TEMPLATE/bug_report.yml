@@ -41,17 +41,14 @@ body:
         3. See error
     validations:
       required: true
-  - type: input
-    id: version
-    attributes:
-      label: App / bench version
-      description: Output of `bench version`, or the app version, if known.
-    validations:
-      required: false
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Browser, OS, self-hosted vs Frappe Cloud, etc.
+      description: App / bench version, browser, OS, and whether you're self-hosted or on Frappe Cloud.
+      placeholder: |
+        - App / bench version: (output of `bench version`, if known)
+        - Browser & OS:
+        - Hosting: self-hosted / Frappe Cloud
     validations:
       required: false
