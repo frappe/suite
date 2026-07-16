@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { Combobox, createResource, toast } from 'frappe-ui'
 
@@ -38,6 +38,8 @@ const mailContacts = createResource({
 
 const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
 
+const combobox = ref<{ reset: () => void } | null>(null)
+
 const addParticipant = (email: string) => {
 	const value = email?.trim()
 	if (!value) return
@@ -55,6 +57,17 @@ const addParticipant = (email: string) => {
 		...participants.value,
 		{ email: value, participation_status: 'NEEDS-ACTION', expect_reply: true, isNew: true },
 	]
+}
+
+// Picking a contact commits it as the Combobox's selected value — add it and reset the control so the
+// input clears for the next participant, rather than sitting there showing the one just added.
+// The reset waits a tick: this handler fires mid-commit, and the Combobox writes the option's label
+// into its input right after we return, which would undo a synchronous reset.
+const handleParticipantSelect = async (email: string | null) => {
+	if (!email) return
+	addParticipant(email)
+	await nextTick()
+	combobox.value?.reset()
 }
 
 const handleParticipantEnter = (e: Event) => {
@@ -77,10 +90,12 @@ const removeParticipant = (email: string) => {
 		<div>
 			<h3 class="text-base-medium mb-2 text-ink-gray-8">{{ label }}</h3>
 			<Combobox
+				ref="combobox"
 				class="w-full"
 				:options="mailContacts?.data || []"
 				:placeholder="placeholder"
 				@input="debouncedSearch($event)"
+				@update:model-value="handleParticipantSelect($event)"
 				@keyup.enter="handleParticipantEnter($event)"
 			/>
 		</div>
