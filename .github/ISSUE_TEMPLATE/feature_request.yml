@@ -37,9 +37,3 @@ body:
       description: What would you like to see happen?
     validations:
       required: true
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-    validations:
-      required: false

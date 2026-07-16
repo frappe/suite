@@ -27,7 +27,7 @@ body:
     id: what-happened
     attributes:
       label: What happened?
-      description: A clear description of the bug, and what you expected to happen instead.
+      description: A clear description of the bug and what you expected instead. Include any relevant logs, console errors, screenshots, or a screen recording.
       placeholder: When I …, I expected …, but instead …
     validations:
       required: true
@@ -53,12 +53,5 @@ body:
     attributes:
       label: Environment
       description: Browser, OS, self-hosted vs Frappe Cloud, etc.
-    validations:
-      required: false
-  - type: textarea
-    id: logs
-    attributes:
-      label: Relevant logs / screenshots
-      description: Console errors, screenshots, or a screen recording.
     validations:
       required: false
