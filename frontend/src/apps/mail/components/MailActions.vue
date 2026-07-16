@@ -49,7 +49,7 @@ import {
 	raiseOptimisticToast,
 	raiseToast,
 } from '@/apps/mail/utils'
-import { useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -90,6 +90,7 @@ const router = useRouter()
 const store = userStore()
 const { mailboxes, mailboxIds, identities, screenedAddresses } = store
 const { setUndoAction, undo } = useUndo()
+const { filterBySender } = useFilterBySender()
 const user = inject('$user')
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
@@ -209,6 +210,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 				condition: () => !mail.draft,
 			},
 			{
+				label: __("Filter Sender's Messages"),
+				onClick: () => filterBySender(mail.from_email),
+				icon: ListFilter,
+				condition: () => !mail.draft && !!mail.from_email,
+			},
+			{
 				label: __('Block Sender'),
 				onClick: () => handleBlockAddress(true),
 				icon: Ban,
@@ -223,12 +230,6 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 				icon: LockOpen,
 				condition: () =>
 					mailbox !== mailboxIds.screener && isSenderBlocked(mail.from_email),
-			},
-			{
-				label: __('Filter Messages Like This'),
-				onClick: () => filterMessagesLikeThis(),
-				icon: ListFilter,
-				condition: () => !mail.draft && !!mail.from_email,
 			},
 		],
 	},
@@ -301,16 +302,6 @@ const handleMarkUnreadFromHere = () => {
 		.filter((m: Mail) => !m.draft)
 		.map((m: Mail) => m.id)
 	if (ids.length) setMailsSeen.submit({ ids })
-}
-
-// Open the search results scoped to this sender (Gmail's "Filter messages like this"), landing on the
-// filtered view with a "From" chip the user can refine further.
-const filterMessagesLikeThis = () => {
-	router.push({
-		name: 'mail-mailbox',
-		params: { accountId: store.accountId, mailbox: 'search' },
-		query: { from: mail.from_email },
-	})
 }
 
 const blockEmailAddress = createResource({

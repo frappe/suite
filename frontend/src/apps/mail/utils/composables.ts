@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
@@ -276,6 +277,26 @@ export const useBlockSender = () => {
 	}
 
 	return { showBlockSender, sendersToBlock, willJunkSenders, promptBlockSenders, blockSenders }
+}
+
+// Navigate to the search results scoped to a sender — Gmail's "Filter messages like this". Lands on the
+// filtered view (mailbox 'search') with a "From" chip the user can refine further. Shared by the message
+// more-actions menu and the clickable sender address in a thread.
+export const useFilterBySender = () => {
+	const router = useRouter()
+	// Read store.accountId live rather than destructuring, so it reflects account switches.
+	const store = userStore()
+
+	const filterBySender = (email: string) => {
+		if (!email) return
+		router.push({
+			name: 'mail-mailbox',
+			params: { accountId: store.accountId, mailbox: 'search' },
+			query: { from: email },
+		})
+	}
+
+	return { filterBySender }
 }
 
 // Shared state for the Settings dialog, so any view can open it (optionally on a specific tab).

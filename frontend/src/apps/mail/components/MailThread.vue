@@ -149,7 +149,9 @@
 												</span>
 												<span
 													v-if="mail.from_name && !isMobile"
-													class="text-ink-gray-5 truncate"
+													class="text-ink-gray-5 hover:text-ink-gray-7 cursor-pointer truncate hover:underline"
+													:title="__('Filter messages from this sender')"
+													@click.stop="filterBySender(mail.from_email)"
 												>
 													{{ `<${mail.from_email}>` }}
 												</span>
@@ -401,7 +403,7 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
-import { useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
+import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -457,6 +459,7 @@ const emit = defineEmits([
 
 const { isMobile } = useScreenSize()
 const { openSettings } = useSettings()
+const { filterBySender } = useFilterBySender()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 const store = userStore()
