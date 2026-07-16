@@ -47,8 +47,10 @@ jobs:
               'Calendar': 'calendar',
               'General': 'general',
             }
-            // The set this automation manages, so edits can reconcile to a single one.
-            const APP_LABELS = new Set([...Object.values(MAP), 'needs-triage'])
+            // The app labels this automation manages, so edits can reconcile to a single one.
+            // `needs-triage` is intentionally NOT tracked here: it's only a parse-failure fallback, and
+            // reconciling it would strip a `needs-triage` a maintainer applied by hand.
+            const APP_LABELS = new Set(Object.values(MAP))
 
             const { owner, repo } = context.repo
             const issue_number = context.payload.issue.number
