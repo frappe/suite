@@ -398,14 +398,19 @@ const folderMatches = computed<MailboxData[]>(() =>
 const contactSearch = createResource({
 	url: 'suite.mail.api.contacts.get_contacts',
 	auto: false,
-	makeParams: (text: string) => ({
-		account: store.accountId,
-		limit: 5,
-		// Omit the filter entirely for an empty query → the backend returns a default contact list, so the
-		// dropdown is populated the moment an operator (e.g. `from:`) is inserted, before anything is typed.
-		// (Sending `filter: undefined` can serialize to the string "undefined" and error server-side.)
-		...(text ? { filter: { operator: 'OR', conditions: [{ text }, { email: text }] } } : {}),
-	}),
+	makeParams: (text: string) => {
+		// frappe-ui's fetch reuses the previous params object when called with a falsy value (our
+		// intended empty query) and feeds it back here as `text`, so guard against a non-string.
+		const query = typeof text === 'string' ? text : ''
+		return {
+			account: store.accountId,
+			limit: 5,
+			// Omit the filter entirely for an empty query → the backend returns a default contact list, so the
+			// dropdown is populated the moment an operator (e.g. `from:`) is inserted, before anything is typed.
+			// (Sending `filter: undefined` can serialize to the string "undefined" and error server-side.)
+			...(query ? { filter: { operator: 'OR', conditions: [{ text: query }, { email: query }] } } : {}),
+		}
+	},
 	transform: (data: { email: string; full_name?: string; user_image?: string }[]) =>
 		data.map((o) => {
 			const name = o.full_name || ''
