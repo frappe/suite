@@ -35,8 +35,8 @@ jobs:
               }
             }
 
-            // Map the dropdown display value to a label slug. Keep this in sync with the
-            // options in .github/ISSUE_TEMPLATE/*.yml.
+            // Map each App option to the repo's existing app label (bare names, no prefix).
+            // Keep this in sync with the options in .github/ISSUE_TEMPLATE/*.yml and the repo labels.
             const MAP = {
               'Drive': 'drive',
               'Slides': 'slides',
@@ -47,17 +47,18 @@ jobs:
               'Calendar': 'calendar',
               'General': 'general',
             }
+            // The set this automation manages, so edits can reconcile to a single one.
+            const APP_LABELS = new Set([...Object.values(MAP), 'needs-triage'])
 
             const { owner, repo } = context.repo
             const issue_number = context.payload.issue.number
-            const slug = MAP[choice]
-            // Every option maps to a slug; `needs-triage` is only a safety net if parsing ever misses.
-            const label = slug ? `app: ${slug}` : 'needs-triage'
+            // Every option maps to a label; `needs-triage` is only a safety net if parsing ever misses.
+            const label = MAP[choice] || 'needs-triage'
 
             // Drop any previously-applied app label so exactly one stays (handles edits).
             const current = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number })
             for (const l of current.data) {
-              if ((l.name.startsWith('app: ') || l.name === 'needs-triage') && l.name !== label) {
+              if (APP_LABELS.has(l.name) && l.name !== label) {
                 await github.rest.issues
                   .removeLabel({ owner, repo, issue_number, name: l.name })
                   .catch(() => {})
