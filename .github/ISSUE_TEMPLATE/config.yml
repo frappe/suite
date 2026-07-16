@@ -1,0 +1,6 @@
+# Force every issue through a form (each form requires picking an App).
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & usage help
+    url: https://discuss.frappe.io
+    about: For how-to questions and general discussion, please use the Frappe community forum instead of an issue.

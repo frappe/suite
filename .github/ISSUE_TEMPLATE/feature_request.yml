@@ -1,0 +1,45 @@
+name: ✨ Feature request
+description: Suggest an idea or improvement for a Frappe Suite app
+title: "[Feature]: "
+labels: ["feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Start by telling us **which app** this is for — it's required.
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      description: Which Suite app is this request for?
+      options:
+        - Drive
+        - Slides
+        - Writer
+        - Sheets
+        - Meet
+        - Mail
+        - Calendar
+        - General
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do, and what problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to see happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

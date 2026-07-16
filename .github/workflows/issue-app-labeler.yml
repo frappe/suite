@@ -1,0 +1,69 @@
+name: Label issues by app
+
+# Reads the required "App" dropdown from the issue form and applies an
+# `app: <name>` label so issues are filterable/triageable per app.
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || ''
+
+            // Issue forms render each field as "### <label>" followed by the value on a
+            // later line. Find the line that is exactly "### App", then take the next
+            // non-empty line as the selected option.
+            const lines = body.split(/\r?\n/)
+            const idx = lines.findIndex((l) => /^###\s+App\s*$/.test(l))
+            if (idx === -1) {
+              core.info('No "App" field found in the issue body; skipping.')
+              return
+            }
+            let choice = ''
+            for (let i = idx + 1; i < lines.length; i++) {
+              if (lines[i].trim()) {
+                choice = lines[i].trim()
+                break
+              }
+            }
+
+            // Map the dropdown display value to a label slug. Keep this in sync with the
+            // options in .github/ISSUE_TEMPLATE/*.yml.
+            const MAP = {
+              'Drive': 'drive',
+              'Slides': 'slides',
+              'Writer': 'writer',
+              'Sheets': 'sheets',
+              'Meet': 'meet',
+              'Mail': 'mail',
+              'Calendar': 'calendar',
+              'General': 'general',
+            }
+
+            const { owner, repo } = context.repo
+            const issue_number = context.payload.issue.number
+            const slug = MAP[choice]
+            // Every option maps to a slug; `needs-triage` is only a safety net if parsing ever misses.
+            const label = slug ? `app: ${slug}` : 'needs-triage'
+
+            // Drop any previously-applied app label so exactly one stays (handles edits).
+            const current = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number })
+            for (const l of current.data) {
+              if ((l.name.startsWith('app: ') || l.name === 'needs-triage') && l.name !== label) {
+                await github.rest.issues
+                  .removeLabel({ owner, repo, issue_number, name: l.name })
+                  .catch(() => {})
+              }
+            }
+
+            // addLabels creates the label if it doesn't exist yet (default color).
+            await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [label] })
+            core.info(`Applied "${label}" for App = "${choice}".`)

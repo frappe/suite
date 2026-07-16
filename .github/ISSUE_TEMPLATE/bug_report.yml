@@ -1,0 +1,64 @@
+name: 🐛 Bug report
+description: Report a problem with a Frappe Suite app
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! Start by telling us **which app** this is about — it's required.
+  - type: dropdown
+    id: app
+    attributes:
+      label: App
+      description: Which Suite app does this issue affect?
+      options:
+        - Drive
+        - Slides
+        - Writer
+        - Sheets
+        - Meet
+        - Mail
+        - Calendar
+        - General
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected to happen instead.
+      placeholder: When I …, I expected …, but instead …
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App / bench version
+      description: Output of `bench version`, or the app version, if known.
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, self-hosted vs Frappe Cloud, etc.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / screenshots
+      description: Console errors, screenshots, or a screen recording.
+    validations:
+      required: false
