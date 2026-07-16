@@ -3,7 +3,7 @@ from typing import ClassVar, Literal
 import frappe
 
 from suite import __version__
-from suite.mail.jmap.models import EmailCreateModel, EmailRecipient
+from suite.mail.jmap.models import EmailAttachment, EmailCreateModel, EmailRecipient
 from suite.mail.jmap.services.core import CallIdGenerator
 from suite.mail.jmap.services.mail.mail import MailService
 from suite.mail.jmap.services.mail.mailbox import MailboxService
@@ -478,8 +478,10 @@ class EmailService(MailService):
 		# Body parts
 		draft["bodyValues"] = {}
 
+		text_part = html_part = None
+
 		if email.text_body:
-			draft["textBody"] = [{"partId": "text", "type": "text/plain"}]
+			text_part = {"partId": "text", "type": "text/plain"}
 			draft["bodyValues"]["text"] = {
 				"value": email.text_body,
 				"charset": "utf-8",
@@ -487,7 +489,7 @@ class EmailService(MailService):
 			}
 
 		if email.html_body:
-			draft["htmlBody"] = [{"partId": "html", "type": "text/html"}]
+			html_part = {"partId": "html", "type": "text/html"}
 			draft["bodyValues"]["html"] = {
 				"value": email.html_body,
 				"charset": "utf-8",
@@ -495,16 +497,59 @@ class EmailService(MailService):
 			}
 
 		# Attachments
-		if email.attachments:
-			draft["attachments"] = [
-				{
-					"name": a.name,
-					"type": a.type,
-					"cid": a.cid,
-					"blobId": a.blob_id,
-					"disposition": a.disposition,
+		attachments = email.attachments or []
+		inline_attachments = [a for a in attachments if a.disposition == "inline"]
+		regular_attachments = [a for a in attachments if a.disposition != "inline"]
+		body_parts = [p for p in (text_part, html_part) if p]
+
+		if inline_attachments and body_parts:
+			# Inline images are referenced from the HTML body via `cid:` URLs. Build an
+			# explicit MIME structure that nests them inside a `multipart/related` container
+			# (next to the body) instead of letting them become plain siblings of the body in
+			# `multipart/mixed`. Some providers (e.g. AWS) treat every `multipart/mixed` part
+			# as a regular attachment and reject inline images by extension, whereas clients
+			# like Gmail wrap them in `multipart/related` so they are recognized as inline.
+			body_root = (
+				{"type": "multipart/alternative", "subParts": body_parts}
+				if len(body_parts) > 1
+				else body_parts[0]
+			)
+
+			body_structure = {
+				"type": "multipart/related",
+				"subParts": [body_root, *(EmailService._get_body_part(a) for a in inline_attachments)],
+			}
+
+			if regular_attachments:
+				body_structure = {
+					"type": "multipart/mixed",
+					"subParts": [
+						body_structure,
+						*(EmailService._get_body_part(a) for a in regular_attachments),
+					],
 				}
-				for a in email.attachments
-			]
+
+			draft["bodyStructure"] = body_structure
+		else:
+			# No inline images: let the server assemble the structure from the convenience
+			# properties (`multipart/alternative` for the body, `multipart/mixed` for attachments).
+			if text_part:
+				draft["textBody"] = [text_part]
+			if html_part:
+				draft["htmlBody"] = [html_part]
+			if attachments:
+				draft["attachments"] = [EmailService._get_body_part(a) for a in attachments]
 
 		return draft
+
+	@staticmethod
+	def _get_body_part(attachment: EmailAttachment) -> dict[str, str]:
+		"""Helper function to build an EmailBodyPart payload for an attachment."""
+
+		return {
+			"name": attachment.name,
+			"type": attachment.type,
+			"cid": attachment.cid,
+			"blobId": attachment.blob_id,
+			"disposition": attachment.disposition,
+		}
