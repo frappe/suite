@@ -40,6 +40,16 @@ const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.rel
 
 const combobox = ref<{ reset: () => void } | null>(null)
 
+// Picking a dropdown option commits it on keydown, so the matching keyup.enter lands here too and
+// would re-add the option and clear the input from under the reset below. Typing is the only way
+// back to the free-text path, so an input event is what clears this again.
+const justSelectedOption = ref(false)
+
+const handleInput = (text: string) => {
+	justSelectedOption.value = false
+	debouncedSearch(text)
+}
+
 const addParticipant = (email: string) => {
 	const value = email?.trim()
 	if (!value) return
@@ -65,12 +75,15 @@ const addParticipant = (email: string) => {
 // into its input right after we return, which would undo a synchronous reset.
 const handleParticipantSelect = async (email: string | null) => {
 	if (!email) return
+	justSelectedOption.value = true
 	addParticipant(email)
 	await nextTick()
 	combobox.value?.reset()
 }
 
 const handleParticipantEnter = (e: Event) => {
+	if (justSelectedOption.value) return
+
 	const input = e.target as HTMLInputElement
 	input.value
 		.split(',')
@@ -94,7 +107,7 @@ const removeParticipant = (email: string) => {
 				class="w-full"
 				:options="mailContacts?.data || []"
 				:placeholder="placeholder"
-				@input="debouncedSearch($event)"
+				@input="handleInput($event)"
 				@update:model-value="handleParticipantSelect($event)"
 				@keyup.enter="handleParticipantEnter($event)"
 			/>
