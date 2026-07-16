@@ -93,22 +93,22 @@ const participants = computed(() => {
 	])
 })
 
-// Descriptions arrive either as plain text or as HTML, depending on what the organizer's client put in
-// the invite. Plain text goes through <LinkifiedText>; HTML is sanitized and rendered below.
-const isHtmlDescription = computed(() =>
-	/<(a|p|div|span|br|ul|ol|li|table|h[1-6]|strong|em|b|i)\b[^>]*>/i.test(calendarEvent.description ?? ''),
-)
-
 // Tags a description can reasonably carry. No <img> (remote assets in an invite from an external
 // organizer are a tracking vector) and no <style>/<script>: unlike mail's <EmailContent>, this renders
 // inline in our page rather than in an iframe, so it must not be able to restyle the app.
-// Every tag isHtmlDescription detects must appear here, or that description routes to the HTML path
-// and then gets stripped down to bare text by the sanitizer.
 const ALLOWED_TAGS = [
 	'a', 'p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's',
 	'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
 	'table', 'caption', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
 ]
+
+// Descriptions arrive either as plain text or as HTML, depending on what the organizer's client put in
+// the invite. Plain text goes through <LinkifiedText>; HTML is sanitized and rendered below.
+// Derived from ALLOWED_TAGS so the two can't drift: a tag we detect but don't allow would render as
+// text stripped of its markup, and one we allow but don't detect would render as escaped raw tags.
+const HTML_TAG_RE = new RegExp(`<(${ALLOWED_TAGS.join('|')})\\b[^>]*>`, 'i')
+
+const isHtmlDescription = computed(() => HTML_TAG_RE.test(calendarEvent.description ?? ''))
 
 const sanitizedDescription = computed(() => {
 	const clean = DOMPurify.sanitize(calendarEvent.description ?? '', {
