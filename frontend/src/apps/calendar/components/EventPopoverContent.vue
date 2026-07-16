@@ -102,9 +102,12 @@ const isHtmlDescription = computed(() =>
 // Tags a description can reasonably carry. No <img> (remote assets in an invite from an external
 // organizer are a tracking vector) and no <style>/<script>: unlike mail's <EmailContent>, this renders
 // inline in our page rather than in an iframe, so it must not be able to restyle the app.
+// Every tag isHtmlDescription detects must appear here, or that description routes to the HTML path
+// and then gets stripped down to bare text by the sanitizer.
 const ALLOWED_TAGS = [
 	'a', 'p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's',
 	'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+	'table', 'caption', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
 ]
 
 const sanitizedDescription = computed(() => {
