@@ -148,12 +148,17 @@
 													{{ mail.from_name || mail.from_email }}
 												</span>
 												<span
-													v-if="mail.from_name && !isMobile"
-													class="text-ink-gray-5 hover:text-ink-gray-7 cursor-pointer truncate hover:underline"
-													:title="__('Filter messages from this sender')"
-													@click.stop="filterBySender(mail.from_email)"
+													v-if="!isMobile"
+													class="text-ink-gray-5 truncate"
 												>
-													{{ `<${mail.from_email}>` }}
+													<span>&lt;</span>
+													<Tooltip :text="__('Filter messages from this sender')">
+														<span
+															class="cursor-pointer hover:underline"
+															@click.stop="filterBySender(mail.from_email)"
+														>{{ mail.from_email }}</span>
+													</Tooltip>
+													<span>&gt;</span>
 												</span>
 												<template
 													v-if="!(isCollapsed(mail) || mail.draft)"
@@ -388,7 +393,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
-import { Alert, Avatar, Badge, Button, createResource } from 'frappe-ui'
+import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui'
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
