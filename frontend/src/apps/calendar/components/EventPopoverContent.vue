@@ -2,11 +2,13 @@
 import { computed, inject, onMounted, ref, useTemplateRef } from 'vue'
 import { CalendarDays, Edit2, Globe, MapPin, Repeat, Text, Trash2, Users, Video } from 'lucide-vue-next'
 import { Button, Dropdown, createResource, toast } from 'frappe-ui'
+import DOMPurify from 'dompurify'
 
 import { getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent, close } = defineProps<{ calendarEvent: any; close: () => void }>()
 
@@ -28,8 +30,11 @@ const descriptionRef = useTemplateRef('descriptionRef')
 const isDescriptionClamped = ref(false)
 
 onMounted(() => {
-	const el = descriptionRef.value
-	if (el) isDescriptionClamped.value = el.scrollHeight > el.clientHeight
+	// The description is a bare element when it's HTML and a component when it's plain text — measure the
+	// underlying element either way.
+	const ref = descriptionRef.value as any
+	const el = (ref?.$el ?? ref) as HTMLElement | undefined
+	if (el instanceof HTMLElement) isDescriptionClamped.value = el.scrollHeight > el.clientHeight
 
 	setTimeout(() => {
 		if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
@@ -86,6 +91,35 @@ const participants = computed(() => {
 		total === 1 ? __('participant') : __('participants'),
 		parts.length ? `(${parts.join(', ')})` : '',
 	])
+})
+
+// Descriptions arrive either as plain text or as HTML, depending on what the organizer's client put in
+// the invite. Plain text goes through <LinkifiedText>; HTML is sanitized and rendered below.
+const isHtmlDescription = computed(() =>
+	/<(a|p|div|span|br|ul|ol|li|table|h[1-6]|strong|em|b|i)\b[^>]*>/i.test(calendarEvent.description ?? ''),
+)
+
+// Tags a description can reasonably carry. No <img> (remote assets in an invite from an external
+// organizer are a tracking vector) and no <style>/<script>: unlike mail's <EmailContent>, this renders
+// inline in our page rather than in an iframe, so it must not be able to restyle the app.
+const ALLOWED_TAGS = [
+	'a', 'p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's',
+	'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+]
+
+const sanitizedDescription = computed(() => {
+	const clean = DOMPurify.sanitize(calendarEvent.description ?? '', {
+		ALLOWED_TAGS,
+		ALLOWED_ATTR: ['href', 'title'],
+	})
+	// Force links to open safely. Done after sanitizing rather than with DOMPurify.addHook, which is
+	// global and would leak into every other caller (notably mail's <EmailContent>).
+	const doc = new DOMParser().parseFromString(clean, 'text/html')
+	doc.querySelectorAll('a').forEach((anchor) => {
+		anchor.setAttribute('target', '_blank')
+		anchor.setAttribute('rel', 'noopener noreferrer')
+	})
+	return doc.body.innerHTML
 })
 
 const meetUrl = computed(() => {
@@ -321,13 +355,19 @@ const RESPONSE_STATUS_MAPPING = { ACCEPTED: __('Yes'), TENTATIVE: __('Maybe'), D
 			<div v-if="calendarEvent.description" class="flex gap-3">
 				<Text class="stroke-1.5 text-ink-gray-5 h-4 w-4 shrink-0" />
 				<div class="mt-px min-w-0 text-left text-sm">
-					<span
+					<div
+						v-if="isHtmlDescription"
 						ref="descriptionRef"
-						class="break-words"
+						class="break-words [&_a]:text-ink-blue-6 [&_a]:hover:underline [&_p]:m-0"
 						:class="{ 'line-clamp-3': !descriptionExpanded }"
-					>
-						{{ calendarEvent.description }}
-					</span>
+						v-html="sanitizedDescription"
+					/>
+					<LinkifiedText
+						v-else
+						ref="descriptionRef"
+						:text="calendarEvent.description"
+						:class="{ 'line-clamp-3': !descriptionExpanded }"
+					/>
 					<button
 						v-if="isDescriptionClamped && !descriptionExpanded"
 						class="text-ink-blue-6 mt-0.5 block"

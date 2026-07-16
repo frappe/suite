@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { isEmail } from '@/apps/mail/utils'
-
 // Matches URLs (http/https/www) and email addresses in plain text.
 const URL_OR_EMAIL_REGEX =
 	/(https?:\/\/[^\s<]+|www\.[^\s<]+|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/gi
+// Anchored form of the email branch above, to tell which kind of link a matched token is. Kept local so
+// this stays app-agnostic — mail's isEmail() validates user input, which is a separate concern.
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 // Trailing punctuation unlikely to be part of the link.
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/
 
@@ -33,7 +34,7 @@ const segments = computed<Segment[]>(() => {
 
 		const trailing = token.match(TRAILING_PUNCTUATION)?.[0] ?? ''
 		const link = token.slice(0, token.length - trailing.length)
-		const href = isEmail(link)
+		const href = EMAIL_REGEX.test(link)
 			? `mailto:${link}`
 			: link.startsWith('www.')
 				? `https://${link}`
@@ -53,7 +54,9 @@ const segments = computed<Segment[]>(() => {
 </script>
 
 <template>
-	<div class="whitespace-pre-wrap break-words pt-4 font-sans text-base !leading-5 sm:text-sm">
+	<!-- Only whitespace/wrapping is baked in — it's what makes plain text render faithfully. Typography,
+	     spacing and clamping are the caller's, via class fallthrough. -->
+	<div class="whitespace-pre-wrap break-words">
 		<template v-for="(segment, index) in segments" :key="index">
 			<a
 				v-if="segment.href"
