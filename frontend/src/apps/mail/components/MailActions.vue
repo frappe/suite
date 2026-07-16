@@ -32,6 +32,7 @@ import {
 	Ellipsis,
 	ExternalLink,
 	Forward,
+	ListFilter,
 	LockOpen,
 	MailOpen,
 	Reply,
@@ -223,6 +224,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 				condition: () =>
 					mailbox !== mailboxIds.screener && isSenderBlocked(mail.from_email),
 			},
+			{
+				label: __('Filter Messages Like This'),
+				onClick: () => filterMessagesLikeThis(),
+				icon: ListFilter,
+				condition: () => !mail.draft && !!mail.from_email,
+			},
 		],
 	},
 	{
@@ -294,6 +301,16 @@ const handleMarkUnreadFromHere = () => {
 		.filter((m: Mail) => !m.draft)
 		.map((m: Mail) => m.id)
 	if (ids.length) setMailsSeen.submit({ ids })
+}
+
+// Open the search results scoped to this sender (Gmail's "Filter messages like this"), landing on the
+// filtered view with a "From" chip the user can refine further.
+const filterMessagesLikeThis = () => {
+	router.push({
+		name: 'mail-mailbox',
+		params: { accountId: store.accountId, mailbox: 'search' },
+		query: { from: mail.from_email },
+	})
 }
 
 const blockEmailAddress = createResource({
