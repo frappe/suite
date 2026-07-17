@@ -371,9 +371,11 @@ class AccountService(StalwartCLI):
 
 		merged = list(dict.fromkeys([*existing, *role_ids]))
 
-		commands = ["update", "Account", account, "--field", f"roles/@type={RoleType.CUSTOM.value}"]
-		for role_id in merged:
-			commands.extend(["--field", f"roles/roleIds/{role_id}=true"])
+		# `roles` is a tagged union; its `@type` discriminator can't be patched via a sub-path
+		# (the server rejects `roles/@type` as an invalid JSON Pointer path). Replace the whole
+		# field with a full JSON object instead.
+		roles = UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=merged))
+		commands = ["update", "Account", account, "--field", f"roles={json.dumps(roles.to_dict())}"]
 
 		response = self.run(commands)
 
@@ -396,15 +398,14 @@ class AccountService(StalwartCLI):
 		remove = set(role_ids)
 		remaining = [role_id for role_id in existing if role_id not in remove]
 
+		# Replace the whole `roles` field with a full JSON object rather than patching sub-paths of
+		# the tagged union (the server rejects patching the `@type` discriminator via a pointer path).
 		if remaining:
-			commands = ["update", "Account", account, "--field", f"roles/@type={RoleType.CUSTOM.value}"]
-			for role_id in remaining:
-				commands.extend(["--field", f"roles/roleIds/{role_id}=true"])
-			# explicitly clear the removed roles so the deep-merged update actually drops them
-			for role_id in remove:
-				commands.extend(["--field", f"roles/roleIds/{role_id}=false"])
+			roles = UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=remaining))
 		else:
-			commands = ["update", "Account", account, "--field", f"roles/@type={RoleType.USER.value}"]
+			roles = UserRoles(type=RoleType.USER)
+
+		commands = ["update", "Account", account, "--field", f"roles={json.dumps(roles.to_dict())}"]
 
 		response = self.run(commands)
 
