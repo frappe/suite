@@ -1,7 +1,7 @@
 // Copyright (c) 2025, Frappe and contributors
 // For license information, please see license.txt
 
-frappe.ui.form.on("Sae Meeting", {
+frappe.ui.form.on("Meet Room", {
 	refresh(frm) {
 		frm.add_web_link(`/meet/${frm.doc.name}`, __("Join Meeting"));
 	},

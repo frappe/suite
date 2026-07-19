@@ -133,7 +133,7 @@ permission_query_conditions = {
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_query",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
 	# meet
-	"Sae Meeting": "suite.meet.doctype.sae_meeting.sae_meeting.get_permission_query_conditions",
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.get_permission_query_condition",
 	"Blocked Email Address": "suite.mail.doctype.blocked_email_address.blocked_email_address.get_permission_query_condition",
@@ -162,7 +162,7 @@ has_permission = {
 	"Sheet Op Log": "suite.sheets.permissions.sheet_op_log_has_permission",
 	"Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
 	# meet
-	"Sae Meeting": "suite.meet.doctype.sae_meeting.sae_meeting.has_permission",
+	"Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
 	# mail
 	"JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
 	"Address Book": "suite.mail.doctype.address_book.address_book.has_permission",

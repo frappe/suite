@@ -8,7 +8,7 @@ from frappe.model.document import Document
 
 
 def execute():
-	meetings = frappe.get_all("Sae Meeting", fields=["name", "members", "waiting_room"])
+	meetings = frappe.get_all("Meet Room", fields=["name", "members", "waiting_room"])
 
 	for meeting in meetings:
 		try:
@@ -20,9 +20,9 @@ def execute():
 							if user:
 								child_doc = frappe.get_doc(
 									{
-										"doctype": "Sae Meeting User",
+										"doctype": "Meet Room User",
 										"parent": meeting.name,
-										"parenttype": "Sae Meeting",
+										"parenttype": "Meet Room",
 										"parentfield": "members",
 										"user": user,
 									}
@@ -39,9 +39,9 @@ def execute():
 							if user:
 								child_doc = frappe.get_doc(
 									{
-										"doctype": "Sae Meeting User",
+										"doctype": "Meet Room User",
 										"parent": meeting.name,
-										"parenttype": "Sae Meeting",
+										"parenttype": "Meet Room",
 										"parentfield": "waiting_room",
 										"user": user,
 									}

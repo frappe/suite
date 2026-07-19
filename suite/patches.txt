@@ -1,6 +1,8 @@
 # Patches consolidated in Phase 3 (grouped by source app, preserving order).
 
 [pre_model_sync]
+# --- meet ---
+suite.meet.patches.rename_sae_meeting_to_meet_room
 # --- drive ---
 suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles

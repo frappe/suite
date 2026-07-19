@@ -51,7 +51,7 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
 		frappe.set_user(self.host_email)
 		meeting = frappe.get_doc(
 			{
-				"doctype": "Sae Meeting",
+				"doctype": "Meet Room",
 				"meeting_type": "open",
 				"allow_guest": 1,
 			}

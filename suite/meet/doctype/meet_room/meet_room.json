@@ -62,27 +62,27 @@
     "fieldname": "members",
     "fieldtype": "Table",
     "label": "Members",
-    "options": "Sae Meeting User",
+     "options": "Meet Room User",
     "read_only": 1
   },
   {
    "fieldname": "co_hosts",
    "fieldtype": "Table",
    "label": "Co-hosts",
-   "options": "Sae Meeting User"
+    "options": "Meet Room User"
   },
   {
    "fieldname": "waiting_room",
    "fieldtype": "Table",
    "label": "Waiting Room",
-   "options": "Sae Meeting User",
+    "options": "Meet Room User",
    "read_only": 1
   },
   {
    "fieldname": "banned_users",
    "fieldtype": "Table",
    "label": "Banned Users",
-   "options": "Sae Meeting User",
+    "options": "Meet Room User",
    "read_only": 1
   },
   {
@@ -106,7 +106,7 @@
  "modified": "2026-06-04 12:36:16.782160",
  "modified_by": "Administrator",
  "module": "Meet",
- "name": "Sae Meeting",
+  "name": "Meet Room",
  "owner": "Administrator",
  "permissions": [
   {

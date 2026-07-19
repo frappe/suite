@@ -15,7 +15,7 @@ from suite.meet.utils.user import (
 )
 
 
-class SaeMeeting(Document):
+class MeetRoom(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -24,15 +24,15 @@ class SaeMeeting(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		from suite.meet.doctype.sae_meeting_user.sae_meeting_user import SaeMeetingUser
+		from suite.meet.doctype.meet_room_user.meet_room_user import MeetRoomUser
 
 		allow_guest: DF.Check
-		banned_users: DF.Table[SaeMeetingUser]
-		co_hosts: DF.Table[SaeMeetingUser]
+		banned_users: DF.Table[MeetRoomUser]
+		co_hosts: DF.Table[MeetRoomUser]
 		e2ee_enabled: DF.Check
 		meeting_type: DF.Literal["open", "restricted"]
-		members: DF.Table[SaeMeetingUser]
-		waiting_room: DF.Table[SaeMeetingUser]
+		members: DF.Table[MeetRoomUser]
+		waiting_room: DF.Table[MeetRoomUser]
 	# end: auto-generated types
 
 	def autoname(self):
@@ -467,19 +467,19 @@ def get_permission_query_conditions(user: str | None = None) -> str:
 
 	escaped_user = frappe.db.escape(user)
 	return f"""
-		`tabSae Meeting`.`owner` = {escaped_user}
+		`tabMeet Room`.`owner` = {escaped_user}
 		OR EXISTS (
 			SELECT 1
-			FROM `tabSae Meeting User` AS cohost
-			WHERE cohost.parent = `tabSae Meeting`.`name`
-				AND cohost.parenttype = 'Sae Meeting'
+			FROM `tabMeet Room User` AS cohost
+			WHERE cohost.parent = `tabMeet Room`.`name`
+				AND cohost.parenttype = 'Meet Room'
 				AND cohost.parentfield = 'co_hosts'
 				AND cohost.user = {escaped_user}
 		)
 	"""
 
 
-def has_permission(doc: SaeMeeting, ptype: str = "read", user: str | None = None) -> bool:
+def has_permission(doc: MeetRoom, ptype: str = "read", user: str | None = None) -> bool:
 	user = user or frappe.session.user
 	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
 		return True
