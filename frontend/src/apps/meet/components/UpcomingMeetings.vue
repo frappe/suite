@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, createResource } from 'frappe-ui'
+import { createResource } from 'frappe-ui'
 
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
@@ -18,14 +18,19 @@ const upcomingEvents = createResource({
 	makeParams: () => ({
 		account: calendarStore.accountId,
 		from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
-		to_date: dayjs().add(2, 'day').endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
+		to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
 		time_zone: timezone(),
 	}),
 })
 
 const meetings = computed(() => {
+	const now = dayjs()
 	return [...(upcomingEvents.data || [])]
-		.filter((event: any) => getMeetingUrl(event))
+		.filter((event: any) => {
+			const start = dayjs(event.start)
+			const end = start.add(dayjs.duration(event.duration || 'PT0S'))
+			return getMeetingUrl(event) && start.isSame(now, 'day') && end.isAfter(now)
+		})
 		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
 		.slice(0, 4)
 })
@@ -50,13 +55,6 @@ const eventParticipants = (event: any) => {
 		})
 	}
 	return [...participantsByEmail.values()]
-}
-
-const isJoinable = (event: any) => {
-	const start = dayjs(event.start)
-	const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-	const now = dayjs()
-	return start.diff(now, 'minute') <= 10 && end.isAfter(now)
 }
 
 const getMeetingUrl = (event: any) => {
@@ -104,17 +102,16 @@ defineExpose({ reload })
 </script>
 
 <template>
-	<div class="mt-10">
+	<div v-if="meetings.length" class="mt-10">
 		<h2 class="mb-3 text-base-medium text-ink-gray-8">Upcoming meetings</h2>
-		<div
-			v-if="meetings.length"
-			class="overflow-hidden rounded-xl border border-outline-gray-1 bg-surface-gray-1"
-		>
-			<div
+		<div class="overflow-hidden rounded-xl border border-outline-gray-1 bg-surface-gray-1">
+			<button
 				v-for="(event, index) in meetings"
 				:key="event.id"
-				class="flex min-h-[66px] items-center gap-8 border-outline-gray-1 px-2.5 py-2.5"
+				type="button"
+				class="flex min-h-[66px] w-full items-center gap-8 border-outline-gray-1 px-2.5 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-surface-gray-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-gray-4"
 				:class="index !== meetings.length - 1 ? 'border-b' : ''"
+				@click="joinMeeting(event)"
 			>
 				<div class="flex min-w-0 flex-1 items-center gap-2.5">
 					<div
@@ -159,13 +156,7 @@ defineExpose({ reload })
 					</div>
 				</div>
 
-				<Button v-if="isJoinable(event)" variant="outline" @click="joinMeeting(event)">
-					Join
-				</Button>
-			</div>
+			</button>
 		</div>
-		<p v-else class="rounded-xl border border-outline-gray-1 bg-surface-gray-1 px-4 py-5 text-sm text-ink-gray-6">
-			No upcoming Meet meetings
-		</p>
 	</div>
 </template>
