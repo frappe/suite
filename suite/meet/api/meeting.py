@@ -53,7 +53,7 @@ def _generate_sfu_token(
 
 
 def _get_codec_strategy() -> str:
-	return frappe.get_cached_doc("Sae Settings").codec_strategy or "svc"
+	return frappe.get_cached_doc("Meet Settings").codec_strategy or "svc"
 
 
 def _is_e2ee_enabled(meeting_id: str) -> bool:
@@ -126,7 +126,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
 @rate_limit(limit=10, seconds=60 * 60)
 def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
 	"""Create a new meeting with specified type"""
-	global_settings = frappe.get_cached_doc("Sae Settings")
+	global_settings = frappe.get_cached_doc("Meet Settings")
 	if not global_settings.allow_guest:
 		allow_guest = False
 
@@ -374,7 +374,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
 
 	meeting = frappe.get_doc("Meet Room", meeting_id, for_update=True)
 
-	global_settings = frappe.get_cached_doc("Sae Settings")
+	global_settings = frappe.get_cached_doc("Meet Settings")
 	if not global_settings.allow_guest or not meeting.allow_guest:
 		frappe.throw(_("Guests are not allowed in this meeting"))
 	# Check if reusing existing guest_id
@@ -604,7 +604,7 @@ def check_meeting_access(meeting_id: str) -> dict:
 	"""
 	try:
 		meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
-		settings = frappe.get_cached_doc("Sae Settings")
+		settings = frappe.get_cached_doc("Meet Settings")
 		allow_guest = settings.allow_guest and meeting.allow_guest
 
 		return {"allow_guest": allow_guest, "host_only_chat": bool(meeting.host_only_chat)}

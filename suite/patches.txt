@@ -3,6 +3,7 @@
 [pre_model_sync]
 # --- meet ---
 suite.meet.patches.rename_sae_meeting_to_meet_room
+suite.meet.patches.rename_sae_settings_to_meet_settings
 # --- drive ---
 suite.drive.patches.team_restructure #8
 suite.drive.patches.update_roles

@@ -433,7 +433,7 @@ class MeetRoom(Document):
 
 		updated_fields = {}
 		if allow_guest is not None:
-			global_settings = frappe.get_cached_doc("Sae Settings")
+			global_settings = frappe.get_cached_doc("Meet Settings")
 			if not global_settings.allow_guest and allow_guest:
 				frappe.throw(_("Guest access is disabled globally"))
 			self.allow_guest = bool(allow_guest)
