@@ -90,6 +90,33 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			get_sfu_connection_details(self.meeting.name)
 
+	def test_only_host_and_cohost_can_read_meeting_document(self):
+		self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+		self.meeting.add_user_to_table("co_hosts", self.outsider_email, save=True, ignore_permissions=True)
+
+		frappe.set_user(self.member_email)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Sae Meeting", self.meeting.name).check_permission("read")
+
+		for user in (self.host_email, self.outsider_email):
+			frappe.set_user(user)
+			frappe.get_doc("Sae Meeting", self.meeting.name).check_permission("read")
+
+	def test_meeting_list_only_contains_hosted_or_cohosted_meetings(self):
+		self.meeting.add_user_to_table("co_hosts", self.member_email, save=True, ignore_permissions=True)
+
+		frappe.set_user(self.member_email)
+		self.assertIn(
+			self.meeting.name,
+			frappe.get_list("Sae Meeting", pluck="name"),
+		)
+
+		frappe.set_user(self.outsider_email)
+		self.assertNotIn(
+			self.meeting.name,
+			frappe.get_list("Sae Meeting", pluck="name"),
+		)
+
 	def test_join_meeting_returns_sfu_connection_details(self):
 		"""join_meeting bundles SFU JWT so clients skip a second RTT."""
 		self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
