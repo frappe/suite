@@ -3,6 +3,7 @@
 
 import frappe
 import jwt
+from frappe.client import delete as delete_document
 from frappe.tests import IntegrationTestCase
 
 from suite.meet.api.meeting import get_sfu_connection_details, join_meeting
@@ -116,6 +117,18 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 			self.meeting.name,
 			frappe.get_list("Sae Meeting", pluck="name"),
 		)
+
+	def test_only_host_can_delete_meeting_through_frappe_api(self):
+		frappe.set_user(self.outsider_email)
+		with self.assertRaises(frappe.PermissionError):
+			delete_document("Sae Meeting", self.meeting.name)
+
+		self.assertTrue(frappe.db.exists("Sae Meeting", self.meeting.name))
+
+		frappe.set_user(self.host_email)
+		delete_document("Sae Meeting", self.meeting.name)
+
+		self.assertFalse(frappe.db.exists("Sae Meeting", self.meeting.name))
 
 	def test_join_meeting_returns_sfu_connection_details(self):
 		"""join_meeting bundles SFU JWT so clients skip a second RTT."""
