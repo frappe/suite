@@ -14,12 +14,12 @@
         <!-- General section -->
         <div class="border-b pb-5 mb-5">
           <div class="mb-2 text-ink-gray-5 text-sm">General access</div>
-          <div class="flex justify-between gap-2">
-            <div class="flex flex-col gap-2">
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex flex-col items-start gap-2">
               <Select v-model="generalAccessLevel" variant="outline" :options="levelOptions" @update:model-value="
                 (val) => updateGeneralAccess(val, generalPerms)
               " />
-              <TeamSelector v-if="generalAccessLevel == 'team'" v-model="chosenTeam" />
+              <TeamSelector v-if="generalAccessLevel == 'team'" v-model="chosenTeam" variant="outline" />
             </div>
             <AccessSelect v-if="generalAccessLevel !== 'restricted'" v-model="generalPerms" variant="ghost" :options="accessOptions"
               @update:model-value="
