@@ -125,6 +125,7 @@ export function useNetworkQuality() {
 
 			if (isFailed) {
 				networkQuality.value = "critical";
+				stallDetector.suspend();
 				return;
 			}
 

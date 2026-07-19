@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, defineComponent, nextTick, ref, watchEffect } from "vue";
+import { StallDetector } from "../../utils/media/stallDetector";
 import { useNetworkQuality } from "../useNetworkQuality";
 
 describe("useNetworkQuality", () => {
@@ -107,6 +108,16 @@ describe("useNetworkQuality", () => {
 
 		expect(observed.value).toBe("critical");
 
+		unmount();
+	});
+
+	it("suspends stall detection while a transport is failed", async () => {
+		const suspend = vi.spyOn(StallDetector.prototype, "suspend");
+		const { unmount } = mountWithStats({}, "failed");
+
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(suspend).toHaveBeenCalledOnce();
 		unmount();
 	});
 
