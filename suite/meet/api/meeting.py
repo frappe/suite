@@ -1,6 +1,8 @@
 # Copyright (c) 2025, Frappe and contributors
 # For license information, please see license.txt
 
+from __future__ import annotations
+
 import base64
 import binascii
 import secrets
@@ -76,7 +78,7 @@ def _user_payload(meeting, user) -> tuple[str, str | None, bool, bool]:
 	return fullname, avatar, is_host, is_cohost
 
 
-def _build_sfu_connection_details(meeting: "SaeMeeting", user: str) -> dict:
+def _build_sfu_connection_details(meeting: SaeMeeting, user: str) -> dict:
 	"""SFU JWT + endpoint payload for a signed-in user.
 
 	Callers must enforce membership / join ACL first. Mints a full-scope media
@@ -328,7 +330,11 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 	if meeting.is_user_banned(frappe.session.user):
 		frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
 
-	if not meeting.can_join(frappe.session.user):
+	user = frappe.session.user
+	can_preview = (
+		meeting.is_host_or_cohost(user) or user in meeting.get_members() or user in meeting.get_waiting_room()
+	)
+	if not can_preview:
 		frappe.throw(_("Access denied"), frappe.PermissionError)
 
 	sfu_config = get_sfu_config()
