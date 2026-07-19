@@ -178,12 +178,6 @@ export class StallDetector {
 		) {
 			return false;
 		}
-		if (
-			st.lastRecoveredAt !== null &&
-			now - st.lastRecoveredAt < this.recoveryCooldownMs
-		) {
-			return false;
-		}
 		return true;
 	}
 
