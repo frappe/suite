@@ -62,7 +62,7 @@
     "fieldname": "members",
     "fieldtype": "Table",
     "label": "Members",
-     "options": "Meet Room User",
+    "options": "Meet Room User",
     "read_only": 1
   },
   {
