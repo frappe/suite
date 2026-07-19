@@ -110,10 +110,10 @@ describe("useNetworkQuality", () => {
 		unmount();
 	});
 
-	it("resyncs after recovery when a remote consumer stalls for several polls", async () => {
+	it("resets the receive side when a remote consumer stalls for several polls", async () => {
 		vi.useFakeTimers();
 
-		const resyncAfterRecovery = vi.fn().mockResolvedValue(undefined);
+		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
 		const stats = new Map<string, { type: string; bytesReceived: number }>([
@@ -151,7 +151,7 @@ describe("useNetworkQuality", () => {
 					getAllConsumers: () => [entry],
 				},
 			},
-			resyncAfterRecovery,
+			resetReceiveSide,
 		});
 
 		const observed = ref("unknown");
@@ -171,20 +171,77 @@ describe("useNetworkQuality", () => {
 		app.provide("sfuManager", sfuManager);
 		app.mount(root);
 
-		await vi.advanceTimersByTimeAsync(3000);
-		expect(resyncAfterRecovery).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(18_000);
+		expect(resetReceiveSide).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(resyncAfterRecovery).not.toHaveBeenCalled();
+		expect(resetReceiveSide).toHaveBeenCalledTimes(1);
+
+		app.unmount();
+	});
+
+	it("waits for a fresh stall window after network quality recovers", async () => {
+		vi.useFakeTimers();
+
+		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const track = { muted: false } as MediaStreamTrack;
+		const stats = new Map<string, { type: string; bytesReceived: number }>([
+			["in", { type: "inbound-rtp", bytesReceived: 1000 }],
+		]);
+		const qualityStats = {
+			rtt: 1300,
+			packetLoss: 20,
+			availableOutgoingBitrate: 100_000,
+			timestamp: Date.now(),
+			isValid: true,
+		};
+		const sfuManager = ref({
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockImplementation(async () => qualityStats),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [
+						{
+							id: "c1",
+							kind: "video",
+							track,
+							createdAt: Date.now() - 60_000,
+							consumer: {
+								paused: false,
+								getStats: vi.fn().mockResolvedValue(stats),
+							},
+						},
+					],
+				},
+			},
+			resetReceiveSide,
+		});
+
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(resetReceiveSide).not.toHaveBeenCalled();
+
+		qualityStats.rtt = 50;
+		qualityStats.packetLoss = 0;
+		qualityStats.availableOutgoingBitrate = 800_000;
+		await vi.advanceTimersByTimeAsync(18_000);
+		expect(resetReceiveSide).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(resyncAfterRecovery).not.toHaveBeenCalled();
-
-		await vi.advanceTimersByTimeAsync(3000);
-		expect(resyncAfterRecovery).toHaveBeenCalledTimes(1);
-		expect(resyncAfterRecovery).toHaveBeenCalledWith(
-			expect.stringMatching(/^consumer_stall_/),
-		);
+		expect(resetReceiveSide).toHaveBeenCalledTimes(1);
 
 		app.unmount();
 	});

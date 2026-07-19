@@ -100,7 +100,7 @@ export function useNetworkQuality() {
 		const stalledIds = stallDetector.check(samples);
 		if (stalledIds.length === 0) return;
 
-		void sfuManager.resyncAfterRecovery(`consumer_stall_${stalledIds.join(",")}`);
+		void sfuManager.resetReceiveSide();
 	};
 
 	const pollStats = async () => {
@@ -131,6 +131,10 @@ export function useNetworkQuality() {
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
 				updateQuality(stats);
+			}
+			if (networkQuality.value !== "good") {
+				stallDetector.suspend();
+				return;
 			}
 
 			await checkConsumerStalls();

@@ -69,7 +69,7 @@ describe("StallDetector", () => {
 
 		det.check([toSample(sample)]);
 
-		now += 4_000;
+		now += 14_000;
 		expect(det.check([toSample(sample)])).toEqual([]);
 
 		now += 2_000;
@@ -86,7 +86,7 @@ describe("StallDetector", () => {
 		sample.bytes = 1000;
 		expect(det.check([toSample(sample)])).toEqual([]);
 
-		now += 6_000;
+		now += 16_000;
 		sample.bytes = 1000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
@@ -103,11 +103,11 @@ describe("StallDetector", () => {
 		sample.bytes = 2000;
 		expect(det.check([toSample(sample)])).toEqual([]);
 
-		now += 4_000;
+		now += 14_000;
 		sample.bytes = 2000;
 		expect(det.check([toSample(sample)])).toEqual([]);
 
-		now += 6_000;
+		now += 16_000;
 		sample.bytes = 2000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
@@ -118,7 +118,7 @@ describe("StallDetector", () => {
 
 		det.check([toSample(sample)]);
 
-		now += 6_000;
+		now += 16_000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 
 		now += 5_000;
@@ -133,8 +133,31 @@ describe("StallDetector", () => {
 
 		sample.muted = true;
 		expect(det.check([toSample(sample)])).toEqual([]);
-		now += 6_000;
+		now += 16_000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
+	});
+
+	it("keeps recovery on cooldown when consumers are replaced", () => {
+		const det = new StallDetector({
+			now: getNow,
+			stallTimeoutMs: 500,
+			recoveryCooldownMs: 30_000,
+		});
+		const first = makeSample({ id: "c1", createdAt: now - 10_000 });
+
+		det.check([toSample(first)]);
+		now += 600;
+		expect(det.check([toSample(first)])).toEqual([]);
+		now += 600;
+		expect(det.check([toSample(first)])).toEqual(["c1"]);
+
+		const replacement = makeSample({ id: "c2", createdAt: now - 10_000 });
+		det.check([toSample(replacement)]);
+		now += 600;
+		expect(det.check([toSample(replacement)])).toEqual([]);
+
+		now += 30_000;
+		expect(det.check([toSample(replacement)])).toEqual(["c2"]);
 	});
 
 	it("clears state for paused consumers", () => {
@@ -178,11 +201,11 @@ describe("StallDetector", () => {
 			const audioSample = { ...toSample(sample), kind: "audio" };
 
 			det.check([audioSample]);
-			now += 1_000;
+			now += 3_000;
 			sample.bytes = 1000;
 			expect(det.check([audioSample])).toEqual([]);
 
-			now += 1_600;
+			now += 9_000;
 			sample.bytes = 1000;
 			expect(det.check([audioSample])).toEqual(["c1"]);
 		});
@@ -227,11 +250,11 @@ describe("StallDetector", () => {
 			const videoSample = { ...toSample(sample), kind: "video" };
 
 			det.check([videoSample]);
-			now += 4_000;
+			now += 14_000;
 			sample.bytes = 1000;
 			expect(det.check([videoSample])).toEqual([]);
 
-			now += 6_000;
+			now += 16_000;
 			sample.bytes = 1000;
 			expect(det.check([videoSample])).toEqual(["c1"]);
 		});

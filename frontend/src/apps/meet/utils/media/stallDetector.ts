@@ -2,18 +2,17 @@
  * Stall Detector
  *
  * Detects consumers that are technically "connected" but not actually
- * receiving any media bytes. A stalled consumer usually means a transport
- * is wedged (browser decoder issue, congestion that producer scores hide,
- * or background tab throttling) and the only recovery is an ICE restart.
+ * receiving any media bytes. A stalled consumer can mean the receive side
+ * is wedged, congestion has hidden producer scores, or a background tab was
+ * throttled.
  *
- * Audio consumers are checked with a much shorter window than video: silence
- * for even ~1.5s is a much worse user experience than a frozen video frame,
- * and audio is also the leading indicator of a wedged transport (audio
- * packets stop arriving before the congestion controller can drop video).
+ * Audio consumers use a shorter window than video because audio is the
+ * leading indicator of a wedged transport, while brief video freezes are
+ * expected under congestion.
  */
 
-const DEFAULT_STALL_TIMEOUT_MS = 5000;
-const DEFAULT_AUDIO_STALL_TIMEOUT_MS = 1500;
+const DEFAULT_STALL_TIMEOUT_MS = 15_000;
+const DEFAULT_AUDIO_STALL_TIMEOUT_MS = 8_000;
 const DEFAULT_MIN_CONSUMER_AGE_MS = 3000;
 const DEFAULT_RECOVERY_COOLDOWN_MS = 30_000;
 
@@ -48,6 +47,7 @@ export class StallDetector {
 	private readonly recoveryCooldownMs: number;
 	private readonly now: () => number;
 	private readonly state: Map<string, ConsumerState> = new Map();
+	private lastRecoveryAt: number | null = null;
 
 	constructor(options: StallDetectorOptions = {}) {
 		this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
@@ -134,6 +134,9 @@ export class StallDetector {
 				this.state.delete(id);
 			}
 		}
+		if (stalled.length > 0) {
+			this.lastRecoveryAt = now;
+		}
 
 		return stalled;
 	}
@@ -163,6 +166,12 @@ export class StallDetector {
 
 	private shouldRecover(st: ConsumerState, now: number): boolean {
 		if (
+			this.lastRecoveryAt !== null &&
+			now - this.lastRecoveryAt < this.recoveryCooldownMs
+		) {
+			return false;
+		}
+		if (
 			st.lastRecoveredAt !== null &&
 			st.stallStartedAt !== null &&
 			st.lastRecoveredAt >= st.stallStartedAt
@@ -179,6 +188,11 @@ export class StallDetector {
 	}
 
 	reset(): void {
+		this.state.clear();
+		this.lastRecoveryAt = null;
+	}
+
+	suspend(): void {
 		this.state.clear();
 	}
 
