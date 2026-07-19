@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useNow } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
 
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
@@ -9,6 +10,7 @@ import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
 
 const router = useRouter()
 const calendarStore = useCalendarUserStore()
+const now = useNow({ interval: 30_000 })
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -24,12 +26,12 @@ const upcomingEvents = createResource({
 })
 
 const meetings = computed(() => {
-	const now = dayjs()
+	const currentTime = dayjs(now.value)
 	return [...(upcomingEvents.data || [])]
 		.filter((event: any) => {
 			const start = dayjs(event.start)
 			const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-			return getMeetingUrl(event) && start.isSame(now, 'day') && end.isAfter(now)
+			return getMeetingUrl(event) && start.isSame(currentTime, 'day') && end.isAfter(currentTime)
 		})
 		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
 		.slice(0, 4)
