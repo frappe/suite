@@ -4,6 +4,7 @@
     placeholder="Select a team"
     :options
     :disabled
+    :variant
     :open-on-click="true"
   />
 </template>
@@ -27,6 +28,7 @@ const props = defineProps({
   none: { default: false, type: Boolean || String },
   allowBlank: { default: false },
   disabled: { default: false },
+  variant: { default: 'subtle', type: String },
 })
 watch(
   () => getTeams.data,
