@@ -1,5 +1,5 @@
 <template>
-  <LoadingIndicator v-if="loading" class="w-10" />
+  <FilePreviewSkeleton v-if="loading" />
   <img
     v-else
     v-show="!loading"
@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import { LoadingIndicator } from 'frappe-ui'
+import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { onBeforeUnmount, onMounted, ref, watch, inject } from 'vue'
 import { useObjectUrl } from '@vueuse/core'
 

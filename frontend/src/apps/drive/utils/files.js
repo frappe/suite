@@ -472,8 +472,11 @@ export async function updateURLSlug(file_name) {
 export function getLink(entity, copy = true, withDomain = true) {
   let link
   if (entity.file_type === 'Link') link = entity.file_url
-  else if (entity.mime_type === 'frappe/slides') {
-    link = window.location.origin + '/slides/presentation/' + entity.name
+  else if (entity.mime_type === 'frappe/slides' || isPresentation(entity)) {
+    link =
+      window.location.origin +
+      '/slides/presentation/' +
+      (entity.content_docname || entity.name)
   } else if (
     entity.file_type === 'Document' ||
     entity.file_type === 'Markdown'

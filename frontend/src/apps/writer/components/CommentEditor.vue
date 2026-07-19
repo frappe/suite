@@ -42,7 +42,7 @@ import {
 } from 'frappe-ui/editor'
 import { Button } from 'frappe-ui'
 import { allUsers } from '@/apps/drive/sdk'
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import LucideMessageCircleReply from '~icons/lucide/message-circle-reply'
 import LucideX from '~icons/lucide/x'
 
@@ -62,6 +62,14 @@ const editorContent = ref(props.content || '')
 
 const textEditor = ref('textEditor')
 const editor = computed(() => textEditor.value?.editor)
+
+// `:autofocus` only applies at init; focus when a comment flips into edit mode.
+watch(
+  () => props.editable,
+  (editable) => {
+    if (editable) nextTick(() => editor.value?.commands.focus('end'))
+  },
+)
 
 const extensions = [RichTextKit.configure({ mention: { items: () => allUsers.data ?? [] } })]
 

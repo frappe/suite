@@ -1,5 +1,5 @@
 <template>
-  <LoadingIndicator v-if="loading" class="w-10" />
+  <FilePreviewSkeleton v-if="loading" />
   <audio
     v-else
     :key="src"
@@ -16,7 +16,7 @@
 </template>
 
 <script setup>
-import { LoadingIndicator } from 'frappe-ui'
+import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { ref, onBeforeUnmount, watch, onMounted } from 'vue'
 
 const props = defineProps({

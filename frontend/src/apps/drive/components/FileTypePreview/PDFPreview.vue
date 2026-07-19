@@ -6,7 +6,7 @@
       <Button @click="scale += 0.25" :disabled="scale >= 2" label="+" />
     </div>
     <div class="grow flex items-center justify-center border rounded-sm max-h-[70vh] overflow-auto">
-      <LoadingIndicator v-if="loading" class="w-10 text-ink-gray-8 mx-auto h-full" />
+      <Skeleton v-if="loading" class="w-full h-[70vh] rounded-sm" />
       <canvas ref="canvasRef" :class="{ hidden: loading }" class="rounded-sm" />
     </div>
     <div v-if="totalPages" class="flex gap-2 justify-center items-center">
@@ -25,7 +25,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { LoadingIndicator, Button } from 'frappe-ui'
+import { Skeleton, Button } from 'frappe-ui'
 import { breakpointsTailwind, useBreakpoints } from '@vueuse/core'
 import * as PDFJS from 'pdfjs-dist'
 

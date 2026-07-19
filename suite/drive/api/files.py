@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename, send_file
 from werkzeug.wrappers import Response
 from werkzeug.wsgi import wrap_file
 
-from suite.drive.api.storage import storage_bar_data
+from suite.drive.api.storage import get_storage_usage
 from suite.drive.utils import (
 	ATTACHMENT_CONTENT_DOCTYPE,
 	STATUS_ACTIVE,
@@ -88,7 +88,7 @@ def upload_file(
 
 	# Validate that file size is matching
 	file_size = temp_path.stat().st_size
-	storage_data = storage_bar_data(team)
+	storage_data = get_storage_usage(team)
 	if (storage_data["limit"] - storage_data["total_size"]) < file_size:
 		frappe.throw("You're out of storage!", ValueError)
 
@@ -559,7 +559,7 @@ def remove_or_restore(entity_names: list[str] | str):
 			flag = STATUS_TRASHED
 			manager.move_to_trash(doc)
 		else:
-			storage_data = storage_bar_data(doc.team)
+			storage_data = get_storage_usage(doc.team)
 			if (storage_data["limit"] - storage_data["total_size"]) < doc.file_size:
 				frappe.throw("You're out of storage!", ValueError)
 			manager.restore(doc)

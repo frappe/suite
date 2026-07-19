@@ -7,7 +7,7 @@
         else delete commentRefs[comment.id]
       }
         " v-on-outside-click="(e) => onOutsideCardClick(e, comment)"
-          class="absolute rounded shadow w-56 comment-group scroll-m-24 bg-surface-base dark:border max-md:fixed max-md:z-20 max-md:inset-x-3 max-md:bottom-3 max-md:top-auto max-md:w-auto max-md:max-h-[65vh] max-md:overflow-y-auto max-md:shadow-xl"
+          class="absolute rounded shadow w-56 comment-group scroll-m-24 bg-surface-base dark:border max-md:fixed max-md:inset-x-4 max-md:bottom-4 max-md:top-auto max-md:w-auto max-md:max-w-sm max-md:mx-auto max-md:max-h-[65vh] max-md:overflow-y-auto max-md:shadow-xl"
           :class="[
             activeComment === comment.id && 'shadow-xl ',
             isMobile || comment.top
@@ -53,7 +53,7 @@
             Delete
           </Button>
         </div>
-        <div class="p-3" :class="activeComment !== comment.id &&
+        <div class="p-3 max-md:px-4" :class="activeComment !== comment.id &&
           comment.replies.length > 0 &&
           'pb-1.5'
           ">
@@ -161,7 +161,7 @@
           </div>
         </div>
         <div v-if="activeComment !== comment.id && comment.replies.length > 0"
-          class="replies-count text-ink-gray-6 font-base text-xs p-3 pt-0">
+          class="replies-count text-ink-gray-6 font-base text-xs p-3 pt-0 max-md:px-4">
           {{ comment.replies.length }}
           {{ comment.replies.length === 1 ? 'reply' : 'replies' }}
         </div>

@@ -200,7 +200,7 @@ const refreshData = () => {
 }
 
 watch(
-  [verifyAccess, team],
+  [verifyAccess, team, () => props.getEntities],
   ([data]) => {
     if (!data) return
     refreshData()

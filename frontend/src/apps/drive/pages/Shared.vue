@@ -8,6 +8,7 @@ import { computed } from 'vue'
 import { getSiteFiles, getShared } from '@/apps/drive/resources/files'
 import { shareView } from '@/apps/drive/data/prefs'
 import LucideFiles from '~icons/lucide/files'
+import LucideUsers from '~icons/lucide/users'
 
 
 const getEntities = computed(() =>

@@ -9,10 +9,7 @@
         :draggable="false"
         class="w-full px-10 py-5 flex-grow w-full flex justify-center align-center items-center relative"
       >
-        <LoadingIndicator
-          v-if="file.loading"
-          class="w-10 h-full text-ink-gray-8"
-        />
+        <FilePreviewSkeleton v-if="file.loading" />
         <FileRender v-else-if="file.data" :preview-entity="file.data" />
       </div>
       <div
@@ -43,8 +40,9 @@ import { setActiveEntity } from '@/apps/drive/data/selection'
 import { pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 import Navbar from '@/apps/drive/components/Navbar.vue'
 import { ref, computed, onMounted, defineProps } from 'vue'
-import { Button, LoadingIndicator } from 'frappe-ui'
+import { Button } from 'frappe-ui'
 import FileRender from '@/apps/drive/components/FileRender.vue'
+import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { createResource } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import LucideScan from '~icons/lucide/scan'

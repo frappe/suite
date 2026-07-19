@@ -1,5 +1,5 @@
 <template>
-  <LoadingIndicator v-if="loading" class="w-10" />
+  <FilePreviewSkeleton v-if="loading" />
   <pre
     v-else
     class="overflow-y-auto h-[80vh] font-[InterVar] text-p-base text-ink-gray-8 sm:w-full border p-3 rounded overflow-x-auto"
@@ -10,7 +10,7 @@
 <script setup>
 /* Consider adding https://codemirror.net/ and add a mimetype eval list for all possible mimetypes */
 
-import { LoadingIndicator } from 'frappe-ui'
+import FilePreviewSkeleton from '@/apps/drive/components/FileTypePreview/FilePreviewSkeleton.vue'
 import { onMounted, ref, watch } from 'vue'
 
 const props = defineProps({

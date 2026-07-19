@@ -468,6 +468,10 @@ const invites = createResource({
 
 const isAdmin = createResource({
   url: 'suite.drive.api.permissions.is_admin',
+  // Pending invites are admin-only; only fetch them once the user qualifies.
+  onSuccess: (admin) => {
+    if (admin) invites.fetch({ team: team.value })
+  },
 })
 
 const team = ref(route.params.team || (getTeams.data ? Object.keys(getTeams.data)[0] : null))
@@ -479,7 +483,6 @@ watch(
   (team) => {
     if (!team) return
     teamUsers.fetch({ team })
-    invites.fetch({ team })
     isAdmin.fetch({ team })
     tabIndex.value = 0
   },
@@ -524,16 +527,21 @@ const leaveTeam = createResource({
   },
 })
 
-const tabs = [
+const tabs = computed(() => [
   {
     label: 'Members',
     icon: h(LucideUsers, { class: 'size-4' }),
   },
-  {
-    label: 'Invites',
-    icon: h(LucideMail, { class: 'size-4' }),
-  },
-]
+  // Invite management is admin-only.
+  ...(isAdmin.data
+    ? [
+        {
+          label: 'Invites',
+          icon: h(LucideMail, { class: 'size-4' }),
+        },
+      ]
+    : []),
+])
 
 const updateAccess = (level) => {
   selectedUser.value.access_level = level
