@@ -136,7 +136,7 @@ class SaeMeeting(Document):
 		if self.meeting_type == "restricted" and user != self.owner:
 			if not self.is_user_approved(user):
 				self.add_to_waiting_room(user)
-				self.save()
+				self.save(ignore_permissions=True)
 				return {"status": "waiting_for_approval", "message": "Waiting for host approval"}
 
 		joined = self.add_user_to_table("members", user)
@@ -145,7 +145,7 @@ class SaeMeeting(Document):
 		if joined:
 			self.remove_from_waiting_room(user)
 
-			self.save()
+			self.save(ignore_permissions=True)
 
 		return {"status": "joined", "message": "Successfully joined the meeting"}
 
@@ -458,3 +458,36 @@ def generate(segment_length=4, num_segments=3, separator="-"):
 		"".join(secrets.choice(string.ascii_lowercase) for _ in range(segment_length))
 		for _ in range(num_segments)
 	)
+
+
+def get_permission_query_conditions(user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+		return ""
+
+	escaped_user = frappe.db.escape(user)
+	return f"""
+		`tabSae Meeting`.`owner` = {escaped_user}
+		OR EXISTS (
+			SELECT 1
+			FROM `tabSae Meeting User` AS cohost
+			WHERE cohost.parent = `tabSae Meeting`.`name`
+				AND cohost.parenttype = 'Sae Meeting'
+				AND cohost.parentfield = 'co_hosts'
+				AND cohost.user = {escaped_user}
+		)
+	"""
+
+
+def has_permission(doc: SaeMeeting, ptype: str = "read", user: str | None = None) -> bool:
+	user = user or frappe.session.user
+	if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+		return True
+
+	if ptype == "create":
+		return True
+
+	if ptype == "delete":
+		return doc.owner == user
+
+	return doc.owner == user or user in doc.get_co_hosts()
