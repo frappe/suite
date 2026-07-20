@@ -42,6 +42,7 @@ export class ClientTelemetry {
 		this.firstMedia.clear();
 		this.recoveryStartedAt = null;
 		this.recoveryDirections.clear();
+		this.recoveryTrigger = "ice";
 	}
 
 	markFirstRemoteMedia(media: "audio" | "video"): void {
