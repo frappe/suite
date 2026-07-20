@@ -1,3 +1,4 @@
 .env
 secrets/*
 !secrets/.gitkeep
+prometheus/targets/*.yml

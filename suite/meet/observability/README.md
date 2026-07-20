@@ -24,7 +24,11 @@ Set the same token as `METRICS_TOKEN` on every SFU. Edit `.env` with the Grafana
 openssl rand -base64 32
 ```
 
-List every SFU hostname in `prometheus/targets/sfu.yml`:
+Copy the target template, then list every SFU hostname in the ignored runtime file:
+
+```bash
+cp prometheus/targets/sfu.yml.example prometheus/targets/sfu.yml
+```
 
 ```yaml
 - targets:
@@ -62,7 +66,7 @@ GRAFANA_ADMIN_PASSWORD=local-test-password
 PROMETHEUS_RETENTION=7d
 ```
 
-Put the same local test token in `secrets/sfu_metrics_token` and configure `prometheus/targets/sfu.yml` to scrape the host machine from Docker:
+Put the same local test token in `secrets/sfu_metrics_token` and configure `prometheus/targets/local.yml` to scrape the host machine from Docker:
 
 ```yaml
 - targets:
