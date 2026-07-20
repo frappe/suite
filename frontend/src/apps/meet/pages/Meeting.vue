@@ -313,9 +313,20 @@ const meetingDoc = getMeetingDoc(meetingId.value);
 const previewDetails = createResource({
 	url: "suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },
-	auto: true,
+	auto: !session.isLoggedIn,
 });
-const previewTitle = computed(() => previewDetails.data?.title || meetingId.value);
+const previewTitle = computed(
+	() => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
+);
+
+watch(
+	() => meetingDoc.get.error,
+	(error) => {
+		if (error && !previewDetails.data && !previewDetails.loading) {
+			previewDetails.fetch();
+		}
+	},
+);
 
 // --- Background effects & noise cancellation ---
 const backgroundEffects = useBackgroundEffects();
