@@ -6,9 +6,10 @@ import { Avatar, Button } from 'frappe-ui'
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 
-const { participants, dontShowRemove } = defineProps<{
+const { participants, dontShowRemove, avatarSize = 'xl' } = defineProps<{
 	participants: any[]
 	dontShowRemove?: boolean
+	avatarSize?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl'
 }>()
 
 defineEmits(['removeParticipant'])
@@ -34,7 +35,7 @@ const getParticipantStatusValues = (status: string) => {
 	<div v-for="p in participants" :key="p.email">
 		<div class="flex items-center justify-between text-left">
 			<div class="flex items-center space-x-2">
-				<Avatar :image="p.user_image" :label="p._name || p.email" size="xl" />
+				<Avatar :image="p.user_image" :label="p._name || p.email" :size="avatarSize" />
 				<div class="flex flex-col space-y-0.5">
 					<div class="flex items-center space-x-1">
 						<span class="text-ink-gray-8 text-sm-medium">

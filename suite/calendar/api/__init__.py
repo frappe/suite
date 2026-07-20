@@ -76,20 +76,15 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
 	user_data = frappe.db.get_all(
 		"User", filters={"name": ["in", list(unique_emails)]}, fields=["name", "user_image"]
 	)
+	# Only actual profile pictures — no Gravatar fallback, so participants
+	# without one render as initials in the frontend.
 	user_images = {u.name: u.user_image for u in user_data if u.user_image}
-	avatar_map = {email: user_images.get(email) or get_avatar_url(email) for email in unique_emails}
 
 	for event in events:
 		for participant in event["participants"]:
 			email = participant.get("email")
-			if email in avatar_map:
-				participant["user_image"] = avatar_map[email]
-
-
-def get_avatar_url(email: str) -> str:
-	"""Returns the avatar URL for the given email."""
-
-	return f"/api/method/suite.mail.api.mail.get_avatar?email={email}"
+			if user_images.get(email):
+				participant["user_image"] = user_images[email]
 
 
 @frappe.whitelist()

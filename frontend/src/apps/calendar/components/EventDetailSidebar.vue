@@ -227,7 +227,7 @@ const meetCode = computed(() => meetUrl.value.split('/meet/')[1]?.split(/[?#]/)[
 
 const copyMeetLink = async () => {
 	await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
-	toast.success(__('Meet link copied.'))
+	toast.success(__('Frappe Meet link copied.'))
 }
 
 const joinMeet = () => {
@@ -394,7 +394,7 @@ const openUrl = (location: string) => {
 						</span>
 						<button
 							class="text-ink-gray-5 hover:text-ink-gray-7 shrink-0"
-							:title="__('Copy meet link')"
+							:title="__('Copy Frappe Meet link')"
 							@click="copyMeetLink"
 						>
 							<Copy class="stroke-1.5 size-4" />
@@ -406,7 +406,7 @@ const openUrl = (location: string) => {
 							@click="joinMeet"
 						>
 							<Video class="stroke-1.5 size-4" />
-							{{ __('Join meet') }}
+							{{ __('Join Frappe Meet') }}
 						</button>
 					</div>
 				</template>
@@ -477,7 +477,11 @@ const openUrl = (location: string) => {
 					</a>
 				</div>
 				<div class="space-y-3 px-[18px]">
-					<EventParticipantList :participants="visibleParticipants" :dont-show-remove="true" />
+					<EventParticipantList
+						:participants="visibleParticipants"
+						:dont-show-remove="true"
+						avatar-size="sm"
+					/>
 					<button
 						v-if="!showAllParticipants && orderedParticipants.length > VISIBLE_PARTICIPANT_COUNT"
 						class="text-ink-gray-6 hover:text-ink-gray-8 flex items-center gap-2.5 py-0.5 text-sm"
