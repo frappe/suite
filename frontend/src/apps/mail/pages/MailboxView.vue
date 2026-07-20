@@ -24,7 +24,8 @@
 	     screening is on and threads are waiting to be screened. -->
 	<div v-if="showScreenerBanner" class="flex items-center space-x-1 border-b py-2.5 px-5">
 		<span class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full" />
-		<span class="text-ink-gray-5"><span class="font-medium text-ink-gray-9">{{ screenerCountLabel }}</span> {{ screenerBannerRest }}</span>
+		<span class="text-ink-gray-5">{{ screenerBanner.before
+		}}<span class="font-medium text-ink-gray-9">{{ screenerBanner.phrase }}</span>{{ screenerBanner.after }}</span>
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
@@ -995,17 +996,18 @@ const showScreenerBanner = computed(
 		screenerCount.value > 0 &&
 		(showReadingPane.value || !threadID),
 )
-// Split so only the count phrase ("3 new threads") is emphasised, the rest stays regular weight.
-const screenerCountLabel = computed(() =>
-	screenerCount.value === 1
-		? __('1 new thread')
-		: __('{0} new threads', [String(screenerCount.value)]),
-)
-const screenerBannerRest = computed(() =>
-	screenerCount.value === 1
-		? __('is waiting to be screened.')
-		: __('are waiting to be screened.'),
-)
+// Emphasise only the count phrase ("3 new threads") while keeping the sentence a single translatable
+// unit: the full string keeps a literal {0} placeholder (no args passed) so translators control word
+// order, then we split on {0} to slot the emphasised phrase back in.
+const screenerBanner = computed(() => {
+	const one = screenerCount.value === 1
+	const phrase = one ? __('1 new thread') : __('{0} new threads', [String(screenerCount.value)])
+	const sentence = one
+		? __('{0} is waiting to be screened.')
+		: __('{0} are waiting to be screened.')
+	const [before, after] = sentence.split('{0}')
+	return { phrase, before, after }
+})
 const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
 const scrollListToTop = () => mailListRef.value?.scrollTo({ top: 0 })
