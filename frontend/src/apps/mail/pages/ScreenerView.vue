@@ -518,7 +518,7 @@ const clearAllResource = createResource({
 })
 
 const clearAllOptions = computed(() => ({
-	title: __('Move all to Inbox?'),
+	title: __('Move All to Inbox'),
 	message: __(
 		'This will move current unscreened messages to your Inbox. Future emails from these senders will still go to the Screener.',
 	),
@@ -558,7 +558,7 @@ const bulkConfirmOptions = computed(() => {
 	const count = senders.data?.length ?? 0
 	const isAllow = pendingBulkAction.value === 'allow'
 	return {
-		title: isAllow ? __('Allow all senders?') : __('Deny all senders?'),
+		title: isAllow ? __('Allow All Senders') : __('Deny All Senders'),
 		message: isAllow
 			? __('{0} senders will be allowed, and their messages moved to your Inbox.', [String(count)])
 			: __('{0} senders will be denied, and their messages moved to Junk.', [String(count)]),
