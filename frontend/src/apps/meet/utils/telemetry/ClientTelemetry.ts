@@ -75,6 +75,7 @@ export class ClientTelemetry {
 			});
 			this.recoveryStartedAt = null;
 			this.recoveryDirections.clear();
+			this.recoveryTrigger = "ice";
 			return;
 		}
 
