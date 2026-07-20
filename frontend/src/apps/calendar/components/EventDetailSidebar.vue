@@ -214,7 +214,11 @@ const getMeetUrl = (url?: string) => {
 		// path is kept for navigation, so joining always stays on our own
 		// origin regardless of the stored host.
 		const parsed = new URL(value, window.location.origin)
-		if (parsed.pathname.startsWith('/meet/'))
+		// Accept if the stored host matches ours, OR if it was a relative path
+		// (no host in the original string). Rejects external meeting services
+		// whose URLs happen to contain /meet/.
+		const isRelative = !value.startsWith('http')
+		if (parsed.pathname.startsWith('/meet/') && (isRelative || parsed.origin === window.location.origin))
 			return parsed.pathname + parsed.search + parsed.hash
 	} catch {
 		return ''
