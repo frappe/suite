@@ -25,8 +25,16 @@ provide('$dayjs', dayjs)
 
 watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
 
-onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+// Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
+// reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.
+onMounted(() => {
+	document.body.classList.add('calendar-app')
+	window.addEventListener('keydown', handleKeyDown)
+})
+onUnmounted(() => {
+	document.body.classList.remove('calendar-app')
+	window.removeEventListener('keydown', handleKeyDown)
+})
 
 const handleKeyDown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
@@ -78,3 +86,14 @@ const updateColorScheme = createResource({
 		<router-view />
 	</FrappeUIProvider>
 </template>
+
+<style>
+/* Lucide icons render an <svg> whose default stroke-width is 2, and Tailwind has no
+   `stroke-1.5` utility, so give the calendar a shared `.icon` helper for the 1.5 stroke —
+   mirrors the mail layout. Scoped to `body.calendar-app` (toggled while this layout is
+   mounted) so it also reaches Dropdowns/Dialogs that teleport to <body>, and never leaks
+   into the other suite apps. */
+body.calendar-app .icon {
+	stroke-width: 1.5;
+}
+</style>
