@@ -45,7 +45,7 @@
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
 								</Dropdown>
-								<Button :label="__('Allow all')" variant="ghost" @click="allowAll" />
+								<Button :label="__('Allow All')" variant="ghost" @click="allowAll" />
 							</div>
 						</div>
 
@@ -520,7 +520,8 @@ const clearAllResource = createResource({
 const clearAllOptions = computed(() => ({
 	title: __('Move All to Inbox'),
 	message: __(
-		'This will move current unscreened messages to your Inbox. Future emails from these senders will still go to the Screener.',
+		'Messages from {0} senders will be moved to your Inbox. Future emails from them will still go to the Screener.',
+		[String(senders.data?.length ?? 0)],
 	),
 	actions: [
 		{
@@ -564,7 +565,7 @@ const bulkConfirmOptions = computed(() => {
 			: __('{0} senders will be denied, and their messages moved to Junk.', [String(count)]),
 		actions: [
 			{
-				label: isAllow ? __('Allow all') : __('Deny all'),
+				label: isAllow ? __('Allow All') : __('Deny All'),
 				variant: 'solid',
 				onClick: runBulk,
 			},
@@ -573,7 +574,7 @@ const bulkConfirmOptions = computed(() => {
 })
 
 const bulkOptions = computed(() => [
-	{ label: __('Deny all'), onClick: denyAll },
-	{ label: __('Move all to Inbox'), onClick: () => (showClearAll.value = true) },
+	{ label: __('Deny All'), onClick: denyAll },
+	{ label: __('Move All to Inbox'), onClick: () => (showClearAll.value = true) },
 ])
 </script>
