@@ -1,0 +1,216 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "targets": [
+        { "expr": "sum(up{job=\"frappe-meet-sfu\",instance=~\"$instance\"})", "refId": "A" }
+      ],
+      "title": "SFUs Up",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "expr": "sum(meet_sfu_resources{resource=\"rooms\",instance=~\"$instance\"})", "refId": "A" }],
+      "title": "Active Rooms",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "expr": "sum(meet_sfu_resources{resource=\"peers\",instance=~\"$instance\"})", "refId": "A" }],
+      "title": "Connected Peers",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "expr": "sum(meet_sfu_resources{resource=\"sockets\",instance=~\"$instance\"})", "refId": "A" }],
+      "title": "Connected Sockets",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "expr": "sum(increase(meet_sfu_transport_operations_total{outcome=\"failure\",instance=~\"$instance\"}[$__range])) or vector(0)", "refId": "A" }],
+      "title": "Transport Failures",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "expr": "sum(increase(meet_sfu_client_media_stalls_total{instance=~\"$instance\"}[$__range])) or vector(0)", "refId": "A" }],
+      "title": "Sampled Media Stalls",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (instance, resource) (meet_sfu_resources{resource=~\"rooms|peers|sockets|transports|producers|consumers\",instance=~\"$instance\"})", "legendFormat": "{{instance}} {{resource}}", "refId": "A" }],
+      "title": "SFU Resources",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "connections/s", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "unit": "cps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 8,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (outcome) (rate(meet_sfu_socket_connections_total{instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{outcome}}", "refId": "A" }],
+      "title": "Socket Connection Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }, "mappings": [] }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "id": 9,
+      "options": { "displayLabels": ["name", "value"], "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "values": ["value"] }, "pieType": "donut", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "sum by (reason) (increase(meet_sfu_socket_disconnects_total{instance=~\"$instance\"}[$__range]))", "legendFormat": "{{reason}}", "refId": "A" }],
+      "title": "Disconnect Reasons",
+      "type": "piechart"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [], "max": 100, "min": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 }] }, "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "id": 10,
+      "options": { "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto" },
+      "targets": [{ "expr": "100 * sum(rate(meet_sfu_room_joins_total{outcome=\"success\",instance=~\"$instance\"}[$__rate_interval])) / clamp_min(sum(rate(meet_sfu_room_joins_total{instance=~\"$instance\"}[$__rate_interval])), 0.000001)", "refId": "A" }],
+      "title": "Room Join Success",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "id": 11,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(meet_sfu_room_join_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "P95", "refId": "A" }],
+      "title": "Room Join Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "failures", "axisPlacement": "auto", "drawStyle": "bars", "fillOpacity": 60, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 12,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (operation, direction) (increase(meet_sfu_transport_operations_total{outcome=\"failure\",instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{operation}} {{direction}}", "refId": "A" }],
+      "title": "Transport Failures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 13,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, media) (rate(meet_sfu_first_remote_media_duration_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))", "legendFormat": "{{media}} P95", "refId": "A" }],
+      "title": "First Remote Media Latency (Sampled)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "events", "axisPlacement": "auto", "drawStyle": "bars", "fillOpacity": 45, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 14,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (media) (increase(meet_sfu_client_media_stalls_total{instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{media}}", "refId": "A" }],
+      "title": "Media Stalls (Sampled)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "recoveries", "axisPlacement": "auto", "drawStyle": "bars", "fillOpacity": 45, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "never", "spanNulls": true, "stacking": { "group": "A", "mode": "normal" }, "thresholdsStyle": { "mode": "off" } }, "mappings": [], "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 15,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (outcome, direction, trigger) (increase(meet_sfu_client_recoveries_total{instance=~\"$instance\"}[$__rate_interval]))", "legendFormat": "{{outcome}} {{direction}} {{trigger}}", "refId": "A" }],
+      "title": "Recovery Outcomes (Sampled)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["frappe-meet", "sfu"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(meet_sfu_resources, instance)",
+        "includeAll": true,
+        "label": "SFU instance",
+        "multi": true,
+        "name": "instance",
+        "options": [],
+        "query": { "query": "label_values(meet_sfu_resources, instance)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Frappe Meet SFU Overview",
+  "uid": "frappe-meet-sfu-overview",
+  "version": 1,
+  "weekStart": ""
+}
