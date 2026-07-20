@@ -141,6 +141,7 @@ def create(meeting_type: str = "open", allow_guest: bool = True, title: str | No
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=10, seconds=60)
 def get_public_meeting_preview(meeting_id: str) -> dict:
 	"""Return title-only data for the meeting preview."""
 	title = frappe.db.get_value("Meet Room", meeting_id, "title")
