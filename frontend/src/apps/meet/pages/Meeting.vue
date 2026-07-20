@@ -11,7 +11,7 @@
 		>
 			<MeetingHeader
 				:meetingId="meetingId"
-				:meetingTitle="meetingTitle"
+				:meetingTitle="previewTitle"
 			>
 				<template #right>
 					<Button
@@ -42,6 +42,7 @@
 			<MeetingPreview
 				v-if="showPreview"
 				:meetingId="meetingId"
+				:meetingTitle="previewTitle"
 				:isCameraOn="mediaState.isCameraOn"
 				:isMicOn="mediaState.isMicOn"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
@@ -216,7 +217,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, frappeRequest, toast } from "frappe-ui";
+import { Button, createResource, frappeRequest, toast } from "frappe-ui";
 import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -309,6 +310,12 @@ const {
 	meetingCoHosts,
 } = useMeetingDoc();
 const meetingDoc = getMeetingDoc(meetingId.value);
+const previewDetails = createResource({
+	url: "suite.meet.api.meeting.get_public_meeting_preview",
+	params: { meeting_id: meetingId.value },
+	auto: true,
+});
+const previewTitle = computed(() => previewDetails.data?.title || meetingId.value);
 
 // --- Background effects & noise cancellation ---
 const backgroundEffects = useBackgroundEffects();

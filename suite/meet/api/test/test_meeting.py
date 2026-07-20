@@ -6,7 +6,12 @@ import jwt
 from frappe.client import delete as delete_document
 from frappe.tests import IntegrationTestCase
 
-from suite.meet.api.meeting import get_sfu_connection_details, join_meeting
+from suite.meet.api.meeting import (
+	get_public_meeting_preview,
+	get_sfu_connection_details,
+	get_sfu_presence_preview_token,
+	join_meeting,
+)
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -102,6 +107,16 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 		for user in (self.host_email, self.outsider_email):
 			frappe.set_user(user)
 			frappe.get_doc("Meet Room", self.meeting.name).check_permission("read")
+
+	def test_non_member_gets_public_preview_title_without_read_access(self):
+		self.meeting.title = "Quarterly planning"
+		self.meeting.save(ignore_permissions=True)
+
+		frappe.set_user(self.outsider_email)
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc("Meet Room", self.meeting.name).check_permission("read")
+
+		self.assertEqual(get_public_meeting_preview(self.meeting.name)["title"], "Quarterly planning")
 
 	def test_meeting_list_only_contains_hosted_or_cohosted_meetings(self):
 		self.meeting.add_user_to_table("co_hosts", self.member_email, save=True, ignore_permissions=True)
