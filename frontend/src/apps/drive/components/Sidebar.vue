@@ -5,8 +5,8 @@
     menuItems: settingsItems,
     logo: FrappeDriveLogo,
   }" :sections="sidebarItems">
-    <template #footer-items="{ isCollapsed }">
-      <StorageBar v-if="teamExists.data" :is-expanded="!isCollapsed" />
+    <template #footer-items>
+      <StorageBar v-if="teamExists.data" :is-expanded="!sidebarCollapsed" />
     </template>
     <template #sidebar-item="{ item, isCollapsed }">
       <SidebarItem :class="draggedSpace === item.label &&

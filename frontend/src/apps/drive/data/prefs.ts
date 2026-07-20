@@ -1,4 +1,5 @@
 import { ref, watch } from 'vue'
+import { useStorage } from '@vueuse/core'
 
 export type ViewMode = 'list' | 'grid'
 
@@ -42,8 +43,7 @@ export function setSortOrder(scopeId: string, order: SortOrder) {
 }
 
 /** Sidebar collapsed on desktop. */
-export const sidebarCollapsed = ref(getJson('sidebarCollapsed', false))
-watch(sidebarCollapsed, (v) => setJson('sidebarCollapsed', v))
+export const sidebarCollapsed = useStorage('isSidebarCollapsed', false)
 
 /** Shared page: site files vs shared-with-you (in-memory only). */
 export const shareView = ref(false)

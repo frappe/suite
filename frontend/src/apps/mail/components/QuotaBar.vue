@@ -15,7 +15,7 @@
 				:style="{ width: `${quota.data?.used_percentage || 0}%`, maxWidth: '100%' }"
 			/>
 		</div>
-		<span class="text-ink-gray-5 line-clamp-1 text-xs" :class="{ invisible: isCollapsed }">
+		<span v-if="!isCollapsed" class="text-ink-gray-5 line-clamp-1 text-xs">
 			{{ displayedQuota }}
 		</span>
 	</div>

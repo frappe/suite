@@ -21,7 +21,7 @@ import LucideCheck from "~icons/lucide/check";
 const route = useRoute();
 const sessionStore = useSessionStore();
 
-const isCollapsed = useStorage("meet-sidebar-collapsed", true);
+const isCollapsed = useStorage("isSidebarCollapsed", false);
 
 const userResource = createResource({
 	url: "suite.api.account.get_logged_in_user",

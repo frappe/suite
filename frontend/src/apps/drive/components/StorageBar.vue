@@ -23,11 +23,9 @@
         }"
       />
     </div>
-    <span
-      class="text-xs text-ink-gray-5 line-clamp-1 ml-2"
-      :class="isExpanded ? 'opacity-100' : 'opacity-0'"
-      >{{ formattedString }}</span
-    >
+    <span v-if="isExpanded" class="text-xs text-ink-gray-5 line-clamp-1 ml-2">
+      {{ formattedString }}
+    </span>
   </div>
 </template>
 

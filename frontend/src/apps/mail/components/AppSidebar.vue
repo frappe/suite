@@ -20,8 +20,8 @@
 			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
-			<template #footer-items="{ isCollapsed }">
-				<QuotaBar v-if="user.data.is_jmap_configured" :is-collapsed />
+			<template #footer-items>
+				<QuotaBar v-if="user.data.is_jmap_configured" :is-collapsed="isSidebarCollapsed" />
 			</template>
 			<template #sidebar-item="{ item }">
 				<SidebarItem
