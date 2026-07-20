@@ -6,7 +6,7 @@ import { Button, Calendar, Dialog, createResource, usePageMeta } from 'frappe-ui
 import { raiseToast } from '@/apps/calendar/utils'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
-import EventPopoverContent from '@/apps/calendar/components/EventPopoverContent.vue'
+import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 
 const dayjs = inject('$dayjs')
@@ -161,6 +161,28 @@ const handleOpenEvent = (e) => {
 	showEditEvent.value = true
 }
 
+// --- Event detail sidebar ---
+
+const selectedCalendarEvent = ref(null)
+
+const handleEventClick = ({ calendarEvent }) => (selectedCalendarEvent.value = calendarEvent)
+
+// Keep the sidebar in sync after edits/RSVPs: once events reload, swap in the
+// fresh copy of the selected event, or close the sidebar if it no longer exists
+// (deleted, or outside the fetched range after navigation).
+watch(
+	() => events.data,
+	(data) => {
+		if (!selectedCalendarEvent.value || !data) return
+		selectedCalendarEvent.value =
+			data.find(
+				(e) =>
+					e.id === selectedCalendarEvent.value.id &&
+					e.recurrence_id === selectedCalendarEvent.value.recurrence_id,
+			) ?? null
+	},
+)
+
 watch(
 	() => showEditEvent.value,
 	(val) => {
@@ -259,20 +281,19 @@ const NOTIFY_MODAL_OPTIONS = {
 					ref="calendar"
 					:events="visibleEvents"
 					:config="{ isEditMode: true }"
+					:on-click="handleEventClick"
 					:on-dbl-click="(event) => handleOpenEvent(event)"
 					:on-cell-click="(event) => handleOpenEvent(event)"
 					@update="handleUpdate"
-				>
-					<template #event-popover-content="{ calendarEvent, close }">
-						<EventPopoverContent
-							:calendar-event
-							:close
-							@edit="handleOpenEvent({ calendarEvent })"
-							@reload-events="events.reload()"
-						/>
-					</template>
-				</Calendar>
+				/>
 			</div>
+			<EventDetailSidebar
+				v-if="selectedCalendarEvent"
+				:calendar-event="selectedCalendarEvent"
+				@close="selectedCalendarEvent = null"
+				@edit="handleOpenEvent({ calendarEvent: selectedCalendarEvent })"
+				@reload-events="events.reload()"
+			/>
 		</div>
 	</div>
 	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="events.reload()" />
