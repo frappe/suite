@@ -2,6 +2,32 @@
 
 Mediasoup-based Selective Forwarding Unit (SFU) for Frappe Meet.
 
+## Development Setup
+
+From the Suite app directory, install the SFU dependencies and create a local environment file:
+
+```bash
+cd suite/meet/sfu-server
+yarn install
+cp .env.example .env
+```
+
+Set `JWT_SECRET` in `.env` to a development secret. The default host, signaling port, and WebRTC settings in `.env.example` are suitable for local development.
+
+From your bench directory, configure the Frappe site with the local SFU URL and the same secret:
+
+```bash
+bench --site suite.localhost set-config sfu_server_url http://localhost:3000
+bench --site suite.localhost set-config sfu_secret your_jwt_secret_here
+```
+
+Replace `suite.localhost` with your site name, then return to `apps/suite/suite/meet/sfu-server` and start the SFU:
+
+```bash
+yarn dev
+```
+
+The signaling server runs at `http://localhost:3000`. Check `http://localhost:3000/health` to verify that it is ready, then run the Frappe development server with `bench start` in a separate terminal.
 
 ## Production Deployment
 
