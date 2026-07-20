@@ -11,7 +11,7 @@
 </div>
 
 <div align="center">
-  <img width="1268" alt="Frappe Suite" src="https://github.com/user-attachments/assets/20e2d1c2-caae-43ee-9eb8-ed6a27ad9917" />
+  <img width="1990" height="966" alt="image" src="https://github.com/user-attachments/assets/462b2529-d8f8-4346-835b-b5c390bc6d57" />
 </div>
 
 <br />
@@ -37,6 +37,27 @@ Frappe Suite brings seven collaboration products into one Frappe app. Keep files
 | [Meet](https://github.com/frappe/meet) | Run video meetings |
 | [Mail](https://github.com/frappe/mail) | Manage email in a modern client |
 | [Calendar](https://github.com/frappe/calendar_app) | Plan events and manage schedules |
+
+<details>
+<summary>View screenshots</summary>
+
+### Drive
+
+![Frappe Drive](https://github.com/user-attachments/assets/8b4b33ad-afb4-4e64-ac10-987076c66d57)
+
+### Slides
+
+![Frappe Slides](https://github.com/user-attachments/assets/3bb8ba8c-a5a1-4223-bf04-cd07372128a0)
+
+### Meet
+
+![Frappe Meet](https://github.com/user-attachments/assets/aa124052-dc35-4f0d-b974-d47d2d813e70)
+
+### Mail
+
+![Frappe Mail](https://raw.githubusercontent.com/frappe/mail/develop/docs/screenshots/ui/reading-pane-dark.png)
+
+</details>
 
 ## Under the Hood
 
