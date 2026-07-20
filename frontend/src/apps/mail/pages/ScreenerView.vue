@@ -39,12 +39,14 @@
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
 						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
 							<span class="text-ink-gray-5 truncate">{{ waitingLabel }}</span>
-							<Button
-								:label="__('Clear All')"
-								variant="ghost"
-								class="-mr-2"
-								@click="showClearAll = true"
-							/>
+							<div class="-mr-2 flex items-center gap-1">
+								<Button :label="__('Allow all')" variant="ghost" @click="allowAll" />
+								<Dropdown :options="bulkOptions" placement="bottom-end">
+									<Button variant="ghost" class="!px-1.5">
+										<template #icon><Ellipsis class="h-4 w-4" stroke-width="1.5" /></template>
+									</Button>
+								</Dropdown>
+							</div>
 						</div>
 
 						<div
@@ -211,7 +213,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Check, ChevronDown, ChevronLeft, LoaderCircle, X } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronLeft, Ellipsis, LoaderCircle, X } from 'lucide-vue-next'
 import { Breadcrumbs, Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
@@ -361,7 +363,7 @@ usePageMeta(() => {
 
 const waitingLabel = computed(() => {
 	const n = senders.data?.length ?? 0
-	return n === 1 ? __('1 new sender.') : __('{0} new senders.', [String(n)])
+	return n === 1 ? __('1 new sender') : __('{0} new senders', [String(n)])
 })
 
 const allowResource = createResource({
@@ -515,7 +517,7 @@ const clearAllResource = createResource({
 })
 
 const clearAllOptions = computed(() => ({
-	title: __('Clear the Screener?'),
+	title: __('Move all to Inbox?'),
 	message: __(
 		'This will move current unscreened messages to your Inbox. Future emails from these senders will still go to the Screener.',
 	),
@@ -528,4 +530,15 @@ const clearAllOptions = computed(() => ({
 		},
 	],
 }))
+
+// Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
+// batched request); "Move all to Inbox" keeps the no-decision path behind its confirm dialog.
+const allSenderEmails = () => (senders.data ?? []).map((s: ScreeningSender) => s.from_email)
+const allowAll = () => allow(allSenderEmails())
+const denyAll = () => screenOut(allSenderEmails())
+
+const bulkOptions = computed(() => [
+	{ label: __('Deny all'), onClick: denyAll },
+	{ label: __('Move all to Inbox'), onClick: () => (showClearAll.value = true) },
+])
 </script>
