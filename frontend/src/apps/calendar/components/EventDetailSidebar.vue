@@ -278,7 +278,7 @@ const handleDeleteEventInstance = () =>
 	})
 
 const handleDeleteFollowingEventInstances = () => {
-	const recurrenceRule = calendarEvent.recurrence_rule
+	const recurrenceRule = { ...calendarEvent.recurrence_rule }
 	recurrenceRule.until = `${calendarEvent.date}T00:00:00Z`
 	const patch = { recurrence_rule: JSON.stringify(recurrenceRule) }
 

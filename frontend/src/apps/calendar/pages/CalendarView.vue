@@ -289,6 +289,7 @@ const NOTIFY_MODAL_OPTIONS = {
 			</div>
 			<EventDetailSidebar
 				v-if="selectedCalendarEvent"
+				:key="selectedCalendarEvent.id + (selectedCalendarEvent.recurrence_id ?? '')"
 				:calendar-event="selectedCalendarEvent"
 				@close="selectedCalendarEvent = null"
 				@edit="handleOpenEvent({ calendarEvent: selectedCalendarEvent })"
