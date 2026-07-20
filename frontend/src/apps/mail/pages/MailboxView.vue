@@ -22,8 +22,9 @@
 
 	<!-- Unscreened-thread nudge on the inbox, mirroring the trash/junk info bar: shown while Hey-style
 	     screening is on and threads are waiting to be screened. -->
-	<div v-if="showScreenerBanner" class="space-x-1 border-b py-2.5 px-5">
-		<span class="text-ink-gray-5">{{ screenerBannerLabel }}</span>
+	<div v-if="showScreenerBanner" class="flex items-center space-x-1 border-b py-2.5 px-5">
+		<span class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full" />
+		<span class="text-ink-gray-5"><span class="font-medium text-ink-gray-9">{{ screenerCountLabel }}</span> {{ screenerBannerRest }}</span>
 		<Button :label="__('Review Now')" variant="ghost" @click="goToScreener" />
 	</div>
 
@@ -994,10 +995,16 @@ const showScreenerBanner = computed(
 		screenerCount.value > 0 &&
 		(showReadingPane.value || !threadID),
 )
-const screenerBannerLabel = computed(() =>
+// Split so only the count phrase ("3 new threads") is emphasised, the rest stays regular weight.
+const screenerCountLabel = computed(() =>
 	screenerCount.value === 1
-		? __('1 new thread is waiting to be screened.')
-		: __('{0} new threads are waiting to be screened.', [String(screenerCount.value)]),
+		? __('1 new thread')
+		: __('{0} new threads', [String(screenerCount.value)]),
+)
+const screenerBannerRest = computed(() =>
+	screenerCount.value === 1
+		? __('is waiting to be screened.')
+		: __('are waiting to be screened.'),
 )
 const goToScreener = () => router.push({ name: 'mail-screener', params: { accountId } })
 
