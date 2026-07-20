@@ -192,13 +192,6 @@ const previewVideoRef = (el: unknown) => {
 	props.setLocalVideoRef?.(el as HTMLVideoElement | null);
 };
 
-const previewDetails = createResource({
-	url: "suite.meet.api.meeting.get_public_meeting_preview",
-	params: { meeting_id: props.meetingId },
-	auto: true,
-});
-const meetingTitle = computed(() => previewDetails.data?.title || "");
-
 const { participants, error: presenceError } = useMeetingPreviewPresence(
 	props.meetingId,
 );
