@@ -38,11 +38,11 @@
 					<div class="pb-20">
 						<!-- Count bar — matches the mailbox "All Mails" toolbar height/style. -->
 						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
-							<span class="text-ink-gray-5 truncate">{{ waitingLabel }}</span>
+							<span class="truncate">{{ waitingLabel }}</span>
 							<div class="-mr-2 flex items-center gap-1">
 								<Dropdown :options="bulkOptions" placement="bottom-end">
 									<Button variant="ghost" class="!px-1.5">
-										<template #icon><Ellipsis class="h-4 w-4" stroke-width="1.5" /></template>
+										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
 								</Dropdown>
 								<Button :label="__('Allow all')" variant="ghost" @click="allowAll" />
