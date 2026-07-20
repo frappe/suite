@@ -40,12 +40,12 @@
 						<div class="flex min-h-[49px] items-center justify-between border-b px-5">
 							<span class="text-ink-gray-5 truncate">{{ waitingLabel }}</span>
 							<div class="-mr-2 flex items-center gap-1">
-								<Button :label="__('Allow all')" variant="ghost" @click="allowAll" />
 								<Dropdown :options="bulkOptions" placement="bottom-end">
 									<Button variant="ghost" class="!px-1.5">
 										<template #icon><Ellipsis class="h-4 w-4" stroke-width="1.5" /></template>
 									</Button>
 								</Dropdown>
+								<Button :label="__('Allow all')" variant="ghost" @click="allowAll" />
 							</div>
 						</div>
 
@@ -207,6 +207,7 @@
 		</div>
 
 		<Dialog v-model="showClearAll" :options="clearAllOptions" />
+		<Dialog v-model="showBulkConfirm" :options="bulkConfirmOptions" />
 	</div>
 </template>
 
@@ -532,10 +533,45 @@ const clearAllOptions = computed(() => ({
 }))
 
 // Bulk triage over every waiting sender. Allow/Deny reuse the per-sender flow (optimistic clear +
-// batched request); "Move all to Inbox" keeps the no-decision path behind its confirm dialog.
+// batched request) but, since they act on everyone at once, go behind a confirm dialog.
 const allSenderEmails = () => (senders.data ?? []).map((s: ScreeningSender) => s.from_email)
-const allowAll = () => allow(allSenderEmails())
-const denyAll = () => screenOut(allSenderEmails())
+
+const showBulkConfirm = ref(false)
+const pendingBulkAction = ref<'allow' | 'screenOut' | null>(null)
+
+const allowAll = () => confirmBulk('allow')
+const denyAll = () => confirmBulk('screenOut')
+
+const confirmBulk = (action: 'allow' | 'screenOut') => {
+	pendingBulkAction.value = action
+	showBulkConfirm.value = true
+}
+
+const runBulk = () => {
+	const action = pendingBulkAction.value
+	showBulkConfirm.value = false
+	pendingBulkAction.value = null
+	if (action) runAction(action, allSenderEmails())
+}
+
+const bulkConfirmOptions = computed(() => {
+	const count = senders.data?.length ?? 0
+	const isAllow = pendingBulkAction.value === 'allow'
+	return {
+		title: isAllow ? __('Allow all senders?') : __('Deny all senders?'),
+		message: isAllow
+			? __('{0} senders will be allowed, and their messages moved to your Inbox.', [String(count)])
+			: __('{0} senders will be denied, and their messages moved to Junk.', [String(count)]),
+		actions: [
+			{
+				label: isAllow ? __('Allow all') : __('Deny all'),
+				variant: 'solid',
+				theme: isAllow ? 'gray' : 'red',
+				onClick: runBulk,
+			},
+		],
+	}
+})
 
 const bulkOptions = computed(() => [
 	{ label: __('Deny all'), onClick: denyAll },
