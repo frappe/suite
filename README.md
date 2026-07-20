@@ -38,27 +38,6 @@ Frappe Suite brings seven collaboration products into one Frappe app. Keep files
 | [Mail](https://github.com/frappe/mail) | Manage email in a modern client |
 | [Calendar](https://github.com/frappe/calendar_app) | Plan events and manage schedules |
 
-<details>
-<summary>View screenshots</summary>
-
-### Drive
-
-![Frappe Drive](https://github.com/user-attachments/assets/8b4b33ad-afb4-4e64-ac10-987076c66d57)
-
-### Slides
-
-![Frappe Slides](https://github.com/user-attachments/assets/3bb8ba8c-a5a1-4223-bf04-cd07372128a0)
-
-### Meet
-
-![Frappe Meet](https://github.com/user-attachments/assets/aa124052-dc35-4f0d-b974-d47d2d813e70)
-
-### Mail
-
-![Frappe Mail](https://raw.githubusercontent.com/frappe/mail/develop/docs/screenshots/ui/reading-pane-dark.png)
-
-</details>
-
 ## Under the Hood
 
 - [**Frappe Framework**](https://github.com/frappe/frappe): Provides the database, authentication, permissions, realtime events, and APIs shared by Drive, Writer, Sheets, Slides, Meet, Mail, and Calendar.
