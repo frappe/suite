@@ -480,7 +480,6 @@ const openUrl = (location: string) => {
 					<EventParticipantList
 						:participants="visibleParticipants"
 						:dont-show-remove="true"
-						avatar-size="sm"
 					/>
 					<button
 						v-if="!showAllParticipants && orderedParticipants.length > VISIBLE_PARTICIPANT_COUNT"
