@@ -566,7 +566,6 @@ const bulkConfirmOptions = computed(() => {
 			{
 				label: isAllow ? __('Allow all') : __('Deny all'),
 				variant: 'solid',
-				theme: isAllow ? 'gray' : 'red',
 				onClick: runBulk,
 			},
 		],
