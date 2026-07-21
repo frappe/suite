@@ -447,23 +447,6 @@ def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 
 
 @frappe.whitelist()
-def get_master_events_by_uids(account: str, uids: list[str]) -> dict:
-	"""Returns a dictionary of master calendar events for the specified account and UIDs."""
-
-	events = {}
-	service = get_calendar_event_service(account)
-
-	if master_ids := service.get_master_ids(uids):
-		calendar_map = {c["id"]: c["name"] for c in service.calendars}
-
-		for event in service.get(master_ids):
-			event = format_calendar_event(account, calendar_map, event)
-			events[event["uid"]] = event
-
-	return events
-
-
-@frappe.whitelist()
 def update_calendar_event(
 	account: str,
 	id: str,
