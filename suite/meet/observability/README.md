@@ -16,7 +16,7 @@ cp .env.example .env
 mkdir -p secrets
 openssl rand -hex 32 > secrets/sfu_metrics_token
 # Prometheus must be able to read this bind-mounted file.
-PROMETHEUS_IDS="$(docker compose run --rm --no-deps --entrypoint sh prometheus -c 'id -u:id -g')"
+PROMETHEUS_IDS="$(docker compose run --rm --no-deps --entrypoint sh prometheus -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
 sudo chown "$PROMETHEUS_IDS" secrets/sfu_metrics_token
 sudo chmod 400 secrets/sfu_metrics_token
 ```
