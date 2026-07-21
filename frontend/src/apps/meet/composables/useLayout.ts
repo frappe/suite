@@ -53,18 +53,6 @@ export function useLayout(
 		return maxColumns.value * 4;
 	});
 
-	const gridColumns = computed<number>(() => {
-		if (mode.value === "sidebar") {
-			if (isMobile.value) return 1;
-			const total = Object.keys(stripParticipants.value || {}).length + 1;
-			return Math.min(total > 4 ? 2 : 1, sidebarMaxColumns.value);
-		}
-		const count = visibleTileCount.value;
-		if (count <= 0) return 1;
-		if (isMobile.value && count === 2) return 1;
-		return Math.min(maxColumns.value, Math.ceil(Math.sqrt(count)));
-	});
-
 	// ── Slot persistence ──────────────────────────────────────────────────────
 
 	let slotAssignments: Map<string, number> = new Map();
@@ -314,6 +302,23 @@ export function useLayout(
 			displayParticipants.value.list.length +
 			(displayParticipants.value.extra > 0 ? 1 : 0),
 	);
+
+	const gridColumns = computed<number>(() => {
+		if (mode.value === "sidebar") {
+			if (isMobile.value) return 1;
+			const pinnedParticipantIds = new Set(getPinnedParticipantId());
+			const stripTileCount =
+				visibleTileCount.value -
+				displayParticipants.value.list.filter((participant) =>
+					pinnedParticipantIds.has(participant.user_id),
+				).length;
+			return Math.min(stripTileCount > 4 ? 2 : 1, sidebarMaxColumns.value);
+		}
+		const count = visibleTileCount.value;
+		if (count <= 0) return 1;
+		if (isMobile.value && count === 2) return 1;
+		return Math.min(maxColumns.value, Math.ceil(Math.sqrt(count)));
+	});
 
 	const allParticipants = computed<LayoutParticipant[]>(() => {
 		const { list, hidden } = displayParticipants.value;
