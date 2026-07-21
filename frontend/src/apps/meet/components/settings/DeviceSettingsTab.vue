@@ -13,13 +13,23 @@
 			<div class="space-y-1.5">
 				<label class="block text-base text-ink-gray-5">Camera</label>
 				<div class="flex items-center gap-2">
-					<FormControl type="combobox" trigger="button" v-model="selectedCameraIdLocal"
-						:options="hasVideoPermission ? cameraSelectOptions : []" :disabled="!hasVideoPermission"
-						placeholder="Camera access required">
-						<template #prefix>
-							<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
-						</template>
-					</FormControl>
+					<div class="relative w-full">
+						<FormControl class="device-select" type="combobox" trigger="button" v-model="selectedCameraIdLocal"
+							:options="hasVideoPermission ? cameraSelectOptions : []" :disabled="!hasVideoPermission"
+							placeholder="Camera access required">
+							<template #prefix>
+								<lucide-camera class="mr-2 h-4 w-4 text-ink-gray-7" />
+							</template>
+						</FormControl>
+						<button
+							v-if="!hasVideoPermission"
+							type="button"
+							class="absolute inset-0 cursor-pointer rounded bg-transparent focus-visible:focus-ring disabled:cursor-wait"
+							aria-label="Allow camera access"
+							:disabled="isRequestingVideoPermission"
+							@click="requestPermission('video')"
+						/>
+					</div>
 					<Tooltip v-if="!hasVideoPermission" text="Allow camera access to select a camera">
 						<Button
 							variant="ghost"
@@ -34,13 +44,23 @@
 			<div class="space-y-1.5">
 				<label class="block text-base text-ink-gray-5">Microphone</label>
 				<div class="flex items-center gap-2">
-					<FormControl type="combobox" trigger="button" v-model="selectedMicIdLocal"
-						:options="hasAudioPermission ? micSelectOptions : []" :disabled="!hasAudioPermission"
-						placeholder="Microphone access required">
-						<template #prefix>
-							<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
-						</template>
-					</FormControl>
+					<div class="relative w-full">
+						<FormControl class="device-select" type="combobox" trigger="button" v-model="selectedMicIdLocal"
+							:options="hasAudioPermission ? micSelectOptions : []" :disabled="!hasAudioPermission"
+							placeholder="Microphone access required">
+							<template #prefix>
+								<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
+							</template>
+						</FormControl>
+						<button
+							v-if="!hasAudioPermission"
+							type="button"
+							class="absolute inset-0 cursor-pointer rounded bg-transparent focus-visible:focus-ring disabled:cursor-wait"
+							aria-label="Allow microphone access"
+							:disabled="isRequestingAudioPermission"
+							@click="requestPermission('audio')"
+						/>
+					</div>
 					<Tooltip v-if="!hasAudioPermission" text="Allow microphone access to select a microphone">
 						<Button
 							variant="ghost"
@@ -462,3 +482,9 @@ onUnmounted(() => {
 	}
 });
 </script>
+
+<style scoped>
+:deep(.device-select:disabled) {
+	background-color: var(--surface-gray-2);
+}
+</style>
