@@ -16,8 +16,6 @@ class DeviceManager {
 	speakers: MediaDevice[];
 	isEnumerating: boolean;
 	deviceChangeListeners: Array<() => void>;
-	hasVideoPermission: boolean;
-	hasAudioPermission: boolean;
 
 	constructor() {
 		this.cameras = [];
@@ -25,26 +23,7 @@ class DeviceManager {
 		this.speakers = [];
 		this.isEnumerating = false;
 		this.deviceChangeListeners = [];
-		this.hasVideoPermission = false;
-		this.hasAudioPermission = false;
 		this.setupDeviceChangeListener();
-	}
-
-	/**
-	 * Check if we already have permissions without requesting them
-	 */
-	async checkExistingPermissions(): Promise<void> {
-		if (!navigator.permissions) return;
-
-		const cameraPermission = await navigator.permissions.query({
-			name: "camera",
-		});
-		this.hasVideoPermission = cameraPermission.state === "granted";
-
-		const micPermission = await navigator.permissions.query({
-			name: "microphone",
-		});
-		this.hasAudioPermission = micPermission.state === "granted";
 	}
 
 	/**
@@ -75,45 +54,13 @@ class DeviceManager {
 		};
 	}
 
-	async enumerateDevices(
-		options: { video?: boolean; audio?: boolean } = {},
-	): Promise<void> {
+	async enumerateDevices(): Promise<void> {
 		if (this.isEnumerating) return;
 
 		try {
 			this.isEnumerating = true;
 
-			let permissionStream: MediaStream | null = null;
-
-			// Only request permissions if explicitly requested
-			// Why? Cuz I don't want camera LED from turning on unnecessarily
-			if (options.video || options.audio) {
-				try {
-					const constraints: Record<string, boolean> = {};
-					if (options.video) constraints.video = true;
-					if (options.audio) constraints.audio = true;
-
-					permissionStream =
-						await navigator.mediaDevices.getUserMedia(constraints);
-
-					if (options.video) this.hasVideoPermission = true;
-					if (options.audio) this.hasAudioPermission = true;
-				} catch (error) {
-					console.warn(
-						"Could not get media permissions for device enumeration:",
-						error,
-					);
-				}
-			}
-
 			const devices = await navigator.mediaDevices.enumerateDevices();
-
-			// this is needed to stop all tracks to release camera/mic hardware
-			if (permissionStream) {
-				for (const track of permissionStream.getTracks()) {
-					track.stop();
-				}
-			}
 
 			this.cameras = devices
 				.filter((device) => device.kind === "videoinput")
@@ -193,23 +140,12 @@ class DeviceManager {
 				try {
 					const changes = await this.detectDeviceChanges();
 
-					// Only request permissions if:
-					// 1. We already have them, OR
-					// 2. Only audio changed and we have audio permission
-					const requestVideo = changes.videoChanged && this.hasVideoPermission;
-					const requestAudio = changes.audioChanged && this.hasAudioPermission;
-
 					console.log("Device change type:", {
 						videoChanged: changes.videoChanged,
 						audioChanged: changes.audioChanged,
-						willRequestVideo: requestVideo,
-						willRequestAudio: requestAudio,
 					});
 
-					await this.enumerateDevices({
-						video: requestVideo,
-						audio: requestAudio,
-					});
+					await this.enumerateDevices();
 
 					for (const listener of this.deviceChangeListeners) {
 						try {

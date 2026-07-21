@@ -528,10 +528,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		if (!storedDeviceId) return null;
 
 		try {
-			await deviceManager.enumerateDevices({
-				video: false,
-				audio: false,
-			});
+			await deviceManager.enumerateDevices();
 
 			if (deviceManager.isDeviceAvailable(storedDeviceId, deviceType)) {
 				return storedDeviceId;

@@ -7,8 +7,6 @@ beforeEach(() => {
 	deviceManager.speakers = [];
 	deviceManager.deviceChangeListeners = [];
 	deviceManager.isEnumerating = false;
-	deviceManager.hasVideoPermission = false;
-	deviceManager.hasAudioPermission = false;
 });
 
 afterEach(() => {
@@ -89,6 +87,28 @@ describe("getCameras / getMicrophones / getSpeakers", () => {
 			{ deviceId: "mic1", label: "M1", groupId: "g1" },
 		];
 		deviceManager.speakers = [{ deviceId: "spk1", label: "S1", groupId: "g1" }];
+		expect(deviceManager.getCameras()).toHaveLength(1);
+		expect(deviceManager.getMicrophones()).toHaveLength(1);
+		expect(deviceManager.getSpeakers()).toHaveLength(1);
+	});
+});
+
+describe("enumerateDevices", () => {
+	it("lists devices without requesting media permission", async () => {
+		const getUserMedia = vi.fn();
+		const enumerateDevices = vi.fn().mockResolvedValue([
+			{ kind: "videoinput", deviceId: "cam1", label: "Camera", groupId: "g1" },
+			{ kind: "audioinput", deviceId: "mic1", label: "Microphone", groupId: "g1" },
+			{ kind: "audiooutput", deviceId: "spk1", label: "Speaker", groupId: "g1" },
+		]);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: { enumerateDevices, getUserMedia },
+		});
+
+		await deviceManager.enumerateDevices();
+
+		expect(getUserMedia).not.toHaveBeenCalled();
 		expect(deviceManager.getCameras()).toHaveLength(1);
 		expect(deviceManager.getMicrophones()).toHaveLength(1);
 		expect(deviceManager.getSpeakers()).toHaveLength(1);
