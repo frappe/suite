@@ -13,8 +13,11 @@ export async function initSentry(app: App, router: Router): Promise<void> {
       dsn: window.sentry_dsn,
       environment: window.sentry_environment,
       release: window.sentry_release,
-      integrations: [Sentry.browserTracingIntegration({ router })],
+      sampleRate: 1,
+      integrations: [Sentry.browserTracingIntegration({ router }), Sentry.replayIntegration()],
       tracesSampleRate: 0,
+      replaysSessionSampleRate: 0,
+      replaysOnErrorSampleRate: 1,
       initialScope: {
         user: { id: window.site_name },
         tags: { frappe_user: getSessionUser() ?? 'Guest' },
