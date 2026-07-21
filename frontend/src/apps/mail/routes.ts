@@ -23,46 +23,64 @@ import '@/apps/mail/router'
 // them and redirects before any component ever mounts.
 const ShortcutRedirect = { render: () => null }
 
+// LoginLayout supplies the Frappe Mail logo, the centered card and the per-route
+// title. Without it the public views render as bare, full-bleed forms.
+const LoginLayout = () => import('@/apps/mail/components/LoginLayout.vue')
+const publicMeta = { isLogin: true, allowGuest: true }
+
 export const routes: RouteRecordRaw[] = [
 	// --- Public (pre-auth) routes -------------------------------------------
-	// Nested under LoginLayout, which supplies the Frappe Mail logo, the centered
-	// card and the per-route title. Without it these views render as bare,
-	// full-bleed forms.
+	// One LoginLayout wrapper PER path segment rather than a single `path: ''`
+	// parent: an empty-path wrapper would tie with the MailLayout group below
+	// for an exact `/mail` match and, being declared first, would win — leaving
+	// `mail-root-shortcut` unreachable and rendering an empty login card.
 	{
-		path: '',
-		component: () => import('@/apps/mail/components/LoginLayout.vue'),
+		path: 'login',
+		component: LoginLayout,
 		children: [
 			{
-				path: 'signup',
+				path: '',
+				name: 'mail-login',
+				component: () => import('@/apps/mail/pages/LoginView.vue'),
+				meta: publicMeta,
+			},
+		],
+	},
+	{
+		path: 'signup',
+		component: LoginLayout,
+		children: [
+			{
+				path: '',
 				name: 'mail-signup',
 				component: () => import('@/apps/mail/pages/SignupView.vue'),
-				meta: { isLogin: true, allowGuest: true },
+				meta: publicMeta,
 			},
 			{
-				path: 'signup/:requestKey',
+				path: ':requestKey',
 				name: 'mail-invite-setup',
 				component: () => import('@/apps/mail/pages/InviteSetupView.vue'),
 				props: true,
-				meta: { isLogin: true, allowGuest: true },
+				meta: publicMeta,
 			},
+		],
+	},
+	{
+		path: 'reset-password',
+		component: LoginLayout,
+		children: [
 			{
-				path: 'login',
-				name: 'mail-login',
-				component: () => import('@/apps/mail/pages/LoginView.vue'),
-				meta: { isLogin: true, allowGuest: true },
-			},
-			{
-				path: 'reset-password',
+				path: '',
 				name: 'mail-forgot-password',
 				component: () => import('@/apps/mail/pages/ForgotPasswordView.vue'),
-				meta: { isLogin: true, allowGuest: true },
+				meta: publicMeta,
 			},
 			{
-				path: 'reset-password/:requestKey',
+				path: ':requestKey',
 				name: 'mail-reset-password',
 				component: () => import('@/apps/mail/pages/ResetPasswordView.vue'),
 				props: true,
-				meta: { isLogin: true, allowGuest: true },
+				meta: publicMeta,
 			},
 		],
 	},
