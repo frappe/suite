@@ -56,6 +56,9 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
 	base_ids = get_calendar_event_service(account).get_base_event_ids(
 		[event["id"] for event in events]
 	)
+	if not base_ids:
+		return
+
 	masters = {
 		master["id"]: master
 		for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
