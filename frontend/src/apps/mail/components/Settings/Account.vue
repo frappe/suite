@@ -23,6 +23,7 @@
 			:open-on-click="true"
 		/>
 		<SettingsRow
+			class="!py-0"
 			:title="__('Create Contacts After Sending Email')"
 			:description="
 				__('Automatically creates contacts for new recipients after an email is sent.')
@@ -31,6 +32,7 @@
 			<Switch v-model="createContactsAfterEmailSubmit" />
 		</SettingsRow>
 		<SettingsRow
+			class="!py-0"
 			:title="__('Delete Email After Sending')"
 			:description="
 				__('Automatically deletes the email from your mailbox after it is sent.')
@@ -39,6 +41,7 @@
 			<Switch v-model="destroyEmailAfterSubmit" />
 		</SettingsRow>
 		<SettingsRow
+			class="!py-0"
 			:title="__('Delete Newsletter After Sending')"
 			:description="__('Automatically deletes the newsletter after it is sent.')"
 		>
@@ -47,6 +50,7 @@
 
 		<h2 class="text-base-semibold text-ink-gray-8">{{ __('Incoming') }}</h2>
 		<SettingsRow
+			class="!py-0"
 			:title="__('Screen New Senders')"
 			:description="
 				__(
@@ -57,6 +61,7 @@
 			<Switch v-model="enableScreening" />
 		</SettingsRow>
 		<SettingsRow
+			class="!py-0"
 			:title="__('Block Remote Images')"
 			:description="__(`Don't load remote images from untrusted sources by default.`)"
 		>

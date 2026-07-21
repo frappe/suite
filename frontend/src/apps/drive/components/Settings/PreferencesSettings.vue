@@ -4,7 +4,7 @@
 		:description="__('Control how Drive behaves for you')"
 	/>
 	<AppSettingsBody>
-		<div class="space-y-3">
+		<div>
 			<SettingsRow :title="__('Automatically detect links')">
 				<Switch v-model="detectLinks" />
 			</SettingsRow>

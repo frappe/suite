@@ -14,6 +14,7 @@
 		:options="ARCHIVE_TYPE_OPTIONS"
 	/>
 	<SettingsRow
+		class="!py-0"
 		:title="__('Custom Selection')"
 		:description="__('Apply filters to select specific events for export.')"
 	>

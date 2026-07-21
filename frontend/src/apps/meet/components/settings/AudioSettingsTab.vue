@@ -4,7 +4,7 @@
 		description="Configure your audio and microphone settings"
 	/>
 	<AppSettingsBody>
-		<div class="space-y-6">
+		<div>
 			<SettingsRow
 				title="Noise Cancellation"
 				description="Reduce background noise from your microphone"

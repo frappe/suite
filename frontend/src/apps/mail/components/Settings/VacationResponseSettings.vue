@@ -16,6 +16,7 @@
 	<AppSettingsBody>
 		<div v-if="vacationResponse.data" class="flex flex-col gap-5">
 			<SettingsRow
+				class="!py-0"
 				:title="__('Enabled')"
 				:description="__('Auto-reply to incoming mails while you’re away.')"
 			>

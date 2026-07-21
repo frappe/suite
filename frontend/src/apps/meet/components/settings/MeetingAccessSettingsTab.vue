@@ -4,7 +4,7 @@
 		description="Manage join rules, chat, and security for this meeting."
 	/>
 	<AppSettingsBody>
-			<div class="space-y-6">
+			<div>
 				<SettingsRow
 					title="Allow Guests"
 					description="Allow non-registered users to join this meeting"
