@@ -466,8 +466,8 @@ const handleDeviceChange = () => {
 	}
 };
 
-onMounted(() => {
-	checkPermissions();
+onMounted(async () => {
+	await checkPermissions();
 	loadDevices();
 
 	deviceManager.addDeviceChangeListener(handleDeviceChange);
