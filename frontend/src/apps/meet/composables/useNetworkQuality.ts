@@ -118,7 +118,7 @@ export function useNetworkQuality() {
 				),
 		);
 
-		void sfuManager.resetReceiveSide();
+		void sfuManager.connectionManager.resetReceiveSide();
 	};
 
 	const pollStats = async () => {

@@ -162,7 +162,7 @@ describe("useNetworkQuality", () => {
 					getAllConsumers: () => [entry],
 				},
 			},
-			resetReceiveSide,
+			connectionManager: { resetReceiveSide },
 		});
 
 		const observed = ref("unknown");
@@ -230,7 +230,7 @@ describe("useNetworkQuality", () => {
 					],
 				},
 			},
-			resetReceiveSide,
+			connectionManager: { resetReceiveSide },
 		});
 
 		const app = createApp({
