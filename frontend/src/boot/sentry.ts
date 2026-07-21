@@ -29,7 +29,14 @@ export async function initSentry(app: App, router: Router): Promise<void> {
         tags: { frappe_user: getSessionUser() ?? 'Guest' },
       },
       beforeSend(event, hint) {
-        const stack = hint.originalException instanceof Error ? hint.originalException.stack : ''
+        const original = hint.originalException
+        if (original && typeof original === 'object') {
+          const error = original as Record<string, unknown>
+          const exceptionType = error.exc_type ?? error.excType
+          if (exceptionType === 'PermissionError' || exceptionType === 'ValidationError') return null
+        }
+
+        const stack = original instanceof Error ? original.stack : ''
         return stack?.includes('frappe.throw') ? null : event
       },
     })
