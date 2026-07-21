@@ -15,7 +15,10 @@ Central Prometheus and Grafana deployment for one or more SFU servers. Prometheu
 cp .env.example .env
 mkdir -p secrets
 openssl rand -hex 32 > secrets/sfu_metrics_token
-chmod 600 secrets/sfu_metrics_token
+# Prometheus must be able to read this bind-mounted file.
+PROMETHEUS_IDS="$(docker compose run --rm --no-deps --entrypoint sh prometheus -c 'id -u:id -g')"
+sudo chown "$PROMETHEUS_IDS" secrets/sfu_metrics_token
+sudo chmod 400 secrets/sfu_metrics_token
 ```
 
 Set the same token as `METRICS_TOKEN` on every SFU. Edit `.env` with the Grafana domain and a strong admin password. Generate a password with:
@@ -43,6 +46,12 @@ Start the stack:
 ```bash
 docker compose config
 docker compose up -d
+```
+
+On Linux, if the SFU target reports `unable to read authorization credentials`, verify the mounted secret is readable by Prometheus:
+
+```bash
+docker compose exec prometheus sh -lc 'cat /run/secrets/sfu_metrics_token >/dev/null && echo readable'
 ```
 
 Open `https://<GRAFANA_DOMAIN>`, sign in, and use the provisioned Prometheus datasource. Check scrape health at **Connections > Data sources > Prometheus > Explore** with:
