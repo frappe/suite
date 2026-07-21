@@ -14,7 +14,13 @@ export async function initSentry(app: App, router: Router): Promise<void> {
       environment: window.sentry_environment,
       release: window.sentry_release,
       sampleRate: 1,
-      integrations: [Sentry.browserTracingIntegration({ router }), Sentry.replayIntegration()],
+      integrations: [
+        Sentry.browserTracingIntegration({ router }),
+        Sentry.replayIntegration({
+          maskAllText: true,
+          blockAllMedia: true,
+        }),
+      ],
       tracesSampleRate: 0,
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 1,
