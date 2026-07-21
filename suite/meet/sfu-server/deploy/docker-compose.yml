@@ -32,6 +32,9 @@ services:
       - MEDIASOUP_NUM_WORKERS=${MEDIASOUP_NUM_WORKERS:-}
       - MEDIASOUP_WORKER_LOGLEVEL=${MEDIASOUP_WORKER_LOGLEVEL:-warn}
       - SFU_LOG_LEVEL=${SFU_LOG_LEVEL:-info}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${PORT:-3000}/health"]

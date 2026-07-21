@@ -121,3 +121,17 @@ docker compose up -d
 ```
 
 Back up the `prometheus-data`, `grafana-data`, `caddy-data`, and `caddy-config` Docker volumes. Do not expose Prometheus port 9090 publicly.
+
+## Error tracking
+
+Use three Sentry projects so ownership, alerting, and releases remain independent:
+
+- Frontend: set `SUITE_FRONTEND_SENTRY_DSN` in the Frappe web process environment.
+- Backend: set `FRAPPE_SENTRY_DSN` in the Frappe web and worker process environments.
+- SFU: set `SENTRY_DSN` in each SFU deployment.
+
+Enable telemetry in System Settings to permit frontend and backend reporting. Frappe Framework provides backend coverage for Suite requests, background workers, Desk, and errors passed to `frappe.log_error()`. The unified Suite browser application reads its separate frontend DSN at runtime.
+
+The SFU is deployed separately; see `../sfu-server/deploy/.env.example`. Set `SENTRY_RELEASE` to the deployed commit or image version to make regressions actionable. The Suite frontend release defaults to the installed Suite version, while Frappe supplies its own backend release metadata.
+
+Sentry is reserved for unexpected exceptions and process failures. Prometheus remains the source for failure rates and service health, while operational and expected client/WebRTC failures remain in metrics and logs.

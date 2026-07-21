@@ -10,6 +10,7 @@ import router from '@/router'
 import { configureFrappeUI } from '@/boot/config'
 import { translationPlugin } from '@/boot/translation'
 import { userResource, getSessionUser } from '@/boot/session'
+import { initSentry } from '@/boot/sentry'
 
 // One frappe-ui resource/session configuration for the whole suite.
 configureFrappeUI()
@@ -18,6 +19,8 @@ if (getSessionUser()) {
 }
 
 const app = createApp(App)
+
+await initSentry(app, router)
 
 app.use(createPinia())
 app.use(router)

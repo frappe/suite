@@ -14,6 +14,9 @@ import { SocketHandlerManager } from './server/SocketHandlerManager';
 import { Telemetry } from './telemetry/Telemetry';
 import type { ServerConfig } from './types';
 import { loggers } from './utils/logger';
+import { captureException, flushSentry, initSentry } from './utils/sentry';
+
+initSentry();
 
 function socketTimeout(envName: string, fallback: number): number {
 	const value = Number.parseInt(process.env[envName] || '', 10);
@@ -115,6 +118,8 @@ export class SFUServer {
 				'Failed to start SFU server: %s',
 				(error as Error).message,
 			);
+			captureException(error);
+			await flushSentry();
 			process.exit(1);
 		}
 	}
@@ -142,17 +147,17 @@ export class SFUServer {
 	}
 }
 
-const sfuServer = new SFUServer();
+let sfuServer: SFUServer | undefined;
 
 process.on('SIGINT', async () => {
 	loggers.server.info('Received SIGINT, shutting down gracefully');
-	await sfuServer.stop();
+	await sfuServer?.stop();
 	process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
 	loggers.server.info('Received SIGTERM, shutting down gracefully');
-	await sfuServer.stop();
+	await sfuServer?.stop();
 	process.exit(0);
 });
 
@@ -162,7 +167,8 @@ process.on('uncaughtException', (error) => {
 		error.message,
 		error.stack,
 	);
-	process.exit(1);
+	captureException(error);
+	void flushSentry().finally(() => process.exit(1));
 });
 
 process.on('unhandledRejection', (reason) => {
@@ -172,13 +178,25 @@ process.on('unhandledRejection', (reason) => {
 		err.message,
 		err.stack,
 	);
-	process.exit(1);
+	captureException(err);
+	void flushSentry().finally(() => process.exit(1));
 });
 
-sfuServer.start().catch((error) => {
+try {
+	sfuServer = new SFUServer();
+	sfuServer.start().catch((error) => {
+		loggers.server.error(
+			'Failed to start SFU server: %s',
+			(error as Error).message,
+		);
+		captureException(error);
+		void flushSentry().finally(() => process.exit(1));
+	});
+} catch (error) {
 	loggers.server.error(
-		'Failed to start SFU server: %s',
+		'Failed to configure SFU server: %s',
 		(error as Error).message,
 	);
-	process.exit(1);
-});
+	captureException(error);
+	void flushSentry().finally(() => process.exit(1));
+}

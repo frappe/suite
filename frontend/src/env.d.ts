@@ -11,6 +11,9 @@ declare global {
     csrf_token?: string
     site_name?: string
     socketio_port?: string | number
+    sentry_dsn?: string
+    sentry_environment?: string
+    sentry_release?: string
     /** Frappe translation map (message -> translated); populated per-app. */
     translatedMessages?: Record<string, string>
     /** Global translate helper installed by the suite translation plugin. */

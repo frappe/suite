@@ -1,4 +1,8 @@
+import os
+
 import frappe
+
+from suite import __version__
 
 no_cache = 1
 
@@ -29,10 +33,17 @@ def get_desk_theme():
 
 
 def get_boot():
+	sentry_dsn = None
+	if frappe.get_system_settings("enable_telemetry"):
+		sentry_dsn = os.getenv("SUITE_FRONTEND_SENTRY_DSN")
+
 	return frappe._dict(
 		{
 			"site_name": frappe.local.site,
 			"socketio_port": frappe.conf.get("socketio_port") or 9000,
+			"sentry_dsn": sentry_dsn,
+			"sentry_environment": "development" if frappe.conf.developer_mode else "production",
+			"sentry_release": f"suite@{__version__}",
 			# Surfaced on window.push_relay_server_url for mail's FCM push setup
 			# (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
 			# standalone www/mail.py boot, which the suite shell replaced.

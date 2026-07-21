@@ -60,6 +60,7 @@ Set the required values in `.env`:
 | `DOMAIN` | Domain pointing to this server | `sfu.example.com` |
 | `SSL_EMAIL` | Email for Let's Encrypt notifications | `admin@example.com` |
 | `METRICS_TOKEN` | Optional bearer token enabling the Prometheus `/metrics` endpoint | `openssl rand -hex 32` |
+| `SENTRY_DSN` | Optional Sentry DSN for unexpected SFU failures | Sentry project DSN |
 
 Then run setup:
 
@@ -118,3 +119,5 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" https://sfu.example.com/metrics
 ```
 
 Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.
+
+Set `SENTRY_DSN` to report unexpected process failures and mediasoup worker deaths. `SENTRY_ENVIRONMENT` defaults to `production`; set `SENTRY_RELEASE` to the deployed image or commit version. Expected authentication, client-state, and WebRTC operation failures remain in metrics and logs rather than being reported as Sentry issues.

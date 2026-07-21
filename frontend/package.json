@@ -22,6 +22,7 @@
     "@mediapipe/selfie_segmentation": "0.1.1671057942",
     "@noble/ciphers": "2.1.1",
     "@noble/hashes": "^2.2.0",
+    "@sentry/vue": "^10.0.0",
     "@tanstack/vue-virtual": "^3.13.24",
     "@tato30/vue-pdf": "1.10.0",
     "@tiptap/core": "^3.26.0",
