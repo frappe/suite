@@ -15,12 +15,12 @@
 	</AppSettingsHeader>
 	<AppSettingsBody>
 		<div v-if="vacationResponse.data" class="flex flex-col gap-5">
-			<Switch
-				v-model="vacationResponse.data.enabled"
-				:label="__('Enabled')"
+			<SettingsRow
+				:title="__('Enabled')"
 				:description="__('Auto-reply to incoming mails while you’re away.')"
-				class="!p-0"
-			/>
+			>
+				<Switch v-model="vacationResponse.data.enabled" />
+			</SettingsRow>
 			<FormControl
 				v-model="vacationResponse.data.from_date"
 				type="datetime-local"
@@ -63,6 +63,7 @@ import { computed, inject, reactive, ref } from 'vue'
 import {
 	Button,
 	FormControl,
+	SettingsRow,
 	Switch,
 	TextEditor,
 	createResource,

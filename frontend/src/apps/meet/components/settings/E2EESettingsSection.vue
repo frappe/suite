@@ -1,19 +1,15 @@
 <template>
-	<div class="space-y-3">
+	<SettingsRow title="End-to-end encryption" :description="e2eeDescription">
 		<Switch
-			class="w-full !px-0"
-			label="End-to-end encryption"
-			:description="e2eeDescription"
 			v-model="e2eeEnabled"
 			:disabled="isToggleDisabled"
 			data-testid="e2ee-toggle"
 		/>
-
-	</div>
+	</SettingsRow>
 </template>
 
 <script setup lang="ts">
-import { frappeRequest, Switch, toast } from "frappe-ui";
+import { frappeRequest, SettingsRow, Switch, toast } from "frappe-ui";
 import { computed, onMounted, ref, watch } from "vue";
 import { useDeviceIdentity } from "../../composables/useDeviceIdentity";
 import { getE2EETransformCapability } from "../../utils/media/e2ee";

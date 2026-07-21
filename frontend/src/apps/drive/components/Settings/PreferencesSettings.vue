@@ -5,14 +5,16 @@
 	/>
 	<AppSettingsBody>
 		<div class="space-y-3">
-			<Switch v-model="detectLinks" :label="__('Automatically detect links')" />
+			<SettingsRow :title="__('Automatically detect links')">
+				<Switch v-model="detectLinks" />
+			</SettingsRow>
 		</div>
 	</AppSettingsBody>
 </template>
 
 <script setup>
 import { ref, watch } from 'vue'
-import { Switch } from 'frappe-ui'
+import { SettingsRow, Switch } from 'frappe-ui'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { settings, setSettings } from '@/apps/drive/resources/permissions'

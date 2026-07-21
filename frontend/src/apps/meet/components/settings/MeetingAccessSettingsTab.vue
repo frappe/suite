@@ -5,38 +5,36 @@
 	/>
 	<AppSettingsBody>
 			<div class="space-y-6">
-				<!-- Allow Guest Toggle -->
-				<div class="space-y-3">
+				<SettingsRow
+					title="Allow Guests"
+					description="Allow non-registered users to join this meeting"
+				>
 					<Switch
-						class="w-full !px-0"
-						label="Allow Guests"
-						description="Allow non-registered users to join this meeting"
 						v-model="allowGuest"
 						:disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
 					/>
-				</div>
+				</SettingsRow>
 
-				<div class="space-y-3">
+				<SettingsRow
+					title="Require host approval"
+					description="People wait in the lobby until a host or co-host admits them"
+				>
 					<Switch
-						class="w-full !px-0"
-						label="Require host approval"
-						description="People wait in the lobby until a host or co-host admits them"
 						v-model="requireHostApproval"
 						:disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
 					/>
-				</div>
+				</SettingsRow>
 
-				<div class="space-y-3">
+				<SettingsRow
+					title="Host Only Chat"
+					description="Restrict chat so only hosts and co-hosts can send messages"
+				>
 					<Switch
-						class="w-full !px-0"
-						label="Host Only Chat"
-						description="Restrict chat so only hosts and co-hosts can send messages"
 						v-model="hostOnlyChat"
 						:disabled="meetingDoc.updateSettings.loading || meetingDoc.get.loading"
 					/>
-				</div>
+				</SettingsRow>
 
-				<!-- E2EE Toggle -->
 				<E2EESettingsSection
 					:meeting-id="props.meetingId"
 					:meeting-doc="meetingDoc"
@@ -51,6 +49,7 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import {
 	debounce,
+	SettingsRow,
 	Switch,
 	toast,
 } from 'frappe-ui';

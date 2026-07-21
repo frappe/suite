@@ -11,15 +11,14 @@
 		</div>
 
 		<div class="px-3 py-4">
-			<Switch
-				size="md"
-				:label="__('Enable Push Notifications')"
-				:class="{ 'p-2': description }"
-				:model-value="isPushNotificationsSettingEnabled"
-				:disabled="!isPushNotificationEnabled || isLoading"
-				:description
-				@update:model-value="togglePushNotifications"
-			/>
+			<SettingsRow :title="__('Enable Push Notifications')" :description>
+				<Switch
+					size="md"
+					:model-value="isPushNotificationsSettingEnabled"
+					:disabled="!isPushNotificationEnabled || isLoading"
+					@update:model-value="togglePushNotifications"
+				/>
+			</SettingsRow>
 
 			<div v-if="isLoading" class="-mt-0.5 flex items-center gap-2 px-3">
 				<LoadingIndicator class="text-ink-gray-7 h-3 w-3" />
@@ -38,7 +37,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ChevronLeft } from 'lucide-vue-next'
-import { Button, LoadingIndicator, Switch, createResource } from 'frappe-ui'
+import { Button, LoadingIndicator, SettingsRow, Switch, createResource } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
 

@@ -5,12 +5,12 @@
 	/>
 	<AppSettingsBody>
 		<div class="space-y-6">
-			<Switch
-				class="w-full !px-0"
-				label="Auto-hide header and controls"
+			<SettingsRow
+				title="Auto-hide header and controls"
 				description="Automatically hide the header and toolbar after 10 seconds of inactivity"
-				v-model="autoHideToolbarLocal"
-			/>
+			>
+				<Switch v-model="autoHideToolbarLocal" />
+			</SettingsRow>
 		</div>
 	</AppSettingsBody>
 </template>
@@ -18,7 +18,7 @@
 <script setup lang="ts">
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { Switch } from "frappe-ui";
+import { SettingsRow, Switch } from "frappe-ui";
 import { type Ref, ref, watch } from "vue";
 import {
 	autoHideToolbar,
