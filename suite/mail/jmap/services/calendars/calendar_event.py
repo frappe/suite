@@ -282,6 +282,24 @@ class CalendarEventService(CalendarsService):
 
 		return result
 
+	def get_base_event_ids(self, ids: list[str]) -> dict[str, str]:
+		"""Public method to map event ids (including synthetic ids from recurrence-expanded queries)
+		to the id of the real event they belong to.
+
+		Resolved via a lightweight get requesting only baseEventId, which the server derives
+		directly from the id itself — unlike a uid query, it does not depend on the search index
+		(updated asynchronously), so it works immediately after an event is created."""
+
+		base_ids = {}
+		for batch in self.create_batches(ids, self.max_objects_in_get):
+			response = self._get(batch, properties=["id", "baseEventId"])
+
+			if method_responses := response.get("methodResponses"):
+				for event in method_responses[0][1].get("list", []):
+					base_ids[event["id"]] = event.get("baseEventId") or event["id"]
+
+		return base_ids
+
 	def get_master_ids(self, uids: list[str]) -> list[str]:
 		"""Public method to get master event IDs for a list of UIDs."""
 

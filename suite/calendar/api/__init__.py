@@ -6,12 +6,12 @@ from frappe import _
 from suite.calendar.doctype.calendar.calendar import fetch_calendars
 from suite.calendar.doctype.calendar_event.calendar_event import (
 	fetch_calendar_events,
-	get_master_events_by_uids,
 	update_calendar_event,
 )
 from suite.calendar.doctype.calendar_event.calendar_event import (
 	get_calendar_events as get_calendar_events_by_ids,
 )
+from suite.mail.jmap import get_calendar_event_service
 
 
 @frappe.whitelist()
@@ -42,22 +42,38 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
 
 
 def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
-	"""Attaches recurrence/master info to each event in-place."""
+	"""Attaches recurrence/master info to each event in-place.
 
-	uids = {event["uid"] for event in events}
-	masters = get_master_events_by_uids(account, list(uids))
-	master_map = {
-		uid: {
-			"recurrence_rule": json.loads(master["recurrence_rule"]),
-			"master_id": master["id"],
-			"master_start": master["start"],
-			"master_duration": master["duration"],
-		}
-		for uid, master in masters.items()
+	Masters are resolved through baseEventId rather than a uid query: the uid filter runs on
+	the server's search index, which is updated asynchronously, so a query-based lookup misses
+	events created moments ago — leaving them without a master_id (so the frontend falls back
+	to the synthetic id, which cannot be updated or deleted) and with an unparsed
+	recurrence_rule string until the index catches up."""
+
+	if not events:
+		return
+
+	base_ids = get_calendar_event_service(account).get_base_event_ids(
+		[event["id"] for event in events]
+	)
+	masters = {
+		master["id"]: master
+		for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
 	}
 
 	for event in events:
-		event.update(master_map.get(event["uid"], {}))
+		master = masters.get(base_ids.get(event["id"]))
+		if not master:
+			continue
+
+		event.update(
+			{
+				"recurrence_rule": json.loads(master["recurrence_rule"]),
+				"master_id": master["id"],
+				"master_start": master["start"],
+				"master_duration": master["duration"],
+			}
+		)
 
 
 def enrich_participants_with_avatars(events: list[dict]) -> None:
