@@ -31,6 +31,12 @@ export const routes: RouteRecordRaw[] = [
 	{
 		path: '',
 		component: () => import('@/apps/mail/components/LoginLayout.vue'),
+		// This wrapper's own full path is bare '/mail' — the same as the root
+		// shortcut below — and, being registered first, it wins the matcher tie:
+		// without the redirect, '/mail' renders an empty login card instead of
+		// the inbox. Redirect exact matches to the shortcut; children
+		// ('/mail/login' etc.) are unaffected.
+		redirect: { name: 'mail-root-shortcut' },
 		children: [
 			{
 				path: 'signup',
