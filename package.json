@@ -8,6 +8,7 @@
   "scripts": {
     "build": "yarn workspace @suite/frontend build",
     "dev": "yarn workspace @suite/frontend dev",
+    "test:e2e": "yarn --cwd suite/meet/e2e test",
     "knip:e2e": "knip --workspace suite/meet/e2e",
     "knip:frontend": "knip --workspace frontend",
     "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
