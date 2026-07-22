@@ -31,6 +31,8 @@ import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
 import type { ParticipantStore } from "./useParticipantStore";
 
+const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
+
 interface WaitingRoomResponse {
 	waiting_users: Array<{
 		user_id: string;
@@ -324,6 +326,7 @@ export function useSFUConnection(deps: {
 		}
 
 		try {
+			let wasAutomaticallyMuted = false;
 			const manager = new SFUMeetingManager(sfuClient);
 			manager.initialize({
 				meetingId,
@@ -389,11 +392,23 @@ export function useSFUConnection(deps: {
 				};
 			}
 
+			const wantsAudio = mediaState.isMicOn;
 			await manager.joinRoom(userData, {
-				audio_enabled: mediaState.isMicOn,
+				audio_enabled: false,
 				video_enabled: mediaState.isCameraOn,
 			});
 			if (await stopIfCancelled()) return;
+
+			if (wantsAudio) {
+				const participants = await sfuClient.getRoomParticipants();
+				if (participants.length > LARGE_MEETING_PARTICIPANT_THRESHOLD) {
+					mediaState.isMicOn = false;
+					wasAutomaticallyMuted = true;
+					for (const track of mediaState.localStream?.getAudioTracks() || []) {
+						track.enabled = false;
+					}
+				}
+			}
 			if (sfuClient.isE2EERequired()) {
 				await waitForE2EEContextReady(0);
 				if (await stopIfCancelled()) return;
@@ -441,6 +456,15 @@ export function useSFUConnection(deps: {
 			if (await stopIfCancelled()) return;
 
 			connectionState.isSetupComplete = true;
+			if (wasAutomaticallyMuted) {
+				const MicOffIcon = defineAsyncComponent(
+					() => import("~icons/lucide/mic-off"),
+				);
+				toast("Mic muted automatically in large meetings.", {
+					duration: 5000,
+					icon: h(MicOffIcon),
+				});
+			}
 
 			if (!guestName && (isHost || isCohost)) {
 				fetchExistingWaitingRoomUsers();
