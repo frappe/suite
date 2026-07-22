@@ -318,6 +318,7 @@ export function useSFUConnection(deps: {
 		clientTelemetry.startSession();
 		let isHost = initialIsHost;
 		let isCohost = initialIsCohost;
+		let manager: SFUMeetingManager | null = null;
 		isCurrentTabHost.value = isHost;
 		if (connectionState.isSetupComplete) {
 			connectionState.isInPreview = false;
@@ -327,7 +328,7 @@ export function useSFUConnection(deps: {
 
 		try {
 			let wasAutomaticallyMuted = false;
-			const manager = new SFUMeetingManager(sfuClient);
+			manager = new SFUMeetingManager(sfuClient);
 			manager.initialize({
 				meetingId,
 				currentUser: currentUser.currentUser.value,
@@ -400,8 +401,19 @@ export function useSFUConnection(deps: {
 			if (await stopIfCancelled()) return;
 
 			if (wantsAudio) {
-				const participants = await sfuClient.getRoomParticipants();
-				if (participants.length > LARGE_MEETING_PARTICIPANT_THRESHOLD) {
+				let shouldMute = true;
+				try {
+					const participants = await sfuClient.getRoomParticipants();
+					shouldMute =
+						participants.length > LARGE_MEETING_PARTICIPANT_THRESHOLD;
+				} catch (error) {
+					console.warn(
+						"Could not determine meeting size; joining muted:",
+						(error as Error).message,
+					);
+				}
+
+				if (shouldMute) {
 					mediaState.isMicOn = false;
 					wasAutomaticallyMuted = true;
 					for (const track of mediaState.localStream?.getAudioTracks() || []) {
@@ -471,6 +483,10 @@ export function useSFUConnection(deps: {
 			}
 		} catch (error) {
 			console.error("SFU setup failed:", error);
+			await manager?.cleanup();
+			if (sfuManager.value === manager) {
+				sfuManager.value = null;
+			}
 			throw error;
 		}
 	};
