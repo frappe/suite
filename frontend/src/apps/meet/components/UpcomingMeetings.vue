@@ -152,7 +152,6 @@ defineExpose({ reload })
 								:error="null"
 								:max-displayed="2"
 								size="sm"
-								stack-direction="left"
 							/>
 						</div>
 					</div>
