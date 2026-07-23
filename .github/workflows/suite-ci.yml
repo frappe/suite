@@ -53,6 +53,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check node server changes
+        id: node-server-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run_sheets=1
+            run_meet=1
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              changed_files="$(git diff --name-only HEAD~1 HEAD)"
+            else
+              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+            fi
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+          fi
+
+          echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
+          echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
+          echo "Run sheets collab server tests: $run_sheets"
+          echo "Run meet sfu server tests: $run_meet"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -117,12 +142,14 @@ jobs:
           TYPE: server
 
       - name: Run Sheets Collab Server Tests
+        if: steps.node-server-changes.outputs.run_sheets == '1'
         working-directory: suite/sheets/collab-server
         run: |
           npm install
           npm test
 
       - name: Run Meet SFU Server Tests
+        if: steps.node-server-changes.outputs.run_meet == '1'
         working-directory: suite/meet/sfu-server
         run: |
           yarn install --frozen-lockfile
