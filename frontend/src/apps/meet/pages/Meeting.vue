@@ -167,6 +167,7 @@
 						:isCameraOn="mediaState.isCameraOn"
 						:isScreenSharing="mediaState.isScreenSharing"
 						:isFullscreen="isFullscreen"
+						:statsVisible="showStatsForNerds"
 						:isHandRaised="isHandRaised"
 						:isReactionPickerOpen="isReactionPickerOpen"
 						@update:isReactionPickerOpen="isReactionPickerOpen = $event"
@@ -184,12 +185,15 @@
 						@toggle-fullscreen="toggleFullscreen"
 						@toggle-raise-hand="raiseHand.toggleRaiseHand()"
 						@report-problem="handleReportProblem"
+						@toggle-stats="toggleStatsForNerds"
 						@end-call="sfuConnection.endCall()"
 						@device-changed="handleDeviceChanged"
 						@visibility-change="isToolbarVisible = $event"
 					/>
 				</div>
 			</div>
+
+			<StatsForNerdsOverlay v-if="showStatsForNerds" />
 
 			<LobbyOverlay
 				v-if="(isInLobby || isWaitingForApproval) && !isRejected"
@@ -232,6 +236,7 @@ import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
 import Spinner from "../components/Spinner.vue";
+import StatsForNerdsOverlay from "../components/StatsForNerdsOverlay.vue";
 import { useBackgroundEffects } from "../composables/useBackgroundEffects";
 import { useChat } from "../composables/useChat";
 import { useChatStore } from "../composables/useChatStore";
@@ -266,6 +271,10 @@ import {
 	selectedMicId,
 	selectedSpeakerId,
 } from "../data/mediaPreferences";
+import {
+	setShowStatsForNerds,
+	showStatsForNerds,
+} from "../data/statsPreferences";
 import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
@@ -746,6 +755,10 @@ const togglePeople = () => {
 const toggleReactions = (payload: string) => {
 	reactions.onSendReaction(payload);
 	isReactionPickerOpen.value = false;
+};
+
+const toggleStatsForNerds = () => {
+	setShowStatsForNerds(!showStatsForNerds.value);
 };
 
 const syncFullscreenState = () => {

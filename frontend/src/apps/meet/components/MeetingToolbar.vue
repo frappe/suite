@@ -218,6 +218,7 @@ const props = defineProps<{
 	meetingTitle?: string;
 	currentUser?: unknown;
 	isFullscreen?: boolean;
+	statsVisible?: boolean;
 	cameraPermissionGranted?: boolean;
 	microphonePermissionGranted?: boolean;
 }>();
@@ -232,6 +233,7 @@ const emit = defineEmits<{
 	"toggle-fullscreen": [];
 	"toggle-raise-hand": [];
 	"report-problem": [];
+	"toggle-stats": [];
 	"end-call": [];
 	"device-changed": [event: unknown];
 	"update:isReactionPickerOpen": [value: boolean];
@@ -255,6 +257,14 @@ const moreOptions = computed(() => [
 		label: "Meeting information",
 		onClick: () => {
 			showMeetingInfoDialog.value = true;
+			resetHideTimer();
+		},
+	},
+	{
+		icon: "lucide-activity",
+		label: props.statsVisible ? "Hide stats for nerds" : "Stats for nerds",
+		onClick: () => {
+			emit("toggle-stats");
 			resetHideTimer();
 		},
 	},
