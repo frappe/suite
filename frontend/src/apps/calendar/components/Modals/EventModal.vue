@@ -235,6 +235,12 @@ const joinMeet = () => {
 	if (meetUrl.value) window.open(meetUrl.value, '_blank', 'noopener')
 }
 
+// Toggling Meet on an existing event isn't part of eventParams/patch, so it
+// must count as a pending change on its own (both for Save and for submit).
+const pendingMeetAttach = computed(
+	() => !isNew.value && event.addMeetLink && !hasMeetLink(selectedEvent?.calendarEvent),
+)
+
 const copyMeetLink = async () => {
 	await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
 	toast.success(__('Frappe Meet link copied.'))
@@ -360,7 +366,7 @@ const submitEvent = (sendEmail: boolean) => {
 
 	// Attaching a Meet link to an existing event: mint the room first, then send the
 	// regular update with the link included (creation bundles this server-side).
-	const attachMeetLink = !isNew.value && event.addMeetLink && !hasMeetLink(selectedEvent?.calendarEvent)
+	const attachMeetLink = pendingMeetAttach.value
 	const submit = async () => {
 		if (attachMeetLink) {
 			const { meeting_url } = await createMeetLink.submit()
@@ -437,7 +443,7 @@ const disableSave = computed(() => {
 	if (createEvent.loading || editEvent.loading || editEventInstance.loading) return true
 	if (createMeetEvent.loading) return true
 	if (!isDateTimeValid.value) return true
-	if (!isNew.value && !Object.keys(patch.value).length) return true
+	if (!isNew.value && !Object.keys(patch.value).length && !pendingMeetAttach.value) return true
 	return false
 })
 
@@ -570,7 +576,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 								<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
 								<div class="min-w-0 flex-1">
 									<div class="text-sm font-medium text-ink-gray-8 mb-0.5">
-										{{ __('Frappe Meet video call') }}
+										{{ __('Frappe Meet') }}
 									</div>
 									<div class="truncate text-xs text-ink-gray-5">{{ meetLinkDisplay }}</div>
 								</div>
@@ -585,6 +591,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 								<Switch v-model="event.addMeetLink" />
 							</template>
 						</div>
+
 
 
 						<div class="mt-4 flex flex-col gap-4">

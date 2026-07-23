@@ -194,17 +194,23 @@ const sanitizedDescription = computed(() => {
 
 // --- Meet link ---
 
+// Same fallback as the event modal: prefer the sanitized same-origin path, but
+// keep a raw foreign-origin link joinable rather than hiding the section.
 const meetUrl = computed(() => {
-	const link = calendarEvent.links?.find((item: any) => getMeetUrl(item?.href))
-	if (link?.href) return getMeetUrl(link.href)
-
-	const match = calendarEvent.description?.match(
-		/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/,
-	)
-	return getMeetUrl(match?.[0])
+	const href =
+		calendarEvent.links?.find((item: any) => item?.href?.includes('/meet/'))?.href ||
+		calendarEvent.description?.match(
+			/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/,
+		)?.[0]
+	if (!href) return ''
+	return getMeetUrl(href) || href.replace(/\W+$/, '')
 })
 
-const meetCode = computed(() => meetUrl.value.split('/meet/')[1]?.split(/[?#]/)[0] ?? '')
+const meetLinkDisplay = computed(() =>
+	meetUrl.value
+		? new URL(meetUrl.value, window.location.origin).href.replace(/^https?:\/\//, '')
+		: '',
+)
 
 const copyMeetLink = async () => {
 	await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
@@ -213,7 +219,9 @@ const copyMeetLink = async () => {
 
 const joinMeet = () => {
 	if (!meetUrl.value) return
-	window.location.href = meetUrl.value
+	// Same-origin paths stay in-app; foreign links open in a new tab.
+	if (meetUrl.value.startsWith('/')) window.location.href = meetUrl.value
+	else window.open(meetUrl.value, '_blank', 'noopener')
 }
 
 // --- Actions dropdown (delete) ---
@@ -386,6 +394,13 @@ const openUrl = (location: string) => {
 						{{ calendarEvent.title || __('[No title]') }}
 					</h3>
 					<div class="text-ink-gray-6 break-words text-sm">{{ dateLabel }}</div>
+					<div
+						v-if="calendarEvent.recurrence_id"
+						class="text-ink-gray-5 flex items-center gap-1.5 text-sm"
+					>
+						<Repeat class="icon size-3.5 shrink-0" />
+						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
+					</div>
 				</div>
 			</div>
 
@@ -393,21 +408,16 @@ const openUrl = (location: string) => {
 
 			<!-- Details -->
 			<div class="flex flex-col py-2">
-				<!-- Recurrence -->
-				<div v-if="calendarEvent.recurrence_id" class="flex items-center gap-2.5 px-[18px] py-[7px]">
-					<Repeat class="icon text-ink-gray-5 size-4 shrink-0" />
-					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
-						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
-					</span>
-				</div>
-
 				<!-- Meet link -->
 				<template v-if="meetUrl">
 					<div class="flex items-center gap-2.5 px-[18px] py-[7px]">
-						<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-4 shrink-0" />
-						<span class="text-ink-gray-7 min-w-0 flex-1 truncate text-sm">
-							{{ meetCode }}
-						</span>
+						<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
+						<div class="min-w-0 flex-1">
+							<div class="text-ink-gray-8 text-sm font-medium">
+								{{ __('Frappe Meet') }}
+							</div>
+							<div class="text-ink-gray-5 truncate text-xs">{{ meetLinkDisplay }}</div>
+						</div>
 						<button
 							class="text-ink-gray-5 hover:text-ink-gray-7 shrink-0"
 							:title="__('Copy Frappe Meet link')"
@@ -421,7 +431,7 @@ const openUrl = (location: string) => {
 							class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-7 flex w-full items-center justify-center gap-2 rounded py-1.5 text-sm"
 							@click="joinMeet"
 						>
-							{{ __('Join Frappe Meet') }}
+							{{ __('Join') }}
 						</button>
 					</div>
 				</template>
