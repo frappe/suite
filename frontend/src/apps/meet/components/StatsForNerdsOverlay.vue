@@ -1,41 +1,41 @@
 <template>
 	<section
-		class="absolute right-3 top-3 z-[55] flex max-h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border border-white/10 bg-gray-950/95 text-gray-100 shadow-2xl backdrop-blur-xl sm:w-[26rem]"
+		class="absolute right-2 top-2.5 z-[55] flex max-h-[calc(100%-1.25rem)] w-[calc(100%-1rem)] max-w-[380px] flex-col overflow-hidden rounded-[10px] border border-outline-gray-2 bg-surface-gray-1 text-ink-gray-8 shadow-xl"
 		aria-label="Stats for nerds"
 		data-testid="stats-for-nerds"
 	>
-		<header class="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+		<header class="flex shrink-0 items-center justify-between gap-3 px-4 py-5">
 			<div class="flex min-w-0 items-center gap-2.5">
 				<span
 					class="size-2.5 shrink-0 rounded-full"
 					:class="qualityDot"
 				/>
 				<div class="min-w-0">
-					<h2 class="truncate text-sm font-semibold">Stats for nerds</h2>
-					<p class="text-xs capitalize text-gray-400">{{ snapshot.quality }} connection</p>
+					<h2 class="truncate text-sm-medium tracking-[0.21px] text-ink-gray-8">Stats for nerds</h2>
+					<p class="text-xs capitalize text-ink-gray-5">{{ snapshot.quality }} connection</p>
 				</div>
 			</div>
 			<div class="flex items-center gap-1">
 				<Tooltip text="Copy diagnostics">
-					<button class="rounded-md p-1.5 text-gray-400 hover:bg-white/10 hover:text-white" aria-label="Copy diagnostics" @click="copyDiagnostics">
+					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Copy diagnostics" @click="copyDiagnostics">
 						<LucideCopy class="size-4" />
 					</button>
 				</Tooltip>
 				<Tooltip :text="expanded ? 'Show less' : 'Show more'">
-					<button class="rounded-md p-1.5 text-gray-400 hover:bg-white/10 hover:text-white" :aria-label="expanded ? 'Show less' : 'Show more'" @click="expanded = !expanded">
+					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" :aria-label="expanded ? 'Show less' : 'Show more'" @click="expanded = !expanded">
 						<LucideChevronUp v-if="expanded" class="size-4" />
 						<LucideChevronDown v-else class="size-4" />
 					</button>
 				</Tooltip>
 				<Tooltip text="Close">
-					<button class="rounded-md p-1.5 text-gray-400 hover:bg-white/10 hover:text-white" aria-label="Close" @click="close">
+					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Close" @click="close">
 						<LucideX class="size-4" />
 					</button>
 				</Tooltip>
 			</div>
 		</header>
 
-		<div class="overflow-y-auto px-4 py-3 text-xs">
+		<div class="overflow-y-auto px-4 pb-4 text-xs">
 			<div class="grid grid-cols-2 gap-x-5 gap-y-2">
 				<StatValue label="Round-trip time" :value="formatMs(snapshot.rtt)" />
 				<StatValue label="Jitter" :value="formatMs(snapshot.jitter)" />
@@ -61,25 +61,25 @@
 
 				<StatsSection title="Sending" :badge="String(sendStreams.length)">
 					<StreamStats v-for="stream in sendStreams" :key="stream.id" :stream="stream" />
-					<p v-if="!sendStreams.length" class="py-2 text-gray-500">No active outgoing streams</p>
+					<p v-if="!sendStreams.length" class="py-2 text-ink-gray-5">No active outgoing streams</p>
 				</StatsSection>
 
 				<StatsSection title="Receiving" :badge="String(receiveStreams.length)">
 					<StreamStats v-for="stream in receiveStreams" :key="stream.id" :stream="stream" />
-					<p v-if="!receiveStreams.length" class="py-2 text-gray-500">No active incoming streams</p>
+					<p v-if="!receiveStreams.length" class="py-2 text-ink-gray-5">No active incoming streams</p>
 				</StatsSection>
 
 				<StatsSection v-if="connectionState.recoveryTimeline.length" title="Recovery history">
-					<div v-for="entry in recentRecoveryTimeline" :key="`${entry.at}-${entry.state}`" class="border-b border-white/5 py-2 last:border-0">
+					<div v-for="entry in recentRecoveryTimeline" :key="`${entry.at}-${entry.state}`" class="border-b border-outline-gray-2 py-2 last:border-0">
 						<div class="flex justify-between gap-3">
-							<span class="capitalize text-gray-300">{{ humanize(entry.state) }}</span>
-							<time class="shrink-0 text-gray-500">{{ formatTime(entry.at) }}</time>
+							<span class="capitalize text-ink-gray-7">{{ humanize(entry.state) }}</span>
+							<time class="shrink-0 text-ink-gray-5">{{ formatTime(entry.at) }}</time>
 						</div>
-						<p v-if="entry.detail" class="mt-0.5 break-words text-gray-500">{{ entry.detail }}</p>
+						<p v-if="entry.detail" class="mt-0.5 break-words text-ink-gray-5">{{ entry.detail }}</p>
 					</div>
 				</StatsSection>
 
-				<p v-if="error" class="mt-3 rounded-md bg-red-950/50 px-2.5 py-2 text-red-300">{{ error }}</p>
+				<p v-if="error" class="mt-3 rounded-md bg-surface-red-2 px-2.5 py-2 text-ink-red-4">{{ error }}</p>
 			</template>
 		</div>
 	</section>
@@ -164,25 +164,25 @@ async function copyDiagnostics() {
 const StatValue = defineComponent({
 	props: { label: { type: String, required: true }, value: { type: String, required: true } },
 	setup: (props) => () => h("div", [
-		h("p", { class: "text-gray-500" }, props.label),
-		h("p", { class: "mt-0.5 truncate font-mono text-[13px] text-gray-100" }, props.value),
+		h("p", { class: "text-ink-gray-5" }, props.label),
+		h("p", { class: "mt-0.5 truncate font-mono text-[13px] text-ink-gray-8" }, props.value),
 	]),
 });
 
 const StatsRow = defineComponent({
 	props: { label: { type: String, required: true }, value: { type: String, required: true } },
 	setup: (props) => () => h("div", { class: "flex justify-between gap-4 py-1" }, [
-		h("span", { class: "text-gray-500" }, props.label),
-		h("span", { class: "break-all text-right font-mono text-gray-300" }, props.value),
+		h("span", { class: "text-ink-gray-5" }, props.label),
+		h("span", { class: "break-all text-right font-mono text-ink-gray-7" }, props.value),
 	]),
 });
 
 const StatsSection = defineComponent({
 	props: { title: { type: String, required: true }, badge: String },
-	setup: (props, { slots }) => () => h("section", { class: "mt-4 border-t border-white/10 pt-3" }, [
+	setup: (props, { slots }) => () => h("section", { class: "mt-5" }, [
 		h("div", { class: "mb-1 flex items-center gap-2" }, [
-			h("h3", { class: "font-semibold text-gray-200" }, props.title),
-			props.badge ? h("span", { class: "rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400" }, props.badge) : null,
+			h("h3", { class: "font-semibold text-ink-gray-7" }, props.title),
+			props.badge ? h("span", { class: "rounded bg-surface-gray-3 px-1.5 py-0.5 text-[10px] text-ink-gray-5" }, props.badge) : null,
 		]),
 		slots.default?.(),
 	]),
@@ -208,10 +208,10 @@ const StreamStats = defineComponent({
 			["Jitter buffer", formatMs(stream.jitterBufferDelay)],
 			["Audio concealed", stream.concealedSamples === undefined ? "n/a" : `${stream.concealedSamples} / ${stream.totalSamples ?? "n/a"} samples`],
 		];
-		return h("article", { class: "mt-2 rounded-lg bg-white/[0.04] px-3 py-2 first:mt-1" }, [
+		return h("article", { class: "mt-2 rounded-lg bg-surface-gray-2 px-3 py-2 first:mt-1" }, [
 			h("div", { class: "mb-1.5 flex items-center justify-between gap-3" }, [
-				h("h4", { class: "capitalize text-gray-200" }, stream.source),
-				stream.participantId ? h("span", { class: "max-w-36 truncate font-mono text-[10px] text-gray-500", title: stream.participantId }, stream.participantId) : null,
+				h("h4", { class: "capitalize text-ink-gray-7" }, stream.source),
+				stream.participantId ? h("span", { class: "max-w-36 truncate font-mono text-[10px] text-ink-gray-5", title: stream.participantId }, stream.participantId) : null,
 			]),
 			...rows.map(([label, value]) => h(StatsRow, { label, value })),
 		]);
