@@ -51,6 +51,12 @@
 							<template #prefix>
 								<lucide-mic class="mr-2 h-4 w-4 text-ink-gray-7" />
 							</template>
+							<template #suffix>
+								<AudioIndicator v-if="hasAudioPermission && selectedMicIdLocal"
+									:device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
+									:max-height="16" activeColorClass="bg-surface-gray-7" />
+								<span class="lucide-chevron-down size-4 shrink-0 text-ink-gray-4" />
+							</template>
 						</FormControl>
 						<button
 							v-if="!hasAudioPermission"
@@ -69,31 +75,29 @@
 							@click="requestPermission('audio')"
 						/>
 					</Tooltip>
-					<div v-if="hasAudioPermission && selectedMicIdLocal" class="flex h-7 w-5 items-center">
-						<AudioIndicator :device-id="getDeviceId(selectedMicIdLocal)" :is-active="true" :sensitivity="2"
-							:max-height="40" activeColorClass="bg-surface-gray-7" />
-					</div>
 				</div>
 			</div>
 
-			<div class="space-y-2 flex gap-2">
-				<FormControl class="w-full" label="Speaker" type="autocomplete" v-model="selectedSpeakerIdLocal"
-					:options="speakerSelectOptions" placeholder="Select speaker">
-					<template #prefix>
-						<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
-					</template>
-					<template #item-prefix="{ selected }">
-						<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
-					</template>
-				</FormControl>
+			<div class="space-y-1.5">
+				<label class="block text-base text-ink-gray-5">Speaker</label>
+				<div class="flex">
+					<FormControl :class="['w-full', selectedSpeakerIdLocal && '!rounded-r-none']"
+						type="combobox" trigger="button" v-model="selectedSpeakerIdLocal"
+						:options="speakerSelectOptions" placeholder="Select speaker">
+						<template #prefix>
+							<lucide-speaker class="mr-2 h-4 w-4 text-ink-gray-7" />
+						</template>
+						<template #item-prefix="{ selected }">
+							<lucide-check v-if="selected" class="w-4 h-4 text-ink-gray-8" />
+						</template>
+					</FormControl>
 
-				<div>
 					<Button
-					class="mt-3"
-					v-if="selectedSpeakerIdLocal"
-					@click="testSpeaker"
-					:loading="isTestingAudio"
-					icon-left="lucide-volume-2"
+						v-if="selectedSpeakerIdLocal"
+						class="-ml-px !rounded-l-none"
+						@click="testSpeaker"
+						:loading="isTestingAudio"
+						icon-left="lucide-volume-2"
 					>
 						Test
 					</Button>
