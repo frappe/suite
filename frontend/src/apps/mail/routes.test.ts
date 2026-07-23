@@ -47,4 +47,12 @@ describe('mail route matching', () => {
 	it('the not-configured screen resolves', () => {
 		expect(makeRouter().resolve('/mail/not-configured').name).toBe('mail-not-configured')
 	})
+
+	it('the credentials-setup screen resolves', () => {
+		expect(makeRouter().resolve('/mail/credentials-setup').name).toBe('mail-credentials-setup')
+	})
+
+	it('the admin entry resolves to the dashboard', () => {
+		expect(resolveFollowingRedirect(makeRouter(), '/mail/admin').name).toBe('mail-domains')
+	})
 })

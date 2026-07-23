@@ -74,23 +74,47 @@ function installMailGuard(r: Router) {
 		await userResource.promise
 		const user = userResource.data
 
-		// Mail server not set up yet (Stalwart not fully configured — missing server_url,
-		// username or password): show a friendly "not configured" message instead of a blank,
-		// error-filled page. This is the most fundamental gate, so it runs before the
-		// JMAP/dashboard checks below — the admin dashboard is only reachable once the server
-		// is configured.
-		if (!user?.is_stalwart_configured) {
+		// The admin dashboard manages mail infrastructure, so it requires the full server
+		// connection (server_url + username + password). If that isn't set up, show the
+		// "not configured" screen (which explains the fix to admins and tells everyone else to
+		// contact one). Account is already resolved on user load, so nothing else to do here.
+		if (to.meta.isDashboard) {
+			if (!user?.is_stalwart_configured) {
+				return to.name === 'mail-not-configured' ? undefined : { name: 'mail-not-configured' }
+			}
+			return
+		}
+
+		// Users without a "Suite User" role have no personal mailbox, so the mail UI isn't for
+		// them — Administrators / System Managers / Suite Admins belong in the admin area. (This
+		// is also why the credentials-setup screen below is only ever shown to Suite Users.)
+		if (!user?.is_suite_user) {
+			// A user with no suite or admin role at all doesn't belong in Mail — hand them to Desk.
+			if (!user?.is_system_manager && !user?.is_suite_admin) {
+				window.location.replace('/desk')
+				return
+			}
+			// When the server isn't set up, keep them on the not-configured screen rather than
+			// bouncing to the admin area (which would just send them back here).
+			if (to.name === 'mail-not-configured' && !user?.is_stalwart_configured) return
+			return to.name === 'mail-admin' ? undefined : { name: 'mail-admin' }
+		}
+
+		// Suite Users (mail users). Mail viewing needs a server_url...
+		if (!user?.is_server_configured) {
 			return to.name === 'mail-not-configured' ? undefined : { name: 'mail-not-configured' }
 		}
-		// Configured now, but sitting on the not-configured screen — send them into the app.
-		if (to.name === 'mail-not-configured') return { name: 'mail-root-shortcut' }
 
-		// Admin / dashboard access control.
+		// ...and this user's own JMAP credentials.
 		if (!user?.is_jmap_configured) {
-			if (!user?.is_suite_admin) window.location.replace('/desk')
-			if (to.meta.isDashboard) return
-			return { name: 'mail-domains' }
+			return to.name === 'mail-credentials-setup'
+				? undefined
+				: { name: 'mail-credentials-setup' }
 		}
+
+		// Fully configured — bounce off any setup/not-configured screen into the app.
+		if (to.name === 'mail-not-configured' || to.name === 'mail-credentials-setup')
+			return { name: 'mail-root-shortcut' }
 
 		// Resolve active account.
 		resolveAccount(user?.accounts, to.params.accountId as string | undefined)

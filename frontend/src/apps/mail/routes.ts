@@ -96,6 +96,15 @@ export const routes: RouteRecordRaw[] = [
 				meta: { noLayout: true },
 			},
 			{
+				// Server is configured but the user hasn't set their own JMAP credentials. The
+				// guard sends them here to enter them before they can use Mail. `noLayout` because
+				// a credential-less user has no account/mailbox to render the sidebar around.
+				path: 'credentials-setup',
+				name: 'mail-credentials-setup',
+				component: () => import('@/apps/mail/pages/CredentialsSetupView.vue'),
+				meta: { noLayout: true },
+			},
+			{
 				path: 'all-inboxes',
 				name: 'mail-all-inboxes',
 				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),
@@ -183,6 +192,15 @@ export const routes: RouteRecordRaw[] = [
 			},
 			{
 				path: 'dashboard',
+				redirect: { name: 'mail-domains' },
+				meta: { isDashboard: true },
+			},
+			{
+				// Admin-area entry. The mail guard sends admin-type users (System Manager /
+				// Administrator / Suite Admin without a Suite User role) here instead of the mail
+				// UI. Lands on the dashboard, same as '/mail/dashboard'.
+				path: 'admin',
+				name: 'mail-admin',
 				redirect: { name: 'mail-domains' },
 				meta: { isDashboard: true },
 			},

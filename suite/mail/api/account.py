@@ -12,7 +12,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.identity.identity import fetch_identities
 from suite.mail.doctype.mail_settings.mail_settings import get_signup_domains
 from suite.mail.stalwart import get_domains
-from suite.mail.utils import is_stalwart_configured, log_mail_error
+from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.mail.utils.user import (
@@ -20,7 +20,7 @@ from suite.mail.utils.user import (
 	is_jmap_configured,
 )
 from suite.utils import convert_html_to_text, user_context
-from suite.utils.user import is_suite_admin, is_system_manager
+from suite.utils.user import is_suite_admin, is_suite_user, is_system_manager
 
 # SRV service label -> (protocol, connection security). See RFC 6186.
 _SRV_SERVICE_MAP = {
@@ -166,7 +166,13 @@ def get_user_info() -> dict | None:
 	data = result[0]
 
 	data.is_suite_admin = is_suite_admin(user)
+	data.is_suite_user = is_suite_user(user)
 	data.is_system_manager = is_system_manager(user)
+	# Two levels of server config drive the frontend routing:
+	# - is_server_configured (a server_url exists) gates mail viewing: unset -> "not configured"
+	#   screen; set but the user has no JMAP creds -> credentials setup.
+	# - is_stalwart_configured (server_url + username + password) gates the admin dashboard.
+	data.is_server_configured = bool(get_config("server_url"))
 	data.is_stalwart_configured = is_stalwart_configured()
 	data.is_jmap_configured = is_jmap_configured(user)
 	data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])

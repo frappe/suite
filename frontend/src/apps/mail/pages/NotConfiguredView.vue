@@ -8,7 +8,7 @@
 				{{ __('Mail is not set up yet') }}
 			</h1>
 
-			<p v-if="isAdmin" class="text-base text-ink-gray-6">
+			<p v-if="isSystemManager" class="text-base text-ink-gray-6">
 				{{
 					__(
 						'The mail server hasn’t been configured yet. To get started, set the server connection details (server_url, username and password) in your site config (site_config.json) or under Mail Settings.',
@@ -18,22 +18,21 @@
 			<p v-else class="text-base text-ink-gray-6">
 				{{
 					__(
-						'The mail server hasn’t been configured yet. Please contact your administrator to finish setting up Mail.',
+						'The mail server hasn’t been configured yet. Please ask your administrator to set up Mail.',
 					)
 				}}
 			</p>
 
-			<div class="mt-2 flex items-center gap-2">
-				<Button
-					v-if="isAdmin"
-					variant="solid"
-					:label="__('Open Mail Settings')"
-					@click="openMailSettings"
-				/>
-				<router-link
-					to="/suite"
+			<div class="mt-2 flex items-center gap-4">
+				<a
+					v-if="isSystemManager"
+					href="/app/mail-settings"
+					target="_blank"
 					class="text-sm text-ink-blue-link hover:underline"
 				>
+					{{ __('Open Mail Settings') }}
+				</a>
+				<router-link to="/suite" class="text-sm text-ink-blue-link hover:underline">
 					{{ __('Back to launcher') }}
 				</router-link>
 			</div>
@@ -43,18 +42,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button } from 'frappe-ui'
 
 import { userStore } from '@/apps/mail/stores/user'
 import MailLogo from '@/apps/mail/components/Icons/MailLogo.vue'
 
 const { userResource } = userStore()
 
-const isAdmin = computed(
-	() => !!(userResource.data?.is_suite_admin || userResource.data?.is_system_manager),
-)
-
-const openMailSettings = () => {
-	window.open('/app/mail-settings', '_blank')
-}
+// Only System Managers (which includes the Administrator) can edit Mail Settings, so only they
+// get the direct link. Suite Admins / Suite Users are told to reach out to their administrator.
+const isSystemManager = computed(() => !!userResource.data?.is_system_manager)
 </script>
