@@ -46,7 +46,7 @@ const shortcutGroups = [
     title: 'General',
     shortcuts: [
       [[metaKey.value, 'K'], 'Find Files'],
-      [['Ctrl', ','], 'Open Settings'],
+      [[metaKey.value, 'Shift', ','], 'Open Settings'],
     ],
   },
   {

@@ -19,7 +19,7 @@
           " @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
     </template>
   </Sidebar>
-  <SettingsDialog v-if="showSettings" v-model="showSettings" :suggested-tab="suggestedTab" />
+  <SettingsDialog v-model="showSettings" :suggested-tab="suggestedTab" />
   <ShortcutsDialog v-if="showShortcuts" v-model="showShortcuts" />
 </template>
 <script setup>

@@ -101,7 +101,7 @@ const shortcutGroups = computed(() => [
 		{
 			title: __('Other'),
 			shortcuts: [
-				[[modifier.value, ','], __('Open Settings')],
+				[[modifier.value, 'Shift', ','], __('Open Settings')],
 				[[modifier.value, ';'], __('Toggle Sidebar')],
 				[[modifier.value, 'Shift', 'L'], __('Cycle Theme')],
 				[['?'], __('View Shortcuts')],

@@ -3,7 +3,6 @@
 		v-model="show"
 		v-model:tab="activeTabValue"
 		size="5xl"
-		:shortcut="false"
 	>
 		<template #title>Settings</template>
 		<SettingsSidebar>
