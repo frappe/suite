@@ -4,7 +4,7 @@
 		aria-label="Stats for nerds"
 		data-testid="stats-for-nerds"
 	>
-		<header class="flex shrink-0 items-center justify-between gap-3 px-4 py-5">
+		<header class="flex shrink-0 items-center justify-between gap-3 p-4">
 			<div class="flex min-w-0 items-center gap-2.5">
 				<span
 					class="size-2.5 shrink-0 rounded-full"
@@ -179,7 +179,7 @@ const StatsRow = defineComponent({
 
 const StatsSection = defineComponent({
 	props: { title: { type: String, required: true }, badge: String },
-	setup: (props, { slots }) => () => h("section", { class: "mt-5" }, [
+	setup: (props, { slots }) => () => h("section", { class: "mt-4 border-t border-outline-gray-2 pt-3" }, [
 		h("div", { class: "mb-1 flex items-center gap-2" }, [
 			h("h3", { class: "font-semibold text-ink-gray-7" }, props.title),
 			props.badge ? h("span", { class: "rounded bg-surface-gray-3 px-1.5 py-0.5 text-[10px] text-ink-gray-5" }, props.badge) : null,
@@ -208,7 +208,7 @@ const StreamStats = defineComponent({
 			["Jitter buffer", formatMs(stream.jitterBufferDelay)],
 			["Audio concealed", stream.concealedSamples === undefined ? "n/a" : `${stream.concealedSamples} / ${stream.totalSamples ?? "n/a"} samples`],
 		];
-		return h("article", { class: "mt-2 rounded-lg bg-surface-gray-2 px-3 py-2 first:mt-1" }, [
+		return h("article", { class: "border-b border-outline-gray-2 py-2 last:border-0" }, [
 			h("div", { class: "mb-1.5 flex items-center justify-between gap-3" }, [
 				h("h4", { class: "capitalize text-ink-gray-7" }, stream.source),
 				stream.participantId ? h("span", { class: "max-w-36 truncate font-mono text-[10px] text-ink-gray-5", title: stream.participantId }, stream.participantId) : null,
