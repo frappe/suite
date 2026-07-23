@@ -72,6 +72,7 @@
 
 <script setup>
 import GridItem from '@/apps/drive/components/GridItem.vue'
+import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
 import emitter from '@/apps/drive/emitter'
 import { Button } from 'frappe-ui'
 import { ref, computed } from 'vue'
