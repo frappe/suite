@@ -139,6 +139,7 @@ describe("useNetworkQuality", () => {
 			consumer: {
 				id: "c1",
 				paused: false,
+				producerPaused: true,
 				getStats: vi.fn().mockResolvedValue(stats),
 			},
 		};
@@ -182,10 +183,11 @@ describe("useNetworkQuality", () => {
 		app.provide("sfuManager", sfuManager);
 		app.mount(root);
 
-		await vi.advanceTimersByTimeAsync(18_000);
+		await vi.advanceTimersByTimeAsync(21_000);
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 
-		await vi.advanceTimersByTimeAsync(3000);
+		entry.consumer.producerPaused = false;
+		await vi.advanceTimersByTimeAsync(21_000);
 		expect(resetReceiveSide).toHaveBeenCalledTimes(1);
 
 		app.unmount();
