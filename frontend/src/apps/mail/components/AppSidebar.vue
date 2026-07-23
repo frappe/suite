@@ -394,10 +394,6 @@ const handleKeyDown = (event: KeyboardEvent) => {
 			isSidebarCollapsed.value = !isSidebarCollapsed.value
 			return
 		}
-		if (event.key === ',') {
-			event.preventDefault()
-			showSettings.value = true
-		}
 	}
 }
 

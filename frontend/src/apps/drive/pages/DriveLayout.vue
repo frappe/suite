@@ -84,10 +84,6 @@ onKeyDown((e) => {
   if (e.key == '?') emitter.emit('toggleShortcuts')
 
   if (e.metaKey) {
-    if (e.key == ',') {
-      emitter.emit('showSettings')
-      e.preventDefault()
-    }
     if (e.shiftKey) {
       if (e.key == 'ArrowRight') {
         sidebarCollapsed.value = false
