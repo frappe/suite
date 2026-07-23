@@ -74,7 +74,7 @@
 					</template>
 				</Dropdown>
 			</div>
-			<div v-else class="w-7 shrink-0" aria-hidden="true" />
+			<div v-else-if="reserveHostControlSpace" class="w-7 shrink-0" aria-hidden="true" />
 		</div>
 	</div>
 
@@ -103,6 +103,7 @@ interface Props {
 	isCurrentUser?: boolean;
 	isHost?: boolean;
 	canControlParticipant?: boolean;
+	reserveHostControlSpace?: boolean;
 	canPromoteToCohost?: boolean;
 }
 
@@ -110,6 +111,7 @@ const props = withDefaults(defineProps<Props>(), {
 	isCurrentUser: false,
 	isHost: false,
 	canControlParticipant: false,
+	reserveHostControlSpace: false,
 	canPromoteToCohost: false,
 });
 

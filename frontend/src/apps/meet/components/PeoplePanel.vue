@@ -39,7 +39,7 @@
 
 				<div class="flex-1 overflow-y-auto px-2">
 					<PeopleWaitingSection
-						v-if="isCreator"
+						v-if="isHostOrCohost"
 						:lobbyUsers="filteredLobbyUsers"
 						@approve="handleApproveLobbyUser"
 						@reject="handleRejectLobbyUser"
@@ -60,6 +60,7 @@
 							:isCurrentUser="participant.isCurrentUser"
 							:isHost="participant.isHost"
 							:canControlParticipant="participant.canControlParticipant"
+							:reserveHostControlSpace="isHostOrCohost"
 							@muteParticipant="handleMuteParticipant"
 							@kickParticipant="handleKickParticipant"
 							@lowerHand="handleLowerHand"
@@ -141,7 +142,7 @@ const emit = defineEmits<{
 
 const searchQuery = ref<string>("");
 
-const isCreator = computed(() => {
+const isHostOrCohost = computed(() => {
 	return (
 		props.currentUser.user_id === props.creatorUserId ||
 		props.coHosts.includes(props.currentUser.user_id || "")
@@ -233,7 +234,7 @@ const allVisibleParticipants = computed(() => {
 			user_id: props.currentUser?.user_id || "",
 			participantData: currentUserData.value,
 			isCurrentUser: true,
-			isHost: isCreator.value,
+			isHost: isHostOrCohost.value,
 			canControlParticipant: false,
 			canPromoteToCohost: false,
 		});
@@ -248,7 +249,7 @@ const allVisibleParticipants = computed(() => {
 				participant.user_id === props.creatorUserId ||
 				props.coHosts.includes(participant.user_id),
 			canControlParticipant:
-				isCreator.value && participant.user_id !== props.creatorUserId,
+				isHostOrCohost.value && participant.user_id !== props.creatorUserId,
 			canPromoteToCohost:
 				isHost.value &&
 				!participant.is_guest &&
