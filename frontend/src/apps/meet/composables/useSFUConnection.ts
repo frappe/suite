@@ -419,6 +419,8 @@ export function useSFUConnection(deps: {
 					for (const track of mediaState.localStream?.getAudioTracks() || []) {
 						track.enabled = false;
 					}
+				} else {
+					sfuClient.sendMediaControl("unmute");
 				}
 			}
 			if (sfuClient.isE2EERequired()) {
