@@ -89,6 +89,19 @@ function reports(stats: unknown): StatsReport[] {
 	return values ? Array.from(values) as StatsReport[] : [];
 }
 
+export function selectPrimaryRtpReport(
+	stats: unknown,
+	type: "inbound-rtp" | "outbound-rtp",
+): StatsReport | undefined {
+	const allReports = reports(stats);
+	return allReports.find((report) => {
+		if (report.type !== type || report.isRemote === true) return false;
+		const codecId = stringValue(report.codecId);
+		const codec = allReports.find((candidate) => candidate.id === codecId);
+		return stringValue(codec?.mimeType)?.toLowerCase() !== "video/rtx";
+	});
+}
+
 export function calculateBitrate(
 	previous: CounterSample | undefined,
 	current: CounterSample,
@@ -171,13 +184,15 @@ export function useRTCStats(active: Ref<boolean>) {
 		try {
 			const allReports = reports(await options.getStats());
 			const primaryType = options.direction === "send" ? "outbound-rtp" : "inbound-rtp";
-			const primary = allReports.find(
-				(report) => report.type === primaryType && report.kind !== "rtx" && report.isRemote !== true,
-			);
+			const primary = selectPrimaryRtpReport(allReports, primaryType);
 			if (!primary) return null;
 
+			const remoteId = stringValue(primary.remoteId);
 			const remote = options.direction === "send"
-				? allReports.find((report) => report.type === "remote-inbound-rtp")
+				? allReports.find((report) =>
+					report.type === "remote-inbound-rtp" &&
+					(report.id === remoteId || report.localId === primary.id),
+				) ?? allReports.find((report) => report.type === "remote-inbound-rtp")
 				: undefined;
 			const codecId = stringValue(primary.codecId);
 			const codec = allReports.find((report) => report.id === codecId);

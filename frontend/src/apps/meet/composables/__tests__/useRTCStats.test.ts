@@ -3,11 +3,23 @@ import {
 	calculateBitrate,
 	calculatePacketLoss,
 	RTC_STATS_POLL_INTERVAL_MS,
+	selectPrimaryRtpReport,
 } from "../useRTCStats";
 
 describe("RTC stats interval calculations", () => {
 	it("refreshes once per second", () => {
 		expect(RTC_STATS_POLL_INTERVAL_MS).toBe(1000);
+	});
+
+	it("skips RTX reports when selecting a media stream", () => {
+		const stats = new Map([
+			["rtx", { id: "rtx", type: "outbound-rtp", kind: "video", codecId: "rtx-codec", bytesSent: 500 }],
+			["primary", { id: "primary", type: "outbound-rtp", kind: "video", codecId: "vp9-codec", bytesSent: 10_000 }],
+			["rtx-codec", { id: "rtx-codec", type: "codec", mimeType: "video/rtx" }],
+			["vp9-codec", { id: "vp9-codec", type: "codec", mimeType: "video/VP9" }],
+		]);
+
+		expect(selectPrimaryRtpReport(stats, "outbound-rtp")?.id).toBe("primary");
 	});
 
 	it("calculates bitrate from cumulative byte counters", () => {
