@@ -60,6 +60,7 @@ export interface User {
 	enabled: boolean
 	is_suite_admin: boolean
 	is_system_manager: boolean
+	is_stalwart_configured: boolean
 	is_jmap_configured: boolean
 
 	mailboxes: { id: string; name: string; role: string }[]

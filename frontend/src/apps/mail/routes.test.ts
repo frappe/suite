@@ -43,4 +43,8 @@ describe('mail route matching', () => {
 	it('account-scoped routes still resolve', () => {
 		expect(makeRouter().resolve('/mail/account/ih/mailbox/a').name).toBe('mail-mailbox')
 	})
+
+	it('the not-configured screen resolves', () => {
+		expect(makeRouter().resolve('/mail/not-configured').name).toBe('mail-not-configured')
+	})
 })

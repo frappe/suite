@@ -87,6 +87,15 @@ export const routes: RouteRecordRaw[] = [
 		component: () => import('@/apps/mail/pages/MailLayout.vue'),
 		children: [
 			{
+				// Shown when the mail server isn't configured yet (no server_url set). The mail
+				// guard (see ./router.ts) redirects here instead of dropping the user on a blank,
+				// error-filled page. `noLayout` renders it without the sidebar chrome.
+				path: 'not-configured',
+				name: 'mail-not-configured',
+				component: () => import('@/apps/mail/pages/NotConfiguredView.vue'),
+				meta: { noLayout: true },
+			},
+			{
 				path: 'all-inboxes',
 				name: 'mail-all-inboxes',
 				component: () => import('@/apps/mail/pages/AllInboxesView.vue'),

@@ -167,6 +167,7 @@ def get_user_info() -> dict | None:
 
 	data.is_suite_admin = is_suite_admin(user)
 	data.is_system_manager = is_system_manager(user)
+	data.is_stalwart_configured = is_stalwart_configured()
 	data.is_jmap_configured = is_jmap_configured(user)
 	data.accounts = frappe.db.get_all("User Account", {"user": user}, ["account"])
 

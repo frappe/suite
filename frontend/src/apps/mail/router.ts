@@ -74,6 +74,17 @@ function installMailGuard(r: Router) {
 		await userResource.promise
 		const user = userResource.data
 
+		// Mail server not set up yet (Stalwart not fully configured — missing server_url,
+		// username or password): show a friendly "not configured" message instead of a blank,
+		// error-filled page. This is the most fundamental gate, so it runs before the
+		// JMAP/dashboard checks below — the admin dashboard is only reachable once the server
+		// is configured.
+		if (!user?.is_stalwart_configured) {
+			return to.name === 'mail-not-configured' ? undefined : { name: 'mail-not-configured' }
+		}
+		// Configured now, but sitting on the not-configured screen — send them into the app.
+		if (to.name === 'mail-not-configured') return { name: 'mail-root-shortcut' }
+
 		// Admin / dashboard access control.
 		if (!user?.is_jmap_configured) {
 			if (!user?.is_suite_admin) window.location.replace('/desk')
