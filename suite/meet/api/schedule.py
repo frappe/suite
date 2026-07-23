@@ -70,3 +70,13 @@ def create_scheduled_meeting(
 	)
 
 	return {"meeting_id": meeting_id, "meeting_url": meet_url, "event_id": event_id}
+
+
+@frappe.whitelist()
+def create_meet_link(account: str, title: str | None = None, meeting_type: str = "open") -> dict[str, str]:
+	"""Create a Meet room and return its link, for attaching to an existing calendar event."""
+
+	is_jmap_account_belongs_to_user(account, raise_exception=True)
+
+	meeting_id = create_meeting(meeting_type=meeting_type, title=title)
+	return {"meeting_id": meeting_id, "meeting_url": get_url(f"/meet/{meeting_id}")}

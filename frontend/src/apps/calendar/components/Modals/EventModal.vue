@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, reactive, ref, watch } from 'vue'
-import { AlignLeft, Bell, Briefcase, Clock, MapPin, Users, X } from 'lucide-vue-next'
+import { computed, inject, nextTick, reactive, ref, watch } from 'vue'
+import { AlignLeft, Bell, Briefcase, Clock, Copy, MapPin, Users, X } from 'lucide-vue-next'
 import { Button, Dialog, Dropdown, FormControl, Switch, createResource, toast } from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
-import { getReorderedParticipants } from '@/apps/calendar/utils'
+import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
@@ -44,7 +44,8 @@ const getEventData = () => {
 		endTime: end.format('HH:mm'),
 		free_busy_status: ev.free_busy_status,
 		privacy: ev.privacy || 'Public',
-		locations: ev.locations.length ? ev.locations.map((l) => l._name) : [''],
+		locations: ev.locations.map((l) => l._name),
+		links: ev.links ? [...ev.links] : [],
 		alerts: ev.alerts?.map(parseAlert) ?? [],
 		description: ev.description || '',
 		participants: [...ev.participants],
@@ -69,7 +70,8 @@ const getDefaultEventData = () => {
 		startTime,
 		endDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
 		endTime: dayjs(startTime, 'HH:mm').add(1, 'hour').format('HH:mm'),
-		locations: [''],
+		locations: [],
+		links: [],
 		alerts: [],
 		description: '',
 		free_busy_status: 'Busy',
@@ -152,6 +154,9 @@ const eventParams = computed(() => {
 	if (event.description) params.description = event.description
 	if (event.locations?.some((l) => l?.trim()))
 		params.locations = event.locations.filter((l) => l?.trim()).map((name) => ({ name }))
+	// Always carry existing links on updates — the JMAP update is a full replace,
+	// so omitting them would strip Meet links from the event.
+	if (event.links?.length) params.links = event.links
 	if (event.participants?.length) params.participants = event.participants
 	if (event.alerts?.length) {
 		params.alerts = event.alerts.map((a) => {
@@ -214,6 +219,33 @@ const hasMeetLink = (ev: any) =>
 	(ev?.links || []).some((link: any) => link?.href?.includes('/meet/')) ||
 	!!ev?.description?.includes('/meet/')
 
+// Prefer the sanitized same-origin path, but fall back to the raw URL so events
+// whose Meet link lives on another origin (e.g. created against a different site
+// URL) still get a Join affordance — the same link is already clickable in the
+// detail sidebar's description.
+const meetUrl = computed(() => {
+	const href =
+		event.links?.find((item: any) => item?.href?.includes('/meet/'))?.href ||
+		event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/)?.[0]
+	if (!href) return ''
+	return getMeetUrl(href) || href.replace(/\W+$/, '')
+})
+
+const joinMeet = () => {
+	if (meetUrl.value) window.open(meetUrl.value, '_blank', 'noopener')
+}
+
+const copyMeetLink = async () => {
+	await navigator.clipboard.writeText(new URL(meetUrl.value, window.location.origin).href)
+	toast.success(__('Frappe Meet link copied.'))
+}
+
+const meetLinkDisplay = computed(() =>
+	meetUrl.value
+		? new URL(meetUrl.value, window.location.origin).href.replace(/^https?:\/\//, '')
+		: '',
+)
+
 // --- Watchers ---
 
 watch(show, (val) => {
@@ -226,6 +258,15 @@ const showRepeatSettings = ref(false)
 watch(showRepeatSettings, (val) => {
 	if (!val && !event.recurrence_rule?.frequency) event.repeat = false
 })
+
+const locationsEl = ref<HTMLElement | null>(null)
+
+const addLocation = async () => {
+	event.locations.push('')
+	await nextTick()
+	const inputs = locationsEl.value?.querySelectorAll('input')
+	inputs?.[inputs.length - 1]?.focus()
+}
 
 // With a rule applied the row is an entry point to the settings — unchecking
 // only happens through Remove Repeat in the modal.
@@ -297,6 +338,11 @@ const editEvent = createResource({
 	onSuccess: handleSuccess,
 })
 
+const createMeetLink = createResource({
+	url: 'suite.meet.api.schedule.create_meet_link',
+	makeParams: () => ({ account: store.accountId, title: event.title }),
+})
+
 const isUpdateInstance = ref(false)
 
 const submitEvent = (sendEmail: boolean) => {
@@ -312,7 +358,18 @@ const submitEvent = (sendEmail: boolean) => {
 		? { loading: __('Creating event...'), success: __('Event created.') }
 		: { loading: __('Updating event...'), success: __('Event updated.') }
 
-	toast.promise(resource.submit({ sendEmail }), {
+	// Attaching a Meet link to an existing event: mint the room first, then send the
+	// regular update with the link included (creation bundles this server-side).
+	const attachMeetLink = !isNew.value && event.addMeetLink && !hasMeetLink(selectedEvent?.calendarEvent)
+	const submit = async () => {
+		if (attachMeetLink) {
+			const { meeting_url } = await createMeetLink.submit()
+			event.links = [...(event.links || []), { href: meeting_url, content_type: 'text/html' }]
+		}
+		return resource.submit({ sendEmail })
+	}
+
+	toast.promise(submit(), {
 		...messages,
 		error: __('Action failed. Please try again in some time.'),
 	})
@@ -508,25 +565,37 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						</div>
 
 						<!-- meet link -->
-						<div
-							v-if="isNew || hasMeetLink(selectedEvent?.calendarEvent)"
-							class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3"
-						>
-							<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-[18px] shrink-0" />
-							<span class="flex-1 text-base">
-								{{ __('Add Frappe Meet Video Call') }}
-							</span>
-							<Switch
-								v-model="event.addMeetLink"
-								:disabled="!isNew && hasMeetLink(selectedEvent?.calendarEvent)"
-							/>
+						<div class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3">
+							<template v-if="meetUrl">
+								<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
+								<div class="min-w-0 flex-1">
+									<div class="text-sm font-medium text-ink-gray-8 mb-0.5">
+										{{ __('Frappe Meet video call') }}
+									</div>
+									<div class="truncate text-xs text-ink-gray-5">{{ meetLinkDisplay }}</div>
+								</div>
+								<Button variant="ghost" :title="__('Copy Frappe Meet link')" @click="copyMeetLink">
+									<template #icon><Copy :size="14" class="icon text-ink-gray-5" /></template>
+								</Button>
+								<Button :label="__('Join')" @click="joinMeet" />
+							</template>
+							<template v-else>
+								<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-[18px] shrink-0" />
+								<span class="flex-1 text-base">{{ __('Add Frappe Meet video call') }}</span>
+								<Switch v-model="event.addMeetLink" />
+							</template>
 						</div>
+
 
 						<div class="mt-4 flex flex-col gap-4">
 							<!-- locations -->
 							<div class="flex gap-3">
-								<MapPin :size="18" class="icon mt-7 shrink-0 text-ink-gray-5" />
-								<div class="min-w-0 flex-1 space-y-2">
+								<MapPin
+									:size="18"
+									class="icon shrink-0 text-ink-gray-5"
+									:class="event.locations?.length ? 'mt-7' : 'mt-2'"
+								/>
+								<div ref="locationsEl" class="min-w-0 flex-1 space-y-2">
 									<div v-for="(_, i) in event.locations" :key="i" class="flex gap-2">
 										<FormControl
 											v-model="event.locations[i]"
@@ -540,18 +609,12 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											:placeholder="__('Meeting location {0}', [i + 1])"
 											class="w-full"
 										/>
-										<Button
-											v-if="event.locations?.length === 1"
-											icon="plus"
-											class="mt-auto"
-											@click="event.locations.push('')"
-										/>
-										<Button v-else icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
+										<Button icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
 									</div>
 									<Button
-										v-if="event.locations?.length > 1 && event.locations?.length < 3"
+										v-if="(event.locations?.length ?? 0) < 3"
 										:label="__('Add Location')"
-										@click="event.locations.push('')"
+										@click="addLocation"
 									/>
 								</div>
 							</div>

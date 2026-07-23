@@ -9,19 +9,19 @@ import {
 	Mail,
 	MapPin,
 	MoreHorizontal,
-	Phone,
 	Repeat,
 	SquarePen,
 	Text,
 	Trash2,
 	Users,
-	Video,
 	X,
 } from 'lucide-vue-next'
 import { Button, Dialog, Dropdown, TabButtons, createResource, toast } from 'frappe-ui'
 import DOMPurify from 'dompurify'
 
-import { getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
+import meetLogo from '@/assets/app-logos/meet.png'
+
+import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
@@ -203,29 +203,6 @@ const meetUrl = computed(() => {
 	)
 	return getMeetUrl(match?.[0])
 })
-
-const getMeetUrl = (url?: string) => {
-	if (!url) return ''
-	const value = url.replace(/\W+$/, '')
-
-	try {
-		// Meet links are stored as absolute URLs built from the site origin
-		// (get_url), which differs from the frontend origin in dev. Only the
-		// path is kept for navigation, so joining always stays on our own
-		// origin regardless of the stored host.
-		const parsed = new URL(value, window.location.origin)
-		// Accept if the stored host matches ours, OR if it was a relative path
-		// (no host in the original string). Rejects external meeting services
-		// whose URLs happen to contain /meet/.
-		const isRelative = !value.startsWith('http')
-		if (parsed.pathname.startsWith('/meet/') && (isRelative || parsed.origin === window.location.origin))
-			return parsed.pathname + parsed.search + parsed.hash
-	} catch {
-		return ''
-	}
-
-	return ''
-}
 
 const meetCode = computed(() => meetUrl.value.split('/meet/')[1]?.split(/[?#]/)[0] ?? '')
 
@@ -427,7 +404,7 @@ const openUrl = (location: string) => {
 				<!-- Meet link -->
 				<template v-if="meetUrl">
 					<div class="flex items-center gap-2.5 px-[18px] py-[7px]">
-						<Phone class="icon text-ink-gray-5 size-4 shrink-0" />
+						<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-4 shrink-0" />
 						<span class="text-ink-gray-7 min-w-0 flex-1 truncate text-sm">
 							{{ meetCode }}
 						</span>
@@ -444,7 +421,6 @@ const openUrl = (location: string) => {
 							class="bg-surface-gray-2 hover:bg-surface-gray-3 text-ink-gray-7 flex w-full items-center justify-center gap-2 rounded py-1.5 text-sm"
 							@click="joinMeet"
 						>
-							<Video class="icon size-4" />
 							{{ __('Join Frappe Meet') }}
 						</button>
 					</div>

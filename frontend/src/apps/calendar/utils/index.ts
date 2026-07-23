@@ -76,3 +76,26 @@ export const shouldIgnoreKeypress = (
 		e.altKey
 	)
 }
+
+// Meet links are stored as absolute URLs built from the site origin (get_url),
+// which differs from the frontend origin in dev. Only the path is kept for
+// navigation, so joining always stays on our own origin regardless of the
+// stored host. Rejects external meeting services whose URLs contain /meet/.
+export const getMeetUrl = (url?: string) => {
+	if (!url) return ''
+	const value = url.replace(/\W+$/, '')
+
+	try {
+		const parsed = new URL(value, window.location.origin)
+		const isRelative = !value.startsWith('http')
+		if (
+			parsed.pathname.startsWith('/meet/') &&
+			(isRelative || parsed.origin === window.location.origin)
+		)
+			return parsed.pathname + parsed.search + parsed.hash
+	} catch {
+		return ''
+	}
+
+	return ''
+}
