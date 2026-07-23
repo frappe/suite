@@ -368,7 +368,10 @@ const submitEvent = (sendEmail: boolean) => {
 	// regular update with the link included (creation bundles this server-side).
 	const attachMeetLink = pendingMeetAttach.value
 	const submit = async () => {
-		if (attachMeetLink) {
+		// A failed update leaves the minted room in event.links only — reuse it on
+		// retry rather than creating an orphaned duplicate.
+		const alreadyMinted = (event.links || []).some((l: any) => l?.href?.includes('/meet/'))
+		if (attachMeetLink && !alreadyMinted) {
 			const { meeting_url } = await createMeetLink.submit()
 			event.links = [...(event.links || []), { href: meeting_url, content_type: 'text/html' }]
 		}
