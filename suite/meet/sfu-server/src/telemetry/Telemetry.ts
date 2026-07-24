@@ -24,6 +24,18 @@ export class Telemetry {
 		labelNames: ['reason'] as const,
 		registers: [this.registry],
 	});
+	readonly authEvents = new Counter({
+		name: 'meet_sfu_auth_events_total',
+		help: 'Authentication and token lifecycle outcomes',
+		labelNames: ['stage', 'reason', 'outcome'] as const,
+		registers: [this.registry],
+	});
+	readonly e2eeEvents = new Counter({
+		name: 'meet_sfu_e2ee_events_total',
+		help: 'Bounded E2EE protocol events and rejections',
+		labelNames: ['event', 'outcome'] as const,
+		registers: [this.registry],
+	});
 	readonly roomJoins = new Counter({
 		name: 'meet_sfu_room_joins_total',
 		help: 'Room join attempts',
@@ -237,6 +249,27 @@ export class Telemetry {
 		this.workerCpu.set({ mode: 'user' }, resources.userCpuSeconds);
 		this.workerCpu.set({ mode: 'system' }, resources.systemCpuSeconds);
 		this.workerMemory.set(resources.maxResidentMemoryBytes);
+	}
+
+	recordE2EEEvent(
+		event: string,
+		outcome: 'received' | 'rate_limited' | 'failure',
+	): void {
+		const known = new Set([
+			'key-package-request',
+			'key-package',
+			'genesis-request',
+			'join-status',
+			'commit-request',
+			'commit',
+			'welcome',
+			'ack',
+			'resync-request',
+		]);
+		this.e2eeEvents.inc({
+			event: known.has(event) ? event : 'unknown',
+			outcome,
+		});
 	}
 }
 

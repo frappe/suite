@@ -103,4 +103,24 @@ describe('Telemetry', () => {
 		expect(output).toContain('meet_sfu_worker_cpu_seconds{mode="user"} 2');
 		expect(output).toContain('meet_sfu_worker_max_resident_memory_bytes 2048');
 	});
+
+	it('bounds E2EE event names', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordE2EEEvent('arbitrary-event', 'received');
+		telemetry.authEvents.inc({
+			stage: 'connection',
+			reason: 'invalid_token',
+			outcome: 'failure',
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_e2ee_events_total{event="unknown",outcome="received"} 1',
+		);
+		expect(output).toContain(
+			'meet_sfu_auth_events_total{stage="connection",reason="invalid_token",outcome="failure"} 1',
+		);
+		expect(output).not.toContain('arbitrary-event');
+	});
 });

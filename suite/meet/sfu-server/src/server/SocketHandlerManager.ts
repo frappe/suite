@@ -58,6 +58,7 @@ export class SocketHandlerManager {
 			this.registry.getParticipantToSender(),
 			coordinatorPersistence,
 			this.rateLimiter,
+			telemetry,
 		);
 		this.e2eeEpochRelay.setRoster(roster);
 
@@ -108,16 +109,31 @@ export class SocketHandlerManager {
 			if (!this.authManager.authenticateSocket(socket)) {
 				this.telemetry.socketConnections.inc({ outcome: 'failure' });
 				loggers.telemetry.event('socket_connection', { outcome: 'failure' });
+				this.telemetry.authEvents.inc({
+					stage: 'connection',
+					reason: 'invalid_token',
+					outcome: 'failure',
+				});
 				return next(new Error('Authentication failed'));
 			}
 			this.telemetry.socketConnections.inc({ outcome: 'success' });
 			loggers.telemetry.event('socket_connection', { outcome: 'success' });
+			this.telemetry.authEvents.inc({
+				stage: 'connection',
+				reason: 'valid',
+				outcome: 'success',
+			});
 			next();
 		});
 
 		this.io.on('connection', (socket) => {
 			socket.use((_packet, next) => {
 				if (this.authManager.isTokenExpired(socket)) {
+					this.telemetry.authEvents.inc({
+						stage: 'expiry',
+						reason: 'middleware_guard',
+						outcome: 'failure',
+					});
 					this.authManager.triggerTokenExpiry(socket, 'middleware_guard');
 					return;
 				}
@@ -139,6 +155,11 @@ export class SocketHandlerManager {
 	private sweepExpiredSockets(): void {
 		for (const [, socket] of this.io.sockets.sockets) {
 			if (this.authManager.isTokenExpired(socket as never)) {
+				this.telemetry.authEvents.inc({
+					stage: 'expiry',
+					reason: 'idle_sweep',
+					outcome: 'failure',
+				});
 				loggers.authManager.debug(
 					'Idle sweep: disconnecting expired socket %s (user %s)',
 					socket.id,

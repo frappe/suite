@@ -188,6 +188,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					getRoomId(socket),
 					socket.userId,
 				).catch((error: unknown) => {
+					deps.telemetry.recordE2EEEvent('join-status', 'failure');
 					loggers.socketHandler.error(
 						'e2ee admission request failed for user %s in room %s: %s',
 						socket.userId,

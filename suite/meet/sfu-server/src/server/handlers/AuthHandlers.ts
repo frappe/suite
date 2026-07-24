@@ -8,13 +8,28 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 			try {
 				const token = typeof data?.token === 'string' ? data.token : null;
 				if (!token) {
+					deps.telemetry.authEvents.inc({
+						stage: 'refresh',
+						reason: 'missing_token',
+						outcome: 'failure',
+					});
 					callback({ success: false, error: 'Missing token' });
 					return;
 				}
 
 				deps.authManager.updateSocketToken(socket, token);
+				deps.telemetry.authEvents.inc({
+					stage: 'refresh',
+					reason: 'valid',
+					outcome: 'success',
+				});
 				callback({ success: true });
 			} catch (error) {
+				deps.telemetry.authEvents.inc({
+					stage: 'refresh',
+					reason: 'invalid_token',
+					outcome: 'failure',
+				});
 				const message = (error as Error).message || 'Token update failed';
 				loggers.socketHandler.warn(
 					'auth:update_token failed for socket %s: %s',

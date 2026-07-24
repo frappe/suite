@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import type { Telemetry } from '../telemetry/Telemetry';
 import type {
 	ClientToServerEvents,
 	E2eeEpochEnvelope,
@@ -105,6 +106,7 @@ export class E2EEEpochRelay {
 		participantToSender: Map<string, Map<string, number>>,
 		private readonly persistence: E2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence(),
 		private readonly rateLimiter: RateLimiter | null = null,
+		private readonly telemetry: Telemetry | null = null,
 	) {
 		this.io = io;
 		this.fullAccessSockets = fullAccessSockets;
@@ -118,6 +120,10 @@ export class E2EEEpochRelay {
 	setup(socket: Socket): void {
 		socket.on('e2ee:epoch', (payload: E2eeEpochPayload) => {
 			if (!this.isWithinRateLimit(socket)) return;
+			this.telemetry?.recordE2EEEvent(
+				typeof payload?.type === 'string' ? payload.type : 'unknown',
+				'received',
+			);
 			void this.handle(socket, payload);
 		});
 	}
@@ -132,6 +138,7 @@ export class E2EEEpochRelay {
 			E2EE_EPOCH_RATE_WINDOW_MS,
 		);
 		if (!allowed) {
+			this.telemetry?.recordE2EEEvent('unknown', 'rate_limited');
 			socket.emit('sfu_error', {
 				error: 'Too many encrypted epoch messages. Please try again later.',
 				code: 'RATE_LIMITED',
