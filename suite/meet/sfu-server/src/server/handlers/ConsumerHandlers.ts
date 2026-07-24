@@ -7,12 +7,16 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 		socket.on('create_consumer', async (data, callback) => {
 			const startedAt = performance.now();
 			let media: 'audio' | 'video' | 'unknown' = 'unknown';
-			const source: 'camera' | 'screen' | 'unknown' = 'unknown';
+			let source: 'camera' | 'screen' | 'unknown' = 'unknown';
 			let outcome: 'success' | 'failure' = 'failure';
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				enforceE2EEMediaPolicy(socket);
 				const { transportId, producerId, rtpCapabilities } = data;
+				const producer = deps.mediasoup.getProducer(producerId);
+				if (producer) {
+					source = producer.appData?.type === 'screen' ? 'screen' : 'camera';
+				}
 				const consumer = await deps.mediasoup.createConsumer(
 					transportId,
 					producerId,

@@ -447,6 +447,10 @@ export class MediasoupManager {
 		};
 	}
 
+	getProducer(producerId: string) {
+		return this.producerManager.getProducer(producerId);
+	}
+
 	closeProducer(producerId: string): CloseProducerResult {
 		const producerData = this.producerManager.getProducerData(producerId);
 		if (!producerData) return { isScreen: false, removedConsumers: [] };
