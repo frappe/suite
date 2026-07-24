@@ -44,7 +44,6 @@ const editor = computed(() => {
   return editor
 })
 provide('editor', editor)
-defineExpose({ editor })
 
 const {
   doc,
@@ -53,8 +52,10 @@ const {
   provider,
   permanentUserData,
   loaded,
+  users,
   ...commentsDetail
 } = useYjs(props.file.doc.name, props.document, editor, edited)
+defineExpose({ editor, users })
 watch(loaded, () => rebuild(editor.value))
 
 const extensions = [

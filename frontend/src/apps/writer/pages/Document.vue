@@ -12,10 +12,7 @@
     v-model:showTemplates="showTemplates" :file :document
     :breadcrumbs="file.doc.breadcrumbs?.map((k) => ({ ...k, label: k.file_name }))">
     <template #content v-if="document.doc?.settings && file.doc.write">
-      <UsersBar v-if="editor?.storage?.collaborationCaret?.users?.filter((k) => k.id !== currentUserId).length" :users="editor.storage.collaborationCaret.users.filter(
-        (k) => k.id !== currentUserId,
-      )
-        " />
+      <UsersBar v-if="collaborators.length" :users="collaborators" />
 
       <Button v-if="document.doc?.settings?.lock" :icon="LucideLock" variant="outline" @click="
         () => {
@@ -107,6 +104,11 @@ const props = defineProps({
 
 const editorEl = useTemplateRef('editorEl')
 const editor = computed(() => editorEl.value?.editor)
+const collaborators = computed(() =>
+  (editorEl.value?.users || []).filter(
+    (user) => user.id !== currentUserId.value,
+  ),
+)
 provide('editor', editor)
 
 const versionPreview = ref(null)
