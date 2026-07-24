@@ -11,6 +11,23 @@ import { loggers } from '../utils/logger';
 
 export class TransportManager {
 	private transports = new Map<string, TransportData>();
+	private stateListeners: Array<
+		(event: {
+			protocol: 'ice' | 'dtls';
+			direction: 'send' | 'recv';
+			state: string;
+		}) => void
+	> = [];
+
+	onStateChange(
+		listener: (event: {
+			protocol: 'ice' | 'dtls';
+			direction: 'send' | 'recv';
+			state: string;
+		}) => void,
+	): void {
+		this.stateListeners.push(listener);
+	}
 
 	async createWebRtcTransport(
 		roomId: string,
@@ -36,6 +53,12 @@ export class TransportManager {
 			enableTcp: options.enableTcp,
 			initialAvailableOutgoingBitrate: options.initialAvailableOutgoingBitrate,
 		});
+		transport.on('icestatechange', (state) => {
+			this.emitState({ protocol: 'ice', direction, state });
+		});
+		transport.on('dtlsstatechange', (state) => {
+			this.emitState({ protocol: 'dtls', direction, state });
+		});
 
 		const _transportKey = `${direction}-${Date.now()}`;
 		const transportData: TransportData = {
@@ -57,6 +80,14 @@ export class TransportManager {
 			iceCandidates: transport.iceCandidates,
 			dtlsParameters: transport.dtlsParameters,
 		};
+	}
+
+	private emitState(event: {
+		protocol: 'ice' | 'dtls';
+		direction: 'send' | 'recv';
+		state: string;
+	}): void {
+		for (const listener of this.stateListeners) listener(event);
 	}
 
 	async connectWebRtcTransport(

@@ -211,6 +211,13 @@ export function useSFUConnection(deps: {
 
 	const createSFUEventHandlers = () => {
 		return {
+			onRecoveryExhausted: () => {
+				clientTelemetry.reportRecoveryExhausted({
+					subsystem: "consumer",
+					direction: "recv",
+					reason: "retry_limit",
+				});
+			},
 			onRecoveryStateChange: (
 				state: Parameters<typeof connectionState.setRecoveryState>[0],
 				detail?: string,

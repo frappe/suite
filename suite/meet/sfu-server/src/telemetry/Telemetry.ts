@@ -50,6 +50,12 @@ export class Telemetry {
 		buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
 		registers: [this.registry],
 	});
+	readonly transportStateChanges = new Counter({
+		name: 'meet_sfu_transport_state_changes_total',
+		help: 'WebRTC transport ICE and DTLS state transitions',
+		labelNames: ['protocol', 'direction', 'state'] as const,
+		registers: [this.registry],
+	});
 	readonly mediaOperations = new Counter({
 		name: 'meet_sfu_media_operations_total',
 		help: 'Producer and consumer creation outcomes',
@@ -113,6 +119,12 @@ export class Telemetry {
 		buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
 		registers: [this.registry],
 	});
+	readonly clientRecoveryExhausted = new Counter({
+		name: 'meet_sfu_client_recovery_exhausted_total',
+		help: 'Sampled browser recoveries that exhausted all fallbacks',
+		labelNames: ['subsystem', 'direction', 'reason'] as const,
+		registers: [this.registry],
+	});
 	private resources = new Gauge({
 		name: 'meet_sfu_resources',
 		help: 'Current SFU resource counts',
@@ -157,6 +169,21 @@ export class Telemetry {
 		loggers.telemetry.event('transport_operation', {
 			...labels,
 			duration_ms: Math.round(durationSeconds * 1000),
+		});
+	}
+
+	recordTransportState(labels: {
+		protocol: 'ice' | 'dtls';
+		direction: 'send' | 'recv';
+		state: string;
+	}): void {
+		const states =
+			labels.protocol === 'ice'
+				? new Set(['new', 'connected', 'completed', 'disconnected', 'closed'])
+				: new Set(['new', 'connecting', 'connected', 'failed', 'closed']);
+		this.transportStateChanges.inc({
+			...labels,
+			state: states.has(labels.state) ? labels.state : 'unknown',
 		});
 	}
 

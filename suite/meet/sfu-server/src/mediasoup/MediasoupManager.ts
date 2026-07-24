@@ -136,6 +136,12 @@ export class MediasoupManager {
 		this.networkQualityListeners.push(listener);
 	}
 
+	onTransportStateChange(
+		listener: Parameters<TransportManager['onStateChange']>[0],
+	): void {
+		this.transportManager.onStateChange(listener);
+	}
+
 	async init(): Promise<void> {
 		loggers.mediasoupManager.info('Initializing Mediasoup');
 

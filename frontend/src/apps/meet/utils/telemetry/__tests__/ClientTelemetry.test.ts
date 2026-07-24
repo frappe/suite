@@ -73,4 +73,22 @@ describe("ClientTelemetry", () => {
 
 		expect(sendClientTelemetry).not.toHaveBeenCalled();
 	});
+
+	it("reports bounded recovery exhaustion", () => {
+		const sendClientTelemetry = vi.fn();
+		const telemetry = new ClientTelemetry({ sendClientTelemetry }, true);
+
+		telemetry.reportRecoveryExhausted({
+			subsystem: "consumer",
+			direction: "recv",
+			reason: "retry_limit",
+		});
+
+		expect(sendClientTelemetry).toHaveBeenCalledWith({
+			event: "recovery_exhausted",
+			subsystem: "consumer",
+			direction: "recv",
+			reason: "retry_limit",
+		});
+	});
 });

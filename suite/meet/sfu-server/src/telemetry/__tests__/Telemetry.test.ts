@@ -69,4 +69,20 @@ describe('Telemetry', () => {
 			'meet_sfu_media_operations_total{operation="create_producer",direction="send",media="video",source="screen",outcome="success"} 1',
 		);
 	});
+
+	it('normalizes transport state transitions', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordTransportState({
+			protocol: 'ice',
+			direction: 'recv',
+			state: 'user-controlled-state',
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_transport_state_changes_total{protocol="ice",direction="recv",state="unknown"} 1',
+		);
+		expect(output).not.toContain('user-controlled-state');
+	});
 });

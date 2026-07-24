@@ -62,6 +62,7 @@ interface MediaManagerOptions {
 interface MediaEventHandlers {
 	onScreenShareStarted?: (data: unknown) => void;
 	onScreenShareStopped?: (data: unknown) => void;
+	onRecoveryExhausted?: () => void;
 }
 
 export class SFUMediaManager {
@@ -289,6 +290,7 @@ export class SFUMediaManager {
 				attempts,
 			});
 			this.resubscribeAttempts.delete(key);
+			this.eventHandlers.onRecoveryExhausted?.();
 			return;
 		}
 		this.resubscribeAttempts.set(key, attempts + 1);

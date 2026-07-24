@@ -64,6 +64,7 @@ export interface SFUEventHandlers {
 			| "failed",
 		detail?: string,
 	) => void;
+	onRecoveryExhausted?: () => void;
 }
 
 interface ConnectionManagerOptions {
@@ -496,6 +497,9 @@ export class SFUConnectionManager {
 		});
 
 		this.mediaManager.setEventHandlers({
+			onRecoveryExhausted: () => {
+				this.eventHandlers.onRecoveryExhausted?.();
+			},
 			onScreenShareStarted: (data: unknown) => {
 				if (this.eventHandlers.onScreenShareStarted) {
 					this.eventHandlers.onScreenShareStarted(data);

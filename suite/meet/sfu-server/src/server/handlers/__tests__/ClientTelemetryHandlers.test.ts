@@ -36,4 +36,20 @@ describe('parseClientTelemetry', () => {
 			}),
 		).toBeNull();
 	});
+
+	it('accepts bounded recovery exhaustion outcomes', () => {
+		expect(
+			parseClientTelemetry({
+				event: 'recovery_exhausted',
+				subsystem: 'consumer',
+				direction: 'recv',
+				reason: 'retry_limit',
+			}),
+		).toEqual({
+			event: 'recovery_exhausted',
+			subsystem: 'consumer',
+			direction: 'recv',
+			reason: 'retry_limit',
+		});
+	});
 });

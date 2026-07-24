@@ -47,6 +47,13 @@ export function registerClientTelemetryHandlers(deps: HandlerDeps) {
 					);
 					break;
 				}
+				case 'recovery_exhausted':
+					deps.telemetry.clientRecoveryExhausted.inc({
+						subsystem: event.subsystem,
+						direction: event.direction,
+						reason: event.reason,
+					});
+					break;
 			}
 		});
 	};
@@ -90,6 +97,25 @@ export function parseClientTelemetry(
 					trigger: data.trigger,
 					outcome: data.outcome,
 					durationMs: data.durationMs,
+				}
+			: null;
+	}
+	if (data.event === 'recovery_exhausted') {
+		return hasOnlyKeys(data, ['event', 'subsystem', 'direction', 'reason']) &&
+			(data.subsystem === 'signaling' ||
+				data.subsystem === 'transport' ||
+				data.subsystem === 'consumer') &&
+			(data.direction === 'send' ||
+				data.direction === 'recv' ||
+				data.direction === 'both') &&
+			(data.reason === 'retry_limit' ||
+				data.reason === 'restart_failed' ||
+				data.reason === 'rebuild_failed')
+			? {
+					event: data.event,
+					subsystem: data.subsystem,
+					direction: data.direction,
+					reason: data.reason,
 				}
 			: null;
 	}

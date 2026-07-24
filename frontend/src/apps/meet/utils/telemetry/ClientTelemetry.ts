@@ -13,6 +13,12 @@ export type ClientTelemetryEvent =
 			trigger: "signaling" | "ice" | "stall";
 			outcome: "success" | "failure";
 			durationMs: number;
+	  }
+	| {
+			event: "recovery_exhausted";
+			subsystem: "signaling" | "transport" | "consumer";
+			direction: "send" | "recv" | "both";
+			reason: "retry_limit" | "restart_failed" | "rebuild_failed";
 	  };
 
 type TelemetryClient = {
@@ -61,6 +67,12 @@ export class ClientTelemetry {
 		}
 	}
 
+	reportRecoveryExhausted(event: Omit<Extract<ClientTelemetryEvent, {
+		event: "recovery_exhausted";
+	}>, "event">): void {
+		this.send({ event: "recovery_exhausted", ...event });
+	}
+
 	recordRecoveryState(
 		state: MeetingRecoveryState,
 		detail?: string,
@@ -74,6 +86,15 @@ export class ClientTelemetry {
 				outcome: state === "healthy" ? "success" : "failure",
 				durationMs: this.elapsed(this.recoveryStartedAt),
 			});
+			if (state === "failed") {
+				this.reportRecoveryExhausted({
+					subsystem:
+						this.recoveryTrigger === "signaling" ? "signaling" : "transport",
+					direction: this.recoveryDirection(),
+					reason:
+						this.recoveryTrigger === "signaling" ? "retry_limit" : "rebuild_failed",
+				});
+			}
 			this.recoveryStartedAt = null;
 			this.recoveryDirections.clear();
 			this.recoveryTrigger = "ice";

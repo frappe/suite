@@ -66,6 +66,9 @@ export class SFUServer {
 
 		this.mediasoup = new MediasoupManager();
 		this.telemetry = new Telemetry();
+		this.mediasoup.onTransportStateChange((event) =>
+			this.telemetry.recordTransportState(event),
+		);
 		this.authManager = new AuthManager(this.config.jwtSecret);
 		this.routeManager = new RouteManager(
 			this.app,
