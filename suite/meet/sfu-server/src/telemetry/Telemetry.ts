@@ -137,6 +137,27 @@ export class Telemetry {
 		labelNames: ['subsystem', 'direction', 'reason'] as const,
 		registers: [this.registry],
 	});
+	readonly clientRtt = new Histogram({
+		name: 'meet_sfu_client_rtt_seconds',
+		help: 'Sampled browser WebRTC round-trip time',
+		buckets: [0.025, 0.05, 0.1, 0.2, 0.45, 0.9, 1.5, 3, 10, 60],
+		registers: [this.registry],
+	});
+	readonly clientPacketLoss = new Histogram({
+		name: 'meet_sfu_client_packet_loss_ratio',
+		help: 'Sampled browser WebRTC packet loss ratio',
+		buckets: [0, 0.01, 0.03, 0.05, 0.08, 0.18, 0.3, 0.5, 1],
+		registers: [this.registry],
+	});
+	readonly clientAvailableOutgoingBitrate = new Histogram({
+		name: 'meet_sfu_client_available_outgoing_bitrate_bps',
+		help: 'Sampled browser available outgoing bitrate',
+		buckets: [
+			50_000, 100_000, 200_000, 350_000, 500_000, 1_000_000, 2_500_000,
+			5_000_000, 10_000_000,
+		],
+		registers: [this.registry],
+	});
 	readonly mediaScore = new Histogram({
 		name: 'meet_sfu_media_score',
 		help: 'mediasoup producer and consumer score observations',

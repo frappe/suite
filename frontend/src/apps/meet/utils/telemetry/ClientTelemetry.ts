@@ -19,6 +19,12 @@ export type ClientTelemetryEvent =
 			subsystem: "signaling" | "transport" | "consumer";
 			direction: "send" | "recv" | "both";
 			reason: "retry_limit" | "restart_failed" | "rebuild_failed";
+	  }
+	| {
+			event: "network_quality";
+			rttMs: number;
+			packetLossPercent: number;
+			availableOutgoingBitrate: number;
 	  };
 
 type TelemetryClient = {
@@ -34,6 +40,7 @@ export class ClientTelemetry {
 	private recoveryDirections = new Set<"send" | "recv">();
 	private recoveryTrigger: "signaling" | "ice" | "stall" = "ice";
 	private firstMedia = new Set<"audio" | "video">();
+	private lastNetworkReportAt = Number.NEGATIVE_INFINITY;
 
 	constructor(
 		private client: TelemetryClient,
@@ -71,6 +78,25 @@ export class ClientTelemetry {
 		event: "recovery_exhausted";
 	}>, "event">): void {
 		this.send({ event: "recovery_exhausted", ...event });
+	}
+
+	reportNetworkQuality(stats: {
+		rtt: number;
+		packetLoss: number;
+		availableOutgoingBitrate: number;
+	}): void {
+		const now = this.now();
+		if (now - this.lastNetworkReportAt < 15_000) return;
+		this.lastNetworkReportAt = now;
+		this.send({
+			event: "network_quality",
+			rttMs: this.bounded(stats.rtt, 60_000),
+			packetLossPercent: this.bounded(stats.packetLoss, 100),
+			availableOutgoingBitrate: this.bounded(
+				stats.availableOutgoingBitrate,
+				100_000_000,
+			),
+		});
 	}
 
 	recordRecoveryState(
@@ -120,6 +146,10 @@ export class ClientTelemetry {
 
 	private elapsed(startedAt: number): number {
 		return Math.max(0, Math.min(300_000, Math.round(this.now() - startedAt)));
+	}
+
+	private bounded(value: number, maximum: number): number {
+		return Number.isFinite(value) ? Math.max(0, Math.min(maximum, value)) : 0;
 	}
 
 	private send(event: ClientTelemetryEvent): void {

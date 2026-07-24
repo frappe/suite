@@ -54,6 +54,15 @@ export function registerClientTelemetryHandlers(deps: HandlerDeps) {
 						reason: event.reason,
 					});
 					break;
+				case 'network_quality':
+					deps.telemetry.clientRtt.observe(event.rttMs / 1000);
+					deps.telemetry.clientPacketLoss.observe(
+						event.packetLossPercent / 100,
+					);
+					deps.telemetry.clientAvailableOutgoingBitrate.observe(
+						event.availableOutgoingBitrate,
+					);
+					break;
 			}
 		});
 	};
@@ -119,6 +128,24 @@ export function parseClientTelemetry(
 				}
 			: null;
 	}
+	if (data.event === 'network_quality') {
+		return hasOnlyKeys(data, [
+			'event',
+			'rttMs',
+			'packetLossPercent',
+			'availableOutgoingBitrate',
+		]) &&
+			isBoundedNumber(data.rttMs, 60_000) &&
+			isBoundedNumber(data.packetLossPercent, 100) &&
+			isBoundedNumber(data.availableOutgoingBitrate, 100_000_000)
+			? {
+					event: data.event,
+					rttMs: data.rttMs,
+					packetLossPercent: data.packetLossPercent,
+					availableOutgoingBitrate: data.availableOutgoingBitrate,
+				}
+			: null;
+	}
 	return null;
 }
 
@@ -143,5 +170,14 @@ function isDuration(value: unknown): value is number {
 		Number.isFinite(value) &&
 		value >= 0 &&
 		value <= MAX_DURATION_MS
+	);
+}
+
+function isBoundedNumber(value: unknown, maximum: number): value is number {
+	return (
+		typeof value === 'number' &&
+		Number.isFinite(value) &&
+		value >= 0 &&
+		value <= maximum
 	);
 }

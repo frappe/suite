@@ -52,4 +52,23 @@ describe('parseClientTelemetry', () => {
 			reason: 'retry_limit',
 		});
 	});
+
+	it('validates sampled network quality values', () => {
+		expect(
+			parseClientTelemetry({
+				event: 'network_quality',
+				rttMs: 100,
+				packetLossPercent: 2,
+				availableOutgoingBitrate: 500_000,
+			}),
+		).not.toBeNull();
+		expect(
+			parseClientTelemetry({
+				event: 'network_quality',
+				rttMs: -1,
+				packetLossPercent: 2,
+				availableOutgoingBitrate: 500_000,
+			}),
+		).toBeNull();
+	});
 });

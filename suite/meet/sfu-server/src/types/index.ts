@@ -264,6 +264,12 @@ export type ClientTelemetryEvent =
 			subsystem: 'signaling' | 'transport' | 'consumer';
 			direction: 'send' | 'recv' | 'both';
 			reason: 'retry_limit' | 'restart_failed' | 'rebuild_failed';
+	  }
+	| {
+			event: 'network_quality';
+			rttMs: number;
+			packetLossPercent: number;
+			availableOutgoingBitrate: number;
 	  };
 
 export interface SocketData {

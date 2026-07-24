@@ -150,6 +150,10 @@ export function useNetworkQuality() {
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
 				updateQuality(stats);
+				const sfuClient = sfuManagerRef?.value?.sfuClient;
+				if (sfuClient && stats.isValid) {
+					getClientTelemetry(sfuClient).reportNetworkQuality(stats);
+				}
 			}
 			if (networkQuality.value !== "good") {
 				stallDetector.suspend();
