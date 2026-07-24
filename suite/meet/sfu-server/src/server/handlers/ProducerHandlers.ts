@@ -6,6 +6,11 @@ import { getRoomId } from './utils';
 export function registerProducerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('create_producer', async (data, callback) => {
+			const startedAt = performance.now();
+			const media =
+				data.kind === 'audio' || data.kind === 'video' ? data.kind : 'unknown';
+			const source = data.appData?.type === 'screen' ? 'screen' : 'camera';
+			let outcome: 'success' | 'failure' = 'failure';
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				enforceE2EEMediaPolicy(socket);
@@ -25,6 +30,7 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 					appData.type === 'screen';
 
 				callback({ success: true, ...producer, isScreen });
+				outcome = 'success';
 
 				const roomId = getRoomId(socket);
 				deps.registry.emitToFullAccessParticipants(roomId, 'producer_created', {
@@ -41,6 +47,17 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 					(error as Error).message,
 				);
 				callback({ success: false, error: (error as Error).message });
+			} finally {
+				deps.telemetry.recordMediaOperation(
+					{
+						operation: 'create_producer',
+						direction: 'send',
+						media,
+						source,
+						outcome,
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 			}
 		});
 

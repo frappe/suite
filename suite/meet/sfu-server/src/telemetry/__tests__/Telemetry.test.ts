@@ -49,4 +49,24 @@ describe('Telemetry', () => {
 		);
 		expect(output).not.toMatch(/meetingId|participantId|socketId|transportId/);
 	});
+
+	it('exports bounded media creation outcomes', async () => {
+		const telemetry = new Telemetry();
+		telemetry.recordMediaOperation(
+			{
+				operation: 'create_producer',
+				direction: 'send',
+				media: 'video',
+				source: 'screen',
+				outcome: 'success',
+			},
+			0.1,
+		);
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_media_operations_total{operation="create_producer",direction="send",media="video",source="screen",outcome="success"} 1',
+		);
+	});
 });

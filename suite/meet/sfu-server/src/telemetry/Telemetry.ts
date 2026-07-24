@@ -50,6 +50,31 @@ export class Telemetry {
 		buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
 		registers: [this.registry],
 	});
+	readonly mediaOperations = new Counter({
+		name: 'meet_sfu_media_operations_total',
+		help: 'Producer and consumer creation outcomes',
+		labelNames: [
+			'operation',
+			'direction',
+			'media',
+			'source',
+			'outcome',
+		] as const,
+		registers: [this.registry],
+	});
+	readonly mediaOperationDuration = new Histogram({
+		name: 'meet_sfu_media_operation_duration_seconds',
+		help: 'Producer and consumer creation duration',
+		labelNames: [
+			'operation',
+			'direction',
+			'media',
+			'source',
+			'outcome',
+		] as const,
+		buckets: [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+		registers: [this.registry],
+	});
 	readonly clientEvents = new Counter({
 		name: 'meet_sfu_client_events_total',
 		help: 'Accepted sampled browser outcome events',
@@ -130,6 +155,24 @@ export class Telemetry {
 		this.transportOperations.inc(labels);
 		this.transportOperationDuration.observe(labels, durationSeconds);
 		loggers.telemetry.event('transport_operation', {
+			...labels,
+			duration_ms: Math.round(durationSeconds * 1000),
+		});
+	}
+
+	recordMediaOperation(
+		labels: {
+			operation: 'create_producer' | 'create_consumer';
+			direction: 'send' | 'recv';
+			media: 'audio' | 'video' | 'unknown';
+			source: 'camera' | 'screen' | 'unknown';
+			outcome: Outcome;
+		},
+		durationSeconds: number,
+	): void {
+		this.mediaOperations.inc(labels);
+		this.mediaOperationDuration.observe(labels, durationSeconds);
+		loggers.telemetry.event('media_operation', {
 			...labels,
 			duration_ms: Math.round(durationSeconds * 1000),
 		});

@@ -5,6 +5,10 @@ import type { HandlerDeps } from './Handler';
 export function registerConsumerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('create_consumer', async (data, callback) => {
+			const startedAt = performance.now();
+			let media: 'audio' | 'video' | 'unknown' = 'unknown';
+			const source: 'camera' | 'screen' | 'unknown' = 'unknown';
+			let outcome: 'success' | 'failure' = 'failure';
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				enforceE2EEMediaPolicy(socket);
@@ -14,14 +18,30 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					producerId,
 					rtpCapabilities,
 				);
+				media =
+					consumer.kind === 'audio' || consumer.kind === 'video'
+						? consumer.kind
+						: 'unknown';
 
 				callback({ success: true, ...consumer });
+				outcome = 'success';
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error creating consumer: %s',
 					(error as Error).message,
 				);
 				callback({ success: false, error: (error as Error).message });
+			} finally {
+				deps.telemetry.recordMediaOperation(
+					{
+						operation: 'create_consumer',
+						direction: 'recv',
+						media,
+						source,
+						outcome,
+					},
+					(performance.now() - startedAt) / 1000,
+				);
 			}
 		});
 
