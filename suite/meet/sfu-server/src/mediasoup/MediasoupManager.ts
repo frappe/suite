@@ -177,9 +177,10 @@ export class MediasoupManager {
 			(total, result) => {
 				if (result.status === 'rejected') return total;
 				return {
-					userCpuSeconds: total.userCpuSeconds + result.value.ru_utime / 1000,
+					userCpuSeconds:
+						total.userCpuSeconds + result.value.ru_utime / 1_000_000,
 					systemCpuSeconds:
-						total.systemCpuSeconds + result.value.ru_stime / 1000,
+						total.systemCpuSeconds + result.value.ru_stime / 1_000_000,
 					maxResidentMemoryBytes:
 						total.maxResidentMemoryBytes + result.value.ru_maxrss * 1024,
 				};
