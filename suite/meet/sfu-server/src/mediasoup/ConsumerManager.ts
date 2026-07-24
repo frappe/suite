@@ -9,6 +9,13 @@ import { loggers } from '../utils/logger';
 
 export class ConsumerManager {
 	private consumers = new Map<string, ConsumerData>();
+	private scoreListeners: Array<
+		(kind: 'audio' | 'video', score: number) => void
+	> = [];
+
+	onScore(listener: (kind: 'audio' | 'video', score: number) => void): void {
+		this.scoreListeners.push(listener);
+	}
 
 	async createConsumer(
 		transport: WebRtcTransport,
@@ -60,6 +67,11 @@ export class ConsumerManager {
 				consumer,
 			};
 			this.consumers.set(consumer.id, consumerData);
+			consumer.on('score', (score) => {
+				for (const listener of this.scoreListeners) {
+					listener(consumer.kind, score.score);
+				}
+			});
 
 			loggers.consumerManager.info(
 				'Consumer %s (%s) created for peer %s from producer %s',

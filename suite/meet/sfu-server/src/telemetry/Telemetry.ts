@@ -125,6 +125,24 @@ export class Telemetry {
 		labelNames: ['subsystem', 'direction', 'reason'] as const,
 		registers: [this.registry],
 	});
+	readonly mediaScore = new Histogram({
+		name: 'meet_sfu_media_score',
+		help: 'mediasoup producer and consumer score observations',
+		labelNames: ['direction', 'media'] as const,
+		buckets: [0, 2, 4, 6, 8, 10],
+		registers: [this.registry],
+	});
+	private workerCpu = new Gauge({
+		name: 'meet_sfu_worker_cpu_seconds',
+		help: 'Aggregate mediasoup worker CPU time',
+		labelNames: ['mode'] as const,
+		registers: [this.registry],
+	});
+	private workerMemory = new Gauge({
+		name: 'meet_sfu_worker_max_resident_memory_bytes',
+		help: 'Aggregate mediasoup worker maximum resident memory',
+		registers: [this.registry],
+	});
 	private resources = new Gauge({
 		name: 'meet_sfu_resources',
 		help: 'Current SFU resource counts',
@@ -209,6 +227,16 @@ export class Telemetry {
 		for (const [resource, value] of Object.entries(resources)) {
 			this.resources.set({ resource }, value);
 		}
+	}
+
+	setWorkerResources(resources: {
+		userCpuSeconds: number;
+		systemCpuSeconds: number;
+		maxResidentMemoryBytes: number;
+	}): void {
+		this.workerCpu.set({ mode: 'user' }, resources.userCpuSeconds);
+		this.workerCpu.set({ mode: 'system' }, resources.systemCpuSeconds);
+		this.workerMemory.set(resources.maxResidentMemoryBytes);
 	}
 }
 

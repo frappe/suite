@@ -85,4 +85,22 @@ describe('Telemetry', () => {
 		);
 		expect(output).not.toContain('user-controlled-state');
 	});
+
+	it('exports aggregate worker resources and bounded media scores', async () => {
+		const telemetry = new Telemetry();
+		telemetry.mediaScore.observe({ direction: 'recv', media: 'video' }, 7);
+		telemetry.setWorkerResources({
+			userCpuSeconds: 2,
+			systemCpuSeconds: 1,
+			maxResidentMemoryBytes: 2048,
+		});
+
+		const output = await telemetry.registry.metrics();
+
+		expect(output).toContain(
+			'meet_sfu_media_score_count{direction="recv",media="video"} 1',
+		);
+		expect(output).toContain('meet_sfu_worker_cpu_seconds{mode="user"} 2');
+		expect(output).toContain('meet_sfu_worker_max_resident_memory_bytes 2048');
+	});
 });

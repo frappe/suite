@@ -69,6 +69,9 @@ export class RouteManager {
 				...this.mediasoup.getResourceCounts(),
 				sockets: this.getSocketCount(),
 			});
+			this.telemetry.setWorkerResources(
+				await this.mediasoup.getWorkerResourceUsage(),
+			);
 			res.set('Content-Type', this.telemetry.registry.contentType);
 			res.send(await this.telemetry.registry.metrics());
 		});

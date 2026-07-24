@@ -13,6 +13,11 @@ function createHarness(token?: string) {
 	};
 	const mediasoup = {
 		getResourceCounts: vi.fn(() => ({ rooms: 2, peers: 4 })),
+		getWorkerResourceUsage: vi.fn(async () => ({
+			userCpuSeconds: 1,
+			systemCpuSeconds: 0.5,
+			maxResidentMemoryBytes: 1024,
+		})),
 		rooms: { getRoomCount: vi.fn(() => 2) },
 		peers: { getPeerCount: vi.fn(() => 4) },
 	};
