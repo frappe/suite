@@ -75,7 +75,8 @@
                 <Avatar size="xl" class="bg-surface-base" :label="$user(reply.owner)?.full_name || reply.owner"
                   :image="$user(reply.owner)?.user_image" />
               </div>
-              <div class="grow flex flex-col min-w-0" :class="reply.edit && 'gap-1'">
+              <div class="grow flex flex-col min-w-0"
+                :class="reply.edit || reply.new ? 'gap-1.5' : 'gap-1'">
                 <div class="w-full flex justify-between items-start label-group gap-1 text-sm">
                   <div class="flex gap-1 min-w-0">
                     <label class="font-medium text-ink-gray-8 truncate">{{ $user(reply.owner)?.full_name ||
@@ -85,7 +86,8 @@
                       &#183;
                       {{ formatDateOrTime(reply.creation) }}</label>
                   </div>
-                  <Dropdown class="ml-auto shrink-0 opacity-0" :class="activeComment === comment.id &&
+                  <Dropdown v-if="comment.owner == currentUserId && !reply.new && !reply.edit"
+                    class="ml-auto shrink-0 opacity-0" :class="activeComment === comment.id &&
                     !reply.edit &&
                     !reply.resolved &&
                     comment.owner == currentUserId &&
@@ -93,6 +95,7 @@
                     " :options="dynamicList([
                       {
                         label: 'Edit',
+                        icon: 'lucide-pencil',
                         onClick: () => (reply.edit = true),
                         cond: comment.owner == currentUserId && !reply.new,
                       },
