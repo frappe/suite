@@ -1,32 +1,35 @@
 <template>
-	<div class="flex-1 min-h-0 overflow-y-auto flex flex-col bg-surface-base" data-testid="meeting-preview">
-		<div class="flex-1 flex lg:flex-row flex-col text-ink-gray-8">
- 			<div class="max-w-7xl mx-auto w-full flex lg:flex-row flex-col">
- 				<!-- Video Section -->
- 				<div class="lg:flex-[2] flex flex-col items-center justify-center p-6 lg:pr-4">
- 					<div class="max-w-3xl w-full">
-						<div
-							class="relative bg-black rounded-xl overflow-hidden aspect-video shadow-xl group w-full"
-							data-testid="preview-video-shell"
-						>
-							<ParticipantTile
-								class="h-full w-full"
-								:participant="previewParticipant"
-								:isLocal="true"
-								:isVideoEnabled="isCameraOn"
-								:isAudioEnabled="isMicOn"
-								:videoRef="previewVideoRef"
-								:showPinButton="false"
-								:showReaction="false"
-								:showRaisedHand="false"
-								:showAudioState="false"
-								:showNetworkState="false"
-								:tileBackgroundClass="'bg-black'"
-								:avatarBackgroundClass="'bg-surface-gray-3'"
-							/>
-						</div>
+	<div
+		class="flex min-h-0 flex-1 flex-col overflow-y-auto bg-surface-base"
+		data-testid="meeting-preview"
+	>
+		<div
+			class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 p-5 text-ink-gray-8 lg:flex-row lg:items-center lg:gap-10 lg:px-6 lg:py-8"
+		>
+			<!-- Video preview remains bounded so the camera-off state does not dominate. -->
+			<div class="flex min-w-0 flex-1 items-center justify-center lg:flex-[2]">
+				<div
+					class="relative aspect-video w-full overflow-hidden rounded-xl bg-black shadow-xl lg:aspect-[3/2]"
+					data-testid="preview-video-shell"
+				>
+					<ParticipantTile
+						class="h-full w-full"
+						:participant="previewParticipant"
+						:isLocal="true"
+						:isVideoEnabled="isCameraOn"
+						:isAudioEnabled="isMicOn"
+						:videoRef="previewVideoRef"
+						:showPinButton="false"
+						:showReaction="false"
+						:showRaisedHand="false"
+						:showAudioState="false"
+						:showNetworkState="false"
+						:tileBackgroundClass="'bg-black'"
+						:avatarBackgroundClass="'bg-surface-gray-3'"
+					/>
 
 					<PreviewToolbar
+						:meetingId="meetingId"
 						:isMicOn="isMicOn"
 						:isCameraOn="isCameraOn"
 						:cameraPermissionGranted="cameraPermissionGranted"
@@ -37,77 +40,63 @@
 					/>
 				</div>
 			</div>
- 
- 				<!-- Join Section -->
- 				<div
- 					class="lg:flex-[1] flex items-center justify-center p-6 lg:pl-4"
- 				>
- 					<div class="max-w-md w-full">
- 						<div class="p-8 mb-6 w-full h-full flex flex-col justify-center">
- 							<div class="mb-6 text-center">
- 								<div class="mb-4">
- 									<div
- 								class="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4 bg-surface-gray-2"
- 							>
- 								<lucide-video class="w-8 h-8 text-ink-gray-8" />
- 							</div>
- 						</div>
- 
- 						<h2 class="text-5xl text-ink-gray-8 mb-3">
- 							<span class="text-ink-gray-8"> Ready to join? </span>
- 						</h2>
- 
-						<div v-if="props.meetingTitle" class="rounded-lg px-4 py-3 mb-4">
-							<p class="text-xl-medium text-ink-gray-7 truncate">
-								{{ props.meetingTitle }}
- 							</p>
- 						</div>
- 
- 						<!-- Avatar group for current participants -->
-						<AvatarGroup
-							v-if="!isGuest"
-							:participants="[...participants]"
-							:error="presenceError"
-							:maxDisplayed="3"
+
+			<!-- Join details -->
+			<div class="flex w-full items-center lg:w-[24rem] lg:shrink-0">
+				<div class="flex w-full flex-col">
+					<p
+						v-if="props.meetingTitle"
+						class="mb-3 truncate text-base-medium text-ink-gray-7"
+					>
+						{{ props.meetingTitle }}
+					</p>
+
+					<h2 class="mb-7 text-4xl-semibold text-ink-gray-9">
+						Ready to join?
+					</h2>
+
+					<AvatarGroup
+						v-if="!isGuest"
+						:participants="[...participants]"
+						:error="presenceError"
+						:maxDisplayed="2"
+						alignment="left"
+					/>
+
+					<form class="mt-7 space-y-3" @submit.prevent="handleJoin">
+						<FormControl
+							v-if="isGuest"
+							ref="guestNameInputRef"
+							v-model="guestName"
+							type="text"
+							label="Your name"
+							placeholder="John Doe"
+							:maxlength="50"
+							autocomplete="off"
+							data-testid="guest-name-input"
 						/>
- 							</div>
- 
- 							<form class="space-y-3" @submit.prevent="handleJoin">
- 								<FormControl
- 									v-if="isGuest"
- 									ref="guestNameInputRef"
- 									v-model="guestName"
- 									type="text"
- 									label="Your name"
- 									placeholder="John Doe"
- 									:maxlength="50"
- 									autocomplete="off"
- 									data-testid="guest-name-input"
- 								/>
- 
- 								<Button
- 									v-if="!presenceError"
- 									type="submit"
- 									variant="solid"
- 									size="lg"
- 									:loading="isConnecting || joinGuestAPI.loading"
- 									:disabled="isGuest && !guestName.trim()"
- 									class="w-full"
- 									data-testid="join-meeting-preview-button"
- 								>
- 									<template #prefix>
- 										<lucide-video class="w-5 h-5" />
- 									</template>
- 									Join Meeting
- 								</Button>
- 							</form>
- 						</div>
- 					</div>
- 				</div>
- 			</div>
- 		</div>
- 	</div>
- </template>
+
+						<Button
+							v-if="!presenceError"
+							type="submit"
+							variant="solid"
+							size="lg"
+							:loading="isConnecting || joinGuestAPI.loading"
+							:disabled="isGuest && !guestName.trim()"
+							class="w-full"
+							data-testid="join-meeting-preview-button"
+						>
+							<template #prefix>
+								<lucide-video class="h-5 w-5" />
+							</template>
+							Join Meeting
+						</Button>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+</template>
 
 <script setup lang="ts">
 import { Button, createResource, FormControl, toast } from "frappe-ui";

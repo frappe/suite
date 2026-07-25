@@ -8,10 +8,10 @@
 		leave-to-class="opacity-0 transform translate-y-4"
 	>
 		<div
-			class="z-5 pointer-events-none mt-4 flex w-full justify-center px-4 md:px-0"
+			class="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4 md:px-0"
 		>
 			<div
-				class="flex items-center gap-1.5 pointer-events-auto transition-all duration-300 mx-auto px-2 py-1"
+				class="pointer-events-auto mx-auto flex items-center gap-1.5 transition-all duration-300"
 			>
 				<!-- Microphone -->
 				<ToolbarButton

@@ -1,13 +1,26 @@
 <template>
-	<div :class="showText ? 'p-4' : ''">
+	<div
+		:class="showText ? (alignment === 'left' ? 'py-4' : 'p-4') : ''"
+	>
 		<div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
 			<p class="text-sm text-red-400">
 				<lucide-alert-circle class="w-4 h-4 inline mr-2" />
 				{{ error }}
 			</p>
 		</div>
-		<div v-else-if="participants.length > 0" class="flex flex-col items-center">
-			<div class="relative isolate flex mx-auto" :class="spacingClass">
+		<div
+			v-else-if="participants.length > 0"
+			class="flex"
+			:class="
+				alignment === 'left'
+					? 'flex-row items-center gap-4'
+					: 'flex-col items-center'
+			"
+		>
+			<div
+				class="relative isolate flex"
+				:class="[spacingClass, alignment === 'center' ? 'mx-auto' : '']"
+			>
 				<div
 					v-for="(participant, index) in displayedParticipants"
 					:key="participant.user_id"
@@ -37,7 +50,11 @@
 					</div>
 				</div>
 			</div>
-			<div v-if="showText" class="mt-4 text-base text-ink-gray-7">
+			<div
+				v-if="showText"
+				class="text-base text-ink-gray-7"
+				:class="alignment === 'center' ? 'mt-4' : ''"
+			>
 				<span v-if="displayedParticipants.length > 0">
 					{{ formattedNames }}
 				</span>
@@ -77,6 +94,7 @@ interface Props {
 	maxDisplayed: number;
 	size?: AvatarGroupSize;
 	stackDirection?: StackDirection;
+	alignment?: "left" | "center";
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -85,6 +103,7 @@ const props = withDefaults(defineProps<Props>(), {
 	maxDisplayed: 3,
 	size: "2xl",
 	stackDirection: "right",
+	alignment: "center",
 });
 
 const sizeClasses: Record<AvatarGroupSize, string> = {
@@ -137,6 +156,7 @@ const formattedNames = computed((): string => {
 	const names = displayedParticipants.value.map((p) => p.full_name);
 	const participantLength = props.participants.length;
 	if (participantLength === 0) return "";
+	if (extraCount.value > 0) return names.join(", ");
 	if (participantLength === 1) return names[0];
 	if (participantLength === 2) return `${names[0]} and ${names[1]}`;
 	if (participantLength === 3)

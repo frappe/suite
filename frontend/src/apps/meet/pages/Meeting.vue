@@ -15,6 +15,14 @@
 			>
 				<template #right>
 					<Button
+						v-if="showPreview"
+						variant="ghost"
+						size="sm"
+						icon-left="lucide-link-2"
+						label="Copy link"
+						@click="copyMeetingLink"
+					/>
+					<Button
 						v-if="showPreview && !session.isLoggedIn"
 						variant="ghost"
 						size="sm"
@@ -292,6 +300,15 @@ function redirectToLogin() {
 		? window.location.pathname
 		: `/meet${window.location.pathname}`;
 	window.location.href = `/login?redirect-to=${encodeURIComponent(path)}`;
+}
+
+async function copyMeetingLink() {
+	try {
+		await navigator.clipboard.writeText(window.location.href);
+		toast.success("Meeting link copied");
+	} catch {
+		toast.error("Could not copy meeting link");
+	}
 }
 
 // --- Stores (singletons) ---
