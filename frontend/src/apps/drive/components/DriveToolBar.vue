@@ -55,7 +55,7 @@
 
         <TabButtons v-model="view" :options="[
           {
-            icon: 'lucide-grid',
+            icon: 'lucide-layout-grid',
             value: 'grid',
             disabled,
           },
