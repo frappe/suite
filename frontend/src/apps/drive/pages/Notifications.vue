@@ -3,7 +3,7 @@
     <div class="bg-surface-gray-2 rounded-[10px] space-x-0.5 h-7 flex items-center px-0.5 py-1">
       <TabButtons
         v-model="onlyUnread"
-        :buttons="[
+        :options="[
           {
             label: 'Unread',
             value: true,

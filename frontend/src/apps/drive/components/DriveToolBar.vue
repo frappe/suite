@@ -7,7 +7,7 @@
     </div>
     <div v-if="$route.name === 'drive-Shared'"
       class="bg-surface-gray-2 rounded-[10px] space-x-0.5 h-7 flex items-center mr-4 py-1">
-      <TabButtons v-model="shareView" :buttons="[
+      <TabButtons v-model="shareView" :options="[
         {
           label: __('Site'),
           value: false,
@@ -53,14 +53,14 @@
           }" :disabled placement="right" />
         <SortControl v-if="$route.name !== 'Recents'" v-model="sortOrder" :options="columnHeaders" :menu-items="sortMenuItems" :disabled />
 
-        <TabButtons v-model="view" :buttons="[
+        <TabButtons v-model="view" :options="[
           {
-            icon: 'grid',
+            icon: 'lucide-grid',
             value: 'grid',
             disabled,
           },
           {
-            icon: 'list',
+            icon: 'lucide-list',
             value: 'list',
             disabled,
           },
