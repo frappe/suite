@@ -4,7 +4,7 @@
     <slot name="breadcrumbs">
       <Breadcrumbs :items="breadcrumbItems" class="select-none truncate max-w-[80%]">
         <template #prefix="{ item, index }">
-          <LoadingIndicator v-if="item.loading" width="20" :scale="70" />
+          <Skeleton v-if="item.loading" class="h-4 w-16 rounded" />
         </template>
       </Breadcrumbs>
     </slot>
@@ -56,7 +56,7 @@
 </template>
 <script setup>
 import EntityDialogs from '@/apps/drive/components/EntityDialogs.vue'
-import { Button, Breadcrumbs, LoadingIndicator, Dropdown } from 'frappe-ui'
+import { Button, Breadcrumbs, Skeleton, Dropdown } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { isHomeContext, pageBreadcrumbs } from '@/apps/drive/data/breadcrumbs'
 const { systemUser } = useCurrentUser()
