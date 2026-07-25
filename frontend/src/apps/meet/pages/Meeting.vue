@@ -16,7 +16,6 @@
 				<template #right>
 					<Button
 						v-if="showPreview"
-						variant="ghost"
 						size="sm"
 						icon-left="lucide-link-2"
 						label="Copy link"
