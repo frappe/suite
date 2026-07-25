@@ -4,7 +4,7 @@
     <slot name="breadcrumbs">
       <Breadcrumbs :items="breadcrumbItems" class="select-none truncate max-w-[80%]">
         <template #prefix="{ item, index }">
-          <LoadingIndicator v-if="item.loading" width="20" scale="70" />
+          <LoadingIndicator v-if="item.loading" width="20" :scale="70" />
         </template>
       </Breadcrumbs>
     </slot>
