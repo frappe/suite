@@ -1,22 +1,24 @@
 <template>
   <ListRowItem :column="column" :row="row" :item="item" :align="column.align">
     <template v-if="column.key === 'file_name'" #prefix>
-      <img
-        v-if="!imgLoaded"
-        loading="lazy"
-        class="h-[16px] w-[16px] rounded-sm"
-        :src="fallback"
-        :draggable="false"
-      />
-      <img
-        v-show="imgLoaded"
-        loading="lazy"
-        decoding="async"
-        class="h-[16px] w-[16px] object-cover rounded-sm"
-        :src="src"
-        :draggable="false"
-        @load="imgLoaded = true"
-      />
+      <div class="relative h-[16px] w-[16px] shrink-0">
+        <img
+          v-if="!imgLoaded"
+          loading="lazy"
+          class="absolute inset-0 h-[16px] w-[16px] rounded-sm"
+          :src="fallback"
+          :draggable="false"
+        />
+        <img
+          loading="lazy"
+          decoding="async"
+          class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-sm"
+          :class="imgLoaded ? 'opacity-100' : 'opacity-0'"
+          :src="src"
+          :draggable="false"
+          @load="imgLoaded = true"
+        />
+      </div>
     </template>
     <template #default="{ label }">
       <div :key="label" class="truncate text-base">
