@@ -10,6 +10,8 @@
       />
       <img
         v-show="imgLoaded"
+        loading="lazy"
+        decoding="async"
         class="h-[16px] w-[16px] object-cover rounded-sm"
         :src="src"
         :draggable="false"

@@ -11,6 +11,8 @@
     />
     <img
       v-show="imgLoaded"
+      loading="lazy"
+      decoding="async"
       :class="
         hasThumbnail
           ? 'h-full min-w-full object-cover rounded-t-[calc(theme(borderRadius.lg)-1px)]'
