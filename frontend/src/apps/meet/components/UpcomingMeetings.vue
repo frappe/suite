@@ -40,7 +40,22 @@ const meetings = computed(() => {
 const formatMeetingMonth = (event: any) => dayjs(event.start).format('MMM')
 const formatMeetingDay = (event: any) => dayjs(event.start).format('D')
 
+const isAllDayEvent = (event: any) => {
+	const start = dayjs(event.start)
+	const duration = dayjs.duration(event.duration || 'PT0S')
+	return (
+		event.show_without_time ||
+		(start.hour() === 0 &&
+			start.minute() === 0 &&
+			start.second() === 0 &&
+			duration.asDays() >= 1 &&
+			duration.asDays() % 1 === 0)
+	)
+}
+
 const formatMeetingTime = (event: any) => {
+	if (isAllDayEvent(event)) return 'All day'
+
 	const start = dayjs(event.start)
 	const end = start.add(dayjs.duration(event.duration || 'PT0S'))
 	return `${start.format('h:mma')} - ${end.format('h:mma')}`
