@@ -118,7 +118,11 @@ def create_account(request_key: str, first_name: str, last_name: str, password: 
 	account_request.save(ignore_permissions=True)
 
 	if account_request.account:
-		account_request.create_account(first_name, last_name, password)
+		# Account setup (JMAP account sync, archive mailbox, sieve) resolves ownership
+		# against the session user, which is Guest on this endpoint — run it elevated,
+		# same as signup().
+		with user_context("Administrator"):
+			account_request.create_account(first_name, last_name, password)
 
 
 @frappe.whitelist(allow_guest=True)
