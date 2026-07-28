@@ -6,9 +6,16 @@ import type { ChatMessage, ChatStore } from "./useChatStore";
 import type { CurrentUser } from "./useCurrentUser";
 
 interface ChatAPI {
-	setupChatEvents: (notificationQueue: unknown) => void;
+	setupChatEvents: (notify: (notification: ChatNotification) => void) => void;
 	onSendChat: (text: string) => void;
 	toggleRestriction: (enabled: boolean) => void;
+}
+
+interface ChatNotification {
+	message: string;
+	fromUser: string;
+	fromName: string;
+	type: "chat";
 }
 
 const E2EE_CHAT_PREFIX = "e2ee:";
@@ -80,7 +87,7 @@ export function useChat(deps: {
 		return E2EEMeeting.instance.getE2EEChatKey();
 	}
 
-	const setupChatEvents = (notificationQueue: unknown) => {
+	const setupChatEvents = (notify: (notification: ChatNotification) => void) => {
 		sfuClient.on("chat:message", async (data: Record<string, unknown>) => {
 			if (data.fromUser === currentUser.currentUser.value?.user_id) {
 				return;
@@ -124,13 +131,11 @@ export function useChat(deps: {
 			) {
 				chatStore.hasUnreadMessages = true;
 
-				(
-					notificationQueue as { addNotification?: (n: unknown) => void }
-				)?.addNotification?.({
+				notify({
 					message: plaintext,
-					fromUser: data.fromUser,
-					fromName: data.fromName || data.fromUser,
-					timestamp: message.timestamp,
+					fromUser: data.fromUser as string,
+					fromName: (data.fromName || data.fromUser) as string,
+					type: "chat",
 				});
 				audioNotificationManager.playChatNotification();
 			}

@@ -9,9 +9,16 @@ import { getErrorMessage } from "../utils/error";
 import audioNotificationManager from "../utils/audioNotifications";
 
 interface PollAPI {
-	setupPollEvents: (notificationQueue?: unknown) => void;
+	setupPollEvents: (notify: (notification: PollNotification) => void) => void;
 	createPoll: (question: string, options: { text: string }[]) => void;
 	submitVote: (pollId: string, optionId: string) => void;
+}
+
+interface PollNotification {
+	message: string;
+	fromUser: string;
+	fromName: string;
+	type: "poll";
 }
 
 const E2EE_POLL_PREFIX = "e2ee:";
@@ -177,7 +184,7 @@ export function usePoll(deps: {
 		await fetchExistingPolls();
 	};
 
-	const setupPollEvents = (notificationQueue?: unknown) => {
+	const setupPollEvents = (notify: (notification: PollNotification) => void) => {
 		sfuClient.on("poll:new", async (data: unknown) => {
 			const key = await E2EEMeeting.instance.getE2EEPollKey();
 			const payload = data as PollPayloadFE;
@@ -187,13 +194,10 @@ export function usePoll(deps: {
 			pollStore.addPoll(poll);
 			if (poll.createdBy !== currentUserId() && !chatStore.isChatOpen) {
 				chatStore.hasUnreadMessages = true;
-				(
-					notificationQueue as { addNotification?: (n: unknown) => void }
-				)?.addNotification?.({
+				notify({
 					message: poll.question,
 					fromUser: poll.createdBy,
 					fromName: poll.createdByName || poll.createdBy,
-					timestamp: poll.createdAt || new Date().toISOString(),
 					type: "poll",
 				});
 				audioNotificationManager.playChatNotification();

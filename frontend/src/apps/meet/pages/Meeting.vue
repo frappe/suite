@@ -222,13 +222,6 @@
 			</template>
 		</template>
 
-		<!-- Chat notifications -->
-		<ChatNotificationQueue
-			ref="chatNotificationQueue"
-			:auto-dismiss-delay="5000"
-			@notification-click="handleNotificationClick"
-		/>
-
 		<!-- Join request notifications -->
 		<JoinRequestNotifications
 			:waitingUsers="lobbyUsersForNotifications"
@@ -240,13 +233,13 @@
 
 <script setup lang="ts">
 import { Badge, Button, createResource, frappeRequest, toast } from "frappe-ui";
-import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
+import { computed, h, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import ChatNotificationQueue from "../components/ChatNotificationQueue.vue";
 import ChatPanel from "../components/ChatPanel.vue";
 import JoinRequestNotifications from "../components/JoinRequestNotifications.vue";
 import LobbyOverlay from "../components/LobbyOverlay.vue";
+import MeetAvatar from "../components/MeetAvatar.vue";
 import MeetingLayout from "../components/MeetingLayout.vue";
 import MeetingPreview from "../components/MeetingPreview.vue";
 import MeetingHeader from "../components/MeetingHeader.vue";
@@ -728,9 +721,6 @@ const isHandRaised = computed(() => {
 });
 
 // --- Refs ---
-const chatNotificationQueue = ref<InstanceType<
-	typeof ChatNotificationQueue
-> | null>(null);
 const isReactionPickerOpen = ref(false);
 const isFullscreen = ref(false);
 const isToolbarVisible = ref(true);
@@ -776,11 +766,83 @@ const {
 	handleApproveLobbyUser,
 	handleApproveAllLobbyUsers,
 	handleRejectLobbyUser,
-	handleNotificationClick,
 	toggleFullscreen,
 	handleReportProblem,
 	handleDeviceChanged,
 } = handlers;
+
+const showMeetingNotification = (notification: {
+	message: string;
+	fromUser: string;
+	fromName: string;
+	type: "chat" | "poll";
+}) => {
+	const participant = participantStore.participants[notification.fromUser] as
+		| { avatar?: string }
+		| undefined;
+	const openChat = () => {
+		if (!chatStore.isChatOpen) toggleChat();
+	};
+	let toastId: string | number;
+	const removeToastId = () => meetingNotificationIds.delete(toastId);
+	const handleClick = () => {
+		toast.dismiss(toastId);
+		openChat();
+	};
+
+	toastId = toast.custom(
+		() =>
+			h(
+				"button",
+				{
+					type: "button",
+					class:
+						"flex w-full min-w-0 items-center gap-3 text-left focus-visible:outline-none",
+					onClick: handleClick,
+				},
+				[
+					h(MeetAvatar, {
+						image: participant?.avatar,
+						label: notification.fromName,
+						size: "sm",
+					}),
+					h("span", { class: "min-w-0 flex-1" }, [
+						h(
+							"span",
+							{ class: "block truncate text-p-base font-medium text-ink-base" },
+							notification.type === "poll"
+								? `${notification.fromName} started a poll`
+								: notification.fromName,
+						),
+						h(
+							"span",
+							{ class: "line-clamp-2 block text-p-base text-ink-base" },
+							notification.message,
+						),
+					]),
+				],
+			),
+		{
+			duration: 5000,
+			onDismiss: removeToastId,
+			onAutoClose: removeToastId,
+		},
+	);
+	meetingNotificationIds.add(toastId);
+};
+
+const meetingNotificationIds = new Set<string | number>();
+const clearMeetingNotifications = () => {
+	for (const id of meetingNotificationIds) toast.dismiss(id);
+	meetingNotificationIds.clear();
+};
+
+watch(
+	() => chatStore.isChatOpen,
+	(isOpen) => {
+		if (isOpen) clearMeetingNotifications();
+	},
+);
 
 // --- Local UI state ---
 const togglePeople = () => {
@@ -913,10 +975,10 @@ onMounted(async () => {
 	}
 
 	// Setup event handlers
-	chat.setupChatEvents(chatNotificationQueue.value);
+	chat.setupChatEvents(showMeetingNotification);
 	reactions.setupReactionEvents();
 	raiseHand.setupRaiseHandEvents();
-	poll.setupPollEvents(chatNotificationQueue.value);
+	poll.setupPollEvents(showMeetingNotification);
 
 	// Setup notification context watchers
 
@@ -953,6 +1015,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
 	clearConnectingToast();
+	clearMeetingNotifications();
 	document.removeEventListener("fullscreenchange", syncFullscreenState);
 	document.removeEventListener(
 		"meet:e2ee-needs-media-republish",

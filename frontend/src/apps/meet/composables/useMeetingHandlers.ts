@@ -280,12 +280,6 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		}
 	};
 
-	const handleNotificationClick = () => {
-		if (!deps.chatStore.isChatOpen) {
-			toggleChat();
-		}
-	};
-
 	const toggleFullscreen = async () => {
 		try {
 			if (!document.fullscreenElement) {
@@ -344,7 +338,6 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		handleApproveLobbyUser,
 		handleApproveAllLobbyUsers,
 		handleRejectLobbyUser,
-		handleNotificationClick,
 		toggleFullscreen,
 		handleReportProblem,
 		handleDeviceChanged,
