@@ -118,7 +118,29 @@ export function useNetworkQuality() {
 				),
 		);
 
-		void sfuManager.connectionManager.resetReceiveSide();
+		const stalledEntries = statsResults
+			.map(({ entry }) => entry)
+			.filter((entry) => stalledSet.has(entry.id));
+		const hasAudioStall = stalledEntries.some((entry) => entry.kind === "audio");
+		const hasExhaustedVideoRecovery = stalledEntries.some(
+			(entry) =>
+				entry.kind === "video" && stallDetector.getRecoveryAttempts(entry.id) > 2,
+		);
+		if (hasAudioStall || hasExhaustedVideoRecovery) {
+			void sfuManager.connectionManager.resetReceiveSide();
+			stallDetector.suspend();
+			return;
+		}
+
+		for (const entry of stalledEntries) {
+			if (entry.kind === "video") {
+				void sfuManager.sfuClient
+					?.requestConsumerKeyFrame(entry.id)
+					.catch((error) =>
+						console.warn("Failed to recover stalled video consumer", entry.id, error),
+					);
+			}
+		}
 	};
 
 	const pollStats = async () => {

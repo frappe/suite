@@ -112,7 +112,7 @@ describe("StallDetector", () => {
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
 
-	it("reports a stall once until media resumes", () => {
+	it("retries a persistent stall after the recovery cooldown", () => {
 		const det = detector();
 		const sample = makeSample({ createdAt: now - 10_000, muted: true });
 
@@ -125,7 +125,7 @@ describe("StallDetector", () => {
 		expect(det.check([toSample(sample)])).toEqual([]);
 
 		now += 30_000;
-		expect(det.check([toSample(sample)])).toEqual([]);
+		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 
 		sample.muted = false;
 		sample.bytes = 2000;
@@ -133,7 +133,7 @@ describe("StallDetector", () => {
 
 		sample.muted = true;
 		expect(det.check([toSample(sample)])).toEqual([]);
-		now += 16_000;
+		now += 30_000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
 

@@ -42,20 +42,20 @@ export function useScreenShareTiles({
 	getParticipantName,
 }: UseScreenShareTilesOptions) {
 	const screenShareSignature = computed(() =>
-		displayScreenShares.value.map((share) => share.consumerId).join(","),
+		displayScreenShares.value.map((share) => share.participantId).join(","),
 	);
 
 	watch(
 		screenShareSignature,
 		(signature, previousSignature) => {
 			const shares = displayScreenShares.value;
-			const primaryShareId = shares[0]?.consumerId;
+			const primaryShareId = shares[0]?.participantId;
 
 			const activePinnedShares = pinnedTiles.value.filter(
 				(t) => t.type === "screenshare",
 			);
 			activePinnedShares.forEach((share) => {
-				if (!shares.some((s) => s.consumerId === share.id)) {
+				if (!shares.some((s) => s.participantId === share.id)) {
 					gridLayout.unpinTile("screenshare", share.id);
 				}
 			});
@@ -87,7 +87,7 @@ export function useScreenShareTiles({
 			}'s screen`;
 
 			return {
-				pinId: share.consumerId,
+				pinId: share.participantId,
 				participant: {
 					user_id: share.participantId,
 					user_name: displayName,

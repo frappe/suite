@@ -38,6 +38,7 @@ interface ConsumerState {
 	hasReceivedBytes: boolean;
 	stallStartedAt: number | null;
 	lastRecoveredAt: number | null;
+	recoveryAttempts: number;
 }
 
 export class StallDetector {
@@ -101,6 +102,7 @@ export class StallDetector {
 				) {
 					stalled.push(sample.id);
 					st.lastRecoveredAt = now;
+					st.recoveryAttempts += 1;
 				}
 				continue;
 			}
@@ -116,6 +118,8 @@ export class StallDetector {
 
 			if (bytes > previous) {
 				st.stallStartedAt = null;
+				st.lastRecoveredAt = null;
+				st.recoveryAttempts = 0;
 				continue;
 			}
 
@@ -126,6 +130,7 @@ export class StallDetector {
 			if (now - st.stallStartedAt >= timeoutMs && this.shouldRecover(st, now)) {
 				stalled.push(sample.id);
 				st.lastRecoveredAt = now;
+				st.recoveryAttempts += 1;
 			}
 		}
 
@@ -158,6 +163,7 @@ export class StallDetector {
 				hasReceivedBytes: false,
 				stallStartedAt: null,
 				lastRecoveredAt: null,
+				recoveryAttempts: 0,
 			};
 			this.state.set(id, st);
 		}
@@ -171,14 +177,11 @@ export class StallDetector {
 		) {
 			return false;
 		}
-		if (
-			st.lastRecoveredAt !== null &&
-			st.stallStartedAt !== null &&
-			st.lastRecoveredAt >= st.stallStartedAt
-		) {
-			return false;
-		}
 		return true;
+	}
+
+	getRecoveryAttempts(consumerId: string): number {
+		return this.state.get(consumerId)?.recoveryAttempts ?? 0;
 	}
 
 	reset(): void {

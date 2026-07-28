@@ -121,10 +121,11 @@ describe("useNetworkQuality", () => {
 		unmount();
 	});
 
-	it("resets the receive side when a remote consumer stalls for several polls", async () => {
+	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 
 		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
 		const stats = new Map<string, { type: string; bytesReceived: number }>([
@@ -145,6 +146,7 @@ describe("useNetworkQuality", () => {
 		};
 
 		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
 			transportManager: {
 				getTransportStats: () => ({
 					sendTransport: { state: "connected" },
@@ -188,7 +190,19 @@ describe("useNetworkQuality", () => {
 
 		entry.consumer.producerPaused = false;
 		await vi.advanceTimersByTimeAsync(21_000);
-		expect(resetReceiveSide).toHaveBeenCalledTimes(1);
+		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
+		expect(requestConsumerKeyFrame).toHaveBeenCalledWith("c1");
+		expect(resetReceiveSide).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(requestConsumerKeyFrame).toHaveBeenCalledTimes(2);
+		expect(resetReceiveSide).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(resetReceiveSide).toHaveBeenCalledOnce();
+
+		await vi.advanceTimersByTimeAsync(21_000);
+		expect(resetReceiveSide).toHaveBeenCalledOnce();
 
 		app.unmount();
 	});
@@ -197,6 +211,7 @@ describe("useNetworkQuality", () => {
 		vi.useFakeTimers();
 
 		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
 		const track = { muted: false } as MediaStreamTrack;
 		const stats = new Map<string, { type: string; bytesReceived: number }>([
 			["in", { type: "inbound-rtp", bytesReceived: 1000 }],
@@ -209,6 +224,7 @@ describe("useNetworkQuality", () => {
 			isValid: true,
 		};
 		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
 			transportManager: {
 				getTransportStats: () => ({
 					sendTransport: { state: "connected" },
@@ -254,7 +270,8 @@ describe("useNetworkQuality", () => {
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 
 		await vi.advanceTimersByTimeAsync(3000);
-		expect(resetReceiveSide).toHaveBeenCalledTimes(1);
+		expect(requestConsumerKeyFrame).toHaveBeenCalledTimes(1);
+		expect(resetReceiveSide).not.toHaveBeenCalled();
 
 		app.unmount();
 	});

@@ -56,7 +56,6 @@ export class SFUMeetingManager {
 					reason,
 				),
 			onRecovered: async (reason) => {
-				await this.connectionManager?.resetReceiveSide();
 				this.connectionManager?.reportRecoveryState("healthy", reason);
 			},
 			onFailed: async (_reason, result) => {

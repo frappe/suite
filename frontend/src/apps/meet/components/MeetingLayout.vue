@@ -5,7 +5,7 @@
 		data-testid="meeting-layout"
 		:class="
 			mode === 'sidebar'
-				? 'relative flex flex-col md:flex-row overflow-hidden mb-2 rounded-lg'
+				? 'relative flex flex-col md:flex-row overflow-hidden rounded-lg'
 				: 'relative h-full rounded-lg overflow-hidden'
 		"
 	>
