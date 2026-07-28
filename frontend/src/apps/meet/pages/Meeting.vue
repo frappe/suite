@@ -78,15 +78,6 @@
 			<template v-else>
 			<div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
 				<div
-					v-if="e2eeJoinPendingMessage"
-					class="absolute top-4 left-1/2 -translate-x-1/2 z-[60] max-w-[calc(100%-2rem)] rounded-full border border-amber-300/30 bg-amber-950/80 px-4 py-2 text-sm text-amber-50 shadow-lg backdrop-blur-md flex items-center gap-2"
-					role="status"
-					data-testid="e2ee-join-pending-banner"
-				>
-					<Spinner class="h-4" />
-					<span>{{ e2eeJoinPendingMessage }}</span>
-				</div>
-				<div
 					class="grid flex-1 min-h-0 transition-[grid-template-columns] duration-300 ease-out relative"
 					:style="{
 						'--panel-width': panelWidth,
@@ -96,7 +87,27 @@
 					<div class="flex flex-col min-h-0 relative">
 						<!-- Video area -->
 						<div class="p-2.5 flex flex-col flex-1 min-h-0 text-white">
-							<MeetingLayout @open-people-panel="togglePeople" />
+							<div
+								v-if="e2eeJoinPendingMessage"
+								class="flex h-full flex-col items-center justify-center px-4 py-12 text-center"
+								role="status"
+								aria-live="polite"
+								data-testid="e2ee-join-pending-state"
+							>
+								<h1 class="text-lg-medium text-ink-gray-8">
+									{{ e2eeJoinTitle }}
+								</h1>
+								<p class="mt-1 max-w-sm text-p-base text-ink-gray-7">
+									{{ e2eeJoinPendingMessage }}
+								</p>
+								<Badge class="mt-3" variant="subtle" theme="gray">
+									<template #prefix>
+										<span class="lucide-lock size-3.5" aria-hidden="true" />
+									</template>
+									End-to-end encrypted
+								</Badge>
+							</div>
+							<MeetingLayout v-else @open-people-panel="togglePeople" />
 						</div>
 					</div>
 
@@ -228,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, frappeRequest, toast } from "frappe-ui";
+import { Badge, Button, createResource, frappeRequest, toast } from "frappe-ui";
 import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -242,7 +253,6 @@ import MeetingHeader from "../components/MeetingHeader.vue";
 import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
-import Spinner from "../components/Spinner.vue";
 import StatsForNerdsOverlay from "../components/StatsForNerdsOverlay.vue";
 import { useBackgroundEffects } from "../composables/useBackgroundEffects";
 import { useChat } from "../composables/useChat";
@@ -370,22 +380,37 @@ const lobbyUsersForNotifications = computed(() => {
 });
 
 const e2eeJoinPendingMessage = ref("");
+const e2eeJoinStatus = ref<"pending" | "failed" | "">("");
+const e2eeJoinReason = ref("");
 const e2eeState = useE2EEState();
+const e2eeJoinTitle = computed(() => {
+	if (e2eeJoinStatus.value === "failed") return "Could not join encrypted meeting";
+	if (e2eeJoinReason.value === "waiting-for-host") {
+		return "Waiting for the host to join";
+	}
+	return "Joining encrypted meeting";
+});
 
 function handleE2EEJoinStatus(event: Event): void {
 	const detail = (event as CustomEvent).detail as
 		| { status?: string; reason?: string; message?: string }
 		| undefined;
 	if (detail?.status === "pending") {
+		e2eeJoinStatus.value = "pending";
+		e2eeJoinReason.value = detail.reason || "";
 		e2eeJoinPendingMessage.value = getE2EEJoinPendingMessage(detail);
 		return;
 	}
 	if (detail?.status === "failed") {
+		e2eeJoinStatus.value = "failed";
+		e2eeJoinReason.value = detail.reason || "";
 		e2eeJoinPendingMessage.value =
 			detail.message ||
 			"Could not set up encryption for this meeting. Please leave and try again.";
 		return;
 	}
+	e2eeJoinStatus.value = "";
+	e2eeJoinReason.value = "";
 	e2eeJoinPendingMessage.value = "";
 }
 
@@ -394,10 +419,7 @@ function getE2EEJoinPendingMessage(detail: {
 	message?: string;
 }): string {
 	if (detail.reason === "waiting-for-host") {
-		return (
-			detail.message ||
-			"This encrypted meeting needs the host to join before others can enter."
-		);
+		return "You'll join automatically when the host arrives.";
 	}
 	return (
 		detail.message ||
