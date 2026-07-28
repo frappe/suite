@@ -10,7 +10,7 @@ import audioNotificationManager from "../utils/audioNotifications";
 
 interface PollAPI {
 	setupPollEvents: (notify: (notification: PollNotification) => void) => void;
-	createPoll: (question: string, options: { text: string }[]) => void;
+	createPoll: (question: string, options: { text: string }[]) => Promise<void>;
 	submitVote: (pollId: string, optionId: string) => void;
 }
 

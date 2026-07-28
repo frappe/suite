@@ -702,8 +702,9 @@ describe('SocketHandlerManager characterization', () => {
 
 		sender.emitCalls.length = 0;
 		receiver.emitCalls.length = 0;
+		const callback = vi.fn();
 
-		sender.fire('chat:send', { message: 'hello world' });
+		sender.fire('chat:send', { message: 'hello world' }, callback);
 
 		const receiverMsg = receiver.emitCalls.find(
 			(c) => c.event === 'chat:message',
@@ -718,6 +719,10 @@ describe('SocketHandlerManager characterization', () => {
 				timestamp: expect.any(String),
 			}),
 		);
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			timestamp: receiverMsg?.data.timestamp,
+		});
 
 		const senderChatMessages = sender.emitCalls.filter(
 			(c) => c.event === 'chat:message',

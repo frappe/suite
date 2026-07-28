@@ -199,6 +199,7 @@ import {
 	watch,
 } from "vue";
 import { tokenizeChatMessage } from "../utils/chatMessageTokens";
+import { buildChatTimeline } from "../utils/chatTimeline";
 import {
 	findColonQuery,
 	insertEmojiAtQuery,
@@ -220,27 +221,6 @@ interface ChatMessage {
 	message: string;
 	timestamp: string;
 }
-
-interface MessageGroup {
-	id: string | number;
-	user_id: string;
-	user_name: string;
-	timestamp: string;
-	isOwn: boolean;
-	messages: ChatMessage[];
-}
-
-type ChatItem = {
-	type: 'poll';
-	key: string;
-	poll: PollPayloadFE;
-	timestamp: string;
-} | {
-	type: 'message';
-	key: string;
-	group: MessageGroup;
-	timestamp: string;
-};
 
 const props = defineProps<{
 	open?: boolean;
@@ -268,12 +248,12 @@ const pollMenuOptions = [
 	},
 ];
 
-const handlePollSubmit = (payload: {
+const handlePollSubmit = async (payload: {
 	question: string;
 	options: { text: string }[];
 }) => {
 	if (pollService) {
-		pollService.createPoll(payload.question, payload.options);
+		await pollService.createPoll(payload.question, payload.options);
 		showPollModal.value = false;
 	} else {
         console.error("ERROR: pollService is undefined! The inject failed.");
@@ -303,64 +283,9 @@ onMounted(async () => {
 	await scrollToBottom();
 });
 
-const groupedMessages = computed<MessageGroup[]>(() => {
-	const msgs = props.messages;
-	if (!msgs || msgs.length === 0) return [];
-
-	const groups: MessageGroup[] = [];
-	let currentGroup: MessageGroup | null = null;
-
-	for (const message of msgs) {
-		const isOwn = message.user_id === props.userId;
-		const shouldStartNewGroup =
-			!currentGroup ||
-			currentGroup.user_id !== message.user_id ||
-			currentGroup.isOwn !== isOwn ||
-			(currentGroup.messages.length > 0 &&
-				Math.abs(
-					new Date(message.timestamp).getTime() -
-						new Date(currentGroup.messages[0].timestamp).getTime(),
-				) > 300000);
-
-		if (shouldStartNewGroup) {
-			currentGroup = {
-				id: message.id,
-				user_id: message.user_id,
-				user_name: message.user_name,
-				timestamp: message.timestamp,
-				isOwn,
-				messages: [message],
-			};
-			groups.push(currentGroup);
-		} else {
-			currentGroup.messages.push(message);
-		}
-	}
-
-	return groups;
-});
-
-const chatItems = computed<ChatItem[]>(() => {
-	const items: ChatItem[] = [];
-	for (const poll of activePolls.value) {
-		items.push({
-			type: 'poll',
-			key: `poll-${poll.pollId}`,
-			poll,
-			timestamp: poll.createdAt || '1970-01-01T00:00:00.000Z',
-		});
-	}
-	for (const group of groupedMessages.value) {
-		items.push({
-			type: 'message',
-			key: `msg-${group.id}`,
-			group,
-			timestamp: group.timestamp,
-		});
-	}
-	items.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-	return items;
-});
+const chatItems = computed(() =>
+	buildChatTimeline(props.messages || [], activePolls.value, props.userId),
+);
 
 function time(ts) {
 	try {

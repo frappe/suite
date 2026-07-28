@@ -117,4 +117,23 @@ describe("useChat E2EE gating", () => {
 			type: "chat",
 		});
 	});
+
+	it("uses the server timestamp for locally sent messages", async () => {
+		E2EEMeeting.instance = new E2EEMeeting();
+		const chatStore = makeChatStore();
+		const timestamp = "2026-07-28T12:02:00.000Z";
+		const sfuClient = makeSFUClient({
+			isE2EERequired: vi.fn(() => false),
+			sendChatMessage: vi.fn(async () => ({ success: true, timestamp })),
+		});
+		const chat = useChat({
+			chatStore,
+			currentUser: currentUser as never,
+			sfuClient: sfuClient as never,
+		});
+
+		await chat.onSendChat("After the poll");
+
+		expect(chatStore.chatMessages.at(-1)?.timestamp).toBe(timestamp);
+	});
 });

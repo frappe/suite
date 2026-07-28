@@ -873,7 +873,10 @@ export class SFUClient {
 
 	// ==================== CHAT OPERATIONS ====================
 
-	sendChatMessage(message: string, options: { clientId?: unknown } = {}): void {
+	async sendChatMessage(
+		message: string,
+		options: { clientId?: unknown } = {},
+	): Promise<{ success: boolean; timestamp: string }> {
 		if (!this.connected) {
 			throw new Error("Not connected to SFU");
 		}
@@ -883,7 +886,10 @@ export class SFUClient {
 			payload.clientId = String(options.clientId);
 		}
 
-		this.sendEvent("chat:send", payload);
+		return (await this.sendRequest("chat:send", payload)) as {
+			success: boolean;
+			timestamp: string;
+		};
 	}
 
 	// ==================== REACTION OPERATIONS ====================

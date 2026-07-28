@@ -24,7 +24,7 @@ export function registerChatHandlers(deps: HandlerDeps) {
 			}
 		});
 
-		socket.on('chat:send', (data = {}) => {
+		socket.on('chat:send', (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const roomId = socket.roomId;
@@ -38,6 +38,7 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					!socket.participantId ||
 					!socket.userName
 				) {
+					callback?.({ success: false, error: 'Invalid chat message' });
 					return;
 				}
 
@@ -51,6 +52,10 @@ export function registerChatHandlers(deps: HandlerDeps) {
 						code: 'HOST_ONLY_CHAT',
 						timestamp: new Date().toISOString(),
 					});
+					callback?.({
+						success: false,
+						error: 'Only hosts and co-hosts can send messages right now.',
+					});
 					return;
 				}
 
@@ -62,6 +67,7 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					timestamp: new Date().toISOString(),
 				};
 				if (data.clientId) payload.clientId = String(data.clientId);
+				callback?.({ success: true, timestamp: payload.timestamp });
 
 				deps.registry.emitToFullAccessParticipants(
 					roomId,
@@ -69,6 +75,10 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					payload,
 				);
 			} catch (e) {
+				callback?.({
+					success: false,
+					error: (e as Error).message || String(e),
+				});
 				loggers.socketHandler.warn(
 					'chat:send handling failed: %s',
 					(e as Error).message || e,

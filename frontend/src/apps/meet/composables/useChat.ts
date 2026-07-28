@@ -120,7 +120,9 @@ export function useChat(deps: {
 				user_id: data.fromUser as string,
 				user_name: (data.fromName || data.fromUser) as string,
 				message: plaintext,
-				timestamp: new Date().toISOString(),
+				timestamp:
+					(typeof data.timestamp === "string" && data.timestamp) ||
+					new Date().toISOString(),
 			};
 
 			chatStore.addMessage(message);
@@ -174,6 +176,14 @@ export function useChat(deps: {
 				}
 			}
 
+			let timestamp = new Date().toISOString();
+			if (sfuClient.isConnected()) {
+				const response = await sfuClient.sendChatMessage(messageToSend, {
+					clientId: currentUser.currentUser.value?.user_id,
+				});
+				timestamp = response.timestamp;
+			}
+
 			const message: ChatMessage = {
 				id: Date.now() + Math.random(),
 				user_id: currentUser.currentUser.value?.user_id as string,
@@ -182,15 +192,9 @@ export function useChat(deps: {
 					(currentUser.currentUser.value?.name as string) ||
 					(currentUser.currentUser.value?.user_id as string),
 				message: text,
-				timestamp: new Date().toISOString(),
+				timestamp,
 			};
 			chatStore.addMessage(message);
-
-			if (sfuClient.isConnected()) {
-				sfuClient.sendChatMessage(messageToSend, {
-					clientId: currentUser.currentUser.value?.user_id,
-				});
-			}
 		} catch (error) {
 			console.error("Failed to send chat message:", error);
 			toast.error("Failed to send message");

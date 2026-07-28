@@ -259,40 +259,52 @@ describe("sendEvent", () => {
 });
 
 describe("sendChatMessage", () => {
-	it("throws when not connected", () => {
+	it("throws when not connected", async () => {
 		const client = createClient();
 		client.connected = false;
-		expect(() => client.sendChatMessage("hello")).toThrow(
+		await expect(client.sendChatMessage("hello")).rejects.toThrow(
 			"Not connected to SFU",
 		);
 	});
 
-	it("emits chat:send with message payload", () => {
+	it("sends chat:send with message payload", async () => {
 		const client = createClient();
 		client.connected = true;
-		client.sendChatMessage("hello");
-		expect(client.signalChannel.emit).toHaveBeenCalledWith("chat:send", {
+		const sendRequest = vi.spyOn(client, "sendRequest").mockResolvedValue({
+			success: true,
+			timestamp: "2026-07-28T12:00:00.000Z",
+		});
+		await client.sendChatMessage("hello");
+		expect(sendRequest).toHaveBeenCalledWith("chat:send", {
 			message: "hello",
 		});
 	});
 
-	it("includes clientId when provided", () => {
+	it("includes clientId when provided", async () => {
 		const client = createClient();
 		client.connected = true;
-		client.sendChatMessage("hello", { clientId: "cid-123" });
-		expect(client.signalChannel.emit).toHaveBeenCalledWith("chat:send", {
+		const sendRequest = vi.spyOn(client, "sendRequest").mockResolvedValue({
+			success: true,
+			timestamp: "2026-07-28T12:00:00.000Z",
+		});
+		await client.sendChatMessage("hello", { clientId: "cid-123" });
+		expect(sendRequest).toHaveBeenCalledWith("chat:send", {
 			message: "hello",
 			clientId: "cid-123",
 		});
 	});
 
-	it("coerces message and clientId to string", () => {
+	it("coerces message and clientId to string", async () => {
 		const client = createClient();
 		client.connected = true;
-		client.sendChatMessage(42 as unknown as string, {
+		const sendRequest = vi.spyOn(client, "sendRequest").mockResolvedValue({
+			success: true,
+			timestamp: "2026-07-28T12:00:00.000Z",
+		});
+		await client.sendChatMessage(42 as unknown as string, {
 			clientId: 99 as unknown as string,
 		});
-		expect(client.signalChannel.emit).toHaveBeenCalledWith("chat:send", {
+		expect(sendRequest).toHaveBeenCalledWith("chat:send", {
 			message: "42",
 			clientId: "99",
 		});
