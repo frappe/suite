@@ -1,6 +1,6 @@
 <template>
 	<div
-		:class="showText ? (alignment === 'left' ? 'py-4' : 'p-4') : ''"
+		:class="showText ? (alignment === 'left' ? 'min-h-[4.5rem] py-4' : 'min-h-[4.5rem] p-4') : ''"
 	>
 		<div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
 			<p class="text-sm text-red-400">
@@ -9,7 +9,7 @@
 			</p>
 		</div>
 		<div
-			v-else-if="participants.length > 0"
+			v-else-if="!loading && participants.length > 0"
 			class="flex"
 			:class="
 				alignment === 'left'
@@ -67,7 +67,7 @@
 				in the meeting
 			</div>
 		</div>
-		<div v-else-if="showText">
+		<div v-else-if="!loading && showText" class="flex h-10 items-center">
 			<p class="text-base text-ink-gray-7">
 				You'll be the first to join this meeting
 			</p>
@@ -91,6 +91,7 @@ interface AvatarGroupParticipant {
 interface Props {
 	participants: AvatarGroupParticipant[];
 	error: string | null;
+	loading?: boolean;
 	maxDisplayed: number;
 	size?: AvatarGroupSize;
 	stackDirection?: StackDirection;
@@ -100,6 +101,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
 	participants: () => [],
 	error: "",
+	loading: false,
 	maxDisplayed: 3,
 	size: "2xl",
 	stackDirection: "right",

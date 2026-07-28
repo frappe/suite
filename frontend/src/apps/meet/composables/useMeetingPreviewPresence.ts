@@ -15,6 +15,7 @@ import type {
 export function useMeetingPreviewPresence(meetingId: string) {
 	const participants = ref<ParticipantPreview[]>([]);
 	const error = ref<string | null>(null);
+	const hasFetchedParticipants = ref(false);
 	let socket: Socket | null = null;
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let isRefreshing = false;
@@ -128,6 +129,7 @@ export function useMeetingPreviewPresence(meetingId: string) {
 				"get_room_participants",
 				{},
 				(response: PresenceParticipantsResponse) => {
+					hasFetchedParticipants.value = true;
 					if (response.success && response.participants) {
 						participants.value = response.participants.map((p) => ({
 							user_id: p.info.userId || p.user_id || p.id,
@@ -204,6 +206,7 @@ export function useMeetingPreviewPresence(meetingId: string) {
 	return {
 		participants: readonly(participants),
 		error: readonly(error),
+		hasFetchedParticipants: readonly(hasFetchedParticipants),
 		refresh,
 		topParticipants: computed(() => participants.value.slice(0, 3)),
 		extraCount: computed(() => Math.max(0, participants.value.length - 3)),

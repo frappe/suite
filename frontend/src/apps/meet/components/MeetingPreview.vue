@@ -59,6 +59,7 @@
 						v-if="!isGuest"
 						:participants="[...participants]"
 						:error="presenceError"
+						:loading="!hasFetchedParticipants"
 						:maxDisplayed="2"
 						alignment="left"
 					/>
@@ -181,9 +182,11 @@ const previewVideoRef = (el: unknown) => {
 	props.setLocalVideoRef?.(el as HTMLVideoElement | null);
 };
 
-const { participants, error: presenceError } = useMeetingPreviewPresence(
-	props.meetingId,
-);
+const {
+	participants,
+	error: presenceError,
+	hasFetchedParticipants,
+} = useMeetingPreviewPresence(props.meetingId);
 
 watch(guestNameInputRef, (inputRef) => {
 	if (inputRef) {
