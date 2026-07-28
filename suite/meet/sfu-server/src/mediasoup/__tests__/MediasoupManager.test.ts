@@ -74,3 +74,45 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 		expect(consumer.requestKeyFrame).not.toHaveBeenCalled();
 	});
 });
+
+describe('MediasoupManager.createConsumer', () => {
+	it('keeps an existing consumer when its replacement fails', async () => {
+		const mgr = new MediasoupManager();
+		const internals = mgr as unknown as {
+			transportManager: {
+				getTransportData: (transportId: string) => unknown;
+			};
+			producerManager: {
+				getProducerData: (producerId: string) => unknown;
+			};
+			roomManager: { getRoom: (roomId: string) => unknown };
+		};
+		const existing = { id: 'existing', producerId: 'producer-1' };
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			transport: {},
+		} as never);
+		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
+			peerId: 'peer-2',
+			producer: { appData: {} },
+		} as never);
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			router: { canConsume: () => true },
+			peers: new Map(),
+		} as never);
+		vi.spyOn(mgr.consumerManager, 'getConsumersByPeer').mockReturnValue([
+			{ consumer: existing } as never,
+		]);
+		const closeConsumer = vi.spyOn(mgr.consumerManager, 'closeConsumer');
+		vi.spyOn(mgr.consumerManager, 'createConsumer').mockRejectedValue(
+			new Error('consume failed'),
+		);
+
+		await expect(
+			mgr.createConsumer('transport-1', 'producer-1', {} as never),
+		).rejects.toThrow('consume failed');
+
+		expect(closeConsumer).not.toHaveBeenCalled();
+	});
+});

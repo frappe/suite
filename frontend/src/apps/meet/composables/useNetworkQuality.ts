@@ -7,7 +7,7 @@ import {
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
 
-type NetworkQuality = "good" | "poor" | "critical";
+export type NetworkQuality = "good" | "poor" | "critical";
 
 interface NetworkStats {
 	rtt: number;
@@ -24,15 +24,15 @@ const CRITICAL_PACKET_LOSS_PERCENT = 18;
 const POOR_VIDEO_BITRATE_BPS = 350_000;
 const CRITICAL_VIDEO_BITRATE_BPS = 200_000;
 
-export function useNetworkQuality() {
+export function useNetworkQuality(
+	sfuManagerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager"),
+) {
 	const networkQuality = ref<NetworkQuality>("good");
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
 
 	const pollIntervalMs = 3000;
-	const sfuManagerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager");
-
 	const updateQuality = (stats: NetworkStats) => {
 		if (!stats.isValid) {
 			// If we can't get valid stats, assume network is good

@@ -8,6 +8,7 @@ function createManager({ e2eeRequired = false } = {}) {
 	const handlers = new Map<string, (data: unknown) => unknown>();
 	const sfuClient = {
 		connect: vi.fn().mockResolvedValue(undefined),
+		disconnect: vi.fn().mockResolvedValue(undefined),
 		getExistingProducers: vi.fn().mockResolvedValue([]),
 		getRoomParticipants: vi.fn().mockResolvedValue([]),
 		isE2EERequired: vi.fn(() => e2eeRequired),
@@ -17,6 +18,8 @@ function createManager({ e2eeRequired = false } = {}) {
 		}),
 	};
 	const mediaManager = {
+		cancelPendingSubscriptions: vi.fn(),
+		cleanup: vi.fn(),
 		rebuildSendSide: vi.fn().mockResolvedValue({}),
 		subscribeToRemoteProducer: vi.fn().mockResolvedValue(undefined),
 		processedConsumers: new Set<string>(),
@@ -30,6 +33,7 @@ function createManager({ e2eeRequired = false } = {}) {
 		setEventHandlers: vi.fn(),
 	};
 	const transportManager = {
+		cleanup: vi.fn(),
 		closeReceiveTransport: vi.fn(),
 		createReceiveTransport: vi.fn().mockResolvedValue(undefined),
 		initializeDevice: vi.fn().mockResolvedValue(undefined),
@@ -203,5 +207,34 @@ describe("SFUConnectionManager", () => {
 		handlers.get("reconnect")?.({});
 
 		expect(rejoin).toHaveBeenCalledTimes(1);
+	});
+
+	it("shares one receive reset across concurrent callers", async () => {
+		const { manager, mediaManager, sfuClient, transportManager } = createManager();
+
+		await Promise.all([manager.resetReceiveSide(), manager.resetReceiveSide()]);
+
+		expect(transportManager.closeReceiveTransport).toHaveBeenCalledTimes(1);
+		expect(mediaManager.cancelPendingSubscriptions).toHaveBeenCalledTimes(1);
+		expect(mediaManager.consumerManager.clear).toHaveBeenCalledTimes(1);
+		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
+		expect(sfuClient.getExistingProducers).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not resume receive recovery after disconnect", async () => {
+		const { manager, mediaManager, transportManager } = createManager();
+		let finishCancellation: () => void = () => {};
+		mediaManager.cancelPendingSubscriptions.mockReturnValue(
+			new Promise<void>((resolve) => {
+				finishCancellation = resolve;
+			}),
+		);
+
+		const reset = manager.resetReceiveSide();
+		await manager.disconnect();
+		finishCancellation();
+		await reset;
+
+		expect(transportManager.createReceiveTransport).not.toHaveBeenCalled();
 	});
 });

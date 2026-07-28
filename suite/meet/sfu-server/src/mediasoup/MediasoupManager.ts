@@ -53,8 +53,15 @@ export class MediasoupManager {
 			lastOverallQuality?: 'good' | 'poor' | 'critical';
 		}
 	>();
+	private creatingConsumers = new Set<string>();
 
 	constructor() {
+		this.consumerManager.onClose(({ roomId, peerId, consumer }) => {
+			this.roomManager
+				.getRoom(roomId)
+				?.peers.get(peerId)
+				?.consumers.delete(consumer.id);
+		});
 		this.consumerManager.onScore((kind, score) => {
 			for (const listener of this.mediaScoreListeners) {
 				listener('recv', kind, score);
@@ -401,6 +408,15 @@ export class MediasoupManager {
 		}
 
 		const { roomId, peerId, transport } = transportData;
+		const consumerKey = `${roomId}:${peerId}:${producerId}`;
+		if (this.creatingConsumers.has(consumerKey)) {
+			throw new Error(
+				`Consumer for producer ${producerId} is already being created`,
+			);
+		}
+		const existingConsumer = this.consumerManager
+			.getConsumersByPeer(roomId, peerId)
+			.find((data) => data.consumer.producerId === producerId);
 
 		if (producerData.peerId === peerId) {
 			throw new Error(`Cannot consume own producer ${producerId}`);
@@ -418,17 +434,27 @@ export class MediasoupManager {
 			);
 		}
 
-		const result = await this.consumerManager.createConsumer(
-			transport,
-			producerData.producer,
-			producerId,
-			roomId,
-			peerId,
-			rtpCapabilities,
-		);
+		this.creatingConsumers.add(consumerKey);
+		let result: Awaited<ReturnType<ConsumerManager['createConsumer']>>;
+		try {
+			result = await this.consumerManager.createConsumer(
+				transport,
+				producerData.producer,
+				producerId,
+				roomId,
+				peerId,
+				rtpCapabilities,
+			);
+		} finally {
+			this.creatingConsumers.delete(consumerKey);
+		}
+		if (existingConsumer) {
+			this.consumerManager.closeConsumer(existingConsumer.consumer.id);
+		}
 
 		const peer = room.peers.get(peerId);
 		if (!peer) {
+			this.consumerManager.closeConsumer(result.id);
 			throw new Error(`Peer ${peerId} not found in room ${roomId}`);
 		}
 

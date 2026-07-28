@@ -157,7 +157,6 @@ import { Button } from "frappe-ui";
 import { type ComputedRef, computed, inject, type Ref, ref, watch } from "vue";
 import { useAudioStream } from "../composables/useAudioLevels";
 import { useMeetingContext } from "../composables/useMeetingContext";
-import { useNetworkQuality } from "../composables/useNetworkQuality";
 import WifiAlertIcon from "../icons/WifiAlertIcon.vue";
 import type { Participant } from "../utils/media/ParticipantManager";
 import AudioIndicator from "./AudioIndicator.vue";
@@ -237,7 +236,9 @@ const { stream } = useAudioStream(props.participant.user_id, {
 	currentUser: meetingCtx?.currentUser,
 });
 
-const { networkQuality } = useNetworkQuality();
+const networkQuality = computed(
+	() => meetingCtx?.networkQuality.value ?? "good",
+);
 
 const resolvedDisplayName = computed(() => {
 	return (

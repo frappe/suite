@@ -125,6 +125,10 @@ export class TransportManager {
 	activeVideoStrategy: string;
 	eventHandlers: EventHandlers;
 	e2eePolicy: E2EETransformPolicy;
+	private sendTransportCreation: Promise<TransportLike> | null = null;
+	private recvTransportCreation: Promise<TransportLike> | null = null;
+	private sendTransportGeneration = 0;
+	private recvTransportGeneration = 0;
 
 	constructor(e2eePolicy?: E2EETransformPolicy) {
 		this.sendTransport = null;
@@ -226,29 +230,45 @@ export class TransportManager {
 
 	async createSendTransport() {
 		if (this.sendTransport) return this.sendTransport;
-		this.e2eePolicy.assertContextReady("create send transport");
-		if (!this.device) await this.initializeDevice();
-		if (!this.device) throw new Error("Device failed to initialize");
-		const client = this.getClient();
-		const rawTransportParams = await client.createWebRtcTransport("send");
-		const shouldEnableLegacyInsertableStreams =
-			this.e2eePolicy.legacyInsertableStreamsEnabled;
+		if (this.sendTransportCreation) return this.sendTransportCreation;
 
-		const additionalSettings: Record<string, unknown> = {};
-		if (shouldEnableLegacyInsertableStreams) {
-			additionalSettings.encodedInsertableStreams = true;
+		const generation = this.sendTransportGeneration;
+		const creation = (async () => {
+			this.e2eePolicy.assertContextReady("create send transport");
+			if (!this.device) await this.initializeDevice();
+			const device = this.device;
+			if (!device) throw new Error("Device failed to initialize");
+			const client = this.getClient();
+			const rawTransportParams = await client.createWebRtcTransport("send");
+			const additionalSettings: Record<string, unknown> = {};
+			if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
+				additionalSettings.encodedInsertableStreams = true;
+			}
+
+			const transport = device.createSendTransport({
+				id: rawTransportParams.id,
+				iceParameters: rawTransportParams.iceParameters,
+				iceCandidates: rawTransportParams.iceCandidates,
+				dtlsParameters: rawTransportParams.dtlsParameters,
+				additionalSettings,
+			});
+			if (generation !== this.sendTransportGeneration) {
+				transport.close();
+				throw new Error("Send transport creation was cancelled");
+			}
+			this.sendTransport = transport;
+			this.setupSendTransportHandlers();
+			return transport;
+		})();
+		this.sendTransportCreation = creation;
+
+		try {
+			return await creation;
+		} finally {
+			if (this.sendTransportCreation === creation) {
+				this.sendTransportCreation = null;
+			}
 		}
-
-		this.sendTransport = this.device.createSendTransport({
-			id: rawTransportParams.id,
-			iceParameters: rawTransportParams.iceParameters,
-			iceCandidates: rawTransportParams.iceCandidates,
-			dtlsParameters: rawTransportParams.dtlsParameters,
-			additionalSettings,
-		});
-		this.setupSendTransportHandlers();
-
-		return this.sendTransport;
 	}
 
 	setupSendTransportHandlers() {
@@ -303,48 +323,71 @@ export class TransportManager {
 
 	async createReceiveTransport() {
 		if (this.recvTransport) return this.recvTransport;
-		this.e2eePolicy.assertContextReady("create receive transport");
-		if (!this.device) await this.initializeDevice();
-		if (!this.device) throw new Error("Device failed to initialize");
-		const client = this.getClient();
-		const rawTransportParams = await client.createWebRtcTransport("recv");
-		const shouldEnableLegacyInsertableStreams =
-			this.e2eePolicy.legacyInsertableStreamsEnabled;
+		if (this.recvTransportCreation) return this.recvTransportCreation;
 
-		const additionalSettings: Record<string, unknown> = {};
-		if (shouldEnableLegacyInsertableStreams) {
-			additionalSettings.encodedInsertableStreams = true;
+		const generation = this.recvTransportGeneration;
+		const creation = (async () => {
+			this.e2eePolicy.assertContextReady("create receive transport");
+			if (!this.device) await this.initializeDevice();
+			const device = this.device;
+			if (!device) throw new Error("Device failed to initialize");
+			const client = this.getClient();
+			const rawTransportParams = await client.createWebRtcTransport("recv");
+			const additionalSettings: Record<string, unknown> = {};
+			if (this.e2eePolicy.legacyInsertableStreamsEnabled) {
+				additionalSettings.encodedInsertableStreams = true;
+			}
+
+			const transport = device.createRecvTransport({
+				id: rawTransportParams.id,
+				iceParameters: rawTransportParams.iceParameters,
+				iceCandidates: rawTransportParams.iceCandidates,
+				dtlsParameters: rawTransportParams.dtlsParameters,
+				additionalSettings,
+			});
+			if (generation !== this.recvTransportGeneration) {
+				transport.close();
+				throw new Error("Receive transport creation was cancelled");
+			}
+			this.recvTransport = transport;
+			this.setupReceiveTransportHandlers();
+			return transport;
+		})();
+		this.recvTransportCreation = creation;
+
+		try {
+			return await creation;
+		} finally {
+			if (this.recvTransportCreation === creation) {
+				this.recvTransportCreation = null;
+			}
 		}
-
-		this.recvTransport = this.device.createRecvTransport({
-			id: rawTransportParams.id,
-			iceParameters: rawTransportParams.iceParameters,
-			iceCandidates: rawTransportParams.iceCandidates,
-			dtlsParameters: rawTransportParams.dtlsParameters,
-			additionalSettings,
-		});
-		this.setupReceiveTransportHandlers();
-		return this.recvTransport;
 	}
 
 	closeReceiveTransport() {
-		if (!this.recvTransport) return;
+		this.recvTransportGeneration++;
+		this.recvTransportCreation = null;
+		const transport = this.recvTransport;
+		this.recvTransport = null;
+		if (!transport) return;
 		try {
-			this.recvTransport.close();
+			transport.close();
 		} catch (_e) {
 			/* ignore */
 		}
-		this.recvTransport = null;
 	}
 
 	closeSendTransport() {
-		if (!this.sendTransport) return;
+		this.sendTransportGeneration++;
+		this.sendTransportCreation = null;
+		const transport = this.sendTransport;
+		this.sendTransport = null;
+		if (!transport) return;
 		try {
-			this.sendTransport.close();
+			transport.close();
 		} catch (_e) {
 			/* ignore */
 		}
-		this.sendTransport = null;
 	}
 
 	setupReceiveTransportHandlers() {
@@ -784,20 +827,8 @@ export class TransportManager {
 	}
 
 	cleanup() {
-		if (this.sendTransport)
-			try {
-				this.sendTransport.close();
-			} catch (_e) {
-				/* ignore */
-			}
-		if (this.recvTransport)
-			try {
-				this.recvTransport.close();
-			} catch (_e) {
-				/* ignore */
-			}
-		this.sendTransport = null;
-		this.recvTransport = null;
+		this.closeSendTransport();
+		this.closeReceiveTransport();
 		this.device = null;
 	}
 }

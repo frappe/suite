@@ -17,7 +17,10 @@ function createManager(
 	mediaManager: SFUMediaManager;
 	transportManager: MockTransportManager;
 	videoManager: { attachStream: ReturnType<typeof vi.fn> };
-	consumerManager: { addConsumer: ReturnType<typeof vi.fn> };
+	consumerManager: {
+		addConsumer: ReturnType<typeof vi.fn>;
+		getConsumersByParticipant: ReturnType<typeof vi.fn>;
+	};
 	participantManager: MockParticipantManager;
 } {
 	const transportManager: MockTransportManager = {
@@ -30,6 +33,7 @@ function createManager(
 			kind: "video",
 			track: { kind: "video" },
 			appData: { type: "camera" },
+			close: vi.fn(),
 		}),
 	};
 
@@ -38,6 +42,7 @@ function createManager(
 	};
 
 	const consumerManager = {
+		getConsumersByParticipant: vi.fn(() => []),
 		addConsumer: vi.fn((c) => ({
 			id: c.id,
 			producerId: c.producerId,
@@ -70,6 +75,53 @@ function createManager(
 		participantManager,
 	};
 }
+
+describe("SFUMediaManager.subscribeToRemoteProducer", () => {
+	it("shares one subscription across concurrent callers", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const request = {
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		};
+
+		await Promise.all([
+			mediaManager.subscribeToRemoteProducer(request),
+			mediaManager.subscribeToRemoteProducer(request),
+		]);
+
+		expect(transportManager.createConsumer).toHaveBeenCalledTimes(1);
+	});
+
+	it("discards a subscription that finishes after receive teardown", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		let resolveConsumer: (consumer: Record<string, unknown>) => void = () => {};
+		transportManager.createConsumer.mockReturnValue(
+			new Promise((resolve) => {
+				resolveConsumer = resolve;
+			}),
+		);
+		const consumer = {
+			id: "stale-c1",
+			producerId: "producer-1",
+			kind: "video",
+			close: vi.fn(),
+		};
+
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const cancellation = mediaManager.cancelPendingSubscriptions();
+		resolveConsumer(consumer);
+
+		await expect(subscription).rejects.toThrow("cancelled");
+		await cancellation;
+		expect(consumer.close).toHaveBeenCalledTimes(1);
+		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
+	});
+});
 
 describe("SFUMediaManager.rebuildSendSide", () => {
 	it("recreates the send transport and republishes live local tracks", async () => {
@@ -166,6 +218,16 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 		await mediaManager.handleConsumerLost(baseInfo);
 
 		await vi.advanceTimersByTimeAsync(1000);
+		expect(transportManager.createConsumer).not.toHaveBeenCalled();
+	});
+
+	it("cancels a delayed re-subscription during teardown", async () => {
+		const { mediaManager, transportManager } = createManager();
+		await mediaManager.handleConsumerLost(baseInfo);
+		await mediaManager.cancelPendingSubscriptions();
+
+		await vi.advanceTimersByTimeAsync(1000);
+
 		expect(transportManager.createConsumer).not.toHaveBeenCalled();
 	});
 

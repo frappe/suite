@@ -262,6 +262,7 @@ import {
 	useMeetingHandlers,
 } from "../composables/useMeetingHandlers";
 import { useNoiseCancellation } from "../composables/useNoiseCancellation";
+import { useNetworkQuality } from "../composables/useNetworkQuality";
 import { useParticipantStore } from "../composables/useParticipantStore";
 import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
@@ -473,6 +474,7 @@ const sfuConnection = useSFUConnection({
 		participantStore.activeSpeakerIds = participantIds;
 	},
 });
+const { networkQuality } = useNetworkQuality(sfuConnection.sfuManager);
 
 // --- Media Controls ---
 const mediaControls = useMediaControls({
@@ -568,6 +570,7 @@ provideMeetingContext({
 	processedStream: mediaState.processedStream,
 	isInMeeting: computed(() => true),
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
+	networkQuality,
 });
 
 // Provide legacy injects for components not yet migrated to useMeetingContext

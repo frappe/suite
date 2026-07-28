@@ -1,4 +1,4 @@
-import type { InjectionKey } from "vue";
+import type { InjectionKey, Ref } from "vue";
 import { inject, provide } from "vue";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import type { ChatStore } from "./useChatStore";
@@ -9,6 +9,7 @@ import type { MediaState } from "./useMediaState";
 import type { ParticipantStore } from "./useParticipantStore";
 import type { RaiseHandStore } from "./useRaiseHandStore";
 import type { ReactionStore } from "./useReactionStore";
+import type { NetworkQuality } from "./useNetworkQuality";
 
 interface MeetingContext {
 	mediaState: MediaState;
@@ -23,6 +24,7 @@ interface MeetingContext {
 	processedStream: MediaStream | null;
 	isInMeeting: ReturnType<() => import("vue").ComputedRef<boolean>>;
 	onBackgroundEffectsChanged: () => void;
+	networkQuality: Ref<NetworkQuality>;
 }
 
 const MEETING_CONTEXT_KEY: InjectionKey<MeetingContext> =

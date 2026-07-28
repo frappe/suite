@@ -96,6 +96,10 @@ export class ConsumerManager {
 			if (this.localCloseInProgress.has(consumer.id)) {
 				return;
 			}
+			if (!this.consumers.has(consumer.id)) {
+				return;
+			}
+			this.removeConsumer(consumer.id);
 			if (this.eventHandlers.onConsumerLost) {
 				this.eventHandlers.onConsumerLost({
 					consumerId: consumer.id,

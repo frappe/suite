@@ -389,6 +389,7 @@ export interface TransportData {
 	roomId: string;
 	peerId: string;
 	transport: WebRtcTransport;
+	direction?: 'send' | 'recv';
 }
 
 export interface ProducerData {
@@ -400,6 +401,7 @@ export interface ProducerData {
 export interface ConsumerData {
 	roomId: string;
 	peerId: string;
+	transportId: string;
 	consumer: Consumer;
 }
 

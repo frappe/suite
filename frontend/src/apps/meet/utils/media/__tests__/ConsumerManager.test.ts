@@ -320,6 +320,7 @@ describe("consumer @close handling", () => {
 		cm.addConsumer(consumer);
 		fire("@close");
 
+		expect(cm.getConsumer("c1")).toBeUndefined();
 		expect(lost).toHaveBeenCalledWith({
 			consumerId: "c1",
 			participantId: "p1",
@@ -338,6 +339,7 @@ describe("consumer @close handling", () => {
 		cm.addConsumer(consumer);
 		fire("trackended");
 
+		expect(cm.getConsumer("c1")).toBeUndefined();
 		expect(lost).toHaveBeenCalledWith({
 			consumerId: "c1",
 			participantId: "p1",

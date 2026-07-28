@@ -79,6 +79,9 @@ export class SFUMediaManager {
 	private eventHandlers: MediaEventHandlers = {};
 	private getCurrentUserId: () => string | null;
 	private resubscribeAttempts: Map<string, number> = new Map();
+	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
+	private resubscribeTimers = new Set<ReturnType<typeof setTimeout>>();
+	private subscriptionGeneration = 0;
 	private static readonly MAX_RESUBSCRIBE_ATTEMPTS = 3;
 	private static readonly RESUBSCRIBE_DELAY_MS = 250;
 
@@ -204,11 +207,16 @@ export class SFUMediaManager {
 		participantId: string,
 		metadata: Record<string, unknown> = {},
 	): Promise<unknown> {
+		const generation = this.subscriptionGeneration;
 		try {
 			const consumer = await this.transportManager.createConsumer(
 				producerId,
 				metadata,
 			);
+			if (generation !== this.subscriptionGeneration) {
+				consumer.close();
+				throw new Error("Consumer subscription was cancelled");
+			}
 
 			const enhancedConsumer = this.consumerManager.addConsumer(
 				consumer,
@@ -252,13 +260,30 @@ export class SFUMediaManager {
 			return null;
 		}
 
-		const result = await this.subscribeToProducer(producerId, participantId, {
+		const key = this.resubscribeKey(participantId, producerId);
+		const existing = this.consumerManager
+			.getConsumersByParticipant(participantId)
+			.find((entry) => entry.producerId === producerId);
+		if (existing) return existing;
+
+		const pending = this.pendingSubscriptions.get(key);
+		if (pending) return pending;
+
+		let subscription: Promise<unknown | null>;
+		subscription = this.subscribeToProducer(producerId, participantId, {
 			isScreen: !!isScreen,
-		});
-		this.resubscribeAttempts.delete(
-			this.resubscribeKey(participantId, producerId),
-		);
-		return result;
+		})
+			.then((result) => {
+				this.resubscribeAttempts.delete(key);
+				return result;
+			})
+			.finally(() => {
+				if (this.pendingSubscriptions.get(key) === subscription) {
+					this.pendingSubscriptions.delete(key);
+				}
+			});
+		this.pendingSubscriptions.set(key, subscription);
+		return subscription;
 	}
 
 	async handleConsumerLost(info: {
@@ -295,7 +320,8 @@ export class SFUMediaManager {
 		}
 		this.resubscribeAttempts.set(key, attempts + 1);
 
-		setTimeout(() => {
+		const timer = setTimeout(() => {
+			this.resubscribeTimers.delete(timer);
 			void this.subscribeToRemoteProducer({
 				producerId: info.producerId,
 				participantId: info.participantId,
@@ -308,10 +334,21 @@ export class SFUMediaManager {
 				});
 			});
 		}, SFUMediaManager.RESUBSCRIBE_DELAY_MS);
+		this.resubscribeTimers.add(timer);
 	}
 
 	private resubscribeKey(participantId: string, producerId: string): string {
 		return `${participantId}:${producerId}`;
+	}
+
+	async cancelPendingSubscriptions(): Promise<void> {
+		this.subscriptionGeneration++;
+		for (const timer of this.resubscribeTimers) clearTimeout(timer);
+		this.resubscribeTimers.clear();
+		this.resubscribeAttempts.clear();
+		const pending = Array.from(this.pendingSubscriptions.values());
+		this.pendingSubscriptions.clear();
+		await Promise.allSettled(pending);
 	}
 
 	async handleNewConsumer(consumer: ConsumerEntry): Promise<void> {
@@ -433,6 +470,7 @@ export class SFUMediaManager {
 	}
 
 	cleanup(): void {
+		void this.cancelPendingSubscriptions();
 		this.mediaHandler.cleanup();
 		this.processedConsumers.clear();
 		this.isScreenShareActive = false;

@@ -260,6 +260,75 @@ describe("emitTransportConnectionState", () => {
 	});
 });
 
+describe("transport creation", () => {
+	it("shares one receive transport across concurrent callers", async () => {
+		const manager = createManager();
+		const client = mockSfuClient();
+		client.createWebRtcTransport.mockResolvedValue({
+			id: "recv-tp",
+			iceParameters: {},
+			iceCandidates: [],
+			dtlsParameters: {},
+		});
+		const transport = {
+			id: "recv-tp",
+			on: vi.fn(),
+			close: vi.fn(),
+		} as never;
+		manager.sfuClient = client as never;
+		manager.device = {
+			createRecvTransport: vi.fn(() => transport),
+		} as never;
+
+		const [first, second] = await Promise.all([
+			manager.createReceiveTransport(),
+			manager.createReceiveTransport(),
+		]);
+
+		expect(client.createWebRtcTransport).toHaveBeenCalledTimes(1);
+		expect(first).toBe(transport);
+		expect(second).toBe(transport);
+	});
+
+	it("discards a receive transport that finishes after it was closed", async () => {
+		const manager = createManager();
+		const client = mockSfuClient();
+		let resolveTransport: (value: {
+			id: string;
+			iceParameters: Record<string, never>;
+			iceCandidates: never[];
+			dtlsParameters: Record<string, never>;
+		}) => void = () => {};
+		client.createWebRtcTransport.mockReturnValue(
+			new Promise((resolve) => {
+				resolveTransport = resolve;
+			}),
+		);
+		const transport = {
+			id: "stale-recv-tp",
+			on: vi.fn(),
+			close: vi.fn(),
+		} as never;
+		manager.sfuClient = client as never;
+		manager.device = {
+			createRecvTransport: vi.fn(() => transport),
+		} as never;
+
+		const creation = manager.createReceiveTransport();
+		manager.closeReceiveTransport();
+		resolveTransport({
+			id: "stale-recv-tp",
+			iceParameters: {},
+			iceCandidates: [],
+			dtlsParameters: {},
+		});
+
+		await expect(creation).rejects.toThrow("cancelled");
+		expect(transport.close).toHaveBeenCalledTimes(1);
+		expect(manager.recvTransport).toBeNull();
+	});
+});
+
 describe("restartAllTransportIce", () => {
 	it("reports a restarted send transport and no receive transport", async () => {
 		const manager = createManager();

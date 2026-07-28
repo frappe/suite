@@ -149,6 +149,7 @@ export class SFUMeetingManager {
 			const hadVideo = !!mediaHandler.videoProducer;
 			const hadAudio = !!mediaHandler.audioProducer;
 
+			await this.mediaManager.cancelPendingSubscriptions();
 			mediaHandler.cleanup();
 			this.consumerManager.clear();
 			this.mediaManager.processedConsumers.clear();

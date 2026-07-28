@@ -12,9 +12,14 @@ export class ConsumerManager {
 	private scoreListeners: Array<
 		(kind: 'audio' | 'video', score: number) => void
 	> = [];
+	private closeListeners: Array<(consumerData: ConsumerData) => void> = [];
 
 	onScore(listener: (kind: 'audio' | 'video', score: number) => void): void {
 		this.scoreListeners.push(listener);
+	}
+
+	onClose(listener: (consumerData: ConsumerData) => void): void {
+		this.closeListeners.push(listener);
 	}
 
 	async createConsumer(
@@ -54,19 +59,25 @@ export class ConsumerManager {
 			);
 		}
 
+		let createdConsumer: mediasoup.types.Consumer | undefined;
 		try {
 			const consumer = await transport.consume({
 				producerId,
 				rtpCapabilities,
 				paused: true, // Consumers should start paused by default
 			});
+			createdConsumer = consumer;
 
 			const consumerData: ConsumerData = {
 				roomId,
 				peerId,
+				transportId: transport.id,
 				consumer,
 			};
 			this.consumers.set(consumer.id, consumerData);
+			consumer.on('transportclose', () => {
+				this.removeConsumer(consumer.id, false);
+			});
 			consumer.on('score', (score) => {
 				for (const listener of this.scoreListeners) {
 					listener(consumer.kind, score.score);
@@ -115,6 +126,7 @@ export class ConsumerManager {
 				paused: consumer.paused,
 			};
 		} catch (consumeError) {
+			if (createdConsumer) this.removeConsumer(createdConsumer.id, true);
 			loggers.consumerManager.error('Failed to create consumer: %o', {
 				error: (consumeError as Error).message,
 				producerId,
@@ -128,22 +140,29 @@ export class ConsumerManager {
 	}
 
 	closeConsumer(consumerId: string): void {
+		this.removeConsumer(consumerId, true);
+	}
+
+	private removeConsumer(consumerId: string, close: boolean): void {
 		const consumerData = this.consumers.get(consumerId);
 		if (!consumerData) return;
 
 		const { consumer } = consumerData;
+		this.consumers.delete(consumerId);
 
-		try {
-			consumer.close();
-		} catch (error) {
-			loggers.consumerManager.warn(
-				'Error closing consumer %s: %s',
-				consumerId,
-				(error as Error).message,
-			);
+		if (close) {
+			try {
+				consumer.close();
+			} catch (error) {
+				loggers.consumerManager.warn(
+					'Error closing consumer %s: %s',
+					consumerId,
+					(error as Error).message,
+				);
+			}
 		}
 
-		this.consumers.delete(consumerId);
+		for (const listener of this.closeListeners) listener(consumerData);
 
 		loggers.consumerManager.info('Consumer closed: %s', consumerId);
 	}
@@ -277,17 +296,8 @@ export class ConsumerManager {
 	}
 
 	cleanup(): void {
-		for (const [consumerId, consumerData] of this.consumers) {
-			try {
-				consumerData.consumer.close();
-			} catch (error) {
-				loggers.consumerManager.warn(
-					'Error closing consumer %s: %s',
-					consumerId,
-					(error as Error).message,
-				);
-			}
+		for (const consumerId of Array.from(this.consumers.keys())) {
+			this.closeConsumer(consumerId);
 		}
-		this.consumers.clear();
 	}
 }
