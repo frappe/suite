@@ -449,12 +449,24 @@ export const getIcon = (mailbox: MailboxData) => {
 export const getMailboxName = (mailbox: MailboxData) =>
 	mailbox._name === SCREENER_MAILBOX_NAME ? __('Screener') : mailbox._name
 
+// Safari reads the blob behind an `<a download>` asynchronously, after the click has
+// already returned, so revoking the object URL in the same tick silently cancels the
+// download. Chrome and Firefox snapshot the blob synchronously, which is why this only
+// shows up on Safari. Keep the URL alive long enough for the browser to read it, then
+// free the blob.
+const DOWNLOAD_URL_TTL = 60_000
+
+export const revokeObjectUrlAfterDownload = (url: string) => {
+	setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_TTL)
+}
+
 export const downloadUrlAsFile = (url: string, filename: string) => {
 	const link = document.createElement('a')
 	link.href = url
 	link.download = filename
+	link.rel = 'noopener'
 	document.body.appendChild(link)
 	link.click()
 	document.body.removeChild(link)
-	URL.revokeObjectURL(url)
+	revokeObjectUrlAfterDownload(url)
 }

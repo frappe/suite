@@ -850,6 +850,8 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 	try {
 		const url = await getAttachmentsZipUrl(mailAttachments)
 		downloadUrlAsFile(url, `${mail.subject || 'attachments'}.zip`)
+	} catch {
+		// the resource's onError already raised a toast; just stop spinning
 	} finally {
 		downloadingZipMail.value = null
 	}

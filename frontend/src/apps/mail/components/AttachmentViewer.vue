@@ -172,7 +172,7 @@ import {
 import { Button } from 'frappe-ui'
 
 import { fetchAttachment, getAttachmentUrl } from '@/apps/mail/resources'
-import { getFileIcon } from '@/apps/mail/utils'
+import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 
 import type { Attachment } from '@/apps/mail/types'
@@ -196,12 +196,23 @@ const isVideo = computed(() => currentAttachment.value?.type?.startsWith('video/
 const isAudio = computed(() => currentAttachment.value?.type?.startsWith('audio/'))
 const canPrint = computed(() => isImage.value || isPDF.value)
 
+// Set to the preview URL a download was started from: Safari fetches the blob after
+// the click returns, so that URL has to outlive the viewer (see downloadUrlAsFile).
+const downloadedUrl = ref<string | null>(null)
+
+const releasePreview = () => {
+	if (!previewUrl.value) return
+
+	if (previewUrl.value === downloadedUrl.value) revokeObjectUrlAfterDownload(previewUrl.value)
+	else URL.revokeObjectURL(previewUrl.value)
+
+	downloadedUrl.value = null
+	previewUrl.value = null
+}
+
 const closeViewer = () => {
 	show.value = false
-	if (previewUrl.value) {
-		URL.revokeObjectURL(previewUrl.value)
-		previewUrl.value = null
-	}
+	releasePreview()
 }
 
 const previousAttachment = () => {
@@ -215,24 +226,30 @@ const nextAttachment = () => {
 const loadAttachment = async () => {
 	if (!currentAttachment.value?.blob_id) return
 
-	if (previewUrl.value) {
-		URL.revokeObjectURL(previewUrl.value)
-		previewUrl.value = null
-	}
+	releasePreview()
 
-	previewUrl.value = await getAttachmentUrl(
-		currentAttachment.value.blob_id,
-		currentAttachment.value.type,
-	)
+	try {
+		previewUrl.value = await getAttachmentUrl(
+			currentAttachment.value.blob_id,
+			currentAttachment.value.type,
+		)
+	} catch {
+		// the resource's onError already raised a toast; the viewer falls back to
+		// its "Failed to load attachment" state
+	}
 }
 
 const downloadAttachment = () => {
 	if (!currentAttachment.value?.blob_id || !previewUrl.value) return
 
 	isDownloading.value = true
+	// Not downloadUrlAsFile(): this URL is still bound to the <img>/<embed> on screen,
+	// so releasePreview() owns revoking it.
+	downloadedUrl.value = previewUrl.value
 	const link = document.createElement('a')
 	link.href = previewUrl.value
 	link.download = currentAttachment.value?.filename || 'attachment'
+	link.rel = 'noopener'
 	document.body.appendChild(link)
 	link.click()
 	document.body.removeChild(link)
@@ -307,5 +324,8 @@ const handleKeyDown = (event: KeyboardEvent) => {
 }
 
 onMounted(() => window.addEventListener('keydown', handleKeyDown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
+onUnmounted(() => {
+	window.removeEventListener('keydown', handleKeyDown)
+	releasePreview()
+})
 </script>

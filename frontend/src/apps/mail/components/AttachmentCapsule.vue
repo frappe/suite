@@ -55,8 +55,13 @@ const downloadAttachment = async () => {
 	if (!blobID) return
 
 	isDownloading.value = true
-	const url = await getAttachmentUrl(blobID, type)
-	downloadUrlAsFile(url, fileName || 'attachment')
-	isDownloading.value = false
+	try {
+		const url = await getAttachmentUrl(blobID, type)
+		downloadUrlAsFile(url, fileName || 'attachment')
+	} catch {
+		// the resource's onError already raised a toast; just stop spinning
+	} finally {
+		isDownloading.value = false
+	}
 }
 </script>

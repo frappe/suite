@@ -256,17 +256,15 @@ const currentlyDownloading = ref<string[]>([])
 
 const downloadAttachment = async (attachment: Attachment) => {
 	currentlyDownloading.value.push(attachment.blob_id)
-	const url = await getAttachmentUrl(attachment.blob_id, attachment.type)
-	if (!url) {
+	try {
+		const url = await getAttachmentUrl(attachment.blob_id, attachment.type)
+		if (url) downloadUrlAsFile(url, attachment.filename || 'attachment')
+	} catch {
+		// the resource's onError already raised a toast; just stop spinning
+	} finally {
 		currentlyDownloading.value = currentlyDownloading.value.filter(
 			(id) => id !== attachment.blob_id,
 		)
-		return
 	}
-
-	downloadUrlAsFile(url, attachment.filename || 'attachment')
-	currentlyDownloading.value = currentlyDownloading.value.filter(
-		(id) => id !== attachment.blob_id,
-	)
 }
 </script>

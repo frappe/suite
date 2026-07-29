@@ -588,8 +588,17 @@ watch(
 const openAttachment = async (blob_id?: string, type?: string) => {
 	if (!blob_id) return
 
-	const url = await getAttachmentUrl(blob_id, type)
-	window.open(url, '_blank')
+	// Opened up front, while the click's user activation is still live: Safari blocks
+	// window.open() once the gesture has expired, which it has by the time the
+	// attachment has been fetched.
+	const tab = window.open('', '_blank')
+	try {
+		const url = await getAttachmentUrl(blob_id, type)
+		if (tab) tab.location.href = url
+		else window.open(url, '_blank')
+	} catch {
+		tab?.close()
+	}
 }
 
 // Custom Extensions
