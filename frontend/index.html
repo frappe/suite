@@ -12,6 +12,47 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
+
+    <script>
+      // Resolve the theme BEFORE the first paint. The attributes above are rendered from
+      // User.desk_theme, which the server only knows for an authenticated session — a Guest
+      // always gets 'light', so the login/signup screens used to flash white on a dark
+      // machine. Mail also keeps its own preference (User Settings.color_scheme), which is
+      // only known once its boot data arrives. So for /mail: use the last mode applied on
+      // this device, else the OS preference for guests, else the server value. Other apps
+      // keep the server value untouched. Storage key mirrors composables.ts THEME_MODE_KEY.
+      ;(function () {
+        if (!/^\/mail(\/|$)/.test(location.pathname)) return
+
+        var root = document.documentElement
+        var modes = ['automatic', 'light', 'dark']
+        var stored = null
+        try {
+          stored = localStorage.getItem('mail-theme-mode')
+        } catch (e) {
+          // Storage can be unavailable (private mode / blocked cookies) — fall through.
+        }
+
+        var userID = document.cookie.match(/(?:^|;\s*)user_id=([^;]*)/)
+        var isGuest = !userID || decodeURIComponent(userID[1]) === 'Guest'
+        var server = root.getAttribute('data-theme-mode')
+        if (modes.indexOf(server) === -1) server = 'light'
+
+        var mode = modes.indexOf(stored) !== -1 ? stored : isGuest ? 'automatic' : server
+        var resolved = mode
+        if (mode === 'automatic') {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+        }
+
+        root.setAttribute('data-theme-mode', mode)
+        root.setAttribute('data-theme', resolved)
+        // Paints the browser's default canvas (and native widgets) dark too, so there is
+        // nothing white on screen before the stylesheet lands.
+        root.style.colorScheme = resolved
+      })()
+    </script>
   </head>
   <body>
     <div id="app" class="h-screen"></div>

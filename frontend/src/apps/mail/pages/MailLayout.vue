@@ -39,7 +39,7 @@ import type { NotificationPayload } from '@/apps/mail/types'
  * do not need the $user/$dayjs/$socket injects.
  */
 const { userResource } = userStore()
-const { dataTheme, cycleTheme } = useTheme()
+const { applyTheme, cycleTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const route = useRoute()
 
@@ -52,7 +52,9 @@ const Layout = computed(() => {
 	return DefaultLayout
 })
 
-watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
+// Keeps <html data-theme> (and the mode remembered for the next load, so pre-login screens
+// don't flash — see index.html) in step with the user's color scheme.
+watchEffect(applyTheme)
 
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
 // Dialogs/Dropdowns, which teleport to <body> — OUTSIDE .mail-app-root. Without this, their

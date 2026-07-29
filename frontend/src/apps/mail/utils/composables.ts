@@ -397,14 +397,60 @@ mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.mat
 
 const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
 
+type ThemeMode = 'automatic' | 'light' | 'dark'
+
+const THEME_MODES: Record<COLOR_SCHEME, ThemeMode> = {
+	'System Default': 'automatic',
+	'Light Mode': 'light',
+	'Dark Mode': 'dark',
+}
+
+// The applied mode is mirrored here so the pre-paint script in index.html can restore it on
+// the next load — the server-rendered <html data-theme> only knows User.desk_theme, and only
+// for an authenticated session, so without this the login screens (and the frames before
+// boot data lands) flash light. Keep the key in sync with index.html.
+const THEME_MODE_KEY = 'mail-theme-mode'
+
+const readThemeMode = (): ThemeMode => {
+	try {
+		const stored = localStorage.getItem(THEME_MODE_KEY)
+		if (stored === 'automatic' || stored === 'light' || stored === 'dark') return stored
+	} catch {
+		// Storage can be unavailable (private mode / blocked cookies) — follow the OS.
+	}
+	return 'automatic'
+}
+
+// Read once, at load: from here on the user's own color scheme (once fetched) is the source
+// of truth, and this only fills the gap before it arrives.
+const storedThemeMode = readThemeMode()
+
 export const useTheme = () => {
 	const { userResource } = userStore()
 
-	const dataTheme = computed(() => {
-		const colorScheme = userResource.data?.color_scheme || 'System Default'
-		if (colorScheme === 'System Default') return systemIsDark.value ? 'dark' : 'light'
-		return colorScheme === 'Dark Mode' ? 'dark' : 'light'
+	const themeMode = computed<ThemeMode>(() => {
+		const colorScheme = userResource.data?.color_scheme
+		return colorScheme ? THEME_MODES[colorScheme] : storedThemeMode
 	})
+
+	const dataTheme = computed(() => {
+		if (themeMode.value === 'automatic') return systemIsDark.value ? 'dark' : 'light'
+		return themeMode.value
+	})
+
+	// Applied by MailLayout (the mounted mail root) on every change.
+	const applyTheme = () => {
+		const root = document.documentElement
+		root.setAttribute('data-theme', dataTheme.value)
+		root.setAttribute('data-theme-mode', themeMode.value)
+		root.style.colorScheme = dataTheme.value
+
+		try {
+			localStorage.setItem(THEME_MODE_KEY, themeMode.value)
+		} catch {
+			// Nothing to remember with — the next load just falls back to the OS.
+		}
+	}
 
 	const updateColorScheme = createResource({
 		url: 'frappe.client.set_value',
@@ -438,5 +484,5 @@ export const useTheme = () => {
 		})
 	}
 
-	return { dataTheme, cycleTheme }
+	return { dataTheme, applyTheme, cycleTheme }
 }
