@@ -35,6 +35,7 @@ from suite.mail.utils import (
 	get_config,
 	log_mail_error,
 )
+from suite.mail.utils.dt import to_utc_z
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
@@ -773,8 +774,6 @@ def search_messages(
 		"subject",
 		"preview",
 		"recipients",
-		"sent_at",
-		"received_at",
 		"from_name",
 		"from_email",
 		"thread_id",
@@ -782,9 +781,18 @@ def search_messages(
 		"attachments",
 		"seen",
 	]
+	# Held in system time (see `format_message`), but this projection is an API payload, and the wire
+	# is UTC.
+	datetime_fields = ["sent_at", "received_at"]
 
 	messages, total = fetch_messages(account, filter=filter, position=position, limit=limit, sort=sort)
-	return [{field: message[field] for field in fields} for message in messages], total
+	return [
+		{
+			**{field: message[field] for field in fields},
+			**{field: to_utc_z(message[field]) for field in datetime_fields},
+		}
+		for message in messages
+	], total
 
 
 def get_messages(account: str, ids: list[str]) -> list[dict]:

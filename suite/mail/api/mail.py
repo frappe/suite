@@ -56,6 +56,7 @@ from suite.mail.jmap import (
 )
 from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
+from suite.mail.utils.dt import to_utc_z
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils import convert_html_to_text
@@ -387,7 +388,6 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 		"thread_id",
 		"from_name",
 		"from_email",
-		"received_at",
 		"recipients",
 		"draft",
 		"preview",
@@ -395,6 +395,8 @@ def serialize_thread(messages: list[dict], thread_messages: list[dict], latest: 
 	return {
 		**{field: current[field] for field in current_fields},
 		**{field: latest[field] for field in activity_fields},
+		# Message timestamps are held in system time (see `format_message`); the wire is UTC.
+		"received_at": to_utc_z(latest["received_at"]),
 		"subject": first["subject"],
 		"attachments": serialize_attachments(latest.get("attachments", [])),
 		"messages": [serialize_mail(message) for message in thread_messages],
@@ -414,7 +416,6 @@ def serialize_mail(mail: dict) -> dict:
 		"subject",
 		"html_body",
 		"preview",
-		"received_at",
 		"draft",
 		"seen",
 		"junk",
@@ -429,6 +430,8 @@ def serialize_mail(mail: dict) -> dict:
 	html = mail.get("html_body") or ""
 	return {
 		**{field: mail[field] for field in mail_fields},
+		# Message timestamps are held in system time (see `format_message`); the wire is UTC.
+		"received_at": to_utc_z(mail["received_at"]),
 		"text_body": "" if html else mail.get("text_body", ""),
 		"attachments": serialize_attachments(mail.get("attachments", [])),
 	}
