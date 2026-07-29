@@ -575,6 +575,7 @@ import {
 	useSwipeNav,
 	useUndo,
 } from '@/apps/mail/utils/composables'
+import { rangeSelection } from '@/apps/mail/utils/rangeSelection'
 import { buildListRows } from '@/apps/mail/utils/threadStacks'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { type MailboxRole, userStore } from '@/apps/mail/stores/user'
@@ -819,6 +820,12 @@ const moreSelectionOptions = computed(() => [
 ])
 const lastSelected = ref<string[]>()
 
+// An in-progress shift+arrow range: where it began (every thread that row stands for) and what was
+// already selected then. Held across steps so each one recomputes anchor..cursor (see rangeSelection)
+// instead of toggling the rows it passes — the toggle was asymmetric, shrinking the range from below
+// dropped both the row being left and the row being entered.
+const keyboardRange = ref<{ anchorIDs: string[]; base: string[] }>()
+
 const isAllSelected = computed(
 	() => threadIDs.value.length && selections.value.length === threadIDs.value.length,
 )
@@ -828,18 +835,14 @@ const isAllSelected = computed(
 // exactly the thing being asked for, at the worst moment. Nothing is concealed by staying collapsed:
 // the header or stack row shows its own checkbox ticked, and the toolbar counts individual threads.
 
-const toggleSelect = (
-	threadIDs: string[],
-	selected: boolean,
-	isKeyboardSelect: boolean = false,
-) => {
-	const allIDs = new Set([
-		...threadIDs,
-		...(isKeyboardSelect ? [] : getShiftSelectedIDs(threadIDs[0])),
-	])
+const toggleSelect = (threadIDs: string[], selected: boolean) => {
+	const allIDs = new Set([...threadIDs, ...getShiftSelectedIDs(threadIDs[0])])
 	if (selected) selections.value = [...new Set([...selections.value, ...allIDs])]
 	else selections.value = selections.value.filter((id) => !allIDs.has(id))
 	lastSelected.value = threadIDs
+	// Ticking a box is a fresh starting point: the next shift+arrow anchors here rather than extending
+	// a range the pointer has since moved away from.
+	keyboardRange.value = undefined
 }
 
 const getShiftSelectedIDs = (thread: string) => {
@@ -862,11 +865,13 @@ const toggleSelectAll = (selected: boolean) => {
 	if (selected) selections.value = [...threadIDs.value]
 	else selections.value = []
 	lastSelected.value = undefined
+	keyboardRange.value = undefined
 }
 
 const resetSelections = () => {
 	selections.value = []
 	lastSelected.value = undefined
+	keyboardRange.value = undefined
 }
 
 const isGroupSelected = (key: string) =>
@@ -1017,7 +1022,9 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 	e.preventDefault()
 
 	const offset = ['arrowup', 'k'].includes(key) ? -1 : 1
-	const prevIDs = focusedRow.value ? rowThreadIDs(focusedRow.value) : []
+	// Where a range would begin if this keypress starts one: the threads being stepped off — the open
+	// thread in the reading pane, everything the cursor's row stands for in the list.
+	const fromIDs = threadID ? [threadID] : focusedRow.value ? rowThreadIDs(focusedRow.value) : []
 
 	let newIDs: string[] = []
 
@@ -1044,10 +1051,17 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 
 	// Handle shift+arrow selection. A row carries every thread it stands for, so shifting onto a stack
 	// takes its whole run and onto a header takes the day — the same sets their checkboxes select.
-	if (!(isShiftPressed.value && newIDs.length)) return
+	// Moving without Shift ends the range, so the next one anchors where the cursor now is.
+	if (!isShiftPressed.value) return (keyboardRange.value = undefined)
+	if (!newIDs.length) return
 
-	const shouldSelect = !newIDs.every((id) => selections.value.includes(id))
-	toggleSelect([...prevIDs, ...newIDs], shouldSelect, true)
+	const { anchorIDs, base } = (keyboardRange.value ??= {
+		anchorIDs: fromIDs,
+		base: [...selections.value],
+	})
+	selections.value = rangeSelection(threadIDs.value, anchorIDs, newIDs, base)
+	// A shift+click afterwards extends from wherever the keyboard left the cursor.
+	lastSelected.value = newIDs
 }
 
 const handleKeyUp = (e: KeyboardEvent) => {
