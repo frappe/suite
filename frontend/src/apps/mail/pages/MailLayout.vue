@@ -57,19 +57,42 @@ const Layout = computed(() => {
 // over the dark app. Values mirror surface-base per theme (dark hex matches
 // EmailContent's THEME_CONFIG).
 const THEME_COLOR: Record<string, string> = { light: '#ffffff', dark: '#171717' }
+
+// All three live on the shared shell, not inside mail: data-theme flips every
+// frappe-ui design token (see colorPalette.js, keyed on [data-theme="dark"]),
+// color-scheme flips the browser-drawn surfaces, and theme-color is a single
+// document-wide meta. Drive/sheets/writer/slides set none of them, so whatever
+// mail leaves behind is what they render with. Snapshot the server-rendered
+// state and restore it on unmount, the same contract as the `mail-app` body
+// class below.
+const root = document.documentElement
+const initialDataTheme = root.getAttribute('data-theme')
+const initialColorScheme = root.style.colorScheme
+let themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+const initialThemeColor = themeColorMeta?.content ?? null
+
 watchEffect(() => {
-	document.documentElement.setAttribute('data-theme', dataTheme.value)
+	root.setAttribute('data-theme', dataTheme.value)
 	// color-scheme drives the browser-drawn surfaces the page can't paint — on
 	// Android standalone that's the system navigation bar (white over a dark app
 	// otherwise) and the status-bar seam, plus native controls/scrollbars.
-	document.documentElement.style.colorScheme = dataTheme.value
-	let meta = document.querySelector('meta[name="theme-color"]')
-	if (!meta) {
-		meta = document.createElement('meta')
-		meta.setAttribute('name', 'theme-color')
-		document.head.appendChild(meta)
+	root.style.colorScheme = dataTheme.value
+	if (!themeColorMeta) {
+		themeColorMeta = document.createElement('meta')
+		themeColorMeta.name = 'theme-color'
+		document.head.appendChild(themeColorMeta)
 	}
-	meta.setAttribute('content', THEME_COLOR[dataTheme.value])
+	themeColorMeta.content = THEME_COLOR[dataTheme.value]
+})
+
+onUnmounted(() => {
+	if (initialDataTheme === null) root.removeAttribute('data-theme')
+	else root.setAttribute('data-theme', initialDataTheme)
+	root.style.colorScheme = initialColorScheme
+	// null means the meta was ours, so take it with us rather than leaving an
+	// empty one on the shell.
+	if (initialThemeColor === null) themeColorMeta?.remove()
+	else if (themeColorMeta) themeColorMeta.content = initialThemeColor
 })
 
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
