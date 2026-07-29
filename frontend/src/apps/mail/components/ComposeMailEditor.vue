@@ -107,13 +107,17 @@
 						</template>
 					</div>
 				</div>
-				<div v-if="!mailDetails?.type || isMobile" class="flex items-center gap-2">
+				<label
+					v-if="!mailDetails?.type || isMobile"
+					class="flex cursor-text items-center gap-2"
+				>
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
 					<input
 						v-model="mail.subject"
-						class="flex-1 border-none bg-inherit text-base focus-visible:!ring-0"
+						:placeholder="__('Add a subject')"
+						class="placeholder:text-ink-gray-4 flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
 					/>
-				</div>
+				</label>
 			</div>
 		</template>
 		<template #editor="{ editor }">
