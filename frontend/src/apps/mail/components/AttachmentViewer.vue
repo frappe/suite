@@ -249,7 +249,6 @@ const downloadAttachment = () => {
 	const link = document.createElement('a')
 	link.href = previewUrl.value
 	link.download = currentAttachment.value?.filename || 'attachment'
-	link.rel = 'noopener'
 	document.body.appendChild(link)
 	link.click()
 	document.body.removeChild(link)

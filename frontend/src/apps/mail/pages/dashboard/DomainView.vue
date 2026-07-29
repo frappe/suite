@@ -74,7 +74,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
+import { downloadUrlAsFile, raiseToast } from '@/apps/mail/utils'
 import DNSRecords from '@/apps/mail/components/DNSRecords.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 
@@ -160,16 +160,7 @@ const downloadFile = (content: string, extension: string, mimeType: string) => {
 	const domainName = (domain.data as DomainData | undefined)?.name || domainId
 	const fileName = `${domainName.replace(/[^a-zA-Z0-9.-]+/g, '_')}.${extension}`
 	const blob = new Blob([content], { type: mimeType })
-	const url = URL.createObjectURL(blob)
-
-	const link = document.createElement('a')
-	link.href = url
-	link.download = fileName
-	document.body.appendChild(link)
-	link.click()
-	document.body.removeChild(link)
-
-	URL.revokeObjectURL(url)
+	downloadUrlAsFile(URL.createObjectURL(blob), fileName)
 }
 
 const downloadDNSZone = createResource({
