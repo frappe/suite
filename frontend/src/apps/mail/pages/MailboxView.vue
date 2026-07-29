@@ -1247,7 +1247,12 @@ const onResetSuccess = () => {
 		const fresh = freshWindow.filter(
 			(t: Thread) => !existing.has(t.thread_id) && !recentlyRemoved.has(t.thread_id),
 		)
-		threadsResource.value.data = [...fresh, ...refreshSnapshot]
+		// Already-loaded threads take their fresh row (new reply's snippet, unread state, timestamp)
+		// but keep their position — updating in place, not re-sorting, so the list doesn't jump under
+		// the reader. Threads outside the fresh window keep their snapshot row unchanged.
+		const freshById = new Map(freshWindow.map((t: Thread) => [t.thread_id, t]))
+		const updatedSnapshot = refreshSnapshot.map((t) => freshById.get(t.thread_id) ?? t)
+		threadsResource.value.data = [...fresh, ...updatedSnapshot]
 		// Keep the reader where they were: shift scroll by the height the prepended rows added. If they
 		// were already at the top, leave them there so the new mail is visible.
 		nextTick(() => {
@@ -1598,12 +1603,20 @@ watch(
 )
 
 // Periodically refresh the mailbox list (keeps sidebar counts current), then merge in new threads only
-// when the mailbox's thread count actually changed — so a quiet mailbox isn't touched (and the reader
-// isn't disturbed) every 30s.
+// when the mailbox's counts actually changed — so a quiet mailbox isn't touched (and the reader isn't
+// disturbed) every 30s. Every count matters: a reply landing in an already-loaded thread moves only
+// total_emails (and unread_* if unread) while total_threads stays put, so comparing threads alone
+// would miss it and the list would go stale (issue #171).
+const mailboxCounts = () => {
+	const m = mailboxObj.value
+	if (!m) return undefined
+	return `${m.total_threads}:${m.unread_threads}:${m.total_emails}:${m.unread_emails}`
+}
+
 const pollForChanges = async () => {
-	const prevTotal = mailboxObj.value?.total_threads
+	const prevCounts = mailboxCounts()
 	await mailboxes.reload()
-	if (mailboxObj.value?.total_threads !== prevTotal) refreshThreads(false)
+	if (mailboxCounts() !== prevCounts) refreshThreads(false)
 }
 
 onMounted(() => {

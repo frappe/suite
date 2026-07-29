@@ -82,7 +82,17 @@ def get_mailboxes(account: str) -> list[dict]:
 	if not mailboxes:
 		return []
 
-	fields = ["name", "id", "_name", "role", "total_threads", "unread_threads", "subscribed"]
+	fields = [
+		"name",
+		"id",
+		"_name",
+		"role",
+		"total_threads",
+		"unread_threads",
+		"total_emails",
+		"unread_emails",
+		"subscribed",
+	]
 
 	mailbox_settings = frappe.db.get_all(
 		"Mailbox Settings",

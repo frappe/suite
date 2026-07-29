@@ -192,6 +192,8 @@ export interface MailboxData {
 	role: string | null
 	total_threads: number
 	unread_threads: number
+	total_emails: number
+	unread_emails: number
 	_name: string
 	subscribed: 0 | 1
 	icon?: string
