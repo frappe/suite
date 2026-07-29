@@ -816,7 +816,7 @@ const showMeetingNotification = (notification: {
 						),
 						h(
 							"span",
-							{ class: "line-clamp-2 block text-p-base text-ink-base" },
+							{ class: "block truncate text-p-base text-ink-base" },
 							notification.message,
 						),
 					]),
