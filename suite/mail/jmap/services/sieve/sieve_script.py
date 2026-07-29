@@ -44,8 +44,13 @@ class SieveScriptService(CoreService):
 			response = self._create(payload, **kwargs)
 
 			if method_responses := response.get("methodResponses"):
-				result["created"].update(method_responses[0][1].get("created", {}))
-				if not_created := method_responses[0][1].get("notCreated", {}):
+				name, body = method_responses[0][0], method_responses[0][1]
+				if name == "error":
+					result["error"] = body
+					break
+
+				result["created"].update(body.get("created", {}))
+				if not_created := body.get("notCreated", {}):
 					result["notCreated"].update(not_created)
 
 		return result
@@ -95,8 +100,13 @@ class SieveScriptService(CoreService):
 			response = self._update(payload, **kwargs)
 
 			if method_responses := response.get("methodResponses"):
-				result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
-				if not_updated := method_responses[0][1].get("notUpdated", {}):
+				name, body = method_responses[0][0], method_responses[0][1]
+				if name == "error":
+					result["error"] = body
+					break
+
+				result["updated"].extend(body.get("updated", {}).keys())
+				if not_updated := body.get("notUpdated", {}):
 					result["notUpdated"].update(not_updated)
 
 		return result
@@ -109,8 +119,13 @@ class SieveScriptService(CoreService):
 			response = self._delete(batch)
 
 			if method_responses := response.get("methodResponses"):
-				result["destroyed"].extend(method_responses[0][1].get("destroyed", []))
-				if not_destroyed := method_responses[0][1].get("notDestroyed", {}):
+				name, body = method_responses[0][0], method_responses[0][1]
+				if name == "error":
+					result["error"] = body
+					break
+
+				result["destroyed"].extend(body.get("destroyed", []))
+				if not_destroyed := body.get("notDestroyed", {}):
 					result["notDestroyed"].update(not_destroyed)
 
 		return result
@@ -170,6 +185,11 @@ class SieveScriptService(CoreService):
 		)
 
 		if method_responses := response.get("methodResponses"):
-			return method_responses[0][1]
+			name, body = method_responses[0][0], method_responses[0][1]
+
+			# A method-level error carries `{type, description}` directly, whereas a successful
+			# validate call reports the outcome in an `error` key. Normalise so callers only
+			# have to look at `error`, otherwise a failed call reads as a valid script.
+			return {"error": body} if name == "error" else body
 
 		return {}

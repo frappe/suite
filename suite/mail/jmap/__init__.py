@@ -464,3 +464,30 @@ def get_mailboxes_for_account(account: str) -> list[dict]:
 	"""Returns the list of mailboxes for the specified account."""
 
 	return get_mailboxes(account)
+
+
+def format_jmap_error(error: dict | None) -> str:
+	"""Returns a readable message for a JMAP error object.
+
+	Only `type` is mandatory on a JMAP error object; `description` is optional and may be null,
+	so never index into it directly.
+	"""
+
+	error = error or {}
+
+	return error.get("description") or error.get("type") or _("An unknown error occurred.")
+
+
+def get_jmap_set_error_message(response: dict, not_done_key: str, id: str) -> str:
+	"""Returns a readable message for a failed JMAP `set` call.
+
+	A `set` can fail per object (reported under `not_done_key`, keyed by the object id) or at the
+	method level (reported under `error`), and neither is guaranteed to be present — nor is the
+	per-object error guaranteed to be keyed by the id we asked about — so every source is probed
+	before falling back to a generic message.
+	"""
+
+	not_done = response.get(not_done_key) or {}
+	error = not_done.get(id) or next(iter(not_done.values()), None) or response.get("error")
+
+	return format_jmap_error(error)

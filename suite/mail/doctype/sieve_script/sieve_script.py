@@ -16,6 +16,8 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_set
 from suite.mail.doctype.screened_email_address.screened_email_address import get_screened_email_addresses
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+	format_jmap_error,
+	get_jmap_set_error_message,
 	get_mailbox_id_by_name,
 	get_mailbox_id_by_role,
 	get_mailbox_name_by_id,
@@ -145,13 +147,13 @@ class SieveScript(Document):
 		}
 		response = service.create([sieve_script])
 
-		title = _("Sieve Script Creation Error")
-		if response.get("created"):
-			return response["created"][creation_id]["id"]
-		elif response.get("notCreated"):
-			frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-		else:
-			frappe.throw(_(response["description"]), title=title)
+		if created := response.get("created"):
+			return created[creation_id]["id"]
+
+		frappe.throw(
+			get_jmap_set_error_message(response, "notCreated", creation_id),
+			title=_("Sieve Script Creation Error"),
+		)
 
 	@classmethod
 	def _fetch_sieve_scripts(
@@ -206,10 +208,7 @@ class SieveScript(Document):
 		response = service.validate(content)
 
 		if error := response.get("error"):
-			frappe.throw(
-				_("{0}: {1}").format(error.get("type"), error.get("description")),
-				title=_("Sieve Script Validation Error"),
-			)
+			frappe.throw(format_jmap_error(error), title=_("Sieve Script Validation Error"))
 
 	@classmethod
 	def _update_sieve_script(
@@ -239,12 +238,11 @@ class SieveScript(Document):
 		sieve_script = {"id": id, "name": name, "content": content, "is_active": bool(active)}
 		response = service.update([sieve_script], deactivate=deactivate)
 
-		title = _("Sieve Script Update Error")
 		if not response.get("updated"):
-			if response.get("notUpdated"):
-				frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-			else:
-				frappe.throw(_(response["description"]), title=title)
+			frappe.throw(
+				get_jmap_set_error_message(response, "notUpdated", id),
+				title=_("Sieve Script Update Error"),
+			)
 
 	@classmethod
 	def _delete_sieve_scripts(cls, account: str, ids: list[str]) -> None:
@@ -253,14 +251,15 @@ class SieveScript(Document):
 		service = get_sieve_script_service(account)
 		response = service.delete(ids)
 
-		if response.get("notDestroyed"):
-			error_messages = []
-			for id, error in response["notDestroyed"].items():
-				error_messages.append(f"{id}: {error['description']}")
+		title = _("Sieve Script Deletion Error")
+		if not_destroyed := response.get("notDestroyed"):
+			error_messages = [f"{id}: {format_jmap_error(error)}" for id, error in not_destroyed.items()]
 			frappe.throw(
 				_("Sieve Script Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-				title=_("Sieve Script Deletion Error"),
+				title=title,
 			)
+		elif error := response.get("error"):
+			frappe.throw(format_jmap_error(error), title=title)
 
 	def validate(self) -> None:
 		if self.read_only:
