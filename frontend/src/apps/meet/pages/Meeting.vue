@@ -804,7 +804,7 @@ const showMeetingNotification = (notification: {
 					h(MeetAvatar, {
 						image: participant?.avatar,
 						label: notification.fromName,
-						size: "sm",
+						size: "lg",
 					}),
 					h("span", { class: "min-w-0 flex-1" }, [
 						h(
