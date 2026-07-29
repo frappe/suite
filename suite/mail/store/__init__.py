@@ -35,6 +35,10 @@ class Entity(Enum):
 	MAILBOX = "mailbox"
 	EMAIL = "email"
 
+	# When each message was first observed in Trash/Junk — the clock the retention purge
+	# runs on, since JMAP exposes no "moved to mailbox at" timestamp (see suite.mail.retention).
+	RETENTION = "retention"
+
 	PARTICIPANT_IDENTITY = "participant_identity"
 	CALENDAR = "calendar"
 	EVENT = "event"

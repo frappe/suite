@@ -265,6 +265,7 @@ scheduler_events = {
 		"suite.sheets.versioning.tasks.truncate_op_log",
 		"suite.sheets.trash.purge_trashed_sheets",
 		# mail
+		"suite.mail.retention.purge_expired_mail",
 		"suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
 		"suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
 		"suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
