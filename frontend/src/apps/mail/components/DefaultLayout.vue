@@ -1,5 +1,8 @@
 <template>
-	<div v-if="userResource?.data?.name" class="relative flex h-dvh flex-col">
+	<div
+		v-if="userResource?.data?.name"
+		class="relative flex h-dvh flex-col pt-[env(safe-area-inset-top)]"
+	>
 		<div class="min-h-0 flex-1">
 			<div class="isolate flex h-full text-base">
 				<AppSidebar v-if="isMobile" />

@@ -1,5 +1,5 @@
 <template>
-	<div class="bg-surface-base fixed inset-0 z-20 flex flex-col">
+	<div class="bg-surface-base fixed inset-0 z-20 flex flex-col pt-[env(safe-area-inset-top)]">
 		<!-- Root bar — same compact-header recipe as ThreadHeader: -ml-2 cancels
 		     the ghost button's padding so the chevron glyph lands on the body's
 		     px-3 axis. -->
@@ -38,7 +38,10 @@
 			leave-active-class="transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
 			leave-to-class="translate-x-full"
 		>
-			<div v-if="activeTab" class="bg-surface-base absolute inset-0 flex flex-col">
+			<div
+				v-if="activeTab"
+				class="bg-surface-base absolute inset-0 flex flex-col pt-[env(safe-area-inset-top)]"
+			>
 				<div class="bg-surface-base flex min-h-14 shrink-0 items-center border-b px-3">
 					<Button variant="ghost" class="-ml-2 mr-2 !h-8 !w-8 shrink-0" @click="activeTab = null">
 						<template #icon>

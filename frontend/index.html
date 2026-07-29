@@ -8,10 +8,22 @@
     <meta charset="UTF-8" />
     <title>Frappe Suite</title>
     <link rel="icon" type="image/svg+xml" href="/src/assets/app-logos/suite.svg" />
+    <!-- viewport-fit=cover: draw edge-to-edge in iOS standalone — required for the
+         env(safe-area-inset-*) paddings to be non-zero at all. -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <!-- Status-bar/browser-chrome color; kept in sync with the active scheme at
+         runtime (see mail's MailLayout) so the bar never sits white over a dark app. -->
+    <meta
+      name="theme-color"
+      content="{{ '#171717' if desk_theme and desk_theme.lower() == 'dark' else '#ffffff' }}"
+    />
+    <!-- No manifest / standalone metas here on purpose: this shell is shared by
+         all seven apps, so anything installable in <head> makes drive, calendar,
+         ... add to the home screen as Frappe Mail. Mail injects its own set on
+         entering /mail (see router/index.ts setPwaTags). -->
   </head>
   <body>
     <div id="app" class="h-screen"></div>

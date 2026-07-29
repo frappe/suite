@@ -12,12 +12,12 @@
 			!screenerActive
 		"
 		variant="solid"
-		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-12 !w-12 !rounded-full shadow-lg"
+		class="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
 		:aria-label="__('Compose')"
 		@click="showSendModal = true"
 	>
 		<template #icon>
-			<FeatherIcon name="edit" class="h-5 w-5" />
+			<FeatherIcon name="edit" class="h-6 w-6" />
 		</template>
 	</Button>
 

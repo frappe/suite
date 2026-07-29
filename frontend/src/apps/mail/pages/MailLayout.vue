@@ -52,7 +52,25 @@ const Layout = computed(() => {
 	return DefaultLayout
 })
 
-watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
+// Alongside the html attribute, sync the theme-color meta — it drives the OS
+// status bar / browser chrome in the installed PWA, which otherwise stays white
+// over the dark app. Values mirror surface-base per theme (dark hex matches
+// EmailContent's THEME_CONFIG).
+const THEME_COLOR: Record<string, string> = { light: '#ffffff', dark: '#171717' }
+watchEffect(() => {
+	document.documentElement.setAttribute('data-theme', dataTheme.value)
+	// color-scheme drives the browser-drawn surfaces the page can't paint — on
+	// Android standalone that's the system navigation bar (white over a dark app
+	// otherwise) and the status-bar seam, plus native controls/scrollbars.
+	document.documentElement.style.colorScheme = dataTheme.value
+	let meta = document.querySelector('meta[name="theme-color"]')
+	if (!meta) {
+		meta = document.createElement('meta')
+		meta.setAttribute('name', 'theme-color')
+		document.head.appendChild(meta)
+	}
+	meta.setAttribute('content', THEME_COLOR[dataTheme.value])
+})
 
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui
 // Dialogs/Dropdowns, which teleport to <body> — OUTSIDE .mail-app-root. Without this, their
@@ -119,15 +137,31 @@ const registerServiceWorker = async () => {
 	}
 }
 
+// iOS standalone scrolls the whole document to reveal a focused input above the
+// keyboard, and can leave that offset behind after dismissal — the entire shell
+// then sits displaced (rows under the clock, tab bar mid-screen, void below).
+// Every scroller in the app is internal, so a document offset is always dirt;
+// sweep it whenever focus leaves a field. rAF: let the keyboard dismissal settle
+// first, and never fight iOS while the field is still focused.
+const resetDocumentScroll = () => {
+	requestAnimationFrame(() => {
+		if (window.scrollY) window.scrollTo(0, 0)
+	})
+}
+
 onMounted(() => {
 	registerServiceWorker()
 	window.frappePushNotification?.onMessage((payload: NotificationPayload) =>
 		showNotification(payload),
 	)
 	window.addEventListener('keydown', handleThemeShortcut)
+	window.addEventListener('focusout', resetDocumentScroll)
 })
 
-onUnmounted(() => window.removeEventListener('keydown', handleThemeShortcut))
+onUnmounted(() => {
+	window.removeEventListener('keydown', handleThemeShortcut)
+	window.removeEventListener('focusout', resetDocumentScroll)
+})
 </script>
 
 <style>
@@ -163,6 +197,20 @@ body.mail-app h1 {
 
 body.mail-app h2 {
 	@apply text-xl !font-medium sm:text-lg;
+}
+
+/* The page behind the app follows the theme: the translucent tab bar blurs over it
+   (over an unthemed white body it read as a pale band in dark mode), and it's what
+   shows in the safe-area strips and iOS rubber-band overscroll. Direct var, not
+   @apply — the surface tokens are frappe-ui CSS-layer classes, not registered
+   Tailwind utilities (see index.css). */
+body.mail-app {
+	background-color: var(--surface-base);
+	/* Every scroller in the app is internal — the document must never scroll.
+	   Belt for the focusout sweep above: without it iOS standalone drags the
+	   whole shell when the keyboard appears. */
+	overflow: hidden;
+	height: 100%;
 }
 
 .icon {

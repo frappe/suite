@@ -5,7 +5,7 @@
 	     z-30: above the thread's reply bar (z-20), which stays mounted underneath
 	     and is revealed as the sheet slides out. -->
 	<div
-		class="bg-surface-base fixed inset-0 z-30 flex flex-col transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+		class="bg-surface-base fixed inset-0 z-30 flex flex-col pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
 		:class="{ 'invisible translate-y-full': !show || !painted }"
 	>
 		<div class="sticky top-0 flex items-center border-b px-3 py-2.5">

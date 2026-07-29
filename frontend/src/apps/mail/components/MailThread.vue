@@ -27,7 +27,10 @@
 		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
 		     and its border is the separator content passes under. -->
 		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-			<h2 class="text-xl-semibold leading-5">
+			<!-- !leading-7: subjects wrap, and both text-xl-semibold (line-height 1.15
+			     baked in) and the global body.mail-app h2 rule outrank a plain leading-*
+			     utility — wrapped lines sat nearly touching. -->
+			<h2 class="text-xl-semibold !leading-7">
 				{{ thread[0].subject || __('[No subject]') }}
 			</h2>
 		</div>

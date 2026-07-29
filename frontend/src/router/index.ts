@@ -8,6 +8,8 @@ import {
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
 import { useSessionStore } from '@/boot/session'
 
+import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
+
 /**
  * ONE Vue Router for the whole suite.
  *
@@ -131,6 +133,7 @@ router.beforeEach(async (to) => {
 router.afterEach((to) => {
   setDocumentTitle(to)
   setFavicon(to)
+  setPwaTags(to)
 })
 
 function setDocumentTitle(to: RouteLocationNormalizedLoaded) {
@@ -161,6 +164,82 @@ function getFaviconElement() {
     document.head.appendChild(icon)
   }
   return icon
+}
+
+/**
+ * Mail is the only installable app in the suite. Since every app is served from
+ * the same HTML shell, the manifest and the iOS standalone metas cannot live in
+ * index.html — Add to Home Screen from /drive would then install Frappe Mail.
+ * They are attached on entering /mail and removed on leaving; both Chrome
+ * (beforeinstallprompt) and iOS (which reads <head> at the moment the user taps
+ * Add to Home Screen) evaluate them live, so this is enough to scope install to
+ * mail. Outside mail the browser falls back to a plain bookmark/shortcut.
+ */
+const MAIL_PWA_METAS: Array<[name: string, content: string]> = [
+  ['mobile-web-app-capable', 'yes'],
+  ['apple-mobile-web-app-capable', 'yes'],
+  // Transparent status bar in iOS standalone: iOS only samples theme-color at
+  // launch, so a theme toggle left the bar stale until relaunch. Translucent
+  // lets the app's own background show through instead — safe-area-inset-top
+  // paddings on the full-screen surfaces keep content out from under it.
+  ['apple-mobile-web-app-status-bar-style', 'black-translucent'],
+]
+
+
+let pwaTagsAttached = false
+
+function setPwaTags(to: RouteLocationNormalizedLoaded) {
+  const installable = to.meta.appId === 'mail'
+  if (installable === pwaTagsAttached) return
+  pwaTagsAttached = installable
+
+  if (!installable) {
+    document.head.querySelectorAll('[data-pwa-scope="mail"]').forEach((el) => el.remove())
+    return
+  }
+
+  // BASE_URL keeps these resolvable in dev ('/') and prod
+  // ('/assets/suite/frontend/') alike; the manifest's own icon srcs are
+  // relative to it for the same reason.
+  const assets = `${import.meta.env.BASE_URL}pwa/mail/`
+  appendPwaTag('link', { rel: 'manifest', href: `${assets}manifest.webmanifest` })
+  // Without this iOS shows a gray monogram on the home screen.
+  appendPwaTag('link', { rel: 'apple-touch-icon', href: `${assets}apple-icon-180.png` })
+  for (const [name, content] of MAIL_PWA_METAS) appendPwaTag('meta', { name, content })
+
+  // iOS ignores the manifest when drawing the launch screen — unlike Chrome it
+  // composites nothing from name/icon/background_color. It blits an
+  // apple-touch-startup-image whose media query matches the device exactly, and
+  // a blank screen when none does, so coverage is strictly per device size.
+  // pwa-splash-devices.json holds the sizes in CSS px + DPR; the artwork is
+  // named in physical px (css x DPR) and is generated from that same file by
+  // scripts/generate-pwa-splash.mjs, so filenames here cannot drift from disk.
+  for (const { width: cssWidth, height: cssHeight, dpr } of APPLE_SPLASH_DEVICES) {
+    // device-width/height stay in the device's portrait orientation on iOS —
+    // they do not swap when it rotates, so both entries share one query and
+    // only the artwork and the orientation term differ.
+    const device =
+      `(device-width: ${cssWidth}px) and (device-height: ${cssHeight}px) and ` +
+      `(-webkit-device-pixel-ratio: ${dpr})`
+    const [w, h] = [cssWidth * dpr, cssHeight * dpr]
+    appendPwaTag('link', {
+      rel: 'apple-touch-startup-image',
+      href: `${assets}splash/apple-splash-${w}-${h}.png`,
+      media: `${device} and (orientation: portrait)`,
+    })
+    appendPwaTag('link', {
+      rel: 'apple-touch-startup-image',
+      href: `${assets}splash/apple-splash-${h}-${w}.png`,
+      media: `${device} and (orientation: landscape)`,
+    })
+  }
+}
+
+function appendPwaTag(tag: 'link' | 'meta', attrs: Record<string, string>) {
+  const el = document.createElement(tag)
+  for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value)
+  el.dataset.pwaScope = 'mail'
+  document.head.appendChild(el)
 }
 
 function getFaviconType(favicon: string) {
