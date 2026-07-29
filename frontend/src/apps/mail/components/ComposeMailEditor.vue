@@ -114,8 +114,7 @@
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
 					<input
 						v-model="mail.subject"
-						:placeholder="__('Add a subject')"
-						class="placeholder:text-ink-gray-4 flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
+						class="flex-1 cursor-text border-none bg-inherit text-base focus-visible:!ring-0"
 					/>
 				</label>
 			</div>
