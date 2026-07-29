@@ -12,6 +12,7 @@
 				v-if="show || !isMobile"
 				ref="composeMailEditor"
 				v-model="show"
+				v-model:draft="draft"
 				:mail-details
 				:reload-mails="() => emit('reloadMails')"
 				@discard-mail="emit('discardMail')"
@@ -21,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { Dialog } from 'frappe-ui'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -37,6 +38,21 @@ const { mailDetails } = defineProps<{ mailDetails?: ComposeMailData }>()
 const emit = defineEmits(['reloadMails', 'discardMail'])
 
 const { isMobile } = useScreenSize()
+
+// Crossing the breakpoint swaps the wrapper above, and the editor is unmounted along with
+// it — so the mail being written is held here, outside the swap, and handed straight back
+// to the instance that takes its place. Released when the composer closes (and whenever it
+// is handed a different draft), so the next one opens fresh.
+const draft = ref<ComposeMailData>()
+
+watch(show, (val) => {
+	if (!val) draft.value = undefined
+})
+
+watch(
+	() => mailDetails,
+	() => (draft.value = undefined),
+)
 
 const editor = useTemplateRef('composeMailEditor')
 

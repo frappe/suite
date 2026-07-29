@@ -307,12 +307,6 @@ const insertContacts = (insertInto: string) => {
 	showContactsModal.value = true
 }
 
-const showCcBcc = ref(!!mailDetails?.cc?.length || !!mailDetails?.bcc?.length)
-const toggleCcBcc = () => {
-	showCcBcc.value = !showCcBcc.value
-	if (showCcBcc.value) nextTick(() => ccInput.value?.setFocus())
-}
-
 const appendEmoji = (emoji: string) => {
 	textEditor.value.editor.commands.insertContent(emoji)
 	textEditor.value.editor.commands.focus()
@@ -341,21 +335,40 @@ const getDefaultFromEmail = () => {
 	)
 }
 
-const mail = reactive<ComposeMailData>({
-	name: mailDetails?.name || '',
-	id: mailDetails?.id || '',
-	from_email: getDefaultFromEmail(),
-	to: mailDetails?.to || [],
-	cc: mailDetails?.cc || [],
-	bcc: mailDetails?.bcc || [],
-	attachments: mailDetails?.attachments || [],
-	subject: mailDetails?.subject || '',
-	html_body: mailDetails?.html_body || '',
-	quoted_content: mailDetails?.quoted_content || '',
-	in_reply_to: mailDetails?.in_reply_to || '',
-	in_reply_to_id: mailDetails?.in_reply_to_id || '',
-	forwarded_from_id: mailDetails?.forwarded_from_id || '',
-})
+// The mail being written outlives this editor: its host swaps components when the window
+// crosses the mobile breakpoint (Dialog ⇄ slide-up sheet), which remounts the editor. So the
+// draft is published to the parent — which sits above that swap — and a remounted instance
+// picks the very same reactive object back up instead of opening blank.
+const draft = defineModel<ComposeMailData>('draft')
+
+const mail =
+	draft.value ??
+	reactive<ComposeMailData>({
+		name: mailDetails?.name || '',
+		id: mailDetails?.id || '',
+		from_email: getDefaultFromEmail(),
+		to: mailDetails?.to || [],
+		cc: mailDetails?.cc || [],
+		bcc: mailDetails?.bcc || [],
+		attachments: mailDetails?.attachments || [],
+		subject: mailDetails?.subject || '',
+		html_body: mailDetails?.html_body || '',
+		quoted_content: mailDetails?.quoted_content || '',
+		in_reply_to: mailDetails?.in_reply_to || '',
+		in_reply_to_id: mailDetails?.in_reply_to_id || '',
+		forwarded_from_id: mailDetails?.forwarded_from_id || '',
+	})
+
+draft.value = mail
+
+// Read off `mail` rather than the props, so a draft carried across the breakpoint reopens
+// with its Cc/Bcc rows showing — the toggle that reveals them hides itself once either is
+// filled, which would otherwise leave those recipients unreachable.
+const showCcBcc = ref(!!mail.cc?.length || !!mail.bcc?.length)
+const toggleCcBcc = () => {
+	showCcBcc.value = !showCcBcc.value
+	if (showCcBcc.value) nextTick(() => ccInput.value?.setFocus())
+}
 
 const originalMail = ref<ComposeMailData>()
 const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
