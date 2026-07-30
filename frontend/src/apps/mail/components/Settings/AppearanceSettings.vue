@@ -25,7 +25,7 @@
 			<template v-if="user.data.is_jmap_configured && !isMobile">
 				<SettingsRow
 					class="!py-0"
-					:title="__('Show Reading Pane')"
+					:title="__('Split View')"
 					:description="__('Preview emails alongside the message list.')"
 				>
 					<Switch
