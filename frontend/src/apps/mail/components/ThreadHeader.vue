@@ -13,7 +13,7 @@
 		</Button>
 		<template v-if="thread?.length">
 			<Tooltip v-if="!isMobile" :text="thread?.[0]?.subject">
-				<h2 class="mr-2 select-none truncate font-semibold leading-5">
+				<h2 class="mr-2 truncate font-semibold leading-5">
 					{{ thread?.[0]?.subject || __('[No subject]') }}
 				</h2>
 			</Tooltip>

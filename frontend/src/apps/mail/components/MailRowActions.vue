@@ -10,6 +10,7 @@
 		<button class="action-btn" @click.stop.prevent="emit('setFlagged', !flagged)">
 			<Star
 				class="icon text-ink-gray-5"
+				:class="{ flagged }"
 				:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
 			/>
 		</button>
@@ -24,6 +25,7 @@
 	>
 		<Star
 			class="text-ink-gray-5 h-5 w-5"
+			:class="{ flagged }"
 			:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
 		/>
 	</button>
@@ -125,9 +127,10 @@ const actions = computed(() =>
 }
 
 /* Hover-capable pointers only: on touch, :hover sticks after a tap and the
-   star would stay dark until something else is touched. */
+   star would stay dark until something else is touched. A flagged star is
+   exempt, or its amber wouldn't show until the pointer left the button. */
 @media (hover: hover) {
-	.action-btn:hover > * {
+	.action-btn:hover > :not(.flagged) {
 		color: var(--ink-gray-8) !important;
 		stroke-width: 2 !important;
 	}
