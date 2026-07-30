@@ -25,10 +25,15 @@ const handleSetupWizardEscape = () => {
 
 const buildDefaultRoute = (
 	accountId: string,
-	mailboxes: { data?: { id: string }[] },
+	mailboxes: { data?: { id: string; role?: string }[] },
 ): { name: string; params: Record<string, string> } => {
-	const firstMailbox = mailboxes.data?.[0]?.id
-	if (firstMailbox) return { name: 'mail-mailbox', params: { accountId, mailbox: firstMailbox } }
+	// Resolve the Inbox by role, not list position: the list is sorted by the
+	// user-orderable sort_order, so [0] can be any folder — including the
+	// Screener, whose redirect below would bounce '/mail' back to the screener
+	// view (from there the Inbox tab then appeared to do nothing).
+	const defaultMailbox = mailboxes.data?.find((m) => m.role === 'inbox') ?? mailboxes.data?.[0]
+	if (defaultMailbox)
+		return { name: 'mail-mailbox', params: { accountId, mailbox: defaultMailbox.id } }
 
 	return { name: 'mail-address-books', params: { accountId } }
 }
