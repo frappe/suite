@@ -4,6 +4,7 @@
 		:is-selected
 		:selectable
 		:selection-mode
+		:no-reading-pane
 		:unread="!mail.seen"
 		:hide-sender
 		:avatar-label="avatarLabel"
@@ -175,6 +176,7 @@ const {
 	selectable = true,
 	hideSender = false,
 	selectionMode = false,
+	noReadingPane = false,
 } = defineProps<{
 	mailbox: string
 	mail: Thread
@@ -190,6 +192,9 @@ const {
 	hideSender?: boolean
 	// Mobile selection mode — forwarded to MailRow.
 	selectionMode?: boolean
+	// Set by views with no reading pane (All Inboxes) — forwarded to MailRow, which then keeps the
+	// full-width row layout regardless of the reading-pane setting.
+	noReadingPane?: boolean
 }>()
 
 const emit = defineEmits([

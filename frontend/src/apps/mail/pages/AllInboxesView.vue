@@ -107,6 +107,7 @@
 								:mail
 								:is-selected="false"
 								:selectable="false"
+								no-reading-pane
 								class="border-l-transparent sm:border-l"
 								@set-seen="(seen: boolean) => handleSetSeen(mail, seen)"
 								@archive-thread="handleArchive(mail)"

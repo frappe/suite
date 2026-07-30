@@ -133,6 +133,7 @@ const {
 	subjectItalic = false,
 	previewItalic = false,
 	selectionMode = false,
+	noReadingPane = false,
 } = defineProps<{
 	// Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
 	to?: RouteLocationRaw
@@ -152,6 +153,9 @@ const {
 	// Mobile selection mode (a selection exists): rows swap avatars for checkboxes,
 	// hide trailing actions, and a tap toggles selection instead of navigating.
 	selectionMode?: boolean
+	// Set by views that render no reading pane (All Inboxes): the reading-pane setting can't cost
+	// them any width, so their rows always take the full-width layout on desktop.
+	noReadingPane?: boolean
 }>()
 
 const emit = defineEmits<{ setSelected: [selected: boolean] }>()
@@ -172,9 +176,11 @@ const onRowClick = (e: MouseEvent) => {
 	emit('setSelected', !isSelected)
 }
 
-// With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
-// instead of a stacked block.
-const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
+// With the reading pane hidden — by the setting, or because the enclosing view has none — the list
+// has the window to itself, so a row lays out as one wide line instead of a stacked block.
+const isFullWidth = computed(
+	() => !isMobile.value && (noReadingPane || !user.data.show_reading_pane),
+)
 
 // A stack member's sender is worth dropping only in the stacked layout, where the sender owns a whole
 // line and repeating the same name down a run costs a third of every row's height. Full-width keeps it:
