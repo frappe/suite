@@ -244,10 +244,16 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
 		visible = visible_in_mailbox(conversation, mailbox, trash_mailbox, junk_mailbox)
 
 		# The summary row is derived from the thread's messages in the current mailbox (falling back
-		# to the whole conversation for cross-mailbox views like "starred").
-		in_mailbox = [
-			m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
-		] or visible
+		# to the whole conversation for cross-mailbox views). "starred" is a pseudo-mailbox no message
+		# carries the id of, so its rows follow the flagged message(s) instead — otherwise the row's
+		# state came from the conversation's newest message, which may not be the starred one: the row
+		# showed a hollow star and star/unstar targeted the wrong mail.
+		if mailbox == "starred":
+			in_mailbox = [m for m in visible if m["flagged"]] or visible
+		else:
+			in_mailbox = [
+				m for m in visible if any(mb["mailbox_id"] == mailbox for mb in m["mailboxes"])
+			] or visible
 
 		# The preview/date reflect the latest message in the conversation (the most recent activity)
 		# everywhere except Sent and Drafts, which show the latest message in the folder itself: a
