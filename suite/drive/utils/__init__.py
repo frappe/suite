@@ -378,6 +378,7 @@ def create_drive_file(
         values["content_docname"] = content_docname
     drive_file = frappe.get_doc(values)
     drive_file.flags.file_created = True
+    drive_file.flags.ignore_file_validate = True
     drive_file.insert(ignore_permissions=True)
     path = entity_path(drive_file) if callable(entity_path) else entity_path
     drive_file.file_url = str(path) if path else ""
@@ -389,7 +390,14 @@ def create_drive_file(
 
 @frappe.whitelist()
 def get_default_team(with_file: bool = False):
-    default_team = frappe.get_value("Drive Team", {"owner": frappe.session.user, "personal": 1}, "name")
+    user = frappe.session.user
+    if not user or user == "Guest":
+        return None
+    default_team = frappe.get_value("Drive Team", {"owner": user, "personal": 1}, "name")
+    if not default_team:
+        from suite.drive.api.product import create_team
+
+        default_team = create_team(user=user, personal=1)
     if with_file:
         file = get_home_folder(default_team)
         return {"team": default_team, "file": file.name}
