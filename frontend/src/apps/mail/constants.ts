@@ -40,3 +40,15 @@ export const FOLDER_COLOR_MAP = {
 	Red: 'bg-red-500',
 	Purple: 'bg-purple-500',
 }
+
+// The amber of a starred mail's star, wherever one is drawn.
+//
+// The mask/background half is not decoration: frappe-ui doesn't paint a lucide svg from its
+// own geometry, it masks the element with a lucide-static copy of the glyph and paints
+// through that with `background-color: currentColor`. The mask is the stroke-only outline,
+// so there is no interior for `fill` to land in and the star renders as an amber ring.
+// Clearing the mask hands rendering back to the real svg, whose fill and stroke then show —
+// and the background has to go with it, or it would paint the whole icon box amber.
+export const FLAGGED_STAR_STYLE =
+	'fill: var(--ink-amber-6); color: var(--ink-amber-6); ' +
+	'mask-image: none; -webkit-mask-image: none; background-color: transparent'

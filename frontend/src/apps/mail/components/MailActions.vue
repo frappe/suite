@@ -49,6 +49,7 @@ import {
 } from 'lucide-vue-next'
 import { Button, createResource } from 'frappe-ui'
 
+import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 
 import {
@@ -112,7 +113,7 @@ const primaryActions = (mail: Mail): MailAction[] => [
 	{
 		label: __('Unstar'),
 		onClick: () => emit('setFlagged', mail.id, false),
-		icon: () => h(Star, { style: 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' }),
+		icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
 		condition: !!mail.flagged && mailbox !== mailboxIds.trash && !isMobile.value,
 	},
 	{
@@ -177,8 +178,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 			{
 				label: __('Unstar'),
 				onClick: () => emit('setFlagged', mail.id, false),
-				icon: () =>
-					h(Star, { style: 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' }),
+				icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
 				condition: () => !!mail.flagged && mailbox !== mailboxIds.trash,
 			},
 			{

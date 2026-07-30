@@ -11,7 +11,7 @@
 			<Star
 				class="icon text-ink-gray-5"
 				:class="{ flagged }"
-				:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
+				:style="flagged ? FLAGGED_STAR_STYLE : ''"
 			/>
 		</button>
 	</Tooltip>
@@ -26,7 +26,7 @@
 		<Star
 			class="text-ink-gray-5 h-5 w-5"
 			:class="{ flagged }"
-			:style="flagged ? 'fill: var(--ink-amber-6); color: var(--ink-amber-6)' : ''"
+			:style="flagged ? FLAGGED_STAR_STYLE : ''"
 		/>
 	</button>
 </template>
@@ -36,6 +36,7 @@ import { computed } from 'vue'
 import { Archive, Mail, MailOpen, Star, Trash2 } from 'lucide-vue-next'
 import { Tooltip } from 'frappe-ui'
 
+import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 
