@@ -145,7 +145,17 @@ def clean_text(text: str) -> str:
 
     text = unicodedata.normalize("NFKC", text)
     text = re.sub(INVISIBLE_CHARS, "", text)
-    text = re.sub(r"([,.!?])(?=\w)", r"\1 ", text)
+
+    # Space out run-on sentences ("word.Next" -> "word. Next"), but skip tokens
+    # containing "@" or "://" so emails and URLs stay intact ("x@y.com" must not
+    # become "x@y. com").
+    def space_out(match: re.Match) -> str:
+        token = match[0]
+        if "@" in token or "://" in token:
+            return token
+        return re.sub(r"([,.!?])(?=\w)", r"\1 ", token)
+
+    text = re.sub(r"\S+", space_out, text)
 
     return re.sub(r"\s+", " ", text).strip()
 
