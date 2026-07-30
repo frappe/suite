@@ -1124,6 +1124,19 @@ def fetch_blobs(account: str, blobs: list[str] | list[tuple[str, str | None]]) -
         frappe.throw(_("Failed to fetch blob(s)."))
 
 
+def preview_from_html(html_body: str) -> str:
+    """Returns preview text for an HTML body, excluding the quoted reply trail."""
+
+    soup = BeautifulSoup(html_body, "html.parser")
+    # Strip the same quote containers the client collapses (see EmailContent.vue) so the
+    # preview surfaces the new content instead of "On ... wrote:" and everything below it.
+    for quote in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
+        quote.decompose()
+
+    # A message that is nothing but a quote would otherwise get a blank preview.
+    return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)
+
+
 def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
     """Returns a formatted message dictionary for the provided message data."""
 
@@ -1192,7 +1205,7 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
         formatted_message[field] = value
 
     if html_body := formatted_message["html_body"]:
-        preview = convert_html_to_text(html_body)
+        preview = preview_from_html(html_body)
     elif text_body := formatted_message["text_body"]:
         preview = clean_text(text_body)
     else:
