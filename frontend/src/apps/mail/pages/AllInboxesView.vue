@@ -143,7 +143,9 @@
 				     fills the pane, as in MailboxView. A deep link whose row isn't in the
 				     loaded window stays gated: the pane's action handlers act on the row.
 				     The owning account scopes the pane (folder menus, reply identities) —
-				     opening a cross-account thread does NOT switch the active account. -->
+				     opening a cross-account thread does NOT switch the active account.
+				     set-seen passes `seen` as `silent` too: the pane only marks read silently
+				     (on open), while its explicit action is Mark as Unread — as in MailboxView. -->
 				<MailThread
 					ref="mailThread"
 					v-if="openRow || !threadID"
@@ -156,7 +158,7 @@
 					:can-go-next="canGoNext"
 					:messages="openRow?.messages"
 					@reload-mails="refreshThreads()"
-					@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen)"
+					@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
 					@set-flagged="
 						(ids: string[], flagged: boolean) =>
 							handleSetFlagged(openRow!, flagged, ids)
@@ -811,7 +813,7 @@ const handleMailDelete = (mail: Mail) =>
 
 const closeThread = () => router.push({ name: 'mail-all-inboxes', query: route.query })
 
-const handleSetSeen = (thread: Thread, seen: boolean) => {
+const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
 	if (thread.seen === (seen ? 1 : 0)) return
 
 	// Marking the open thread unread means "come back to this later", so leave the pane — staying
@@ -822,21 +824,19 @@ const handleSetSeen = (thread: Thread, seen: boolean) => {
 		thread.messages?.forEach((m) => (m.seen = value))
 	}
 	applySeen(seen ? 1 : 0)
-	// Every caller here is an explicit user action (row action, pane menu, `u`); the silent
-	// mark-as-read on opening a thread is the pane's own and never reaches this.
-	raiseOptimisticToast(
-		call('suite.mail.api.mail.set_mails_seen', {
-			account: thread.account,
-			ids: messageIds(thread),
-			seen,
+	const request = call('suite.mail.api.mail.set_mails_seen', {
+		account: thread.account,
+		ids: messageIds(thread),
+		seen,
+	})
+		.then(refreshCounts)
+		.catch((error) => {
+			applySeen(seen ? 0 : 1) // revert the optimistic update
+			throw error
 		})
-			.then(refreshCounts)
-			.catch((error) => {
-				applySeen(seen ? 0 : 1) // revert the optimistic update
-				throw error
-			}),
-		__('Thread marked as {0}.', [seen ? __('read') : __('unread')]),
-	)
+	// The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
+	if (silent) return void request.catch(() => {})
+	raiseOptimisticToast(request, __('Thread marked as {0}.', [seen ? __('read') : __('unread')]))
 }
 
 // Star/unstar, from a list row (which names no mails, so its own representative one) or from the
