@@ -92,7 +92,18 @@ export function useNetworkQuality(
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
 			kind: entry.kind,
-			isPaused: () => entry.consumer.paused || entry.consumer.producerPaused,
+			isPaused: () => {
+				const participant = sfuManager.participantManager.getParticipant(
+					entry.participantId,
+				);
+				return (
+					entry.consumer.paused ||
+					(entry.kind === "audio" && participant?.audio_enabled === false) ||
+					(entry.kind === "video" &&
+						!entry.isScreen &&
+						participant?.video_enabled === false)
+				);
+			},
 			isMuted: () => entry.track?.muted ?? false,
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,

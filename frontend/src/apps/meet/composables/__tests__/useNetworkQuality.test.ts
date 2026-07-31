@@ -121,6 +121,67 @@ describe("useNetworkQuality", () => {
 		unmount();
 	});
 
+	it("does not reset receive media when a remote participant is muted", async () => {
+		vi.useFakeTimers();
+
+		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const stats = new Map<string, { type: string; bytesReceived: number }>([
+			["in", { type: "inbound-rtp", bytesReceived: 1000 }],
+		]);
+		const sfuManager = ref({
+			sfuClient: {},
+			participantManager: {
+				getParticipant: () => ({ audio_enabled: false }),
+			},
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockResolvedValue({
+					rtt: 50,
+					packetLoss: 0,
+					availableOutgoingBitrate: 800_000,
+					timestamp: Date.now(),
+					isValid: true,
+				}),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [
+						{
+							id: "audio-consumer",
+							participantId: "muted-participant",
+							kind: "audio",
+							isScreen: false,
+							track: { muted: false } as MediaStreamTrack,
+							createdAt: Date.now() - 60_000,
+							consumer: {
+								paused: false,
+								getStats: vi.fn().mockResolvedValue(stats),
+							},
+						},
+					],
+				},
+			},
+			connectionManager: { resetReceiveSide },
+		});
+
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(21_000);
+
+		expect(resetReceiveSide).not.toHaveBeenCalled();
+		app.unmount();
+	});
+
 	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 
@@ -128,11 +189,13 @@ describe("useNetworkQuality", () => {
 		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
+		const participant = { video_enabled: false };
 		const stats = new Map<string, { type: string; bytesReceived: number }>([
 			["in", { type: "inbound-rtp", bytesReceived: 1000 }],
 		]);
 		const entry = {
 			id: "c1",
+			participantId: "remote-participant",
 			kind: "video",
 			isScreen: false,
 			track,
@@ -140,13 +203,15 @@ describe("useNetworkQuality", () => {
 			consumer: {
 				id: "c1",
 				paused: false,
-				producerPaused: true,
 				getStats: vi.fn().mockResolvedValue(stats),
 			},
 		};
 
 		const sfuManager = ref({
 			sfuClient: { requestConsumerKeyFrame },
+			participantManager: {
+				getParticipant: () => participant,
+			},
 			transportManager: {
 				getTransportStats: () => ({
 					sendTransport: { state: "connected" },
@@ -188,7 +253,7 @@ describe("useNetworkQuality", () => {
 		await vi.advanceTimersByTimeAsync(21_000);
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 
-		entry.consumer.producerPaused = false;
+		participant.video_enabled = true;
 		await vi.advanceTimersByTimeAsync(21_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
 		expect(requestConsumerKeyFrame).toHaveBeenCalledWith("c1");
@@ -225,6 +290,9 @@ describe("useNetworkQuality", () => {
 		};
 		const sfuManager = ref({
 			sfuClient: { requestConsumerKeyFrame },
+			participantManager: {
+				getParticipant: () => ({ video_enabled: true }),
+			},
 			transportManager: {
 				getTransportStats: () => ({
 					sendTransport: { state: "connected" },
