@@ -222,7 +222,7 @@ import {
 	useTemplateRef,
 	watch,
 } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { EditorContent } from '@tiptap/vue-3'
 import { watchDebounced } from '@vueuse/core'
 import {
@@ -280,6 +280,7 @@ const {
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
 
 const router = useRouter()
+const route = useRoute()
 // The editor sends as the enclosing pane's account (the thread's owning account in
 // All Inboxes, the active one everywhere else): identities, the account's default
 // outgoing email and every create/draft call resolve through this scope.
@@ -446,7 +447,8 @@ const onMailUpdateSuccess = ({
 		raiseToast(
 			__('Message sent.'),
 			'success',
-			thread_id
+			// No View action when the sent mail's thread is already open in front of the user.
+			thread_id && route.params.threadID !== thread_id
 				? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
 				: undefined,
 		)
