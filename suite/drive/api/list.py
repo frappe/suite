@@ -10,6 +10,7 @@ from suite.drive.utils import (
     GENERAL_USER,
     KIND_VIRTUAL,
     MIME_LIST_MAP,
+    PREVIOUS_TEAMS_FOLDER,
     ROOT_FOLDER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
@@ -464,7 +465,17 @@ def get_query_data(
         hide_storage_key(r)
         r |= get_user_access(name)
 
-    return [r for r in res if r["read"]]
+    # The migration leaves one Previous Teams container at the root for everyone,
+    # but each user only sees the teams they were on. With none of them visible
+    # it's an empty folder they can't do anything with, so drop it from the list.
+    return [
+        r
+        for r in res
+        if r["read"]
+        and not (
+            r["file_name"] == PREVIOUS_TEAMS_FOLDER and r["folder"] == ROOT_FOLDER and not r["child_count"]
+        )
+    ]
 
 
 @frappe.whitelist()
