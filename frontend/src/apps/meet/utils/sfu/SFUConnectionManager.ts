@@ -419,6 +419,7 @@ export class SFUConnectionManager {
 			if (generation !== this.lifecycleGeneration) return;
 			await this.setupExistingParticipants();
 			if (generation !== this.lifecycleGeneration) return;
+			this.recoveryManager.setupTransportEventHandlers();
 			this.reportRecoveryState("healthy", "session rebuilt");
 		})()
 			.catch((error) => {
@@ -544,6 +545,7 @@ export class SFUConnectionManager {
 
 	private setupSFUEventHandlers(): void {
 		this.sfuClient.on("reconnect_attempt", () => {
+			this.recoveryManager.reset();
 			this.reportRecoveryState("reconnecting", "signaling reconnect attempt");
 		});
 

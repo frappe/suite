@@ -174,6 +174,7 @@ describe("SFUConnectionManager", () => {
 		expect(transportManager.initializeDevice).toHaveBeenCalledTimes(1);
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
+		expect(recoveryManager.setupTransportEventHandlers).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses current live tracks for rejoin media state", async () => {
@@ -207,6 +208,15 @@ describe("SFUConnectionManager", () => {
 		handlers.get("reconnect")?.({});
 
 		expect(rejoin).toHaveBeenCalledTimes(1);
+	});
+
+	it("cancels transport recovery before signaling reconnect attempts", async () => {
+		const { handlers, manager, recoveryManager } = createManager();
+
+		await manager.connect("token");
+		handlers.get("reconnect_attempt")?.({});
+
+		expect(recoveryManager.reset).toHaveBeenCalledTimes(1);
 	});
 
 	it("shares one receive reset across concurrent callers", async () => {
