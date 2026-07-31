@@ -38,10 +38,7 @@
 				/>
 				<div class="min-w-0 flex-1">
 					<div class="truncate text-xs text-ink-gray-5">{{ formatEventTime(event) }}</div>
-					<div
-						class="mt-0.5 truncate text-sm"
-						:class="event.title ? 'text-ink-gray-8' : 'text-ink-gray-4'"
-					>
+					<div class="mt-0.5 truncate text-sm text-ink-gray-8">
 						{{ event.title || __('Untitled event') }}
 					</div>
 				</div>
