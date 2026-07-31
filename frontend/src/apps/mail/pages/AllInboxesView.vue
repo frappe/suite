@@ -157,7 +157,7 @@
 					:threads="threadIDs"
 					:can-go-next="canGoNext"
 					:messages="openRow?.messages"
-					@reload-mails="refreshThreads()"
+					@reload-mails="reloadPaneThread()"
 					@set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
 					@set-flagged="
 						(ids: string[], flagged: boolean) =>
@@ -360,6 +360,23 @@ const refreshThreads = (reloadCounts = true) => {
 	if (!beginRefresh()) return
 	threads.reload()
 	if (reloadCounts) refreshCounts()
+}
+
+// The pane asked for a reload (a reply was sent, a message deleted, …). The list refresh keeps
+// already-loaded rows to hold the reader's place (see usePaginatedThreads), so it never updates the
+// open row — refetch the thread directly, scoped to its owning account, and write it onto the row so
+// the pane re-derives from fresh messages. MailboxView resets its whole list instead; doing that here
+// would blank the pane for any row outside the first window (the pane only renders loaded rows).
+const reloadPaneThread = () => {
+	const row = openRow.value
+	if (row)
+		call('suite.mail.api.mail.get_thread', {
+			account: row.account,
+			thread_id: row.thread_id,
+		}).then((mails: Mail[]) => {
+			if (mails?.length) row.messages = mails
+		})
+	refreshThreads()
 }
 
 // The rendered rows and the keyboard cursor: date groups, stacks, and the marker that walks them —
