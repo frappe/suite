@@ -82,13 +82,84 @@ console.log("Spawning fake users with config:", {
 	lifetime,
 });
 
-function makeToken(userId, index) {
+const firstNames = [
+	"Adam",
+	"Aisha",
+	"Amara",
+	"Carlos",
+	"Chloe",
+	"Daniel",
+	"Diego",
+	"Elena",
+	"Emma",
+	"Fatima",
+	"Gabriel",
+	"Hiro",
+	"Ibrahim",
+	"Isabella",
+	"Jamal",
+	"Javier",
+	"Layla",
+	"Leila",
+	"Liam",
+	"Lucas",
+	"Maya",
+	"Mei",
+	"Noah",
+	"Olivia",
+	"Priya",
+	"Ravi",
+	"Sara",
+	"Sofia",
+	"Tariq",
+	"Zoe",
+];
+const lastNames = [
+	"Anderson",
+	"Brown",
+	"Chen",
+	"Davis",
+	"Diaz",
+	"Evans",
+	"Fernandez",
+	"Garcia",
+	"Gupta",
+	"Hassan",
+	"Ito",
+	"Johnson",
+	"Kim",
+	"Kumar",
+	"Lee",
+	"Lopez",
+	"Martinez",
+	"Miller",
+	"Nguyen",
+	"Okafor",
+	"Patel",
+	"Rivera",
+	"Robinson",
+	"Sato",
+	"Singh",
+	"Smith",
+	"Taylor",
+	"Thomas",
+	"Wilson",
+	"Williams",
+];
+
+function randomName() {
+	const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+	const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+	return `${firstName} ${lastName}`;
+}
+
+function makeToken(userId, userName) {
 	const now = Math.floor(Date.now() / 1000);
 	return jwt.sign(
 		{
 			user_id: userId,
 			meeting_id: meetingId,
-			user_name: `Fake User ${index}`,
+			user_name: userName,
 			scope: "full",
 			iat: now,
 			exp: now + 3600,
@@ -237,7 +308,8 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 
 async function spawnUser(index) {
 	const userId = `fake.user${index}@example.com`;
-	const token = makeToken(userId, index);
+	const userName = randomName();
+	const token = makeToken(userId, userName);
 
 	const socket = io(endpoint, {
 		auth: { token },
@@ -257,7 +329,7 @@ async function spawnUser(index) {
 			{
 				roomId: meetingId,
 				userData: {
-					name: `Fake User ${index}`,
+					name: userName,
 					userId: userId,
 					avatar: undefined,
 				},
