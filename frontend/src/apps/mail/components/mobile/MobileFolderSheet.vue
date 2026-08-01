@@ -54,7 +54,7 @@ import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet } from '@/apps/mail/utils/composables'
-import { userStore } from '@/apps/mail/stores/user'
+import { SECONDARY_MAILBOX_ROLES, userStore } from '@/apps/mail/stores/user'
 
 import type { MailboxData } from '@/apps/mail/types'
 
@@ -105,17 +105,34 @@ const groups = computed(() => {
 		} as RouteLocationRaw,
 	}
 
+	const isSecondary = (m: MailboxData) => !!m.role && SECONDARY_MAILBOX_ROLES.includes(m.role)
+
 	return [
 		{
 			label: __('Default'),
 			isCustom: false,
-			rows: [...items.filter((m: MailboxData) => m.role).map(toRow), starredRow],
+			rows: [
+				...items.filter((m: MailboxData) => m.role && !isSecondary(m)).map(toRow),
+				starredRow,
+			],
 		},
 		{
 			// Always rendered (even with no custom folders yet): it hosts New Folder.
 			label: __('Custom'),
 			isCustom: true,
 			rows: items.filter((m: MailboxData) => !m.role).map(toRow),
+		},
+		{
+			// Junk/Archive/Trash sit in their own section below Custom, as in the desktop sidebar.
+			label: __('More'),
+			isCustom: false,
+			rows: items
+				.filter(isSecondary)
+				.sort(
+					(a: MailboxData, b: MailboxData) =>
+						SECONDARY_MAILBOX_ROLES.indexOf(a.role!) - SECONDARY_MAILBOX_ROLES.indexOf(b.role!),
+				)
+				.map(toRow),
 		},
 	].filter((group) => group.isCustom || group.rows.length)
 })

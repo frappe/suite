@@ -9,6 +9,15 @@ import type { UserAccount, UserResource } from '@/apps/mail/types'
 
 export type MailboxRole = 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'important'
 
+/** Destinations rather than places mail is read — the folder lists (desktop sidebar,
+ * mobile folder sheet) render these in their own "More" section below the custom folders,
+ * in this order. Typed wide (string) because mailbox data carries role as a string. */
+export const SECONDARY_MAILBOX_ROLES: readonly string[] = [
+	'junk',
+	'archive',
+	'trash',
+] satisfies readonly MailboxRole[]
+
 /** Role → mailbox id map for a mailbox list (plus the named Screener). Shared with
  * utils/accountScope, which derives the same map for a non-active account's list. */
 export const deriveMailboxIds = (
