@@ -1,0 +1,115 @@
+name: Sheets Formula Engine (nightly)
+
+# The pull-request checks for the formula engine run inside the existing
+# "Suite CI" frontend job, which executes `yarn test`. That job must stay fast
+# and deterministic, so it uses the default property-test sample size.
+#
+# This workflow owns the expensive work: large property samples across many
+# seeds, the IronCalc differential comparison, and the performance suite. It
+# never gates a pull request.
+
+on:
+  schedule:
+    # 02:30 UTC daily.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Property-test runs per property"
+        default: "20000"
+      depth:
+        description: "Maximum generated expression depth"
+        default: "6"
+
+concurrency:
+  group: sheets-formula-nightly
+  cancel-in-progress: true
+
+jobs:
+  property:
+    runs-on: ubuntu-latest
+    name: Property tests (seed ${{ matrix.seed }})
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 7, 991, 424242, 20250801]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "yarn"
+          cache-dependency-path: yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Property tests
+        working-directory: frontend
+        env:
+          FORMULA_FC_SEED: ${{ matrix.seed }}
+          FORMULA_FC_RUNS: ${{ github.event.inputs.runs || '20000' }}
+          FORMULA_FC_DEPTH: ${{ github.event.inputs.depth || '6' }}
+        run: yarn vitest run src/apps/sheets/engine/formula.property.test.ts --reporter=verbose
+
+      # fast-check prints the failing seed and the shrunk counterexample in the
+      # run log. Keeping the log as an artifact means a failure stays
+      # reproducible after the run expires.
+      - name: Upload failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: property-failures-seed-${{ matrix.seed }}
+          path: |
+            frontend/src/apps/sheets/engine/test-corpus/failures/
+          if-no-files-found: ignore
+
+  differential:
+    runs-on: ubuntu-latest
+    name: IronCalc differential
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "yarn"
+          cache-dependency-path: yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      # The suite skips itself when IronCalc cannot load, so a missing or
+      # broken optional dependency shows up as a skip rather than a red build.
+      - name: Differential comparison
+        working-directory: frontend
+        run: yarn vitest run src/apps/sheets/engine/formula.differential.test.ts --reporter=verbose
+
+      - name: Upload compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-report
+          path: |
+            frontend/src/apps/sheets/engine/test-corpus/compatibility-report.md
+            frontend/src/apps/sheets/engine/test-corpus/known-differences.json
+          if-no-files-found: ignore
+
+  performance:
+    runs-on: ubuntu-latest
+    name: Performance and stability
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "yarn"
+          cache-dependency-path: yarn.lock
+
+      - run: yarn install --frozen-lockfile
+
+      # The limits here are ceilings against runaway behaviour, not benchmarks,
+      # so a shared runner is good enough to catch a hang or a stack overflow.
+      - name: Performance suite
+        working-directory: frontend
+        run: yarn vitest run src/apps/sheets/engine/formula.performance.test.ts --reporter=verbose
