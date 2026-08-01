@@ -15,40 +15,45 @@
 	</Dialog>
 
 	<!-- iOS installation info message — a plain fixed banner, not a Popover: no overlay to
-	     block the app behind it, and the viewport (not the content) bounds its width. -->
-	<div
-		v-if="iosInstallMessage"
-		class="bg-surface-blue-2 fixed inset-x-2 bottom-4 z-20 flex flex-col gap-3 rounded py-5 drop-shadow-xl"
-	>
-		<div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
-			<span class="text-base-bold">
-				{{ __('Install Frappe Mail') }}
-			</span>
-			<span class="inline-flex items-baseline">
-				<FeatherIcon
-					name="x"
-					class="text-ink-gray-6 ml-auto h-4 w-4"
-					@click="iosInstallMessage = false"
-				/>
-			</span>
-		</div>
-		<div class="text-ink-gray-7 px-3 text-xs">
-			<span class="flex flex-col gap-2">
-				<span>
-					{{
-						__(
-							'Get the app on your iPhone for easy access & a better experience',
-						)
-					}}
+	     block the app behind it, and the viewport (not the content) bounds its width.
+	     Teleported to body and lifted past z-50: it lives in the app tree, so the
+	     body-portaled surfaces (bottom sheets, dialogs — z-50) would otherwise paint
+	     their backdrops over it. -->
+	<Teleport to="body">
+		<div
+			v-if="iosInstallMessage"
+			class="bg-surface-blue-2 fixed inset-x-2 bottom-4 z-[60] flex flex-col gap-3 rounded py-5 drop-shadow-xl"
+		>
+			<div class="mb-1 flex flex-row items-center justify-between px-3 text-center">
+				<span class="text-base-bold">
+					{{ __('Install Frappe Mail') }}
 				</span>
-				<span>
-					{{ __('Tap') }}
-					<FeatherIcon name="share" class="inline h-4 w-4 align-[-3px] text-blue-600" />
-					{{ __('and then "Add to Home Screen"') }}
+				<span class="inline-flex items-baseline">
+					<FeatherIcon
+						name="x"
+						class="text-ink-gray-6 ml-auto h-4 w-4"
+						@click="iosInstallMessage = false"
+					/>
 				</span>
-			</span>
+			</div>
+			<div class="text-ink-gray-7 px-3 text-xs">
+				<span class="flex flex-col gap-2">
+					<span>
+						{{
+							__(
+								'Get the app on your iPhone for easy access & a better experience',
+							)
+						}}
+					</span>
+					<span>
+						{{ __('Tap') }}
+						<FeatherIcon name="share" class="inline h-4 w-4 align-[-3px] text-blue-600" />
+						{{ __('and then "Add to Home Screen"') }}
+					</span>
+				</span>
+			</div>
 		</div>
-	</div>
+	</Teleport>
 </template>
 
 <script setup lang="ts">
