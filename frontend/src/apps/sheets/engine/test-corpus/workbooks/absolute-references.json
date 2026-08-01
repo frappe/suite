@@ -1,0 +1,103 @@
+{
+  "owner": "workbook",
+  "cases": [
+    {
+      "id": "wb-absref-col-anchor-read-001",
+      "sheets": { "Sheet1": { "A1": 7, "B1": "=$A1" } },
+      "expected": { "Sheet1!B1": 7 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "The only anchored form the tokenizer survives: a leading $ is swallowed by the unrecognised-character branch and what remains is a plain A1."
+    },
+    {
+      "id": "wb-absref-col-anchor-dependency-001",
+      "sheets": { "Sheet1": { "A1": 7, "B1": "=$A1" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "set", "cell": "A1", "value": 8 }
+      ],
+      "expected": { "Sheet1!B1": 8 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "Because $A1 degrades to a REF token it also gets a real dependency edge."
+    },
+    {
+      "id": "wb-absref-full-anchor-read-001",
+      "sheets": { "Sheet1": { "A1": 7, "B1": "=$A$1" } },
+      "expected": { "Sheet1!B1": 7 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "$A$1 is the documented way to pin a reference, formula-adjust.js already shifts it correctly, and the autocomplete UI offers the syntax, but the tokenizer builds the identifier A$1 which matches neither the cell pattern nor a column, so it becomes a NAME token and resolves to #NAME?.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": "#NAME?" }
+    },
+    {
+      "id": "wb-absref-row-anchor-read-001",
+      "sheets": { "Sheet1": { "A1": 7, "B1": "=A$1" } },
+      "expected": { "Sheet1!B1": 7 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "Row-anchored references fail the same way as fully anchored ones.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": "#NAME?" }
+    },
+    {
+      "id": "wb-absref-full-anchor-dependency-001",
+      "sheets": { "Sheet1": { "A1": 7, "B1": "=$A$1" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "set", "cell": "A1", "value": 8 }
+      ],
+      "expected": { "Sheet1!B1": 8 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "An anchored reference is still a reference, so it must recalculate when its target changes. Today it registers no dependency edge either, because deps.js sees a NAME token rather than a REF.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": "#NAME?" }
+    },
+    {
+      "id": "wb-absref-full-anchor-range-sum-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM($A$1:$A$3)" } },
+      "expected": { "Sheet1!B1": 6 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "An anchored range is the normal way to write a lookup table, and it does not even surface an error: both endpoints tokenize as names, SUM ignores them, and the cell reports zero. A pinned total silently reads as empty.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": 0 }
+    },
+    {
+      "id": "wb-absref-row-anchor-range-sum-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM(A$1:A$3)" } },
+      "expected": { "Sheet1!B1": 6 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "The row-anchored range fill pattern produces the same silent zero.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": 0 }
+    },
+    {
+      "id": "wb-absref-mixed-range-endpoints-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM(A1:$A$3)" } },
+      "expected": { "Sheet1!B1": 6 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "A relative start with an anchored end throws inside the parser (a REF followed by a colon demands a REF or COLREF), which _evalFormula converts to the soft #ERROR! sentinel.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": { "Sheet1!B1": "#ERROR!" }
+    },
+    {
+      "id": "wb-absref-col-anchor-range-sum-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM($A1:$A3)" } },
+      "expected": { "Sheet1!B1": 6 },
+      "category": "absolute-reference",
+      "source": "excel-compatible-semantics",
+      "notes": "Column-anchored endpoints survive because the leading $ is simply dropped."
+    }
+  ]
+}

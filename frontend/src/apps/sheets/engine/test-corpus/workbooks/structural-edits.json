@@ -1,0 +1,229 @@
+{
+  "owner": "workbook",
+  "cases": [
+    {
+      "id": "wb-struct-insert-row-below-formula-001",
+      "sheets": { "Sheet1": { "A1": 10, "A2": 20, "B1": "=A1+A2" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "insertRow", "at": 5 }
+      ],
+      "expected": { "Sheet1!B1": 30 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "An insertion past every referenced row must leave the formula and its value alone."
+    },
+    {
+      "id": "wb-struct-delete-col-right-of-formula-001",
+      "sheets": { "Sheet1": { "A1": 10, "B1": 20, "C1": "=A1+B1", "E1": 99 } },
+      "actions": [
+        { "type": "read", "cell": "C1" },
+        { "type": "deleteCol", "at": 4 }
+      ],
+      "expected": { "Sheet1!C1": 30 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Deleting a column to the right of everything the formula touches changes nothing."
+    },
+
+    {
+      "id": "wb-struct-insert-row-above-refs-001",
+      "sheets": { "Sheet1": { "A1": 10, "A2": 20, "B1": "=A1+A2" } },
+      "actions": [{ "type": "insertRow", "at": 0 }],
+      "expected": { "Sheet1!B2": 30 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets rewrite B1 to =A2+A3 when a row is inserted above it. sheet.js _shiftCells relocates cell ids but never touches formula text, and insertRow does not call adjustFormula at all, so the moved formula keeps pointing at the addresses the data just vacated.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!B2": 10 }
+    },
+    {
+      "id": "wb-struct-insert-row-inside-range-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "C1": "=SUM(A1:A3)" } },
+      "actions": [{ "type": "insertRow", "at": 1 }],
+      "expected": { "Sheet1!C1": 6 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Inserting inside a summed range must widen the range to A1:A4 so the total is preserved. Here the range stays A1:A3 while A2 and A3 moved down to A3 and A4, so the total silently drops the last row.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!C1": 3 }
+    },
+    {
+      "id": "wb-struct-delete-row-above-refs-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 10, "A3": 20, "C5": "=A2+A3" } },
+      "actions": [{ "type": "deleteRow", "at": 0 }],
+      "expected": { "Sheet1!C4": 30 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Deleting row 1 must rewrite =A2+A3 to =A1+A2. The formula text is untouched, so it now reads one row below the data.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!C4": 20 }
+    },
+    {
+      "id": "wb-struct-delete-row-of-referenced-cell-001",
+      "sheets": { "Sheet1": { "A1": 10, "A2": 20, "B1": "=A2*2" } },
+      "actions": [{ "type": "deleteRow", "at": 1 }],
+      "expected": { "Sheet1!B1": "#REF!" },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Deleting the row a formula points at makes the reference dangle; Excel and Sheets turn it into =#REF!*2. This engine leaves =A2*2 pointing at a now-empty address, which reads as zero, so a deleted row looks like a legitimate zero instead of an error.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!B1": 0 }
+    },
+    {
+      "id": "wb-struct-insert-col-left-of-refs-001",
+      "sheets": { "Sheet1": { "A1": 10, "B1": 20, "C1": "=A1+B1" } },
+      "actions": [{ "type": "insertCol", "at": 0 }],
+      "expected": { "Sheet1!D1": 30 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Column insertion has the same gap as row insertion: ids move, formula text does not.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!D1": 10 }
+    },
+    {
+      "id": "wb-struct-delete-col-creates-self-reference-001",
+      "sheets": { "Sheet1": { "A1": 10, "B1": 20, "C1": "=B1*2" } },
+      "actions": [{ "type": "deleteCol", "at": 0 }],
+      "expected": { "Sheet1!B1": 40 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Deleting column A shifts C1 to B1 while its text still says =B1*2, so the formula now references the cell it lives in. The engine reports a circular reference that the user never wrote. This is the worst of the structural cases because it converts a correct sheet into a broken one with no edit to any formula.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!B1": "#CIRCULAR!" }
+    },
+    {
+      "id": "wb-struct-delete-col-of-referenced-cell-001",
+      "sheets": { "Sheet1": { "A1": 10, "B1": 20, "D1": "=B1+1" } },
+      "actions": [{ "type": "deleteCol", "at": 1 }],
+      "expected": { "Sheet1!C1": "#REF!" },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Deleting the referenced column must produce #REF!; instead the shifted formula silently reads whatever moved into B1.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!C1": 1 }
+    },
+    {
+      "id": "wb-struct-insert-row-absolute-ref-001",
+      "sheets": { "Sheet1": { "A1": 10, "A2": 20, "B1": "=$A$2" } },
+      "actions": [{ "type": "insertRow", "at": 0 }],
+      "expected": { "Sheet1!B2": 20 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "An absolute reference still follows its target through a row insertion in Excel: $A$2 becomes $A$3. Two defects stack here, so the recorded actual is the #NAME? the evaluator returns for any $-anchored reference rather than a shifted value.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!B2": "#NAME?" }
+    },
+    {
+      "id": "wb-struct-insert-row-cross-sheet-ref-001",
+      "sheets": {
+        "Sheet1": { "B1": "=Data!A2*2" },
+        "Data": { "A1": 1, "A2": 5 }
+      },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "switchSheet", "name": "Data" },
+        { "type": "insertRow", "at": 0 }
+      ],
+      "expected": { "Sheet1!B1": 10 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Inserting a row on Data pushes A2 to A3, so Sheet1's formula must become =Data!A3*2. It is not rewritten, and it reads Data!A2 which now holds the old A1.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!B1": 2 }
+    },
+
+    {
+      "id": "wb-struct-rename-sheet-rewrites-refs-001",
+      "sheets": { "Sheet1": { "A1": "=Sheet2!A1+1" }, "Sheet2": { "A1": 5 } },
+      "actions": [
+        { "type": "read", "cell": "A1" },
+        { "type": "renameSheet", "from": "Sheet2", "to": "Data" }
+      ],
+      "expected": { "Sheet1!A1": 6 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "wb-struct-rename-sheet-keeps-edges-001",
+      "sheets": { "Sheet1": { "A1": "=Sheet2!A1+1" }, "Sheet2": { "A1": 5 } },
+      "actions": [
+        { "type": "read", "cell": "A1" },
+        { "type": "renameSheet", "from": "Sheet2", "to": "Data" },
+        { "type": "set", "sheet": "Data", "cell": "A1", "value": 50 }
+      ],
+      "expected": { "Sheet1!A1": 51 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "The rewritten formula has to register a fresh edge against the new sheet name."
+    },
+    {
+      "id": "wb-struct-rename-sheet-substring-guard-001",
+      "sheets": {
+        "Sheet1": { "A1": "=Sheet2!A1+Sheet20!A1" },
+        "Sheet2": { "A1": 5 },
+        "Sheet20": { "A1": 100 }
+      },
+      "actions": [{ "type": "renameSheet", "from": "Sheet2", "to": "Data" }],
+      "expected": { "Sheet1!A1": 105 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Renaming Sheet2 must not also rewrite the Sheet20 prefix."
+    },
+    {
+      "id": "wb-struct-rename-sheet-rewrites-string-literal-001",
+      "sheets": {
+        "Sheet1": { "A1": 1 },
+        "Sheet2": { "B1": "=\"Sheet1!A1\"" }
+      },
+      "actions": [{ "type": "renameSheet", "from": "Sheet1", "to": "Data" }],
+      "expected": { "Sheet2!B1": "Sheet1!A1" },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "renameSheetInFormula runs a regex over raw formula text with no awareness of string literals, so text that merely looks like a sheet prefix is rewritten. A label, a URL fragment or a lookup key that happens to contain the sheet name plus an exclamation mark is silently edited by a rename.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet2!B1": "Data!A1" }
+    },
+
+    {
+      "id": "wb-struct-delete-unrelated-sheet-001",
+      "sheets": {
+        "Sheet1": { "A1": 1, "B1": "=A1+1" },
+        "Sheet2": { "A1": 5 },
+        "Spare": { "A1": 9 }
+      },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "deleteSheet", "name": "Spare" }
+      ],
+      "expected": { "Sheet1!B1": 2 },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "wb-struct-delete-referenced-sheet-001",
+      "sheets": { "Sheet1": { "A1": "=Sheet2!A1+1" }, "Sheet2": { "A1": 5 } },
+      "actions": [
+        { "type": "read", "cell": "A1" },
+        { "type": "deleteSheet", "name": "Sheet2" }
+      ],
+      "expected": { "Sheet1!A1": "#REF!" },
+      "category": "structural-edit",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets rewrite references to a deleted sheet as #REF!. deleteSheet here drops the sheet without rebuilding the dependency graph or clearing the memo, so the dependent keeps serving the value it cached while the sheet still existed. Forcing a recompute does not help either: a missing sheet reads as zero, so the answer becomes 1 rather than an error.",
+      "status": "known-failure",
+      "defect": "structural-edit",
+      "actual": { "Sheet1!A1": 6 }
+    }
+  ]
+}

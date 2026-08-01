@@ -1,0 +1,126 @@
+{
+  "owner": "workbook",
+  "cases": [
+    {
+      "id": "wb-named-single-cell-read-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=REV*2" } },
+      "namedRanges": { "REV": { "start": "A1", "end": "A1" } },
+      "expected": { "Sheet1!B1": 10 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "wb-named-lookup-is-case-insensitive-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=rev*2" } },
+      "namedRanges": { "Rev": { "start": "A1", "end": "A1" } },
+      "expected": { "Sheet1!B1": 10 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "Sheets and Excel both resolve defined names without regard to case."
+    },
+    {
+      "id": "wb-named-range-aggregate-read-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM(DATA)" } },
+      "namedRanges": { "DATA": { "start": "A1", "end": "A3" } },
+      "expected": { "Sheet1!B1": 6 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "wb-named-undefined-name-001",
+      "sheets": { "Sheet1": { "B1": "=NOT_DEFINED+1" } },
+      "expected": { "Sheet1!B1": "#NAME?" },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "An unbound name is #NAME? in both Excel and Sheets."
+    },
+    {
+      "id": "wb-named-source-edit-not-tracked-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=REV*2" } },
+      "namedRanges": { "REV": { "start": "A1", "end": "A1" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "set", "cell": "A1", "value": 50 }
+      ],
+      "expected": { "Sheet1!B1": 100 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "deps.js extractRefs only walks REF / SHEETREF / SHEETCOL tokens, so a NAME token registers no edge at all. Once B1 has been read once its result is cached forever and no edit to the bound cell can dislodge it. Anything on screen that reads through a defined name freezes at its first value.",
+      "status": "known-failure",
+      "defect": "dependency-missing",
+      "actual": { "Sheet1!B1": 10 }
+    },
+    {
+      "id": "wb-named-range-member-edit-not-tracked-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM(DATA)" } },
+      "namedRanges": { "DATA": { "start": "A1", "end": "A3" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "set", "cell": "A2", "value": 20 }
+      ],
+      "expected": { "Sheet1!B1": 24 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "Same missing edge as the single-cell case, but through a range binding, which is how named ranges are normally used.",
+      "status": "known-failure",
+      "defect": "dependency-missing",
+      "actual": { "Sheet1!B1": 6 }
+    },
+    {
+      "id": "wb-named-source-cleared-not-tracked-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=REV*2" } },
+      "namedRanges": { "REV": { "start": "A1", "end": "A1" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "clear", "cell": "A1" }
+      ],
+      "expected": { "Sheet1!B1": 0 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "Clearing the bound cell leaves the dependent showing the old product.",
+      "status": "known-failure",
+      "defect": "dependency-missing",
+      "actual": { "Sheet1!B1": 10 }
+    },
+    {
+      "id": "wb-named-cross-sheet-binding-read-001",
+      "sheets": { "Sheet1": { "B1": "=REV*2" }, "Data": { "A1": 5 } },
+      "namedRanges": { "REV": { "sheet": "Data", "start": "A1", "end": "A1" } },
+      "expected": { "Sheet1!B1": 10 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "wb-named-cross-sheet-source-edit-not-tracked-001",
+      "sheets": { "Sheet1": { "B1": "=REV*2" }, "Data": { "A1": 5 } },
+      "namedRanges": { "REV": { "sheet": "Data", "start": "A1", "end": "A1" } },
+      "actions": [
+        { "type": "read", "cell": "B1" },
+        { "type": "set", "sheet": "Data", "cell": "A1", "value": 50 }
+      ],
+      "expected": { "Sheet1!B1": 100 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "A workbook-level name pointing at another sheet is the common shape, and it is just as untracked.",
+      "status": "known-failure",
+      "defect": "dependency-missing",
+      "actual": { "Sheet1!B1": 10 }
+    },
+    {
+      "id": "wb-named-dependent-of-named-formula-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=REV*2", "C1": "=B1+1" } },
+      "namedRanges": { "REV": { "start": "A1", "end": "A1" } },
+      "actions": [
+        { "type": "read", "cell": "C1" },
+        { "type": "set", "cell": "A1", "value": 50 }
+      ],
+      "expected": { "Sheet1!C1": 101 },
+      "category": "named-range",
+      "source": "excel-compatible-semantics",
+      "notes": "The missing edge stops the cascade at B1, so everything downstream of a named range is stale too.",
+      "status": "known-failure",
+      "defect": "dependency-missing",
+      "actual": { "Sheet1!C1": 11 }
+    }
+  ]
+}
