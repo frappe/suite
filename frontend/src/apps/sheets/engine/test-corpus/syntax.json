@@ -263,6 +263,562 @@
       "status": "known-failure",
       "defect": "parser-accepts-invalid",
       "actual": 1
+    },
+
+    {
+      "id": "syntax-number-scientific-uppercase-plus-001",
+      "formula": "=1E+3",
+      "expected": 1000,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-string-doubled-quote-escape-001",
+      "formula": "=\"a\"\"b\"",
+      "expected": "a\"b",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics",
+      "notes": "Doubling is the only quote escape Excel and Google Sheets define. The tokenizer closes the string at the first `\"` and starts a second one, so the parser reads the first literal and abandons the rest — a wrong value, not an error.",
+      "status": "known-failure",
+      "defect": "parser-rejects-valid",
+      "actual": "a"
+    },
+    {
+      "id": "syntax-error-literal-ref-001",
+      "formula": "=#REF!",
+      "expected": "#REF!",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-error-literal-na-001",
+      "formula": "=#N/A",
+      "expected": "#N/A",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics",
+      "notes": "`/` is in the error-literal stop set, so `#N/A` tokenises as ERR `#N`, OP `/`, COLREF `A`. `IFNA` and `NA()` guards written against a literal `#N/A` compare against the wrong string.",
+      "status": "known-failure",
+      "defect": "parser-rejects-valid",
+      "actual": "#N"
+    },
+    {
+      "id": "syntax-error-literal-div0-001",
+      "formula": "=#DIV/0!",
+      "expected": "#DIV/0!",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "parser-rejects-valid",
+      "actual": "#DIV"
+    },
+    {
+      "id": "syntax-fn-lowercase-001",
+      "formula": "=sum(1,2)",
+      "expected": 3,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-fn-mixed-case-001",
+      "formula": "=SuM(1,2)",
+      "expected": 3,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-fn-space-before-paren-001",
+      "formula": "=SUM (1,2)",
+      "expected": 3,
+      "category": "grammar",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets both allow whitespace between a function name and its opening paren."
+    },
+    {
+      "id": "syntax-whitespace-inside-arglist-001",
+      "formula": "=SUM( 1 , 2 )",
+      "expected": 3,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-whitespace-around-colon-001",
+      "formula": "=SUM( A1 : A3 )",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-whitespace-leading-trailing-001",
+      "formula": "= 1 + 2 ",
+      "expected": 3,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-nested-calls-deep-001",
+      "formula": "=SUM(SUM(SUM(SUM(1))))",
+      "expected": 1,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-nested-parens-seven-001",
+      "formula": "=(((((((1)))))))",
+      "expected": 1,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-long-arg-list-001",
+      "formula": "=SUM(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20)",
+      "expected": 210,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-empty-string-concat-001",
+      "formula": "=\"\"&\"a\"",
+      "expected": "a",
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-empty-arg-trailing-001",
+      "formula": "=SUM(1,)",
+      "expected": 1,
+      "category": "grammar",
+      "source": "excel-compatible-semantics",
+      "notes": "An omitted argument is an empty value, not a syntax error."
+    },
+    {
+      "id": "syntax-empty-arg-middle-001",
+      "formula": "=SUM(1,,2)",
+      "expected": 3,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-ref-chain-depth-three-001",
+      "formula": "=D1",
+      "cells": { "A1": 5, "B1": "=A1+1", "C1": "=B1+1", "D1": "=C1+1" },
+      "expected": 8,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-range-reversed-rectangle-001",
+      "formula": "=SUM(B2:A1)",
+      "cells": { "A1": 1, "A2": 2, "B1": 3, "B2": 4 },
+      "expected": 10,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "Bottom-right to top-left is normalised, same as Excel."
+    },
+    {
+      "id": "syntax-ref-absolute-range-001",
+      "formula": "=SUM($A$1:$A$3)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "`$A$1` becomes a NAME token, the unresolved name yields #NAME?, and the stray COLON and second NAME are read as further arguments — SUM then ignores the text and returns 0. A pinned range is the normal result of dragging a fill handle, so this is a silent zero in ordinary use.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": 0
+    },
+    {
+      "id": "syntax-ref-absolute-mixed-row-range-001",
+      "formula": "=SUM(A$1:A$3)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": 0
+    },
+    {
+      "id": "syntax-ref-absolute-mixed-col-range-001",
+      "formula": "=SUM($A1:$A3)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "Survives only because a leading `$` is dropped and `A1` still tokenises as a reference."
+    },
+    {
+      "id": "syntax-ref-absolute-crosssheet-001",
+      "formula": "=Sheet2!$A$1",
+      "sheets": { "Sheet1": {}, "Sheet2": { "A1": 9 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "After `!` the tokenizer accepts only `[A-Za-z0-9]`, so `$` ends the cell part and the reference degrades to #REF!.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": "#REF!"
+    },
+    {
+      "id": "syntax-wholecolumn-sum-001",
+      "formula": "=SUM(A:A)",
+      "cells": { "A1": 1, "A2": 2 },
+      "expected": 3,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "A whole-column reference expands to all 1048576 rows eagerly; `flatten` then spreads that into a push and overflows the argument limit, which the call site swallows as #VALUE!. Whole-column ranges are the standard idiom for open-ended totals.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "syntax-crosssheet-range-unqualified-end-001",
+      "formula": "=SUM(Sheet2!A1:A2)",
+      "sheets": { "Sheet1": {}, "Sheet2": { "A1": 4, "A2": 5 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-crosssheet-range-both-qualified-001",
+      "formula": "=SUM('My Sheet'!A1:'My Sheet'!A2)",
+      "sheets": { "Sheet1": {}, "My Sheet": { "A1": 4, "A2": 5 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-crosssheet-escaped-apostrophe-001",
+      "formula": "=SUM('O''Brien'!A1:A2)",
+      "sheets": { "Sheet1": {}, "O'Brien": { "A1": 4, "A2": 5 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "A literal apostrophe in a sheet name is escaped by doubling it."
+    },
+    {
+      "id": "syntax-crosssheet-numeric-sheet-name-001",
+      "formula": "='2024'!A1",
+      "sheets": { "Sheet1": {}, "2024": { "A1": 4 } },
+      "expected": 4,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "A sheet name that starts with a digit is legal once quoted."
+    },
+    {
+      "id": "syntax-crosssheet-bang-in-sheet-name-001",
+      "formula": "='a!b'!A1",
+      "sheets": { "Sheet1": {}, "a!b": { "A1": 11 } },
+      "expected": 11,
+      "category": "reference",
+      "source": "engine-contract",
+      "notes": "Excel forbids `!` in a sheet name, so no product defines this. Recorded because the quoted-name scanner reads to the closing apostrophe and therefore accepts it."
+    },
+    {
+      "id": "syntax-crosssheet-space-before-bang-001",
+      "formula": "=SUM(Sheet2 !A1:A2)",
+      "sheets": { "Sheet1": {}, "Sheet2": { "A1": 4, "A2": 5 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "engine-contract",
+      "notes": "The identifier scanner swallows spaces when the next non-space character is `!`. Excel normalises the space away rather than rejecting it."
+    },
+    {
+      "id": "syntax-named-range-column-shaped-001",
+      "formula": "=SUM(TAX)",
+      "cells": { "A1": 1, "A2": 2 },
+      "namedRanges": { "TAX": { "start": "A1", "end": "A2" } },
+      "expected": 3,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "An all-letter name tokenises as COLREF; the parser falls back to named-range resolution when no `:` follows."
+    },
+    {
+      "id": "syntax-named-range-case-insensitive-001",
+      "formula": "=rev",
+      "cells": { "A1": 1 },
+      "namedRanges": { "Rev": { "start": "A1", "end": "A1" } },
+      "expected": 1,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-named-range-underscore-001",
+      "formula": "=my_range",
+      "cells": { "A1": 4 },
+      "namedRanges": { "my_range": { "start": "A1", "end": "A1" } },
+      "expected": 4,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-name-cell-shaped-unknown-001",
+      "formula": "=NOSUCHNAME1",
+      "expected": "#NAME?",
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "`NOSUCHNAME` is past the last column (XFD), so a spreadsheet reads this as an undefined name. The tokenizer's `letters+digits` test has no column bound, so it becomes a reference to an empty cell and the formula returns 0 instead of an error.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": 0
+    },
+
+    {
+      "id": "invalid-missing-operand-leading-star-001",
+      "formula": "=*1",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "`primary` ends with an unconditional `next(); return 0`, so any token it does not recognise is consumed and valued at zero.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 0
+    },
+    {
+      "id": "invalid-missing-operand-leading-amp-001",
+      "formula": "=&1",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 0
+    },
+    {
+      "id": "invalid-missing-operand-leading-caret-001",
+      "formula": "=^2",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 0
+    },
+    {
+      "id": "invalid-lone-closing-paren-001",
+      "formula": "=)",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 0
+    },
+    {
+      "id": "invalid-empty-parens-001",
+      "formula": "=()",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-trailing-multiply-001",
+      "formula": "=1*",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-trailing-concat-001",
+      "formula": "=1&",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-trailing-comparison-001",
+      "formula": "=1<>",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-trailing-power-001",
+      "formula": "=1^",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-unclosed-paren-001",
+      "formula": "=(1",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-unterminated-string-in-call-001",
+      "formula": "=SUM(\"a",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The unterminated string still yields a STR token, but the missing `)` is caught."
+    },
+    {
+      "id": "invalid-function-name-without-parens-001",
+      "formula": "=SUM",
+      "expected": "#NAME?",
+      "category": "invalid-syntax",
+      "source": "excel-compatible-semantics",
+      "notes": "A bare function name is an undefined name, which Excel reports as #NAME?."
+    },
+    {
+      "id": "invalid-function-close-without-open-001",
+      "formula": "=SUM)",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "Excel refuses this at entry time. The engine reports #NAME? — still a documented error rather than a partial result, but it hides the unbalanced paren, and the trailing `)` is never read.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "invalid-trailing-string-literal-001",
+      "formula": "=1 \"a\"",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1
+    },
+    {
+      "id": "invalid-adjacent-strings-001",
+      "formula": "=\"a\" \"b\"",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": "a"
+    },
+    {
+      "id": "invalid-semicolon-outside-call-001",
+      "formula": "=1;2",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "`;` tokenises as an argument separator everywhere, so at top level it just terminates the expression.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1
+    },
+    {
+      "id": "invalid-bracketed-reference-001",
+      "formula": "=[A1]",
+      "cells": { "A1": 5 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "Brackets carry meaning in Excel (workbook and structured references) and are not a wrapper for a cell reference. Both are dropped as unrecognised characters.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 5
+    },
+    {
+      "id": "invalid-range-missing-end-001",
+      "formula": "=A1:",
+      "cells": { "A1": 1 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-range-missing-start-001",
+      "formula": "=:A1",
+      "cells": { "A1": 1 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 0
+    },
+    {
+      "id": "invalid-range-number-endpoint-001",
+      "formula": "=SUM(A1:1)",
+      "cells": { "A1": 1 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-range-number-start-001",
+      "formula": "=SUM(1:A1)",
+      "cells": { "A1": 1 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "A number has no range branch, so `1`, `:` and `A1` become three separate arguments and SUM adds them.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 2
+    },
+    {
+      "id": "invalid-sheet-ref-missing-cell-001",
+      "formula": "=Sheet2!",
+      "sheets": { "Sheet1": {}, "Sheet2": {} },
+      "expected": "#REF!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "Excel rejects this at entry; the engine reports #REF!, which is an acceptable documented error."
+    },
+    {
+      "id": "invalid-sheet-ref-bad-cell-001",
+      "formula": "=Sheet2!1A",
+      "sheets": { "Sheet1": {}, "Sheet2": {} },
+      "expected": "#REF!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-sheet-name-unterminated-001",
+      "formula": "='unterminated",
+      "expected": "#REF!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The quoted-name scanner runs to end of input, finds no `!`, and emits #REF!."
+    },
+    {
+      "id": "invalid-sheet-name-missing-bang-001",
+      "formula": "='Nope'A1",
+      "expected": "#REF!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-sheet-missing-001",
+      "formula": "=Sheet9!A1",
+      "expected": "#REF!",
+      "category": "invalid-syntax",
+      "source": "excel-compatible-semantics",
+      "notes": "A reference to a sheet that does not exist is #REF! in Excel and Sheets. The engine reads the missing sheet as empty and returns 0, so a deleted or misspelt sheet silently zeroes the total.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": 0
+    },
+    {
+      "id": "invalid-numeric-double-exponent-001",
+      "formula": "=1e5e5",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The number scanner stops after the first exponent; the trailing `e5` becomes a REF token nobody reads.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 100000
+    },
+    {
+      "id": "invalid-only-dots-001",
+      "formula": "=...",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "A `.` not followed by a digit matches no branch and is dropped, leaving an empty token stream, which `evaluate` reports as a blank cell.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": ""
     }
   ]
 }
