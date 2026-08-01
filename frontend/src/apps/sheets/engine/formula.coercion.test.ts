@@ -646,8 +646,13 @@ describe("date arithmetic", () => {
 	})
 
 	it("[known-failure] DATEDIF counts calendar months, not complete months", () => {
-		// Excel: 1, because 31 Jan to 1 Mar is one complete month plus a day.
-		expect(evaluate('=DATEDIF(DATE(2024,1,31),DATE(2024,3,1),"M")')).toBe(2)
+		// Excel: 1, because 20 Jan to 10 Mar is one complete month plus 19 days.
+		//
+		// Both dates sit well away from a month boundary. DATE() returns an ISO
+		// string that is parsed as UTC and read back with local getters, so a
+		// date on the 1st or the 31st shifts by a day west of Greenwich and the
+		// month arithmetic below changes with the machine's time zone.
+		expect(evaluate('=DATEDIF(DATE(2024,1,20),DATE(2024,3,10),"M")')).toBe(2)
 	})
 
 	it("[known-failure] a year below 1900 is not offset by 1900", () => {

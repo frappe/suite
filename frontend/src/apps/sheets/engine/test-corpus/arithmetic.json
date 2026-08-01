@@ -712,14 +712,25 @@
     },
     {
       "id": "date-datedif-complete-months-001",
-      "formula": "=DATEDIF(DATE(2024,1,31),DATE(2024,3,1),\"M\")",
+      "formula": "=DATEDIF(DATE(2024,1,20),DATE(2024,3,10),\"M\")",
       "expected": 1,
       "category": "date-arithmetic",
       "source": "excel-compatible-semantics",
-      "notes": "DATEDIF counts COMPLETE months. 31 Jan to 1 Mar is one complete month plus one day. The engine subtracts calendar month numbers and ignores the day of month, so it over-counts whenever the end day is earlier in the month than the start day.",
+      "notes": "DATEDIF counts COMPLETE months. 20 Jan to 10 Mar is one complete month plus 19 days. The engine subtracts calendar month numbers and ignores the day of month, so it over-counts whenever the end day falls earlier in the month than the start day. Both dates sit away from a month boundary on purpose: DATE() returns an ISO string that is parsed as UTC and read back with local getters, so a boundary date shifts by a day west of Greenwich and made the earlier version of this fixture depend on the machine's time zone. Verified identical across eight zones from UTC-3 to UTC+14.",
       "status": "known-failure",
       "defect": "function-result",
       "actual": 2
+    },
+    {
+      "id": "date-datedif-complete-years-001",
+      "formula": "=DATEDIF(DATE(2020,6,15),DATE(2024,3,10),\"Y\")",
+      "expected": 3,
+      "category": "date-arithmetic",
+      "source": "excel-compatible-semantics",
+      "notes": "The fourth anniversary has not been reached, so three complete years have elapsed. Same root cause as the month case: the engine subtracts calendar year numbers.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 4
     },
     {
       "id": "date-year-below-1900-001",
