@@ -80,6 +80,7 @@ suite.mail.patches.rebuild_email_address_indexes
 suite.mail.patches.enable_screening_for_personal_accounts
 suite.mail.patches.create_suite_user_role
 suite.mail.patches.rename_mail_admin_to_suite_admin
+suite.suite_core.patches.move_blob_store_out_of_files
 suite.mail.patches.migrate_cache_to_mail_namespace
 suite.mail.patches.migrate_search_index_to_mail_namespace
 suite.mail.patches.rebuild_automation_sieve_scripts
