@@ -51,7 +51,7 @@
       "expected": 64,
       "category": "operator-associativity",
       "source": "excel-compatible-semantics",
-      "notes": "Excel and Google Sheets evaluate same-precedence operators left to right and make no exception for `^`, so this is (2^3)^2 = 64, NOT the 512 that maths convention and most programming languages give. baseline.md records 512; that entry is wrong. Either way the engine is wrong for a different reason: `pow()` handles at most one `^` and never loops, so the trailing `^2` is dropped and the engine returns 2^3. Nothing verifies the token stream was consumed, so this is a silent wrong answer.",
+      "notes": "Excel and Google Sheets evaluate same-precedence operators left to right and make no exception for `^`, so this is (2^3)^2 = 64, NOT the 512 that maths convention and most programming languages give. IronCalc, an Excel-compatibility engine, independently returns 64; see diff-power-associativity-resolved in known-differences.json for how this was adjudicated. Either way the engine is wrong for a different reason: `pow()` handles at most one `^` and never loops, so the trailing `^2` is dropped and the engine returns 2^3. Nothing verifies the token stream was consumed, so this is a silent wrong answer.",
       "status": "known-failure",
       "defect": "associativity",
       "actual": 8

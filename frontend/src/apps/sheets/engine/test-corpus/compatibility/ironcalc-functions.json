@@ -1,0 +1,178 @@
+{
+  "note": "Local defects confirmed by the IronCalc differential harness (engine/formula.differential.test.ts). Every `expected` was produced by IronCalc 0.8.4 and cross-checked against documented Excel and Google Sheets behaviour; every `actual` was produced by running this engine. Regenerate with: DIFF_DUMP=/tmp/diff.json yarn vitest run src/apps/sheets/engine/formula.differential.test.ts",
+  "cases": [
+    {
+      "id": "diff-error-propagation-sum-001",
+      "formula": "=SUM(1,1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "ironcalc",
+      "notes": "Excel and Google Sheets propagate an error argument out of SUM. This engine's SUM coerces the error string to 0 and returns the rest.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": 1
+    },
+    {
+      "id": "diff-isblank-empty-cell-001",
+      "formula": "=ISBLANK(Z99)",
+      "expected": true,
+      "category": "information-functions",
+      "source": "ironcalc",
+      "notes": "An unset cell is blank. This engine reads it as the empty string and reports FALSE, so ISBLANK can never be TRUE for a reference.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": false
+    },
+    {
+      "id": "diff-countblank-empty-range-001",
+      "formula": "=COUNTBLANK(Y1:Y3)",
+      "expected": 3,
+      "category": "information-functions",
+      "source": "ironcalc",
+      "notes": "Same root cause as diff-isblank-empty-cell-001: unset cells are not recognised as blank.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 0
+    },
+    {
+      "id": "diff-average-empty-range-001",
+      "formula": "=AVERAGE(Y1:Y3)",
+      "expected": "#DIV/0!",
+      "category": "aggregate-functions",
+      "source": "ironcalc",
+      "notes": "Averaging nothing is a division by zero in Excel and Google Sheets. This engine returns 0, which silently hides an empty range.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 0
+    },
+    {
+      "id": "diff-rounddown-honours-digits-001",
+      "formula": "=ROUNDDOWN(-1.999,2)",
+      "expected": -1.99,
+      "category": "rounding",
+      "source": "ironcalc",
+      "notes": "ROUNDDOWN truncates toward zero at the requested number of digits. This engine ignores the digits argument for negative numbers.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -2
+    },
+    {
+      "id": "diff-search-wildcard-001",
+      "formula": "=SEARCH(\"h*o\",\"hello\")",
+      "expected": 1,
+      "category": "text-functions",
+      "source": "ironcalc",
+      "notes": "SEARCH supports the `*` and `?` wildcards in Excel and Google Sheets. This engine treats the pattern as a literal and returns #VALUE!.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "diff-bool-concat-case-001",
+      "formula": "=TRUE&\"x\"",
+      "expected": "TRUEx",
+      "category": "coercion",
+      "source": "ironcalc",
+      "notes": "A boolean coerced to text is uppercase in every spreadsheet. This engine leaks the JavaScript `String(true)` form.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "truex"
+    },
+    {
+      "id": "diff-fixed-thousands-separator-001",
+      "formula": "=FIXED(1234.567,1)",
+      "expected": "1,234.6",
+      "category": "text-functions",
+      "source": "ironcalc",
+      "notes": "FIXED includes thousands separators unless the third argument is TRUE. This engine never emits them, so the third argument has no effect.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "1234.6"
+    },
+    {
+      "id": "diff-dollar-thousands-separator-001",
+      "formula": "=DOLLAR(1234.567,2)",
+      "expected": "$1,234.57",
+      "category": "text-functions",
+      "source": "ironcalc",
+      "notes": "DOLLAR always groups thousands. Same missing grouping as diff-fixed-thousands-separator-001.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "$1234.57"
+    },
+    {
+      "id": "diff-comparison-chain-001",
+      "formula": "=1<2<3",
+      "expected": false,
+      "category": "comparison",
+      "source": "ironcalc",
+      "notes": "`1<2` yields TRUE; in Excel's type ordering every boolean sorts above every number, so `TRUE<3` is FALSE. This engine coerces TRUE to 1 and returns TRUE.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "diff-missing-log10-001",
+      "formula": "=LOG10(1000)",
+      "expected": 3,
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "notes": "LOG10 is a core Excel and Google Sheets function. This engine has LOG and LN but not LOG10.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "diff-missing-sumsq-001",
+      "formula": "=SUMSQ(3,4)",
+      "expected": 25,
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "diff-missing-lcm-001",
+      "formula": "=LCM(4,6)",
+      "expected": 12,
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "notes": "GCD is implemented locally but LCM is not, so the pair is half present.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "diff-missing-roman-001",
+      "formula": "=ROMAN(4)",
+      "expected": "IV",
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "diff-missing-type-001",
+      "formula": "=TYPE(1)",
+      "expected": 1,
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "diff-missing-rank-001",
+      "formula": "=RANK(2,A1:A3)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 2,
+      "category": "unsupported-function",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#NAME?"
+    }
+  ]
+}

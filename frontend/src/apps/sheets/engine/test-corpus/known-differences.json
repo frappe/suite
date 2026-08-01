@@ -32,6 +32,54 @@
       "detail": "The expansion is literal, so a whole-column reference materialises a million rows instead of using the used range.",
       "classification": "unsupported-local-feature",
       "impact": "Correct results, unusable performance. Tracked as a performance defect, not a compatibility one."
+    },
+    {
+      "id": "diff-google-sheets-only-functions",
+      "area": "functions",
+      "summary": "`SPARKLINE`, `SPLIT`, `JOIN` and `REGEXMATCH` exist here and in Google Sheets, but not in Excel or IronCalc.",
+      "detail": "The IronCalc differential run confirmed these four are the only local functions IronCalc does not recognise. They are Google Sheets functions, deliberately kept.",
+      "classification": "intentional-product-difference",
+      "impact": "A workbook using them cannot round-trip through Excel. The differential harness must not report them as defects."
+    },
+    {
+      "id": "diff-dates-are-iso-strings",
+      "area": "dates",
+      "summary": "Date functions return `YYYY-MM-DD` text, not an Excel serial number.",
+      "detail": "`DATE`, `TODAY` and friends return a formatted string. Excel, Google Sheets and IronCalc all return a serial number carrying a date number format. Because the result is text, `=DATE(2026,1,31)+1` is `#VALUE!` here and `46054` everywhere else.",
+      "classification": "unsupported-local-feature",
+      "impact": "Date arithmetic does not work at all. The differential harness converts a local ISO string to a serial before comparing, so only the arithmetic cases show up as differences. Fixtures: diff-* under compatibility/, plus the date cases in the corpus."
+    },
+    {
+      "id": "diff-power-associativity-resolved",
+      "area": "arithmetic",
+      "summary": "`^` is LEFT associative, so `=2^3^2` is 64. IronCalc agrees with Excel here.",
+      "detail": "Two agents in this campaign disagreed, so the question was adjudicated rather than assumed. Microsoft documents one precedence level for `^` and the rule that operators of equal precedence evaluate left to right, which gives (2^3)^2 = 64. IronCalc 0.8.4, whose purpose is Excel compatibility, independently returns 64 and rewrites the stored formula to `=(2^3)^2`. Mathematical convention and most programming languages give 512, which is why this is easy to get backwards. This engine returns 8, wrong for a third reason: its `pow` rule reads one operator and abandons the rest of the expression.",
+      "classification": "inconclusive-resolved",
+      "impact": "Not a difference at all — recorded because it was contested. The target value for any fix is 64. Fixture: associativity-power-left-to-right-001."
+    },
+    {
+      "id": "diff-ironcalc-accepts-trailing-garbage",
+      "area": "reference-engine",
+      "summary": "IronCalc also accepts `=1 2`, `=1+2)`, `=1@2` and `=1.2.3`.",
+      "detail": "IronCalc silently truncates each of these to its first valid prefix and rewrites the stored formula (`=1 2` becomes `=1`). It agrees with this engine, and both disagree with Excel and Google Sheets, which refuse the formula.",
+      "classification": "ironcalc-defect",
+      "impact": "The differential harness cannot detect this class of defect. Those cases stay covered by syntax.json against documented Excel behaviour."
+    },
+    {
+      "id": "diff-ironcalc-infinity-leaks-through-concat",
+      "area": "reference-engine",
+      "summary": "IronCalc returns the text `inf` for `=1e308*10&\"\"`.",
+      "detail": "`=1e308*10` alone is `#NUM!` in IronCalc, but concatenating the same expression yields the string `inf`. Excel and Google Sheets give `#NUM!` in both forms.",
+      "classification": "ironcalc-defect",
+      "impact": "Only affects overflow-through-concat comparisons; recorded so the harness result is not mistaken for a local defect."
+    },
+    {
+      "id": "diff-ironcalc-scientific-exponent-format",
+      "area": "reference-engine",
+      "summary": "IronCalc's `0.00E+00` number format writes a three-digit exponent twice.",
+      "detail": "`1e-300` formats as `1.00000000000000E-30300` instead of `E-300`. This is a formatter defect, not an engine defect: the general format prints `1E-300` correctly.",
+      "classification": "ironcalc-defect",
+      "impact": "The adapter reads numbers through a fixed 15-decimal format instead of a scientific one, and falls back to the general format only when the fixed one underflows. See test-corpus/ironcalc.ts."
     }
   ]
 }

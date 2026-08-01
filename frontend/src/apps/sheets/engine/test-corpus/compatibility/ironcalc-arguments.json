@@ -1,0 +1,163 @@
+{
+  "note": "Argument validation defects confirmed by the IronCalc differential harness. This engine never checks argument count or argument type: `FUNCTIONS[name](args)` is called with whatever the parser collected, so a missing argument becomes `undefined` and coerces to 0. Excel and Google Sheets refuse these formulas outright; the corpus records a refusal as `#ERROR!`, matching the convention in syntax.json.",
+  "cases": [
+    {
+      "id": "diff-arity-sum-no-args-001",
+      "formula": "=SUM()",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "SUM requires at least one argument. IronCalc reports #ERROR!; Excel refuses the formula at entry.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 0
+    },
+    {
+      "id": "diff-arity-abs-no-args-001",
+      "formula": "=ABS()",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "The missing argument coerces to 0, so ABS() answers 0 instead of failing.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 0
+    },
+    {
+      "id": "diff-arity-abs-extra-args-001",
+      "formula": "=ABS(-1,2)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "Extra arguments are silently discarded, so a typo in a nested call is invisible.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "diff-arity-left-extra-args-001",
+      "formula": "=LEFT(\"abc\",1,9)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a"
+    },
+    {
+      "id": "diff-arity-round-missing-digits-001",
+      "formula": "=ROUND(2.567)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "ROUND takes exactly two arguments in Excel. This engine defaults the missing digit count to 0 and returns 3.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 3
+    },
+    {
+      "id": "diff-arity-mod-single-arg-001",
+      "formula": "=MOD(5)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "The missing divisor coerces to 0, so the arity mistake surfaces as an unrelated #DIV/0!.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "#DIV/0!"
+    },
+    {
+      "id": "diff-arity-power-single-arg-001",
+      "formula": "=POWER(2)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "The missing exponent coerces to 0, so POWER(2) answers 1.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "diff-arity-if-extra-args-001",
+      "formula": "=IF(TRUE,1,2,3)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "diff-arity-if-single-arg-001",
+      "formula": "=IF(TRUE)",
+      "expected": "#ERROR!",
+      "category": "function-arity",
+      "source": "ironcalc",
+      "notes": "This engine returns JavaScript `undefined`, which JSON cannot express, so no `actual` is recorded. The runner still asserts the result does not match `expected`.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "diff-argtype-abs-text-001",
+      "formula": "=ABS(\"a\")",
+      "expected": "#VALUE!",
+      "category": "argument-type",
+      "source": "ironcalc",
+      "notes": "Numeric functions use the lenient `toNum`, which maps unparseable text to 0 rather than #VALUE!.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 0
+    },
+    {
+      "id": "diff-argbound-mid-start-below-one-001",
+      "formula": "=MID(\"abc\",0,1)",
+      "expected": "#VALUE!",
+      "category": "argument-bounds",
+      "source": "ironcalc",
+      "notes": "MID requires start_num >= 1. This engine returns the empty string, so an off-by-one in a formula produces a blank instead of an error.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "diff-argbound-mid-negative-length-001",
+      "formula": "=MID(\"abc\",1,-1)",
+      "expected": "#VALUE!",
+      "category": "argument-bounds",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "diff-argbound-left-negative-count-001",
+      "formula": "=LEFT(\"abc\",-1)",
+      "expected": "#VALUE!",
+      "category": "argument-bounds",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "diff-argbound-rept-negative-count-001",
+      "formula": "=REPT(\"a\",-1)",
+      "expected": "#VALUE!",
+      "category": "argument-bounds",
+      "source": "ironcalc",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "diff-argbound-round-huge-digits-001",
+      "formula": "=ROUND(1.5,400)",
+      "expected": 1.5,
+      "category": "argument-bounds",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Google Sheets clamp the digit count and return 1.5. This engine computes 10^400, overflows to Infinity and returns NaN, which JSON cannot express, so no `actual` is recorded. IronCalc returns #NUM! here, which is a third answer and is why `source` is not `ironcalc`.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    }
+  ]
+}
