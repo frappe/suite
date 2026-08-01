@@ -1,0 +1,4981 @@
+{
+	"cases": [
+		{
+			"id": "fn-math-sum-scalars-001",
+			"formula": "=SUM(1,2,3)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "minimum useful call: scalar arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-single-arg-002",
+			"formula": "=SUM(7)",
+			"expected": 7,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "one argument is the documented minimum for SUM",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-no-args-003",
+			"formula": "=SUM()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "SUM needs at least one argument. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sum-range-004",
+			"formula": "=SUM(A1:A5)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 4,
+				"A4": 8,
+				"A5": 16
+			},
+			"expected": 31,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "range input",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-range-plus-scalar-005",
+			"formula": "=SUM(A1:A5,10)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 4,
+				"A4": 8,
+				"A5": 16
+			},
+			"expected": 41,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "mixed range and scalar arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-many-args-006",
+			"formula": "=SUM(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30)",
+			"expected": 465,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "30 arguments: Excel's classic maximum for SUM",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-empty-range-007",
+			"formula": "=SUM(Z1:Z5)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5
+			},
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "SUM of only blank cells is 0",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-text-in-range-008",
+			"formula": "=SUM(A1:A3)",
+			"cells": {
+				"A1": 10,
+				"A2": "x",
+				"A3": 30
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "text inside a range is skipped, not read as 0 — here it makes no difference to SUM but it does to AVERAGE",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-text-literal-009",
+			"formula": "=SUM(\"abc\",4)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "non-numeric text passed directly as an argument is #VALUE! in Excel; only text *inside a range* is skipped",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-sum-numeric-text-literal-010",
+			"formula": "=SUM(\"3\",4)",
+			"expected": 7,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "text that parses as a number is coerced when passed directly",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-bool-literals-011",
+			"formula": "=SUM(TRUE,TRUE)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "logical values passed directly count as 1/0",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-bool-in-range-012",
+			"formula": "=SUM(A1:A3)",
+			"cells": {
+				"A1": 10,
+				"A2": true,
+				"A3": 30
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "logical values inside a range are ignored by SUM",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 41
+		},
+		{
+			"id": "fn-math-sum-error-in-range-013",
+			"formula": "=SUM(A1:A3)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "an error anywhere in the range propagates out of SUM",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 15
+		},
+		{
+			"id": "fn-math-sum-error-literal-014",
+			"formula": "=SUM(A2,1)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "an error argument propagates",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-sum-nested-015",
+			"formula": "=SUM(SUM(1,2),SUM(3,4))",
+			"expected": 10,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "nested calls",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-cross-sheet-016",
+			"formula": "=SUM(Data!A1:A3)",
+			"sheets": {
+				"Sheet1": {
+					"A1": 1,
+					"A2": 2,
+					"A3": 3
+				},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30
+				}
+			},
+			"expected": 60,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "cross-sheet range",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-cross-sheet-mixed-017",
+			"formula": "=SUM(A1:A3,Data!A1:A3)",
+			"sheets": {
+				"Sheet1": {
+					"A1": 1,
+					"A2": 2,
+					"A3": 3
+				},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30
+				}
+			},
+			"expected": 66,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "local and cross-sheet ranges in one call",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sum-missing-sheet-018",
+			"formula": "=SUM(NoSuch!A1:A3)",
+			"sheets": {
+				"Sheet1": {
+					"A1": 1,
+					"A2": 2,
+					"A3": 3
+				},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30
+				}
+			},
+			"expected": "#REF!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "a reference to a sheet that does not exist is #REF!",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sum-overflow-019",
+			"formula": "=SUM(1E308,1E308)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel caps at ~1.79E308 and reports #NUM! on overflow Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-sum-float-noise-020",
+			"formula": "=SUM(0.1,0.2)",
+			"expected": 0.3,
+			"tolerance": 1e-15,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "Excel applies last-bit rounding so 0.1+0.2 compares equal to 0.3; the tolerance covers the IEEE-754 representation gap",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-scalars-001",
+			"formula": "=PRODUCT(2,3,4)",
+			"expected": 24,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-single-002",
+			"formula": "=PRODUCT(5)",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "minimum arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-no-args-003",
+			"formula": "=PRODUCT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-product-range-004",
+			"formula": "=PRODUCT(A1:A5)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5
+			},
+			"expected": 120,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-blank-in-range-005",
+			"formula": "=PRODUCT(A1:A3)",
+			"cells": {
+				"A1": 1,
+				"A3": 3
+			},
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "blank cells are ignored; treating a blank as 0 would zero the whole product",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-product-text-in-range-006",
+			"formula": "=PRODUCT(A1:A3)",
+			"cells": {
+				"A1": 10,
+				"A2": "x",
+				"A3": 30
+			},
+			"expected": 300,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "text inside a range is ignored",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-product-empty-range-007",
+			"formula": "=PRODUCT(Z1:Z5)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5
+			},
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "PRODUCT over only blanks is documented as 0, not 1",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-text-literal-008",
+			"formula": "=PRODUCT(\"abc\",5)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-product-error-in-range-009",
+			"formula": "=PRODUCT(A1:A3)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-product-extra-range-010",
+			"formula": "=PRODUCT(A1:A5,2)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 3,
+				"A4": 4,
+				"A5": 5
+			},
+			"expected": 240,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "additional arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-nested-011",
+			"formula": "=PRODUCT(SUM(1,1),3)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-product-cross-sheet-012",
+			"formula": "=PRODUCT(Data!A1:A3)",
+			"sheets": {
+				"Sheet1": {
+					"A1": 1,
+					"A2": 2,
+					"A3": 3
+				},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30
+				}
+			},
+			"expected": 6000,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-negative-001",
+			"formula": "=ABS(-3)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-positive-002",
+			"formula": "=ABS(3)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-zero-003",
+			"formula": "=ABS(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-no-args-004",
+			"formula": "=ABS()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-abs-extra-args-005",
+			"formula": "=ABS(-3,9)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "ABS takes exactly one argument. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-abs-text-006",
+			"formula": "=ABS(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-abs-numeric-text-007",
+			"formula": "=ABS(\"-5\")",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-bool-008",
+			"formula": "=ABS(TRUE)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-error-arg-009",
+			"formula": "=ABS(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "errors propagate through single-argument math functions",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-abs-ref-010",
+			"formula": "=ABS(A1)",
+			"cells": {
+				"A1": -42
+			},
+			"expected": 42,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-nested-011",
+			"formula": "=SQRT(ABS(-16))",
+			"expected": 4,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel SQRT example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-boundary-012",
+			"formula": "=ABS(-1E308)",
+			"expected": 1e+308,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "largest magnitude Excel represents",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-abs-cross-sheet-013",
+			"formula": "=ABS(Data!A1)",
+			"sheets": {
+				"Sheet1": {},
+				"Data": {
+					"A1": -7
+				}
+			},
+			"expected": 7,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-int-positive-001",
+			"formula": "=INT(8.9)",
+			"expected": 8,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-int-negative-002",
+			"formula": "=INT(-8.9)",
+			"expected": -9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: INT rounds toward minus infinity",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-int-no-args-003",
+			"formula": "=INT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-int-extra-args-004",
+			"formula": "=INT(8.9,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 8
+		},
+		{
+			"id": "fn-math-int-text-005",
+			"formula": "=INT(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-int-numeric-text-006",
+			"formula": "=INT(\"2.9\")",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-int-error-007",
+			"formula": "=INT(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-int-boundary-008",
+			"formula": "=INT(1E20)",
+			"expected": 100000000000000000000,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-trunc-positive-001",
+			"formula": "=TRUNC(8.9)",
+			"expected": 8,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-trunc-negative-002",
+			"formula": "=TRUNC(-8.9)",
+			"expected": -8,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: TRUNC drops the fraction, INT floors",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-trunc-digits-003",
+			"formula": "=TRUNC(3.14159,2)",
+			"expected": 3.14,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "second argument is the number of digits to keep",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-trunc-digits-negative-004",
+			"formula": "=TRUNC(123.456,-2)",
+			"expected": 100,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "negative digits truncate to the left of the decimal point",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 123
+		},
+		{
+			"id": "fn-math-trunc-no-args-005",
+			"formula": "=TRUNC()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-trunc-extra-args-006",
+			"formula": "=TRUNC(8.9,0,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 8
+		},
+		{
+			"id": "fn-math-trunc-text-007",
+			"formula": "=TRUNC(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-trunc-zero-008",
+			"formula": "=TRUNC(0.45)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-trunc-error-009",
+			"formula": "=TRUNC(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sign-positive-001",
+			"formula": "=SIGN(10)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sign-zero-002",
+			"formula": "=SIGN(4-4)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sign-negative-003",
+			"formula": "=SIGN(-0.00001)",
+			"expected": -1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sign-no-args-004",
+			"formula": "=SIGN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sign-extra-args-005",
+			"formula": "=SIGN(10,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-sign-text-006",
+			"formula": "=SIGN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sign-error-007",
+			"formula": "=SIGN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sign-boundary-008",
+			"formula": "=SIGN(1E-320)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "subnormal but non-zero",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sign-bool-009",
+			"formula": "=SIGN(TRUE)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-basic-001",
+			"formula": "=ROUND(2.15,1)",
+			"expected": 2.2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-half-away-positive-002",
+			"formula": "=ROUND(2.5,0)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "Excel rounds half away from zero",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-half-away-negative-003",
+			"formula": "=ROUND(-2.5,0)",
+			"expected": -3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "half away from zero also applies to negatives; JavaScript Math.round is half-up and gives -2",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -2
+		},
+		{
+			"id": "fn-math-round-half-away-negative-004",
+			"formula": "=ROUND(-1.5,0)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "half away from zero",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -1
+		},
+		{
+			"id": "fn-math-round-negative-digits-005",
+			"formula": "=ROUND(21.5,-1)",
+			"expected": 20,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-negative-digits-006",
+			"formula": "=ROUND(626.3,-3)",
+			"expected": 1000,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-doc-negative-007",
+			"formula": "=ROUND(-1.475,2)",
+			"expected": -1.48,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; Excel rounds the decimal value, so the binary shortfall of -1.475 does not change the answer",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -1.47
+		},
+		{
+			"id": "fn-math-round-no-args-008",
+			"formula": "=ROUND()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-round-one-arg-009",
+			"formula": "=ROUND(1.5)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Google Sheets defaults places to 0; Excel requires both arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-extra-args-010",
+			"formula": "=ROUND(1.5,0,9)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-round-text-011",
+			"formula": "=ROUND(\"abc\",0)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-round-error-012",
+			"formula": "=ROUND(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-round-nested-013",
+			"formula": "=ROUND(AVERAGE(A1:A5),1)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"A3": 2,
+				"A4": 3,
+				"A5": 4
+			},
+			"expected": 2.4,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "nested call",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-round-cross-sheet-014",
+			"formula": "=ROUND(Data!A1,-1)",
+			"sheets": {
+				"Sheet1": {},
+				"Data": {
+					"A1": 15
+				}
+			},
+			"expected": 20,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-roundup-positive-001",
+			"formula": "=ROUNDUP(3.14159,3)",
+			"expected": 3.142,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-roundup-negative-002",
+			"formula": "=ROUNDUP(-3.2,0)",
+			"expected": -4,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "ROUNDUP always rounds away from zero, so -3.2 becomes -4",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -3
+		},
+		{
+			"id": "fn-math-roundup-negative-digits-003",
+			"formula": "=ROUNDUP(31415.92654,-2)",
+			"expected": 31500,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-roundup-no-args-004",
+			"formula": "=ROUNDUP()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-roundup-extra-args-005",
+			"formula": "=ROUNDUP(3.2,0,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-roundup-text-006",
+			"formula": "=ROUNDUP(\"abc\",0)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-roundup-error-007",
+			"formula": "=ROUNDUP(A2,0)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-roundup-zero-008",
+			"formula": "=ROUNDUP(0,2)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-rounddown-positive-001",
+			"formula": "=ROUNDDOWN(3.14159,3)",
+			"expected": 3.141,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-rounddown-negative-002",
+			"formula": "=ROUNDDOWN(-3.8,0)",
+			"expected": -3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "ROUNDDOWN always rounds toward zero, so -3.8 becomes -3; JavaScript Math.floor gives -4",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -4
+		},
+		{
+			"id": "fn-math-rounddown-negative-digits-003",
+			"formula": "=ROUNDDOWN(31415.92654,-2)",
+			"expected": 31400,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-rounddown-no-args-004",
+			"formula": "=ROUNDDOWN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-rounddown-extra-args-005",
+			"formula": "=ROUNDDOWN(3.8,0,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-rounddown-text-006",
+			"formula": "=ROUNDDOWN(\"abc\",0)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-rounddown-error-007",
+			"formula": "=ROUNDDOWN(A2,0)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-rounddown-doc-008",
+			"formula": "=ROUNDDOWN(3.2,0)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-basic-001",
+			"formula": "=CEILING(2.5,1)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-neg-neg-002",
+			"formula": "=CEILING(-2.5,-2)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: with a negative significance the value rounds up, toward zero",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -4
+		},
+		{
+			"id": "fn-math-ceiling-neg-pos-003",
+			"formula": "=CEILING(-2.5,2)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-fraction-004",
+			"formula": "=CEILING(1.5,0.1)",
+			"expected": 1.5,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-fraction-005",
+			"formula": "=CEILING(0.234,0.01)",
+			"expected": 0.24,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; tolerance covers the binary representation of 0.01 multiples",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-pos-neg-sig-006",
+			"formula": "=CEILING(2.5,-1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: number positive and significance negative is #NUM!",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-ceiling-one-arg-007",
+			"formula": "=CEILING(2.5)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Google Sheets defaults the factor to 1; Excel requires both arguments",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ceiling-no-args-008",
+			"formula": "=CEILING()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-ceiling-extra-args-009",
+			"formula": "=CEILING(2.5,1,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-ceiling-text-010",
+			"formula": "=CEILING(\"abc\",1)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-ceiling-error-011",
+			"formula": "=CEILING(A2,1)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-floor-basic-001",
+			"formula": "=FLOOR(3.7,2)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-neg-neg-002",
+			"formula": "=FLOOR(-2.5,-2)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-pos-neg-sig-003",
+			"formula": "=FLOOR(2.5,-2)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: number positive and significance negative is #NUM!",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-floor-fraction-004",
+			"formula": "=FLOOR(1.58,0.1)",
+			"expected": 1.5,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-fraction-005",
+			"formula": "=FLOOR(0.234,0.01)",
+			"expected": 0.23,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-zero-significance-006",
+			"formula": "=FLOOR(2.5,0)",
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: significance 0 is #DIV/0!",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-one-arg-007",
+			"formula": "=FLOOR(2.5)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Google Sheets defaults the factor to 1",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-floor-no-args-008",
+			"formula": "=FLOOR()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-floor-extra-args-009",
+			"formula": "=FLOOR(2.5,1,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-floor-text-010",
+			"formula": "=FLOOR(\"abc\",1)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-floor-error-011",
+			"formula": "=FLOOR(A2,1)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-floor-neg-pos-sig-012",
+			"formula": "=FLOOR(-2.5,1)",
+			"expected": -3,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "negative value with positive significance rounds toward minus infinity",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-basic-001",
+			"formula": "=MOD(3,2)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-neg-dividend-002",
+			"formula": "=MOD(-3,2)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: the result takes the sign of the divisor, unlike JavaScript's % operator",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": -1
+		},
+		{
+			"id": "fn-math-mod-neg-divisor-003",
+			"formula": "=MOD(3,-2)",
+			"expected": -1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: result takes the sign of the divisor",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-mod-both-neg-004",
+			"formula": "=MOD(-3,-2)",
+			"expected": -1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-zero-divisor-005",
+			"formula": "=MOD(3,0)",
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-no-args-006",
+			"formula": "=MOD()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#DIV/0!"
+		},
+		{
+			"id": "fn-math-mod-one-arg-007",
+			"formula": "=MOD(5)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "MOD needs both arguments. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#DIV/0!"
+		},
+		{
+			"id": "fn-math-mod-extra-args-008",
+			"formula": "=MOD(5,3,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-mod-text-009",
+			"formula": "=MOD(\"abc\",2)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-mod-error-010",
+			"formula": "=MOD(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-mod-nested-011",
+			"formula": "=MOD(MOD(10,3),2)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-boundary-012",
+			"formula": "=MOD(1E15,7)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "large dividend still exact in double precision",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-mod-fraction-013",
+			"formula": "=MOD(5.5,2)",
+			"expected": 1.5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-quotient-basic-001",
+			"formula": "=QUOTIENT(5,2)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-quotient-fraction-002",
+			"formula": "=QUOTIENT(4.5,3.1)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-quotient-negative-003",
+			"formula": "=QUOTIENT(-10,3)",
+			"expected": -3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-quotient-zero-divisor-004",
+			"formula": "=QUOTIENT(7,0)",
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-quotient-no-args-005",
+			"formula": "=QUOTIENT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#DIV/0!"
+		},
+		{
+			"id": "fn-math-quotient-one-arg-006",
+			"formula": "=QUOTIENT(7)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#DIV/0!"
+		},
+		{
+			"id": "fn-math-quotient-extra-args-007",
+			"formula": "=QUOTIENT(7,2,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-quotient-text-008",
+			"formula": "=QUOTIENT(\"abc\",2)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-quotient-error-009",
+			"formula": "=QUOTIENT(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-power-basic-001",
+			"formula": "=POWER(5,2)",
+			"expected": 25,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-fraction-exp-002",
+			"formula": "=POWER(98.6,3.2)",
+			"expected": 2401077.222,
+			"tolerance": 0.001,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; tolerance because the reference value is quoted to three decimals",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-root-003",
+			"formula": "=POWER(4,5/4)",
+			"expected": 5.656854249,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-zero-zero-004",
+			"formula": "=POWER(0,0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel and Google Sheets both return 1",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-negative-fractional-005",
+			"formula": "=POWER(-8,1/3)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: a negative base with a fractional exponent has no real result Engine returns NaN, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-power-overflow-006",
+			"formula": "=POWER(10,309)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "overflow past Excel's numeric ceiling Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-power-no-args-007",
+			"formula": "=POWER()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-power-one-arg-008",
+			"formula": "=POWER(2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-power-extra-args-009",
+			"formula": "=POWER(2,3,4)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 8
+		},
+		{
+			"id": "fn-math-power-text-010",
+			"formula": "=POWER(\"abc\",2)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-power-numeric-text-011",
+			"formula": "=POWER(\"2\",\"3\")",
+			"expected": 8,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-error-012",
+			"formula": "=POWER(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-power-boundary-013",
+			"formula": "=POWER(10,308)",
+			"expected": 1e+308,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "largest power of ten Excel represents",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-power-nested-014",
+			"formula": "=SQRT(POWER(3,2)+POWER(4,2))",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "nested calls",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sqrt-basic-001",
+			"formula": "=SQRT(16)",
+			"expected": 4,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sqrt-negative-002",
+			"formula": "=SQRT(-16)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sqrt-zero-003",
+			"formula": "=SQRT(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sqrt-no-args-004",
+			"formula": "=SQRT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sqrt-extra-args-005",
+			"formula": "=SQRT(16,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-sqrt-text-006",
+			"formula": "=SQRT(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sqrt-bool-007",
+			"formula": "=SQRT(TRUE)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sqrt-error-008",
+			"formula": "=SQRT(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sqrt-range-009",
+			"formula": "=SQRT(A1)",
+			"cells": {
+				"A1": 144
+			},
+			"expected": 12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-exp-zero-001",
+			"formula": "=EXP(0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-exp-one-002",
+			"formula": "=EXP(1)",
+			"expected": 2.718281828,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; tolerance because the reference value is quoted to nine decimals",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-exp-two-003",
+			"formula": "=EXP(2)",
+			"expected": 7.389056099,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-exp-overflow-004",
+			"formula": "=EXP(1000)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "overflow past Excel's numeric ceiling Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-exp-no-args-005",
+			"formula": "=EXP()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-exp-extra-args-006",
+			"formula": "=EXP(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2.718281828459045
+		},
+		{
+			"id": "fn-math-exp-text-007",
+			"formula": "=EXP(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-exp-error-008",
+			"formula": "=EXP(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-exp-nested-009",
+			"formula": "=LN(EXP(3))",
+			"expected": 3,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "round trip; tolerance for floating-point noise",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ln-one-001",
+			"formula": "=LN(1)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ln-e-002",
+			"formula": "=LN(EXP(1))",
+			"expected": 1,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ln-zero-003",
+			"formula": "=LN(0)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ln-negative-004",
+			"formula": "=LN(-1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-ln-no-args-005",
+			"formula": "=LN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-ln-extra-args-006",
+			"formula": "=LN(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-ln-text-007",
+			"formula": "=LN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-ln-error-008",
+			"formula": "=LN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-ln-doc-009",
+			"formula": "=LN(86)",
+			"expected": 4.454347296,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-default-base-001",
+			"formula": "=LOG(10)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: base defaults to 10",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-base-2-002",
+			"formula": "=LOG(8,2)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-base-e-003",
+			"formula": "=LOG(86,2.7182818)",
+			"expected": 4.4543473,
+			"tolerance": 0.000001,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-zero-004",
+			"formula": "=LOG(0)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-negative-005",
+			"formula": "=LOG(-1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-log-base-one-006",
+			"formula": "=LOG(8,1)",
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "base 1 makes the change-of-base denominator zero Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-log-no-args-007",
+			"formula": "=LOG()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-log-extra-args-008",
+			"formula": "=LOG(8,2,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-log-text-009",
+			"formula": "=LOG(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-log-error-010",
+			"formula": "=LOG(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-log-nested-011",
+			"formula": "=LOG(POWER(2,10),2)",
+			"expected": 10,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-five-001",
+			"formula": "=FACT(5)",
+			"expected": 120,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-zero-002",
+			"formula": "=FACT(0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-one-003",
+			"formula": "=FACT(1)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-fraction-004",
+			"formula": "=FACT(1.9)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: the value is truncated first",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-negative-005",
+			"formula": "=FACT(-1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-fact-overflow-006",
+			"formula": "=FACT(171)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "170! is the largest factorial a double can hold Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-fact-boundary-007",
+			"formula": "=FACT(170)",
+			"expected": 7.257415615e+306,
+			"tolerance": 1e+298,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "largest representable factorial; tolerance is relative to the magnitude",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-fact-no-args-008",
+			"formula": "=FACT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-fact-extra-args-009",
+			"formula": "=FACT(5,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 120
+		},
+		{
+			"id": "fn-math-fact-text-010",
+			"formula": "=FACT(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-fact-error-011",
+			"formula": "=FACT(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-fact-doc-012",
+			"formula": "=FACT(3)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-basic-001",
+			"formula": "=GCD(24,36)",
+			"expected": 12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-coprime-002",
+			"formula": "=GCD(5,2)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-with-one-003",
+			"formula": "=GCD(7,1)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-with-zero-004",
+			"formula": "=GCD(5,0)",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-single-arg-005",
+			"formula": "=GCD(5)",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "one argument is the documented minimum",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-three-args-006",
+			"formula": "=GCD(8,12,10)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "GCD accepts up to 255 arguments; ignoring arguments past the second silently changes the answer",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-gcd-range-007",
+			"formula": "=GCD(A1:A3)",
+			"cells": {
+				"A1": 12,
+				"A2": 18,
+				"A3": 30
+			},
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "range input",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-gcd-negative-008",
+			"formula": "=GCD(-8,12)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: a negative argument is #NUM!",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-gcd-no-args-009",
+			"formula": "=GCD()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-gcd-text-010",
+			"formula": "=GCD(\"abc\",4)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-gcd-error-011",
+			"formula": "=GCD(A2,4)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 4
+		},
+		{
+			"id": "fn-math-gcd-zero-zero-012",
+			"formula": "=GCD(0,0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-gcd-fraction-013",
+			"formula": "=GCD(7.5,10)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "non-integer arguments are truncated first, so this is GCD(7,10)",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 2.5
+		},
+		{
+			"id": "fn-math-even-fraction-001",
+			"formula": "=EVEN(1.5)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-even-odd-int-002",
+			"formula": "=EVEN(3)",
+			"expected": 4,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-even-even-int-003",
+			"formula": "=EVEN(2)",
+			"expected": 2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-even-negative-004",
+			"formula": "=EVEN(-1)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: EVEN rounds away from zero and keeps the sign",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-even-negative-fraction-005",
+			"formula": "=EVEN(-1.5)",
+			"expected": -2,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "sign preserved",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-even-zero-006",
+			"formula": "=EVEN(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-even-no-args-007",
+			"formula": "=EVEN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-even-extra-args-008",
+			"formula": "=EVEN(1.5,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-math-even-text-009",
+			"formula": "=EVEN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-even-error-010",
+			"formula": "=EVEN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-even-boundary-011",
+			"formula": "=EVEN(1E15)",
+			"expected": 1000000000000000,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-odd-fraction-001",
+			"formula": "=ODD(1.5)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-odd-odd-int-002",
+			"formula": "=ODD(3)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-odd-even-int-003",
+			"formula": "=ODD(2)",
+			"expected": 3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-odd-negative-004",
+			"formula": "=ODD(-1)",
+			"expected": -1,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: ODD keeps the sign",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-odd-negative-even-005",
+			"formula": "=ODD(-2)",
+			"expected": -3,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-odd-zero-006",
+			"formula": "=ODD(0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-odd-no-args-007",
+			"formula": "=ODD()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-odd-extra-args-008",
+			"formula": "=ODD(1.5,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-math-odd-text-009",
+			"formula": "=ODD(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-odd-error-010",
+			"formula": "=ODD(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-pi-value-001",
+			"formula": "=PI()",
+			"expected": 3.14159265358979,
+			"tolerance": 1e-14,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "Excel returns pi to 15 digits",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-pi-extra-args-002",
+			"formula": "=PI(5)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "PI takes no arguments. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3.141592653589793
+		},
+		{
+			"id": "fn-math-pi-nested-003",
+			"formula": "=PI()/2",
+			"expected": 1.5707963267949,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-pi-doc-004",
+			"formula": "=PI()/2",
+			"expected": 1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sin-zero-001",
+			"formula": "=SIN(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sin-pi-half-002",
+			"formula": "=SIN(PI()/2)",
+			"expected": 1,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; tolerance because trigonometry is approximate",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sin-pi-003",
+			"formula": "=SIN(PI())",
+			"expected": 0,
+			"tolerance": 1e-15,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "both engines return a tiny non-zero residue; tolerance covers it",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sin-degrees-004",
+			"formula": "=SIN(RADIANS(30))",
+			"expected": 0.5,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example: SIN takes radians",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sin-no-args-005",
+			"formula": "=SIN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sin-extra-args-006",
+			"formula": "=SIN(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.8414709848078965
+		},
+		{
+			"id": "fn-math-sin-text-007",
+			"formula": "=SIN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sin-error-008",
+			"formula": "=SIN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sin-ref-009",
+			"formula": "=SIN(A1)",
+			"cells": {
+				"A1": 0
+			},
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cos-zero-001",
+			"formula": "=COS(0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cos-pi-002",
+			"formula": "=COS(PI())",
+			"expected": -1,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cos-doc-003",
+			"formula": "=COS(1.047)",
+			"expected": 0.500171,
+			"tolerance": 0.000001,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cos-degrees-004",
+			"formula": "=COS(RADIANS(60))",
+			"expected": 0.5,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cos-no-args-005",
+			"formula": "=COS()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-cos-extra-args-006",
+			"formula": "=COS(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.5403023058681398
+		},
+		{
+			"id": "fn-math-cos-text-007",
+			"formula": "=COS(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-cos-error-008",
+			"formula": "=COS(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-tan-zero-001",
+			"formula": "=TAN(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tan-quarter-pi-002",
+			"formula": "=TAN(PI()/4)",
+			"expected": 1,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tan-degrees-003",
+			"formula": "=TAN(RADIANS(45))",
+			"expected": 1,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tan-doc-004",
+			"formula": "=TAN(0.785)",
+			"expected": 0.9992,
+			"tolerance": 0.00001,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tan-no-args-005",
+			"formula": "=TAN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-tan-extra-args-006",
+			"formula": "=TAN(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.5574077246549023
+		},
+		{
+			"id": "fn-math-tan-text-007",
+			"formula": "=TAN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-tan-error-008",
+			"formula": "=TAN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-asin-one-001",
+			"formula": "=ASIN(1)",
+			"expected": 1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "ASIN(1) is pi/2",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-asin-doc-002",
+			"formula": "=ASIN(-0.5)",
+			"expected": -0.523598776,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-asin-zero-003",
+			"formula": "=ASIN(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-asin-above-range-004",
+			"formula": "=ASIN(2)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: the argument must be between -1 and 1",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-asin-below-range-005",
+			"formula": "=ASIN(-2)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-asin-no-args-006",
+			"formula": "=ASIN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-asin-extra-args-007",
+			"formula": "=ASIN(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-asin-text-008",
+			"formula": "=ASIN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-asin-error-009",
+			"formula": "=ASIN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-asin-boundary-010",
+			"formula": "=ASIN(-1)",
+			"expected": -1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-one-001",
+			"formula": "=ACOS(1)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-doc-002",
+			"formula": "=ACOS(-0.5)",
+			"expected": 2.094395102,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-zero-003",
+			"formula": "=ACOS(0)",
+			"expected": 1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-out-of-range-004",
+			"formula": "=ACOS(1.5)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-below-range-005",
+			"formula": "=ACOS(-1.5)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-acos-no-args-006",
+			"formula": "=ACOS()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-acos-extra-args-007",
+			"formula": "=ACOS(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-acos-text-008",
+			"formula": "=ACOS(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-acos-error-009",
+			"formula": "=ACOS(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-acos-boundary-010",
+			"formula": "=ACOS(-1)",
+			"expected": 3.141592654,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan-one-001",
+			"formula": "=ATAN(1)",
+			"expected": 0.785398163,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan-zero-002",
+			"formula": "=ATAN(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan-doc-003",
+			"formula": "=DEGREES(ATAN(1))",
+			"expected": 45,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan-large-004",
+			"formula": "=ATAN(1E10)",
+			"expected": 1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "asymptotic boundary",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan-no-args-005",
+			"formula": "=ATAN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan-extra-args-006",
+			"formula": "=ATAN(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.7853981633974483
+		},
+		{
+			"id": "fn-math-atan-text-007",
+			"formula": "=ATAN(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan-error-008",
+			"formula": "=ATAN(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan2-doc-001",
+			"formula": "=ATAN2(1,1)",
+			"expected": 0.785398163,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example; Excel takes x first, then y",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan2-doc-002",
+			"formula": "=ATAN2(-1,-1)",
+			"expected": -2.35619449,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan2-degrees-003",
+			"formula": "=DEGREES(ATAN2(1,1))",
+			"expected": 45,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan2-arg-order-004",
+			"formula": "=ATAN2(0,1)",
+			"expected": 1.570796327,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "x=0, y=1 points straight up, so the angle is pi/2; this pins the argument order",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-atan2-both-zero-005",
+			"formula": "=ATAN2(0,0)",
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: both arguments zero",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan2-no-args-006",
+			"formula": "=ATAN2()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan2-one-arg-007",
+			"formula": "=ATAN2(1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-atan2-extra-args-008",
+			"formula": "=ATAN2(1,1,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.7853981633974483
+		},
+		{
+			"id": "fn-math-atan2-text-009",
+			"formula": "=ATAN2(\"abc\",1)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-atan2-error-010",
+			"formula": "=ATAN2(A2,1)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1.5707963267948966
+		},
+		{
+			"id": "fn-math-sinh-zero-001",
+			"formula": "=SINH(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sinh-doc-002",
+			"formula": "=SINH(1)",
+			"expected": 1.175201194,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sinh-negative-003",
+			"formula": "=SINH(-1)",
+			"expected": -1.175201194,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "SINH is odd",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sinh-no-args-004",
+			"formula": "=SINH()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sinh-extra-args-005",
+			"formula": "=SINH(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.1752011936438014
+		},
+		{
+			"id": "fn-math-sinh-text-006",
+			"formula": "=SINH(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sinh-error-007",
+			"formula": "=SINH(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sinh-overflow-008",
+			"formula": "=SINH(1000)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "overflow past Excel's numeric ceiling Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-cosh-zero-001",
+			"formula": "=COSH(0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cosh-doc-002",
+			"formula": "=COSH(4)",
+			"expected": 27.30823284,
+			"tolerance": 1e-8,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cosh-even-003",
+			"formula": "=COSH(-4)",
+			"expected": 27.30823284,
+			"tolerance": 1e-8,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "COSH is even",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-cosh-no-args-004",
+			"formula": "=COSH()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-cosh-extra-args-005",
+			"formula": "=COSH(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.5430806348152437
+		},
+		{
+			"id": "fn-math-cosh-text-006",
+			"formula": "=COSH(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-cosh-error-007",
+			"formula": "=COSH(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-cosh-overflow-008",
+			"formula": "=COSH(1000)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"notes": "Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted."
+		},
+		{
+			"id": "fn-math-tanh-zero-001",
+			"formula": "=TANH(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tanh-doc-002",
+			"formula": "=TANH(0.5)",
+			"expected": 0.462117157,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tanh-saturation-003",
+			"formula": "=TANH(1000)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "TANH saturates at 1; no overflow",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-tanh-no-args-004",
+			"formula": "=TANH()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-tanh-extra-args-005",
+			"formula": "=TANH(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.7615941559557649
+		},
+		{
+			"id": "fn-math-tanh-text-006",
+			"formula": "=TANH(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-tanh-error-007",
+			"formula": "=TANH(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-degrees-pi-001",
+			"formula": "=DEGREES(PI())",
+			"expected": 180,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-degrees-zero-002",
+			"formula": "=DEGREES(0)",
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-degrees-negative-003",
+			"formula": "=DEGREES(-PI())",
+			"expected": -180,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-degrees-no-args-004",
+			"formula": "=DEGREES()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-degrees-extra-args-005",
+			"formula": "=DEGREES(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 57.29577951308232
+		},
+		{
+			"id": "fn-math-degrees-text-006",
+			"formula": "=DEGREES(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-degrees-error-007",
+			"formula": "=DEGREES(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-radians-180-001",
+			"formula": "=RADIANS(180)",
+			"expected": 3.141592654,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-radians-doc-002",
+			"formula": "=RADIANS(270)",
+			"expected": 4.71238898,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-radians-roundtrip-003",
+			"formula": "=DEGREES(RADIANS(37))",
+			"expected": 37,
+			"tolerance": 1e-12,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "round trip",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-radians-no-args-004",
+			"formula": "=RADIANS()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-radians-extra-args-005",
+			"formula": "=RADIANS(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.017453292519943295
+		},
+		{
+			"id": "fn-math-radians-text-006",
+			"formula": "=RADIANS(\"abc\")",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-radians-error-007",
+			"formula": "=RADIANS(A2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-combin-doc-001",
+			"formula": "=COMBIN(8,2)",
+			"expected": 28,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-choose-zero-002",
+			"formula": "=COMBIN(5,0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-zero-zero-003",
+			"formula": "=COMBIN(0,0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-k-gt-n-004",
+			"formula": "=COMBIN(5,6)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: number_chosen must not exceed number",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-negative-n-005",
+			"formula": "=COMBIN(-1,2)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-negative-k-006",
+			"formula": "=COMBIN(5,-1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-truncates-007",
+			"formula": "=COMBIN(5.9,2.9)",
+			"expected": 10,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "non-integer arguments are truncated",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-combin-no-args-008",
+			"formula": "=COMBIN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-combin-one-arg-009",
+			"formula": "=COMBIN(5)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-combin-extra-args-010",
+			"formula": "=COMBIN(5,2,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 10
+		},
+		{
+			"id": "fn-math-combin-text-011",
+			"formula": "=COMBIN(\"abc\",2)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-combin-error-012",
+			"formula": "=COMBIN(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-combin-large-013",
+			"formula": "=COMBIN(50,25)",
+			"expected": 126410606437752,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "large but exactly representable",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-doc-001",
+			"formula": "=PERMUT(3,2)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-doc-002",
+			"formula": "=PERMUT(100,3)",
+			"expected": 970200,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented Excel example",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-choose-zero-003",
+			"formula": "=PERMUT(5,0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-k-gt-n-004",
+			"formula": "=PERMUT(5,6)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-negative-005",
+			"formula": "=PERMUT(-1,1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-permut-no-args-006",
+			"formula": "=PERMUT()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-permut-one-arg-007",
+			"formula": "=PERMUT(5)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-permut-extra-args-008",
+			"formula": "=PERMUT(5,2,1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 20
+		},
+		{
+			"id": "fn-math-permut-text-009",
+			"formula": "=PERMUT(\"abc\",2)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-permut-error-010",
+			"formula": "=PERMUT(A2,2)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-math-permut-truncates-011",
+			"formula": "=PERMUT(5.9,2.9)",
+			"expected": 20,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "non-integer arguments are truncated",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-two-ranges-001",
+			"formula": "=SUMPRODUCT(A1:A4,B1:B4)",
+			"cells": {
+				"A1": 3,
+				"A2": 8,
+				"A3": 1,
+				"A4": 4,
+				"B1": 2,
+				"B2": 6,
+				"B3": 9,
+				"B4": 5
+			},
+			"expected": 83,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "3*2 + 8*6 + 1*9 + 4*5",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-single-range-002",
+			"formula": "=SUMPRODUCT(A1:A4)",
+			"cells": {
+				"A1": 3,
+				"A2": 8,
+				"A3": 1,
+				"A4": 4,
+				"B1": 2,
+				"B2": 6,
+				"B3": 9,
+				"B4": 5
+			},
+			"expected": 16,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "one array behaves like SUM",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-scalars-003",
+			"formula": "=SUMPRODUCT(2,3)",
+			"expected": 6,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-mismatched-004",
+			"formula": "=SUMPRODUCT(A1:A4,B1:B2)",
+			"cells": {
+				"A1": 3,
+				"A2": 8,
+				"A3": 1,
+				"A4": 4,
+				"B1": 2,
+				"B2": 6,
+				"B3": 9,
+				"B4": 5
+			},
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: all arrays must have the same dimensions",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 54
+		},
+		{
+			"id": "fn-math-sumproduct-text-in-range-005",
+			"formula": "=SUMPRODUCT(A1:A3,B1:B3)",
+			"cells": {
+				"A1": 2,
+				"A2": "x",
+				"A3": 4,
+				"B1": 3,
+				"B2": 5,
+				"B3": 6
+			},
+			"expected": 30,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented behaviour: non-numeric array entries are treated as zero",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-error-in-range-006",
+			"formula": "=SUMPRODUCT(A1:A3,B1:B3)",
+			"cells": {
+				"A1": 2,
+				"A2": "=1/0",
+				"A3": 4,
+				"B1": 3,
+				"B2": 5,
+				"B3": 6
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 30
+		},
+		{
+			"id": "fn-math-sumproduct-three-ranges-007",
+			"formula": "=SUMPRODUCT(A1:A2,B1:B2,C1:C2)",
+			"cells": {
+				"A1": 1,
+				"A2": 2,
+				"B1": 3,
+				"B2": 4,
+				"C1": 5,
+				"C2": 6
+			},
+			"expected": 63,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "1*3*5 + 2*4*6",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-cross-sheet-008",
+			"formula": "=SUMPRODUCT(A1:A3,Data!A1:A3)",
+			"sheets": {
+				"Sheet1": {
+					"A1": 1,
+					"A2": 2,
+					"A3": 3
+				},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30
+				}
+			},
+			"expected": 140,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "1*10+2*20+3*30",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-condition-009",
+			"formula": "=SUMPRODUCT((A1:A4>3)*1,B1:B4)",
+			"cells": {
+				"A1": 3,
+				"A2": 8,
+				"A3": 1,
+				"A4": 4,
+				"B1": 2,
+				"B2": 6,
+				"B3": 9,
+				"B4": 5
+			},
+			"expected": 11,
+			"defect": "unsupported-feature",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "the classic conditional-sum idiom: rows where A>3 are 3 and 8 -> 2+6... only A2=8 and A4=4 exceed 3, so 6+5",
+			"status": "known-failure",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sumif-text-criteria-001",
+			"formula": "=SUMIF(A1:A5,\"apple\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 90,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-no-sum-range-002",
+			"formula": "=SUMIF(B1:B5,\">25\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 120,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "two-argument form sums the tested range itself",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-comparison-003",
+			"formula": "=SUMIF(B1:B5,\">=30\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 120,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-wildcard-004",
+			"formula": "=SUMIF(A1:A5,\"a*\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 90,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "* matches any run of characters",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-not-equal-005",
+			"formula": "=SUMIF(A1:A5,\"<>apple\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 60,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-case-insensitive-006",
+			"formula": "=SUMIF(A1:A5,\"APPLE\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 90,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "criteria matching ignores case",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-numeric-criteria-007",
+			"formula": "=SUMIF(B1:B5,30)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 30,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-no-match-008",
+			"formula": "=SUMIF(A1:A5,\"zzz\",B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-short-sum-range-009",
+			"formula": "=SUMIF(A1:A5,\"apple\",B1:B3)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 90,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented behaviour: the sum range is extended from its top-left cell to the shape of the criteria range, so B1:B3 behaves as B1:B5",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 40
+		},
+		{
+			"id": "fn-math-sumif-one-arg-010",
+			"formula": "=SUMIF(A1:A5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "SUMIF needs at least a range and a criterion. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sumif-no-args-011",
+			"formula": "=SUMIF()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sumif-extra-args-012",
+			"formula": "=SUMIF(A1:A5,\"apple\",B1:B5,1)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "SUMIF takes at most three arguments. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 90
+		},
+		{
+			"id": "fn-math-sumif-cross-sheet-013",
+			"formula": "=SUMIF(Data!B1:B3,\"apple\",Data!A1:A3)",
+			"sheets": {
+				"Sheet1": {},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30,
+					"B1": "apple",
+					"B2": "banana",
+					"B3": "apple"
+				}
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-nested-014",
+			"formula": "=ROUND(SUMIF(A1:A5,\"apple\",B1:B5)/3,0)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 30,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "nested call",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-error-in-sum-range-015",
+			"formula": "=SUMIF(A1:A3,\"y\",B1:B3)",
+			"cells": {
+				"A1": "y",
+				"A2": "n",
+				"A3": "y",
+				"B1": 1,
+				"B2": 2,
+				"B3": "=1/0"
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "an error in a summed cell propagates",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-sumifs-one-criterion-001",
+			"formula": "=SUMIFS(B1:B5,A1:A5,\"apple\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 90,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-two-criteria-002",
+			"formula": "=SUMIFS(B1:B5,A1:A5,\"apple\",C1:C5,\"east\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel",
+			"notes": "criteria are combined with AND",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-comparison-003",
+			"formula": "=SUMIFS(B1:B5,B1:B5,\">=30\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 120,
+			"category": "function-math",
+			"source": "excel",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-no-match-004",
+			"formula": "=SUMIFS(B1:B5,B1:B5,\">100\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 0,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-sum-range-only-005",
+			"formula": "=SUMIFS(B1:B5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "SUMIFS needs at least one criteria range and criterion. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 150
+		},
+		{
+			"id": "fn-math-sumifs-dangling-range-006",
+			"formula": "=SUMIFS(B1:B5,A1:A5)",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "criteria ranges and criteria must come in pairs. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 150
+		},
+		{
+			"id": "fn-math-sumifs-no-args-007",
+			"formula": "=SUMIFS()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-sumifs-wildcard-008",
+			"formula": "=SUMIFS(B1:B5,A1:A5,\"*rr*\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "only cherry matches",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-cross-sheet-009",
+			"formula": "=SUMIFS(Data!A1:A3,Data!B1:B3,\"apple\")",
+			"sheets": {
+				"Sheet1": {},
+				"Data": {
+					"A1": 10,
+					"A2": 20,
+					"A3": 30,
+					"B1": "apple",
+					"B2": "banana",
+					"B3": "apple"
+				}
+			},
+			"expected": 40,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-three-criteria-010",
+			"formula": "=SUMIFS(B1:B5,A1:A5,\"apple\",C1:C5,\"east\",B1:B5,\">10\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 30,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-randbetween-fixed-point-001",
+			"formula": "=RANDBETWEEN(5,5)",
+			"expected": 5,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "bottom equals top, so the result is deterministic; the distribution itself is checked in formula.functions.math.test.ts",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-randbetween-reversed-002",
+			"formula": "=RANDBETWEEN(6,1)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel",
+			"notes": "documented error: bottom must not exceed top The engine result varies between runs because the call still reaches the random generator, so no \"actual\" is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-randbetween-no-args-003",
+			"formula": "=RANDBETWEEN()",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-math-randbetween-one-arg-004",
+			"formula": "=RANDBETWEEN(1)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-math-randbetween-extra-args-005",
+			"formula": "=RANDBETWEEN(1,6,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference. The engine result varies between runs because the call still reaches the random generator, so no \"actual\" is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-math-randbetween-text-006",
+			"formula": "=RANDBETWEEN(\"a\",6)",
+			"expected": "#VALUE!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"notes": "The engine result varies between runs because the call still reaches the random generator, so no \"actual\" is recorded."
+		},
+		{
+			"id": "fn-math-randbetween-error-007",
+			"formula": "=RANDBETWEEN(A2,10)",
+			"cells": {
+				"A1": 5,
+				"A2": "=1/0",
+				"A3": 10
+			},
+			"expected": "#DIV/0!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"notes": "The engine result varies between runs because the call still reaches the random generator, so no \"actual\" is recorded."
+		},
+		{
+			"id": "fn-math-rand-bounded-008",
+			"formula": "=IF(AND(RAND()>=0,RAND()<1),1,0)",
+			"expected": 1,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "RAND is volatile, so the fixture asserts the documented range rather than a value",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-rand-extra-args-009",
+			"formula": "=RAND(1,2)",
+			"expected": "#N/A",
+			"category": "function-math",
+			"source": "google-sheets",
+			"notes": "RAND takes no arguments. Excel refuses to accept a call with the wrong argument count at entry time; Google Sheets accepts it and returns #N/A with \"Wrong number of arguments\". Google Sheets is used as the checkable reference. The engine result varies between runs because the call still reaches the random generator, so no \"actual\" is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-math-product-boundary-013",
+			"formula": "=PRODUCT(1E200,1E200)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "the product overflows Excel's numeric ceiling Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-radians-boundary-008",
+			"formula": "=RADIANS(1E308)",
+			"expected": 1.7453292519943295e+306,
+			"tolerance": 1e+298,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "largest input that does not overflow Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-randbetween-boundary-008",
+			"formula": "=RANDBETWEEN(-2147483648,-2147483648)",
+			"expected": -2147483648,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "collapsed bounds at a 32-bit boundary stay deterministic",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-boundary-016",
+			"formula": "=SUMIF(B1:B5,\">=10\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 150,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": ">= includes the endpoint, so every row counts",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumif-boundary-017",
+			"formula": "=SUMIF(B1:B5,\">10\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 140,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "> excludes the endpoint",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-boundary-011",
+			"formula": "=SUMIFS(B1:B5,B1:B5,\">=10\")",
+			"cells": {
+				"A1": "apple",
+				"A2": "banana",
+				"A3": "apple",
+				"A4": "cherry",
+				"A5": "apple",
+				"B1": 10,
+				"B2": 20,
+				"B3": 30,
+				"B4": 40,
+				"B5": 50,
+				"C1": "east",
+				"C2": "west",
+				"C3": "east",
+				"C4": "east",
+				"C5": "west"
+			},
+			"expected": 150,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "boundary criterion includes the endpoint",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumifs-text-in-sum-range-012",
+			"formula": "=SUMIFS(B1:B3,A1:A3,\"y\")",
+			"cells": {
+				"A1": "y",
+				"A2": "y",
+				"A3": "n",
+				"B1": 10,
+				"B2": "x",
+				"B3": 99
+			},
+			"expected": 10,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "text in the sum range is skipped",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-sumproduct-boundary-010",
+			"formula": "=SUMPRODUCT(1E200,1E200)",
+			"expected": "#NUM!",
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "the product overflows Excel's numeric ceiling Engine returns Infinity, which JSON cannot express, so \"actual\" is omitted.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-math-sumproduct-blank-in-range-011",
+			"formula": "=SUMPRODUCT(A1:A3,B1:B3)",
+			"cells": {
+				"A1": 2,
+				"A3": 4,
+				"B1": 3,
+				"B2": 5,
+				"B3": 6
+			},
+			"expected": 30,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "a blank cell contributes zero to the sum of products",
+			"status": "pass"
+		},
+		{
+			"id": "fn-math-pi-in-range-005",
+			"formula": "=SUM(PI(),PI())",
+			"expected": 6.283185307,
+			"tolerance": 1e-9,
+			"category": "function-math",
+			"source": "excel-compatible-semantics",
+			"notes": "PI has no inputs, so the only remaining dimension is composition",
+			"status": "pass"
+		}
+	]
+}
