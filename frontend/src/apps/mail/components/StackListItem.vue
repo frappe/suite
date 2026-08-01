@@ -71,7 +71,14 @@ import type { Thread } from '@/apps/mail/types'
 //
 // Its hover actions apply to every member at once, so each one names the count and every move it makes
 // is undoable.
-const { threads, expanded, isSelected, selectable, hideAvatar, accountLabel } = defineProps<{
+const {
+	threads,
+	expanded,
+	isSelected,
+	selectable = true,
+	hideAvatar,
+	accountLabel,
+} = defineProps<{
 	threads: Thread[]
 	expanded: boolean
 	isSelected: boolean
