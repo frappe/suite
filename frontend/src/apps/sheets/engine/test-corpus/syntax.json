@@ -1,0 +1,268 @@
+{
+  "owner": "parser",
+  "cases": [
+    {
+      "id": "syntax-number-int-001",
+      "formula": "=42",
+      "expected": 42,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-number-decimal-001",
+      "formula": "=3.5",
+      "expected": 3.5,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-number-leading-dot-001",
+      "formula": "=.5",
+      "expected": 0.5,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-number-scientific-001",
+      "formula": "=1.5e3",
+      "expected": 1500,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-number-scientific-negative-exp-001",
+      "formula": "=2e-2",
+      "expected": 0.02,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-string-basic-001",
+      "formula": "=\"hello\"",
+      "expected": "hello",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-string-empty-001",
+      "formula": "=\"\"",
+      "expected": "",
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-string-backslash-preserved-001",
+      "formula": "=\"\\d+\"",
+      "expected": "\\d+",
+      "category": "tokenizer",
+      "source": "engine-contract",
+      "notes": "Backslash passes through so REGEX* functions receive the pattern intact."
+    },
+    {
+      "id": "syntax-bool-true-001",
+      "formula": "=TRUE",
+      "expected": true,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-bool-call-form-001",
+      "formula": "=TRUE()",
+      "expected": true,
+      "category": "tokenizer",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-ref-a1-001",
+      "formula": "=A1",
+      "cells": { "A1": 7 },
+      "expected": 7,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-ref-lowercase-001",
+      "formula": "=a1",
+      "cells": { "A1": 7 },
+      "expected": 7,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-ref-absolute-001",
+      "formula": "=$A$1",
+      "cells": { "A1": 7 },
+      "expected": 7,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "The tokenizer drops a leading `$` (no branch matches it) and folds the rest into an identifier, so every absolute reference resolves to #NAME?. Absolute references are the documented way to pin a reference during fill and paste.",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "syntax-ref-absolute-col-001",
+      "formula": "=$A1",
+      "cells": { "A1": 7 },
+      "expected": 7,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "This one form survives by accident: `$` is silently dropped, and what remains (`A1`) still tokenises as a reference. `A$1` and `$A$1` do not."
+    },
+    {
+      "id": "syntax-ref-absolute-row-001",
+      "formula": "=A$1",
+      "cells": { "A1": 7 },
+      "expected": 7,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "reference-resolution",
+      "actual": "#NAME?"
+    },
+    {
+      "id": "syntax-range-sum-001",
+      "formula": "=SUM(A1:A3)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-range-reversed-001",
+      "formula": "=SUM(A3:A1)",
+      "cells": { "A1": 1, "A2": 2, "A3": 3 },
+      "expected": 6,
+      "category": "reference",
+      "source": "excel-compatible-semantics",
+      "notes": "A reversed range is normalised, same as Excel."
+    },
+    {
+      "id": "syntax-crosssheet-cell-001",
+      "formula": "=Sheet2!A1",
+      "sheets": { "Sheet1": {}, "Sheet2": { "A1": 9 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-crosssheet-quoted-001",
+      "formula": "=SUM('My Sheet'!A1:A2)",
+      "sheets": { "Sheet1": {}, "My Sheet": { "A1": 4, "A2": 5 } },
+      "expected": 9,
+      "category": "reference",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-nested-calls-001",
+      "formula": "=SUM(MAX(1,2),MIN(3,4))",
+      "expected": 5,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-nested-parens-001",
+      "formula": "=((((1+2))))",
+      "expected": 3,
+      "category": "grammar",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "syntax-semicolon-arg-separator-001",
+      "formula": "=SUM(1;2)",
+      "expected": 3,
+      "category": "grammar",
+      "source": "engine-contract",
+      "notes": "`;` is accepted as an argument separator alongside `,`."
+    },
+    {
+      "id": "invalid-trailing-operator-001",
+      "formula": "=1+",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-unclosed-call-001",
+      "formula": "=SUM(1,2",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract"
+    },
+    {
+      "id": "invalid-adjacent-literals-001",
+      "formula": "=1 2",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The parser never checks that every token was consumed, so it returns the first expression and silently discards the rest. Whole classes of typos become silent wrong answers instead of errors.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1
+    },
+    {
+      "id": "invalid-extra-closing-paren-001",
+      "formula": "=1+2)",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 3
+    },
+    {
+      "id": "invalid-trailing-garbage-after-call-001",
+      "formula": "=SUM(1,2) 5",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 3
+    },
+    {
+      "id": "invalid-unknown-punctuation-001",
+      "formula": "=1@2",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The tokenizer's final else consumes an unrecognised character and emits no token, so stray punctuation vanishes instead of failing.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1
+    },
+    {
+      "id": "invalid-unterminated-string-001",
+      "formula": "=\"abc",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The string scanner stops at end-of-input and emits a complete STR token.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": "abc"
+    },
+    {
+      "id": "invalid-numeric-literal-001",
+      "formula": "=1.2.3",
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "notes": "The number scanner accepts any run of digits and dots, then parseFloat silently truncates at the second dot.",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1.2
+    },
+    {
+      "id": "invalid-adjacent-refs-001",
+      "formula": "=A1 A2",
+      "cells": { "A1": 1, "A2": 2 },
+      "expected": "#ERROR!",
+      "category": "invalid-syntax",
+      "source": "engine-contract",
+      "status": "known-failure",
+      "defect": "parser-accepts-invalid",
+      "actual": 1
+    }
+  ]
+}

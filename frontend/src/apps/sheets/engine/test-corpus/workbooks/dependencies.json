@@ -1,0 +1,83 @@
+{
+  "owner": "workbook",
+  "cases": [
+    {
+      "id": "dependency-direct-001",
+      "sheets": { "Sheet1": { "A1": 1, "B1": "=A1+1" } },
+      "actions": [{ "type": "set", "sheet": "Sheet1", "cell": "A1", "value": 10 }],
+      "expected": { "Sheet1!B1": 11 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-diamond-001",
+      "sheets": {
+        "Sheet1": { "A1": 1, "B1": "=A1+1", "C1": "=A1+2", "D1": "=B1+C1" }
+      },
+      "actions": [{ "type": "set", "sheet": "Sheet1", "cell": "A1", "value": 10 }],
+      "expected": { "Sheet1!B1": 11, "Sheet1!C1": 12, "Sheet1!D1": 23 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-chain-001",
+      "sheets": {
+        "Sheet1": { "A1": 1, "A2": "=A1+1", "A3": "=A2+1", "A4": "=A3+1", "A5": "=A4+1" }
+      },
+      "actions": [{ "type": "set", "sheet": "Sheet1", "cell": "A1", "value": 100 }],
+      "expected": { "Sheet1!A5": 104 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-range-source-001",
+      "sheets": { "Sheet1": { "A1": 1, "A2": 2, "A3": 3, "B1": "=SUM(A1:A3)" } },
+      "actions": [{ "type": "set", "sheet": "Sheet1", "cell": "A2", "value": 20 }],
+      "expected": { "Sheet1!B1": 24 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-cross-sheet-001",
+      "sheets": { "Sheet1": { "A1": "=Sheet2!A1+1" }, "Sheet2": { "A1": 5 } },
+      "actions": [{ "type": "set", "sheet": "Sheet2", "cell": "A1", "value": 50 }],
+      "expected": { "Sheet1!A1": 51 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-clear-source-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=A1*2" } },
+      "actions": [{ "type": "clear", "sheet": "Sheet1", "cell": "A1" }],
+      "expected": { "Sheet1!B1": 0 },
+      "category": "dependency",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "dependency-formula-replaced-by-literal-001",
+      "sheets": { "Sheet1": { "A1": 5, "B1": "=A1*2", "C1": "=B1+1" } },
+      "actions": [
+        { "type": "set", "sheet": "Sheet1", "cell": "B1", "value": 3 },
+        { "type": "set", "sheet": "Sheet1", "cell": "A1", "value": 99 }
+      ],
+      "expected": { "Sheet1!B1": 3, "Sheet1!C1": 4 },
+      "category": "cache",
+      "source": "excel-compatible-semantics",
+      "notes": "Replacing B1's formula must drop the old A1 to B1 edge, so a later A1 edit leaves B1 alone."
+    },
+    {
+      "id": "circular-self-reference-001",
+      "sheets": { "Sheet1": { "A1": "=A1+1" } },
+      "expected": { "Sheet1!A1": "#CIRCULAR!" },
+      "category": "circular-reference",
+      "source": "engine-contract"
+    },
+    {
+      "id": "circular-two-cell-cycle-001",
+      "sheets": { "Sheet1": { "A1": "=B1+1", "B1": "=A1+1" } },
+      "expected": { "Sheet1!A1": "#CIRCULAR!" },
+      "category": "circular-reference",
+      "source": "engine-contract"
+    }
+  ]
+}

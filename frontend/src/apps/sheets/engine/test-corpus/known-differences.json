@@ -1,0 +1,37 @@
+{
+  "note": "Accepted differences from Excel and Google Sheets. Each entry is a decision, not a defect. A difference belongs here only after a reviewer confirms it is intentional or out of scope. Fixtures that assert current behaviour must link to an id here.",
+  "differences": [
+    {
+      "id": "diff-float-display-rounding",
+      "area": "arithmetic",
+      "summary": "Results are raw IEEE-754 doubles.",
+      "detail": "Excel applies a final-result rounding pass so =0.1+0.2 shows 0.3. This engine returns 0.30000000000000004.",
+      "classification": "intentional-product-difference",
+      "impact": "Display only for most workbooks, but exact equality tests on computed values can disagree with Excel."
+    },
+    {
+      "id": "diff-argument-separator-semicolon",
+      "area": "parser",
+      "summary": "`;` is accepted as an argument separator.",
+      "detail": "Excel accepts `;` only under locales that use it. This engine always accepts both `,` and `;`.",
+      "classification": "intentional-product-difference",
+      "impact": "Strictly more permissive, so no valid formula is rejected."
+    },
+    {
+      "id": "diff-circular-error-name",
+      "area": "engine",
+      "summary": "Circular references return `#CIRCULAR!`.",
+      "detail": "Excel reports a circular-reference warning and puts 0 in the cell. Google Sheets returns `#REF!`. This engine uses a distinct `#CIRCULAR!` marker.",
+      "classification": "intentional-product-difference",
+      "impact": "The differential harness must normalise this before comparing."
+    },
+    {
+      "id": "diff-whole-column-row-limit",
+      "area": "reference",
+      "summary": "`A:A` expands to rows 1 to 1048576.",
+      "detail": "The expansion is literal, so a whole-column reference materialises a million rows instead of using the used range.",
+      "classification": "unsupported-local-feature",
+      "impact": "Correct results, unusable performance. Tracked as a performance defect, not a compatibility one."
+    }
+  ]
+}

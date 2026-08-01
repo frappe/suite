@@ -1,0 +1,281 @@
+{
+  "owner": "arithmetic",
+  "cases": [
+    {
+      "id": "precedence-mul-over-add-001",
+      "formula": "=1+2*3",
+      "expected": 7,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "precedence-add-then-concat-001",
+      "formula": "=1+2&3",
+      "expected": "33",
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics",
+      "notes": "& binds looser than +."
+    },
+    {
+      "id": "precedence-concat-then-add-001",
+      "formula": "=1&2+3",
+      "expected": "15",
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "precedence-unary-minus-over-power-001",
+      "formula": "=-2^2",
+      "expected": 4,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Google Sheets bind unary minus tighter than ^, so this is +4, not -4."
+    },
+    {
+      "id": "precedence-power-negative-exponent-001",
+      "formula": "=2^-2",
+      "expected": 0.25,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "precedence-percent-then-power-001",
+      "formula": "=50%^2",
+      "expected": 0.25,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "associativity-power-right-001",
+      "formula": "=2^3^2",
+      "expected": 512,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics",
+      "notes": "`pow()` handles at most one `^` and never loops, so the trailing `^2` is dropped entirely: the engine returns 2^3. Because nothing verifies that all tokens were consumed, this is a silent wrong answer.",
+      "status": "known-failure",
+      "defect": "associativity",
+      "actual": 8
+    },
+    {
+      "id": "associativity-power-explicit-left-001",
+      "formula": "=(2^3)^2",
+      "expected": 64,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "associativity-power-explicit-right-001",
+      "formula": "=2^(3^2)",
+      "expected": 512,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "associativity-subtraction-left-001",
+      "formula": "=10-3-2",
+      "expected": 5,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "associativity-division-left-001",
+      "formula": "=100/10/2",
+      "expected": 5,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "unary-percent-after-negation-001",
+      "formula": "=-5%",
+      "expected": -0.05,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "`unary()` returns immediately after a leading `-` and never checks for a trailing `%`, so the `%` token is left unread and silently discarded.",
+      "status": "known-failure",
+      "defect": "precedence",
+      "actual": -5
+    },
+    {
+      "id": "unary-double-negation-001",
+      "formula": "=--1",
+      "expected": 1,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "`unary()` recurses into `primary()` rather than `unary()`, so the second `-` reaches primary's catch-all, which consumes the token and returns 0. The result is -0; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "precedence"
+    },
+    {
+      "id": "unary-negate-parenthesised-001",
+      "formula": "=-(-1)",
+      "expected": 1,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "unary-double-percent-001",
+      "formula": "=5%%",
+      "expected": 0.0005,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "`unary()` applies `%` once, so the second `%` is dropped.",
+      "status": "known-failure",
+      "defect": "precedence",
+      "actual": 0.05
+    },
+    {
+      "id": "coercion-text-plus-number-001",
+      "formula": "=\"abc\"+1",
+      "expected": "#VALUE!",
+      "category": "coercion",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "coercion-numeric-string-plus-number-001",
+      "formula": "=\"2\"+1",
+      "expected": 3,
+      "category": "coercion",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "coercion-bool-plus-number-001",
+      "formula": "=TRUE+1",
+      "expected": 2,
+      "category": "coercion",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "coercion-empty-cell-plus-number-001",
+      "formula": "=Z99+1",
+      "expected": 1,
+      "category": "coercion",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "comparison-text-equals-zero-001",
+      "formula": "=\"a\"=0",
+      "expected": false,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "The `=` operator ORs a case-insensitive string compare with a numeric compare, and `toNum` maps any non-numeric text to 0. So every text value tests equal to 0.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "comparison-empty-string-equals-zero-001",
+      "formula": "=\"\"=0",
+      "expected": false,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "comparison-number-equals-numeric-text-001",
+      "formula": "=1=\"1\"",
+      "expected": false,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel compares a number and text by type first: a number is never equal to text.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "comparison-not-equal-disagrees-with-equal-001",
+      "formula": "=IF(1=\"1\",1,0)+IF(1<>\"1\",1,0)",
+      "expected": 1,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "`=` and `<>` use different comparison rules (`=` also tries a numeric compare, `<>` does not), so they could disagree. Today they happen to agree here; this fixture guards the invariant while `=` is repaired."
+    },
+    {
+      "id": "comparison-text-greater-than-number-001",
+      "formula": "=\"apple\">1",
+      "expected": true,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel orders every text value above every number.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "error-divide-by-zero-001",
+      "formula": "=1/0",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-addition-001",
+      "formula": "=(1/0)+1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-comparison-001",
+      "formula": "=(1/0)>1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "`comparison()` coerces with `toNum`, which turns an error string into 0, so an error is silently compared as a number instead of propagating.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "error-propagates-through-concat-001",
+      "formula": "=\"x\"&(1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "`concat()` stringifies both operands without an error check, so the error text is embedded in the result.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "x#DIV/0!"
+    },
+    {
+      "id": "error-propagates-through-power-001",
+      "formula": "=(1/0)^2",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-literal-propagates-001",
+      "formula": "=#REF!+1",
+      "expected": "#REF!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "boundary-divide-by-negative-zero-001",
+      "formula": "=1/-0",
+      "expected": "#DIV/0!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "boundary-large-exponent-overflow-001",
+      "formula": "=1e308*10",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel reports #NUM! on overflow. This engine returns the IEEE-754 value Infinity, which then leaks into every downstream cell and serialises as the string \"Infinity\". `actual` is omitted because Infinity has no JSON form.",
+      "status": "known-failure",
+      "defect": "compatibility-difference"
+    },
+    {
+      "id": "boundary-float-cancellation-001",
+      "formula": "=0.1+0.2",
+      "expected": 0.30000000000000004,
+      "category": "boundary",
+      "source": "engine-contract",
+      "notes": "The engine uses raw IEEE-754 doubles. Excel applies a final-result rounding pass and shows 0.3; that difference is tracked in known-differences.json."
+    }
+  ]
+}
