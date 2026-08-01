@@ -40,9 +40,7 @@
 						:class="iconClass(mailActive)"
 					/>
 					<Icon v-else name="inbox" :class="iconClass(mailActive)" />
-					<span v-if="mailBadgeCount" :class="badgeClass">{{
-						badgeText(mailBadgeCount)
-					}}</span>
+					<span v-if="mailUnreadCount" :class="dotClass" />
 				</span>
 				<span class="max-w-full truncate px-1" :class="labelClass(mailActive)">
 					{{ currentFolder?.label ?? __('Inbox') }}
@@ -51,7 +49,7 @@
 			<button v-if="screeningEnabled" :class="tabClass(screenerActive)" @click="openScreener">
 				<span class="relative">
 					<Icon name="eye" :class="iconClass(screenerActive)" />
-					<span v-if="screenerCount" :class="badgeClass">{{ badgeText(screenerCount) }}</span>
+					<span v-if="screenerCount" :class="dotClass" />
 				</span>
 				<span :class="labelClass(screenerActive)">{{ __('Screener') }}</span>
 			</button>
@@ -157,8 +155,8 @@ const openMail = () => {
 		openFolderSheet()
 		return
 	}
-	// From elsewhere the tab reads "Inbox" with the Inbox's unread badge, so the
-	// tap must land there — restoring the last-viewed folder made a badged tab
+	// From elsewhere the tab reads "Inbox" with the Inbox's unread dot, so the
+	// tap must land there — restoring the last-viewed folder made a dotted tab
 	// open Sent. (/mail redirects to the inbox.)
 	router.push('/mail')
 }
@@ -181,10 +179,10 @@ const screenerCount = computed(
 			?.unread_threads ?? 0,
 )
 
-// The badge follows what the tab is showing: the current folder's unread while
-// on a mail route (so Drafts with nothing unread shows no badge), the Inbox's
+// The dot follows what the tab is showing: the current folder's unread while
+// on a mail route (so Drafts with nothing unread shows no dot), the Inbox's
 // unread when the tab reads "Inbox" from elsewhere. Starred is virtual — no count.
-const mailBadgeCount = computed(() => {
+const mailUnreadCount = computed(() => {
 	if (route.name === 'mail-all-inboxes') return allInboxesUnread.data ?? 0
 	// In search the tab reads "Inbox" (below), so fall through to the Inbox's count.
 	if (route.name === 'mail-mailbox' && !isSearchRoute.value) {
@@ -200,23 +198,17 @@ const mailBadgeCount = computed(() => {
 	)
 })
 
-// Numeric unread badge shared by the Mail and Screener tabs (replaces the old
-// presence dot). Bordered like the dot was, to read against the translucent bar.
-// Anchored at the icon's top-right (left 60%) and allowed to overflow, so wide
-// counts ("99+") grow outward instead of spreading back across the glyph — the
-// icon keeps its optical centering. Neutral ink pill, not red — counts are
-// information here, and red shouted louder than the active tab. gray-10 +
-// ink-base is the app's inverted-chip pair (see the row selection check),
-// flipping correctly in both themes.
-const badgeClass =
-	'bg-surface-gray-10 text-ink-base absolute -top-1.5 left-[60%] flex h-4 min-w-5 items-center justify-center rounded-full border border-[var(--surface-base)] px-1 text-[10px] font-semibold leading-none'
-
-const badgeText = (count: number) => (count > 99 ? '99+' : String(count))
+// Raven-style unread dot (RailItemBadge dot recipe) shared by the Mail and
+// Screener tabs: presence, not a count. Offset outward so it hangs off the
+// icon's corner rather than sitting on the glyph strokes; bordered to read
+// against the translucent bar.
+const dotClass =
+	'bg-surface-red-6 absolute -right-1.5 -top-1 block size-2.5 rounded-full border border-[var(--surface-base)]'
 
 // Active/inactive contrast rides two channels: ink (9 vs 4 — dropping inactive
-// to 3 read as more disparity but tipped into illegible) and weight (stroke 2
-// vs 1.75, semibold vs medium), so the active tab pops without any label going
-// faint.
+// to 3 read as more disparity but tipped into illegible) and weight (stroke
+// 1.75 vs 1.5, semibold vs medium), so the active tab pops without any label
+// going faint.
 const tabClass = (active: boolean) =>
 	[
 		'flex flex-1 flex-col items-center justify-center gap-1',
@@ -224,7 +216,7 @@ const tabClass = (active: boolean) =>
 	].join(' ')
 
 const iconClass = (active: boolean) =>
-	['h-6 w-6 shrink-0', active ? 'stroke-2' : '[stroke-width:1.75]'].join(' ')
+	['h-6 w-6 shrink-0', active ? '[stroke-width:1.75]' : '[stroke-width:1.5]'].join(' ')
 
 const labelClass = (active: boolean) =>
 	['text-xs !leading-3', active ? '!font-semibold' : '!font-medium'].join(' ')
