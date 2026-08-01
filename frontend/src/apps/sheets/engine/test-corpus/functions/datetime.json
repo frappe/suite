@@ -1,0 +1,1394 @@
+{
+	"_readme": [
+		"Date and time built-ins: DATE DATEDIF DATEVALUE DAY DAYS EDATE EOMONTH HOUR",
+		"MINUTE MONTH NETWORKDAYS NOW SECOND TIME TIMEVALUE TODAY WEEKDAY WORKDAY YEAR.",
+		"",
+		"Two conventions used throughout this file.",
+		"",
+		"1. Date literals are written as 'YYYY-MM-DD 00:00:00', not 'YYYY-MM-DD'.",
+		"   The engine parses every date with `new Date(string)`, then reads the",
+		"   result with LOCAL getters. A bare ISO date is parsed as UTC midnight, so",
+		"   DAY('2026-05-23') is 23 east of Greenwich and 22 west of it. The",
+		"   space-separated form is parsed as local time, which makes the fixture",
+		"   answer the same in every time zone. The time-zone leak itself is covered",
+		"   in formula.functions.lookup.test.ts, which can assert it deterministically.",
+		"",
+		"2. This engine represents a date as an ISO string, not as an Excel serial",
+		"   number. Fixtures whose only difference from Excel is that representation",
+		"   carry source 'engine-contract' and name the Excel serial in notes. The",
+		"   consequences of the choice - date arithmetic, date comparison, dates in",
+		"   ranges - are recorded as known-failures, because those produce wrong",
+		"   answers rather than a different-looking right one.",
+		"",
+		"Wrong-argument-count cases use Google Sheets as the oracle: Sheets surfaces",
+		"'Wrong number of arguments' as #N/A, while Excel refuses the formula at entry",
+		"and so has no value to compare against."
+	],
+	"cases": [
+		{
+			"id": "fn-date-date-basic-001",
+			"formula": "=DATE(2026,5,23)",
+			"expected": "2026-05-23",
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "Excel returns serial 46165 formatted as a date; this engine returns the ISO string. Same calendar day."
+		},
+		{
+			"id": "fn-date-date-month-rollover-002",
+			"formula": "=DATE(2026,13,1)",
+			"expected": "2027-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Month 13 rolls into the next year, as in Excel."
+		},
+		{
+			"id": "fn-date-date-month-zero-003",
+			"formula": "=DATE(2026,0,1)",
+			"expected": "2025-12-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Month 0 is December of the previous year."
+		},
+		{
+			"id": "fn-date-date-day-overflow-004",
+			"formula": "=DATE(2026,2,30)",
+			"expected": "2026-03-02",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Day 30 of a 28-day February rolls forward two days."
+		},
+		{
+			"id": "fn-date-date-day-zero-005",
+			"formula": "=DATE(2026,1,0)",
+			"expected": "2025-12-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Day 0 is the last day of the previous month."
+		},
+		{
+			"id": "fn-date-date-leap-day-006",
+			"formula": "=DATE(2024,2,29)",
+			"expected": "2024-02-29",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "2024 is a leap year, so 29 February is a real date."
+		},
+		{
+			"id": "fn-date-date-two-digit-year-007",
+			"formula": "=DATE(99,1,1)",
+			"expected": "1999-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel adds 1900 to years below 1900. Years 0-99 happen to agree with JavaScript's own two-digit mapping."
+		},
+		{
+			"id": "fn-date-date-year-120-008",
+			"formula": "=DATE(120,1,1)",
+			"expected": "2020-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel maps years 0-1899 to year+1900, so DATE(120,1,1) is 2020. JavaScript only remaps 0-99, so 120 stays a literal year 120.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "120-01-01"
+		},
+		{
+			"id": "fn-date-date-year-1899-009",
+			"formula": "=DATE(1899,1,1)",
+			"expected": "3799-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel adds 1900 to any year below 1900, so DATE(1899,1,1) is 3799-01-01. The engine takes 1899 literally.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "1899-01-01"
+		},
+		{
+			"id": "fn-date-date-year-zero-010",
+			"formula": "=DATE(0,1,1)",
+			"expected": "1900-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Year 0 maps to 1900 in Excel, and to 1900 in JavaScript's two-digit rule as well, so both agree here."
+		},
+		{
+			"id": "fn-date-date-1900-leap-bug-011",
+			"formula": "=DATE(1900,2,29)",
+			"expected": "1900-02-29",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel keeps the fictional 1900-02-29 (serial 60) for Lotus compatibility. A real calendar has no such day, so the engine rolls to 1 March.",
+			"status": "known-failure",
+			"defect": "compatibility-difference",
+			"actual": "1900-03-01"
+		},
+		{
+			"id": "fn-date-date-missing-day-012",
+			"formula": "=DATE(2026,5)",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "DATE needs three arguments. There is no arity check, so the missing day becomes 0 and the result silently slips to the last day of April.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "2026-04-30"
+		},
+		{
+			"id": "fn-date-date-no-arguments-013",
+			"formula": "=DATE()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "All three arguments default to 0, producing 1899-11-30 instead of an error.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "1899-11-30"
+		},
+		{
+			"id": "fn-date-date-extra-argument-014",
+			"formula": "=DATE(2026,5,23,99)",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "A fourth argument is accepted and ignored rather than rejected.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "2026-05-23"
+		},
+		{
+			"id": "fn-date-date-numeric-text-015",
+			"formula": "=DATE(\"2026\",\"5\",\"23\")",
+			"expected": "2026-05-23",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Numeric text coerces to numbers, as in Excel."
+		},
+		{
+			"id": "fn-date-date-boolean-arguments-016",
+			"formula": "=DATE(TRUE,TRUE,TRUE)",
+			"expected": "1901-01-01",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "TRUE coerces to 1, and Excel maps year 1 to 1901."
+		},
+		{
+			"id": "fn-date-date-text-arguments-017",
+			"formula": "=DATE(\"a\",\"b\",\"c\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Non-numeric text is a #VALUE! error in Excel. toNum turns it into 0, so the engine builds a date from zeroes.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "1899-11-30"
+		},
+		{
+			"id": "fn-date-date-error-argument-018",
+			"formula": "=DATE(1/0,1,1)",
+			"expected": "#DIV/0!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "An error argument must propagate. toNum swallows the error string and yields 0, which maps to year 1900.",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "1900-01-01"
+		},
+		{
+			"id": "fn-date-date-plus-one-019",
+			"formula": "=DATE(2026,5,23)+1",
+			"expected": "2026-05-24",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Adding 1 to a date gives the next day in every spreadsheet. Because DATE returns a string, strict arithmetic coercion rejects it. This is the headline cost of the ISO-string representation.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-date-date-difference-020",
+			"formula": "=DATE(2026,3,1)-DATE(2026,2,1)",
+			"expected": 28,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Subtracting two dates gives a day count. DAYS() on the same pair returns 28, so the capability exists; only the operator path is broken.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-date-date-less-than-021",
+			"formula": "=DATE(2026,1,1)<DATE(2026,2,1)",
+			"expected": true,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "January precedes February. The comparison operator coerces both text operands to 0, so every pair of dates compares equal.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": false
+		},
+		{
+			"id": "fn-date-date-equality-022",
+			"formula": "=DATE(2026,5,23)=DATE(2026,5,23)",
+			"expected": true,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Equality survives the string representation even though ordering does not."
+		},
+		{
+			"id": "fn-date-date-days-round-trip-023",
+			"formula": "=DAYS(DATE(2026,3,1),DATE(2026,2,1))",
+			"expected": 28,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "DAYS re-parses the ISO strings, so the nested call works where the minus operator does not."
+		},
+		{
+			"id": "fn-date-date-concat-024",
+			"formula": "=\"x\"&DATE(2026,5,23)",
+			"expected": "x2026-05-23",
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "Excel would concatenate the serial number, giving 'x46165'. The ISO string is the more useful local behaviour, recorded here so a change is visible."
+		},
+
+		{
+			"id": "fn-date-year-basic-030",
+			"formula": "=YEAR(\"2026-05-23 00:00:00\")",
+			"expected": 2026,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-month-basic-031",
+			"formula": "=MONTH(\"2026-05-23 00:00:00\")",
+			"expected": 5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-day-basic-032",
+			"formula": "=DAY(\"2026-05-23 00:00:00\")",
+			"expected": 23,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-parts-round-trip-033",
+			"formula": "=DATE(YEAR(\"2026-05-23 00:00:00\"),MONTH(\"2026-05-23 00:00:00\"),DAY(\"2026-05-23 00:00:00\"))",
+			"expected": "2026-05-23",
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "Splitting a date into parts and rebuilding it is lossless."
+		},
+		{
+			"id": "fn-date-year-of-date-call-034",
+			"formula": "=YEAR(DATE(2026,5,23))",
+			"expected": 2026,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Nested call: YEAR re-parses the ISO string DATE produced."
+		},
+		{
+			"id": "fn-date-year-serial-035",
+			"formula": "=YEAR(46165)",
+			"expected": 2026,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "46165 is the Excel serial for 2026-05-23, and DATEVALUE in this engine produces exactly that number. YEAR feeds it to new Date(), which reads it as 46165 milliseconds after the Unix epoch. So the engine cannot consume its own DATEVALUE output. The recorded result is time-zone dependent (1970 east of Greenwich, 1969 west), so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-date-year-empty-036",
+			"formula": "=YEAR(\"\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Empty text is not a date. new Date('') is Invalid Date and getFullYear() returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-date-day-text-037",
+			"formula": "=DAY(\"junk\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "An unparseable date must be #VALUE!. The engine returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-date-month-no-arguments-038",
+			"formula": "=MONTH()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "No arity check; the engine returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-date-day-extra-argument-039",
+			"formula": "=DAY(\"2026-05-23 00:00:00\",\"extra\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "The second argument is silently ignored.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 23
+		},
+		{
+			"id": "fn-date-year-error-input-040",
+			"formula": "=YEAR(1/0)",
+			"expected": "#DIV/0!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "new Date('#DIV/0!') is invalid, but Date's fallback parse of the digit 0 in the string yields year 2000 instead of propagating the error.",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": 2000
+		},
+		{
+			"id": "fn-date-year-range-input-041",
+			"formula": "=YEAR(A1:A2)",
+			"cells": { "A1": "2026-05-23 00:00:00", "A2": "2026-06-23 00:00:00" },
+			"expected": 2026,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel applies implicit intersection or spills; either way the first row's year is 2026. The engine hands the whole matrix to new Date(), giving NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-date-year-of-date-cell-042",
+			"formula": "=YEAR(A1)",
+			"cells": { "A1": "2026-05-23" },
+			"expected": 2026,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "A date typed into a cell is stored as text and then parseFloat'd on read, so A1 arrives at YEAR as the NUMBER 2026, which new Date() reads as 2026 milliseconds after the epoch. Result is time-zone dependent (1970 or 1969), so no actual is recorded. This is the single most damaging date defect: no date function works on a date the user actually typed.",
+			"status": "known-failure",
+			"defect": "coercion"
+		},
+		{
+			"id": "fn-date-days-of-date-cells-043",
+			"formula": "=DAYS(A1,A2)",
+			"cells": { "A1": "2026-01-15", "A2": "2026-02-15" },
+			"expected": -31,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Both cells collapse to the number 2026 on read, so their difference is zero.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": 0
+		},
+
+		{
+			"id": "fn-date-hour-basic-050",
+			"formula": "=HOUR(\"2026-05-23 13:45:30\")",
+			"expected": 13,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-minute-basic-051",
+			"formula": "=MINUTE(\"2026-05-23 13:45:30\")",
+			"expected": 45,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-second-basic-052",
+			"formula": "=SECOND(\"2026-05-23 13:45:30\")",
+			"expected": 30,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-hour-of-time-053",
+			"formula": "=HOUR(TIME(23,45,30))-HOUR(TIME(22,45,30))",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "TIME returns a day fraction, which is exactly what HOUR consumes in Excel. Here HOUR feeds the fraction to new Date() as a millisecond count, so it reads the local UTC offset instead. formula.functions.lookup.test.ts pins the raw value down against the machine's offset. Two adjacent hours are subtracted rather than one being read directly: the engine answers with the machine's UTC offset either way, so the difference is always 0 while a spreadsheet always says 1. That makes the fixture true in every time zone without naming a value.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-minute-of-fraction-054",
+			"formula": "=MINUTE(TIME(12,20,0))-MINUTE(TIME(12,21,0))",
+			"expected": -1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Same defect as HOUR, one level down. Two adjacent minutes are subtracted for the same reason as the HOUR fixture above.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-hour-time-only-text-055",
+			"formula": "=HOUR(\"13:45:30\")",
+			"expected": 13,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel parses a bare time string. new Date('13:45:30') is invalid, giving NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-date-second-no-arguments-056",
+			"formula": "=SECOND()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+
+		{
+			"id": "fn-date-hour-no-arguments-057",
+			"formula": "=HOUR()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-date-hour-extra-argument-058",
+			"formula": "=HOUR(\"2026-05-23 13:45:30\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 13
+		},
+		{
+			"id": "fn-date-minute-no-arguments-059",
+			"formula": "=MINUTE()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-date-second-extra-argument-060a",
+			"formula": "=SECOND(\"2026-05-23 13:45:30\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 30
+		},
+		{
+			"id": "fn-date-year-extra-argument-060b",
+			"formula": "=YEAR(\"2026-05-23 00:00:00\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2026
+		},
+		{
+			"id": "fn-date-month-extra-argument-060c",
+			"formula": "=MONTH(\"2026-05-23 00:00:00\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 5
+		},
+		{
+			"id": "fn-date-now-extra-argument-060d",
+			"formula": "=LEN(NOW(1))>0",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "NOW takes no arguments. Wrapped so the assertion does not depend on the locale string's content.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": true
+		},
+		{
+			"id": "fn-date-days-forward-060",
+			"formula": "=DAYS(\"2026-03-01 00:00:00\",\"2026-02-01 00:00:00\")",
+			"expected": 28,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-days-negative-061",
+			"formula": "=DAYS(\"2026-02-01 00:00:00\",\"2026-03-01 00:00:00\")",
+			"expected": -28,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "DAYS(end, start) is signed; reversing the pair negates the answer."
+		},
+		{
+			"id": "fn-date-days-same-day-062",
+			"formula": "=DAYS(\"2026-03-01 00:00:00\",\"2026-03-01 00:00:00\")",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-days-missing-argument-063",
+			"formula": "=DAYS(\"2026-03-01 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-date-days-extra-argument-064",
+			"formula": "=DAYS(\"2026-03-01 00:00:00\",\"2026-02-01 00:00:00\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 28
+		},
+		{
+			"id": "fn-date-days-text-input-065",
+			"formula": "=DAYS(\"junk\",\"2026-02-01 00:00:00\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+
+		{
+			"id": "fn-date-edate-clamp-short-month-070",
+			"formula": "=EDATE(\"2026-01-31 00:00:00\",1)",
+			"expected": "2026-02-28",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "31 January plus one month clamps to the last day of February."
+		},
+		{
+			"id": "fn-date-edate-backwards-071",
+			"formula": "=EDATE(\"2026-01-31 00:00:00\",-1)",
+			"expected": "2025-12-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-edate-zero-months-072",
+			"formula": "=EDATE(\"2026-05-23 00:00:00\",0)",
+			"expected": "2026-05-23",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-edate-clamp-backwards-073",
+			"formula": "=EDATE(\"2026-03-31 00:00:00\",-1)",
+			"expected": "2026-02-28",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-edate-invalid-date-074",
+			"formula": "=EDATE(\"junk\",1)",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "One of the few date functions that validates its input."
+		},
+		{
+			"id": "fn-date-edate-missing-months-075",
+			"formula": "=EDATE(\"2026-01-31 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "The missing month count becomes 0, so the start date comes straight back.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "2026-01-31"
+		},
+		{
+			"id": "fn-date-edate-no-arguments-076",
+			"formula": "=EDATE()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "The invalid-date guard catches this one, so the error code is at least an error.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+
+		{
+			"id": "fn-date-eomonth-current-080",
+			"formula": "=EOMONTH(\"2026-01-15 00:00:00\",0)",
+			"expected": "2026-01-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-eomonth-next-081",
+			"formula": "=EOMONTH(\"2026-01-15 00:00:00\",1)",
+			"expected": "2026-02-28",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-eomonth-previous-082",
+			"formula": "=EOMONTH(\"2026-01-15 00:00:00\",-1)",
+			"expected": "2025-12-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Crosses a year boundary backwards."
+		},
+		{
+			"id": "fn-date-eomonth-leap-february-083",
+			"formula": "=EOMONTH(\"2024-02-15 00:00:00\",0)",
+			"expected": "2024-02-29",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-eomonth-year-wrap-084",
+			"formula": "=EOMONTH(\"2026-12-15 00:00:00\",1)",
+			"expected": "2027-01-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "December plus one month must land in the next year."
+		},
+		{
+			"id": "fn-date-eomonth-multi-year-back-085",
+			"formula": "=EOMONTH(\"2026-01-15 00:00:00\",-13)",
+			"expected": "2024-12-31",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "More than twelve months backwards, which exercises the floor-divide in the year adjustment."
+		},
+		{
+			"id": "fn-date-eomonth-missing-months-086",
+			"formula": "=EOMONTH(\"2026-01-15 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "2026-01-31"
+		},
+		{
+			"id": "fn-date-eomonth-no-arguments-087",
+			"formula": "=EOMONTH()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "The engine formats an Invalid Date and hands back the literal string 'NaN-NaN-NaN', which no spreadsheet would ever show and which downstream functions treat as ordinary text.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "NaN-NaN-NaN"
+		},
+		{
+			"id": "fn-date-eomonth-invalid-date-088",
+			"formula": "=EOMONTH(\"junk\",0)",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Same NaN formatting path as the no-argument case. EDATE guards its input, EOMONTH does not.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "NaN-NaN-NaN"
+		},
+
+		{
+			"id": "fn-date-weekday-default-090",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\")",
+			"expected": 7,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "2026-05-23 is a Saturday; type 1 counts Sunday as 1."
+		},
+		{
+			"id": "fn-date-weekday-type-1-091",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",1)",
+			"expected": 7,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-weekday-type-2-092",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",2)",
+			"expected": 6,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Type 2 counts Monday as 1, so Saturday is 6."
+		},
+		{
+			"id": "fn-date-weekday-type-3-093",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",3)",
+			"expected": 5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Type 3 counts Monday as 0, so Saturday is 5."
+		},
+		{
+			"id": "fn-date-weekday-sunday-type-2-094",
+			"formula": "=WEEKDAY(\"2026-05-24 00:00:00\",2)",
+			"expected": 7,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Sunday is the boundary case for type 2."
+		},
+		{
+			"id": "fn-date-weekday-sunday-type-3-095",
+			"formula": "=WEEKDAY(\"2026-05-24 00:00:00\",3)",
+			"expected": 6,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-weekday-type-11-096",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",11)",
+			"expected": 6,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel types 11-17 select the first day of the week. Type 11 is Monday-based, so Saturday is 6. Only types 1-3 are implemented; everything else falls back to type 1.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": 7
+		},
+		{
+			"id": "fn-date-weekday-type-zero-097",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",0)",
+			"expected": "#NUM!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "0 is not a valid return type. `toNum(type)||1` turns it into 1.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 7
+		},
+		{
+			"id": "fn-date-weekday-no-arguments-098",
+			"formula": "=WEEKDAY()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-date-weekday-extra-argument-099",
+			"formula": "=WEEKDAY(\"2026-05-23 00:00:00\",1,\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 7
+		},
+
+		{
+			"id": "fn-date-networkdays-full-month-100",
+			"formula": "=NETWORKDAYS(\"2026-05-01 00:00:00\",\"2026-05-31 00:00:00\")",
+			"expected": 21,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "May 2026 has 21 weekdays."
+		},
+		{
+			"id": "fn-date-networkdays-one-week-101",
+			"formula": "=NETWORKDAYS(\"2026-05-18 00:00:00\",\"2026-05-22 00:00:00\")",
+			"expected": 5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Monday to Friday inclusive."
+		},
+		{
+			"id": "fn-date-networkdays-single-weekday-102",
+			"formula": "=NETWORKDAYS(\"2026-05-22 00:00:00\",\"2026-05-22 00:00:00\")",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Both ends inclusive, so a single Friday counts as one."
+		},
+		{
+			"id": "fn-date-networkdays-single-weekend-103",
+			"formula": "=NETWORKDAYS(\"2026-05-23 00:00:00\",\"2026-05-23 00:00:00\")",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "A lone Saturday counts as zero."
+		},
+		{
+			"id": "fn-date-networkdays-reversed-104",
+			"formula": "=NETWORKDAYS(\"2026-05-22 00:00:00\",\"2026-05-18 00:00:00\")",
+			"expected": -5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel returns a negative count when the end precedes the start. The while loop never runs, so the engine returns 0 - it cannot tell 'no working days' apart from 'backwards range'.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-networkdays-holidays-105",
+			"formula": "=NETWORKDAYS(\"2026-05-18 00:00:00\",\"2026-05-22 00:00:00\",A1)",
+			"cells": { "A1": "2026-05-20 00:00:00" },
+			"expected": 4,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "The third argument is a holiday list. The implementation destructures only two parameters, so holidays are silently ignored.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": 5
+		},
+		{
+			"id": "fn-date-networkdays-missing-end-106",
+			"formula": "=NETWORKDAYS(\"2026-05-01 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "Comparing against an Invalid Date is always false, so the loop is skipped and 0 comes back.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-networkdays-invalid-date-107",
+			"formula": "=NETWORKDAYS(\"junk\",\"2026-05-31 00:00:00\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+
+		{
+			"id": "fn-date-workday-over-weekend-110",
+			"formula": "=WORKDAY(\"2026-05-22 00:00:00\",1)",
+			"expected": "2026-05-25",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Friday plus one working day is the following Monday."
+		},
+		{
+			"id": "fn-date-workday-zero-days-111",
+			"formula": "=WORKDAY(\"2026-05-22 00:00:00\",0)",
+			"expected": "2026-05-22",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-workday-negative-112",
+			"formula": "=WORKDAY(\"2026-05-25 00:00:00\",-1)",
+			"expected": "2026-05-22",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Monday minus one working day is the previous Friday."
+		},
+		{
+			"id": "fn-date-workday-full-week-113",
+			"formula": "=WORKDAY(\"2026-05-22 00:00:00\",5)",
+			"expected": "2026-05-29",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-workday-holidays-114",
+			"formula": "=WORKDAY(\"2026-05-18 00:00:00\",2,A1)",
+			"cells": { "A1": "2026-05-20 00:00:00" },
+			"expected": "2026-05-21",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Wednesday is a holiday, so two working days from Monday is Thursday. Holidays are not implemented.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": "2026-05-20"
+		},
+		{
+			"id": "fn-date-workday-invalid-date-115",
+			"formula": "=WORKDAY(\"junk\",1)",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-workday-missing-days-116",
+			"formula": "=WORKDAY(\"2026-05-22 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "2026-05-22"
+		},
+		{
+			"id": "fn-date-workday-no-arguments-117",
+			"formula": "=WORKDAY()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+
+		{
+			"id": "fn-date-time-noon-120",
+			"formula": "=TIME(12,0,0)",
+			"expected": 0.5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel stores a time as a fraction of a day; noon is 0.5."
+		},
+		{
+			"id": "fn-date-time-midnight-121",
+			"formula": "=TIME(0,0,0)",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-time-last-second-122",
+			"formula": "=TIME(23,59,59)",
+			"expected": 0.9999884259259259,
+			"tolerance": 1e-9,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Upper boundary of the day."
+		},
+		{
+			"id": "fn-date-time-hour-overflow-123",
+			"formula": "=TIME(25,0,0)",
+			"expected": 0.041666666666666664,
+			"tolerance": 1e-9,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel wraps hours past 24, so 25:00 is 01:00 the next day."
+		},
+		{
+			"id": "fn-date-time-negative-hour-124",
+			"formula": "=TIME(-1,0,0)",
+			"expected": "#NUM!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel rejects a negative time. The engine wraps it into the previous day instead.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.9583333333333334
+		},
+		{
+			"id": "fn-date-time-missing-seconds-125",
+			"formula": "=TIME(12,0)",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "TIME takes exactly three arguments in Excel and Sheets. The missing second becomes 0.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.5
+		},
+		{
+			"id": "fn-date-time-no-arguments-126",
+			"formula": "=TIME()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-time-extra-argument-127",
+			"formula": "=TIME(12,0,0,5)",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.5
+		},
+		{
+			"id": "fn-date-time-text-arguments-128",
+			"formula": "=TIME(\"a\",\"b\",\"c\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "toNum turns each unparseable string into 0, producing midnight.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": 0
+		},
+
+		{
+			"id": "fn-date-timevalue-24h-130",
+			"formula": "=TIMEVALUE(\"12:00\")",
+			"expected": 0.5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-timevalue-pm-131",
+			"formula": "=TIMEVALUE(\"12:00:00 PM\")",
+			"expected": 0.5,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-timevalue-midnight-am-132",
+			"formula": "=TIMEVALUE(\"12:00 AM\")",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "12 AM is midnight, not noon - the classic off-by-twelve boundary."
+		},
+		{
+			"id": "fn-date-timevalue-invalid-133",
+			"formula": "=TIMEVALUE(\"junk\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-timevalue-no-arguments-134",
+			"formula": "=TIMEVALUE()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "The regex rejects 'undefined', so the answer is at least an error, just the wrong one.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-date-timevalue-out-of-range-135",
+			"formula": "=TIMEVALUE(\"25:00\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel rejects an hour above 23 in TIMEVALUE, unlike TIME which wraps. The regex accepts two digits without a range check, so the result exceeds 1.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1.0416666666666667
+		},
+		{
+			"id": "fn-date-timevalue-extra-argument-136",
+			"formula": "=TIMEVALUE(\"12:00\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0.5
+		},
+
+		{
+			"id": "fn-date-datevalue-basic-140",
+			"formula": "=DATEVALUE(\"2026-05-23\")",
+			"expected": 46165,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "The Excel serial for 2026-05-23. A bare ISO date is used deliberately: the engine parses the string as UTC and subtracts a UTC epoch, so this form is the time-zone-stable one for DATEVALUE, while 'YYYY-MM-DD 00:00:00' shifts by a day."
+		},
+		{
+			"id": "fn-date-datevalue-after-fake-leap-141",
+			"formula": "=DATEVALUE(\"1900-03-01\")",
+			"expected": 61,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "The first day after Excel's fictional 1900-02-29. From here on the engine's 1899-12-30 epoch and Excel agree."
+		},
+		{
+			"id": "fn-date-datevalue-before-fake-leap-142",
+			"formula": "=DATEVALUE(\"1900-01-01\")",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel's serial 1 is 1900-01-01. The fixed 1899-12-30 epoch is only correct after the fictional leap day, so every date before 1900-03-01 is one too high.",
+			"status": "known-failure",
+			"defect": "compatibility-difference",
+			"actual": 2
+		},
+		{
+			"id": "fn-date-datevalue-below-epoch-143",
+			"formula": "=DATEVALUE(\"1899-12-31\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel has no serial for dates before 1900-01-01.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-date-datevalue-invalid-144",
+			"formula": "=DATEVALUE(\"junk\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-datevalue-no-arguments-145",
+			"formula": "=DATEVALUE()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-date-datevalue-extra-argument-146",
+			"formula": "=DATEVALUE(\"2026-05-23\",\"x\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 46165
+		},
+		{
+			"id": "fn-date-datevalue-of-date-call-147",
+			"formula": "=DATEVALUE(DATE(2026,5,23))",
+			"expected": 46165,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Nested call: DATEVALUE consumes the ISO string DATE produced and yields the Excel serial. This is the only bridge between the two representations."
+		},
+
+		{
+			"id": "fn-date-datedif-days-150",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"D\")",
+			"expected": 59,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-datedif-months-151",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"M\")",
+			"expected": 2,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Two complete months."
+		},
+		{
+			"id": "fn-date-datedif-years-152",
+			"formula": "=DATEDIF(\"2024-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"Y\")",
+			"expected": 2,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-datedif-same-day-153",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-01-01 00:00:00\",\"D\")",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-datedif-lowercase-unit-154",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"d\")",
+			"expected": 59,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "The unit is case-insensitive in Excel."
+		},
+		{
+			"id": "fn-date-datedif-incomplete-month-155",
+			"formula": "=DATEDIF(\"2026-01-15 00:00:00\",\"2026-03-01 00:00:00\",\"M\")",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "DATEDIF counts COMPLETE months. 15 Jan to 1 Mar is one whole month plus a fortnight. The engine subtracts calendar month numbers and ignores the day, so it over-counts whenever the end day precedes the start day.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 2
+		},
+		{
+			"id": "fn-date-datedif-incomplete-year-156",
+			"formula": "=DATEDIF(\"2025-06-15 00:00:00\",\"2026-03-01 00:00:00\",\"Y\")",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Not yet a full year. The engine subtracts calendar years, so any January-to-December straddle reads as one year.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-date-datedif-unit-md-157",
+			"formula": "=DATEDIF(\"2026-01-15 00:00:00\",\"2026-03-01 00:00:00\",\"MD\")",
+			"expected": 14,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "MD is the day difference ignoring months and years. Unsupported units fall through to a bare `return 0`.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-unit-ym-158",
+			"formula": "=DATEDIF(\"2026-01-15 00:00:00\",\"2026-03-01 00:00:00\",\"YM\")",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "YM is the month difference ignoring years.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-unit-yd-159",
+			"formula": "=DATEDIF(\"2026-01-15 00:00:00\",\"2026-03-01 00:00:00\",\"YD\")",
+			"expected": 45,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "YD is the day difference ignoring years.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-invalid-unit-160",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"X\")",
+			"expected": "#NUM!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "An unknown unit is #NUM! in Excel. Returning 0 makes a typo look like a legitimate answer.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-reversed-161",
+			"formula": "=DATEDIF(\"2026-03-01 00:00:00\",\"2026-01-01 00:00:00\",\"D\")",
+			"expected": "#NUM!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "DATEDIF requires start <= end. The engine returns a negative count.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": -59
+		},
+		{
+			"id": "fn-date-datedif-missing-unit-162",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "String(undefined) is 'UNDEFINED', which matches no unit, so the fall-through 0 comes back.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-no-arguments-163",
+			"formula": "=DATEDIF()",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-date-datedif-extra-argument-164",
+			"formula": "=DATEDIF(\"2026-01-01 00:00:00\",\"2026-03-01 00:00:00\",\"D\",\"extra\")",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 59
+		},
+		{
+			"id": "fn-date-datedif-invalid-date-165",
+			"formula": "=DATEDIF(\"junk\",\"2026-03-01 00:00:00\",\"D\")",
+			"expected": "#VALUE!",
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Returns NaN, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+
+		{
+			"id": "fn-date-today-self-difference-170",
+			"formula": "=DAYS(TODAY(),TODAY())",
+			"expected": 0,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Volatile function, asserted through an invariant rather than a value. Both calls happen inside one evaluation, so a midnight rollover between them is not reachable in practice."
+		},
+		{
+			"id": "fn-date-today-self-equality-171",
+			"formula": "=TODAY()=TODAY()",
+			"expected": true,
+			"category": "date-time",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-date-today-iso-length-172",
+			"formula": "=LEN(TODAY())",
+			"expected": 10,
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "TODAY returns a fixed-width ISO date string. Excel returns a serial number, whose length is not 10. Shape assertion only, so the test is date-independent."
+		},
+		{
+			"id": "fn-date-today-plus-one-173",
+			"formula": "=TODAY()+1",
+			"expected": 1,
+			"category": "date-time",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel gives tomorrow's serial. Expressing that without naming today's date is impossible, so the fixture only records that the engine cannot do date arithmetic at all: TODAY()+1 is a type error. The literal 1 is a stand-in for 'any number'.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-date-today-extra-argument-174",
+			"formula": "=LEN(TODAY(1))",
+			"expected": "#N/A",
+			"category": "date-time",
+			"source": "google-sheets",
+			"notes": "TODAY takes no arguments. LEN wraps it so the assertion stays date-independent.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 10
+		},
+		{
+			"id": "fn-date-today-datevalue-bridge-175",
+			"formula": "=DATEVALUE(TODAY())>46000",
+			"expected": true,
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "46000 is 2025-11-12. The assertion is a lower bound, so it stays true for every future run and never depends on the clock."
+		},
+		{
+			"id": "fn-date-now-not-iso-176",
+			"formula": "=LEN(NOW())=10",
+			"expected": true,
+			"category": "date-time",
+			"source": "engine-contract",
+			"notes": "NOW uses toLocaleString while TODAY uses an ISO string, so the two volatile functions disagree on format and NOW cannot be fed to any date function. The locale string is also machine dependent, so only the mismatch is asserted, not its content.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": false
+		}
+	]
+}

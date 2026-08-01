@@ -1,0 +1,1107 @@
+{
+	"_readme": [
+		"Financial built-ins (FV IRR NPV PMT PV), array built-ins (FILTER SEQUENCE",
+		"SORT TRANSPOSE UNIQUE) and SPARKLINE.",
+		"",
+		"The array functions return matrices, and this engine has no spill semantics.",
+		"A spreadsheet spills the matrix across neighbouring cells and shows its",
+		"top-left value in the anchor cell, so `expected` for a bare array call is",
+		"that top-left value. Every such fixture is a known-failure carrying the raw",
+		"matrix as `actual`; together they measure the size of the missing feature.",
+		"Calls that CONSUME a matrix (SUM, INDEX, ROWS, COLUMNS) work and are",
+		"recorded as passing, because that is the composition the engine does support.",
+		"",
+		"SPARKLINE returns a render-only spec object rather than a value. The object",
+		"cannot be compared through JSON, so these fixtures assert the surrounding",
+		"contract instead: the spec must never reach the user as '[object Object]'.",
+		"The spec's own shape is asserted in formula.functions.lookup.test.ts.",
+		"",
+		"Wrong-argument-count cases use Google Sheets as the oracle: Sheets surfaces",
+		"'Wrong number of arguments' as #N/A, while Excel refuses the formula at entry."
+	],
+	"cases": [
+		{
+			"id": "fn-array-pmt-basic-001",
+			"formula": "=PMT(0.05/12,60,10000)",
+			"expected": -188.71233644010992,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "A 10,000 loan at 5% nominal over 60 monthly payments."
+		},
+		{
+			"id": "fn-array-pmt-zero-rate-002",
+			"formula": "=PMT(0,60,10000)",
+			"expected": -166.66666666666666,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Rate 0 takes the linear branch; boundary between the two formulas."
+		},
+		{
+			"id": "fn-array-pmt-with-future-value-003",
+			"formula": "=PMT(0.05/12,60,10000,5000)",
+			"expected": -262.23517132683156,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Optional fv."
+		},
+		{
+			"id": "fn-array-pmt-payment-at-start-004",
+			"formula": "=PMT(0.05/12,60,10000,0,1)",
+			"expected": -187.9292976996945,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list; type 1 is payment at the start of each period."
+		},
+		{
+			"id": "fn-array-pmt-zero-periods-005",
+			"formula": "=PMT(0.05/12,0,10000)",
+			"expected": "#NUM!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "nper 0 is the documented error outcome."
+		},
+		{
+			"id": "fn-array-pmt-missing-pv-006",
+			"formula": "=PMT(0.05/12,60)",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"notes": "PMT needs three arguments. The missing present value becomes 0, so a payment of 0 looks like a real answer.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-array-pmt-no-arguments-007",
+			"formula": "=PMT()",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"notes": "nper defaults to 0, which the #NUM! guard catches.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-array-pmt-extra-argument-008",
+			"formula": "=PMT(0.05/12,60,10000,0,0,\"extra\")",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": -188.7123364401099,
+			"tolerance": 1e-9
+		},
+		{
+			"id": "fn-array-pmt-text-arguments-009",
+			"formula": "=PMT(\"a\",\"b\",\"c\")",
+			"expected": "#VALUE!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "toNum turns every unparseable argument into 0, so the wrong error surfaces.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "#NUM!"
+		},
+
+		{
+			"id": "fn-array-fv-basic-020",
+			"formula": "=FV(0.05/12,60,-200)",
+			"expected": 13601.216568168567,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "200 saved monthly for five years at 5% nominal."
+		},
+		{
+			"id": "fn-array-fv-zero-rate-021",
+			"formula": "=FV(0,60,-200)",
+			"expected": 12000,
+			"category": "financial",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-fv-with-present-value-022",
+			"formula": "=FV(0.05/12,60,-200,-1000)",
+			"expected": 14884.575246672079,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-fv-payment-at-start-023",
+			"formula": "=FV(0.05/12,60,-200,0,1)",
+			"expected": 13657.888303869271,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list."
+		},
+		{
+			"id": "fn-array-fv-no-arguments-024",
+			"formula": "=FV()",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"notes": "Everything defaults to 0 and the zero-rate branch returns a confident 0.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-array-fv-extra-argument-025",
+			"formula": "=FV(0.05/12,60,-200,0,1,\"extra\")",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 13657.888303869271,
+			"tolerance": 1e-6
+		},
+
+		{
+			"id": "fn-array-pv-basic-030",
+			"formula": "=PV(0.05/12,60,-200)",
+			"expected": 10598.14126478543,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-pv-zero-rate-031",
+			"formula": "=PV(0,60,-200)",
+			"expected": 12000,
+			"category": "financial",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-pv-payment-at-start-032",
+			"formula": "=PV(0.05/12,60,-200,0,1)",
+			"expected": 10642.300186722037,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list."
+		},
+		{
+			"id": "fn-array-pv-round-trip-033",
+			"formula": "=PV(0.05/12,60,PMT(0.05/12,60,10000))",
+			"expected": 10000,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Nested call: PV inverts PMT, so the original principal comes back."
+		},
+		{
+			"id": "fn-array-pv-no-arguments-034",
+			"formula": "=PV()",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+
+		{
+			"id": "fn-array-npv-scalars-040",
+			"formula": "=NPV(0.1,100,200,300)",
+			"expected": 481.59278737791124,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Cash flows are discounted from period 1, not period 0."
+		},
+		{
+			"id": "fn-array-npv-range-041",
+			"formula": "=NPV(0.1,A1:A3)",
+			"cells": { "A1": 100, "A2": 200, "A3": 300 },
+			"expected": 481.59278737791124,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "A range argument must give the same answer as the equivalent scalars."
+		},
+		{
+			"id": "fn-array-npv-cross-sheet-042",
+			"formula": "=NPV(0.1,Data!A1:A3)",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 1, "A2": 2, "A3": 3 } },
+			"expected": 4.815927873779112,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-npv-ignores-text-043",
+			"formula": "=NPV(0.1,100,200,300,\"x\")",
+			"expected": 481.59278737791124,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel ignores text among the cash flows rather than failing."
+		},
+		{
+			"id": "fn-array-npv-rate-minus-one-044",
+			"formula": "=NPV(-1,100)",
+			"expected": "#DIV/0!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "A rate of -1 makes the discount factor zero. The engine divides by it and returns Infinity, which JSON cannot express, so no actual is recorded. Infinity is not an error, so ISERROR misses it and IFERROR cannot guard it.",
+			"status": "known-failure",
+			"defect": "function-result"
+		},
+		{
+			"id": "fn-array-npv-missing-values-045",
+			"formula": "=NPV(0.1)",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"notes": "NPV needs at least one cash flow. An empty sum returns 0, which reads as a break-even project.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+		{
+			"id": "fn-array-npv-no-arguments-046",
+			"formula": "=NPV()",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 0
+		},
+
+		{
+			"id": "fn-array-irr-basic-050",
+			"formula": "=IRR(A1:A4)",
+			"cells": { "A1": -1000, "A2": 400, "A3": 400, "A4": 400 },
+			"expected": 0.09701025740327,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list; the guess defaults to 0.1."
+		},
+		{
+			"id": "fn-array-irr-with-guess-051",
+			"formula": "=IRR(A1:A4,0.5)",
+			"cells": { "A1": -1000, "A2": 400, "A3": 400, "A4": 400 },
+			"expected": 0.09701025740327,
+			"tolerance": 1e-9,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list. A far-away guess must converge to the same root."
+		},
+		{
+			"id": "fn-array-irr-npv-round-trip-052",
+			"formula": "=NPV(IRR(A1:A4),A2:A4)+A1",
+			"cells": { "A1": -1000, "A2": 400, "A3": 400, "A4": 400 },
+			"expected": 0,
+			"tolerance": 1e-6,
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "The defining property of IRR: discounting at that rate makes the net present value zero. This is the strongest available check and needs no reference implementation."
+		},
+		{
+			"id": "fn-array-irr-no-sign-change-053",
+			"formula": "=IRR(A1:A2)",
+			"cells": { "A1": 100, "A2": 200 },
+			"expected": "#NUM!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Without a sign change there is no root."
+		},
+		{
+			"id": "fn-array-irr-single-value-054",
+			"formula": "=IRR(A1:A1)",
+			"cells": { "A1": 100 },
+			"expected": "#NUM!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "Below the two-value minimum."
+		},
+		{
+			"id": "fn-array-irr-no-arguments-055",
+			"formula": "=IRR()",
+			"expected": "#N/A",
+			"category": "financial",
+			"source": "google-sheets",
+			"notes": "The empty cash-flow guard catches it, so it fails with the wrong error rather than succeeding.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#NUM!"
+		},
+		{
+			"id": "fn-array-irr-text-guess-056",
+			"formula": "=IRR(A1:A4,\"guess\")",
+			"cells": { "A1": -1000, "A2": 400, "A3": 400, "A4": 400 },
+			"expected": "#VALUE!",
+			"category": "financial",
+			"source": "excel-compatible-semantics",
+			"notes": "toNum turns the text into a guess of 0, which still converges, so a typed-in typo produces a confident number.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": 0.09701025740325282,
+			"tolerance": 1e-9
+		},
+
+		{
+			"id": "fn-array-transpose-consumed-070",
+			"formula": "=SUM(TRANSPOSE(A1:B3))",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 21,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Transposing does not change a total, but it does prove the matrix survives the call."
+		},
+		{
+			"id": "fn-array-transpose-indexed-071",
+			"formula": "=INDEX(TRANSPOSE(A1:B3),1,2)",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Row 1, column 2 of the transpose is row 2, column 1 of the source."
+		},
+		{
+			"id": "fn-array-transpose-dimensions-072",
+			"formula": "=ROWS(TRANSPOSE(A1:B3))",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A 3x2 range transposes to 2x3."
+		},
+		{
+			"id": "fn-array-transpose-columns-073",
+			"formula": "=COLUMNS(TRANSPOSE(A1:B3))",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-transpose-involution-074",
+			"formula": "=INDEX(TRANSPOSE(TRANSPOSE(A1:B3)),3,2)",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 6,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Transposing twice is the identity."
+		},
+		{
+			"id": "fn-array-transpose-cross-sheet-075",
+			"formula": "=COLUMNS(TRANSPOSE(Data!A1:A3))",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 1, "A2": 2, "A3": 3 } },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A column transposes to a row."
+		},
+		{
+			"id": "fn-array-transpose-spill-076",
+			"formula": "=TRANSPOSE(A1:B3)",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 1,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A spreadsheet spills the 2x3 result and shows 1 in the anchor cell. With no spill support the raw matrix lands in the cell.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [[1, 3, 5], [2, 4, 6]]
+		},
+		{
+			"id": "fn-array-transpose-scalar-077",
+			"formula": "=TRANSPOSE(5)",
+			"expected": 5,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Transposing a scalar is a no-op in a spreadsheet; here it becomes a 1x1 matrix.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [[5]]
+		},
+		{
+			"id": "fn-array-transpose-concat-078",
+			"formula": "=\"x\"&TRANSPOSE(A1:B3)",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": "x1",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A matrix in a scalar position must reduce to one value. Instead the whole matrix is joined with commas, so the user sees six numbers where they asked for one.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "x1,3,5,2,4,6"
+		},
+		{
+			"id": "fn-array-transpose-arithmetic-079",
+			"formula": "=TRANSPOSE(A1:B3)+0",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 1,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Same reduction in an arithmetic position, where it becomes a type error instead.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-array-transpose-no-arguments-080",
+			"formula": "=ROWS(TRANSPOSE())",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Wrapped in ROWS so the assertion compares a scalar. The engine builds a 1x1 matrix holding undefined.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-transpose-extra-argument-081",
+			"formula": "=ROWS(TRANSPOSE(A1:B3,\"x\"))",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+
+		{
+			"id": "fn-array-filter-consumed-090",
+			"formula": "=SUM(FILTER(A1:A3,B1:B3))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"expected": 40,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Rows 1 and 3 are kept."
+		},
+		{
+			"id": "fn-array-filter-count-091",
+			"formula": "=ROWS(FILTER(A1:A3,B1:B3))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-filter-no-matches-092",
+			"formula": "=FILTER(A1:A2,B1:B2)",
+			"cells": { "A1": 10, "A2": 20, "B1": false, "B2": false },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Sheets reports an empty filter as #N/A; Excel 365 reports #CALC!. Sheets is used because this engine has no #CALC!."
+		},
+		{
+			"id": "fn-array-filter-scalar-093",
+			"formula": "=FILTER(5,TRUE)",
+			"expected": 5,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-filter-inline-condition-094",
+			"formula": "=SUM(FILTER(A1:A3,A1:A3>15))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30 },
+			"expected": 50,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "The normal way to write FILTER: the condition is an inline comparison over the same range. The comparison operator reduces both matrices to scalars and returns a single FALSE, so nothing is kept, FILTER reports #N/A and SUM skips it to reach 0. FILTER is effectively unusable without a pre-computed boolean column.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": 0
+		},
+		{
+			"id": "fn-array-filter-mismatched-condition-095",
+			"formula": "=ROWS(FILTER(A1:A3,B1:B1))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "B1": true },
+			"expected": "#VALUE!",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel requires the condition to be the same height as the range. A short condition array silently drops the rows it does not cover.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-filter-matrix-rows-096",
+			"formula": "=COLUMNS(FILTER(A1:B3,C1:C3))",
+			"cells": { "A1": 10, "B1": "a", "A2": 20, "B2": "b", "A3": 30, "B3": "c", "C1": true, "C2": false, "C3": true },
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Filtering keeps whole rows, so the width is unchanged."
+		},
+		{
+			"id": "fn-array-filter-missing-condition-097",
+			"formula": "=FILTER(A1:A3)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30 },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Right answer for the wrong reason: the missing condition array keeps no rows, and an empty result is already reported as #N/A."
+		},
+		{
+			"id": "fn-array-filter-no-arguments-098",
+			"formula": "=FILTER()",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "The engine returns the JavaScript value `undefined`, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "crash"
+		},
+		{
+			"id": "fn-array-filter-extra-argument-099",
+			"formula": "=ROWS(FILTER(A1:A3,B1:B3,\"extra\"))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Sheets uses further arguments for additional conditions; this engine accepts and ignores them.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-array-filter-spill-100",
+			"formula": "=FILTER(A1:A3,B1:B3)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "B1": true, "B2": false, "B3": true },
+			"expected": 10,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [[10], [30]]
+		},
+
+		{
+			"id": "fn-array-sort-ascending-110",
+			"formula": "=INDEX(SORT(A1:A4),1)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 1,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Ascending is the default."
+		},
+		{
+			"id": "fn-array-sort-descending-111",
+			"formula": "=INDEX(SORT(A1:A4,1,FALSE),1)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list."
+		},
+		{
+			"id": "fn-array-sort-by-second-column-112",
+			"formula": "=INDEX(SORT(A1:B4,2,FALSE),1,1)",
+			"cells": { "A1": 3, "B1": "c", "A2": 1, "B2": "a", "A3": 2, "B3": "b", "A4": 1, "B4": "a" },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Sorting a matrix by column 2 descending puts 'c' first, carrying its row with it."
+		},
+		{
+			"id": "fn-array-sort-preserves-total-113",
+			"formula": "=SUM(SORT(A1:A4))",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 7,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Sorting is a permutation, so the total is invariant."
+		},
+		{
+			"id": "fn-array-sort-numbers-before-text-114",
+			"formula": "=INDEX(SORT(A1:A4),1)",
+			"cells": { "A1": "b", "A2": 2, "A3": "a", "A4": 10 },
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Numbers sort before text in both Excel and Sheets."
+		},
+		{
+			"id": "fn-array-sort-text-115",
+			"formula": "=INDEX(SORT(A1:A4),4)",
+			"cells": { "A1": "c", "A2": "a", "A3": "b", "A4": "a" },
+			"expected": "c",
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sort-scalar-116",
+			"formula": "=SORT(5)",
+			"expected": 5,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sort-column-out-of-range-117",
+			"formula": "=INDEX(SORT(A1:B4,3),1,1)",
+			"cells": { "A1": 3, "B1": "c", "A2": 1, "B2": "a", "A3": 2, "B3": "b", "A4": 1, "B4": "a" },
+			"expected": "#VALUE!",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel rejects a sort column outside the range. Comparing undefined against undefined leaves the order untouched, so the caller gets unsorted data that looks sorted.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-sort-column-zero-118",
+			"formula": "=INDEX(SORT(A1:B4,0),1,1)",
+			"cells": { "A1": 3, "B1": "c", "A2": 1, "B2": "a", "A3": 2, "B3": "b", "A4": 1, "B4": "a" },
+			"expected": "#VALUE!",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Sort columns are 1-based.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-sort-no-arguments-119",
+			"formula": "=SORT()",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Returns the JavaScript value `undefined`, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "crash"
+		},
+		{
+			"id": "fn-array-sort-extra-argument-120",
+			"formula": "=INDEX(SORT(A1:A4,1,TRUE,\"extra\"),1)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Sheets uses further argument pairs for secondary sort keys; this engine ignores them.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-sort-spill-121",
+			"formula": "=SORT(A1:A4)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 1,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [[1], [1], [2], [3]]
+		},
+
+		{
+			"id": "fn-array-unique-count-130",
+			"formula": "=ROWS(UNIQUE(A1:A4))",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-unique-first-occurrence-order-131",
+			"formula": "=INDEX(UNIQUE(A1:A4),1)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "UNIQUE preserves first-occurrence order; it does not sort."
+		},
+		{
+			"id": "fn-array-unique-sum-132",
+			"formula": "=SUM(UNIQUE(A1:A4))",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 6,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "The duplicate 1 is counted once."
+		},
+		{
+			"id": "fn-array-unique-whole-rows-133",
+			"formula": "=ROWS(UNIQUE(A1:B3))",
+			"cells": { "A1": 1, "B1": 2, "A2": 1, "B2": 2, "A3": 3, "B3": 4 },
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Over a matrix, UNIQUE compares whole rows; rows 1 and 2 are identical."
+		},
+		{
+			"id": "fn-array-unique-all-distinct-134",
+			"formula": "=ROWS(UNIQUE(A1:B3))",
+			"cells": { "A1": 1, "B1": 2, "A2": 3, "B2": 4, "A3": 5, "B3": 6 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Nothing to remove; the identity case."
+		},
+		{
+			"id": "fn-array-unique-case-135",
+			"formula": "=ROWS(UNIQUE(A1:A3))",
+			"cells": { "A1": "a", "A2": "A", "A3": "b" },
+			"expected": 2,
+			"category": "array",
+			"source": "excel",
+			"notes": "Excel's UNIQUE is case-insensitive, so 'a' and 'A' collapse to one entry. Google Sheets is case-sensitive here and returns 3, which is what this engine does. Recorded against Excel because the rest of this engine's lookup layer is deliberately case-insensitive, so UNIQUE is inconsistent with it either way.",
+			"status": "known-failure",
+			"defect": "compatibility-difference",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-unique-scalar-136",
+			"formula": "=UNIQUE(5)",
+			"expected": 5,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-unique-no-arguments-137",
+			"formula": "=UNIQUE()",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Returns the JavaScript value `undefined`, which JSON cannot express, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "crash"
+		},
+		{
+			"id": "fn-array-unique-extra-argument-138",
+			"formula": "=ROWS(UNIQUE(A1:A4,\"x\"))",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Sheets uses the extra arguments for by-column and exactly-once modes.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-unique-spill-139",
+			"formula": "=UNIQUE(A1:A4)",
+			"cells": { "A1": 3, "A2": 1, "A3": 2, "A4": 1 },
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [[3], [1], [2]]
+		},
+
+		{
+			"id": "fn-array-sequence-total-150",
+			"formula": "=SUM(SEQUENCE(4))",
+			"expected": 10,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list: 1, 2, 3, 4."
+		},
+		{
+			"id": "fn-array-sequence-grid-151",
+			"formula": "=INDEX(SEQUENCE(2,3),2,1)",
+			"expected": 4,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "SEQUENCE fills row by row, so the second row starts at 4."
+		},
+		{
+			"id": "fn-array-sequence-start-and-step-152",
+			"formula": "=INDEX(SEQUENCE(2,3,10,5),2,3)",
+			"expected": 35,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list; the last cell of a 2x3 grid from 10 in steps of 5."
+		},
+		{
+			"id": "fn-array-sequence-negative-step-153",
+			"formula": "=INDEX(SEQUENCE(2,2,1,-1),2,2)",
+			"expected": -2,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sequence-zero-step-154",
+			"formula": "=SUM(SEQUENCE(3,1,1,0))",
+			"expected": 3,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A step of 0 repeats the start value."
+		},
+		{
+			"id": "fn-array-sequence-dimensions-155",
+			"formula": "=COLUMNS(SEQUENCE(3,2))",
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sequence-count-156",
+			"formula": "=COUNT(SEQUENCE(3,3))",
+			"expected": 9,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sequence-numeric-text-157",
+			"formula": "=SUM(SEQUENCE(\"3\"))",
+			"expected": 6,
+			"category": "array",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-array-sequence-fractional-rows-158",
+			"formula": "=ROWS(SEQUENCE(2.7))",
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel truncates the row count to 2. Math.max(1, 2.7) keeps the fraction and the loop runs three times.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-sequence-zero-rows-159",
+			"formula": "=ROWS(SEQUENCE(0))",
+			"expected": "#NUM!",
+			"category": "array",
+			"source": "google-sheets",
+			"notes": "Sheets rejects a dimension below 1; Excel 365 reports #CALC!. The Math.max(1, ...) clamp turns the rejected input into a one-row result.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-sequence-negative-rows-160",
+			"formula": "=ROWS(SEQUENCE(-1))",
+			"expected": "#NUM!",
+			"category": "array",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-sequence-zero-columns-161",
+			"formula": "=ROWS(SEQUENCE(3,0))",
+			"expected": "#NUM!",
+			"category": "array",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-sequence-no-arguments-162",
+			"formula": "=ROWS(SEQUENCE())",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-array-sequence-extra-argument-163",
+			"formula": "=ROWS(SEQUENCE(3,1,1,1,\"extra\"))",
+			"expected": "#N/A",
+			"category": "array",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 3
+		},
+		{
+			"id": "fn-array-sequence-spill-164",
+			"formula": "=SEQUENCE(3)",
+			"expected": 1,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "A single-column SEQUENCE returns a flat array rather than a column of one-element rows, so the shape differs from the other array functions as well as from the spreadsheet.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": [1, 2, 3]
+		},
+		{
+			"id": "fn-array-sequence-arithmetic-165",
+			"formula": "=SEQUENCE(3)+1",
+			"expected": 2,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "The matrix must reduce to its first element in a scalar position.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-array-sequence-concat-166",
+			"formula": "=SEQUENCE(3)&\"x\"",
+			"expected": "1x",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": "1,2,3x"
+		},
+		{
+			"id": "fn-array-sequence-comparison-167",
+			"formula": "=SEQUENCE(3)=1",
+			"expected": true,
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "The comparison operator coerces the matrix to 0 rather than to its first element, so the answer is FALSE.",
+			"status": "known-failure",
+			"defect": "coercion",
+			"actual": false
+		},
+		{
+			"id": "fn-array-sequence-in-condition-168",
+			"formula": "=IF(SEQUENCE(3)>1,\"y\",\"n\")",
+			"expected": "n",
+			"category": "array",
+			"source": "excel-compatible-semantics",
+			"notes": "Right answer, wrong reason: Excel compares 1 > 1 and takes the false branch, while the engine compares a coerced 0 > 1 and takes it too."
+		},
+
+		{
+			"id": "fn-array-sparkline-concat-180",
+			"formula": "=\"x\"&SPARKLINE(A1:A3)",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": "x",
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "A sparkline spec is render-only, so `&` must treat it as empty text. The `_str` helper does exactly that, and this fixture guards it."
+		},
+		{
+			"id": "fn-array-sparkline-comparison-181",
+			"formula": "=SPARKLINE(A1:A3)=\"\"",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": true,
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "Same coercion in a comparison position."
+		},
+		{
+			"id": "fn-array-sparkline-not-numeric-182",
+			"formula": "=ISNUMBER(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": false,
+			"category": "sparkline",
+			"source": "engine-contract"
+		},
+		{
+			"id": "fn-array-sparkline-not-an-error-183",
+			"formula": "=ISERROR(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": false,
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "A spec is a value, not an error, so a cell holding one must not trip error handling."
+		},
+		{
+			"id": "fn-array-sparkline-text-value-184",
+			"formula": "=T(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": "",
+			"category": "sparkline",
+			"source": "engine-contract"
+		},
+		{
+			"id": "fn-array-sparkline-numeric-value-185",
+			"formula": "=N(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": 0,
+			"category": "sparkline",
+			"source": "engine-contract"
+		},
+		{
+			"id": "fn-array-sparkline-summed-186",
+			"formula": "=SUM(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": 0,
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "A spec carries no numeric value of its own, so it contributes nothing to a total."
+		},
+		{
+			"id": "fn-array-sparkline-len-leak-187",
+			"formula": "=LEN(SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": 0,
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "LEN calls String() directly instead of the `_str` helper, so it measures the literal text '[object Object]' and returns 15. The render-only spec has leaked.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 15
+		},
+		{
+			"id": "fn-array-sparkline-concatenate-leak-188",
+			"formula": "=CONCATENATE(\"a\",SPARKLINE(A1:A3))",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": "a",
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "The `&` operator hides the spec but CONCATENATE does not, so the same expression written two ways gives two different answers and one of them shows '[object Object]' to the user.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "a[object Object]"
+		},
+		{
+			"id": "fn-array-sparkline-nested-source-189",
+			"formula": "=\"x\"&SPARKLINE(SEQUENCE(3))",
+			"expected": "x",
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "A generated matrix is a valid data source; the spec still does not leak."
+		},
+		{
+			"id": "fn-array-sparkline-cross-sheet-190",
+			"formula": "=\"x\"&SPARKLINE(Data!A1:A2)",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 10, "A2": 20 } },
+			"expected": "x",
+			"category": "sparkline",
+			"source": "engine-contract"
+		},
+		{
+			"id": "fn-array-sparkline-in-branch-191",
+			"formula": "=\"x\"&IF(TRUE,SPARKLINE(A1:A3),\"n\")",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": "x",
+			"category": "sparkline",
+			"source": "engine-contract",
+			"notes": "A spec survives an IF branch without becoming text."
+		},
+		{
+			"id": "fn-array-sparkline-no-arguments-192",
+			"formula": "=\"x\"&SPARKLINE()",
+			"expected": "#N/A",
+			"category": "sparkline",
+			"source": "google-sheets",
+			"notes": "SPARKLINE requires a data range. An empty spec is built instead, which renders as a blank cell and gives the user no clue anything is wrong.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "x"
+		},
+		{
+			"id": "fn-array-sparkline-extra-argument-193",
+			"formula": "=\"x\"&SPARKLINE(A1:A3,\"line\",\"red\",\"extra\")",
+			"cells": { "A1": 1, "A2": 5, "A3": 3 },
+			"expected": "#N/A",
+			"category": "sparkline",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "x"
+		}
+	]
+}

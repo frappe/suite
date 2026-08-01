@@ -1,0 +1,1305 @@
+{
+	"_readme": [
+		"Lookup and reference built-ins: ADDRESS CHOOSE COLUMN COLUMNS HLOOKUP INDEX",
+		"MATCH ROW ROWS VLOOKUP XLOOKUP.",
+		"",
+		"Standard grid used by most fixtures (sorted ascending on column A):",
+		"  A1:C4 = 10 'ten' 'X1' / 20 'twenty' 'X2' / 30 'thirty' 'X3' / 40 'forty' 'X4'",
+		"",
+		"Wrong-argument-count cases use Google Sheets as the oracle: Sheets surfaces",
+		"'Wrong number of arguments' as #N/A, while Excel refuses the formula at entry",
+		"and so has no value to compare against.",
+		"",
+		"The corpus harness writes the formula under test into XFD1048576, so ROW()",
+		"and COLUMN() with no argument are expected to report 1048576 and 16384."
+	],
+	"cases": [
+		{
+			"id": "fn-lookup-vlookup-exact-001",
+			"formula": "=VLOOKUP(20,A1:C4,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-vlookup-third-column-002",
+			"formula": "=VLOOKUP(20,A1:C4,3,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": "X2",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum column index for this table."
+		},
+		{
+			"id": "fn-lookup-vlookup-approximate-003",
+			"formula": "=VLOOKUP(25,A1:C4,2,TRUE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Approximate match takes the largest key not greater than the lookup value."
+		},
+		{
+			"id": "fn-lookup-vlookup-approximate-default-004",
+			"formula": "=VLOOKUP(25,A1:C4,2)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "range_lookup defaults to TRUE when omitted."
+		},
+		{
+			"id": "fn-lookup-vlookup-approximate-below-range-005",
+			"formula": "=VLOOKUP(5,A1:C4,2,TRUE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Nothing is smaller than the first key."
+		},
+		{
+			"id": "fn-lookup-vlookup-approximate-above-range-006",
+			"formula": "=VLOOKUP(99,A1:C4,2,TRUE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "forty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Above every key, so the last row wins."
+		},
+		{
+			"id": "fn-lookup-vlookup-exact-miss-007",
+			"formula": "=VLOOKUP(25,A1:C4,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Exact-match failure is #N/A, the documented error outcome."
+		},
+		{
+			"id": "fn-lookup-vlookup-index-too-large-008",
+			"formula": "=VLOOKUP(20,A1:C4,4,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": "#REF!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A column index past the end of the table is #REF!."
+		},
+		{
+			"id": "fn-lookup-vlookup-index-zero-009",
+			"formula": "=VLOOKUP(20,A1:C4,0,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel separates the two failures: index below 1 is #VALUE!, index past the end is #REF!. The engine reports #REF! for both, so a typo in the index looks like a range problem.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-vlookup-index-negative-010",
+			"formula": "=VLOOKUP(20,A1:C4,-1,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-vlookup-index-fractional-011",
+			"formula": "=VLOOKUP(20,A1:B2,2.9,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel truncates a fractional column index to 2. The engine subtracts 1 without truncating and indexes the row array at 1.9, which is undefined, so a perfectly valid lookup becomes #REF!.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-vlookup-index-beyond-single-column-012",
+			"formula": "=VLOOKUP(20,A1:A4,2,FALSE)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#REF!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A one-column table has no column 2."
+		},
+		{
+			"id": "fn-lookup-vlookup-missing-index-013",
+			"formula": "=VLOOKUP(20,A1:C4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "No arity check, so the missing index becomes 0 and the call fails as a range error instead.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-vlookup-no-arguments-014",
+			"formula": "=VLOOKUP()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "The non-array table guard catches this, so it is at least an error.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-vlookup-extra-argument-015",
+			"formula": "=VLOOKUP(20,A1:B2,2,FALSE,\"extra\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "twenty"
+		},
+		{
+			"id": "fn-lookup-vlookup-case-insensitive-016",
+			"formula": "=VLOOKUP(\"BANANA\",A1:B3,2,FALSE)",
+			"cells": { "A1": "apple", "B1": 1, "A2": "Banana", "B2": 2, "A3": "cherry", "B3": 3 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Lookups ignore case in Excel and Sheets."
+		},
+		{
+			"id": "fn-lookup-vlookup-text-miss-017",
+			"formula": "=VLOOKUP(\"durian\",A1:B3,2,FALSE)",
+			"cells": { "A1": "apple", "B1": 1, "A2": "Banana", "B2": 2, "A3": "cherry", "B3": 3 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-vlookup-text-approximate-018",
+			"formula": "=VLOOKUP(\"apple\",A1:B3,2,TRUE)",
+			"cells": { "A1": "apple", "B1": 1, "A2": "Banana", "B2": 2, "A3": "cherry", "B3": 3 },
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Approximate match over sorted text still finds the exact hit. The approximate branch compares with toNum, which maps every one of these strings to 0, so 'apple' <= 'apple' holds for every row and the LAST row is returned.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 3
+		},
+		{
+			"id": "fn-lookup-vlookup-empty-lookup-019",
+			"formula": "=VLOOKUP(\"\",A1:B2,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-vlookup-boolean-lookup-020",
+			"formula": "=VLOOKUP(TRUE,A1:B2,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A boolean never equals a number in Excel's lookup comparison."
+		},
+		{
+			"id": "fn-lookup-vlookup-error-lookup-021",
+			"formula": "=VLOOKUP(1/0,A1:B2,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#DIV/0!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "An error argument must come straight back out. Here it is compared as an ordinary string and reported as a plain lookup miss, which hides the real cause.",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#N/A"
+		},
+		{
+			"id": "fn-lookup-vlookup-zero-means-exact-022",
+			"formula": "=VLOOKUP(25,A1:B4,2,0)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "0 is the numeric spelling of FALSE, so this must be an exact match and miss."
+		},
+		{
+			"id": "fn-lookup-vlookup-one-means-approximate-023",
+			"formula": "=VLOOKUP(25,A1:B4,2,1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "1 is the numeric spelling of TRUE."
+		},
+		{
+			"id": "fn-lookup-vlookup-nested-024",
+			"formula": "=VLOOKUP(VLOOKUP(20,A1:B4,1,FALSE),A1:B4,2,FALSE)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "The inner lookup returns the key itself, which the outer one looks up again."
+		},
+		{
+			"id": "fn-lookup-vlookup-cross-sheet-025",
+			"formula": "=VLOOKUP(A1,Data!A1:B2,2,FALSE)",
+			"sheets": {
+				"Sheet1": { "A1": 20 },
+				"Data": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" }
+			},
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Lookup value on one sheet, table on another."
+		},
+		{
+			"id": "fn-lookup-vlookup-iferror-wrap-026",
+			"formula": "=IFERROR(VLOOKUP(99,A1:B2,2,FALSE),\"missing\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "missing",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "The #N/A is catchable, which is the usual way users guard a lookup."
+		},
+
+		{
+			"id": "fn-lookup-hlookup-exact-030",
+			"formula": "=HLOOKUP(20,A1:C2,2,FALSE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "b",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-hlookup-approximate-031",
+			"formula": "=HLOOKUP(25,A1:C2,2,TRUE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "b",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-hlookup-exact-miss-032",
+			"formula": "=HLOOKUP(25,A1:C2,2,FALSE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-hlookup-approximate-below-range-033",
+			"formula": "=HLOOKUP(5,A1:C2,2,TRUE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-hlookup-first-row-034",
+			"formula": "=HLOOKUP(20,A1:C1,1,FALSE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30 },
+			"expected": 20,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Row index 1 returns the key row itself; minimum viable table."
+		},
+		{
+			"id": "fn-lookup-hlookup-row-too-large-035",
+			"formula": "=HLOOKUP(20,A1:C2,3,FALSE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#REF!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-hlookup-row-zero-036",
+			"formula": "=HLOOKUP(20,A1:C2,0,FALSE)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Same #VALUE!/#REF! conflation as VLOOKUP.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-hlookup-missing-row-037",
+			"formula": "=HLOOKUP(20,A1:C2)",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-hlookup-no-arguments-038",
+			"formula": "=HLOOKUP()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-hlookup-extra-argument-039",
+			"formula": "=HLOOKUP(20,A1:C2,2,FALSE,\"x\")",
+			"cells": { "A1": 10, "B1": 20, "C1": 30, "A2": "a", "B2": "b", "C2": "c" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "b"
+		},
+
+		{
+			"id": "fn-lookup-xlookup-exact-050",
+			"formula": "=XLOOKUP(20,A1:A4,B1:B4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list: exact match is the default."
+		},
+		{
+			"id": "fn-lookup-xlookup-miss-051",
+			"formula": "=XLOOKUP(25,A1:A4,B1:B4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-if-not-found-052",
+			"formula": "=XLOOKUP(25,A1:A4,B1:B4,\"nope\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "nope",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-next-smaller-053",
+			"formula": "=XLOOKUP(25,A1:A4,B1:B4,\"nope\",-1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-next-larger-054",
+			"formula": "=XLOOKUP(25,A1:A4,B1:B4,\"nope\",1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "thirty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-next-smaller-below-range-055",
+			"formula": "=XLOOKUP(5,A1:A4,B1:B4,\"nope\",-1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "nope",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Boundary: nothing smaller exists."
+		},
+		{
+			"id": "fn-lookup-xlookup-next-larger-above-range-056",
+			"formula": "=XLOOKUP(99,A1:A4,B1:B4,\"nope\",1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "nope",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-case-insensitive-057",
+			"formula": "=XLOOKUP(\"BANANA\",A1:A3,B1:B3)",
+			"cells": { "A1": "apple", "B1": 1, "A2": "Banana", "B2": 2, "A3": "cherry", "B3": 3 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-empty-lookup-058",
+			"formula": "=XLOOKUP(\"\",A1:A4,B1:B4,\"nope\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "nope",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-xlookup-missing-return-array-059",
+			"formula": "=XLOOKUP(20,A1:A4)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "The key is found, then the empty return array yields #REF! instead of an argument error.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-xlookup-no-arguments-060",
+			"formula": "=XLOOKUP()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "An empty lookup array loosely matches undefined at index 0, so the miss branch is never reached and the result is #REF! rather than #N/A.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-xlookup-extra-argument-061",
+			"formula": "=XLOOKUP(20,A1:A4,B1:B4,\"nope\",0,\"extra\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "Excel's sixth argument is search_mode; this engine has no sixth parameter at all, so an unsupported search mode is silently ignored rather than rejected.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "twenty"
+		},
+		{
+			"id": "fn-lookup-xlookup-mismatched-arrays-062",
+			"formula": "=XLOOKUP(20,A1:A4,B1:B3)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel requires the lookup and return arrays to be the same size. The engine flattens both and indexes positionally, so a mis-sized return array quietly returns a value from the wrong row whenever the index is still in bounds.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "twenty"
+		},
+		{
+			"id": "fn-lookup-xlookup-two-column-return-063",
+			"formula": "=XLOOKUP(20,A1:A4,B1:C4)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A two-column return array makes XLOOKUP return the whole matching ROW; the top-left of that row is 'twenty'. Flattening the matrix turns the row index into a cell index, so index 1 lands on C1 instead of B2.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "X1"
+		},
+		{
+			"id": "fn-lookup-xlookup-cross-sheet-064",
+			"formula": "=XLOOKUP(A1,Data!A1:A2,Data!B1:B2)",
+			"sheets": {
+				"Sheet1": { "A1": 20 },
+				"Data": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" }
+			},
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+
+		{
+			"id": "fn-lookup-match-exact-070",
+			"formula": "=MATCH(20,A1:A4,0)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "match_type 0 is exact and returns a 1-based position."
+		},
+		{
+			"id": "fn-lookup-match-exact-miss-071",
+			"formula": "=MATCH(25,A1:A4,0)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-ascending-072",
+			"formula": "=MATCH(25,A1:A4,1)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "match_type 1 wants the largest value not greater than the lookup, over ascending data."
+		},
+		{
+			"id": "fn-lookup-match-default-type-073",
+			"formula": "=MATCH(25,A1:A4)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "match_type defaults to 1."
+		},
+		{
+			"id": "fn-lookup-match-ascending-below-range-074",
+			"formula": "=MATCH(5,A1:A4,1)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-ascending-above-range-075",
+			"formula": "=MATCH(99,A1:A4,1)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 4,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-ascending-first-element-076",
+			"formula": "=MATCH(10,A1:A4,1)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Boundary: exactly the first key."
+		},
+		{
+			"id": "fn-lookup-match-descending-077",
+			"formula": "=MATCH(25,A1:A4,-1)",
+			"cells": { "A1": 40, "A2": 30, "A3": 20, "A4": 10 },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "match_type -1 wants the smallest value not less than the lookup, over descending data."
+		},
+		{
+			"id": "fn-lookup-match-descending-first-element-078",
+			"formula": "=MATCH(40,A1:A4,-1)",
+			"cells": { "A1": 40, "A2": 30, "A3": 20, "A4": 10 },
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-descending-below-range-079",
+			"formula": "=MATCH(5,A1:A4,-1)",
+			"cells": { "A1": 40, "A2": 30, "A3": 20, "A4": 10 },
+			"expected": 4,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-descending-above-range-080",
+			"formula": "=MATCH(99,A1:A4,-1)",
+			"cells": { "A1": 40, "A2": 30, "A3": 20, "A4": 10 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-text-case-insensitive-081",
+			"formula": "=MATCH(\"BANANA\",A1:A3,0)",
+			"cells": { "A1": "apple", "A2": "Banana", "A3": "cherry" },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-text-miss-082",
+			"formula": "=MATCH(\"durian\",A1:A3,0)",
+			"cells": { "A1": "apple", "A2": "Banana", "A3": "cherry" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Guards the toNum trap: without a both-sides-numeric check every text lookup would match position 1."
+		},
+		{
+			"id": "fn-lookup-match-empty-lookup-083",
+			"formula": "=MATCH(\"\",A1:A4,0)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-boolean-lookup-084",
+			"formula": "=MATCH(TRUE,A1:A4,0)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-match-scalar-array-085",
+			"formula": "=MATCH(20,20,0)",
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A scalar behaves as a one-element array."
+		},
+		{
+			"id": "fn-lookup-match-missing-array-086",
+			"formula": "=MATCH(20)",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "With no array to search, the ascending branch falls out of its loop and reports the array length, which is 1. A missing argument becomes a plausible-looking position.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-match-no-arguments-087",
+			"formula": "=MATCH()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-match-extra-argument-088",
+			"formula": "=MATCH(20,A1:A4,0,\"x\")",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-lookup-index-match-089",
+			"formula": "=INDEX(B1:B4,MATCH(30,A1:A4,0))",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "thirty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "The INDEX/MATCH idiom, the most common nested use of either function."
+		},
+		{
+			"id": "fn-lookup-index-match-cross-sheet-090",
+			"formula": "=INDEX(Data!B1:B2,MATCH(Sheet1!A1,Data!A1:A2,0))",
+			"sheets": {
+				"Sheet1": { "A1": 20 },
+				"Data": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" }
+			},
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+
+		{
+			"id": "fn-lookup-index-row-and-column-100",
+			"formula": "=INDEX(A1:C4,2,2)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": "twenty",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-index-single-column-101",
+			"formula": "=INDEX(A1:A4,3)",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 30,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list over a vector."
+		},
+		{
+			"id": "fn-lookup-index-row-only-102",
+			"formula": "=INDEX(A1:C4,2)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2", "A3": 30, "B3": "thirty", "C3": "X3", "A4": 40, "B4": "forty", "C4": "X4" },
+			"expected": 20,
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "INDEX over a matrix with only a row number returns that whole row; the cell shows its first value."
+		},
+		{
+			"id": "fn-lookup-index-scalar-range-103",
+			"formula": "=INDEX(5,1,1)",
+			"expected": 5,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-index-row-out-of-range-104",
+			"formula": "=INDEX(A1:C4,5,1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty", "A3": 30, "B3": "thirty", "A4": 40, "B4": "forty" },
+			"expected": "#REF!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-index-column-out-of-range-105",
+			"formula": "=INDEX(A1:C4,1,9)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2" },
+			"expected": "#REF!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-index-negative-row-106",
+			"formula": "=INDEX(A1:C4,-1,1)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel distinguishes a negative index (#VALUE!) from an out-of-range one (#REF!).",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-index-whole-column-107",
+			"formula": "=INDEX(A1:C2,0,2)",
+			"cells": { "A1": 10, "B1": "ten", "C1": "X1", "A2": 20, "B2": "twenty", "C2": "X2" },
+			"expected": "ten",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "Row 0 means 'the whole of column 2'; a single cell shows the first value of that column. The engine indexes range[-1], which is undefined, and reports #REF!.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-index-whole-row-108",
+			"formula": "=INDEX(A1:B2,1,0)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": 10,
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "Column 0 means 'the whole of row 1'.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-index-whole-column-summed-109",
+			"formula": "=SUM(INDEX(A1:B2,0,1))",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": 30,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "SUM(INDEX(range,0,n)) is the standard way to total one column of a table without naming its extent. It returns 0 here, which is a wrong ANSWER rather than an error - the most dangerous shape of this defect.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 0
+		},
+		{
+			"id": "fn-lookup-index-missing-row-110",
+			"formula": "=INDEX(A1:C4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#REF!"
+		},
+		{
+			"id": "fn-lookup-index-no-arguments-111",
+			"formula": "=INDEX()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "The engine returns the JavaScript value `undefined`, which is neither a value nor an error and which JSON cannot express, so no actual is recorded. Everything downstream sees a blank.",
+			"status": "known-failure",
+			"defect": "crash"
+		},
+		{
+			"id": "fn-lookup-index-extra-argument-112",
+			"formula": "=INDEX(A1:C4,2,2,\"extra\")",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "Excel's fourth argument is area_num for a multi-area reference; this engine has no fourth parameter.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "twenty"
+		},
+		{
+			"id": "fn-lookup-index-cross-sheet-113",
+			"formula": "=INDEX(Data!A1:B2,2,2)",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 5, "B1": "five", "A2": 6, "B2": "six" } },
+			"expected": "six",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+
+		{
+			"id": "fn-lookup-choose-basic-120",
+			"formula": "=CHOOSE(2,\"a\",\"b\",\"c\")",
+			"expected": "b",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-choose-single-value-121",
+			"formula": "=CHOOSE(1,\"a\")",
+			"expected": "a",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list."
+		},
+		{
+			"id": "fn-lookup-choose-index-zero-122",
+			"formula": "=CHOOSE(0,\"a\",\"b\")",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Index below 1 is the documented error outcome."
+		},
+		{
+			"id": "fn-lookup-choose-index-too-large-123",
+			"formula": "=CHOOSE(4,\"a\",\"b\")",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-choose-index-negative-124",
+			"formula": "=CHOOSE(-1,\"a\",\"b\")",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-choose-fractional-index-125",
+			"formula": "=CHOOSE(2.7,\"a\",\"b\",\"c\")",
+			"expected": "b",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel truncates the index to 2. The engine passes 2.7 straight into the array, so it hands back the JavaScript value `undefined` - not a value and not an error. JSON cannot express it, so no actual is recorded.",
+			"status": "known-failure",
+			"defect": "function-arguments"
+		},
+		{
+			"id": "fn-lookup-choose-numeric-text-index-126",
+			"formula": "=CHOOSE(\"2\",\"a\",\"b\")",
+			"expected": "b",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-choose-boolean-index-127",
+			"formula": "=CHOOSE(TRUE,\"a\",\"b\")",
+			"expected": "a",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-choose-missing-values-128",
+			"formula": "=CHOOSE(1)",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "CHOOSE needs at least one value. The range check happens to catch it."
+		},
+		{
+			"id": "fn-lookup-choose-no-arguments-129",
+			"formula": "=CHOOSE()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-choose-range-argument-130",
+			"formula": "=SUM(CHOOSE(2,A1:A2,A3:A4))",
+			"cells": { "A1": 10, "A2": 20, "A3": 30, "A4": 40 },
+			"expected": 70,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "CHOOSE selects a whole range, which SUM then totals."
+		},
+		{
+			"id": "fn-lookup-choose-error-index-131",
+			"formula": "=CHOOSE(1/0,\"a\",\"b\")",
+			"expected": "#DIV/0!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "toNum turns the error string into 0, so the error is replaced by a different one.",
+			"status": "known-failure",
+			"defect": "error-propagation",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-choose-error-value-132",
+			"formula": "=CHOOSE(2,\"a\",1/0)",
+			"expected": "#DIV/0!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "The selected value is an error, so the error comes through."
+		},
+
+		{
+			"id": "fn-lookup-row-no-argument-140",
+			"formula": "=ROW()",
+			"expected": 1048576,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "ROW() with no argument is the row of the formula's own cell. The corpus harness evaluates in XFD1048576. The engine has no idea which cell it is evaluating and always answers 1.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-column-no-argument-141",
+			"formula": "=COLUMN()",
+			"expected": 16384,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "XFD is column 16384.",
+			"status": "known-failure",
+			"defect": "function-result",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-row-of-reference-142",
+			"formula": "=ROW(B7)",
+			"expected": 7,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Arguments are evaluated before the function sees them, so ROW receives B7's CONTENTS, never the reference. With B7 empty it receives 0 and answers 1.",
+			"status": "known-failure",
+			"defect": "reference-resolution",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-column-of-reference-143",
+			"formula": "=COLUMN(C1)",
+			"cells": { "C1": "X1" },
+			"expected": 3,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Worse than a wrong constant: COLUMN sees the string 'X1' stored in C1, matches its own cell-id pattern against that CONTENT, and reports column 24 for cell C1. The answer depends on the data in the cell being asked about.",
+			"status": "known-failure",
+			"defect": "reference-resolution",
+			"actual": 24
+		},
+		{
+			"id": "fn-lookup-row-of-range-144",
+			"formula": "=ROW(B2:C4)",
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "ROW of a range is the first row of that range.",
+			"status": "known-failure",
+			"defect": "reference-resolution",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-column-of-range-145",
+			"formula": "=COLUMN(B2:C4)",
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"status": "known-failure",
+			"defect": "reference-resolution",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-row-of-text-146",
+			"formula": "=ROW(\"B2\")",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel rejects a text argument to ROW; a reference is required. This engine only works on text, which is the exact inverse of the specification.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 2
+		},
+		{
+			"id": "fn-lookup-column-large-147",
+			"formula": "=COLUMN(\"ZZ1\")",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Records that the text path does compute multi-letter columns correctly (ZZ is 702) even though accepting text at all is wrong.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 702
+		},
+		{
+			"id": "fn-lookup-rows-matrix-150",
+			"formula": "=ROWS(A1:C4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": 4,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Counts rows in the reference, not rows containing data."
+		},
+		{
+			"id": "fn-lookup-columns-matrix-151",
+			"formula": "=COLUMNS(A1:C4)",
+			"cells": { "A1": 10, "B1": "ten", "A2": 20, "B2": "twenty" },
+			"expected": 3,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-rows-single-column-152",
+			"formula": "=ROWS(A1:A4)",
+			"expected": 4,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-columns-single-column-153",
+			"formula": "=COLUMNS(A1:A4)",
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-rows-single-row-154",
+			"formula": "=ROWS(A1:C1)",
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-columns-single-row-155",
+			"formula": "=COLUMNS(A1:C1)",
+			"expected": 3,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-rows-scalar-156",
+			"formula": "=ROWS(5)",
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "A scalar counts as a one-by-one array."
+		},
+		{
+			"id": "fn-lookup-columns-scalar-157",
+			"formula": "=COLUMNS(5)",
+			"expected": 1,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-rows-cross-sheet-158",
+			"formula": "=ROWS(Data!A1:B2)",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 1, "B1": 2, "A2": 3, "B2": 4 } },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-columns-cross-sheet-159",
+			"formula": "=COLUMNS(Data!A1:B2)",
+			"sheets": { "Sheet1": { "A1": 0 }, "Data": { "A1": 1, "B1": 2, "A2": 3, "B2": 4 } },
+			"expected": 2,
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-rows-no-argument-160",
+			"formula": "=ROWS()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "ROWS requires an array. Returning 1 makes a missing argument indistinguishable from a scalar.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-columns-no-argument-161",
+			"formula": "=COLUMNS()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 1
+		},
+		{
+			"id": "fn-lookup-rows-extra-argument-162",
+			"formula": "=ROWS(A1:C4,\"x\")",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": 4
+		},
+
+		{
+			"id": "fn-lookup-address-default-170",
+			"formula": "=ADDRESS(1,1)",
+			"expected": "$A$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Minimum argument list; abs_num defaults to 1, meaning fully absolute."
+		},
+		{
+			"id": "fn-lookup-address-row-column-order-171",
+			"formula": "=ADDRESS(2,3)",
+			"expected": "$C$2",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Row first, column second - the reverse of the resulting text."
+		},
+		{
+			"id": "fn-lookup-address-abs-2-172",
+			"formula": "=ADDRESS(1,1,2)",
+			"expected": "A$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-abs-3-173",
+			"formula": "=ADDRESS(1,1,3)",
+			"expected": "$A1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-abs-4-174",
+			"formula": "=ADDRESS(1,1,4)",
+			"expected": "A1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-with-sheet-175",
+			"formula": "=ADDRESS(1,1,1,TRUE,\"Sheet2\")",
+			"expected": "Sheet2!$A$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Maximum argument list."
+		},
+		{
+			"id": "fn-lookup-address-column-26-176",
+			"formula": "=ADDRESS(1,26)",
+			"expected": "$Z$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Last single-letter column."
+		},
+		{
+			"id": "fn-lookup-address-column-27-177",
+			"formula": "=ADDRESS(1,27)",
+			"expected": "$AA$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "First two-letter column - the carry boundary."
+		},
+		{
+			"id": "fn-lookup-address-column-703-178",
+			"formula": "=ADDRESS(1,703)",
+			"expected": "$AAA$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "First three-letter column."
+		},
+		{
+			"id": "fn-lookup-address-sheet-limits-179",
+			"formula": "=ADDRESS(1048576,16384)",
+			"expected": "$XFD$1048576",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "The bottom-right cell of a worksheet."
+		},
+		{
+			"id": "fn-lookup-address-row-zero-180",
+			"formula": "=ADDRESS(0,1)",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-column-zero-181",
+			"formula": "=ADDRESS(1,0)",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-abs-out-of-range-182",
+			"formula": "=ADDRESS(1,1,5)",
+			"expected": "#VALUE!",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "abs_num must be 1-4. An unrecognised value silently produces the relative form.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "A1"
+		},
+		{
+			"id": "fn-lookup-address-r1c1-183",
+			"formula": "=ADDRESS(1,1,1,FALSE)",
+			"expected": "R1C1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "a1 FALSE selects R1C1 notation. The parameter is accepted and discarded.",
+			"status": "known-failure",
+			"defect": "unsupported-feature",
+			"actual": "$A$1"
+		},
+		{
+			"id": "fn-lookup-address-fractional-184",
+			"formula": "=ADDRESS(1.9,1.9)",
+			"expected": "$A$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics",
+			"notes": "Excel truncates both arguments. The engine truncates neither, so the fraction leaks into the reference text and produces '$A$1.9', which is not a cell reference at all.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "$A$1.9"
+		},
+		{
+			"id": "fn-lookup-address-numeric-text-185",
+			"formula": "=ADDRESS(\"1\",\"1\")",
+			"expected": "$A$1",
+			"category": "lookup",
+			"source": "excel-compatible-semantics"
+		},
+		{
+			"id": "fn-lookup-address-missing-column-186",
+			"formula": "=ADDRESS(1)",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"notes": "The missing column becomes 0 and trips the range guard, so the error code is wrong but the call does fail.",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-address-no-arguments-187",
+			"formula": "=ADDRESS()",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "#VALUE!"
+		},
+		{
+			"id": "fn-lookup-address-extra-argument-188",
+			"formula": "=ADDRESS(1,1,1,TRUE,\"Sheet2\",\"extra\")",
+			"expected": "#N/A",
+			"category": "lookup",
+			"source": "google-sheets",
+			"status": "known-failure",
+			"defect": "function-arguments",
+			"actual": "Sheet2!$A$1"
+		}
+	]
+}
