@@ -84,7 +84,10 @@ primary      literal | ref | range | call | ( expr ) | name
 Two structural gaps are visible in this table alone:
 
 - `pow` reads a single `^` and returns, so `2^3^2` evaluates `2^3` and abandons
-  the rest of the expression.
+  the rest of the expression. Note that Excel and Google Sheets evaluate
+  equal-precedence operators left to right and make no exception for `^`, so
+  the correct answer is `(2^3)^2 = 64`, not the 512 that mathematical convention
+  gives. The engine is wrong either way, but the expected value is 64.
 - `unary` calls `primary`, not itself, so a prefix operator cannot stack, and it
   checks for `%` only on the path that had no prefix operator.
 
@@ -102,7 +105,7 @@ These ran against the unmodified engine. Each has a fixture in the corpus.
 
 | Formula | Engine | Spreadsheet | Class |
 | --- | --- | --- | --- |
-| `=2^3^2` | 8 | 512 | associativity |
+| `=2^3^2` | 8 | 64 | associativity |
 | `=--1` | -0 | 1 | precedence |
 | `=-5%` | -5 | -0.05 | precedence |
 | `=5%%` | 0.05 | 0.0005 | precedence |

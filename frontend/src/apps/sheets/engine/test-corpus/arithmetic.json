@@ -46,15 +46,691 @@
       "source": "excel-compatible-semantics"
     },
     {
-      "id": "associativity-power-right-001",
+      "id": "associativity-power-left-to-right-001",
       "formula": "=2^3^2",
-      "expected": 512,
+      "expected": 64,
       "category": "operator-associativity",
       "source": "excel-compatible-semantics",
-      "notes": "`pow()` handles at most one `^` and never loops, so the trailing `^2` is dropped entirely: the engine returns 2^3. Because nothing verifies that all tokens were consumed, this is a silent wrong answer.",
+      "notes": "Excel and Google Sheets evaluate same-precedence operators left to right and make no exception for `^`, so this is (2^3)^2 = 64, NOT the 512 that maths convention and most programming languages give. baseline.md records 512; that entry is wrong. Either way the engine is wrong for a different reason: `pow()` handles at most one `^` and never loops, so the trailing `^2` is dropped and the engine returns 2^3. Nothing verifies the token stream was consumed, so this is a silent wrong answer.",
       "status": "known-failure",
       "defect": "associativity",
       "actual": 8
+    },
+    {
+      "id": "associativity-power-unary-exponent-001",
+      "formula": "=2^-3^2",
+      "expected": 0.015625,
+      "category": "operator-associativity",
+      "source": "excel-compatible-semantics",
+      "notes": "Unary minus binds tighter than `^`, and `^` groups left to right, so this is (2^-3)^2. The engine evaluates 2^-3 and drops the trailing `^2`.",
+      "status": "known-failure",
+      "defect": "associativity",
+      "actual": 0.125
+    },
+    {
+      "id": "precedence-power-over-multiplication-001",
+      "formula": "=2*3^4",
+      "expected": 162,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics",
+      "notes": "^ binds tighter than *, so 2*(3^4), not (2*3)^4 = 1296."
+    },
+    {
+      "id": "precedence-concat-over-comparison-001",
+      "formula": "=\"a\"&\"b\"=\"ab\"",
+      "expected": true,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics",
+      "notes": "& binds tighter than =, so this is (\"a\"&\"b\")=\"ab\". If the grouping were reversed the result would be the string \"afalse\"."
+    },
+    {
+      "id": "precedence-comparison-chain-left-001",
+      "formula": "=1<2=TRUE",
+      "expected": true,
+      "category": "operator-precedence",
+      "source": "excel-compatible-semantics",
+      "notes": "Comparisons chain left to right: (1<2)=TRUE."
+    },
+    {
+      "id": "precedence-percent-after-unary-minus-drops-rest-001",
+      "formula": "=-2%*3",
+      "expected": -0.06,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "% binds tighter than unary minus, which binds tighter than *, so this is (-(2%))*3. `unary()` returns straight after the leading `-`, leaving `%` unread; `mul()` then sees `%` instead of `*` and stops, so BOTH the percent and the multiplication are silently discarded.",
+      "status": "known-failure",
+      "defect": "precedence",
+      "actual": -2
+    },
+    {
+      "id": "unary-plus-then-minus-001",
+      "formula": "=+-2",
+      "expected": -2,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "`unary()` calls `primary()`, which cannot parse a prefix operator; its catch-all consumes the `-` and returns 0, and the literal 2 is then left unread.",
+      "status": "known-failure",
+      "defect": "precedence",
+      "actual": 0
+    },
+    {
+      "id": "unary-minus-then-plus-001",
+      "formula": "=-+2",
+      "expected": -2,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "Mirror of `unary-plus-then-minus-001`. The engine returns -0; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "precedence"
+    },
+    {
+      "id": "unary-triple-negation-001",
+      "formula": "=---1",
+      "expected": -1,
+      "category": "unary-operator",
+      "source": "excel-compatible-semantics",
+      "notes": "Right answer for the wrong reason: the engine parses this as (-0) - 1 because `primary()` swallows the second `-` as a zero. It is kept as a pass fixture so a future rewrite of `unary()` still has to produce -1."
+    },
+    {
+      "id": "coercion-empty-string-plus-number-001",
+      "formula": "=\"\"+1",
+      "expected": "#VALUE!",
+      "category": "coercion",
+      "source": "excel",
+      "notes": "An empty string literal is text, not a blank, so Excel gives #VALUE!. `toNumStrict` maps '' to 0 instead. Google Sheets is more lenient here and returns 1, so this one case is an Excel-only expectation.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 1
+    },
+    {
+      "id": "coercion-blank-cell-concat-001",
+      "formula": "=Z99&\"x\"",
+      "expected": "x",
+      "category": "coercion",
+      "source": "excel-compatible-semantics",
+      "notes": "A reference to an unset cell resolves to the NUMBER 0 rather than a blank, so concatenation injects a literal \"0\". The same root cause makes ISBLANK(Z99) FALSE and LEN(Z99) 1.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "0x"
+    },
+    {
+      "id": "coercion-number-to-text-precision-001",
+      "formula": "=\"\"&(1/3)",
+      "expected": "0.333333333333333",
+      "category": "coercion",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets render a number as text with at most 15 significant digits. `_str` uses JavaScript's String(), which emits the full 17-digit shortest round-trip form.",
+      "status": "known-failure",
+      "defect": "compatibility-difference",
+      "actual": "0.3333333333333333"
+    },
+    {
+      "id": "coercion-numeric-string-multiply-001",
+      "formula": "=\"3\"*\"4\"",
+      "expected": 12,
+      "category": "coercion",
+      "source": "excel-compatible-semantics",
+      "notes": "Numeric text coerces in arithmetic, unlike in comparison."
+    },
+    {
+      "id": "coercion-text-power-001",
+      "formula": "=\"abc\"^2",
+      "expected": "#VALUE!",
+      "category": "coercion",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "comparison-true-equals-one-001",
+      "formula": "=TRUE=1",
+      "expected": false,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel compares by type first: a boolean is never equal to a number. `comparison()` falls back to toNum, which maps TRUE to 1.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "comparison-false-equals-zero-001",
+      "formula": "=FALSE=0",
+      "expected": false,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "comparison-true-greater-than-number-001",
+      "formula": "=TRUE>1",
+      "expected": true,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel's cross-type ordering is number < text < FALSE < TRUE, so any boolean outranks any number.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "comparison-text-ordering-001",
+      "formula": "=\"a\"<\"b\"",
+      "expected": true,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "`<` coerces both sides with toNum, which maps every non-numeric string to 0, so no two text values ever compare as ordered. Every text ordering test collapses to FALSE.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "comparison-text-ordering-case-insensitive-001",
+      "formula": "=\"B\">\"a\"",
+      "expected": true,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Text comparison in Excel is case-insensitive but still ordered, so \"B\" > \"a\".",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "comparison-equal-and-not-equal-disagree-001",
+      "formula": "=IF(\"a\"=0,1,0)+IF(\"a\"<>0,1,0)",
+      "expected": 1,
+      "category": "comparison",
+      "source": "excel-compatible-semantics",
+      "notes": "Exactly one of `x=y` and `x<>y` must hold. `=` ORs a string compare with a numeric compare while `<>` only does the string compare, so for text against 0 the engine reports BOTH as true and the sum is 2.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 2
+    },
+    {
+      "id": "error-propagates-through-subtraction-001",
+      "formula": "=(1/0)-2",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-multiplication-001",
+      "formula": "=2*(1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-division-001",
+      "formula": "=(1/0)/2",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-unary-minus-001",
+      "formula": "=-(1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-percent-001",
+      "formula": "=(1/0)%",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-propagates-through-exponent-operand-001",
+      "formula": "=2^(1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "error-precedence-differs-between-operators-001",
+      "formula": "=\"abc\"^(1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "`=\"abc\"+(1/0)` correctly gives #DIV/0!, but `^` reports #VALUE! for the same operands. `add()`, `mul()` and friends test both operands for an error before coercing; `pow()` skips that step and coerces the base first, so which error a user sees depends on the operator rather than on the data.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "coercion-boolean-to-text-case-001",
+      "formula": "=TRUE&\"\"",
+      "expected": "TRUE",
+      "category": "coercion",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets render a boolean as upper-case text. `_str` uses JavaScript's String(), which gives \"true\". Any exported or concatenated flag column comes out in the wrong case.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "true"
+    },
+    {
+      "id": "error-swallowed-by-equal-001",
+      "formula": "=(1/0)=1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "error-swallowed-by-not-equal-001",
+      "formula": "=(1/0)<>1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "error-swallowed-by-less-than-001",
+      "formula": "=(1/0)<1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "toNum maps the error string to 0, so the engine reports 0 < 1.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "error-swallowed-by-greater-or-equal-001",
+      "formula": "=(1/0)>=1",
+      "expected": "#DIV/0!",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "error-not-visible-to-iserror-001",
+      "formula": "=ISERROR((1/0)>1)",
+      "expected": true,
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "Because comparison destroys the error rather than propagating it, IFERROR/ISERROR around a comparison cannot see the failure. A broken row silently reports FALSE instead of an error a user could catch.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "error-na-literal-truncated-001",
+      "formula": "=#N/A+1",
+      "expected": "#N/A",
+      "category": "error-propagation",
+      "source": "excel-compatible-semantics",
+      "notes": "The tokenizer's error-literal branch stops at `/`, so `#N/A` becomes the error `#N` followed by a division. The error propagates, but as a value that is not one of the seven spreadsheet error codes.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#N"
+    },
+    {
+      "id": "boundary-divide-by-zero-expression-001",
+      "formula": "=1/(1-1)",
+      "expected": "#DIV/0!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "boundary-nan-from-fractional-root-001",
+      "formula": "=(-8)^(1/3)",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "A fractional power of a negative base has no real value. The engine returns the IEEE-754 NaN, which reaches the grid as the display string \"NaN\". `actual` is omitted because JSON cannot express NaN.",
+      "status": "known-failure",
+      "defect": "compatibility-difference"
+    },
+    {
+      "id": "boundary-infinity-from-power-001",
+      "formula": "=2^1024",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Overflow through `^`. The engine returns Infinity; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "compatibility-difference"
+    },
+    {
+      "id": "boundary-infinity-leaks-into-text-001",
+      "formula": "=1e308*10&\"\"",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Proves the overflow value is not merely an internal representation: concatenation turns it into the user-visible text \"Infinity\", which then flows into exports and further string functions.",
+      "status": "known-failure",
+      "defect": "compatibility-difference",
+      "actual": "Infinity"
+    },
+    {
+      "id": "boundary-zero-to-negative-power-001",
+      "formula": "=0^-1",
+      "expected": "#DIV/0!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Raising zero to a negative power is a division by zero. The engine returns Infinity; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "compatibility-difference"
+    },
+    {
+      "id": "boundary-zero-to-zero-power-001",
+      "formula": "=0^0",
+      "expected": 1,
+      "category": "boundary",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "boundary-underflow-to-zero-001",
+      "formula": "=1e-320/1e10",
+      "expected": 0,
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Underflow flushes to zero rather than erroring, in both Excel and this engine."
+    },
+    {
+      "id": "boundary-float-cancellation-subtraction-001",
+      "formula": "=0.1+0.2-0.3",
+      "expected": 5.551115123125783e-17,
+      "category": "boundary",
+      "source": "google-sheets",
+      "notes": "Google Sheets exposes the raw IEEE-754 residue, and so does this engine. Excel special-cases a final addition or subtraction of nearly equal operands and forces the result to exactly 0, so this is one place where Excel and Sheets genuinely disagree; the fixture follows Sheets."
+    },
+    {
+      "id": "rounding-round-2675-001",
+      "formula": "=ROUND(2.675,2)",
+      "expected": 2.68,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "The classic binary-representation trap: 2.675 is stored slightly below 2.675. Excel, Sheets and this engine all still give 2.68."
+    },
+    {
+      "id": "rounding-round-half-away-from-zero-001",
+      "formula": "=ROUND(-2.5,0)",
+      "expected": -3,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Spreadsheet ROUND is half-away-from-zero. JavaScript's Math.round is half-up (towards +Infinity), so every negative half-way value rounds the wrong way.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -2
+    },
+    {
+      "id": "rounding-round-negative-half-001",
+      "formula": "=ROUND(-0.5,0)",
+      "expected": -1,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Same defect as `rounding-round-half-away-from-zero-001` at the smallest magnitude. The engine returns -0; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "rounding-round-decimal-boundary-001",
+      "formula": "=ROUND(1.005,2)",
+      "expected": 1.01,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets round the 15-significant-digit decimal value, so 1.005 rounds up. Multiplying by 100 in binary first gives 100.49999999999999, which rounds down and loses a cent. This is the money-rounding case that shows up in invoices.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 1
+    },
+    {
+      "id": "rounding-roundup-negative-001",
+      "formula": "=ROUNDUP(-1.1,0)",
+      "expected": -2,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "ROUNDUP rounds away from zero, so a negative number gets more negative. The engine uses Math.ceil, which rounds towards +Infinity.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -1
+    },
+    {
+      "id": "rounding-rounddown-negative-001",
+      "formula": "=ROUNDDOWN(-1.9,0)",
+      "expected": -1,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "ROUNDDOWN rounds towards zero. The engine uses Math.floor, which rounds towards -Infinity.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -2
+    },
+    {
+      "id": "rounding-int-floors-negative-001",
+      "formula": "=INT(-2.5)",
+      "expected": -3,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "INT rounds towards -Infinity even for negatives, unlike TRUNC."
+    },
+    {
+      "id": "rounding-trunc-negative-001",
+      "formula": "=TRUNC(-2.7)",
+      "expected": -2,
+      "category": "rounding",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "rounding-trunc-ignores-digits-001",
+      "formula": "=TRUNC(2.789,2)",
+      "expected": 2.78,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "TRUNC takes an optional digit count. The engine's implementation destructures only the first argument, so the second is silently ignored.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 2
+    },
+    {
+      "id": "rounding-floor-opposite-sign-significance-001",
+      "formula": "=FLOOR(2.5,-1)",
+      "expected": "#NUM!",
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel documents #NUM! when number is positive and significance is negative. The engine divides and floors, producing a value larger than the input.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 3
+    },
+    {
+      "id": "rounding-ceiling-opposite-sign-significance-001",
+      "formula": "=CEILING(2.5,-1)",
+      "expected": "#NUM!",
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel documents #NUM! when number is positive and significance is negative. The engine returns 2, i.e. it rounds a CEILING down.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 2
+    },
+    {
+      "id": "rounding-floor-negative-toward-minus-infinity-001",
+      "formula": "=FLOOR(-2.5,1)",
+      "expected": -3,
+      "category": "rounding",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "rounding-ceiling-negative-toward-zero-001",
+      "formula": "=CEILING(-2.5,1)",
+      "expected": -2,
+      "category": "rounding",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "rounding-floor-zero-significance-001",
+      "formula": "=FLOOR(2.5,0)",
+      "expected": "#DIV/0!",
+      "category": "rounding",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "rounding-even-negative-001",
+      "formula": "=EVEN(-1.5)",
+      "expected": -2,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "EVEN rounds away from zero and keeps the sign. The engine takes the absolute value first and never restores the sign.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 2
+    },
+    {
+      "id": "rounding-odd-negative-001",
+      "formula": "=ODD(-1.5)",
+      "expected": -3,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Same sign-loss defect as `rounding-even-negative-001`.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 3
+    },
+    {
+      "id": "mod-sign-follows-divisor-001",
+      "formula": "=MOD(-3,2)",
+      "expected": 1,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel defines MOD(n,d) = n - d*INT(n/d), so the result takes the sign of the DIVISOR. JavaScript's `%` takes the sign of the dividend, and the engine uses `%` directly.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -1
+    },
+    {
+      "id": "mod-negative-divisor-001",
+      "formula": "=MOD(3,-2)",
+      "expected": -1,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 1
+    },
+    {
+      "id": "mod-wraps-negative-dividend-001",
+      "formula": "=MOD(-1,3)",
+      "expected": 2,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "The idiom for cyclic indexing. Returning -1 instead of 2 turns a valid rotation into an out-of-range index.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": -1
+    },
+    {
+      "id": "mod-both-negative-001",
+      "formula": "=MOD(-3,-2)",
+      "expected": -1,
+      "category": "rounding",
+      "source": "excel-compatible-semantics",
+      "notes": "The one sign combination where JavaScript's `%` and Excel's MOD agree."
+    },
+    {
+      "id": "mod-zero-divisor-001",
+      "formula": "=MOD(1,0)",
+      "expected": "#DIV/0!",
+      "category": "rounding",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "boundary-fact-negative-001",
+      "formula": "=FACT(-1)",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "The engine's loop simply never runs and returns the identity 1.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 1
+    },
+    {
+      "id": "boundary-fact-overflow-001",
+      "formula": "=FACT(200)",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel errors above FACT(170). The engine returns Infinity; `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "boundary-log-base-one-001",
+      "formula": "=LOG(100,1)",
+      "expected": "#DIV/0!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics",
+      "notes": "log(1) is 0, so the engine divides by zero in floating point and returns Infinity instead of an error. `actual` is omitted because JSON cannot express it.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "boundary-sqrt-negative-001",
+      "formula": "=SQRT(-1)",
+      "expected": "#NUM!",
+      "category": "boundary",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "date-add-one-day-001",
+      "formula": "=DATE(2026,1,31)+1",
+      "expected": "2026-02-01",
+      "category": "date-arithmetic",
+      "source": "engine-contract",
+      "notes": "Excel stores a date as a serial number, so DATE(2026,1,31)+1 is the next day. This engine stores dates as ISO strings, which `toNumStrict` cannot convert, so the commonest date operation there is fails outright. `expected` is written in the engine's own ISO representation because it has no serial form.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "date-difference-in-days-001",
+      "formula": "=DATE(2026,3,1)-DATE(2026,2,1)",
+      "expected": 28,
+      "category": "date-arithmetic",
+      "source": "excel-compatible-semantics",
+      "notes": "Subtracting two dates to get a day count is the second commonest date operation and is also unsupported. DAYS() on the same two dates does return 28, so the capability exists but the operator cannot reach it.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "date-days-function-works-001",
+      "formula": "=DAYS(DATE(2026,3,1),DATE(2026,2,1))",
+      "expected": 28,
+      "category": "date-arithmetic",
+      "source": "excel-compatible-semantics",
+      "notes": "Contrast with `date-difference-in-days-001`: the same computation succeeds through the function."
+    },
+    {
+      "id": "date-datedif-complete-months-001",
+      "formula": "=DATEDIF(DATE(2024,1,31),DATE(2024,3,1),\"M\")",
+      "expected": 1,
+      "category": "date-arithmetic",
+      "source": "excel-compatible-semantics",
+      "notes": "DATEDIF counts COMPLETE months. 31 Jan to 1 Mar is one complete month plus one day. The engine subtracts calendar month numbers and ignores the day of month, so it over-counts whenever the end day is earlier in the month than the start day.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 2
+    },
+    {
+      "id": "date-year-below-1900-001",
+      "formula": "=DATE(1899,1,1)",
+      "expected": "3799-01-01",
+      "category": "date-arithmetic",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel documents that a year argument between 0 and 1899 is ADDED to 1900. The engine passes the year straight to the JavaScript Date constructor, which has its own, different two-digit rule. `expected` uses the engine's ISO representation of the date Excel would produce.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "1899-01-01"
     },
     {
       "id": "associativity-power-explicit-left-001",
