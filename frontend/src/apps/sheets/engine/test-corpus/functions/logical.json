@@ -1,0 +1,1761 @@
+{
+  "_readme": [
+    "Logical, information and error-handling function fixtures.",
+    "",
+    "`expected` is always the value Excel or Google Sheets produces.",
+    "",
+    "Arity cases use `source: \"google-sheets\"`. Excel refuses the formula entry",
+    "outright, so it has no cell result to record; Google Sheets accepts it and",
+    "evaluates to #N/A with a 'Wrong number of arguments' message. That #N/A is",
+    "the only observable spreadsheet answer, so every arity fixture expects it.",
+    "",
+    "Two cross-cutting engine defects show up repeatedly below and are worth",
+    "naming once:",
+    "  * arguments are evaluated eagerly and errors are ordinary strings, so an",
+    "    error in a branch that is not taken can still surface, and any string",
+    "    that starts with '#' is mistaken for an error;",
+    "  * comparison operators coerce both sides with toNum, which turns an error",
+    "    into 0, so an error inside a comparison is erased before IFERROR or the",
+    "    IS* family can ever see it."
+  ],
+  "cases": [
+    {
+      "id": "fn-logic-if-true-branch-001",
+      "formula": "=IF(TRUE,1,2)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-false-branch-002",
+      "formula": "=IF(FALSE,1,2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-omitted-false-branch-003",
+      "formula": "=IF(FALSE,1)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity is two; the omitted value_if_false defaults to FALSE."
+    },
+    {
+      "id": "fn-logic-if-omitted-false-branch-taken-004",
+      "formula": "=IF(TRUE,1)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-number-condition-005",
+      "formula": "=IF(0,1,2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A numeric condition is false only at exactly 0."
+    },
+    {
+      "id": "fn-logic-if-nonzero-condition-006",
+      "formula": "=IF(-1,1,2)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-text-condition-007",
+      "formula": "=IF(\"a\",1,2)",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Text is not a logical value; Excel rejects it. The engine uses JavaScript truthiness, so any non-empty text takes the true branch.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 1
+    },
+    {
+      "id": "fn-logic-if-empty-text-condition-008",
+      "formula": "=IF(\"\",1,2)",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Empty text is still text, so Excel rejects it. JavaScript treats it as falsy.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 2
+    },
+    {
+      "id": "fn-logic-if-error-condition-009",
+      "formula": "=IF(1/0,1,2)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error in the condition must propagate. The engine sees a non-empty string, which is truthy, and silently takes the TRUE branch — a wrong ANSWER, not a wrong error.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": 1
+    },
+    {
+      "id": "fn-logic-if-error-in-taken-branch-010",
+      "formula": "=IF(TRUE,1/0,2)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The error is in the branch that IS taken, so it must surface."
+    },
+    {
+      "id": "fn-logic-if-error-in-untaken-branch-011",
+      "formula": "=IF(FALSE,1/0,2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Arguments are evaluated eagerly here, unlike Excel, but the error is produced as a VALUE rather than thrown, so IF can still discard it. The guard idiom survives — see fn-logic-if-guard-divide-by-zero-012."
+    },
+    {
+      "id": "fn-logic-if-guard-divide-by-zero-012",
+      "formula": "=IF(A1=0,0,1/A1)",
+      "cells": { "A1": 0 },
+      "expected": 0,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The standard divide-by-zero guard. Eager evaluation computes 1/0 anyway, but the #DIV/0! is discarded with the untaken branch, so no error leaks."
+    },
+    {
+      "id": "fn-logic-if-guard-nonzero-013",
+      "formula": "=IF(A1=0,0,1/A1)",
+      "cells": { "A1": 5 },
+      "expected": 0.2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-cell-condition-014",
+      "formula": "=IF(A1>3,\"big\",\"small\")",
+      "cells": { "A1": 5 },
+      "expected": "big",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-cross-sheet-015",
+      "formula": "=IF(Data!B1=0,\"zero\",\"nonzero\")",
+      "sheets": { "Sheet1": {}, "Data": { "B1": 0 } },
+      "expected": "zero",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-nested-016",
+      "formula": "=IF(IF(TRUE,TRUE,FALSE),1,2)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-if-one-arg-017",
+      "formula": "=IF(1)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Below minimum arity. The engine returns the JavaScript value `undefined`, which JSON cannot express, so `actual` is omitted. An undefined cell value is the most damaging arity failure in the engine: it is neither a value nor an error, and everything downstream stringifies it to 'undefined'.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-if-no-args-018",
+      "formula": "=IF()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-if-extra-args-019",
+      "formula": "=IF(TRUE,1,2,3)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "IF takes at most three arguments.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-logic-if-range-condition-020",
+      "formula": "=IF(A1:A2,1,2)",
+      "cells": { "A1": 0, "A2": 0 },
+      "expected": 2,
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Sheets maps IF over the range, so the anchor cell shows the result for A1 = 0, which is 2. The engine tests the JavaScript array itself, which is always truthy, so ANY range condition takes the true branch regardless of its contents.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": 1
+    },
+
+    {
+      "id": "fn-logic-ifs-second-pair-001",
+      "formula": "=IFS(FALSE,1,TRUE,2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifs-first-wins-002",
+      "formula": "=IFS(TRUE,1,TRUE,2)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "IFS returns the value for the FIRST true condition."
+    },
+    {
+      "id": "fn-logic-ifs-single-pair-003",
+      "formula": "=IFS(TRUE,1)",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity is one condition/value pair."
+    },
+    {
+      "id": "fn-logic-ifs-no-match-004",
+      "formula": "=IFS(FALSE,1)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Documented error outcome: no condition is true."
+    },
+    {
+      "id": "fn-logic-ifs-no-match-multi-005",
+      "formula": "=IFS(FALSE,1,FALSE,2)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifs-numeric-conditions-006",
+      "formula": "=IFS(0,\"a\",1,\"b\")",
+      "expected": "b",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifs-error-in-untaken-value-007",
+      "formula": "=IFS(FALSE,1/0,TRUE,2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel does not surface an error from a value it did not select, and neither does the engine — the error is computed eagerly but then discarded."
+    },
+    {
+      "id": "fn-logic-ifs-error-condition-008",
+      "formula": "=IFS(1/0,\"a\",TRUE,\"b\")",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error in a CONDITION must propagate. The engine sees a truthy string and returns the matching value.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "a"
+    },
+    {
+      "id": "fn-logic-ifs-cell-conditions-009",
+      "formula": "=IFS(A1>10,\"big\",A1>1,\"mid\",TRUE,\"small\")",
+      "cells": { "A1": 5 },
+      "expected": "mid",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifs-no-args-010",
+      "formula": "=IFS()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Right answer for the wrong reason: the no-match path also returns #N/A, so a missing-argument bug is invisible here."
+    },
+    {
+      "id": "fn-logic-ifs-odd-args-011",
+      "formula": "=IFS(TRUE,1,TRUE)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "A trailing condition with no value is an arity error. The engine simply ignores the dangling argument.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-logic-ifs-lone-condition-012",
+      "formula": "=IFS(TRUE)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Right answer for the wrong reason: the loop needs a pair, finds none, and falls through to the no-match #N/A."
+    },
+
+    {
+      "id": "fn-logic-and-both-true-001",
+      "formula": "=AND(TRUE,TRUE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-and-one-false-002",
+      "formula": "=AND(TRUE,FALSE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-and-single-003",
+      "formula": "=AND(TRUE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity is one."
+    },
+    {
+      "id": "fn-logic-and-numbers-004",
+      "formula": "=AND(1,2)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Any non-zero number is TRUE."
+    },
+    {
+      "id": "fn-logic-and-zero-005",
+      "formula": "=AND(0,1)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-and-range-006",
+      "formula": "=AND(B1:B3)",
+      "cells": { "B1": 1, "B2": 0, "B3": 1 },
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "AND flattens a range."
+    },
+    {
+      "id": "fn-logic-and-range-all-true-007",
+      "formula": "=AND(B1:B3)",
+      "cells": { "B1": 1, "B2": 2, "B3": 3 },
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-and-many-args-008",
+      "formula": "=AND(TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-and-text-009",
+      "formula": "=AND(\"a\")",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A text argument that is not a logical is rejected. JavaScript truthiness accepts it.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-and-error-010",
+      "formula": "=AND(1/0,TRUE)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error argument must propagate. The engine sees a truthy string and reports TRUE, so a divide-by-zero upstream becomes a confident TRUE downstream.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-and-blank-cell-011",
+      "formula": "=AND(A1)",
+      "cells": { "A1": "" },
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "AND ignores blank cells, and with no logical values left it is #VALUE!. The engine resolves the blank to 0 and answers FALSE.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-and-no-args-012",
+      "formula": "=AND()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Below minimum arity. Array.every on an empty list is vacuously true, so the engine answers TRUE.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-or-one-true-001",
+      "formula": "=OR(FALSE,TRUE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-or-none-true-002",
+      "formula": "=OR(FALSE,FALSE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-or-single-003",
+      "formula": "=OR(FALSE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-or-range-004",
+      "formula": "=OR(B1:B3)",
+      "cells": { "B1": 0, "B2": 0, "B3": 1 },
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-or-cross-sheet-range-005",
+      "formula": "=OR(Data!A1:A2)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": 0, "A2": 0 } },
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-or-text-006",
+      "formula": "=OR(\"a\")",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-or-error-007",
+      "formula": "=OR(1/0)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-or-no-args-008",
+      "formula": "=OR()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Right answer only in shape: Array.some on an empty list is FALSE, which is not an error but at least is not a false positive.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-or-many-args-009",
+      "formula": "=OR(FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,TRUE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+
+    {
+      "id": "fn-logic-not-true-001",
+      "formula": "=NOT(TRUE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-not-false-002",
+      "formula": "=NOT(FALSE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-not-zero-003",
+      "formula": "=NOT(0)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-not-nonzero-004",
+      "formula": "=NOT(1)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-not-double-005",
+      "formula": "=NOT(NOT(TRUE))",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-not-text-006",
+      "formula": "=NOT(\"a\")",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-not-empty-text-007",
+      "formula": "=NOT(\"\")",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-not-error-008",
+      "formula": "=NOT(1/0)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-not-no-args-009",
+      "formula": "=NOT()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-not-extra-args-010",
+      "formula": "=NOT(TRUE,FALSE)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+
+    {
+      "id": "fn-logic-xor-one-true-001",
+      "formula": "=XOR(TRUE,FALSE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-xor-two-true-002",
+      "formula": "=XOR(TRUE,TRUE)",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "XOR is TRUE when an ODD number of arguments is TRUE."
+    },
+    {
+      "id": "fn-logic-xor-three-true-003",
+      "formula": "=XOR(1,1,1)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-xor-single-004",
+      "formula": "=XOR(TRUE)",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity is one."
+    },
+    {
+      "id": "fn-logic-xor-range-005",
+      "formula": "=XOR(B1:B3)",
+      "cells": { "B1": 1, "B2": 1, "B3": 0 },
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-xor-nested-006",
+      "formula": "=XOR(ISODD(3),ISEVEN(3))",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-xor-text-007",
+      "formula": "=XOR(\"a\",\"b\")",
+      "expected": "#VALUE!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Both texts count as TRUE under JavaScript truthiness, so the engine answers FALSE (two trues) instead of erroring.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-xor-error-008",
+      "formula": "=XOR(1/0,FALSE)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-xor-no-args-009",
+      "formula": "=XOR()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+
+    {
+      "id": "fn-logic-true-call-001",
+      "formula": "=TRUE()",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-true-keyword-002",
+      "formula": "=TRUE",
+      "expected": true,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Both the bare keyword and the call form are accepted."
+    },
+    {
+      "id": "fn-logic-true-arithmetic-003",
+      "formula": "=TRUE()+1",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "TRUE coerces to 1 in arithmetic."
+    },
+    {
+      "id": "fn-logic-true-extra-args-004",
+      "formula": "=TRUE(1)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "TRUE takes no arguments at all.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-false-call-005",
+      "formula": "=FALSE()",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-false-keyword-006",
+      "formula": "=FALSE",
+      "expected": false,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-false-arithmetic-007",
+      "formula": "=FALSE()+1",
+      "expected": 1,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-false-extra-args-008",
+      "formula": "=FALSE(1)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+
+    {
+      "id": "fn-logic-switch-match-001",
+      "formula": "=SWITCH(2,1,\"a\",2,\"b\")",
+      "expected": "b",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-switch-no-match-no-default-002",
+      "formula": "=SWITCH(3,1,\"a\",2,\"b\")",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Documented error outcome: no match and no default."
+    },
+    {
+      "id": "fn-logic-switch-default-003",
+      "formula": "=SWITCH(3,1,\"a\",2,\"b\",\"z\")",
+      "expected": "z",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A trailing odd argument is the default."
+    },
+    {
+      "id": "fn-logic-switch-single-pair-004",
+      "formula": "=SWITCH(1,1,\"a\")",
+      "expected": "a",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity is three."
+    },
+    {
+      "id": "fn-logic-switch-text-match-005",
+      "formula": "=SWITCH(\"b\",\"a\",1,\"b\",2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-switch-case-insensitive-006",
+      "formula": "=SWITCH(\"B\",\"a\",1,\"b\",2)",
+      "expected": 2,
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "SWITCH compares text the same way the = operator does, which is case-insensitive. The engine uses JavaScript === and misses the match.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "#N/A"
+    },
+    {
+      "id": "fn-logic-switch-number-vs-text-007",
+      "formula": "=SWITCH(1,\"1\",\"str\")",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A number does not match the text form of itself."
+    },
+    {
+      "id": "fn-logic-switch-cell-expression-008",
+      "formula": "=SWITCH(A1,5,\"five\",6,\"six\")",
+      "cells": { "A1": 5 },
+      "expected": "five",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-switch-nested-009",
+      "formula": "=SWITCH(LEFT(\"abc\",1),\"a\",\"first\",\"b\",\"second\")",
+      "expected": "first",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-switch-error-in-selected-010",
+      "formula": "=SWITCH(1,1,1/0)",
+      "expected": "#DIV/0!",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-switch-error-in-unselected-011",
+      "formula": "=SWITCH(2,1,1/0,2,\"ok\")",
+      "expected": "ok",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error in a result that was not selected is discarded."
+    },
+    {
+      "id": "fn-logic-switch-no-args-012",
+      "formula": "=SWITCH()",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "The engine returns the JavaScript value `undefined` (args.length 0 is even, so it returns args[-1]), which JSON cannot express; `actual` is omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-switch-one-arg-013",
+      "formula": "=SWITCH(1)",
+      "expected": "#N/A",
+      "category": "logical-function",
+      "source": "google-sheets",
+      "notes": "Right answer for the wrong reason: the no-match path also returns #N/A."
+    },
+
+    {
+      "id": "fn-logic-iferror-catches-001",
+      "formula": "=IFERROR(1/0,\"e\")",
+      "expected": "e",
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iferror-passes-through-002",
+      "formula": "=IFERROR(1,\"e\")",
+      "expected": 1,
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iferror-catches-na-003",
+      "formula": "=IFERROR(NA(),\"e\")",
+      "expected": "e",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "IFERROR catches every error type including #N/A."
+    },
+    {
+      "id": "fn-logic-iferror-catches-num-004",
+      "formula": "=IFERROR(SQRT(-1),\"e\")",
+      "expected": "e",
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iferror-catches-lookup-005",
+      "formula": "=IFERROR(VLOOKUP(\"z\",A1:A2,1,FALSE),\"nf\")",
+      "cells": { "A1": "a", "A2": "b" },
+      "expected": "nf",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The most common real use of IFERROR."
+    },
+    {
+      "id": "fn-logic-iferror-fallback-also-errors-006",
+      "formula": "=IFERROR(1/0,1/0)",
+      "expected": "#DIV/0!",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "IFERROR does not re-check its fallback."
+    },
+    {
+      "id": "fn-logic-iferror-nested-007",
+      "formula": "=IFERROR(IFERROR(1/0,1/0),\"deep\")",
+      "expected": "deep",
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iferror-comparison-swallows-error-008",
+      "formula": "=IFERROR((1/0)>1,\"e\")",
+      "expected": "e",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "In Excel the comparison itself is #DIV/0!, so IFERROR catches it. Here the comparison operator coerces the error to 0 with toNum, producing a plain FALSE that IFERROR has nothing to catch. This is the single most dangerous defect in the error model: it makes IFERROR unreliable in exactly the guarded-comparison pattern it exists for.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-iferror-text-that-looks-like-error-009",
+      "formula": "=IFERROR(\"#VALUE!\",\"e\")",
+      "expected": "#VALUE!",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The argument is a text literal, not an error, so IFERROR must return it unchanged. The engine classifies any string starting with '#' as an error, so ordinary data such as a hash-prefixed ticket id is silently swallowed.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "e"
+    },
+    {
+      "id": "fn-logic-iferror-hash-text-010",
+      "formula": "=IFERROR(\"#1 seed\",\"e\")",
+      "expected": "#1 seed",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Realistic version of fn-logic-iferror-text-that-looks-like-error-009: any user text beginning with # is treated as an error value.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "e"
+    },
+    {
+      "id": "fn-logic-iferror-one-arg-011",
+      "formula": "=IFERROR(1/0)",
+      "expected": "",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "Google Sheets allows the one-argument form and returns blank on error; Excel requires two arguments. Sheets is used here because it is the only product that produces a cell value. The engine returns the JavaScript value `undefined`, which JSON cannot express, so `actual` is omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-iferror-one-arg-no-error-012",
+      "formula": "=IFERROR(1)",
+      "expected": 1,
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "The one-argument form with a non-error value passes it through."
+    },
+    {
+      "id": "fn-logic-iferror-no-args-013",
+      "formula": "=IFERROR()",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "Returns `undefined`; `actual` omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-iferror-extra-args-014",
+      "formula": "=IFERROR(1,2,3)",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-logic-iferror-cross-sheet-015",
+      "formula": "=IFERROR(Data!A1,\"e\")",
+      "sheets": { "Sheet1": {}, "Data": { "A1": 7 } },
+      "expected": 7,
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+
+    {
+      "id": "fn-logic-ifna-catches-001",
+      "formula": "=IFNA(NA(),\"e\")",
+      "expected": "e",
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifna-passes-value-002",
+      "formula": "=IFNA(1,\"e\")",
+      "expected": 1,
+      "category": "error-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-ifna-ignores-other-errors-003",
+      "formula": "=IFNA(1/0,\"e\")",
+      "expected": "#DIV/0!",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "IFNA catches only #N/A; every other error passes through."
+    },
+    {
+      "id": "fn-logic-ifna-regexextract-004",
+      "formula": "=IFNA(REGEXEXTRACT(\"abc\",\"z\"),\"none\")",
+      "expected": "none",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "#N/A produced rather than written as a literal: the tokenizer stops an error scan at '/', so '#N/A' cannot be typed into a formula at all."
+    },
+    {
+      "id": "fn-logic-ifna-one-arg-005",
+      "formula": "=IFNA(NA())",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "IFNA requires two arguments in both products. The engine returns `undefined`; JSON cannot express it, so `actual` is omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-ifna-no-args-006",
+      "formula": "=IFNA()",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "Returns `undefined`; `actual` omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+    {
+      "id": "fn-logic-ifna-extra-args-007",
+      "formula": "=IFNA(NA(),\"e\",\"x\")",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "e"
+    },
+    {
+      "id": "fn-logic-ifna-text-that-looks-like-na-008",
+      "formula": "=IFNA(\"#N\"&\"/A\",\"e\")",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The argument is ordinary text that happens to read '#N/A'. Excel returns it unchanged; the engine cannot tell text from an error value and substitutes the fallback. Built by concatenation because the tokenizer cannot lex a '#N/A' literal.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "e"
+    },
+
+    {
+      "id": "fn-logic-na-basic-001",
+      "formula": "=NA()",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The only way to obtain a #N/A literal in this engine; the tokenizer stops an error scan at '/' so '=#N/A' lexes as '#N'."
+    },
+    {
+      "id": "fn-logic-na-propagates-002",
+      "formula": "=NA()+1",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "#N/A poisons arithmetic."
+    },
+    {
+      "id": "fn-logic-na-concat-003",
+      "formula": "=NA()&\"x\"",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Concatenation must propagate the error rather than paste its text. The engine pastes.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#N/Ax"
+    },
+    {
+      "id": "fn-logic-na-extra-args-004",
+      "formula": "=NA(1)",
+      "expected": "#N/A",
+      "category": "error-function",
+      "source": "google-sheets",
+      "notes": "NA takes no arguments; Sheets reports the arity error as #N/A, which is indistinguishable from NA's own result, so this passes by accident."
+    },
+
+    {
+      "id": "fn-logic-isblank-empty-cell-001",
+      "formula": "=ISBLANK(A1)",
+      "cells": { "A1": "" },
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An empty cell is blank. The engine resolves an unset or cleared cell to the NUMBER 0, so ISBLANK can never be TRUE for a real cell.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isblank-unset-cell-002",
+      "formula": "=ISBLANK(Z99)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Same defect as fn-logic-isblank-empty-cell-001 for a cell that was never written. ISBLANK is unusable as written.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isblank-value-003",
+      "formula": "=ISBLANK(A1)",
+      "cells": { "A1": "x" },
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isblank-zero-004",
+      "formula": "=ISBLANK(0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isblank-empty-string-005",
+      "formula": "=ISBLANK(\"\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Empty text is a value, not a blank. This is the mirror image of fn-logic-isblank-empty-cell-001: the engine gets the literal case wrong in the other direction.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isblank-cross-sheet-006",
+      "formula": "=ISBLANK(Data!B1)",
+      "sheets": { "Sheet1": {}, "Data": { "B1": 0 } },
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isblank-no-args-007",
+      "formula": "=ISBLANK()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isblank-extra-args-008",
+      "formula": "=ISBLANK(A1,A2)",
+      "cells": { "A1": 1, "A2": 2 },
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+
+    {
+      "id": "fn-logic-isnumber-number-001",
+      "formula": "=ISNUMBER(1)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-text-002",
+      "formula": "=ISNUMBER(\"a\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-empty-text-003",
+      "formula": "=ISNUMBER(\"\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-error-004",
+      "formula": "=ISNUMBER(1/0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-numeric-text-005",
+      "formula": "=ISNUMBER(\"1\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A text literal that looks numeric is still text. The engine tests Number(v) instead of the type, so imported text digits are misreported as numbers.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isnumber-boolean-006",
+      "formula": "=ISNUMBER(TRUE)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A logical is not a number. Number(true) is 1, so the engine says TRUE.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isnumber-unset-cell-007",
+      "formula": "=ISNUMBER(Z99)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An empty cell is not a number. The engine resolves it to 0.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isnumber-cross-sheet-008",
+      "formula": "=ISNUMBER(Data!A1)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "hello" } },
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-nested-009",
+      "formula": "=ISNUMBER(VALUE(\"12\"))",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isnumber-no-args-010",
+      "formula": "=ISNUMBER()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isnumber-extra-args-011",
+      "formula": "=ISNUMBER(1,2)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-istext-text-001",
+      "formula": "=ISTEXT(\"a\")",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-istext-number-002",
+      "formula": "=ISTEXT(1)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-istext-empty-text-003",
+      "formula": "=ISTEXT(\"\")",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-istext-boolean-004",
+      "formula": "=ISTEXT(TRUE)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-istext-numeric-text-005",
+      "formula": "=ISTEXT(\"1\")",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The exact complement of fn-logic-isnumber-numeric-text-005; the same coercion bug reports text digits as not-text.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-istext-error-006",
+      "formula": "=ISTEXT(1/0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error is not text. Because the engine models errors as strings, ISTEXT reports TRUE for every error value.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-istext-cell-007",
+      "formula": "=ISTEXT(A1)",
+      "cells": { "A1": "Ünïcodé" },
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-istext-no-args-008",
+      "formula": "=ISTEXT()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-istext-extra-args-009",
+      "formula": "=ISTEXT(\"a\",\"b\")",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-iserror-div-zero-001",
+      "formula": "=ISERROR(1/0)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserror-value-002",
+      "formula": "=ISERROR(1)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserror-na-003",
+      "formula": "=ISERROR(NA())",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "ISERROR includes #N/A; ISERR excludes it."
+    },
+    {
+      "id": "fn-logic-iserror-nested-in-if-004",
+      "formula": "=IF(ISERROR(1/0),\"err\",\"ok\")",
+      "expected": "err",
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserror-comparison-005",
+      "formula": "=ISERROR((1/0)>1)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "In Excel a comparison against an error IS an error. Here the comparison operator coerces the error to 0 first, so ISERROR sees a plain FALSE. Every error check placed after a comparison is therefore blind.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-iserror-hash-text-006",
+      "formula": "=ISERROR(\"#1 seed\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Ordinary text that begins with # is not an error. The engine's isErr test is a string prefix check, so real data is misclassified.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-iserror-no-args-007",
+      "formula": "=ISERROR()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-iserror-extra-args-008",
+      "formula": "=ISERROR(1/0,1)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-iserr-div-zero-001",
+      "formula": "=ISERR(1/0)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserr-excludes-na-002",
+      "formula": "=ISERR(NA())",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The one behaviour that distinguishes ISERR from ISERROR."
+    },
+    {
+      "id": "fn-logic-iserr-value-003",
+      "formula": "=ISERR(1)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserr-text-004",
+      "formula": "=ISERR(\"a\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iserr-no-args-005",
+      "formula": "=ISERR()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-iserr-extra-args-006",
+      "formula": "=ISERR(1/0,1)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-isna-na-001",
+      "formula": "=ISNA(NA())",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isna-other-error-002",
+      "formula": "=ISNA(1/0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isna-value-003",
+      "formula": "=ISNA(1)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isna-propagated-004",
+      "formula": "=ISNA(NA()+1)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "#N/A survives arithmetic, so ISNA still sees it."
+    },
+    {
+      "id": "fn-logic-isna-regexextract-005",
+      "formula": "=ISNA(REGEXEXTRACT(\"abc\",\"z\"))",
+      "expected": true,
+      "category": "information-function",
+      "source": "google-sheets",
+      "notes": "#N/A produced by a function rather than written as a literal, which the tokenizer cannot lex."
+    },
+    {
+      "id": "fn-logic-isna-no-args-006",
+      "formula": "=ISNA()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isna-extra-args-007",
+      "formula": "=ISNA(NA(),1)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-islogical-true-001",
+      "formula": "=ISLOGICAL(TRUE)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-islogical-number-002",
+      "formula": "=ISLOGICAL(1)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-islogical-text-003",
+      "formula": "=ISLOGICAL(\"TRUE\")",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-islogical-comparison-004",
+      "formula": "=ISLOGICAL(1=1)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A comparison yields a logical."
+    },
+    {
+      "id": "fn-logic-islogical-error-005",
+      "formula": "=ISLOGICAL(1/0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-islogical-no-args-006",
+      "formula": "=ISLOGICAL()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-islogical-extra-args-007",
+      "formula": "=ISLOGICAL(TRUE,FALSE)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-isodd-odd-001",
+      "formula": "=ISODD(3)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isodd-even-002",
+      "formula": "=ISODD(2)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isodd-negative-003",
+      "formula": "=ISODD(-3)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: the sign is ignored."
+    },
+    {
+      "id": "fn-logic-isodd-zero-004",
+      "formula": "=ISODD(0)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isodd-fractional-005",
+      "formula": "=ISODD(3.5)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel truncates to 3, which is odd. The engine takes 3.5 % 2 = 1.5, which is neither 0 nor 1, so BOTH ISODD and ISEVEN answer FALSE for the same value.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isodd-cell-006",
+      "formula": "=ISODD(A1)",
+      "cells": { "A1": 7 },
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-isodd-text-007",
+      "formula": "=ISODD(\"a\")",
+      "expected": "#VALUE!",
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Non-numeric text is rejected. toNum turns it into 0.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isodd-boolean-008",
+      "formula": "=ISODD(TRUE)",
+      "expected": "#VALUE!",
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "ISODD does not accept a logical.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-isodd-error-009",
+      "formula": "=ISODD(1/0)",
+      "expected": "#DIV/0!",
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isodd-no-args-010",
+      "formula": "=ISODD()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-isodd-extra-args-011",
+      "formula": "=ISODD(3,4)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-iseven-even-001",
+      "formula": "=ISEVEN(2)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iseven-odd-002",
+      "formula": "=ISEVEN(3)",
+      "expected": false,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iseven-zero-003",
+      "formula": "=ISEVEN(0)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: zero is even."
+    },
+    {
+      "id": "fn-logic-iseven-negative-004",
+      "formula": "=ISEVEN(-4)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-iseven-fractional-005",
+      "formula": "=ISEVEN(2.5)",
+      "expected": true,
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel truncates to 2, which is even.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": false
+    },
+    {
+      "id": "fn-logic-iseven-text-006",
+      "formula": "=ISEVEN(\"a\")",
+      "expected": "#VALUE!",
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "toNum turns unparseable text into 0, so the engine confidently reports 'even'.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-iseven-error-007",
+      "formula": "=ISEVEN(1/0)",
+      "expected": "#DIV/0!",
+      "category": "information-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The error coerces to 0, which the engine calls even. An error becomes TRUE.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-iseven-no-args-008",
+      "formula": "=ISEVEN()",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+    {
+      "id": "fn-logic-iseven-extra-args-009",
+      "formula": "=ISEVEN(2,3)",
+      "expected": "#N/A",
+      "category": "information-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-logic-nested-and-is-001",
+      "formula": "=IF(AND(ISNUMBER(1),ISTEXT(\"a\")),\"both\",\"no\")",
+      "expected": "both",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-logic-nested-ifs-isblank-002",
+      "formula": "=IFS(ISBLANK(A1),\"blank\",TRUE,\"not\")",
+      "cells": { "A1": "" },
+      "expected": "blank",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The most common ISBLANK idiom, broken by the unset-cell-is-zero defect.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "not"
+    },
+    {
+      "id": "fn-logic-nested-iferror-value-003",
+      "formula": "=IF(ISNUMBER(VALUE(\"12\")),LEFT(\"abc\",2),\"no\")",
+      "expected": "ab",
+      "category": "logical-function",
+      "source": "excel-compatible-semantics"
+    }
+  ]
+}

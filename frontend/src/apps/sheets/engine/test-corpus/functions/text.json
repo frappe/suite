@@ -1,0 +1,2486 @@
+{
+  "_readme": [
+    "Text-function fixtures. `expected` is always the value Excel or Google Sheets",
+    "produces, never the value this engine produces.",
+    "",
+    "Arity cases use `source: \"google-sheets\"`. Excel refuses to accept a formula",
+    "with the wrong number of arguments at all (a modal dialog, not a cell value),",
+    "so there is no Excel cell result to record. Google Sheets accepts the entry",
+    "and evaluates it to #N/A with a 'Wrong number of arguments' message, so #N/A",
+    "is the only observable spreadsheet answer and every arity fixture uses it.",
+    "",
+    "This engine has no arity checking at all, so every one of those is a",
+    "known-failure with defect `function-arguments`."
+  ],
+  "cases": [
+    {
+      "id": "fn-text-len-basic-001",
+      "formula": "=LEN(\"abc\")",
+      "expected": 3,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-len-empty-string-002",
+      "formula": "=LEN(\"\")",
+      "expected": 0,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-len-number-003",
+      "formula": "=LEN(123)",
+      "expected": 3,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A number is coerced to its text form before measuring."
+    },
+    {
+      "id": "fn-text-len-boolean-004",
+      "formula": "=LEN(TRUE)",
+      "expected": 4,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Passes only because 'TRUE' and the engine's 'true' have equal length; see fn-text-code-boolean-004 for the same coercion failing visibly."
+    },
+    {
+      "id": "fn-text-len-cell-005",
+      "formula": "=LEN(A1)",
+      "cells": { "A1": "hello" },
+      "expected": 5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-len-cross-sheet-006",
+      "formula": "=LEN(Data!A1)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "hello" } },
+      "expected": 5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-len-unset-cell-007",
+      "formula": "=LEN(Z99)",
+      "expected": 0,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An unset cell is blank; LEN of a blank cell is 0. This engine resolves an unset cell to the NUMBER 0, so LEN measures the string '0'.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 1
+    },
+    {
+      "id": "fn-text-len-blank-cell-008",
+      "formula": "=LEN(A1)",
+      "cells": { "A1": "" },
+      "expected": 0,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Same defect as fn-text-len-unset-cell-007 but with a cell that was explicitly cleared.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 1
+    },
+    {
+      "id": "fn-text-len-error-input-009",
+      "formula": "=LEN(1/0)",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error argument must propagate. This engine measures the length of the string '#DIV/0!' instead.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": 7
+    },
+    {
+      "id": "fn-text-len-no-args-010",
+      "formula": "=LEN()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Below minimum arity. See the file header for why arity fixtures use Google Sheets.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 0
+    },
+    {
+      "id": "fn-text-len-extra-args-011",
+      "formula": "=LEN(\"a\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Above maximum arity; the extra argument is silently dropped.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-text-len-unicode-012",
+      "formula": "=LEN(\"Ünïcodé\")",
+      "expected": 7,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: non-ASCII characters count as one each."
+    },
+
+    {
+      "id": "fn-text-upper-basic-001",
+      "formula": "=UPPER(\"abc\")",
+      "expected": "ABC",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-upper-number-002",
+      "formula": "=UPPER(123)",
+      "expected": "123",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-upper-unicode-003",
+      "formula": "=UPPER(\"Ünïcodé\")",
+      "expected": "ÜNÏCODÉ",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-upper-cross-sheet-004",
+      "formula": "=UPPER(Data!A1)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "hello" } },
+      "expected": "HELLO",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-upper-blank-cell-005",
+      "formula": "=UPPER(A1)",
+      "cells": { "A1": "" },
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A blank cell is empty text, not the number 0.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "0"
+    },
+    {
+      "id": "fn-text-upper-no-args-006",
+      "formula": "=UPPER()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Below minimum arity. The engine leaks the JavaScript value `undefined` into the result text, which is the worst class of arity failure here: it produces a plausible-looking string instead of an error.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "UNDEFINED"
+    },
+    {
+      "id": "fn-text-upper-extra-args-007",
+      "formula": "=UPPER(\"a\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "A"
+    },
+    {
+      "id": "fn-text-upper-error-input-008",
+      "formula": "=UPPER(1/0)",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Right answer for the wrong reason: the engine uppercases the error TEXT '#DIV/0!', which is already upper case. LOWER shows the same code path failing — see fn-text-lower-error-input-006."
+    },
+
+    {
+      "id": "fn-text-lower-basic-001",
+      "formula": "=LOWER(\"ABC\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-lower-empty-002",
+      "formula": "=LOWER(\"\")",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-lower-boolean-003",
+      "formula": "=LOWER(TRUE)",
+      "expected": "true",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel stringifies the boolean to 'TRUE' and then lowercases it; the engine stringifies to 'true' already. Same answer by coincidence."
+    },
+    {
+      "id": "fn-text-lower-no-args-004",
+      "formula": "=LOWER()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefined"
+    },
+    {
+      "id": "fn-text-lower-extra-args-005",
+      "formula": "=LOWER(\"AB\",\"CD\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "ab"
+    },
+    {
+      "id": "fn-text-lower-error-input-006",
+      "formula": "=LOWER(1/0)",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error argument must propagate unchanged. Because this engine models errors as ordinary strings, LOWER rewrites the error value itself into a token nothing downstream recognises as an error.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#div/0!"
+    },
+
+    {
+      "id": "fn-text-proper-basic-001",
+      "formula": "=PROPER(\"hello world\")",
+      "expected": "Hello World",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-proper-apostrophe-002",
+      "formula": "=PROPER(\"o'neil\")",
+      "expected": "O'Neil",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel treats an apostrophe as a word boundary, so the N is capitalised."
+    },
+    {
+      "id": "fn-text-proper-digit-word-003",
+      "formula": "=PROPER(\"2nd place\")",
+      "expected": "2Nd Place",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel capitalises the first LETTER after a non-letter, so '2nd' becomes '2Nd'. The engine's \\b\\w rule sees the digit as the word start and leaves 'nd' alone.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "2nd Place"
+    },
+    {
+      "id": "fn-text-proper-mixed-case-004",
+      "formula": "=PROPER(\"hELLO wORLD\")",
+      "expected": "Hello World",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "PROPER lowercases the rest of each word. The engine only uppercases the first letter and leaves the tail untouched.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "HELLO WORLD"
+    },
+    {
+      "id": "fn-text-proper-empty-005",
+      "formula": "=PROPER(\"\")",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-proper-no-args-006",
+      "formula": "=PROPER()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "Undefined"
+    },
+    {
+      "id": "fn-text-proper-extra-args-007",
+      "formula": "=PROPER(\"ab\",\"cd\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "Ab"
+    },
+
+    {
+      "id": "fn-text-trim-basic-001",
+      "formula": "=TRIM(\"  a  b  \")",
+      "expected": "a b",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "TRIM removes leading and trailing spaces and collapses internal runs to one."
+    },
+    {
+      "id": "fn-text-trim-cell-002",
+      "formula": "=TRIM(A1)",
+      "cells": { "A1": "  pad  " },
+      "expected": "pad",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-trim-nothing-to-trim-003",
+      "formula": "=TRIM(\"abc\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-trim-tabs-004",
+      "formula": "=TRIM(\"a\"&CHAR(9)&\"b\")",
+      "expected": "a\tb",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel TRIM removes only the space character (32); a tab survives. The engine uses JavaScript trim/\\s+, which treats a tab as whitespace and collapses it to a space.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "a b"
+    },
+    {
+      "id": "fn-text-trim-range-005",
+      "formula": "=TRIM(A1:A2)",
+      "cells": { "A1": " hello ", "A2": " x " },
+      "expected": "hello",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "A range handed to a scalar text function is an array argument. Google Sheets maps over it and the anchor cell shows the first element. The engine instead stringifies the whole JavaScript array, producing a comma-joined blob.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "hello , x"
+    },
+    {
+      "id": "fn-text-trim-no-args-006",
+      "formula": "=TRIM()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefined"
+    },
+    {
+      "id": "fn-text-trim-extra-args-007",
+      "formula": "=TRIM(\" a \",\" b \")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a"
+    },
+
+    {
+      "id": "fn-text-clean-basic-001",
+      "formula": "=CLEAN(\"a\"&CHAR(7)&\"b\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "CLEAN strips the 32 non-printing ASCII control characters."
+    },
+    {
+      "id": "fn-text-clean-tab-002",
+      "formula": "=CLEAN(CHAR(9))",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-clean-nothing-003",
+      "formula": "=CLEAN(\"abc\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-clean-empty-004",
+      "formula": "=CLEAN(\"\")",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-clean-no-args-005",
+      "formula": "=CLEAN()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefined"
+    },
+    {
+      "id": "fn-text-clean-extra-args-006",
+      "formula": "=CLEAN(\"a\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a"
+    },
+
+    {
+      "id": "fn-text-left-basic-001",
+      "formula": "=LEFT(\"hello\",2)",
+      "expected": "he",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-left-default-count-002",
+      "formula": "=LEFT(\"hello\")",
+      "expected": "h",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "num_chars defaults to 1 when omitted. The engine reads the missing argument as 0 and returns nothing.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-left-zero-003",
+      "formula": "=LEFT(\"hello\",0)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-left-negative-004",
+      "formula": "=LEFT(\"hello\",-1)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects a negative num_chars.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-left-overrun-005",
+      "formula": "=LEFT(\"hello\",99)",
+      "expected": "hello",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: asking for more characters than exist returns the whole string."
+    },
+    {
+      "id": "fn-text-left-fractional-006",
+      "formula": "=LEFT(\"hello\",1.9)",
+      "expected": "h",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "num_chars truncates toward zero."
+    },
+    {
+      "id": "fn-text-left-boolean-007",
+      "formula": "=LEFT(TRUE,2)",
+      "expected": "TR",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel stringifies a boolean in upper case. The engine uses JavaScript String(true) = 'true'.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "tr"
+    },
+    {
+      "id": "fn-text-left-number-008",
+      "formula": "=LEFT(12345,2)",
+      "expected": "12",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-left-error-input-009",
+      "formula": "=LEFT(1/0,2)",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#D"
+    },
+    {
+      "id": "fn-text-left-no-args-010",
+      "formula": "=LEFT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-left-extra-args-011",
+      "formula": "=LEFT(\"hello\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "he"
+    },
+
+    {
+      "id": "fn-text-right-basic-001",
+      "formula": "=RIGHT(\"hello\",2)",
+      "expected": "lo",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-right-default-count-002",
+      "formula": "=RIGHT(\"hello\")",
+      "expected": "o",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "num_chars defaults to 1 when omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-right-zero-003",
+      "formula": "=RIGHT(\"hello\",0)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-right-negative-004",
+      "formula": "=RIGHT(\"hello\",-1)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects a negative num_chars. The engine computes substring(6) and returns empty text.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-right-overrun-005",
+      "formula": "=RIGHT(\"hello\",99)",
+      "expected": "hello",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-right-cell-006",
+      "formula": "=RIGHT(A1,3)",
+      "cells": { "A1": "abcdef" },
+      "expected": "def",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-right-no-args-007",
+      "formula": "=RIGHT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-right-extra-args-008",
+      "formula": "=RIGHT(\"hello\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "lo"
+    },
+
+    {
+      "id": "fn-text-mid-basic-001",
+      "formula": "=MID(\"hello\",2,3)",
+      "expected": "ell",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "start_num is 1-based."
+    },
+    {
+      "id": "fn-text-mid-zero-start-002",
+      "formula": "=MID(\"hello\",0,2)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects start_num < 1. The engine's substring(-1, 1) clamps to 0 and returns the first character, so an off-by-one bug becomes a plausible wrong answer.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "h"
+    },
+    {
+      "id": "fn-text-mid-negative-start-003",
+      "formula": "=MID(\"hello\",-1,2)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-mid-negative-length-004",
+      "formula": "=MID(\"hello\",2,-1)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects a negative num_chars. JavaScript substring swaps its arguments when start > end, so the engine returns the text BEFORE the start position.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "h"
+    },
+    {
+      "id": "fn-text-mid-zero-length-005",
+      "formula": "=MID(\"hello\",1,0)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-mid-past-end-006",
+      "formula": "=MID(\"hello\",9,2)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: start_num beyond the string returns empty text, not an error."
+    },
+    {
+      "id": "fn-text-mid-overrun-007",
+      "formula": "=MID(\"hello\",4,99)",
+      "expected": "lo",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-mid-missing-length-008",
+      "formula": "=MID(\"hello\",2)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "num_chars is required for MID. Below minimum arity.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-mid-no-args-009",
+      "formula": "=MID()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-mid-extra-args-010",
+      "formula": "=MID(\"hello\",2,3,4)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "ell"
+    },
+    {
+      "id": "fn-text-mid-fractional-011",
+      "formula": "=MID(\"hello\",1.5,2)",
+      "expected": "he",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel truncates start_num to 1."
+    },
+
+    {
+      "id": "fn-text-concat-basic-001",
+      "formula": "=CONCAT(\"a\",\"b\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concat-single-002",
+      "formula": "=CONCAT(\"a\")",
+      "expected": "a",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Minimum arity for CONCAT is one argument."
+    },
+    {
+      "id": "fn-text-concat-numbers-003",
+      "formula": "=CONCAT(1,2)",
+      "expected": "12",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concat-range-004",
+      "formula": "=CONCAT(C1:C3)",
+      "cells": { "C1": "a", "C2": "b", "C3": "c" },
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "CONCAT, unlike CONCATENATE, accepts ranges."
+    },
+    {
+      "id": "fn-text-concat-cross-sheet-005",
+      "formula": "=CONCAT(Data!A1,Data!A2)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "hello", "A2": "world" } },
+      "expected": "helloworld",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concat-boolean-006",
+      "formula": "=CONCAT(TRUE,FALSE)",
+      "expected": "TRUEFALSE",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel and Sheets stringify booleans in upper case. The engine uses JavaScript String(), which gives lower case, so every text function that receives a boolean produces the wrong case.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "truefalse"
+    },
+    {
+      "id": "fn-text-concat-error-input-007",
+      "formula": "=CONCAT(1/0,\"a\")",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "An error argument must poison the whole result. The engine pastes the error text into the output, which hides the failure inside otherwise-valid-looking text.",
+      "status": "known-failure",
+      "defect": "error-propagation",
+      "actual": "#DIV/0!a"
+    },
+    {
+      "id": "fn-text-concat-no-args-008",
+      "formula": "=CONCAT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-concat-blank-cell-009",
+      "formula": "=CONCAT(A1,\"x\")",
+      "cells": { "A1": "" },
+      "expected": "x",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A blank cell contributes nothing. The engine resolves it to the number 0 and prepends a '0'.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "0x"
+    },
+
+    {
+      "id": "fn-text-concatenate-basic-001",
+      "formula": "=CONCATENATE(\"a\",\"b\",\"c\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concatenate-single-002",
+      "formula": "=CONCATENATE(\"only\")",
+      "expected": "only",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concatenate-empty-string-003",
+      "formula": "=CONCATENATE(\"a\",\"\",\"b\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-concatenate-no-args-004",
+      "formula": "=CONCATENATE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-concatenate-many-args-005",
+      "formula": "=CONCATENATE(\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\")",
+      "expected": "abcdefgh",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Well below Excel's 255-argument ceiling, but proves the variadic path."
+    },
+
+    {
+      "id": "fn-text-textjoin-ignore-empty-001",
+      "formula": "=TEXTJOIN(\"-\",TRUE,\"a\",\"\",\"b\")",
+      "expected": "a-b",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-textjoin-keep-empty-002",
+      "formula": "=TEXTJOIN(\"-\",FALSE,\"a\",\"\",\"b\")",
+      "expected": "a--b",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-textjoin-range-003",
+      "formula": "=TEXTJOIN(\",\",TRUE,C1:C3)",
+      "cells": { "C1": "a", "C2": "b", "C3": "c" },
+      "expected": "a,b,c",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-textjoin-cross-sheet-004",
+      "formula": "=TEXTJOIN(\"-\",TRUE,Data!A1:A2)",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "hello", "A2": "world" } },
+      "expected": "hello-world",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-textjoin-numeric-flag-005",
+      "formula": "=TEXTJOIN(\",\",1,\"a\",\"b\")",
+      "expected": "a,b",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "ignore_empty accepts a number as a logical."
+    },
+    {
+      "id": "fn-text-textjoin-empty-delimiter-006",
+      "formula": "=TEXTJOIN(\"\",TRUE,\"a\",\"b\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-textjoin-min-args-007",
+      "formula": "=TEXTJOIN(\"-\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "TEXTJOIN needs at least three arguments.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-textjoin-no-args-008",
+      "formula": "=TEXTJOIN()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+
+    {
+      "id": "fn-text-join-basic-001",
+      "formula": "=JOIN(\",\",\"a\",\"b\")",
+      "expected": "a,b",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "JOIN is a Google Sheets function; Excel has no equivalent."
+    },
+    {
+      "id": "fn-text-join-range-002",
+      "formula": "=JOIN(\",\",C1:C3)",
+      "cells": { "C1": "a", "C2": "b", "C3": "c" },
+      "expected": "a,b,c",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-join-empty-delimiter-003",
+      "formula": "=JOIN(\"\",\"a\",\"b\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-join-min-args-004",
+      "formula": "=JOIN(\",\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "JOIN needs a delimiter and at least one value.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-join-no-args-005",
+      "formula": "=JOIN()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+
+    {
+      "id": "fn-text-rept-basic-001",
+      "formula": "=REPT(\"ab\",3)",
+      "expected": "ababab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-rept-zero-002",
+      "formula": "=REPT(\"ab\",0)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-rept-negative-003",
+      "formula": "=REPT(\"ab\",-1)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects a negative repeat count.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-rept-fractional-004",
+      "formula": "=REPT(\"ab\",2.7)",
+      "expected": "abab",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The repeat count truncates."
+    },
+    {
+      "id": "fn-text-rept-cell-limit-005",
+      "formula": "=LEN(REPT(\"a\",32768))",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: a cell holds at most 32767 characters, so REPT past that is #VALUE! in Excel. The engine happily builds the longer string.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 32768
+    },
+    {
+      "id": "fn-text-rept-huge-count-006",
+      "formula": "=REPT(\"a\",1000000000)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The right answer for the wrong reason: JavaScript String.repeat throws a RangeError and the blanket try/catch around every function call turns it into #VALUE!."
+    },
+    {
+      "id": "fn-text-rept-min-args-007",
+      "formula": "=REPT(\"ab\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-rept-extra-args-008",
+      "formula": "=REPT(\"ab\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "abab"
+    },
+
+    {
+      "id": "fn-text-char-basic-001",
+      "formula": "=CHAR(65)",
+      "expected": "A",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-char-upper-boundary-002",
+      "formula": "=CHAR(255)",
+      "expected": "ÿ",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: 255 is the highest code CHAR accepts."
+    },
+    {
+      "id": "fn-text-char-lower-boundary-003",
+      "formula": "=CHAR(1)",
+      "expected": "\u0001",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: 1 is the lowest code CHAR accepts."
+    },
+    {
+      "id": "fn-text-char-zero-004",
+      "formula": "=CHAR(0)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects 0; the valid range is 1..255. The engine emits a NUL character, which then travels through the rest of the sheet.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "\u0000"
+    },
+    {
+      "id": "fn-text-char-above-255-005",
+      "formula": "=CHAR(256)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "Ā"
+    },
+    {
+      "id": "fn-text-char-negative-006",
+      "formula": "=CHAR(-1)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "String.fromCharCode wraps a negative code around to U+FFFF.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "\uffff"
+    },
+    {
+      "id": "fn-text-char-no-args-007",
+      "formula": "=CHAR()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "\u0000"
+    },
+    {
+      "id": "fn-text-char-extra-args-008",
+      "formula": "=CHAR(65,66)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "A"
+    },
+    {
+      "id": "fn-text-char-text-input-009",
+      "formula": "=CHAR(\"abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Non-numeric text is not a code point. The engine's toNum turns it into 0 and emits NUL.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "\u0000"
+    },
+
+    {
+      "id": "fn-text-code-basic-001",
+      "formula": "=CODE(\"A\")",
+      "expected": 65,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-code-first-char-002",
+      "formula": "=CODE(\"abc\")",
+      "expected": 97,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "CODE reads only the first character."
+    },
+    {
+      "id": "fn-text-code-roundtrip-003",
+      "formula": "=CODE(CHAR(255))",
+      "expected": 255,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-code-boolean-004",
+      "formula": "=CODE(TRUE)",
+      "expected": 84,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel sees 'TRUE' and returns the code of 'T' (84). The engine sees 'true' and returns the code of 't' (116). The clearest single proof that boolean stringification is wrong.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": 116
+    },
+    {
+      "id": "fn-text-code-empty-005",
+      "formula": "=CODE(\"\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects empty text. The engine returns NaN, which JSON cannot express, so `actual` is omitted. A NaN escaping into the grid is worse than an error: it fails every comparison including equality with itself.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "fn-text-code-no-args-006",
+      "formula": "=CODE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "The engine stringifies the missing argument to 'undefined' and returns the code of 'u'.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 117
+    },
+    {
+      "id": "fn-text-code-extra-args-007",
+      "formula": "=CODE(\"A\",\"B\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 65
+    },
+
+    {
+      "id": "fn-text-exact-same-001",
+      "formula": "=EXACT(\"a\",\"a\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-exact-case-002",
+      "formula": "=EXACT(\"a\",\"A\")",
+      "expected": false,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "EXACT is the case-sensitive comparison; the = operator is not."
+    },
+    {
+      "id": "fn-text-exact-both-empty-003",
+      "formula": "=EXACT(\"\",\"\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-exact-number-vs-text-004",
+      "formula": "=EXACT(1,\"1\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "EXACT compares the text forms, so a number and its digits match."
+    },
+    {
+      "id": "fn-text-exact-boolean-005",
+      "formula": "=EXACT(TRUE,\"TRUE\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel stringifies TRUE to 'TRUE'; the engine to 'true', so the comparison fails.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": false
+    },
+    {
+      "id": "fn-text-exact-cell-006",
+      "formula": "=EXACT(A1,\"hello\")",
+      "cells": { "A1": "hello" },
+      "expected": true,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-exact-min-args-007",
+      "formula": "=EXACT(\"a\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-text-exact-no-args-008",
+      "formula": "=EXACT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Both missing arguments stringify to 'undefined', so they compare equal and the engine says TRUE.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+    {
+      "id": "fn-text-exact-extra-args-009",
+      "formula": "=EXACT(\"a\",\"a\",\"a\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-text-substitute-all-001",
+      "formula": "=SUBSTITUTE(\"a-b-c\",\"-\",\"+\")",
+      "expected": "a+b+c",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-substitute-instance-002",
+      "formula": "=SUBSTITUTE(\"a-b-c\",\"-\",\"+\",2)",
+      "expected": "a-b+c",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "instance_num is 1-based."
+    },
+    {
+      "id": "fn-text-substitute-first-instance-003",
+      "formula": "=SUBSTITUTE(\"a-b-c\",\"-\",\"+\",1)",
+      "expected": "a+b-c",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-substitute-instance-past-end-004",
+      "formula": "=SUBSTITUTE(\"a-b-c\",\"-\",\"+\",5)",
+      "expected": "a-b-c",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: an instance that does not exist leaves the text unchanged."
+    },
+    {
+      "id": "fn-text-substitute-instance-zero-005",
+      "formula": "=SUBSTITUTE(\"a-b-c\",\"-\",\"+\",0)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects instance_num < 1.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a-b-c"
+    },
+    {
+      "id": "fn-text-substitute-empty-old-006",
+      "formula": "=SUBSTITUTE(\"abc\",\"\",\"x\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel returns the text untouched when old_text is empty. The engine's split('').join('x') interleaves the replacement between every character.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "axbxc"
+    },
+    {
+      "id": "fn-text-substitute-no-match-007",
+      "formula": "=SUBSTITUTE(\"abc\",\"z\",\"x\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-substitute-case-sensitive-008",
+      "formula": "=SUBSTITUTE(\"aAa\",\"A\",\"z\")",
+      "expected": "aza",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "SUBSTITUTE is case-sensitive, so only the upper-case A is replaced."
+    },
+    {
+      "id": "fn-text-substitute-min-args-009",
+      "formula": "=SUBSTITUTE(\"abc\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "new_text is required. The engine substitutes the literal string 'undefined'.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "aundefinedc"
+    },
+    {
+      "id": "fn-text-substitute-no-args-010",
+      "formula": "=SUBSTITUTE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefined"
+    },
+    {
+      "id": "fn-text-substitute-extra-args-011",
+      "formula": "=SUBSTITUTE(\"a-b\",\"-\",\"+\",1,9)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a+b"
+    },
+    {
+      "id": "fn-text-substitute-boolean-012",
+      "formula": "=SUBSTITUTE(TRUE,\"T\",\"X\")",
+      "expected": "XRUE",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel substitutes into 'TRUE'. The engine sees 'true', finds no upper-case T, and returns it unchanged.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "true"
+    },
+
+    {
+      "id": "fn-text-replace-basic-001",
+      "formula": "=REPLACE(\"hello\",2,3,\"XYZ\")",
+      "expected": "hXYZo",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-replace-insert-002",
+      "formula": "=REPLACE(\"hello\",1,0,\"X\")",
+      "expected": "Xhello",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "num_chars 0 makes REPLACE an insertion."
+    },
+    {
+      "id": "fn-text-replace-overrun-003",
+      "formula": "=REPLACE(\"hello\",2,99,\"X\")",
+      "expected": "hX",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-replace-zero-start-004",
+      "formula": "=REPLACE(\"hello\",0,2,\"X\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects start_num < 1.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "Xello"
+    },
+    {
+      "id": "fn-text-replace-negative-start-005",
+      "formula": "=REPLACE(\"hello\",-1,2,\"X\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "Xhello"
+    },
+    {
+      "id": "fn-text-replace-min-args-006",
+      "formula": "=REPLACE(\"hello\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "new_text is required; the engine splices in the literal 'undefined'.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "hundefinedo"
+    },
+    {
+      "id": "fn-text-replace-no-args-007",
+      "formula": "=REPLACE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefinedundefined"
+    },
+    {
+      "id": "fn-text-replace-extra-args-008",
+      "formula": "=REPLACE(\"hello\",2,3,\"X\",9)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "hXo"
+    },
+
+    {
+      "id": "fn-text-find-basic-001",
+      "formula": "=FIND(\"l\",\"hello\")",
+      "expected": 3,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "FIND returns a 1-based position."
+    },
+    {
+      "id": "fn-text-find-case-sensitive-002",
+      "formula": "=FIND(\"L\",\"hello\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "FIND is case-sensitive and returns #VALUE! when not found — not 0 and not -1."
+    },
+    {
+      "id": "fn-text-find-not-found-003",
+      "formula": "=FIND(\"z\",\"hello\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-find-start-position-004",
+      "formula": "=FIND(\"l\",\"hello\",4)",
+      "expected": 4,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "start_num is 1-based and the result stays absolute."
+    },
+    {
+      "id": "fn-text-find-start-zero-005",
+      "formula": "=FIND(\"l\",\"hello\",0)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel rejects start_num < 1. The engine's `toNum(st)||1` turns 0 into 1 and searches from the start.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 3
+    },
+    {
+      "id": "fn-text-find-start-past-end-006",
+      "formula": "=FIND(\"l\",\"hello\",99)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: start_num beyond the string length is #VALUE!."
+    },
+    {
+      "id": "fn-text-find-empty-needle-007",
+      "formula": "=FIND(\"\",\"hello\")",
+      "expected": 1,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: empty find_text matches at start_num."
+    },
+    {
+      "id": "fn-text-find-number-needle-008",
+      "formula": "=FIND(1,\"a1b\")",
+      "expected": 2,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-find-boolean-haystack-009",
+      "formula": "=FIND(\"R\",TRUE)",
+      "expected": 2,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel searches 'TRUE' and finds R at 2. The engine searches 'true' case-sensitively and reports not-found.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-find-min-args-010",
+      "formula": "=FIND(\"h\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-find-no-args-011",
+      "formula": "=FIND()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Both arguments stringify to 'undefined', so the engine finds a match at position 1.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-text-find-extra-args-012",
+      "formula": "=FIND(\"l\",\"hello\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 3
+    },
+    {
+      "id": "fn-text-find-no-wildcards-013",
+      "formula": "=FIND(\"?\",\"hello\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "FIND does NOT support wildcards, so a literal ? is searched for and not found."
+    },
+
+    {
+      "id": "fn-text-search-case-insensitive-001",
+      "formula": "=SEARCH(\"L\",\"hello\")",
+      "expected": 3,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "SEARCH is case-insensitive; FIND is not."
+    },
+    {
+      "id": "fn-text-search-not-found-002",
+      "formula": "=SEARCH(\"z\",\"hello\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-search-start-position-003",
+      "formula": "=SEARCH(\"l\",\"hello\",4)",
+      "expected": 4,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-search-start-past-match-004",
+      "formula": "=SEARCH(\"h\",\"hello\",2)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-search-wildcard-question-005",
+      "formula": "=SEARCH(\"?\",\"hello\")",
+      "expected": 1,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "SEARCH supports ? as any single character, so it matches the first character.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-search-wildcard-star-006",
+      "formula": "=SEARCH(\"h*o\",\"hello\")",
+      "expected": 1,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "SEARCH supports * as any run of characters.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-search-escaped-wildcard-007",
+      "formula": "=SEARCH(\"~?\",\"a?b\")",
+      "expected": 2,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A tilde escapes a wildcard so it is matched literally.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-search-cell-008",
+      "formula": "=SEARCH(\"L\",A1,3)",
+      "cells": { "A1": "hello" },
+      "expected": 3,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-search-no-args-009",
+      "formula": "=SEARCH()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1
+    },
+    {
+      "id": "fn-text-search-extra-args-010",
+      "formula": "=SEARCH(\"l\",\"hello\",2,3)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 3
+    },
+
+    {
+      "id": "fn-text-value-basic-001",
+      "formula": "=VALUE(\"123\")",
+      "expected": 123,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-value-currency-002",
+      "formula": "=VALUE(\"$1,234.5\")",
+      "expected": 1234.5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-value-exponent-003",
+      "formula": "=VALUE(\"1e3\")",
+      "expected": 1000,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-value-whitespace-004",
+      "formula": "=VALUE(\"  7 \")",
+      "expected": 7,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-value-not-a-number-005",
+      "formula": "=VALUE(\"abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-value-boolean-006",
+      "formula": "=VALUE(TRUE)",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "VALUE takes text, not a logical."
+    },
+    {
+      "id": "fn-text-value-trailing-junk-007",
+      "formula": "=VALUE(\"12abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel requires the whole string to be a number. parseFloat stops at the first non-digit and returns a partial answer, which is the dangerous kind of wrong: it looks like data.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 12
+    },
+    {
+      "id": "fn-text-value-percent-008",
+      "formula": "=VALUE(\"50%\")",
+      "expected": 0.5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "VALUE understands a percent suffix and divides by 100.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 50
+    },
+    {
+      "id": "fn-text-value-no-args-009",
+      "formula": "=VALUE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-value-extra-args-010",
+      "formula": "=VALUE(\"123\",\"x\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 123
+    },
+    {
+      "id": "fn-text-value-roundtrip-011",
+      "formula": "=VALUE(TEXT(1234.5,\"0.00\"))",
+      "expected": 1234.5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Nested call: TEXT then VALUE must round-trip."
+    },
+
+    {
+      "id": "fn-text-numbervalue-basic-001",
+      "formula": "=NUMBERVALUE(\"1,234.5\")",
+      "expected": 1234.5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "With no separator arguments NUMBERVALUE uses the locale defaults, which are . and , in en-US."
+    },
+    {
+      "id": "fn-text-numbervalue-plain-002",
+      "formula": "=NUMBERVALUE(\"42\")",
+      "expected": 42,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-numbervalue-custom-separators-003",
+      "formula": "=NUMBERVALUE(\"1.234,5\",\",\",\".\")",
+      "expected": 1234.5,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "decimal_separator and group_separator are the whole point of NUMBERVALUE over VALUE. The engine ignores both arguments and strips commas unconditionally, so European-formatted numbers come back off by a factor of 1000.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": 1.2345
+    },
+    {
+      "id": "fn-text-numbervalue-percent-004",
+      "formula": "=NUMBERVALUE(\"10%\")",
+      "expected": 0.1,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Each trailing percent sign divides the result by 100.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": 10
+    },
+    {
+      "id": "fn-text-numbervalue-not-a-number-005",
+      "formula": "=NUMBERVALUE(\"abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The engine returns a bare NaN, which JSON cannot express, so `actual` is omitted. NaN in a cell is worse than an error value: it silently poisons every downstream comparison.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "fn-text-numbervalue-empty-006",
+      "formula": "=NUMBERVALUE(\"\")",
+      "expected": 0,
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel documents empty text as 0. The engine returns NaN; `actual` omitted for the same reason as fn-text-numbervalue-not-a-number-005.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "fn-text-numbervalue-no-args-007",
+      "formula": "=NUMBERVALUE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Returns NaN; `actual` omitted.",
+      "status": "known-failure",
+      "defect": "function-arguments"
+    },
+
+    {
+      "id": "fn-text-text-decimals-001",
+      "formula": "=TEXT(1234.567,\"0.00\")",
+      "expected": "1234.57",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-text-percent-002",
+      "formula": "=TEXT(0.25,\"0%\")",
+      "expected": "25%",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-text-percent-decimals-003",
+      "formula": "=TEXT(0.256,\"0.0%\")",
+      "expected": "25.6%",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-text-zero-004",
+      "formula": "=TEXT(0,\"0.00\")",
+      "expected": "0.00",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: zero still formats."
+    },
+    {
+      "id": "fn-text-text-currency-format-005",
+      "formula": "=TEXT(1234,\"$#,##0\")",
+      "expected": "$1,234",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The engine sees a leading $ and hard-codes two decimals with no grouping, ignoring the rest of the format string.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "$1234.00"
+    },
+    {
+      "id": "fn-text-text-grouping-006",
+      "formula": "=TEXT(1234567.5,\"#,##0\")",
+      "expected": "1,234,568",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The engine falls back to JavaScript toLocaleString, which honours the HOST locale rather than the format string and never drops the decimals the format asks it to. On this machine (en-IN) the result groups as 12,34,567.5; on an en-US host it would be 1,234,567.5. `actual` is omitted because it is environment-dependent — that non-determinism is itself the defect.",
+      "status": "known-failure",
+      "defect": "function-result"
+    },
+    {
+      "id": "fn-text-text-non-numeric-007",
+      "formula": "=TEXT(\"abc\",\"0.00\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel passes non-numeric text through unchanged. The engine coerces it to 0 first.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "0.00"
+    },
+    {
+      "id": "fn-text-text-boolean-008",
+      "formula": "=TEXT(TRUE,\"0\")",
+      "expected": "TRUE",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Excel does not apply a numeric format to a logical; it returns the logical's text. The engine coerces TRUE to 1.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "1"
+    },
+    {
+      "id": "fn-text-text-min-args-009",
+      "formula": "=TEXT(5)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "5"
+    },
+    {
+      "id": "fn-text-text-no-args-010",
+      "formula": "=TEXT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "undefined"
+    },
+    {
+      "id": "fn-text-text-extra-args-011",
+      "formula": "=TEXT(1234.5,\"0.00\",\"x\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "1234.50"
+    },
+    {
+      "id": "fn-text-text-numeric-format-012",
+      "formula": "=TEXT(5,5)",
+      "expected": "5",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A numeric format_text is coerced to the format string \"5\", which in Excel is a literal 5. Same answer here by a different route."
+    },
+
+    {
+      "id": "fn-text-dollar-default-001",
+      "formula": "=DOLLAR(1234.567)",
+      "expected": "$1,234.57",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "DOLLAR always groups thousands. The engine emits no separators at all.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "$1234.57"
+    },
+    {
+      "id": "fn-text-dollar-zero-002",
+      "formula": "=DOLLAR(0)",
+      "expected": "$0.00",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: zero needs no grouping, so the engine happens to be right."
+    },
+    {
+      "id": "fn-text-dollar-decimals-003",
+      "formula": "=DOLLAR(1.567,1)",
+      "expected": "$1.6",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-dollar-zero-decimals-004",
+      "formula": "=DOLLAR(1.567,0)",
+      "expected": "$2",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-dollar-negative-decimals-005",
+      "formula": "=DOLLAR(1234.567,-2)",
+      "expected": "$1,200",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "A negative `decimals` rounds to the left of the decimal point. Number.toFixed throws a RangeError for a negative argument, and the blanket try/catch turns that crash into #VALUE!.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-dollar-negative-value-006",
+      "formula": "=DOLLAR(-1234.567)",
+      "expected": "($1,234.57)",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "DOLLAR renders negatives in parentheses.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "$-1234.57"
+    },
+    {
+      "id": "fn-text-dollar-text-input-007",
+      "formula": "=DOLLAR(\"abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The engine's toNum turns unparseable text into 0 and formats it as money.",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "$0.00"
+    },
+    {
+      "id": "fn-text-dollar-no-args-008",
+      "formula": "=DOLLAR()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "$0.00"
+    },
+    {
+      "id": "fn-text-dollar-extra-args-009",
+      "formula": "=DOLLAR(1.5,1,9)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "$1.5"
+    },
+
+    {
+      "id": "fn-text-fixed-default-001",
+      "formula": "=FIXED(1234.567)",
+      "expected": "1,234.57",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "FIXED groups thousands unless no_commas is TRUE.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "1234.57"
+    },
+    {
+      "id": "fn-text-fixed-small-002",
+      "formula": "=FIXED(1.567,1)",
+      "expected": "1.6",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Under 1000 there is nothing to group, so the engine agrees."
+    },
+    {
+      "id": "fn-text-fixed-no-commas-003",
+      "formula": "=FIXED(1234.567,0,TRUE)",
+      "expected": "1235",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "no_commas TRUE suppresses grouping, which is the one case the engine gets right."
+    },
+    {
+      "id": "fn-text-fixed-negative-decimals-004",
+      "formula": "=FIXED(1234.567,-1)",
+      "expected": "1,230",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Negative decimals round left of the point. Number.toFixed throws, and the blanket try/catch reports #VALUE!.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "#VALUE!"
+    },
+    {
+      "id": "fn-text-fixed-text-input-005",
+      "formula": "=FIXED(\"abc\")",
+      "expected": "#VALUE!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "status": "known-failure",
+      "defect": "coercion",
+      "actual": "0.00"
+    },
+    {
+      "id": "fn-text-fixed-huge-006",
+      "formula": "=FIXED(1000000000000000000000,2)",
+      "expected": "1,000,000,000,000,000,000,000.00",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Boundary: past 1e21 JavaScript toFixed switches to exponential notation and the engine leaks '1e+21' into the sheet.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "1e+21"
+    },
+    {
+      "id": "fn-text-fixed-no-args-007",
+      "formula": "=FIXED()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "0.00"
+    },
+    {
+      "id": "fn-text-fixed-extra-args-008",
+      "formula": "=FIXED(1.5,1,TRUE,9)",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "1.5"
+    },
+
+    {
+      "id": "fn-text-split-basic-001",
+      "formula": "=SPLIT(\"a,b,c\",\",\")",
+      "expected": ["a", "b", "c"],
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "SPLIT is a Google Sheets function with no Excel equivalent. It spills across columns; the corpus compares the raw array."
+    },
+    {
+      "id": "fn-text-split-remove-empty-default-002",
+      "formula": "=SPLIT(\"a,,b\",\",\")",
+      "expected": ["a", "b"],
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "remove_empty defaults to TRUE."
+    },
+    {
+      "id": "fn-text-split-keep-empty-003",
+      "formula": "=SPLIT(\"a,,b\",\",\",TRUE,FALSE)",
+      "expected": ["a", "", "b"],
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-split-by-each-004",
+      "formula": "=SPLIT(\"a1b2c\",\"12\")",
+      "expected": ["a", "b", "c"],
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "split_by_each defaults to TRUE, so each character of the delimiter splits independently."
+    },
+    {
+      "id": "fn-text-split-empty-delimiter-005",
+      "formula": "=SPLIT(\"abc\",\"\")",
+      "expected": ["abc"],
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Boundary: an empty delimiter leaves the text whole."
+    },
+    {
+      "id": "fn-text-split-shape-006",
+      "formula": "=INDEX(SPLIT(\"a,b,c\",\",\"),1,2)",
+      "expected": "b",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "SPLIT spills horizontally, so row 1 column 2 is 'b'. The engine returns a flat one-dimensional array, so INDEX reads it as a COLUMN and returns 'a'. Anything that composes with SPLIT sees the wrong orientation.",
+      "status": "known-failure",
+      "defect": "function-result",
+      "actual": "a"
+    },
+    {
+      "id": "fn-text-split-min-args-007",
+      "formula": "=SPLIT(\"a,b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "The delimiter is required.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ["a,b"]
+    },
+    {
+      "id": "fn-text-split-no-args-008",
+      "formula": "=SPLIT()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": [""]
+    },
+    {
+      "id": "fn-text-split-array-leaks-into-text-009",
+      "formula": "=LEN(SPLIT(\"a,b\",\",\"))",
+      "expected": 1,
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Sheets maps LEN over the spilled array, so the anchor cell shows LEN(\"a\") = 1. The engine stringifies the JavaScript array to 'a,b' and measures that, so an array silently becomes comma-joined text.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": 3
+    },
+
+    {
+      "id": "fn-text-regexmatch-basic-001",
+      "formula": "=REGEXMATCH(\"abc\",\"b\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexmatch-no-match-002",
+      "formula": "=REGEXMATCH(\"abc\",\"z\")",
+      "expected": false,
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "No match is FALSE, not an error."
+    },
+    {
+      "id": "fn-text-regexmatch-backslash-class-003",
+      "formula": "=REGEXMATCH(\"abc\",\"\\w\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "The tokenizer must preserve the backslash through the string literal for regex classes to work."
+    },
+    {
+      "id": "fn-text-regexmatch-anchors-004",
+      "formula": "=REGEXMATCH(\"abc\",\"^abc$\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexmatch-invalid-pattern-005",
+      "formula": "=REGEXMATCH(\"abc\",\"[\")",
+      "expected": "#ERROR!",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "An unterminated character class is caught rather than crashing the evaluator."
+    },
+    {
+      "id": "fn-text-regexmatch-empty-text-006",
+      "formula": "=REGEXMATCH(\"\",\"^$\")",
+      "expected": true,
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexmatch-min-args-007",
+      "formula": "=REGEXMATCH(\"abc\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "The missing pattern stringifies to 'undefined', which is a valid regex that does not match.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-text-regexmatch-no-args-008",
+      "formula": "=REGEXMATCH()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": false
+    },
+    {
+      "id": "fn-text-regexmatch-extra-args-009",
+      "formula": "=REGEXMATCH(\"abc\",\"b\",\"x\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": true
+    },
+
+    {
+      "id": "fn-text-regexextract-basic-001",
+      "formula": "=REGEXEXTRACT(\"a123b\",\"[0-9]+\")",
+      "expected": "123",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexextract-capture-group-002",
+      "formula": "=REGEXEXTRACT(\"a-1\",\"(\\d)\")",
+      "expected": "1",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "With one capture group the group wins over the whole match."
+    },
+    {
+      "id": "fn-text-regexextract-no-match-003",
+      "formula": "=REGEXEXTRACT(\"abc\",\"z\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "No match is the documented #N/A outcome."
+    },
+    {
+      "id": "fn-text-regexextract-invalid-pattern-004",
+      "formula": "=REGEXEXTRACT(\"abc\",\"[\")",
+      "expected": "#ERROR!",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexextract-multiple-groups-005",
+      "formula": "=REGEXEXTRACT(\"a123b\",\"([0-9])([0-9])\")",
+      "expected": ["1", "2"],
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "With more than one capture group Sheets spills one cell per group. The engine returns only the first group, so the second is lost with no warning.",
+      "status": "known-failure",
+      "defect": "unsupported-feature",
+      "actual": "1"
+    },
+    {
+      "id": "fn-text-regexextract-min-args-006",
+      "formula": "=REGEXEXTRACT(\"abc\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Right answer for the wrong reason: 'undefined' is a valid pattern that does not match, so the no-match path also produces #N/A."
+    },
+    {
+      "id": "fn-text-regexextract-extra-args-007",
+      "formula": "=REGEXEXTRACT(\"a1b\",\"[0-9]\",\"x\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "1"
+    },
+
+    {
+      "id": "fn-text-regexreplace-basic-001",
+      "formula": "=REGEXREPLACE(\"a1b2\",\"[0-9]\",\"\")",
+      "expected": "ab",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexreplace-global-002",
+      "formula": "=REGEXREPLACE(\"aXbX\",\"X\",\"-\")",
+      "expected": "a-b-",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "REGEXREPLACE replaces every occurrence."
+    },
+    {
+      "id": "fn-text-regexreplace-no-match-003",
+      "formula": "=REGEXREPLACE(\"abc\",\"z\",\"x\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexreplace-invalid-pattern-004",
+      "formula": "=REGEXREPLACE(\"abc\",\"[\",\"x\")",
+      "expected": "#ERROR!",
+      "category": "text-function",
+      "source": "google-sheets"
+    },
+    {
+      "id": "fn-text-regexreplace-backreference-005",
+      "formula": "=REGEXREPLACE(\"ab\",\"(a)(b)\",\"$2$1\")",
+      "expected": "ba",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "Sheets uses $1-style backreferences in the replacement, and so does JavaScript, so this one lines up."
+    },
+    {
+      "id": "fn-text-regexreplace-min-args-006",
+      "formula": "=REGEXREPLACE(\"abc\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "notes": "The replacement is required; the engine treats it as empty text and deletes the match.",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "ac"
+    },
+    {
+      "id": "fn-text-regexreplace-no-args-007",
+      "formula": "=REGEXREPLACE()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-regexreplace-extra-args-008",
+      "formula": "=REGEXREPLACE(\"abc\",\"b\",\"x\",\"y\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "axc"
+    },
+
+    {
+      "id": "fn-text-t-text-001",
+      "formula": "=T(\"abc\")",
+      "expected": "abc",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-t-number-002",
+      "formula": "=T(5)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "T returns empty text for anything that is not text."
+    },
+    {
+      "id": "fn-text-t-boolean-003",
+      "formula": "=T(TRUE)",
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-t-error-004",
+      "formula": "=T(1/0)",
+      "expected": "#DIV/0!",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "T is documented to pass an error through. It works here only because the engine models errors as strings, so T's typeof check happens to say 'string'."
+    },
+    {
+      "id": "fn-text-t-cell-005",
+      "formula": "=T(A1)",
+      "cells": { "A1": "hello" },
+      "expected": "hello",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-t-numeric-cell-006",
+      "formula": "=T(A1)",
+      "cells": { "A1": 5 },
+      "expected": "",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-t-no-args-007",
+      "formula": "=T()",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": ""
+    },
+    {
+      "id": "fn-text-t-extra-args-008",
+      "formula": "=T(\"a\",\"b\")",
+      "expected": "#N/A",
+      "category": "text-function",
+      "source": "google-sheets",
+      "status": "known-failure",
+      "defect": "function-arguments",
+      "actual": "a"
+    },
+
+    {
+      "id": "fn-text-nested-trim-upper-concat-001",
+      "formula": "=TRIM(UPPER(CONCAT(\"  a \",\"b  \")))",
+      "expected": "A B",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "Three-deep nesting through the text pipeline."
+    },
+    {
+      "id": "fn-text-nested-substitute-replace-002",
+      "formula": "=SUBSTITUTE(REPLACE(\"hello\",1,1,\"J\"),\"l\",\"L\")",
+      "expected": "JeLLo",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-nested-rept-char-003",
+      "formula": "=CONCAT(REPT(\"-\",3),CHAR(65))",
+      "expected": "---A",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-nested-len-concat-004",
+      "formula": "=LEN(CONCAT(A1,A1))",
+      "cells": { "A1": "hello" },
+      "expected": 10,
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    },
+    {
+      "id": "fn-text-nested-mid-find-005",
+      "formula": "=MID(\"user@example.com\",FIND(\"@\",\"user@example.com\")+1,99)",
+      "expected": "example.com",
+      "category": "text-function",
+      "source": "excel-compatible-semantics",
+      "notes": "The classic FIND-plus-MID idiom, which depends on FIND being 1-based."
+    },
+    {
+      "id": "fn-text-cross-sheet-substitute-006",
+      "formula": "=SUBSTITUTE(UPPER(Data!A1),\"-\",\"_\")",
+      "sheets": { "Sheet1": {}, "Data": { "A1": "a-b" } },
+      "expected": "A_B",
+      "category": "text-function",
+      "source": "excel-compatible-semantics"
+    }
+  ]
+}
