@@ -39,7 +39,7 @@ import {
 	Forward,
 	ListFilter,
 	LockOpen,
-	MailOpen,
+	Mail as MailIcon,
 	Reply,
 	ReplyAll,
 	ShieldCheck,
@@ -215,7 +215,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 			{
 				label: thread.length === 1 ? __('Mark as Unread') : __('Mark Unread from Here'),
 				onClick: () => handleMarkUnreadFromHere(),
-				icon: MailOpen,
+				icon: MailIcon,
 				condition: () => !mail.draft,
 			},
 			{
