@@ -18,31 +18,25 @@
 				</h2>
 			</Tooltip>
 			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2">
-				<AdaptiveDropdown
-					v-if="user.data?.show_reading_pane && !isMobile"
-					:options="threadActions"
-					:title="__('Actions')"
+				<Button
+					variant="ghost"
+					class="max-sm:!h-8 max-sm:!w-8"
+					:tooltip="isFlagged ? __('Unstar') : __('Star')"
+					@click="
+						emit(
+							'setFlagged',
+							thread.map((m) => m.id),
+							!isFlagged,
+						)
+					"
 				>
-					<Button variant="ghost" :tooltip="__('Actions')">
-						<template #icon>
-							<Ellipsis class="icon" />
-						</template>
-					</Button>
-				</AdaptiveDropdown>
-				<template v-else>
-					<Button
-						v-for="action in threadActions.filter((a) => a.condition())"
-						:key="action.label"
-						:tooltip="action.label"
-						variant="ghost"
-						class="max-sm:!h-8 max-sm:!w-8"
-						@click="action.onClick"
-					>
-						<template #icon>
-							<component :is="action.icon" class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
-						</template>
-					</Button>
-				</template>
+					<template #icon>
+						<Star
+							:style="isFlagged ? FLAGGED_STAR_STYLE : undefined"
+							class="icon max-sm:!h-[18px] max-sm:!w-[18px]"
+						/>
+					</template>
+				</Button>
 
 				<AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
 					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
@@ -62,6 +56,13 @@
 					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Remove From')">
 						<template #icon>
 							<FolderMinus class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+						</template>
+					</Button>
+				</AdaptiveDropdown>
+				<AdaptiveDropdown :options="moreActions">
+					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('More')">
+						<template #icon>
+							<Ellipsis class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
 						</template>
 					</Button>
 				</AdaptiveDropdown>
@@ -96,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { type Component, computed, h, inject } from 'vue'
+import { type Component, computed, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { Icon } from 'frappe-ui/icons'
 import {
@@ -147,8 +148,6 @@ const route = useRoute()
 // when All Inboxes opened it, the active account otherwise.
 const { mailboxes, mailboxIds } = injectAccountScope()
 
-const user = inject('$user')
-
 const mailbox = computed(() => route.params.mailbox as string)
 const threadID = computed(() => route.params.threadID as string)
 
@@ -183,29 +182,9 @@ const canRemoveFrom = computed(() =>
 	(thread ?? []).some((mail: Mail) => mail.id && mail.mailboxes.length > 1),
 )
 
-const threadActions = computed((): Action[] => [
-	{
-		label: __('Star'),
-		onClick: () =>
-			emit(
-				'setFlagged',
-				thread.map((m) => m.id),
-				true,
-			),
-		icon: Star,
-		condition: () => thread.some((m) => !m.flagged),
-	},
-	{
-		label: __('Unstar'),
-		onClick: () =>
-			emit(
-				'setFlagged',
-				thread.map((m) => m.id),
-				false,
-			),
-		icon: h(Star, { style: FLAGGED_STAR_STYLE }),
-		condition: () => thread.every((m) => m.flagged),
-	},
+const isFlagged = computed(() => thread.every((m) => m.flagged))
+
+const moreActions = computed((): Action[] => [
 	{
 		label: __('Archive (E)'),
 		onClick: () =>
