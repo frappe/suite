@@ -330,8 +330,11 @@ body.mail-app .bottom-sheet-content > .h-\[70vh\] {
 /* Portaled dialogs and menus ship without a z-index (they rely on body DOM
    order), so the mobile panes with explicit z (thread pane, settings — z-20)
    would paint over them. Lift them above the panes but below bottom sheets
-   (z-50), preserving sheet-over-dialog ordering. */
-body.mail-app .dialog-overlay {
+   (z-50), preserving sheet-over-dialog ordering. The panel is a sibling of
+   the overlay (not nested inside it), so both layers need the lift — same z,
+   so DOM order keeps the panel above its own backdrop. */
+body.mail-app .dialog-overlay,
+body.mail-app .dialog-scroll-container {
 	z-index: 30;
 }
 body.mail-app .menu-content {
