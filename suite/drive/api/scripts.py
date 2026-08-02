@@ -97,7 +97,8 @@ def auto_delete_from_trash():
         filters={"status": STATUS_TRASHED, "file_modified": ["<", days_before]},
         fields=["name"],
     )
-    delete_entities(result)
+    if result:
+        delete_entities(result)
 
 
 def clear_deleted_files():
