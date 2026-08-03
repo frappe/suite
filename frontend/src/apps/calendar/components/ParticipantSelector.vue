@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { Combobox, createResource, toast } from 'frappe-ui'
 
@@ -31,16 +31,26 @@ const mailContacts = createResource({
 	url: 'suite.mail.api.mail.get_email_suggestions',
 	makeParams: (text: string) => ({
 		account: props.account,
-		// frappe-ui's fetch nulls Event params and reuses the previous params object when called
-		// with a falsy value, feeding it back here as `text` — guard against a non-string.
-		text: typeof text === 'string' ? text : '',
+		text,
 	}),
 	transform: (data: any[]) => data.map((contact) => contact.email),
 })
 
 const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
 
-const combobox = ref<{ reset: () => void } | null>(null)
+const combobox = ref<{ clear: () => void } | null>(null)
+
+const searchText = ref('')
+const showSuggestions = ref(false)
+
+// Suggestions only exist for a typed query — with an empty input the popover
+// would show stale results from the previous query (or a bare "No results"
+// panel), so block reka's focus/arrow-key opens too, not just hide options.
+watch(showSuggestions, (open) => {
+	if (open && !searchText.value) showSuggestions.value = false
+})
+
+const options = computed(() => (searchText.value ? mailContacts?.data || [] : []))
 
 // Picking a dropdown option commits it on keydown, so the matching keyup.enter lands here too and
 // would re-add the option and clear the input from under the reset below. Typing is the only way
@@ -49,6 +59,8 @@ const justSelectedOption = ref(false)
 
 const handleInput = (text: string) => {
 	justSelectedOption.value = false
+	searchText.value = text
+	if (!text) showSuggestions.value = false
 	debouncedSearch(text)
 }
 
@@ -71,16 +83,16 @@ const addParticipant = (email: string) => {
 	]
 }
 
-// Picking a contact commits it as the Combobox's selected value — add it and reset the control so the
+// Picking a contact commits it as the Combobox's selected value — add it and clear the control so the
 // input clears for the next participant, rather than sitting there showing the one just added.
-// The reset waits a tick: this handler fires mid-commit, and the Combobox writes the option's label
-// into its input right after we return, which would undo a synchronous reset.
+// The clear waits a tick: this handler fires mid-commit, and the Combobox writes the option's label
+// into its input right after we return, which would undo a synchronous clear.
 const handleParticipantSelect = async (email: string | null) => {
 	if (!email) return
 	justSelectedOption.value = true
 	addParticipant(email)
 	await nextTick()
-	combobox.value?.reset()
+	combobox.value?.clear()
 }
 
 const handleParticipantEnter = (e: Event) => {
@@ -106,10 +118,11 @@ const removeParticipant = (email: string) => {
 			<h3 v-if="label" class="text-base-medium mb-2 text-ink-gray-8">{{ label }}</h3>
 			<Combobox
 				ref="combobox"
+				v-model:open="showSuggestions"
 				class="w-full"
-				:options="mailContacts?.data || []"
+				:options="options"
 				:placeholder="placeholder"
-				@input="handleInput($event)"
+				@update:query="handleInput($event)"
 				@update:model-value="handleParticipantSelect($event)"
 				@keyup.enter="handleParticipantEnter($event)"
 			/>

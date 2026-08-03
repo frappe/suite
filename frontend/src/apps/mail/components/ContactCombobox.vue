@@ -1,11 +1,12 @@
 <template>
 	<Combobox
 		v-model="model"
+		v-model:open="showSuggestions"
 		:label="label"
 		:options="options"
 		placeholder=""
 		:open-on-click="false"
-		@input="search"
+		@update:query="search"
 	>
 		<template #item-prefix="{ item, query }">
 			<Avatar :image="item.image" :label="item.label || query" size="sm" />
@@ -19,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { Avatar, Combobox, createResource } from 'frappe-ui'
 
@@ -37,9 +38,7 @@ const contactSearch = createResource({
 	auto: false,
 	makeParams: (text: string) => ({
 		account: store.accountId,
-		// frappe-ui's fetch nulls Event params and reuses the previous params object when called
-		// with a falsy value, feeding it back here as `text` — guard against a non-string.
-		text: typeof text === 'string' ? text : '',
+		text,
 	}),
 	transform: (data: { email: string; name?: string; user_image?: string }[]) =>
 		data.map((o) => {
@@ -47,21 +46,40 @@ const contactSearch = createResource({
 			return { value: o.email, label: name || o.email, email: o.email, display_name: name, image: o.user_image }
 		}),
 })
-const search = useDebounceFn((text: string) => {
+const searchText = ref('')
+const showSuggestions = ref(false)
+
+const fetchSuggestions = useDebounceFn((text: string) => {
 	if (text) contactSearch.fetch(text)
 }, 300)
 
+const search = (text: string) => {
+	searchText.value = text
+	if (!text) showSuggestions.value = false
+	fetchSuggestions(text)
+}
+
+// Suggestions only exist for a typed query — with an empty input the popover
+// would show stale results from the previous query (or a bare "No results"
+// panel), so block reka's focus/arrow-key opens too, not just hide options.
+watch(showSuggestions, (open) => {
+	if (open && !searchText.value) showSuggestions.value = false
+})
+
 // Contact matches plus a "create" entry (like compose's RecipientInput) so a typed value that isn't a
 // contact can still be applied.
-const options = computed(() => [
-	...(contactSearch.data ?? []),
-	{
-		type: 'custom',
-		slot: 'create',
-		condition: () => !contactSearch.data?.length,
-		onClick: ({ query }: { query: string }) => {
-			model.value = query
+const options = computed(() => {
+	if (!searchText.value) return []
+	return [
+		...(contactSearch.data ?? []),
+		{
+			type: 'custom',
+			slot: 'create',
+			condition: () => !contactSearch.data?.length,
+			onClick: ({ query }: { query: string }) => {
+				model.value = query
+			},
 		},
-	},
-])
+	]
+})
 </script>
