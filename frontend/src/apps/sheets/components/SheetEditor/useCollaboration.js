@@ -25,8 +25,13 @@ import { ensureFrappeRealtime }        from '../../collab/frappe-realtime-init.j
  *                  guarantees, needs a collab server running and reachable.
  *
  * Resolution order (first match wins):
- *   1. `window.frappe.boot.collab_mode` — server-side, from site_config
- *   2. `window.__COLLAB_MODE__`          — local dev override
+ *   1. `window.collab_mode`     — server-side, from site_config via
+ *                                 www/suite.py's get_boot(). The suite shell
+ *                                 flattens every boot key straight onto
+ *                                 `window` (see www/suite.html), so this is
+ *                                 NOT under `window.frappe.boot` the way it
+ *                                 was in the standalone app.
+ *   2. `window.__COLLAB_MODE__` — local dev override
  *   3. the legacy `collab_v2` boolean, which only ever meant "hocuspocus"
  */
 export const COLLAB_MODES = Object.freeze({
@@ -37,9 +42,9 @@ export const COLLAB_MODES = Object.freeze({
 
 function _collabMode() {
   if (typeof window === 'undefined') return COLLAB_MODES.REALTIME
-  const explicit = window.frappe?.boot?.collab_mode || window.__COLLAB_MODE__
+  const explicit = window.collab_mode || window.__COLLAB_MODE__
   if (explicit) return String(explicit)
-  if (window.frappe?.boot?.collab_v2 === true || window.__COLLAB_V2__ === true) {
+  if (window.collab_v2 === true || window.__COLLAB_V2__ === true) {
     return COLLAB_MODES.HOCUSPOCUS
   }
   return COLLAB_MODES.REALTIME

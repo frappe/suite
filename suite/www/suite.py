@@ -48,5 +48,11 @@ def get_boot():
 			# (frappe-push-notification.ts / PWASettings.vue). Mirrors the old
 			# standalone www/mail.py boot, which the suite shell replaced.
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
+			# Sheets collab transport — "realtime" (default), "webrtc" or
+			# "hocuspocus"; read as window.collab_mode by useCollaboration.js.
+			# It belongs here rather than in sheets/www/sheets.py, because
+			# website_route_rules sends /sheets to this unified SPA and that
+			# template is never rendered for it.
+			"collab_mode": frappe.conf.get("collab_mode") or "realtime",
 		}
 	)
