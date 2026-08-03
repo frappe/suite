@@ -129,12 +129,21 @@ def get_collab_session(name: str) -> dict:
 	if not _can_read_sheet(name):
 		frappe.throw("Not permitted to open this sheet", frappe.PermissionError)
 
+	# One read for both fields — the epoch and the stored doc live on the same
+	# row, and this runs on every sheet open.
+	state = (
+		frappe.db.get_value(
+			"Sheet Collab State", name, ("room_epoch", "ydoc_state"), as_dict=True
+		)
+		or {}
+	)
+
 	return {
 		"room": _room_name(name),
-		"password": _room_key(name),
+		"password": _room_key(name, int(state.get("room_epoch") or 0)),
 		"signaling": frappe.conf.get("collab_signaling") or _DEFAULT_SIGNALING,
 		"iceServers": frappe.conf.get("collab_ice_servers") or _DEFAULT_ICE_SERVERS,
-		"ydocState": frappe.db.get_value("Sheet Collab State", name, "ydoc_state") or None,
+		"ydocState": state.get("ydoc_state") or None,
 		"canWrite": _can_write_sheet(name),
 	}
 
@@ -343,7 +352,7 @@ def bump_room_epoch(name: str) -> int:
 	return 1
 
 
-def _room_key(name: str) -> str:
+def _room_key(name: str, epoch: int) -> str:
 	"""Per-sheet symmetric key that y-webrtc encrypts room traffic with.
 
 	Derived rather than stored, so there's no key material to back up or
@@ -351,7 +360,7 @@ def _room_key(name: str) -> str:
 
 	Three inputs. The site's encryption key is the secret. ``name`` keeps each
 	sheet's key independent, so compromising one room reveals nothing about
-	any other. The epoch is what makes the key *revocable* — changing it
+	any other. ``epoch`` is what makes the key *revocable* — changing it
 	changes the derived key, and that is the only way to take back a key
 	someone already holds.
 	"""
@@ -360,7 +369,7 @@ def _room_key(name: str) -> str:
 	secret = frappe.conf.get("collab_room_secret") or get_encryption_key()
 	return hmac.new(
 		secret.encode() if isinstance(secret, str) else secret,
-		f"sheets-collab-room:{name}:{_room_epoch(name)}".encode(),
+		f"sheets-collab-room:{name}:{epoch}".encode(),
 		hashlib.sha256,
 	).hexdigest()
 

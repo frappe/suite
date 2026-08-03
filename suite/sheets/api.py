@@ -152,6 +152,20 @@ def get_sheet_shares(name: str) -> list:
 	return rows
 
 
+def _share_grants_write(name: str, match: dict) -> bool:
+	"""Does the matching DocShare currently grant write on ``name``?
+
+	Read *before* `frappe.share.add` overwrites the row. A write→read
+	downgrade revokes edit rights just as unsharing revokes access, and both
+	have to rotate the collab room key — otherwise the demoted user keeps a
+	working key and can still transmit into the live P2P session. See
+	`sheets.collab.bump_room_epoch`.
+	"""
+	return bool(
+		frappe.db.get_value("DocShare", {"share_doctype": "Sheet", "share_name": name, **match}, "write")
+	)
+
+
 @frappe.whitelist()
 def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) -> dict:
 	# `ptype="share"` — only users who themselves hold the share right
@@ -161,6 +175,7 @@ def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) ->
 	if int(everyone or 0):
 		# "Accessible to all" → single DocShare with everyone=1, user=NULL.
 		# notify=False because there's no individual to email.
+		was_editor = _share_grants_write(name, {"everyone": 1})
 		frappe.share.add(
 			"Sheet",
 			name,
@@ -170,6 +185,8 @@ def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) ->
 			everyone=1,
 			notify=False,
 		)
+		if was_editor and not int(write):
+			bump_room_epoch(name)
 		return {"status": "ok"}
 	# Reject disabled users (and non-existent ones) up front — silently
 	# carrying a share to an account that's been turned off lets it light
@@ -184,17 +201,7 @@ def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) ->
 	# notification renders as "Asif shared a document Sheet 'Title' with
 	# you" and the click destination is the Desk doctype form, not our
 	# SPA. We dispatch our own branded notification below.
-	# A write→read downgrade revokes edit rights, so it must rotate the collab
-	# room key exactly as unsharing does — otherwise the demoted user keeps a
-	# working key and can still transmit into the live session. Read the old
-	# value before `share.add` overwrites the row.
-	was_editor = bool(
-		frappe.db.get_value(
-			"DocShare",
-			{"share_doctype": "Sheet", "share_name": name, "user": user},
-			"write",
-		)
-	)
+	was_editor = _share_grants_write(name, {"user": user})
 	frappe.share.add("Sheet", name, user, write=int(write), share=0, notify=False)
 	if was_editor and not int(write):
 		bump_room_epoch(name)
@@ -288,8 +295,15 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
 			# `sheets.collab.bump_room_epoch`.
 			bump_room_epoch(name)
 		return {"status": "ok"}
+	# Only rotate if a share actually existed. `share.remove` is a no-op for a
+	# user who was never shared with, and rotating on a no-op would split
+	# everyone's live session for nothing.
+	had_share = bool(
+		frappe.db.exists("DocShare", {"share_doctype": "Sheet", "share_name": name, "user": user})
+	)
 	frappe.share.remove("Sheet", name, user)
-	bump_room_epoch(name)
+	if had_share:
+		bump_room_epoch(name)
 	return {"status": "ok"}
 
 

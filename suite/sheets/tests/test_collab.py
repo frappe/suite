@@ -134,10 +134,10 @@ class GetCollabSession(unittest.TestCase):
 		"""
 		from suite.sheets import collab
 
-		self.frappe.db.get_value.return_value = 0
+		self.frappe.db.get_value.return_value = {"room_epoch": 0, "ydoc_state": None}
 		before = collab.get_collab_session("SH-1")["password"]
 
-		self.frappe.db.get_value.return_value = 1  # epoch bumped
+		self.frappe.db.get_value.return_value = {"room_epoch": 1, "ydoc_state": None}
 		after = collab.get_collab_session("SH-1")["password"]
 
 		self.assertNotEqual(before, after)
