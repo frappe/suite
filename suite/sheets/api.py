@@ -2,6 +2,7 @@ import json
 
 import frappe
 
+from suite.sheets.collab import bump_room_epoch
 from suite.sheets.doctype.sheet.cell_codec import cell_map as unpack_cell_map
 from suite.sheets.doctype.sheet.storage import decode_sheets_data
 from suite.sheets.versioning import save as save_mod
@@ -183,7 +184,20 @@ def share_sheet(name: str, user: str = "", write: int = 0, everyone: int = 0) ->
 	# notification renders as "Asif shared a document Sheet 'Title' with
 	# you" and the click destination is the Desk doctype form, not our
 	# SPA. We dispatch our own branded notification below.
+	# A write→read downgrade revokes edit rights, so it must rotate the collab
+	# room key exactly as unsharing does — otherwise the demoted user keeps a
+	# working key and can still transmit into the live session. Read the old
+	# value before `share.add` overwrites the row.
+	was_editor = bool(
+		frappe.db.get_value(
+			"DocShare",
+			{"share_doctype": "Sheet", "share_name": name, "user": user},
+			"write",
+		)
+	)
 	frappe.share.add("Sheet", name, user, write=int(write), share=0, notify=False)
+	if was_editor and not int(write):
+		bump_room_epoch(name)
 	_notify_sheet_shared(name, user, can_edit=bool(int(write)))
 	return {"status": "ok"}
 
@@ -270,8 +284,12 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
 		)
 		if share_name:
 			frappe.delete_doc("DocShare", share_name, ignore_permissions=True)
+			# Losing access must also lose the collab room key — see
+			# `sheets.collab.bump_room_epoch`.
+			bump_room_epoch(name)
 		return {"status": "ok"}
 	frappe.share.remove("Sheet", name, user)
+	bump_room_epoch(name)
 	return {"status": "ok"}
 
 

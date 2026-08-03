@@ -25,10 +25,22 @@ class CustomShareNotification(unittest.TestCase):
         self.frappe.session.user = "alice@example.com"
         self.frappe.has_permission.return_value = True
         # Recipient lookup (`enabled` check) — return 1 so share proceeds.
-        self.frappe.db.get_value.side_effect = lambda dt, name, field=None: {
+        # `name` is a docname for these, but production also calls get_value
+        # with a filter *dict* (share_sheet's DocShare write-flag pre-read).
+        # Dicts are unhashable, so anything this table doesn't model falls
+        # through to None instead of raising.
+        _values = {
             ("User", "bob@example.com", "enabled"):  1,
             ("User", "alice@example.com", "full_name"): "Alice",
-        }.get((dt, name, field))
+        }
+
+        def _get_value(dt, name, field=None, *args, **kwargs):
+            try:
+                return _values.get((dt, name, field))
+            except TypeError:
+                return None
+
+        self.frappe.db.get_value.side_effect = _get_value
         # frappe.get_doc("Sheet", name) → mock title
         sheet_doc = mock.Mock()
         sheet_doc.title = "Q3 Forecast"

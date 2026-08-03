@@ -124,6 +124,24 @@ class GetCollabSession(unittest.TestCase):
 		self.assertEqual(a1, a2)  # stable across opens — no coordination needed
 		self.assertNotEqual(a1, b)  # one room's key reveals nothing about another
 
+	def test_room_key_changes_when_the_epoch_is_bumped(self):
+		"""Revocation has to actually revoke.
+
+		Every other input to the derivation is fixed for the life of the
+		sheet, so without the epoch a key handed out once would keep working
+		forever — including for someone whose access was taken away. Nothing
+		in a P2P session would stop them rejoining.
+		"""
+		from suite.sheets import collab
+
+		self.frappe.db.get_value.return_value = 0
+		before = collab.get_collab_session("SH-1")["password"]
+
+		self.frappe.db.get_value.return_value = 1  # epoch bumped
+		after = collab.get_collab_session("SH-1")["password"]
+
+		self.assertNotEqual(before, after)
+
 	def test_room_key_is_not_the_site_secret(self):
 		from suite.sheets import collab
 
@@ -140,6 +158,41 @@ class GetCollabSession(unittest.TestCase):
 		out = collab.get_collab_session("SH-1")
 		self.assertTrue(out["password"])
 		self.assertFalse(out["canWrite"])
+
+
+class BumpRoomEpoch(unittest.TestCase):
+	def setUp(self):
+		self.frappe, patcher = _patched_frappe()
+		self.addCleanup(patcher.stop)
+
+	def test_increments_an_existing_row(self):
+		from suite.sheets import collab
+
+		self.frappe.db.exists.return_value = True
+		self.frappe.db.get_value.return_value = 4
+
+		self.assertEqual(collab.bump_room_epoch("SH-1"), 5)
+		self.frappe.db.set_value.assert_called_once_with(
+			"Sheet Collab State", "SH-1", "room_epoch", 5
+		)
+
+	def test_creates_a_row_when_the_sheet_has_no_collab_state(self):
+		"""A key can be issued before any collab state row exists.
+
+		`get_collab_session` derives one on demand, so a revocation on a
+		never-collab-edited sheet still has to record the bump — otherwise
+		the key that was already handed out stays valid.
+		"""
+		from suite.sheets import collab
+
+		self.frappe.db.exists.return_value = False
+		doc = mock.MagicMock()
+		self.frappe.new_doc.return_value = doc
+
+		self.assertEqual(collab.bump_room_epoch("SH-1"), 1)
+		self.assertEqual(doc.sheet, "SH-1")
+		self.assertEqual(doc.room_epoch, 1)
+		doc.insert.assert_called_once_with(ignore_permissions=True)
 
 
 class SaveCollabState(unittest.TestCase):

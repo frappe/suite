@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "sheet",
+  "room_epoch",
   "byte_size",
   "last_persisted_at",
   "ydoc_state"
@@ -19,6 +20,13 @@
    "reqd": 1,
    "unique": 1,
    "in_standard_filter": 1
+  },
+  {
+   "fieldname": "room_epoch",
+   "fieldtype": "Int",
+   "label": "Collab room epoch",
+   "default": "0",
+   "description": "Bumped whenever access is revoked or downgraded. Feeds the per-sheet room key derivation, so an old key stops working once someone loses access."
   },
   {
    "fieldname": "byte_size",

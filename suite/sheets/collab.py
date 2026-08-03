@@ -310,21 +310,57 @@ def _room_name(name: str) -> str:
 	return f"fsheet-{name}"
 
 
+def _room_epoch(name: str) -> int:
+	"""Rotation counter for ``name``'s room key. See :func:`bump_room_epoch`."""
+	return int(frappe.db.get_value("Sheet Collab State", name, "room_epoch") or 0)
+
+
+def bump_room_epoch(name: str) -> int:
+	"""Invalidate the current room key for ``name``.
+
+	Called when someone loses access. Without it the key is a permanent
+	grant: every other input to the derivation is fixed for the life of the
+	sheet, so a user whose access was revoked could keep decrypting the room
+	indefinitely. The signaling server won't stop them rejoining, and there
+	is nothing else in a P2P session that would.
+
+	Deliberately *not* called when access is granted. Rotating splits any
+	live session until every peer reloads and picks up the new key — the
+	desired outcome for a revocation, pure disruption for a grant.
+	"""
+	if frappe.db.exists("Sheet Collab State", name):
+		epoch = _room_epoch(name) + 1
+		frappe.db.set_value("Sheet Collab State", name, "room_epoch", epoch)
+		return epoch
+
+	# No collab state row yet — this sheet has never been opened
+	# collaboratively. Record the bump anyway: a key handed out before the
+	# row existed must not survive the revocation.
+	doc = frappe.new_doc("Sheet Collab State")
+	doc.sheet = name
+	doc.room_epoch = 1
+	doc.insert(ignore_permissions=True)
+	return 1
+
+
 def _room_key(name: str) -> str:
 	"""Per-sheet symmetric key that y-webrtc encrypts room traffic with.
 
-	Derived rather than stored so there's no key column to migrate, back up,
-	or leak — and so it's stable across restarts without any coordination.
-	The site's encryption key is the secret; `name` is the message, which
-	keeps each sheet's key independent (compromising one room reveals
-	nothing about any other).
+	Derived rather than stored, so there's no key material to back up or
+	leak and none to coordinate across restarts.
+
+	Three inputs. The site's encryption key is the secret. ``name`` keeps each
+	sheet's key independent, so compromising one room reveals nothing about
+	any other. The epoch is what makes the key *revocable* — changing it
+	changes the derived key, and that is the only way to take back a key
+	someone already holds.
 	"""
 	from frappe.utils.password import get_encryption_key
 
 	secret = frappe.conf.get("collab_room_secret") or get_encryption_key()
 	return hmac.new(
 		secret.encode() if isinstance(secret, str) else secret,
-		f"sheets-collab-room:{name}".encode(),
+		f"sheets-collab-room:{name}:{_room_epoch(name)}".encode(),
 		hashlib.sha256,
 	).hexdigest()
 
