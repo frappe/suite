@@ -77,13 +77,6 @@ def get_context(context):
     # `sid` is treated the same way Frappe Desk does — injected into the
     # rendered HTML so JS can read it; an XSS already implies full session
     # compromise via cookie auth, so this doesn't widen the blast radius.
-    # `collab_mode` selects the transport: "realtime" (default, no extra
-    # infra), "webrtc" (peer-to-peer via signal.frappe.cloud, the transport
-    # Suite's Writer already uses), or "hocuspocus" (needs a collab server).
-    # The older `collab_v2` boolean only ever meant "hocuspocus" — keep
-    # honouring it so sites already running the websocket path don't silently
-    # drop to the relay.
-    context.collab_mode   = frappe.conf.get("collab_mode") or None
     context.collab_v2     = bool(frappe.conf.get("collab_v2") or False)
     context.collab_ws_url = frappe.conf.get("collab_ws_url") or None
     context.session_sid   = getattr(frappe.session, "sid", "") or ""

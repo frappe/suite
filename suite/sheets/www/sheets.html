@@ -21,14 +21,13 @@
         user_fullname: {{ session_user_fullname | tojson }},
         user_image: {{ session_user_image | tojson }},
       },
-      // Subset of `frappe.boot` that the SPA actually reads — the collab
-      // transport selector, optional override of the websocket URL, the sid
-      // that the Hocuspocus provider passes as its auth token, and
-      // `sitename` / `socketio_port` so the SPA can stand up
-      // `frappe.realtime` against the site's socket.io namespace (the legacy
-      // presence path's only transport on the public www page).
+      // Subset of `frappe.boot` that the SPA actually reads — collab v2
+      // toggle, optional override of the websocket URL, the sid that the
+      // Hocuspocus provider passes as its auth token, and `sitename` /
+      // `socketio_port` so the SPA can stand up `frappe.realtime` against
+      // the site's socket.io namespace (the legacy presence path's only
+      // transport on the public www page).
       boot: {
-        collab_mode: {{ collab_mode | tojson }},
         collab_v2: {{ collab_v2 | tojson }},
         collab_ws_url: {{ collab_ws_url | tojson }},
         sid: {{ session_sid | tojson }},
