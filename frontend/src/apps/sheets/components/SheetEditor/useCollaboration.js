@@ -8,21 +8,41 @@ import { createFrappeProvider }        from '../../collab/frappe-provider.js'
 import { createRealtimeAdapter }       from '../../collab/realtime-adapter.js'
 import { createAwareness }             from '../../collab/awareness.js'
 import { createHocuspocusClient }      from '../../collab/hocuspocus-client.js'
+import { createWebrtcClient }          from '../../collab/webrtc-client.js'
+import { createPersistence }           from '../../collab/persistence.js'
 import { ensureFrappeRealtime }        from '../../collab/frappe-realtime-init.js'
 
-// Feature flag for the Hocuspocus-backed collab path. When false (default),
-// the legacy `frappe.realtime` relay path runs unchanged so a deploy of this
-// frontend without the collab server doesn't break editing. Flip to true on
-// benches that have the collab server running + reachable at COLLAB_WS_URL.
-//
-// Resolution order (first non-empty wins):
-//   1. `window.frappe.boot.collab_v2`  — server-side flag from site_config
-//   2. `window.__COLLAB_V2__`           — local dev override
-function _collabV2Enabled() {
-  if (typeof window === 'undefined') return false
-  if (window.frappe?.boot?.collab_v2 === true) return true
-  if (window.__COLLAB_V2__ === true) return true
-  return false
+/**
+ * Which collab transport to stand up. Three of them coexist because they have
+ * genuinely different deployment costs, and a site should be able to pick:
+ *
+ *   'realtime'   — default. Relays through `frappe.realtime`; no extra infra,
+ *                  no authoritative doc, weakest convergence guarantees.
+ *   'webrtc'     — peer-to-peer via signal.frappe.cloud, the transport Suite's
+ *                  Writer already uses. No infrastructure to deploy. See
+ *                  webrtc-client.js for what that costs.
+ *   'hocuspocus' — websocket server with an authoritative Y.Doc. Strongest
+ *                  guarantees, needs a collab server running and reachable.
+ *
+ * Resolution order (first match wins):
+ *   1. `window.frappe.boot.collab_mode` — server-side, from site_config
+ *   2. `window.__COLLAB_MODE__`          — local dev override
+ *   3. the legacy `collab_v2` boolean, which only ever meant "hocuspocus"
+ */
+export const COLLAB_MODES = Object.freeze({
+  REALTIME:   'realtime',
+  WEBRTC:     'webrtc',
+  HOCUSPOCUS: 'hocuspocus',
+})
+
+function _collabMode() {
+  if (typeof window === 'undefined') return COLLAB_MODES.REALTIME
+  const explicit = window.frappe?.boot?.collab_mode || window.__COLLAB_MODE__
+  if (explicit) return String(explicit)
+  if (window.frappe?.boot?.collab_v2 === true || window.__COLLAB_V2__ === true) {
+    return COLLAB_MODES.HOCUSPOCUS
+  }
+  return COLLAB_MODES.REALTIME
 }
 
 function _collabWsUrl() {
@@ -119,18 +139,27 @@ export function useCollaboration({
   repopulateGrid,
   _self        = getSessionUser(),
   _realtime    = window.frappe?.realtime,
-  _callFn      = (method, args) => call(method, args),
+  // Third arg is forwarded so the P2P persistence layer can request
+  // `keepalive` on its teardown flush — without it the browser cancels that
+  // request on navigation and the last unsaved edits are lost.
+  _callFn      = (method, args, opts) => call(method, args, opts),
   _watch       = watch,
   _onUnmounted = onUnmounted,
 }) {
   const presentUsers  = ref([])           // other users currently viewing
   const remoteCursors = ref(new Map())    // userId → { row, col, subSheet, color, ... }
 
-  let _doc       = null
-  let _provider  = null
-  let _awareness = null
-  let _binding   = null
-  let _sheetId   = null
+  let _doc         = null
+  let _provider    = null
+  let _awareness   = null
+  let _binding     = null
+  let _sheetId     = null
+  let _persistence = null
+  // Bumped on every start/stop. The P2P path has to await a round-trip before
+  // it can connect, and the user can switch sheets in that window — the
+  // continuation compares generations and bails rather than attaching a
+  // provider for a sheet nobody is looking at any more.
+  let _gen         = 0
 
   // ── Outbound API (kept for backwards-compatibility with index.vue) ──────────
 
@@ -223,6 +252,7 @@ export function useCollaboration({
   function _start(docId) {
     if (_doc) _stop()
     _sheetId = docId
+    const gen = ++_gen
 
     const sheet  = getSheet()
     const identity = _readUserIdentity()
@@ -246,7 +276,13 @@ export function useCollaboration({
       },
     })
 
-    if (_collabV2Enabled()) {
+    const mode = _collabMode()
+
+    if (mode === COLLAB_MODES.WEBRTC) {
+      // P2P path. Needs a round-trip first (room key + stored state), so
+      // unlike the other two this one finishes asynchronously.
+      _startWebrtc({ gen, sheet, identity })
+    } else if (mode === COLLAB_MODES.HOCUSPOCUS) {
       // Hocuspocus path. The client connects to the collab server over
       // WebSocket, syncs against the authoritative server-side Y.Doc, and
       // exposes a y-protocols Awareness on the same socket.
@@ -286,6 +322,53 @@ export function useCollaboration({
     }
   }
 
+  async function _startWebrtc({ gen, sheet, identity }) {
+    let session
+    try {
+      session = await _callFn('suite.sheets.collab.get_collab_session', { name: _sheetId })
+    } catch (err) {
+      // No session means no collaboration, but the sheet itself must stay
+      // usable — a signaling outage shouldn't make the editor unusable. Seed
+      // the doc locally so the cell binding has something behind it and the
+      // user edits solo.
+      if (gen !== _gen) return
+      console.warn(`[collab] session unavailable, editing solo: ${err.message}`)
+      hydrateYDoc(_doc, { sheet: sheet?.snapshot?.() })
+      return
+    }
+    if (gen !== _gen) return  // sheet switched while awaiting
+
+    _persistence = createPersistence({
+      doc:      _doc,
+      sheetId:  _sheetId,
+      canWrite: session.canWrite,
+      callFn:   _callFn,
+      onError:  err => console.warn(`[collab] save failed: ${err.message}`),
+    })
+
+    // Stored state before the provider exists, so the doc is already populated
+    // when peers start syncing against it. Applied with the 'server' origin so
+    // it doesn't immediately bounce back as a save.
+    _persistence.applyServerState(session.ydocState)
+
+    const client = createWebrtcClient({
+      doc:        _doc,
+      sheetId:    _sheetId,
+      room:       session.room,
+      password:   session.password,
+      signaling:  session.signaling,
+      iceServers: session.iceServers,
+      // Only used when this sheet has never been opened — see the leader
+      // election in webrtc-client.js.
+      getSnapshot: () => sheet?.snapshot?.(),
+    })
+    _provider  = client
+    _awareness = client.awareness
+    _awareness.setLocalStateField('user', identity)
+    _awareness.on('change', _syncFromAwareness)
+    _syncFromAwareness()
+  }
+
   function _createHocuspocus({ sheet, identity }) {
     void identity  // identity is plumbed via setLocalStateField in _start
     const url   = _collabWsUrl()
@@ -314,11 +397,17 @@ export function useCollaboration({
   }
 
   function _stop() {
+    // Invalidate any in-flight _startWebrtc continuation before tearing down,
+    // so it can't attach a provider to the doc we're about to destroy.
+    _gen++
+    // Persistence first: its final flush reads the doc, which won't survive
+    // the destroy() two lines down.
+    _persistence?.dispose()
     _binding?.dispose()
     _awareness?.destroy()
     _provider?.destroy()
     _doc?.destroy()
-    _binding = _awareness = _provider = _doc = null
+    _binding = _awareness = _provider = _doc = _persistence = null
     _sheetId = null
     presentUsers.value  = []
     remoteCursors.value = new Map()

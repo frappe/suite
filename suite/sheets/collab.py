@@ -25,12 +25,44 @@ collab server schema-agnostic.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import hmac
 
 import frappe
+import pycrdt
 
 # Header the collab server sends with every server-to-server call.
 _COLLAB_SECRET_HEADER = "X-Collab-Secret"
+
+# Concurrent flushes from two peers race on the same row. Neither loses data
+# (the CRDT already holds both sides), so we swallow these rather than surface
+# a save error to one of the editors.
+_COLLISION_ERRORS = (
+	frappe.exceptions.QueryDeadlockError,
+	frappe.exceptions.TimestampMismatchError,
+)
+
+# ── P2P (y-webrtc) defaults ───────────────────────────────────────────────────
+#
+# Frappe operates a shared signaling + TURN box at signal.frappe.cloud, and
+# Suite's own Writer already points at it (see its `REALTIME_CONFIG`). The TURN
+# credentials below are the shared ones published in that config — they are not
+# secret and are not meant to be. Override per-site via `collab_signaling` /
+# `collab_ice_servers` in site_config.json.
+_DEFAULT_SIGNALING = ["wss://signal.frappe.cloud"]
+_DEFAULT_ICE_SERVERS = [
+	{"urls": "stun:stun.l.google.com:19302"},
+	{
+		"urls": [
+			"turn:signal.frappe.cloud:3478?transport=udp",
+			"turn:signal.frappe.cloud:3478?transport=tcp",
+		],
+		"username": "turnuser",
+		"credential": "turnpass",
+	},
+]
 
 
 # ── Browser-side: auth hook called by Hocuspocus ──────────────────────────────
@@ -69,6 +101,98 @@ def check_collab_access(name: str) -> dict:
 		"initials": identity["initials"],
 		"userImage": identity["user_image"],
 	}
+
+
+# ── Browser-side: P2P session bootstrap + persistence ─────────────────────────
+
+
+@frappe.whitelist()
+def get_collab_session(name: str) -> dict:
+	"""Everything a browser needs to join the peer-to-peer session for ``name``.
+
+	There is no server in the data plane here: peers exchange updates directly
+	and the signaling box only introduces them to each other. It authenticates
+	nobody, so anyone who can reach it and guess a room name can join that
+	room. The room key returned below is what actually gates access — y-webrtc
+	encrypts all room traffic with it, so an uninvited peer sees ciphertext.
+
+	Handing out that key *is* the permission check, and it happens once per
+	open. Read access is sufficient to get one: P2P can't enforce read-only
+	downstream (any peer can send to any other), so a viewer who joins is
+	technically able to publish. :func:`save_collab_state` is the backstop —
+	it re-checks write permission before anything reaches the database, so a
+	viewer still cannot make an edit that outlives the session.
+	"""
+	if frappe.session.user == "Guest":
+		frappe.throw("Login required", frappe.AuthenticationError)
+
+	if not _can_read_sheet(name):
+		frappe.throw("Not permitted to open this sheet", frappe.PermissionError)
+
+	return {
+		"room": _room_name(name),
+		"password": _room_key(name),
+		"signaling": frappe.conf.get("collab_signaling") or _DEFAULT_SIGNALING,
+		"iceServers": frappe.conf.get("collab_ice_servers") or _DEFAULT_ICE_SERVERS,
+		"ydocState": frappe.db.get_value("Sheet Collab State", name, "ydoc_state") or None,
+		"canWrite": _can_write_sheet(name),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def save_collab_state(name: str, update: str) -> dict:
+	"""Merge one peer's Y.Doc update into the stored state for ``name``.
+
+	Writer overwrites its stored blob with whatever the last saver sent. That
+	is safe only while every peer is connected P2P and therefore holds a
+	superset of everyone's edits — an assumption that breaks the moment one
+	participant sits behind a NAT even TURN can't traverse. Their save would
+	then clobber edits they never received.
+
+	Merging server-side with the same CRDT the clients run removes the
+	assumption entirely: applying updates is commutative and idempotent, so
+	the stored state converges to the union no matter what order saves land
+	in or how many are lost.
+	"""
+	if not _can_write_sheet(name):
+		frappe.throw("Not permitted to edit this sheet", frappe.PermissionError)
+
+	payload = _decode_update(update)
+	# Before this endpoint existed, `ydoc_state` could only be written by the
+	# collab server behind the shared secret. It's now reachable by every user
+	# with write access, so the size that used to be implicitly trusted has to
+	# be checked. Generous enough that no real workbook hits it — this is a
+	# guard against a runaway or hostile client, not a quota.
+	if len(payload) > _max_state_bytes():
+		frappe.throw("Collab update too large", frappe.ValidationError)
+
+	merged = _merge_update(name, payload)
+	encoded = base64.b64encode(merged).decode()
+	now = frappe.utils.now()
+
+	try:
+		if frappe.db.exists("Sheet Collab State", name):
+			frappe.db.set_value(
+				"Sheet Collab State",
+				name,
+				{"ydoc_state": encoded, "byte_size": len(merged), "last_persisted_at": now},
+				update_modified=True,
+			)
+		else:
+			doc = frappe.new_doc("Sheet Collab State")
+			doc.sheet = name
+			doc.ydoc_state = encoded
+			doc.byte_size = len(merged)
+			doc.last_persisted_at = now
+			doc.insert(ignore_permissions=True)
+	except _COLLISION_ERRORS:
+		# Two peers flushing at once. Both updates are already in the CRDT they
+		# share, and each retries on its next debounce window, so dropping this
+		# write loses nothing — same reasoning as Writer's `save_doc`, which
+		# swallows the identical pair of exceptions.
+		return {"sheet": name, "byte_size": len(merged), "persisted_at": None, "skipped": True}
+
+	return {"sheet": name, "byte_size": len(merged), "persisted_at": now, "skipped": False}
 
 
 # ── Server-to-server: persistence endpoints ───────────────────────────────────
@@ -169,6 +293,98 @@ def _require_collab_secret() -> None:
 	# habit anyway.
 	if not sent or not hmac.compare_digest(expected, sent):
 		frappe.throw("Invalid collab server credentials", frappe.AuthenticationError)
+
+
+def _can_read_sheet(name: str) -> bool:
+	"""True when the session user may read sheet ``name``."""
+	return bool(frappe.has_permission("Sheet", doc=name, ptype="read", throw=False))
+
+
+def _can_write_sheet(name: str) -> bool:
+	"""True when the session user may edit sheet ``name``."""
+	return bool(frappe.has_permission("Sheet", doc=name, ptype="write", throw=False))
+
+
+def _room_name(name: str) -> str:
+	"""Signaling room id. Visible to anyone watching the signaling server."""
+	return f"fsheet-{name}"
+
+
+def _room_key(name: str) -> str:
+	"""Per-sheet symmetric key that y-webrtc encrypts room traffic with.
+
+	Derived rather than stored so there's no key column to migrate, back up,
+	or leak — and so it's stable across restarts without any coordination.
+	The site's encryption key is the secret; `name` is the message, which
+	keeps each sheet's key independent (compromising one room reveals
+	nothing about any other).
+	"""
+	from frappe.utils.password import get_encryption_key
+
+	secret = frappe.conf.get("collab_room_secret") or get_encryption_key()
+	return hmac.new(
+		secret.encode() if isinstance(secret, str) else secret,
+		f"sheets-collab-room:{name}".encode(),
+		hashlib.sha256,
+	).hexdigest()
+
+
+def _max_state_bytes() -> int:
+	"""Ceiling on a single decoded Y.Doc update, overridable per site."""
+	return int(frappe.conf.get("collab_max_state_bytes") or 10 * 1024 * 1024)
+
+
+def _decode_update(update: str) -> bytes:
+	"""Base64 → raw Y.Doc update bytes, with a legible error on garbage."""
+	try:
+		return base64.b64decode(update or "", validate=True)
+	except (binascii.Error, ValueError):
+		frappe.throw("Malformed collab update payload", frappe.ValidationError)
+
+
+def _apply_update(doc: pycrdt.Doc, payload: bytes) -> bool:
+	"""Apply ``payload`` to ``doc``; ``False`` when it isn't a valid Y update.
+
+	pycrdt is a Rust extension, and it surfaces a malformed update as a pyo3
+	``PanicException`` — which inherits straight from ``BaseException``, so a
+	plain ``except Exception`` sails right past it. There is no importable
+	symbol to name that class (``pyo3_runtime`` exists only as a ``__module__``
+	label), which is why the catch here has to be broad. Keeping it inside this
+	one small helper is what stops that breadth leaking into the callers, and
+	the two BaseExceptions that must never be swallowed are re-raised.
+
+	A doc that panicked mid-apply is not reused by either caller.
+	"""
+	try:
+		doc.apply_update(payload)
+		return True
+	except (KeyboardInterrupt, SystemExit):
+		raise
+	except BaseException:
+		return False
+
+
+def _merge_update(name: str, incoming: bytes) -> bytes:
+	"""Apply ``incoming`` on top of the stored state, returning the merged doc.
+
+	The Y.Doc binary stays opaque to us — pycrdt is only doing the merge, it
+	never inspects the spreadsheet's contents.
+	"""
+	doc = pycrdt.Doc()
+	stored = frappe.db.get_value("Sheet Collab State", name, "ydoc_state")
+	if stored and not _apply_update(doc, base64.b64decode(stored)):
+		# A corrupt stored blob shouldn't strand the sheet forever — start from
+		# a clean doc and let the incoming update become the new base.
+		frappe.log_error(f"Unreadable collab state for {name}", frappe.get_traceback())
+		doc = pycrdt.Doc()
+
+	if not _apply_update(doc, incoming):
+		# Client-supplied bytes, so this is reachable by anyone who can edit.
+		# Without the guard the panic would bypass Frappe's error handling
+		# entirely and surface as a bare 500.
+		frappe.throw("Malformed collab update payload", frappe.ValidationError)
+
+	return doc.get_update()
 
 
 def _user_identity(user: str) -> dict:
