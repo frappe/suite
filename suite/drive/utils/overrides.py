@@ -40,7 +40,24 @@ def filter_file(user=None):
     public files, DocShares, and readable attachments — folder-inherited access
     needs Drive's recursive path traversal, impractical in SQL, so it's left to
     `has_permission`."""
-    return file_permission_criterion(user)
+    user = user or frappe.session.user
+    roles = frappe.get_roles(user)
+    if user == "Administrator" or "Suite Admin" in roles:
+        return ""
+
+    escaped = frappe.db.escape(user)
+    clauses = [
+        "`tabFile`.`is_private` = 0",
+        f"`tabFile`.`owner` = {escaped}",
+        f"`tabFile`.`name` IN (SELECT `entity` FROM `tabDrive Permission`"
+        f" WHERE `user` IN ({principal_list(user)}) AND `read` = 1 AND `deny` = 0)",
+        f"`tabFile`.`name` IN (SELECT `share_name` FROM `tabDocShare`"
+        f" WHERE `share_doctype` = 'File' AND `user` = {escaped} AND `read` = 1)",
+    ]
+    if SYSTEM_USER_ROLE in roles:
+        readable = ", ".join(frappe.db.escape(dt) for dt in get_doctypes_with_read(user)) or "''"
+        clauses.append(f"`tabFile`.`attached_to_doctype` IN ({readable})")
+    return "(" + " OR ".join(clauses) + ")"
 
 
 def common_filters(func):
