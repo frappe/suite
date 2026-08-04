@@ -292,6 +292,25 @@ describe('remapEmailForDarkMode', () => {
 		})
 	})
 
+	it('classifies surfaces through the cascade — specificity and !important, not just source order', () => {
+		const doc = parseDoc(`
+			<style>
+				div.hero { background-image: url(https://cdn.example.com/hero.jpg); }
+				.hero { background-image: none; }
+				.banner { background-image: url(https://cdn.example.com/banner.jpg) !important; }
+				.banner { background: #ffffff; }
+			</style>
+			<div class="hero"><p style="color: #444444;">image wins on specificity</p></div>
+			<div class="banner" style="background: #ffffff;"><p style="color: #444444;">image wins on importance</p></div>
+		`)
+		remapEmailForDarkMode(doc)
+		// Both surfaces keep their image despite later/inline repaints, so both
+		// texts stay authored.
+		doc.querySelectorAll('p').forEach((p) => {
+			expect(p.getAttribute('style')).toContain('color: #444444;')
+		})
+	})
+
 	it('pins inherited text color onto an image surface explicitly', () => {
 		// The wrapper's literal gets remapped light for the rest of the email; the
 		// image surface must keep an authored copy for the text inheriting into it.

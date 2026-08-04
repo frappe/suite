@@ -494,54 +494,107 @@ const hasImageBackground = (el: Element): boolean =>
 // treated as unconditional, which is exact for the surviving light-scheme
 // rules (dark blocks are stripped before remapping) and a fair approximation
 // for responsive ones.
-type SheetSurfaces = { color: Set<Element>; image: Set<Element> }
+type SheetSurfaces = {
+	color: Set<Element>
+	image: Set<Element>
+	// Image claims won with !important — these beat even an inline repaint.
+	imageImportant: Set<Element>
+}
+
+// Email-grade selector specificity: (ids, classes/attributes/pseudo-classes,
+// elements), packed into one comparable number. Enough fidelity for the
+// selectors mail templates ship; the exotica (:is() argument weighing, layers)
+// doesn't appear in email CSS.
+const selectorSpecificity = (selector: string): number => {
+	const s = selector.replace(/::[\w-]+/g, ' x ') // pseudo-elements weigh as elements
+	const ids = (s.match(/#[\w-]+/g) ?? []).length
+	const classes = (s.match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?/g) ?? []).length
+	const elements = (s.match(/(?:^|[\s>+~(,])[a-zA-Z][\w-]*/g) ?? []).length
+	return ids * 10_000 + classes * 100 + elements
+}
+
+// The winning claim on one background axis of one element, cascade-ordered:
+// !important first, then specificity, then source order (ties go to the later
+// declaration, as in CSS).
+type AxisClaim = { on: boolean; important: boolean; specificity: number; order: number }
+
+const beats = (a: AxisClaim, b: AxisClaim | undefined) =>
+	!b ||
+	(a.important !== b.important
+		? a.important
+		: a.specificity !== b.specificity
+			? a.specificity > b.specificity
+			: a.order >= b.order)
 
 const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
-	// Last-writer-wins per background axis, in source order — the closest thing
-	// to the cascade email-grade CSS needs. A later rule that repaints an
-	// element (`background: #fff` after an image hero, `background-image: none`
-	// in a reset) must strip the earlier image classification, or its text
-	// stays pinned against a surface that was remapped dark. Specificity is not
-	// modeled; source order decides, as it does for the equal-specificity rules
-	// emails actually ship.
-	const image = new Map<Element, boolean>()
-	const color = new Map<Element, boolean>()
+	// Resolve each element's effective background per axis through the cascade,
+	// so classification matches what the browser paints. A repaint that wins
+	// (`background: #fff` over an image hero, a `background-image: none` reset)
+	// must strip the image classification, or its text stays pinned
+	// authored-dark against a surface that was remapped; a repaint that loses
+	// (lower specificity than an `!important` hero rule) must not.
+	const image = new Map<Element, AxisClaim>()
+	const color = new Map<Element, AxisClaim>()
+	let order = 0
 	doc.querySelectorAll('style').forEach((style) => {
 		for (const rule of (style.textContent ?? '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-			const selector = rule[1].trim()
-			if (selector.startsWith('@')) continue
+			const selectorList = rule[1].trim()
+			if (selectorList.startsWith('@')) continue
 			const decls = [...rule[2].matchAll(/background(-color|-image)?\s*:\s*([^;]+)/gi)]
 			if (!decls.length) continue
-			let els: NodeListOf<Element>
-			try {
-				els = doc.querySelectorAll(selector)
-			} catch {
-				continue // selector syntax we can't resolve — skip
-			}
-			for (const decl of decls) {
-				const axis = (decl[1] ?? '').toLowerCase()
-				const hasUrl = /url\(\s*[^)\s]/i.test(decl[2])
-				const token = decl[2].match(COLOR_TOKEN)?.[0]
-				const hasColor = !!token && (parseCssColor(token)?.a ?? 0) > 0
-				els.forEach((el) => {
-					if (axis !== '-color') image.set(el, hasUrl)
-					if (axis !== '-image') color.set(el, hasColor)
-				})
+			// Per selector in the list: each carries its own specificity.
+			for (const selector of selectorList.split(',')) {
+				let els: NodeListOf<Element>
+				try {
+					els = doc.querySelectorAll(selector)
+				} catch {
+					continue // selector syntax we can't resolve — skip
+				}
+				const specificity = selectorSpecificity(selector)
+				for (const decl of decls) {
+					const axis = (decl[1] ?? '').toLowerCase()
+					const important = /!\s*important/i.test(decl[2])
+					const hasUrl = /url\(\s*[^)\s]/i.test(decl[2])
+					const token = decl[2].match(COLOR_TOKEN)?.[0]
+					const hasColor = !!token && (parseCssColor(token)?.a ?? 0) > 0
+					const claim = (on: boolean): AxisClaim => ({
+						on,
+						important,
+						specificity,
+						order: order++,
+					})
+					els.forEach((el) => {
+						if (axis !== '-color') {
+							const next = claim(hasUrl)
+							if (beats(next, image.get(el))) image.set(el, next)
+						}
+						if (axis !== '-image') {
+							const next = claim(hasColor)
+							if (beats(next, color.get(el))) color.set(el, next)
+						}
+					})
+				}
 			}
 		}
 	})
-	const surfaces: SheetSurfaces = { color: new Set(), image: new Set() }
-	image.forEach((isImage, el) => isImage && surfaces.image.add(el))
-	color.forEach((isColor, el) => isColor && surfaces.color.add(el))
+	const surfaces: SheetSurfaces = { color: new Set(), image: new Set(), imageImportant: new Set() }
+	image.forEach((c, el) => {
+		if (!c.on) return
+		surfaces.image.add(el)
+		if (c.important) surfaces.imageImportant.add(el)
+	})
+	color.forEach((c, el) => c.on && surfaces.color.add(el))
 	return surfaces
 }
 
-// An image layer paints over any color layer, wherever each is declared — but
-// an inline `background`/`background-image` repaint overrides a sheet-declared
-// image (the shorthand resets the image layer), while `background-color` alone
-// touches only the color layer beneath it.
+// An image layer paints over any color layer, wherever each is declared. An
+// inline `background`/`background-image` repaint overrides a sheet-declared
+// image (the shorthand resets the image layer) — unless the sheet claim won
+// with !important, which beats inline styles; `background-color` alone only
+// touches the color layer beneath the image.
 const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean => {
 	if (hasImageBackground(el)) return true
+	if (sheets.imageImportant.has(el)) return true
 	if (/(?:^|;)\s*background(?:-image)?\s*:/i.test(el.getAttribute('style') ?? '')) return false
 	return sheets.image.has(el)
 }
