@@ -306,6 +306,28 @@ class SaveCollabState(unittest.TestCase):
 		args, _ = self.frappe.db.set_value.call_args
 		self.assertEqual(_cells_of(args[2]["ydoc_state"]), {"A1": "recovered"})
 
+	def test_reads_the_stored_state_under_a_row_lock(self):
+		"""What keeps :func:`test_merges_rather_than_overwrites` true concurrently.
+
+		Merging is a read-modify-write. Unlocked, two peers saving at once both
+		read the same blob and the second write erases the first's edits with
+		nothing raised — the exact loss server-side merging exists to prevent.
+		Only the lock makes the sequence atomic, so pin it here: an unlocked
+		SELECT cannot be caught by any single-request assertion.
+		"""
+		from suite.sheets import collab
+
+		self.frappe.db.exists.return_value = True
+
+		collab.save_collab_state("SH-1", _b64_update(A1=1))
+
+		read = [c for c in self.frappe.db.get_value.call_args_list if "ydoc_state" in c.args]
+		self.assertTrue(read, "expected a read of ydoc_state")
+		self.assertTrue(
+			all(c.kwargs.get("for_update") for c in read),
+			"the merge's read of ydoc_state must take FOR UPDATE",
+		)
+
 	def test_concurrent_flush_collision_is_reported_as_skipped(self):
 		from frappe.exceptions import QueryDeadlockError
 
@@ -313,6 +335,23 @@ class SaveCollabState(unittest.TestCase):
 
 		self.frappe.db.exists.return_value = True
 		self.frappe.db.set_value.side_effect = QueryDeadlockError("deadlock")
+
+		out = collab.save_collab_state("SH-1", _b64_update(A1=1))
+
+		self.assertTrue(out["skipped"])
+		self.assertIsNone(out["persisted_at"])
+
+	def test_a_racing_first_time_insert_is_reported_as_skipped(self):
+		"""Two peers saving a never-persisted sheet both clear the gap lock and
+		race to INSERT; the loser drops its write and resends next debounce."""
+		from frappe.exceptions import DuplicateEntryError
+
+		from suite.sheets import collab
+
+		self.frappe.db.exists.return_value = False
+		doc = mock.MagicMock()
+		doc.insert.side_effect = DuplicateEntryError("Sheet Collab State", "SH-1", None)
+		self.frappe.new_doc.return_value = doc
 
 		out = collab.save_collab_state("SH-1", _b64_update(A1=1))
 

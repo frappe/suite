@@ -36,12 +36,16 @@ import pycrdt
 # Header the collab server sends with every server-to-server call.
 _COLLAB_SECRET_HEADER = "X-Collab-Secret"
 
-# Concurrent flushes from two peers race on the same row. Neither loses data
-# (the CRDT already holds both sides), so we swallow these rather than surface
-# a save error to one of the editors.
+# Concurrent flushes from two peers race on the same row. The row lock in
+# `_merge_update` serialises the read-modify-write, so what's left here is the
+# lock itself failing rather than a lost update: a deadlock between two waiters,
+# or — on a sheet whose state row doesn't exist yet — two first-time savers both
+# clearing the gap lock and racing to INSERT. Nothing is lost by dropping the
+# loser; it resends full state on its next debounce.
 _COLLISION_ERRORS = (
 	frappe.exceptions.QueryDeadlockError,
 	frappe.exceptions.TimestampMismatchError,
+	frappe.exceptions.DuplicateEntryError,
 )
 
 # ── P2P (y-webrtc) defaults ───────────────────────────────────────────────────
@@ -414,9 +418,23 @@ def _merge_update(name: str, incoming: bytes) -> bytes:
 
 	The Y.Doc binary stays opaque to us — pycrdt is only doing the merge, it
 	never inspects the spreadsheet's contents.
+
+	``for_update`` is what makes the merge actually a merge. Read-modify-write
+	on an unlocked row is a lost update waiting to happen: two peers saving at
+	once both read the same stored blob, each merges only its own half, and
+	whichever writes second erases the other's contribution — silently, since
+	nothing raises. Locking the row holds the second saver at this SELECT until
+	the first commits, so it merges on top of a blob that already contains the
+	first's edits. The lock lives until the request's transaction ends, which is
+	after the write below.
+
+	Peers who are connected to each other survive that race anyway (each already
+	holds the other's edits), but this endpoint exists precisely for the peers
+	who aren't — see :func:`save_collab_state`. Losing an update here would undo
+	the reason server-side merging is done at all.
 	"""
 	doc = pycrdt.Doc()
-	stored = frappe.db.get_value("Sheet Collab State", name, "ydoc_state")
+	stored = frappe.db.get_value("Sheet Collab State", name, "ydoc_state", for_update=True)
 	if stored and not _apply_update(doc, base64.b64decode(stored)):
 		# A corrupt stored blob shouldn't strand the sheet forever — start from
 		# a clean doc and let the incoming update become the new base.

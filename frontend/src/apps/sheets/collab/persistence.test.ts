@@ -178,10 +178,84 @@ describe('createPersistence', () => {
 		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
 		expect(callFn).toHaveBeenCalledTimes(1)
 
-		// Second flush while the first is still open — should reuse it.
+		// Second flush while the first is still open — should not fire yet.
 		p.flush()
 		expect(callFn).toHaveBeenCalledTimes(1)
 
 		resolve({})
+	})
+
+	// The coalesced save must not be *dropped*, only deferred. The first
+	// request's payload was encoded before these edits existed, so if the
+	// follow-up never fires they live nowhere but this browser — and nothing
+	// re-arms the debounce until the user types again.
+	it('sends edits made while a save was in flight', async () => {
+		let resolve
+		const callFn = vi.fn(() => new Promise(r => { resolve = r }))
+		const doc = new Y.Doc()
+		createPersistence({ doc, sheetId: 'SH-1', callFn })
+
+		doc.getMap('cells').set('A1', 'first')
+		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+		expect(callFn).toHaveBeenCalledTimes(1)
+
+		// Typed while the first POST is still open.
+		doc.getMap('cells').set('A2', 'during')
+		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+		expect(callFn).toHaveBeenCalledTimes(1)  // still queued behind the open one
+
+		resolve({})
+		await vi.advanceTimersByTimeAsync(0)
+
+		expect(callFn).toHaveBeenCalledTimes(2)
+		const restored = new Y.Doc()
+		Y.applyUpdate(restored, fromBase64(callFn.mock.calls[1][1].update))
+		expect(restored.getMap('cells').get('A2')).toBe('during')
+	})
+
+	// Teardown has no next debounce window to fall back on, so it must issue
+	// its own request rather than riding on one encoded seconds earlier.
+	it('does not coalesce the teardown flush onto an in-flight save', async () => {
+		const resolvers = []
+		const callFn = vi.fn(() => new Promise(r => resolvers.push(r)))
+		const doc = new Y.Doc()
+		const p = createPersistence({ doc, sheetId: 'SH-1', callFn })
+
+		doc.getMap('cells').set('A1', 'first')
+		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+		expect(callFn).toHaveBeenCalledTimes(1)
+
+		doc.getMap('cells').set('A2', 'last words')
+		p.dispose()
+
+		expect(callFn).toHaveBeenCalledTimes(2)
+		expect(callFn.mock.calls[1][2]).toEqual({ keepalive: true })
+		const restored = new Y.Doc()
+		Y.applyUpdate(restored, fromBase64(callFn.mock.calls[1][1].update))
+		expect(restored.getMap('cells').get('A2')).toBe('last words')
+
+		resolvers.forEach(r => r({}))
+	})
+
+	// A save queued behind an in-flight request must not fire after teardown:
+	// the final flush already sent full state, and the caller is free to
+	// destroy the doc the moment dispose() returns.
+	it('drops a queued save when disposal happens first', async () => {
+		const resolvers = []
+		const callFn = vi.fn(() => new Promise(r => resolvers.push(r)))
+		const doc = new Y.Doc()
+		const p = createPersistence({ doc, sheetId: 'SH-1', callFn })
+
+		doc.getMap('cells').set('A1', 1)
+		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+		doc.getMap('cells').set('A2', 2)
+		await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)  // queues a follow-up
+		expect(callFn).toHaveBeenCalledTimes(1)
+
+		p.dispose()                      // forced teardown save — call 2
+		resolvers.forEach(r => r({}))    // now let the queued follow-up wake up
+		await vi.advanceTimersByTimeAsync(0)
+
+		expect(callFn).toHaveBeenCalledTimes(2)
 	})
 })

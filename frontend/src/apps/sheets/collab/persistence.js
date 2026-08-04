@@ -8,8 +8,13 @@
 //
 // Every writer flushes its own view of the document. That's safe because the
 // backend merges instead of overwriting (see `sheets.collab.save_collab_state`),
-// so two peers flushing concurrently union rather than clobber. It also means a
-// lost save costs nothing: the next debounce window sends the full state again.
+// so two peers flushing concurrently union rather than clobber. A failed save
+// costs nothing either: the next debounce window sends the full state again.
+//
+// "The next window" is doing real work in that sentence, so the two places
+// where there isn't one are handled explicitly below — a save requested while
+// another is open queues a follow-up rather than riding on the open request's
+// older payload, and the teardown flush skips coalescing altogether.
 //
 // Viewers never flush at all — `canWrite` gates the whole path, and the
 // endpoint re-checks write permission regardless.
@@ -68,6 +73,7 @@ export function createPersistence({
 	let timer = null
 	let disposed = false
 	let inFlight = null
+	let queued = null
 
 	function _schedule() {
 		if (disposed || !canWrite || timer) return
@@ -92,16 +98,9 @@ export function createPersistence({
 	// everything edited since the last debounce fired. See the note in
 	// utils/api.js — frappe-ui's call() has no keepalive option, so that path
 	// drops to a raw fetch.
-	async function flush({ keepalive = false } = {}) {
-		if (disposed || !canWrite) return null
-		// Coalesce: if a save is already in flight, let it finish rather than
-		// stacking a second full-state POST behind it. The in-flight request
-		// carries a superset of what we'd send anyway only if it started
-		// later, so we re-arm afterwards to be safe.
-		if (inFlight) return inFlight
-
+	function _send({ keepalive }) {
 		const update = toBase64(Y.encodeStateAsUpdate(doc))
-		inFlight = callFn(
+		const req = callFn(
 			'suite.sheets.collab.save_collab_state',
 			{ name: sheetId, update },
 			{ keepalive },
@@ -115,9 +114,39 @@ export function createPersistence({
 				return null
 			})
 			.finally(() => {
-				inFlight = null
+				// Identity-checked: a forced teardown save can start while this
+				// one is still open, and the older request settling must not
+				// clear the newer one's slot.
+				if (inFlight === req) inFlight = null
 			})
-		return inFlight
+		inFlight = req
+		return req
+	}
+
+	// `force` skips coalescing entirely — used only for the teardown flush,
+	// where the tab is going away and there is no "next debounce" to fall back
+	// on. Two overlapping POSTs are safe: the backend merges under a row lock.
+	async function flush({ keepalive = false, force = false } = {}) {
+		if (disposed || !canWrite) return null
+		if (inFlight && !force) {
+			// Don't hand back the in-flight request. Its payload was encoded
+			// before the edits that triggered this call existed, so awaiting it
+			// would report them as saved while they sit only in this browser —
+			// and nothing re-arms the debounce until the user types again.
+			// Chain one follow-up instead: it encodes after the open request
+			// settles, so it picks up everything since, and repeat calls
+			// collapse onto the same queued save rather than stacking.
+			queued = queued || inFlight.then(() => {
+				queued = null
+				// Disposal in the meantime means teardown already forced a
+				// full-state save and the caller is free to destroy the doc —
+				// encoding it here would be both redundant and unsafe.
+				if (disposed) return null
+				return _send({ keepalive })
+			})
+			return queued
+		}
+		return _send({ keepalive })
 	}
 
 	function _onUpdate(_update, origin) {
@@ -137,8 +166,12 @@ export function createPersistence({
 		// Grab the last flush before flipping `disposed`, otherwise the guard
 		// at the top of flush() swallows it and the final few seconds of
 		// edits only survive in whichever peer is still open. This is the
-		// unload path, hence keepalive.
-		const pending = finalFlush && canWrite ? flush({ keepalive: true }) : null
+		// unload path, hence keepalive — and `force`, because coalescing onto
+		// a save that was encoded seconds ago would lose exactly the edits
+		// this flush exists to rescue.
+		const pending = finalFlush && canWrite
+			? flush({ keepalive: true, force: true })
+			: null
 		disposed = true
 		return pending
 	}
