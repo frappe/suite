@@ -37,13 +37,7 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
-        <Dropdown :options="availableFilterTypes.map(({ name, icon }) => ({
-          label: __(name),
-          icon: h('img', { src: icon }),
-          onClick: () => activeFilters.push({ name, icon }),
-          disabled: activeFilters.includes({ name, icon }),
-        }))
-          " :button="{
+        <Dropdown :options="filterOptions" :button="{
             icon: LucideFilter,
             tooltip: 'Filter',
           }" :disabled placement="right" />
@@ -83,14 +77,13 @@
   </div>
 </template>
 <script setup>
-import { Button, Dropdown, TextInput, TabButtons, Switch } from 'frappe-ui'
+import { Button, Dropdown, TextInput, TabButtons } from 'frappe-ui'
 import {
   ref,
   computed,
   watch,
   useTemplateRef,
   h,
-  defineComponent,
   onWatcherCleanup,
 } from 'vue'
 import { getIconUrl } from '@/apps/drive/utils/files'
@@ -139,6 +132,24 @@ const availableFilterTypes = computed(() => {
     .sort((a, b) => (a > b ? 1 : -1))
     .map((t) => ({ name: t, icon: getIconUrl(t) }))
 })
+
+const filterOptions = computed(() =>
+  availableFilterTypes.value.map(({ name, icon }) => {
+    const selected = activeFilters.value.some((filter) => filter.name === name)
+    return {
+      label: __(name),
+      icon: selected ? 'lucide-check' : h('img', { src: icon }),
+      selected,
+      onClick: () => toggleTypeFilter({ name, icon }),
+    }
+  })
+)
+
+function toggleTypeFilter(filter) {
+  const index = activeFilters.value.findIndex(({ name }) => name === filter.name)
+  if (index === -1) activeFilters.value.push(filter)
+  else activeFilters.value.splice(index, 1)
+}
 
 onKeyDown('Escape', () => {
   searchInput.value.el.blur()
