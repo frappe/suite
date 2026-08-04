@@ -101,6 +101,20 @@ describe('mapColorToken', () => {
 		expect(luma(banner)).toBeLessThan(0.35)
 	})
 
+	it('keeps visible borders visible — light hairlines land in the hairline band', () => {
+		// A #e5e7eb table divider reads clearly on white; pure bg inversion would
+		// land it a whisker above the canvas, invisible in the compressed dark.
+		const divider = mapColorToken('#e5e7eb', 'border')!
+		expect(luma(divider)).toBeGreaterThan(luma(mapColorToken('#e5e7eb', 'bg')!) + 0.05)
+		expect(luma(divider)).toBeLessThan(0.35)
+	})
+
+	it('keeps invisible spacer borders invisible — near-white tracks pure inversion', () => {
+		// border: 1px solid #fff on a white surface is a spacing hack, not a
+		// divider; flooring it would draw a grid the author never had.
+		expect(mapColorToken('#ffffff', 'border')).toBe('#171717')
+	})
+
 	it('preserves alpha and skips fully transparent colors', () => {
 		expect(mapColorToken('rgba(255, 255, 255, 0.5)', 'bg')).toMatch(/^rgba\(.*0\.5\)$/)
 		expect(mapColorToken('rgba(255, 255, 255, 0)', 'bg')).toBeNull()
@@ -232,6 +246,29 @@ describe('remapEmailForDarkMode', () => {
 		const card = doc.querySelector('a')!.getAttribute('style')!
 		expect(card).toContain('background-color: #171717;')
 		expect(luma(card.match(/(?:^|;)\s*color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
+	it('counts sheet-defined surfaces in the walk — a classed white card inside a textured wrapper remaps', () => {
+		// The Twilio receipt: dark textured wrapper, a white card whose background
+		// is a <style> class, and a textured footer. The card is the text's real
+		// surface — walking past it (inline-only walk) pinned authored-dark text
+		// onto the card that the sheet remap had just turned dark.
+		const doc = parseDoc(`
+			<style>
+				.card { background-color: #ffffff; }
+				.foot { background: #eeeeee url(https://cdn.example.com/texture.png); }
+			</style>
+			<div style="background: #242424 url(https://cdn.example.com/dark-texture.png);">
+				<div class="card"><p style="color: #414141;">We charged your card.</p></div>
+				<div class="foot"><p style="color: #414141;">This system email was sent to you.</p></div>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		const [card, foot] = Array.from(doc.querySelectorAll('p'))
+		// Card text follows the remap — its sheet-defined surface remaps with it…
+		expect(luma(card!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+		// …while footer text stays authored: its surface is an unremappable texture.
+		expect(foot!.getAttribute('style')).toContain('color: #414141;')
 	})
 
 	it('pins inherited text color onto an image surface explicitly', () => {

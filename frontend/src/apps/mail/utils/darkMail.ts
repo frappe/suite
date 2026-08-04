@@ -13,7 +13,7 @@
 // a brand link) is kept byte-identical unless it lacks contrast against the
 // dark canvas, in which case it is brightened just enough, hue untouched.
 
-export type ColorRole = 'fg' | 'bg'
+export type ColorRole = 'fg' | 'bg' | 'border'
 
 // OKLab lightness of #171717 — frappe-ui's dark surface-base and the reading
 // pane's canvas. White backgrounds map exactly onto it so remapped emails seam
@@ -37,6 +37,12 @@ const MIN_FG_LUMINANCE = 0.216
 // canvas — a saturated brand banner should read as a tinted dark surface, not
 // a neon slab.
 const BG_MAX_CHROMA = 0.1
+
+// Where visible borders land in dark mode (≈ #333 on the #171717 canvas).
+// Pure background inversion maps a light hairline (#e5e7eb) a whisker above
+// the canvas, where dark lightness deltas compress into invisibility — a
+// divider authored to be seen must stay seen.
+const HAIRLINE_L = 0.32
 
 // Was this color authored as gray or as a color? Authors reach for blue-tinted
 // grays (Tailwind slate & friends) as "gray" on white, where the tint is
@@ -63,6 +69,11 @@ const BG_PROPS = new Set([
 	'background',
 	'background-color',
 	'background-image',
+	'box-shadow',
+	'text-shadow',
+])
+
+const BORDER_PROPS = new Set([
 	'border',
 	'border-color',
 	'border-top',
@@ -75,8 +86,6 @@ const BG_PROPS = new Set([
 	'border-left-color',
 	'outline',
 	'outline-color',
-	'box-shadow',
-	'text-shadow',
 ])
 
 const NAMED_COLORS: Record<string, string> = {
@@ -243,6 +252,17 @@ export const mapColorToken = (token: string, role: ColorRole): string | null => 
 		// neutral canvas reads as colored words, a tinted surface just reads as
 		// brand. Damping only keeps flipped-light surfaces from going neon.
 		targetChroma = Math.min(chroma * 0.85, BG_MAX_CHROMA)
+	} else if (role === 'border') {
+		// Borders invert like surfaces but are floored at the hairline band,
+		// weighted by how visible they were against white — a divider that read
+		// in light mode still reads in dark, while a near-white "spacer" border
+		// (authored invisible over a white surface) tracks pure inversion and
+		// stays invisible over the surface's remapped color.
+		// Full floor for anything up to #eee-grade dividers (L ≈ 0.95), fading
+		// to none by #fafafa (L ≈ 0.99), where light mode itself showed nothing.
+		const visibility = Math.min(1, Math.max(0, (0.99 - L) / 0.04))
+		mappedL = Math.max(invertBackgroundL(L), HAIRLINE_L * visibility)
+		targetChroma = Math.min(chroma * 0.85, BG_MAX_CHROMA)
 	} else {
 		// Gray text flips into the light band and sheds its tint. Colorful text
 		// keeps its hue and saturation exactly and is only brightened when it
@@ -287,7 +307,13 @@ export const remapCssValue = (value: string, role: ColorRole) => {
 export const remapCssText = (css: string) =>
 	css.replace(DECLARATION, (full, prop: string, sep: string, value: string) => {
 		const name = prop.toLowerCase()
-		const role = FG_PROPS.has(name) ? 'fg' : BG_PROPS.has(name) ? 'bg' : null
+		const role = FG_PROPS.has(name)
+			? 'fg'
+			: BG_PROPS.has(name)
+				? 'bg'
+				: BORDER_PROPS.has(name)
+					? 'border'
+					: null
 		return role ? prop + sep + remapCssValue(value, role) : full
 	})
 
@@ -460,13 +486,59 @@ const elementTextColor = (el: Element): string | null => {
 const hasImageBackground = (el: Element): boolean =>
 	/background[^;:]*:[^;]*url\(\s*[^)\s]/i.test(el.getAttribute('style') ?? '')
 
+// Surfaces whose background is authored in <style> sheets rather than inline
+// (Twilio's white card is a classed rule; some heroes class their bg image).
+// The walk below must stop at them too: missing a sheet-backed card between
+// the text and a textured wrapper pins the text to a surface it doesn't rest
+// on. Selectors are resolved with querySelectorAll — rules inside @media are
+// treated as unconditional, which is exact for the surviving light-scheme
+// rules (dark blocks are stripped before remapping) and a fair approximation
+// for responsive ones.
+type SheetSurfaces = { color: Set<Element>; image: Set<Element> }
+
+const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
+	const surfaces: SheetSurfaces = { color: new Set(), image: new Set() }
+	doc.querySelectorAll('style').forEach((style) => {
+		for (const rule of (style.textContent ?? '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+			const values = [...rule[2].matchAll(/background(?:-color|-image)?\s*:\s*([^;]+)/gi)]
+			if (!values.length) continue
+			const isImage = values.some((v) => /url\(\s*[^)\s]/i.test(v[1]))
+			const isColor = values.some((v) => {
+				const token = v[1].match(COLOR_TOKEN)?.[0]
+				return !!token && (parseCssColor(token)?.a ?? 0) > 0
+			})
+			if (!isImage && !isColor) continue
+			const selector = rule[1].trim()
+			if (selector.startsWith('@')) continue
+			try {
+				doc.querySelectorAll(selector).forEach((el) => {
+					;(isImage ? surfaces.image : surfaces.color).add(el)
+				})
+			} catch {
+				/* selector syntax we can't resolve — skip */
+			}
+		}
+	})
+	return surfaces
+}
+
+// An image layer paints over any color layer, wherever each is declared.
+const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean =>
+	hasImageBackground(el) || sheets.image.has(el)
+
 // The innermost element whose background the text actually rests on — the one
 // that decides whether its text follows the remap (color surface) or the
 // authored bytes (image surface). A color-backed card nested inside a hero
 // image is its own surface: its text keeps following the remap.
-const nearestSurface = (el: Element): Element | null => {
+const nearestSurface = (el: Element, sheets: SheetSurfaces): Element | null => {
 	let cur: Element | null = el
-	while (cur && !elementBackground(cur) && !hasImageBackground(cur)) cur = cur.parentElement
+	while (
+		cur &&
+		!elementBackground(cur) &&
+		!isImageSurface(cur, sheets) &&
+		!sheets.color.has(cur)
+	)
+		cur = cur.parentElement
 	return cur
 }
 
@@ -485,14 +557,16 @@ export const remapEmailForDarkMode = (doc: Document) => {
 	// Snapshot those pairs before remapping: afterwards the text is re-pinned to
 	// its surface's mapped color, so it follows the background mapping instead
 	// of the text mapping and dark mode doesn't reveal what light mode hides.
+	const sheets = collectSheetSurfaces(doc)
+
 	const camouflaged: Array<{ el: Element; surface: Element }> = []
 	doc.querySelectorAll('[style], [color]').forEach((el) => {
 		const fg = parseAnyColor(elementTextColor(el))
 		if (!fg || fg.a !== 1) return
-		const surface = nearestSurface(el)
+		const surface = nearestSurface(el, sheets)
 		// Text over an image surface is pinned to its authored bytes below —
 		// matching a color further up the tree there is coincidence, not intent.
-		if (surface && hasImageBackground(surface)) return
+		if (surface && isImageSurface(surface, sheets)) return
 		const bg = surface && parseAnyColor(elementBackground(surface))
 		if (!surface || !bg || bg.a !== 1) return
 		if (
@@ -513,11 +587,15 @@ export const remapEmailForDarkMode = (doc: Document) => {
 	doc.querySelectorAll('[style], [color]').forEach((el) => {
 		const authored = elementTextColor(el)
 		if (!authored) return
-		const surface = nearestSurface(el)
-		if (surface && hasImageBackground(surface)) pinned.push({ el, color: authored })
+		const surface = nearestSurface(el, sheets)
+		if (surface && isImageSurface(surface, sheets)) pinned.push({ el, color: authored })
 	})
+	const imageSurfaces = new Set<Element>(sheets.image)
 	doc.querySelectorAll('[style]').forEach((el) => {
-		if (!hasImageBackground(el) || elementTextColor(el)) return
+		if (hasImageBackground(el)) imageSurfaces.add(el)
+	})
+	imageSurfaces.forEach((el) => {
+		if (elementTextColor(el)) return
 		let cur = el.parentElement
 		while (cur && !elementTextColor(cur)) cur = cur.parentElement
 		pinned.push({ el, color: (cur && elementTextColor(cur)) || '#000000' })
