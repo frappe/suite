@@ -27,6 +27,12 @@ import type { Thread } from '@/apps/mail/types'
 /** Rows per window. Fetches ask for one more, to detect whether further rows exist without a total. */
 export const PAGE_LENGTH = 25
 
+// Windows one fill episode may pull before it gives up (see topUpIfShort). Far more than any viewport
+// needs — the cap only catches the case where the fill can never succeed: every window absorbed into
+// the trailing stack row, which adds no height, so the sentinel stays in view and the list would walk
+// the whole mailbox 25 threads at a time.
+const MAX_FILL_WINDOWS = 20
+
 // How long a row optimistically removed by an action stays suppressed. The server keeps returning it
 // until the mutation lands, so a refresh or append in that window would put it back.
 const REMOVAL_SUPPRESSION_MS = 15000
@@ -250,15 +256,20 @@ export const usePaginatedThreads = ({
 	const sentinelVisible = ref(false)
 
 	// How far the fill had gotten (see fillProgress) the last time we topped it up, so a fill that
-	// adds nothing visible can be detected. Reset at the start of each fill episode.
+	// adds nothing visible can be detected, and how many windows this episode has pulled. Both reset
+	// at the start of each fill episode.
 	let lastFillProgress = 0
+	let fillWindows = 0
 
 	useIntersectionObserver(
 		sentinel,
 		([entry]) => {
 			const entering = !!entry?.isIntersecting && !sentinelVisible.value
 			sentinelVisible.value = !!entry?.isIntersecting
-			if (entering) lastFillProgress = 0
+			if (entering) {
+				lastFillProgress = 0
+				fillWindows = 0
+			}
 			if (sentinelVisible.value) loadMore()
 		},
 		{ root: container },
@@ -270,13 +281,19 @@ export const usePaginatedThreads = ({
 	 * A window of 25 threads can collapse to a single stack row (or vanish into an existing one), so
 	 * filling the viewport can take several of them.
 	 *
-	 * The progress guard is load-bearing: stop as soon as a window advanced nothing the reader can see
-	 * — its threads landed inside a collapsed date group, so further windows would be just as
-	 * invisible. Without it, collapsing a large group turns into a stampede that walks the entire
-	 * mailbox 25 threads at a time. Progress is the caller's fillProgress metric, NOT pixel height:
-	 * a window absorbed into existing stack rows adds no height yet is real progress, and height-based
-	 * stopping stranded exactly the incident-heavy inboxes that stack hardest, with the sentinel in
-	 * view but nothing left to re-fire it.
+	 * What normally ends an episode is the sentinel leaving the viewport — the fill worked. Two guards
+	 * cover the fills that can't:
+	 *
+	 * Progress, the caller's fillProgress metric and NOT pixel height: a window absorbed into existing
+	 * stack rows adds no height yet is real progress, and height-based stopping stranded exactly the
+	 * incident-heavy inboxes that stack hardest, with the sentinel in view but nothing left to re-fire
+	 * it. A window that advances nothing landed somewhere unrenderable (a collapsed date group), so
+	 * further windows would be too. Appends normally extend the last date group, which can't be
+	 * collapsed, so this mostly guards rows arriving out of order.
+	 *
+	 * And the episode's window budget, for the fill that makes progress forever without ever filling:
+	 * every window absorbed into the trailing stack row is invisible height-wise, so absent a cap an
+	 * alerting inbox would walk itself end to end. The reader can still scroll and re-arm the observer.
 	 *
 	 * Call it from a watcher on the RENDERED rows, not on the loaded threads: rows come and go as
 	 * stacks and date groups fold, and each change can move the sentinel. That watcher must be
@@ -297,7 +314,7 @@ export const usePaginatedThreads = ({
 	}
 
 	const topUpIfShort = () => {
-		if (!sentinelVisible.value || !hasMore.value) return
+		if (!sentinelVisible.value || !hasMore.value || fillWindows >= MAX_FILL_WINDOWS) return
 
 		nextTick(() => {
 			if (!sentinelInView()) return
@@ -305,7 +322,9 @@ export const usePaginatedThreads = ({
 			const progress = fillProgress ? fillProgress() : (container.value?.scrollHeight ?? 0)
 			const grew = progress > lastFillProgress
 			lastFillProgress = progress
-			if (grew) loadMore()
+			if (!grew) return
+			fillWindows++
+			loadMore()
 		})
 	}
 
