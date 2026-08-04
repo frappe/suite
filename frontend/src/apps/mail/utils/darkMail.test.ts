@@ -331,6 +331,22 @@ describe('remapEmailForDarkMode', () => {
 		expect(luma(sideText!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
 	})
 
+	it('splits selector lists on top-level commas only — functional arguments keep theirs', () => {
+		// Naive comma splitting turns `.hero:not(.a, .b), .strip` into invalid
+		// fragments and silently drops both surfaces.
+		const doc = parseDoc(`
+			<style>
+				.hero:not(.plain, .quiet), .strip { background-image: url(https://cdn.example.com/hero.jpg); }
+			</style>
+			<div class="hero"><p style="color: #444444;">on the hero image</p></div>
+			<div class="strip"><p style="color: #444444;">on the strip image</p></div>
+		`)
+		remapEmailForDarkMode(doc)
+		doc.querySelectorAll('p').forEach((p) => {
+			expect(p.getAttribute('style')).toContain('color: #444444;')
+		})
+	})
+
 	it('pins inherited text color onto an image surface explicitly', () => {
 		// The wrapper's literal gets remapped light for the rest of the email; the
 		// image surface must keep an authored copy for the text inheriting into it.

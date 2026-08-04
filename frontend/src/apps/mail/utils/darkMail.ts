@@ -514,7 +514,7 @@ const selectorSpecificity = (selector: string): number => {
 			if (fn.toLowerCase() !== 'where')
 				functional += Math.max(
 					0,
-					...args.split(',').map((arg: string) => selectorSpecificity(arg)),
+					...splitSelectorList(args).map((arg: string) => selectorSpecificity(arg)),
 				)
 			return ' '
 		})
@@ -523,6 +523,26 @@ const selectorSpecificity = (selector: string): number => {
 	const classes = (s.match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?/g) ?? []).length
 	const elements = (s.match(/(?:^|[\s>+~(,])[a-zA-Z][\w-]*/g) ?? []).length
 	return functional + ids * 10_000 + classes * 100 + elements
+}
+
+// Split a selector list on top-level commas only — commas inside functional
+// arguments (`:not(.x, .y)`) or attribute values belong to their selector, and
+// naive splitting turns it into invalid fragments whose surfaces silently drop.
+const splitSelectorList = (list: string): string[] => {
+	const parts: string[] = []
+	let depth = 0
+	let start = 0
+	for (let i = 0; i < list.length; i++) {
+		const ch = list[i]
+		if (ch === '(' || ch === '[') depth++
+		else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1)
+		else if (ch === ',' && depth === 0) {
+			parts.push(list.slice(start, i))
+			start = i + 1
+		}
+	}
+	parts.push(list.slice(start))
+	return parts
 }
 
 // The winning claim on one background axis of one element, cascade-ordered:
@@ -555,7 +575,7 @@ const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
 			const decls = [...rule[2].matchAll(/background(-color|-image)?\s*:\s*([^;]+)/gi)]
 			if (!decls.length) continue
 			// Per selector in the list: each carries its own specificity.
-			for (const selector of selectorList.split(',')) {
+			for (const selector of splitSelectorList(selectorList)) {
 				let els: NodeListOf<Element>
 				try {
 					els = doc.querySelectorAll(selector)
