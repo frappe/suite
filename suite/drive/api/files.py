@@ -888,6 +888,16 @@ def redirect_to_original(file_id: str):
 def track_visit(entity_name: str):
     entity = frappe.get_doc("File", entity_name)
     mark_as_viewed(entity)
+    frappe.db.set_value(
+        "Drive Notification",
+        {
+            "to_user": frappe.session.user,
+            "notif_doctype_name": entity_name,
+            "read": False,
+        },
+        "read",
+        True,
+    )
 
 
 @frappe.whitelist()

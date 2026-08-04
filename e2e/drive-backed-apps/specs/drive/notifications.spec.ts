@@ -6,6 +6,7 @@ interface DriveNotification {
 	notif_doctype_name: string;
 	type: string;
 	message: string;
+	read: number;
 }
 
 test("sharing a document notifies the recipient", async ({
@@ -34,4 +35,20 @@ test("sharing a document notifies the recipient", async ({
 				.map((row) => row.message);
 		})
 		.toEqual([expect.stringContaining(title)]);
+
+	await collaborator.page.goto(`/writer/w/${file.name}`);
+
+	// Opening the shared document directly also consumes its notification.
+	await expect
+		.poll(async () => {
+			const response = await collaborator.page.request.get(
+				"/api/method/suite.drive.api.notifications.get_notifications",
+			);
+			if (!response.ok()) return undefined;
+			const rows = await frappeData<DriveNotification[]>(response).catch(() => []);
+			return rows.find(
+				(row) => row.notif_doctype_name === file.name && row.type === "Share",
+			)?.read;
+		})
+		.toBe(1);
 });
