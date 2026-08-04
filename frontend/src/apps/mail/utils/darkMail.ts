@@ -496,9 +496,11 @@ const hasImageBackground = (el: Element): boolean =>
 // for responsive ones.
 type SheetSurfaces = {
 	color: Set<Element>
-	image: Set<Element>
-	// Image claims won with !important — these beat even an inline repaint.
-	imageImportant: Set<Element>
+	// Each element's winning sheet claim on the image axis — kept as a claim,
+	// not a set, so inline-versus-sheet resolution can weigh its importance in
+	// both directions (an !important url beats an inline repaint; an !important
+	// `none` reset beats an inline url).
+	imageClaims: Map<Element, AxisClaim>
 }
 
 // Email-grade selector specificity: (ids, classes/attributes/pseudo-classes,
@@ -609,30 +611,25 @@ const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
 			}
 		}
 	})
-	const surfaces: SheetSurfaces = { color: new Set(), image: new Set(), imageImportant: new Set() }
-	image.forEach((c, el) => {
-		if (!c.on) return
-		surfaces.image.add(el)
-		if (c.important) surfaces.imageImportant.add(el)
-	})
+	const surfaces: SheetSurfaces = { color: new Set(), imageClaims: image }
 	color.forEach((c, el) => c.on && surfaces.color.add(el))
 	return surfaces
 }
 
-// An image layer paints over any color layer, wherever each is declared. An
-// inline `background`/`background-image` repaint overrides a sheet-declared
-// image (the shorthand resets the image layer) — unless the sheet claim won
-// with !important, which beats a normal inline repaint but loses to an inline
-// !important one (the style attribute wins at equal importance).
-// `background-color` alone only touches the color layer beneath the image.
+// An image layer paints over any color layer, wherever each is declared. The
+// image axis is decided between the style attribute and the winning sheet
+// claim by importance, style attribute on ties — in both directions: a sheet
+// !important url beats an inline repaint, and a sheet !important `none` reset
+// beats an inline url. `background-color` (either place) only touches the
+// color layer beneath the image and never enters this contest.
 const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean => {
-	if (hasImageBackground(el)) return true
 	const style = el.getAttribute('style') ?? ''
-	const repaints = [...style.matchAll(/(?:^|;)\s*background(?:-image)?\s*:[^;]*/gi)]
-	const repaintImportant = repaints.some((decl) => /!\s*important/i.test(decl[0]))
-	if (sheets.imageImportant.has(el) && !repaintImportant) return true
-	if (repaints.length) return false
-	return sheets.image.has(el)
+	const inlineDecls = [...style.matchAll(/(?:^|;)\s*background(?:-image)?\s*:[^;]*/gi)]
+	const inlineImportant = inlineDecls.some((decl) => /!\s*important/i.test(decl[0]))
+	const sheet = sheets.imageClaims.get(el)
+	if (inlineDecls.length && (inlineImportant || !sheet?.important)) return hasImageBackground(el)
+	if (sheet) return sheet.on
+	return hasImageBackground(el)
 }
 
 // The innermost element whose background the text actually rests on — the one
@@ -699,9 +696,12 @@ export const remapEmailForDarkMode = (doc: Document) => {
 		const surface = nearestSurface(el, sheets)
 		if (surface && isImageSurface(surface, sheets)) pinned.push({ el, color: authored })
 	})
-	const imageSurfaces = new Set<Element>(sheets.image)
+	const imageSurfaces = new Set<Element>()
+	sheets.imageClaims.forEach((_, el) => {
+		if (isImageSurface(el, sheets)) imageSurfaces.add(el)
+	})
 	doc.querySelectorAll('[style]').forEach((el) => {
-		if (hasImageBackground(el)) imageSurfaces.add(el)
+		if (isImageSurface(el, sheets)) imageSurfaces.add(el)
 	})
 	imageSurfaces.forEach((el) => {
 		if (elementTextColor(el)) return

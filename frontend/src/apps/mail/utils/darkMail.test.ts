@@ -331,6 +331,21 @@ describe('remapEmailForDarkMode', () => {
 		expect(luma(sideText!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
 	})
 
+	it('a sheet !important image reset beats a non-important inline url', () => {
+		// The browser paints no image here: the sheet's !important none wins over
+		// the inline url, so the surface is its (remapped) color and the text
+		// must follow the remap.
+		const doc = parseDoc(`
+			<style>.stripped { background-image: none !important; }</style>
+			<div class="stripped" style="background: #ffffff url(https://cdn.example.com/tex.png);">
+				<p style="color: #444444;">no image painted</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		const text = doc.querySelector('p')!.getAttribute('style')!
+		expect(luma(text.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
 	it('an inline !important repaint beats a sheet !important image', () => {
 		// The style attribute wins at equal importance: the browser paints white,
 		// the remap turns it dark, so the text must follow the remap.
