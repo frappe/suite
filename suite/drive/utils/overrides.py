@@ -1,7 +1,37 @@
 import frappe
 from frappe.permissions import SYSTEM_USER_ROLE, get_doctypes_with_read
 
-from suite.drive.utils import principal_list
+from suite.drive.utils import get_principals, principal_list
+
+
+def file_permission_criterion(user=None, table=None):
+    user = user or frappe.session.user
+    roles = frappe.get_roles(user)
+    if user == "Administrator" or "Suite Admin" in roles:
+        return None
+
+    file = table or frappe.qb.DocType("File")
+    permission = frappe.qb.DocType("Drive Permission")
+    share = frappe.qb.DocType("DocShare")
+    criterion = (
+        (file.is_private == 0)
+        | (file.owner == user)
+        | file.name.isin(
+            frappe.qb.from_(permission)
+            .select(permission.entity)
+            .where(
+                permission.user.isin(get_principals(user)) & (permission.read == 1) & (permission.deny == 0)
+            )
+        )
+        | file.name.isin(
+            frappe.qb.from_(share)
+            .select(share.share_name)
+            .where((share.share_doctype == "File") & (share.user == user) & (share.read == 1))
+        )
+    )
+    if SYSTEM_USER_ROLE in roles:
+        criterion |= file.attached_to_doctype.isin(get_doctypes_with_read(user) or [""])
+    return criterion
 
 
 def filter_file(user=None):
@@ -10,24 +40,7 @@ def filter_file(user=None):
     public files, DocShares, and readable attachments — folder-inherited access
     needs Drive's recursive path traversal, impractical in SQL, so it's left to
     `has_permission`."""
-    user = user or frappe.session.user
-    roles = frappe.get_roles(user)
-    if user == "Administrator" or "Suite Admin" in roles:
-        return ""
-
-    escaped = frappe.db.escape(user)
-    clauses = [
-        "`tabFile`.`is_private` = 0",
-        f"`tabFile`.`owner` = {escaped}",
-        f"`tabFile`.`name` IN (SELECT `entity` FROM `tabDrive Permission`"
-        f" WHERE `user` IN ({principal_list(user)}) AND `read` = 1 AND `deny` = 0)",
-        f"`tabFile`.`name` IN (SELECT `share_name` FROM `tabDocShare`"
-        f" WHERE `share_doctype` = 'File' AND `user` = {escaped} AND `read` = 1)",
-    ]
-    if SYSTEM_USER_ROLE in roles:
-        readable = ", ".join(frappe.db.escape(dt) for dt in get_doctypes_with_read(user)) or "''"
-        clauses.append(f"`tabFile`.`attached_to_doctype` IN ({readable})")
-    return "(" + " OR ".join(clauses) + ")"
+    return file_permission_criterion(user)
 
 
 def common_filters(func):

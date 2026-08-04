@@ -21,7 +21,7 @@ from suite.drive.utils import (
     principal_list,
 )
 from suite.drive.utils.api import get_default_access
-from suite.drive.utils.overrides import filter_file
+from suite.drive.utils.overrides import file_permission_criterion
 
 from .permissions import get_user_access, user_has_permission
 
@@ -36,22 +36,18 @@ Binary = CustomFunction("BINARY", ["expression"])
 
 
 def _attachment_candidates(doctype: str | None = None, docname: str | None = None):
-    conditions = ["`attached_to_doctype` IS NOT NULL"]
-    values = {}
-    if doctype:
-        conditions.append("`attached_to_doctype` = %(doctype)s")
-        values["doctype"] = doctype
-    if docname:
-        conditions.append("`attached_to_name` = %(docname)s")
-        values["docname"] = docname
-    if permission_condition := filter_file():
-        conditions.append(permission_condition)
-
-    return frappe.db.sql(
-        f"SELECT `name`, `attached_to_doctype`, `attached_to_name` FROM `tabFile` WHERE {' AND '.join(conditions)}",  # nosemgrep
-        values,
-        as_dict=True,
+    query = (
+        frappe.qb.from_(DriveFile)
+        .select(DriveFile.name, DriveFile.attached_to_doctype, DriveFile.attached_to_name)
+        .where(DriveFile.attached_to_doctype.isnotnull())
     )
+    if doctype:
+        query = query.where(DriveFile.attached_to_doctype == doctype)
+    if docname:
+        query = query.where(DriveFile.attached_to_name == docname)
+    if permission_condition := file_permission_criterion(table=DriveFile):
+        query = query.where(permission_condition)
+    return query.run(as_dict=True)
 
 
 # Helper Functions for Filters
