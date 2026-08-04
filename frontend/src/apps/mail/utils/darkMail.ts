@@ -622,12 +622,16 @@ const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
 // An image layer paints over any color layer, wherever each is declared. An
 // inline `background`/`background-image` repaint overrides a sheet-declared
 // image (the shorthand resets the image layer) — unless the sheet claim won
-// with !important, which beats inline styles; `background-color` alone only
-// touches the color layer beneath the image.
+// with !important, which beats a normal inline repaint but loses to an inline
+// !important one (the style attribute wins at equal importance).
+// `background-color` alone only touches the color layer beneath the image.
 const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean => {
 	if (hasImageBackground(el)) return true
-	if (sheets.imageImportant.has(el)) return true
-	if (/(?:^|;)\s*background(?:-image)?\s*:/i.test(el.getAttribute('style') ?? '')) return false
+	const style = el.getAttribute('style') ?? ''
+	const repaints = [...style.matchAll(/(?:^|;)\s*background(?:-image)?\s*:[^;]*/gi)]
+	const repaintImportant = repaints.some((decl) => /!\s*important/i.test(decl[0]))
+	if (sheets.imageImportant.has(el) && !repaintImportant) return true
+	if (repaints.length) return false
 	return sheets.image.has(el)
 }
 

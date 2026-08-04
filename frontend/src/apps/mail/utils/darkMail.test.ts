@@ -331,6 +331,20 @@ describe('remapEmailForDarkMode', () => {
 		expect(luma(sideText!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
 	})
 
+	it('an inline !important repaint beats a sheet !important image', () => {
+		// The style attribute wins at equal importance: the browser paints white,
+		// the remap turns it dark, so the text must follow the remap.
+		const doc = parseDoc(`
+			<style>.banner { background-image: url(https://cdn.example.com/banner.jpg) !important; }</style>
+			<div class="banner" style="background: #ffffff !important;">
+				<p style="color: #444444;">painted over</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		const text = doc.querySelector('p')!.getAttribute('style')!
+		expect(luma(text.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
 	it('splits selector lists on top-level commas only — functional arguments keep theirs', () => {
 		// Naive comma splitting turns `.hero:not(.a, .b), .strip` into invalid
 		// fragments and silently drops both surfaces.
