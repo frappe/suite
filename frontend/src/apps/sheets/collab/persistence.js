@@ -17,7 +17,10 @@
 // older payload, and the teardown flush skips coalescing altogether.
 //
 // Viewers never flush at all — `canWrite` gates the whole path, and the
-// endpoint re-checks write permission regardless.
+// endpoint re-checks write permission regardless. Note what that does *not*
+// buy: it stops a viewer saving, not a viewer's edits being saved. Those reach
+// the backend inside the next full-state flush from any connected writer. See
+// the trade-offs listed in webrtc-client.js.
 
 import * as Y from 'yjs'
 

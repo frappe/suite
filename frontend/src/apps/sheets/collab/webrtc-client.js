@@ -15,10 +15,20 @@
 //   * No authoritative server doc. Two peers who can never reach each other
 //     (both behind a NAT TURN can't traverse) edit in parallel and only
 //     reconcile through the backend merge on save.
-//   * No read-only enforcement. Any peer can send to any other, so a viewer
-//     who joins the room can publish updates into the session. The backstop is
-//     `save_collab_state`, which re-checks write permission — a viewer's edits
-//     are visible live but never persist.
+//   * No read-only enforcement, and no backstop behind it. Any peer can send
+//     to any other, so a viewer who joins the room can publish updates into the
+//     session — and those updates become durable. `save_collab_state` re-checks
+//     write permission, but it checks who is *posting*, not whose edits are in
+//     the payload: a writer saves `encodeStateAsUpdate(doc)`, the whole
+//     document, viewer's edits included. Filtering at save time is not
+//     available as a fix; full state is what makes concurrent saves mergeable.
+//
+//     Net effect: a user shared read-only on a sheet can land a permanent edit
+//     whenever a writer is connected. Accepted, matching Writer, which ships
+//     the same exposure with unencrypted rooms. Closing it means either
+//     withholding room keys from viewers (costing them live view entirely) or
+//     a signed-update layer above y-webrtc. Room encryption still bounds the
+//     blast radius to people already shared on the sheet.
 //
 // Room access is gated by encryption, not by the signaling server, which
 // authenticates nobody: `password` is a per-sheet key handed out by

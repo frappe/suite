@@ -409,8 +409,16 @@ export function useCollaboration({
     // the destroy() two lines down.
     _persistence?.dispose()
     _binding?.dispose()
-    _awareness?.destroy()
+    // Provider before awareness, and the order is load-bearing. Every provider
+    // announces this client's departure during its own teardown — y-webrtc's
+    // Room.disconnect calls removeAwarenessStates — and that announcement
+    // reaches the wire through a listener registered *on the awareness
+    // object*. Awareness.destroy() inherits lib0's Observable.destroy, which
+    // drops every listener, so tearing awareness down first silently unhooks
+    // the broadcast: the departure is emitted to nobody and peers keep showing
+    // the avatar until y-protocols' 30s outdatedTimeout expires.
     _provider?.destroy()
+    _awareness?.destroy()
     _doc?.destroy()
     _binding = _awareness = _provider = _doc = _persistence = null
     _sheetId = null

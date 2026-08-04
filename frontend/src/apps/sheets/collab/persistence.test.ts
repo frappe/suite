@@ -99,8 +99,9 @@ describe('createPersistence', () => {
 		expect(p.applyServerState('')).toBe(false)
 	})
 
-	// P2P can't stop a viewer from joining the room, so the client-side gate
-	// and the server-side re-check both matter. This is the client half.
+	// Stops a viewer's *browser* from saving. It does not stop a viewer's edits
+	// from being saved by a connected writer's full-state flush — that gap is
+	// accepted and documented in webrtc-client.js, not covered here.
 	it('never saves when the user lacks write access', async () => {
 		const { doc, callFn, p } = setup({ canWrite: false })
 
