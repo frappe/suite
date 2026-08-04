@@ -3,7 +3,10 @@
 	<tbody>
 		<tr>
 			<td class="button {{ 'button-primary' if primary else '' }}">
-				<a href="{{ link }}" rel="nofollow">
+				{# .btn exempts the label from frappe's `.email-body a:not(.btn)` link
+				   restyle, which premailer keeps as !important (it can't inline :not())
+				   and which would bury the button's own color under the link color. #}
+				<a class="btn" href="{{ link }}" rel="nofollow">
 					{{ label }}
 				</a>
 			</td>

@@ -44,7 +44,7 @@
 						<div style="font-size: 13px; color: #7c7c7c; margin-top: 1px;">{{ meet.label }}</div>
 					</td>
 					<td style="vertical-align: middle; text-align: right; white-space: nowrap;">
-						<a href="{{ meet.url }}" style="display: inline-block; padding: 7px 15px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">Join</a>
+						<a class="btn" href="{{ meet.url }}" style="display: inline-block; padding: 7px 15px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">Join</a>
 					</td>
 				</tr>
 			</table>
@@ -64,13 +64,13 @@
 <table role="presentation" cellpadding="0" cellspacing="0">
 	<tr>
 		<td style="padding-right: 10px;">
-			<a href="{{ rsvp.accept }}" style="display: inline-block; padding: 10px 20px; background-color: #171717; color: #ffffff; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 600;">Yes</a>
+			<a class="btn" href="{{ rsvp.accept }}" style="display: inline-block; padding: 10px 20px; background-color: #171717; color: #ffffff; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 600;">Yes</a>
 		</td>
 		<td style="padding-right: 10px;">
-			<a href="{{ rsvp.tentative }}" style="display: inline-block; padding: 9px 19px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">Maybe</a>
+			<a class="btn" href="{{ rsvp.tentative }}" style="display: inline-block; padding: 9px 19px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">Maybe</a>
 		</td>
 		<td>
-			<a href="{{ rsvp.decline }}" style="display: inline-block; padding: 9px 19px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">No</a>
+			<a class="btn" href="{{ rsvp.decline }}" style="display: inline-block; padding: 9px 19px; background-color: #ffffff; color: #383838; border: 1px solid #e2e2e2; text-decoration: none; border-radius: 10px; font-family: {{ font }}; font-size: 14px; font-weight: 500;">No</a>
 		</td>
 	</tr>
 </table>
