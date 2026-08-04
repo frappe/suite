@@ -477,14 +477,14 @@ const elementTextColor = (el: Element): string | null => {
 }
 
 // A surface painted by url(...) — a raster the remap cannot rewrite (the token
-// pass masks url() precisely so it never touches one). Its pixels are
+// pass masks url() precisely so it never touches one) — shows pixels that are
 // byte-identical in dark mode, so the text resting on it must be too:
 // remapping dark text over a light gradient JPEG flips it near-white and it
 // vanishes into the image. CSS gradients don't count — they carry color
-// literals and are remapped like any other surface. Requires a non-empty
-// url(): blocked remote assets are blanked to url() and paint nothing.
-const hasImageBackground = (el: Element): boolean =>
-	/background[^;:]*:[^;]*url\(\s*[^)\s]/i.test(el.getAttribute('style') ?? '')
+// literals and are remapped like any other surface. Detection requires a
+// non-empty url(): blocked remote assets are blanked to url() and paint
+// nothing. Whether an image actually paints is a cascade question, resolved by
+// inlineImageClaim and collectSheetSurfaces below.
 
 // Surfaces whose background is authored in <style> sheets rather than inline
 // (Twilio's white card is a classed rule; some heroes class their bg image).
@@ -616,20 +616,37 @@ const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
 	return surfaces
 }
 
+// The style attribute's own claim on the image axis, resolved by the same
+// last-writer-wins the sheets use: a later inline shorthand reset
+// (`background: #fff`) beats an earlier inline url exactly as it paints, and
+// a later non-important declaration does not beat an earlier !important one.
+// `background-color` never enters — it only touches the layer beneath.
+const inlineImageClaim = (el: Element): { on: boolean; important: boolean } | null => {
+	let claim: { on: boolean; important: boolean } | null = null
+	for (const decl of (el.getAttribute('style') ?? '').matchAll(
+		/(?:^|;)\s*background(-color|-image)?\s*:([^;]*)/gi,
+	)) {
+		if ((decl[1] ?? '').toLowerCase() === '-color') continue
+		const next = {
+			on: /url\(\s*[^)\s]/i.test(decl[2]),
+			important: /!\s*important/i.test(decl[2]),
+		}
+		if (!claim || next.important || !claim.important) claim = next
+	}
+	return claim
+}
+
 // An image layer paints over any color layer, wherever each is declared. The
-// image axis is decided between the style attribute and the winning sheet
-// claim by importance, style attribute on ties — in both directions: a sheet
-// !important url beats an inline repaint, and a sheet !important `none` reset
-// beats an inline url. `background-color` (either place) only touches the
-// color layer beneath the image and never enters this contest.
+// image axis is decided between the style attribute's claim and the winning
+// sheet claim by importance, style attribute on ties — in both directions: a
+// sheet !important url beats an inline repaint, and a sheet !important `none`
+// reset beats a non-important inline url.
 const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean => {
-	const style = el.getAttribute('style') ?? ''
-	const inlineDecls = [...style.matchAll(/(?:^|;)\s*background(?:-image)?\s*:[^;]*/gi)]
-	const inlineImportant = inlineDecls.some((decl) => /!\s*important/i.test(decl[0]))
+	const inline = inlineImageClaim(el)
 	const sheet = sheets.imageClaims.get(el)
-	if (inlineDecls.length && (inlineImportant || !sheet?.important)) return hasImageBackground(el)
+	if (inline && (inline.important || !sheet?.important)) return inline.on
 	if (sheet) return sheet.on
-	return hasImageBackground(el)
+	return false
 }
 
 // The innermost element whose background the text actually rests on — the one

@@ -331,6 +331,20 @@ describe('remapEmailForDarkMode', () => {
 		expect(luma(sideText!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
 	})
 
+	it('a later inline shorthand reset beats an earlier inline url', () => {
+		// The style attribute is itself a cascade: the shorthand that follows the
+		// url declaration resets the image layer, so no image paints and the text
+		// must follow the remap.
+		const doc = parseDoc(`
+			<div style="background-image: url(https://cdn.example.com/tex.png); background: #ffffff;">
+				<p style="color: #444444;">reset within the attribute</p>
+			</div>
+		`)
+		remapEmailForDarkMode(doc)
+		const text = doc.querySelector('p')!.getAttribute('style')!
+		expect(luma(text.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
 	it('a sheet !important image reset beats a non-important inline url', () => {
 		// The browser paints no image here: the sheet's !important none wins over
 		// the inline url, so the surface is its (remapped) color and the text
