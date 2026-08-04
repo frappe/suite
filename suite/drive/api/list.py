@@ -21,6 +21,7 @@ from suite.drive.utils import (
     principal_list,
 )
 from suite.drive.utils.api import get_default_access
+from suite.drive.utils.overrides import filter_file
 
 from .permissions import get_user_access, user_has_permission
 
@@ -32,6 +33,25 @@ DriveFavourite = frappe.qb.DocType("Drive Favourite")
 Recents = frappe.qb.DocType("Drive Entity Log")
 
 Binary = CustomFunction("BINARY", ["expression"])
+
+
+def _attachment_candidates(doctype: str | None = None, docname: str | None = None):
+    conditions = ["`attached_to_doctype` IS NOT NULL"]
+    values = {}
+    if doctype:
+        conditions.append("`attached_to_doctype` = %(doctype)s")
+        values["doctype"] = doctype
+    if docname:
+        conditions.append("`attached_to_name` = %(docname)s")
+        values["docname"] = docname
+    if permission_condition := filter_file():
+        conditions.append(permission_condition)
+
+    return frappe.db.sql(
+        f"SELECT `name`, `attached_to_doctype`, `attached_to_name` FROM `tabFile` WHERE {' AND '.join(conditions)}",  # nosemgrep
+        values,
+        as_dict=True,
+    )
 
 
 # Helper Functions for Filters
@@ -479,18 +499,14 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
     # lets a file's owner through while blocking users who only have generic read
     # on the doctype but not the specific document.
     if doctype and docname:
-        files = frappe.get_all(
-            "File", filters={"attached_to_doctype": doctype, "attached_to_name": docname}, pluck="name"
-        )
+        files = [row.name for row in _attachment_candidates(doctype, docname)]
         files = [f for f in files if user_has_permission(f, "read")]
         query = frappe.qb.from_(DriveFile).where(DriveFile.name.isin(files or [""]))
         return get_query_data(query)
 
     titles = {}
     if doctype:
-        names = frappe.get_all(
-            "File", filters={"attached_to_doctype": doctype}, fields=["name", "attached_to_name"]
-        )
+        names = _attachment_candidates(doctype)
         doctypes_set = Counter(k["attached_to_name"] for k in names if user_has_permission(k["name"], "read"))
         # Show each document by its title field rather than its raw name (ID).
         title_field = frappe.get_meta(doctype).get_title_field()
@@ -504,11 +520,7 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
                 )
             )
     else:
-        names = frappe.get_all(
-            "File",
-            filters={"attached_to_doctype": ["is", "set"]},
-            fields=["name", "attached_to_doctype"],
-        )
+        names = _attachment_candidates()
         doctypes_set = Counter(
             k["attached_to_doctype"] for k in names if user_has_permission(k["name"], "read")
         )
