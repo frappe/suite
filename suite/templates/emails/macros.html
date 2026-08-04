@@ -5,8 +5,11 @@
 			<td class="button {{ 'button-primary' if primary else '' }}">
 				{# .btn exempts the label from frappe's `.email-body a:not(.btn)` link
 				   restyle, which premailer keeps as !important (it can't inline :not())
-				   and which would bury the button's own color under the link color. #}
-				<a class="btn" href="{{ link }}" rel="nofollow">
+				   and which would bury the button's own color under the link color.
+				   The class comes with the rest of frappe's .btn, which premailer inlines
+				   too: border and margin are re-declared here (the style attribute wins,
+				   in place) so the button keeps the geometry .button-primary gives it. #}
+				<a class="btn" href="{{ link }}" rel="nofollow" style="border: 0; margin: 0;">
 					{{ label }}
 				</a>
 			</td>

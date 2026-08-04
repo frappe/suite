@@ -27,7 +27,10 @@
 						<p style="font-size: 14px; line-height: 1.5; color: #444444; max-width: 400px; margin: 0 auto 24px;">
 							{{ user }} has invited you to join {% if team_name %}<strong>{{ team_name }}</strong> on {% endif %}Frappe Drive. Click below to get started.
 						</p>
-						<a class="btn" href="{{ invite_link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px;">Accept Invitation</a>
+						{#- .btn exempts the anchor from frappe's `.email-body a:not(.btn)` restyle, which
+						    premailer keeps as !important. border/margin are re-declared because the class
+						    brings the rest of frappe's .btn in with it. -#}
+						<a class="btn" href="{{ invite_link }}" style="display: inline-block; padding: 12px 24px; font-size: 14px; color: #ffffff; background-color: #171717; text-decoration: none; border-radius: 8px; border: 0; margin: 0;">Accept Invitation</a>
 						<p style="font-size: 12px; color: #888888; margin: 24px 0 0;">If you didn’t request this, feel free to ignore this email.</p>
 					</td>
 				</tr>
