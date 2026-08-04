@@ -271,6 +271,27 @@ describe('remapEmailForDarkMode', () => {
 		expect(foot!.getAttribute('style')).toContain('color: #414141;')
 	})
 
+	it('a later rule or inline style repainting the surface strips the image classification', () => {
+		// Cascade order matters: `background: #fff` after an image hero, or a
+		// `background-image: none` reset, means no image actually paints — text
+		// there must follow the remap, not stay pinned authored-dark.
+		const doc = parseDoc(`
+			<style>
+				.hero { background: url(https://cdn.example.com/hero.jpg); }
+				.hero { background: #ffffff; }
+				.banner { background-image: url(https://cdn.example.com/banner.jpg); }
+				.banner { background-image: none; }
+			</style>
+			<div class="hero"><p style="color: #444444;">repainted</p></div>
+			<div class="banner" style="background-color: #ffffff;"><p style="color: #444444;">reset</p></div>
+			<div class="hero" style="background: #ffffff;"><p style="color: #444444;">inline repaint</p></div>
+		`)
+		remapEmailForDarkMode(doc)
+		doc.querySelectorAll('p').forEach((p) => {
+			expect(luma(p.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+		})
+	})
+
 	it('pins inherited text color onto an image surface explicitly', () => {
 		// The wrapper's literal gets remapped light for the rest of the email; the
 		// image surface must keep an authored copy for the text inheriting into it.

@@ -497,34 +497,54 @@ const hasImageBackground = (el: Element): boolean =>
 type SheetSurfaces = { color: Set<Element>; image: Set<Element> }
 
 const collectSheetSurfaces = (doc: Document): SheetSurfaces => {
-	const surfaces: SheetSurfaces = { color: new Set(), image: new Set() }
+	// Last-writer-wins per background axis, in source order — the closest thing
+	// to the cascade email-grade CSS needs. A later rule that repaints an
+	// element (`background: #fff` after an image hero, `background-image: none`
+	// in a reset) must strip the earlier image classification, or its text
+	// stays pinned against a surface that was remapped dark. Specificity is not
+	// modeled; source order decides, as it does for the equal-specificity rules
+	// emails actually ship.
+	const image = new Map<Element, boolean>()
+	const color = new Map<Element, boolean>()
 	doc.querySelectorAll('style').forEach((style) => {
 		for (const rule of (style.textContent ?? '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-			const values = [...rule[2].matchAll(/background(?:-color|-image)?\s*:\s*([^;]+)/gi)]
-			if (!values.length) continue
-			const isImage = values.some((v) => /url\(\s*[^)\s]/i.test(v[1]))
-			const isColor = values.some((v) => {
-				const token = v[1].match(COLOR_TOKEN)?.[0]
-				return !!token && (parseCssColor(token)?.a ?? 0) > 0
-			})
-			if (!isImage && !isColor) continue
 			const selector = rule[1].trim()
 			if (selector.startsWith('@')) continue
+			const decls = [...rule[2].matchAll(/background(-color|-image)?\s*:\s*([^;]+)/gi)]
+			if (!decls.length) continue
+			let els: NodeListOf<Element>
 			try {
-				doc.querySelectorAll(selector).forEach((el) => {
-					;(isImage ? surfaces.image : surfaces.color).add(el)
-				})
+				els = doc.querySelectorAll(selector)
 			} catch {
-				/* selector syntax we can't resolve — skip */
+				continue // selector syntax we can't resolve — skip
+			}
+			for (const decl of decls) {
+				const axis = (decl[1] ?? '').toLowerCase()
+				const hasUrl = /url\(\s*[^)\s]/i.test(decl[2])
+				const token = decl[2].match(COLOR_TOKEN)?.[0]
+				const hasColor = !!token && (parseCssColor(token)?.a ?? 0) > 0
+				els.forEach((el) => {
+					if (axis !== '-color') image.set(el, hasUrl)
+					if (axis !== '-image') color.set(el, hasColor)
+				})
 			}
 		}
 	})
+	const surfaces: SheetSurfaces = { color: new Set(), image: new Set() }
+	image.forEach((isImage, el) => isImage && surfaces.image.add(el))
+	color.forEach((isColor, el) => isColor && surfaces.color.add(el))
 	return surfaces
 }
 
-// An image layer paints over any color layer, wherever each is declared.
-const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean =>
-	hasImageBackground(el) || sheets.image.has(el)
+// An image layer paints over any color layer, wherever each is declared — but
+// an inline `background`/`background-image` repaint overrides a sheet-declared
+// image (the shorthand resets the image layer), while `background-color` alone
+// touches only the color layer beneath it.
+const isImageSurface = (el: Element, sheets: SheetSurfaces): boolean => {
+	if (hasImageBackground(el)) return true
+	if (/(?:^|;)\s*background(?:-image)?\s*:/i.test(el.getAttribute('style') ?? '')) return false
+	return sheets.image.has(el)
+}
 
 // The innermost element whose background the text actually rests on — the one
 // that decides whether its text follows the remap (color surface) or the
