@@ -502,15 +502,27 @@ type SheetSurfaces = {
 }
 
 // Email-grade selector specificity: (ids, classes/attributes/pseudo-classes,
-// elements), packed into one comparable number. Enough fidelity for the
-// selectors mail templates ship; the exotica (:is() argument weighing, layers)
-// doesn't appear in email CSS.
+// elements), packed into one comparable number. Per spec, :is()/:not()/:has()
+// weigh as their most specific argument and add nothing themselves, and
+// :where() adds nothing at all — frappe's own email CSS ships
+// `.email-body a:not(.btn)`, so these are not exotica here. Nested functional
+// pseudo-classes and cascade layers stay unmodeled; email CSS has neither.
 const selectorSpecificity = (selector: string): number => {
-	const s = selector.replace(/::[\w-]+/g, ' x ') // pseudo-elements weigh as elements
+	let functional = 0
+	const s = selector
+		.replace(/:(is|not|has|where)\(([^()]*)\)/gi, (_, fn: string, args: string) => {
+			if (fn.toLowerCase() !== 'where')
+				functional += Math.max(
+					0,
+					...args.split(',').map((arg: string) => selectorSpecificity(arg)),
+				)
+			return ' '
+		})
+		.replace(/::[\w-]+/g, ' x ') // pseudo-elements weigh as elements
 	const ids = (s.match(/#[\w-]+/g) ?? []).length
 	const classes = (s.match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?/g) ?? []).length
 	const elements = (s.match(/(?:^|[\s>+~(,])[a-zA-Z][\w-]*/g) ?? []).length
-	return ids * 10_000 + classes * 100 + elements
+	return functional + ids * 10_000 + classes * 100 + elements
 }
 
 // The winning claim on one background axis of one element, cascade-ordered:

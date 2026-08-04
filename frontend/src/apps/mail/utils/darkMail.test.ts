@@ -311,6 +311,26 @@ describe('remapEmailForDarkMode', () => {
 		})
 	})
 
+	it('weighs functional pseudo-classes per spec — :not() carries its argument, :where() nothing', () => {
+		// div:not(#promo) is id-weight (1,0,1): the later class-pile reset must
+		// lose to it. :where(#promo) .side is class-weight only (0,0,0)+(0,1,0):
+		// the plain-class reset that follows wins there.
+		const doc = parseDoc(`
+			<style>
+				div:not(#promo) { background-image: url(https://cdn.example.com/hero.jpg); }
+				.card.wide.padded { background-image: none; }
+				:where(#promo) .side { background-image: url(https://cdn.example.com/side.jpg); }
+				.side { background-image: none; }
+			</style>
+			<div class="card wide padded"><p style="color: #444444;">not() carries the id</p></div>
+			<section id="promo"><span class="side"><p style="color: #444444;">where() weighs nothing</p></span></section>
+		`)
+		remapEmailForDarkMode(doc)
+		const [heroText, sideText] = Array.from(doc.querySelectorAll('p'))
+		expect(heroText!.getAttribute('style')).toContain('color: #444444;')
+		expect(luma(sideText!.getAttribute('style')!.match(/color:\s*([^;]+)/)![1])).toBeGreaterThan(0.6)
+	})
+
 	it('pins inherited text color onto an image surface explicitly', () => {
 		// The wrapper's literal gets remapped light for the rest of the email; the
 		// image surface must keep an authored copy for the text inheriting into it.
