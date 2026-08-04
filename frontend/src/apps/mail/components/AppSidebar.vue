@@ -14,6 +14,7 @@
 			v-if="!isMobile || isSidebarOpen"
 			id="sidebar"
 			v-model:collapsed="isSidebarCollapsed"
+			class="border-r border-outline-gray-1"
 			:class="{ 'fixed left-0 top-0 z-10 w-60 !bg-surface-base': isMobile }"
 			:disable-collapse="isMobile"
 		>
