@@ -119,9 +119,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/frappe-bench
-          key: ${{ runner.os }}-bench-v2-${{ hashFiles('**/pyproject.toml', '**/yarn.lock', '**/requirements.txt', '**/package.json') }}
+          key: ${{ runner.os }}-bench-${{ hashFiles('**/pyproject.toml', '**/yarn.lock', '**/requirements.txt', '**/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-bench-v2-
+            ${{ runner.os }}-bench-
 
       - name: Install MariaDB client
         run: |
