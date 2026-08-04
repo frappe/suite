@@ -3,18 +3,18 @@
   <div
     v-if="rows?.length"
     ref="scrollContainer"
-    class="grid-container content-start gap-5 p-5 pb-[60px] overflow-auto select-none flex-1 min-h-0"
+    class="grid-container content-start gap-3 p-3 pb-[60px] sm:gap-5 sm:p-5 sm:pb-[60px] overflow-auto select-none flex-1 min-h-0"
   >
     <div
       v-for="file in rows"
       :id="file.name"
       :key="file.name"
       :data-testid="`drive-entity-${file.name}`"
-      class="grid-item rounded-lg group select-none entity cursor-pointer relative h-[172px] border bg-surface-base"
+      class="grid-item rounded-md group select-none entity cursor-pointer relative h-40 sm:h-[172px] border bg-surface-base"
       :class="[
         selections.has(file.name) || selectedRow?.name === file.name
-          ? 'bg-surface-gray-2 shadow-gray'
-          : 'border-outline-elevation-2 hover:shadow-lg',
+          ? 'border-outline-gray-3 bg-surface-gray-2 shadow-sm'
+          : 'border-outline-gray-2 hover:bg-surface-gray-1 hover:shadow-sm',
         draggingNames.has(file.name) ? 'opacity-60 hover:shadow-none' : '',
         dragOverItem === file.name ? '!bg-surface-gray-3' : '',
       ]"
@@ -31,12 +31,7 @@
         }
       "
       @drop="$emit('dropped', file, draggedItem)"
-      @click.meta="
-        selections.has(file.name)
-          ? selections.delete(file.name)
-          : selections.add(file.name)
-      "
-      @click="open(file)"
+      @click="isModKey($event) ? toggleSelection(file) : open(file)"
       @contextmenu="contextMenu($event, file)"
       @mousedown.stop
     >
@@ -65,7 +60,7 @@
           selections.size > 0 ? '' : '!bg-surface-gray-3 hover:shadow-lg',
           selectedRow?.name === file.name
             ? ''
-            : 'invisible group-hover:visible',
+            : 'sm:invisible sm:group-hover:visible',
         ]"
         @click.stop="contextMenu($event, file)"
       >
@@ -73,6 +68,10 @@
       </Button>
       <GridItem :file="file" />
     </div>
+  </div>
+  <NoFilesSection v-else description="Nothing found - try something else?" />
+  <div v-if="loadingMore" class="pointer-events-none px-3 pb-5 sm:px-5">
+    <Skeleton class="h-3 w-24 rounded" />
   </div>
   <ContextMenu
     v-if="rowEvent && selectedRow"
@@ -87,9 +86,10 @@
 <script setup>
 import GridItem from '@/apps/drive/components/GridItem.vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
-import { Button, Checkbox } from 'frappe-ui'
+import NoFilesSection from '@/apps/drive/components/NoFilesSection.vue'
+import { Button, Checkbox, Skeleton } from 'frappe-ui'
 import { ref, computed } from 'vue'
-import { openEntity } from '@/apps/drive/utils/files'
+import { openEntity, isModKey } from '@/apps/drive/utils/files'
 import { useRoute } from 'vue-router'
 import { setActiveEntity, renamingEntity } from '@/apps/drive/data/selection'
 import { settings } from '@/apps/drive/resources/permissions'
@@ -98,6 +98,7 @@ import { onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 const props = defineProps({
   folderContents: Object,
   actionItems: Array,
+  loadingMore: Boolean,
 })
 defineEmits(['dropped'])
 const route = useRoute()
@@ -115,7 +116,7 @@ const rowEvent = ref(null)
 const contextMenu = (event, row) => {
   if (selections.value.size > 0) return
   // Ctrl + click triggers context menu on Mac
-  if (event.ctrlKey) openEntity(row, true)
+  if (isModKey(event)) openEntity(row, true)
   rowEvent.value = event
   selectedRow.value = row
   event.stopPropagation()
@@ -183,7 +184,4 @@ const onDragStart = (e, file) => {
   grid-auto-columns: minmax(170px, 1fr);
 }
 
-.shadow-gray {
-  box-shadow: 0px 0px 0px 2px rgb(161, 159, 159);
-}
 </style>

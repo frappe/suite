@@ -13,7 +13,8 @@
     <NoFilesSection v-else-if="!props.getEntities.data?.length" v-bind="empty" />
     <ListView v-else-if="view === 'list'" ref="viewEl" v-model="selections" v-model:sort-order="sortOrder" :folder-contents="rows && grouper(rows)"
       :action-items="actionItems" :root-entity="verify?.data" :loading-more="loadingMore" @dropped="onDrop" />
-    <GridView v-else ref="viewEl" v-model="selections" :folder-contents="rows" :action-items="actionItems" @dropped="onDrop" />
+    <GridView v-else ref="viewEl" v-model="selections" :folder-contents="rows" :action-items="actionItems"
+      :loading-more="loadingMore" @dropped="onDrop" />
   </div>
   <p class="hidden absolute text-center top-1/2 left-[calc(50%-4rem)] w-32 z-10 font-bold">
     Drop to upload

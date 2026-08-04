@@ -26,10 +26,12 @@
   <div
     class="p-2 h-[35%] border-t border-outline-gray-1 flex flex-col justify-evenly"
   >
-    <InlineRenameInput :entity="file" class="text-base-medium">
-      <div class="truncate w-full w-fit text-base-medium text-ink-gray-8">
-        {{ file.file_name }}
-      </div>
+    <InlineRenameInput :entity="file">
+      <Tooltip :text="file.file_name" :disabled="displayFileName(file) === file.file_name">
+        <div class="truncate w-full text-base text-ink-gray-8">
+          {{ displayFileName(file) }}
+        </div>
+      </Tooltip>
     </InlineRenameInput>
     <div class="mt-[5px] text-xs text-ink-gray-5">
       <div class="flex items-center justify-start gap-1">
@@ -41,9 +43,7 @@
           :draggable="false"
         />
         <p class="truncate">
-          {{ file.is_folder ? childrenSentence + '∙' : '' }}
-          {{ file.file_type !== 'Unknown' ? file.file_type + '∙' : '' }}
-          {{ file.relativeModified }}
+          {{ metadata }}
         </p>
       </div>
       <!-- <p class="mt-1">
@@ -53,7 +53,8 @@
   </div>
 </template>
 <script setup>
-import { getIconUrl, getThumbnailUrl } from '@/apps/drive/utils/files'
+import { getIconUrl, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
+import { Tooltip } from 'frappe-ui'
 import { ref, computed } from 'vue'
 import InlineRenameInput from './InlineRenameInput.vue'
 const props = defineProps({ file: Object })
@@ -76,4 +77,13 @@ const childrenSentence = computed(() => {
   if (!props.file.child_count) return 'empty'
   return props.file.child_count + ' item' + (props.file.child_count === 1 ? '' : 's')
 })
+const metadata = computed(() =>
+  [
+    props.file.is_folder ? childrenSentence.value : null,
+    props.file.file_type !== 'Unknown' ? props.file.file_type : null,
+    props.file.relativeModified,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+)
 </script>
