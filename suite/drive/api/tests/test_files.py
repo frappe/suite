@@ -16,6 +16,7 @@ from suite.drive.api.files import (
     update_access,
     upload_file,
 )
+from suite.drive.api.list import get_attachments
 from suite.drive.api.permissions import get_user_access, user_has_permission
 from suite.drive.utils import (
     GENERAL_USER,
@@ -54,6 +55,14 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 "text/plain",
                 12,
             )
+
+    def test_owner_can_list_attachment(self):
+        self.file.db_set({"attached_to_doctype": "User", "attached_to_name": OWNER})
+
+        with self.set_user(OWNER):
+            attachments = get_attachments("User", OWNER)
+
+        self.assertEqual([attachment["name"] for attachment in attachments], [self.file.name])
 
     def tearDown(self):
         frappe.flags.mute_drive_activity_log = False

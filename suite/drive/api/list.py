@@ -204,10 +204,10 @@ def files(
     entity_name: str | None = None,
     order_by: str = "modified",
     ascending: bool = True,
-    file_kinds: list[str] | str = [],
-    search: str = None,
+    file_kinds: list[str] | str | None = None,
+    search: str | None = None,
     start: int = 0,
-    limit: int = None,
+    limit: int | None = None,
 ):
     """
     Returns active files in a folder. Pass `start`/`limit` to page through large
@@ -246,10 +246,10 @@ def shared(
     shared_type: str = "with",
     order_by: str = "modified",
     ascending: bool = True,
-    file_kinds: list[str] | str = [],
-    search: str = None,
+    file_kinds: list[str] | str | None = None,
+    search: str | None = None,
     start: int = 0,
-    limit: int = None,
+    limit: int | None = None,
 ):
     """
     Returns shared files based on shared_type parameter.
@@ -273,10 +273,10 @@ def shared(
 def favourites(
     order_by: str = "modified",
     ascending: bool = True,
-    file_kinds: list[str] | str = [],
-    search: str = None,
+    file_kinds: list[str] | str | None = None,
+    search: str | None = None,
     start: int = 0,
-    limit: int = None,
+    limit: int | None = None,
 ):
     """
     Returns all files marked as favourite by the current user.
@@ -298,10 +298,10 @@ def favourites(
 def recents(
     order_by: str = "modified",
     ascending: bool = True,
-    file_kinds: list[str] | str = [],
-    search: str = None,
+    file_kinds: list[str] | str | None = None,
+    search: str | None = None,
     start: int = 0,
-    limit: int = None,
+    limit: int | None = None,
 ):
     """
     Returns all files marked recently by the current user.
@@ -323,10 +323,10 @@ def recents(
 def trash(
     order_by: str = "modified",
     ascending: bool = True,
-    file_kinds: list[str] | str = [],
-    search: str = None,
+    file_kinds: list[str] | str | None = None,
+    search: str | None = None,
     start: int = 0,
-    limit: int = None,
+    limit: int | None = None,
 ):
     """
     Returns all deleted files (trash) for the current user.
@@ -364,7 +364,7 @@ def get_query_data(
     query,
     favourites_only=False,
     recents_only=False,
-    file_kinds=[],
+    file_kinds=None,
     entity_name=None,
     shared_type=None,
     order_by="modified",
@@ -479,7 +479,7 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
     # lets a file's owner through while blocking users who only have generic read
     # on the doctype but not the specific document.
     if doctype and docname:
-        files = frappe.get_list(
+        files = frappe.get_all(
             "File", filters={"attached_to_doctype": doctype, "attached_to_name": docname}, pluck="name"
         )
         files = [f for f in files if user_has_permission(f, "read")]
@@ -488,7 +488,7 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
 
     titles = {}
     if doctype:
-        names = frappe.get_list(
+        names = frappe.get_all(
             "File", filters={"attached_to_doctype": doctype}, fields=["name", "attached_to_name"]
         )
         doctypes_set = Counter(k["attached_to_name"] for k in names if user_has_permission(k["name"], "read"))
@@ -504,7 +504,7 @@ def get_attachments(doctype: str | None = None, docname: str | None = None):
                 )
             )
     else:
-        names = frappe.get_list(
+        names = frappe.get_all(
             "File",
             filters={"attached_to_doctype": ["is", "set"]},
             fields=["name", "attached_to_doctype"],
