@@ -601,6 +601,8 @@ const {
 	fetchMore: () => (mailbox === 'search' ? loadMoreSearch : loadMoreThreads).reload(),
 	openThreadID: () => threadID,
 	onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
+	// Deferred read — visibleThreadCount is declared below, with the rows it counts.
+	fillProgress: () => visibleThreadCount.value,
 })
 
 // Rows and the cursor
@@ -627,6 +629,7 @@ const {
 	collapsedGroups,
 	expandedStacks,
 	groupedRows,
+	visibleThreadCount,
 	navigableRows,
 	focusedRowKey,
 	focusedRow,

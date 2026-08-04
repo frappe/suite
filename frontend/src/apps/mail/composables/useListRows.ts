@@ -114,6 +114,25 @@ export const useListRows = ({
 		),
 	)
 
+	/**
+	 * How many loaded threads the rendered rows stand for. A collapsed stack row still stands for its
+	 * members (that's its count badge), so they count; threads inside a collapsed date group have no
+	 * row at all and don't. This is infinite scroll's fill-progress metric (see usePaginatedThreads):
+	 * a fetched window that doesn't advance it landed entirely inside collapsed groups.
+	 */
+	const visibleThreadCount = computed(() => {
+		let count = 0
+		for (const [dateKey, rows] of Object.entries(groupedRows.value)) {
+			if (headersVisible.value && collapsedGroups.value.includes(dateKey)) continue
+			for (const row of rows) {
+				// An expanded stack emits its members again as inStack thread rows — skip the dupes.
+				if (row.type === 'stack') count += row.threads.length
+				else if (!row.inStack) count++
+			}
+		}
+		return count
+	})
+
 	// ── The cursor ──────────────────────────────────────────────────────────────────────────────────
 
 	/**
@@ -271,6 +290,7 @@ export const useListRows = ({
 		collapsedGroups,
 		expandedStacks,
 		groupedRows,
+		visibleThreadCount,
 		navigableRows,
 		focusedRowKey,
 		focusedRow,

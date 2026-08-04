@@ -290,6 +290,8 @@ const {
 	// just takes the cursor to it — onto whatever row stands for it (see rowForThread).
 	onEdgeThread: (id, action) => (action === 'open' ? openThread(id) : focusOnThread(id)),
 	threadKey,
+	// Deferred read — visibleThreadCount is declared below, with the rows it counts.
+	fillProgress: () => visibleThreadCount.value,
 })
 
 const isLoaded = ref(false)
@@ -389,6 +391,7 @@ const {
 	collapsedGroups,
 	expandedStacks,
 	groupedRows,
+	visibleThreadCount,
 	navigableRows,
 	focusedRowKey,
 	focusedRow,

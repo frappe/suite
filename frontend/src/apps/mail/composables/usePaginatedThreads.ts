@@ -68,6 +68,13 @@ export interface PaginatedThreadsOptions {
 	 * merged view keys by account + thread id, since one thread id can recur across accounts.
 	 */
 	threadKey?: (thread: Thread) => string
+	/**
+	 * How far the viewport fill has gotten, in units the reader can see — the views pass the count of
+	 * threads their rendered rows stand for (see useListRows' visibleThreadCount). Pixel height (the
+	 * fallback) cannot tell progress from a dead end: a window absorbed into existing stack rows adds
+	 * no height but is progress, while one landing in a collapsed date group adds none and is not.
+	 */
+	fillProgress?: () => number
 }
 
 export const usePaginatedThreads = ({
@@ -76,6 +83,7 @@ export const usePaginatedThreads = ({
 	openThreadID,
 	onEdgeThread,
 	threadKey = (thread: Thread) => thread.thread_id,
+	fillProgress,
 }: PaginatedThreadsOptions) => {
 	const container = useTemplateRef<HTMLElement>('mailList')
 	const sentinel = useTemplateRef<HTMLElement>('loadMoreSentinel')
@@ -241,48 +249,63 @@ export const usePaginatedThreads = ({
 	// True while the sentinel is in view.
 	const sentinelVisible = ref(false)
 
-	// The height the list had reached the last time we topped it up, so a fill that adds nothing can be
-	// detected. Reset at the start of each fill episode.
-	let lastFillHeight = 0
+	// How far the fill had gotten (see fillProgress) the last time we topped it up, so a fill that
+	// adds nothing visible can be detected. Reset at the start of each fill episode.
+	let lastFillProgress = 0
 
 	useIntersectionObserver(
 		sentinel,
 		([entry]) => {
 			const entering = !!entry?.isIntersecting && !sentinelVisible.value
 			sentinelVisible.value = !!entry?.isIntersecting
-			if (entering) lastFillHeight = 0
+			if (entering) lastFillProgress = 0
 			if (sentinelVisible.value) loadMore()
 		},
 		{ root: container },
 	)
 
 	/**
-	 * Rescues the one case the observer cannot: the rendered list is too short to scroll, so the
-	 * sentinel can never leave and re-enter the viewport to fire again — infinite scroll would die with
-	 * nothing left to scroll. A window of 25 threads can collapse to a single stack row, so filling the
-	 * viewport can take several of them.
+	 * Rescues the case the observer cannot: the sentinel is already in view and stays there, so it
+	 * never leaves and re-enters to fire again — infinite scroll would die with the viewport unfilled.
+	 * A window of 25 threads can collapse to a single stack row (or vanish into an existing one), so
+	 * filling the viewport can take several of them.
 	 *
-	 * Both guards are load-bearing. Stop once the list can scroll, because from there the user's own
-	 * scrolling drives the observer. And stop if a window added no height: its rows landed somewhere
-	 * they cannot be seen (a collapsed date group), so further windows would be just as invisible —
-	 * without this, collapsing a large group turns into a stampede that walks the entire mailbox 25
-	 * threads at a time.
+	 * The progress guard is load-bearing: stop as soon as a window advanced nothing the reader can see
+	 * — its threads landed inside a collapsed date group, so further windows would be just as
+	 * invisible. Without it, collapsing a large group turns into a stampede that walks the entire
+	 * mailbox 25 threads at a time. Progress is the caller's fillProgress metric, NOT pixel height:
+	 * a window absorbed into existing stack rows adds no height yet is real progress, and height-based
+	 * stopping stranded exactly the incident-heavy inboxes that stack hardest, with the sentinel in
+	 * view but nothing left to re-fire it.
 	 *
-	 * Call it from a watcher on the RENDERED rows, not on the loaded threads: a fill is judged by the
-	 * height the rows took, and rows also come and go as stacks and date groups fold. That watcher must
-	 * be declared below the rows it watches — `watch` evaluates its source at setup, and reading a
+	 * Call it from a watcher on the RENDERED rows, not on the loaded threads: rows come and go as
+	 * stacks and date groups fold, and each change can move the sentinel. That watcher must be
+	 * declared below the rows it watches — `watch` evaluates its source at setup, and reading a
 	 * `<script setup>` computed from above its declaration is a temporal-dead-zone crash.
 	 */
+	// Whether the sentinel is inside the container's viewport RIGHT NOW, measured — not the observer
+	// flag, which is stale at nextTick (observer callbacks land after render): a fill that pushed the
+	// sentinel below the fold would read as still-visible and chain an unwanted extra window onto
+	// every ordinary scroll-to-bottom load.
+	const sentinelInView = () => {
+		const el = container.value
+		const s = sentinel.value
+		if (!el || !s) return false
+		const c = el.getBoundingClientRect()
+		const r = s.getBoundingClientRect()
+		return r.top < c.bottom && r.bottom > c.top
+	}
+
 	const topUpIfShort = () => {
 		if (!sentinelVisible.value || !hasMore.value) return
 
 		nextTick(() => {
-			const el = container.value
-			if (!el || !sentinelVisible.value) return
+			if (!sentinelInView()) return
 
-			const grew = el.scrollHeight > lastFillHeight
-			lastFillHeight = el.scrollHeight
-			if (el.scrollHeight <= el.clientHeight && grew) loadMore()
+			const progress = fillProgress ? fillProgress() : (container.value?.scrollHeight ?? 0)
+			const grew = progress > lastFillProgress
+			lastFillProgress = progress
+			if (grew) loadMore()
 		})
 	}
 
