@@ -83,8 +83,8 @@
 									<div
 										v-for="message in item.group.messages"
 										:key="message.id"
-										class="max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-sm leading-[1.15] tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
-										:class="item.group.isOwn ? 'bg-surface-gray-3 text-right' : 'bg-surface-gray-2'"
+										class="max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-left text-p-sm tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
+										:class="item.group.isOwn ? 'bg-surface-gray-3' : 'bg-surface-gray-2'"
 									>
 										<template
 											v-for="(token, i) in tokenizeChatMessage(message.message)"
