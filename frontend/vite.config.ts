@@ -153,6 +153,7 @@ export default defineConfig(({ mode }) => ({
   },
   optimizeDeps: {
     include: [
+      'debug',
       'frappe-ui > feather-icons',
       'frappe-ui > lowlight',
       'yjs',
