@@ -114,15 +114,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Cache bench directory
-        id: cache-bench
-        uses: actions/cache@v4
-        with:
-          path: ~/frappe-bench
-          key: ${{ runner.os }}-bench-${{ hashFiles('**/pyproject.toml', '**/yarn.lock', '**/requirements.txt', '**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-bench-
-
       - name: Install MariaDB client
         run: |
           sudo apt update
@@ -131,9 +122,7 @@ jobs:
       - name: Setup Bench
         run: |
           pip install frappe-bench
-          if [ "${{ steps.cache-bench.outputs.cache-hit }}" != "true" ]; then
-            bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
-          fi
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
 
       - name: Install Suite
         working-directory: /home/runner/frappe-bench
