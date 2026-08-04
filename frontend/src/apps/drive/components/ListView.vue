@@ -1,32 +1,23 @@
 <template>
   <List
-    class="relative select-none pt-3 flex flex-col flex-1 min-h-0 list-row-px-3"
+    class="relative select-none pt-3 flex flex-col flex-1 min-h-0 list-row-px-5 sm:list-row-px-3"
     :columns="columnTracks"
     :row-height="40"
-    divider="inset"
+    divider="full"
   >
     <!-- Header is inside the scroll container so it shares the rows' width -->
     <div
       ref="scrollContainer"
-      class="flex-1 min-h-0 overflow-y-auto px-2 isolate [scrollbar-gutter:stable]"
+      class="flex-1 min-h-0 overflow-y-auto px-0 sm:px-2 isolate [scrollbar-gutter:stable]"
     >
       <ListHeader class="group sticky top-0 z-10 bg-surface-base">
-        <ListHeaderCell>
-          <Checkbox
-            class="shrink-0"
-            :class="selectAllState.some ? '' : 'invisible group-hover:visible'"
-            :model-value="selectAllState.all"
-            :indeterminate="selectAllState.some && !selectAllState.all"
-            @click.stop="toggleSelectAll"
-          />
-        </ListHeaderCell>
         <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
           {{ __('Name') }}
           <template #suffix="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
-        <ListHeaderCellSort :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
+        <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('owner')" @click="toggleSort('owner', __('Owner'))">
           {{ __('Owner') }}
           <template #suffix="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
@@ -38,7 +29,7 @@
             <span class="block size-3.5" :class="sortIcon(direction)" />
           </template>
         </ListHeaderCellSort>
-        <ListHeaderCellSort :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
+        <ListHeaderCellSort class="hidden sm:flex" :direction="directionFor('file_size')" @click="toggleSort('file_size', __('Size'))">
           {{ __('Size') }}
           <template #suffix="{ direction }">
             <span class="block size-3.5" :class="sortIcon(direction)" />
@@ -73,19 +64,18 @@
           />
         </div>
         <ListRow v-if="loadingMore" class="pointer-events-none">
-          <ListCell />
           <ListCell>
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
               <Skeleton class="h-[16px] w-[16px] rounded-sm" />
             </div>
             <Skeleton class="h-3.5 w-40 rounded" />
           </ListCell>
-          <ListCell>
+          <ListCell class="hidden sm:flex">
             <Skeleton class="size-5 shrink-0 mr-2 rounded-full" />
             <Skeleton class="h-3 w-16 rounded" />
           </ListCell>
           <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
-          <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
+          <ListCell class="hidden sm:flex"><Skeleton class="h-3 w-12 rounded" /></ListCell>
           <ListCell />
         </ListRow>
       </template>
@@ -96,7 +86,7 @@
 </template>
 <script setup>
 import { List, ListHeader, ListHeaderCell, ListHeaderCellSort, ListGroup, ListRow, ListCell } from 'frappe-ui/list'
-import { Checkbox, Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
+import { Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
 import { computed, ref, watch } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
@@ -211,17 +201,6 @@ function toggleSelection(row, event) {
   lastSelectedName.value = row.name
 }
 
-const selectAllState = computed(() => {
-  const names = flatRows.value.map((r) => r.name)
-  const count = names.filter((n) => selections.value.has(n)).length
-  return { all: names.length > 0 && count === names.length, some: count > 0 }
-})
-function toggleSelectAll() {
-  selections.value = selectAllState.value.all
-    ? new Set()
-    : new Set(flatRows.value.map((r) => r.name))
-}
-
 const setActive = (entityName) => {
   const entity = props.folderContents.find((k) => k.name === entityName)
   selectedRow.value =
@@ -257,8 +236,8 @@ const contextMenu = (event, row) => {
 
 </script>
 <style>
-/* Match the inset row dividers — frappe-ui always spans this 1 / -1 */
+/* Keep the header divider aligned with the full-width row dividers. */
 [data-slot='list-header-border'] {
-  grid-column: 2 / -1;
+  grid-column: 1 / -1;
 }
 </style>

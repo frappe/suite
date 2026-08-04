@@ -1,7 +1,6 @@
 <template>
   <template v-for="item in items" :key="item.key">
     <ListRow v-if="item.placeholder === 'loading'" class="pointer-events-none">
-      <ListCell />
       <ListCell>
         <div class="flex items-center" :style="indent(item.depth)">
           <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-sm" />
@@ -14,7 +13,6 @@
       </ListCell>
       <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
       <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
-      <ListCell />
     </ListRow>
     <ListRow v-else-if="item.placeholder" class="pointer-events-none">
       <ListCell />
@@ -45,7 +43,7 @@
         :data-testid="`drive-entity-${row.name}`"
         :data-selected="selections.has(row.name) || undefined"
         @contextmenu="(e) => !selections.size && contextMenu(e, row)"
-        @click="!isModKey($event) && !selections.size && open(row)"
+        @click="isModKey($event) ? props.toggleSelection(row, $event) : !selections.size && open(row)"
         @dragstart="onDragStart($event, row)"
         @dragend="draggedItem = null"
         @dragover="
@@ -65,14 +63,6 @@
           )
         "
       >
-        <ListCell>
-          <Checkbox
-            class="shrink-0"
-            :class="selections.size > 0 || selections.has(row.name) ? '' : 'invisible group-hover:visible'"
-            :model-value="selections.has(row.name)"
-            @click.stop="props.toggleSelection(row, $event)"
-          />
-        </ListCell>
         <ListCell>
           <div
             class="relative h-[16px] w-[16px] shrink-0 mr-2"
@@ -132,7 +122,7 @@
             </Tooltip>
           </div>
         </ListCell>
-        <ListCell>
+        <ListCell class="hidden sm:flex">
           <Avatar
             v-if="row.owner"
             shape="circle"
@@ -148,13 +138,14 @@
             <span class="truncate text-base">{{ row.relativeModified }}</span>
           </Tooltip>
         </ListCell>
-        <ListCell>
+        <ListCell class="hidden sm:flex">
           <span class="truncate text-base">{{ sizeLabel(row) }}</span>
         </ListCell>
         <ListCell class="justify-end">
           <Button
             v-if="!selections.size"
-            class="!bg-inherit"
+            :label="__('Actions for {0}', [row.file_name])"
+            class="!bg-inherit sm:invisible sm:group-hover:visible"
             @click="(e) => contextMenu(e, row)"
           >
             <LucideMoreHorizontal class="size-4" />
@@ -166,13 +157,13 @@
 </template>
 <script setup>
 import { ListRow, ListCell } from 'frappe-ui/list'
-import { Avatar, Button, Checkbox, Skeleton, Tooltip } from 'frappe-ui'
+import { Avatar, Button, Skeleton, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSessionStore } from '@/boot/session'
 import { activeEntity, renamingEntity } from '@/apps/drive/data/selection'
 import InlineRenameInput from './InlineRenameInput.vue'
-import { openEntity, isModKey, isVirtual, folderRoute, getThumbnailUrl, WRITER_CONTENT_DOCTYPE, PRESENTATION_CONTENT_DOCTYPE } from '@/apps/drive/utils/files'
+import { openEntity, isModKey, isVirtual, folderRoute, getThumbnailUrl, displayFileName } from '@/apps/drive/utils/files'
 import { formatDate } from '@/apps/drive/utils/format'
 import { expandedFolders } from '@/apps/drive/data/folderTree'
 import LucideStar from '~icons/lucide/star'
@@ -262,21 +253,11 @@ function thumbnail(row) {
 }
 
 function displayName(row) {
-  if (!row.file_name) return row.title || ''
-  return row.file_name.lastIndexOf('.') === -1 ||
-    row.is_folder ||
-    row.content_doctype === WRITER_CONTENT_DOCTYPE ||
-    row.content_doctype === PRESENTATION_CONTENT_DOCTYPE
-    ? row.file_name
-    : row.file_name.slice(0, row.file_name.lastIndexOf('.'))
+  return displayFileName(row)
 }
 function nameTooltip(row) {
-  return !row.file_name ||
-    row.is_folder ||
-    row.content_doctype === WRITER_CONTENT_DOCTYPE ||
-    row.content_doctype === PRESENTATION_CONTENT_DOCTYPE
-    ? ''
-    : row.file_name
+  const display = displayFileName(row)
+  return display === row.file_name ? '' : row.file_name
 }
 
 function shareIcon(row) {

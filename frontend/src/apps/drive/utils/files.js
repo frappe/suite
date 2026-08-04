@@ -55,6 +55,17 @@ const FILE_ICONS = {
 
 export const WRITER_CONTENT_DOCTYPE = 'Writer Document'
 export const PRESENTATION_CONTENT_DOCTYPE = 'Presentation'
+
+export function displayFileName(file) {
+  const name = file.file_name || file.title || ''
+  const dot = name.lastIndexOf('.')
+  return dot === -1 ||
+    file.is_folder ||
+    file.content_doctype === WRITER_CONTENT_DOCTYPE ||
+    file.content_doctype === PRESENTATION_CONTENT_DOCTYPE
+    ? name
+    : name.slice(0, dot)
+}
 export const SHEET_CONTENT_DOCTYPE = 'Sheet'
 export const ATTACHMENT_CONTENT_DOCTYPE = 'File'
 

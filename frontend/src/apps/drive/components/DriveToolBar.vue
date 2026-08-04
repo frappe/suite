@@ -1,12 +1,12 @@
 <template>
-  <div class="flex items-center px-5 pt-3 h-12">
-    <div v-if="selections?.length" class="my-auto w-[40%] text-base text-ink-gray-8">
+  <div class="flex flex-wrap items-center gap-2 px-5 pt-3 min-h-12">
+    <div v-if="selections?.length" class="my-auto text-base text-ink-gray-8 sm:w-[40%]">
       {{ selections.length }}
       {{ selections.length === 1 ? __('item') : __('items') }}
       {{ __('selected') }}
     </div>
     <div v-if="$route.name === 'drive-Home'"
-      class="bg-surface-gray-2 rounded-[10px] space-x-0.5 h-7 flex items-center mr-4 py-1">
+      class="bg-surface-gray-2 rounded-md space-x-0.5 h-7 flex items-center sm:mr-2 py-1">
       <TabButtons v-model="shareView" :options="[
         {
           label: __('Yours'),
@@ -19,22 +19,11 @@
       ]" />
     </div>
     <TextInput ref="search-input" v-model="search" :disabled :class="selections.length ? 'hidden' : 'block'"
-      :placeholder="__('Find')" class="w-[30%]">
+      :placeholder="__('Find')" class="min-w-0 flex-1 sm:w-[30%] sm:flex-none">
       <template #prefix>
         <LucideSearch class="size-4" />
       </template>
     </TextInput>
-    <Dropdown v-if="!selections?.length" class="ml-2 my-auto" :options="availableFilterTypes.map(({ name, icon }) => ({
-      label: __(name),
-      icon: h('img', { src: icon }),
-      onClick: () => activeFilters.push({ name, icon }),
-      disabled: activeFilters.includes({ name, icon }),
-    }))
-      " :button="{
-        icon: LucideFilter,
-        tooltip: 'Filter',
-      }" :disabled placement="right" />
-
     <div class="flex gap-2 ml-auto my-auto">
       <template v-if="!selections?.length">
         <div v-if="activeFilters.length" class="flex flex-wrap items-start justify-end gap-1 ml-3">
@@ -48,6 +37,16 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
+        <Dropdown :options="availableFilterTypes.map(({ name, icon }) => ({
+          label: __(name),
+          icon: h('img', { src: icon }),
+          onClick: () => activeFilters.push({ name, icon }),
+          disabled: activeFilters.includes({ name, icon }),
+        }))
+          " :button="{
+            icon: LucideFilter,
+            tooltip: 'Filter',
+          }" :disabled placement="right" />
         <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders"
           :menu-items="sortMenuItems" :disabled />
 
