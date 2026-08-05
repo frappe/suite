@@ -111,19 +111,20 @@
             />
           </div>
           <InlineRenameInput :entity="row">
-            <Tooltip :text="nameTooltip(row)" :disabled="!nameTooltip(row)">
+            <Tooltip :text="nameTooltip(row)" :disabled="!nameTooltip(row)" class="min-w-0 flex-1">
               <div class="truncate text-base">{{ displayName(row) }}</div>
             </Tooltip>
           </InlineRenameInput>
-          <div class="flex flex-row grow justify-end gap-2 w-[20px] pr-3">
+          <div v-if="(row.is_favourite && $route.name !== 'Favourites') || shareIcon(row)"
+            class="ml-auto flex min-w-8 shrink-0 flex-row justify-end gap-2 pr-3">
             <LucideStar
               v-if="row.is_favourite && $route.name !== 'Favourites'"
               width="16"
               height="16"
-              class="my-auto text-ink-amber-6 stroke-current fill-current"
+              class="my-auto shrink-0 text-ink-amber-6 stroke-current fill-current"
             />
-            <Tooltip v-if="shareIcon(row)" :text="shareIcon(row).tooltip">
-              <component :is="shareIcon(row).icon" class="size-4" />
+            <Tooltip v-if="shareIcon(row)" :text="shareIcon(row).tooltip" class="shrink-0">
+              <component :is="shareIcon(row).icon" class="size-4 shrink-0" />
             </Tooltip>
           </div>
         </ListCell>
