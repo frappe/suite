@@ -253,21 +253,32 @@ const scheduleMeeting = createResource({
 	},
 });
 
-const startInstantMeeting = () => {
-	toast.promise(createMeeting.submit({ meeting_type: "open" }), {
-		loading: "Creating meeting...",
-		success: "Meeting created successfully!",
-		error: "Failed to create meeting. Please try again.",
-	});
+const startMeeting = (meetingType: "open" | "restricted") => {
+	const toastId = toast.loading("Creating meeting...");
+	createMeeting
+		.submit({ meeting_type: meetingType })
+		.then((meetingCode: string) => {
+			toast.dismiss(toastId);
+			toast.success("Meeting created successfully!", {
+				duration: 8000,
+				action: {
+					label: "Copy link",
+					onClick: () => {
+						const path = router.resolve({
+							name: "meet-meeting",
+							params: { meetingId: meetingCode },
+						}).href;
+						navigator.clipboard.writeText(new URL(path, window.location.origin).href);
+					},
+				},
+			});
+		})
+		.catch(() => toast.dismiss(toastId));
 };
 
-const startRestrictedMeeting = () => {
-	toast.promise(createMeeting.submit({ meeting_type: "restricted" }), {
-		loading: "Creating restricted meeting...",
-		success: "Restricted meeting created successfully!",
-		error: "Failed to create meeting. Please try again.",
-	});
-};
+const startInstantMeeting = () => startMeeting("open");
+
+const startRestrictedMeeting = () => startMeeting("restricted");
 
 const openScheduleDialog = async () => {
 	try {
