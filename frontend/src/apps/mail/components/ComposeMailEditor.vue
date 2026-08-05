@@ -201,6 +201,7 @@
 				class="border-t"
 				:class="{ 'border-transparent': isDragging }"
 				@select-files="(files: File[]) => uploadFiles(files)"
+				@attach-from-drive="showDrivePicker = true"
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
 				@discard-mail="discardMail"
 				@send-mail="sendMail"
@@ -212,6 +213,8 @@
 		v-model="showContactsModal"
 		@insert="(selections) => mail[insertContactsInto].push(...selections)"
 	/>
+
+	<DriveFilePicker v-model="showDrivePicker" @attach="attachFromDrive" />
 </template>
 
 <script setup lang="ts">
@@ -271,6 +274,7 @@ import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
+import DriveFilePicker from './Modals/DriveFilePicker.vue'
 
 const show = defineModel<boolean>()
 
@@ -313,6 +317,7 @@ const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 
 const showContactsModal = ref(false)
+const showDrivePicker = ref(false)
 const insertContactsInto = ref('')
 
 const insertContacts = (insertInto: string) => {
@@ -786,6 +791,31 @@ const uploadFiles = async (files: File[]) => {
 		if (res.status === 'rejected')
 			raiseToast(__('Failed to upload {0}', [files[i].name]), 'error')
 	})
+}
+
+// Drive files are fetched as bytes (permission-checked server-side) and pushed through the same
+// upload pipeline as local files, so they become ordinary Frappe File attachments — no send-path change.
+const attachFromDrive = async (
+	entries: { name: string; file_name: string; mime_type?: string }[],
+) => {
+	const results = await Promise.allSettled(
+		entries.map(async (entry) => {
+			const res = await fetch(
+				`/api/method/suite.drive.api.files.get_file_content?entity_name=${encodeURIComponent(entry.name)}`,
+			)
+			if (!res.ok) throw new Error(entry.file_name)
+			const blob = await res.blob()
+			return new File([blob], entry.file_name, { type: entry.mime_type || blob.type })
+		}),
+	)
+
+	const files: File[] = []
+	results.forEach((res, i) => {
+		if (res.status === 'fulfilled') files.push(res.value)
+		else raiseToast(__('Failed to fetch {0} from Drive', [entries[i].file_name]), 'error')
+	})
+
+	await uploadFiles(files)
 }
 
 const uploadFile = async (file: File) => {

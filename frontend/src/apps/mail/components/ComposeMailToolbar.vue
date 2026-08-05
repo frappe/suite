@@ -18,11 +18,13 @@
 						</template>
 					</Button>
 				</EmojiPicker>
-				<Button variant="ghost" class="max-h-6 max-w-6" @click="fileInput?.click()">
-					<template #icon>
-						<Paperclip class="icon" />
-					</template>
-				</Button>
+				<Dropdown :options="attachOptions">
+					<Button variant="ghost" class="max-h-6 max-w-6">
+						<template #icon>
+							<Paperclip class="icon" />
+						</template>
+					</Button>
+				</Dropdown>
 				<input
 					ref="fileInput"
 					type="file"
@@ -54,8 +56,8 @@
 </template>
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
-import { Laugh, Paperclip, SendHorizontal, Trash2 } from 'lucide-vue-next'
-import { Button, TextEditorFixedMenu } from 'frappe-ui'
+import { HardDrive, Laugh, Monitor, Paperclip, SendHorizontal, Trash2 } from 'lucide-vue-next'
+import { Button, Dropdown, TextEditorFixedMenu } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons, useVisualViewport } from '@/apps/mail/utils/composables'
@@ -65,9 +67,22 @@ const { isRecipientsEmpty } = defineProps<{
 	isRecipientsEmpty: boolean
 }>()
 
-const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail'])
+const emit = defineEmits(['appendEmoji', 'selectFiles', 'attachFromDrive', 'discardMail', 'sendMail'])
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
+
+const attachOptions = [
+	{
+		label: __('Upload from computer'),
+		icon: Monitor,
+		onClick: () => fileInput.value?.click(),
+	},
+	{
+		label: __('Attach from Frappe Drive'),
+		icon: HardDrive,
+		onClick: () => emit('attachFromDrive'),
+	},
+]
 
 // Make toolbar hover over keyboard on mobile
 
