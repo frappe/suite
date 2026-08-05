@@ -10,7 +10,7 @@
       :id="file.name"
       :key="file.name"
       :data-testid="`drive-entity-${file.name}`"
-      class="grid-item rounded-md group select-none entity cursor-pointer relative h-40 sm:h-[172px] border bg-surface-base"
+      class="grid-item rounded-md group select-none entity cursor-pointer relative h-40 sm:h-[172px] border bg-surface-base [-webkit-touch-callout:none]"
       :class="[
         selections.has(file.name) || selectedRow?.name === file.name
           ? 'border-outline-gray-3 bg-surface-gray-2 shadow-sm'
@@ -31,33 +31,40 @@
         }
       "
       @drop="$emit('dropped', file, draggedItem)"
-      @click="isModKey($event) ? toggleSelection(file) : open(file)"
+      @click="selectionMode || isModKey($event) ? toggleSelection(file, $event) : open(file)"
       @contextmenu="contextMenu($event, file)"
+      @touchstart="onTouchStart($event, file)"
+      @touchend="onTouchEnd"
+      @touchcancel="clearTouchTimer"
       @mousedown.stop
     >
       <LucideStar
         v-if="$route.name !== 'Favourites' && file.is_favourite"
         class="z-10 text-ink-amber-6 stroke-current fill-current absolute top-2 left-2 h-4"
-        :class="selections.size ? 'invisible' : 'group-hover:invisible'"
+        :class="selectionMode ? 'invisible' : 'group-hover:invisible'"
         width="16"
         height="16"
       />
-      <Checkbox
+      <div
         class="z-10 absolute top-1 left-1 cursor-pointer"
         :class="
-          selections.size > 0 || selections.has(file.name)
+          selectionMode || selections.has(file.name)
             ? ''
-            : 'invisible group-hover:visible'
+            : 'invisible sm:group-hover:visible'
         "
-        :model-value="selections.has(file.name)"
-        @click.stop="toggleSelection(file)"
-      />
+      >
+        <Checkbox
+          :model-value="selections.has(file.name)"
+          :aria-label="__('Select {0}', [file.file_name])"
+          @click.stop="toggleSelection(file, $event)"
+        />
+      </div>
       <Button
         :variant="'subtle'"
         :label="`Actions for ${file.file_name}`"
         class="z-10 duration-300 absolute top-2 right-2"
         :class="[
-          selections.size > 0 ? '' : '!bg-surface-gray-3 hover:shadow-lg',
+          selectionMode ? 'hidden' : '!bg-surface-gray-3 hover:shadow-lg',
           selectedRow?.name === file.name
             ? ''
             : 'sm:invisible sm:group-hover:visible',
@@ -99,21 +106,68 @@ const props = defineProps({
   folderContents: Object,
   actionItems: Array,
   loadingMore: Boolean,
+  selectionMode: Boolean,
 })
 defineEmits(['dropped'])
 const route = useRoute()
 const selections = defineModel(new Set())
+const selectionMode = computed(() => props.selectionMode)
 
 const rows = computed(() => props.folderContents)
+const visibleNames = computed(() => rows.value?.map(({ name }) => name) ?? [])
 
 const scrollContainer = ref(null)
-defineExpose({ scrollEl: scrollContainer })
+defineExpose({ scrollEl: scrollContainer, visibleNames })
 
 const selectedRow = ref(null)
 const rowEvent = ref(null)
 
+let touchStartX = 0
+let touchStartY = 0
+let touchTimer = null
+let didLongPress = false
+const isTouching = ref(false)
+
+function onTouchStart(event, file) {
+  const touch = event.touches[0]
+  touchStartX = touch.clientX
+  touchStartY = touch.clientY
+  didLongPress = false
+  isTouching.value = true
+  document.addEventListener('touchmove', onTouchMove, { passive: true })
+  touchTimer = setTimeout(() => {
+    didLongPress = true
+    toggleSelection(file)
+  }, 450)
+}
+
+function onTouchEnd(event) {
+  if (didLongPress) event.preventDefault()
+  clearTouchTimer()
+}
+
+function onTouchMove(event) {
+  const touch = event.touches[0]
+  if (
+    Math.abs(touch.clientX - touchStartX) > 10 ||
+    Math.abs(touch.clientY - touchStartY) > 10
+  )
+    clearTouchTimer()
+}
+
+function clearTouchTimer() {
+  isTouching.value = false
+  document.removeEventListener('touchmove', onTouchMove)
+  if (touchTimer) clearTimeout(touchTimer)
+  touchTimer = null
+}
+
 // Duplication, redesign
 const contextMenu = (event, row) => {
+  if (isTouching.value || selectionMode.value) {
+    event.preventDefault()
+    return
+  }
   if (selections.value.size > 0) return
   // Ctrl + click triggers context menu on Mac
   if (isModKey(event)) openEntity(row, true)
@@ -136,9 +190,25 @@ const dropdownActionItems = (row) => {
       },
     }))
 }
-const toggleSelection = (file) => {
-  if (selections.value.has(file.name)) selections.value.delete(file.name)
-  else selections.value.add(file.name)
+const lastSelectedName = ref(null)
+const toggleSelection = (file, event) => {
+  const names = rows.value.map(({ name }) => name)
+  if (event?.shiftKey && lastSelectedName.value) {
+    const from = names.indexOf(lastSelectedName.value)
+    const to = names.indexOf(file.name)
+    if (from !== -1 && to !== -1) {
+      const [start, end] = from < to ? [from, to] : [to, from]
+      const next = new Set(selections.value)
+      names.slice(start, end + 1).forEach((name) => next.add(name))
+      selections.value = next
+      return
+    }
+  }
+  const next = new Set(selections.value)
+  if (next.has(file.name)) next.delete(file.name)
+  else next.add(file.name)
+  selections.value = next
+  lastSelectedName.value = file.name
 }
 
 const open = (row) =>

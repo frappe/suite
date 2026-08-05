@@ -1,11 +1,14 @@
 <template>
   <div class="flex flex-wrap items-center gap-2 px-5 pt-3 min-h-12">
-    <div v-if="selections?.length" class="my-auto text-base text-ink-gray-8 sm:w-[40%]">
-      {{ selections.length }}
-      {{ selections.length === 1 ? __('item') : __('items') }}
-      {{ __('selected') }}
+    <div v-if="selectionMode" class="flex min-w-0 items-center gap-2">
+      <span class="whitespace-nowrap text-base text-ink-gray-8">
+        {{ selections.length }} {{ __('selected') }}
+      </span>
+      <Button v-if="view !== 'list'" variant="outline"
+        :label="allSelected ? __('Unselect all') : __('Select all {0}', [selectableCount])"
+        @click="emit('select-all')" />
     </div>
-    <div v-if="$route.name === 'drive-Home'"
+    <div v-if="!selectionMode && $route.name === 'drive-Home'"
       class="bg-surface-gray-2 rounded-md space-x-0.5 h-7 flex items-center sm:mr-2 py-1">
       <TabButtons v-model="shareView" :options="[
         {
@@ -18,14 +21,14 @@
         },
       ]" />
     </div>
-    <TextInput ref="search-input" v-model="search" :disabled :class="selections.length ? 'hidden' : 'block'"
+    <TextInput ref="search-input" v-model="search" :disabled :class="selectionMode ? 'hidden' : 'block'"
       :placeholder="__('Find')" class="min-w-0 flex-1 sm:w-[30%] sm:flex-none">
       <template #prefix>
         <LucideSearch class="size-4" />
       </template>
     </TextInput>
     <div class="flex gap-2 ml-auto my-auto">
-      <template v-if="!selections?.length">
+      <template v-if="!selectionMode">
         <div v-if="activeFilters.length" class="flex flex-wrap items-start justify-end gap-1 ml-3">
           <div v-for="({ icon, name }, index) in activeFilters" :key="index">
             <div class="flex items-center border rounded pl-2 py-1 h-7 text-base select-none">
@@ -57,7 +60,7 @@
           },
         ]" />
       </template>
-      <div v-else-if="actionItems" class="flex gap-3 ml-4 overflow-auto">
+      <div v-else-if="selections.length && actionItems" class="flex gap-2 overflow-auto">
         <template v-for="item in actionItems
           .filter((i) => i.important && (selections.length === 1 || i.multi))
           .filter(
@@ -100,7 +103,11 @@ const props = defineProps({
   selections: Array,
   actionItems: Array,
   getEntities: Object,
+  selectableCount: Number,
+  allSelected: Boolean,
+  selectionMode: Boolean,
 })
+const emit = defineEmits(['select-all'])
 
 const activeFilters = defineModel('filters')
 const disabled = computed(() => !props.getEntities.data?.length)

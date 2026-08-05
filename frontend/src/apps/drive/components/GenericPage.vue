@@ -7,13 +7,17 @@
   <div v-else id="drop-area" ref="container" class="flex flex-col flex-1 min-h-0 overflow-hidden bg-surface-base"
     @dragover="onDragOverScroll" @drop="stopAutoScroll" @dragend="stopAutoScroll">
     <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters"
-      :action-items="actionItems" :selections="selectedEntitities" :get-entities="getEntities || { data: [] }" />
+      :selection-mode="selectionMode" :action-items="actionItems" :selections="selectedEntitities"
+      :selectable-count="selectableNames.length" :all-selected="allVisibleSelected"
+      :get-entities="getEntities || { data: [] }" @select-all="toggleSelectAll" />
 
     <DriveListSkeleton v-if="!props.getEntities.data" />
     <NoFilesSection v-else-if="!props.getEntities.data?.length" v-bind="empty" />
-    <ListView v-else-if="view === 'list'" ref="viewEl" v-model="selections" v-model:sort-order="sortOrder" :folder-contents="rows && grouper(rows)"
+    <ListView v-else-if="view === 'list'" ref="viewEl" v-model="selections" v-model:sort-order="sortOrder"
+      :folder-contents="rows && grouper(rows)"
       :action-items="actionItems" :root-entity="verify?.data" :loading-more="loadingMore" @dropped="onDrop" />
-    <GridView v-else ref="viewEl" v-model="selections" :folder-contents="rows" :action-items="actionItems"
+    <GridView v-else ref="viewEl" v-model="selections" :selection-mode="selectionMode"
+      :folder-contents="rows" :action-items="actionItems"
       :loading-more="loadingMore" @dropped="onDrop" />
   </div>
   <p class="hidden absolute text-center top-1/2 left-[calc(50%-4rem)] w-32 z-10 font-bold">
@@ -166,6 +170,8 @@ watch(
 )
 
 const selections = ref(new Set())
+const selectionMode = computed(() => selections.value.size > 0)
+const viewEl = ref(null)
 const allRows = computed(() => [
   ...(props.getEntities.data ?? []),
   ...loadedChildRows.value,
@@ -173,6 +179,23 @@ const allRows = computed(() => [
 const selectedEntitities = computed(() =>
   allRows.value.filter(({ name }) => selections.value.has(name))
 )
+const selectableNames = computed(
+  () => viewEl.value?.visibleNames ?? rows.value.map(({ name }) => name)
+)
+const allVisibleSelected = computed(
+  () => selectableNames.value.length > 0 && selectableNames.value.every((name) => selections.value.has(name))
+)
+
+function toggleSelectAll() {
+  const next = new Set(selections.value)
+  if (allVisibleSelected.value) selectableNames.value.forEach((name) => next.delete(name))
+  else selectableNames.value.forEach((name) => next.add(name))
+  selections.value = next
+}
+
+function clearSelection() {
+  selections.value = new Set()
+}
 
 // Shared by both views, as selections is Drive's own Set-based model.
 const isTyping = (e) =>
@@ -182,8 +205,8 @@ const isTyping = (e) =>
 
 onKeyDown('a', (e) => {
   if (isTyping(e)) return
-  if (e.metaKey) {
-    selections.value = new Set(rows.value.map((k) => k.name))
+  if (e.metaKey || e.ctrlKey) {
+    toggleSelectAll()
     e.preventDefault()
   }
 })
@@ -199,7 +222,7 @@ onKeyDown('Escape', (e) => {
   if (isTyping(e)) return
   // Let an open dialog handle its own Escape.
   if (document.querySelector('.dialog-content[data-state="open"]')) return
-  selections.value = new Set()
+  clearSelection()
   e.preventDefault()
 })
 
@@ -265,7 +288,6 @@ async function loadMore() {
   }
 }
 
-const viewEl = ref(null)
 const scrollHost = ref(null)
 const resolveScrollHost = () => {
   let el = viewEl.value?.scrollEl

@@ -1,6 +1,7 @@
 <template>
   <template v-for="item in items" :key="item.key">
     <ListRow v-if="item.placeholder === 'loading'" class="pointer-events-none">
+      <ListCell />
       <ListCell>
         <div class="flex items-center" :style="indent(item.depth)">
           <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-sm" />
@@ -13,6 +14,7 @@
       </ListCell>
       <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
       <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
+      <ListCell />
     </ListRow>
     <ListRow v-else-if="item.placeholder" class="pointer-events-none">
       <ListCell />
@@ -64,6 +66,15 @@
         "
       >
         <ListCell>
+          <Checkbox
+            class="shrink-0"
+            :class="selections.size > 0 || selections.has(row.name) ? '' : 'invisible group-hover:visible'"
+            :model-value="selections.has(row.name)"
+            :aria-label="__('Select {0}', [row.file_name])"
+            @click.stop="props.toggleSelection(row, $event)"
+          />
+        </ListCell>
+        <ListCell>
           <div
             class="relative h-[16px] w-[16px] shrink-0 mr-2"
             :class="canExpand(row) ? 'cursor-pointer' : ''"
@@ -73,13 +84,7 @@
           >
             <div
               class="absolute inset-0"
-              :class="
-                canExpand(row)
-                  ? isExpanded(row)
-                    ? 'opacity-0'
-                    : 'group-hover:opacity-0'
-                  : ''
-              "
+              :class="canExpand(row) ? (isExpanded(row) ? 'opacity-0' : 'group-hover:opacity-0') : ''"
             >
               <img
                 v-if="!loadedThumbnails.has(row.name)"
@@ -157,7 +162,7 @@
 </template>
 <script setup>
 import { ListRow, ListCell } from 'frappe-ui/list'
-import { Avatar, Button, Skeleton, Tooltip } from 'frappe-ui'
+import { Avatar, Button, Checkbox, Skeleton, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSessionStore } from '@/boot/session'

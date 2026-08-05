@@ -3,7 +3,7 @@
     class="relative select-none pt-3 flex flex-col flex-1 min-h-0 list-row-px-5 sm:list-row-px-3"
     :columns="columnTracks"
     :row-height="40"
-    divider="full"
+    divider="inset"
   >
     <!-- Header is inside the scroll container so it shares the rows' width -->
     <div
@@ -11,6 +11,16 @@
       class="flex-1 min-h-0 overflow-y-auto px-0 sm:px-2 isolate [scrollbar-gutter:stable]"
     >
       <ListHeader class="group sticky top-0 z-10 bg-surface-base">
+        <ListHeaderCell>
+          <Checkbox
+            class="shrink-0"
+            :class="selectAllState.some ? '' : 'invisible group-hover:visible'"
+            :model-value="selectAllState.all"
+            :indeterminate="selectAllState.some && !selectAllState.all"
+            :aria-label="__('Select all visible items')"
+            @click.stop="toggleSelectAll"
+          />
+        </ListHeaderCell>
         <ListHeaderCellSort :direction="directionFor('file_name')" @click="toggleSort('file_name', __('Name'))">
           {{ __('Name') }}
           <template #suffix="{ direction }">
@@ -64,6 +74,7 @@
           />
         </div>
         <ListRow v-if="loadingMore" class="pointer-events-none">
+          <ListCell />
           <ListCell>
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
               <Skeleton class="h-[16px] w-[16px] rounded-sm" />
@@ -86,7 +97,7 @@
 </template>
 <script setup>
 import { List, ListHeader, ListHeaderCell, ListHeaderCellSort, ListGroup, ListRow, ListCell } from 'frappe-ui/list'
-import { Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
+import { Checkbox, Skeleton, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
 import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
 import { computed, ref, watch } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
@@ -116,7 +127,6 @@ const selectedRow = ref(null)
 const rowEvent = ref(null)
 
 const scrollContainer = ref(null)
-defineExpose({ scrollEl: scrollContainer })
 
 // Sort state lives on `sortOrder` (shared with the toolbar's sort control on
 // grid view); clicking a header toggles direction on repeat-click of the same
@@ -181,6 +191,8 @@ const flatRows = computed(() =>
     .filter((i) => i.row)
     .map((i) => i.row)
 )
+const visibleNames = computed(() => flatRows.value.map(({ name }) => name))
+defineExpose({ scrollEl: scrollContainer, visibleNames })
 function toggleSelection(row, event) {
   if (event?.shiftKey && lastSelectedName.value) {
     const names = flatRows.value.map((r) => r.name)
@@ -199,6 +211,20 @@ function toggleSelection(row, event) {
   else next.add(row.name)
   selections.value = next
   lastSelectedName.value = row.name
+}
+
+const selectAllState = computed(() => {
+  const names = flatRows.value.map(({ name }) => name)
+  const count = names.filter((name) => selections.value.has(name)).length
+  return { all: names.length > 0 && count === names.length, some: count > 0 }
+})
+
+function toggleSelectAll() {
+  const names = flatRows.value.map(({ name }) => name)
+  const next = new Set(selections.value)
+  if (selectAllState.value.all) names.forEach((name) => next.delete(name))
+  else names.forEach((name) => next.add(name))
+  selections.value = next
 }
 
 const setActive = (entityName) => {
@@ -236,8 +262,8 @@ const contextMenu = (event, row) => {
 
 </script>
 <style>
-/* Keep the header divider aligned with the full-width row dividers. */
+/* Keep the header divider aligned with the inset row dividers. */
 [data-slot='list-header-border'] {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
 }
 </style>
