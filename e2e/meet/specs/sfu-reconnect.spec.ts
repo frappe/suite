@@ -1,4 +1,5 @@
 import { expect, joinHostAndGuest, test } from "../fixtures/test";
+import { meetHostName } from "../helpers/auth";
 import { expectRemoteVideoReceiving } from "../helpers/media";
 
 const disconnectTestEnabled =
@@ -25,7 +26,7 @@ test.describe("SFU reconnect", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 		await expectRemoteVideoReceiving(hostPage, guestName);
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(guest.page, meetHostName);
 
 		await guest.context.setOffline(true);
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(1, {
@@ -40,6 +41,6 @@ test.describe("SFU reconnect", () => {
 			timeout: 45_000,
 		});
 		await expectRemoteVideoReceiving(hostPage, guestName);
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(guest.page, meetHostName);
 	});
 });

@@ -1,4 +1,5 @@
 import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
+import { meetHostName } from "../helpers/auth";
 import { expectRemoteVideoReceiving } from "../helpers/media";
 
 test.describe("Multi participant", () => {
@@ -26,14 +27,14 @@ test.describe("Multi participant", () => {
 		await Promise.all([
 			expectRemoteVideoReceiving(hostPage, "Guest One"),
 			expectRemoteVideoReceiving(hostPage, "Guest Two"),
-			expectRemoteVideoReceiving(guestOne.page, "Administrator"),
-			expectRemoteVideoReceiving(guestTwo.page, "Administrator"),
+			expectRemoteVideoReceiving(guestOne.page, meetHostName),
+			expectRemoteVideoReceiving(guestTwo.page, meetHostName),
 		]);
 		await hostPage.getByRole("button", { name: "Show Participants" }).click();
 
 		const peoplePanel = hostPage.getByTestId("people-panel");
 		await expect(peoplePanel).toContainText("People");
-		await expect(peoplePanel).toContainText("Administrator");
+		await expect(peoplePanel).toContainText(meetHostName);
 		await expect(peoplePanel).toContainText("Guest One");
 		await expect(peoplePanel).toContainText("Guest Two");
 	});

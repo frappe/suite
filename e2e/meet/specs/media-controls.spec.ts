@@ -1,4 +1,5 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
+import { meetHostName } from "../helpers/auth";
 import {
 	expectRemoteVideoReceiving,
 	expectVideoReceiving,
@@ -19,12 +20,12 @@ test.describe("Media controls", () => {
 			meetingId,
 			`Guest Media ${test.info().parallelIndex}`,
 		);
-		await expectRemoteVideoReceiving(guest.page, "Administrator");
+		await expectRemoteVideoReceiving(guest.page, meetHostName);
 
 		await hostPage.getByRole("button", { name: /Toggle Video/ }).click();
 		await hostPage.getByRole("button", { name: /Toggle Audio/ }).click();
 
-		const hostTile = guest.page.getByTestId("participant-tile-Administrator");
+		const hostTile = guest.page.getByTestId(`participant-tile-${meetHostName}`);
 		await expect(hostTile).toBeVisible();
 		await expect(hostTile).toHaveAttribute("data-audio-enabled", "false");
 		await expect(hostTile).toHaveAttribute("data-video-enabled", "false");
@@ -48,7 +49,7 @@ test.describe("Media controls", () => {
 		await hostPage.getByRole("button", { name: "Toggle Screen Share" }).click();
 
 		await expect(guest.page.locator("[data-tile-id^='screenshare-']")).toHaveCount(1);
-		await expect(guest.page.getByText("Administrator's screen")).toBeVisible();
+		await expect(guest.page.getByText(`${meetHostName}'s screen`)).toBeVisible();
 		await expectVideoReceiving(
 			guest.page.locator("[data-tile-id^='screenshare-'] video").first(),
 		);
@@ -56,6 +57,6 @@ test.describe("Media controls", () => {
 		await hostPage.getByRole("button", { name: "Toggle Screen Share" }).click();
 
 		await expect(guest.page.locator("[data-tile-id^='screenshare-']")).toHaveCount(0);
-		await expect(guest.page.getByText("Administrator's screen")).toHaveCount(0);
+		await expect(guest.page.getByText(`${meetHostName}'s screen`)).toHaveCount(0);
 	});
 });

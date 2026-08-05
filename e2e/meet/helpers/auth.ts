@@ -6,6 +6,7 @@ export const meetHost: Credentials = {
 	email: "meet-e2e-host@example.com",
 	password: "MeetE2EHost!2026",
 };
+export const meetHostName = "Meet E2E Host";
 
 export async function provisionMeetHost(
 	request: APIRequestContext,
