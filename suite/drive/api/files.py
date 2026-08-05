@@ -885,7 +885,17 @@ def redirect_to_original(file_id: str):
 
 
 @frappe.whitelist()
-def track_visit(entity_name: str):
+def track_visit(
+    entity_name: str | None = None,
+    doctype: str | None = None,
+    docname: str | None = None,
+):
+    if not entity_name and doctype and docname:
+        entity_name = frappe.db.get_value(
+            "File", {"content_doctype": doctype, "content_docname": docname}, "name"
+        )
+    if not entity_name:
+        frappe.throw("A Drive file or content document is required", ValueError)
     entity = frappe.get_doc("File", entity_name)
     mark_as_viewed(entity)
     frappe.db.set_value(

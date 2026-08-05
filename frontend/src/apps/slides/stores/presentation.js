@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { createResource, call, createDocumentResource, toast } from 'frappe-ui'
+import { createResource, call, createDocumentResource, frappeRequest, toast } from 'frappe-ui'
 
 import tinycolor from 'tinycolor2'
 
@@ -288,6 +288,7 @@ const presentationResource = ref(null)
 
 const initPresentationDoc = async (id, readonly = false) => {
 	presentationId.value = id
+	let doc
 	if (readonly) {
 		presentationResource.value = getReadonlyPresentationResource(
 			id,
@@ -301,12 +302,17 @@ const initPresentationDoc = async (id, readonly = false) => {
 			)
 			await presentationResource.value.fetch()
 		}
-		return presentationResource.value.data
+		doc = presentationResource.value.data
 	} else {
 		presentationResource.value = getPresentationResource(id)
 		await presentationResource.value.get.fetch()
-		return presentationResource.value.doc
+		doc = presentationResource.value.doc
 	}
+	frappeRequest({
+		url: 'suite.drive.api.files.track_visit',
+		params: { doctype: 'Presentation', docname: id },
+	}).catch(() => {})
+	return doc
 }
 
 const templateList = ref([])

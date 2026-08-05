@@ -13,6 +13,7 @@ from suite.drive.api.files import (
     move,
     remove_or_restore,
     rename,
+    track_visit,
     update_access,
     upload_file,
 )
@@ -63,6 +64,18 @@ class TestDriveFilesAPI(IntegrationTestCase):
             attachments = get_attachments("User", OWNER)
 
         self.assertEqual([attachment["name"] for attachment in attachments], [self.file.name])
+
+    def test_track_visit_resolves_backing_file(self):
+        self.file.db_set({"content_doctype": "User", "content_docname": OWNER})
+
+        with (
+            self.set_user(OWNER),
+            patch("suite.drive.api.files.mark_as_viewed") as mark_as_viewed,
+            patch("suite.drive.api.files.frappe.db.set_value"),
+        ):
+            track_visit(doctype="User", docname=OWNER)
+
+        self.assertEqual(mark_as_viewed.call_args.args[0].name, self.file.name)
 
     def tearDown(self):
         frappe.flags.mute_drive_activity_log = False

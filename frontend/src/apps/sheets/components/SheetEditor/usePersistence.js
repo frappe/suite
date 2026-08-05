@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { frappeRequest } from 'frappe-ui'
 import { call }                  from '../../utils/api.js'
 import { encodeForUpload, isDecompressionSupported, decodeFromDownload } from '../../utils/compress.js'
 import { packSheet, packSheetChunked, unpackSheet, boundsOf } from '../../utils/sheet-codec.js'
@@ -28,6 +29,10 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
     try {
       const canGz  = isDecompressionSupported()
       const doc    = await call('suite.sheets.api.get_sheet', { name, compressed: canGz ? 1 : 0 })
+      frappeRequest({
+        url: 'suite.drive.api.files.track_visit',
+        params: { doctype: 'Sheet', docname: name },
+      }).catch(() => {})
       const plain  = canGz ? await decodeFromDownload(doc.sheets_data) : doc.sheets_data
       const saved  = JSON.parse(plain || '{}')
       if (saved.formats)    formats.restore(saved.formats)
