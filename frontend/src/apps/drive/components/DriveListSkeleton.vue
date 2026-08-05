@@ -7,6 +7,7 @@
   >
     <div class="flex-1 min-h-0 overflow-hidden px-0 sm:px-2">
       <ListRow v-for="i in 10" :key="i" class="pointer-events-none">
+        <ListCell />
         <ListCell>
           <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-sm" />
           <Skeleton class="h-3.5 rounded" :style="{ width: nameWidths[i % nameWidths.length] }" />
