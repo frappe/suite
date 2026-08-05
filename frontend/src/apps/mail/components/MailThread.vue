@@ -422,6 +422,7 @@ import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	downloadUrlAsFile,
+	escapeHtml,
 	extractQuotedContent,
 	getFormattedDate,
 	getFormattedRecipients,
@@ -1100,9 +1101,14 @@ const getReplyAllRecipients = (mail: Mail) => {
 const isUserEmail = (email: string) =>
 	identities.value.data?.map((i: Identity) => i.email).includes(email)
 
+// A body with no markup is plain text, so it has to be escaped before going into the
+// <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
+// their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
+// silently deleting the very addresses the notice is about.
 const getBodyContent = (mail: Mail) => {
 	if (hasHtmlContent(mail.html_body)) return mail.html_body
-	return `<pre style="white-space: pre-wrap; word-break: break-word">${mail.html_body || mail.text_body || '&nbsp;'}</pre>`
+	const text = mail.html_body || mail.text_body
+	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
 }
 
 const getQuotedContent = (mail: Mail) =>

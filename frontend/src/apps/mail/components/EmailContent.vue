@@ -48,6 +48,7 @@ import { ImageOff } from 'lucide-vue-next'
 import { Button } from 'frappe-ui'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
+import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
 import { useComposeMail, useTheme } from '@/apps/mail/utils/composables'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { isArtDirected, normalizeToLightScheme, remapEmailForDarkMode } from '@/apps/mail/utils/darkMail'
@@ -151,7 +152,7 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const srcdoc = computed(() => {
-	let sanitized = DOMPurify.sanitize(content, DOMPURIFY_CONFIG)
+	let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
 	if (effectiveBlock.value) sanitized = blockRemoteAssets(sanitized)
 	const doc = new DOMParser().parseFromString(sanitized, 'text/html')
 	// Art-directed emails — the author claimed the full canvas and painted with
@@ -168,10 +169,7 @@ const srcdoc = computed(() => {
 	const remapped = dataTheme.value === 'dark' && !isArtDirected(doc)
 	if (remapped) remapEmailForDarkMode(doc)
 	collapseQuotes(doc)
-	const transformedContent = doc.documentElement.outerHTML.replace(
-		/<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/g,
-		'<b>&lt;$1&gt;</b>',
-	)
+	const transformedContent = doc.documentElement.outerHTML
 
 	/* eslint-disable no-useless-escape */
 	return `

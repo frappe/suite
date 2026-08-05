@@ -1,3 +1,5 @@
+import { escapeHtml } from '@/apps/mail/utils/html'
+
 import type { ComposeMailData, DraftRecipient } from '@/apps/mail/types'
 
 // RFC 6068 `mailto:` links, turned into a draft. Clicking one in a message should open
@@ -22,9 +24,6 @@ const recipients = (list: string | undefined): DraftRecipient[] =>
 		.map((address) => decode(address).trim())
 		.filter(Boolean)
 		.map((email) => ({ email }))
-
-const escapeHtml = (text: string) =>
-	text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 // The body arrives as plain text; the editor speaks divs (see CustomParagraphExtension),
 // and an empty line needs the <br> to survive the round trip.
