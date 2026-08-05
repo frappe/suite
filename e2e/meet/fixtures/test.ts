@@ -12,6 +12,7 @@ import {
 	createMeetingViaApi,
 	type MeetingType,
 } from "../helpers/meeting";
+import { meetHost } from "../helpers/auth";
 
 const isCI = !!process.env.CI;
 const previewTimeout = isCI ? 45_000 : 20_000;
@@ -149,7 +150,7 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 			await joinFromPreview(page);
 		},
 		async joinAsHost(meetingId: string) {
-			await loginViaApi(context.request);
+			await loginViaApi(context.request, meetHost);
 			await page.goto(appUrl("/meet/"));
 			await page.goto(appUrl(`/meet/${meetingId}`));
 			await joinFromPreview(page);
@@ -165,7 +166,7 @@ export const test = base.extend<TestFixtures>({
 	hostPage: async ({ browser }, use) => {
 		const context = await browser.newContext();
 		await prepareContext(context);
-		await loginViaApi(context.request);
+		await loginViaApi(context.request, meetHost);
 		const page = await context.newPage();
 		await page.goto(appUrl("/meet/"));
 		await use(page);
@@ -175,7 +176,7 @@ export const test = base.extend<TestFixtures>({
 	// API-only meeting create so tests do not share rooms across workers.
 	createMeeting: async ({ playwright }, use) => {
 		const api = await playwright.request.newContext({ baseURL });
-		await loginViaApi(api);
+		await loginViaApi(api, meetHost);
 
 		await use(async (meetingType = "open") => {
 			await clearMeetingCreateRateLimit(api);

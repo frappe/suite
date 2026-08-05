@@ -1,4 +1,6 @@
-import type { FullConfig } from "@playwright/test";
+import { request, type FullConfig } from "@playwright/test";
+import { loginViaApi } from "../shared/auth";
+import { provisionMeetHost } from "./helpers/auth";
 
 async function waitForService(url: string, name: string): Promise<void> {
 	for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -28,4 +30,9 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 	// Meetings are created per-test for worker isolation; only health-check here.
 	await waitForService(baseURL, "Frappe Meet");
 	await waitForService(sfuHealthURL, "SFU server");
+
+	const api = await request.newContext({ baseURL });
+	await loginViaApi(api);
+	await provisionMeetHost(api);
+	await api.dispose();
 }
