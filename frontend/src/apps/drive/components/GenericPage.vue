@@ -179,6 +179,14 @@ const allRows = computed(() => [
 const selectedEntitities = computed(() =>
   allRows.value.filter(({ name }) => selections.value.has(name))
 )
+watch(allRows, (entities) => {
+  const names = new Set(entities.map(({ name }) => name))
+  if ([...selections.value].some((name) => !names.has(name))) {
+    selections.value = new Set(
+      [...selections.value].filter((name) => names.has(name))
+    )
+  }
+})
 const selectableNames = computed(
   () => viewEl.value?.visibleNames ?? rows.value.map(({ name }) => name)
 )
@@ -235,14 +243,19 @@ const pageStart = ref(0)
 const hasNextPage = ref(false)
 const loadingMore = ref(false)
 
-const refreshData = () => {
-  const res = props.getEntities
+const queryParams = () => {
   const params = {}
   if (sortOrder.value) {
     params.order_by = sortOrder.value.field
     params.ascending = sortOrder.value.ascending
   }
   params.search = search.value || ''
+  return params
+}
+
+const refreshData = () => {
+  const res = props.getEntities
+  const params = queryParams()
   pageStart.value = 0
   hasNextPage.value = false
   if (res.paginated) {
@@ -272,7 +285,12 @@ async function loadMore() {
     const resp = await request({
       url: path,
       method: 'GET',
-      params: { ...res.params, start: next, limit: PAGE_SIZE },
+      params: {
+        ...res.params,
+        ...queryParams(),
+        start: next,
+        limit: PAGE_SIZE,
+      },
       credentials: 'include',
     })
     // request() is a raw fetch that skips the resource's transform, so the page
