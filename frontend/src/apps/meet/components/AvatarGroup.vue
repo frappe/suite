@@ -96,6 +96,7 @@ interface Props {
 	size?: AvatarGroupSize;
 	stackDirection?: StackDirection;
 	alignment?: "left" | "center";
+	showText?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -106,6 +107,7 @@ const props = withDefaults(defineProps<Props>(), {
 	size: "2xl",
 	stackDirection: "right",
 	alignment: "center",
+	showText: false,
 });
 
 const sizeClasses: Record<AvatarGroupSize, string> = {
@@ -132,7 +134,6 @@ const spacingClasses: Record<AvatarGroupSize, string> = {
 	"2xl": "-space-x-2",
 };
 
-const showText = computed(() => props.size === "2xl");
 const avatarWrapperClasses = computed(() => sizeClasses[props.size]);
 const extraAvatarWrapperClasses = computed(() => extraSizeClasses[props.size]);
 const spacingClass = computed(() => spacingClasses[props.size]);

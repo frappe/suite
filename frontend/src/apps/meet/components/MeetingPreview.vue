@@ -59,6 +59,7 @@
 						:error="presenceError"
 						:loading="!hasFetchedParticipants"
 						:maxDisplayed="2"
+						:showText="true"
 						alignment="left"
 					/>
 
