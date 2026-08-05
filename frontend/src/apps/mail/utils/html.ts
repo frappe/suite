@@ -13,7 +13,12 @@ export const escapeHtml = (s: string) =>
 // below, so such a body can reach the reader as "HTML" either way). Escaping them has
 // to happen before sanitizing, the last point where they still exist; the <b> marks
 // the recipient the notice is reporting on.
-const BRACKETED_ADDRESS = /<([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>/g
+// Deliberately loose about what an address may look like — `user@localhost` carries no
+// dot, an address literal carries brackets (`user@[10.0.0.1]`), an internationalized
+// mailbox carries neither in ASCII — because spelling out the grammar only decides
+// which recipients still get deleted. The test applied is the parser's own: something
+// with an `@` and no whitespace, which no real tag name can be.
+const BRACKETED_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/g
 
 export const escapeBracketedAddresses = (html: string) =>
 	html.replace(BRACKETED_ADDRESS, '<b>&lt;$1&gt;</b>')

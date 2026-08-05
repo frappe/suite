@@ -39,6 +39,19 @@ describe('addresses in angle brackets', () => {
 		expect(hasHtmlContent(BOUNCE)).toBe(true)
 	})
 
+	// Recipients a stricter address grammar would have kept deleting: a local MTA's
+	// dotless host, an address literal, a domain that is not ASCII.
+	it.each([
+		['user@localhost', 'a dotless host'],
+		['user@[192.168.1.1]', 'an address literal'],
+		['user@例え.jp', 'an internationalized domain'],
+		["odd'name+tag@sub.example.co.uk", 'a local part with punctuation'],
+	])('survive for %s (%s)', (address) => {
+		const sanitized = DOMPurify.sanitize(escapeBracketedAddresses(`<div>To <${address}></div>`))
+
+		expect(sanitized).toContain(address)
+	})
+
 	it('leave real markup alone', () => {
 		const html = '<a href="mailto:x@y.com" title="Mail x@y.com">Write</a>'
 
