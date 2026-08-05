@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="relative bg-gray-800/70 rounded-lg overflow-hidden min-h-0 flex flex-col gap-2 items-center justify-center cursor-pointer p-2"
+		class="relative bg-surface-gray-3 rounded-lg overflow-hidden min-h-0 flex flex-col gap-2 items-center justify-center cursor-pointer p-2"
 		:title="tooltip"
 		role="button"
 		tabindex="0"
