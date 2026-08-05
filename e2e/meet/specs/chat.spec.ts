@@ -25,7 +25,9 @@ test.describe("Chat", () => {
 		await hostPage.getByRole("button", { name: "Send message" }).click();
 
 		await guest.page.getByRole("button", { name: "Show Chat" }).click();
-		await expect(guest.page.getByText(message, { exact: true })).toBeVisible();
+		await expect(
+			guest.page.getByTestId("chat-panel").getByText(message, { exact: true }),
+		).toBeVisible();
 	});
 
 	test("unread badge appears when chat is closed and clears when opened", async ({
@@ -56,7 +58,9 @@ test.describe("Chat", () => {
 		await expect(unreadBadge).toHaveCount(1);
 
 		await chatButton.click();
-		await expect(hostPage.getByText(message, { exact: true })).toBeVisible();
+		await expect(
+			hostPage.getByTestId("chat-panel").getByText(message, { exact: true }),
+		).toBeVisible();
 		await expect(unreadBadge).toHaveCount(0);
 	});
 });

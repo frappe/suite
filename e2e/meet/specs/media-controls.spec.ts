@@ -1,5 +1,5 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
-import { meetHostName } from "../helpers/auth";
+import { meetHost, meetHostName } from "../helpers/auth";
 import {
 	expectRemoteVideoReceiving,
 	expectVideoReceiving,
@@ -25,7 +25,7 @@ test.describe("Media controls", () => {
 		await hostPage.getByRole("button", { name: /Toggle Video/ }).click();
 		await hostPage.getByRole("button", { name: /Toggle Audio/ }).click();
 
-		const hostTile = guest.page.getByTestId(`participant-tile-${meetHostName}`);
+		const hostTile = guest.page.getByTestId(`participant-tile-${meetHost.email}`);
 		await expect(hostTile).toBeVisible();
 		await expect(hostTile).toHaveAttribute("data-audio-enabled", "false");
 		await expect(hostTile).toHaveAttribute("data-video-enabled", "false");

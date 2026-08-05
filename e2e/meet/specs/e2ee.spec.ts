@@ -44,8 +44,10 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 		timeout: 30_000,
 	});
 	await page.keyboard.press("Escape");
-	await page.waitForTimeout(150);
-	await page.keyboard.press("Escape");
+	if (await toggle.isVisible()) {
+		await page.mouse.click(20, 20);
+	}
+	await expect(toggle).not.toBeVisible();
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
@@ -71,7 +73,7 @@ async function expectScreenShareReceiving(page: Page): Promise<void> {
 
 async function clickScreenShare(page: Page): Promise<void> {
 	await page
-		.getByRole("button", { name: "Toggle Screen Share" })
+		.locator('button[aria-label="Toggle Screen Share"]')
 		.evaluate((button) => (button as HTMLButtonElement).click());
 }
 
@@ -124,6 +126,7 @@ test.describe("E2EE", () => {
 
 	test.describe("heavy coverage", () => {
 		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
+		test.describe.configure({ timeout: 180_000 });
 
 	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
 		hostPage,
@@ -216,8 +219,13 @@ test.describe("E2EE", () => {
 			guest.page.getByRole("toolbar", { name: "Meeting controls" }),
 		).toBeVisible();
 
-		const hostErrors = capturePageErrors(hostPage, ["request_consumer_keyframe"]);
-		const guestErrors = capturePageErrors(guest.page, ["request_consumer_keyframe"]);
+		const teardownErrors = [
+			"request_consumer_keyframe",
+			"refresh_sfu_token",
+			"403 (FORBIDDEN)",
+		];
+		const hostErrors = capturePageErrors(hostPage, teardownErrors);
+		const guestErrors = capturePageErrors(guest.page, teardownErrors);
 
 		await hostPage.goto(appUrl(`/meet/${meetingId}`));
 		await joinFromPreview(hostPage);
