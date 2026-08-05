@@ -3,7 +3,7 @@
   <div
     v-if="rows?.length"
     ref="scrollContainer"
-    class="grid-container content-start gap-3 p-3 pb-[60px] sm:gap-5 sm:p-5 sm:pb-[60px] overflow-auto select-none flex-1 min-h-0"
+    class="grid-container isolate content-start gap-3 p-3 pb-[60px] sm:gap-5 sm:p-5 sm:pb-[60px] overflow-auto select-none flex-1 min-h-0"
   >
     <div
       v-for="file in rows"

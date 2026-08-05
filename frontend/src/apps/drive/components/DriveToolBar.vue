@@ -1,5 +1,8 @@
 <template>
-  <div class="flex flex-wrap items-center gap-2 px-5 pt-3 min-h-12">
+  <div
+    class="items-center gap-2 px-3 pt-3 min-h-12 sm:flex sm:flex-wrap sm:px-5"
+    :class="selectionMode ? 'flex flex-wrap' : 'grid grid-cols-[auto_minmax(0,1fr)]'"
+  >
     <div v-if="selectionMode" class="flex min-w-0 items-center gap-2">
       <span class="whitespace-nowrap text-base text-ink-gray-8">
         {{ selections.length }} {{ __('selected') }}
@@ -21,21 +24,27 @@
         },
       ]" />
     </div>
-    <TextInput ref="search-input" v-model="search" :disabled :class="selectionMode ? 'hidden' : 'block'"
+    <TextInput ref="search-input" v-model="search" :disabled :class="[
+      selectionMode ? 'hidden' : 'block',
+      $route.name === 'drive-Home' ? '' : 'col-span-2 sm:col-span-1',
+    ]"
       :placeholder="__('Find')" class="min-w-0 flex-1 sm:w-[30%] sm:flex-none">
       <template #prefix>
         <LucideSearch class="size-4" />
       </template>
     </TextInput>
-    <div class="flex gap-2 ml-auto my-auto">
+    <div class="col-span-2 flex min-w-0 w-full justify-end gap-2 my-auto sm:ml-auto sm:w-auto">
       <template v-if="!selectionMode">
-        <div v-if="activeFilters.length" class="flex flex-wrap items-start justify-end gap-1 ml-3">
-          <div v-for="({ icon, name }, index) in activeFilters" :key="index">
-            <div class="flex items-center border rounded pl-2 py-1 h-7 text-base select-none">
-              <img class="w-4" :src="icon" />
-              <span class="text-sm ml-2">{{ name }}</span>
-              <Button variant="minimal" :icon="h(LucideX, { class: 'size-3' })"
-                @click="activeFilters.splice(index, 1)" />
+        <div v-if="activeFilters.length"
+          class="min-w-0 flex-1 overflow-x-auto sm:ml-3 sm:flex sm:flex-initial sm:flex-wrap sm:items-start sm:justify-end sm:gap-1 sm:overflow-visible">
+          <div class="flex min-w-full w-max justify-end gap-1 sm:contents">
+            <div v-for="({ icon, name }, index) in activeFilters" :key="index" class="shrink-0">
+              <div class="flex items-center border rounded pl-2 py-1 h-7 text-base select-none">
+                <img class="w-4" :src="icon" />
+                <span class="text-sm ml-2">{{ name }}</span>
+                <Button variant="minimal" :icon="h(LucideX, { class: 'size-3' })"
+                  @click="activeFilters.splice(index, 1)" />
+              </div>
             </div>
           </div>
         </div>
