@@ -82,7 +82,7 @@
 				:count="displayParticipants.extra"
 				:tooltip="hiddenParticipantsTooltip"
 				:participants="displayParticipants.hidden"
-				:size="mode === 'sidebar' ? 'small' : 'medium'"
+				:size="mode === 'sidebar' ? 'xl' : '2xl'"
 				:style="tileStyle"
 				@click="emit('open-people-panel')"
 			/>

@@ -12,7 +12,7 @@
 			:participants="avatarParticipants"
 			:error="null"
 			:maxDisplayed="2"
-			size="2xl"
+			:size="size"
 		/>
 	</div>
 </template>
@@ -34,7 +34,7 @@ const props = defineProps<{
 		avatar?: string;
 		initials?: string;
 	}>;
-	size?: "small" | "medium";
+	size?: "sm" | "md" | "lg" | "xl" | "2xl";
 }>();
 
 const avatarParticipants = computed(() =>
