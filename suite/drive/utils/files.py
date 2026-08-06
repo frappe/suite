@@ -47,6 +47,7 @@ class FileManager:
         return self.settings.root_folder or ""
 
     def get_root_storage_key(self):
+        """Return the backend-normalized storage key for the Drive root folder."""
         file_url = get_root_folder()["file_url"]
         if self.s3_enabled:
             file_url = get_s3_key(file_url)
