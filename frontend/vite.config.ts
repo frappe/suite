@@ -6,6 +6,20 @@ import frappeui from 'frappe-ui/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Local frappe-ui work: when the submodule is checked out, bare `frappe-ui`
+// imports resolve to its source instead of the pinned package, so edits show up
+// without a publish/reinstall. Same wiring as the mail app.
+//
+// The find is anchored so ONLY the bare specifier is rewritten — `frappe-ui/vite`,
+// `frappe-ui/tailwind` and `frappe-ui/style.css` must keep resolving through node
+// (a bare-prefix alias would break the vite plugin and the Tailwind preset).
+//
+// Note this covers the Vite door only: tailwind.config.js loads the preset through
+// node and globs `node_modules/frappe-ui/src`, so with the submodule ahead of the
+// pin, components come from the checkout while tokens come from the package. Run
+// `yarn dev:frappe-ui` to point node at the checkout too and keep them in step.
+const frappeUIPath = path.resolve(__dirname, '../frappe-ui/src/index.ts')
+
 const emitSlidesServiceWorker = () => ({
   name: 'slides-service-worker',
   apply: 'build' as const,
@@ -116,10 +130,16 @@ export default defineConfig(({ mode }) => ({
     }),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      'tailwind.config.js': path.resolve(__dirname, 'tailwind.config.js'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, 'src') },
+      {
+        find: 'tailwind.config.js',
+        replacement: path.resolve(__dirname, 'tailwind.config.js'),
+      },
+      ...(fs.existsSync(frappeUIPath)
+        ? [{ find: /^frappe-ui$/, replacement: frappeUIPath }]
+        : []),
+    ],
     // Keep single ProseMirror / Yjs / reka-ui / vue singletons across the 7
     // merged editors (drive/writer/sheets/mail collab) — see _resolved.json.
     // @vueuse/core must NOT be deduped: frappe-ui needs v10 while reka-ui
@@ -130,8 +150,18 @@ export default defineConfig(({ mode }) => ({
       'vue-router',
       'yjs',
       '@tiptap/pm',
+      // The frappe-ui submodule's editor imports @tiptap/pm/* subpaths directly;
+      // without deduping each one, its copy of prosemirror-tables registers the
+      // 'cell' selection JSON ID a second time and the app dies at boot with
+      // "Duplicate use of selection JSON ID cell".
+      '@tiptap/pm/model',
+      '@tiptap/pm/state',
+      '@tiptap/pm/tables',
+      '@tiptap/pm/view',
       'prosemirror-state',
       'prosemirror-view',
+      'prosemirror-model',
+      'prosemirror-tables',
       'reka-ui',
     ],
   },
@@ -158,6 +188,13 @@ export default defineConfig(({ mode }) => ({
       'frappe-ui > lowlight',
       'yjs',
       'tailwind.config.js',
+      // Pre-bundle these so the aliased frappe-ui source and the app share ONE
+      // instance. Vite serves bare imports from a linked/aliased dep raw, while
+      // node_modules importers get the optimized chunk — two copies otherwise.
+      '@tiptap/pm/model',
+      '@tiptap/pm/state',
+      '@tiptap/pm/tables',
+      '@tiptap/pm/view',
     ],
     exclude: mode === 'production' ? [] : ['frappe-ui'],
   },
