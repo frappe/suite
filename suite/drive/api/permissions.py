@@ -68,6 +68,13 @@ def get_user_access_for_user(entity: str | Document | frappe._dict, user: str):
 
 @frappe.whitelist(allow_guest=True)
 def get_general_access(entity: str | Document | frappe._dict):
+    """Return an entity's effective public or site-wide access.
+
+    The current session must have read access to the entity. ``type`` is
+    ``public`` for Guest access, ``site`` for all logged-in users, or
+    ``restricted`` when neither principal has read access. The remaining
+    fields are that principal's effective permission bits.
+    """
     if isinstance(entity, str):
         entity = frappe.get_cached_doc("File", entity)
     if not get_user_access_for_user(entity, frappe.session.user)["read"]:
