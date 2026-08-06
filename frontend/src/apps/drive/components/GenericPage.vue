@@ -71,8 +71,8 @@ import {
   refreshExpanded,
   refreshFolder,
   removeFromTree,
-  resetTree,
 } from '@/apps/drive/data/folderTree'
+import { getPageFilters } from '@/apps/drive/data/pageState'
 import { toast } from '@/apps/drive/utils/toasts'
 import { move } from '@/apps/drive/resources/files'
 import DriveListSkeleton from '@/apps/drive/components/DriveListSkeleton.vue'
@@ -124,7 +124,7 @@ const DEFAULT_SORT = inIframe
   }
 const sortOrder = ref(getSortOrder(sortId.value) || DEFAULT_SORT)
 const search = ref('')
-const filters = ref([])
+const filters = getPageFilters(sortId.value)
 
 const rows = computed(() => {
   let out = props.getEntities.data ?? []
@@ -143,7 +143,6 @@ const rows = computed(() => {
 watch(
   sortId,
   (id) => {
-    resetTree()
     const saved = getSortOrder(id)
     if (saved) sortOrder.value = saved
   },

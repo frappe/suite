@@ -69,6 +69,11 @@ test("expands a folder inline in the list view and moves a subfile into another 
 	// Expanding must not navigate away from the folder listing.
 	await expect(owner.page).toHaveURL(/\/drive(\?.*)?$/);
 
+	await childRow.click();
+	await expect(owner.page).toHaveURL(new RegExp(`/drive/f/${child.name}`));
+	await owner.page.goBack();
+	await expect(childRow).toBeVisible();
+
 	await dragRowOnto(owner.page, child.name, destination.name);
 
 	await expect(childRow).toHaveCount(0);

@@ -49,10 +49,13 @@
           </div>
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
-        <Dropdown :options="filterOptions" :button="{
-            icon: LucideFilter,
-            tooltip: 'Filter',
-          }" :disabled placement="right" />
+        <div data-testid="drive-filter">
+          <Dropdown :options="filterOptions" :disabled placement="right">
+            <template #trigger="{ open }">
+              <Button :active="open" :disabled icon="lucide-filter" tooltip="Filter" />
+            </template>
+          </Dropdown>
+        </div>
         <SortControl v-if="$route.name !== 'Recents' && view !== 'list'" v-model="sortOrder" :options="columnHeaders"
           :menu-items="sortMenuItems" :disabled />
 
@@ -101,7 +104,6 @@ import {
 import { getIconUrl } from '@/apps/drive/utils/files'
 import { view, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown } from '@vueuse/core'
-import LucideFilter from '~icons/lucide/filter'
 import SortControl from '@/components/SortControl.vue'
 
 import LucideX from '~icons/lucide/x'

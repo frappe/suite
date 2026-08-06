@@ -73,6 +73,14 @@ test.describe.serial("Drive critical paths", () => {
 		expect(uploadResponse.ok()).toBe(true);
 		const uploaded = await waitForDriveEntity(page.request, uploadedName);
 		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toContainText(uploadedLabel);
+		await page.getByTestId("drive-filter").getByRole("button").click();
+		await page.getByRole("menuitem", { name: "Text", exact: true }).click();
+		await expect(page.locator("#drop-area").getByText("Text", { exact: true })).toBeVisible();
+		await page.getByTestId(`drive-entity-${uploaded.name}`).click();
+		await expect(page).toHaveURL(new RegExp(`/drive/f/${uploaded.name}`));
+		await page.goBack();
+		await expect(page.locator("#drop-area").getByText("Text", { exact: true })).toBeVisible();
+		await expect(page.getByTestId(`drive-entity-${uploaded.name}`)).toBeVisible();
 
 		await openEntityActions(page, uploaded.name);
 		await page.getByRole("button", { name: "Rename", exact: true }).click();
