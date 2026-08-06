@@ -23,7 +23,7 @@ class DrivePermission(Document):
                 job_id=f"fdocperm_{self.name}",
                 deduplicate=True,
                 timeout=None,
-                now=True,
+                enqueue_after_commit=True,
                 at_front=False,
                 entity_name=self.entity,
                 docperm_name=self.name,

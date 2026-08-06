@@ -153,7 +153,6 @@ def send_share_email(to, message, link, type_):
                 "link": link,
             },
             inline_images=drive_logo_inline_images(),
-            now=True,
         )
-    except:
+    except Exception:
         pass
