@@ -15,6 +15,17 @@ function uniqueName(runId: string, label: string, extension = "") {
 }
 
 test.describe.serial("Drive critical paths", () => {
+	test("shows mobile navigation below the tablet breakpoint", async ({ owner }) => {
+		const { page } = owner;
+		await page.setViewportSize({ width: 700, height: 900 });
+		await page.goto("/drive");
+
+		await expect(page.locator("#sidebar")).toBeHidden();
+		await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
+
+		await page.setViewportSize({ width: 1440, height: 900 });
+	});
+
 	test("authenticated home and file lifecycle", async ({ owner, run }) => {
 		const { page } = owner;
 		const folderName = uniqueName(run.run_id, "folder");

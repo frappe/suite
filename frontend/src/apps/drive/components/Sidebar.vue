@@ -1,5 +1,5 @@
 <template>
-  <Sidebar id="sidebar" v-model:collapsed="sidebarCollapsed" class="hidden sm:flex" :header="{
+  <Sidebar id="sidebar" v-model:collapsed="sidebarCollapsed" class="hidden md:flex" :header="{
     title: 'Drive',
     subtitle: currentUserFullName,
     menuItems: settingsItems,

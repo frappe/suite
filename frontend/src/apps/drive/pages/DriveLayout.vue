@@ -2,7 +2,7 @@
   <FrappeUIProvider>
     <div
       v-if="isLoggedIn || $route.meta.allowGuest"
-      class="flex flex-col sm:flex-row h-full"
+      class="flex flex-col md:flex-row h-full"
     >
       <Sidebar v-if="normalView" />
       <div id="dropzone" class="flex flex-col flex-1 overflow-hidden bg-surface-base relative">
@@ -10,7 +10,7 @@
           <component :is="Component" />
         </router-view>
       </div>
-      <BottomBar v-if="!inIframe && isLoggedIn" class="w-full sm:hidden" />
+      <BottomBar v-if="!inIframe && isLoggedIn" class="w-full md:hidden" />
     </div>
     <router-view v-else :key="$route.fullPath" v-slot="{ Component }">
       <component :is="Component" />

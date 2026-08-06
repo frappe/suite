@@ -8,6 +8,7 @@
     <button
       v-for="tab in sidebarItems"
       :key="tab.label"
+      :aria-label="tab.label"
       class="flex flex-col items-center justify-center transition active:scale-95 h-[50px]"
       @click="$router.push(tab.route)"
     >
