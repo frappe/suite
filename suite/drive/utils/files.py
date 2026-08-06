@@ -59,7 +59,7 @@ class FileManager:
 
     def can_create_thumbnail(self, file):
         # Only images, videos and PDFs get thumbnails.
-        if not hasattr(file, "mime_type"):
+        if not getattr(file, "mime_type", None):
             return False
         return file.mime_type.startswith(("image", "video")) or file.mime_type == "application/pdf"
 

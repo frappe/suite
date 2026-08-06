@@ -142,6 +142,15 @@ class TestDriveFilesAPI(IntegrationTestCase):
             with self.assertRaises(frappe.PermissionError):
                 upload_file(total_file_size=6, parent=self.folder.name)
 
+    def test_upload_with_unknown_mime_type(self):
+        with self.set_user(OWNER):
+            uploaded = self.upload(b"unknown file contents", "upload.unknownextension")
+
+            self.assertEqual(uploaded.file_type, "Unknown")
+            self.assertFalse(uploaded.mime_type)
+            with FileManager().get_file(uploaded) as stored:
+                self.assertEqual(stored.read(), b"unknown file contents")
+
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = frappe.generate_hash(12)
         with self.set_user(OWNER):
