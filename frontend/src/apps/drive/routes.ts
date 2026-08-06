@@ -125,7 +125,7 @@ export const routes: RouteRecordRaw[] = [
         path: 'f/:entityName/:slug?',
         name: 'drive-File',
         component: () => import('@/apps/drive/pages/File.vue'),
-        meta: { allowGuest: true, filePage: true },
+        meta: { allowGuest: true, filePage: true, shellScroll: false },
         props: true,
       },
       {

@@ -1,6 +1,6 @@
 <template>
   <nav id="navbar" ondragstart="return false;" ondrop="return false;"
-    class="bg-surface-base border-b px-5 py-2.5 h-12 shrink-0 flex justify-between">
+    class="sticky top-0 z-20 bg-surface-base border-b px-5 py-2.5 h-12 shrink-0 flex justify-between">
     <slot name="breadcrumbs">
       <EditableBreadcrumbs :items="breadcrumbItems" :entity="rootEntity || null"
         class="select-none truncate max-w-[80%]" />

@@ -1,26 +1,17 @@
 <template>
-  <div
-    class="grid grid-cols-5 bg-surface-elevation-2 border-t border-outline-gray-2 standalone:pb-4"
-    :style="{
-      gridTemplateColumns: `repeat(${sidebarItems.length}, minmax(0, 1fr))`,
-    }"
-  >
-    <button
+  <MobileNav>
+    <MobileNavItem
       v-for="tab in sidebarItems"
       :key="tab.label"
-      :aria-label="tab.label"
-      class="flex flex-col items-center justify-center transition active:scale-95 h-[50px]"
-      @click="$router.push(tab.route)"
-    >
-      <component
-        :is="tab.icon"
-        class="size-6"
-        :class="[tab.highlight() ? 'text-ink-gray-8' : 'text-ink-gray-5']"
-      />
-    </button>
-  </div>
+      :label="tab.label"
+      :icon="tab.icon"
+      :to="tab.route"
+      :active="tab.highlight()"
+    />
+  </MobileNav>
 </template>
 <script>
+import { MobileNav, MobileNavItem } from 'frappe-ui'
 import LucideClock from '~icons/lucide/clock'
 import LucideHome from '~icons/lucide/home'
 import LucideStar from '~icons/lucide/star'
@@ -30,6 +21,7 @@ import { rootInfo } from '@/apps/drive/resources/files'
 
 export default {
   name: 'BottomBar',
+  components: { MobileNav, MobileNavItem },
   computed: {
     sidebarItems() {
       const first = getRootSection()

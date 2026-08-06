@@ -1,16 +1,12 @@
 <template>
   <List
-    class="relative select-none pt-3 flex flex-col flex-1 min-h-0 list-row-px-5 sm:list-row-px-3"
+    class="relative select-none pt-3 list-row-px-5 sm:list-row-px-3"
     :columns="columnTracks"
     :row-height="40"
     divider="inset"
   >
-    <!-- Header is inside the scroll container so it shares the rows' width -->
-    <div
-      ref="scrollContainer"
-      class="flex-1 min-h-0 overflow-y-auto px-0 sm:px-2 isolate [scrollbar-gutter:stable]"
-    >
-      <ListHeader class="group sticky top-0 z-10 bg-surface-base">
+    <div class="px-0 sm:px-2 isolate [scrollbar-gutter:stable]">
+      <ListHeader class="group sticky top-12 z-10 bg-surface-base">
         <ListHeaderCell>
           <Checkbox
             class="shrink-0"
@@ -126,8 +122,6 @@ const selectedRow = ref(null)
 
 const rowEvent = ref(null)
 
-const scrollContainer = ref(null)
-
 // Sort state lives on `sortOrder` (shared with the toolbar's sort control on
 // grid view); clicking a header toggles direction on repeat-click of the same
 // field, or switches field with a sensible default direction.
@@ -192,7 +186,7 @@ const flatRows = computed(() =>
     .map((i) => i.row)
 )
 const visibleNames = computed(() => flatRows.value.map(({ name }) => name))
-defineExpose({ scrollEl: scrollContainer, visibleNames })
+defineExpose({ visibleNames })
 function toggleSelection(row, event) {
   if (event?.shiftKey && lastSelectedName.value) {
     const names = flatRows.value.map((r) => r.name)

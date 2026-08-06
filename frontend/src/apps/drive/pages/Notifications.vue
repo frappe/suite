@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-surface-base border-b w-full px-5 py-2.5 h-12 flex items-center justify-between">
+  <div class="sticky top-0 z-20 bg-surface-base border-b w-full px-5 py-2.5 h-12 flex items-center justify-between">
     <TabButtons
       v-model="onlyUnread"
       :options="[

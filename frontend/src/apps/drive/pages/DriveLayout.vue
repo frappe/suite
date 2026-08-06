@@ -1,17 +1,32 @@
 <template>
   <FrappeUIProvider>
-    <div
-      v-if="isLoggedIn || $route.meta.allowGuest"
-      class="flex flex-col md:flex-row h-full"
-    >
-      <Sidebar v-if="normalView" />
-      <div id="dropzone" class="flex flex-col flex-1 overflow-hidden bg-surface-base relative">
+    <template v-if="isLoggedIn || $route.meta.allowGuest">
+      <div v-if="$route.name === 'drive-Signup'" id="dropzone" class="h-full">
         <router-view :key="$route.fullPath" v-slot="{ Component }">
           <component :is="Component" />
         </router-view>
       </div>
-      <BottomBar v-if="!inIframe && isLoggedIn" class="w-full md:hidden" />
-    </div>
+      <DesktopShell v-else-if="isDesktop" :scroll="shellScroll">
+        <template v-if="normalView" #sidebar>
+          <Sidebar />
+        </template>
+        <div id="dropzone" class="relative flex min-h-full flex-col bg-surface-base" :class="{ 'h-full': !shellScroll }">
+          <router-view :key="$route.fullPath" v-slot="{ Component }">
+            <component :is="Component" />
+          </router-view>
+        </div>
+      </DesktopShell>
+      <MobileShell v-else>
+        <div id="dropzone" class="relative flex min-h-full flex-col bg-surface-base" :class="{ 'h-full': !shellScroll }">
+          <router-view :key="$route.fullPath" v-slot="{ Component }">
+            <component :is="Component" />
+          </router-view>
+        </div>
+        <template v-if="!inIframe && isLoggedIn" #nav>
+          <BottomBar />
+        </template>
+      </MobileShell>
+    </template>
     <router-view v-else :key="$route.fullPath" v-slot="{ Component }">
       <component :is="Component" />
     </router-view>
@@ -31,10 +46,10 @@ import FileUploader from '@/apps/drive/components/FileUploader.vue'
 import { useSessionStore } from '@/boot/session'
 import { ref, computed, onMounted, provide } from 'vue'
 import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
-import { onKeyDown } from '@vueuse/core'
+import { onKeyDown, useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
 import { initSocket } from '@/apps/drive/socket'
-import { FrappeUIProvider } from 'frappe-ui'
+import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
 import { useRoute } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
 
@@ -43,6 +58,8 @@ provide('emitter', emitter)
 provide('socket', initSocket())
 
 const route = useRoute()
+const isDesktop = useMediaQuery('(min-width: 768px)')
+const shellScroll = computed(() => route.meta.shellScroll !== false)
 const inIframe = window.self !== window.top
 provide('inIframe', inIframe)
 

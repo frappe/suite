@@ -20,10 +20,25 @@ test.describe.serial("Drive critical paths", () => {
 		await page.setViewportSize({ width: 700, height: 900 });
 		await page.goto("/drive");
 
+		await expect(page.locator('[data-slot="mobile-shell"]')).toBeVisible();
+		await expect(page.locator('[data-slot="desktop-shell"]')).toHaveCount(0);
 		await expect(page.locator("#sidebar")).toBeHidden();
-		await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible();
+		const nav = page.locator('[data-slot="mobile-nav"]');
+		await expect(nav).toBeVisible();
+		await expect(nav.locator('[data-slot="mobile-nav-item"]')).toHaveCount(4);
+		await expect(nav.getByRole("button", { name: "Home", exact: true })).toHaveAttribute(
+			"data-state",
+			"active",
+		);
+		await nav.getByRole("link", { name: "Recents", exact: true }).click();
+		await expect(page).toHaveURL(/\/drive\/recents\/?$/);
+		await expect(nav.getByText("Recents", { exact: true })).toBeVisible();
 
 		await page.setViewportSize({ width: 1440, height: 900 });
+		await expect(page.locator('[data-slot="desktop-shell"]')).toBeVisible();
+		await expect(page.locator('[data-slot="mobile-shell"]')).toHaveCount(0);
+		await expect(page.locator("#sidebar")).toBeVisible();
+		await page.goto("about:blank");
 	});
 
 	test("authenticated home and file lifecycle", async ({ owner, run }) => {
@@ -66,8 +81,10 @@ test.describe.serial("Drive critical paths", () => {
 			.getByTestId(`drive-entity-${uploaded.name}`)
 			.getByRole("textbox");
 		await renameInput.fill("");
+		await expect(renameInput).toHaveValue("");
+		await page.waitForTimeout(100);
 		// Typed key by key: the row is a <button>, so a space must not activate it.
-		await renameInput.pressSequentially(renamedLabel);
+		await renameInput.pressSequentially(renamedLabel, { delay: 10 });
 		await expect(renameInput).toHaveValue(renamedLabel);
 		await expect(page).toHaveURL(/\/drive\/?$/);
 		await renameInput.press("Enter");

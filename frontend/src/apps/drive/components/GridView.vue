@@ -2,8 +2,7 @@
   <!-- pt-1 to accomodate borders -->
   <div
     v-if="rows?.length"
-    ref="scrollContainer"
-    class="grid-container isolate content-start gap-3 p-3 pb-[60px] sm:gap-5 sm:p-5 sm:pb-[60px] overflow-auto select-none flex-1 min-h-0"
+    class="grid-container isolate content-start gap-3 p-3 pb-[60px] sm:gap-5 sm:p-5 sm:pb-[60px] select-none"
   >
     <div
       v-for="file in rows"
@@ -116,8 +115,7 @@ const selectionMode = computed(() => props.selectionMode)
 const rows = computed(() => props.folderContents)
 const visibleNames = computed(() => rows.value?.map(({ name }) => name) ?? [])
 
-const scrollContainer = ref(null)
-defineExpose({ scrollEl: scrollContainer, visibleNames })
+defineExpose({ visibleNames })
 
 const selectedRow = ref(null)
 const rowEvent = ref(null)

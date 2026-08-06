@@ -4,7 +4,7 @@
 
   <ErrorPage v-if="verify?.error || getEntities.error" :error="verify?.error || getEntities.error" />
 
-  <div v-else id="drop-area" ref="container" class="flex flex-col flex-1 min-h-0 overflow-hidden bg-surface-base"
+  <div v-else id="drop-area" ref="container" class="flex min-h-full flex-col bg-surface-base"
     @dragover="onDragOverScroll" @drop="stopAutoScroll" @dragend="stopAutoScroll">
     <DriveToolBar v-model:sort-order="sortOrder" v-model:search="search" v-model:filters="filters"
       :selection-mode="selectionMode" :action-items="actionItems" :selections="selectedEntitities"
@@ -54,10 +54,10 @@ import {
 import { toggleFav, clearRecent, PAGE_SIZE } from '@/apps/drive/resources/files'
 import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { ref, computed, watch, watchEffect, provide, inject, nextTick } from 'vue'
+import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { onKeyDown, useEventListener, useInfiniteScroll } from '@vueuse/core'
-import { request } from 'frappe-ui'
+import { request, useScrollContainer } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
 import { uploads } from '@/apps/drive/data/uploads'
@@ -103,14 +103,15 @@ const props = defineProps({
   getEntities: Object,
 })
 const route = useRoute()
+const { el: scrollHost } = useScrollContainer()
 
 const listDialog = ref('')
 provide('listDialog', listDialog)
 provide('dialog', listDialog)
 
 const sortId = computed(() => route.params.entityName || route.name)
-const inIframe = inject('inIframe')
-const DEFAULT_SORT = inIframe.value
+const inIframe = inject('inIframe', false)
+const DEFAULT_SORT = inIframe
   ? {
     label: 'Name',
     field: 'name',
@@ -306,27 +307,6 @@ async function loadMore() {
   }
 }
 
-const scrollHost = ref(null)
-const resolveScrollHost = () => {
-  let el = viewEl.value?.scrollEl
-  let outermost = null
-  while (el && el !== document.body) {
-    const { overflowY } = getComputedStyle(el)
-    if (/(auto|scroll)/.test(overflowY)) {
-      if (el.scrollHeight > el.clientHeight) {
-        scrollHost.value = el
-        return
-      }
-      outermost = el
-    }
-    el = el.parentElement
-  }
-  scrollHost.value = outermost
-}
-watch([() => props.getEntities.data, view], () => nextTick(resolveScrollHost), {
-  immediate: true,
-})
-useEventListener(window, 'resize', resolveScrollHost)
 useInfiniteScroll(scrollHost, () => loadMore(), {
   distance: 200,
   canLoadMore: () =>
@@ -407,15 +387,6 @@ emitter.on('remove-file-ui', removeFile)
 let scrollRAF = null
 let scrollTarget = null
 let scrollSpeed = 0
-function getScrollableParent(el) {
-  while (el && el !== document.body) {
-    const { overflowY } = getComputedStyle(el)
-    if (/(auto|scroll)/.test(overflowY) && el.scrollHeight > el.clientHeight)
-      return el
-    el = el.parentElement
-  }
-  return null
-}
 function autoScrollTick() {
   if (!scrollTarget || !scrollSpeed) return stopAutoScroll()
   scrollTarget.scrollTop += scrollSpeed
@@ -428,7 +399,7 @@ function stopAutoScroll() {
   scrollSpeed = 0
 }
 function onDragOverScroll(e) {
-  const target = getScrollableParent(e.target)
+  const target = scrollHost.value
   if (!target) return stopAutoScroll()
   const rect = target.getBoundingClientRect()
   const edge = 60
@@ -443,6 +414,7 @@ function onDragOverScroll(e) {
   if (speed && !scrollRAF) autoScrollTick()
   else if (!speed) stopAutoScroll()
 }
+onBeforeUnmount(stopAutoScroll)
 
 // Action Items
 const actionItems = computed(() => {
