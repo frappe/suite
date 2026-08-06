@@ -123,6 +123,7 @@ describe("StallDetector", () => {
 
 		now += 5_000;
 		expect(det.check([toSample(sample)])).toEqual([]);
+		expect(det.hasActiveStall()).toBe(true);
 
 		now += 30_000;
 		expect(det.check([toSample(sample)])).toEqual(["c1"]);

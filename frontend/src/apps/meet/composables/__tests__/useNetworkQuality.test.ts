@@ -256,6 +256,8 @@ describe("useNetworkQuality", () => {
 					rtt: 50,
 					packetLoss: 0,
 					availableOutgoingBitrate: 800_000,
+					downlinkPacketLoss: 0,
+					hasDownlinkSample: true,
 					timestamp: Date.now(),
 					isValid: true,
 				}),
@@ -295,7 +297,11 @@ describe("useNetworkQuality", () => {
 		expect(requestConsumerKeyFrame).toHaveBeenCalledWith("c1");
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 
-		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(9000);
+		expect(observedDownlink.value).toBe("critical");
+		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
+
+		await vi.advanceTimersByTimeAsync(21_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledTimes(2);
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 

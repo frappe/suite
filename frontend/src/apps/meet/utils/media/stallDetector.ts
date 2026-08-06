@@ -49,6 +49,7 @@ export class StallDetector {
 	private readonly now: () => number;
 	private readonly state: Map<string, ConsumerState> = new Map();
 	private lastRecoveryAt: number | null = null;
+	private activeStall = false;
 
 	constructor(options: StallDetectorOptions = {}) {
 		this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
@@ -65,6 +66,7 @@ export class StallDetector {
 		const now = this.now();
 		const activeIds = new Set<string>();
 		const stalled: string[] = [];
+		this.activeStall = false;
 
 		for (const sample of samples) {
 			activeIds.add(sample.id);
@@ -96,13 +98,13 @@ export class StallDetector {
 				if (st.stallStartedAt === null) {
 					st.stallStartedAt = now;
 				}
-				if (
-					now - st.stallStartedAt >= timeoutMs &&
-					this.shouldRecover(st, now)
-				) {
-					stalled.push(sample.id);
-					st.lastRecoveredAt = now;
-					st.recoveryAttempts += 1;
+				if (now - st.stallStartedAt >= timeoutMs) {
+					this.activeStall = true;
+					if (this.shouldRecover(st, now)) {
+						stalled.push(sample.id);
+						st.lastRecoveredAt = now;
+						st.recoveryAttempts += 1;
+					}
 				}
 				continue;
 			}
@@ -127,10 +129,13 @@ export class StallDetector {
 				st.stallStartedAt = now;
 			}
 
-			if (now - st.stallStartedAt >= timeoutMs && this.shouldRecover(st, now)) {
-				stalled.push(sample.id);
-				st.lastRecoveredAt = now;
-				st.recoveryAttempts += 1;
+			if (now - st.stallStartedAt >= timeoutMs) {
+				this.activeStall = true;
+				if (this.shouldRecover(st, now)) {
+					stalled.push(sample.id);
+					st.lastRecoveredAt = now;
+					st.recoveryAttempts += 1;
+				}
 			}
 		}
 
@@ -184,13 +189,19 @@ export class StallDetector {
 		return this.state.get(consumerId)?.recoveryAttempts ?? 0;
 	}
 
+	hasActiveStall(): boolean {
+		return this.activeStall;
+	}
+
 	reset(): void {
 		this.state.clear();
 		this.lastRecoveryAt = null;
+		this.activeStall = false;
 	}
 
 	suspend(): void {
 		this.state.clear();
+		this.activeStall = false;
 	}
 
 	dispose(consumerId: string): void {
