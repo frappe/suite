@@ -268,14 +268,14 @@ describe("useNetworkQuality", () => {
 			connectionManager: { resetReceiveSide },
 		});
 
-		const observed = ref("unknown");
+		const observedDownlink = ref("unknown");
 		const root = document.createElement("div");
 
 		const TestComponent = defineComponent({
 			setup() {
-				const { networkQuality } = useNetworkQuality();
+				const { downlinkQuality } = useNetworkQuality();
 				watchEffect(() => {
-					observed.value = networkQuality.value;
+					observedDownlink.value = downlinkQuality.value;
 				});
 				return () => null;
 			},
@@ -291,6 +291,7 @@ describe("useNetworkQuality", () => {
 		participant.video_enabled = true;
 		await vi.advanceTimersByTimeAsync(21_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
+		expect(observedDownlink.value).toBe("critical");
 		expect(requestConsumerKeyFrame).toHaveBeenCalledWith("c1");
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 

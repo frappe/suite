@@ -158,6 +158,8 @@ export function useNetworkQuality(
 
 		const stalledIds = stallDetector.check(samples);
 		if (stalledIds.length === 0) return;
+		downlinkQuality.value = "critical";
+		healthyDownlinkSamples = 0;
 		const stalledSet = new Set(stalledIds);
 		clientTelemetry?.reportMediaStalls(
 			samples
