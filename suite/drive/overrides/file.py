@@ -307,6 +307,7 @@ class File(FrappeFile):
 
         return frappe.get_value("File", new_parent, ["file_name", "name", "folder"], as_dict=True)
 
+    @frappe.whitelist()
     def toggle_favourite(self):
         existing_doc = frappe.db.exists(
             {
