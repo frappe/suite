@@ -127,7 +127,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
       "id": 10,
       "options": { "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto" },
-      "targets": [{ "expr": "100 * sum(rate(meet_sfu_room_joins_total{outcome=\"success\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(meet_sfu_room_joins_total{instance=~\"$instance\"}[$__rate_interval]))", "refId": "A" }],
+      "targets": [{ "expr": "(100 * sum(rate(meet_sfu_room_joins_total{outcome=\"success\",instance=~\"$instance\"}[$__rate_interval])) / sum(rate(meet_sfu_room_joins_total{instance=~\"$instance\"}[$__rate_interval]))) and on() (sum(rate(meet_sfu_room_joins_total{instance=~\"$instance\"}[$__rate_interval])) > 0)", "refId": "A" }],
       "title": "Room Join Success",
       "type": "gauge"
     },
