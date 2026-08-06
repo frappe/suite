@@ -156,6 +156,12 @@ class TestDriveFilesAPI(IntegrationTestCase):
             with FileManager().get_file(uploaded) as stored:
                 self.assertEqual(stored.read(), b"unknown file contents")
 
+    def test_file_url_update_requires_valid_storage_path(self):
+        with self.set_user(OWNER):
+            self.file.file_url = "/drive-test/../invalid.txt"
+            with self.assertRaises(frappe.ValidationError):
+                self.file.save()
+
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = frappe.generate_hash(12)
         with self.set_user(OWNER):

@@ -47,6 +47,8 @@ class File(FrappeFile):
     def validate(self):
         if self.is_new() and not self.flags.file_created:
             return super().validate()
+        if not self.is_new() and self.has_value_changed("file_url") and not self._not_in_disk():
+            self.validate_storage_path()
         # Blob-backed Drive files must be private: they're served only through
         # Drive's permission layer, never the public /files/ path. Folders, links
         # and content-doctype files have no on-disk blob, and adopted framework
@@ -128,6 +130,10 @@ class File(FrappeFile):
             self.content_doctype and self.content_doctype != WRITER_CONTENT_DOCTYPE
         )
         return self.file_type == "Link" or not self.file_url or content_without_storage
+
+    def validate_storage_path(self):
+        if ".." in Path(storage_key(self.file_url)).parts:
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
 
     # Drive methods
     def _update_modified(func):
