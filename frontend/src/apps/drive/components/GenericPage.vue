@@ -320,6 +320,7 @@ watch(
   ([data]) => {
     if (!data) return
     refreshData()
+    refreshExpanded(sortOrder.value)
   },
   { immediate: true, deep: false }
 )
