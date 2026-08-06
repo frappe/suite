@@ -245,8 +245,10 @@ const resolvedDisplayName = computed(() => {
 });
 
 const computedNetworkQuality = computed(() => {
-	if (props.isLocal && meetingCtx?.isTransportFailed.value) {
-		return "critical";
+	if (props.isLocal) {
+		return meetingCtx?.isTransportFailed.value
+			? "critical"
+			: (meetingCtx?.localNetworkQuality.value ?? "good");
 	}
 	return props.participant.networkQuality || "good";
 });

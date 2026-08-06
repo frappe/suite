@@ -52,6 +52,7 @@ export interface SFUEventHandlers {
 	onScreenShareStarted?: (data: unknown) => void;
 	onScreenShareStopped?: (data: unknown) => void;
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
+	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
 	onHostKickedYou?: (data: unknown) => void;
 	onRecoveryStateChange?: (
@@ -700,6 +701,7 @@ export class SFUConnectionManager {
 		this.sfuClient.on("network_quality_update", (data: unknown) => {
 			const d = data as { participantId?: string; quality?: string };
 			if (d.participantId && d.quality) {
+				this.eventHandlers.onNetworkQualityUpdated?.(d.participantId, d.quality);
 				this.participantManager.updateParticipant(d.participantId, {
 					networkQuality: d.quality,
 				});

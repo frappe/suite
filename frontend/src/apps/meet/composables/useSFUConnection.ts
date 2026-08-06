@@ -126,6 +126,7 @@ export function useSFUConnection(deps: {
 	const activeSpeakerTimeout = shallowRef<ReturnType<typeof setTimeout> | null>(
 		null,
 	);
+	const localNetworkQuality = shallowRef("good");
 	let stabilityCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	const handleParticipantJoined = (participant: Record<string, unknown>) => {
@@ -228,6 +229,11 @@ export function useSFUConnection(deps: {
 			onParticipantJoined: handleParticipantJoined,
 			onParticipantLeft: handleParticipantLeft,
 			onParticipantUpdated: handleParticipantUpdated,
+			onNetworkQualityUpdated: (participantId: string, quality: string) => {
+				if (participantId === currentUser.currentUser.value?.user_id) {
+					localNetworkQuality.value = quality;
+				}
+			},
 			onScreenShareStarted: onScreenShareStarted,
 			onScreenShareStopped: onScreenShareStopped,
 			onActiveSpeakerChanged: (participantIds: string[]) => {
@@ -928,6 +934,7 @@ export function useSFUConnection(deps: {
 	return {
 		sfuClient,
 		sfuManager,
+		localNetworkQuality,
 		joinMeetingRoom,
 		handleGuestJoinResult,
 		setupFrappeRealtimeEventListeners,

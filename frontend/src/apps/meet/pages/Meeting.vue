@@ -588,6 +588,7 @@ provideMeetingContext({
 	isInMeeting: computed(() => true),
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
 	networkQuality,
+	localNetworkQuality: sfuConnection.localNetworkQuality,
 	isTransportFailed,
 });
 

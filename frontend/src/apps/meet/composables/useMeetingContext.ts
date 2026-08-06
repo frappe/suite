@@ -25,6 +25,7 @@ interface MeetingContext {
 	isInMeeting: ReturnType<() => import("vue").ComputedRef<boolean>>;
 	onBackgroundEffectsChanged: () => void;
 	networkQuality: Ref<NetworkQuality>;
+	localNetworkQuality: Ref<string>;
 	isTransportFailed: Ref<boolean>;
 }
 
