@@ -4685,9 +4685,9 @@ fraction.js@^5.3.4:
   resolved "https://registry.yarnpkg.com/fraction.js/-/fraction.js-5.3.4.tgz#8c0fcc6a9908262df4ed197427bdeef563e0699a"
   integrity sha512-1X1NTtiJphryn/uLQz3whtY6jK3fTqoE3ohKs0tT+Ujr1W59oopxmoEh7Lu5p6vBaPbgoM0bzveAW4Qi5RyWDQ==
 
-frappe-ui@frappe/frappe-ui#548b9b950628f1cccec26687eb4a9c11f74f3877:
-  version "1.0.0-beta.29"
-  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/548b9b950628f1cccec26687eb4a9c11f74f3877"
+frappe-ui@frappe/frappe-ui#5b4243d13ed0f06a1e855f4a92f02ac36435f24e:
+  version "1.0.0-beta.34"
+  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/5b4243d13ed0f06a1e855f4a92f02ac36435f24e"
   dependencies:
     "@codemirror/lang-css" "^6.3.0"
     "@codemirror/lang-html" "^6.4.9"
