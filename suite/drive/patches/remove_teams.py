@@ -349,7 +349,7 @@ def sweep_sidecars(sidecars=None, trashed=None):
 
 def _carry_sidecars(sidecars, trashed):
     manager = FileManager()
-    root = storage_key(get_root_folder().file_url).rstrip("/")
+    root = manager.get_root_storage_key().rstrip("/")
     prefix = manager.settings.thumbnail_prefix or "thumbnails"
 
     # One listing, not one per prefix and a head_object per object: on S3 that is

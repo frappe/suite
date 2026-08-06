@@ -46,6 +46,12 @@ class FileManager:
     def get_prefix(self):
         return self.settings.root_folder or ""
 
+    def get_root_storage_key(self):
+        file_url = get_root_folder()["file_url"]
+        if self.s3_enabled:
+            file_url = get_s3_key(file_url)
+        return storage_key(file_url)
+
     def _not_if_flat(func):
         """Flat storage has no directories and no per-file paths, so anything that
         rearranges them is a no-op."""
@@ -149,7 +155,7 @@ class FileManager:
         if self.flat:
             # One namespace under the root, keyed by id — no tree, no team, so a
             # rename or move never touches storage.
-            root = Path(storage_key(get_root_folder()["file_url"]))
+            root = Path(self.get_root_storage_key())
             return root / ("embeds" if embed else "") / entity.name
 
         # perf: stupidly complicated because we use this both with a real entity and a dict
@@ -277,7 +283,7 @@ class FileManager:
             finally:
                 body.close()
         else:
-            f = open(self.site_folder / path, "rb")
+            f = open(self.site_folder / storage_key(path), "rb")
             try:
                 yield f
             finally:
@@ -364,11 +370,7 @@ class FileManager:
         return files
 
     def get_thumbnail_path(self, name):
-        return (
-            Path(storage_key(get_root_folder()["file_url"]))
-            / self.settings.thumbnail_prefix
-            / (name + ".thumbnail")
-        )
+        return Path(self.get_root_storage_key()) / self.settings.thumbnail_prefix / (name + ".thumbnail")
 
     def get_thumbnail(self, name):
         return self.get_file(frappe._dict({"file_url": str(self.get_thumbnail_path(name))}), log=False)
@@ -376,8 +378,7 @@ class FileManager:
     def __get_trash_path(self, entity):
         """Keyed by id, not file_name: trash is one flat directory under a single
         root now, and two teams could each trash a `readme.md`."""
-        root = get_root_folder()
-        return Path(storage_key(root["file_url"])) / TRASH_PREFIX / entity.name
+        return Path(self.get_root_storage_key()) / TRASH_PREFIX / entity.name
 
     @_not_if_flat
     def rename(self, entity):
