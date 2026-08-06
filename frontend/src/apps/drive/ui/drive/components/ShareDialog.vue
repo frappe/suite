@@ -104,7 +104,7 @@ import {
   Dialog,
   Select,
   Skeleton,
-  frappeRequest,
+  createResource,
   toast,
   Button,
 } from 'frappe-ui'
@@ -184,12 +184,11 @@ const generalAccessLevel = ref(levelOptions[0].value)
 const generalPerms = ref('reader')
 const generalAccessLoaded = ref(false)
 
-const fetchGeneralAccess = async () => {
-  try {
-    const data = await frappeRequest({
-      url: 'suite.drive.api.permissions.get_general_access',
-      params: { entity: props.file.name },
-    })
+createResource({
+  url: 'suite.drive.api.permissions.get_general_access',
+  params: { entity: props.file.name },
+  auto: true,
+  onSuccess(data) {
     generalAccessLevel.value = data.type
     if (data.read) {
       generalPerms.value = data.write
@@ -199,11 +198,11 @@ const fetchGeneralAccess = async () => {
           : 'reader'
     }
     generalAccessLoaded.value = true
-  } catch (error) {
+  },
+  onError(error) {
     toast.error(error.messages?.at(-1) || 'Could not load general access.')
-  }
-}
-fetchGeneralAccess()
+  },
+})
 const updateGeneralAccess = (level, perms) => {
   if (level !== 'restricted') {
     props.updateAccess.submit({
