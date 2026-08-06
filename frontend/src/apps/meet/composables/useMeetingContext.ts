@@ -25,6 +25,7 @@ interface MeetingContext {
 	isInMeeting: ReturnType<() => import("vue").ComputedRef<boolean>>;
 	onBackgroundEffectsChanged: () => void;
 	networkQuality: Ref<NetworkQuality>;
+	isTransportFailed: Ref<boolean>;
 }
 
 const MEETING_CONTEXT_KEY: InjectionKey<MeetingContext> =

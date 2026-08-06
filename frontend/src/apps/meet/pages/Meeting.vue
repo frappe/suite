@@ -489,7 +489,9 @@ const sfuConnection = useSFUConnection({
 		participantStore.activeSpeakerIds = participantIds;
 	},
 });
-const { networkQuality } = useNetworkQuality(sfuConnection.sfuManager);
+const { networkQuality, isTransportFailed } = useNetworkQuality(
+	sfuConnection.sfuManager,
+);
 
 // --- Media Controls ---
 const mediaControls = useMediaControls({
@@ -586,6 +588,7 @@ provideMeetingContext({
 	isInMeeting: computed(() => true),
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
 	networkQuality,
+	isTransportFailed,
 });
 
 // Provide legacy injects for components not yet migrated to useMeetingContext

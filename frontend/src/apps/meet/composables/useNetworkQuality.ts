@@ -28,6 +28,7 @@ export function useNetworkQuality(
 	sfuManagerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager"),
 ) {
 	const networkQuality = ref<NetworkQuality>("good");
+	const isTransportFailed = ref(false);
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
@@ -163,6 +164,7 @@ export function useNetworkQuality(
 
 			if (!transportManager) {
 				networkQuality.value = "good";
+				isTransportFailed.value = false;
 				return;
 			}
 
@@ -173,6 +175,7 @@ export function useNetworkQuality(
 
 			// Only treat "failed" as a hard error.
 			const isFailed = sendState === "failed" || recvState === "failed";
+			isTransportFailed.value = isFailed;
 
 			if (isFailed) {
 				networkQuality.value = "critical";
@@ -213,5 +216,6 @@ export function useNetworkQuality(
 
 	return {
 		networkQuality,
+		isTransportFailed,
 	};
 }
