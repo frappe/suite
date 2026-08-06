@@ -98,6 +98,7 @@
 import { Button, Dropdown } from 'frappe-ui'
 import EditableBreadcrumbs from '@/apps/drive/components/EditableBreadcrumbs.vue'
 import { getFileLink } from '@/apps/drive/sdk'
+import { toggleFav } from '@/apps/drive/resources/files'
 
 import { useSessionStore } from '@/boot/session'
 import emitter from '@/apps/writer/emitter'
@@ -238,7 +239,9 @@ const fileActions = computed(() =>
               icon: LucideStar,
               onClick: () => {
                 props.file.doc.is_favourite = true
-                toggleFav.submit({ entities: [props.file.doc] })
+                toggleFav.submit({
+                  entities: [{ name: props.file.doc.name, is_favourite: true }],
+                })
               },
               isEnabled: () => !props.file.doc.is_favourite,
             },
@@ -248,7 +251,9 @@ const fileActions = computed(() =>
               color: 'stroke-amber-500 fill-amber-500',
               onClick: () => {
                 props.file.doc.is_favourite = false
-                toggleFav.submit({ entities: [props.file.doc] })
+                toggleFav.submit({
+                  entities: [{ name: props.file.doc.name, is_favourite: false }],
+                })
               },
               isEnabled: () => props.file.doc.is_favourite,
             },

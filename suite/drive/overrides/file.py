@@ -308,28 +308,6 @@ class File(FrappeFile):
         return frappe.get_value("File", new_parent, ["file_name", "name", "folder"], as_dict=True)
 
     @frappe.whitelist()
-    def toggle_favourite(self):
-        existing_doc = frappe.db.exists(
-            {
-                "doctype": "Drive Favourite",
-                "entity": self.name,
-                "user": frappe.session.user,
-            }
-        )
-        if existing_doc:
-            frappe.delete_doc("Drive Favourite", existing_doc)
-            return False
-        else:
-            frappe.get_doc(
-                {
-                    "doctype": "Drive Favourite",
-                    "entity": self.name,
-                    "user": frappe.session.user,
-                }
-            ).insert()
-            return True
-
-    @frappe.whitelist()
     @_update_modified
     def rename(self, new_file_name: str):
         """

@@ -21,9 +21,6 @@ export default function useDocument(docId: MaybeRefOrGetter<string>) {
     transform: (doc) => {
       return prettyData(doc)
     },
-    methods: {
-      toggleFav: { name: 'toggle_favourite' },
-    },
   })
   // Construct a fake useDoc until we fetch data
   const document = ref({ doc: null })
