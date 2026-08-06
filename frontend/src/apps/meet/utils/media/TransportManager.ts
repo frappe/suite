@@ -129,6 +129,10 @@ export class TransportManager {
 	private recvTransportCreation: Promise<TransportLike> | null = null;
 	private sendTransportGeneration = 0;
 	private recvTransportGeneration = 0;
+	private previousInboundPackets = new Map<
+		string,
+		{ received: number; lost: number }
+	>();
 
 	constructor(e2eePolicy?: E2EETransformPolicy) {
 		this.sendTransport = null;
@@ -710,6 +714,8 @@ export class TransportManager {
 		const result = {
 			rtt: 0,
 			packetLoss: 0,
+			downlinkPacketLoss: 0,
+			hasDownlinkSample: false,
 			availableOutgoingBitrate: 0,
 			timestamp: Date.now(),
 			isValid: false,
@@ -722,7 +728,10 @@ export class TransportManager {
 		try {
 			let packetsSent = 0;
 			let packetsLost = 0;
+			let downlinkPackets = 0;
+			let downlinkPacketsLost = 0;
 			let validStatsFound = false;
+			const seenInboundReports = new Set<string>();
 
 			// One RTT sample per transport, from a single report type.
 			const transportRtt: number[] = [];
@@ -730,13 +739,14 @@ export class TransportManager {
 			const processStats = (
 				stats: Map<string, TransportStatReport>,
 				preferRemoteInbound: boolean,
+				transportDirection: Direction,
 			) => {
 				let remoteRttSum = 0;
 				let remoteRttCount = 0;
 				let pairRttSum = 0;
 				let pairRttCount = 0;
 
-				for (const report of stats.values()) {
+				for (const [reportId, report] of stats) {
 					if (
 						report.type === "candidate-pair" &&
 						report.state === "succeeded"
@@ -765,6 +775,24 @@ export class TransportManager {
 						) {
 							packetsSent += report.packetsReceived + report.packetsLost;
 							packetsLost += report.packetsLost;
+
+							const sampleId = `${transportDirection}:${reportId}`;
+							seenInboundReports.add(sampleId);
+							const previous = this.previousInboundPackets.get(sampleId);
+							if (
+								previous &&
+								report.packetsReceived >= previous.received &&
+								report.packetsLost >= previous.lost
+							) {
+								const receivedDelta = report.packetsReceived - previous.received;
+								const lostDelta = report.packetsLost - previous.lost;
+								downlinkPackets += receivedDelta + lostDelta;
+								downlinkPacketsLost += lostDelta;
+							}
+							this.previousInboundPackets.set(sampleId, {
+								received: report.packetsReceived,
+								lost: report.packetsLost,
+							});
 						}
 					}
 
@@ -796,7 +824,7 @@ export class TransportManager {
 					this.sendTransport.connectionState === "completed")
 			) {
 				const sendStats = await this.sendTransport.getStats();
-				processStats(sendStats, true);
+				processStats(sendStats, true, "send");
 			}
 
 			if (
@@ -805,7 +833,13 @@ export class TransportManager {
 					this.recvTransport.connectionState === "completed")
 			) {
 				const recvStats = await this.recvTransport.getStats();
-				processStats(recvStats, false);
+				processStats(recvStats, false, "recv");
+			}
+
+			for (const reportId of this.previousInboundPackets.keys()) {
+				if (!seenInboundReports.has(reportId)) {
+					this.previousInboundPackets.delete(reportId);
+				}
 			}
 
 			if (transportRtt.length > 0) {
@@ -816,6 +850,11 @@ export class TransportManager {
 
 			if (packetsSent > 0) {
 				result.packetLoss = (packetsLost / packetsSent) * 100;
+			}
+			if (downlinkPackets > 0) {
+				result.downlinkPacketLoss =
+					(downlinkPacketsLost / downlinkPackets) * 100;
+				result.hasDownlinkSample = true;
 			}
 
 			result.isValid = validStatsFound;
@@ -830,5 +869,6 @@ export class TransportManager {
 		this.closeSendTransport();
 		this.closeReceiveTransport();
 		this.device = null;
+		this.previousInboundPackets.clear();
 	}
 }

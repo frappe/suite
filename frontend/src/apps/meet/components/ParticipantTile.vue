@@ -246,9 +246,7 @@ const resolvedDisplayName = computed(() => {
 
 const computedNetworkQuality = computed(() => {
 	if (props.isLocal) {
-		return meetingCtx?.isTransportFailed.value
-			? "critical"
-			: (meetingCtx?.localNetworkQuality.value ?? "good");
+		return meetingCtx?.localNetworkQuality.value ?? "good";
 	}
 	return props.participant.networkQuality || "good";
 });

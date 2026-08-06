@@ -13,6 +13,8 @@ interface NetworkStats {
 	rtt: number;
 	packetLoss: number;
 	availableOutgoingBitrate: number;
+	downlinkPacketLoss?: number;
+	hasDownlinkSample?: boolean;
 	timestamp: number;
 	isValid: boolean;
 }
@@ -28,7 +30,11 @@ export function useNetworkQuality(
 	sfuManagerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager"),
 ) {
 	const networkQuality = ref<NetworkQuality>("good");
+	const downlinkQuality = ref<NetworkQuality>("good");
 	const isTransportFailed = ref(false);
+	let degradedDownlinkSamples = 0;
+	let healthyDownlinkSamples = 0;
+	let pendingDownlinkQuality: NetworkQuality = "good";
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
@@ -64,6 +70,38 @@ export function useNetworkQuality(
 			networkQuality.value = "poor";
 		} else {
 			networkQuality.value = "good";
+		}
+	};
+
+	const updateDownlinkQuality = (stats: NetworkStats) => {
+		if (!stats.hasDownlinkSample) return;
+
+		const packetLoss = stats.downlinkPacketLoss ?? 0;
+		const sampleQuality: NetworkQuality =
+			packetLoss > CRITICAL_PACKET_LOSS_PERCENT
+				? "critical"
+				: packetLoss > POOR_PACKET_LOSS_PERCENT
+					? "poor"
+					: "good";
+
+		if (sampleQuality === "good") {
+			degradedDownlinkSamples = 0;
+			pendingDownlinkQuality = "good";
+			healthyDownlinkSamples++;
+			if (healthyDownlinkSamples >= 3) downlinkQuality.value = "good";
+			return;
+		}
+
+		healthyDownlinkSamples = 0;
+		degradedDownlinkSamples++;
+		if (
+			sampleQuality === "critical" ||
+			pendingDownlinkQuality === "good"
+		) {
+			pendingDownlinkQuality = sampleQuality;
+		}
+		if (degradedDownlinkSamples >= 2) {
+			downlinkQuality.value = pendingDownlinkQuality;
 		}
 	};
 
@@ -186,6 +224,7 @@ export function useNetworkQuality(
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
 				updateQuality(stats);
+				updateDownlinkQuality(stats);
 				const sfuClient = sfuManagerRef?.value?.sfuClient;
 				if (sfuClient && stats.isValid) {
 					getClientTelemetry(sfuClient).reportNetworkQuality(stats);
@@ -216,6 +255,7 @@ export function useNetworkQuality(
 
 	return {
 		networkQuality,
+		downlinkQuality,
 		isTransportFailed,
 	};
 }

@@ -26,7 +26,6 @@ interface MeetingContext {
 	onBackgroundEffectsChanged: () => void;
 	networkQuality: Ref<NetworkQuality>;
 	localNetworkQuality: Ref<string>;
-	isTransportFailed: Ref<boolean>;
 }
 
 const MEETING_CONTEXT_KEY: InjectionKey<MeetingContext> =
