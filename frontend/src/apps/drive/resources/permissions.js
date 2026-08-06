@@ -35,7 +35,7 @@ export const setSettings = createResource({
 })
 
 export const generalAccess = createResource({
-  url: 'suite.drive.api.permissions.get_user_access',
+  url: 'suite.drive.api.permissions.get_general_access',
 })
 
 export const userList = createResource({

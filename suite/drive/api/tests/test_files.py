@@ -17,7 +17,12 @@ from suite.drive.api.files import (
     upload_file,
 )
 from suite.drive.api.list import get_attachments
-from suite.drive.api.permissions import get_user_access, user_has_permission
+from suite.drive.api.permissions import (
+    get_general_access,
+    get_user_access,
+    get_user_access_for_user,
+    user_has_permission,
+)
 from suite.drive.utils import (
     GENERAL_USER,
     STATUS_ACTIVE,
@@ -177,6 +182,27 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.folder.share(user=OTHER_USER, read=True)
         with self.set_user(OTHER_USER):
             self.assertEqual(get_user_access(self.file.name)["read"], 1)
+
+    def test_get_user_access_endpoint_cannot_inspect_another_user(self):
+        with self.set_user(OWNER):
+            self.file.share(user=OTHER_USER, read=True)
+            with self.assertRaises(TypeError):
+                get_user_access(self.file.name, OTHER_USER)
+            self.assertEqual(get_user_access_for_user(self.file.name, OTHER_USER)["read"], 1)
+
+    def test_general_access_reports_public_site_and_restricted_access(self):
+        with self.set_user(OWNER):
+            self.assertEqual(get_general_access(self.file)["type"], "restricted")
+            self.file.share(user=GENERAL_USER, read=True)
+            self.assertEqual(get_general_access(self.file)["type"], "site")
+            self.file.share(read=True)
+            self.assertEqual(get_general_access(self.file)["type"], "public")
+            self.file.unshare()
+            self.file.unshare(GENERAL_USER)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                get_general_access(self.file)
 
     def test_sharing_api_adds_and_removes_permission(self):
         with self.set_user(OWNER):

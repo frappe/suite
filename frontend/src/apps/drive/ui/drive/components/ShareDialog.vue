@@ -104,7 +104,7 @@ import {
   Dialog,
   Select,
   Skeleton,
-  useCall,
+  frappeRequest,
   Button,
 } from 'frappe-ui'
 import AccessSelect from './AccessSelect.vue'
@@ -182,28 +182,18 @@ const accessOptions = computed(() =>
 const generalAccessLevel = ref(levelOptions[0].value)
 const generalPerms = ref('reader')
 
-let generalParams = {}
-const getGeneralAccess = useCall({
-  url: '/api/v2/method/suite.drive.api.permissions.get_user_access',
-  immediate: false,
-  onSuccess: (data) => {
-    if (!data || !data.read) {
-      if (generalParams.user === 'Guest') fetchGeneralAccess({ user: '$GENERAL' })
-      return
-    }
-    generalAccessLevel.value = generalParams.user === 'Guest' ? 'public' : 'site'
-    generalPerms.value = data.write
-      ? 'editor'
-      : data.upload
-        ? 'upload'
-        : 'reader'
-  },
+frappeRequest({
+  url: 'suite.drive.api.permissions.get_general_access',
+  params: { entity: props.file.name },
+}).then((data) => {
+  generalAccessLevel.value = data.type
+  if (!data.read) return
+  generalPerms.value = data.write
+    ? 'editor'
+    : data.upload
+      ? 'upload'
+      : 'reader'
 })
-const fetchGeneralAccess = (params) => {
-  generalParams = params
-  getGeneralAccess.submit({ entity: props.file.name, ...params })
-}
-fetchGeneralAccess({ user: 'Guest' })
 const updateGeneralAccess = (level, perms) => {
   if (level !== 'restricted') {
     props.updateAccess.submit({

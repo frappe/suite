@@ -103,9 +103,9 @@ def notify_share(entity_name, docperm_name):
 
 
 def create_notification(from_user: str, to_user: str, type: str, entity: str, message: str | None = None):
-    from suite.drive.api.permissions import get_user_access
+    from suite.drive.api.permissions import get_user_access_for_user
 
-    user_access = get_user_access(entity.name, to_user)
+    user_access = get_user_access_for_user(entity.name, to_user)
     if user_access.get("read") == 0:
         return
 
@@ -155,5 +155,5 @@ def send_share_email(to, message, link, type_):
             inline_images=drive_logo_inline_images(),
             now=True,
         )
-    except:
+    except Exception:
         pass

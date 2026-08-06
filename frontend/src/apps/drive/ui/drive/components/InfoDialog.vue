@@ -142,25 +142,10 @@ const props = defineProps({
 
 // Refactor to share with ShareDialog
 const getGeneralAccess = createResource({
-  url: 'suite.drive.api.permissions.get_user_access',
-  makeParams: (params) => ({
-    ...params,
-    entity: props.entity.name,
-  }),
-  transform: (data) => {
-    if (!data || !data.read) {
-      if (getGeneralAccess.params.user !== 'Guest') return { type: 'restricted' }
-      getGeneralAccess.fetch({ user: '$GENERAL' })
-      // Wait for the $GENERAL answer rather than claiming public meanwhile.
-      return { type: 'restricted' }
-    }
-    return {
-      ...data,
-      type: getGeneralAccess.params.user === 'Guest' ? 'public' : 'site',
-    }
-  },
+  url: 'suite.drive.api.permissions.get_general_access',
+  params: { entity: props.entity.name },
+  auto: true,
 })
-getGeneralAccess.fetch({ user: 'Guest' })
 
 const userAccess = createResource({
   url: 'suite.drive.api.permissions.get_shared_with_list',

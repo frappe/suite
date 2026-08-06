@@ -11,7 +11,7 @@ from suite.drive.api.files import get_file_type
 from suite.drive.api.permissions import (
     exceeds_grant_ceiling,
     get_entity_with_permissions,
-    get_user_access,
+    get_user_access_for_user,
     user_has_permission,
 )
 from suite.drive.api.product import create_invites
@@ -209,7 +209,7 @@ class File(FrappeFile):
             # Dropping this file's own general rows is enough unless read is
             # inherited from a folder above (e.g. anything inside Site); then
             # restricting still needs an explicit deny to cut the inheritance.
-            if get_user_access(self, "Guest")["read"]:
+            if get_user_access_for_user(self, "Guest")["read"]:
                 self._insert_deny("")
             if generate_upward_path(self.name, GENERAL_USER)[-1]["read"]:
                 self._insert_deny(GENERAL_USER)

@@ -32,14 +32,16 @@ def is_drive_admin(user: str | None = None):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_user_access(entity: str | Document | frappe._dict, user: str | None = None):
+def get_user_access(entity: str | Document | frappe._dict):
     """
     Return the user specific permissions for an entity.
     """
+    return get_user_access_for_user(entity, frappe.session.user)
+
+
+def get_user_access_for_user(entity: str | Document | frappe._dict, user: str):
     if isinstance(entity, str):
         entity = frappe.get_cached_doc("File", entity)
-    if not user:
-        user = frappe.session.user
 
     # Admins hold everything everywhere - including the shared root, which carries
     # no grant of its own, so nothing else would let them create there.
@@ -62,6 +64,20 @@ def get_user_access(entity: str | Document | frappe._dict, user: str | None = No
 
     access = filter_access(generate_upward_path(entity.name, user))
     return {**access, "type": "user" if access["write"] else "guest"}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_general_access(entity: str | Document | frappe._dict):
+    if isinstance(entity, str):
+        entity = frappe.get_cached_doc("File", entity)
+    if not get_user_access_for_user(entity, frappe.session.user)["read"]:
+        frappe.throw("You don't have access to this file.", frappe.PermissionError)
+
+    for user, access_type in (("Guest", "public"), (GENERAL_USER, "site")):
+        access = get_user_access_for_user(entity, user)
+        if access["read"]:
+            return {**access, "type": access_type}
+    return {**NO_ACCESS, "type": "restricted"}
 
 
 def _ref_doc_access(entity, user):
@@ -127,7 +143,7 @@ def get_entity_with_permissions(entity_name: str):
 
     # General access marker: -2 public (link), -1 site users, 0 restricted.
     default = 0
-    if get_user_access(entity, "Guest")["read"]:
+    if get_user_access_for_user(entity, "Guest")["read"]:
         default = -2
     elif generate_upward_path(entity_name, GENERAL_USER)[-1]["read"]:
         default = -1
@@ -185,7 +201,7 @@ def exceeds_grant_ceiling(entity, requested, user=None):
     user = user or frappe.session.user
     if is_drive_admin(user):
         return []
-    granter = get_user_access(entity, user)
+    granter = get_user_access_for_user(entity, user)
     return [t for t in PERMISSION_TYPES if requested.get(t) and not granter.get(t)]
 
 
@@ -248,5 +264,5 @@ def user_has_permission(doc, ptype, user=None):
     if ptype not in PERMISSION_TYPES:
         # Should ideally deflect to Framework
         ptype = "write"
-    access = get_user_access(doc, user)
+    access = get_user_access_for_user(doc, user)
     return bool(access.get(ptype))
