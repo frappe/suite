@@ -194,7 +194,7 @@ class FileManager:
                 else:
                     buf = self.conn.get_object(Bucket=self.bucket, Key=file_url)["Body"]
             else:
-                with open(self.site_folder / file_url, "rb") as fh:
+                with open(self.get_local_path(file_url), "rb") as fh:
                     buf = BytesIO(fh.read())
         except (ClientError, FileNotFoundError, OSError) as e:
             if log:
@@ -202,6 +202,16 @@ class FileManager:
             frappe.throw("Could not find this file.", frappe.DoesNotExistError)
 
         return buf
+
+    def get_local_path(self, file_url):
+        path = (self.site_folder / storage_key(file_url)).resolve()
+        roots = [
+            (self.site_folder / "private" / "files").resolve(),
+            (self.site_folder / "public" / "files").resolve(),
+        ]
+        if not any(path.is_relative_to(root) for root in roots):
+            frappe.throw("The File URL you've entered is incorrect", frappe.ValidationError)
+        return path
 
     def presigned_url(self, key, download_name, mime_type=None, expires=3600):
         """Short-lived S3 GET URL, range-capable, served straight to the client."""
@@ -258,7 +268,7 @@ class FileManager:
             finally:
                 source.close()
         else:
-            with open(self.site_folder / storage_key(entity.file_url), "rb") as fh:
+            with open(self.get_local_path(entity.file_url), "rb") as fh:
                 while chunk := fh.read(block_size):
                     yield chunk
 
@@ -284,7 +294,7 @@ class FileManager:
             finally:
                 body.close()
         else:
-            f = open(self.site_folder / storage_key(path), "rb")
+            f = open(self.get_local_path(path), "rb")
             try:
                 yield f
             finally:
@@ -409,7 +419,7 @@ class FileManager:
                     shutil.rmtree(full_trash_path)
 
                 full_trash_path.parent.mkdir(exist_ok=True)
-                cur_path = self.site_folder / storage_key(entity.file_url)
+                cur_path = self.get_local_path(entity.file_url)
                 if cur_path.is_dir():
                     shutil.move(cur_path, full_trash_path)
                 else:
@@ -444,8 +454,8 @@ class FileManager:
                 )
                 self.conn.delete_object(Bucket=bucket, Key=src_key)
             else:
-                cur_path = self.site_folder / src_key
-                dest_path = self.site_folder / dest_key
+                cur_path = self.get_local_path(src_key)
+                dest_path = self.get_local_path(dest_key)
                 if cur_path.is_dir():
                     shutil.move(cur_path, dest_path)
                 else:
@@ -467,7 +477,7 @@ class FileManager:
                 pass
         else:
             try:
-                (self.site_folder / storage_key(entity.file_url)).unlink()
+                self.get_local_path(entity.file_url).unlink()
                 if thumbnail_path:
                     (self.site_folder / thumbnail_path).unlink()
             except FileNotFoundError:

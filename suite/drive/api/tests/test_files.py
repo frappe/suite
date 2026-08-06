@@ -51,12 +51,18 @@ class TestDriveFilesAPI(IntegrationTestCase):
     def setUp(self):
         frappe.flags.mute_drive_activity_log = True
         with self.set_user(OWNER):
-            self.folder = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
+            manager = FileManager()
+            self.folder = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: manager.create_folder(file),
+            )
             self.file = create_drive_file(
                 f"{frappe.generate_hash(8)}.txt",
                 self.folder.name,
                 "Text",
-                f"/drive-test/{frappe.generate_hash(8)}.txt",
+                f"{self.folder.file_url}{frappe.generate_hash(8)}.txt",
                 "text/plain",
                 12,
             )
@@ -158,9 +164,10 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
     def test_file_url_update_requires_valid_storage_path(self):
         with self.set_user(OWNER):
-            self.file.file_url = "/drive-test/../invalid.txt"
+            file = frappe.get_doc("File", self.file.name)
+            file.file_url = "/private/files/../../invalid.txt"
             with self.assertRaises(frappe.ValidationError):
-                self.file.save()
+                file.save()
 
     def test_ordered_chunks_are_assembled_byte_for_byte(self):
         session = frappe.generate_hash(12)
@@ -274,8 +281,14 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
     def test_owner_can_rename_and_move_uploaded_file(self):
         with self.set_user(OWNER):
+            manager = FileManager()
             uploaded = self.upload(b"move me", "before.txt")
-            destination = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
+            destination = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: manager.create_folder(file),
+            )
 
             rename(uploaded.name, "after.txt")
             uploaded.reload()
@@ -291,7 +304,13 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
     def test_unrelated_user_cannot_rename_or_move_file(self):
         with self.set_user(OWNER):
-            destination = create_drive_file(frappe.generate_hash(8), self.home, "Folder", "")
+            manager = FileManager()
+            destination = create_drive_file(
+                frappe.generate_hash(8),
+                self.home,
+                "Folder",
+                lambda file: manager.create_folder(file),
+            )
         with self.set_user(OTHER_USER):
             with self.assertRaises(frappe.PermissionError):
                 rename(self.file.name, "forbidden.txt")

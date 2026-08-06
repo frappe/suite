@@ -321,6 +321,7 @@ def _serve_resumable(manager, key, download_name, mime_type=None):
 
     xaccel_prefix = frappe.conf.get("drive_xaccel_prefix")
     if xaccel_prefix:
+        key = str(manager.get_local_path(key).relative_to(manager.site_folder.resolve()))
         response = Response(status=200)
         # header values must be latin-1 and nginx expects an encoded URI
         response.headers["X-Accel-Redirect"] = f"{xaccel_prefix.rstrip('/')}/{quote(key)}"
@@ -330,7 +331,7 @@ def _serve_resumable(manager, key, download_name, mime_type=None):
         return response
 
     response = send_file(
-        str(manager.site_folder / key),
+        str(manager.get_local_path(key)),
         mimetype=mime_type or "application/octet-stream",
         as_attachment=True,
         download_name=download_name,
