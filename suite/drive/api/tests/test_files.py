@@ -13,6 +13,7 @@ from suite.drive.api.files import (
     move,
     remove_or_restore,
     rename,
+    stream_file_content,
     track_visit,
     update_access,
     upload_file,
@@ -205,6 +206,31 @@ class TestDriveFilesAPI(IntegrationTestCase):
             Bucket=manager.bucket,
             Key=uploaded.file_url.lstrip("/"),
         )
+
+    def test_private_video_range_stream_uses_storage_relative_path(self):
+        self.file.file_type = "Video"
+        self.file.mime_type = "video/mp4"
+        self.file.file_size = 12
+        self.file.save()
+        request = Request(EnvironBuilder(headers={"Range": "bytes=0-"}).get_environ())
+
+        @contextmanager
+        def stored_file(path):
+            self.assertEqual(path, self.file.file_url.lstrip("/"))
+            yield BytesIO(b"video bytes!")
+
+        frappe.local.request = request
+        try:
+            with (
+                self.set_user(OWNER),
+                patch.object(FileManager, "open_file", side_effect=stored_file),
+            ):
+                response = stream_file_content(self.file.name)
+        finally:
+            del frappe.local.request
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.data, b"video bytes!")
 
     def test_direct_and_inherited_shares_grant_read_access(self):
         with self.set_user(OWNER):

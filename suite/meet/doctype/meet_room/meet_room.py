@@ -28,6 +28,7 @@ class MeetRoom(Document):
 
         allow_guest: DF.Check
         banned_users: DF.Table[MeetRoomUser]
+        calendar_event: DF.Data | None
         co_hosts: DF.Table[MeetRoomUser]
         e2ee_enabled: DF.Check
         meeting_type: DF.Literal["open", "restricted"]
@@ -41,7 +42,31 @@ class MeetRoom(Document):
             self.name = generate()
 
     def validate(self):
+        self.validate_recording_policy()
         self.backfill_display_names()
+
+    def validate_recording_policy(self):
+        policy_fields_changed = not self.is_new() and self.has_value_changed("e2ee_enabled")
+        if policy_fields_changed and not getattr(self.flags, "recording_policy_update", False):
+            frappe.throw(_("Use the dedicated meeting policy method to change E2EE"))
+        if self.has_value_changed("e2ee_enabled") and self.e2ee_enabled and self.has_active_recording():
+            frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
+
+    def has_active_recording(self) -> bool:
+        from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
+
+        return bool(
+            frappe.db.exists(
+                "Meet Recording", {"meet_room": self.name, "status": ["in", ACTIVE_RECORDING_STATUSES]}
+            )
+        )
+
+    def recording_policy_lock(self):
+        lock = frappe.cache.lock(f"meet-recording-policy:{frappe.local.site}:{self.name}", timeout=300)
+        if not lock.acquire(blocking=True, blocking_timeout=10):
+            frappe.throw(_("Meeting policy is being updated; try again"))
+        frappe.db.after_commit.add(lock.release)
+        frappe.db.after_rollback.add(lock.release)
 
     def backfill_display_names(self):
         """Backfill display names for existing child rows."""
@@ -390,7 +415,14 @@ class MeetRoom(Document):
         if not self.is_host_or_cohost(frappe.session.user):
             frappe.throw(_("Only hosts and co-hosts can convert meetings to E2EE"), frappe.PermissionError)
 
+        self.recording_policy_lock()
+        self.reload()
+        if not self.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Only hosts and co-hosts can convert meetings to E2EE"), frappe.PermissionError)
+        if self.has_active_recording():
+            frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
         self.e2ee_enabled = True
+        self.flags.recording_policy_update = True
         self.save()
 
         users_notified = set()

@@ -7,7 +7,8 @@
  "field_order": [
   "section_break_mm5y",
   "codec_strategy",
-  "allow_guest"
+  "allow_guest",
+  "enable_recording"
  ],
  "fields": [
   {
@@ -28,10 +29,17 @@
    "fieldname": "allow_guest",
    "fieldtype": "Check",
    "label": "Allow Guest Access"
+  },
+  {
+   "default": "0",
+   "description": "Allow eligible rooms to start new recording sessions when a recorder service is configured.",
+   "fieldname": "enable_recording",
+   "fieldtype": "Check",
+   "label": "Enable Recording"
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
  "modified": "2026-04-02 15:26:04.984617",

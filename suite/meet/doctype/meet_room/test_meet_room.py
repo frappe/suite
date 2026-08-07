@@ -1,7 +1,8 @@
 # Copyright (c) 2025, Frappe and Contributors
 # See license.txt
 
-# import frappe
+import frappe
+from frappe.exceptions import ValidationError
 from frappe.tests import IntegrationTestCase
 
 # On IntegrationTestCase, the doctype test records and all
@@ -17,4 +18,9 @@ class IntegrationTestMeetRoom(IntegrationTestCase):
     Use this class for testing interactions between multiple components.
     """
 
-    pass
+    def test_generic_save_cannot_enable_e2ee(self):
+        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+        room.e2ee_enabled = True
+
+        with self.assertRaisesRegex(ValidationError, "dedicated meeting policy"):
+            room.save()

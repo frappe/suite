@@ -16,6 +16,7 @@ class MeetSettings(Document):
 
         allow_guest: DF.Check
         codec_strategy: DF.Literal["svc", "simulcast"]
+        enable_recording: DF.Check
     # end: auto-generated types
 
     pass

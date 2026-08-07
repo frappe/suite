@@ -8,6 +8,27 @@ MEGA_BYTE = 1024**2
 DriveFile = frappe.qb.DocType("File")
 
 
+def acquire_owner_storage_lock(owner: str):
+    key = f"drive-storage:{frappe.local.site}:{owner}"
+    held_locks = getattr(frappe.local, "drive_storage_locks", None)
+    if held_locks is None:
+        held_locks = frappe.local.drive_storage_locks = {}
+    if key in held_locks:
+        return
+
+    lock = frappe.cache.lock(key, timeout=300)
+    if not lock.acquire(blocking=True, blocking_timeout=10):
+        frappe.throw(_("Drive storage is being updated; try again"))
+    held_locks[key] = lock
+
+    def release():
+        held_locks.pop(key, None)
+        lock.release()
+
+    frappe.db.after_commit.add(release)
+    frappe.db.after_rollback.add(release)
+
+
 def get_quota(user: str | None = None):
     """Effective quota in bytes: the user's override, else the site default. 0 = unlimited."""
     user = user or frappe.session.user
@@ -65,6 +86,18 @@ def get_storage_usage(user: str | None = None):
         .select(fn.Coalesce(fn.Sum(DriveFile.file_size), 0).as_("total_size"))
     )
     result = query.run(as_dict=True)[0]
+    if frappe.db.table_exists("Meet Recording"):
+        recording = frappe.qb.DocType("Meet Recording")
+        reserved = (
+            frappe.qb.from_(recording)
+            .select(fn.Coalesce(fn.Sum(recording.budget_bytes), 0))
+            .where(
+                (recording.room_owner == user)
+                & recording.status.isin(("Pending", "Recording", "Interrupted", "Stopping", "Processing"))
+            )
+        ).run()
+        result["reserved_size"] = reserved[0][0]
+        result["total_size"] += result["reserved_size"]
     result["limit"] = get_quota(user)
     return result
 

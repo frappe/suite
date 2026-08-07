@@ -140,6 +140,7 @@ permission_query_conditions = {
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_query",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.get_permission_query_conditions",
+    "Meet Recording": "suite.meet.doctype.meet_recording.meet_recording.get_permission_query_conditions",
     # mail
     "JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.get_permission_query_condition",
     "Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
@@ -168,6 +169,7 @@ has_permission = {
     "Sheet Snapshot": "suite.sheets.permissions.sheet_snapshot_has_permission",
     # meet
     "Meet Room": "suite.meet.doctype.meet_room.meet_room.has_permission",
+    "Meet Recording": "suite.meet.doctype.meet_recording.meet_recording.has_permission",
     # mail
     "JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
     "Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
@@ -220,6 +222,9 @@ override_whitelisted_methods = {
 # Document Events (deep-merged; per-doctype/per-event handler lists combined)
 # ============================================================================
 doc_events = {
+    "File": {
+        "on_update": "suite.meet.recording.ingest.delete_recording_metadata_for_removed_artifact",
+    },
     "User Group": {
         "on_update": "suite.drive.utils.clear_user_group_cache",
         "on_trash": "suite.drive.utils.clear_user_group_cache",
@@ -304,6 +309,7 @@ scheduler_events = {
         "suite.mail.doctype.mail_message.mail_message.schedule_fetch_changes",
     ],
     "cron": {
+        "* * * * *": ["suite.meet.api.recording.reconcile_pending_recordings"],
         "*/5 * * * *": [
             # mail
             "suite.mail.doctype.server_job.server_job.retry_failed_jobs",
