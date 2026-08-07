@@ -1,19 +1,47 @@
 loki.source.file "frappe" {
   targets = [
     {
-      __path__ = "/var/log/frappe/{web.log,web.error.log}",
+      __path__ = "/var/log/frappe/web.log",
       service  = "frappe-web",
     },
     {
-      __path__ = "/var/log/frappe/{node-socketio.log,node-socketio.error.log,socketio.log,socketio.error.log}",
+      __path__ = "/var/log/frappe/web.error.log",
+      service  = "frappe-web",
+    },
+    {
+      __path__ = "/var/log/frappe/node-socketio.log",
       service  = "frappe-socketio",
     },
     {
-      __path__ = "/var/log/frappe/{worker.log,worker.error.log}",
+      __path__ = "/var/log/frappe/node-socketio.error.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/socketio.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/socketio.error.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/worker.log",
       service  = "frappe-worker",
     },
     {
-      __path__ = "/var/log/frappe/{schedule.log,schedule.error.log,scheduler.log}",
+      __path__ = "/var/log/frappe/worker.error.log",
+      service  = "frappe-worker",
+    },
+    {
+      __path__ = "/var/log/frappe/schedule.log",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/schedule.error.log",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/scheduler.log",
       service  = "frappe-scheduler",
     },
     {
@@ -62,6 +90,10 @@ loki.process "frappe" {
 
   stage.labels {
     values = { level = "level" }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
   }
 
   stage.replace {
