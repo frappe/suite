@@ -28,7 +28,7 @@ vi.mock("../data/mediaPreferences", () => ({
 import { useMediaControls } from "./useMediaControls";
 
 class FakeMediaStream {
-	id = crypto.randomUUID();
+	id = "fake-media-stream";
 	private tracks: MediaStreamTrack[];
 
 	constructor(tracks: MediaStreamTrack[] = []) {
