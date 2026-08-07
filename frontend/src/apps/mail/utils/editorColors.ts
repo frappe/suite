@@ -67,17 +67,20 @@ export const resolveColorVariables = (style: string) =>
 // `inherit` is the fix rather than the resolved hex, because it is correct whichever way round
 // the two marks happen to nest, and it is a no-op when the run isn't coloured at all. Marks that
 // already carry a colour of their own are left alone.
-// Quoted mail is somebody else's document, and a <mark> in it was written expecting the browser
-// default we would be overriding — so `inherit` there could recolour their words from whatever
-// element happens to enclose the quote. Left alone. (Both spellings, because the quote may be one
-// of ours or one carried in from Gmail, and openQuotedContent folds it straight into the body, so
-// the two can't be told apart by which string they arrived in.)
-const QUOTE = '.frappe_mail_quote, .gmail_quote'
+// Mail carried into a reply or a forward is somebody else's document, and a <mark> in it was
+// written expecting the browser default we would be overriding — so `inherit` there could recolour
+// their words from whatever element happens to enclose the block. Left alone.
+//
+// All three spellings: our own quote and forward wrappers (MailThread's getQuotedContent and
+// getForwardedContent) and Gmail's. Matching on the wrapper rather than on which field the HTML
+// arrived in is what makes this hold — openQuotedContent folds the quote straight into html_body,
+// so by the time this runs the composed and carried-over parts are one string.
+const CARRIED_OVER = '.frappe_mail_quote, .frappe_mail_fwd, .gmail_quote'
 
 const keepTextColorThroughHighlights = ($: CheerioAPI) => {
 	$('mark').each((_, element) => {
 		const mark = $(element)
-		if (mark.closest(QUOTE).length) return
+		if (mark.closest(CARRIED_OVER).length) return
 
 		const style = mark.attr('style') ?? ''
 		if (/(^|;)\s*color\s*:/.test(style)) return

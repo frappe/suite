@@ -77,14 +77,17 @@ describe('text colour inside a highlight', () => {
 	})
 })
 
-// A reply carries the quoted message along with it. That part is the other sender's document,
-// written against the browser default we would be overriding, so it is left as they wrote it.
-describe('quoted mail', () => {
-	it.each(['frappe_mail_quote', 'gmail_quote'])('keeps a highlight in a %s as written', (quote) => {
-		const html = `<div class="${quote}"><mark style="background-color: #fef08a">theirs</mark></div>`
+// A reply or a forward carries the other sender's message along with it. That part is their
+// document, written against the browser default we would be overriding, so it is left as written.
+describe('mail carried into a reply or forward', () => {
+	it.each(['frappe_mail_quote', 'frappe_mail_fwd', 'gmail_quote'])(
+		'keeps a highlight in a %s as written',
+		(wrapper) => {
+			const html = `<div class="${wrapper}"><mark style="background-color: #fef08a">theirs</mark></div>`
 
-		expect(outbound(html)).toBe(html)
-	})
+			expect(outbound(html)).toBe(html)
+		},
+	)
 
 	it('still fixes the highlight above the quote', () => {
 		const composed = '<mark style="background-color: #fef08a">mine</mark>'
