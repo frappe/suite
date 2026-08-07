@@ -150,11 +150,20 @@ describe("RecorderRenderer", () => {
 		context.mediaState.activeScreenShareConsumers = [{ participantId: "alice", consumerId: "screen-1", startedAt: 1 }] as never;
 		context.mediaState.screenShareStreams = { "screen-1": {} } as never;
 		const failure = vi.fn();
+		const attachmentFailure = vi.fn();
 		const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(new Error("decoder failed"));
 		const root = document.createElement("div");
-		const app = createApp(RecorderRenderer, { startedAt: Date.now(), videoManager: { registerVideoElement: vi.fn(), removeVideoElement: vi.fn() }, meetingContext: context, onPlaybackFailure: failure });
+		const app = createApp(RecorderRenderer, {
+			startedAt: Date.now(),
+			videoManager: { registerVideoElement: vi.fn(), removeVideoElement: vi.fn() },
+			meetingContext: context,
+			onPlaybackFailure: failure,
+			onScreenAttachment: (_consumerId: string, attachment: Promise<void>) =>
+				attachment.catch(attachmentFailure),
+		});
 		app.mount(root);
 		await vi.waitFor(() => expect(failure).toHaveBeenCalledWith("Screen playback failed: decoder failed"));
+		expect(attachmentFailure).toHaveBeenCalledWith(new Error("decoder failed"));
 		play.mockRestore();
 		app.unmount();
 	});
@@ -180,7 +189,7 @@ describe("RecorderRenderer", () => {
 		app.mount(root);
 
 		await vi.waitFor(() => expect(attached).toHaveBeenCalledOnce());
-		expect(play).toHaveBeenCalledOnce();
+		expect(play).toHaveBeenCalledTimes(2);
 		expect(failure).not.toHaveBeenCalled();
 		play.mockRestore();
 		app.unmount();

@@ -68,7 +68,8 @@ provide("setScreenShareVideoRef", (consumerId: string, element: HTMLVideoElement
 				props.onPlaybackFailure?.(`Screen playback failed: ${error instanceof Error ? error.message : "unknown error"}`);
 			});
 		screenAttachments.set(element, { stream, attachment });
-		props.onScreenAttachment?.(consumerId, attachment);
+		if (props.onScreenAttachment) props.onScreenAttachment(consumerId, attachment);
+		else void attachment.catch(() => undefined);
 	}
 });
 
@@ -76,10 +77,19 @@ const attachmentRetryDelay = () => new Promise<void>((resolve) => setTimeout(res
 const attachScreenShare = async (element: HTMLVideoElement, stream: MediaStream, onFailure: (error: unknown) => void): Promise<void> => {
 	while (!element.parentNode) await attachmentRetryDelay();
 	if (element.srcObject !== stream) element.srcObject = stream;
-	void element.play().catch((error: unknown) => {
-		if (error instanceof DOMException && error.name === "AbortError") return;
-		onFailure(error);
-	});
+	while (true) {
+		try {
+			await element.play();
+			return;
+		} catch (error) {
+			if (error instanceof DOMException && error.name === "AbortError") {
+				await attachmentRetryDelay();
+				continue;
+			}
+			onFailure(error);
+			throw error;
+		}
+	}
 };
 
 const now = ref(Date.now());
