@@ -1,0 +1,52 @@
+services:
+  recorder:
+    image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}
+    container_name: suite-recorder
+    restart: unless-stopped
+    shm_size: "2gb"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3010
+      RECORDER_ALLOW_HTTP: "false"
+      RECORDER_CHROMIUM_NO_SANDBOX: "true"
+    ports:
+      - "127.0.0.1:3010:3010"
+    volumes:
+      - recorder-data:/data
+    cpus: ${RECORDER_CPUS:-4}
+    mem_limit: ${RECORDER_MEMORY:-6g}
+    pids_limit: ${RECORDER_PIDS_LIMIT:-512}
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2.10.0-alpine
+    container_name: suite-recorder-proxy
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RECORDER_DOMAIN: ${RECORDER_DOMAIN}
+      TLS_EMAIL: ${TLS_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      recorder:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+volumes:
+  recorder-data:
+  caddy-data:
+  caddy-config:

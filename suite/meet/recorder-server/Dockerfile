@@ -45,3 +45,5 @@ CMD ["node", "dist/server.js"]
 FROM runtime AS integration
 ENV NODE_ENV=integration
 CMD ["node", "dist/integration/CaptureWorker.integration.js"]
+
+FROM runtime AS production
