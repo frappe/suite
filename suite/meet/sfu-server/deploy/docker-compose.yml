@@ -143,7 +143,7 @@ services:
         max-file: "2"
 
   alloy:
-    image: grafana/alloy:v1.18.1
+    image: grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33
     restart: unless-stopped
     profiles:
       - observability
@@ -154,7 +154,7 @@ services:
       - /etc/alloy/sfu.alloy
     environment:
       - ALLOY_ENVIRONMENT=${ALLOY_ENVIRONMENT:-production}
-      - ALLOY_HOST=${ALLOY_HOST:-sfu-01}
+      - ALLOY_HOST=${ALLOY_HOST:-}
       - LOKI_PUSH_URL=${LOKI_PUSH_URL:-}
       - LOKI_PUSH_USER=${LOKI_PUSH_USER:-alloy}
     volumes:
@@ -164,6 +164,11 @@ services:
       - alloy-data:/var/lib/alloy/data
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 
 volumes:
   alloy-data:

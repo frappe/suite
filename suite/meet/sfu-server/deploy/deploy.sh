@@ -135,6 +135,42 @@ check_env() {
     ok "Configuration is valid"
 }
 
+check_observability_env() {
+    check_env
+
+    local errors=false
+
+    if [ -z "${ALLOY_HOST:-}" ]; then
+        err "ALLOY_HOST must be a stable, unique host name."
+        errors=true
+    fi
+    if [ -z "${LOKI_PUSH_URL:-}" ]; then
+        err "LOKI_PUSH_URL must be set."
+        errors=true
+    fi
+    if [ -z "${LOKI_PUSH_USER:-}" ]; then
+        err "LOKI_PUSH_USER must be set."
+        errors=true
+    fi
+    if [ ! -s "$SCRIPT_DIR/secrets/loki-password" ]; then
+        err "secrets/loki-password must exist and contain the Loki push password."
+        errors=true
+    fi
+
+    if [ "$errors" = true ]; then
+        exit 1
+    fi
+
+    ok "Observability configuration is valid"
+}
+
+observability_is_configured() {
+    [ -n "${ALLOY_HOST:-}" ] \
+        && [ -n "${LOKI_PUSH_URL:-}" ] \
+        && [ -n "${LOKI_PUSH_USER:-}" ] \
+        && [ -s "$SCRIPT_DIR/secrets/loki-password" ]
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 cmd_setup() {
     header "Frappe Meet SFU — Setup"
@@ -185,20 +221,24 @@ cmd_setup() {
 cmd_start() {
     check_env
     header "Starting services"
-    compose up -d
+    if observability_is_configured; then
+        compose --profile observability up -d
+    else
+        compose up -d
+    fi
     ok "Services started"
     cmd_status
 }
 
 cmd_stop() {
     header "Stopping services"
-    compose down
+    compose --profile observability down
     ok "Services stopped"
 }
 
 cmd_restart() {
     header "Restarting services"
-    compose restart
+    compose --profile observability restart
     ok "Services restarted"
     cmd_status
 }
@@ -222,12 +262,26 @@ cmd_update() {
 }
 
 cmd_logs() {
-    compose logs -f --tail=100 "$@"
+    compose --profile observability logs -f --tail=100 "$@"
+}
+
+cmd_observability_start() {
+    check_dependencies
+    check_observability_env
+    header "Starting log collector"
+    compose up -d alloy
+    ok "Alloy started"
+}
+
+cmd_observability_stop() {
+    header "Stopping log collector"
+    compose stop alloy
+    ok "Alloy stopped"
 }
 
 cmd_status() {
     header "Service Status"
-    compose ps -a
+    compose --profile observability ps -a
     echo ""
 
     set -a; source "$ENV_FILE"; set +a
@@ -273,6 +327,8 @@ cmd_help() {
     echo "  pull       Pull the latest SFU and recorder images"
     echo "  update     Pull latest images and recreate service containers"
     echo "  logs       Tail logs (append service name to filter, e.g., logs sfu)"
+    echo "  observability-start  Validate and start the Alloy log collector"
+    echo "  observability-stop   Stop the Alloy log collector"
     echo "  status     Show container status and health"
     echo "  ssl-init   Provision SSL certificate (first time)"
     echo "  ssl-renew  Force SSL certificate renewal"
@@ -289,6 +345,8 @@ case "${1:-help}" in
     pull)      cmd_pull ;;
     update)    cmd_update ;;
     logs)      shift; cmd_logs "$@" ;;
+    observability-start) cmd_observability_start ;;
+    observability-stop)  cmd_observability_stop ;;
     status)    cmd_status ;;
     ssl-init)  cmd_ssl_init ;;
     ssl-renew) cmd_ssl_renew ;;

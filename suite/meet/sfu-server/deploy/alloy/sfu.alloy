@@ -68,22 +68,37 @@ loki.process "suite" {
   }
 
   stage.replace {
-    expression = `(?i)["'](?:authorization|cookie|password|passwd|secret|token|api[_-]?key|sid)["']\s*:\s*["'](?P<quoted_secret>[^"']*)["']`
+    expression = `(?i)["'](?:authorization|cookie|password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)["']\s*:\s*["'](?P<quoted_secret>[^"']*)["']`
     replace    = "[REDACTED]"
   }
 
   stage.replace {
-    expression = `(?i)\b(?:password|passwd|secret|token|api[_-]?key|sid)\s*=\s*["']?(?P<kv_secret>[^"'\s,;&]+)`
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*["'](?P<quoted_kv_secret>[^"']*)["']`
     replace    = "[REDACTED]"
   }
 
   stage.replace {
-    expression = `(?i)\bauthorization\s*[:=]\s*["']?(?P<auth_secret>(?:basic|bearer)\s+[A-Za-z0-9._~+/-]+=*)`
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*(?P<kv_secret>[^"'\s,;}&]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\bauthorization\s*[:=]\s*["']?(?P<auth_secret>[^"'\r\n,}]+)`
     replace    = "[REDACTED]"
   }
 
   stage.replace {
     expression = `(?i)\b(?:cookie|set-cookie)\s*[:=]\s*["']?(?P<cookie_secret>[^"'\r\n]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<jwt>eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<aws_key>\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)`
     replace    = "[REDACTED]"
   }
 }
@@ -95,7 +110,10 @@ loki.write "remote" {
   }
 
   endpoint {
-    url = sys.env("LOKI_PUSH_URL")
+    url                 = sys.env("LOKI_PUSH_URL")
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "5m"
+    max_backoff_retries = 100
 
     basic_auth {
       username      = sys.env("LOKI_PUSH_USER")

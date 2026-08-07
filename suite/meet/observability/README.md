@@ -37,6 +37,8 @@ docker run --rm -it caddy:2.10.0-alpine caddy hash-password --algorithm bcrypt
 
 Store the plain password in a root-readable `secrets/loki-password` file on each source host. Store only the hash in the monitoring VPS `.env`. Keep the hash single-quoted because it contains dollar signs.
 
+Set `LOKI_PUSH_ENABLED=true` only after the domain, user, and hash are present. Caddy refuses partial enabled configuration.
+
 Copy the target template, then list every SFU hostname in the ignored runtime file:
 
 ```bash
@@ -74,7 +76,7 @@ Each SFU appears under Prometheus's automatic `instance` label.
 
 ## Log collection
 
-Only collect operational logs. Do not log credentials, authorization headers, cookies, session IDs, request bodies, or user-authored content. Keep users, sites, rooms, files, paths, jobs, and correlation IDs in the log body. Never use them as Loki labels.
+Only collect operational logs. Do not log credentials, authorization headers, cookies, session IDs, request bodies, or user-authored content. Keep users, sites, rooms, files, paths, jobs, and correlation IDs in the log body. Never use them as Loki labels. Alloy redacts several common secret formats, but it cannot prove a log line is safe. Review each source before enabling it.
 
 ### Meet host
 
@@ -86,10 +88,10 @@ install -d -m 700 secrets
 install -m 400 /secure/path/loki-password secrets/loki-password
 ```
 
-Set `ALLOY_HOST`, `LOKI_PUSH_URL`, and `LOKI_PUSH_USER` in `.env`, then start only Alloy:
+Set a unique `ALLOY_HOST`, `LOKI_PUSH_URL`, and `LOKI_PUSH_USER` in `.env`, then start only Alloy:
 
 ```bash
-docker compose -f docker-compose.yml -p suite-sfu --env-file .env --profile observability up -d alloy
+./deploy.sh observability-start
 ```
 
 Alloy reads only the `suite-sfu`, `suite-recorder`, and `suite-sfu-nginx` containers. Docker socket access is effectively root access even when the mount is read-only. Keep Alloy pinned, local, and unreachable from the network.
@@ -111,7 +113,7 @@ Set the real bench path and stable host name in `.env`. Confirm the allowlisted 
 docker compose -f docker-compose.frappe.yml --env-file .env up -d
 ```
 
-The bench log directory is mounted read-only. Alloy starts at the end of each file on first use, so it does not upload old production history.
+The bench log directory is mounted read-only. Alloy starts at the end of each file on first use, so it does not upload old production history. Plain Frappe log lines keep their collection time because their timestamps have no time zone. Structured monitor timestamps are parsed when they include an offset.
 
 ### Verify logs
 
@@ -143,6 +145,7 @@ GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=local-test-password
 PROMETHEUS_RETENTION=7d
 LOKI_PUSH_DOMAIN=logs.localhost
+LOKI_PUSH_ENABLED=true
 LOKI_PUSH_USER=alloy
 LOKI_PUSH_PASSWORD_HASH='<valid-caddy-bcrypt-hash>'
 ```
@@ -187,6 +190,8 @@ docker compose down
 
 Prometheus scrapes Loki itself. Check `up{job="loki"}` before debugging a missing log stream.
 
+Loki is not an availability dependency for Grafana or Suite. Alloy retries network, server, and rate-limit failures for several hours in memory. Authentication failures are not retried. Restarting Alloy during an outage can still lose unsent lines, so check Alloy logs and the time of the latest Loki line after every outage.
+
 ```bash
 docker compose ps
 docker compose logs -f prometheus loki grafana caddy
@@ -199,14 +204,17 @@ Back up the `prometheus-data`, `loki-data`, `grafana-data`, `caddy-data`, and `c
 To rotate the push credential:
 
 1. Generate one new password and hash.
-2. Replace the hash in the monitoring VPS `.env`.
-3. Replace the plain password file on each source host.
-4. Recreate Caddy and both Alloy collectors.
-5. Confirm new logs arrive, then discard the old credential.
+2. Stop both Alloy collectors.
+3. Replace the hash in the monitoring VPS `.env` and recreate Caddy.
+4. Replace the plain password file on each source host.
+5. Start both Alloy collectors.
+6. Confirm new logs arrive, then discard the old credential.
 
 If the Loki disk fills, stop the Alloy collectors first. Free or extend disk space, start Loki, and then restart the collectors. Do not delete Loki files by hand.
 
 Run `./validate-config.sh` after changing Loki, Caddy, Alloy, or Compose configuration. Do not expose Prometheus port 9090 or Loki port 3100 publicly.
+
+Existing monitoring deployments can update before configuring ingestion. Caddy uses an unreachable internal push site and a discarded fallback credential while `LOKI_PUSH_ENABLED=false`. Enabling pushes requires the domain, user, and hash together.
 
 ## Error tracking
 

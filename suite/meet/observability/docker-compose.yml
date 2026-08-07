@@ -55,22 +55,25 @@ services:
     depends_on:
       prometheus:
         condition: service_started
-      loki:
-        condition: service_healthy
 
   caddy:
     image: caddy:2.10.0-alpine
     restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/caddy-entrypoint.sh
     environment:
       GRAFANA_DOMAIN: ${GRAFANA_DOMAIN}
-      LOKI_PUSH_DOMAIN: ${LOKI_PUSH_DOMAIN:?set LOKI_PUSH_DOMAIN in .env}
-      LOKI_PUSH_USER: ${LOKI_PUSH_USER:?set LOKI_PUSH_USER in .env}
-      LOKI_PUSH_PASSWORD_HASH: ${LOKI_PUSH_PASSWORD_HASH:?set LOKI_PUSH_PASSWORD_HASH in .env}
+      LOKI_PUSH_ENABLED: ${LOKI_PUSH_ENABLED:-false}
+      LOKI_PUSH_DOMAIN: ${LOKI_PUSH_DOMAIN:-}
+      LOKI_PUSH_USER: ${LOKI_PUSH_USER:-}
+      LOKI_PUSH_PASSWORD_HASH: ${LOKI_PUSH_PASSWORD_HASH:-}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-entrypoint.sh:/usr/local/bin/caddy-entrypoint.sh:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
@@ -78,8 +81,6 @@ services:
     depends_on:
       grafana:
         condition: service_started
-      loki:
-        condition: service_healthy
 
 networks:
   observability:

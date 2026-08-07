@@ -5,6 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SFU_DEPLOY_DIR="$SCRIPT_DIR/../sfu-server/deploy"
 TEST_HASH='$2a$14$B28NG7UTkSTQFMM/Fly87.LUrKQTceAYHvLY0sTYoIJ.XU7qZ39qG'
+ALLOY_IMAGE='grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33'
 VALIDATION_SECRET="$SCRIPT_DIR/secrets/sfu_metrics_token"
 VALIDATION_SECRET_CREATED=false
 
@@ -44,7 +45,7 @@ alloy_validate() {
     -e LOKI_PUSH_USER=alloy \
     -v "$config:/etc/alloy/config.alloy:ro" \
     -v /dev/null:/run/secrets/loki-password:ro \
-    grafana/alloy:v1.18.1 \
+    "$ALLOY_IMAGE" \
     validate --stability.level=generally-available /etc/alloy/config.alloy
 }
 
