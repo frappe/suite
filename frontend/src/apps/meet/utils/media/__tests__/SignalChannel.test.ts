@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const socket = {
 	connected: true,
 	disconnect: vi.fn(),
+	connect: vi.fn(),
 	emit: vi.fn(),
 	id: "socket-1",
 	io: {
@@ -27,6 +28,7 @@ describe("SocketIOSignalChannel", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		socket.connected = true;
+		socket.connect.mockImplementation(() => socket);
 	});
 
 	it("routes Socket.IO Manager reconnect lifecycle events to the manager", async () => {
@@ -72,5 +74,18 @@ describe("SocketIOSignalChannel", () => {
 
 		expect(socket.on).toHaveBeenCalledWith("producer_created", handler);
 		expect(socket.io.on).not.toHaveBeenCalledWith("producer_created", handler);
+	});
+
+	it("registers application listeners supplied before connect", async () => {
+		const channel = new SocketIOSignalChannel();
+		const handler = vi.fn();
+		channel.on("recording:challenge", handler);
+
+		await channel.connect({ origin: "https://sfu.example.test", path: "/socket.io", auth: { token: "test" } });
+
+		expect(socket.on).toHaveBeenCalledWith("recording:challenge", handler);
+		expect(socket.on.mock.invocationCallOrder[0]).toBeLessThan(
+			socket.connect.mock.invocationCallOrder[0],
+		);
 	});
 });

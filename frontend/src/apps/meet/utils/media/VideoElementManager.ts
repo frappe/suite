@@ -8,6 +8,9 @@ import { selectedSpeakerId } from "../../data/mediaPreferences";
 interface DeferredAttachment {
 	stream: MediaStream;
 	isLocal: boolean;
+	resolve?: () => void;
+	reject?: (error: unknown) => void;
+	timer?: ReturnType<typeof setTimeout>;
 }
 
 const STALE_REATTACH_MS = 60_000;
@@ -19,7 +22,7 @@ export class VideoElementManager {
 	private lastVideoAttachAt: Map<string, number>;
 	private lastAudioAttachAt: Map<string, number>;
 
-	constructor() {
+	constructor(private strictAttachmentTimeoutMs?: number) {
 		this.videoElements = new Map();
 		this.audioElements = new Map();
 		this.deferredAttachments = new Map();
@@ -64,11 +67,15 @@ export class VideoElementManager {
 		this.videoElements.set(participantId, videoEl);
 
 		if (this.deferredAttachments.has(participantId)) {
-			const { stream, isLocal } = this.deferredAttachments.get(
+			const deferred = this.deferredAttachments.get(
 				participantId,
 			) as DeferredAttachment;
-			this.attachStream(participantId, stream, isLocal);
 			this.deferredAttachments.delete(participantId);
+			if (deferred.timer) clearTimeout(deferred.timer);
+			void this.attachStream(participantId, deferred.stream, deferred.isLocal).then(
+				deferred.resolve,
+				deferred.reject,
+			);
 		}
 	}
 
@@ -82,14 +89,23 @@ export class VideoElementManager {
 
 		// Always attach audio for remote participants, even if no video element exists
 		if (!isLocal && audioTracks.length > 0) {
-			this.attachAudioStream(participantId, audioTracks);
+			await this.attachAudioStream(participantId, audioTracks);
 		}
 
 		// Only defer if we have video tracks and no video element
 		// Audio-only streams don't need video elements, so don't defer them
 		if (!videoElement && !isLocal && stream.getVideoTracks().length > 0) {
-			this.deferredAttachments.set(participantId, { stream, isLocal });
-			return;
+			if (!this.strictAttachmentTimeoutMs) {
+				this.deferredAttachments.set(participantId, { stream, isLocal });
+				return;
+			}
+			return new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(() => {
+					this.deferredAttachments.delete(participantId);
+					reject(new Error(`Timed out waiting for video element for ${participantId}`));
+				}, this.strictAttachmentTimeoutMs);
+				this.deferredAttachments.set(participantId, { stream, isLocal, resolve, reject, timer });
+			});
 		}
 
 		if (videoElement) {
@@ -124,6 +140,7 @@ export class VideoElementManager {
 						await videoElement.play();
 					} catch (err) {
 						console.error(`Error playing video for ${participantId}:`, err);
+						throw err;
 					}
 				} else {
 					console.log(
@@ -134,10 +151,10 @@ export class VideoElementManager {
 		}
 	}
 
-	attachAudioStream(
+	async attachAudioStream(
 		participantId: string,
 		audioTracks: MediaStreamTrack[],
-	): void {
+	): Promise<void> {
 		let audioElement = this.audioElements.get(participantId);
 
 		if (!audioElement) {
@@ -182,12 +199,15 @@ export class VideoElementManager {
 			this.lastAudioAttachAt.set(participantId, Date.now());
 
 			// Try to play audio
-			audioElement.play().catch((err: Error) => {
+			try {
+				await audioElement.play();
+			} catch (err) {
 				console.warn(
 					`Audio autoplay failed for ${participantId}:`,
-					err.message,
+					(err as Error).message,
 				);
-			});
+				throw err;
+			}
 		}
 	}
 
@@ -262,6 +282,8 @@ export class VideoElementManager {
 		}
 
 		this.videoElements.delete(participantId);
+		const deferred = this.deferredAttachments.get(participantId);
+		if (deferred?.timer) clearTimeout(deferred.timer);
 		this.deferredAttachments.delete(participantId);
 		this.lastVideoAttachAt.delete(participantId);
 		this.lastAudioAttachAt.delete(participantId);
@@ -274,6 +296,10 @@ export class VideoElementManager {
 	}
 
 	cleanup(): void {
+		for (const deferred of this.deferredAttachments.values()) {
+			if (deferred.timer) clearTimeout(deferred.timer);
+			deferred.reject?.(new Error("Video element manager cleaned up"));
+		}
 		for (const [_participantId, element] of this.videoElements.entries()) {
 			if (element?.srcObject) {
 				for (const track of (element.srcObject as MediaStream).getTracks()) {

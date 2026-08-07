@@ -123,6 +123,21 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 	});
 });
 
+describe("SFUMediaManager.attachAudioConsumer", () => {
+	it("propagates audio attachment failures", async () => {
+		const { mediaManager, videoManager } = createManager();
+		vi.stubGlobal("MediaStream", class {
+			constructor(_tracks: unknown[]) {}
+		});
+		videoManager.attachStream.mockRejectedValue(new Error("audio blocked"));
+
+		await expect(mediaManager.attachAudioConsumer("remote-1", {
+			track: { kind: "audio" },
+		} as never)).rejects.toThrow("audio blocked");
+		vi.unstubAllGlobals();
+	});
+});
+
 describe("SFUMediaManager.rebuildSendSide", () => {
 	it("recreates the send transport and republishes live local tracks", async () => {
 		const { mediaManager, transportManager } = createManager();

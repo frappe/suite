@@ -29,12 +29,18 @@ interface UseLayoutReturn {
 	hiddenParticipantsTooltip: ComputedRef<string>;
 }
 
+interface LayoutOptions {
+	localTileCount?: 0 | 1;
+}
+
 export function useLayout(
 	participants: Ref<Record<string, Participant>>,
 	pinnedTiles: Ref<PinnedTile[]>,
 	layoutDeps: LayoutDeps,
 	extraTiles: Ref<number>,
+	options: LayoutOptions = {},
 ): UseLayoutReturn {
+	const localTileCount = options.localTileCount ?? 1;
 	const { isMobile, maxColumns, sidebarMaxColumns } = useResponsiveGrid();
 
 	const mode = computed<"grid" | "sidebar">(() =>
@@ -87,7 +93,7 @@ export function useLayout(
 	): number => {
 		const overlayRemoteCount = pinnedParticipantIds.length;
 		const stripRemoteCount = remoteCount - overlayRemoteCount;
-		const reserved = 1 + extraTiles.value;
+		const reserved = localTileCount + extraTiles.value;
 		const total = stripRemoteCount + reserved;
 		const threshold = maxVisibleTiles.value;
 
@@ -297,7 +303,7 @@ export function useLayout(
 
 	const visibleTileCount = computed<number>(
 		() =>
-			1 +
+			localTileCount +
 			extraTiles.value +
 			displayParticipants.value.list.length +
 			(displayParticipants.value.extra > 0 ? 1 : 0),

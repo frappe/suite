@@ -409,6 +409,7 @@ export class SFUMediaManager {
 				`Failed to attach video consumer for ${participantId}:`,
 				error,
 			);
+			throw error;
 		}
 	}
 
@@ -426,6 +427,7 @@ export class SFUMediaManager {
 				`Failed to attach audio consumer for ${participantId}:`,
 				error,
 			);
+			throw error;
 		}
 	}
 
@@ -466,6 +468,7 @@ export class SFUMediaManager {
 			}
 		} catch (error) {
 			console.error("Failed to handle screen share consumer:", error);
+			throw error;
 		}
 	}
 

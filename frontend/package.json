@@ -8,6 +8,8 @@
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
     "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
     "build": "vite build",
+    "build:recorder": "vite build --config vite.recorder.config.ts",
+    "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
     "test": "vitest run",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"

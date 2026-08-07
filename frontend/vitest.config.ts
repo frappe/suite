@@ -8,12 +8,14 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "src"),
+			"frappe-ui": path.resolve(__dirname, "recorder/frappeUi.ts"),
 			"~icons/lucide/scan": path.resolve(__dirname, "src/test/icon-stub.ts"),
+			"~icons/lucide/chevron-down": path.resolve(__dirname, "src/test/icon-stub.ts"),
 		},
 	},
 	test: {
 		environment: "jsdom",
-		include: ["src/**/*.test.ts"],
+		include: ["src/**/*.test.ts", "recorder/**/*.test.ts"],
 		setupFiles: ["fake-indexeddb/auto"],
 		silent: true,
 	},
