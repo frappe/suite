@@ -179,6 +179,12 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					audio_enabled: false,
 					video_enabled: false,
 				});
+				socket.emit('existing_raised_hands', {
+					hands: deps.registry.getRaisedHands(roomId) as unknown as Record<
+						string,
+						boolean
+					>,
+				});
 				callback({ success: true });
 			} catch (error) {
 				callback({ success: false, error: (error as Error).message });

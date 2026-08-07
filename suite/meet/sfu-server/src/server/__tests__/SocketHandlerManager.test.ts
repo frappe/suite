@@ -215,6 +215,35 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
 	});
 
+	it('recording:join sends raised hands that predate the recorder', async () => {
+		const harness = createManager();
+		const participant = connectFullSocket(harness, {
+			id: 'participant-socket',
+			userId: 'participant-1',
+		});
+		emitJoin(participant, { userId: 'participant-1' });
+		await new Promise((resolve) => setImmediate(resolve));
+		participant.fire('raise_hand', { raised: true }, vi.fn());
+
+		const recorder = connectFullSocket(harness, {
+			id: 'recorder-socket',
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		recorder.fire('recording:join', { roomId: 'room-1' }, vi.fn());
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recorder.emitCalls).toContainEqual({
+			event: 'existing_raised_hands',
+			data: { hands: { 'participant-1': expect.any(String) } },
+		});
+	});
+
 	it('disconnects an unproved recorder after ten seconds and clears the timer on proof', async () => {
 		vi.useFakeTimers();
 		const grantManager = {
