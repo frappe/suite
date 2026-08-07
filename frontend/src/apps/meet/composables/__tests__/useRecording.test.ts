@@ -5,6 +5,12 @@ const mocks = vi.hoisted(() => ({
 	startParams: [] as Array<{ meeting_id: string; request_id: string }>,
 	startCount: 0,
 	startResults: [] as Array<Record<string, unknown>>,
+	getStateCount: 0,
+	getStateResults: [] as Array<
+		| Record<string, unknown>
+		| null
+		| Promise<Record<string, unknown> | null>
+	>,
 	stopped: false,
 }));
 
@@ -28,12 +34,15 @@ vi.mock("frappe-ui", () => ({
 				return { name: "recording", status: "Stopping", state_revision: 3 };
 			}
 			if (options.url.endsWith(".get_preflight")) return { eligible: true };
-			if (options.url.endsWith(".get_state") && mocks.startCount > 1)
-				return {
+			if (options.url.endsWith(".get_state")) {
+				mocks.getStateCount += 1;
+				if (mocks.getStateResults.length) return await mocks.getStateResults.shift();
+				if (mocks.startCount > 1) return {
 					name: "recording",
 					status: mocks.stopped ? "Stopping" : "Recording",
 					state_revision: mocks.stopped ? 3 : 2,
 				};
+			}
 			return null;
 		}),
 	}),
@@ -48,6 +57,8 @@ describe("useRecording", () => {
 		mocks.startParams.length = 0;
 		mocks.startCount = 0;
 		mocks.startResults.length = 0;
+		mocks.getStateCount = 0;
+		mocks.getStateResults.length = 0;
 		mocks.stopped = false;
 		vi.clearAllMocks();
 	});
@@ -76,6 +87,33 @@ describe("useRecording", () => {
 		await recording.start();
 		await recording.stop();
 		expect(recording.state.value?.status).toBe("Stopping");
+	});
+
+	it("does not let a stale state load overwrite a newer command revision", async () => {
+		let resolveStale!: (value: Record<string, unknown>) => void;
+		const stale = new Promise<Record<string, unknown>>((resolve) => {
+			resolveStale = resolve;
+		});
+		mocks.getStateResults.push(stale, {
+			name: "recording",
+			status: "Stopping",
+			state_revision: 3,
+		});
+		const recording = useRecording("room");
+		await recording.start();
+
+		const starting = recording.start();
+		await vi.waitFor(() => expect(mocks.getStateCount).toBe(1));
+		await recording.stop();
+		resolveStale({
+			name: "recording",
+			status: "Recording",
+			state_revision: 2,
+		});
+		await starting;
+
+		expect(recording.state.value?.status).toBe("Stopping");
+		expect(recording.state.value?.state_revision).toBe(3);
 	});
 
 	it("does not store or announce an explicit capacity rejection as started", async () => {

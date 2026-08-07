@@ -45,7 +45,6 @@ interface UseMeetingDocReturn {
 	meetingType: ComputedRef<string>;
 	allowGuest: ComputedRef<boolean>;
 	e2eeEnabled: ComputedRef<boolean>;
-	recordingEnabled: ComputedRef<boolean>;
 	meetingCoHosts: ComputedRef<string[]>;
 	isCurrentUserCohost: ComputedRef<boolean>;
 }

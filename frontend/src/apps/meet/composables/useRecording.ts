@@ -77,7 +77,12 @@ export function useRecording(meetingId: string) {
 
 	async function loadState() {
 		try {
-			state.value = (await stateCall.submit({ meeting_id: meetingId })) ?? null;
+			const revision = state.value?.state_revision;
+			const loaded = (await stateCall.submit({ meeting_id: meetingId })) ?? null;
+			if (state.value?.state_revision !== revision) return;
+			if (loaded && revision !== undefined && loaded.state_revision < revision)
+				return;
+			state.value = loaded;
 		} catch {
 			// Guests may receive state through the room-scoped realtime channel instead.
 		}
