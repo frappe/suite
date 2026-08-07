@@ -61,7 +61,7 @@ const unavailable = computed(() =>
 				{{ unavailable.message }}
 			</Alert>
 			<Alert v-else-if="limitedByStorage" theme="orange" variant="subtle" title="Storage may end the recording early">
-				Hosts will be warned before recording stops.
+				Recording will stop when its available storage budget is reached.
 			</Alert>
 		</div>
 	</Dialog>
