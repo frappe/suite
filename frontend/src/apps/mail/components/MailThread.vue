@@ -291,7 +291,7 @@
 
 									<LinkifiedText
 										v-else
-										:text="mail.html_body || mail.text_body"
+										:text="getPlainTextBody(mail)"
 										class="pt-4 font-sans text-base !leading-5 sm:text-sm"
 									/>
 
@@ -421,6 +421,7 @@ import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
+	decodeHtmlEntities,
 	downloadUrlAsFile,
 	escapeHtml,
 	extractQuotedContent,
@@ -1101,13 +1102,19 @@ const getReplyAllRecipients = (mail: Mail) => {
 const isUserEmail = (email: string) =>
 	identities.value.data?.map((i: Identity) => i.email).includes(email)
 
+// The plain-text reading of a body, normalised. Servers hand some bodies over already
+// entity-escaped, and those carry no real tags — so they take this path, where showing
+// them verbatim (or escaping them again) puts `&lt;` in front of the reader instead of
+// the address it stands for. Both consumers below start from here.
+const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || mail.text_body || '')
+
 // A body with no markup is plain text, so it has to be escaped before going into the
 // <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
 // their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
 // silently deleting the very addresses the notice is about.
 const getBodyContent = (mail: Mail) => {
 	if (hasHtmlContent(mail.html_body)) return mail.html_body
-	const text = mail.html_body || mail.text_body
+	const text = getPlainTextBody(mail)
 	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
 }
 

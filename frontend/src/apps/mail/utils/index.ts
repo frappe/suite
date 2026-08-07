@@ -407,7 +407,7 @@ export const getScriptName = (scriptName: string) => {
 export const isSystemScript = (scriptName: string) =>
 	['vacation', 'frappe_mail_automation'].includes(scriptName)
 
-export { escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
+export { decodeHtmlEntities, escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
 
 export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a
