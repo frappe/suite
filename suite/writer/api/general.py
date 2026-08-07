@@ -150,6 +150,18 @@ def search(query: str, filters: str | None = None):
         k.update(meta)
         cleaned_results.append(k)
     search["results"] = cleaned_results
+
+    # The index is unscoped, so summary stats and spelling corrections are
+    # computed against every document on the site, not just what the caller
+    # can read. Recompute counts from the filtered set and drop corrections
+    # outright, since validating them against readable content isn't worth
+    # the cost the UI doesn't use them.
+    match_count = len(cleaned_results)
+    search["summary"]["total_matches"] = match_count
+    search["summary"]["returned_matches"] = match_count
+    search["summary"]["filtered_matches"] = match_count
+    search["summary"]["corrected_words"] = None
+    search["summary"]["corrected_query"] = None
     return search
 
 
