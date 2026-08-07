@@ -108,10 +108,23 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 	});
 
 	it("attaches audio and surfaces autoplay failure", async () => {
+		manager = new VideoElementManager(1000);
 		const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValueOnce(new Error("blocked"));
 		const track = { ...makeTrack("audio-1"), kind: "audio" } as MediaStreamTrack;
 		await expect(manager.attachStream("p1", makeStream([track]), false)).rejects.toThrow("blocked");
 		expect(manager.audioElements.get("p1")?.srcObject).not.toBeNull();
+		play.mockRestore();
+	});
+
+	it("retries blocked audio after user interaction outside strict mode", async () => {
+		const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+			.mockRejectedValueOnce(new DOMException("blocked", "NotAllowedError"))
+			.mockResolvedValue(undefined);
+		const track = { ...makeTrack("audio-1"), kind: "audio" } as MediaStreamTrack;
+
+		await expect(manager.attachStream("p1", makeStream([track]), false)).resolves.toBeUndefined();
+		document.dispatchEvent(new Event("click"));
+		await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(2));
 		play.mockRestore();
 	});
 

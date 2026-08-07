@@ -106,6 +106,44 @@ describe("RecorderRenderer", () => {
 		app.unmount();
 	});
 
+	it("attaches each screen-share tile to its own consumer stream", async () => {
+		const context = meetingContext();
+		context.gridLayout.displayScreenShares.value = [
+			{ participantId: "alice", consumerId: "screen-1" },
+			{ participantId: "bob", consumerId: "screen-2" },
+		] as never;
+		context.mediaState.activeScreenShareConsumers = [
+			{ participantId: "alice", consumerId: "screen-1", startedAt: 2 },
+			{ participantId: "bob", consumerId: "screen-2", startedAt: 1 },
+		] as never;
+		const first = {} as MediaStream;
+		const second = {} as MediaStream;
+		context.mediaState.screenShareStreams = { "screen-1": first, "screen-2": second };
+		const attached = vi.fn();
+		const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+		const root = document.createElement("div");
+		const app = createApp(RecorderRenderer, {
+			startedAt: Date.now(),
+			videoManager: { registerVideoElement: vi.fn(), removeVideoElement: vi.fn() },
+			meetingContext: context,
+			onScreenAttachment: attached,
+		});
+		app.mount(root);
+
+		await vi.waitFor(() => expect(attached).toHaveBeenCalledTimes(2));
+		const videos = [...root.querySelectorAll("video")];
+		expect(videos.map((video) => video.srcObject).filter(Boolean)).toEqual([
+			first,
+			second,
+		]);
+		expect(attached.mock.calls.map(([consumerId]) => consumerId)).toEqual([
+			"screen-1",
+			"screen-2",
+		]);
+		play.mockRestore();
+		app.unmount();
+	});
+
 	it("reports screen attachment play failures", async () => {
 		const context = meetingContext();
 		context.gridLayout.displayScreenShares.value = [{ participantId: "alice", consumerId: "screen-1" }] as never;

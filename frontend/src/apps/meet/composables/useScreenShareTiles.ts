@@ -23,6 +23,7 @@ interface ScreenShareTileParticipant {
 
 interface ScreenShareTile {
 	pinId: string;
+	consumerId: string;
 	participant: ScreenShareTileParticipant;
 }
 
@@ -88,6 +89,7 @@ export function useScreenShareTiles({
 
 			return {
 				pinId: share.participantId,
+				consumerId: share.consumerId,
 				participant: {
 					user_id: share.participantId,
 					user_name: displayName,

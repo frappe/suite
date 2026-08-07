@@ -56,11 +56,9 @@ provide("setRemoteVideoRef", (participantId: string, element: HTMLVideoElement |
 	if (element) props.videoManager.registerVideoElement(participantId, element);
 	else props.videoManager.removeVideoElement(participantId);
 });
-provide("setScreenShareVideoRef", (element: HTMLVideoElement | null) => {
+provide("setScreenShareVideoRef", (consumerId: string, element: HTMLVideoElement | null) => {
 	if (!element) return;
-	const shares = props.meetingContext.mediaState.activeScreenShareConsumers;
-	const latest = shares[0];
-	const stream = latest && props.meetingContext.mediaState.screenShareStreams[latest.consumerId];
+	const stream = props.meetingContext.mediaState.screenShareStreams[consumerId];
 	if (stream) {
 		element.muted = true;
 		const existing = screenAttachments.get(element);
@@ -70,7 +68,7 @@ provide("setScreenShareVideoRef", (element: HTMLVideoElement | null) => {
 				props.onPlaybackFailure?.(`Screen playback failed: ${error instanceof Error ? error.message : "unknown error"}`);
 			});
 		screenAttachments.set(element, { stream, attachment });
-		props.onScreenAttachment?.(latest.consumerId, attachment);
+		props.onScreenAttachment?.(consumerId, attachment);
 	}
 });
 

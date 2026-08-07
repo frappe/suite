@@ -610,7 +610,12 @@ provideMeetingContext({
 // Provide legacy injects for components not yet migrated to useMeetingContext
 provide("setLocalVideoRef", mediaControls.setLocalVideoRef);
 provide("setRemoteVideoRef", mediaControls.setRemoteVideoRef);
-provide("setScreenShareVideoRef", mediaControls.setScreenShareVideoRef);
+provide(
+	"setScreenShareVideoRef",
+	(_consumerId: string, element: HTMLVideoElement | null) => {
+		if (element) mediaControls.setScreenShareVideoRef(element);
+	},
+);
 provide("getParticipantName", participantStore.getParticipantName);
 provide("meetingId", meetingId.value);
 provide("sfuManager", sfuConnection.sfuManager);

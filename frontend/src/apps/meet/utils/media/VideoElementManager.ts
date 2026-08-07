@@ -140,7 +140,9 @@ export class VideoElementManager {
 						await videoElement.play();
 					} catch (err) {
 						console.error(`Error playing video for ${participantId}:`, err);
-						throw err;
+						if (this.strictAttachmentTimeoutMs) throw err;
+						if ((err as DOMException).name === "NotAllowedError")
+							this.addUserInteractionHandler(videoElement, participantId);
 					}
 				} else {
 					console.log(
@@ -206,7 +208,9 @@ export class VideoElementManager {
 					`Audio autoplay failed for ${participantId}:`,
 					(err as Error).message,
 				);
-				throw err;
+				if (this.strictAttachmentTimeoutMs) throw err;
+				if ((err as DOMException).name === "NotAllowedError")
+					this.addUserInteractionHandler(audioElement, participantId);
 			}
 		}
 	}
@@ -235,7 +239,7 @@ export class VideoElementManager {
 	}
 
 	addUserInteractionHandler(
-		element: HTMLVideoElement,
+		element: HTMLMediaElement,
 		participantId: string,
 	): void {
 		const playOnInteraction = async () => {
