@@ -101,7 +101,7 @@ grant. Only already-stopping local captures are finalized from persistent data.
 ./deploy.sh start      # Start all services
 ./deploy.sh stop       # Stop all services
 ./deploy.sh restart    # Restart all services
-./deploy.sh update     # Pull latest image and restart SFU
+./deploy.sh update     # Pull latest images and recreate SFU and recorder
 ./deploy.sh logs       # Tail logs (use: ./deploy.sh logs sfu)
 ./deploy.sh status     # Show health and container status
 ./deploy.sh ssl-renew  # Force SSL certificate renewal
@@ -109,7 +109,7 @@ grant. Only already-stopping local captures are finalized from persistent data.
 
 ### Updating
 
-When new changes are pushed to `develop`, the GitHub Actions workflow builds and pushes a new Docker image. To update the SFU on your server:
+When new changes are pushed to `develop`, GitHub Actions builds and pushes the SFU and recorder images. To update both services on your server:
 
 ```bash
 cd /opt/meet-sfu

@@ -7,7 +7,7 @@
 #   ./deploy.sh start      — Start all services
 #   ./deploy.sh stop       — Stop all services
 #   ./deploy.sh restart    — Restart all services
-#   ./deploy.sh pull       — Pull the latest SFU image
+#   ./deploy.sh pull       — Pull the latest SFU and recorder images
 #   ./deploy.sh logs       — Tail logs from all services
 #   ./deploy.sh status     — Show container status and health
 #   ./deploy.sh ssl-init   — Provision SSL certificate (first time only)
@@ -115,7 +115,8 @@ check_env() {
     fi
 
     # Informational
-    info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
+	info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
+	info "Recorder Image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
     info "SFU Port: ${PORT:-3000}"
     if [ -n "${MEDIASOUP_NUM_WORKERS:-}" ]; then
         local media_port_start="${WEBRTC_SERVER_PORT:-40000}"
@@ -140,10 +141,11 @@ cmd_setup() {
     check_dependencies
     check_env
 
-    header "Pulling SFU image"
-    set -a; source "$ENV_FILE"; set +a
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    ok "Image pulled"
+	header "Pulling service images"
+	set -a; source "$ENV_FILE"; set +a
+	docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
+	docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
+	ok "Images pulled"
 
     # Start SFU first (nginx depends on it being healthy)
     header "Starting SFU"
@@ -202,19 +204,20 @@ cmd_restart() {
 }
 
 cmd_pull() {
-    set -a; source "$ENV_FILE"; set +a
-    header "Pulling latest SFU image"
-    docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    ok "Image pulled"
-    info "Run './deploy.sh restart' to use the new image"
+	set -a; source "$ENV_FILE"; set +a
+	header "Pulling latest service images"
+	docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
+	docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
+	ok "Images pulled"
+	info "Run './deploy.sh update' to use the new images"
 }
 
 cmd_update() {
-    header "Updating SFU"
-    cmd_pull
-    header "Recreating SFU container"
-    compose up -d --force-recreate sfu
-    ok "SFU updated"
+	header "Updating SFU and recorder"
+	cmd_pull
+	header "Recreating service containers"
+	compose up -d --force-recreate grant-store-init sfu recorder
+	ok "SFU and recorder updated"
     cmd_status
 }
 
@@ -267,8 +270,8 @@ cmd_help() {
     echo "  start      Start all services"
     echo "  stop       Stop all services"
     echo "  restart    Restart all services"
-    echo "  pull       Pull the latest SFU image from the registry"
-    echo "  update     Pull latest image and recreate the SFU container"
+	echo "  pull       Pull the latest SFU and recorder images"
+	echo "  update     Pull latest images and recreate service containers"
     echo "  logs       Tail logs (append service name to filter, e.g., logs sfu)"
     echo "  status     Show container status and health"
     echo "  ssl-init   Provision SSL certificate (first time)"
