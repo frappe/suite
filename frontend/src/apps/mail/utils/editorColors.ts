@@ -58,18 +58,27 @@ export const resolveColorVariables = (style: string) =>
 	})
 
 // Text colour and highlight are separate marks, so colouring a highlighted run nests them:
-// `<span style="color: …"><mark style="background-color: …">`. That looks right in the editor and
-// is wrong the moment it leaves, because every browser's default stylesheet gives <mark> its own
-// `color`, and a colour set *on* the element beats one inherited from an ancestor. The highlight
-// survives, the text colour is overruled, and the words come out black on the background — which
-// is exactly what Gmail shows.
+// `<span style="color: …"><mark style="background-color: …">`. That looks right in the editor
+// and is wrong the moment it leaves, because every browser's default stylesheet gives <mark> its
+// own `color`, and a colour set *on* the element beats one inherited from an ancestor. The
+// highlight survives, the text colour is overruled, and the words come out black on the
+// background — which is exactly what Gmail shows.
 //
 // `inherit` is the fix rather than the resolved hex, because it is correct whichever way round
 // the two marks happen to nest, and it is a no-op when the run isn't coloured at all. Marks that
 // already carry a colour of their own are left alone.
+// Quoted mail is somebody else's document, and a <mark> in it was written expecting the browser
+// default we would be overriding — so `inherit` there could recolour their words from whatever
+// element happens to enclose the quote. Left alone. (Both spellings, because the quote may be one
+// of ours or one carried in from Gmail, and openQuotedContent folds it straight into the body, so
+// the two can't be told apart by which string they arrived in.)
+const QUOTE = '.frappe_mail_quote, .gmail_quote'
+
 const keepTextColorThroughHighlights = ($: CheerioAPI) => {
 	$('mark').each((_, element) => {
 		const mark = $(element)
+		if (mark.closest(QUOTE).length) return
+
 		const style = mark.attr('style') ?? ''
 		if (/(^|;)\s*color\s*:/.test(style)) return
 
@@ -79,6 +88,9 @@ const keepTextColorThroughHighlights = ($: CheerioAPI) => {
 
 // Everything that has to happen to the editor's colours before a body goes on the wire.
 export const preserveEditorColors = ($: CheerioAPI) => {
+	// Variables are resolved everywhere, quotes included: only our own editor writes them, so one
+	// inside a quote is our earlier mail coming back and would render just as broken as the first
+	// time. It is the mark rewrite below that has to keep its hands off other people's markup.
 	$('[style]').each((_, element) => {
 		const styled = $(element)
 		styled.attr('style', resolveColorVariables(styled.attr('style')!))
