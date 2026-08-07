@@ -47,6 +47,12 @@ export function useRecording(meetingId: string) {
 	const state = ref<RecordingState | null>(null);
 	const requestId = ref<string | null>(null);
 	const socket = useSocket();
+	let stateVersion = 0;
+
+	function setState(next: RecordingState | null) {
+		state.value = next;
+		stateVersion += 1;
+	}
 
 	const stateCall = useCall<RecordingState | null, { meeting_id: string }>({
 		url: "/api/v2/method/suite.meet.api.recording.get_state",
@@ -77,12 +83,14 @@ export function useRecording(meetingId: string) {
 
 	async function loadState() {
 		try {
+			const version = stateVersion;
 			const revision = state.value?.state_revision;
 			const loaded = (await stateCall.submit({ meeting_id: meetingId })) ?? null;
+			if (stateVersion !== version) return;
 			if (state.value?.state_revision !== revision) return;
 			if (loaded && revision !== undefined && loaded.state_revision < revision)
 				return;
-			state.value = loaded;
+			setState(loaded);
 		} catch {
 			// Guests may receive state through the room-scoped realtime channel instead.
 		}
@@ -99,16 +107,16 @@ export function useRecording(meetingId: string) {
 			request_id: requestId.value,
 		});
 		if (result.status === "Rejected") {
-			state.value = null;
+			setState(null);
 			requestId.value = null;
 			toast.error("Recording capacity is unavailable");
 			return result;
 		}
-		state.value = {
+		setState({
 			...state.value,
 			...result,
 			state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
-		};
+		});
 		if (result.status === "Recording") await loadState();
 		if (result.status !== "Pending") requestId.value = null;
 		if (result.status === "Pending") toast.info("Recording is starting");
@@ -121,11 +129,11 @@ export function useRecording(meetingId: string) {
 	async function stop() {
 		const result = await stopCall.submit({ meeting_id: meetingId });
 		if (result) {
-			state.value = {
+			setState({
 				...state.value,
 				...result,
 				state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
-			};
+			});
 			await loadState();
 		}
 		toast.info("Recording is stopping");
@@ -136,7 +144,7 @@ export function useRecording(meetingId: string) {
 		if (event.meeting_id !== meetingId) return;
 		if (!event.recording) {
 			const wasPending = state.value?.status === "Pending";
-			state.value = null;
+			setState(null);
 			requestId.value = null;
 			if (wasPending) toast.error("Recording could not start");
 			return;
@@ -147,7 +155,7 @@ export function useRecording(meetingId: string) {
 		)
 			return;
 		const previous = state.value?.status;
-		state.value = event.recording;
+		setState(event.recording);
 		if (event.recording.status === "Recording" && previous !== "Recording")
 			toast.info("This meeting is being recorded");
 		if (event.recording.status === "Interrupted")

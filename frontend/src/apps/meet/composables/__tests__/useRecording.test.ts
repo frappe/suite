@@ -1,16 +1,22 @@
 import { toast } from "frappe-ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createApp } from "vue";
 
 const mocks = vi.hoisted(() => ({
 	startParams: [] as Array<{ meeting_id: string; request_id: string }>,
 	startCount: 0,
 	startResults: [] as Array<Record<string, unknown>>,
 	getStateCount: 0,
+	getStateCompleted: 0,
 	getStateResults: [] as Array<
 		| Record<string, unknown>
 		| null
 		| Promise<Record<string, unknown> | null>
 	>,
+	socketHandler: null as ((event: {
+		meeting_id: string;
+		recording: Record<string, unknown> | null;
+	}) => void) | null,
 	stopped: false,
 }));
 
@@ -36,7 +42,11 @@ vi.mock("frappe-ui", () => ({
 			if (options.url.endsWith(".get_preflight")) return { eligible: true };
 			if (options.url.endsWith(".get_state")) {
 				mocks.getStateCount += 1;
-				if (mocks.getStateResults.length) return await mocks.getStateResults.shift();
+				if (mocks.getStateResults.length) {
+					const result = await mocks.getStateResults.shift();
+					mocks.getStateCompleted += 1;
+					return result;
+				}
 				if (mocks.startCount > 1) return {
 					name: "recording",
 					status: mocks.stopped ? "Stopping" : "Recording",
@@ -48,7 +58,14 @@ vi.mock("frappe-ui", () => ({
 	}),
 }));
 
-vi.mock("../../socket", () => ({ useSocket: () => null }));
+vi.mock("../../socket", () => ({
+	useSocket: () => ({
+		on: vi.fn((_event: string, handler: typeof mocks.socketHandler) => {
+			mocks.socketHandler = handler;
+		}),
+		off: vi.fn(),
+	}),
+}));
 
 import { useRecording } from "../useRecording";
 
@@ -58,7 +75,9 @@ describe("useRecording", () => {
 		mocks.startCount = 0;
 		mocks.startResults.length = 0;
 		mocks.getStateCount = 0;
+		mocks.getStateCompleted = 0;
 		mocks.getStateResults.length = 0;
+		mocks.socketHandler = null;
 		mocks.stopped = false;
 		vi.clearAllMocks();
 	});
@@ -114,6 +133,33 @@ describe("useRecording", () => {
 
 		expect(recording.state.value?.status).toBe("Stopping");
 		expect(recording.state.value?.state_revision).toBe(3);
+	});
+
+	it("does not resurrect state after a realtime null transition", async () => {
+		let resolveStale!: (value: Record<string, unknown>) => void;
+		mocks.getStateResults.push(new Promise<Record<string, unknown>>((resolve) => {
+			resolveStale = resolve;
+		}));
+		let recording!: ReturnType<typeof useRecording>;
+		const app = createApp({
+			setup() {
+				recording = useRecording("room");
+				return () => null;
+			},
+		});
+		app.mount(document.createElement("div"));
+		await vi.waitFor(() => expect(mocks.getStateCount).toBe(1));
+
+		mocks.socketHandler?.({ meeting_id: "room", recording: null });
+		resolveStale({
+			name: "recording",
+			status: "Recording",
+			state_revision: 1,
+		});
+		await vi.waitFor(() => expect(mocks.getStateCompleted).toBe(1));
+
+		expect(recording.state.value).toBeNull();
+		app.unmount();
 	});
 
 	it("does not store or announce an explicit capacity rejection as started", async () => {
