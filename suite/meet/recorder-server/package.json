@@ -1,0 +1,33 @@
+{
+	"name": "meet-recorder-server",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Control plane for Frappe Meet recorder workers",
+	"main": "dist/server.js",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"start": "node dist/server.js",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"test": "vitest run",
+		"test:integration": "./integration/run.sh"
+	},
+	"packageManager": "yarn@1.22.22",
+	"license": "AGPL-3.0",
+	"dependencies": {
+		"express": "^4.18.2",
+		"jsonwebtoken": "^9.0.2",
+		"prom-client": "^15.1.3",
+		"puppeteer-core": "^24.16.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.12",
+		"@types/express": "^4.17.21",
+		"@types/jsonwebtoken": "^9.0.6",
+		"@types/node": "^20.11.24",
+		"socket.io": "^4.8.3",
+		"typescript": "^5.3.3",
+		"vitest": "^4.1.6"
+	}
+}
