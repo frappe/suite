@@ -824,12 +824,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				if (mh?.audioProducer) {
 					const audioProducer = mh.audioProducer;
 					const currentTrack = audioProducer.track;
-					if (currentTrack && currentTrack.readyState === "ended") {
-						if (track && typeof audioProducer.replaceTrack === "function") {
+					if (track) {
+						track.enabled = true;
+						if (
+							currentTrack !== track &&
+							typeof audioProducer.replaceTrack === "function"
+						) {
 							await audioProducer.replaceTrack({ track });
 						}
-					} else if (track) {
-						track.enabled = true;
 					}
 					audioProducer.resume?.();
 
