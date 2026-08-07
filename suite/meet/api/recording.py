@@ -125,13 +125,16 @@ def get_state(meeting_id: str) -> dict | None:
     room = frappe.get_doc("Meet Room", meeting_id)
     if not room.can_join(frappe.session.user) or not room.is_user_approved(frappe.session.user):
         frappe.throw(_("You do not have access to this meeting"), frappe.PermissionError)
-    recording = frappe.db.get_value(
+    return get_active_recording_state(meeting_id)
+
+
+def get_active_recording_state(meeting_id: str) -> dict | None:
+    return frappe.db.get_value(
         "Meet Recording",
         {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]},
         ["name", "status", "started_at", "capture_started_at", "state_revision"],
         as_dict=True,
     )
-    return recording
 
 
 def _validate_request_id(request_id: str):

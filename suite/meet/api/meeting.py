@@ -11,6 +11,7 @@ import jwt
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
+from suite.meet.api.recording import get_active_recording_state
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.utils.sfu_config import get_sfu_config
 from suite.meet.utils.user import (
@@ -427,6 +428,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
                 "codec_strategy": _get_codec_strategy(),
                 "host_only_chat": bool(meeting.host_only_chat),
                 "e2ee_required": e2ee_required,
+                "recording": get_active_recording_state(meeting_id),
                 "message": "Successfully joined meeting",
             }
         elif guest_id not in meeting.get_waiting_room():
@@ -465,6 +467,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
         "codec_strategy": _get_codec_strategy(),
         "host_only_chat": bool(meeting.host_only_chat),
         "e2ee_required": e2ee_required,
+        "recording": get_active_recording_state(meeting_id),
         "message": "Successfully joined meeting",
     }
 
@@ -517,6 +520,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
         "codec_strategy": _get_codec_strategy(),
         "host_only_chat": bool(meeting.host_only_chat),
         "e2ee_required": e2ee_required,
+        "recording": get_active_recording_state(meeting_id),
         "message": "Successfully joined meeting",
     }
 

@@ -1,6 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from unittest.mock import patch
+
 import frappe
 import jwt
 from frappe.client import delete as delete_document
@@ -11,6 +13,7 @@ from suite.meet.api.meeting import (
     get_sfu_connection_details,
     get_sfu_presence_preview_token,
     join_meeting,
+    join_meeting_as_guest,
 )
 
 
@@ -168,6 +171,24 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(decoded["user_id"], self.member_email)
         self.assertEqual(decoded["meeting_id"], self.meeting.name)
         self.assertEqual(decoded.get("scope", "full"), "full")
+
+    def test_guest_join_returns_active_recording_state(self):
+        self.meeting.db_set("meeting_type", "open")
+        frappe.set_user("Guest")
+        recording = {
+            "name": "recording-1",
+            "status": "Recording",
+            "state_revision": 1,
+        }
+
+        with patch(
+            "suite.meet.api.meeting.get_active_recording_state",
+            return_value=recording,
+        ):
+            result = join_meeting_as_guest(self.meeting.name, "Late Guest")
+
+        self.assertEqual(result["status"], "joined")
+        self.assertEqual(result["recording"], recording)
 
     def test_restricted_waiting_join_does_not_return_full_media_token(self):
         frappe.set_user(self.outsider_email)
