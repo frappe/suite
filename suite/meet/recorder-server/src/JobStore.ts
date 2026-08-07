@@ -72,6 +72,9 @@ function validLedger(value: unknown): value is Ledger {
 			'stop_operation_ids',
 			...(job.health_reason === undefined ? [] : ['health_reason']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
+			...(job.callback_completed_at === undefined
+				? []
+				: ['callback_completed_at']),
 			...(job.artifact === undefined ? [] : ['artifact']),
 		].sort();
 		if (JSON.stringify(Object.keys(job).sort()) !== JSON.stringify(keys))
@@ -108,6 +111,8 @@ function validLedger(value: unknown): value is Ledger {
 				(typeof job.health_reason === 'string' &&
 					job.health_reason.length <= 256)) &&
 			(job.terminal_at === undefined || validUtcTimestamp(job.terminal_at)) &&
+			(job.callback_completed_at === undefined ||
+				validUtcTimestamp(job.callback_completed_at)) &&
 			Array.isArray(job.stop_operation_ids) &&
 			job.stop_operation_ids.length <= 10_000 &&
 			job.stop_operation_ids.every(nonempty) &&

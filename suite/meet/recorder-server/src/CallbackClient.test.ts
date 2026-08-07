@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import jwt from 'jsonwebtoken';
@@ -144,5 +144,6 @@ describe('CallbackClient', () => {
 		expect(jwt.decode(token, { complete: true })?.header.typ).toBe(
 			'meet-recording-callback+jwt',
 		);
+		await expect(stat(directory)).rejects.toThrow();
 	});
 });

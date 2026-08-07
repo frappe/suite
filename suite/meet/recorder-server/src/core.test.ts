@@ -395,6 +395,45 @@ describe('JobStore and JobManager', () => {
 		expect(reloaded.get('job')?.state).toBe('complete');
 	});
 
+	it('retries terminal callbacks and persists their acknowledgement', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const terminal = vi
+			.fn<(job: import('./types.js').JobRecord) => Promise<void>>()
+			.mockRejectedValueOnce(new Error('site unavailable'))
+			.mockResolvedValue(undefined);
+		const manager = new JobManager(
+			store,
+			bridge,
+			1,
+			terminal,
+			undefined,
+			async () => undefined,
+		);
+		await manager.reserve(baseClaims);
+
+		await bridge.emit({ job: 'job', type: 'complete' });
+
+		await vi.waitFor(() => expect(terminal).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() =>
+			expect(store.get('job')?.callback_completed_at).toEqual(
+				expect.any(String),
+			),
+		);
+
+		const reloaded = new JobStore(path);
+		await reloaded.initialize();
+		const afterRestart = vi.fn(async () => undefined);
+		await new JobManager(
+			reloaded,
+			new FakeRendererBridge(),
+			1,
+			afterRestart,
+		).initialize();
+		expect(afterRestart).not.toHaveBeenCalled();
+	});
+
 	it('finalizes a stopping job through the local restart hook', async () => {
 		const store = new JobStore(path);
 		await store.initialize();

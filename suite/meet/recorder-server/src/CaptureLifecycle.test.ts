@@ -202,6 +202,46 @@ describe('capture lifecycle', () => {
 		);
 	});
 
+	it('routes worker-requested stops through lifecycle completion', async () => {
+		const renderer = new FakeRendererBridge();
+		const stop = vi.fn(async () => 'complete' as const);
+		const worker = {
+			env: {},
+			initialize: vi.fn(async () => undefined),
+			startCapture: vi.fn(async () => undefined),
+			rendererFailed: vi.fn(async () => 'partial' as const),
+			stop,
+			recoverStopped: vi.fn(async () => 'complete' as const),
+			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
+		};
+		let workerOptions: CaptureWorkerOptions | undefined;
+		const manager = new CaptureWorkerManager(
+			renderer,
+			{ ...options('/tmp'), maxConcurrent: 1 },
+			(_job, createdOptions) => {
+				workerOptions = createdOptions;
+				return worker;
+			},
+		);
+		const lifecycle = vi.fn(async () => undefined);
+		manager.onLifecycle(lifecycle);
+		await manager.reserve(command('one'));
+
+		workerOptions?.onStopRequested?.(false, 'capture_budget_reached');
+
+		await vi.waitFor(() =>
+			expect(lifecycle).toHaveBeenCalledWith(
+				expect.objectContaining({
+					job: 'one',
+					type: 'complete',
+					reason: 'capture_budget_reached',
+				}),
+			),
+		);
+		expect(stop).toHaveBeenCalledWith(false, 'capture_budget_reached');
+		expect(manager.hasWorker('one')).toBe(false);
+	});
+
 	it('publishes interruption before waiting for terminal recovery timeout', async () => {
 		const renderer = new FakeRendererBridge();
 		let finishRecovery!: (outcome: 'partial') => void;

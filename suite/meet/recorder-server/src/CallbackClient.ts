@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { open } from 'node:fs/promises';
+import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import jwt from 'jsonwebtoken';
 import { safeJobDirectory } from './ManifestStore.js';
@@ -37,6 +37,10 @@ export class CallbackClient {
 		for (let attempt = 0; ; attempt += 1) {
 			try {
 				await this.performUpload(job);
+				await rm(safeJobDirectory(this.options.dataRoot, job.job), {
+					recursive: true,
+					force: true,
+				});
 				return;
 			} catch (error) {
 				if (attempt === 4) throw error;
@@ -63,7 +67,7 @@ export class CallbackClient {
 			!artifact.duration_ms ||
 			!['complete', 'partial'].includes(artifact.state)
 		)
-			return;
+			throw new Error('terminal recording artifact is incomplete');
 		const stoppedSequence = 3;
 		const begun = await this.json('recorder_stopped', job, 'stopped', '3', {
 			recording_id: job.recording,

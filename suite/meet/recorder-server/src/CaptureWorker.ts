@@ -25,6 +25,7 @@ export interface CaptureWorkerOptions {
 	gracefulTimeoutMs: number;
 	recoveryTimeoutMs: number;
 	limits?: RecordingLimits;
+	onStopRequested?: (partial: boolean, reason: string) => void;
 }
 
 export interface CaptureWorkerDependencies {
@@ -169,7 +170,7 @@ export class CaptureWorker {
 	async startCapture(): Promise<void> {
 		if (this.ffmpeg || this.stopPromise) return;
 		if (this.limitReached()) {
-			void this.stop(false, 'capture_limit_reached');
+			this.requestStop(false, 'capture_limit_reached');
 			return;
 		}
 		const epoch = this.epoch++;
@@ -373,7 +374,7 @@ export class CaptureWorker {
 				backoff = Math.min(backoff * 2, 5_000);
 			}
 		}
-		if (!this.stopPromise) await this.stop(true, 'capture_recovery_timeout');
+		if (!this.stopPromise) this.requestStop(true, 'capture_recovery_timeout');
 	}
 
 	private async segmentAdopted(
@@ -381,7 +382,7 @@ export class CaptureWorker {
 		_segment: CaptureSegment,
 	): Promise<void> {
 		if (this.healthyEpoch?.epoch === epoch) this.healthyEpoch.resolve();
-		if (this.limitReached()) void this.stop(false, 'capture_budget_reached');
+		if (this.limitReached()) this.requestStop(false, 'capture_budget_reached');
 	}
 
 	private limitReached(): boolean {
@@ -403,9 +404,17 @@ export class CaptureWorker {
 			this.options.limits && Date.parse(this.options.limits.max_ends_at);
 		if (!end || this.limitTimer) return;
 		this.limitTimer = setTimeout(
-			() => void this.stop(false, 'capture_time_limit_reached'),
+			() => this.requestStop(false, 'capture_time_limit_reached'),
 			Math.max(0, end - this.now()),
 		);
+	}
+
+	private requestStop(partial: boolean, reason: string): void {
+		if (this.options.onStopRequested) {
+			this.options.onStopRequested(partial, reason);
+			return;
+		}
+		void this.stop(partial, reason);
 	}
 
 	private async openGap(reason: string): Promise<void> {
@@ -433,7 +442,7 @@ export class CaptureWorker {
 		return this.supervisor.start(command, args, {
 			env: this.env,
 			logPath: join(this.manifest.directory, `logs/${log}.log`),
-			onUnexpectedExit: () => void this.stop(true, reason),
+			onUnexpectedExit: () => this.requestStop(true, reason),
 		});
 	}
 

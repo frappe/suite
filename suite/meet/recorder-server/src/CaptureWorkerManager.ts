@@ -18,7 +18,7 @@ type Worker = Pick<
 >;
 
 export interface CaptureWorkerManagerOptions
-	extends Omit<CaptureWorkerOptions, 'display' | 'limits'> {
+	extends Omit<CaptureWorkerOptions, 'display' | 'limits' | 'onStopRequested'> {
 	maxConcurrent: number;
 }
 
@@ -62,6 +62,11 @@ export class CaptureWorkerManager implements RendererBridge {
 			...this.options,
 			display: this.nextDisplay++,
 			limits: command.limits,
+			onStopRequested: (partial, reason) => {
+				void this.enqueue(command.job, () =>
+					this.stopWorker(command.job, partial, reason),
+				);
+			},
 		});
 		// Claim capacity before asynchronous initialization so concurrent reserves cannot overbook.
 		this.workers.set(command.job, worker);

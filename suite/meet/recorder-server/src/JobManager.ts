@@ -3,6 +3,7 @@ import type { RendererBridge } from './RendererBridge.js';
 import type { CommandClaims, JobRecord } from './types.js';
 
 const TERMINAL_STATES = ['complete', 'partial', 'failed'] as const;
+const MAX_ACKNOWLEDGED_TERMINAL_JOBS = 1_000;
 const ACTIVE_TRANSITIONS: Record<JobRecord['state'], JobRecord['state'][]> = {
 	reserved: ['configured', 'complete', 'partial', 'failed', 'stopping'],
 	configured: ['proof_complete', 'complete', 'partial', 'failed', 'stopping'],
@@ -41,6 +42,7 @@ function sameCommand(job: JobRecord, command: CommandClaims): boolean {
 export class JobManager {
 	private operations: Promise<void> = Promise.resolve();
 	private recoveryRequired = false;
+	private readonly terminalDeliveries = new Map<string, Promise<void>>();
 
 	constructor(
 		private readonly store: JobStore,
@@ -48,6 +50,8 @@ export class JobManager {
 		private readonly capacity: number,
 		private readonly onTerminal?: (job: JobRecord) => Promise<void>,
 		private readonly onInterrupted?: (job: JobRecord) => Promise<void>,
+		private readonly sleep: (ms: number) => Promise<void> = (ms) =>
+			new Promise((resolve) => setTimeout(resolve, ms)),
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
@@ -99,9 +103,7 @@ export class JobManager {
 				}
 			});
 		}
-		await Promise.allSettled(
-			terminalAtStartup.map((job) => this.onTerminal?.(job)),
-		);
+		for (const job of terminalAtStartup) this.scheduleTerminal(job);
 	}
 
 	get ready(): boolean {
@@ -210,6 +212,50 @@ export class JobManager {
 		await current;
 	}
 
+	private scheduleTerminal(job: JobRecord): void {
+		if (
+			!this.onTerminal ||
+			job.callback_completed_at ||
+			this.terminalDeliveries.has(job.job)
+		)
+			return;
+		const delivery = this.deliverTerminal(job.job).finally(() => {
+			this.terminalDeliveries.delete(job.job);
+		});
+		this.terminalDeliveries.set(job.job, delivery);
+	}
+
+	private async deliverTerminal(jobId: string): Promise<void> {
+		let delay = 1_000;
+		while (this.onTerminal) {
+			const job = this.store.get(jobId);
+			if (!job || !terminal(job) || job.callback_completed_at) return;
+			try {
+				await this.onTerminal(job);
+				await this.store.update((jobs) => {
+					const current = jobs[jobId];
+					if (!current || !terminal(current)) return;
+					current.callback_completed_at ??= new Date().toISOString();
+					const acknowledged = Object.values(jobs)
+						.filter((record) => record.callback_completed_at)
+						.sort((a, b) =>
+							(b.callback_completed_at ?? '').localeCompare(
+								a.callback_completed_at ?? '',
+							),
+						);
+					for (const expired of acknowledged.slice(
+						MAX_ACKNOWLEDGED_TERMINAL_JOBS,
+					))
+						delete jobs[expired.job];
+				});
+				return;
+			} catch {
+				await this.sleep(delay);
+				delay = Math.min(delay * 2, 60_000);
+			}
+		}
+	}
+
 	private async recordLifecycle(
 		job: string,
 		type:
@@ -267,6 +313,6 @@ export class JobManager {
 				terminal.state as (typeof TERMINAL_STATES)[number],
 			)
 		)
-			await this.onTerminal?.(terminal);
+			this.scheduleTerminal(terminal);
 	}
 }
