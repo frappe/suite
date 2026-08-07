@@ -178,9 +178,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         recording = frappe.get_doc("Meet Recording", started["name"])
         now = int(time.time())
         claims = {
-            "iss": "meet-recorder:suite.test",
+            "iss": f"meet-recorder:{frappe.local.site}",
             "aud": CALLBACK_AUDIENCE,
-            "site": "suite.test",
+            "site": frappe.local.site,
             "recording": recording.name,
             "job": recording.recorder_job_id,
             "operation": "stopped",
