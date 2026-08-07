@@ -36,11 +36,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			await deps.mediasoup.createRoom(
 				scopedRoomId,
 				(roomIdInner, participantIds) => {
-					deps.registry.emitToFullAccessParticipants(
-						roomIdInner,
-						'active_speaker',
-						{ participantIds },
-					);
+					deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
 				},
 			);
 
@@ -160,8 +156,39 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 	}
 
 	return (socket: Socket) => {
+		socket.on('recording:join', async (data, callback) => {
+			try {
+				deps.authManager.ensureRecorderAccess(socket);
+				if (data?.roomId !== socket.meetingId)
+					throw new Error('Room ID mismatch');
+				const roomId = getRoomId(socket);
+				const peerId = socket.userId;
+				await deps.mediasoup.createRoom(
+					roomId,
+					(roomIdInner, participantIds) => {
+						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
+					},
+				);
+				socket.join(roomId);
+				socket.roomId = roomId;
+				socket.participantId = peerId;
+				deps.registry.joinRecorder(socket, roomId, peerId);
+				deps.mediasoup.addPeer(roomId, peerId, {
+					name: 'Recorder',
+					userId: peerId,
+					audio_enabled: false,
+					video_enabled: false,
+				});
+				callback({ success: true });
+			} catch (error) {
+				callback({ success: false, error: (error as Error).message });
+			}
+		});
+
 		socket.on('join_room', async (data, callback) => {
 			try {
+				if (socket.scope === 'recording')
+					throw new Error('Recorder must use recording:join');
 				if (!socket.userId || !socket.meetingId) {
 					callback({ success: false, error: 'Authentication required' });
 					return;
@@ -220,6 +247,16 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			const participantId = socket.participantId;
 			if (roomId && participantId) {
 				try {
+					if (socket.scope === 'recording') {
+						const ownsPeer = deps.registry.leaveRecorder(
+							socket,
+							roomId,
+							participantId,
+						);
+						if (ownsPeer) {
+							await deps.mediasoup.removePeer(roomId, participantId);
+						}
+					}
 					const shouldCleanupPeer = deps.registry.releaseParticipant(
 						socket,
 						roomId,
@@ -234,22 +271,20 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						await deps.mediasoup.removePeer(roomId, participantId);
 
 						if (isRealParticipant(participantId)) {
-							socket
-								.to(roomId)
-								.emit('participant_left', { roomId, participantId });
+							deps.registry.emitParticipantEvent(
+								roomId,
+								'participant_left',
+								participantId,
+							);
 						}
 
 						if (deps.registry.hasRaisedHand(roomId, participantId)) {
 							deps.registry.clearRaisedHand(roomId, participantId);
-							deps.registry.emitToFullAccessParticipants(
-								roomId,
-								'hand_raised',
-								{
-									participantId,
-									raised: false,
-									timestamp: new Date().toISOString(),
-								},
-							);
+							deps.registry.emitRaisedHand(roomId, {
+								participantId,
+								raised: false,
+								timestamp: new Date().toISOString(),
+							});
 						}
 					}
 

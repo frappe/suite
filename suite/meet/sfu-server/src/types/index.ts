@@ -43,6 +43,8 @@ import type {
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecordingJoinRequest,
+	RecordingProofRequest,
 	ScreenShareRequest,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
@@ -87,6 +89,8 @@ export type {
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecordingJoinRequest,
+	RecordingProofRequest,
 	Router,
 	RouterRtpCodecCapability,
 	RtpCapabilities,
@@ -107,6 +111,9 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
+	'recording:challenge': (
+		data: import('../server/RecordingGrantManager').RecordingProofChallenge,
+	) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
 	producer_created: (data: ProducerCreatedEvent) => void;
@@ -132,6 +139,14 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	'recording:proof': (
+		data: RecordingProofRequest,
+		callback: (response: SFUResponse) => void,
+	) => void;
+	'recording:join': (
+		data: RecordingJoinRequest,
+		callback: (response: SFUResponse) => void,
+	) => void;
 	client_telemetry: (data: ClientTelemetryEvent) => void;
 	'auth:update_token': (
 		data: UpdateTokenRequest,
@@ -412,6 +427,7 @@ export interface RoomStats {
 	id: string;
 	created: Date;
 	peerCount: number;
+	participantCount: number;
 	peers: string[];
 	producerCount?: number;
 	consumerCount?: number;
@@ -606,5 +622,7 @@ declare module 'socket.io' {
 		scope?: SFUScope;
 		e2eeRequired?: boolean;
 		e2eeReady?: boolean;
+		recordingProofComplete?: boolean;
+		recordingClaims?: import('../server/RecordingGrantManager').RecordingGrantClaims;
 	}
 }

@@ -30,22 +30,18 @@ export function registerMediaControlHandlers(deps: HandlerDeps) {
 					deps.registry.hasRaisedHand(roomId, socket.participantId)
 				) {
 					deps.registry.clearRaisedHand(roomId, socket.participantId);
-					deps.registry.emitToFullAccessParticipants(roomId, 'hand_raised', {
+					deps.registry.emitRaisedHand(roomId, {
 						participantId: socket.participantId,
 						raised: false,
 						timestamp: new Date().toISOString(),
 					});
 				}
 
-				deps.registry.emitToFullAccessParticipants(
-					roomId,
-					'media_control_update',
-					{
-						participantId: socket.participantId,
-						action,
-						timestamp: new Date().toISOString(),
-					},
-				);
+				deps.registry.emitMediaControlUpdate(roomId, {
+					participantId: socket.participantId,
+					action,
+					timestamp: new Date().toISOString(),
+				});
 			} catch (error) {
 				loggers.socketHandler.warn(
 					'media_control handling failed: %s',

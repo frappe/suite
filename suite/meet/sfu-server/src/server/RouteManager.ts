@@ -52,7 +52,7 @@ export class RouteManager {
 				status: 'healthy',
 				uptime: process.uptime(),
 				rooms: this.mediasoup.rooms.getRoomCount(),
-				peers: this.mediasoup.peers.getPeerCount(),
+				peers: this.mediasoup.rooms.getParticipantCount(),
 			};
 			res.json(stats);
 		});

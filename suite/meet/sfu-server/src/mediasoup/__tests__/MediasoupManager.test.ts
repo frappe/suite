@@ -91,9 +91,11 @@ describe('MediasoupManager.createConsumer', () => {
 		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
 			roomId: 'room-1',
 			peerId: 'peer-1',
+			direction: 'recv',
 			transport: {},
 		} as never);
 		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
+			roomId: 'room-1',
 			peerId: 'peer-2',
 			producer: { appData: {} },
 		} as never);
@@ -110,9 +112,63 @@ describe('MediasoupManager.createConsumer', () => {
 		);
 
 		await expect(
-			mgr.createConsumer('transport-1', 'producer-1', {} as never),
+			mgr.createConsumer(
+				'transport-1',
+				'producer-1',
+				'room-1',
+				'peer-1',
+				{} as never,
+			),
 		).rejects.toThrow('consume failed');
 
 		expect(closeConsumer).not.toHaveBeenCalled();
+	});
+});
+
+describe('MediasoupManager resource access', () => {
+	it('requires transport room, peer, and direction to match', () => {
+		const mgr = new MediasoupManager();
+		const internals = mgr as unknown as {
+			transportManager: { getTransportData: (id: string) => unknown };
+		};
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			direction: 'send',
+			transport: {},
+		});
+
+		expect(() => mgr.assertTransportAccess('t1', 'room-2', 'peer-1')).toThrow(
+			'Transport ownership mismatch',
+		);
+		expect(() => mgr.assertTransportAccess('t1', 'room-1', 'peer-2')).toThrow(
+			'Transport ownership mismatch',
+		);
+		expect(() =>
+			mgr.assertTransportAccess('t1', 'room-1', 'peer-1', 'recv'),
+		).toThrow('is not a recv transport');
+	});
+
+	it('rejects a producer from another room when creating a consumer', async () => {
+		const mgr = new MediasoupManager();
+		const internals = mgr as unknown as {
+			transportManager: { getTransportData: (id: string) => unknown };
+			producerManager: { getProducerData: (id: string) => unknown };
+		};
+		vi.spyOn(internals.transportManager, 'getTransportData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			direction: 'recv',
+			transport: {},
+		});
+		vi.spyOn(internals.producerManager, 'getProducerData').mockReturnValue({
+			roomId: 'room-2',
+			peerId: 'peer-2',
+			producer: {},
+		});
+
+		await expect(
+			mgr.createConsumer('t1', 'p1', 'room-1', 'peer-1', {} as never),
+		).rejects.toThrow('does not belong to room room-1');
 	});
 });

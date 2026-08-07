@@ -13,8 +13,10 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			const startedAt = performance.now();
 			const transportDirection = direction(data.direction);
 			try {
-				deps.authManager.ensureFullAccess(socket);
+				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { direction, encryptionEnabled } = data;
+				if (socket.scope === 'recording' && direction !== 'recv')
+					throw new Error('Recorder send transports are not permitted');
 				enforceE2EETransportPolicy(socket, encryptionEnabled);
 				const roomId = getRoomId(socket);
 				const userId = socket.userId;
@@ -60,7 +62,7 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			const transportDirection =
 				transportDirections.get(data.transportId) ?? 'unknown';
 			try {
-				deps.authManager.ensureFullAccess(socket);
+				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { transportId, dtlsParameters } = data;
 				if (
 					socket.e2eeRequired &&
@@ -73,6 +75,8 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				await deps.mediasoup.connectWebRtcTransport(
 					transportId,
 					dtlsParameters,
+					getRoomId(socket),
+					socket.userId,
 				);
 
 				callback({ success: true });
@@ -106,10 +110,13 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			const transportDirection =
 				transportDirections.get(data.transportId) ?? 'unknown';
 			try {
-				deps.authManager.ensureFullAccess(socket);
+				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { transportId } = data;
-				const iceParameters =
-					await deps.mediasoup.restartWebRtcTransportIce(transportId);
+				const iceParameters = await deps.mediasoup.restartWebRtcTransportIce(
+					transportId,
+					getRoomId(socket),
+					socket.userId,
+				);
 
 				callback({ success: true, iceParameters });
 				deps.telemetry.recordTransportOperation(

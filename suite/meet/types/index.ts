@@ -1,4 +1,12 @@
-export type SFUScope = "presence-preview" | "full";
+export type SFUScope = "presence-preview" | "full" | "recording";
+
+export interface RecordingJoinRequest {
+	roomId: string;
+}
+
+export interface RecordingProofRequest {
+	signature: string;
+}
 
 export interface UserData {
 	name: string;

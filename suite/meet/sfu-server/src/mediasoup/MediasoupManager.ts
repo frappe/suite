@@ -297,14 +297,22 @@ export class MediasoupManager {
 	async connectWebRtcTransport(
 		transportId: string,
 		dtlsParameters: DtlsParameters,
+		roomId: string,
+		peerId: string,
 	): Promise<void> {
+		this.assertTransportAccess(transportId, roomId, peerId);
 		return this.transportManager.connectWebRtcTransport(
 			transportId,
 			dtlsParameters,
 		);
 	}
 
-	async restartWebRtcTransportIce(transportId: string): Promise<IceParameters> {
+	async restartWebRtcTransportIce(
+		transportId: string,
+		roomId: string,
+		peerId: string,
+	): Promise<IceParameters> {
+		this.assertTransportAccess(transportId, roomId, peerId);
 		return this.transportManager.restartWebRtcTransportIce(transportId);
 	}
 
@@ -338,6 +346,8 @@ export class MediasoupManager {
 
 	async createProducer(
 		transportId: string,
+		roomId: string,
+		peerId: string,
 		rtpParameters: RtpParameters,
 		kind: 'audio' | 'video',
 		appData: AppData = {},
@@ -346,12 +356,14 @@ export class MediasoupManager {
 	): Promise<{ id: string; kind: 'audio' | 'video'; appData: AppData }> {
 		const enrichedAppData: AppData =
 			senderId !== undefined ? { ...appData, senderId } : appData;
-		const transportData = this.transportManager.getTransportData(transportId);
-		if (!transportData) {
-			throw new Error(`Transport ${transportId} not found`);
-		}
+		const transportData = this.assertTransportAccess(
+			transportId,
+			roomId,
+			peerId,
+			'send',
+		);
 
-		const { roomId, peerId, transport } = transportData;
+		const { transport } = transportData;
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) {
 			throw new Error(`Room ${roomId} not found`);
@@ -388,6 +400,8 @@ export class MediasoupManager {
 	async createConsumer(
 		transportId: string,
 		producerId: string,
+		roomId: string,
+		peerId: string,
 		rtpCapabilities: RtpCapabilities,
 	): Promise<{
 		id: string;
@@ -397,17 +411,24 @@ export class MediasoupManager {
 		paused: boolean;
 		senderId?: number;
 	}> {
-		const transportData = this.transportManager.getTransportData(transportId);
-		if (!transportData) {
-			throw new Error(`Transport ${transportId} not found`);
-		}
+		const transportData = this.assertTransportAccess(
+			transportId,
+			roomId,
+			peerId,
+			'recv',
+		);
 
 		const producerData = this.producerManager.getProducerData(producerId);
 		if (!producerData) {
 			throw new Error(`Producer ${producerId} not found`);
 		}
+		if (producerData.roomId !== roomId) {
+			throw new Error(
+				`Producer ${producerId} does not belong to room ${roomId}`,
+			);
+		}
 
-		const { roomId, peerId, transport } = transportData;
+		const { transport } = transportData;
 		const consumerKey = `${roomId}:${peerId}:${producerId}`;
 		if (this.creatingConsumers.has(consumerKey)) {
 			throw new Error(
@@ -534,6 +555,43 @@ export class MediasoupManager {
 
 	getConsumerData(consumerId: string): ConsumerData | undefined {
 		return this.consumerManager.getConsumerData(consumerId);
+	}
+
+	assertTransportAccess(
+		transportId: string,
+		roomId: string,
+		peerId: string,
+		direction?: 'send' | 'recv',
+	) {
+		const data = this.transportManager.getTransportData(transportId);
+		if (!data) throw new Error(`Transport ${transportId} not found`);
+		if (data.roomId !== roomId || data.peerId !== peerId) {
+			throw new Error('Transport ownership mismatch');
+		}
+		if (direction && data.direction !== direction) {
+			throw new Error(
+				`Transport ${transportId} is not a ${direction} transport`,
+			);
+		}
+		return data;
+	}
+
+	assertProducerAccess(producerId: string, roomId: string, peerId: string) {
+		const data = this.producerManager.getProducerData(producerId);
+		if (!data) throw new Error(`Producer ${producerId} not found`);
+		if (data.roomId !== roomId || data.peerId !== peerId) {
+			throw new Error('Producer ownership mismatch');
+		}
+		return data;
+	}
+
+	assertConsumerAccess(consumerId: string, roomId: string, peerId: string) {
+		const data = this.consumerManager.getConsumerData(consumerId);
+		if (!data) throw new Error(`Consumer ${consumerId} not found`);
+		if (data.roomId !== roomId || data.peerId !== peerId) {
+			throw new Error('Consumer ownership mismatch');
+		}
+		return data;
 	}
 
 	async updateConsumerPreferences(options: {
@@ -892,6 +950,7 @@ export class MediasoupManager {
 	getResourceCounts(): Record<string, number> {
 		return {
 			rooms: this.roomManager.getRoomCount(),
+			participants: this.roomManager.getParticipantCount(),
 			peers: this.peerManager.getPeerCount(),
 			transports: this.transportManager.getTransportCount(),
 			producers: this.producerManager.getProducerCount(),

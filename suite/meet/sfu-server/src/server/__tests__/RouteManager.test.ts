@@ -12,13 +12,16 @@ function createHarness(token?: string) {
 		}),
 	};
 	const mediasoup = {
-		getResourceCounts: vi.fn(() => ({ rooms: 2, peers: 4 })),
+		getResourceCounts: vi.fn(() => ({ rooms: 2, participants: 3, peers: 4 })),
 		getWorkerResourceUsage: vi.fn(async () => ({
 			userCpuSeconds: 1,
 			systemCpuSeconds: 0.5,
 			maxResidentMemoryBytes: 1024,
 		})),
-		rooms: { getRoomCount: vi.fn(() => 2) },
+		rooms: {
+			getRoomCount: vi.fn(() => 2),
+			getParticipantCount: vi.fn(() => 3),
+		},
 		peers: { getPeerCount: vi.fn(() => 4) },
 	};
 	const telemetry = new Telemetry();
@@ -70,6 +73,20 @@ describe('RouteManager metrics endpoint', () => {
 		);
 		expect(response.send).toHaveBeenCalledWith(
 			expect.stringContaining('meet_sfu_resources{resource="sockets"} 5'),
+		);
+		expect(response.send).toHaveBeenCalledWith(
+			expect.stringContaining('meet_sfu_resources{resource="participants"} 3'),
+		);
+	});
+
+	it('reports human participants rather than recorder peers in health', () => {
+		const { handlers } = createHarness();
+		const response = createResponse();
+
+		handlers.get('/health')?.({} as never, response as never);
+
+		expect(response.json).toHaveBeenCalledWith(
+			expect.objectContaining({ rooms: 2, peers: 3 }),
 		);
 	});
 });

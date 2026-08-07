@@ -162,7 +162,7 @@ describe('RoomManager', () => {
 		const worker = makeWorker({ router });
 		const webRtcServer = makeWebRtcServer();
 		const room = await mgr.createRoom('r1', worker, webRtcServer, codecs);
-		addPeersTo(room, 'p1', 'p2');
+		addPeersTo(room, 'p1', 'p2', 'recorder:session-1');
 
 		room.peers.get('p1')!.producers.set('a', {} as never);
 		room.peers.get('p1')!.producers.set('b', {} as never);
@@ -172,14 +172,16 @@ describe('RoomManager', () => {
 		expect(stats).toEqual(
 			expect.objectContaining({
 				id: 'r1',
-				peerCount: 2,
-				peers: ['p1', 'p2'],
+				peerCount: 3,
+				participantCount: 2,
+				peers: ['p1', 'p2', 'recorder:session-1'],
 				producerCount: 2,
 				consumerCount: 1,
 			}),
 		);
 
 		expect(mgr.getRoomStats('missing')).toBeNull();
+		expect(mgr.getParticipantCount()).toBe(2);
 	});
 
 	it('cleanup closes every room', async () => {

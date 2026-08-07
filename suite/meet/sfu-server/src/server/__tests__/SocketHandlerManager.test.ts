@@ -71,6 +71,187 @@ describe('SocketHandlerManager characterization', () => {
 		expect(next).toHaveBeenCalledWith();
 	});
 
+	it('denies producer and token-refresh handlers to recording scope', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingProofComplete: true,
+		});
+		const denied = new Error('Insufficient scope for full access');
+		harness.authManager.ensureFullAccess.mockImplementation(() => {
+			throw denied;
+		});
+		vi.stubEnv('NODE_ENV', 'development');
+		const producerCallback = vi.fn();
+		const refreshCallback = vi.fn();
+
+		socket.fire(
+			'create_producer',
+			{ kind: 'video', rtpParameters: {}, transportId: 'recv-1' },
+			producerCallback,
+		);
+		socket.fire('auth:update_token', { token: 'replacement' }, refreshCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(producerCallback).toHaveBeenCalledWith({
+			success: false,
+			error: denied.message,
+		});
+		expect(refreshCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Token refresh is unavailable for recording',
+		});
+		expect(harness.mediasoup.createProducer).not.toHaveBeenCalled();
+	});
+
+	it('denies recording scope from all participant mutation surfaces', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingProofComplete: true,
+			roomId: 'room-1',
+			participantId: 'recorder:recording-1',
+			userId: 'recorder:recording-1',
+		});
+		const denied = new Error('Insufficient scope for full access');
+		harness.authManager.ensureFullAccess.mockImplementation(() => {
+			throw denied;
+		});
+		const callbackEvents: Array<[string, unknown]> = [
+			['close_producer', { producerId: 'producer-1' }],
+			['pause_producer', { producerId: 'producer-1' }],
+			['resume_producer', { producerId: 'producer-1' }],
+			['create_plain_transport', {}],
+			['chat:send', { message: 'nope' }],
+			['poll:create', { question: 'q', options: [{ text: 'a' }] }],
+			['poll:vote', { pollId: 'poll-1', optionId: 'option-1' }],
+			['poll:sync_encrypted', { pollId: 'p', question: 'q', options: [] }],
+			['raise_hand', { raised: true }],
+		];
+		for (const [event, data] of callbackEvents) {
+			const callback = vi.fn();
+			socket.fire(event, data, callback);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(callback, event).toHaveBeenCalledWith({
+				success: false,
+				error: expect.any(String),
+			});
+		}
+
+		for (const [event, data] of [
+			['chat:toggle_restriction', { enabled: true }],
+			['reaction:send', { reaction: 'wave' }],
+			['media_control', { action: 'mute' }],
+			['host_control', { action: 'mute_all' }],
+			['screen_share', { action: 'start_share', shareData: {} }],
+			['client_telemetry', { event: 'media_stall', media: 'video' }],
+		] as Array<[string, unknown]>) {
+			socket.fire(event, data);
+		}
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.assertProducerAccess).not.toHaveBeenCalled();
+		expect(harness.mediasoup.createPlainTransport).not.toHaveBeenCalled();
+		expect(harness.mediasoup.applyMediaControl).not.toHaveBeenCalled();
+		expect(socket.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'e2ee:epoch' }),
+		);
+		vi.unstubAllEnvs();
+	});
+
+	it('denies recorder send transport while allowing the receive-only path', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+		});
+		const sendCallback = vi.fn();
+		const recvCallback = vi.fn();
+
+		socket.fire('create_webrtc_transport', { direction: 'send' }, sendCallback);
+		socket.fire('create_webrtc_transport', { direction: 'recv' }, recvCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(sendCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Recorder send transports are not permitted',
+		});
+		expect(recvCallback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true }),
+		);
+	});
+
+	it('leave_room fully removes recorder membership and media resources', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'recorder-socket',
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const joinCallback = vi.fn();
+		socket.fire('recording:join', { roomId: 'room-1' }, joinCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		socket.fire('leave_room');
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(joinCallback).toHaveBeenCalledWith({ success: true });
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'recorder:recording-1',
+		);
+		expect(harness.io.socketsAdapterRooms.get('room-1')).not.toContain(
+			socket.id,
+		);
+		expect(
+			harness.io.socketsAdapterRooms.get('room-1:recorders'),
+		).not.toContain(socket.id);
+		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+	});
+
+	it('disconnects an unproved recorder after ten seconds and clears the timer on proof', async () => {
+		vi.useFakeTimers();
+		const grantManager = {
+			createChallenge: vi.fn(() => ({ nonce: 'challenge' })),
+			verifyProofAndConsume: vi.fn().mockResolvedValue(2_000_000_000),
+		};
+		const harness = createManager(grantManager as never);
+		const unproved = harness.createSocket({
+			id: 'unproved',
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const unprovedDisconnect = vi.spyOn(unproved, 'disconnect');
+		harness.connect(unproved);
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(unprovedDisconnect).toHaveBeenCalledWith(true);
+
+		const proved = harness.createSocket({
+			id: 'proved',
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-2',
+				recorder_job_id: 'job-2',
+			} as never,
+		});
+		const provedDisconnect = vi.spyOn(proved, 'disconnect');
+		harness.connect(proved);
+		proved.fire('recording:proof', { signature: 'valid' }, vi.fn());
+		await vi.runAllTicks();
+		await vi.advanceTimersByTimeAsync(10_000);
+		expect(provedDisconnect).not.toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
 	it('join_room with scope:full adds the socket to fullAccessSockets, calls mediasoup.createRoom + addPeer, and emits existing_raised_hands to the joiner', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, { id: 'sock-A' });
@@ -654,7 +835,39 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.connectWebRtcTransport).toHaveBeenCalledWith(
 			'transport-1',
 			{},
+			'room-1',
+			'e2ee-user',
 		);
+	});
+
+	it('authenticates and checks consumer room ownership before updating preferences', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			userId: 'viewer-1',
+			roomId: 'room-1',
+		});
+		const callback = vi.fn();
+
+		socket.fire(
+			'consumer:update_preferences',
+			{ consumerId: 'consumer-1', visible: true, width: 640, height: 360 },
+			callback,
+		);
+		await new Promise((r) => setImmediate(r));
+
+		expect(harness.authManager.ensureMediaConsumerAccess).toHaveBeenCalledWith(
+			socket,
+		);
+		expect(harness.mediasoup.assertConsumerAccess).toHaveBeenCalledWith(
+			'consumer-1',
+			'room-1',
+			'viewer-1',
+		);
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			paused: false,
+			visible: true,
+		});
 	});
 
 	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {

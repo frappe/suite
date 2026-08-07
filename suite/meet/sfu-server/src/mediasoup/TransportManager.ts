@@ -278,6 +278,7 @@ export class TransportManager {
 			roomId,
 			peerId,
 			transport: transport as unknown as WebRtcTransport, // fake as WebRtcTransport
+			direction: 'send',
 		};
 		this.transports.set(transport.id, transportData);
 

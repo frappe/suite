@@ -6,6 +6,12 @@ const MAX_DURATION_MS = 5 * 60 * 1000;
 export function registerClientTelemetryHandlers(deps: HandlerDeps) {
 	return (socket: import('socket.io').Socket) => {
 		socket.on('client_telemetry', (data: unknown) => {
+			try {
+				deps.authManager.ensureFullAccess(socket);
+			} catch {
+				deps.telemetry.clientEventsRejected.inc({ reason: 'scope' });
+				return;
+			}
 			if (
 				!deps.rateLimiter.checkRateLimit(
 					`client-telemetry:${socket.id}`,

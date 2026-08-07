@@ -56,4 +56,50 @@ describe('AuthManager', () => {
 			manager.updateSocketToken(socket, token({ site: 'site-b' })),
 		).toThrow('Token site mismatch');
 	});
+
+	it('rejects recording scope on the participant JWT path', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket({
+			handshake: {
+				auth: { token: token({ scope: 'recording' }) },
+				query: {},
+				headers: {},
+				address: '127.0.0.1',
+			} as never,
+		});
+
+		expect(manager.authenticateSocket(socket)).toBe(false);
+	});
+
+	it('keeps recorder access distinct from full access and disables refresh', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket({
+			scope: 'recording',
+			recordingProofComplete: true,
+			recordingClaims: {
+				iss: 'frappe-site:site-a',
+				aud: 'meet-sfu-recorder',
+				scope: 'recording',
+				jti: 'grant-1',
+				site: 'site-a',
+				meeting_id: 'room-1',
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+				cnf: { jwk: {}, jkt: 'thumbprint' },
+				iat: 1,
+				exp: 2,
+				authorization_expires_at: 3,
+			},
+			site: 'site-a',
+			meetingId: 'room-1',
+		});
+
+		expect(() => manager.ensureFullAccess(socket)).toThrow(
+			'Insufficient scope',
+		);
+		expect(() => manager.ensureRecorderAccess(socket)).not.toThrow();
+		expect(() => manager.updateSocketToken(socket, token())).toThrow(
+			'Recording authorization cannot be refreshed',
+		);
+	});
 });

@@ -27,6 +27,16 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			if (roomId && participantId) {
 				try {
+					if (socket.scope === 'recording') {
+						const ownsPeer = deps.registry.leaveRecorder(
+							socket,
+							roomId,
+							participantId,
+						);
+						if (ownsPeer) {
+							await deps.mediasoup.removePeer(roomId, participantId);
+						}
+					}
 					deps.registry.leaveScope(socket, roomId, 'full');
 					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 
@@ -57,15 +67,11 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 							if (deps.registry.hasRaisedHand(roomId, participantId)) {
 								deps.registry.clearRaisedHand(roomId, participantId);
-								deps.registry.emitToFullAccessParticipants(
-									roomId,
-									'hand_raised',
-									{
-										participantId,
-										raised: false,
-										timestamp: new Date().toISOString(),
-									},
-								);
+								deps.registry.emitRaisedHand(roomId, {
+									participantId,
+									raised: false,
+									timestamp: new Date().toISOString(),
+								});
 							}
 
 							loggers.socketHandler.info(

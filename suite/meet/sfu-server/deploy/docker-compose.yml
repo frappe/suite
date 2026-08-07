@@ -3,6 +3,7 @@
 # ==============================================================================
 # Services:
 #   sfu     – Mediasoup SFU server (signaling on port 3000, fixed UDP media ports)
+#   recorder – Browser-based recording service (control on host loopback only)
 #   nginx   – Reverse proxy (SSL termination + WebSocket upgrade)
 #   certbot – Let's Encrypt certificate provisioning & renewal
 #
@@ -15,11 +16,29 @@
 # ==============================================================================
 
 services:
+  grant-store-init:
+    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
+    container_name: suite-sfu-grant-store-init
+    restart: "no"
+    volumes:
+      - sfu-grants:/data
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        import { RecordingGrantPersistenceFile } from
+        './dist/sfu-server/src/server/RecordingGrantPersistenceFile.js';
+        await RecordingGrantPersistenceFile.bootstrap('/data/recording-grants.json');
+
   # ── SFU Server ──────────────────────────────────────────────────────────────
   sfu:
     image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
     container_name: suite-sfu
     restart: unless-stopped
+    depends_on:
+      grant-store-init:
+        condition: service_completed_successfully
     network_mode: host
     environment:
       - JWT_SECRET=${JWT_SECRET}
@@ -35,13 +54,48 @@ services:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
+      - RECORDING_GRANT_PERSISTENCE_FILE=/data/recording-grants.json
       - NODE_ENV=production
+    volumes:
+      - sfu-grants:/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${PORT:-3000}/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  recorder:
+    image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}
+    container_name: suite-recorder
+    restart: unless-stopped
+    init: true
+    shm_size: "2gb"
+    ports:
+      - "127.0.0.1:${RECORDER_PORT:-3010}:3010"
+    volumes:
+      - recorder-data:/data
+    environment:
+      - PORT=3010
+      - RECORDER_SECRET=${RECORDER_SECRET}
+      - RECORDER_METRICS_TOKEN=${RECORDER_METRICS_TOKEN}
+      - RECORDER_SITE=${RECORDER_SITE}
+      - RECORDER_SITE_ORIGIN=${RECORDER_SITE_ORIGIN}
+      - RECORDER_ALLOW_HTTP=${RECORDER_ALLOW_HTTP:-false}
+      - RECORDER_MAX_CONCURRENT=1
+      - SFU_ORIGIN=https://${DOMAIN}
+      - SFU_SOCKET_PATH=/socket.io
+      - RECORDER_CHROMIUM_NO_SANDBOX=true
+    cpus: ${RECORDER_CPUS:-4}
+    mem_limit: ${RECORDER_MEMORY:-6g}
+    pids_limit: ${RECORDER_PIDS_LIMIT:-512}
+    security_opt:
+      - no-new-privileges:true
     logging:
       driver: json-file
       options:
@@ -89,5 +143,7 @@ services:
         max-file: "2"
 
 volumes:
+  sfu-grants:
+  recorder-data:
   certbot-webroot:
   certbot-certs:

@@ -2,11 +2,15 @@ import * as jwt from 'jsonwebtoken';
 import type { Socket } from 'socket.io';
 import type { JWTPayload } from '../types';
 import { loggers } from '../utils/logger';
+import type { RecordingGrantManager } from './RecordingGrantManager';
 
 export class AuthManager {
 	private jwtSecret: string;
 
-	constructor(jwtSecret: string) {
+	constructor(
+		jwtSecret: string,
+		private readonly recordingGrantManager?: RecordingGrantManager,
+	) {
 		this.jwtSecret = jwtSecret;
 	}
 
@@ -19,7 +23,35 @@ export class AuthManager {
 				return false;
 			}
 
+			const header = jwt.decode(String(token), { complete: true })?.header;
+			if (header?.typ === 'meet-recording-grant+jwt') {
+				if (!this.recordingGrantManager) return false;
+				const claims = this.recordingGrantManager.verifyGrant(String(token));
+				socket.userId = `recorder:${claims.recording_id}`;
+				socket.userName = 'Recorder';
+				socket.meetingId = claims.meeting_id;
+				socket.site = claims.site;
+				socket.isHost = false;
+				socket.isCohost = false;
+				socket.isGuest = false;
+				socket.scope = 'recording';
+				socket.e2eeRequired = false;
+				socket.e2eeReady = false;
+				socket.currentToken = String(token);
+				socket.tokenExpiresAt = claims.exp * 1000;
+				socket.recordingClaims = claims;
+				socket.recordingProofComplete = false;
+				return true;
+			}
+
 			const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+			if (
+				decoded.scope !== undefined &&
+				decoded.scope !== 'full' &&
+				decoded.scope !== 'presence-preview'
+			) {
+				throw new Error('Invalid participant scope');
+			}
 
 			// Attach user info to socket
 			socket.userId = decoded.user_id;
@@ -52,6 +84,9 @@ export class AuthManager {
 	}
 
 	updateSocketToken(socket: Socket, token: string): void {
+		if (socket.scope === 'recording') {
+			throw new Error('Recording authorization cannot be refreshed');
+		}
 		const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
 		const wasE2EERequired = socket.e2eeRequired === true;
 		const wasE2EEReady = socket.e2eeReady === true;
@@ -173,6 +208,23 @@ export class AuthManager {
 	ensureFullAccess(socket: Socket): void {
 		if (socket.scope !== 'full') {
 			throw new Error('Insufficient scope for full access');
+		}
+	}
+
+	ensureMediaConsumerAccess(socket: Socket): void {
+		if (socket.scope === 'full') return;
+		this.ensureRecorderAccess(socket);
+	}
+
+	ensureRecorderAccess(socket: Socket): void {
+		if (
+			socket.scope !== 'recording' ||
+			!socket.recordingProofComplete ||
+			!socket.recordingClaims ||
+			socket.recordingClaims.meeting_id !== socket.meetingId ||
+			socket.recordingClaims.site !== socket.site
+		) {
+			throw new Error('Recording proof required');
 		}
 	}
 

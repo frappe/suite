@@ -9,6 +9,8 @@ import { InMemoryE2eeCoordinatorPersistence } from './server/E2eeCoordinatorPers
 import { InMemoryRosterPersistence } from './server/E2eeRosterPersistence';
 import { FileRosterPersistence } from './server/E2eeRosterPersistenceFile';
 import { E2eeRosterStore } from './server/E2eeRosterStore';
+import { RecordingGrantManager } from './server/RecordingGrantManager';
+import { RecordingGrantPersistenceFile } from './server/RecordingGrantPersistenceFile';
 import { RouteManager } from './server/RouteManager';
 import { SocketHandlerManager } from './server/SocketHandlerManager';
 import { Telemetry } from './telemetry/Telemetry';
@@ -33,6 +35,7 @@ export class SFUServer {
 	private socketHandlerManager: SocketHandlerManager;
 	private config: ServerConfig;
 	private telemetry: Telemetry;
+	private recordingGrantPersistence?: RecordingGrantPersistenceFile;
 
 	constructor() {
 		const jwtSecret = process.env.JWT_SECRET;
@@ -72,7 +75,21 @@ export class SFUServer {
 		this.mediasoup.onMediaScore((direction, media, score) =>
 			this.telemetry.mediaScore.observe({ direction, media }, score),
 		);
-		this.authManager = new AuthManager(this.config.jwtSecret);
+		const recordingPersistencePath =
+			process.env.RECORDING_GRANT_PERSISTENCE_FILE;
+		this.recordingGrantPersistence = recordingPersistencePath
+			? new RecordingGrantPersistenceFile(recordingPersistencePath)
+			: undefined;
+		const recordingGrantManager = recordingPersistencePath
+			? new RecordingGrantManager(
+					this.config.jwtSecret,
+					this.recordingGrantPersistence!,
+				)
+			: undefined;
+		this.authManager = new AuthManager(
+			this.config.jwtSecret,
+			recordingGrantManager,
+		);
 		this.routeManager = new RouteManager(
 			this.app,
 			this.mediasoup,
@@ -94,6 +111,7 @@ export class SFUServer {
 			this.telemetry,
 			e2eeRoster,
 			e2eeCoordinatorPersistence,
+			recordingGrantManager,
 		);
 
 		this.setupMiddleware();
@@ -111,6 +129,14 @@ export class SFUServer {
 			loggers.server.info('Starting SFU Server');
 
 			await this.mediasoup.init();
+			if (this.recordingGrantPersistence) {
+				await this.recordingGrantPersistence.initialize().catch((error) => {
+					loggers.server.error(
+						'Recording authorization unavailable: %s',
+						(error as Error).message,
+					);
+				});
+			}
 
 			this.server.listen(this.config.port, this.config.host, () => {
 				loggers.server.info(

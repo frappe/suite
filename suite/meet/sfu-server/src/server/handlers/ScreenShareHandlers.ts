@@ -18,15 +18,11 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						socket.participantId || socket.userId,
 						shareData?.producerId || 'unspecified',
 					);
-					deps.registry.emitToFullAccessParticipants(
-						roomId,
-						'screen_share_started',
-						{
-							participantId: socket.participantId,
-							shareData,
-							timestamp: new Date().toISOString(),
-						},
-					);
+					deps.registry.emitScreenShare(roomId, 'screen_share_started', {
+						participantId: socket.participantId,
+						shareData,
+						timestamp: new Date().toISOString(),
+					});
 				} else if (action === 'stop_share') {
 					loggers.socketHandler.info(
 						'screen_share action=stop_share peer=%s producer=%s reason=%s source=%s details=%o',
@@ -36,15 +32,11 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						shareData?.source || 'unspecified',
 						shareData?.details || {},
 					);
-					deps.registry.emitToFullAccessParticipants(
-						roomId,
-						'screen_share_stopped',
-						{
-							participantId: socket.participantId,
-							reason: shareData?.reason,
-							timestamp: new Date().toISOString(),
-						},
-					);
+					deps.registry.emitScreenShare(roomId, 'screen_share_stopped', {
+						participantId: socket.participantId,
+						reason: shareData?.reason,
+						timestamp: new Date().toISOString(),
+					});
 				}
 			} catch (error) {
 				loggers.socketHandler.warn(

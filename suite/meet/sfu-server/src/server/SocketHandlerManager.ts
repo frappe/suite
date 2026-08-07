@@ -25,7 +25,10 @@ import { registerRoomJoinHandlers } from './handlers/RoomJoinHandlers';
 import { registerRoomQueryHandlers } from './handlers/RoomQueryHandlers';
 import { registerScreenShareHandlers } from './handlers/ScreenShareHandlers';
 import { registerWebRtcTransportHandlers } from './handlers/WebRtcTransportHandlers';
+import type { RecordingGrantManager } from './RecordingGrantManager';
 import { RoomRegistry } from './RoomRegistry';
+
+const RECORDING_PROOF_TIMEOUT_MS = 10_000;
 
 export class SocketHandlerManager {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
@@ -45,6 +48,7 @@ export class SocketHandlerManager {
 		telemetry: Telemetry,
 		roster: E2eeRosterStore,
 		coordinatorPersistence?: E2eeCoordinatorPersistence,
+		private readonly recordingGrantManager?: RecordingGrantManager,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
@@ -127,7 +131,35 @@ export class SocketHandlerManager {
 		});
 
 		this.io.on('connection', (socket) => {
-			socket.use((_packet, next) => {
+			let challenge =
+				socket.scope === 'recording' &&
+				socket.recordingClaims &&
+				this.recordingGrantManager
+					? this.recordingGrantManager.createChallenge(
+							socket.recordingClaims,
+							socket.id,
+						)
+					: undefined;
+			let proofTimeout: NodeJS.Timeout | undefined;
+			const clearProofTimeout = () => {
+				if (proofTimeout) clearTimeout(proofTimeout);
+				proofTimeout = undefined;
+			};
+			if (challenge) {
+				proofTimeout = setTimeout(() => {
+					proofTimeout = undefined;
+					if (!socket.recordingProofComplete) socket.disconnect(true);
+				}, RECORDING_PROOF_TIMEOUT_MS);
+				proofTimeout.unref();
+				socket.once('disconnect', clearProofTimeout);
+			}
+			socket.use((packet, next) => {
+				if (socket.scope === 'recording' && !socket.recordingProofComplete) {
+					if (packet[0] !== 'recording:proof') {
+						socket.disconnect(true);
+						return;
+					}
+				}
 				if (this.authManager.isTokenExpired(socket)) {
 					this.telemetry.authEvents.inc({
 						stage: 'expiry',
@@ -140,10 +172,42 @@ export class SocketHandlerManager {
 				next();
 			});
 
+			if (challenge && this.recordingGrantManager) {
+				const manager = this.recordingGrantManager;
+				socket.once('recording:proof', async (data, callback) => {
+					try {
+						const claims = socket.recordingClaims;
+						if (!claims || !challenge || typeof data?.signature !== 'string')
+							throw new Error('Invalid recording proof');
+						const expiresAt = await manager.verifyProofAndConsume(
+							claims,
+							challenge,
+							data.signature,
+							socket.id,
+						);
+						this.registry.activateRecorder(
+							socket,
+							claims.recording_id,
+							claims.recorder_job_id,
+						);
+						socket.recordingProofComplete = true;
+						clearProofTimeout();
+						socket.tokenExpiresAt = expiresAt * 1000;
+						challenge = undefined;
+						callback({ success: true });
+					} catch (error) {
+						clearProofTimeout();
+						callback({ success: false, error: (error as Error).message });
+						socket.disconnect(true);
+					}
+				});
+				socket.emit('recording:challenge', challenge);
+			}
+
 			for (const register of this.registerHandlers) {
 				register(socket);
 			}
-			this.e2eeEpochRelay.setup(socket);
+			if (socket.scope !== 'recording') this.e2eeEpochRelay.setup(socket);
 		});
 
 		this.idleExpirySweep = setInterval(

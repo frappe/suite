@@ -36,6 +36,7 @@ Thumbs.db
 *~
 
 # Runtime data
+data/
 pids/
 *.pid
 *.seed
