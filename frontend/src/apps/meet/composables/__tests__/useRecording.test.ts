@@ -162,6 +162,20 @@ describe("useRecording", () => {
 		app.unmount();
 	});
 
+	it("syncs active recording state supplied by a guest join", () => {
+		const recording = useRecording("room");
+
+		recording.syncState({
+			name: "recording",
+			status: "Recording",
+			state_revision: 1,
+		});
+
+		expect(recording.state.value?.status).toBe("Recording");
+		expect(recording.isLive.value).toBe(true);
+		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded");
+	});
+
 	it("does not store or announce an explicit capacity rejection as started", async () => {
 		mocks.startResults.push({ status: "Rejected" });
 		const recording = useRecording("room");

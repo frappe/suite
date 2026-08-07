@@ -553,6 +553,7 @@ const sfuConnection = useSFUConnection({
 	onActiveSpeakerChanged: (participantIds: string[]) => {
 		participantStore.activeSpeakerIds = participantIds;
 	},
+	onRecordingState: recording.syncState,
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,

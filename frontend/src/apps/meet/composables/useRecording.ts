@@ -162,6 +162,10 @@ export function useRecording(meetingId: string) {
 			toast.error("Recording was interrupted and is trying to recover");
 	}
 
+	function syncState(recording: RecordingState | null) {
+		handleState({ meeting_id: meetingId, recording });
+	}
+
 	onMounted(() => {
 		void loadState();
 		socket?.on("meeting:recording_state", handleState);
@@ -176,6 +180,7 @@ export function useRecording(meetingId: string) {
 		startLoading: computed(() => startCall.loading),
 		stopLoading: computed(() => stopCall.loading),
 		getPreflight,
+		syncState,
 		start,
 		stop,
 	};

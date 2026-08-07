@@ -30,6 +30,7 @@ import type { GridLayout } from "./useGridLayout";
 import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
 import type { ParticipantStore } from "./useParticipantStore";
+import type { RecordingState } from "./useRecording";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -76,6 +77,7 @@ export function useSFUConnection(deps: {
 	onScreenShareStarted: (data: SFUScreenShareData) => void;
 	onScreenShareStopped: (data: SFUScreenShareData) => void;
 	onActiveSpeakerChanged: (participantIds: string[]) => void;
+	onRecordingState?: (recording: RecordingState | null) => void;
 }): SFUConnectionAPI {
 	const {
 		connectionState,
@@ -90,6 +92,7 @@ export function useSFUConnection(deps: {
 		onScreenShareStarted,
 		onScreenShareStopped,
 		onActiveSpeakerChanged,
+		onRecordingState,
 	} = deps;
 
 	const router = useRouter();
@@ -584,6 +587,8 @@ export function useSFUConnection(deps: {
 					}
 
 					const approved = response as Record<string, unknown>;
+					if ("recording" in approved)
+						onRecordingState?.(approved.recording as RecordingState | null);
 					connectionState.guestAuthToken = approved.auth_token as string;
 					connectionState.guestSfuUrl = (approved.sfu_url as string) || null;
 					connectionState.guestSfuPort =
@@ -807,6 +812,8 @@ export function useSFUConnection(deps: {
 				setupGuestApprovalListener(guestName);
 				return;
 			}
+			if ("recording" in joinResult)
+				onRecordingState?.(joinResult.recording as RecordingState | null);
 
 			// Show meeting shell immediately; SFU setup continues in the background.
 			connectionState.isInPreview = false;
