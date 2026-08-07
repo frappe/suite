@@ -213,6 +213,23 @@ describe('JobStore and JobManager', () => {
 		).toBe(true);
 	});
 
+	it('continues ledger updates after the nonce limit rejects a command', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		await store.update((_jobs, nonces) => {
+			for (let index = 0; index < 10_000; index += 1)
+				nonces[`nonce-${index}`] = now + 60;
+		});
+
+		await expect(store.consumeJti('overflow', now + 30, now)).rejects.toThrow(
+			'nonce ledger is full',
+		);
+		await store.update((_jobs, nonces) => {
+			delete nonces['nonce-0'];
+		});
+		expect(await store.consumeJti('after-rejection', now + 30, now)).toBe(true);
+	});
+
 	it('fails closed on corrupt ledger data', async () => {
 		await writeFile(path, '{broken', { mode: 0o600 });
 		const store = new JobStore(path);

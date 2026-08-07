@@ -193,8 +193,7 @@ export class JobStore {
 			consumedJtis: Record<string, number>,
 		) => void,
 	): Promise<void> {
-		let failure: unknown;
-		this.updates = this.updates.then(async () => {
+		const update = this.updates.then(async () => {
 			if (!this.writable) throw new Error('job ledger is unavailable');
 			const next = structuredClone(this.ledger);
 			mutator(next.jobs, next.consumed_jtis);
@@ -203,15 +202,11 @@ export class JobStore {
 				this.ledger = next;
 			} catch (error) {
 				this.writable = false;
-				failure = error;
 				throw error;
 			}
 		});
-		try {
-			await this.updates;
-		} catch (error) {
-			throw failure ?? error;
-		}
+		this.updates = update.catch(() => undefined);
+		await update;
 	}
 
 	async consumeJti(
