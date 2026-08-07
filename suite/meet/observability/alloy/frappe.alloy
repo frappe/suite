@@ -1,0 +1,102 @@
+loki.source.file "frappe" {
+  targets = [
+    {
+      __path__ = "/var/log/frappe/{web.log,web.error.log}",
+      service  = "frappe-web",
+    },
+    {
+      __path__ = "/var/log/frappe/{node-socketio.log,node-socketio.error.log,socketio.log,socketio.error.log}",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/{worker.log,worker.error.log}",
+      service  = "frappe-worker",
+    },
+    {
+      __path__ = "/var/log/frappe/{schedule.log,schedule.error.log,scheduler.log}",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/monitor.json.log",
+      service  = "frappe-monitor",
+    },
+  ]
+
+  forward_to             = [loki.process.frappe.receiver]
+  tail_from_end           = true
+  on_positions_file_error = "restart_from_end"
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+loki.process "frappe" {
+  forward_to = [loki.write.remote.receiver]
+
+  stage.json {
+    expressions = {
+      timestamp = "timestamp",
+      level     = "level",
+    }
+    drop_malformed = false
+  }
+
+  stage.regex {
+    expression = `^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\s+(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\b.*$`
+  }
+
+  stage.timestamp {
+    source                        = "timestamp"
+    format                        = "RFC3339Nano"
+    fallback_formats              = ["2006-01-02 15:04:05,000"]
+    action_on_failure             = "skip"
+    action_on_duplicate_timestamp = "keep"
+  }
+
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = { level = "level" }
+  }
+
+  stage.replace {
+    expression = `(?i)["'](?:authorization|cookie|password|passwd|secret|token|api[_-]?key|sid)["']\s*:\s*["'](?P<quoted_secret>[^"']*)["']`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:password|passwd|secret|token|api[_-]?key|sid)\s*=\s*["']?(?P<kv_secret>[^"'\s,;&]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\bauthorization\s*[:=]\s*["']?(?P<auth_secret>(?:basic|bearer)\s+[A-Za-z0-9._~+/-]+=*)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:cookie|set-cookie)\s*[:=]\s*["']?(?P<cookie_secret>[^"'\r\n]+)`
+    replace    = "[REDACTED]"
+  }
+}
+
+loki.write "remote" {
+  external_labels = {
+    environment = sys.env("ALLOY_ENVIRONMENT"),
+    host        = sys.env("ALLOY_HOST"),
+  }
+
+  endpoint {
+    url = sys.env("LOKI_PUSH_URL")
+
+    basic_auth {
+      username      = sys.env("LOKI_PUSH_USER")
+      password_file = "/run/secrets/loki-password"
+    }
+  }
+}

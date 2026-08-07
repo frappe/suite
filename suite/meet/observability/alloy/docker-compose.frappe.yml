@@ -1,0 +1,24 @@
+services:
+  alloy:
+    image: grafana/alloy:v1.18.1
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=127.0.0.1:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/frappe.alloy
+    environment:
+      ALLOY_ENVIRONMENT: ${ALLOY_ENVIRONMENT:-production}
+      ALLOY_HOST: ${ALLOY_HOST:?set ALLOY_HOST in .env}
+      LOKI_PUSH_URL: ${LOKI_PUSH_URL:?set LOKI_PUSH_URL in .env}
+      LOKI_PUSH_USER: ${LOKI_PUSH_USER:-alloy}
+    volumes:
+      - ./frappe.alloy:/etc/alloy/frappe.alloy:ro
+      - ./secrets/loki-password:/run/secrets/loki-password:ro
+      - ${FRAPPE_BENCH_PATH:?set FRAPPE_BENCH_PATH in .env}/logs:/var/log/frappe:ro
+      - alloy-data:/var/lib/alloy/data
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  alloy-data:

@@ -142,7 +142,31 @@ services:
         max-size: "10m"
         max-file: "2"
 
+  alloy:
+    image: grafana/alloy:v1.18.1
+    restart: unless-stopped
+    profiles:
+      - observability
+    command:
+      - run
+      - --server.http.listen-addr=127.0.0.1:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/sfu.alloy
+    environment:
+      - ALLOY_ENVIRONMENT=${ALLOY_ENVIRONMENT:-production}
+      - ALLOY_HOST=${ALLOY_HOST:-sfu-01}
+      - LOKI_PUSH_URL=${LOKI_PUSH_URL:-}
+      - LOKI_PUSH_USER=${LOKI_PUSH_USER:-alloy}
+    volumes:
+      - ./alloy/sfu.alloy:/etc/alloy/sfu.alloy:ro
+      - ./secrets/loki-password:/run/secrets/loki-password:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
+  alloy-data:
   sfu-grants:
   recorder-data:
   certbot-webroot:
