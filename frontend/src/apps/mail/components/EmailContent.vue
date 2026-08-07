@@ -369,6 +369,10 @@ const DOMPURIFY_CONFIG = {
 		'em',
 		'i',
 		'u',
+		// Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
+		// highlight applied in our own composer came back to the reader as plain text —
+		// while the text colour beside it, which rides a <span>, survived.
+		'mark',
 		'h1',
 		'h2',
 		'h3',
