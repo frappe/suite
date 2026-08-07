@@ -14,6 +14,12 @@
 				:meetingTitle="previewTitle"
 			>
 				<template #right>
+					<RecordingIndicator
+						v-if="!showPreview && recording.isLive.value && recording.state.value"
+						:recording="recording.state.value"
+						:can-stop="isCurrentUserHost || isCurrentUserCohost"
+						@click="handleRecordingAction"
+					/>
 					<Button
 						v-if="showPreview"
 						size="sm"
@@ -194,6 +200,9 @@
 						:currentUser="currentUser.currentUser.value"
 						:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 						:microphonePermissionGranted="mediaState.microphonePermissionGranted"
+						:canManageRecording="isCurrentUserHost || isCurrentUserCohost"
+						:recordingStatus="recording.state.value?.status"
+						:recordingLoading="recording.startLoading.value || recording.stopLoading.value"
 						@toggle-chat="toggleChat"
 						@toggle-people="togglePeople"
 						@toggle-reactions="toggleReactions($event)"
@@ -207,6 +216,7 @@
 						@end-call="sfuConnection.endCall()"
 						@device-changed="handleDeviceChanged"
 						@visibility-change="isToolbarVisible = $event"
+						@manage-recording="handleRecordingAction"
 					/>
 				</div>
 			</div>
@@ -228,6 +238,17 @@
 			@approve-user="lobby.approveUser"
 			@reject-user="lobby.rejectUser"
 		/>
+
+		<RecordingPreflightDialog
+			v-model:open="recordingDialogOpen"
+			:preflight="recordingPreflight"
+			:confirm="confirmRecordingStart"
+		/>
+		<RecordingStopDialog
+			v-model="recordingStopDialogOpen"
+			:loading="recording.stopLoading.value"
+			@confirm="confirmRecordingStop"
+		/>
 	</div>
 </template>
 
@@ -243,6 +264,9 @@ import MeetAvatar from "../components/MeetAvatar.vue";
 import MeetingLayout from "../components/MeetingLayout.vue";
 import MeetingPreview from "../components/MeetingPreview.vue";
 import MeetingHeader from "../components/MeetingHeader.vue";
+import RecordingIndicator from "../components/RecordingIndicator.vue";
+import RecordingPreflightDialog from "../components/RecordingPreflightDialog.vue";
+import RecordingStopDialog from "../components/RecordingStopDialog.vue";
 import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
@@ -269,6 +293,10 @@ import { useNetworkQuality } from "../composables/useNetworkQuality";
 import { useParticipantStore } from "../composables/useParticipantStore";
 import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
+import {
+	type RecordingPreflight,
+	useRecording,
+} from "../composables/useRecording";
 import { useReactionStore } from "../composables/useReactionStore";
 import { useReactions } from "../composables/useReactions";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
@@ -339,6 +367,43 @@ const {
 	meetingCoHosts,
 } = useMeetingDoc();
 const meetingDoc = getMeetingDoc(meetingId.value);
+const recording = useRecording(meetingId.value);
+const recordingDialogOpen = ref(false);
+const recordingStopDialogOpen = ref(false);
+const recordingPreflight = ref<RecordingPreflight | null>(null);
+
+async function handleRecordingAction() {
+	try {
+		if (recording.isStarting.value) return;
+		if (recording.isLive.value) {
+			if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return;
+			if (recording.state.value?.status !== "Stopping") recordingStopDialogOpen.value = true;
+			return;
+		}
+		recordingPreflight.value = await recording.getPreflight();
+		recordingDialogOpen.value = true;
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not manage recording");
+	}
+}
+
+async function confirmRecordingStop() {
+	try {
+		await recording.stop();
+		recordingStopDialogOpen.value = false;
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not stop recording");
+	}
+}
+
+async function confirmRecordingStart() {
+	try {
+		await recording.start();
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not start recording");
+		throw error;
+	}
+}
 const previewDetails = createResource({
 	url: "suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },
