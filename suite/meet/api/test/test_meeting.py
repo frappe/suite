@@ -70,6 +70,17 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(decoded["site"], frappe.local.site)
         self.assertEqual(decoded["meeting_id"], self.meeting.name)
 
+    def test_sfu_connection_details_include_disabled_global_recording_setting(self):
+        self.meeting.add_user_to_table("members", self.host_email, save=True, ignore_permissions=True)
+        frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
+        frappe.clear_cache(doctype="Meet Settings")
+        self.addCleanup(frappe.clear_cache, doctype="Meet Settings")
+        frappe.set_user(self.host_email)
+
+        result = get_sfu_connection_details(self.meeting.name)
+
+        self.assertFalse(result["recording_enabled"])
+
     def test_sfu_token_site_claim_keeps_cross_site_meetings_isolated(self):
         """Two sites with meetings of the same name must mint tokens that
         carry different `site` claims so the SFU can route them to distinct

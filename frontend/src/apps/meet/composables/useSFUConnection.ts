@@ -78,6 +78,7 @@ export function useSFUConnection(deps: {
 	onScreenShareStopped: (data: SFUScreenShareData) => void;
 	onActiveSpeakerChanged: (participantIds: string[]) => void;
 	onRecordingState?: (recording: RecordingState | null) => void;
+	onRecordingEnabled?: (enabled: boolean) => void;
 }): SFUConnectionAPI {
 	const {
 		connectionState,
@@ -93,6 +94,7 @@ export function useSFUConnection(deps: {
 		onScreenShareStopped,
 		onActiveSpeakerChanged,
 		onRecordingState,
+		onRecordingEnabled,
 	} = deps;
 
 	const router = useRouter();
@@ -692,6 +694,7 @@ export function useSFUConnection(deps: {
 
 				if (sfuResult) {
 					const details = sfuResult as Record<string, unknown>;
+					onRecordingEnabled?.(!!details.recording_enabled);
 					const prefetched = connectionDetailsFromJoinPayload(details, {
 						expectedMeetingId: meetingId,
 					});
@@ -867,6 +870,7 @@ export function useSFUConnection(deps: {
 			if (joinResult?.host_only_chat !== undefined) {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
 			}
+			onRecordingEnabled?.(!!joinResult.recording_enabled);
 
 			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
 				expectedMeetingId: meetingId,

@@ -200,7 +200,7 @@
 						:currentUser="currentUser.currentUser.value"
 						:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 						:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-						:canManageRecording="isCurrentUserHost || isCurrentUserCohost"
+						:canManageRecording="recording.globalEnabled.value && (isCurrentUserHost || isCurrentUserCohost)"
 						:recordingStatus="recording.state.value?.status"
 						:recordingLoading="recording.startLoading.value || recording.stopLoading.value"
 						@toggle-chat="toggleChat"
@@ -554,6 +554,7 @@ const sfuConnection = useSFUConnection({
 		participantStore.activeSpeakerIds = participantIds;
 	},
 	onRecordingState: recording.syncState,
+	onRecordingEnabled: recording.setGlobalEnabled,
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,

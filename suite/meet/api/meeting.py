@@ -84,6 +84,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
     sfu_config = get_sfu_config()
+    settings = frappe.get_cached_doc("Meet Settings")
     user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
     e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
@@ -106,7 +107,8 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         "meeting_id": meeting.name,
         "is_host": is_host,
         "is_cohost": is_cohost,
-        "codec_strategy": _get_codec_strategy(),
+        "codec_strategy": settings.codec_strategy or "svc",
+        "recording_enabled": bool(settings.enable_recording),
         "e2ee_required": e2ee_required,
         "user_data": {
             "name": user_fullname,

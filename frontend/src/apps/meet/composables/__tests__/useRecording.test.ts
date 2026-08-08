@@ -176,6 +176,14 @@ describe("useRecording", () => {
 		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded");
 	});
 
+	it("tracks global recording availability", () => {
+		const recording = useRecording("room");
+
+		expect(recording.globalEnabled.value).toBe(false);
+		recording.setGlobalEnabled(true);
+		expect(recording.globalEnabled.value).toBe(true);
+	});
+
 	it("does not store or announce an explicit capacity rejection as started", async () => {
 		mocks.startResults.push({ status: "Rejected" });
 		const recording = useRecording("room");

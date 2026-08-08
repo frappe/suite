@@ -45,6 +45,7 @@ type RecordingEvent = {
 
 export function useRecording(meetingId: string) {
 	const state = ref<RecordingState | null>(null);
+	const globalEnabled = ref(false);
 	const requestId = ref<string | null>(null);
 	const socket = useSocket();
 	let stateVersion = 0;
@@ -166,6 +167,10 @@ export function useRecording(meetingId: string) {
 		handleState({ meeting_id: meetingId, recording });
 	}
 
+	function setGlobalEnabled(enabled: boolean) {
+		globalEnabled.value = enabled;
+	}
+
 	onMounted(() => {
 		void loadState();
 		socket?.on("meeting:recording_state", handleState);
@@ -174,12 +179,14 @@ export function useRecording(meetingId: string) {
 
 	return {
 		state,
+		globalEnabled,
 		isLive,
 		isStarting,
 		preflightLoading: computed(() => preflightCall.loading),
 		startLoading: computed(() => startCall.loading),
 		stopLoading: computed(() => stopCall.loading),
 		getPreflight,
+		setGlobalEnabled,
 		syncState,
 		start,
 		stop,
