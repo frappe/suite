@@ -1,12 +1,11 @@
 # Suite Observability
 
-Central Prometheus, Loki, and Grafana deployment for Suite. Prometheus and Loki stay inside the Docker network. Caddy exposes Grafana and a write-only Loki push endpoint over HTTPS.
+Central Prometheus, Loki, and Grafana deployment for Suite. Prometheus and Loki stay inside the Docker network. Caddy exposes Grafana and an authenticated Loki push path on the same HTTPS hostname.
 
 ## Prerequisites
 
 - A Linux server with Docker and the Docker Compose plugin.
 - DNS for the Grafana domain pointing to the server.
-- DNS for a separate log push domain pointing to the server.
 - TCP ports 80 and 443 open on the server firewall.
 - Each SFU reachable from this server over HTTPS with the same `METRICS_TOKEN`.
 
@@ -37,7 +36,7 @@ docker run --rm -it caddy:2.10.0-alpine caddy hash-password --algorithm bcrypt
 
 Store the plain password in a root-readable `secrets/loki-password` file on each source host. Store only the hash in the monitoring VPS `.env`. Keep the hash single-quoted because it contains dollar signs.
 
-Set `LOKI_PUSH_ENABLED=true` only after the domain, user, and hash are present. Caddy refuses partial enabled configuration.
+Set `LOKI_PUSH_ENABLED=true` only after the user and hash are present. Caddy refuses partial enabled configuration. Alloy sends logs to `https://<GRAFANA_DOMAIN>/loki/api/v1/push`; no second DNS record is required.
 
 Copy the target template, then list every SFU hostname in the ignored runtime file:
 
@@ -90,15 +89,19 @@ install -m 400 /secure/path/loki-password secrets/loki-password
 
 Set a unique `ALLOY_HOST`, `LOKI_PUSH_URL`, and `LOKI_PUSH_USER` in `.env`, then start only Alloy:
 
+```env
+LOKI_PUSH_URL=https://metrics.example.com/loki/api/v1/push
+```
+
 ```bash
 ./deploy.sh observability-start
 ```
 
 Alloy reads only the `suite-sfu`, `suite-recorder`, and `suite-sfu-nginx` containers. Docker socket access is effectively root access even when the mount is read-only. Keep Alloy pinned, local, and unreachable from the network.
 
-### Frappe host
+### Self-hosted Frappe bench
 
-Use the standalone Compose file in `alloy/`:
+Use the standalone Compose file in `alloy/` only when you control the bench host and can mount its log directory:
 
 ```bash
 cd suite/meet/observability/alloy
@@ -114,6 +117,18 @@ docker compose -f docker-compose.frappe.yml --env-file .env up -d
 ```
 
 The bench log directory is mounted read-only. Alloy starts at the end of each file on first use, so it does not upload old production history. Plain Frappe log lines keep their collection time because their timestamps have no time zone. Structured monitor timestamps are parsed when they include an offset.
+
+### Frappe Cloud sites
+
+Do not deploy the Frappe Alloy file collector for sites hosted on Frappe Cloud. Frappe Cloud already provides managed Logs, Log Browser, site monitoring, process status, and job history. It does not currently document a supported external log drain or continuous Loki export.
+
+Use the supported Frappe Cloud views:
+
+- [Logs](https://docs.frappe.io/cloud/logs)
+- [Log Browser](https://docs.frappe.io/cloud/devtools/log-browser)
+- [Site monitoring](https://docs.frappe.io/cloud/sites/monitoring)
+
+When Suite sites run on Frappe Cloud, this stack collects only logs from separately managed services such as the Meet SFU, recorder, and Nginx. Ask Frappe Cloud support before building against undocumented Press log endpoints or persistent SSH sessions.
 
 ### Verify logs
 
@@ -144,10 +159,6 @@ GRAFANA_PORT=3001
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=local-test-password
 PROMETHEUS_RETENTION=7d
-LOKI_PUSH_DOMAIN=logs.localhost
-LOKI_PUSH_ENABLED=true
-LOKI_PUSH_USER=alloy
-LOKI_PUSH_PASSWORD_HASH='<valid-caddy-bcrypt-hash>'
 ```
 
 Put the same local test token in `secrets/sfu_metrics_token` and configure `prometheus/targets/local.yml` to scrape the host machine from Docker:
@@ -214,7 +225,15 @@ If the Loki disk fills, stop the Alloy collectors first. Free or extend disk spa
 
 Run `./validate-config.sh` after changing Loki, Caddy, Alloy, or Compose configuration. Do not expose Prometheus port 9090 or Loki port 3100 publicly.
 
-Existing monitoring deployments can update before configuring ingestion. Caddy uses an unreachable internal push site and a discarded fallback credential while `LOKI_PUSH_ENABLED=false`. Enabling pushes requires the domain, user, and hash together.
+Existing monitoring deployments without log ingestion can update directly. Caddy protects the push path with a discarded fallback credential while `LOKI_PUSH_ENABLED=false`. Enabling pushes requires the user and hash together.
+
+To move an active collector from the former separate log hostname:
+
+1. Stop the SFU and Frappe Alloy collectors.
+2. Change each `LOKI_PUSH_URL` to `https://<GRAFANA_DOMAIN>/loki/api/v1/push`.
+3. Deploy this Caddy configuration on the monitoring host.
+4. Start the collectors and confirm new logs arrive.
+5. Remove the old log DNS record after all collectors use the Grafana hostname.
 
 ## Error tracking
 

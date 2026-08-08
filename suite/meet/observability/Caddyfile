@@ -1,9 +1,4 @@
 {$GRAFANA_DOMAIN} {
-	encode zstd gzip
-	reverse_proxy grafana:3000
-}
-
-{$LOKI_PUSH_DOMAIN} {
 	@loki_push {
 		method POST
 		path /loki/api/v1/push
@@ -19,6 +14,7 @@
 	}
 
 	handle {
-		respond 404
+		encode zstd gzip
+		reverse_proxy grafana:3000
 	}
 }

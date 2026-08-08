@@ -41,7 +41,7 @@ alloy_validate() {
   docker run --rm \
     -e ALLOY_ENVIRONMENT=production \
     -e ALLOY_HOST=validation \
-    -e LOKI_PUSH_URL=https://logs.example.com/loki/api/v1/push \
+    -e LOKI_PUSH_URL=https://metrics.example.com/loki/api/v1/push \
     -e LOKI_PUSH_USER=alloy \
     -v "$config:/etc/alloy/config.alloy:ro" \
     -v /dev/null:/run/secrets/loki-password:ro \
