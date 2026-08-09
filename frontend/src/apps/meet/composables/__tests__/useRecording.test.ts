@@ -106,6 +106,7 @@ describe("useRecording", () => {
 		await recording.start();
 		await recording.stop();
 		expect(recording.state.value?.status).toBe("Stopping");
+		expect(recording.isLive.value).toBe(false);
 	});
 
 	it("does not let a stale state load overwrite a newer command revision", async () => {

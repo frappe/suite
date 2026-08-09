@@ -78,7 +78,7 @@ export function useRecording(meetingId: string) {
 	});
 
 	const isLive = computed(() =>
-		["Recording", "Interrupted", "Stopping"].includes(state.value?.status || ""),
+		["Recording", "Interrupted"].includes(state.value?.status || ""),
 	);
 	const isStarting = computed(() => state.value?.status === "Pending");
 
