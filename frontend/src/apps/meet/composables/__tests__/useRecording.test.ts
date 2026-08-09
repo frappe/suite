@@ -177,6 +177,24 @@ describe("useRecording", () => {
 		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded");
 	});
 
+	it("accepts a new recording session with a lower revision", () => {
+		const recording = useRecording("room");
+		recording.syncState({
+			name: "old-recording",
+			status: "Processing",
+			state_revision: 4,
+		});
+
+		recording.syncState({
+			name: "new-recording",
+			status: "Recording",
+			state_revision: 1,
+		});
+
+		expect(recording.state.value?.name).toBe("new-recording");
+		expect(recording.isLive.value).toBe(true);
+	});
+
 	it("tracks global recording availability", () => {
 		const recording = useRecording("room");
 

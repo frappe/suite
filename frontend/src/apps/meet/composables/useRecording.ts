@@ -85,11 +85,16 @@ export function useRecording(meetingId: string) {
 	async function loadState() {
 		try {
 			const version = stateVersion;
+			const recordingName = state.value?.name;
 			const revision = state.value?.state_revision;
 			const loaded = (await stateCall.submit({ meeting_id: meetingId })) ?? null;
 			if (stateVersion !== version) return;
 			if (state.value?.state_revision !== revision) return;
-			if (loaded && revision !== undefined && loaded.state_revision < revision)
+			if (
+				loaded?.name === recordingName &&
+				revision !== undefined &&
+				loaded.state_revision < revision
+			)
 				return;
 			setState(loaded);
 		} catch {
@@ -152,6 +157,7 @@ export function useRecording(meetingId: string) {
 		}
 		if (
 			state.value &&
+			event.recording.name === state.value.name &&
 			event.recording.state_revision < state.value.state_revision
 		)
 			return;
