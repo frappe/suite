@@ -15,7 +15,9 @@
     "knip:frontend": "knip --workspace frontend",
     "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
     "knip:sheets-collab": "knip --workspace suite/sheets/collab-server",
-    "knip": "knip"
+    "knip": "knip",
+    "check:meet-types": "node suite/meet/type-policy/check.mjs",
+    "test:meet-type-policy": "node --test suite/meet/type-policy/check.test.mjs"
   },
   "resolutions": {
     "@tiptap/core": "3.26.0",
