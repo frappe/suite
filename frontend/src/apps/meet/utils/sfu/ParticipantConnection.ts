@@ -144,8 +144,10 @@ export type ParticipantConnectionState =
 export interface ParticipantConnectionStartOptions {
 	authToken?: string | null;
 	prefetchedDetails?: ConnectionDetails | null;
-	userData: JoinUserData;
-	mediaState: JoinRoomMediaState;
+	prepareJoin: (signal: AbortSignal) => Promise<{
+		userData: JoinUserData;
+		mediaState: JoinRoomMediaState;
+	}>;
 	waitForE2EEReady: (signal: AbortSignal) => Promise<void>;
 	publishLocalMedia: (signal: AbortSignal) => Promise<unknown>;
 }
@@ -233,11 +235,16 @@ export class ParticipantConnection {
 			this.lifecycleAbortController = new AbortController();
 			const signal = this.lifecycleAbortController.signal;
 			this.setState("starting");
+			this.initialSyncInProgress = true;
 
 			try {
 				await this.connect(options.authToken, options.prefetchedDetails);
 				this.throwIfAborted(signal);
-				await this.joinRoom(options.userData, options.mediaState);
+				const { userData, mediaState } = await this.awaitAbortable(
+					options.prepareJoin(signal),
+					signal,
+				);
+				await this.joinRoom(userData, mediaState);
 				this.throwIfAborted(signal);
 				if (this.sfuClient.isE2EERequired?.()) {
 					await this.awaitAbortable(options.waitForE2EEReady(signal), signal);
@@ -253,7 +260,7 @@ export class ParticipantConnection {
 
 				const [publication, snapshot] = await Promise.allSettled([
 					this.awaitAbortable(options.publishLocalMedia(signal), signal),
-					this.setupExistingParticipants(signal),
+					this.setupExistingParticipants(signal, true),
 				]);
 				this.throwIfAborted(signal);
 				if (publication.status === "rejected") {
@@ -261,6 +268,7 @@ export class ParticipantConnection {
 					this.eventHandlers.onInitialPublicationError?.(publication.reason);
 				}
 				if (snapshot.status === "rejected") {
+					this.initialSyncInProgress = true;
 					this.setState("degraded");
 					this.startSnapshotRetry(signal);
 				} else {
@@ -268,6 +276,7 @@ export class ParticipantConnection {
 				}
 				return this._state;
 			} catch (error) {
+				this.initialSyncInProgress = false;
 				if (signal.aborted) throw error;
 				this.setState("failed");
 				throw error;
@@ -358,13 +367,14 @@ export class ParticipantConnection {
 					await this.delay(delay, signal);
 					await this.serializeLifecycle(async () => {
 						this.throwIfAborted(signal);
-						await this.setupExistingParticipants(signal);
+						await this.setupExistingParticipants(signal, true);
 						this.throwIfAborted(signal);
 						this.setState("ready");
 					});
 					return;
 				} catch (error) {
 					if (signal.aborted || !this.isSignalingConnected()) return;
+					this.initialSyncInProgress = true;
 					console.warn("Participant snapshot retry failed:", error);
 					delay = Math.min(delay * 2, ParticipantConnection.MAX_RETRY_DELAY_MS);
 				}
@@ -475,7 +485,10 @@ export class ParticipantConnection {
 		}
 	}
 
-	async setupExistingParticipants(signal?: AbortSignal): Promise<void> {
+	async setupExistingParticipants(
+		signal?: AbortSignal,
+		keepBufferingOnFailure = false,
+	): Promise<void> {
 		const generation = this.lifecycleGeneration;
 		try {
 			this.initialSyncInProgress = true;
@@ -522,7 +535,7 @@ export class ParticipantConnection {
 			await this.flushBufferedProducers();
 		} catch (error) {
 			console.error("Error in setupExistingParticipants:", error);
-			this.initialSyncInProgress = false;
+			if (!keepBufferingOnFailure) this.initialSyncInProgress = false;
 			throw error;
 		}
 	}
@@ -728,7 +741,7 @@ export class ParticipantConnection {
 					if (generation !== this.lifecycleGeneration) return;
 					await this.mediaManager.rebuildSendSide();
 					if (generation !== this.lifecycleGeneration) return;
-					await this.setupExistingParticipants(signal);
+					await this.setupExistingParticipants(signal, true);
 					if (generation !== this.lifecycleGeneration) return;
 					this.recoveryManager.setupTransportEventHandlers();
 					this.reportRecoveryState("healthy", "session rebuilt");
@@ -1261,6 +1274,7 @@ export class ParticipantConnection {
 
 	async disconnect(): Promise<void> {
 		this.setState("stopping");
+		this.initialSyncInProgress = false;
 		this.lifecycleAbortController.abort(
 			new DOMException("Participant connection stopped", "AbortError"),
 		);

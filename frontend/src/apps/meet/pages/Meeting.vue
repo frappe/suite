@@ -60,7 +60,7 @@
 				:isMicOn="mediaState.isMicOn"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-				:isConnecting="connectionState.isConnecting"
+				:isConnecting="sfuConnection.isConnecting.value"
 				:userInitials="currentUser.userInitials.value"
 				:userAvatar="currentUser.userAvatar.value"
 				:currentUserName="
@@ -698,7 +698,7 @@ provide("meetingTitle", computed(() => meetingTitle.value));
 provide(pollKey, poll);
 
 // --- Computed properties ---
-const isConnecting = computed(() => connectionState.isConnecting);
+const isConnecting = sfuConnection.isConnecting;
 const hasConnectionError = computed(() => !!connectionState.connectionError);
 const isInLobby = computed(() => lobbyStore.isInLobby || false);
 const isWaitingForApproval = computed(
@@ -768,7 +768,7 @@ watch(
 		connectingToastTimer = setTimeout(() => {
 			connectingToastTimer = null;
 			if (
-				!connectionState.isConnecting ||
+				!sfuConnection.isConnecting.value ||
 				connectionState.isInPreview ||
 				lobbyStore.isWaitingForApproval ||
 				lobbyStore.isInLobby ||

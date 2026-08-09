@@ -199,7 +199,7 @@ describe("useNetworkQuality", () => {
 					],
 				},
 			},
-			connectionManager: { resetReceiveSide },
+			resetReceiveMedia: resetReceiveSide,
 		});
 
 		const app = createApp({
@@ -267,7 +267,7 @@ describe("useNetworkQuality", () => {
 					getAllConsumers: () => [entry],
 				},
 			},
-			connectionManager: { resetReceiveSide },
+			resetReceiveMedia: resetReceiveSide,
 		});
 
 		const observedDownlink = ref("unknown");
@@ -358,7 +358,7 @@ describe("useNetworkQuality", () => {
 					],
 				},
 			},
-			connectionManager: { resetReceiveSide },
+			resetReceiveMedia: resetReceiveSide,
 		});
 
 		const app = createApp({

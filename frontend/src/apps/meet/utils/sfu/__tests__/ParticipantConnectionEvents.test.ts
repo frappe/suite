@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { E2EEMeeting } from "../../media/E2EEMeeting";
 import { ParticipantManager } from "../../media/ParticipantManager";
-import { SFUConnectionManager } from "../SFUConnectionManager";
+import { ParticipantConnection } from "../ParticipantConnection";
 
 function createManager({ e2eeRequired = false } = {}) {
 	const participantManager = new ParticipantManager();
@@ -40,16 +40,17 @@ function createManager({ e2eeRequired = false } = {}) {
 		initialize: vi.fn(),
 		isDeviceLoaded: vi.fn(() => true),
 	};
-	const manager = new SFUConnectionManager({
+	const recoveryManager = {
+		setupTransportEventHandlers: vi.fn(),
+		reset: vi.fn(),
+	};
+	const manager = new ParticipantConnection({
 		sfuClient: sfuClient as never,
 		videoManager: {} as never,
 		participantManager,
 		transportManager: transportManager as never,
 		mediaManager: mediaManager as never,
-		recoveryManager: {
-			setupTransportEventHandlers: vi.fn(),
-			reset: vi.fn(),
-		} as never,
+		recoveryManager: recoveryManager as never,
 	});
 	manager.currentUser = { value: { user_id: "me" } };
 	return {
@@ -59,11 +60,11 @@ function createManager({ e2eeRequired = false } = {}) {
 		participantManager,
 		sfuClient,
 		transportManager,
-		recoveryManager: manager.recoveryManager,
+		recoveryManager,
 	};
 }
 
-describe("SFUConnectionManager", () => {
+describe("ParticipantConnection", () => {
 	afterEach(() => {
 		E2EEMeeting.instance.wipeMeetingContext();
 	});

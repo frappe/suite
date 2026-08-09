@@ -17,6 +17,7 @@ function deferred<T>() {
 
 function createConnection({ e2eeRequired = false } = {}) {
 	const participantManager = new ParticipantManager();
+	const handlers = new Map<string, (data: unknown) => unknown>();
 	const sfuClient = {
 		connect: vi.fn().mockResolvedValue(undefined),
 		disconnect: vi.fn().mockResolvedValue(undefined),
@@ -24,7 +25,9 @@ function createConnection({ e2eeRequired = false } = {}) {
 		getRoomParticipants: vi.fn().mockResolvedValue([]),
 		isE2EERequired: vi.fn(() => e2eeRequired),
 		joinRoom: vi.fn().mockResolvedValue(undefined),
-		on: vi.fn(),
+		on: vi.fn((event: string, handler: (data: unknown) => unknown) => {
+			handlers.set(event, handler);
+		}),
 	};
 	const mediaManager = {
 		cancelPendingSubscriptions: vi.fn().mockResolvedValue(undefined),
@@ -64,6 +67,7 @@ function createConnection({ e2eeRequired = false } = {}) {
 	connection.initialize("meeting-1", { user_id: "me" });
 	return {
 		connection,
+		handlers,
 		mediaManager,
 		participantManager,
 		recoveryManager,
@@ -76,8 +80,10 @@ function startOptions(
 	overrides: Partial<ParticipantConnectionStartOptions> = {},
 ): ParticipantConnectionStartOptions {
 	return {
-		userData: { name: "Me", userId: "me" },
-		mediaState: { audio_enabled: true, video_enabled: true },
+		prepareJoin: vi.fn().mockResolvedValue({
+			userData: { name: "Me", userId: "me" },
+			mediaState: { audio_enabled: true, video_enabled: true },
+		}),
 		waitForE2EEReady: vi.fn().mockResolvedValue(undefined),
 		publishLocalMedia: vi.fn().mockResolvedValue(undefined),
 		...overrides,
@@ -108,6 +114,52 @@ describe("ParticipantConnection lifecycle", () => {
 		publication.resolve(undefined);
 		await expect(start).resolves.toBe("ready");
 		expect(states).toEqual(["starting", "syncing", "ready"]);
+	});
+
+	it("prepares join after connection details are available", async () => {
+		const { connection, sfuClient } = createConnection();
+		const prepareJoin = vi.fn(async () => {
+			expect(sfuClient.connect).toHaveBeenCalledOnce();
+			return {
+				userData: { name: "Host", userId: "me", isHost: true },
+				mediaState: { audio_enabled: false, video_enabled: true },
+			};
+		});
+
+		await connection.start(startOptions({ prepareJoin }));
+
+		expect(prepareJoin).toHaveBeenCalledOnce();
+		expect(sfuClient.joinRoom).toHaveBeenCalledWith(
+			"meeting-1",
+			expect.objectContaining({ isHost: true }),
+			{ audio_enabled: false, video_enabled: true },
+		);
+	});
+
+	it("buffers live events from signaling connect until the first snapshot", async () => {
+		const { connection, handlers, participantManager, sfuClient } =
+			createConnection();
+		const join = deferred<{
+			userData: { name: string; userId: string };
+			mediaState: { audio_enabled: boolean; video_enabled: boolean };
+		}>();
+		const start = connection.start(
+			startOptions({ prepareJoin: () => join.promise }),
+		);
+		await vi.waitFor(() => expect(sfuClient.connect).toHaveBeenCalledOnce());
+
+		handlers.get("participant_joined")?.({
+			participantId: "alice",
+			user_id: "alice",
+		});
+		expect(participantManager.hasParticipant("alice")).toBe(false);
+
+		join.resolve({
+			userData: { name: "Me", userId: "me" },
+			mediaState: { audio_enabled: false, video_enabled: false },
+		});
+		await start;
+		expect(participantManager.hasParticipant("alice")).toBe(true);
 	});
 
 	it("reports publication failure without failing startup", async () => {
@@ -146,6 +198,24 @@ describe("ParticipantConnection lifecycle", () => {
 		await vi.advanceTimersByTimeAsync(1);
 		expect(sfuClient.getRoomParticipants).toHaveBeenCalledTimes(2);
 		expect(connection.state).toBe("ready");
+	});
+
+	it("replays events received between failed snapshot attempts", async () => {
+		vi.useFakeTimers();
+		const { connection, handlers, participantManager, sfuClient } =
+			createConnection();
+		sfuClient.getRoomParticipants
+			.mockRejectedValueOnce(new Error("snapshot unavailable"))
+			.mockResolvedValueOnce([
+				{ participantId: "alice", user_id: "alice" },
+			]);
+
+		await expect(connection.start(startOptions())).resolves.toBe("degraded");
+		handlers.get("participant_left")?.({ participantId: "alice" });
+		await vi.advanceTimersByTimeAsync(1000);
+
+		expect(connection.state).toBe("ready");
+		expect(participantManager.hasParticipant("alice")).toBe(false);
 	});
 
 	it("aborts E2EE readiness and prevents startup from mutating after cleanup", async () => {

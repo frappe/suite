@@ -181,7 +181,7 @@ export function useNetworkQuality(
 				entry.kind === "video" && stallDetector.getRecoveryAttempts(entry.id) > 2,
 		);
 		if (hasAudioStall || hasExhaustedVideoRecovery) {
-			void sfuManager.connectionManager.resetReceiveSide();
+			void sfuManager.resetReceiveMedia();
 			stallDetector.suspend();
 			return;
 		}

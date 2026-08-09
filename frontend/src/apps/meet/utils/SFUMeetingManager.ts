@@ -12,8 +12,7 @@ import { ConsumerManager } from "./media/ConsumerManager";
 import { ParticipantManager } from "./media/ParticipantManager";
 import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
-import type { ConnectionDetails, SFUClient } from "./SFUClient";
-import type { JoinRoomMediaState, JoinUserData } from "../types";
+import type { SFUClient } from "./SFUClient";
 import type { User } from "../composables/useCurrentUser";
 import {
 	ParticipantConnection,
@@ -22,7 +21,10 @@ import {
 	type SFUEventHandlers,
 } from "./sfu/ParticipantConnection";
 import { SFUMediaManager, type PublishedMedia } from "./sfu/SFUMediaManager";
-import { SFURecoveryManager } from "./sfu/SFURecoveryManager";
+import {
+	SFURecoveryManager,
+	type RecoveryResult,
+} from "./sfu/SFURecoveryManager";
 
 interface SFUMeetingManagerOptions {
 	meetingId: string;
@@ -38,9 +40,9 @@ export class SFUMeetingManager {
 	consumerManager: ConsumerManager;
 	transportManager: TransportManager;
 
-	connectionManager: ParticipantConnection;
+	private connectionManager: ParticipantConnection;
 	mediaManager: SFUMediaManager;
-	recoveryManager: SFURecoveryManager;
+	private recoveryManager: SFURecoveryManager;
 
 	constructor(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
@@ -103,32 +105,10 @@ export class SFUMeetingManager {
 		);
 	}
 
-	async connect(
-		authToken: string | null = null,
-		prefetchedDetails: ConnectionDetails | null = null,
-	): Promise<boolean> {
-		return this.connectionManager.connect(authToken, prefetchedDetails);
-	}
-
 	startParticipantConnection(
 		options: ParticipantConnectionStartOptions,
 	): Promise<ParticipantConnectionState> {
 		return this.connectionManager.start(options);
-	}
-
-	async joinRoom(
-		userData: JoinUserData,
-		mediaState: JoinRoomMediaState,
-	): Promise<boolean> {
-		return this.connectionManager.joinRoom(userData, mediaState);
-	}
-
-	async initializeDevice(): Promise<boolean> {
-		return this.connectionManager.initializeDevice();
-	}
-
-	async createReceiveTransport(): Promise<boolean> {
-		return this.connectionManager.createReceiveTransport();
 	}
 
 	async publishMedia(
@@ -202,7 +182,7 @@ export class SFUMeetingManager {
 				}
 			}
 
-			await this.setupExistingParticipants();
+			await this.connectionManager.setupExistingParticipants();
 			console.log("E2EE reconfiguration completed");
 		} catch (error) {
 			console.error("E2EE reconfiguration failed:", error);
@@ -212,12 +192,16 @@ export class SFUMeetingManager {
 		}
 	}
 
-	async setupExistingParticipants(): Promise<void> {
-		return this.connectionManager.setupExistingParticipants();
-	}
-
 	async resyncAfterRecovery(reason: string): Promise<void> {
 		return this.connectionManager.resyncAfterRecovery(reason);
+	}
+
+	async recoverTransport(reason: string): Promise<RecoveryResult> {
+		return this.recoveryManager.recoverTransportIce(reason);
+	}
+
+	async resetReceiveMedia(): Promise<void> {
+		return this.connectionManager.resetReceiveSide();
 	}
 
 	async subscribeToRemoteProducer({
@@ -318,7 +302,4 @@ export class SFUMeetingManager {
 		return this.connectionManager.currentUser;
 	}
 
-	get initialSyncInProgress(): boolean {
-		return this.connectionManager.initialSyncInProgress;
-	}
 }

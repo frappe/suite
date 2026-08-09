@@ -16,7 +16,7 @@ describe("SFUMeetingManager recovery fallback", () => {
 		);
 
 		await expect(
-			manager.recoveryManager.recoverTransportIce("transport_recv_failed"),
+			manager.recoverTransport("transport_recv_failed"),
 		).resolves.toBe("recovered");
 
 		expect(closeReceiveTransport).not.toHaveBeenCalled();
@@ -39,7 +39,7 @@ describe("SFUMeetingManager recovery fallback", () => {
 		);
 
 		await expect(
-			manager.recoveryManager.recoverTransportIce("transport_send_failed"),
+			manager.recoverTransport("transport_send_failed"),
 		).resolves.toBe("failed");
 
 		expect(closeReceiveTransport).toHaveBeenCalledOnce();
