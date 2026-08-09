@@ -82,11 +82,17 @@ function isAssertionExpression(node) {
 	return ts.isAsExpression(node) || ts.isTypeAssertionExpression(node);
 }
 
+function unwrapParentheses(node) {
+	while (ts.isParenthesizedExpression(node)) node = node.expression;
+	return node;
+}
+
 function isUnsafeUnknownAssertion(node) {
+	if (!isAssertionExpression(node)) return false;
+	const inner = unwrapParentheses(node.expression);
 	return (
-		isAssertionExpression(node) &&
-		isAssertionExpression(node.expression) &&
-		node.expression.type.kind === ts.SyntaxKind.UnknownKeyword
+		isAssertionExpression(inner) &&
+		inner.type.kind === ts.SyntaxKind.UnknownKeyword
 	);
 }
 

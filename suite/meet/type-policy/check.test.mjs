@@ -44,6 +44,14 @@ test("rejects angle-bracket double assertions", () => {
 	assert.deepEqual(findings.map(({ rule }) => rule), ["MTP003"]);
 });
 
+test("rejects parenthesized double assertions", () => {
+	const findings = analyzeSource(
+		"frontend/src/apps/meet/example.ts",
+		"const participant = (<unknown>input) as Participant;",
+	);
+	assert.deepEqual(findings.map(({ rule }) => rule), ["MTP003"]);
+});
+
 test("permits test-double assertions", () => {
 	const findings = analyzeSource(
 		"suite/meet/sfu-server/src/example.test.ts",
