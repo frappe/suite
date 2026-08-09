@@ -78,10 +78,14 @@ function isUnknownStringIndex(node) {
 	);
 }
 
+function isAssertionExpression(node) {
+	return ts.isAsExpression(node) || ts.isTypeAssertionExpression(node);
+}
+
 function isUnsafeUnknownAssertion(node) {
 	return (
-		ts.isAsExpression(node) &&
-		ts.isAsExpression(node.expression) &&
+		isAssertionExpression(node) &&
+		isAssertionExpression(node.expression) &&
 		node.expression.type.kind === ts.SyntaxKind.UnknownKeyword
 	);
 }
