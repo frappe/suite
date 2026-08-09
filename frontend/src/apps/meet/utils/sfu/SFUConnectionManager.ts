@@ -28,12 +28,22 @@ import type { User } from "../../composables/useCurrentUser";
 import type { SFUMediaManager } from "./SFUMediaManager";
 import type { MediaScreenShareEvent } from "./SFUMediaManager";
 import type { SFURecoveryManager } from "./SFURecoveryManager";
+import {
+	applyMeetingReconciliationEvent,
+	createMeetingReconciliationState,
+	reconcileMeetingSnapshot,
+	type MeetingReconciliationEvent,
+	type MeetingReconciliationState,
+} from "./MeetingSnapshotReconciler";
 
 interface SFUProducerEvent {
 	producerId: string;
 	participantId: string;
 	isScreen?: boolean;
 }
+
+type ReconciledParticipant = ParticipantData & { participantId: string };
+type ReconciliationEvent = MeetingReconciliationEvent<ReconciledParticipant>;
 
 interface SFUProducerClosedEvent {
 	participantId?: string;
@@ -152,7 +162,10 @@ export class SFUConnectionManager {
 	currentUser: { value: User | null } = { value: null };
 	isConnected = false;
 	initialSyncInProgress = false;
-	bufferedProducerEvents: SFUProducerEvent[] = [];
+	private bufferedReconciliationEvents: ReconciliationEvent[] = [];
+	private reconciliation: MeetingReconciliationState<ReconciledParticipant> =
+		createMeetingReconciliationState();
+	private producerClaims = new Set<string>();
 	eventHandlers: SFUEventHandlers = {};
 	private lastJoinUserData: JoinUserData | null = null;
 	private lastJoinMediaState: JoinRoomMediaState = {
@@ -256,21 +269,32 @@ export class SFUConnectionManager {
 			const participants = await this.sfuClient.getRoomParticipants();
 			const currentUserId = this.getCurrentUserId();
 
-			const normalized = participants
+			const normalized: ReconciledParticipant[] = participants
 				.map((participant) => ({
 					...participant,
+					participantId: participant.participantId || participant.user_id || "",
 					audio_enabled: participant.userData?.audio_enabled ?? false,
 					video_enabled: participant.userData?.video_enabled ?? false,
 					is_guest: participant.userData?.is_guest ?? false,
 				}))
-				.filter((p) => p.user_id !== currentUserId);
-
-			this.participantManager.syncParticipants(normalized);
-
-			await this.requestExistingProducers();
-			await this.flushBufferedProducers();
+				.filter((p) => p.participantId && p.user_id !== currentUserId);
+			const existingProducers = await this.sfuClient.getExistingProducers();
+			this.reconciliation = reconcileMeetingSnapshot(
+				this.reconciliation,
+				{
+					participants: normalized,
+					producers: existingProducers.map((producer) => ({
+						producerId: producer.id,
+						participantId: producer.participantId,
+						isScreen: producer.isScreen === true,
+					})),
+				},
+				this.bufferedReconciliationEvents.splice(0),
+			);
+			this.participantManager.syncParticipants([...this.reconciliation.participants.values()]);
 
 			this.initialSyncInProgress = false;
+			await this.flushBufferedProducers();
 		} catch (error) {
 			console.error("Error in setupExistingParticipants:", error);
 			this.initialSyncInProgress = false;
@@ -280,85 +304,59 @@ export class SFUConnectionManager {
 
 	async requestExistingProducers(): Promise<SFUExistingProducer[] | null> {
 		try {
+			this.initialSyncInProgress = true;
 			const existingProducers = await this.sfuClient.getExistingProducers();
+			const previous = this.reconciliation;
+			const bufferedEvents = this.bufferedReconciliationEvents.splice(0);
+			this.reconciliation = reconcileMeetingSnapshot(
+				this.reconciliation,
+				{
+					producers: existingProducers.map((producer) => ({
+						producerId: producer.id,
+						participantId: producer.participantId,
+						isScreen: producer.isScreen === true,
+					})),
+				},
+				[],
+			);
+			for (const event of bufferedEvents) this.applyReconciliationEvent(event);
+			for (const producer of previous.producers.values()) {
+				if (!this.reconciliation.producers.has(producer.producerId)) {
+					this.removeProducerConsumers(producer);
+				}
+			}
+			this.initialSyncInProgress = false;
 
-			if (existingProducers?.length) {
+			if (existingProducers.length) {
 				console.log(
 					`Found ${existingProducers.length} existing producers:`,
 					existingProducers,
 				);
-
-				if (!(await this.waitForE2EEContextIfRequired())) {
-					this.bufferedProducerEvents.push(
-						...existingProducers.map((producer) => ({
-							producerId: producer.id,
-							participantId: producer.participantId,
-							isScreen: producer.isScreen,
-						})),
-					);
-					return existingProducers;
-				}
-
-				for (const producerInfo of existingProducers) {
-					const participantId = producerInfo.participantId;
-					const producerId = producerInfo.id;
-
-					if (this.hasConsumerForProducer(participantId, producerId)) {
-						continue;
-					}
-
-					console.log("Subscribing to existing producer:", {
-						producerId,
-						participantId,
-						kind: producerInfo.kind,
-						isScreen: producerInfo.isScreen,
-					});
-					await this.mediaManager.subscribeToRemoteProducer({
-						producerId,
-						participantId,
-						isScreen: producerInfo.isScreen,
-					});
-				}
+				await this.flushBufferedProducers();
 			} else {
 				console.log("No existing producers found");
 			}
 
 			return existingProducers;
 		} catch (error) {
+			this.initialSyncInProgress = false;
 			console.warn("Failed to request existing producers:", error);
 			return null;
 		}
 	}
 
 	async flushBufferedProducers(): Promise<void> {
-		if (!this.bufferedProducerEvents.length) {
+		if (!this.reconciliation.producers.size) {
 			console.log("No buffered producer events to flush");
-			return;
-		}
-		if (!(await this.waitForE2EEContextIfRequired())) {
 			return;
 		}
 
 		console.log(
-			`Flushing ${this.bufferedProducerEvents.length} buffered producer events`,
+			`Flushing ${this.reconciliation.producers.size} buffered producer events`,
 		);
-		const pending = this.bufferedProducerEvents.splice(0);
-		for (const event of pending) {
+		for (const event of this.reconciliation.producers.values()) {
 			try {
-				if (!event?.producerId || !event.participantId) {
-					console.warn("Skipping malformed buffered producer event:", event);
-					continue;
-				}
-
-				if (this.hasConsumerForProducer(event.participantId, event.producerId)) {
-					continue;
-				}
-
-				await this.mediaManager.subscribeToRemoteProducer({
-					producerId: event.producerId as string,
-					participantId: event.participantId as string,
-					isScreen: !!event.isScreen,
-				});
+				await this.subscribeToReconciledProducer(event);
 			} catch (error) {
 				console.warn("Failed to process buffered producer:", error);
 			}
@@ -481,6 +479,64 @@ export class SFUConnectionManager {
 		);
 	}
 
+	private async subscribeToReconciledProducer(event: SFUProducerEvent): Promise<void> {
+		if (
+			this.reconciliation.producers.get(event.producerId) !== event ||
+			this.producerClaims.has(event.producerId) ||
+			this.hasConsumerForProducer(event.participantId, event.producerId) ||
+			!this.transportManager?.isDeviceLoaded?.()
+		) return;
+
+		this.producerClaims.add(event.producerId);
+		try {
+			if (!(await this.waitForE2EEContextIfRequired())) return;
+			if (this.reconciliation.producers.get(event.producerId) !== event) return;
+			await this.mediaManager.subscribeToRemoteProducer(event);
+			if (this.reconciliation.producers.get(event.producerId) !== event) {
+				this.removeProducerConsumers(event);
+			}
+		} finally {
+			this.producerClaims.delete(event.producerId);
+		}
+	}
+
+	private removeProducerConsumers(event: SFUProducerEvent): void {
+		const consumers =
+			this.mediaManager.consumerManager.getConsumersByParticipant(event.participantId);
+		for (const consumer of consumers) {
+			const producerMatches =
+				consumer.consumer.producerId === event.producerId ||
+				consumer.appData?.producerId === event.producerId;
+			const isScreen =
+				consumer.isScreen ||
+				consumer.appData?.type === "screen" ||
+				consumer.consumer.appData?.type === "screen";
+			if (producerMatches || (event.isScreen && isScreen)) {
+				this.mediaManager.consumerManager.removeConsumer(consumer.id);
+				this.mediaManager.processedConsumers.delete(consumer.id);
+			}
+		}
+	}
+
+	private applyReconciliationEvent(event: ReconciliationEvent): void {
+		const previous = this.reconciliation;
+		this.reconciliation = applyMeetingReconciliationEvent(previous, event);
+		if (event.type === "participant-joined") {
+			if (!previous.participants.has(event.value.participantId)) {
+				this.participantManager.addParticipant(event.value);
+			}
+		} else if (event.type === "participant-left") {
+			if (!previous.departedParticipantIds.has(event.value.participantId)) {
+				this.participantManager.removeParticipant(event.value.participantId);
+			}
+		} else if (
+			event.type === "producer-closed" &&
+			!previous.closedProducerIds.has(event.value.producerId)
+		) {
+			this.removeProducerConsumers(event.value);
+		}
+	}
+
 	private getCurrentRejoinMediaState(): JoinRoomMediaState {
 		const localStream = this.mediaManager.mediaHandler.localStream;
 		if (!localStream) return this.lastJoinMediaState;
@@ -599,19 +655,43 @@ export class SFUConnectionManager {
 
 		this.sfuClient.on("participant_joined", (value: unknown) => {
 			const data = normalizeParticipantData(value);
-			if (!data) return;
+			if (!data?.participantId) return;
 			const currentUserId = this.getCurrentUserId();
 			const joinedUserId = data.participantId || data.user_id || "";
 
 			if (joinedUserId && joinedUserId !== currentUserId) {
-				this.participantManager.addParticipant(data);
+				const event: ReconciliationEvent = {
+					type: "participant-joined",
+					value: { ...data, participantId: data.participantId },
+				};
+				if (this.initialSyncInProgress) {
+					this.bufferedReconciliationEvents.push(event);
+					return;
+				}
+				const previous = this.reconciliation;
+				this.reconciliation = applyMeetingReconciliationEvent(previous, event);
+				if (!previous.participants.has(data.participantId)) {
+					this.participantManager.addParticipant(data);
+				}
 			}
 		});
 
 		this.sfuClient.on("participant_left", (value: unknown) => {
 			const participant = normalizeParticipantData(value);
 			if (participant?.participantId) {
-				this.participantManager.removeParticipant(participant.participantId);
+				const event: ReconciliationEvent = {
+					type: "participant-left",
+					value: { participantId: participant.participantId },
+				};
+				if (this.initialSyncInProgress) {
+					this.bufferedReconciliationEvents.push(event);
+					return;
+				}
+				const previous = this.reconciliation;
+				this.reconciliation = applyMeetingReconciliationEvent(previous, event);
+				if (!previous.departedParticipantIds.has(participant.participantId)) {
+					this.participantManager.removeParticipant(participant.participantId);
+				}
 			}
 		});
 
@@ -619,57 +699,46 @@ export class SFUConnectionManager {
 			const d = normalizeProducerEvent(value);
 			if (!d) return;
 			if (d.participantId === this.getCurrentUserId()) return;
-
+			const event: ReconciliationEvent = {
+				type: "producer-created",
+				value: { ...d, isScreen: d.isScreen === true },
+			};
+			if (this.initialSyncInProgress) {
+				this.bufferedReconciliationEvents.push(event);
+				return;
+			}
+			const previous = this.reconciliation;
+			this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 			if (
-				this.initialSyncInProgress ||
-				!this.transportManager?.isDeviceLoaded?.()
-			) {
-				this.bufferedProducerEvents.push(d);
-				return;
-			}
-			if (!(await this.waitForE2EEContextIfRequired())) {
-				this.bufferedProducerEvents.push(d);
-				return;
-			}
-
-			try {
-				await this.mediaManager.subscribeToRemoteProducer({
-					producerId: d.producerId,
-					participantId: d.participantId,
-					isScreen: !!d.isScreen,
-				});
-			} catch (error) {
+				previous.producers.has(d.producerId) ||
+				!this.reconciliation.producers.has(d.producerId)
+			) return;
+			await this.subscribeToReconciledProducer(event.value).catch((error) => {
 				console.warn("Failed to subscribe to producer_created event:", error);
-			}
+			});
 		});
 
 		this.sfuClient.on("producer_closed", (value: unknown) => {
 			const d = normalizeProducerClosedEvent(value);
-			if (!d) return;
-			const pid = d.participantId;
-			const closedProducerId = d.producerId;
-			const closedIsScreen = d.isScreen;
-			if (pid) {
-				const allForPid =
-					this.mediaManager.consumerManager.getConsumersByParticipant(pid);
-				for (const c of allForPid) {
-					const producedMatch =
-						(closedProducerId && c.consumer.producerId === closedProducerId) ||
-						c.appData?.producerId === closedProducerId;
-					const isScreenLike =
-						c.isScreen ||
-						c.appData?.type === "screen" ||
-						c.consumer.appData?.type === "screen";
-					const shouldRemove =
-						producedMatch || (isScreenLike && closedIsScreen);
-					if (shouldRemove) {
-						this.mediaManager.consumerManager.removeConsumer(c.id);
-						this.mediaManager.processedConsumers.delete(c.id);
-					}
-				}
+			if (!d?.participantId || !d.producerId) return;
+			const event: ReconciliationEvent = {
+				type: "producer-closed",
+				value: {
+					participantId: d.participantId,
+					producerId: d.producerId,
+					isScreen: d.isScreen === true,
+				},
+			};
+			if (this.initialSyncInProgress) {
+				this.bufferedReconciliationEvents.push(event);
+				return;
 			}
+			const previous = this.reconciliation;
+			this.reconciliation = applyMeetingReconciliationEvent(previous, event);
+			if (previous.closedProducerIds.has(d.producerId)) return;
+			this.removeProducerConsumers(event.value);
 
-			if (this.eventHandlers && d?.isScreen) {
+			if (d.isScreen) {
 				this.eventHandlers.onScreenShareStopped?.({
 					participantId: d.participantId,
 				});
@@ -909,6 +978,9 @@ export class SFUConnectionManager {
 		this.eventHandlers = {};
 		this.isConnected = false;
 		this.initialSyncInProgress = false;
+		this.bufferedReconciliationEvents = [];
+		this.reconciliation = createMeetingReconciliationState();
+		this.producerClaims.clear();
 		this.lastJoinUserData = null;
 		this.lastJoinMediaState = {
 			audio_enabled: false,

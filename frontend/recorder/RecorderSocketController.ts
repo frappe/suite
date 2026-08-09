@@ -7,6 +7,13 @@ import { VideoElementManager } from "../src/apps/meet/utils/media/VideoElementMa
 import { SFUClient } from "../src/apps/meet/utils/SFUClient";
 import { SFUMediaManager } from "../src/apps/meet/utils/sfu/SFUMediaManager";
 import {
+	applyMeetingReconciliationEvent,
+	createMeetingReconciliationState,
+	reconcileMeetingSnapshot,
+	type MeetingReconciliationEvent,
+	type MeetingReconciliationState,
+} from "../src/apps/meet/utils/sfu/MeetingSnapshotReconciler";
+import {
 	parseActiveSpeakers,
 	parseChatMessage,
 	parseConsumerId,
@@ -23,15 +30,14 @@ import {
 	parseRequestResponse,
 	parseScreenShareStarted,
 	type MediaControlMessage,
-	type ParticipantMessage,
 	type ProducerEvent,
-	type ProducerMessage,
 	type RecorderParticipantData,
 	type RecorderParticipantUpdate,
 } from "./protocol";
 import type { RecorderConfig, RecorderRendererBridge } from "./rendererBridge";
 
-type SyncEvent = ParticipantMessage | ProducerMessage;
+type ReconciledRecorderParticipant = RecorderParticipantData & { participantId: string };
+type SyncEvent = MeetingReconciliationEvent<ReconciledRecorderParticipant>;
 export type RecorderState = {
 	participantAdded?: (participant: Participant) => void;
 	participantRemoved?: (participantId: string) => void;
@@ -60,8 +66,9 @@ export class RecorderSocketController {
 	private channel: SignalChannel;
 	private deps: RecorderDependencies;
 	private bufferedEvents: SyncEvent[] = [];
-	private closedProducers = new Set<string>();
-	private departedParticipants = new Set<string>();
+	private reconciliation: MeetingReconciliationState<ReconciledRecorderParticipant> =
+		createMeetingReconciliationState();
+	private producerClaims = new Set<string>();
 	private attachmentPromises = new Map<string, Promise<void>>();
 	private screenAttachmentPromises = new Map<string, Promise<void>>();
 	private initialSync = true;
@@ -221,13 +228,13 @@ export class RecorderSocketController {
 
 	private async initialSynchronize(): Promise<void> {
 		const participants = await this.deps.sfuClient.getRoomParticipants();
-		this.deps.participantManager.syncParticipants(
-			participants
-				.filter((participant) =>
-					!this.departedParticipants.has(participant.participantId || ""),
-				)
-				.map((participant) => this.sanitizeParticipant({
+		const participantSnapshot = participants
+			.map((participant) => {
+				const participantId = participant.participantId || participant.user_id;
+				if (!participantId) return null;
+				return this.sanitizeParticipant({
 					...participant,
+					participantId,
 					userData: {
 						...participant.userData,
 						audio_enabled:
@@ -247,57 +254,74 @@ export class RecorderSocketController {
 						participant.userData?.video_enabled ??
 						participant.video_enabled ??
 						false,
-				})),
-		);
+				});
+			})
+			.filter((participant): participant is ReconciledRecorderParticipant => participant !== null);
 		const existing = await this.deps.sfuClient.getExistingProducers();
-		const producers = new Map<string, ProducerEvent>();
+		const producers: ProducerEvent[] = [];
 		for (const value of existing) {
 			const producer = parseProducerSnapshot(value);
 			if (!producer) continue;
-			const event = { producerId: producer.id, participantId: producer.participantId, isScreen: producer.isScreen };
-			if (!this.closedProducers.has(event.producerId) && !this.departedParticipants.has(event.participantId)) producers.set(event.producerId, event);
+			producers.push({ producerId: producer.id, participantId: producer.participantId, isScreen: producer.isScreen });
 		}
-		while (this.bufferedEvents.length) for (const event of this.bufferedEvents.splice(0)) this.applySyncEvent(event, producers);
+		this.reconciliation = reconcileMeetingSnapshot(
+			this.reconciliation,
+			{ participants: participantSnapshot, producers },
+			this.bufferedEvents.splice(0),
+		);
+		this.deps.participantManager.syncParticipants([...this.reconciliation.participants.values()]);
+		if (this.reconciliation.participants.size === 0) this.scheduleRoomEmpty();
 		this.initialSync = false;
-		for (const event of producers.values()) await this.subscribeRequired(event);
+		for (const event of this.reconciliation.producers.values()) await this.subscribeRequired(event);
 	}
 
 	private queueOrApply(event: SyncEvent): void {
 		if (this.initialSync) this.bufferedEvents.push(event);
 		else this.applySyncEvent(event);
 	}
-	private applySyncEvent(event: SyncEvent, producers?: Map<string, ProducerEvent>): void {
+	private applySyncEvent(event: SyncEvent): void {
+		const previous = this.reconciliation;
+		this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 		if (event.type === "participant-joined") {
 			const id = event.value.participantId;
-			this.departedParticipants.delete(id);
-			this.deps.participantManager.addParticipant(this.sanitizeParticipant(event.value));
+			if (!previous.participants.has(id) || previous.departedParticipantIds.has(id)) {
+				this.deps.participantManager.addParticipant(this.sanitizeParticipant(event.value));
+			}
 		} else if (event.type === "participant-left") {
 			const id = event.value.participantId;
-			this.departedParticipants.add(id);
-			const removed = this.deps.participantManager.removeParticipant(id);
-			if (!removed) this.scheduleRoomEmpty();
-			if (producers) for (const [producerId, producer] of producers) if (producer.participantId === id) { producers.delete(producerId); this.closedProducers.add(producerId); }
+			if (!previous.departedParticipantIds.has(id)) {
+				const removed = this.deps.participantManager.removeParticipant(id);
+				if (!removed) this.scheduleRoomEmpty();
+			}
 		} else if (event.type === "producer-created") {
-			this.closedProducers.delete(event.value.producerId);
-			if (!this.departedParticipants.has(event.value.participantId)) producers ? producers.set(event.value.producerId, event.value) : void this.subscribeLive(event.value);
+			if (
+				!previous.producers.has(event.value.producerId) &&
+				this.reconciliation.producers.has(event.value.producerId)
+			) void this.subscribeLive(event.value);
 		} else {
-			this.closedProducers.add(event.value.producerId);
-			producers?.delete(event.value.producerId);
-			this.removeProducer(event.value);
+			if (!previous.closedProducerIds.has(event.value.producerId)) this.removeProducer(event.value);
 		}
 	}
 	private async subscribeRequired(event: ProducerEvent): Promise<void> {
-		if (this.closedProducers.has(event.producerId) || this.departedParticipants.has(event.participantId)) return;
-		const result = await this.deps.mediaManager.subscribeToRemoteProducer(event);
-		if (this.closedProducers.has(event.producerId) || this.departedParticipants.has(event.participantId)) { this.removeProducer(event); return; }
-		if (!result) throw new Error(`Initial producer ${event.producerId} did not create a consumer`);
-		const attached = this.attachmentPromises.get(event.producerId);
-		if (!attached) throw new Error(`Initial producer ${event.producerId} was not attached`);
-		await attached;
+		if (!this.isCurrentProducer(event) || this.producerClaims.has(event.producerId)) return;
+		this.producerClaims.add(event.producerId);
+		try {
+			if (!this.isCurrentProducer(event)) return;
+			const result = await this.deps.mediaManager.subscribeToRemoteProducer(event);
+			if (!this.isCurrentProducer(event)) { this.removeProducer(event); return; }
+			if (!result) throw new Error(`Initial producer ${event.producerId} did not create a consumer`);
+			const attached = this.attachmentPromises.get(event.producerId);
+			if (!attached) throw new Error(`Initial producer ${event.producerId} was not attached`);
+			await attached;
+			if (!this.isCurrentProducer(event)) this.removeProducer(event);
+		} finally {
+			this.producerClaims.delete(event.producerId);
+		}
 	}
 	private async subscribeLive(event: ProducerEvent): Promise<void> {
 		try { await this.subscribeRequired(event); } catch (error) { this.interrupt(error instanceof Error ? error.message : "Media subscription failed"); }
 	}
+	private isCurrentProducer(event: ProducerEvent): boolean { return this.reconciliation.producers.get(event.producerId) === event; }
 	private sanitizeParticipant(p: RecorderParticipantData): RecorderParticipantData { const avatar = trustedAvatar(p.userData?.avatar || p.avatar, this.frappeOrigin); return { ...p, avatar, userData: { ...p.userData, avatar } }; }
 	private frappeOrigin = "";
 	private removeProducer(event: ProducerEvent): void { for (const c of this.deps.consumerManager.getConsumersByParticipant(event.participantId || "")) if (c.producerId === event.producerId || (event.isScreen && c.isScreen)) this.deps.consumerManager.removeConsumer(c.id); }

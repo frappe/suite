@@ -152,6 +152,62 @@ describe("SFUConnectionManager", () => {
 		});
 	});
 
+	it("claims duplicate producer events before awaiting E2EE", async () => {
+		const { handlers, manager, mediaManager } = createManager({
+			e2eeRequired: true,
+		});
+		await manager.connect("token");
+		const event = {
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		};
+
+		const first = handlers.get("producer_created")?.(event);
+		const duplicate = handlers.get("producer_created")?.(event);
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		await Promise.all([first, duplicate]);
+
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce();
+	});
+
+	it("replays participant leaves and producer closes over stale snapshots", async () => {
+		const { handlers, manager, mediaManager, participantManager, sfuClient } =
+			createManager();
+		await manager.connect("token");
+		sfuClient.getRoomParticipants.mockImplementationOnce(async () => {
+			handlers.get("participant_left")?.({ participantId: "remote-1" });
+			return [{ participantId: "remote-1", user_id: "remote-1" }];
+		});
+		sfuClient.getExistingProducers.mockImplementationOnce(async () => {
+			handlers.get("producer_closed")?.({
+				participantId: "remote-1",
+				producerId: "producer-1",
+			});
+			return [{ id: "producer-1", participantId: "remote-1" }];
+		});
+
+		await manager.setupExistingParticipants();
+
+		expect(participantManager.hasParticipant("remote-1")).toBe(false);
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
+	it("preserves participant state during producer-only reconciliation", async () => {
+		const { manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote" },
+		});
+
+		await manager.requestExistingProducers();
+
+		expect(participantManager.hasParticipant("remote-1")).toBe(true);
+	});
+
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {
 		const { manager, mediaManager, sfuClient, transportManager, recoveryManager } =
 			createManager();
