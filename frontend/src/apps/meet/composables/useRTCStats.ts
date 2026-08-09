@@ -1,6 +1,7 @@
-import type { Consumer, Producer } from "mediasoup-client/types";
+import type { AppData, Consumer, Producer } from "mediasoup-client/types";
 import { computed, inject, onUnmounted, type Ref, ref, watch } from "vue";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
+import { isUnknownRecord } from "../types";
 
 type StatsReport = Record<string, unknown> & {
 	id?: string;
@@ -86,7 +87,11 @@ function stringValue(value: unknown): string | undefined {
 function reports(stats: unknown): StatsReport[] {
 	if (!stats || typeof stats !== "object") return [];
 	const values = (stats as { values?: () => IterableIterator<unknown> }).values?.();
-	return values ? Array.from(values) as StatsReport[] : [];
+	return values
+		? Array.from(values).filter(
+				(report): report is StatsReport => isUnknownRecord(report),
+			)
+		: [];
 }
 
 export function selectPrimaryRtpReport(
@@ -154,7 +159,7 @@ function sourceForProducer(producer: Producer): RTCStreamStats["source"] {
 function sourceForConsumer(entry: {
 	kind: string;
 	isScreen?: boolean;
-	appData?: Record<string, unknown>;
+	appData?: AppData;
 }): RTCStreamStats["source"] {
 	if (entry.kind === "audio") return "remote audio";
 	return entry.isScreen || entry.appData?.type === "screen"

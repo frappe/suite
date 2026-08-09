@@ -13,16 +13,21 @@ import { ParticipantManager } from "./media/ParticipantManager";
 import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
 import type { ConnectionDetails, SFUClient } from "./SFUClient";
+import type { JoinRoomMediaState, JoinUserData } from "../types";
+import type { User } from "../composables/useCurrentUser";
 import {
 	SFUConnectionManager,
 	type SFUEventHandlers,
 } from "./sfu/SFUConnectionManager";
-import { SFUMediaManager } from "./sfu/SFUMediaManager";
+import {
+	SFUMediaManager,
+	type PublishedMedia,
+} from "./sfu/SFUMediaManager";
 import { SFURecoveryManager } from "./sfu/SFURecoveryManager";
 
 interface SFUMeetingManagerOptions {
 	meetingId: string;
-	currentUser: unknown;
+	currentUser: User | null;
 	eventHandlers?: SFUEventHandlers;
 }
 
@@ -118,7 +123,10 @@ export class SFUMeetingManager {
 		return this.connectionManager.connect(authToken, prefetchedDetails);
 	}
 
-	async joinRoom(userData: unknown, mediaState: unknown): Promise<boolean> {
+	async joinRoom(
+		userData: JoinUserData,
+		mediaState: JoinRoomMediaState,
+	): Promise<boolean> {
 		return this.connectionManager.joinRoom(userData, mediaState);
 	}
 
@@ -133,7 +141,7 @@ export class SFUMeetingManager {
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
-	): Promise<Record<string, unknown>> {
+	): Promise<PublishedMedia> {
 		return this.mediaManager.publishMedia(localStream, options);
 	}
 

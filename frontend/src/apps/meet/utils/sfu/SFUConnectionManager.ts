@@ -5,14 +5,28 @@
 
 import type { ConsumerEntry } from "../media/ConsumerManager";
 import type {
+	Participant,
 	ParticipantData,
 	ParticipantManager,
+	ParticipantUpdate,
 } from "../media/ParticipantManager";
+import { normalizeParticipantData } from "../media/ParticipantManager";
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
 import { waitForE2EEContextReady } from "../media/E2EEContextReady";
-import type { ConnectionDetails, SFUClient } from "../SFUClient";
+import type {
+	ConnectionDetails,
+	SFUClient,
+	SFUExistingProducer,
+} from "../SFUClient";
+import type {
+	JoinRoomMediaState,
+	JoinUserData,
+} from "../../types";
+import { isUnknownRecord } from "../../types";
+import type { User } from "../../composables/useCurrentUser";
 import type { SFUMediaManager } from "./SFUMediaManager";
+import type { MediaScreenShareEvent } from "./SFUMediaManager";
 import type { SFURecoveryManager } from "./SFURecoveryManager";
 
 interface SFUProducerEvent {
@@ -38,23 +52,65 @@ interface SFUHostControlEvent {
 	hostId?: string;
 }
 
+function normalizeProducerEvent(value: unknown): SFUProducerEvent | null {
+	if (
+		!isUnknownRecord(value) ||
+		typeof value.producerId !== "string" ||
+		typeof value.participantId !== "string"
+	) {
+		return null;
+	}
+	return {
+		producerId: value.producerId,
+		participantId: value.participantId,
+		isScreen: value.isScreen === true,
+	};
+}
+
+function normalizeProducerClosedEvent(
+	value: unknown,
+): SFUProducerClosedEvent | null {
+	if (!isUnknownRecord(value)) return null;
+	return {
+		participantId:
+			typeof value.participantId === "string" ? value.participantId : undefined,
+		producerId:
+			typeof value.producerId === "string" ? value.producerId : undefined,
+		isScreen: value.isScreen === true,
+	};
+}
+
+function normalizeScreenShareEvent(value: unknown): ScreenShareEvent | null {
+	if (!isUnknownRecord(value)) return null;
+	return {
+		participantId:
+			typeof value.participantId === "string" ? value.participantId : undefined,
+		consumerId:
+			typeof value.consumerId === "string" ? value.consumerId : undefined,
+		stream:
+			typeof MediaStream !== "undefined" && value.stream instanceof MediaStream
+				? value.stream
+				: undefined,
+	};
+}
+
 export interface SFUEventHandlers {
-	onParticipantJoined?: (participant: unknown) => void;
+	onParticipantJoined?: (participant: Participant) => void;
 	onParticipantLeft?: (data: {
 		participantId: string;
-		participant?: unknown;
+		participant?: Participant;
 	}) => void;
 	onParticipantUpdated?: (
 		participantId: string,
-		participant: unknown,
-		updates: unknown,
+		participant: Participant,
+		updates: ParticipantUpdate,
 	) => void;
-	onScreenShareStarted?: (data: unknown) => void;
-	onScreenShareStopped?: (data: unknown) => void;
+	onScreenShareStarted?: (data: ScreenShareEvent) => void;
+	onScreenShareStopped?: (data: ScreenShareEvent) => void;
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
-	onHostKickedYou?: (data: unknown) => void;
+	onHostKickedYou?: (data: { hostId?: string }) => void;
 	onRecoveryStateChange?: (
 		state:
 			| "reconnecting"
@@ -66,6 +122,13 @@ export interface SFUEventHandlers {
 		detail?: string,
 	) => void;
 	onRecoveryExhausted?: () => void;
+}
+
+interface ScreenShareEvent {
+	participantId?: string;
+	consumerId?: string;
+	stream?: MediaStream;
+	consumer?: { id: string };
 }
 
 interface ConnectionManagerOptions {
@@ -86,13 +149,16 @@ export class SFUConnectionManager {
 	recoveryManager: SFURecoveryManager;
 
 	meetingId: string | null = null;
-	currentUser: { value: unknown } = { value: null };
+	currentUser: { value: User | null } = { value: null };
 	isConnected = false;
 	initialSyncInProgress = false;
 	bufferedProducerEvents: SFUProducerEvent[] = [];
 	eventHandlers: SFUEventHandlers = {};
-	private lastJoinUserData: unknown = null;
-	private lastJoinMediaState: Record<string, unknown> = {};
+	private lastJoinUserData: JoinUserData | null = null;
+	private lastJoinMediaState: JoinRoomMediaState = {
+		audio_enabled: false,
+		video_enabled: false,
+	};
 	private activeRejoin: Promise<void> | null = null;
 	private activeReceiveReset: Promise<void> | null = null;
 	private lifecycleGeneration = 0;
@@ -108,7 +174,7 @@ export class SFUConnectionManager {
 
 	initialize(
 		meetingId: string,
-		currentUser: unknown,
+		currentUser: User | { value: User | null } | null,
 		eventHandlers?: SFUEventHandlers,
 	): void {
 		this.meetingId = meetingId;
@@ -144,14 +210,14 @@ export class SFUConnectionManager {
 		}
 	}
 
-	async joinRoom(userData: unknown, mediaState: unknown): Promise<boolean> {
+	async joinRoom(
+		userData: JoinUserData,
+		mediaState: JoinRoomMediaState,
+	): Promise<boolean> {
 		try {
 			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState);
 			this.lastJoinUserData = userData;
-			this.lastJoinMediaState =
-				mediaState && typeof mediaState === "object"
-					? { ...(mediaState as Record<string, unknown>) }
-					: {};
+			this.lastJoinMediaState = { ...mediaState };
 			console.log("Successfully joined room:", this.meetingId);
 			return true;
 		} catch (error) {
@@ -190,28 +256,13 @@ export class SFUConnectionManager {
 			const participants = await this.sfuClient.getRoomParticipants();
 			const currentUserId = this.getCurrentUserId();
 
-			const normalized = (participants || [])
-				.map((p: Record<string, unknown>) => {
-					const info = (p.info || {}) as Record<string, unknown>;
-					return {
-						participantId: (p.user_id ?? p.id) as string,
-						user_id: (p.user_id ?? p.id) as string,
-						user_name: (info.name ??
-							info.user_name ??
-							p.user_id ??
-							"") as string,
-						avatar: (info.avatar ?? null) as string | null,
-						audio_enabled:
-							typeof info.audio_enabled === "boolean"
-								? info.audio_enabled
-								: false,
-						video_enabled:
-							typeof info.video_enabled === "boolean"
-								? info.video_enabled
-								: false,
-						is_guest: (info.is_guest as boolean) || false,
-					};
-				})
+			const normalized = participants
+				.map((participant) => ({
+					...participant,
+					audio_enabled: participant.userData?.audio_enabled ?? false,
+					video_enabled: participant.userData?.video_enabled ?? false,
+					is_guest: participant.userData?.is_guest ?? false,
+				}))
 				.filter((p) => p.user_id !== currentUserId);
 
 			this.participantManager.syncParticipants(normalized);
@@ -227,47 +278,30 @@ export class SFUConnectionManager {
 		}
 	}
 
-	async requestExistingProducers(): Promise<unknown[] | null> {
+	async requestExistingProducers(): Promise<SFUExistingProducer[] | null> {
 		try {
 			const existingProducers = await this.sfuClient.getExistingProducers();
 
 			if (existingProducers?.length) {
 				console.log(
 					`Found ${existingProducers.length} existing producers:`,
-					existingProducers.map((p: unknown) => {
-						const producer = p as Record<string, unknown>;
-						return {
-							id: producer.id,
-							participantId:
-								producer.participantId || producer.user_id || producer.userId,
-							kind: producer.kind,
-							isScreen: !!producer.isScreen,
-						};
-					}),
+					existingProducers,
 				);
 
 				if (!(await this.waitForE2EEContextIfRequired())) {
 					this.bufferedProducerEvents.push(
-						...existingProducers.map((producerInfo: unknown) => {
-							const info = producerInfo as Record<string, unknown>;
-							return {
-								producerId: info.id as string,
-								participantId: (info.participantId ??
-									info.user_id ??
-									info.userId) as string,
-								isScreen: !!info.isScreen,
-							};
-						}),
+						...existingProducers.map((producer) => ({
+							producerId: producer.id,
+							participantId: producer.participantId,
+							isScreen: producer.isScreen,
+						})),
 					);
 					return existingProducers;
 				}
 
 				for (const producerInfo of existingProducers) {
-					const info = producerInfo as Record<string, unknown>;
-					const participantId = (info.participantId ??
-						info.user_id ??
-						info.userId) as string;
-					const producerId = info.id as string;
+					const participantId = producerInfo.participantId;
+					const producerId = producerInfo.id;
 
 					if (this.hasConsumerForProducer(participantId, producerId)) {
 						continue;
@@ -276,13 +310,13 @@ export class SFUConnectionManager {
 					console.log("Subscribing to existing producer:", {
 						producerId,
 						participantId,
-						kind: info.kind,
-						isScreen: !!info.isScreen,
+						kind: producerInfo.kind,
+						isScreen: producerInfo.isScreen,
 					});
 					await this.mediaManager.subscribeToRemoteProducer({
 						producerId,
 						participantId,
-						isScreen: !!info.isScreen,
+						isScreen: producerInfo.isScreen,
 					});
 				}
 			} else {
@@ -387,6 +421,8 @@ export class SFUConnectionManager {
 		}
 		this.recoveryManager.reset();
 		const generation = this.lifecycleGeneration;
+		const lastJoinUserData = this.lastJoinUserData;
+		const meetingId = this.meetingId;
 
 		const rejoin = (async () => {
 			this.reportRecoveryState("rejoining", "signaling reconnected");
@@ -400,8 +436,8 @@ export class SFUConnectionManager {
 			if (generation !== this.lifecycleGeneration) return;
 
 			await this.sfuClient.joinRoom(
-				this.meetingId as string,
-				this.lastJoinUserData,
+				meetingId,
+				lastJoinUserData,
 				this.getCurrentRejoinMediaState(),
 			);
 			if (generation !== this.lifecycleGeneration) return;
@@ -445,7 +481,7 @@ export class SFUConnectionManager {
 		);
 	}
 
-	private getCurrentRejoinMediaState(): Record<string, unknown> {
+	private getCurrentRejoinMediaState(): JoinRoomMediaState {
 		const localStream = this.mediaManager.mediaHandler.localStream;
 		if (!localStream) return this.lastJoinMediaState;
 
@@ -475,14 +511,14 @@ export class SFUConnectionManager {
 
 	private setupManagerEventHandlers(): void {
 		this.participantManager.setEventHandlers({
-			onParticipantAdded: (participant: Record<string, unknown>) => {
+			onParticipantAdded: (participant: Participant) => {
 				if (this.eventHandlers.onParticipantJoined) {
 					this.eventHandlers.onParticipantJoined(participant);
 				}
 			},
 			onParticipantRemoved: (
 				participantId: string,
-				participant: Record<string, unknown>,
+				participant: Participant,
 			) => {
 				this.videoManager.removeVideoElement(participantId);
 				this.mediaManager.consumerManager.cleanupParticipantConsumers(
@@ -494,8 +530,8 @@ export class SFUConnectionManager {
 			},
 			onParticipantUpdated: (
 				participantId: string,
-				participant: Record<string, unknown>,
-				updates: Record<string, unknown>,
+				participant: Participant,
+				updates: ParticipantUpdate,
 			) => {
 				if (this.eventHandlers.onParticipantUpdated) {
 					this.eventHandlers.onParticipantUpdated(
@@ -531,12 +567,12 @@ export class SFUConnectionManager {
 			onRecoveryExhausted: () => {
 				this.eventHandlers.onRecoveryExhausted?.();
 			},
-			onScreenShareStarted: (data: unknown) => {
+			onScreenShareStarted: (data: MediaScreenShareEvent) => {
 				if (this.eventHandlers.onScreenShareStarted) {
 					this.eventHandlers.onScreenShareStarted(data);
 				}
 			},
-			onScreenShareStopped: (data: unknown) => {
+			onScreenShareStopped: (data: MediaScreenShareEvent) => {
 				if (this.eventHandlers.onScreenShareStopped) {
 					this.eventHandlers.onScreenShareStopped(data);
 				}
@@ -561,7 +597,9 @@ export class SFUConnectionManager {
 			});
 		});
 
-		this.sfuClient.on("participant_joined", (data: ParticipantData) => {
+		this.sfuClient.on("participant_joined", (value: unknown) => {
+			const data = normalizeParticipantData(value);
+			if (!data) return;
 			const currentUserId = this.getCurrentUserId();
 			const joinedUserId = data.participantId || data.user_id || "";
 
@@ -570,13 +608,16 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("participant_left", (data: ParticipantData) => {
-			const d = data as ParticipantData;
-			this.participantManager.removeParticipant(d.participantId || "");
+		this.sfuClient.on("participant_left", (value: unknown) => {
+			const participant = normalizeParticipantData(value);
+			if (participant?.participantId) {
+				this.participantManager.removeParticipant(participant.participantId);
+			}
 		});
 
-		this.sfuClient.on("producer_created", async (data: unknown) => {
-			const d = data as SFUProducerEvent;
+		this.sfuClient.on("producer_created", async (value: unknown) => {
+			const d = normalizeProducerEvent(value);
+			if (!d) return;
 			if (d.participantId === this.getCurrentUserId()) return;
 
 			if (
@@ -602,8 +643,9 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("producer_closed", (data: unknown) => {
-			const d = data as SFUProducerClosedEvent;
+		this.sfuClient.on("producer_closed", (value: unknown) => {
+			const d = normalizeProducerClosedEvent(value);
+			if (!d) return;
 			const pid = d.participantId;
 			const closedProducerId = d.producerId;
 			const closedIsScreen = d.isScreen;
@@ -634,15 +676,19 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("consumer_closed", (data: unknown) => {
+		this.sfuClient.on("consumer_closed", (value: unknown) => {
 			try {
-				const d = data as { consumerId?: string; participantId?: string };
-				const consumerId = d.consumerId;
+				if (!isUnknownRecord(value)) return;
+				const consumerId =
+					typeof value.consumerId === "string" ? value.consumerId : undefined;
 				if (!consumerId) return;
 				const removed =
 					this.mediaManager.consumerManager.removeConsumer(consumerId);
 				if (!removed) {
-					const pid = d.participantId;
+					const pid =
+						typeof value.participantId === "string"
+							? value.participantId
+							: undefined;
 					if (pid) {
 						const allForPid =
 							this.mediaManager.consumerManager.getConsumersByParticipant(pid);
@@ -663,8 +709,22 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("media_control_update", (data: unknown) => {
-			const d = data as SFUMediaControlEvent;
+		this.sfuClient.on("media_control_update", (value: unknown) => {
+			if (!isUnknownRecord(value) || typeof value.participantId !== "string") {
+				return;
+			}
+			const action = value.action;
+			const d: SFUMediaControlEvent = {
+				participantId: value.participantId,
+				action:
+					typeof action === "string"
+						? action
+						: isUnknownRecord(action) &&
+								typeof action.type === "string" &&
+								typeof action.enabled === "boolean"
+							? { type: action.type, enabled: action.enabled }
+							: undefined,
+			};
 			const updates: Record<string, boolean> = {};
 			if (d.action && typeof d.action === "object") {
 				const a = d.action;
@@ -698,18 +758,33 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("network_quality_update", (data: unknown) => {
-			const d = data as { participantId?: string; quality?: string };
-			if (d.participantId && d.quality) {
-				this.eventHandlers.onNetworkQualityUpdated?.(d.participantId, d.quality);
-				this.participantManager.updateParticipant(d.participantId, {
-					networkQuality: d.quality,
+		this.sfuClient.on("network_quality_update", (value: unknown) => {
+			if (
+				isUnknownRecord(value) &&
+				typeof value.participantId === "string" &&
+				typeof value.quality === "string"
+			) {
+				this.eventHandlers.onNetworkQualityUpdated?.(
+					value.participantId,
+					value.quality,
+				);
+				this.participantManager.updateParticipant(value.participantId, {
+					networkQuality: value.quality,
 				});
 			}
 		});
 
-		this.sfuClient.on("host_control_update", (data: unknown) => {
-			const d = data as SFUHostControlEvent;
+		this.sfuClient.on("host_control_update", (value: unknown) => {
+			if (
+				!isUnknownRecord(value) ||
+				typeof value.action !== "string" ||
+				typeof value.targetParticipantId !== "string"
+			) return;
+			const d: SFUHostControlEvent = {
+				action: value.action,
+				targetParticipantId: value.targetParticipantId,
+				hostId: typeof value.hostId === "string" ? value.hostId : undefined,
+			};
 			const myParticipantId = this.getCurrentUserId();
 			const isForMe = d.targetParticipantId === myParticipantId;
 
@@ -733,21 +808,23 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("screen_share_started", (data: unknown) => {
-			const d = data as { participantId?: string; stream?: MediaStream };
+		this.sfuClient.on("screen_share_started", (value: unknown) => {
+			const d = normalizeScreenShareEvent(value);
+			if (!d) return;
 			console.log("SFU event: screen_share_started (from signaling)", {
 				participantId: d.participantId,
 				hasDirectStream: !!d.stream,
 			});
 		});
 
-		this.sfuClient.on("screen_share_stopped", (data: unknown) => {
-			const d = data as { participantId?: string };
+		this.sfuClient.on("screen_share_stopped", (value: unknown) => {
+			const d = normalizeScreenShareEvent(value);
+			if (!d) return;
 			console.log("Screen share stopped - resetting sidebar mode flag");
 			this.mediaManager.isScreenShareActive = false;
 
 			if (this.eventHandlers.onScreenShareStopped) {
-				this.eventHandlers.onScreenShareStopped(data);
+				this.eventHandlers.onScreenShareStopped(d);
 			}
 
 			const pid = d.participantId;
@@ -783,28 +860,31 @@ export class SFUConnectionManager {
 			}
 		});
 
-		this.sfuClient.on("active_speaker", (data: unknown) => {
-			const d = data as { participantIds: string[] };
+		this.sfuClient.on("active_speaker", (value: unknown) => {
+			if (
+				!isUnknownRecord(value) ||
+				!Array.isArray(value.participantIds) ||
+				!value.participantIds.every((id) => typeof id === "string")
+			) return;
+			const d = { participantIds: value.participantIds };
 			if (this.eventHandlers.onActiveSpeakerChanged) {
 				this.eventHandlers.onActiveSpeakerChanged(d.participantIds);
 			}
 		});
 	}
 
-	private ensureRef(obj: unknown): { value: unknown } {
-		if (obj && typeof obj === "object" && "value" in (obj as object)) {
-			return obj as { value: unknown };
+	private ensureRef(
+		obj: User | { value: User | null } | null,
+	): { value: User | null } {
+		if (obj && "value" in obj) {
+			return obj;
 		}
 		return { value: obj };
 	}
 
 	getCurrentUserId(): string | null {
-		const cu = this.currentUser?.value || this.currentUser;
-		return (
-			((cu as Record<string, unknown>)?.user_id as string) ||
-			((cu as Record<string, unknown>)?.userId as string) ||
-			null
-		);
+		const user = this.currentUser.value;
+		return user?.user_id || user?.userId || null;
 	}
 
 	async disconnect(): Promise<void> {
@@ -830,7 +910,10 @@ export class SFUConnectionManager {
 		this.isConnected = false;
 		this.initialSyncInProgress = false;
 		this.lastJoinUserData = null;
-		this.lastJoinMediaState = {};
+		this.lastJoinMediaState = {
+			audio_enabled: false,
+			video_enabled: false,
+		};
 		this.activeRejoin = null;
 	}
 }

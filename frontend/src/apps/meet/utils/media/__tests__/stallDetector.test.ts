@@ -283,17 +283,13 @@ describe("extractInboundBytesReceived", () => {
 			["a", { type: "outbound-rtp", bytesReceived: 999 }],
 			["b", { type: "inbound-rtp", bytesReceived: 12345 }],
 		]);
-		expect(
-			extractInboundBytesReceived(stats as unknown as RTCStatsReport),
-		).toBe(12345);
+		expect(extractInboundBytesReceived(stats)).toBe(12345);
 	});
 
 	it("returns null when no inbound-rtp report is present", () => {
 		const stats = new Map<string, { type: string; bytesReceived?: number }>([
 			["a", { type: "outbound-rtp", bytesReceived: 999 }],
 		]);
-		expect(
-			extractInboundBytesReceived(stats as unknown as RTCStatsReport),
-		).toBeNull();
+		expect(extractInboundBytesReceived(stats)).toBeNull();
 	});
 });

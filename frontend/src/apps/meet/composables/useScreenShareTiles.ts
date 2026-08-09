@@ -13,7 +13,7 @@ interface CurrentUser {
 	name?: string;
 }
 
-interface ScreenShareTileParticipant {
+export interface ScreenShareTileParticipant {
 	user_id: string;
 	user_name: string;
 	avatar: string;
@@ -21,7 +21,7 @@ interface ScreenShareTileParticipant {
 	isLocalScreenShare: boolean;
 }
 
-interface ScreenShareTile {
+export interface ScreenShareTile {
 	pinId: string;
 	consumerId: string;
 	participant: ScreenShareTileParticipant;

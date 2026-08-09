@@ -1,15 +1,38 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ParticipantManager } from "../ParticipantManager";
+import {
+	type ParticipantData,
+	ParticipantManager,
+	normalizeParticipantData,
+} from "../ParticipantManager";
 
 beforeEach(() => {
 	vi.clearAllMocks();
+});
+
+it("preserves E2EE roster metadata while normalizing SFU participants", () => {
+	expect(normalizeParticipantData({
+		id: "participant-1",
+		user_id: "user-1",
+		senderId: 42,
+		sender_id: 42,
+		is_host: false,
+		info: { name: "Alice" },
+	})).toMatchObject({
+		participantId: "user-1",
+		user_id: "user-1",
+		senderId: 42,
+		sender_id: 42,
+		is_host: false,
+	});
 });
 
 function createManager() {
 	return new ParticipantManager();
 }
 
-function makeParticipantData(overrides: Record<string, unknown> = {}) {
+function makeParticipantData(
+	overrides: Partial<ParticipantData> = {},
+): ParticipantData {
 	return {
 		participantId: "p1",
 		user_id: "p1",

@@ -205,6 +205,7 @@ import {
 	type EmojiSuggestion,
 } from "../utils/emojiSuggest";
 import { usePollStore } from "../composables/usePollStore";
+import { pollKey } from "../composables/usePoll";
 import type { PollPayloadFE } from "../types";
 import CreatePollModal from "./CreatePollModal.vue";
 import MeetAvatar from "./MeetAvatar.vue";
@@ -231,7 +232,7 @@ const props = defineProps<{
 }>();
 
 const pollStore = usePollStore();
-const pollService = inject("poll") as any;
+const pollService = inject(pollKey);
 const showPollModal = ref(false);
 
 const activePolls = computed(() => pollStore.activePolls);
@@ -284,7 +285,7 @@ const chatItems = computed(() =>
 	buildChatTimeline(props.messages || [], activePolls.value, props.userId),
 );
 
-function time(ts) {
+function time(ts: string) {
 	try {
 		return new Date(ts).toLocaleTimeString([], {
 			hour: "2-digit",

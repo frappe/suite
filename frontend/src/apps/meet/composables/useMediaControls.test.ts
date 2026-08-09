@@ -57,13 +57,13 @@ class FakeMediaStream {
 }
 
 const audioTrack = (id: string) =>
-	({
+	Object.assign(Object.create(null), {
 		id,
 		kind: "audio",
 		enabled: true,
 		readyState: "live",
 		stop: vi.fn(),
-	} as unknown as MediaStreamTrack);
+	}) as MediaStreamTrack;
 
 describe("useMediaControls", () => {
 	beforeEach(() => {

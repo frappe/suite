@@ -3,16 +3,16 @@
  * Handles MediaSoup consumer lifecycle and stream management
  */
 
-import type { Consumer } from "mediasoup-client/types";
+import type { AppData, Consumer, MediaKind } from "mediasoup-client/types";
 
 export interface ConsumerEntry {
 	id: string;
 	participantId: string;
 	producerId: string;
-	kind: string;
+	kind: MediaKind;
 	isScreen: boolean;
 	track?: MediaStreamTrack;
-	appData?: Record<string, unknown>;
+	appData?: AppData;
 	createdAt: number;
 	consumer: Consumer;
 	close?: () => void;
@@ -24,7 +24,7 @@ interface ConsumerLostInfo {
 	consumerId: string;
 	participantId: string;
 	producerId: string;
-	kind: string;
+	kind: MediaKind;
 	isScreen: boolean;
 }
 
@@ -34,7 +34,7 @@ interface ConsumerEventHandlers {
 	onConsumerUpdated?: (
 		consumerId: string,
 		updatedConsumer: ConsumerEntry,
-		updates: Record<string, unknown>,
+		updates: Partial<ConsumerEntry>,
 	) => void;
 	onAllConsumersCleared?: (consumerIds: string[]) => void;
 	onConsumerLost?: (info: ConsumerLostInfo) => void;
@@ -249,7 +249,7 @@ export class ConsumerManager {
 
 	updateConsumer(
 		consumerId: string,
-		updates: Record<string, unknown>,
+		updates: Partial<ConsumerEntry>,
 	): ConsumerEntry | null {
 		const consumer = this.consumers.get(consumerId);
 		if (consumer) {

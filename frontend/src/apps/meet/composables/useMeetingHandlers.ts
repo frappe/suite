@@ -3,15 +3,22 @@ import type { Ref } from "vue";
 import type { Router } from "vue-router";
 import type { TransportManager } from "../utils/media/TransportManager";
 import type { SFUClient } from "../utils/SFUClient";
+import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import type { ChatStore } from "./useChatStore";
 import type { ConnectionState } from "./useConnectionState";
 import type { CurrentUser } from "./useCurrentUser";
 import type { GridLayout } from "./useGridLayout";
 import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
+import type { DocumentResource } from "./useMeetingDoc";
 import type { ParticipantStore } from "./useParticipantStore";
 import type { RaiseHandStore } from "./useRaiseHandStore";
 import type { ReactionStore } from "./useReactionStore";
+import {
+	isUnknownRecord,
+	type JoinPayload,
+	normalizeJoinPayload,
+} from "../types";
 
 interface LobbyActions {
 	approveUser: (userId: string) => Promise<void>;
@@ -41,7 +48,9 @@ interface MediaHandlerLike {
 	audioProducer: ProducerLike | null;
 	videoProducer: ProducerLike | null;
 	screenProducer: ProducerLike | null;
-	setProducers: (producers: Record<string, unknown>) => void;
+	setProducers: (producers: Partial<Pick<MediaHandlerLike,
+		"audioProducer" | "videoProducer" | "screenProducer"
+	>>) => void;
 	stopScreenShare: () => void;
 }
 
@@ -56,19 +65,14 @@ interface SFUMeetingManagerLike {
 	videoManager: VideoManagerLike | null;
 }
 
-export type MeetingDocLike = {
-	doc: { banned_users?: Array<{ user: string }> } | null | undefined;
-	setValue: { submit: (data: Record<string, unknown>) => Promise<unknown> };
-	reload: () => Promise<void>;
-	[key: string]: unknown;
-};
+export type MeetingDocLike = DocumentResource;
 
 interface SFUConnectionActions {
-	sfuManager: Ref<SFUMeetingManagerLike | null>;
+	sfuManager: Ref<SFUMeetingManager | null>;
 	sfuClient: SFUClient;
 	joinMeetingRoom: () => Promise<void>;
 	handleGuestJoinResult: (
-		joinResult: Record<string, unknown>,
+		joinResult: JoinPayload,
 		guestName: string,
 	) => Promise<void>;
 }
@@ -110,10 +114,15 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		joinResult,
 	}: {
 		guestName: string;
-		joinResult: Record<string, unknown>;
+		joinResult: unknown;
 	}) => {
+		const normalizedJoinResult = normalizeJoinPayload(joinResult);
+		if (!normalizedJoinResult) {
+			deps.connectionState.connectionError = "Invalid guest join response";
+			return;
+		}
 		const guestId =
-			(joinResult?.guest_id as string) ||
+			normalizedJoinResult.guest_id ||
 			(deps.connectionState.guestId as string);
 		const resolvedGuestName = guestName || localStorage.getItem("guest_name");
 
@@ -128,7 +137,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		}
 
 		await deps.sfuConnection.handleGuestJoinResult(
-			joinResult,
+			normalizedJoinResult,
 			resolvedGuestName || "",
 		);
 	};
@@ -241,7 +250,10 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 				},
 			});
 
-			if ((response as { meeting_id?: string })?.meeting_id) {
+			if (
+				isUnknownRecord(response) &&
+				typeof response.meeting_id === "string"
+			) {
 				toast.success("User promoted to co-host");
 				await deps.meetingDoc.reload();
 			}
@@ -307,14 +319,20 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		});
 	};
 
-	const handleDeviceChanged = async (event: Record<string, unknown>) => {
-		if (typeof event.type !== "string" || typeof event.deviceId !== "string") {
+	const handleDeviceChanged = async (event: unknown) => {
+		if (
+			!isUnknownRecord(event) ||
+			(event.type !== "camera" &&
+				event.type !== "microphone" &&
+				event.type !== "speaker") ||
+			typeof event.deviceId !== "string"
+		) {
 			return;
 		}
 
 		try {
 			await deps.mediaControls.switchInputDevice(
-				event.type as "camera" | "microphone" | "speaker",
+				event.type,
 				event.deviceId,
 			);
 		} catch (error) {

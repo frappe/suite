@@ -18,6 +18,11 @@ function createManager() {
 	return new TransportManager();
 }
 
+function mockedIceRestart(manager: TransportManager) {
+	if (!manager.sfuClient) throw new Error("Missing mock SFU client");
+	return vi.mocked(manager.sfuClient.restartWebRtcTransportIce);
+}
+
 function mockSfuClient(getCodecStrategy?: () => string) {
 	return {
 		getCodecStrategy: getCodecStrategy ?? (() => "svc"),
@@ -58,8 +63,7 @@ describe("getVideoEncodingDecision", () => {
 	it("falls back to svc when sfuClient has no getCodecStrategy", () => {
 		const manager = createManager();
 		manager.sfuClient = mockSfuClient() as never;
-		(manager.sfuClient as unknown as Record<string, unknown>).getCodecStrategy =
-			undefined;
+		Reflect.set(manager.sfuClient, "getCodecStrategy", undefined);
 		manager.device = { rtpCapabilities: { codecs: [] } } as never;
 		manager.routerRtpCapabilities = { codecs: [] };
 
@@ -97,8 +101,9 @@ describe("getVideoEncodingConfig", () => {
 		expect(config.decision.scalabilityMode).toBe("L3T1");
 		expect(config.encodings).toHaveLength(1);
 		expect(
-			(config.encodings[0] as unknown as { scalabilityMode: string })
-				.scalabilityMode,
+			config.encodings[0] && "scalabilityMode" in config.encodings[0]
+				? config.encodings[0].scalabilityMode
+				: undefined,
 		).toBe("L3T1");
 	});
 
@@ -200,24 +205,6 @@ describe("E2EE transport options", () => {
 				onRtpSender: expect.any(Function),
 			}),
 		);
-	});
-});
-
-describe("extractRouterRtpCapabilities", () => {
-	it("extracts rtpCapabilities key from response", () => {
-		const manager = createManager();
-		const result = (manager as unknown as Record<string, unknown>)
-			.extractRouterRtpCapabilities as (resp: unknown) => unknown;
-		const response = { rtpCapabilities: { codecs: [] } };
-		expect(result(response)).toEqual({ codecs: [] });
-	});
-
-	it("returns response as-is when no rtpCapabilities key", () => {
-		const manager = createManager();
-		const result = (manager as unknown as Record<string, unknown>)
-			.extractRouterRtpCapabilities as (resp: unknown) => unknown;
-		const response = { codecs: [] };
-		expect(result(response)).toEqual(response);
 	});
 });
 
@@ -341,10 +328,7 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockResolvedValue({ iceParams: true });
+		mockedIceRestart(manager).mockResolvedValue({ iceParams: true } as never);
 		const result = await manager.restartAllTransportIce();
 		expect(result).toEqual({ send: "restarted", recv: "not-needed" });
 	});
@@ -359,10 +343,7 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockRejectedValue(new Error("fail"));
+		mockedIceRestart(manager).mockRejectedValue(new Error("fail"));
 		const result = await manager.restartAllTransportIce();
 		expect(result).toEqual({ send: "failed", recv: "not-needed" });
 	});
@@ -384,12 +365,9 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockImplementation((transportId: string) => {
+		mockedIceRestart(manager).mockImplementation((transportId: string) => {
 			return transportId === "send-tp"
-				? Promise.resolve({ iceParams: true })
+				? Promise.resolve({ usernameFragment: "u", password: "p" })
 				: Promise.reject(new Error("recv failed"));
 		});
 
@@ -416,10 +394,7 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockResolvedValue({ iceParams: true });
+		mockedIceRestart(manager).mockResolvedValue({ iceParams: true } as never);
 
 		await expect(manager.restartAllTransportIce()).resolves.toEqual({
 			send: "restarted",
@@ -444,13 +419,10 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockImplementation((transportId: string) => {
+		mockedIceRestart(manager).mockImplementation((transportId: string) => {
 			return transportId === "send-tp"
 				? Promise.reject(new Error("send failed"))
-				: Promise.resolve({ iceParams: true });
+				: Promise.resolve({ usernameFragment: "u", password: "p" });
 		});
 
 		await expect(manager.restartAllTransportIce()).resolves.toEqual({
@@ -476,10 +448,7 @@ describe("restartAllTransportIce", () => {
 			close: vi.fn(),
 			getStats: vi.fn(),
 		} as never;
-		vi.mocked(
-			(manager.sfuClient as unknown as Record<string, unknown>)
-				.restartWebRtcTransportIce as ReturnType<typeof vi.fn>,
-		).mockRejectedValue(new Error("restart failed"));
+		mockedIceRestart(manager).mockRejectedValue(new Error("restart failed"));
 
 		await expect(manager.restartAllTransportIce()).resolves.toEqual({
 			send: "failed",

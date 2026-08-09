@@ -8,6 +8,65 @@ import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import AvatarGroup from '@/apps/meet/components/AvatarGroup.vue'
 
+interface CalendarEventParticipant {
+	email: string
+	_name?: string | null
+	user_image?: string | null
+}
+
+interface CalendarEventLink {
+	href?: string | null
+}
+
+interface CalendarEvent {
+	id: string
+	title?: string
+	start: string
+	duration?: string
+	show_without_time?: boolean | 0 | 1
+	participants?: CalendarEventParticipant[]
+	links?: CalendarEventLink[]
+	description?: string | null
+}
+
+const isOptionalString = (value: unknown) =>
+	value === undefined || value === null || typeof value === 'string'
+
+const isCalendarEventParticipant = (value: unknown): value is CalendarEventParticipant =>
+	typeof value === 'object' &&
+	value !== null &&
+	'email' in value &&
+	typeof value.email === 'string' &&
+	(!('_name' in value) || isOptionalString(value._name)) &&
+	(!('user_image' in value) || isOptionalString(value.user_image))
+
+const isCalendarEventLink = (value: unknown): value is CalendarEventLink =>
+	typeof value === 'object' &&
+	value !== null &&
+	(!('href' in value) || isOptionalString(value.href))
+
+const isCalendarEvent = (value: unknown): value is CalendarEvent =>
+	typeof value === 'object' &&
+	value !== null &&
+	'id' in value &&
+	typeof value.id === 'string' &&
+	'start' in value &&
+	typeof value.start === 'string' &&
+	(!('title' in value) || isOptionalString(value.title)) &&
+	(!('duration' in value) || isOptionalString(value.duration)) &&
+	(!('show_without_time' in value) ||
+		value.show_without_time === undefined ||
+		typeof value.show_without_time === 'boolean' ||
+		value.show_without_time === 0 ||
+		value.show_without_time === 1) &&
+	(!('description' in value) || isOptionalString(value.description)) &&
+	(!('participants' in value) ||
+		value.participants === undefined ||
+		(Array.isArray(value.participants) && value.participants.every(isCalendarEventParticipant))) &&
+	(!('links' in value) ||
+		value.links === undefined ||
+		(Array.isArray(value.links) && value.links.every(isCalendarEventLink)))
+
 const router = useRouter()
 const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
@@ -27,20 +86,22 @@ const upcomingEvents = createResource({
 
 const meetings = computed(() => {
 	const currentTime = dayjs(now.value)
-	return [...(upcomingEvents.data || [])]
-		.filter((event: any) => {
+	const data: unknown = upcomingEvents.data
+	const events = Array.isArray(data) ? data.filter(isCalendarEvent) : []
+	return events
+		.filter((event) => {
 			const start = dayjs(event.start)
 			const end = start.add(dayjs.duration(event.duration || 'PT0S'))
 			return getMeetingUrl(event) && start.isSame(currentTime, 'day') && end.isAfter(currentTime)
 		})
-		.sort((left: any, right: any) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
+		.sort((left, right) => dayjs(left.start).valueOf() - dayjs(right.start).valueOf())
 		.slice(0, 4)
 })
 
-const formatMeetingMonth = (event: any) => dayjs(event.start).format('MMM')
-const formatMeetingDay = (event: any) => dayjs(event.start).format('D')
+const formatMeetingMonth = (event: CalendarEvent) => dayjs(event.start).format('MMM')
+const formatMeetingDay = (event: CalendarEvent) => dayjs(event.start).format('D')
 
-const isAllDayEvent = (event: any) => {
+const isAllDayEvent = (event: CalendarEvent) => {
 	const start = dayjs(event.start)
 	const duration = dayjs.duration(event.duration || 'PT0S')
 	return (
@@ -53,7 +114,7 @@ const isAllDayEvent = (event: any) => {
 	)
 }
 
-const formatMeetingTime = (event: any) => {
+const formatMeetingTime = (event: CalendarEvent) => {
 	if (isAllDayEvent(event)) return 'All day'
 
 	const start = dayjs(event.start)
@@ -61,7 +122,7 @@ const formatMeetingTime = (event: any) => {
 	return `${start.format('h:mma')} - ${end.format('h:mma')}`
 }
 
-const eventParticipants = (event: any) => {
+const eventParticipants = (event: CalendarEvent) => {
 	const participantsByEmail = new Map<string, { user_id: string; full_name: string; avatar_url?: string }>()
 	for (const participant of event.participants || []) {
 		if (!participant.email || participantsByEmail.has(participant.email)) continue
@@ -74,14 +135,14 @@ const eventParticipants = (event: any) => {
 	return [...participantsByEmail.values()]
 }
 
-const getMeetingUrl = (event: any) => {
-	const link = event.links?.find((item: any) => getTrustedMeetUrl(item?.href))
+const getMeetingUrl = (event: CalendarEvent) => {
+	const link = event.links?.find((item) => getTrustedMeetUrl(item.href))
 	if (link?.href) return getTrustedMeetUrl(link.href)
 	const match = event.description?.match(/https?:\/\/\S+\/meet\/[a-zA-Z0-9-]+|\/meet\/[a-zA-Z0-9-]+/)
 	return getTrustedMeetUrl(match?.[0])
 }
 
-const getTrustedMeetUrl = (url?: string) => {
+const getTrustedMeetUrl = (url?: string | null) => {
 	if (!url) return ''
 	const value = url.replace(/\W+$/, '')
 
@@ -96,10 +157,10 @@ const getTrustedMeetUrl = (url?: string) => {
 	return ''
 }
 
-const getMeetingId = (event: any) =>
+const getMeetingId = (event: CalendarEvent) =>
 	getMeetingUrl(event).split('/meet/').pop()?.replace(/\W+$/, '') || ''
 
-const joinMeeting = (event: any) => {
+const joinMeeting = (event: CalendarEvent) => {
 	const meetingId = getMeetingId(event)
 	if (!meetingId) return
 	router.push({ name: 'meet-meeting', params: { meetingId } })
@@ -110,9 +171,14 @@ const reload = () => {
 }
 
 onMounted(() => {
-	calendarStore.userResource.promise
+	const userPromise = calendarStore.userResource.promise
+	if (!userPromise) {
+		reload()
+		return
+	}
+	userPromise
 		.then(reload)
-		.catch((error: any) => console.warn('Could not load upcoming calendar meetings:', error))
+		.catch((error: unknown) => console.warn('Could not load upcoming calendar meetings:', error))
 })
 
 defineExpose({ reload })

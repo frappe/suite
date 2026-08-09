@@ -1,6 +1,7 @@
 import type { SFUClient } from "../utils/SFUClient";
 import type { CurrentUser } from "./useCurrentUser";
 import type { ReactionStore } from "./useReactionStore";
+import { isUnknownRecord } from "../types";
 
 interface ReactionsAPI {
 	setupReactionEvents: () => void;
@@ -20,10 +21,19 @@ export function useReactions(deps: {
 	const { reactionStore, currentUser, sfuClient } = deps;
 
 	const setupReactionEvents = () => {
-		sfuClient.on("reaction:message", (data: Record<string, unknown>) => {
-			const userId = data.fromUser as string;
-			const emoji = (data.message || data.reaction) as string;
-			const duration = (data.duration || 5000) as number;
+		sfuClient.on("reaction:message", (value: unknown) => {
+			if (!isUnknownRecord(value) || typeof value.fromUser !== "string") return;
+			const userId = value.fromUser;
+			const emoji =
+				typeof value.message === "string"
+					? value.message
+					: typeof value.reaction === "string"
+						? value.reaction
+						: "";
+			const duration =
+				typeof value.duration === "number" && value.duration > 0
+					? value.duration
+					: 5000;
 
 			if (userId && emoji) {
 				reactionStore.showReactionForUser(userId, emoji, duration);

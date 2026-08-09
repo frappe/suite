@@ -1,5 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ConsumerManager } from "../ConsumerManager";
+import {
+	type ConsumerEntry,
+	ConsumerManager,
+} from "../ConsumerManager";
+
+interface MockConsumerOverrides {
+	id?: string;
+	producerId?: string;
+	kind?: "audio" | "video";
+	track?: MediaStreamTrack;
+	appData?: { userId: string; type?: string };
+	close?: ReturnType<typeof vi.fn>;
+	pause?: ReturnType<typeof vi.fn>;
+	resume?: ReturnType<typeof vi.fn>;
+	once?: ReturnType<typeof vi.fn>;
+}
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -9,7 +24,7 @@ function createManager() {
 	return new ConsumerManager();
 }
 
-function mockConsumer(overrides: Record<string, unknown> = {}) {
+function mockConsumer(overrides: MockConsumerOverrides = {}) {
 	const consumer = {
 		id: "c1",
 		producerId: "producer-1",
@@ -27,7 +42,7 @@ function mockConsumer(overrides: Record<string, unknown> = {}) {
 
 function assertEntry(
 	entry: ReturnType<ConsumerManager["addConsumer"]>,
-): asserts entry is NonNullable<ReturnType<ConsumerManager["addConsumer"]>> {
+): asserts entry is ConsumerEntry {
 	expect(entry).not.toBe(false);
 }
 
@@ -36,11 +51,9 @@ describe("addConsumer", () => {
 		const cm = createManager();
 		const entry = cm.addConsumer(mockConsumer());
 		assertEntry(entry);
-		expect((entry as unknown as { id: string }).id).toBe("c1");
-		expect((entry as unknown as { participantId: string }).participantId).toBe(
-			"p1",
-		);
-		expect((entry as unknown as { kind: string }).kind).toBe("video");
+		expect(entry.id).toBe("c1");
+		expect(entry.participantId).toBe("p1");
+		expect(entry.kind).toBe("video");
 	});
 
 	it("returns false for invalid consumer", () => {
@@ -52,9 +65,7 @@ describe("addConsumer", () => {
 		const cm = createManager();
 		const entry = cm.addConsumer(mockConsumer(), "override-id");
 		assertEntry(entry);
-		expect((entry as unknown as { participantId: string }).participantId).toBe(
-			"override-id",
-		);
+		expect(entry.participantId).toBe("override-id");
 	});
 
 	it("fires onConsumerAdded event", () => {
@@ -296,7 +307,7 @@ describe("clear", () => {
 
 describe("consumer @close handling", () => {
 	function setupMockConsumerWithClose(
-		overrides: Record<string, unknown> = {},
+		overrides: MockConsumerOverrides = {},
 	): {
 		consumer: ReturnType<typeof mockConsumer> & {
 			once: ReturnType<typeof vi.fn>;
@@ -379,8 +390,6 @@ describe("consumer @close handling", () => {
 			mockConsumer({ id: "c2", producerId: "producer-2" }),
 		);
 		assertEntry(entry);
-		expect((entry as unknown as { producerId: string }).producerId).toBe(
-			"producer-2",
-		);
+		expect(entry.producerId).toBe("producer-2");
 	});
 });

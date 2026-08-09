@@ -2,6 +2,7 @@ import audioNotificationManager from "../utils/audioNotifications";
 import type { SFUClient } from "../utils/SFUClient";
 import type { CurrentUser } from "./useCurrentUser";
 import type { RaiseHandStore } from "./useRaiseHandStore";
+import { isUnknownRecord } from "../types";
 
 interface RaiseHandAPI {
 	setupRaiseHandEvents: () => void;
@@ -16,14 +17,21 @@ export function useRaiseHand(deps: {
 	const { raiseHandStore, currentUser, sfuClient } = deps;
 
 	const setupRaiseHandEvents = () => {
-		sfuClient.on("hand_raised", (data: Record<string, unknown>) => {
-			const participantId = data.participantId as string;
-			const raised = data.raised as boolean;
+		sfuClient.on("hand_raised", (value: unknown) => {
+			if (
+				!isUnknownRecord(value) ||
+				typeof value.participantId !== "string" ||
+				typeof value.raised !== "boolean"
+			) return;
+			const participantId = value.participantId;
+			const raised = value.raised;
 
 			if (raised) {
 				raiseHandStore.raiseHand(
 					participantId,
-					(data.timestamp as string) || new Date().toISOString(),
+					typeof value.timestamp === "string"
+						? value.timestamp
+						: new Date().toISOString(),
 				);
 				audioNotificationManager.playRaiseHandNotification();
 			} else {
@@ -31,8 +39,13 @@ export function useRaiseHand(deps: {
 			}
 		});
 
-		sfuClient.on("existing_raised_hands", (data: Record<string, unknown>) => {
-			raiseHandStore.setHands((data.hands as Record<string, string>) || {});
+		sfuClient.on("existing_raised_hands", (value: unknown) => {
+			if (!isUnknownRecord(value) || !isUnknownRecord(value.hands)) return;
+			const hands: Record<string, string> = {};
+			for (const [participantId, timestamp] of Object.entries(value.hands)) {
+				if (typeof timestamp === "string") hands[participantId] = timestamp;
+			}
+			raiseHandStore.setHands(hands);
 		});
 	};
 

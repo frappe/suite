@@ -31,6 +31,16 @@ import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
 import type { ParticipantStore } from "./useParticipantStore";
 import type { RecordingState } from "./useRecording";
+import {
+	isUnknownRecord,
+	type JoinPayload,
+	type JoinUserData,
+	normalizeJoinPayload,
+} from "../types";
+import type {
+	Participant,
+	ParticipantUpdate,
+} from "../utils/media/ParticipantManager";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -41,6 +51,58 @@ interface WaitingRoomResponse {
 		user_image?: string;
 		is_guest?: boolean;
 	}>;
+}
+
+interface MeetingRealtimeEvent {
+	meeting: string;
+	user: string;
+	userName?: string;
+	userImage?: string;
+}
+
+function normalizeMeetingRealtimeEvent(value: unknown): MeetingRealtimeEvent | null {
+	if (
+		!isUnknownRecord(value) ||
+		typeof value.meeting !== "string" ||
+		typeof value.user !== "string"
+	) return null;
+	return {
+		meeting: value.meeting,
+		user: value.user,
+		userName: typeof value.user_name === "string" ? value.user_name : undefined,
+		userImage: typeof value.user_image === "string" ? value.user_image : undefined,
+	};
+}
+
+function normalizeGuestRealtimeEvent(
+	value: unknown,
+): { guestId: string; meetingId: string } | null {
+	if (
+		!isUnknownRecord(value) ||
+		typeof value.guest_id !== "string" ||
+		typeof value.meeting_id !== "string"
+	) return null;
+	return { guestId: value.guest_id, meetingId: value.meeting_id };
+}
+
+function normalizeWaitingRoomResponse(value: unknown): WaitingRoomResponse | null {
+	if (!isUnknownRecord(value) || !Array.isArray(value.waiting_users)) return null;
+	const waitingUsers: WaitingRoomResponse["waiting_users"] = [];
+	for (const candidate of value.waiting_users) {
+		if (!isUnknownRecord(candidate) || typeof candidate.user_id !== "string") {
+			continue;
+		}
+		waitingUsers.push({
+			user_id: candidate.user_id,
+			full_name:
+				typeof candidate.full_name === "string" ? candidate.full_name : undefined,
+			user_image:
+				typeof candidate.user_image === "string" ? candidate.user_image : undefined,
+			is_guest:
+				typeof candidate.is_guest === "boolean" ? candidate.is_guest : undefined,
+		});
+	}
+	return { waiting_users: waitingUsers };
 }
 
 export interface SFUScreenShareData {
@@ -55,12 +117,13 @@ interface SFUConnectionAPI {
 	sfuManager: Ref<SFUMeetingManager | null>;
 	joinMeetingRoom: () => Promise<void>;
 	handleGuestJoinResult: (
-		joinResult: Record<string, unknown>,
+		joinResult: JoinPayload,
 		guestName: string,
 	) => Promise<void>;
 	setupFrappeRealtimeEventListeners: () => void;
 	endCall: () => Promise<void>;
 	fetchExistingWaitingRoomUsers: () => Promise<void>;
+	localNetworkQuality: Ref<string>;
 }
 
 export function useSFUConnection(deps: {
@@ -134,7 +197,7 @@ export function useSFUConnection(deps: {
 	const localNetworkQuality = shallowRef("good");
 	let stabilityCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 
-	const handleParticipantJoined = (participant: Record<string, unknown>) => {
+	const handleParticipantJoined = (participant: Participant) => {
 		const participantName = participant?.user_name || participant?.user_id;
 		const participantId = participant.participantId || participant?.user_id;
 		const currentUserId = currentUser.currentUser.value?.user_id;
@@ -156,7 +219,7 @@ export function useSFUConnection(deps: {
 		}
 
 		audioNotificationManager.playJoinNotification(
-			participant.participantId as string,
+			participant.user_id,
 		);
 
 		const LucideUserIcon = defineAsyncComponent(
@@ -179,9 +242,7 @@ export function useSFUConnection(deps: {
 	}: {
 		participantId: string;
 	}) => {
-		const participant = participantStore.participants[participantId] as
-			| Record<string, unknown>
-			| undefined;
+		const participant = participantStore.participants[participantId];
 		const participantName = participant?.user_name || participantId;
 
 		participantStore.removeParticipant(participantId);
@@ -207,8 +268,8 @@ export function useSFUConnection(deps: {
 
 	const handleParticipantUpdated = (
 		participantId: string,
-		_participant: Record<string, unknown>,
-		updates: Record<string, unknown>,
+		_participant: Participant,
+		updates: ParticipantUpdate,
 	) => {
 		if (participantId) {
 			participantStore.updateParticipant(participantId, updates || {});
@@ -355,7 +416,7 @@ export function useSFUConnection(deps: {
 			sfuManager.value = manager;
 			const stopIfCancelled = async () => {
 				if (!setupCancelled) return false;
-				await manager.cleanup();
+					await manager!.cleanup();
 				if (sfuManager.value === manager) {
 					sfuManager.value = null;
 				}
@@ -389,7 +450,7 @@ export function useSFUConnection(deps: {
 				}
 			}
 
-			let userData: Record<string, unknown>;
+			let userData: JoinUserData;
 			if (guestName) {
 				userData = {
 					name: guestName,
@@ -469,7 +530,7 @@ export function useSFUConnection(deps: {
 						...audioTracks,
 					]);
 
-					await manager.publishMedia(streamToPublish, {
+					await manager!.publishMedia(streamToPublish, {
 						publishVideo: mediaState.isCameraOn,
 						publishAudio: mediaState.isMicOn,
 					});
@@ -483,7 +544,7 @@ export function useSFUConnection(deps: {
 
 			await Promise.all([
 				publishLocal(),
-				manager.setupExistingParticipants(),
+				manager!.setupExistingParticipants(),
 			]);
 			if (await stopIfCancelled()) return;
 
@@ -513,10 +574,10 @@ export function useSFUConnection(deps: {
 
 	const fetchExistingWaitingRoomUsers = async () => {
 		try {
-			const result = (await frappeRequest({
+			const result = normalizeWaitingRoomResponse(await frappeRequest({
 				url: "suite.meet.api.meeting.get_waiting_room",
 				params: { meeting_id: meetingId },
-			})) as WaitingRoomResponse;
+			}));
 
 			if (result?.waiting_users) {
 				const transformedUsers = result.waiting_users.map((user) => ({
@@ -552,17 +613,16 @@ export function useSFUConnection(deps: {
 			return;
 		}
 
-		socket.emit("guest_subscribe", guestId);
-
 		socket.on("meet:guest_join_approved", handleGuestApproved);
 		socket.on("meet:guest_join_rejected", handleGuestRejected);
 
-		async function handleGuestApproved(data: Record<string, unknown>) {
-			if (data.guest_id !== guestId || data.meeting_id !== meetingId) {
+		async function handleGuestApproved(value: unknown) {
+			const event = normalizeGuestRealtimeEvent(value);
+			if (event?.guestId !== guestId || event.meetingId !== meetingId) {
 				return;
 			}
 
-			stopGuestApprovalListener();
+			removeGuestApprovalListeners();
 
 			lobbyStore.isWaitingForApproval = false;
 			connectionState.isConnecting = true;
@@ -570,34 +630,30 @@ export function useSFUConnection(deps: {
 			try {
 				const resolvedGuestName =
 					guestName || sessionStorage.getItem("guest_name") || "Guest";
-				const response = await frappeRequest({
+				const response = normalizeJoinPayload(await frappeRequest({
 					url: "suite.meet.api.meeting.get_approved_guest_connection_details",
 					params: {
 						meeting_id: meetingId,
 						guest_id: guestId,
 					},
-				});
+				}));
 				if (
-					(response as Record<string, unknown>)?.status === "joined" &&
-					(response as Record<string, unknown>).auth_token
+					response?.status === "joined" &&
+					response.auth_token
 				) {
-					if (
-						(response as Record<string, unknown>).host_only_chat !== undefined
-					) {
-						chatStore.hostOnlyChat = !!(response as Record<string, unknown>)
-							.host_only_chat;
+					if (response.host_only_chat !== undefined) {
+						chatStore.hostOnlyChat = response.host_only_chat;
 					}
 
-					const approved = response as Record<string, unknown>;
-					if ("recording" in approved)
-						onRecordingState?.(approved.recording as RecordingState | null);
-					connectionState.guestAuthToken = approved.auth_token as string;
-					connectionState.guestSfuUrl = (approved.sfu_url as string) || null;
+					if (response.recording !== undefined)
+						onRecordingState?.(response.recording);
+					connectionState.guestAuthToken = response.auth_token;
+					connectionState.guestSfuUrl = response.sfu_url || null;
 					connectionState.guestSfuPort =
-						(approved.sfu_port as string) || null;
+						response.sfu_port == null ? null : String(response.sfu_port);
 
-					const prefetched = connectionDetailsFromJoinPayload(approved, {
-						guestAuthToken: approved.auth_token as string,
+					const prefetched = connectionDetailsFromJoinPayload(response, {
+						guestAuthToken: response.auth_token,
 						guestId,
 						guestName: resolvedGuestName,
 						expectedMeetingId: meetingId,
@@ -629,15 +685,14 @@ export function useSFUConnection(deps: {
 			}
 		}
 
-		function handleGuestRejected(data: Record<string, unknown>) {
-			if (
-				(data as Record<string, unknown>).guest_id !== guestId ||
-				(data as Record<string, unknown>).meeting_id !== meetingId
-			) {
+		function handleGuestRejected(value: unknown) {
+			const event = normalizeGuestRealtimeEvent(value);
+			if (event?.guestId !== guestId || event.meetingId !== meetingId) {
 				return;
 			}
 
-			stopGuestApprovalListener();
+			removeGuestApprovalListeners();
+			unsubscribeGuestRealtime();
 
 			lobbyStore.isJoinRequestRejected = true;
 			lobbyStore.isWaitingForApproval = false;
@@ -646,29 +701,26 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const stopGuestApprovalListener = () => {
+	const removeGuestApprovalListeners = () => {
 		if (!socket) return;
-
-		const guestId = sessionStorage.getItem("guest_id");
-
-		if (guestId) {
-			socket.emit("guest_unsubscribe", guestId);
-		}
 
 		socket.off("meet:guest_join_approved");
 		socket.off("meet:guest_join_rejected");
 	};
 
-	const handleMeetingJoinRequest = (data: Record<string, unknown>) => {
-		if (data.meeting === meetingId) {
-			if (!data.user) {
-				return;
-			}
+	const unsubscribeGuestRealtime = () => {
+		const guestId = sessionStorage.getItem("guest_id");
+		if (socket && guestId) socket.emit("guest_unsubscribe", guestId);
+	};
+
+	const handleMeetingJoinRequest = (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
+		if (data?.meeting === meetingId) {
 
 			const userData = {
-				userId: data.user as string,
-				name: (data.user_name || data.user) as string,
-				avatar: data.user_image as string,
+				userId: data.user,
+				name: data.userName || data.user,
+				avatar: data.userImage,
 				requested_at: new Date().toISOString(),
 			};
 
@@ -678,30 +730,30 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const handleMeetingJoinApproved = async (data: Record<string, unknown>) => {
+	const handleMeetingJoinApproved = async (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
 		const currentUserId = currentUser.currentUser.value?.user_id;
 
-		if (data.meeting === meetingId && data.user === currentUserId) {
+		if (data?.meeting === meetingId && data.user === currentUserId) {
 			lobbyStore.isWaitingForApproval = false;
 
 			try {
-				const sfuResult = await frappeRequest({
+				const sfuResult = normalizeJoinPayload(await frappeRequest({
 					url: "suite.meet.api.meeting.get_sfu_connection_details",
 					params: {
 						meeting_id: meetingId,
 					},
-				});
+				}));
 
 				if (sfuResult) {
-					const details = sfuResult as Record<string, unknown>;
-					onRecordingEnabled?.(!!details.recording_enabled);
-					const prefetched = connectionDetailsFromJoinPayload(details, {
+					onRecordingEnabled?.(!!sfuResult.recording_enabled);
+					const prefetched = connectionDetailsFromJoinPayload(sfuResult, {
 						expectedMeetingId: meetingId,
 					});
 					await setupSFUConnection(
 						null,
-						details.is_host as boolean,
-						details.is_cohost as boolean,
+						!!sfuResult.is_host,
+						!!sfuResult.is_cohost,
 						prefetched,
 					);
 					connectionState.isInPreview = false;
@@ -718,10 +770,11 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const handleMeetingJoinRejected = (data: Record<string, unknown>) => {
+	const handleMeetingJoinRejected = (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
 		const currentUserId = currentUser.currentUser.value?.user_id;
 
-		if (data.meeting === meetingId && data.user === currentUserId) {
+		if (data?.meeting === meetingId && data.user === currentUserId) {
 			lobbyStore.isJoinRequestRejected = true;
 			lobbyStore.isWaitingForApproval = false;
 
@@ -729,15 +782,17 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const handleMeetingUserApproved = (data: Record<string, unknown>) => {
-		if (data.meeting === meetingId) {
-			lobbyStore.removeLobbyUser(data.user as string);
+	const handleMeetingUserApproved = (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
+		if (data?.meeting === meetingId) {
+			lobbyStore.removeLobbyUser(data.user);
 		}
 	};
 
-	const handleMeetingUserRejected = (data: Record<string, unknown>) => {
-		if (data.meeting === meetingId) {
-			lobbyStore.removeLobbyUser(data.user as string);
+	const handleMeetingUserRejected = (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
+		if (data?.meeting === meetingId) {
+			lobbyStore.removeLobbyUser(data.user);
 		}
 	};
 
@@ -780,7 +835,7 @@ export function useSFUConnection(deps: {
 	};
 
 	const handleGuestJoinResult = async (
-		joinResult: Record<string, unknown>,
+		joinResult: JoinPayload,
 		guestName: string,
 	) => {
 		if (!guestName || !joinResult?.guest_id) {
@@ -792,16 +847,18 @@ export function useSFUConnection(deps: {
 		try {
 			connectionState.connectionError = null;
 
-			sessionStorage.setItem("guest_id", joinResult.guest_id as string);
+			sessionStorage.setItem("guest_id", joinResult.guest_id);
 			sessionStorage.setItem("guest_name", guestName);
 			sessionStorage.setItem("guest_meeting_id", meetingId);
-			sessionStorage.setItem("guest_status", joinResult.status as string);
+			sessionStorage.setItem("guest_status", joinResult.status || "joined");
+			socket?.emit("guest_subscribe", joinResult.guest_id);
 
-			connectionState.guestId = joinResult.guest_id as string;
+			connectionState.guestId = joinResult.guest_id;
 			connectionState.guestAuthToken =
-				(joinResult.auth_token as string) || null;
-			connectionState.guestSfuUrl = (joinResult.sfu_url as string) || null;
-			connectionState.guestSfuPort = (joinResult.sfu_port as string) || null;
+				joinResult.auth_token || null;
+			connectionState.guestSfuUrl = joinResult.sfu_url || null;
+			connectionState.guestSfuPort =
+				joinResult.sfu_port == null ? null : String(joinResult.sfu_port);
 
 			if (joinResult.host_only_chat !== undefined) {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
@@ -815,8 +872,8 @@ export function useSFUConnection(deps: {
 				setupGuestApprovalListener(guestName);
 				return;
 			}
-			if ("recording" in joinResult)
-				onRecordingState?.(joinResult.recording as RecordingState | null);
+			if (joinResult.recording !== undefined)
+				onRecordingState?.(joinResult.recording);
 
 			// Show meeting shell immediately; SFU setup continues in the background.
 			connectionState.isInPreview = false;
@@ -853,7 +910,8 @@ export function useSFUConnection(deps: {
 			connectionState.guestSfuUrl = null;
 			connectionState.guestSfuPort = null;
 
-			const joinResult = await joinMeetingAPI.fetch();
+			const joinResult = normalizeJoinPayload(await joinMeetingAPI.fetch());
+			if (!joinResult) throw new Error("Invalid meeting join response");
 
 			if (joinResult.status === "waiting_for_approval") {
 				lobbyStore.isWaitingForApproval = true;
@@ -872,8 +930,8 @@ export function useSFUConnection(deps: {
 			});
 			await setupSFUConnection(
 				null,
-				(joinResult?.is_host || false) as boolean,
-				(joinResult?.is_cohost || false) as boolean,
+				!!joinResult.is_host,
+				!!joinResult.is_cohost,
 				prefetched,
 			);
 
@@ -891,7 +949,8 @@ export function useSFUConnection(deps: {
 	const endCall = async () => {
 		try {
 			setupCancelled = true;
-			stopGuestApprovalListener();
+			removeGuestApprovalListeners();
+			unsubscribeGuestRealtime();
 
 			if (activeSpeakerTimeout.value) {
 				clearTimeout(activeSpeakerTimeout.value);
@@ -926,7 +985,8 @@ export function useSFUConnection(deps: {
 			stabilityCheckTimeout = null;
 		}
 
-		stopGuestApprovalListener();
+		removeGuestApprovalListeners();
+		unsubscribeGuestRealtime();
 		removeFrappeRealtimeEventListeners();
 
 		if (sfuManager.value) {

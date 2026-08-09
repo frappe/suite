@@ -301,9 +301,7 @@ describe("sendChatMessage", () => {
 			success: true,
 			timestamp: "2026-07-28T12:00:00.000Z",
 		});
-		await client.sendChatMessage(42 as unknown as string, {
-			clientId: 99 as unknown as string,
-		});
+		await Reflect.apply(client.sendChatMessage, client, [42, { clientId: 99 }]);
 		expect(sendRequest).toHaveBeenCalledWith("chat:send", {
 			message: "42",
 			clientId: "99",
@@ -689,28 +687,16 @@ describe("E2EE signaling payloads", () => {
 		).RTCRtpReceiver;
 
 		try {
-			(
-				globalThis as typeof globalThis & {
-					RTCRtpSender?: {
-						prototype?: { createEncodedStreams?: () => void };
-					};
-				}
-			).RTCRtpSender = {
+			Reflect.set(globalThis, "RTCRtpSender", {
 				prototype: {
 					createEncodedStreams: () => {},
 				},
-			} as unknown as typeof globalThis.RTCRtpSender;
-			(
-				globalThis as typeof globalThis & {
-					RTCRtpReceiver?: {
-						prototype?: { createEncodedStreams?: () => void };
-					};
-				}
-			).RTCRtpReceiver = {
+			});
+			Reflect.set(globalThis, "RTCRtpReceiver", {
 				prototype: {
 					createEncodedStreams: () => {},
 				},
-			} as unknown as typeof globalThis.RTCRtpReceiver;
+			});
 
 			const sendRequestSpy = vi
 				.spyOn(client, "sendRequest")

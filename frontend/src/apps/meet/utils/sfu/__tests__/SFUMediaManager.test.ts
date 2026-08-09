@@ -95,7 +95,12 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 
 	it("discards a subscription that finishes after receive teardown", async () => {
 		const { mediaManager, transportManager, consumerManager } = createManager();
-		let resolveConsumer: (consumer: Record<string, unknown>) => void = () => {};
+		let resolveConsumer: (consumer: {
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}) => void = () => {};
 		transportManager.createConsumer.mockReturnValue(
 			new Promise((resolve) => {
 				resolveConsumer = resolve;

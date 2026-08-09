@@ -108,7 +108,10 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import { toast } from 'frappe-ui';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useBackgroundEffects } from "../../composables/useBackgroundEffects";
+import {
+	type BackgroundEffectOptions,
+	useBackgroundEffects,
+} from "../../composables/useBackgroundEffects";
 import { useMeetingContext } from "../../composables/useMeetingContext";
 import {
 	addCustomBackgroundImage,
@@ -163,8 +166,8 @@ const pendingPreviewRefresh = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 let previewSession: {
 	cleanup: () => void;
-	updateOptions?: (opts: unknown) => Promise<void>;
-	stream?: MediaStream;
+	updateOptions: (opts: BackgroundEffectOptions) => Promise<void>;
+	stream: MediaStream;
 } | null = null;
 let previewInputStream: MediaStream | null = null; // Raw stream feeding the preview pipeline
 let isPreviewStreamDedicated = false; // Track if preview stream is dedicated (not meeting's processed stream; needed when cam is off in meeting)
@@ -177,8 +180,15 @@ const selectedBackgroundImageLocal = ref<BackgroundImageOption | string | null>(
 );
 const blurIntensityLocal = ref(blurIntensity.value);
 
-const allBackgroundOptionsTyped = computed(
-	() => allBackgroundOptions.value as unknown as BackgroundOption[],
+const allBackgroundOptionsTyped = computed<BackgroundOption[]>(() =>
+	allBackgroundOptions.value.map((option) => ({
+		name: option.name,
+		label: option.label,
+		type: "type" in option ? option.type : undefined,
+		url: option.url,
+		isAddButton: "isAddButton" in option ? option.isAddButton : undefined,
+		isCustom: "isCustom" in option ? option.isCustom : undefined,
+	})),
 );
 
 // Background effects composable
@@ -272,7 +282,11 @@ async function handleFileSelect(event: Event) {
 		toast.success(`Added custom background: ${file.name}`);
 	} catch (error) {
 		console.error("Failed to add custom image:", error);
-		toast.error(error.message || "Failed to add custom background image");
+		toast.error(
+			error instanceof Error
+				? error.message
+				: "Failed to add custom background image",
+		);
 	}
 
 	target.value = "";

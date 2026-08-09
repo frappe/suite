@@ -8,26 +8,42 @@ export interface Participant {
 	user_name: string;
 	avatar: string | null;
 	initials: string;
+	participantId?: string;
 	audio_enabled?: boolean;
 	video_enabled?: boolean;
 	is_guest?: boolean;
-	[key: string]: unknown;
+	isHost?: boolean;
+	networkQuality?: string;
+	userData?: ParticipantUserData;
+	isLocalScreenShare?: boolean;
+}
+
+export interface ParticipantUserData {
+	name?: string;
+	avatar?: string | null;
+	audio_enabled?: boolean;
+	video_enabled?: boolean;
+	is_guest?: boolean;
+	isHost?: boolean;
 }
 
 export interface ParticipantData {
 	participantId?: string;
 	user_id?: string;
 	user_name?: string;
-	userData?: {
-		name?: string;
-		avatar?: string | null;
-		audio_enabled?: boolean;
-		video_enabled?: boolean;
-		is_guest?: boolean;
-	};
+	userData?: ParticipantUserData;
 	avatar?: string | null;
-	[key: string]: unknown;
+	audio_enabled?: boolean;
+	video_enabled?: boolean;
+	is_guest?: boolean;
+	isHost?: boolean;
+	networkQuality?: string;
+	senderId?: number;
+	sender_id?: number;
+	is_host?: boolean;
 }
+
+export type ParticipantUpdate = Partial<Participant>;
 
 interface MediaStateUpdate {
 	audioEnabled?: boolean;
@@ -43,7 +59,7 @@ interface ParticipantEventHandlers {
 	onParticipantUpdated?: (
 		participantId: string,
 		updatedParticipant: Participant,
-		updates: Record<string, unknown>,
+		updates: ParticipantUpdate,
 	) => void;
 	onAllParticipantsCleared?: (participantIds: string[]) => void;
 }
@@ -76,7 +92,10 @@ export class ParticipantManager {
 			audio_enabled: participantData.userData?.audio_enabled,
 			video_enabled: participantData.userData?.video_enabled,
 			is_guest: participantData.userData?.is_guest,
-			...participantData,
+			isHost: participantData.userData?.isHost ?? participantData.isHost,
+			networkQuality: participantData.networkQuality,
+			participantId: participantData.participantId,
+			userData: participantData.userData,
 		};
 
 		this.participants.set(participant.user_id, participant);
@@ -102,7 +121,7 @@ export class ParticipantManager {
 
 	updateParticipant(
 		participantId: string,
-		updates: Record<string, unknown>,
+		updates: ParticipantUpdate,
 	): Participant | null {
 		const participant = this.participants.get(participantId);
 		if (participant) {
@@ -208,4 +227,72 @@ export class ParticipantManager {
 			}
 		}
 	}
+}
+
+function isObject(value: unknown): value is object {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(value: object, key: string): string | undefined {
+	if (!(key in value)) return undefined;
+	const field = Reflect.get(value, key);
+	return typeof field === "string" ? field : undefined;
+}
+
+function booleanField(value: object, key: string): boolean | undefined {
+	if (!(key in value)) return undefined;
+	const field = Reflect.get(value, key);
+	return typeof field === "boolean" ? field : undefined;
+}
+
+function numberField(value: object, key: string): number | undefined {
+	if (!(key in value)) return undefined;
+	const field = Reflect.get(value, key);
+	return typeof field === "number" && Number.isFinite(field) ? field : undefined;
+}
+
+function normalizeUserData(value: unknown): ParticipantUserData | undefined {
+	if (!isObject(value)) return undefined;
+	const avatar = "avatar" in value && value.avatar === null
+		? null
+		: stringField(value, "avatar");
+	return {
+		name: stringField(value, "name"),
+		avatar,
+		audio_enabled: booleanField(value, "audio_enabled"),
+		video_enabled: booleanField(value, "video_enabled"),
+		is_guest: booleanField(value, "is_guest"),
+		isHost: booleanField(value, "isHost"),
+	};
+}
+
+export function normalizeParticipantData(value: unknown): ParticipantData | null {
+	if (!isObject(value)) return null;
+	const participantId = stringField(value, "participantId");
+	const userId = stringField(value, "user_id") ?? stringField(value, "id");
+	if (!participantId && !userId) return null;
+	const nestedUserData =
+		"userData" in value
+			? normalizeUserData(value.userData)
+			: "info" in value
+				? normalizeUserData(value.info)
+				: undefined;
+	const avatar = "avatar" in value && value.avatar === null
+		? null
+		: stringField(value, "avatar");
+	return {
+		participantId: participantId ?? userId,
+		user_id: userId ?? participantId,
+		user_name: stringField(value, "user_name") ?? nestedUserData?.name,
+		userData: nestedUserData,
+		avatar,
+		audio_enabled: booleanField(value, "audio_enabled"),
+		video_enabled: booleanField(value, "video_enabled"),
+		is_guest: booleanField(value, "is_guest"),
+		isHost: booleanField(value, "isHost"),
+		networkQuality: stringField(value, "networkQuality"),
+		senderId: numberField(value, "senderId"),
+		sender_id: numberField(value, "sender_id"),
+		is_host: booleanField(value, "is_host"),
+	};
 }

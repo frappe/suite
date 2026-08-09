@@ -3,7 +3,7 @@ import { VideoElementManager } from "../VideoElementManager";
 
 type StreamCtor = new (tracks: MediaStreamTrack[]) => MediaStream;
 
-const globalAny = globalThis as unknown as { MediaStream?: StreamCtor };
+const globalAny = globalThis as typeof globalThis & { MediaStream?: StreamCtor };
 
 beforeEach(() => {
 	if (globalAny.MediaStream === undefined) {
@@ -24,16 +24,16 @@ beforeEach(() => {
 				return this.tracks;
 			}
 		}
-		globalAny.MediaStream = MockMediaStream as unknown as StreamCtor;
+		Reflect.set(globalAny, "MediaStream", MockMediaStream);
 	}
 });
 
 function makeTrack(id: string): MediaStreamTrack {
-	return {
+	return Object.assign(Object.create(null), {
 		id,
 		kind: "video",
 		stop: vi.fn(),
-	} as unknown as MediaStreamTrack;
+	}) as MediaStreamTrack;
 }
 
 function makeStream(tracks: MediaStreamTrack[]): MediaStream {

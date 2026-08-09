@@ -285,7 +285,6 @@ import { useMediaState } from "../composables/useMediaState";
 import { provideMeetingContext } from "../composables/useMeetingContext";
 import { useMeetingDoc } from "../composables/useMeetingDoc";
 import {
-	type MeetingDocLike,
 	useMeetingHandlers,
 } from "../composables/useMeetingHandlers";
 import { useNoiseCancellation } from "../composables/useNoiseCancellation";
@@ -318,7 +317,7 @@ import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
-import { usePoll } from "../composables/usePoll.js";
+import { pollKey, usePoll } from "../composables/usePoll.js";
 import { usePollStore } from "../composables/usePollStore.js";
 
 // Router
@@ -696,7 +695,7 @@ provide("hostControls", {
 });
 provide("meetingTitle", computed(() => meetingTitle.value));
 
-provide("poll", poll);
+provide(pollKey, poll);
 
 // --- Computed properties ---
 const isConnecting = computed(() => connectionState.isConnecting);
@@ -833,7 +832,7 @@ const handlers = useMeetingHandlers({
 	sfuConnection,
 	mediaControls,
 	lobby,
-	meetingDoc: meetingDoc as unknown as MeetingDocLike,
+	meetingDoc,
 	meetingId: meetingId.value,
 	isCurrentUserHost,
 	isPeopleOpen,
@@ -993,7 +992,7 @@ const handleE2EENeedsMediaRepublish = async () => {
 		if (mediaState.isMicOn) {
 			mediaState.microphonePermissionGranted = true;
 		}
-		if (mediaState.localVideo) {
+		if (mediaState.localVideo instanceof HTMLVideoElement) {
 			mediaControls.setLocalVideoRef(mediaState.localVideo);
 		}
 		if (mediaState.localStream && sfuConnection.sfuManager.value) {

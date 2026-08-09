@@ -25,16 +25,24 @@ function makeChatStore(): ChatStore {
 	};
 }
 
-function makeSFUClient(overrides: Record<string, unknown> = {}) {
-	const handlers = new Map<string, (data: Record<string, unknown>) => void>();
+function makeSFUClient(
+	overrides: Partial<{
+		isE2EERequired: () => boolean;
+		sendChatMessage: (message: string) => Promise<{
+			success: boolean;
+			timestamp: string;
+		}>;
+	}> = {},
+) {
+	const handlers = new Map<string, (data: unknown) => void>();
 	return {
-		on: vi.fn((event: string, handler: (data: Record<string, unknown>) => void) => {
+		on: vi.fn((event: string, handler: (data: unknown) => void) => {
 			handlers.set(event, handler);
 		}),
 		isConnected: vi.fn(() => true),
 		isE2EERequired: vi.fn(() => true),
 		sendChatMessage: vi.fn(),
-		emitChatMessage: (data: Record<string, unknown>) =>
+		emitChatMessage: (data: unknown) =>
 			handlers.get("chat:message")?.(data),
 		...overrides,
 	};

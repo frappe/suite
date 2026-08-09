@@ -1,31 +1,35 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import type {
+	Participant,
+	ParticipantUpdate,
+} from "../utils/media/ParticipantManager";
 
 export interface ParticipantStore {
-	participants: Record<string, unknown>;
+	participants: Record<string, Participant>;
 	remoteVideos: Record<string, HTMLVideoElement>;
 	activeSpeakerIds: string[];
 	stableSpeakerIds: string[];
 	speakerStartTimes: Record<string, number>;
-	addParticipant: (participant: Record<string, unknown>) => void;
+	addParticipant: (participant: Participant) => void;
 	removeParticipant: (participantId: string) => void;
 	updateParticipant: (
 		participantId: string,
-		updates: Record<string, unknown>,
+		updates: ParticipantUpdate,
 	) => void;
 	getParticipantName: (participantId: string) => string;
 	$reset: () => void;
 }
 
 export const useParticipantStore = defineStore("meet-participant", () => {
-	const participants = ref<Record<string, unknown>>({});
+	const participants = ref<Record<string, Participant>>({});
 	const remoteVideos = ref<Record<string, HTMLVideoElement>>({});
 	const activeSpeakerIds = ref<string[]>([]);
 	const stableSpeakerIds = ref<string[]>([]);
 	const speakerStartTimes = ref<Record<string, number>>({});
 
-	function addParticipant(participant: Record<string, unknown>) {
-		const userId = participant.user_id as string;
+	function addParticipant(participant: Participant) {
+		const userId = participant.user_id;
 		if (!userId) return;
 		participants.value[userId] = participant;
 	}
@@ -45,21 +49,17 @@ export const useParticipantStore = defineStore("meet-participant", () => {
 
 	function updateParticipant(
 		participantId: string,
-		updates: Record<string, unknown>,
+		updates: ParticipantUpdate,
 	) {
-		const participant = participants.value[participantId] as
-			| Record<string, unknown>
-			| undefined;
+		const participant = participants.value[participantId];
 		if (participant) {
 			participants.value[participantId] = { ...participant, ...updates };
 		}
 	}
 
 	function getParticipantName(participantId: string): string {
-		const participant = participants.value[participantId] as
-			| Record<string, unknown>
-			| undefined;
-		return (participant?.user_name as string) || participantId;
+		const participant = participants.value[participantId];
+		return participant?.user_name || participantId;
 	}
 
 	function $reset() {

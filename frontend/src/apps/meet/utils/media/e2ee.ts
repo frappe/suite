@@ -49,7 +49,7 @@ export type TransformableReceiver = RTCRtpReceiver & {
 
 type RTCRtpScriptTransformConstructor = new (
 	worker: Worker,
-	options: Record<string, unknown>,
+	options: object,
 ) => unknown;
 
 type E2EETransformCapability =
@@ -520,10 +520,10 @@ function hasLegacyInsertableStreamSupport(): boolean {
 	if (typeof globalThis.RTCRtpSender === "undefined") return false;
 	if (typeof globalThis.RTCRtpReceiver === "undefined") return false;
 	try {
-		const senderProto = globalThis.RTCRtpSender.prototype as unknown as {
+		const senderProto = globalThis.RTCRtpSender.prototype as RTCRtpSender & {
 			createEncodedStreams?: () => unknown;
 		};
-		const receiverProto = globalThis.RTCRtpReceiver.prototype as unknown as {
+		const receiverProto = globalThis.RTCRtpReceiver.prototype as RTCRtpReceiver & {
 			createEncodedStreams?: () => unknown;
 		};
 		return (
