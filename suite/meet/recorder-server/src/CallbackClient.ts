@@ -17,6 +17,70 @@ interface CallbackClientOptions {
 	timeoutMs?: number;
 }
 
+interface InterruptedRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: 2;
+	reason: string;
+}
+
+interface FailedRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: 3;
+	failure_code: 'capture_failed';
+}
+
+interface StoppedRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: 3;
+	size: number;
+	sha256: string;
+	duration_ms: number;
+	ended_at: string;
+	end_reason: string;
+	gaps: Array<{ started_at: string; ended_at: string; reason: string }>;
+}
+
+interface CompleteUploadRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: 4;
+}
+
+type CallbackRequest =
+	| InterruptedRequest
+	| FailedRequest
+	| StoppedRequest
+	| CompleteUploadRequest;
+
+type CallbackMethod =
+	| 'recorder_interrupted'
+	| 'recorder_failed'
+	| 'recorder_stopped'
+	| 'recorder_complete_upload';
+
+type CallbackOperation =
+	| 'interrupted'
+	| 'failed'
+	| 'stopped'
+	| 'upload_chunk'
+	| 'complete_upload';
+
+interface StatusResponse {
+	status: string;
+}
+
+interface UploadStartResponse {
+	offset: number;
+	complete: boolean;
+}
+
+interface UploadChunkResponse {
+	offset: number;
+}
+
 export class CallbackClient {
 	private readonly timeoutMs: number;
 	constructor(private readonly options: CallbackClientOptions) {
@@ -24,12 +88,19 @@ export class CallbackClient {
 	}
 
 	async interrupted(job: JobRecord): Promise<void> {
-		await this.json('recorder_interrupted', job, 'interrupted', '2', {
-			recording_id: job.recording,
-			job: job.job,
-			event_sequence: 2,
-			reason: job.health_reason ?? 'capture_interrupted',
-		});
+		await this.json(
+			'recorder_interrupted',
+			job,
+			'interrupted',
+			'2',
+			{
+				recording_id: job.recording,
+				job: job.job,
+				event_sequence: 2,
+				reason: job.health_reason ?? 'capture_interrupted',
+			},
+			parseStatusResponse,
+		);
 	}
 
 	async upload(job: JobRecord): Promise<void> {
@@ -52,12 +123,19 @@ export class CallbackClient {
 
 	private async performUpload(job: JobRecord): Promise<void> {
 		if (job.state === 'failed') {
-			await this.json('recorder_failed', job, 'failed', '3', {
-				recording_id: job.recording,
-				job: job.job,
-				event_sequence: 3,
-				failure_code: 'capture_failed',
-			});
+			await this.json(
+				'recorder_failed',
+				job,
+				'failed',
+				'3',
+				{
+					recording_id: job.recording,
+					job: job.job,
+					event_sequence: 3,
+					failure_code: 'capture_failed',
+				},
+				parseStatusResponse,
+			);
 			return;
 		}
 		const artifact = job.artifact;
@@ -69,23 +147,30 @@ export class CallbackClient {
 		)
 			throw new Error('terminal recording artifact is incomplete');
 		const stoppedSequence = 3;
-		const begun = await this.json('recorder_stopped', job, 'stopped', '3', {
-			recording_id: job.recording,
-			job: job.job,
-			event_sequence: stoppedSequence,
-			size: artifact.bytes,
-			sha256: artifact.sha256,
-			duration_ms: artifact.duration_ms,
-			ended_at: job.terminal_at ?? new Date().toISOString(),
-			end_reason: this.endReason(job),
-			gaps: (artifact.gaps ?? []).map((gap) => ({
-				started_at: gap.started_at,
-				ended_at: gap.ended_at ?? job.terminal_at ?? new Date().toISOString(),
-				reason: this.gapReason(gap.reason),
-			})),
-		});
+		const begun = await this.json(
+			'recorder_stopped',
+			job,
+			'stopped',
+			'3',
+			{
+				recording_id: job.recording,
+				job: job.job,
+				event_sequence: stoppedSequence,
+				size: artifact.bytes,
+				sha256: artifact.sha256,
+				duration_ms: artifact.duration_ms,
+				ended_at: job.terminal_at ?? new Date().toISOString(),
+				end_reason: this.endReason(job),
+				gaps: (artifact.gaps ?? []).map((gap) => ({
+					started_at: gap.started_at,
+					ended_at: gap.ended_at ?? job.terminal_at ?? new Date().toISOString(),
+					reason: this.gapReason(gap.reason),
+				})),
+			},
+			parseUploadStartResponse,
+		);
 		if (begun.complete === true) return;
-		let offset = Number(begun.offset);
+		let offset = begun.offset;
 		if (!Number.isSafeInteger(offset) || offset < 0 || offset > artifact.bytes)
 			throw new Error('invalid Frappe upload offset');
 
@@ -103,7 +188,7 @@ export class CallbackClient {
 					throw new Error('recording artifact ended early');
 				const hash = createHash('sha256').update(chunk).digest('hex');
 				const result = await this.binary(job, offset, hash, chunk);
-				const next = Number(result.offset);
+				const next = result.offset;
 				if (next !== offset + length)
 					throw new Error('invalid Frappe upload acknowledgement');
 				offset = next;
@@ -111,11 +196,18 @@ export class CallbackClient {
 		} finally {
 			await file.close();
 		}
-		await this.json('recorder_complete_upload', job, 'complete_upload', '4', {
-			recording_id: job.recording,
-			job: job.job,
-			event_sequence: 4,
-		});
+		await this.json(
+			'recorder_complete_upload',
+			job,
+			'complete_upload',
+			'4',
+			{
+				recording_id: job.recording,
+				job: job.job,
+				event_sequence: 4,
+			},
+			parseStatusResponse,
+		);
 	}
 
 	private async binary(
@@ -123,7 +215,7 @@ export class CallbackClient {
 		offset: number,
 		hash: string,
 		chunk: Buffer,
-	): Promise<Record<string, unknown>> {
+	): Promise<UploadChunkResponse> {
 		const operationId = `${offset}:${hash}`;
 		const url = new URL(
 			'/api/method/suite.meet.api.recording.recorder_upload_chunk',
@@ -135,38 +227,54 @@ export class CallbackClient {
 		url.searchParams.set('chunk_sha256', hash);
 		const body = new Uint8Array(chunk.length);
 		body.set(chunk);
-		return this.request(url, job, 'upload_chunk', operationId, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/octet-stream' },
-			body,
-		});
+		return this.request(
+			url,
+			job,
+			'upload_chunk',
+			operationId,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/octet-stream' },
+				body,
+			},
+			parseUploadChunkResponse,
+		);
 	}
 
-	private json(
-		method: string,
+	private json<T>(
+		method: CallbackMethod,
 		job: JobRecord,
-		operation: string,
+		operation: Exclude<CallbackOperation, 'upload_chunk'>,
 		operationId: string,
-		body: Record<string, unknown>,
-	): Promise<Record<string, unknown>> {
+		body: CallbackRequest,
+		parseResponse: (value: unknown) => T,
+	): Promise<T> {
 		const url = new URL(
 			`/api/method/suite.meet.api.recording.${method}`,
 			this.options.origin,
 		);
-		return this.request(url, job, operation, operationId, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body),
-		});
+		return this.request(
+			url,
+			job,
+			operation,
+			operationId,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			},
+			parseResponse,
+		);
 	}
 
-	private async request(
+	private async request<T>(
 		url: URL,
 		job: JobRecord,
-		operation: string,
+		operation: CallbackOperation,
 		operationId: string,
 		init: RequestInit,
-	): Promise<Record<string, unknown>> {
+		parseResponse: (value: unknown) => T,
+	): Promise<T> {
 		const response = await fetch(url, {
 			...init,
 			headers: {
@@ -179,22 +287,18 @@ export class CallbackClient {
 		if (!response.ok || text.length > 64 * 1024)
 			throw new Error(`Frappe callback failed with HTTP ${response.status}`);
 		const parsed: unknown = JSON.parse(text);
-		if (
-			!parsed ||
-			typeof parsed !== 'object' ||
-			Array.isArray(parsed) ||
-			!('message' in parsed) ||
-			!(parsed as { message?: unknown }).message ||
-			typeof (parsed as { message: unknown }).message !== 'object' ||
-			Array.isArray((parsed as { message: unknown }).message)
-		)
+		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 			throw new Error('invalid Frappe callback response');
-		return (parsed as { message: Record<string, unknown> }).message;
+		}
+		if (!('message' in parsed)) {
+			throw new Error('invalid Frappe callback response');
+		}
+		return parseResponse(parsed.message);
 	}
 
 	private token(
 		job: JobRecord,
-		operation: string,
+		operation: CallbackOperation,
 		operationId: string,
 	): string {
 		const now = Math.floor(Date.now() / 1000);
@@ -235,4 +339,47 @@ export class CallbackClient {
 		if (reason.includes('renderer')) return 'renderer_interrupted';
 		return 'capture_interrupted';
 	}
+}
+
+function parseStatusResponse(value: unknown): StatusResponse {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!('status' in value) ||
+		typeof value.status !== 'string'
+	) {
+		throw new Error('invalid Frappe callback response');
+	}
+	return { status: value.status };
+}
+
+function parseUploadStartResponse(value: unknown): UploadStartResponse {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!('complete' in value) ||
+		typeof value.complete !== 'boolean' ||
+		!('offset' in value) ||
+		typeof value.offset !== 'number' ||
+		!Number.isSafeInteger(value.offset)
+	) {
+		throw new Error('invalid Frappe callback response');
+	}
+	return { complete: value.complete, offset: value.offset };
+}
+
+function parseUploadChunkResponse(value: unknown): UploadChunkResponse {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!('offset' in value) ||
+		typeof value.offset !== 'number' ||
+		!Number.isSafeInteger(value.offset)
+	) {
+		throw new Error('invalid Frappe callback response');
+	}
+	return { offset: value.offset };
 }

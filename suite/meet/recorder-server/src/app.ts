@@ -10,15 +10,51 @@ import type { JobManager } from './JobManager.js';
 import type { Logger } from './logger.js';
 import type { CommandClaims, JobRecord } from './types.js';
 
-function exactBody(
-	value: unknown,
-	keys: string[],
-): value is Record<string, unknown> {
+interface ReserveBody {
+	job: string;
+}
+
+interface GrantBody {
+	grant: string;
+}
+
+interface StopBody {
+	job: string;
+	operation_id: string;
+}
+
+function exactBody(value: unknown, keys: string[]): value is object {
 	return (
 		!!value &&
 		typeof value === 'object' &&
 		!Array.isArray(value) &&
 		JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys)
+	);
+}
+
+function reserveBody(value: unknown): value is ReserveBody {
+	return (
+		exactBody(value, ['job']) && 'job' in value && typeof value.job === 'string'
+	);
+}
+
+function grantBody(value: unknown): value is GrantBody {
+	return (
+		exactBody(value, ['grant']) &&
+		'grant' in value &&
+		typeof value.grant === 'string' &&
+		value.grant.length > 0
+	);
+}
+
+function stopBody(value: unknown): value is StopBody {
+	return (
+		exactBody(value, ['job', 'operation_id']) &&
+		'job' in value &&
+		typeof value.job === 'string' &&
+		'operation_id' in value &&
+		typeof value.operation_id === 'string' &&
+		value.operation_id.length > 0
 	);
 }
 
@@ -109,7 +145,8 @@ export function createApp(
 	app.post('/v1/recordings', command('reserve'), async (req, res, next) => {
 		try {
 			const claims = res.locals.command as CommandClaims;
-			if (!exactBody(req.body, ['job']) || req.body.job !== claims.job)
+			const body: unknown = req.body;
+			if (!reserveBody(body) || body.job !== claims.job)
 				return res
 					.status(422)
 					.json({ status: 'rejected', job: claims.job, reason: 'invalid_job' });
@@ -152,18 +189,15 @@ export function createApp(
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
-				if (
-					!exactBody(req.body, ['grant']) ||
-					typeof req.body.grant !== 'string' ||
-					!req.body.grant
-				)
+				const body: unknown = req.body;
+				if (!grantBody(body))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
 						reason: 'invalid_job',
 					});
 				await auth.consume(claims);
-				if (!(await jobs.grant(claims, req.body.grant)))
+				if (!(await jobs.grant(claims, body.grant)))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
@@ -183,19 +217,15 @@ export function createApp(
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
-				if (
-					!exactBody(req.body, ['job', 'operation_id']) ||
-					req.body.job !== claims.job ||
-					typeof req.body.operation_id !== 'string' ||
-					!req.body.operation_id
-				)
+				const body: unknown = req.body;
+				if (!stopBody(body) || body.job !== claims.job)
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
 						reason: 'invalid_job',
 					});
 				await auth.consume(claims);
-				if (!(await jobs.stop(claims, req.body.operation_id)))
+				if (!(await jobs.stop(claims, body.operation_id)))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,
@@ -205,7 +235,7 @@ export function createApp(
 				return res.status(202).json({
 					status: 'accepted',
 					job: claims.job,
-					operation_id: req.body.operation_id,
+					operation_id: body.operation_id,
 				});
 			} catch (error) {
 				next(error);

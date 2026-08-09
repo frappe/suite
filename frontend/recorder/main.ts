@@ -27,11 +27,11 @@ const app = createApp({
 		const lobbyStore = useLobbyStore();
 		const gridLayout = useGridLayout(mediaState);
 		const messages = ref<Array<{ id: string; author: string; text: string; avatar?: string | null }>>([]);
-		const pendingScreenAttachments = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
+		const pendingScreenAttachments = new Map<string, { resolve: () => void; reject: (error?: Error) => void }>();
 		const controller = new RecorderSocketController(bridge, undefined, {
 			participantAdded: (participant) => participantStore.addParticipant(participant),
 			participantRemoved: (id) => participantStore.removeParticipant(id),
-			participantUpdated: (id, updates) => participantStore.updateParticipant(id, updates),
+			participantUpdated: (id, updates) => participantStore.updateParticipant(id, { ...updates }),
 			activeSpeakersChanged: (ids) => { participantStore.activeSpeakerIds = ids; participantStore.stableSpeakerIds = ids; },
 			screenStarted: ({ participantId, consumerId, stream, startedAt }) => {
 				mediaState.screenShareStreams[consumerId] = stream;

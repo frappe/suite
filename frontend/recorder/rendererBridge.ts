@@ -18,7 +18,20 @@ export interface RecordingChallenge {
 	expires_at: number;
 }
 
-export const canonicalChallenge = (challenge: RecordingChallenge): Uint8Array =>
+type RendererReport =
+	| { type: "suite-recorder:capture-ready" }
+	| { type: "suite-recorder:interruption"; reason: string }
+	| { type: "suite-recorder:proof-complete" }
+	| { type: "suite-recorder:join-complete" }
+	| { type: "suite-recorder:room-empty" }
+	| { type: "suite-recorder:failure"; reason: string };
+
+export type OutboundRendererMessage =
+	| { type: "suite-recorder:public-key-ready"; publicKey: JsonWebKey }
+	| { type: "suite-recorder:configuration-accepted"; job: string }
+	| (RendererReport & { job: string });
+
+export const canonicalChallenge = (challenge: RecordingChallenge): Uint8Array<ArrayBuffer> =>
 	new TextEncoder().encode(`meet-recording-proof-v1\n${challenge.jti}\n${challenge.socket_id}\n${challenge.nonce}\n${challenge.issued_at}\n${challenge.expires_at}`);
 
 const base64url = (bytes: ArrayBuffer): string => {
@@ -32,7 +45,7 @@ export class RecorderRendererBridge {
 	private configured = false;
 	private job?: string;
 
-	private post(message: Record<string, unknown>, target: Pick<Window, "postMessage"> = window): void {
+	private post(message: OutboundRendererMessage, target: Pick<Window, "postMessage"> = window): void {
 		target.postMessage(message, window.location.origin);
 	}
 
@@ -52,8 +65,8 @@ export class RecorderRendererBridge {
 		return new Promise((resolve) => {
 			const receive = (event: MessageEvent) => {
 				if (this.configured || event.source !== window || event.origin !== window.location.origin) return;
-				const message = event.data as { type?: string; config?: RecorderConfig };
-				if (message?.type !== "suite-recorder:configure" || !isConfig(message.config)) return;
+				const message = parseConfigureMessage(event.data);
+				if (!message) return;
 				this.configured = true;
 				this.job = message.config.job;
 				source.removeEventListener("message", receive as EventListener);
@@ -75,37 +88,78 @@ export class RecorderRendererBridge {
 	}
 
 	reportCaptureReady(target: Pick<Window, "postMessage"> = window): void {
-		this.report("capture-ready", {}, target);
+		this.report({ type: "suite-recorder:capture-ready" }, target);
 	}
 
 	reportInterruption(reason: string, target: Pick<Window, "postMessage"> = window): void {
-		this.report("interruption", { reason }, target);
+		this.report({ type: "suite-recorder:interruption", reason }, target);
 	}
 
 	reportProofComplete(target: Pick<Window, "postMessage"> = window): void {
-		this.report("proof-complete", {}, target);
+		this.report({ type: "suite-recorder:proof-complete" }, target);
 	}
 
 	reportJoinComplete(target: Pick<Window, "postMessage"> = window): void {
-		this.report("join-complete", {}, target);
+		this.report({ type: "suite-recorder:join-complete" }, target);
 	}
 
 	reportRoomEmpty(target: Pick<Window, "postMessage"> = window): void {
-		this.report("room-empty", {}, target);
+		this.report({ type: "suite-recorder:room-empty" }, target);
 	}
 
 	reportFailure(reason: string, target: Pick<Window, "postMessage"> = window): void {
-		this.report("failure", { reason }, target);
+		this.report({ type: "suite-recorder:failure", reason }, target);
 	}
 
-	private report(type: string, fields: Record<string, unknown>, target: Pick<Window, "postMessage">): void {
+	private report(message: RendererReport, target: Pick<Window, "postMessage">): void {
 		if (!this.job) return;
-		this.post({ type: `suite-recorder:${type}`, job: this.job, ...fields }, target);
+		this.post({ ...message, job: this.job }, target);
 	}
 }
 
-const isConfig = (value: unknown): value is RecorderConfig => {
-	if (!value || typeof value !== "object") return false;
-	const config = value as Record<string, unknown>;
-	return ["job", "grant", "meetingId", "sfuOrigin", "frappeOrigin", "socketPath"].every((key) => typeof config[key] === "string" && config[key] !== "") && typeof config.startedAt === "number";
+const isHttpUrl = (value: string): boolean => {
+	try {
+		return ["http:", "https:"].includes(new URL(value).protocol);
+	} catch {
+		return false;
+	}
+};
+
+const parseConfig = (value: unknown): RecorderConfig | null => {
+	if (!value || typeof value !== "object") return null;
+	if (!("job" in value) || typeof value.job !== "string" || !value.job ||
+		!("grant" in value) || typeof value.grant !== "string" || !value.grant ||
+		!("meetingId" in value) || typeof value.meetingId !== "string" || !value.meetingId ||
+		!("sfuOrigin" in value) || typeof value.sfuOrigin !== "string" || !isHttpUrl(value.sfuOrigin) ||
+		!("frappeOrigin" in value) || typeof value.frappeOrigin !== "string" || !isHttpUrl(value.frappeOrigin) ||
+		!("socketPath" in value) || typeof value.socketPath !== "string" || !value.socketPath ||
+		!("startedAt" in value) || typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt) ||
+		("publicChat" in value && value.publicChat !== undefined && typeof value.publicChat !== "boolean")
+	) return null;
+	return {
+		job: value.job,
+		grant: value.grant,
+		meetingId: value.meetingId,
+		sfuOrigin: value.sfuOrigin,
+		frappeOrigin: value.frappeOrigin,
+		socketPath: value.socketPath,
+		startedAt: value.startedAt,
+		...("publicChat" in value && typeof value.publicChat === "boolean"
+			? { publicChat: value.publicChat }
+			: {}),
+	};
+};
+
+const parseConfigureMessage = (
+	value: unknown,
+): { type: "suite-recorder:configure"; config: RecorderConfig } | null => {
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("type" in value) ||
+		value.type !== "suite-recorder:configure" ||
+		!("config" in value)
+	) return null;
+	const config = parseConfig(value.config);
+	return config ? { type: value.type, config } : null;
 };

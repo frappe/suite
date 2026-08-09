@@ -34,6 +34,8 @@ describe("RecorderRendererBridge", () => {
 		const config: RecorderConfig = { job: "job", grant: "grant", meetingId: "room", sfuOrigin: "https://sfu.test", frappeOrigin: "https://frappe.test", socketPath: "/socket.io", startedAt: 1 };
 		const bridge = new RecorderRendererBridge();
 		const pending = bridge.waitForConfig(source);
+		listeners[0](new MessageEvent("message", { data: { type: "suite-recorder:configure", config: { ...config, startedAt: "now" } }, origin: window.location.origin, source: window }));
+		expect(source.removeEventListener).not.toHaveBeenCalled();
 		listeners[0](new MessageEvent("message", { data: { type: "suite-recorder:configure", config }, origin: window.location.origin, source: window }));
 
 		expect(await pending).toEqual(config);

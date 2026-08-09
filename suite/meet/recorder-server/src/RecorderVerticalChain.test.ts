@@ -120,7 +120,11 @@ describe('recorder vertical chain', () => {
 					joined = true;
 					callback({ success: true });
 				});
-				const query = (event: string, response: Record<string, unknown>) =>
+				type QueryResponse =
+					| { rtpCapabilities: { codecs: never[]; headerExtensions: never[] } }
+					| { participants: never[] }
+					| { producers: never[] };
+				const query = (event: string, response: QueryResponse) =>
 					socket.on(event, (_data, callback) => {
 						expect(joined).toBe(true);
 						callback({ success: true, ...response });

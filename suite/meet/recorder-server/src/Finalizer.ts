@@ -32,9 +32,105 @@ async function command(program: string, args: string[]): Promise<string> {
 	});
 }
 
-function rate(value: string): number {
-	const [a = 0, b = 1] = value.split('/').map(Number);
-	return a / b;
+function rate(value: unknown): number {
+	if (
+		typeof value !== 'string' ||
+		!/^\d+(?:\.\d+)?\/\d+(?:\.\d+)?$/.test(value)
+	) {
+		return Number.NaN;
+	}
+	const [numerator, denominator] = value.split('/').map(Number);
+	return denominator ? (numerator ?? 0) / denominator : Number.NaN;
+}
+
+function decimal(value: unknown): number {
+	if (typeof value !== 'string' || !/^-?\d+(?:\.\d+)?$/.test(value)) {
+		return Number.NaN;
+	}
+	return Number(value);
+}
+
+function validateFfprobeOutput(value: unknown): MediaProbe {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!('streams' in value) ||
+		!Array.isArray(value.streams) ||
+		value.streams.length !== 2 ||
+		!('format' in value) ||
+		!value.format ||
+		typeof value.format !== 'object' ||
+		Array.isArray(value.format)
+	) {
+		throw new Error('invalid ffprobe output');
+	}
+	const video = value.streams.find(
+		(stream) =>
+			stream &&
+			typeof stream === 'object' &&
+			!Array.isArray(stream) &&
+			'codec_type' in stream &&
+			stream.codec_type === 'video',
+	);
+	const audio = value.streams.find(
+		(stream) =>
+			stream &&
+			typeof stream === 'object' &&
+			!Array.isArray(stream) &&
+			'codec_type' in stream &&
+			stream.codec_type === 'audio',
+	);
+	if (!video || !audio) throw new Error('invalid stream types');
+	const videoStart =
+		'start_time' in video ? decimal(video.start_time) : Number.NaN;
+	const frameRate =
+		'avg_frame_rate' in video ? rate(video.avg_frame_rate) : Number.NaN;
+	if (
+		!('codec_name' in video) ||
+		video.codec_name !== 'h264' ||
+		!('profile' in video) ||
+		video.profile !== 'High' ||
+		!('width' in video) ||
+		video.width !== 1920 ||
+		!('height' in video) ||
+		video.height !== 1080 ||
+		!('pix_fmt' in video) ||
+		video.pix_fmt !== 'yuv420p' ||
+		!Number.isFinite(frameRate) ||
+		Math.abs(frameRate - 30) > 1 ||
+		!Number.isFinite(videoStart) ||
+		videoStart < 0
+	) {
+		throw new Error('invalid video invariant');
+	}
+	const audioStart =
+		'start_time' in audio ? decimal(audio.start_time) : Number.NaN;
+	if (
+		!('codec_name' in audio) ||
+		audio.codec_name !== 'aac' ||
+		!('profile' in audio) ||
+		audio.profile !== 'LC' ||
+		!('sample_rate' in audio) ||
+		decimal(audio.sample_rate) !== 48000 ||
+		!('channels' in audio) ||
+		audio.channels !== 2 ||
+		!Number.isFinite(audioStart) ||
+		audioStart < 0 ||
+		Math.abs(videoStart - audioStart) > 0.1
+	) {
+		throw new Error('invalid audio invariant');
+	}
+	const duration =
+		'duration' in value.format ? decimal(value.format.duration) : Number.NaN;
+	if (!Number.isFinite(duration) || duration <= 0) {
+		throw new Error('invalid media duration');
+	}
+	return {
+		duration_ms: Math.round(duration * 1000),
+		video: { codec: 'h264', width: 1920, height: 1080, fps: 30 },
+		audio: { codec: 'aac', sample_rate: 48000, channels: 2 },
+	};
 }
 
 async function fileDigest(
@@ -53,7 +149,7 @@ export class FfmpegMediaTools implements MediaTools {
 	) {}
 	async validate(path: string): Promise<MediaProbe> {
 		await command(this.ffmpeg, ['-v', 'error', '-i', path, '-f', 'null', '-']);
-		const parsed = JSON.parse(
+		const parsed: unknown = JSON.parse(
 			await command(this.ffprobe, [
 				'-v',
 				'error',
@@ -63,44 +159,8 @@ export class FfmpegMediaTools implements MediaTools {
 				'json',
 				path,
 			]),
-		) as {
-			streams: Array<Record<string, unknown>>;
-			format: Record<string, unknown>;
-		};
-		if (parsed.streams.length !== 2) throw new Error('invalid stream count');
-		const video = parsed.streams.find((s) => s.codec_type === 'video');
-		const audio = parsed.streams.find((s) => s.codec_type === 'audio');
-		const videoStart = Number(video?.start_time);
-		const audioStart = Number(audio?.start_time);
-		if (
-			video?.codec_name !== 'h264' ||
-			video.profile !== 'High' ||
-			video.width !== 1920 ||
-			video.height !== 1080 ||
-			video.pix_fmt !== 'yuv420p' ||
-			Math.abs(rate(String(video.avg_frame_rate)) - 30) > 1 ||
-			!Number.isFinite(videoStart) ||
-			videoStart < 0
-		)
-			throw new Error('invalid video invariant');
-		if (
-			audio?.codec_name !== 'aac' ||
-			audio.profile !== 'LC' ||
-			Number(audio.sample_rate) !== 48000 ||
-			audio.channels !== 2 ||
-			!Number.isFinite(audioStart) ||
-			audioStart < 0 ||
-			Math.abs(videoStart - audioStart) > 0.1
-		)
-			throw new Error('invalid audio invariant');
-		const duration = Number(parsed.format.duration);
-		if (!Number.isFinite(duration) || duration <= 0)
-			throw new Error('invalid media duration');
-		return {
-			duration_ms: Math.round(duration * 1000),
-			video: { codec: 'h264', width: 1920, height: 1080, fps: 30 },
-			audio: { codec: 'aac', sample_rate: 48000, channels: 2 },
-		};
+		);
+		return validateFfprobeOutput(parsed);
 	}
 	async concat(list: string, output: string): Promise<void> {
 		await command(this.ffmpeg, [

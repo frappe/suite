@@ -53,36 +53,53 @@ export function validUtcTimestamp(value: unknown): value is string {
 }
 
 export function validLimits(value: unknown): value is RecordingLimits {
+	return parseLimits(value) !== null;
+}
+
+function parseLimits(value: unknown): RecordingLimits | null {
 	if (
 		!value ||
 		typeof value !== 'object' ||
 		Array.isArray(value) ||
 		!exactKeys(value, LIMIT_KEYS)
 	)
-		return false;
-	const limits = value as Record<string, unknown>;
+		return null;
 	if (
-		!Number.isSafeInteger(limits.budget_bytes) ||
-		(limits.budget_bytes as number) <= 0
+		!('budget_bytes' in value) ||
+		typeof value.budget_bytes !== 'number' ||
+		!Number.isSafeInteger(value.budget_bytes) ||
+		value.budget_bytes <= 0 ||
+		!('max_ends_at' in value) ||
+		!validUtcTimestamp(value.max_ends_at) ||
+		!('output' in value)
 	)
-		return false;
-	if (!validUtcTimestamp(limits.max_ends_at)) return false;
-	const output = limits.output;
+		return null;
+	const output = value.output;
 	if (
 		!output ||
 		typeof output !== 'object' ||
 		Array.isArray(output) ||
 		!exactKeys(output, OUTPUT_KEYS)
 	)
-		return false;
-	const out = output as Record<string, unknown>;
-	return (
-		out.width === 1920 &&
-		out.height === 1080 &&
-		out.fps === 30 &&
-		out.video === 'h264' &&
-		out.audio === 'aac'
-	);
+		return null;
+	if (
+		!('width' in output) ||
+		output.width !== 1920 ||
+		!('height' in output) ||
+		output.height !== 1080 ||
+		!('fps' in output) ||
+		output.fps !== 30 ||
+		!('video' in output) ||
+		output.video !== 'h264' ||
+		!('audio' in output) ||
+		output.audio !== 'aac'
+	)
+		return null;
+	return {
+		budget_bytes: value.budget_bytes,
+		max_ends_at: value.max_ends_at,
+		output: { width: 1920, height: 1080, fps: 30, video: 'h264', audio: 'aac' },
+	};
 }
 
 export class AuthManager {
@@ -137,7 +154,7 @@ export class AuthManager {
 			!exactKeys(decoded, CLAIM_KEYS)
 		)
 			throw new AuthError('invalid claims');
-		const claims = decoded as unknown as CommandClaims;
+		const claims = parseCommandClaims(decoded);
 		if (
 			claims.aud !== COMMAND_AUDIENCE ||
 			claims.operation !== expectedOperation ||
@@ -158,7 +175,6 @@ export class AuthManager {
 			claims.iat < now - 35
 		)
 			throw new AuthError('invalid command lifetime');
-		if (!validLimits(claims.limits)) throw new AuthError('invalid limits');
 		return claims;
 	}
 
@@ -173,4 +189,56 @@ export class AuthManager {
 			actual.length === expected.length && timingSafeEqual(actual, expected)
 		);
 	}
+}
+
+function parseCommandClaims(value: unknown): CommandClaims {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!exactKeys(value, CLAIM_KEYS)
+	) {
+		throw new AuthError('invalid claims');
+	}
+	if (
+		!('aud' in value) ||
+		value.aud !== COMMAND_AUDIENCE ||
+		!('operation' in value) ||
+		(value.operation !== 'reserve' &&
+			value.operation !== 'query' &&
+			value.operation !== 'grant' &&
+			value.operation !== 'stop') ||
+		!('iat' in value) ||
+		typeof value.iat !== 'number' ||
+		!Number.isSafeInteger(value.iat) ||
+		!('exp' in value) ||
+		typeof value.exp !== 'number' ||
+		!Number.isSafeInteger(value.exp) ||
+		!('limits' in value)
+	) {
+		throw new AuthError('invalid claims');
+	}
+	const limits = parseLimits(value.limits);
+	if (!limits) throw new AuthError('invalid limits');
+	return {
+		iss: claimString(value, 'iss'),
+		aud: COMMAND_AUDIENCE,
+		site: claimString(value, 'site'),
+		origin: claimString(value, 'origin'),
+		room: claimString(value, 'room'),
+		recording: claimString(value, 'recording'),
+		job: claimString(value, 'job'),
+		operation: value.operation,
+		limits,
+		jti: claimString(value, 'jti'),
+		iat: value.iat,
+		exp: value.exp,
+	};
+}
+
+function claimString(value: object, key: string): string {
+	if (!(key in value)) throw new AuthError('invalid claims');
+	const claim = value[key as keyof typeof value];
+	if (typeof claim !== 'string') throw new AuthError('invalid claims');
+	return claim;
 }

@@ -74,7 +74,7 @@ provide("setScreenShareVideoRef", (consumerId: string, element: HTMLVideoElement
 });
 
 const attachmentRetryDelay = () => new Promise<void>((resolve) => setTimeout(resolve, 50));
-const attachScreenShare = async (element: HTMLVideoElement, stream: MediaStream, onFailure: (error: unknown) => void): Promise<void> => {
+const attachScreenShare = async (element: HTMLVideoElement, stream: MediaStream, onFailure: (error: Error) => void): Promise<void> => {
 	while (!element.parentNode) await attachmentRetryDelay();
 	if (element.srcObject !== stream) element.srcObject = stream;
 	while (true) {
@@ -86,8 +86,9 @@ const attachScreenShare = async (element: HTMLVideoElement, stream: MediaStream,
 				await attachmentRetryDelay();
 				continue;
 			}
-			onFailure(error);
-			throw error;
+			const failure = error instanceof Error ? error : new Error("Screen playback failed");
+			onFailure(failure);
+			throw failure;
 		}
 	}
 };

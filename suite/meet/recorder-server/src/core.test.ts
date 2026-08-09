@@ -10,7 +10,7 @@ import type { Config } from './config.js';
 import { loadConfig } from './config.js';
 import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
-import type { Logger } from './logger.js';
+import type { LogEntry, Logger } from './logger.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { COMMAND_AUDIENCE, COMMAND_TYPE, type CommandClaims } from './types.js';
 
@@ -36,13 +36,20 @@ const baseClaims = {
 } satisfies CommandClaims;
 
 function token(
-	overrides: Record<string, unknown> = {},
-	header: Record<string, unknown> = {},
+	overrides: Partial<Omit<CommandClaims, 'aud' | 'limits'>> & {
+		aud?: string;
+		limits?: CommandClaims['limits'];
+		extra?: boolean;
+	} = {},
+	header: { typ?: string; kid?: string } = {},
 ): string {
 	return jwt.sign(
 		{ ...baseClaims, jti: crypto.randomUUID(), ...overrides },
 		secret,
-		{ algorithm: 'HS256', header: { typ: COMMAND_TYPE, ...header } },
+		{
+			algorithm: 'HS256',
+			header: { alg: 'HS256', typ: COMMAND_TYPE, ...header },
+		},
 	);
 }
 
@@ -582,7 +589,7 @@ describe('JobStore and JobManager', () => {
 describe('HTTP contract', () => {
 	let app: ReturnType<typeof createApp>;
 	let bridge: FakeRendererBridge;
-	let logs: Array<Record<string, unknown>>;
+	let logs: LogEntry[];
 	let config: Config;
 
 	beforeEach(async () => {
@@ -647,7 +654,13 @@ describe('HTTP contract', () => {
 			authenticated('POST', { job: 'job' }),
 		);
 		expect(reserve.status).toBe(202);
-		const reserveBody = (await reserve.json()) as Record<string, unknown>;
+		const reserveBody: {
+			status: 'accepted';
+			job: string;
+			accepted_at: string;
+			public_jwk: typeof TEST_PUBLIC_JWK;
+			state: string;
+		} = await reserve.json();
 		expect(Object.keys(reserveBody).sort()).toEqual([
 			'accepted_at',
 			'job',

@@ -1,23 +1,41 @@
 import { readonly, ref, type Ref } from "vue";
-import { ConsumerManager, type ConsumerEntry } from "../src/apps/meet/utils/media/ConsumerManager";
-import { ParticipantManager, type Participant, type ParticipantData } from "../src/apps/meet/utils/media/ParticipantManager";
+import { ConsumerManager } from "../src/apps/meet/utils/media/ConsumerManager";
+import { ParticipantManager, type Participant } from "../src/apps/meet/utils/media/ParticipantManager";
 import { SocketIOSignalChannel, type SignalChannel } from "../src/apps/meet/utils/media/SignalChannel";
 import { TransportManager } from "../src/apps/meet/utils/media/TransportManager";
 import { VideoElementManager } from "../src/apps/meet/utils/media/VideoElementManager";
 import { SFUClient } from "../src/apps/meet/utils/SFUClient";
 import { SFUMediaManager } from "../src/apps/meet/utils/sfu/SFUMediaManager";
-import type { RecorderConfig, RecorderRendererBridge, RecordingChallenge } from "./rendererBridge";
+import {
+	parseActiveSpeakers,
+	parseChatMessage,
+	parseConsumerId,
+	parseHandChange,
+	parseMediaControlMessage,
+	parseParticipantId,
+	parseParticipantMessage,
+	parseParticipantUpdate,
+	parseProducerMessage,
+	parseProducerSnapshot,
+	parseRaisedHands,
+	parseReaction,
+	parseRecordingChallenge,
+	parseRequestResponse,
+	parseScreenShareStarted,
+	type MediaControlMessage,
+	type ParticipantMessage,
+	type ProducerEvent,
+	type ProducerMessage,
+	type RecorderParticipantData,
+	type RecorderParticipantUpdate,
+} from "./protocol";
+import type { RecorderConfig, RecorderRendererBridge } from "./rendererBridge";
 
-type ProducerEvent = { producerId: string; participantId: string; isScreen?: boolean };
-type SyncEvent =
-	| { type: "participant-joined"; value: ParticipantData }
-	| { type: "participant-left"; value: ParticipantData }
-	| { type: "producer-created"; value: ProducerEvent }
-	| { type: "producer-closed"; value: ProducerEvent };
-type RecorderState = {
+type SyncEvent = ParticipantMessage | ProducerMessage;
+export type RecorderState = {
 	participantAdded?: (participant: Participant) => void;
 	participantRemoved?: (participantId: string) => void;
-	participantUpdated?: (participantId: string, updates: Record<string, unknown>) => void;
+	participantUpdated?: (participantId: string, updates: RecorderParticipantUpdate) => void;
 	activeSpeakersChanged?: (participantIds: string[]) => void;
 	screenStarted?: (data: { participantId: string; consumerId: string; stream: MediaStream; startedAt: number }) => Promise<void> | void;
 	screenStopped?: (participantId: string) => void;
@@ -94,8 +112,13 @@ export class RecorderSocketController {
 		let resolveProof!: () => void;
 		let rejectProof!: (error: Error) => void;
 		const proved = new Promise<void>((resolve, reject) => { resolveProof = resolve; rejectProof = reject; });
-		this.channel.on("recording:challenge", (...args) => {
-			this.bridge.sign(args[0] as RecordingChallenge)
+		this.channel.on("recording:challenge", (value) => {
+			const challenge = parseRecordingChallenge(value);
+			if (!challenge) {
+				rejectProof(new Error("Invalid recording challenge"));
+				return;
+			}
+			this.bridge.sign(challenge)
 				.then((signature) => this.request("recording:proof", { signature }))
 				.then(resolveProof, rejectProof);
 		});
@@ -148,7 +171,10 @@ export class RecorderSocketController {
 				this.state.participantRemoved?.(id);
 				this.scheduleRoomEmpty();
 			},
-			onParticipantUpdated: (id, _p, updates) => this.state.participantUpdated?.(id, updates),
+			onParticipantUpdated: (id, _p, updates) => {
+				const parsed = parseParticipantUpdate(updates);
+				if (parsed) this.state.participantUpdated?.(id, parsed);
+			},
 		});
 		this.deps.consumerManager.setEventHandlers({
 			onConsumerAdded: (consumer) => {
@@ -156,7 +182,7 @@ export class RecorderSocketController {
 					if (consumer.isScreen) await this.screenAttachmentPromises.get(consumer.id);
 				});
 				this.attachmentPromises.set(consumer.producerId, attached);
-				void attached.catch((error: unknown) => {
+				void attached.catch((error) => {
 					if (this._ready.value) this.interrupt(`Media attachment failed: ${error instanceof Error ? error.message : "unknown error"}`);
 				});
 			},
@@ -165,9 +191,10 @@ export class RecorderSocketController {
 		});
 		this.deps.mediaManager.setEventHandlers({
 			onScreenShareStarted: (value) => {
-				const data = value as { participantId: string; stream: MediaStream; consumer: ConsumerEntry };
-				const acknowledged = Promise.resolve(this.state.screenStarted?.({ participantId: data.participantId, consumerId: data.consumer.id, stream: data.stream, startedAt: Date.now() }));
-				this.screenAttachmentPromises.set(data.consumer.id, this.withTimeout(acknowledged, `Timed out waiting for screen element for ${data.participantId}`));
+				const data = parseScreenShareStarted(value);
+				if (!data) return;
+				const acknowledged = Promise.resolve(this.state.screenStarted?.({ participantId: data.participantId, consumerId: data.consumerId, stream: data.stream, startedAt: Date.now() }));
+				this.screenAttachmentPromises.set(data.consumerId, this.withTimeout(acknowledged, `Timed out waiting for screen element for ${data.participantId}`));
 			},
 			onRecoveryExhausted: () => this.interrupt("Media subscription recovery exhausted"),
 		});
@@ -178,27 +205,56 @@ export class RecorderSocketController {
 
 	private setupSFUEvents(): void {
 		const client = this.deps.sfuClient;
-		client.on("participant_joined", (value) => this.queueOrApply({ type: "participant-joined", value: value as ParticipantData }));
-		client.on("participant_left", (value) => this.queueOrApply({ type: "participant-left", value: value as ParticipantData }));
-		client.on("producer_created", (value) => this.queueOrApply({ type: "producer-created", value: value as ProducerEvent }));
-		client.on("producer_closed", (value) => this.queueOrApply({ type: "producer-closed", value: value as ProducerEvent }));
-		client.on("consumer_closed", (value) => { const id = (value as { consumerId?: string }).consumerId; if (id) this.deps.consumerManager.removeConsumer(id); });
-		client.on("media_control_update", (value) => this.updateMedia(value as Record<string, unknown>));
-		client.on("active_speaker", (value) => this.state.activeSpeakersChanged?.((value as { participantIds?: string[] }).participantIds || []));
-		client.on("screen_share_stopped", (value) => this.stopScreen((value as { participantId?: string }).participantId || ""));
-		client.on("reaction:message", (value) => { const d = value as { fromUser?: string; reaction?: string }; if (d.fromUser && d.reaction) this.state.reactionReceived?.(d.fromUser, d.reaction); });
-		client.on("hand_raised", (value) => { const d = value as { participantId?: string; raised?: boolean; timestamp?: string }; if (d.participantId) this.state.handChanged?.(d.participantId, !!d.raised, d.timestamp || new Date().toISOString()); });
-		client.on("existing_raised_hands", (value) => this.state.handsSynced?.((value as { hands?: Record<string, string> }).hands || {}));
-		client.on("chat:message", (value) => { const d = value as { fromUser?: string; fromName?: string; message?: string; timestamp?: string }; const time = Date.parse(d.timestamp || ""); if (d.message && (!Number.isFinite(time) || time >= this.captureStartedAt)) this.state.chatReceived?.({ id: `${d.fromUser || "unknown"}-${d.timestamp || Date.now()}`, participantId: d.fromUser, author: d.fromName || d.fromUser || "Unknown", text: d.message }); });
+		client.on("participant_joined", (value) => { const event = parseParticipantMessage("participant-joined", value); if (event) this.queueOrApply(event); });
+		client.on("participant_left", (value) => { const event = parseParticipantMessage("participant-left", value); if (event) this.queueOrApply(event); });
+		client.on("producer_created", (value) => { const event = parseProducerMessage("producer-created", value); if (event) this.queueOrApply(event); });
+		client.on("producer_closed", (value) => { const event = parseProducerMessage("producer-closed", value); if (event) this.queueOrApply(event); });
+		client.on("consumer_closed", (value) => { const id = parseConsumerId(value); if (id) this.deps.consumerManager.removeConsumer(id); });
+		client.on("media_control_update", (value) => { const message = parseMediaControlMessage(value); if (message) this.updateMedia(message); });
+		client.on("active_speaker", (value) => { const ids = parseActiveSpeakers(value); if (ids) this.state.activeSpeakersChanged?.(ids); });
+		client.on("screen_share_stopped", (value) => { const id = parseParticipantId(value); if (id) this.stopScreen(id); });
+		client.on("reaction:message", (value) => { const reaction = parseReaction(value); if (reaction) this.state.reactionReceived?.(reaction.fromUser, reaction.reaction); });
+		client.on("hand_raised", (value) => { const hand = parseHandChange(value); if (hand) this.state.handChanged?.(hand.participantId, hand.raised, hand.timestamp); });
+		client.on("existing_raised_hands", (value) => { const hands = parseRaisedHands(value); if (hands) this.state.handsSynced?.(hands); });
+		client.on("chat:message", (value) => { const message = parseChatMessage(value); if (!message) return; const time = Date.parse(message.timestamp || ""); if (!Number.isFinite(time) || time >= this.captureStartedAt) this.state.chatReceived?.({ id: `${message.fromUser || "unknown"}-${message.timestamp || Date.now()}`, participantId: message.fromUser, author: message.fromName || message.fromUser || "Unknown", text: message.message }); });
 	}
 
 	private async initialSynchronize(): Promise<void> {
-		const participants = await this.deps.sfuClient.getRoomParticipants() as Record<string, unknown>[];
-		this.deps.participantManager.syncParticipants(participants.map((p) => this.snapshotParticipant(p)).filter((p) => !this.departedParticipants.has(p.participantId || "")));
+		const participants = await this.deps.sfuClient.getRoomParticipants();
+		this.deps.participantManager.syncParticipants(
+			participants
+				.filter((participant) =>
+					!this.departedParticipants.has(participant.participantId || ""),
+				)
+				.map((participant) => this.sanitizeParticipant({
+					...participant,
+					userData: {
+						...participant.userData,
+						audio_enabled:
+							participant.userData?.audio_enabled ??
+							participant.audio_enabled ??
+							false,
+						video_enabled:
+							participant.userData?.video_enabled ??
+							participant.video_enabled ??
+							false,
+					},
+					audio_enabled:
+						participant.userData?.audio_enabled ??
+						participant.audio_enabled ??
+						false,
+					video_enabled:
+						participant.userData?.video_enabled ??
+						participant.video_enabled ??
+						false,
+				})),
+		);
 		const existing = await this.deps.sfuClient.getExistingProducers();
 		const producers = new Map<string, ProducerEvent>();
-		for (const value of existing as Record<string, unknown>[]) {
-			const event = { producerId: value.id as string, participantId: (value.participantId || value.user_id || value.userId) as string, isScreen: !!value.isScreen };
+		for (const value of existing) {
+			const producer = parseProducerSnapshot(value);
+			if (!producer) continue;
+			const event = { producerId: producer.id, participantId: producer.participantId, isScreen: producer.isScreen };
 			if (!this.closedProducers.has(event.producerId) && !this.departedParticipants.has(event.participantId)) producers.set(event.producerId, event);
 		}
 		while (this.bufferedEvents.length) for (const event of this.bufferedEvents.splice(0)) this.applySyncEvent(event, producers);
@@ -212,11 +268,11 @@ export class RecorderSocketController {
 	}
 	private applySyncEvent(event: SyncEvent, producers?: Map<string, ProducerEvent>): void {
 		if (event.type === "participant-joined") {
-			const id = event.value.participantId || event.value.user_id || "";
+			const id = event.value.participantId;
 			this.departedParticipants.delete(id);
 			this.deps.participantManager.addParticipant(this.sanitizeParticipant(event.value));
 		} else if (event.type === "participant-left") {
-			const id = event.value.participantId || event.value.user_id || "";
+			const id = event.value.participantId;
 			this.departedParticipants.add(id);
 			const removed = this.deps.participantManager.removeParticipant(id);
 			if (!removed) this.scheduleRoomEmpty();
@@ -242,26 +298,11 @@ export class RecorderSocketController {
 	private async subscribeLive(event: ProducerEvent): Promise<void> {
 		try { await this.subscribeRequired(event); } catch (error) { this.interrupt(error instanceof Error ? error.message : "Media subscription failed"); }
 	}
-	private snapshotParticipant(p: Record<string, unknown>): ParticipantData {
-		const info = (p.info || {}) as Record<string, unknown>;
-		return this.sanitizeParticipant({
-			participantId: (p.user_id || p.id) as string,
-			user_id: (p.user_id || p.id) as string,
-			user_name: (info.name || info.user_name || p.user_id || "") as string,
-			avatar: info.avatar as string | null,
-			audio_enabled:
-				typeof info.audio_enabled === "boolean" ? info.audio_enabled : false,
-			video_enabled:
-				typeof info.video_enabled === "boolean" ? info.video_enabled : false,
-			is_guest: Boolean(info.is_guest),
-			userData: info,
-		});
-	}
-	private sanitizeParticipant(p: ParticipantData): ParticipantData { const avatar = trustedAvatar(p.userData?.avatar || p.avatar, this.frappeOrigin); return { ...p, avatar, userData: { ...p.userData, avatar } }; }
+	private sanitizeParticipant(p: RecorderParticipantData): RecorderParticipantData { const avatar = trustedAvatar(p.userData?.avatar || p.avatar, this.frappeOrigin); return { ...p, avatar, userData: { ...p.userData, avatar } }; }
 	private frappeOrigin = "";
 	private removeProducer(event: ProducerEvent): void { for (const c of this.deps.consumerManager.getConsumersByParticipant(event.participantId || "")) if (c.producerId === event.producerId || (event.isScreen && c.isScreen)) this.deps.consumerManager.removeConsumer(c.id); }
 	private stopScreen(participantId: string): void { if (!participantId) return; for (const c of this.deps.consumerManager.getScreenShareConsumers().filter((c) => c.participantId === participantId)) this.deps.consumerManager.removeConsumer(c.id); this.state.screenStopped?.(participantId); }
-	private updateMedia(data: Record<string, unknown>): void { const action = data.action as { type?: string; enabled?: boolean } | string; const update: { audioEnabled?: boolean; videoEnabled?: boolean } = {}; if (typeof action === "object") action.type === "audio" ? update.audioEnabled = !!action.enabled : action.type === "video" ? update.videoEnabled = !!action.enabled : undefined; else if (action === "mute" || action === "unmute") update.audioEnabled = action === "unmute"; else if (action === "video_on" || action === "video_off") update.videoEnabled = action === "video_on"; this.deps.participantManager.updateMediaState(data.participantId as string, update); }
+	private updateMedia(data: MediaControlMessage): void { const action = data.action; const update: { audioEnabled?: boolean; videoEnabled?: boolean } = {}; if (typeof action === "object") action.type === "audio" ? update.audioEnabled = action.enabled : update.videoEnabled = action.enabled; else if (action === "mute" || action === "unmute") update.audioEnabled = action === "unmute"; else update.videoEnabled = action === "video_on"; this.deps.participantManager.updateMediaState(data.participantId, update); }
 	private interrupt(reason: string): void { if (!this._ready.value && this._interruption.value) return; this._ready.value = false; this._interruption.value = reason; this.bridge.reportInterruption(reason); }
 	private withTimeout(promise: Promise<void>, message: string): Promise<void> {
 		return new Promise((resolve, reject) => {
@@ -290,7 +331,7 @@ export class RecorderSocketController {
 				this.state.roomEmpty?.();
 		}, 10_000);
 	}
-	private request(event: string, data: unknown): Promise<void> { return new Promise((resolve, reject) => this.channel.emit(event, data, (value) => { const response = value as { success?: boolean; error?: string }; response?.success ? resolve() : reject(new Error(response?.error || `${event} failed`)); })); }
+	private request(event: string, data: { signature: string } | { roomId: string }): Promise<void> { return new Promise((resolve, reject) => this.channel.emit(event, data, (value) => { const response = parseRequestResponse(value); response?.success ? resolve() : reject(new Error(response?.error || `${event} failed`)); })); }
 }
 
 export function trustedAvatar(value: unknown, frappeOrigin: string): string | null {

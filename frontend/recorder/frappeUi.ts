@@ -56,7 +56,7 @@ export const Avatar = defineComponent({
 });
 export const frappeRequest = () => Promise.reject(new Error("Frappe requests are unavailable in the recorder"));
 export const createResource = () => ({ data: {}, loading: false, fetch: () => Promise.resolve() });
-export const debounce = <T extends (...args: never[]) => unknown>(fn: T, wait: number) => {
+export const debounce = <T extends (...args: never[]) => void>(fn: T, wait: number) => {
 	let timer: ReturnType<typeof setTimeout>;
 	return (...args: Parameters<T>) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), wait); };
 };

@@ -13,6 +13,12 @@ import puppeteer, {
 import type { CaptureArtifact, CaptureGap } from './captureTypes.js';
 import type { CommandClaims, PublicJwk } from './types.js';
 
+declare global {
+	interface Window {
+		__suiteRecorderLifecycle(value: unknown): void;
+	}
+}
+
 export interface RendererBridge {
 	readonly productionReady: boolean;
 	reserve(command: CommandClaims): Promise<PublicJwk>;
@@ -78,14 +84,17 @@ const browserAdapter: BrowserAdapter = {
 
 function isPublicJwk(value: unknown): value is PublicJwk {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-	const jwk = value as Record<string, unknown>;
 	return (
-		jwk.kty === 'EC' &&
-		jwk.crv === 'P-256' &&
-		typeof jwk.x === 'string' &&
-		typeof jwk.y === 'string' &&
-		/^[A-Za-z0-9_-]{43}$/.test(jwk.x) &&
-		/^[A-Za-z0-9_-]{43}$/.test(jwk.y)
+		'kty' in value &&
+		value.kty === 'EC' &&
+		'crv' in value &&
+		value.crv === 'P-256' &&
+		'x' in value &&
+		typeof value.x === 'string' &&
+		'y' in value &&
+		typeof value.y === 'string' &&
+		/^[A-Za-z0-9_-]{43}$/.test(value.x) &&
+		/^[A-Za-z0-9_-]{43}$/.test(value.y)
 	);
 }
 
@@ -227,11 +236,7 @@ export class ChromiumRendererBridge implements RendererBridge {
 						event.source === window &&
 						event.origin === window.location.origin
 					) {
-						(
-							window as unknown as {
-								__suiteRecorderLifecycle(value: unknown): void;
-							}
-						).__suiteRecorderLifecycle(event.data);
+						window.__suiteRecorderLifecycle(event.data);
 					}
 				});
 			});
@@ -397,32 +402,21 @@ export class ChromiumRendererBridge implements RendererBridge {
 		rejectReady: (error: Error) => void,
 	): void {
 		if (!value || typeof value !== 'object' || Array.isArray(value)) return;
-		const message = value as Record<string, unknown>;
-		if (message.type === 'suite-recorder:public-key-ready') {
-			if (isPublicJwk(message.publicKey)) {
-				const { kty, crv, x, y } = message.publicKey;
+		if ('type' in value && value.type === 'suite-recorder:public-key-ready') {
+			if ('publicKey' in value && isPublicJwk(value.publicKey)) {
+				const { kty, crv, x, y } = value.publicKey;
 				resolveReady({ kty, crv, x, y });
 			} else rejectReady(new Error('renderer returned an invalid public JWK'));
 			return;
 		}
-		if (message.job !== job) return;
+		if (!('job' in value) || value.job !== job || !('type' in value)) return;
 		const renderer = this.jobs.get(job);
-		const types: Record<string, RendererLifecycleEvent['type']> = {
-			'suite-recorder:configuration-accepted': 'configured',
-			'suite-recorder:proof-complete': 'proof_complete',
-			'suite-recorder:join-complete': 'joined',
-			'suite-recorder:capture-ready': 'capture_ready',
-			'suite-recorder:interruption': 'interrupted',
-			'suite-recorder:room-empty': 'room_empty',
-			'suite-recorder:failure': 'failed',
-		};
-		const type =
-			typeof message.type === 'string' ? types[message.type] : undefined;
+		const type = rendererLifecycleType(value.type);
 		if (!type) return;
 		if (type === 'configured') renderer?.resolveConfiguration?.();
 		const reason =
-			typeof message.reason === 'string'
-				? message.reason.slice(0, 256)
+			'reason' in value && typeof value.reason === 'string'
+				? value.reason.slice(0, 256)
 				: undefined;
 		void this.lifecycleHandler({ job, type, ...(reason ? { reason } : {}) });
 	}
@@ -432,6 +426,29 @@ export class ChromiumRendererBridge implements RendererBridge {
 		if (!renderer) return;
 		renderer.rejectConfiguration?.(new Error(reason));
 		await this.lifecycleHandler({ job, type: 'failed', reason });
+	}
+}
+
+function rendererLifecycleType(
+	value: unknown,
+): RendererLifecycleEvent['type'] | undefined {
+	switch (value) {
+		case 'suite-recorder:configuration-accepted':
+			return 'configured';
+		case 'suite-recorder:proof-complete':
+			return 'proof_complete';
+		case 'suite-recorder:join-complete':
+			return 'joined';
+		case 'suite-recorder:capture-ready':
+			return 'capture_ready';
+		case 'suite-recorder:interruption':
+			return 'interrupted';
+		case 'suite-recorder:room-empty':
+			return 'room_empty';
+		case 'suite-recorder:failure':
+			return 'failed';
+		default:
+			return undefined;
 	}
 }
 
