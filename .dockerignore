@@ -6,6 +6,8 @@ frontend/*
 !frontend/package.json
 !frontend/yarn.lock
 !frontend/recorder.html
+!frontend/postcss.config.js
+!frontend/tailwind.config.js
 !frontend/vite.recorder.config.ts
 !frontend/tsconfig*.json
 !frontend/recorder/
