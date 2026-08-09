@@ -161,7 +161,7 @@ export class SFUMeetingManager {
 			mediaHandler.cleanup();
 			this.consumerManager.clear();
 			this.mediaManager.processedConsumers.clear();
-			this.connectionManager.bufferedProducerEvents = [];
+			this.connectionManager.clearBufferedReconciliationEvents();
 			this.transportManager.cleanup();
 
 			await this.transportManager.initializeDevice();

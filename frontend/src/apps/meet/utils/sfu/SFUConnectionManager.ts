@@ -971,6 +971,10 @@ export class SFUConnectionManager {
 		}
 	}
 
+	clearBufferedReconciliationEvents(): void {
+		this.bufferedReconciliationEvents = [];
+	}
+
 	reset(): void {
 		this.lifecycleGeneration++;
 		this.meetingId = null;
