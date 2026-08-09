@@ -20,6 +20,9 @@ interface RecoveryManagerOptions {
 		result: TransportIceRestartResult,
 	) => Promise<void> | void;
 	onStarted?: (reason: string) => void;
+	schedule?: (
+		operation: () => Promise<RecoveryResult>,
+	) => Promise<RecoveryResult>;
 }
 
 type TransportDirection = "send" | "recv";
@@ -32,6 +35,7 @@ export class SFURecoveryManager {
 	private onRecovered?: RecoveryManagerOptions["onRecovered"];
 	private onFailed?: RecoveryManagerOptions["onFailed"];
 	private onStarted?: RecoveryManagerOptions["onStarted"];
+	private schedule?: RecoveryManagerOptions["schedule"];
 	private recoveryInProgress = false;
 	private activeRecovery: Promise<RecoveryResult> | null = null;
 	private recoveryGeneration = 0;
@@ -49,6 +53,7 @@ export class SFURecoveryManager {
 		this.onRecovered = options.onRecovered;
 		this.onFailed = options.onFailed;
 		this.onStarted = options.onStarted;
+		this.schedule = options.schedule;
 	}
 
 	get isRecovering(): boolean {
@@ -72,7 +77,8 @@ export class SFURecoveryManager {
 		this.onStarted?.(reason);
 		const recoveryGeneration = ++this.recoveryGeneration;
 
-		this.activeRecovery = (async (): Promise<RecoveryResult> => {
+		const recover = async (): Promise<RecoveryResult> => {
+			if (recoveryGeneration !== this.recoveryGeneration) return "skipped";
 			let restartResult: TransportIceRestartResult;
 			try {
 				try {
@@ -119,7 +125,8 @@ export class SFURecoveryManager {
 					this.activeRecovery = null;
 				}
 			}
-		})();
+		};
+		this.activeRecovery = this.schedule ? this.schedule(recover) : recover();
 
 		return this.activeRecovery;
 	}
