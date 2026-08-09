@@ -512,13 +512,6 @@ export interface JWTPayload {
 	iat?: number;
 }
 
-// Server types
-export interface ServerConfig {
-	port: number;
-	host: string;
-	jwtSecret: string;
-}
-
 export interface HealthStats {
 	status: 'healthy';
 	uptime: number;

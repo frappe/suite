@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../config';
 import type { Consumer } from '../../types';
 import { MediasoupManager } from '../MediasoupManager';
+
+const mediasoupConfig = loadConfig(
+	{ JWT_SECRET: 'test', NODE_ENV: 'development' },
+	{ cpuCount: 2, localIpv4: '127.0.0.1' },
+).mediasoup;
+
+function createManager(): MediasoupManager {
+	return new MediasoupManager(mediasoupConfig);
+}
 
 function makeConsumer(opts: {
 	paused: boolean;
@@ -27,7 +37,7 @@ function makeConsumer(opts: {
 
 describe('MediasoupManager.updateConsumerPreferences', () => {
 	it('requests a keyframe when a paused consumer is resumed with no layer change', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const consumer = makeConsumer({ paused: true });
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
 			roomId: 'r1',
@@ -51,7 +61,7 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 	});
 
 	it('does not request a keyframe on a running consumer with no layer change', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const consumer = makeConsumer({ paused: false });
 		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
 			roomId: 'r1',
@@ -77,7 +87,7 @@ describe('MediasoupManager.updateConsumerPreferences', () => {
 
 describe('MediasoupManager.createConsumer', () => {
 	it('keeps an existing consumer when its replacement fails', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: {
 				getTransportData: (transportId: string) => unknown;
@@ -127,7 +137,7 @@ describe('MediasoupManager.createConsumer', () => {
 
 describe('MediasoupManager resource access', () => {
 	it('requires transport room, peer, and direction to match', () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: { getTransportData: (id: string) => unknown };
 		};
@@ -150,7 +160,7 @@ describe('MediasoupManager resource access', () => {
 	});
 
 	it('rejects a producer from another room when creating a consumer', async () => {
-		const mgr = new MediasoupManager();
+		const mgr = createManager();
 		const internals = mgr as unknown as {
 			transportManager: { getTransportData: (id: string) => unknown };
 			producerManager: { getProducerData: (id: string) => unknown };

@@ -7,6 +7,7 @@ import type {
 	IceCandidate,
 	IceParameters,
 	MediaControlAction,
+	MediasoupConfig,
 	ParticipantInfo,
 	Peer,
 	PeerInfo,
@@ -21,7 +22,6 @@ import type {
 } from '../types';
 import { loggers } from '../utils/logger';
 import { ConsumerManager } from './ConsumerManager';
-import { mediasoupConfig } from './config';
 import { PeerManager } from './PeerManager';
 import { ProducerManager } from './ProducerManager';
 import { RoomManager } from './RoomManager';
@@ -57,7 +57,7 @@ export class MediasoupManager {
 	>();
 	private creatingConsumers = new Set<string>();
 
-	constructor() {
+	constructor(private readonly config: MediasoupConfig) {
 		this.consumerManager.onClose(({ roomId, peerId, consumer }) => {
 			this.roomManager
 				.getRoom(roomId)
@@ -202,9 +202,9 @@ export class MediasoupManager {
 		loggers.mediasoupManager.info('Initializing Mediasoup');
 
 		await this.workerManager.initialize(
-			mediasoupConfig.numWorkers,
-			mediasoupConfig.worker,
-			mediasoupConfig.webRtcServer,
+			this.config.numWorkers,
+			this.config.worker,
+			this.config.webRtcServer,
 		);
 
 		loggers.mediasoupManager.info('Mediasoup initialized successfully');
@@ -219,7 +219,7 @@ export class MediasoupManager {
 			roomId,
 			worker,
 			webRtcServer,
-			mediasoupConfig.router.mediaCodecs as RtpCodecCapability[],
+			this.config.router.mediaCodecs as RtpCodecCapability[],
 			onActiveSpeaker,
 		);
 	}
@@ -292,7 +292,7 @@ export class MediasoupManager {
 			room.router,
 			room.webRtcServer,
 			direction,
-			mediasoupConfig.webRtcTransport,
+			this.config.webRtcTransport,
 		);
 	}
 
@@ -337,7 +337,7 @@ export class MediasoupManager {
 			throw new Error(`Peer ${peerId} not found in room ${roomId}`);
 		}
 
-		const listenIp = mediasoupConfig.webRtcServer.listenIp || '0.0.0.0';
+		const listenIp = this.config.webRtcServer.listenIp;
 		return this.transportManager.createPlainTransport(
 			roomId,
 			peerId,

@@ -30,11 +30,12 @@ export class RouteManager {
 		mediasoup: MediasoupManager,
 		telemetry: Telemetry,
 		getSocketCount: () => number,
+		metricsToken?: string,
 	) {
 		this.app = app;
 		this.mediasoup = mediasoup;
 		this.telemetry = telemetry;
-		this.metricsToken = process.env.METRICS_TOKEN;
+		this.metricsToken = metricsToken;
 		this.getSocketCount = getSocketCount;
 	}
 

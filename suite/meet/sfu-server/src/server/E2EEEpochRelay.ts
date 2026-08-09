@@ -107,6 +107,7 @@ export class E2EEEpochRelay {
 		private readonly persistence: E2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence(),
 		private readonly rateLimiter: RateLimiter | null = null,
 		private readonly telemetry: Telemetry | null = null,
+		private readonly bypassRateLimits = false,
 	) {
 		this.io = io;
 		this.fullAccessSockets = fullAccessSockets;
@@ -136,6 +137,7 @@ export class E2EEEpochRelay {
 			E2EE_EPOCH_USER_LIMIT,
 			E2EE_EPOCH_IP_LIMIT,
 			E2EE_EPOCH_RATE_WINDOW_MS,
+			this.bypassRateLimits,
 		);
 		if (!allowed) {
 			this.telemetry?.recordE2EEEvent('unknown', 'rate_limited');

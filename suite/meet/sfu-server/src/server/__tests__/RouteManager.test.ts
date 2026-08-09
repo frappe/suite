@@ -1,10 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Telemetry } from '../../telemetry/Telemetry';
 import { RouteManager } from '../RouteManager';
 
 function createHarness(token?: string) {
-	if (token) process.env.METRICS_TOKEN = token;
-	else delete process.env.METRICS_TOKEN;
 	const handlers = new Map<string, (req: never, res: never) => unknown>();
 	const app = {
 		get: vi.fn((path: string, handler: (req: never, res: never) => unknown) => {
@@ -30,6 +28,7 @@ function createHarness(token?: string) {
 		mediasoup as never,
 		telemetry,
 		() => 5,
+		token,
 	).setupRoutes();
 	return { handlers, telemetry };
 }
@@ -44,8 +43,6 @@ function createResponse() {
 }
 
 describe('RouteManager metrics endpoint', () => {
-	afterEach(() => delete process.env.METRICS_TOKEN);
-
 	it('requires a configured bearer token', async () => {
 		const { handlers } = createHarness('secret');
 		const response = createResponse();

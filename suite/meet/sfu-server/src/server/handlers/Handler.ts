@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import type { SFUConfig } from '../../config';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
 import type { Telemetry } from '../../telemetry/Telemetry';
 import type {
@@ -28,4 +29,5 @@ export interface HandlerDeps {
 	e2eeEpochRelay: E2EEEpochRelay;
 	e2eeRoster: E2eeRosterStore;
 	telemetry: Telemetry;
+	runtime: SFUConfig['runtime'];
 }

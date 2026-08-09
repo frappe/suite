@@ -71,6 +71,34 @@ describe('SocketHandlerManager characterization', () => {
 		expect(next).toHaveBeenCalledWith();
 	});
 
+	it('allows plain transports only when runtime configuration enables them', async () => {
+		const productionHarness = createManager();
+		const productionSocket = connectFullSocket(productionHarness);
+		const productionCallback = vi.fn();
+		productionSocket.fire('create_plain_transport', {}, productionCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(productionCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'PlainTransport creation is not allowed in this environment',
+		});
+
+		const developmentHarness = createManager(undefined, {
+			mode: 'development',
+			allowPlainTransport: true,
+			bypassRateLimits: true,
+		});
+		const developmentSocket = connectFullSocket(developmentHarness);
+		const developmentCallback = vi.fn();
+		developmentSocket.fire('create_plain_transport', {}, developmentCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(developmentCallback).toHaveBeenCalledWith({
+			success: true,
+			id: 'plain-1',
+		});
+	});
+
 	it('denies producer and token-refresh handlers to recording scope', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {
@@ -81,7 +109,6 @@ describe('SocketHandlerManager characterization', () => {
 		harness.authManager.ensureFullAccess.mockImplementation(() => {
 			throw denied;
 		});
-		vi.stubEnv('NODE_ENV', 'development');
 		const producerCallback = vi.fn();
 		const refreshCallback = vi.fn();
 

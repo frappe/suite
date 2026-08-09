@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import { vi } from 'vitest';
+import type { SFUConfig } from '../../config';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
 import { Telemetry } from '../../telemetry/Telemetry';
 import type {
@@ -230,6 +231,11 @@ interface ManagerHarness {
 
 export function createManager(
 	recordingGrantManager?: RecordingGrantManager,
+	runtime: SFUConfig['runtime'] = {
+		mode: 'test',
+		allowPlainTransport: false,
+		bypassRateLimits: false,
+	},
 ): ManagerHarness {
 	const io = createMockServer();
 	const mediasoup = createMockMediasoupManager();
@@ -242,6 +248,7 @@ export function createManager(
 		authManager as unknown as AuthManager,
 		telemetry,
 		roster,
+		runtime,
 		undefined,
 		recordingGrantManager,
 	);

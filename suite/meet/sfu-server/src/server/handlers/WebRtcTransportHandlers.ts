@@ -146,8 +146,7 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 
 		socket.on('create_plain_transport', async (_data, callback) => {
 			try {
-				const isDev = process.env.NODE_ENV === 'development';
-				if (!isDev) {
+				if (!deps.runtime.allowPlainTransport) {
 					throw new Error(
 						'PlainTransport creation is not allowed in this environment',
 					);
