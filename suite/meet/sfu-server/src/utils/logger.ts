@@ -1,4 +1,5 @@
 import { format } from 'node:util';
+import type { JsonValue } from '../types';
 
 enum LogLevel {
 	DEBUG = 0,
@@ -55,7 +56,7 @@ class Logger {
 		}
 	}
 
-	event(name: string, fields: Record<string, unknown> = {}): void {
+	event(name: string, fields: { [key: string]: JsonValue } = {}): void {
 		if (this.shouldLog(LogLevel.INFO)) {
 			console.log(
 				JSON.stringify({

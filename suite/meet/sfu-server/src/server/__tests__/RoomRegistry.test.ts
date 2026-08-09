@@ -3,6 +3,17 @@ import { describe, expect, it } from 'vitest';
 import type { UserData } from '../../types';
 import { RoomRegistry } from '../RoomRegistry';
 
+interface EmissionFixture {
+	event: string;
+	data: {
+		roomId?: string;
+		participantId?: string;
+		producerId?: string;
+		isScreen?: boolean;
+		shareData?: { producerId: string };
+	};
+}
+
 function makeSocket(id: string): Socket {
 	const emitCalls: { event: string; data: unknown }[] = [];
 	const sock = {
@@ -233,7 +244,7 @@ describe('RoomRegistry', () => {
 				producerId: 'producer-1',
 				isScreen: false,
 				reason: 'private diagnostic',
-				details: { private: true },
+				details: { message: 'private diagnostic' },
 			});
 			registry.emitScreenShare('r1', 'screen_share_started', {
 				participantId: 'p1',
@@ -247,7 +258,11 @@ describe('RoomRegistry', () => {
 				fromName: 'Alice',
 				timestamp: 'ts',
 			});
-			registry.emitRaisedHand('r1', { participantId: 'p1', raised: true });
+			registry.emitRaisedHand('r1', {
+				participantId: 'p1',
+				raised: true,
+				timestamp: 'ts',
+			});
 			registry.emitPublicChat('r1', {
 				roomId: 'r1',
 				message: 'hello',
@@ -278,7 +293,7 @@ describe('RoomRegistry', () => {
 			]);
 			const calls = (
 				recorder as unknown as {
-					_emitCalls: { event: string; data: Record<string, unknown> }[];
+					_emitCalls: EmissionFixture[];
 				}
 			)._emitCalls;
 			expect(

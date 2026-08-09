@@ -157,7 +157,11 @@ describe('RecordingGrantManager', () => {
 });
 
 function makeToken(
-	overrides: Record<string, unknown> = {},
+	overrides: {
+		scope?: string;
+		iss?: string;
+		cnf?: RecordingGrantClaims['cnf'];
+	} = {},
 	header: Record<string, string> = {},
 ): string {
 	const claims: RecordingGrantClaims = {

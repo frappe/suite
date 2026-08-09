@@ -3,9 +3,10 @@ import type * as mediasoup from 'mediasoup';
 import type {
 	AppData,
 	CloseProducerResult,
+	ProducerAppData,
 	ProducerData,
 	RtpParameters,
-	WebRtcTransport,
+	TransportData,
 } from '../types';
 import { loggers } from '../utils/logger';
 
@@ -13,14 +14,18 @@ export class ProducerManager extends EventEmitter {
 	private producers = new Map<string, ProducerData>();
 
 	async createProducer(
-		transport: WebRtcTransport,
+		transport: TransportData['transport'],
 		roomId: string,
 		peerId: string,
 		rtpParameters: RtpParameters,
 		kind: 'audio' | 'video',
-		appData: AppData = {},
+		appData: ProducerAppData = {},
 		paused = false,
-	): Promise<{ id: string; kind: 'audio' | 'video'; appData: AppData }> {
+	): Promise<{
+		id: string;
+		kind: 'audio' | 'video';
+		appData: ProducerAppData;
+	}> {
 		loggers.producerManager.info(
 			'Creating %s producer for peer %s',
 			kind,
@@ -55,7 +60,7 @@ export class ProducerManager extends EventEmitter {
 		return {
 			id: producer.id,
 			kind: producer.kind,
-			appData: producer.appData || appData,
+			appData: sanitizedAppData(producer.appData),
 		};
 	}
 
@@ -180,4 +185,19 @@ export class ProducerManager extends EventEmitter {
 		}
 		this.producers.clear();
 	}
+}
+
+function sanitizedAppData(value: AppData): ProducerAppData {
+	const appData: ProducerAppData = {};
+	if (value.type === 'screen') appData.type = 'screen';
+	if (typeof value.e2eeStartPaused === 'boolean') {
+		appData.e2eeStartPaused = value.e2eeStartPaused;
+	}
+	if (
+		typeof value.senderId === 'number' &&
+		Number.isSafeInteger(value.senderId)
+	) {
+		appData.senderId = value.senderId;
+	}
+	return appData;
 }

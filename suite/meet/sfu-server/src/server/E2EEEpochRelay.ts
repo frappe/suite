@@ -1386,7 +1386,7 @@ export class E2EEEpochRelay {
 	private async getCommitterDebugState(
 		roomId: string,
 		excludeSenderIds: number[],
-	): Promise<Record<string, unknown>> {
+	) {
 		const rosterEntries = (await this.roster?.list(roomId)) ?? [];
 		const fullAccessSocketIds = Array.from(
 			this.fullAccessSockets.get(roomId) ?? [],
@@ -1484,9 +1484,7 @@ export class E2EEEpochRelay {
 		if (!socketsInRoom) return null;
 
 		for (const socketId of socketsInRoom) {
-			const socket = this.io.sockets.sockets.get(socketId) as
-				| TypedSocket
-				| undefined;
+			const socket = this.io.sockets.sockets.get(socketId);
 			if (socket && socket.participantId === participantId) {
 				return socket;
 			}
@@ -1569,8 +1567,7 @@ export class E2EEEpochRelay {
 		for (const socketId of socketIds) {
 			const socket = this.io.sockets.sockets.get(socketId);
 			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: typed-socket emit with narrowed payload
-				(socket as any).emit('e2ee:epoch', data);
+				socket.emit('e2ee:epoch', data);
 			}
 		}
 	}

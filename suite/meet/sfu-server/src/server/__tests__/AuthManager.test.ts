@@ -1,11 +1,14 @@
 import * as jwt from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
+import type { JWTPayload } from '../../types';
 import { AuthManager } from '../AuthManager';
 import { createMockSocket } from './test-helpers';
 
 const SECRET = 'test-secret';
 
-function token(overrides: Record<string, unknown> = {}): string {
+function token(
+	overrides: Partial<JWTPayload> & { user_avatar?: string | null } = {},
+): string {
 	return jwt.sign(
 		{
 			user_id: 'user-1',
@@ -36,6 +39,20 @@ describe('AuthManager', () => {
 		expect(manager.authenticateSocket(socket)).toBe(true);
 
 		expect(socket.site).toBe('site-a');
+	});
+
+	it('accepts a null avatar from the participant token issuer', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket({
+			handshake: {
+				auth: { token: token({ user_avatar: null }) },
+				query: {},
+				headers: {},
+				address: '127.0.0.1',
+			} as never,
+		});
+
+		expect(manager.authenticateSocket(socket)).toBe(true);
 	});
 
 	it('rejects token refreshes that change site', () => {

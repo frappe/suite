@@ -5,6 +5,7 @@ import type {
 	DtlsParameters,
 	IceCandidate,
 	IceParameters,
+	PlainTransport,
 	Producer,
 	Router,
 	RouterRtpCodecCapability,
@@ -38,7 +39,11 @@ import type {
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
 	PreviewParticipantInfo,
+	ProducerCloseDetails,
 	ProducerClosedEvent,
+	ProducerCloseReason,
+	ProducerCloseSource,
+	ProducerCloseTrackSettings,
 	ProducerCreatedEvent,
 	RaiseHandRequest,
 	ReactionMessage,
@@ -82,9 +87,14 @@ export type {
 	ParticipantInfo,
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
+	PlainTransport,
 	PreviewParticipantInfo,
 	Producer,
+	ProducerCloseDetails,
 	ProducerClosedEvent,
+	ProducerCloseReason,
+	ProducerCloseSource,
+	ProducerCloseTrackSettings,
 	ProducerCreatedEvent,
 	RaiseHandRequest,
 	ReactionMessage,
@@ -177,7 +187,7 @@ export interface ClientToServerEvents {
 			transportId: string;
 			rtpParameters: RtpParameters;
 			kind: 'audio' | 'video';
-			appData?: Record<string, unknown>;
+			appData?: AppData;
 		},
 		callback: (response: ProducerResponse) => void,
 	) => void;
@@ -192,9 +202,9 @@ export interface ClientToServerEvents {
 	close_producer: (
 		data: {
 			producerId: string;
-			reason?: string;
-			source?: string;
-			details?: Record<string, unknown>;
+			reason?: ProducerCloseReason;
+			source?: ProducerCloseSource;
+			details?: ProducerCloseDetails;
 		},
 		callback: (response: CloseProducerResponse) => void,
 	) => void;
@@ -351,8 +361,25 @@ export interface RoomParticipantsResponse extends SFUResponse {
 export interface ProducerInfo {
 	id: string;
 	kind: 'audio' | 'video';
-	appData: Record<string, unknown>;
+	appData: ProducerAppData;
 }
+
+export interface ProducerAppData extends AppData {
+	type?: 'screen';
+	e2eeStartPaused?: boolean;
+	senderId?: number;
+}
+
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
+
+export type JsonObject = { [key: string]: JsonValue };
+
 export interface ConsumerInfo {
 	id: string;
 	producerId: string;
@@ -403,12 +430,23 @@ export interface PeerInfo extends UserData {
 	isHost?: boolean;
 }
 
-export interface TransportData {
+export interface WebRtcTransportData {
 	roomId: string;
 	peerId: string;
 	transport: WebRtcTransport;
-	direction?: 'send' | 'recv';
+	direction: 'send' | 'recv';
+	type: 'webrtc';
 }
+
+export interface PlainTransportData {
+	roomId: string;
+	peerId: string;
+	transport: PlainTransport;
+	direction: 'send';
+	type: 'plain';
+}
+
+export type TransportData = WebRtcTransportData | PlainTransportData;
 
 export interface ProducerData {
 	roomId: string;

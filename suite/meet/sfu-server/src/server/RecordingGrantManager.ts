@@ -49,17 +49,27 @@ export class RecordingGrantManager {
 		if (!this.persistence.isReady()) {
 			throw new Error('Recording authorization is not ready');
 		}
-		const decoded = jwt.verify(token, this.secret, {
+		const decoded: unknown = jwt.verify(token, this.secret, {
 			algorithms: ['HS256'],
 			audience: GRANT_AUDIENCE,
 			clockTimestamp: now,
 			clockTolerance: this.clockSkewSeconds,
 			complete: true,
-		}) as jwt.Jwt;
+		});
 		if (
+			!decoded ||
+			typeof decoded !== 'object' ||
+			Array.isArray(decoded) ||
+			!('header' in decoded) ||
+			!decoded.header ||
+			typeof decoded.header !== 'object' ||
+			Array.isArray(decoded.header) ||
 			Object.keys(decoded.header).length !== 2 ||
+			!('alg' in decoded.header) ||
 			decoded.header.alg !== 'HS256' ||
-			decoded.header.typ !== GRANT_TYPE
+			!('typ' in decoded.header) ||
+			decoded.header.typ !== GRANT_TYPE ||
+			!('payload' in decoded)
 		) {
 			throw new Error('Invalid recording grant header');
 		}
@@ -157,38 +167,94 @@ export function jwkThumbprint(jwk: JsonWebKey): string {
 	return createHash('sha256').update(canonical).digest('base64url');
 }
 
-function parseClaims(payload: string | jwt.JwtPayload): RecordingGrantClaims {
-	if (typeof payload === 'string')
+function parseClaims(payload: unknown): RecordingGrantClaims {
+	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
 		throw new Error('Invalid recording grant claims');
-	const requiredStrings = [
-		'iss',
-		'jti',
-		'site',
-		'meeting_id',
-		'recording_id',
-		'recorder_job_id',
-	] as const;
-	for (const name of requiredStrings) {
-		if (typeof payload[name] !== 'string' || payload[name].length === 0) {
-			throw new Error(`Missing recording grant claim: ${name}`);
-		}
 	}
-	if (payload.aud !== GRANT_AUDIENCE || payload.scope !== 'recording') {
+	if (
+		!('aud' in payload) ||
+		payload.aud !== GRANT_AUDIENCE ||
+		!('scope' in payload) ||
+		payload.scope !== 'recording'
+	) {
 		throw new Error('Invalid recording grant audience or scope');
 	}
-	for (const name of ['iat', 'exp', 'authorization_expires_at'] as const) {
-		if (!Number.isSafeInteger(payload[name])) {
-			throw new Error(`Missing recording grant claim: ${name}`);
-		}
+	return {
+		iss: requiredClaimString(property(payload, 'iss'), 'iss'),
+		aud: GRANT_AUDIENCE,
+		scope: 'recording',
+		jti: requiredClaimString(property(payload, 'jti'), 'jti'),
+		site: requiredClaimString(property(payload, 'site'), 'site'),
+		meeting_id: requiredClaimString(
+			property(payload, 'meeting_id'),
+			'meeting_id',
+		),
+		recording_id: requiredClaimString(
+			property(payload, 'recording_id'),
+			'recording_id',
+		),
+		recorder_job_id: requiredClaimString(
+			property(payload, 'recorder_job_id'),
+			'recorder_job_id',
+		),
+		cnf: parseConfirmation(property(payload, 'cnf')),
+		iat: requiredClaimInteger(property(payload, 'iat'), 'iat'),
+		exp: requiredClaimInteger(property(payload, 'exp'), 'exp'),
+		authorization_expires_at: requiredClaimInteger(
+			property(payload, 'authorization_expires_at'),
+			'authorization_expires_at',
+		),
+	};
+}
+
+function property(value: object, key: string): unknown {
+	return key in value ? value[key as keyof typeof value] : undefined;
+}
+
+function requiredClaimString(value: unknown, name: string): string {
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new Error(`Missing recording grant claim: ${name}`);
 	}
-	if (!payload.cnf || typeof payload.cnf !== 'object') {
+	return value;
+}
+
+function requiredClaimInteger(value: unknown, name: string): number {
+	if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+		throw new Error(`Missing recording grant claim: ${name}`);
+	}
+	return value;
+}
+
+function parseConfirmation(value: unknown): { jwk: JsonWebKey; jkt: string } {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Missing recording grant claim: cnf');
 	}
-	const cnf = payload.cnf as Record<string, unknown>;
-	if (!cnf.jwk || typeof cnf.jwk !== 'object' || typeof cnf.jkt !== 'string') {
+	if (!('jwk' in value) || !('jkt' in value) || typeof value.jkt !== 'string') {
 		throw new Error('Invalid recording grant cnf');
 	}
-	return payload as RecordingGrantClaims;
+	return { jwk: parsePublicJwk(value.jwk), jkt: value.jkt };
+}
+
+function parsePublicJwk(value: unknown): JsonWebKey {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Invalid recording grant public JWK');
+	}
+	if (
+		!('kty' in value) ||
+		value.kty !== 'EC' ||
+		!('crv' in value) ||
+		value.crv !== 'P-256' ||
+		'd' in value ||
+		!('x' in value) ||
+		typeof value.x !== 'string' ||
+		!('y' in value) ||
+		typeof value.y !== 'string'
+	) {
+		throw new Error('Invalid recording grant public JWK');
+	}
+	decodeBase64Url(value.x, 32, 'JWK x');
+	decodeBase64Url(value.y, 32, 'JWK y');
+	return { kty: 'EC', crv: 'P-256', x: value.x, y: value.y };
 }
 
 function validatePublicJwk(jwk: JsonWebKey): void {

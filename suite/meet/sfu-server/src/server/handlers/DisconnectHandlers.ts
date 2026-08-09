@@ -11,7 +11,7 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 			deps.telemetry.socketDisconnects.inc({ reason: normalizedReason });
 			loggers.telemetry.event('socket_disconnect', {
 				reason: normalizedReason,
-				scope: socket.scope,
+				scope: socket.scope ?? 'unassigned',
 			});
 			deps.authManager.cleanupSocket(socket);
 

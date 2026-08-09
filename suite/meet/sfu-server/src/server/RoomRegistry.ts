@@ -3,11 +3,26 @@ import type {
 	ActivePoll,
 	ChatMessage,
 	ClientToServerEvents,
+	HandRaisedEvent,
 	MediaControlAction,
+	ProducerCloseDetails,
+	ProducerCloseReason,
+	ProducerCloseSource,
 	ReactionMessage,
+	ScreenShareStartedEvent,
+	ScreenShareStoppedEvent,
 	ServerToClientEvents,
+	SocketData,
 	UserData,
 } from '../types';
+
+type ServerSocket = Socket<
+	ClientToServerEvents,
+	ServerToClientEvents,
+	Record<string, never>,
+	SocketData
+>;
+type ServerEventName = keyof ServerToClientEvents;
 
 const fullRoom = (roomId: string) => `${roomId}:full`;
 const previewRoom = (roomId: string) => `${roomId}:preview`;
@@ -205,48 +220,50 @@ export class RoomRegistry {
 		this.participantToSender.delete(roomId);
 	}
 
-	emitToScope(
+	emitToScope<Event extends ServerEventName>(
 		roomId: string,
 		scope: 'full' | 'presence-preview',
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
 		const key = scope === 'full' ? fullRoom(roomId) : previewRoom(roomId);
 		const ids = this.io.sockets.adapter.rooms.get(key);
 		if (!ids) return;
 		for (const id of ids) {
-			const socket = this.io.sockets.sockets.get(id);
+			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
 			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: Internal utility for type-safe emission to dynamic event names
-				(socket as any).emit(event, data);
+				socket.emit(event, ...args);
 			}
 		}
 	}
 
-	emitToFullAccessParticipants(
+	emitToFullAccessParticipants<Event extends ServerEventName>(
 		roomId: string,
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
-		this.emitToScope(roomId, 'full', event, data);
+		this.emitToScope(roomId, 'full', event, ...args);
 	}
 
-	emitToPreviewParticipants(
+	emitToPreviewParticipants<Event extends ServerEventName>(
 		roomId: string,
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
-		this.emitToScope(roomId, 'presence-preview', event, data);
+		this.emitToScope(roomId, 'presence-preview', event, ...args);
 	}
 
-	private emitToRecorders(roomId: string, event: string, data: unknown): void {
+	private emitToRecorders<Event extends ServerEventName>(
+		roomId: string,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
+	): void {
 		const ids = this.io.sockets.adapter.rooms.get(recorderRoom(roomId));
 		if (!ids) return;
 		for (const id of ids) {
-			const socket = this.io.sockets.sockets.get(id);
+			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
 			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: Internal utility used only by the explicit recorder allowlist below
-				(socket as any).emit(event, data);
+				socket.emit(event, ...args);
 			}
 		}
 	}
@@ -256,7 +273,7 @@ export class RoomRegistry {
 		data: {
 			participantId: string;
 			producerId: string;
-			kind: string;
+			kind: 'audio' | 'video';
 			paused: boolean;
 			isScreen: boolean;
 		},
@@ -272,9 +289,9 @@ export class RoomRegistry {
 			participantId: string;
 			producerId: string;
 			isScreen: boolean;
-			reason?: string;
-			source?: string;
-			details?: Record<string, unknown>;
+			reason?: ProducerCloseReason;
+			source?: ProducerCloseSource;
+			details?: ProducerCloseDetails;
 		},
 	): void {
 		this.emitToFullAccessParticipants(roomId, 'producer_closed', {
@@ -297,15 +314,28 @@ export class RoomRegistry {
 
 	emitScreenShare(
 		roomId: string,
+		event: 'screen_share_started',
+		data: ScreenShareStartedEvent,
+	): void;
+	emitScreenShare(
+		roomId: string,
+		event: 'screen_share_stopped',
+		data: ScreenShareStoppedEvent,
+	): void;
+	emitScreenShare(
+		roomId: string,
 		event: 'screen_share_started' | 'screen_share_stopped',
-		data: Record<string, unknown>,
+		data: ScreenShareStartedEvent | ScreenShareStoppedEvent,
 	): void {
 		this.emitToFullAccessParticipants(roomId, event, data);
-		const shareData = data.shareData as Record<string, unknown> | undefined;
+		const producerId =
+			'shareData' in data && typeof data.shareData.producerId === 'string'
+				? data.shareData.producerId
+				: undefined;
 		this.emitToRecorders(roomId, event, {
 			participantId: data.participantId,
-			...(event === 'screen_share_started' && shareData?.producerId
-				? { shareData: { producerId: shareData.producerId } }
+			...(event === 'screen_share_started' && producerId
+				? { shareData: { producerId } }
 				: {}),
 			timestamp: data.timestamp,
 		});
@@ -316,7 +346,7 @@ export class RoomRegistry {
 		this.emitToRecorders(roomId, 'reaction:message', data);
 	}
 
-	emitRaisedHand(roomId: string, data: Record<string, unknown>): void {
+	emitRaisedHand(roomId: string, data: HandRaisedEvent): void {
 		this.emitToFullAccessParticipants(roomId, 'hand_raised', data);
 		this.emitToRecorders(roomId, 'hand_raised', data);
 	}
@@ -386,7 +416,7 @@ export class RoomRegistry {
 					userData: {
 						name: userData.name,
 						avatar: userData.avatar,
-					} as UserData,
+					},
 				});
 			} else if (event === 'participant_left') {
 				this.emitToPreviewParticipants(roomId, event, {

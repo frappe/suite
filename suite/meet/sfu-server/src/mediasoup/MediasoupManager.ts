@@ -1,5 +1,4 @@
 import type {
-	AppData,
 	CloseProducerResult,
 	Consumer,
 	ConsumerData,
@@ -11,11 +10,14 @@ import type {
 	ParticipantInfo,
 	Peer,
 	PeerInfo,
+	ProducerAppData,
 	ProducerData,
 	Room,
 	RtpCapabilities,
 	RtpCodecCapability,
 	RtpParameters,
+	TransportData,
+	WebRtcTransportData,
 } from '../types';
 import { loggers } from '../utils/logger';
 import { ConsumerManager } from './ConsumerManager';
@@ -350,11 +352,15 @@ export class MediasoupManager {
 		peerId: string,
 		rtpParameters: RtpParameters,
 		kind: 'audio' | 'video',
-		appData: AppData = {},
+		appData: ProducerAppData = {},
 		senderId?: number,
 		paused = false,
-	): Promise<{ id: string; kind: 'audio' | 'video'; appData: AppData }> {
-		const enrichedAppData: AppData =
+	): Promise<{
+		id: string;
+		kind: 'audio' | 'video';
+		appData: ProducerAppData;
+	}> {
+		const enrichedAppData: ProducerAppData =
 			senderId !== undefined ? { ...appData, senderId } : appData;
 		const transportData = this.assertTransportAccess(
 			transportId,
@@ -417,7 +423,6 @@ export class MediasoupManager {
 			peerId,
 			'recv',
 		);
-
 		const producerData = this.producerManager.getProducerData(producerId);
 		if (!producerData) {
 			throw new Error(`Producer ${producerId} not found`);
@@ -561,8 +566,26 @@ export class MediasoupManager {
 		transportId: string,
 		roomId: string,
 		peerId: string,
+		direction: 'recv',
+	): WebRtcTransportData;
+	assertTransportAccess(
+		transportId: string,
+		roomId: string,
+		peerId: string,
+		direction: 'send',
+	): TransportData;
+	assertTransportAccess(
+		transportId: string,
+		roomId: string,
+		peerId: string,
 		direction?: 'send' | 'recv',
-	) {
+	): TransportData;
+	assertTransportAccess(
+		transportId: string,
+		roomId: string,
+		peerId: string,
+		direction?: 'send' | 'recv',
+	): TransportData {
 		const data = this.transportManager.getTransportData(transportId);
 		if (!data) throw new Error(`Transport ${transportId} not found`);
 		if (data.roomId !== roomId || data.peerId !== peerId) {

@@ -16,17 +16,19 @@ export class AuthManager {
 
 	authenticateSocket(socket: Socket): boolean {
 		try {
-			const token = socket.handshake.auth.token || socket.handshake.query.token;
+			const candidate: unknown =
+				socket.handshake.auth.token || socket.handshake.query.token;
 
-			if (!token) {
+			if (typeof candidate !== 'string' || !candidate) {
 				loggers.authManager.error('No authentication token provided');
 				return false;
 			}
+			const token = candidate;
 
-			const header = jwt.decode(String(token), { complete: true })?.header;
+			const header = jwt.decode(token, { complete: true })?.header;
 			if (header?.typ === 'meet-recording-grant+jwt') {
 				if (!this.recordingGrantManager) return false;
-				const claims = this.recordingGrantManager.verifyGrant(String(token));
+				const claims = this.recordingGrantManager.verifyGrant(token);
 				socket.userId = `recorder:${claims.recording_id}`;
 				socket.userName = 'Recorder';
 				socket.meetingId = claims.meeting_id;
@@ -37,21 +39,14 @@ export class AuthManager {
 				socket.scope = 'recording';
 				socket.e2eeRequired = false;
 				socket.e2eeReady = false;
-				socket.currentToken = String(token);
+				socket.currentToken = token;
 				socket.tokenExpiresAt = claims.exp * 1000;
 				socket.recordingClaims = claims;
 				socket.recordingProofComplete = false;
 				return true;
 			}
 
-			const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
-			if (
-				decoded.scope !== undefined &&
-				decoded.scope !== 'full' &&
-				decoded.scope !== 'presence-preview'
-			) {
-				throw new Error('Invalid participant scope');
-			}
+			const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 
 			// Attach user info to socket
 			socket.userId = decoded.user_id;
@@ -87,7 +82,7 @@ export class AuthManager {
 		if (socket.scope === 'recording') {
 			throw new Error('Recording authorization cannot be refreshed');
 		}
-		const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+		const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 		const wasE2EERequired = socket.e2eeRequired === true;
 		const wasE2EEReady = socket.e2eeReady === true;
 
@@ -187,7 +182,7 @@ export class AuthManager {
 		}
 
 		try {
-			const decoded = jwt.verify(token, this.jwtSecret) as JWTPayload;
+			const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 			if (decoded.meeting_id !== socket.meetingId) {
 				loggers.authManager.warn(
 					'Meeting ID mismatch for user %s: token has %s, socket has %s',
@@ -233,4 +228,95 @@ export class AuthManager {
 			throw new Error('Guests are not permitted to perform this action.');
 		}
 	}
+}
+
+function parseParticipantClaims(value: unknown): JWTPayload {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		throw new Error('Invalid participant claims');
+	}
+	const userId = claimString(value, 'user_id');
+	const userName = claimString(value, 'user_name');
+	const meetingId = claimString(value, 'meeting_id');
+	if (!('is_host' in value) || typeof value.is_host !== 'boolean') {
+		throw new Error('Invalid participant claims');
+	}
+	const scope = optionalString(value, 'scope');
+	if (scope !== undefined && scope !== 'full' && scope !== 'presence-preview') {
+		throw new Error('Invalid participant scope');
+	}
+	const site = optionalString(value, 'site');
+	const userAvatar = optionalNullableString(value, 'user_avatar');
+	const sessionId = optionalString(value, 'session_id');
+	const isCohost = optionalBoolean(value, 'is_cohost');
+	const isGuest = optionalBoolean(value, 'is_guest');
+	const e2eeRequired = optionalBoolean(value, 'e2ee_required');
+	const exp = optionalInteger(value, 'exp');
+	const iat = optionalInteger(value, 'iat');
+	return {
+		user_id: userId,
+		user_name: userName,
+		meeting_id: meetingId,
+		is_host: value.is_host,
+		...(site !== undefined ? { site } : {}),
+		...(userAvatar !== undefined ? { user_avatar: userAvatar } : {}),
+		...(isCohost !== undefined ? { is_cohost: isCohost } : {}),
+		...(isGuest !== undefined ? { is_guest: isGuest } : {}),
+		...(scope !== undefined ? { scope } : {}),
+		...(e2eeRequired !== undefined ? { e2ee_required: e2eeRequired } : {}),
+		...(sessionId !== undefined ? { session_id: sessionId } : {}),
+		...(exp !== undefined ? { exp } : {}),
+		...(iat !== undefined ? { iat } : {}),
+	};
+}
+
+function claimString(value: object, key: string): string {
+	if (!(key in value)) throw new Error('Invalid participant claims');
+	const claim = value[key as keyof typeof value];
+	if (typeof claim !== 'string' || !claim) {
+		throw new Error('Invalid participant claims');
+	}
+	return claim;
+}
+
+function optionalString(value: object, key: string): string | undefined {
+	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+		return undefined;
+	}
+	const claim = value[key as keyof typeof value];
+	if (typeof claim !== 'string') throw new Error('Invalid participant claims');
+	return claim;
+}
+
+function optionalNullableString(
+	value: object,
+	key: string,
+): string | undefined {
+	if (
+		!(key in value) ||
+		value[key as keyof typeof value] === undefined ||
+		value[key as keyof typeof value] === null
+	) {
+		return undefined;
+	}
+	return optionalString(value, key);
+}
+
+function optionalBoolean(value: object, key: string): boolean | undefined {
+	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+		return undefined;
+	}
+	const claim = value[key as keyof typeof value];
+	if (typeof claim !== 'boolean') throw new Error('Invalid participant claims');
+	return claim;
+}
+
+function optionalInteger(value: object, key: string): number | undefined {
+	if (!(key in value) || value[key as keyof typeof value] === undefined) {
+		return undefined;
+	}
+	const claim = value[key as keyof typeof value];
+	if (typeof claim !== 'number' || !Number.isSafeInteger(claim)) {
+		throw new Error('Invalid participant claims');
+	}
+	return claim;
 }

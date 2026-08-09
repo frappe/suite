@@ -107,10 +107,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 
 			socket.emit('existing_raised_hands', {
-				hands: deps.registry.getRaisedHands(scopedRoomId) as unknown as Record<
-					string,
-					boolean
-				>,
+				hands: deps.registry.getRaisedHands(scopedRoomId),
 			});
 
 			if (socket.scope === 'full' && !socket.e2eeRequired) {
@@ -180,10 +177,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					video_enabled: false,
 				});
 				socket.emit('existing_raised_hands', {
-					hands: deps.registry.getRaisedHands(roomId) as unknown as Record<
-						string,
-						boolean
-					>,
+					hands: deps.registry.getRaisedHands(roomId),
 				});
 				callback({ success: true });
 			} catch (error) {
