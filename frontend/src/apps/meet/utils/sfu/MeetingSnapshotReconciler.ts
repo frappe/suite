@@ -30,6 +30,7 @@ export interface MeetingSnapshot<Participant extends ReconciledParticipant> {
   producers?: readonly ReconciledProducer[];
 }
 
+/** Creates empty current state and empty tombstone sets. */
 export function createMeetingReconciliationState<
   Participant extends ReconciledParticipant,
 >(): MeetingReconciliationState<Participant> {
@@ -41,6 +42,10 @@ export function createMeetingReconciliationState<
   };
 }
 
+/**
+ * Applies one live event. Later events win, while leave and close events leave
+ * tombstones for stale snapshots.
+ */
 export function applyMeetingReconciliationEvent<
   Participant extends ReconciledParticipant,
 >(
@@ -87,6 +92,10 @@ export function applyMeetingReconciliationEvent<
   };
 }
 
+/**
+ * Uses supplied snapshot sections as the baseline, then replays live events in
+ * arrival order. Omitted sections keep their current state.
+ */
 export function reconcileMeetingSnapshot<
   Participant extends ReconciledParticipant,
 >(
