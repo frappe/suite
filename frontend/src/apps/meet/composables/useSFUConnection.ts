@@ -853,12 +853,7 @@ export function useSFUConnection(deps: {
 			connectionState.guestSfuUrl = null;
 			connectionState.guestSfuPort = null;
 
-			const response = (await joinMeetingAPI.fetch()) as
-				| Record<string, unknown>
-				| { message?: Record<string, unknown> };
-			const joinResult = (
-				"message" in response && response.message ? response.message : response
-			) as Record<string, unknown>;
+			const joinResult = await joinMeetingAPI.fetch();
 
 			if (joinResult.status === "waiting_for_approval") {
 				lobbyStore.isWaitingForApproval = true;
