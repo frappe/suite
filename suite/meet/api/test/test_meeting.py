@@ -70,6 +70,17 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(decoded["site"], frappe.local.site)
         self.assertEqual(decoded["meeting_id"], self.meeting.name)
 
+    def test_presence_preview_token_includes_required_participant_claims(self):
+        frappe.set_user(self.host_email)
+
+        result = get_sfu_presence_preview_token(self.meeting.name)
+        decoded = jwt.decode(result["auth_token"], frappe.conf.sfu_secret, algorithms=["HS256"])
+
+        self.assertEqual(decoded["user_name"], "Host")
+        self.assertTrue(decoded["is_host"])
+        self.assertFalse(decoded["is_cohost"])
+        self.assertFalse(decoded["is_guest"])
+
     def test_sfu_connection_details_include_disabled_global_recording_setting(self):
         self.meeting.add_user_to_table("members", self.host_email, save=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)

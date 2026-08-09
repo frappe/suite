@@ -343,6 +343,7 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 
     expiry_seconds = 300
     session_id = str(secrets.token_urlsafe(16))
+    user_name, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
 
     auth_token = _generate_sfu_token(
         user_id=frappe.session.user,
@@ -350,6 +351,11 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
         scope="presence-preview",
         expires_in=expiry_seconds,
         session_id=session_id,
+        user_name=user_name,
+        user_avatar=user_avatar,
+        is_host=is_host,
+        is_cohost=is_cohost,
+        is_guest=False,
     )
 
     return {
