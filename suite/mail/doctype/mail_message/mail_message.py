@@ -1130,8 +1130,8 @@ def preview_from_html(html_body: str) -> str:
     soup = BeautifulSoup(html_body, "html.parser")
     # Strip the same quote containers the client collapses (see EmailContent.vue) so the
     # preview surfaces the new content instead of "On ... wrote:" and everything below it.
-    for quote in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
-        quote.decompose()
+    for quoted in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
+        quoted.decompose()
 
     # A message that is nothing but a quote would otherwise get a blank preview.
     return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)
@@ -1288,11 +1288,20 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     """Store messages in cache with the message ID as the key, and index their addresses for search."""
 
     store = get_data_store(account)
+
+    # Which of these the cache has never seen, asked before writing them: only those count towards
+    # their participants' interaction totals, so re-fetching a thread can't inflate the people in it.
+    cached = store.exists_many(Entity.EMAIL, keys=list(messages))
+    fresh = [message for message_id, message in messages.items() if message_id not in cached]
+    known = [message for message_id, message in messages.items() if message_id in cached]
+
     store.set_many(Entity.EMAIL, items=messages)
 
     # Feed sender/recipient addresses into the shared address index; never let indexing break caching.
+    # Addresses from messages already cached are still re-indexed, to pick up renamed contacts.
     try:
-        get_email_address_index(account).index_addresses(_message_addresses(messages.values()))
+        addresses = _message_addresses(fresh) + _message_addresses(known, count=0)
+        get_email_address_index(account).index_addresses(addresses)
     except Exception:
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
@@ -1310,14 +1319,28 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
     store.delete_many(Entity.EMAIL, keys=ids)
 
 
-def _message_addresses(messages: list[dict]) -> list[dict]:
-    """Flatten cached messages into {name, email} address dicts (sender + recipients)."""
+def _message_addresses(messages: list[dict], count: int = 1) -> list[dict]:
+    """Flatten cached messages into {name, email, count} address dicts (sender + recipients).
+
+    `count` is what one message adds to an address's interaction count: 1 for a message the cache is
+    seeing for the first time, 0 when re-indexing one it already holds. An address earns it once per
+    message however many of that message's fields it appears in — writing to yourself is one message
+    with the same address on both ends, not two exchanges.
+    """
 
     addresses = []
     for message in messages:
-        addresses.append({"name": message.get("from_name"), "email": message.get("from_email")})
-        for recipient in message.get("recipients") or []:
-            addresses.append({"name": recipient.get("display_name"), "email": recipient.get("email")})
+        participants = [(message.get("from_name"), message.get("from_email"))]
+        participants += [
+            (recipient.get("display_name"), recipient.get("email"))
+            for recipient in message.get("recipients") or []
+        ]
+
+        counted = set()
+        for name, email in participants:
+            key = (email or "").strip().lower()
+            addresses.append({"name": name, "email": email, "count": 0 if key in counted else count})
+            counted.add(key)
 
     return addresses
 

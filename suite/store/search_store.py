@@ -68,27 +68,33 @@ class SearchStore:
     def index_documents(self, sources: list[dict]) -> int:
         """Upsert the given source dicts into the index; returns the number processed.
 
-        Each source is deleted-then-added by its ID_FIELD, so re-indexing an existing
-        document replaces it. Sources without an ID are skipped.
+        Each source is deleted-then-added by its ID_FIELD, so re-indexing an existing document
+        replaces it — `merge_document` first gets to fold anything worth keeping out of the
+        document being replaced. Sources without an ID are skipped.
         """
 
         if not sources:
             return 0
 
         with write_lock(self._lockname, acquire_timeout=30, lock_timeout=300):
+            documents = [self.to_document(source) for source in sources]
+            documents = [document for document in documents if document.get(self.ID_FIELD) is not None]
+
+            # Read the documents being replaced from inside the lock: a read taken before it could
+            # be stale by the time this writer commits, silently dropping a concurrent update.
+            replaced = self.get_documents([str(document[self.ID_FIELD]) for document in documents])
+
             index = self._open()
             writer = index.writer(heap_size=self.HEAP_SIZE, num_threads=1)
 
             try:
-                for source in sources:
-                    document = self._to_tantivy_document(self.to_document(source))
-                    doc_id = document.get_first(self.ID_FIELD)
-                    if doc_id is None:
-                        continue
+                for document in documents:
+                    doc_id = str(document[self.ID_FIELD])
+                    merged = self.merge_document(document, replaced.get(doc_id))
 
                     # Delete any existing doc with this ID first so re-indexing is an upsert.
-                    writer.delete_documents(self.ID_FIELD, str(doc_id))
-                    writer.add_document(document)
+                    writer.delete_documents(self.ID_FIELD, doc_id)
+                    writer.add_document(self._to_tantivy_document(merged))
 
                 writer.commit()
                 writer.wait_merging_threads()
@@ -97,6 +103,20 @@ class SearchStore:
                 del writer
 
         return len(sources)
+
+    def get_documents(self, ids: list[str]) -> dict[str, dict]:
+        """Return the stored fields of the documents with these ID_FIELD values, keyed by ID.
+
+        IDs the index holds no document for are simply absent from the result. Requires ID_FIELD to
+        be stored and tokenized `raw`, so the stored value round-trips as the term looked up here.
+        """
+
+        if not ids:
+            return {}
+
+        query = tantivy.Query.term_set_query(self._schema, self.ID_FIELD, ids)
+        hits, _total_count = self._run_search(lambda _index: query, len(ids), 0, None)
+        return {hit["_id"]: hit for hit in hits if hit["_id"] is not None}
 
     def delete_documents(self, ids: list[str]) -> int:
         """Delete documents matching the given ID_FIELD values; returns the count requested."""
@@ -241,6 +261,15 @@ class SearchStore:
         """Map a raw source dict to a flat field/value dict. Override to reshape sources."""
 
         return source
+
+    def merge_document(self, document: dict, replaced: dict | None) -> dict:
+        """Combine a document with the stored one it is about to replace, if the index held one.
+
+        Defaults to a plain overwrite. Override to carry a value across upserts rather than lose it
+        — a running count, a first-seen timestamp — since every re-index rewrites the document.
+        """
+
+        return document
 
     @property
     def _lockname(self) -> str:

@@ -29,6 +29,12 @@ def _tokenize(text: str | None) -> list[str]:
     return _TOKEN_PATTERN.findall((text or "").lower())
 
 
+def _interactions(address: dict | None) -> int:
+    """How many interactions an address entry carries — messages the user exchanged with it."""
+
+    return int((address or {}).get("count") or 0)
+
+
 def _match_field(query: list[str], field: list[str]) -> tuple | None:
     """Rank how well `query` tokens match one field's tokens; lower is better, None if they don't.
 
@@ -76,8 +82,10 @@ def _relevance_key(query: list[str], hit: dict) -> tuple:
         default=_NO_MATCH,
     )
 
+    # Between matches the query can't separate, the address the user corresponds with most wins:
+    # searching "doe" puts the John Doe they mail weekly above the one they mailed once, in 2019.
     # Named, shorter addresses first among equals; the address itself keeps the order deterministic.
-    return (*best, 0 if name else 1, len(email), email.lower())
+    return (*best, -_interactions(hit), 0 if name else 1, len(email), email.lower())
 
 
 def _sanitize_name(name: str | None) -> str | None:
@@ -98,6 +106,8 @@ class EmailAddressIndex(SearchStore):
     address, so re-indexing the same address from any source is an upsert and addresses stay unique
     by construction. The index is cumulative: entries are only added or updated, never removed when
     a source is evicted, so it doubles as an address book of everyone the user has corresponded with.
+    Each entry also carries a running count of the messages it appeared in, which breaks ties between
+    addresses the query matches equally well.
     """
 
     ENTITY = "email_address"
@@ -109,6 +119,8 @@ class EmailAddressIndex(SearchStore):
         FieldSpec("name", stored=True, tokenizer="raw"),
         # "name email" blob, tokenized so a query can match either part.
         FieldSpec("text"),
+        # Messages this address has appeared in; accumulated across upserts, and read back to rank.
+        FieldSpec("count", kind="integer", stored=True),
     )
     DEFAULT_SEARCH_FIELDS = ("text",)
 
@@ -121,17 +133,36 @@ class EmailAddressIndex(SearchStore):
             "email": email,
             "name": name,
             "text": " ".join(filter(None, (name, email))),
+            "count": _interactions(address),
         }
 
+    def merge_document(self, document: dict, replaced: dict | None) -> dict:
+        """Add what this address had already been counted for to what this batch contributes."""
+
+        if not replaced:
+            return document
+
+        return {**document, "count": document["count"] + _interactions(replaced)}
+
     def index_addresses(self, addresses: list[dict]) -> int:
-        """Upsert the given {name, email} dicts; dedupes the batch and silently skips entries whose
-        email is missing or syntactically invalid."""
+        """Upsert the given {name, email, count} dicts; dedupes the batch and silently skips entries
+        whose email is missing or syntactically invalid.
+
+        `count` is what an entry adds to the address's interaction count: a message passes 1, an
+        address-book entry 0, since having someone in your contacts says nothing about how often you
+        write to them. Repeats within the batch add up, and so does whatever the index already held,
+        so ten messages from one sender leave a count of ten however they were batched.
+        """
 
         unique = {}
         for address in addresses:
             email = (address.get("email") or "").strip()
-            if EMAIL_MATCH_PATTERN.fullmatch(email):
-                unique[email.lower()] = address
+            if not EMAIL_MATCH_PATTERN.fullmatch(email):
+                continue
+
+            # The last entry wins on name and casing; their counts add up.
+            key = email.lower()
+            unique[key] = {**address, "count": _interactions(address) + _interactions(unique.get(key))}
 
         return self.index_documents(list(unique.values()))
 

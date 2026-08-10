@@ -525,13 +525,17 @@ def _remove_cached_contact_cards(account: str, ids: list[str]) -> None:
 
 
 def _contact_addresses(contact_cards: list[dict]) -> list[dict]:
-    """Flatten cached contact cards into {name, email} address dicts, one per email address."""
+    """Flatten cached contact cards into {name, email, count} address dicts, one per email address.
+
+    Contacts carry a count of 0: being in the address book is not correspondence, so a contact adds
+    a name to the index without claiming any of the interaction weight that ranks suggestions.
+    """
 
     addresses = []
     for contact_card in contact_cards:
         name = contact_card.get("full_name")
         for email in contact_card.get("emails") or []:
-            addresses.append({"name": name, "email": email.get("address")})
+            addresses.append({"name": name, "email": email.get("address"), "count": 0})
 
     return addresses
 

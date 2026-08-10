@@ -93,6 +93,7 @@ suite.mail.patches.reset_push_subscription_types_to_all
 suite.mail.patches.rename_skip_schedule_fetch_changes
 execute:frappe.db.set_single_value("Mail Settings", "expand_mailing_list_participants", 1)
 execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participants", 100)
+suite.mail.patches.rebuild_email_address_indexes_for_counts
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
