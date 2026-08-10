@@ -76,18 +76,22 @@ class File(FrappeFile):
     def _validate_content_link(self):
         """`content_doctype`/`content_docname` are the sole permission delegation
         point for content documents (see `content_has_permission`): whoever's
-        File claims a document effectively owns it. They must only ever be set
-        by Drive's own trusted paths (`create_for_doc`, the attachment-reference
+        File claims a document effectively owns it, and `after_delete` cascades
+        deletion through them. They must only ever be set — or cleared — by
+        Drive's own trusted paths (`create_for_doc`, the attachment-reference
         branch of `after_file_upload`, or a migration patch), never by a plain
-        user-driven insert or update — otherwise any user could forge a link to
-        someone else's document and inherit full access to it."""
-        if not (self.content_doctype or self.content_docname):
-            return
-        if self.flags.file_created or self.flags.allow_content_link:
+        user-driven insert or update. Otherwise any user could forge a link to
+        someone else's document and inherit full access to it, or (since File
+        write access can come from a Drive share, not just ownership) sever an
+        existing link to break the permission/deletion delegation and orphan
+        the content document."""
+        if self.is_new() and not (self.content_doctype or self.content_docname):
             return
         if not self.is_new() and not (
             self.has_value_changed("content_doctype") or self.has_value_changed("content_docname")
         ):
+            return
+        if self.flags.file_created or self.flags.allow_content_link:
             return
         if frappe.session.user == "Administrator":
             return

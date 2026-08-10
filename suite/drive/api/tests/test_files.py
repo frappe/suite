@@ -179,6 +179,30 @@ class TestDriveFilesAPI(IntegrationTestCase):
 
             self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
 
+    def test_content_link_cannot_be_cleared_by_a_shared_collaborator(self):
+        """File write access can come from a Drive share, not just ownership.
+        A collaborator who only has write access to the File backing a
+        document must not be able to clear content_doctype/content_docname —
+        doing so would sever content_has_permission's delegation and orphan
+        the document relative to after_delete's cascade-delete."""
+        with self.set_user(OWNER):
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            backing_file = DriveFile.create_for_doc(victim_doc)
+            backing_file.share(user=MEMBER, write=True)
+
+        with self.set_user(MEMBER):
+            self.assertTrue(user_has_permission(backing_file, "write"))
+            doc = frappe.get_doc("File", backing_file.name)
+            doc.content_doctype = None
+            doc.content_docname = None
+            with self.assertRaises(frappe.PermissionError):
+                doc.save()
+
+        self.assertEqual(
+            frappe.db.get_value("File", backing_file.name, "content_docname"),
+            victim_doc.name,
+        )
+
     def test_site_share_and_guest_public_access(self):
         # Inside a user folder, other site users are denied by default.
         with self.set_user(MEMBER):
