@@ -1,12 +1,18 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""The email-address index's normalization contract: display names lose the quotes clients wrap
-them in, and only syntactically valid addresses ever reach the index."""
+"""The email-address index's normalization and ranking contracts: display names lose the quotes
+clients wrap them in, only syntactically valid addresses ever reach the index, and suggestions come
+back ordered by how well the query matches a name or address rather than in index order."""
 
 import unittest
 from unittest import mock
 
-from suite.mail.store.indexes.email_address import EmailAddressIndex, _sanitize_name
+from suite.mail.store.indexes.email_address import (
+    EmailAddressIndex,
+    _relevance_key,
+    _sanitize_name,
+    _tokenize,
+)
 
 
 class SanitizeName(unittest.TestCase):
@@ -107,6 +113,88 @@ class IndexAddresses(unittest.TestCase):
         first = {"name": "Jane", "email": "jane@example.com"}
         second = {"name": "Jane Doe", "email": "Jane@Example.com"}
         self.assertEqual(self.index_addresses([first, second]), [second])
+
+
+class Tokenize(unittest.TestCase):
+    """``_tokenize`` — lowercased alphanumeric runs, matching how the index tokenized the text."""
+
+    def test_name_and_address_split_on_punctuation(self):
+        self.assertEqual(
+            _tokenize("Jane Doe jane.doe@example.com"), ["jane", "doe", "jane", "doe", "example", "com"]
+        )
+
+    def test_accented_word_stays_whole(self):
+        self.assertEqual(_tokenize("Jörg Müller"), ["jörg", "müller"])
+
+    def test_non_latin_script_stays_whole(self):
+        self.assertEqual(_tokenize("山田太郎"), ["山田太郎"])
+
+    def test_underscore_separates_words(self):
+        self.assertEqual(_tokenize("jane_doe"), ["jane", "doe"])
+
+    def test_blank_has_no_tokens(self):
+        self.assertEqual(_tokenize(None), [])
+        self.assertEqual(_tokenize("  -- "), [])
+
+
+class Relevance(unittest.TestCase):
+    """``_relevance_key`` — the order suggestions are presented in, most relevant first."""
+
+    def rank(self, query, addresses):
+        """Return `addresses` ordered as the suggestion list would present them."""
+
+        tokens = _tokenize(query)
+        ordered = sorted(addresses, key=lambda hit: _relevance_key(tokens, hit))
+        return [address["email"] for address in ordered]
+
+    def test_whole_word_beats_longer_word_starting_with_it(self):
+        # The reported case: "Doe" is what was typed, "Doeringer" merely starts with it.
+        doe = {"name": "John Doe", "email": "john@example.com"}
+        doeringer = {"name": "Jane Doeringer", "email": "jane@example.com"}
+        self.assertEqual(self.rank("doe", [doeringer, doe]), [doe["email"], doeringer["email"]])
+
+    def test_first_word_beats_later_word(self):
+        first = {"name": "Doe Jansen", "email": "dj@example.com"}
+        later = {"name": "Ann Doe", "email": "ad@example.com"}
+        self.assertEqual(self.rank("doe", [later, first]), [first["email"], later["email"]])
+
+    def test_whole_local_part_beats_name_match(self):
+        address = {"name": None, "email": "jane@example.com"}
+        named = {"name": "Jane Roe", "email": "jane.roe@example.com"}
+        self.assertEqual(self.rank("jane", [named, address]), [address["email"], named["email"]])
+
+    def test_name_match_beats_domain_match(self):
+        named = {"name": "Acme Support", "email": "support@example.com"}
+        hosted = {"name": "Jane Doe", "email": "jane@acme.test"}
+        self.assertEqual(self.rank("acme", [hosted, named]), [named["email"], hosted["email"]])
+
+    def test_adjacent_terms_beat_scattered_ones(self):
+        # Addresses run counter to the alphabetical tie-break, so only the ranking can order these.
+        adjacent = {"name": "Jane Doe", "email": "c@example.com"}
+        interrupted = {"name": "Jane Ann Doe", "email": "b@example.com"}
+        reversed_ = {"name": "Doe Jane", "email": "a@example.com"}
+        self.assertEqual(
+            self.rank("jane doe", [reversed_, interrupted, adjacent]),
+            [adjacent["email"], interrupted["email"], reversed_["email"]],
+        )
+
+    def test_match_spanning_name_and_address_sorts_last(self):
+        # Indexed as one "<name> <email>" blob, so this matches the query without any single
+        # field explaining it — it stays a hit, but below every address that does explain one.
+        spanning = {"name": "Jane", "email": "doe@example.com"}
+        explained = {"name": "Jane Doelan", "email": "jane.doelan@example.com"}
+        self.assertEqual(
+            self.rank("jane doe", [spanning, explained]), [explained["email"], spanning["email"]]
+        )
+
+    def test_equally_good_matches_prefer_named_then_shortest(self):
+        named = {"name": "Jane Doe", "email": "jane.doe@example.com"}
+        short = {"name": None, "email": "jane.aoe@example.com"}
+        long_ = {"name": None, "email": "jane.abercrombie@example.com"}
+        self.assertEqual(
+            self.rank("jane", [long_, short, named]),
+            [named["email"], short["email"], long_["email"]],
+        )
 
 
 if __name__ == "__main__":

@@ -142,7 +142,7 @@ class SearchStore:
         fields = fields or list(self.DEFAULT_SEARCH_FIELDS) or None
         return self._run_search(lambda index: index.parse_query(query, fields), limit, offset, order_by)
 
-    def search_phrase_prefix(
+    def search_prefix(
         self,
         terms: list[str],
         limit: int = 20,
@@ -150,12 +150,14 @@ class SearchStore:
         fields: list[str] | None = None,
         order_by: str | None = None,
     ) -> tuple[list[dict], int]:
-        """Search for the given terms as a consecutive, in-order phrase whose last term is a prefix.
+        """Search for documents holding every term, with the last term matched as a prefix.
 
-        Built for as-you-type autocomplete: the terms must appear adjacent and in order in one of
-        `fields`, with the final term matched as a prefix — so "sagar s" matches "sagar.s@…" and
-        "Sagar Sharma", but not "sagar@…" (nothing follows "sagar") nor an address that merely
-        contains both words apart. A single term is a plain prefix match. Returns `(hits, count)`.
+        Built for as-you-type autocomplete: every term must appear in one of `fields`, with the
+        final one — the word still being typed — matched as a prefix. So "jane d" matches
+        "jane.d@example.com" and "Jane Doe", and also "Jane Ann Doe", since the terms need not be
+        adjacent or in order. Tantivy scores term and prefix queries alike as a constant, so these
+        hits come back in index order: ranking them is the caller's job (see
+        `EmailAddressIndex.search_email_addresses`). Returns `(hits, count)`.
         """
 
         terms = [term for term in terms if term]
@@ -164,7 +166,7 @@ class SearchStore:
 
         fields = fields or list(self.DEFAULT_SEARCH_FIELDS)
         return self._run_search(
-            lambda _index: self._build_phrase_prefix_query(terms, fields), limit, offset, order_by
+            lambda _index: self._build_prefix_query(terms, fields), limit, offset, order_by
         )
 
     def _run_search(
@@ -172,7 +174,7 @@ class SearchStore:
     ) -> tuple[list[dict], int]:
         """Open the index, build a query via `build_query(index)`, run it, and return `(hits, count)`.
 
-        Shared plumbing for `search`/`search_phrase_prefix`; swallows query errors (logged) into an
+        Shared plumbing for `search`/`search_prefix`; swallows query errors (logged) into an
         empty result so a malformed query never breaks the caller.
         """
 
@@ -198,17 +200,34 @@ class SearchStore:
             )
             return ([], 0)
 
-    def _build_phrase_prefix_query(self, terms: list[str], fields: list[str]) -> tantivy.Query:
-        """Build a phrase-prefix query over `terms`, matching in any one of `fields`."""
+    def _build_prefix_query(self, terms: list[str], fields: list[str]) -> tantivy.Query:
+        """Build an all-terms-with-trailing-prefix query, matching within any one of `fields`."""
 
         if len(fields) == 1:
-            return tantivy.Query.phrase_prefix_query(self._schema, fields[0], terms)
+            return self._build_field_prefix_query(terms, fields[0])
 
-        # Match the phrase in any of the fields.
+        # Match all the terms in any one of the fields.
+        clauses = [(tantivy.Occur.Should, self._build_field_prefix_query(terms, field)) for field in fields]
+        return tantivy.Query.boolean_query(clauses)
+
+    def _build_field_prefix_query(self, terms: list[str], field: str) -> tantivy.Query:
+        """Require every term in `field`, matching the last one as a prefix.
+
+        The trailing term uses a zero-distance fuzzy *prefix* query rather than Tantivy's
+        phrase-prefix query: the latter expands a prefix to at most 50 terms, so on a sizeable
+        index a short prefix silently drops every match past those 50 — typing "j" would never
+        reach "jane@example.com" — while the automaton behind this one matches them all.
+        """
+
         clauses = [
-            (tantivy.Occur.Should, tantivy.Query.phrase_prefix_query(self._schema, field, terms))
-            for field in fields
+            (tantivy.Occur.Must, tantivy.Query.term_query(self._schema, field, term)) for term in terms[:-1]
         ]
+        clauses.append(
+            (
+                tantivy.Occur.Must,
+                tantivy.Query.fuzzy_term_query(self._schema, field, terms[-1], distance=0, prefix=True),
+            )
+        )
         return tantivy.Query.boolean_query(clauses)
 
     def drop(self) -> None:
