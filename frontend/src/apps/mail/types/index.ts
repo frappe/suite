@@ -201,6 +201,7 @@ export interface MailboxData {
 	name: string
 	id: string
 	role: string | null
+	total_emails: number
 	total_threads: number
 	unread_threads: number
 	_name: string

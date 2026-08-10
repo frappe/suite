@@ -51,6 +51,26 @@ export const mergeByReceivedAt = (fresh: Thread[], loaded: Thread[]): Thread[] =
 	return [...merged, ...fresh.slice(f), ...loaded.slice(l)]
 }
 
+/**
+ * Re-derives the loaded rows from the newest window: a thread in both takes the server's copy, since
+ * a reply into an already-loaded thread changes that row (another message, a newer received_at, unread
+ * again) without ever arriving as a new one. Rows past the window keep their loaded copy — the window
+ * says nothing about them.
+ *
+ * The result is re-sorted: a thread that just got a reply carries a newer received_at than the loaded
+ * list was ordered by, and belongs further up. The sort is stable, so untouched rows keep their order.
+ */
+export const refreshLoadedThreads = (
+	loaded: Thread[],
+	freshWindow: Thread[],
+	threadKey: (thread: Thread) => string,
+): Thread[] => {
+	const updated = new Map(freshWindow.map((thread) => [threadKey(thread), thread]))
+	return loaded
+		.map((thread) => updated.get(threadKey(thread)) ?? thread)
+		.sort((a, b) => (a.received_at === b.received_at ? 0 : a.received_at > b.received_at ? -1 : 1))
+}
+
 /** The shape of a reset resource this reads and writes — createResource satisfies it. */
 export interface ThreadListResource {
 	data?: Thread[]
@@ -174,8 +194,9 @@ export const usePaginatedThreads = ({
 
 	/**
 	 * Called when a first-window fetch resolves. Two modes:
-	 * - refresh: keep the loaded rows, prepend only threads not already loaded (new mail), and hold
-	 *   the reader's scroll position (re-anchored by the height the prepended rows added).
+	 * - refresh: keep the loaded rows, merge in threads not already loaded and refresh the ones that
+	 *   are (new mail arrives both ways), and hold the reader's scroll position (re-anchored by the
+	 *   height the merge added above them).
 	 * - reset: reveal the fresh first window and scroll to top (mailbox switch, filter, undo, …).
 	 * Either way, cancel any pending edge navigation.
 	 */
@@ -206,11 +227,15 @@ export const usePaginatedThreads = ({
 				(thread: Thread) =>
 					!existing.has(threadKey(thread)) && !recentlyRemoved.has(threadKey(thread)),
 			)
+			// Threads already loaded are filtered out of `fresh` above, so a reply into one of them
+			// would be dropped on the floor — re-derive those rows from the window instead. Keeping
+			// the snapshot's copy is what left replies invisible until a hard reload.
+			const loaded = refreshLoadedThreads(refreshSnapshot, freshWindow, threadKey)
 			// Date-merge rather than blind prepend. A prepend assumes everything in the newest window
 			// that isn't loaded yet is newer than everything that is — true for one account, false for
 			// the merged list, where a second account's newest mail can be older than the first's oldest
 			// loaded row and would otherwise open a stale date group above today's.
-			resource().data = mergeByReceivedAt(fresh, refreshSnapshot)
+			resource().data = mergeByReceivedAt(fresh, loaded)
 			// Keep the reader where they were: shift scroll by the height the merge added above them. If
 			// they were already at the top, leave them there so the new mail is visible.
 			nextTick(() => {

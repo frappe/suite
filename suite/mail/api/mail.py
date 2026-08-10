@@ -101,7 +101,9 @@ def get_mailboxes(account: str) -> list[dict]:
     if not mailboxes:
         return []
 
-    fields = ["name", "id", "_name", "role", "total_threads", "unread_threads", "subscribed"]
+    # total_emails rides along for the pollers: it moves on a reply into an existing thread, which
+    # total_threads doesn't.
+    fields = ["name", "id", "_name", "role", "total_emails", "total_threads", "unread_threads", "subscribed"]
 
     mailbox_settings = frappe.db.get_all(
         "Mailbox Settings",
