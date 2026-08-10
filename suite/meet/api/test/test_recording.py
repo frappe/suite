@@ -26,7 +26,13 @@ from suite.meet.api.recording import (
     stop,
 )
 from suite.meet.recording.callback_auth import CALLBACK_AUDIENCE, CALLBACK_TYPE, authenticate_callback
-from suite.meet.recording.ingest import _upload_path, append_chunk, begin_upload, complete_upload
+from suite.meet.recording.ingest import (
+    _upload_path,
+    append_chunk,
+    begin_upload,
+    complete_upload,
+    process_upload,
+)
 from suite.meet.recording.recorder_client import RecorderOutcome
 
 PUBLIC_JWK = {
@@ -321,9 +327,22 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 ),
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
+                patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
             ):
-                result = complete_upload(recording.name, event_sequence=3)
-                self.assertEqual(complete_upload(recording.name, event_sequence=3), result)
+                self.assertEqual(complete_upload(recording.name, event_sequence=3), {"status": "Processing"})
+                result = process_upload(recording.name, event_sequence=3)
+                self.assertEqual(process_upload(recording.name, event_sequence=3), result)
+
+            enqueue.assert_called_once_with(
+                process_upload,
+                recording_name=recording.name,
+                event_sequence=3,
+                queue="long",
+                timeout=6 * 60 * 60 + 5 * 60,
+                enqueue_after_commit=True,
+                job_id=f"meet-recording-upload::{recording.name}",
+                deduplicate=True,
+            )
 
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)
@@ -384,7 +403,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = complete_upload(recording.name, event_sequence=3)
+                result = process_upload(recording.name, event_sequence=3)
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)
             self.assertEqual(result["status"], "Partial")

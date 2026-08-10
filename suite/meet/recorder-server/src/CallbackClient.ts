@@ -15,6 +15,7 @@ interface CallbackClientOptions {
 	secret: string;
 	dataRoot: string;
 	timeoutMs?: number;
+	sleep?: (ms: number) => Promise<void>;
 }
 
 interface InterruptedRequest {
@@ -92,8 +93,12 @@ interface UploadChunkResponse {
 
 export class CallbackClient {
 	private readonly timeoutMs: number;
+	private readonly sleep: (ms: number) => Promise<void>;
 	constructor(private readonly options: CallbackClientOptions) {
 		this.timeoutMs = options.timeoutMs ?? 30_000;
+		this.sleep =
+			options.sleep ??
+			((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 	}
 
 	async interrupted(job: JobRecord): Promise<void> {
@@ -145,7 +150,7 @@ export class CallbackClient {
 				return;
 			} catch (error) {
 				if (attempt === 4) throw error;
-				await new Promise((resolve) => setTimeout(resolve, delay));
+				await this.sleep(delay);
 				delay *= 2;
 			}
 		}
@@ -227,7 +232,7 @@ export class CallbackClient {
 		} finally {
 			await file.close();
 		}
-		await this.json(
+		const completed = await this.json(
 			'recorder_complete_upload',
 			job,
 			'complete_upload',
@@ -239,6 +244,8 @@ export class CallbackClient {
 			},
 			parseStatusResponse,
 		);
+		if (!['Ready', 'Partial'].includes(completed.status))
+			throw new Error('Frappe recording artifact is still processing');
 	}
 
 	private async retryHealthCallback(
@@ -251,7 +258,7 @@ export class CallbackClient {
 				return;
 			} catch (error) {
 				if (attempt === 4) throw error;
-				await new Promise((resolve) => setTimeout(resolve, delay));
+				await this.sleep(delay);
 				delay *= 2;
 			}
 		}

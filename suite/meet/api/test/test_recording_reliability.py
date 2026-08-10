@@ -36,7 +36,7 @@ from suite.meet.recording.ingest import (
     _upload_path,
     append_chunk,
     begin_upload,
-    complete_upload,
+    process_upload,
 )
 from suite.meet.recording.recorder_client import RecorderOutcome
 
@@ -161,7 +161,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = complete_upload(recording.name, event_sequence=3)
+                result = process_upload(recording.name, event_sequence=3)
             artifact = frappe.get_doc("File", result["artifact"])
             self.assertEqual(artifact.owner, self.owner)
         finally:
@@ -479,7 +479,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording = frappe.get_doc("Meet Recording", started["name"])
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
         with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
-            result = complete_upload(recording.name, event_sequence=3)
+            result = process_upload(recording.name, event_sequence=3)
         artifact = frappe.get_doc("File", result["artifact"])
         active_path = manager.get_local_path(artifact.file_url)
         trash_path = manager.get_local_path(
