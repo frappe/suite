@@ -91,6 +91,9 @@ class SearchStore:
                 for document in documents:
                     doc_id = str(document[self.ID_FIELD])
                     merged = self.merge_document(document, replaced.get(doc_id))
+                    # Should this ID come round again later in the batch, it merges onto what was
+                    # just written rather than onto the document that write already replaced.
+                    replaced[doc_id] = merged
 
                     # Delete any existing doc with this ID first so re-indexing is an upsert.
                     writer.delete_documents(self.ID_FIELD, doc_id)
@@ -109,13 +112,17 @@ class SearchStore:
 
         IDs the index holds no document for are simply absent from the result. Requires ID_FIELD to
         be stored and tokenized `raw`, so the stored value round-trips as the term looked up here.
+
+        A failed read raises here rather than reading as an empty index, the way a user-facing
+        search's does: a caller merging into these documents would take "nothing came back" for
+        "nothing was there" and overwrite what it should have carried forward.
         """
 
         if not ids:
             return {}
 
         query = tantivy.Query.term_set_query(self._schema, self.ID_FIELD, ids)
-        hits, _total_count = self._run_search(lambda _index: query, len(ids), 0, None)
+        hits, _total_count = self._run_search(lambda _index: query, len(ids), 0, None, swallow_errors=False)
         return {hit["_id"]: hit for hit in hits if hit["_id"] is not None}
 
     def delete_documents(self, ids: list[str]) -> int:
@@ -190,12 +197,14 @@ class SearchStore:
         )
 
     def _run_search(
-        self, build_query, limit: int, offset: int, order_by: str | None
+        self, build_query, limit: int, offset: int, order_by: str | None, swallow_errors: bool = True
     ) -> tuple[list[dict], int]:
         """Open the index, build a query via `build_query(index)`, run it, and return `(hits, count)`.
 
         Shared plumbing for `search`/`search_prefix`; swallows query errors (logged) into an
-        empty result so a malformed query never breaks the caller.
+        empty result so a malformed query never breaks the caller. A read a write depends on passes
+        `swallow_errors=False` and gets the exception, since acting on an empty result would mean
+        acting on a failure it cannot see (see `get_documents`).
         """
 
         # Nothing has been indexed yet for this key.
@@ -218,6 +227,10 @@ class SearchStore:
             frappe.logger("suite.store").warning(
                 {"event": "search-failed", "entity": self.ENTITY, "namespace": "/".join(self.namespace)}
             )
+
+            if not swallow_errors:
+                raise
+
             return ([], 0)
 
     def _build_prefix_query(self, terms: list[str], fields: list[str]) -> tantivy.Query:
