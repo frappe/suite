@@ -29,12 +29,6 @@ class FakeTransaction:
         self.data[key] = value
         return True
 
-    def get(self, key: bytes) -> bytes | None:
-        return self.data.get(key)
-
-    def delete(self, key: bytes) -> bool:
-        return self.data.pop(key, None) is not None
-
 
 class SetMany(unittest.TestCase):
     """``set_many`` — everything is stored; only keys the store lacked come back."""
@@ -68,38 +62,6 @@ class SetMany(unittest.TestCase):
         # the keys it saw as new have to be worked out again, not carried over or doubled up.
         aborted, retried = FakeTransaction(), FakeTransaction(existing=(b"email:a",))
         self.assertEqual(self.set_many({"a": 1, "b": 2}, [aborted, retried]), {"b"})
-
-
-class DeleteManyUnchanged(unittest.TestCase):
-    """``delete_many_unchanged`` — undo a write, but only while it is still the write in place."""
-
-    def delete_many_unchanged(self, items, transactions):
-        store = mock.Mock(spec=DataStore)
-        store._db_key.side_effect = lambda entity, key: f"{entity.value}:{key}".encode()
-        store._serialize.side_effect = lambda value: str(value).encode()
-        store._write.side_effect = lambda callback: [callback(txn) for txn in transactions]
-
-        return DataStore.delete_many_unchanged(store, Key.EMAIL, items)
-
-    def test_a_key_still_holding_what_was_written_is_deleted(self):
-        transaction = FakeTransaction()
-        transaction.data[b"email:a"] = b"1"
-
-        self.assertEqual(self.delete_many_unchanged({"a": 1}, [transaction]), {"a"})
-        self.assertNotIn(b"email:a", transaction.data)
-
-    def test_a_key_someone_else_has_written_since_is_left_alone(self):
-        transaction = FakeTransaction()
-        transaction.data[b"email:a"] = b"2"
-
-        self.assertEqual(self.delete_many_unchanged({"a": 1}, [transaction]), set())
-        self.assertEqual(transaction.data[b"email:a"], b"2")
-
-    def test_a_key_already_gone_is_not_reported(self):
-        self.assertEqual(self.delete_many_unchanged({"a": 1}, [FakeTransaction()]), set())
-
-    def test_nothing_to_undo_deletes_nothing(self):
-        self.assertEqual(self.delete_many_unchanged({}, []), set())
 
 
 if __name__ == "__main__":

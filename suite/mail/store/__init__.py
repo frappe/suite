@@ -34,6 +34,10 @@ class Entity(Enum):
     IDENTITY = "identity"
     MAILBOX = "mailbox"
     EMAIL = "email"
+    # IDs of messages already counted towards their participants' interaction totals, recorded
+    # apart from the messages themselves and outliving them: a message is evicted and fetched back
+    # whenever the server reports it updated, and each round would otherwise count it again.
+    COUNTED_EMAIL = "counted_email"
 
     PARTICIPANT_IDENTITY = "participant_identity"
     CALENDAR = "calendar"
@@ -157,9 +161,12 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 
     store = get_data_store(account)
 
-    messages = list(store.scan(Entity.EMAIL).values())
+    messages = list(store.scan(Entity.EMAIL).items())
     for batch in create_batch(messages, _REBUILD_BATCH_SIZE):
-        index.index_addresses(_message_addresses(batch))
+        index.index_addresses(_message_addresses([message for _message_id, message in batch]))
+        # Each batch has now been counted exactly once, so record the claims to match, batch by
+        # batch: a claim left unrecorded would let its message be counted again when next cached.
+        store.set_many(Entity.COUNTED_EMAIL, items={message_id: True for message_id, _ in batch})
 
     contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
     for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):

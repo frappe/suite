@@ -1290,34 +1290,30 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     """Store messages in cache with the message ID as the key, and index their addresses for search."""
 
     store = get_data_store(account)
+    store.set_many(Entity.EMAIL, items=messages)
 
-    # Which of these the cache had never seen, as answered by the write that stores them: only those
-    # count towards their participants' interaction totals, so re-fetching a thread can't inflate the
-    # people in it. Asking before writing instead would let two syncs racing over the same new
-    # message both find it absent, and both count it.
-    added = store.set_many(Entity.EMAIL, items=messages)
-    fresh = [message for message_id, message in messages.items() if message_id in added]
-    known = [message for message_id, message in messages.items() if message_id not in added]
+    # A message counts towards its participants once, ever. Which of these have not been counted
+    # yet is answered by the write that records the claims, not by whether the message was already
+    # cached: it is cached and evicted over and over — the server reporting it updated is enough —
+    # and it must not count again each time it comes back. Claiming as part of the write is what
+    # keeps two syncs racing over the same message from both counting it; asking first, then
+    # writing, tells both of them it is new.
+    counted = store.set_many(Entity.COUNTED_EMAIL, items=dict.fromkeys(messages, True))
+    fresh = [message for message_id, message in messages.items() if message_id in counted]
+    known = [message for message_id, message in messages.items() if message_id not in counted]
 
     # Feed sender/recipient addresses into the shared address index; never let indexing break caching.
-    # Addresses from messages already cached are still re-indexed, to pick up renamed contacts.
+    # Addresses of messages counted already are still re-indexed, to pick up renamed contacts.
     try:
         addresses = _message_addresses(fresh) + _message_addresses(known, count=0)
         get_email_address_index(account).index_addresses(addresses)
     except Exception as error:
-        # Being in the cache is what marks a message counted, so when nothing reached the index,
-        # hand that claim back: left cached, these would read as counted, and the retry would
-        # contribute nothing but leave their participants short for good. A write that got as far
-        # as committing keeps its claim, since a retry would otherwise count it twice.
-        #
-        # Only the entries still holding what was just cached are given back. Another sync may have
-        # stored a newer version of one of these meanwhile — that one keeps both the value and the
-        # claim, which costs a message its count, rather than this taking the newer write away.
-        if added and isinstance(error, IndexWriteAborted):
+        # Nothing reached the index, so give the claims back: left standing, they would read as
+        # counted, and the retry would contribute nothing but leave their participants short for
+        # good. Claims a committed write earned stay, since a retry would count them twice.
+        if counted and isinstance(error, IndexWriteAborted):
             with suppress(Exception):
-                store.delete_many_unchanged(
-                    Entity.EMAIL, {message_id: messages[message_id] for message_id in added}
-                )
+                store.delete_many(Entity.COUNTED_EMAIL, keys=list(counted))
 
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
@@ -1328,7 +1324,10 @@ def _remove_cached_messages(account: str, ids: list[str]) -> None:
     """Remove messages from cache for the provided IDs.
 
     Addresses are left in the search index on purpose: it is cumulative, and an address seen in an
-    evicted message is almost always still valid elsewhere.
+    evicted message is almost always still valid elsewhere. So is the record of the message having
+    been counted, which is why it is kept apart from the message: eviction is routine — every
+    update the server reports evicts one — and dropping it would count the message again as soon
+    as it was fetched back.
     """
 
     store = get_data_store(account)

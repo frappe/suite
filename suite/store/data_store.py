@@ -332,35 +332,6 @@ class DataStore(BaseStore):
 
         return added
 
-    def delete_many_unchanged(self, entity: Enum, items: dict[str, Any]) -> set[str]:
-        """Delete each key that still holds the value given for it here; return the keys deleted.
-
-        For undoing a write, which is only safe while it is still the write in place: another
-        writer may have stored something newer since, and taking that away with it would lose an
-        update nobody asked to undo. Compared and deleted in one write transaction, so nothing can
-        slip in between the two.
-        """
-
-        if not items:
-            return set()
-
-        encoded = [(key, self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
-        deleted: set[str] = set()
-
-        def _delete_unchanged(txn: Any) -> None:
-            # A retry re-runs this once the aborted attempt's deletes are undone, so what was
-            # deleted the first time around has to be worked out again rather than accumulated.
-            deleted.clear()
-
-            for key, db_key, data in encoded:
-                if txn.get(db_key) == data:
-                    txn.delete(db_key)
-                    deleted.add(key)
-
-        self._write(_delete_unchanged)
-
-        return deleted
-
     def delete_many(self, entity: Enum, keys: list[str]) -> None:
         """Delete multiple keys from the storage at once."""
 
