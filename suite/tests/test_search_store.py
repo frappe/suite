@@ -1,11 +1,14 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""``SearchStore.index_documents``' upsert contract: every document is merged with the one it
-replaces, including when the same ID comes round more than once in a single batch."""
+"""``SearchStore``'s two contracts that outlive a single call: an upsert merges each document with
+the one it replaces, even when an ID comes round twice in a batch, and the deprecated
+``search_phrase_prefix`` keeps searching for a phrase rather than quietly becoming a looser search."""
 
 import unittest
 from contextlib import nullcontext
 from unittest import mock
+
+import tantivy
 
 from suite.store.search_store import SearchStore
 
@@ -60,24 +63,39 @@ class IndexDocuments(unittest.TestCase):
 
 
 class SearchPhrasePrefix(unittest.TestCase):
-    """``search_phrase_prefix`` — the pre-rename name still works, and says it is on its way out."""
+    """``search_phrase_prefix`` — the pre-rename name, still searching for a phrase, still deprecated."""
 
-    def test_the_old_name_forwards_to_search_prefix(self):
+    def search(self, terms, **kwargs):
+        """Return the Tantivy query the deprecated search would run, and the search's result."""
+
+        schema_builder = tantivy.SchemaBuilder()
+        schema_builder.add_text_field("text")
+
         store = mock.Mock(spec=SearchStore)
-
-        with self.assertWarns(Warning):
-            SearchStore.search_phrase_prefix(store, ["jane", "d"], limit=5)
-
-        store.search_prefix.assert_called_once_with(
-            ["jane", "d"], limit=5, offset=0, fields=None, order_by=None
+        store._schema = schema_builder.build()
+        store.DEFAULT_SEARCH_FIELDS = ("text",)
+        store._build_phrase_prefix_query.side_effect = lambda t, f: SearchStore._build_phrase_prefix_query(
+            store, t, f
         )
-
-    def test_the_result_comes_straight_back(self):
-        store = mock.Mock(spec=SearchStore)
-        store.search_prefix.return_value = ([{"id": "a"}], 1)
+        store._run_search.side_effect = lambda build_query, *_args: (build_query(None), 0)
 
         with self.assertWarns(Warning):
-            self.assertEqual(SearchStore.search_phrase_prefix(store, ["jane"]), ([{"id": "a"}], 1))
+            query, _count = SearchStore.search_phrase_prefix(store, terms, **kwargs)
+
+        return query
+
+    def test_terms_are_searched_for_as_a_phrase_not_scattered(self):
+        # The contract the name promises, and the reason this isn't a forward to search_prefix:
+        # a phrase query matches "Jane Doe" but not "Jane Ann Doe" or "Doe Jane".
+        self.assertIn("PhrasePrefixQuery", repr(self.search(["jane", "d"])))
+
+    def test_blank_terms_search_for_nothing(self):
+        store = mock.Mock(spec=SearchStore)
+
+        with self.assertWarns(Warning):
+            self.assertEqual(SearchStore.search_phrase_prefix(store, ["", None]), ([], 0))
+
+        store._run_search.assert_not_called()
 
 
 if __name__ == "__main__":

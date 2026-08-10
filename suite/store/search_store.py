@@ -205,24 +205,34 @@ class SearchStore:
         fields: list[str] | None = None,
         order_by: str | None = None,
     ) -> tuple[list[dict], int]:
-        """Deprecated name for `search_prefix`, which this forwards to.
+        """Deprecated: the phrase-prefix search that `search_prefix` replaced.
 
-        Kept so callers written against the old name keep working. It warns rather than forwarding
-        quietly because the contract loosened with the rename: the terms no longer have to be
-        adjacent or in order, so this now matches strictly more than the phrase-prefix search it
-        used to be — "jane doe" reaches "Jane Ann Doe" as well as "Jane Doe".
+        Kept with its semantics intact, so callers written against the old name keep getting what
+        that name promised: the terms must appear adjacent and in order in one of `fields`, with
+        the final one matched as a prefix — "jane d" matches "Jane Doe" but not "Jane Ann Doe".
+
+        `search_prefix` is the one to move to. It is looser, matching every term wherever it falls,
+        and it does not inherit what this carries: Tantivy expands the prefix to at most 50 terms,
+        so on a sizeable index a short prefix silently drops every match past those 50.
         """
 
         deprecation_warning(
             marked="2026-08-10",
             graduation="v1",
             msg=(
-                "SearchStore.search_phrase_prefix has been renamed to SearchStore.search_prefix, "
-                "which no longer requires the terms to be adjacent or in order."
+                "SearchStore.search_phrase_prefix has been replaced by SearchStore.search_prefix, "
+                "which matches every term wherever it falls rather than as one adjacent phrase."
             ),
         )
 
-        return self.search_prefix(terms, limit=limit, offset=offset, fields=fields, order_by=order_by)
+        terms = [term for term in terms if term]
+        if not terms:
+            return ([], 0)
+
+        fields = fields or list(self.DEFAULT_SEARCH_FIELDS)
+        return self._run_search(
+            lambda _index: self._build_phrase_prefix_query(terms, fields), limit, offset, order_by
+        )
 
     def _run_search(
         self, build_query, limit: int, offset: int, order_by: str | None, swallow_errors: bool = True
@@ -269,6 +279,23 @@ class SearchStore:
 
         # Match all the terms in any one of the fields.
         clauses = [(tantivy.Occur.Should, self._build_field_prefix_query(terms, field)) for field in fields]
+        return tantivy.Query.boolean_query(clauses)
+
+    def _build_phrase_prefix_query(self, terms: list[str], fields: list[str]) -> tantivy.Query:
+        """Build a phrase-prefix query over `terms`, matching in any one of `fields`.
+
+        Only the deprecated `search_phrase_prefix` builds these; `search_prefix` deliberately
+        does not require the terms to be adjacent, and needs a prefix that expands without a cap.
+        """
+
+        if len(fields) == 1:
+            return tantivy.Query.phrase_prefix_query(self._schema, fields[0], terms)
+
+        # Match the phrase in any of the fields.
+        clauses = [
+            (tantivy.Occur.Should, tantivy.Query.phrase_prefix_query(self._schema, field, terms))
+            for field in fields
+        ]
         return tantivy.Query.boolean_query(clauses)
 
     def _build_field_prefix_query(self, terms: list[str], field: str) -> tantivy.Query:
