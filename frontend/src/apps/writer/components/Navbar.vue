@@ -239,11 +239,18 @@ const fileActions = computed(() =>
               icon: LucideStar,
               onClick: () => {
                 props.file.doc.is_favourite = true
-                toggleFav.submit({
-                  entities: [{ name: props.file.doc.name, is_favourite: true }],
-                })
+                toggleFav.submit(
+                  {
+                    entities: [{ name: props.file.doc.name, is_favourite: true }],
+                  },
+                  {
+                    onError: () => {
+                      props.file.doc.is_favourite = false
+                    },
+                  }
+                )
               },
-              isEnabled: () => !props.file.doc.is_favourite,
+              isEnabled: () => isLoggedIn.value && !props.file.doc.is_favourite,
             },
             {
               label: __('Unfavourite'),
@@ -251,11 +258,18 @@ const fileActions = computed(() =>
               color: 'stroke-amber-500 fill-amber-500',
               onClick: () => {
                 props.file.doc.is_favourite = false
-                toggleFav.submit({
-                  entities: [{ name: props.file.doc.name, is_favourite: false }],
-                })
+                toggleFav.submit(
+                  {
+                    entities: [{ name: props.file.doc.name, is_favourite: false }],
+                  },
+                  {
+                    onError: () => {
+                      props.file.doc.is_favourite = true
+                    },
+                  }
+                )
               },
-              isEnabled: () => props.file.doc.is_favourite,
+              isEnabled: () => isLoggedIn.value && props.file.doc.is_favourite,
             },
           ],
         },

@@ -197,6 +197,22 @@ export const toggleFav = createResource({
       toast(`${toggleFav.params.entities.length} items unfavourited`)
     else toast(`${toggleFav.params.entities.length} items favourited`)
   },
+  onError() {
+    if (toggleFav.params?.entities) {
+      const reverted = toggleFav.params.entities.map((e) => ({
+        ...e,
+        is_favourite: !e.is_favourite,
+      }))
+      getFavourites.setData((d) => {
+        const names = reverted.map((r) => r.name)
+        return reverted[0].is_favourite
+          ? [...(d ?? []), ...reverted]
+          : (d ?? []).filter(({ name }) => !names.includes(name))
+      })
+      mutate(reverted, (el, { is_favourite }) => (el.is_favourite = is_favourite))
+    }
+    toast.error('Failed to update favourite status')
+  },
 })
 
 export const clearRecent = createResource({
