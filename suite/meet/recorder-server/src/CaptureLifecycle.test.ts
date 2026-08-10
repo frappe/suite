@@ -54,6 +54,32 @@ afterEach(async () => {
 });
 
 describe('capture lifecycle', () => {
+	it('synchronizes audio and video capture to the wall clock', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const supervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process()),
+		};
+		const worker = new CaptureWorker('synchronized', options(root), {
+			supervisor: supervisor as unknown as ProcessSupervisor,
+			sleep: async () => undefined,
+		});
+
+		await worker.initialize();
+		await worker.startCapture();
+
+		const args = supervisor.start.mock.calls.at(-1)?.[1] as string[];
+		expect(args.filter((arg) => arg === '-use_wallclock_as_timestamps')).toHaveLength(2);
+		expect(args).toContain('aresample=async=1000:first_pts=0');
+		await worker.stop();
+	});
+
 	it('rolls back every started service when setup exits non-zero', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
