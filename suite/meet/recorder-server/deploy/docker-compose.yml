@@ -14,11 +14,17 @@ services:
       - "127.0.0.1:3010:3010"
     volumes:
       - recorder-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777,uid=1000,gid=1000
+      - /home/node:size=256m,mode=0700,uid=1000,gid=1000
     cpus: ${RECORDER_CPUS:-4}
     mem_limit: ${RECORDER_MEMORY:-6g}
     pids_limit: ${RECORDER_PIDS_LIMIT:-512}
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     logging:
       driver: json-file
       options:

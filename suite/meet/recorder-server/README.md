@@ -64,6 +64,12 @@ Back up the `suite-recorder_recorder-data`, `suite-recorder_caddy-data`, and
 `suite-recorder_caddy-config` volumes. Do not use `docker compose down -v`, and
 do not stop or update the deployment during an active Recording Session.
 
+The recorder runs as the image's unprivileged `node` user with all Linux
+capabilities dropped and a read-only root filesystem. Only `/data`, `/tmp`, and
+the ephemeral node home are writable. Restrict recorder-host egress separately
+to the configured Frappe and SFU origins plus the WebRTC media destinations
+required by that SFU deployment.
+
 ## Chromium integration test
 
 Build the recorder browser assets, then run the recorder-server tests:
