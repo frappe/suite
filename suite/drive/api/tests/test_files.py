@@ -20,6 +20,7 @@ from suite.drive.api.files import (
 )
 from suite.drive.api.list import get_attachments
 from suite.drive.api.permissions import (
+    can_create_in_folder,
     get_general_access,
     get_user_access,
     get_user_access_for_user,
@@ -27,6 +28,7 @@ from suite.drive.api.permissions import (
 )
 from suite.drive.overrides.file import File as DriveFile
 from suite.drive.utils import (
+    FRAMEWORK_FOLDERS,
     GENERAL_USER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
@@ -202,6 +204,60 @@ class TestDriveFilesAPI(IntegrationTestCase):
             frappe.db.get_value("File", backing_file.name, "content_docname"),
             victim_doc.name,
         )
+
+    def test_cannot_create_inside_another_users_folder(self):
+        """`create` used to be granted unconditionally, so the generic REST API
+        (`frappe.client.insert`, core's `/api/method/upload_file`) let any user
+        insert a File with `folder` pointing anywhere - planting content inside a
+        folder they hold no `upload` on. Drive's own endpoints checked `upload`,
+        but nothing checked it behind them."""
+        with self.set_user(OTHER_USER):
+            self.assertFalse(user_has_permission(self.folder, "upload"))
+
+            for values in (
+                {"file_name": "planted.txt", "is_private": 1},
+                {"file_name": "planted", "is_folder": 1},
+            ):
+                with self.assertRaises(frappe.PermissionError):
+                    frappe.get_doc({"doctype": "File", "folder": self.folder.name, **values}).insert()
+
+        self.assertFalse(
+            frappe.db.exists("File", {"folder": self.folder.name, "file_name": ["like", "planted%"]})
+        )
+
+    def test_upload_access_is_enough_to_create(self):
+        """The check is `upload` on the parent, not ownership: a collaborator
+        granted upload keeps `create`, so sharing a folder for contribution still
+        works. Asserted at the hook the framework actually calls on insert."""
+        with self.set_user(OWNER):
+            self.folder.share(user=MEMBER, read=True, upload=True)
+
+        incoming = frappe.get_doc(
+            {
+                "doctype": "File",
+                "folder": self.folder.name,
+                "file_name": f"{frappe.generate_hash(8)}.txt",
+                "is_private": 1,
+            }
+        )
+
+        with self.set_user(MEMBER):
+            self.assertTrue(user_has_permission(self.folder, "upload"))
+            self.assertTrue(user_has_permission(incoming, "create"))
+
+        with self.set_user(OTHER_USER):
+            self.assertFalse(user_has_permission(incoming, "create"))
+
+    def test_framework_upload_flow_still_permitted(self):
+        """Core inserts attachments into `Home`/`Home/Attachments`, and resolves
+        an unset `folder` to one of them in `validate` - after the create check.
+        Denying either would break every attachment upload in the suite."""
+        with self.set_user(OTHER_USER):
+            for folder in (*FRAMEWORK_FOLDERS, None, ""):
+                self.assertTrue(can_create_in_folder(folder))
+
+            # Drive's own flow inserts into the user's own folder.
+            self.assertTrue(can_create_in_folder(get_user_folder(OTHER_USER).name))
 
     def test_site_share_and_guest_public_access(self):
         # Inside a user folder, other site users are denied by default.

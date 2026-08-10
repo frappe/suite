@@ -17,6 +17,7 @@ from suite.drive.api.permissions import (
 from suite.drive.api.product import create_invites
 from suite.drive.utils import (
     ATTACHMENT_CONTENT_DOCTYPE,
+    FRAMEWORK_FOLDERS,
     GENERAL_USER,
     GROUP_PREFIX,
     ROOT_FOLDER,
@@ -32,10 +33,6 @@ from suite.drive.utils import (
     validate_filename,
 )
 from suite.drive.utils.files import S3_URL_PREFIX, FileManager, get_s3_url, storage_key
-
-# Framework-created folders (the site root and its attachments folder);
-# uploads still sitting in them haven't been adopted into a user folder yet.
-FRAMEWORK_FOLDERS = ("Home", "Home/Attachments")
 
 
 class File(FrappeFile):

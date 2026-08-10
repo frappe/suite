@@ -42,6 +42,10 @@ PREVIOUS_TEAMS_FOLDER = "Previous Teams"
 # What a user's own folder is called back to them.
 HOME_LABEL = "Home"
 
+# Framework-created folders (the site root and its attachments folder);
+# uploads still sitting in them haven't been adopted into a user folder yet.
+FRAMEWORK_FOLDERS = ("Home", "Home/Attachments")
+
 PERMISSION_TYPES = ["read", "comment", "share", "upload", "write"]
 
 
