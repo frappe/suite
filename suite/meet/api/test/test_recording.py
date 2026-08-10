@@ -332,6 +332,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
                 patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
+                patch("suite.meet.api.recording._publish_state") as publish_state,
             ):
                 self.assertEqual(complete_upload(recording.name, event_sequence=3), {"status": "Processing"})
                 result = process_upload(recording.name, event_sequence=3)
@@ -347,6 +348,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 job_id=f"meet-recording-upload::{recording.name}",
                 deduplicate=True,
             )
+            self.assertEqual(publish_state.call_count, 1)
+            self.assertEqual(publish_state.call_args.args[1].status, "Ready")
 
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)

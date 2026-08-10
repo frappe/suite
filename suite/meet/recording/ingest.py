@@ -162,6 +162,8 @@ def complete_upload(recording_name: str, *, event_sequence: int) -> dict:
 
 
 def process_upload(recording_name: str, *, event_sequence: int) -> dict:
+    from suite.meet.api.recording import _publish_state
+
     recording = frappe.get_doc("Meet Recording", recording_name)
     if recording.status in ("Ready", "Partial"):
         return {"artifact": recording.artifact, "status": recording.status}
@@ -232,6 +234,7 @@ def process_upload(recording_name: str, *, event_sequence: int) -> dict:
         recording.state_revision += 1
         recording.recorder_event_sequence = cint(event_sequence)
         recording.save(ignore_permissions=True)
+        _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
         frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
     except Exception:
         _delete_drive_blob(manager, drive_file)
