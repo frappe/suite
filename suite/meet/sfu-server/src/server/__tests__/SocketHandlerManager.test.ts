@@ -270,6 +270,7 @@ describe('SocketHandlerManager characterization', () => {
 	});
 
 	it('leave_room fully removes recorder membership and media resources', async () => {
+		vi.useFakeTimers();
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {
 			id: 'recorder-socket',
@@ -283,10 +284,10 @@ describe('SocketHandlerManager characterization', () => {
 		});
 		const joinCallback = vi.fn();
 		socket.fire('recording:join', { roomId: 'room-1' }, joinCallback);
-		await new Promise((resolve) => setImmediate(resolve));
+		await vi.advanceTimersByTimeAsync(0);
 
 		socket.fire('leave_room');
-		await new Promise((resolve) => setImmediate(resolve));
+		await vi.advanceTimersByTimeAsync(60_000);
 
 		expect(joinCallback).toHaveBeenCalledWith({ success: true });
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
@@ -300,6 +301,8 @@ describe('SocketHandlerManager characterization', () => {
 			harness.io.socketsAdapterRooms.get('room-1:recorders'),
 		).not.toContain(socket.id);
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+		harness.manager.stop();
+		vi.useRealTimers();
 	});
 
 	it('recording:join sends raised hands that predate the recorder', async () => {
@@ -493,7 +496,7 @@ describe('SocketHandlerManager characterization', () => {
 
 		await new Promise((r) => setImmediate(r));
 
-		expect(harness.mediasoup.createRoom).toHaveBeenCalledTimes(1);
+		expect(harness.mediasoup.createRoom).not.toHaveBeenCalled();
 		expect(harness.mediasoup.addPeer).not.toHaveBeenCalled();
 		expect(socket.joinCalls).toContain('room-1');
 		expect(
@@ -746,7 +749,8 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.createRoom).not.toHaveBeenCalled();
 	});
 
-	it('disconnect of a full-access socket removes the peer, broadcasts participant_left, and closes the room when the last full-access socket leaves', async () => {
+	it('disconnect of a full-access socket removes the peer, broadcasts participant_left, and closes the room after grace when the last human leaves', async () => {
+		vi.useFakeTimers();
 		const harness = createManager();
 
 		const stay = connectFullSocket(harness, {
@@ -754,14 +758,14 @@ describe('SocketHandlerManager characterization', () => {
 			userId: 'stay-1',
 		});
 		emitJoin(stay, { userId: 'stay-1', name: 'Stay' });
-		await new Promise((r) => setImmediate(r));
+		await vi.advanceTimersByTimeAsync(0);
 
 		const socket = connectFullSocket(harness, {
 			id: 'sock-X',
 			userId: 'user-1',
 		});
 		emitJoin(socket);
-		await new Promise((r) => setImmediate(r));
+		await vi.advanceTimersByTimeAsync(0);
 		expect(harness.mediasoup.addPeer).toHaveBeenCalled();
 
 		(harness.mediasoup.addPeer as ReturnType<typeof vi.fn>).mockClear();
@@ -771,7 +775,7 @@ describe('SocketHandlerManager characterization', () => {
 		stay.emitCalls.length = 0;
 
 		socket.fire('disconnect');
-		await new Promise((r) => setImmediate(r));
+		await vi.advanceTimersByTimeAsync(0);
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
@@ -783,13 +787,17 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
 
 		stay.fire('disconnect');
-		await new Promise((r) => setImmediate(r));
+		await vi.advanceTimersByTimeAsync(59_999);
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
 			'stay-1',
 		);
+		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+		harness.manager.stop();
+		vi.useRealTimers();
 	});
 
 	it('disconnect of an older duplicate full-access socket does not remove the current peer', async () => {
@@ -824,7 +832,7 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
-	it('leave_room from an older duplicate socket still closes an empty room', async () => {
+	it('leave_room from one duplicate socket retains the room while another connection remains', async () => {
 		const harness = createManager();
 
 		const older = connectFullSocket(harness, {
@@ -849,7 +857,52 @@ describe('SocketHandlerManager characterization', () => {
 		await new Promise((r) => setImmediate(r));
 
 		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
+	});
+
+	it('keeps previews connected while grace cleanup evicts recorders and closes media', async () => {
+		vi.useFakeTimers();
+		const harness = createManager();
+		const preview = connectFullSocket(harness, {
+			id: 'preview-socket',
+			scope: 'presence-preview',
+			userId: 'preview-1',
+		});
+		emitJoin(preview, { userId: 'preview-1' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const human = connectFullSocket(harness, {
+			id: 'human-socket',
+			userId: 'human-1',
+		});
+		emitJoin(human, { userId: 'human-1' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const recorder = connectFullSocket(harness, {
+			id: 'recorder-socket',
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const disconnectRecorder = vi.spyOn(recorder, 'disconnect');
+		recorder.fire('recording:join', { roomId: 'room-1' }, vi.fn());
+		await vi.advanceTimersByTimeAsync(0);
+
+		human.fire('disconnect', 'client namespace disconnect');
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		expect(disconnectRecorder).toHaveBeenCalledWith(true);
 		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+		expect(harness.io.socketsMap.has(preview.id)).toBe(true);
+		expect(harness.io.socketsAdapterRooms.get('room-1:preview')).toContain(
+			preview.id,
+		);
+		harness.manager.stop();
+		vi.useRealTimers();
 	});
 
 	it('host_control with mute_participant sends host_control_update to the target; non-host gets sfu_error and target gets nothing', async () => {

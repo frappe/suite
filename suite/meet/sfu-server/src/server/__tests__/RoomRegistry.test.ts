@@ -91,6 +91,33 @@ function addRecorderSocket(
 }
 
 describe('RoomRegistry', () => {
+	it('counts a participant as human until all of their sockets leave', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const first = makeSocket('first');
+		const second = makeSocket('second');
+
+		registry.claimParticipant(first, 'r1', 'p1');
+		registry.claimParticipant(second, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(true);
+
+		registry.releaseParticipant(first, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(true);
+
+		registry.releaseParticipant(second, 'r1', 'p1');
+		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
+	it('does not count preview or recorder sockets as humans', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		registry.joinScope(makeSocket('preview'), 'r1', 'presence-preview');
+		registry.joinRecorder(makeSocket('recorder'), 'r1', 'recorder-1');
+
+		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
 	it('preserves replacement recorder ownership and only clears the active owner', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);

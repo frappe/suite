@@ -31,14 +31,17 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			const scopedRoomId = getRoomId(socket);
 			if (socket.scope === 'full') {
 				enforceE2EEJoinPolicy(socket, e2ee);
+				await deps.roomLifecycle.humanJoined(scopedRoomId);
 			}
 
-			await deps.mediasoup.createRoom(
-				scopedRoomId,
-				(roomIdInner, participantIds) => {
-					deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
-				},
-			);
+			if (socket.scope === 'full') {
+				await deps.mediasoup.createRoom(
+					scopedRoomId,
+					(roomIdInner, participantIds) => {
+						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
+					},
+				);
+			}
 
 			socket.join(scopedRoomId);
 
@@ -139,6 +142,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				(performance.now() - startedAt) / 1000,
 			);
 		} catch (error) {
+			if (socket.scope === 'full') {
+				deps.roomLifecycle.scheduleCleanupIfHumanEmpty(getRoomId(socket));
+			}
 			deps.telemetry.recordRoomJoin(
 				{ scope, rejoin, outcome: 'failure' },
 				(performance.now() - startedAt) / 1000,
@@ -176,6 +182,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					audio_enabled: false,
 					video_enabled: false,
 				});
+				deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
 				socket.emit('existing_raised_hands', {
 					hands: deps.registry.getRaisedHands(roomId),
 				});
@@ -287,17 +294,14 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 							});
 						}
 					}
+					if (socket.scope === 'full') {
+						deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
+					}
 
 					socket.leave(roomId);
 					deps.registry.leaveScope(socket, roomId, 'full');
 					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 					socket.roomId = undefined;
-					if (deps.registry.isEmpty(roomId)) {
-						deps.registry.cleanupRoom(roomId);
-						deps.e2eeEpochRelay.clearRoom(roomId);
-						await deps.e2eeRoster.clearRoom(roomId);
-						deps.mediasoup.closeRoom(roomId);
-					}
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
 					loggers.socketHandler.warn(
