@@ -360,8 +360,21 @@ def _recordings_folder(recording) -> str:
     if existing:
         return existing
     manager = FileManager()
+    folder_name = "Meet Recordings"
+    suffix = 1
+    while frappe.db.exists(
+        "File",
+        {
+            "folder": recording.drive_home_folder,
+            "file_name": folder_name,
+            "is_folder": 1,
+            "status": "Active",
+        },
+    ):
+        folder_name = f"Meet Recordings ({suffix})"
+        suffix += 1
     folder = create_drive_file(
-        "Meet Recordings",
+        folder_name,
         recording.drive_home_folder,
         "Folder",
         lambda entity: manager.create_folder(entity),

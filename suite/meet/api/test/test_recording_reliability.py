@@ -13,6 +13,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
 from suite.drive.api.files import delete_entities, remove_or_restore
+from suite.drive.utils import create_drive_file, get_user_folder
 from suite.drive.utils.files import TRASH_PREFIX, FileManager
 from suite.meet.api.recording import (
     BYTES_PER_SECOND,
@@ -30,7 +31,13 @@ from suite.meet.api.recording import (
     start,
     stop,
 )
-from suite.meet.recording.ingest import _upload_path, append_chunk, begin_upload, complete_upload
+from suite.meet.recording.ingest import (
+    _recordings_folder,
+    _upload_path,
+    append_chunk,
+    begin_upload,
+    complete_upload,
+)
 from suite.meet.recording.recorder_client import RecorderOutcome
 
 PUBLIC_JWK = {
@@ -161,6 +168,40 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             path.unlink(missing_ok=True)
             if artifact:
                 frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
+
+    def test_recordings_folder_does_not_alias_foreign_owned_folder(self):
+        manager = FileManager()
+        if manager.flat:
+            self.skipTest("hierarchical Drive storage required")
+        home = get_user_folder(self.owner)
+        parent = create_drive_file(
+            f"recording-folder-test-{frappe.generate_hash(length=8)}",
+            home.name,
+            "Folder",
+            lambda file: manager.create_folder(file),
+        )
+        frappe.set_user(self.cohost)
+        foreign_folder = create_drive_file(
+            "Meet Recordings",
+            parent.name,
+            "Folder",
+            lambda file: manager.create_folder(file),
+        )
+        frappe.set_user(self.owner)
+        recording = frappe._dict(drive_home_folder=parent.name, room_owner=self.owner)
+        owner_folder = frappe.get_doc("File", _recordings_folder(recording))
+
+        try:
+            self.assertEqual(owner_folder.owner, self.owner)
+            self.assertNotEqual(owner_folder.file_name, foreign_folder.file_name)
+            self.assertNotEqual(owner_folder.file_url, foreign_folder.file_url)
+        finally:
+            manager.delete_file(owner_folder)
+            manager.delete_file(foreign_folder)
+            manager.delete_file(parent)
+            frappe.delete_doc("File", owner_folder.name, force=True, ignore_permissions=True)
+            frappe.delete_doc("File", foreign_folder.name, force=True, ignore_permissions=True)
+            frappe.delete_doc("File", parent.name, force=True, ignore_permissions=True)
 
     def test_recorder_acceptance_timestamp_must_be_bound_to_request(self):
         frappe.conf.recording_fixture_mode = False
