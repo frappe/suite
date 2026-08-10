@@ -25,6 +25,7 @@ from suite.drive.api.permissions import (
     get_user_access_for_user,
     user_has_permission,
 )
+from suite.drive.overrides.file import File as DriveFile
 from suite.drive.utils import (
     GENERAL_USER,
     STATUS_ACTIVE,
@@ -134,6 +135,49 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertFalse(user_has_permission(self.file, "read"))
             with self.assertRaises(frappe.PermissionError):
                 get_file_content(self.file.name)
+
+    def test_content_link_cannot_be_forged_to_hijack_another_users_document(self):
+        """content_doctype/content_docname are the sole permission delegation
+        point for content documents like Writer Document (see
+        content_has_permission in suite/drive/overrides/file.py): whoever's
+        File claims a document inherits full access to it. Only Drive's own
+        creation flow may ever set these fields — a user must not be able to
+        point their own File at someone else's document and hijack it."""
+        with self.set_user(OWNER):
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            DriveFile.create_for_doc(victim_doc)
+
+        with self.set_user(OTHER_USER):
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
+
+            attacker_file = create_drive_file(
+                f"{frappe.generate_hash(8)}.txt",
+                get_user_folder(OTHER_USER).name,
+                "Text",
+                None,
+            )
+
+            # Forging the link via an update to a File the attacker owns must fail.
+            forged = frappe.get_doc("File", attacker_file.name)
+            forged.content_doctype = "Writer Document"
+            forged.content_docname = victim_doc.name
+            with self.assertRaises(frappe.PermissionError):
+                forged.save()
+
+            # Forging the link directly at insert time must fail too.
+            with self.assertRaises(frappe.PermissionError):
+                frappe.get_doc(
+                    {
+                        "doctype": "File",
+                        "file_name": "forged.txt",
+                        "is_private": 1,
+                        "folder": get_user_folder(OTHER_USER).name,
+                        "content_doctype": "Writer Document",
+                        "content_docname": victim_doc.name,
+                    }
+                ).insert()
+
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
 
     def test_site_share_and_guest_public_access(self):
         # Inside a user folder, other site users are denied by default.

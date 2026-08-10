@@ -45,6 +45,7 @@ class File(FrappeFile):
     `after_file_upload`."""
 
     def validate(self):
+        self._validate_content_link()
         if self.is_new() and not self.flags.file_created:
             return super().validate()
         if (
@@ -71,6 +72,29 @@ class File(FrappeFile):
                 "Rename Drive files from the Drive interface, not the File form.",
                 frappe.ValidationError,
             )
+
+    def _validate_content_link(self):
+        """`content_doctype`/`content_docname` are the sole permission delegation
+        point for content documents (see `content_has_permission`): whoever's
+        File claims a document effectively owns it. They must only ever be set
+        by Drive's own trusted paths (`create_for_doc`, the attachment-reference
+        branch of `after_file_upload`, or a migration patch), never by a plain
+        user-driven insert or update — otherwise any user could forge a link to
+        someone else's document and inherit full access to it."""
+        if not (self.content_doctype or self.content_docname):
+            return
+        if self.flags.file_created or self.flags.allow_content_link:
+            return
+        if not self.is_new() and not (
+            self.has_value_changed("content_doctype") or self.has_value_changed("content_docname")
+        ):
+            return
+        if frappe.session.user == "Administrator":
+            return
+        frappe.throw(
+            "content_doctype/content_docname can only be set by Drive's own file-creation flow.",
+            frappe.PermissionError,
+        )
 
     def before_insert(self):
         # Drive's upload flow owns storage; framework uploads keep core's flow.
@@ -596,6 +620,10 @@ def after_file_upload(doc):
         doc.modified = library_doc.modified
         doc.content_doctype = ATTACHMENT_CONTENT_DOCTYPE
         doc.content_docname = frappe.form_dict.library_file_name
+        # `File` has no has_permission hook keyed on content_doctype, so this
+        # self-referential "original" link (unlike Writer/Presentation links)
+        # can't grant elevated access to library_doc — safe to allow here.
+        doc.flags.allow_content_link = True
     else:
         # Adopt any framework upload — attachment or loose — into the uploader's
         # private folder; the blob stays where the framework wrote it.
