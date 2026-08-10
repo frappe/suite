@@ -29,6 +29,18 @@ describe('RecordingGrantPersistenceFile', () => {
 		expect(corrupt.isReady()).toBe(false);
 	});
 
+	it('recovers after invalid startup state is repaired', async () => {
+		await writeFile(path, '{broken');
+		const store = new RecordingGrantPersistenceFile(path);
+		await expect(store.initialize()).rejects.toThrow('failed to initialize');
+		expect(store.isReady()).toBe(false);
+
+		await writeFile(path, JSON.stringify({ schemaVersion: 1, consumed: {} }));
+		await store.initialize();
+		expect(store.isReady()).toBe(true);
+		await expect(store.consume('recovered', 200, 100)).resolves.toBeUndefined();
+	});
+
 	it.each([
 		{ schemaVersion: 2, consumed: {} },
 		{ schemaVersion: 1, consumed: [] },

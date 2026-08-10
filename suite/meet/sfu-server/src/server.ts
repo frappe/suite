@@ -18,6 +18,8 @@ import { Telemetry } from './telemetry/Telemetry';
 import { configureLogging, loggers } from './utils/logger';
 import { captureException, flushSentry, initSentry } from './utils/sentry';
 
+const RECORDING_AUTHORIZATION_RETRY_MS = 30_000;
+
 export class SFUServer {
 	private app: Application;
 	private server: http.Server;
@@ -29,6 +31,9 @@ export class SFUServer {
 	private config: SFUConfig['server'];
 	private telemetry: Telemetry;
 	private recordingGrantPersistence?: RecordingGrantPersistenceFile;
+	private recordingGrantRetry: NodeJS.Timeout | null = null;
+	private recordingGrantInitialization: Promise<void> | null = null;
+	private recordingGrantFailureReported = false;
 
 	constructor(config: SFUConfig) {
 		this.config = config.server;
@@ -110,19 +115,48 @@ export class SFUServer {
 		this.app.use(express.json());
 	}
 
+	private initializeRecordingAuthorization(): Promise<void> {
+		const persistence = this.recordingGrantPersistence;
+		if (!persistence || persistence.isReady()) return Promise.resolve();
+		if (this.recordingGrantInitialization)
+			return this.recordingGrantInitialization;
+
+		this.recordingGrantInitialization = persistence
+			.initialize()
+			.then(() => {
+				if (this.recordingGrantFailureReported) {
+					loggers.server.info('Recording authorization recovered');
+				}
+				this.recordingGrantFailureReported = false;
+			})
+			.catch((error) => {
+				if (!this.recordingGrantFailureReported) {
+					loggers.server.error(
+						'Recording authorization unavailable: %s',
+						(error as Error).message,
+					);
+					captureException(error);
+					this.recordingGrantFailureReported = true;
+				}
+			})
+			.finally(() => {
+				this.recordingGrantInitialization = null;
+			});
+		return this.recordingGrantInitialization;
+	}
+
 	async start(): Promise<void> {
 		try {
 			loggers.server.info('Starting SFU Server');
 
 			await this.mediasoup.init();
-			try {
-				await this.recordingGrantPersistence?.initialize();
-			} catch (error) {
-				loggers.server.error(
-					'Recording authorization unavailable: %s',
-					(error as Error).message,
+			await this.initializeRecordingAuthorization();
+			if (this.recordingGrantPersistence) {
+				this.recordingGrantRetry = setInterval(
+					() => void this.initializeRecordingAuthorization(),
+					RECORDING_AUTHORIZATION_RETRY_MS,
 				);
-				captureException(error);
+				this.recordingGrantRetry.unref();
 			}
 
 			this.server.listen(this.config.port, this.config.host, () => {
@@ -145,6 +179,8 @@ export class SFUServer {
 
 	async stop(): Promise<void> {
 		loggers.server.info('Stopping SFU Server');
+		if (this.recordingGrantRetry) clearInterval(this.recordingGrantRetry);
+		this.recordingGrantRetry = null;
 
 		try {
 			this.socketHandlerManager.stop();
