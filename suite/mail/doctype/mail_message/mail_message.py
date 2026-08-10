@@ -1289,13 +1289,13 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
 
     store = get_data_store(account)
 
-    # Which of these the cache has never seen, asked before writing them: only those count towards
-    # their participants' interaction totals, so re-fetching a thread can't inflate the people in it.
-    cached = store.exists_many(Entity.EMAIL, keys=list(messages))
-    fresh = [message for message_id, message in messages.items() if message_id not in cached]
-    known = [message for message_id, message in messages.items() if message_id in cached]
-
-    store.set_many(Entity.EMAIL, items=messages)
+    # Which of these the cache had never seen, as answered by the write that stores them: only those
+    # count towards their participants' interaction totals, so re-fetching a thread can't inflate the
+    # people in it. Asking before writing instead would let two syncs racing over the same new
+    # message both find it absent, and both count it.
+    added = store.set_many(Entity.EMAIL, items=messages)
+    fresh = [message for message_id, message in messages.items() if message_id in added]
+    known = [message for message_id, message in messages.items() if message_id not in added]
 
     # Feed sender/recipient addresses into the shared address index; never let indexing break caching.
     # Addresses from messages already cached are still re-indexed, to pick up renamed contacts.

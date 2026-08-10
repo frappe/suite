@@ -289,21 +289,6 @@ class DataStore(BaseStore):
         with self._txn(write=False) as txn:
             return txn.get(db_key) is not None
 
-    def exists_many(self, entity: Enum, keys: list[str]) -> set[str]:
-        """Return the subset of `keys` the store already holds, in one read transaction.
-
-        Values are never deserialized, so this stays cheap on hot paths that only need to tell
-        what is new from what is already cached.
-        """
-
-        if not keys:
-            return set()
-
-        db_keys = [(key, self._db_key(entity, key)) for key in keys]
-
-        with self._txn(write=False) as txn:
-            return {key for key, db_key in db_keys if txn.get(db_key) is not None}
-
     def get_many(self, entity: Enum, keys: list[str]) -> dict[str, Any | None]:
         """Retrieve multiple values by a list of keys, returning a dictionary of key-value pairs."""
 
@@ -317,19 +302,35 @@ class DataStore(BaseStore):
 
         return {key: self._deserialize(value) if value is not None else None for key, value in raw}
 
-    def set_many(self, entity: Enum, items: dict[str, Any]) -> None:
-        """Store multiple key-value pairs at once, serializing values before saving."""
+    def set_many(self, entity: Enum, items: dict[str, Any]) -> set[str]:
+        """Store multiple key-value pairs at once, serializing values before saving.
+
+        Returns the keys the store did not already hold, decided by the very write that stores
+        them. A caller that acts on what is new — counting it, announcing it — would otherwise
+        have to ask first, and two writers asking about the same key both get told it is new.
+        """
 
         if not items:
-            return
+            return set()
 
-        encoded = [(self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
+        encoded = [(key, self._db_key(entity, key), self._serialize(value)) for key, value in items.items()]
+        added: set[str] = set()
 
         def _put_all(txn: Any) -> None:
-            for db_key, data in encoded:
-                txn.put(db_key, data)
+            # A retry re-runs this after the aborted attempt's writes are gone, so what counted as
+            # new the first time around has to be worked out again rather than accumulated.
+            added.clear()
+
+            for key, db_key, data in encoded:
+                # Claim the key if it is absent, otherwise overwrite it; either way it ends up stored.
+                if txn.put(db_key, data, overwrite=False):
+                    added.add(key)
+                else:
+                    txn.put(db_key, data)
 
         self._write(_put_all)
+
+        return added
 
     def delete_many(self, entity: Enum, keys: list[str]) -> None:
         """Delete multiple keys from the storage at once."""
