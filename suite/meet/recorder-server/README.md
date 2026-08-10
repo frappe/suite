@@ -37,8 +37,8 @@ origin, recorder hostname, and TLS email before starting:
 ```
 
 The recorder API remains bound to host loopback on port 3010. Caddy exposes
-only `/v1/recordings`, `/health`, and `/ready` over HTTPS; metrics remain
-loopback-only. Configure the Frappe site with the same secret:
+the control and status routes plus bearer-protected `/recorder/metrics` over
+HTTPS. Configure the Frappe site with the same secret:
 
 ```json
 {

@@ -7,7 +7,7 @@ Central Prometheus, Loki, and Grafana deployment for Suite. Prometheus and Loki 
 - A Linux server with Docker and the Docker Compose plugin.
 - DNS for the Grafana domain pointing to the server.
 - TCP ports 80 and 443 open on the server firewall.
-- Each SFU reachable from this server over HTTPS with the same `METRICS_TOKEN`.
+- Each SFU and recorder reachable from this server over HTTPS with their respective metrics tokens.
 
 ## Setup
 
@@ -15,13 +15,15 @@ Central Prometheus, Loki, and Grafana deployment for Suite. Prometheus and Loki 
 cp .env.example .env
 mkdir -p secrets
 openssl rand -hex 32 > secrets/sfu_metrics_token
+openssl rand -hex 32 > secrets/recorder_metrics_token
 # Prometheus must be able to read this bind-mounted file.
 PROMETHEUS_IDS="$(docker compose run --rm --no-deps --entrypoint sh prometheus -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
 sudo chown "$PROMETHEUS_IDS" secrets/sfu_metrics_token
-sudo chmod 400 secrets/sfu_metrics_token
+sudo chown "$PROMETHEUS_IDS" secrets/recorder_metrics_token
+sudo chmod 400 secrets/sfu_metrics_token secrets/recorder_metrics_token
 ```
 
-Set the same token as `METRICS_TOKEN` on every SFU. Edit `.env` with the Grafana domain and a strong admin password. Generate a password with:
+Set the first token as `METRICS_TOKEN` on every SFU and the second as `RECORDER_METRICS_TOKEN` on every recorder. Edit `.env` with the Grafana domain and a strong admin password. Generate a password with:
 
 ```bash
 openssl rand -base64 32
@@ -38,10 +40,11 @@ Store the plain password in a root-readable `secrets/loki-password` file on each
 
 Set `LOKI_PUSH_ENABLED=true` only after the user and hash are present. Caddy refuses partial enabled configuration. Alloy sends logs to `https://<GRAFANA_DOMAIN>/loki/api/v1/push`; no second DNS record is required.
 
-Copy the target template, then list every SFU hostname in the ignored runtime file:
+Copy the target templates, then list every SFU and recorder hostname in the ignored runtime files. A colocated recorder uses the same hostname as its SFU:
 
 ```bash
 cp prometheus/targets/sfu.yml.example prometheus/targets/sfu.yml
+cp prometheus/targets/recorder.yml.example prometheus/targets/recorder.yml
 ```
 
 ```yaml
@@ -68,10 +71,10 @@ docker compose exec prometheus sh -lc 'cat /run/secrets/sfu_metrics_token >/dev/
 Open `https://<GRAFANA_DOMAIN>`, sign in, and use the provisioned Prometheus and Loki data sources. Check scrape health at **Connections > Data sources > Prometheus > Explore** with:
 
 ```promql
-up{job="frappe-meet-sfu"}
+up{job=~"frappe-meet-(sfu|recorder)"}
 ```
 
-Each SFU appears under Prometheus's automatic `instance` label.
+Each SFU and recorder appears under Prometheus's automatic `instance` label. Grafana provisions separate SFU and recorder overview dashboards.
 
 ## Log collection
 
@@ -225,7 +228,7 @@ If the Loki disk fills, stop the Alloy collectors first. Free or extend disk spa
 
 Run `./validate-config.sh` after changing Loki, Caddy, Alloy, or Compose configuration. Do not expose Prometheus port 9090 or Loki port 3100 publicly.
 
-Existing monitoring deployments without log ingestion can update directly. Caddy protects the push path with a discarded fallback credential while `LOKI_PUSH_ENABLED=false`. Enabling pushes requires the user and hash together.
+Before updating an existing monitoring deployment, create `secrets/recorder_metrics_token`, deploy the same value as `RECORDER_METRICS_TOKEN` on each recorder, and add `prometheus/targets/recorder.yml`. Caddy protects the Loki push path with a discarded fallback credential while `LOKI_PUSH_ENABLED=false`. Enabling pushes requires the user and hash together.
 
 To move an active collector from the former separate log hostname:
 
