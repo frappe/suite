@@ -18,6 +18,7 @@ from suite.meet.utils.user import (
 
 class MeetRoom(Document):
     CONTROLLED_FIELDS: ClassVar[set[str]] = {
+        "owner",
         "allow_guest",
         "meeting_type",
         "host_only_chat",

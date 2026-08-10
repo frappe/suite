@@ -281,6 +281,8 @@ setup_wizard_url = "/suite/setup"
 # ============================================================================
 scheduler_events = {
     "daily": [
+        # meet
+        "suite.meet.api.recording.cleanup_failed_recordings",
         # drive
         "suite.drive.api.scripts.auto_delete_from_trash",
         "suite.drive.api.scripts.clear_deleted_files",

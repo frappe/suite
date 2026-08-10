@@ -18,13 +18,14 @@ from suite.drive.utils import get_user_folder
 from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
 from suite.meet.recording.callback_auth import authenticate_callback
 from suite.meet.recording.grants import mint_recording_grant, public_jwk_thumbprint
-from suite.meet.recording.ingest import append_chunk, begin_upload, complete_upload
+from suite.meet.recording.ingest import _upload_path, append_chunk, begin_upload, complete_upload
 from suite.meet.recording.recorder_client import RecorderClient, RecorderOutcome
 
 MAX_SECONDS = 4 * 60 * 60
 DEFAULT_ESTIMATE_SECONDS = 60 * 60
 BYTES_PER_SECOND = int(((5_000_000 + 128_000) / 8) * 1.1)
 MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 30 + 5 * 1024 * 1024
+FAILED_RETENTION_DAYS = 30
 
 
 def _get_room(meeting_id: str):
@@ -612,6 +613,19 @@ def reconcile_pending_recordings():
             _retry_stopping(name)
         except Exception:
             frappe.log_error(title="Meet recording stop retry failed", message=frappe.get_traceback())
+
+
+def cleanup_failed_recordings():
+    cutoff = add_to_date(now_datetime(), days=-FAILED_RETENTION_DAYS)
+    recordings = frappe.get_all(
+        "Meet Recording",
+        filters={"status": "Failed", "modified": ["<=", cutoff]},
+        fields=["name", "upload_id"],
+    )
+    for recording in recordings:
+        if recording.upload_id:
+            _upload_path(recording.upload_id).unlink(missing_ok=True)
+        frappe.delete_doc("Meet Recording", recording.name, ignore_permissions=True)
 
 
 def _retry_stopping(name: str):

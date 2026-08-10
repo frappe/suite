@@ -19,6 +19,7 @@ from suite.meet.api.meeting import (
     get_waiting_room,
     join_meeting,
     join_meeting_as_guest,
+    promote_to_cohost,
     refresh_sfu_token,
     reject_join_request,
 )
@@ -271,6 +272,41 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             get_approved_guest_connection_details(self.meeting.name, guest_id)
 
+    def test_approved_guest_rechecks_room_guest_policy(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Room Policy Guest")
+        guest_id = waiting["guest_id"]
+        frappe.set_user(self.host_email)
+        approve_join_request(self.meeting.name, guest_id)
+        self.meeting.db_set("allow_guest", 0)
+
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            get_approved_guest_connection_details(self.meeting.name, guest_id)
+
+    def test_expired_or_deleted_guest_session_cannot_reconnect(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Expired Guest")
+        guest_id = waiting["guest_id"]
+        frappe.set_user(self.host_email)
+        approve_join_request(self.meeting.name, guest_id)
+        frappe.cache.delete_value(f"guest_session:{guest_id}")
+
+        frappe.set_user("Guest")
+        with self.assertRaisesRegex(frappe.ValidationError, "not found or expired"):
+            get_approved_guest_connection_details(self.meeting.name, guest_id)
+
+    def test_rejected_guest_session_cannot_reconnect(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Rejected Guest")
+        guest_id = waiting["guest_id"]
+        frappe.set_user(self.host_email)
+        reject_join_request(self.meeting.name, guest_id)
+
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.ValidationError):
+            get_approved_guest_connection_details(self.meeting.name, guest_id)
+
     def test_guest_connection_details_recheck_ban_and_session(self):
         self.meeting.db_set("meeting_type", "open")
         frappe.set_user("Guest")
@@ -296,6 +332,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                     approve_join_request(self.meeting.name, self.member_email)
                 with self.assertRaises(frappe.ValidationError):
                     reject_join_request(self.meeting.name, self.member_email)
+                with self.assertRaises(frappe.ValidationError):
+                    approve_all_join_requests(self.meeting.name)
+                with self.assertRaises(frappe.ValidationError):
+                    promote_to_cohost(self.meeting.name, self.member_email)
+                with self.assertRaises(frappe.ValidationError):
+                    frappe.get_doc("Meet Room", self.meeting.name).update_settings(host_only_chat=1)
 
         self.meeting.reload()
         self.assertIn(self.member_email, self.meeting.get_waiting_room())

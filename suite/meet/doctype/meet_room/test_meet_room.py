@@ -78,6 +78,26 @@ class IntegrationTestMeetRoom(IntegrationTestCase):
         room.reload()
         self.assertEqual(room.get_waiting_room(), [user])
 
+    def test_every_access_field_rejects_generic_document_updates(self):
+        user = self._ensure_user("room-protected@example.com", "Room Protected")
+        mutations = {
+            "owner": lambda room: room.set("owner", user),
+            "allow_guest": lambda room: room.set("allow_guest", not room.allow_guest),
+            "meeting_type": lambda room: room.set("meeting_type", "restricted"),
+            "host_only_chat": lambda room: room.set("host_only_chat", 1),
+            "members": lambda room: room.append("members", {"user": user}),
+            "co_hosts": lambda room: room.append("co_hosts", {"user": user}),
+            "waiting_room": lambda room: room.append("waiting_room", {"user": user}),
+            "banned_users": lambda room: room.append("banned_users", {"user": user}),
+        }
+
+        for fieldname, mutate in mutations.items():
+            with self.subTest(fieldname=fieldname):
+                room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+                mutate(room)
+                with self.assertRaisesRegex(ValidationError, "dedicated meeting methods"):
+                    room.save()
+
     def _ensure_user(self, email: str, first_name: str) -> str:
         if not frappe.db.exists("User", email):
             frappe.get_doc(
