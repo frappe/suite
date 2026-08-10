@@ -4,6 +4,12 @@
 
 {$RECORDER_DOMAIN} {
 	route {
+		@metrics path /recorder/metrics
+		handle @metrics {
+			rewrite * /metrics
+			reverse_proxy 127.0.0.1:3010
+		}
+
 		@control path /v1/recordings /v1/recordings/*
 		reverse_proxy @control 127.0.0.1:3010
 

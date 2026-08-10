@@ -16,5 +16,17 @@ scrape_configs:
       credentials_file: /run/secrets/sfu_metrics_token
     file_sd_configs:
       - files:
-          - /etc/prometheus/targets/*.yml
+          - /etc/prometheus/targets/sfu*.yml
+          - /etc/prometheus/targets/local.yml
+        refresh_interval: 30s
+
+  - job_name: frappe-meet-recorder
+    scheme: https
+    metrics_path: /recorder/metrics
+    authorization:
+      type: Bearer
+      credentials_file: /run/secrets/recorder_metrics_token
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/recorder*.yml
         refresh_interval: 30s

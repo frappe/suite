@@ -119,6 +119,7 @@ services:
     environment:
       - DOMAIN=${DOMAIN}
       - SFU_UPSTREAM=127.0.0.1:${PORT:-3000}
+      - RECORDER_UPSTREAM=127.0.0.1:${RECORDER_PORT:-3010}
     # nginx:alpine uses envsubst automatically on /etc/nginx/templates/*.template
     # Note: deploy.sh handles startup order (SFU first, then nginx)
     logging:
