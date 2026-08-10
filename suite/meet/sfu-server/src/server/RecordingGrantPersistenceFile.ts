@@ -11,6 +11,7 @@ import {
 import { dirname } from 'node:path';
 
 const SCHEMA_VERSION = 1;
+const DEFAULT_MAX_CONSUMED_IDS = 10_000;
 
 type FileShape = {
 	schemaVersion: 1;
@@ -22,7 +23,13 @@ export class RecordingGrantPersistenceFile {
 	private ready = false;
 	private writes = Promise.resolve();
 
-	constructor(private readonly filePath: string) {}
+	constructor(
+		private readonly filePath: string,
+		private readonly maxConsumedIds = DEFAULT_MAX_CONSUMED_IDS,
+	) {
+		if (!Number.isSafeInteger(maxConsumedIds) || maxConsumedIds < 1)
+			throw new Error('Recording grant persistence capacity must be positive');
+	}
 
 	static async bootstrap(filePath: string): Promise<void> {
 		await access(filePath, constants.F_OK).catch(async () => {
@@ -38,6 +45,9 @@ export class RecordingGrantPersistenceFile {
 			const parsed: unknown = JSON.parse(await readFile(this.filePath, 'utf8'));
 			if (!isFileShape(parsed)) {
 				throw new Error('invalid recording grant persistence schema');
+			}
+			if (Object.keys(parsed.consumed).length > this.maxConsumedIds) {
+				throw new Error('recording grant persistence exceeds capacity');
 			}
 			this.consumed = new Map(Object.entries(parsed.consumed));
 			this.ready = true;
@@ -58,12 +68,18 @@ export class RecordingGrantPersistenceFile {
 
 	consume(jti: string, retainUntil: number, now: number): Promise<void> {
 		return this.serialize(async () => {
+			if (!jti || !Number.isSafeInteger(retainUntil) || retainUntil <= now) {
+				throw new Error('Invalid recording grant consumption');
+			}
 			if ((this.consumed.get(jti) ?? 0) > now) {
 				throw new Error('Recording grant has already been consumed');
 			}
 			const next = new Map(
 				[...this.consumed].filter(([, expiresAt]) => expiresAt > now),
 			);
+			if (!next.has(jti) && next.size >= this.maxConsumedIds) {
+				throw new Error('Recording grant persistence is at capacity');
+			}
 			next.set(jti, retainUntil);
 			await this.persist(next);
 			this.consumed = next;
@@ -139,7 +155,12 @@ function isFileShape(value: unknown): value is FileShape {
 	if (!value || typeof value !== 'object') return false;
 	const candidate = value as Partial<FileShape>;
 	if (candidate.schemaVersion !== SCHEMA_VERSION) return false;
-	if (!candidate.consumed || typeof candidate.consumed !== 'object')
+	if (
+		!candidate.consumed ||
+		typeof candidate.consumed !== 'object' ||
+		Array.isArray(candidate.consumed) ||
+		Object.getPrototypeOf(candidate.consumed) !== Object.prototype
+	)
 		return false;
 	return Object.entries(candidate.consumed).every(
 		([jti, expiresAt]) =>

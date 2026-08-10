@@ -29,6 +29,7 @@ import { TransportManager } from './TransportManager';
 import { WorkerManager } from './WorkerManager';
 
 export class MediasoupManager {
+	private readonly closingRooms = new Set<string>();
 	private workerManager = new WorkerManager();
 	private roomManager = new RoomManager();
 	private peerManager = new PeerManager();
@@ -225,7 +226,17 @@ export class MediasoupManager {
 	}
 
 	async closeRoom(roomId: string): Promise<void> {
-		await this.roomManager.closeRoom(roomId);
+		if (this.closingRooms.has(roomId)) return;
+		this.closingRooms.add(roomId);
+		const room = this.roomManager.getRoom(roomId);
+		try {
+			for (const peerId of [...(room?.peers.keys() ?? [])]) {
+				await this.removePeer(roomId, peerId);
+			}
+			await this.roomManager.closeRoom(roomId);
+		} finally {
+			this.closingRooms.delete(roomId);
+		}
 	}
 
 	async addPeer(
@@ -238,6 +249,9 @@ export class MediasoupManager {
 			video_enabled: true,
 		},
 	): Promise<Peer> {
+		if (this.closingRooms.has(roomId)) {
+			throw new Error(`Room ${roomId} is closing`);
+		}
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) {
 			throw new Error(`Room ${roomId} not found`);
@@ -301,8 +315,9 @@ export class MediasoupManager {
 		dtlsParameters: DtlsParameters,
 		roomId: string,
 		peerId: string,
+		expectedDirection?: 'send' | 'recv',
 	): Promise<void> {
-		this.assertTransportAccess(transportId, roomId, peerId);
+		this.assertTransportAccess(transportId, roomId, peerId, expectedDirection);
 		return this.transportManager.connectWebRtcTransport(
 			transportId,
 			dtlsParameters,
@@ -313,8 +328,9 @@ export class MediasoupManager {
 		transportId: string,
 		roomId: string,
 		peerId: string,
+		expectedDirection?: 'send' | 'recv',
 	): Promise<IceParameters> {
-		this.assertTransportAccess(transportId, roomId, peerId);
+		this.assertTransportAccess(transportId, roomId, peerId, expectedDirection);
 		return this.transportManager.restartWebRtcTransportIce(transportId);
 	}
 

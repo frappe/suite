@@ -24,6 +24,9 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			const roomId = socket.roomId;
 			const participantId = socket.participantId;
+			if (socket.scope === 'recording') {
+				deps.registry.deactivateRecorder(socket);
+			}
 
 			if (roomId && participantId) {
 				try {

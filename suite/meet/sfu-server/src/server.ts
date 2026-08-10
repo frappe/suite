@@ -115,7 +115,15 @@ export class SFUServer {
 			loggers.server.info('Starting SFU Server');
 
 			await this.mediasoup.init();
-			await this.recordingGrantPersistence?.initialize();
+			try {
+				await this.recordingGrantPersistence?.initialize();
+			} catch (error) {
+				loggers.server.error(
+					'Recording authorization unavailable: %s',
+					(error as Error).message,
+				);
+				captureException(error);
+			}
 
 			this.server.listen(this.config.port, this.config.host, () => {
 				loggers.server.info(

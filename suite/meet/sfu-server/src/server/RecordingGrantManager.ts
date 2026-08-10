@@ -86,6 +86,7 @@ export class RecordingGrantManager {
 		if (
 			claims.iat > now + this.clockSkewSeconds ||
 			claims.exp <= claims.iat ||
+			claims.exp > claims.authorization_expires_at ||
 			claims.authorization_expires_at <= claims.iat
 		) {
 			throw new Error('Invalid recording grant timestamps');
@@ -126,6 +127,9 @@ export class RecordingGrantManager {
 		socketId: string,
 		now = unixNow(),
 	): Promise<number> {
+		if (claims.exp <= now || claims.authorization_expires_at <= now) {
+			throw new Error('Recording grant has expired before proof completion');
+		}
 		validateChallenge(challenge, claims.jti, socketId, now);
 		const signatureBytes = decodeBase64Url(signature, 64, 'proof signature');
 		const valid = verifySignature(

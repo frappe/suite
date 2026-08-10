@@ -207,6 +207,66 @@ describe('SocketHandlerManager characterization', () => {
 		expect(recvCallback).toHaveBeenCalledWith(
 			expect.objectContaining({ success: true }),
 		);
+
+		const connectCallback = vi.fn();
+		const restartCallback = vi.fn();
+		socket.fire(
+			'connect_webrtc_transport',
+			{ transportId: 'transport-1', dtlsParameters: {} },
+			connectCallback,
+		);
+		socket.fire(
+			'restart_webrtc_transport_ice',
+			{ transportId: 'transport-1' },
+			restartCallback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(connectCallback).toHaveBeenCalledWith({ success: true });
+		expect(restartCallback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true }),
+		);
+		expect(harness.mediasoup.connectWebRtcTransport).toHaveBeenCalledWith(
+			'transport-1',
+			{},
+			'room-1',
+			'recorder:recording-1',
+			'recv',
+		);
+	});
+
+	it('rejects recorder connect and restart for untracked transports', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+			roomId: 'room-1',
+		});
+		const connectCallback = vi.fn();
+		const restartCallback = vi.fn();
+
+		socket.fire(
+			'connect_webrtc_transport',
+			{ transportId: 'foreign', dtlsParameters: {} },
+			connectCallback,
+		);
+		socket.fire(
+			'restart_webrtc_transport_ice',
+			{ transportId: 'foreign' },
+			restartCallback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(connectCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Recorder may connect only its receive transport',
+		});
+		expect(restartCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Recorder may restart only its receive transport',
+		});
+		expect(harness.mediasoup.connectWebRtcTransport).not.toHaveBeenCalled();
+		expect(harness.mediasoup.restartWebRtcTransportIce).not.toHaveBeenCalled();
 	});
 
 	it('leave_room fully removes recorder membership and media resources', async () => {
@@ -306,6 +366,72 @@ describe('SocketHandlerManager characterization', () => {
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(provedDisconnect).not.toHaveBeenCalled();
 		vi.useRealTimers();
+	});
+
+	it('disconnects an unproved recorder before any handler can observe room state', () => {
+		const grantManager = {
+			createChallenge: vi.fn(() => ({ nonce: 'challenge' })),
+			verifyProofAndConsume: vi.fn(),
+		};
+		const harness = createManager(grantManager as never);
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const disconnect = vi.spyOn(socket, 'disconnect');
+		const next = vi.fn();
+
+		socket.packetMiddleware?.(
+			['get_router_rtp_capabilities', {}, vi.fn()],
+			next,
+		);
+
+		expect(disconnect).toHaveBeenCalledWith(true);
+		expect(next).not.toHaveBeenCalled();
+		expect(harness.mediasoup.createRoom).not.toHaveBeenCalled();
+	});
+
+	it('releases a proved recorder that disconnects before joining', async () => {
+		const grantManager = {
+			createChallenge: vi.fn(() => ({ nonce: 'challenge' })),
+			verifyProofAndConsume: vi.fn().mockResolvedValue(2_000_000_000),
+		};
+		const harness = createManager(grantManager as never);
+		const first = connectFullSocket(harness, {
+			id: 'first',
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const firstProof = vi.fn();
+		first.fire('recording:proof', { signature: 'valid' }, firstProof);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(firstProof).toHaveBeenCalledWith({ success: true });
+
+		first.fire('disconnect', 'client namespace disconnect');
+		await new Promise((resolve) => setImmediate(resolve));
+		const replacement = connectFullSocket(harness, {
+			id: 'replacement',
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-2',
+			} as never,
+		});
+		const replacementProof = vi.fn();
+		replacement.fire(
+			'recording:proof',
+			{ signature: 'valid' },
+			replacementProof,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(replacementProof).toHaveBeenCalledWith({ success: true });
 	});
 
 	it('join_room with scope:full adds the socket to fullAccessSockets, calls mediasoup.createRoom + addPeer, and emits existing_raised_hands to the joiner', async () => {
@@ -893,6 +1019,7 @@ describe('SocketHandlerManager characterization', () => {
 			{},
 			'room-1',
 			'e2ee-user',
+			undefined,
 		);
 	});
 
@@ -924,6 +1051,40 @@ describe('SocketHandlerManager characterization', () => {
 			paused: false,
 			visible: true,
 		});
+	});
+
+	it('rejects every foreign consumer mutation before side effects', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:recording-1',
+			roomId: 'room-1',
+		});
+		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
+			throw new Error('Consumer ownership mismatch');
+		});
+
+		for (const [event, data] of [
+			['close_consumer', { consumerId: 'foreign' }],
+			[
+				'consumer:update_preferences',
+				{ consumerId: 'foreign', visible: true, width: 640, height: 360 },
+			],
+			['request_consumer_keyframe', { consumerId: 'foreign' }],
+		] as const) {
+			const callback = vi.fn();
+			socket.fire(event, data, callback);
+			await new Promise((resolve) => setImmediate(resolve));
+			expect(callback, event).toHaveBeenCalledWith({
+				success: false,
+				error: 'Consumer ownership mismatch',
+			});
+		}
+
+		expect(harness.mediasoup.closeConsumer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.updateConsumerPreferences).not.toHaveBeenCalled();
+		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
 	});
 
 	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {

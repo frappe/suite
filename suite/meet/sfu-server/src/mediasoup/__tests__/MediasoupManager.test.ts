@@ -136,6 +136,58 @@ describe('MediasoupManager.createConsumer', () => {
 });
 
 describe('MediasoupManager resource access', () => {
+	it('removes every peer resource before closing a populated room', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: {
+				getRoom: (id: string) => unknown;
+				closeRoom: (id: string) => Promise<void>;
+			};
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([
+				['peer-1', {}],
+				['peer-2', {}],
+			]),
+		} as never);
+		const removePeer = vi.spyOn(mgr, 'removePeer').mockResolvedValue(undefined);
+		const closeRoom = vi
+			.spyOn(internals.roomManager, 'closeRoom')
+			.mockResolvedValue(undefined);
+
+		await mgr.closeRoom('room-1');
+
+		expect(removePeer.mock.calls).toEqual([
+			['room-1', 'peer-1'],
+			['room-1', 'peer-2'],
+		]);
+		expect(closeRoom).toHaveBeenCalledWith('room-1');
+	});
+
+	it('rejects peers joining while their room is closing', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: {
+				getRoom: (id: string) => unknown;
+				closeRoom: (id: string) => Promise<void>;
+			};
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([['peer-1', {}]]),
+		} as never);
+		let release!: () => void;
+		const removing = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		vi.spyOn(mgr, 'removePeer').mockReturnValue(removing);
+		vi.spyOn(internals.roomManager, 'closeRoom').mockResolvedValue(undefined);
+
+		const closing = mgr.closeRoom('room-1');
+		await expect(mgr.addPeer('room-1', 'peer-2')).rejects.toThrow('is closing');
+		release();
+		await closing;
+	});
+
 	it('requires transport room, peer, and direction to match', () => {
 		const mgr = createManager();
 		const internals = mgr as unknown as {
@@ -157,6 +209,22 @@ describe('MediasoupManager resource access', () => {
 		expect(() =>
 			mgr.assertTransportAccess('t1', 'room-1', 'peer-1', 'recv'),
 		).toThrow('is not a recv transport');
+	});
+
+	it('requires consumer room and peer ownership to match', () => {
+		const mgr = createManager();
+		vi.spyOn(mgr.consumerManager, 'getConsumerData').mockReturnValue({
+			roomId: 'room-1',
+			peerId: 'peer-1',
+			consumer: {},
+		} as never);
+
+		expect(() => mgr.assertConsumerAccess('c1', 'room-2', 'peer-1')).toThrow(
+			'Consumer ownership mismatch',
+		);
+		expect(() => mgr.assertConsumerAccess('c1', 'room-1', 'peer-2')).toThrow(
+			'Consumer ownership mismatch',
+		);
 	});
 
 	it('rejects a producer from another room when creating a consumer', async () => {

@@ -118,6 +118,29 @@ describe('RoomRegistry', () => {
 		expect(registry.isRecorderPeer('r1', 'recorder:recording-1')).toBe(false);
 	});
 
+	it('releases proof-complete recorder ownership before room join', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const disconnected = makeSocket('disconnected');
+		const nextJob = makeSocket('next-job');
+		Object.assign(disconnected, {
+			recordingClaims: { recording_id: 'recording-1' },
+		});
+		Object.assign(nextJob, {
+			recordingClaims: { recording_id: 'recording-1' },
+		});
+
+		registry.activateRecorder(disconnected, 'recording-1', 'job-1');
+		registry.deactivateRecorder(disconnected);
+		expect(() =>
+			registry.activateRecorder(nextJob, 'recording-1', 'job-2'),
+		).not.toThrow();
+		registry.deactivateRecorder(disconnected);
+		expect(() =>
+			registry.activateRecorder(makeSocket('conflict'), 'recording-1', 'job-3'),
+		).toThrow('already connected');
+	});
+
 	describe('raised hands', () => {
 		it('stores and clears timestamps per peer; hasRaisedHand reflects state', () => {
 			const { io } = makeIo();

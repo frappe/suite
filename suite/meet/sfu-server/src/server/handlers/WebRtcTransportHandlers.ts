@@ -64,6 +64,9 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { transportId, dtlsParameters } = data;
+				if (socket.scope === 'recording' && transportDirection !== 'recv') {
+					throw new Error('Recorder may connect only its receive transport');
+				}
 				if (
 					socket.e2eeRequired &&
 					!encryptedWebRtcTransportIds.has(transportId)
@@ -77,6 +80,7 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					dtlsParameters,
 					getRoomId(socket),
 					socket.userId,
+					socket.scope === 'recording' ? 'recv' : undefined,
 				);
 
 				callback({ success: true });
@@ -112,10 +116,14 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureMediaConsumerAccess(socket);
 				const { transportId } = data;
+				if (socket.scope === 'recording' && transportDirection !== 'recv') {
+					throw new Error('Recorder may restart only its receive transport');
+				}
 				const iceParameters = await deps.mediasoup.restartWebRtcTransportIce(
 					transportId,
 					getRoomId(socket),
 					socket.userId,
+					socket.scope === 'recording' ? 'recv' : undefined,
 				);
 
 				callback({ success: true, iceParameters });

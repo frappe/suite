@@ -91,6 +91,16 @@ export class RoomRegistry {
 			current.socket.disconnect(true);
 	}
 
+	deactivateRecorder(socket: Socket): void {
+		const recordingId = socket.recordingClaims?.recording_id;
+		if (
+			recordingId &&
+			this.activeRecordings.get(recordingId)?.socket.id === socket.id
+		) {
+			this.activeRecordings.delete(recordingId);
+		}
+	}
+
 	joinRecorder(socket: Socket, roomId: string, peerId: string): void {
 		socket.join(recorderRoom(roomId));
 		if (!this.recorderSockets.has(roomId))
@@ -113,13 +123,7 @@ export class RoomRegistry {
 			this.recorderPeerIds.get(roomId)?.delete(peerId);
 			this.recorderPeerSockets.get(roomId)?.delete(peerId);
 		}
-		const claims = socket.recordingClaims;
-		if (
-			claims &&
-			this.activeRecordings.get(claims.recording_id)?.socket.id === socket.id
-		) {
-			this.activeRecordings.delete(claims.recording_id);
-		}
+		this.deactivateRecorder(socket);
 		return ownsPeer;
 	}
 

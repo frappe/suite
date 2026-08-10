@@ -192,6 +192,8 @@ function createMockMediasoupManager(): MediasoupManager {
 		restartWebRtcTransportIce: vi.fn().mockResolvedValue({}),
 		assertProducerAccess: vi.fn(),
 		assertConsumerAccess: vi.fn(),
+		closeConsumer: vi.fn().mockResolvedValue(undefined),
+		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
 		updateConsumerPreferences: vi.fn().mockResolvedValue({ paused: false }),
 		createProducer: vi.fn().mockResolvedValue({
 			id: 'producer-1',

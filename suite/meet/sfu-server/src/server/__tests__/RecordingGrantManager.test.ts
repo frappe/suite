@@ -83,6 +83,61 @@ describe('RecordingGrantManager', () => {
 		).toThrow('public JWK');
 	});
 
+	it.each([
+		['wrong typ', {}, { typ: 'JWT' }, 'HS256'],
+		['extra header', {}, { kid: 'unexpected' }, 'HS256'],
+		['wrong algorithm', {}, {}, 'HS384'],
+	] as const)('rejects %s', (_name, overrides, header, algorithm) => {
+		expect(() =>
+			manager.verifyGrant(makeToken(overrides, header, algorithm), NOW),
+		).toThrow();
+	});
+
+	it.each([
+		['aud', 'other'],
+		['aud', ['meet-sfu-recorder']],
+		['scope', 'full'],
+		['iss', 'frappe-site:other'],
+		['site', ''],
+		['meeting_id', ''],
+		['recording_id', 7],
+		['recorder_job_id', ''],
+		['jti', ''],
+		['iat', NOW + 6],
+		['exp', NOW],
+		['exp', NOW + 3_601],
+		['authorization_expires_at', NOW],
+		['authorization_expires_at', NOW + 4 * 60 * 60 + 1],
+	] as const)('rejects invalid %s claims', (claim, value) => {
+		expect(() =>
+			manager.verifyGrant(makeToken({ [claim]: value }), NOW),
+		).toThrow();
+	});
+
+	it.each([
+		{ kty: 'RSA', crv: 'P-256', x: publicJwk.x, y: publicJwk.y },
+		{ kty: 'EC', crv: 'P-384', x: publicJwk.x, y: publicJwk.y },
+		{ kty: 'EC', crv: 'P-256', x: 'short', y: publicJwk.y },
+		{ kty: 'EC', crv: 'P-256', x: publicJwk.x, y: `${publicJwk.y}=` },
+		{ ...publicJwk, d: '' },
+	])('rejects malformed public JWK %#', (jwk) => {
+		expect(() =>
+			manager.verifyGrant(
+				makeToken({ cnf: { jwk, jkt: jwkThumbprint(publicJwk) } }),
+				NOW,
+			),
+		).toThrow('JWK');
+	});
+
+	it('rejects a valid key paired with another key thumbprint', () => {
+		expect(() =>
+			manager.verifyGrant(
+				makeToken({ cnf: { jwk: publicJwk, jkt: 'A'.repeat(43) } }),
+				NOW,
+			),
+		).toThrow('thumbprint');
+	});
+
 	it('uses fixed canonical bytes verified by Node and browser WebCrypto', async () => {
 		expect(canonicalChallengeBytes(vectorChallenge).toString()).toBe(
 			'meet-recording-proof-v1\njti-vector\nsocket-vector\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n1700000000\n1700000010',
@@ -143,6 +198,63 @@ describe('RecordingGrantManager', () => {
 				NOW + 11,
 			),
 		).rejects.toThrow('challenge');
+		expect(persistence.isConsumed(claims.jti, NOW)).toBe(false);
+		await expect(
+			manager.verifyProofAndConsume(
+				claims,
+				vectorChallenge,
+				vectorSignature,
+				'socket-vector',
+				NOW + 1,
+			),
+		).resolves.toBe(NOW + 3_600);
+	});
+
+	it.each([
+		['connection grant', { exp: NOW + 1 }],
+		[
+			'session authorization',
+			{ exp: NOW + 1, authorization_expires_at: NOW + 1 },
+		],
+	] as const)('rechecks %s expiry when proof completes', async (_name, overrides) => {
+		const claims = manager.verifyGrant(makeToken(overrides), NOW);
+		await expect(
+			manager.verifyProofAndConsume(
+				claims,
+				vectorChallenge,
+				vectorSignature,
+				'socket-vector',
+				NOW + 2,
+			),
+		).rejects.toThrow('expired before proof');
+		expect(persistence.isConsumed(claims.jti, NOW)).toBe(false);
+	});
+
+	it('atomically permits only one concurrent proof for a grant', async () => {
+		const claims = manager.verifyGrant(makeToken(), NOW);
+		const results = await Promise.allSettled([
+			manager.verifyProofAndConsume(
+				claims,
+				vectorChallenge,
+				vectorSignature,
+				'socket-vector',
+				NOW + 1,
+			),
+			manager.verifyProofAndConsume(
+				claims,
+				vectorChallenge,
+				vectorSignature,
+				'socket-vector',
+				NOW + 1,
+			),
+		]);
+		expect(
+			results.filter((result) => result.status === 'fulfilled'),
+		).toHaveLength(1);
+		expect(
+			results.filter((result) => result.status === 'rejected'),
+		).toHaveLength(1);
+		expect(persistence.isConsumed(claims.jti, NOW + 1)).toBe(true);
 	});
 
 	it('creates a 32-byte, ten-second challenge', () => {
@@ -157,12 +269,12 @@ describe('RecordingGrantManager', () => {
 });
 
 function makeToken(
-	overrides: {
-		scope?: string;
-		iss?: string;
-		cnf?: RecordingGrantClaims['cnf'];
-	} = {},
+	overrides: Record<
+		string,
+		string | number | readonly string[] | { jwk: JsonWebKey; jkt: string }
+	> = {},
 	header: Record<string, string> = {},
+	algorithm: jwt.Algorithm = 'HS256',
 ): string {
 	const claims: RecordingGrantClaims = {
 		iss: 'frappe-site:test.local',
@@ -179,7 +291,7 @@ function makeToken(
 		authorization_expires_at: NOW + 3_600,
 	};
 	return jwt.sign({ ...claims, ...overrides }, SECRET, {
-		algorithm: 'HS256',
+		algorithm,
 		header: { typ: 'meet-recording-grant+jwt', ...header },
 	});
 }
