@@ -47,6 +47,8 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         frappe.conf.recording_fixture_mode = True
         frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
         frappe.clear_cache(doctype="Meet Settings")
+        frappe.db.delete("Meet Recording", {"room_owner": self.owner})
+        frappe.db.commit()
         frappe.set_user(self.owner)
         self.room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
         started = start(self.room.name, str(uuid.uuid4()))
@@ -63,6 +65,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
+        frappe.db.commit()
         frappe.clear_cache(doctype="Meet Settings")
         frappe.conf.pop("recording_fixture_mode", None)
 
