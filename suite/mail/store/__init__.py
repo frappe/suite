@@ -137,6 +137,11 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
     Drops the existing index, then re-indexes every cached mail message and contact card in
     batches (bounding memory and the size of each index commit). Runs in a background job by
     default; pass `in_background=False` to run inline (e.g. from within the job itself).
+
+    A sync running alongside this can leave a message it cached in the meantime uncounted, since
+    the rebuild counts what the cache held when it started. Every step here is ordered to fail that
+    way round: a rebuild is what repairs undercounted addresses, while nothing repairs a count that
+    has been added twice short of another rebuild.
     """
 
     if in_background:
@@ -155,18 +160,24 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
     from suite.mail.doctype.contact_card.contact_card import _contact_addresses
     from suite.mail.doctype.mail_message.mail_message import _message_addresses
 
+    store = get_data_store(account)
+
+    # Read the cache before dropping the index, so this counts no message that a sync adds after
+    # the drop: that message is counted by the sync that cached it, and counting it here as well
+    # would leave it counted twice.
+    messages = list(store.scan(Entity.EMAIL).items())
+
     # Drop the stale index, then take a fresh handle so its directory is recreated before writing.
     get_email_address_index(account).drop()
     index = get_email_address_index(account)
 
-    store = get_data_store(account)
-
-    messages = list(store.scan(Entity.EMAIL).items())
     for batch in create_batch(messages, _REBUILD_BATCH_SIZE):
-        index.index_addresses(_message_addresses([message for _message_id, message in batch]))
-        # Each batch has now been counted exactly once, so record the claims to match, batch by
-        # batch: a claim left unrecorded would let its message be counted again when next cached.
+        # Claim the batch before counting it, never after. A sync reaching one of these messages
+        # in between finds it claimed and adds nothing, leaving the count to this rebuild; were the
+        # claims recorded afterwards, that sync would count what this batch is about to count too.
+        # Should the indexing then fail, the batch goes uncounted until the next rebuild.
         store.set_many(Entity.COUNTED_EMAIL, items={message_id: True for message_id, _ in batch})
+        index.index_addresses(_message_addresses([message for _message_id, message in batch]))
 
     contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
     for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):
