@@ -44,7 +44,7 @@
 				<StatValue label="Download" :value="formatBitrate(snapshot.downloadBitrate)" />
 				<StatValue label="Upload" :value="formatBitrate(snapshot.uploadBitrate)" />
 				<StatValue label="Available upload" :value="formatBitrate(snapshot.availableOutgoingBitrate)" />
-				<StatValue label="Recovery" :value="humanize(connectionState.recoveryState)" />
+				<StatValue label="Lifecycle" :value="humanize(participantConnectionState.lifecycleState)" />
 			</div>
 
 			<template v-if="expanded">
@@ -69,7 +69,7 @@
 					<p v-if="!receiveStreams.length" class="py-2 text-ink-gray-5">No active incoming streams</p>
 				</StatsSection>
 
-				<StatsSection v-if="connectionState.recoveryTimeline.length" title="Recovery history">
+				<StatsSection v-if="participantConnectionState.recoveryTimeline.length" title="Recovery history">
 					<div v-for="entry in recentRecoveryTimeline" :key="`${entry.at}-${entry.state}`" class="border-b border-outline-gray-2 py-2 last:border-0">
 						<div class="flex justify-between gap-3">
 							<span class="capitalize text-ink-gray-7">{{ humanize(entry.state) }}</span>
@@ -93,6 +93,7 @@ import LucideChevronUp from "~icons/lucide/chevron-up";
 import LucideCopy from "~icons/lucide/copy";
 import LucideX from "~icons/lucide/x";
 import { useConnectionState } from "../composables/useConnectionState";
+import { useParticipantConnectionState } from "../composables/useParticipantConnectionState";
 import { useE2EEState } from "../composables/useE2EEState";
 import { type RTCStreamStats, useRTCStats } from "../composables/useRTCStats";
 import { setShowStatsForNerds } from "../data/statsPreferences";
@@ -100,6 +101,7 @@ import { setShowStatsForNerds } from "../data/statsPreferences";
 const active = ref(true);
 const expanded = ref(false);
 const connectionState = useConnectionState();
+const participantConnectionState = useParticipantConnectionState();
 const e2eeState = useE2EEState();
 const { snapshot, sendStreams, receiveStreams, error } = useRTCStats(active);
 
@@ -120,8 +122,8 @@ const iceRoute = computed(() => {
 	const remote = snapshot.value.remoteCandidateType;
 	return local || remote ? `${local || "unknown"} → ${remote || "unknown"}` : "n/a";
 });
-const recoveryCount = computed(() => connectionState.recoveryTimeline.filter((entry) => entry.state !== "healthy").length);
-const recentRecoveryTimeline = computed(() => connectionState.recoveryTimeline.slice(-8).reverse());
+const recoveryCount = computed(() => participantConnectionState.recoveryTimeline.filter((entry) => entry.state !== "healthy").length);
+const recentRecoveryTimeline = computed(() => participantConnectionState.recoveryTimeline.slice(-8).reverse());
 const encryptionStatus = computed(() => e2eeState.isContextReady.value ? "Active" : "Not active");
 
 function close() {
@@ -156,8 +158,8 @@ async function copyDiagnostics() {
 	await navigator.clipboard.writeText(JSON.stringify({
 		capturedAt: new Date().toISOString(),
 		stats: snapshot.value,
-		recoveryState: connectionState.recoveryState,
-		recoveryTimeline: connectionState.recoveryTimeline,
+		lifecycleState: participantConnectionState.lifecycleState,
+		recoveryTimeline: participantConnectionState.recoveryTimeline,
 	}, null, 2));
 }
 

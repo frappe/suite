@@ -325,7 +325,8 @@ def _recordings_folder(recording) -> str:
 
 
 def _artifact_name(recording) -> str:
-    title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or "Meet Recording"
+    title = frappe.db.get_value("Meet Room", recording.meet_room, "title")
+    title = title or recording.meet_room or "Meet Recording"
     timezone = frappe.db.get_value("User", recording.room_owner, "time_zone") or get_system_timezone()
     started = (
         get_datetime(recording.started_at)

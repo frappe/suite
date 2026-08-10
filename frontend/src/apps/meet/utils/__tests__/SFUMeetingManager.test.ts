@@ -10,15 +10,16 @@ describe("SFUMeetingManager recovery fallback", () => {
 			send: "restarted",
 			recv: "restarted",
 		});
-		const resetReceiveSide = vi
-			.spyOn(manager.connectionManager, "resetReceiveSide")
-			.mockResolvedValue();
+		const closeReceiveTransport = vi.spyOn(
+			manager.transportManager,
+			"closeReceiveTransport",
+		);
 
 		await expect(
-			manager.recoveryManager.recoverTransportIce("transport_recv_failed"),
+			manager.recoverTransport("transport_recv_failed"),
 		).resolves.toBe("recovered");
 
-		expect(resetReceiveSide).not.toHaveBeenCalled();
+		expect(closeReceiveTransport).not.toHaveBeenCalled();
 	});
 
 	it("resets receive media when send rebuild fails", async () => {
@@ -32,14 +33,15 @@ describe("SFUMeetingManager recovery fallback", () => {
 		vi.spyOn(manager.mediaManager, "rebuildSendSide").mockRejectedValue(
 			new Error("send rebuild failed"),
 		);
-		const resetReceiveSide = vi
-			.spyOn(manager.connectionManager, "resetReceiveSide")
-			.mockResolvedValue();
+		const closeReceiveTransport = vi.spyOn(
+			manager.transportManager,
+			"closeReceiveTransport",
+		);
 
 		await expect(
-			manager.recoveryManager.recoverTransportIce("transport_send_failed"),
+			manager.recoverTransport("transport_send_failed"),
 		).resolves.toBe("failed");
 
-		expect(resetReceiveSide).toHaveBeenCalledOnce();
+		expect(closeReceiveTransport).toHaveBeenCalledOnce();
 	});
 });

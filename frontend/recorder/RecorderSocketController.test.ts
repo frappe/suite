@@ -93,12 +93,45 @@ describe("RecorderSocketController", () => {
 		expect(h.dependencies.mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce();
 	});
 
+	it("claims duplicate live producers synchronously", async () => {
+		const h = harness();
+		await h.controller.connect(config);
+
+		h.sfuHandlers.get("producer_created")?.({ producerId: "p1", participantId: "alice" });
+		h.sfuHandlers.get("producer_created")?.({ producerId: "p1", participantId: "alice" });
+		await vi.waitFor(() =>
+			expect(h.dependencies.mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce(),
+		);
+	});
+
 	it("tombstones producer closes and participant leaves during snapshots", async () => {
 		const h = harness([{ id: "p1", participantId: "alice" }]);
 		h.dependencies.sfuClient.getRoomParticipants.mockImplementationOnce(async () => { h.sfuHandlers.get("participant_left")?.({ participantId: "alice" }); h.sfuHandlers.get("producer_closed")?.({ producerId: "p1", participantId: "alice" }); return [{ participantId: "alice", user_id: "alice", userData: { name: "Alice" } }]; });
 		await h.controller.connect(config);
 		expect(h.participants.has("alice")).toBe(false);
 		expect(h.dependencies.mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
+	it("does not resurrect old producers when a participant leaves and rejoins", async () => {
+		const h = harness([{ id: "old", participantId: "alice" }]);
+		h.dependencies.sfuClient.getRoomParticipants.mockResolvedValueOnce([
+			{ participantId: "alice", user_id: "alice", userData: { name: "Alice" } },
+		]);
+		h.dependencies.sfuClient.getExistingProducers.mockImplementationOnce(async () => {
+			h.sfuHandlers.get("participant_left")?.({ participantId: "alice" });
+			h.sfuHandlers.get("participant_joined")?.({ participantId: "alice" });
+			h.sfuHandlers.get("producer_created")?.({ producerId: "new", participantId: "alice" });
+			return [{ id: "old", participantId: "alice" }];
+		});
+
+		await h.controller.connect(config);
+
+		expect(h.dependencies.mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce();
+		expect(h.dependencies.mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			producerId: "new",
+			participantId: "alice",
+			isScreen: false,
+		});
 	});
 
 	it("fails readiness when an initial producer returns no consumer", async () => {

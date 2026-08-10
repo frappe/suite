@@ -3,7 +3,7 @@
  * Orchestrates SFU connection, media, and participant management
  *
  * This is a thin facade that coordinates the focused managers:
- * - SFUConnectionManager: Connection lifecycle and event handling
+ * - ParticipantConnection: Participant connection lifecycle and event handling
  * - SFUMediaManager: Producer/consumer operations
  * - SFURecoveryManager: ICE restart and recovery logic
  */
@@ -12,18 +12,19 @@ import { ConsumerManager } from "./media/ConsumerManager";
 import { ParticipantManager } from "./media/ParticipantManager";
 import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
-import type { ConnectionDetails, SFUClient } from "./SFUClient";
-import type { JoinRoomMediaState, JoinUserData } from "../types";
+import type { SFUClient } from "./SFUClient";
 import type { User } from "../composables/useCurrentUser";
 import {
-	SFUConnectionManager,
+	ParticipantConnection,
+	type ParticipantConnectionStartOptions,
+	type ParticipantConnectionState,
 	type SFUEventHandlers,
-} from "./sfu/SFUConnectionManager";
+} from "./sfu/ParticipantConnection";
+import { SFUMediaManager, type PublishedMedia } from "./sfu/SFUMediaManager";
 import {
-	SFUMediaManager,
-	type PublishedMedia,
-} from "./sfu/SFUMediaManager";
-import { SFURecoveryManager } from "./sfu/SFURecoveryManager";
+	SFURecoveryManager,
+	type RecoveryResult,
+} from "./sfu/SFURecoveryManager";
 
 interface SFUMeetingManagerOptions {
 	meetingId: string;
@@ -39,9 +40,9 @@ export class SFUMeetingManager {
 	consumerManager: ConsumerManager;
 	transportManager: TransportManager;
 
-	connectionManager: SFUConnectionManager;
+	private connectionManager: ParticipantConnection;
 	mediaManager: SFUMediaManager;
-	recoveryManager: SFURecoveryManager;
+	private recoveryManager: SFURecoveryManager;
 
 	constructor(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
@@ -55,6 +56,8 @@ export class SFUMeetingManager {
 			sfuClient,
 			transportManager: this.transportManager,
 			meetingId: () => this.connectionManager?.meetingId ?? null,
+			schedule: (operation) =>
+				this.connectionManager.serializeTransportRecovery(operation),
 			onStarted: (reason) =>
 				this.connectionManager?.reportRecoveryState(
 					reason.includes("send") ? "recovering_send" : "recovering_receive",
@@ -65,21 +68,7 @@ export class SFUMeetingManager {
 			},
 			onFailed: async (_reason, result) => {
 				try {
-					const recoveries: Promise<unknown>[] = [];
-					if (result.send === "failed") {
-						this.connectionManager?.reportRecoveryState("recovering_send", _reason);
-						recoveries.push(this.mediaManager.rebuildSendSide());
-					}
-					if (result.recv === "failed") {
-						this.connectionManager?.reportRecoveryState("recovering_receive", _reason);
-						recoveries.push(this.connectionManager.resetReceiveSide());
-					}
-					const failedRecovery = (await Promise.allSettled(recoveries)).find(
-						(result) => result.status === "rejected",
-					);
-					if (failedRecovery?.status === "rejected") {
-						throw failedRecovery.reason;
-					}
+					await this.connectionManager.recoverFailedTransports(_reason, result);
 					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
 					this.connectionManager?.reportRecoveryState("failed", _reason);
@@ -98,7 +87,7 @@ export class SFUMeetingManager {
 			() => this.connectionManager?.getCurrentUserId() ?? null,
 		);
 
-		this.connectionManager = new SFUConnectionManager({
+		this.connectionManager = new ParticipantConnection({
 			sfuClient,
 			videoManager: this.videoManager,
 			participantManager: this.participantManager,
@@ -116,26 +105,10 @@ export class SFUMeetingManager {
 		);
 	}
 
-	async connect(
-		authToken: string | null = null,
-		prefetchedDetails: ConnectionDetails | null = null,
-	): Promise<boolean> {
-		return this.connectionManager.connect(authToken, prefetchedDetails);
-	}
-
-	async joinRoom(
-		userData: JoinUserData,
-		mediaState: JoinRoomMediaState,
-	): Promise<boolean> {
-		return this.connectionManager.joinRoom(userData, mediaState);
-	}
-
-	async initializeDevice(): Promise<boolean> {
-		return this.connectionManager.initializeDevice();
-	}
-
-	async createReceiveTransport(): Promise<boolean> {
-		return this.connectionManager.createReceiveTransport();
+	startParticipantConnection(
+		options: ParticipantConnectionStartOptions,
+	): Promise<ParticipantConnectionState> {
+		return this.connectionManager.start(options);
 	}
 
 	async publishMedia(
@@ -161,7 +134,7 @@ export class SFUMeetingManager {
 			mediaHandler.cleanup();
 			this.consumerManager.clear();
 			this.mediaManager.processedConsumers.clear();
-			this.connectionManager.bufferedProducerEvents = [];
+			this.connectionManager.clearBufferedReconciliationEvents();
 			this.transportManager.cleanup();
 
 			await this.transportManager.initializeDevice();
@@ -209,7 +182,7 @@ export class SFUMeetingManager {
 				}
 			}
 
-			await this.setupExistingParticipants();
+			await this.connectionManager.setupExistingParticipants();
 			console.log("E2EE reconfiguration completed");
 		} catch (error) {
 			console.error("E2EE reconfiguration failed:", error);
@@ -219,12 +192,16 @@ export class SFUMeetingManager {
 		}
 	}
 
-	async setupExistingParticipants(): Promise<void> {
-		return this.connectionManager.setupExistingParticipants();
-	}
-
 	async resyncAfterRecovery(reason: string): Promise<void> {
 		return this.connectionManager.resyncAfterRecovery(reason);
+	}
+
+	async recoverTransport(reason: string): Promise<RecoveryResult> {
+		return this.recoveryManager.recoverTransportIce(reason);
+	}
+
+	async resetReceiveMedia(): Promise<void> {
+		return this.connectionManager.resetReceiveSide();
 	}
 
 	async subscribeToRemoteProducer({
@@ -301,6 +278,10 @@ export class SFUMeetingManager {
 		return this.connectionManager.isConnected;
 	}
 
+	get participantConnectionState(): ParticipantConnectionState {
+		return this.connectionManager.state;
+	}
+
 	get eventTarget(): EventTarget {
 		return this.mediaManager.eventTarget;
 	}
@@ -321,7 +302,4 @@ export class SFUMeetingManager {
 		return this.connectionManager.currentUser;
 	}
 
-	get initialSyncInProgress(): boolean {
-		return this.connectionManager.initialSyncInProgress;
-	}
 }

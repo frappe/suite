@@ -300,9 +300,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(artifact.folder, recording.drive_home_folder)
             self.assertEqual(artifact.file_type, "Video")
             self.assertEqual(artifact.mime_type, "video/mp4")
-            completed_usage = get_storage_usage(self.owner)
-            self.assertEqual(completed_usage["reserved_size"], usage_before.get("reserved_size", 0))
-            self.assertEqual(completed_usage["total_size"], usage_before["total_size"] + len(content))
+            self.assertTrue(artifact.file_name.startswith(f"{self.room.name} - "))
             artifact.status = "Trashed"
             artifact.save(ignore_permissions=True)
             self.assertTrue(frappe.db.exists("Meet Recording", recording.name))

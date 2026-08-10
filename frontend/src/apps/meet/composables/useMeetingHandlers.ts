@@ -12,6 +12,7 @@ import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
 import type { DocumentResource } from "./useMeetingDoc";
 import type { ParticipantStore } from "./useParticipantStore";
+import type { RecoveryTimelineEntry } from "./useParticipantConnectionState";
 import type { RaiseHandStore } from "./useRaiseHandStore";
 import type { ReactionStore } from "./useReactionStore";
 import {
@@ -75,6 +76,7 @@ interface SFUConnectionActions {
 		joinResult: JoinPayload,
 		guestName: string,
 	) => Promise<void>;
+	recoveryTimeline: Ref<RecoveryTimelineEntry[]>;
 }
 
 interface MeetingHandlersDeps {
@@ -101,7 +103,6 @@ interface MeetingHandlersDeps {
 export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 	const resetToPreview = () => {
 		deps.connectionState.connectionError = null;
-		deps.connectionState.isConnecting = false;
 		deps.connectionState.isInPreview = true;
 	};
 
@@ -315,7 +316,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 			transportManager:
 				deps.sfuConnection.sfuManager.value?.transportManager || null,
 			sfuClient: deps.sfuConnection.sfuClient,
-			recoveryTimeline: deps.connectionState.recoveryTimeline,
+			recoveryTimeline: deps.sfuConnection.recoveryTimeline.value,
 		});
 	};
 

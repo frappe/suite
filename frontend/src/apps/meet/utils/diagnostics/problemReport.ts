@@ -1,5 +1,5 @@
 import type { SFUClient } from "../SFUClient";
-import type { RecoveryTimelineEntry } from "../../composables/useConnectionState";
+import type { RecoveryTimelineEntry } from "../../composables/useParticipantConnectionState";
 import { getConsoleLogLines, getConsoleLogSummary } from "./consoleBuffer";
 
 type TransportStats = {
