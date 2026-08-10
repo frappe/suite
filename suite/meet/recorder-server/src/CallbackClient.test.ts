@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -222,6 +223,7 @@ describe('CallbackClient', () => {
 			recording: 'recording',
 			job: 'job',
 			operation: 'upload_chunk',
+			body_sha256: createHash('sha256').update(content).digest('hex'),
 		});
 		expect(jwt.decode(token, { complete: true })?.header.typ).toBe(
 			'meet-recording-callback+jwt',

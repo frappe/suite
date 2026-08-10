@@ -616,7 +616,7 @@ def recorder_upload_chunk(recording_id: str, job: str, offset: int, chunk_sha256
     return append_chunk(
         recording_id,
         offset=offset,
-        chunk=frappe.request.get_data(cache=False),
+        chunk=frappe.request.get_data(cache=True),
         chunk_sha256=chunk_sha256,
     )
 

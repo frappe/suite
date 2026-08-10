@@ -333,7 +333,12 @@ export class CallbackClient {
 			...init,
 			headers: {
 				...init.headers,
-				'X-Meet-Recorder-Authorization': `Bearer ${this.token(job, operation, operationId)}`,
+				'X-Meet-Recorder-Authorization': `Bearer ${this.token(
+					job,
+					operation,
+					operationId,
+					init.body,
+				)}`,
 			},
 			signal: AbortSignal.timeout(this.timeoutMs),
 		});
@@ -354,8 +359,16 @@ export class CallbackClient {
 		job: JobRecord,
 		operation: CallbackOperation,
 		operationId: string,
+		body: BodyInit | null | undefined,
 	): string {
 		const now = Math.floor(Date.now() / 1000);
+		const bytes =
+			typeof body === 'string'
+				? Buffer.from(body)
+				: body instanceof Uint8Array
+					? Buffer.from(body)
+					: undefined;
+		if (!bytes) throw new Error('unsupported callback request body');
 		return jwt.sign(
 			{
 				iss: `meet-recorder:${this.options.site}`,
@@ -365,6 +378,7 @@ export class CallbackClient {
 				job: job.job,
 				operation,
 				operation_id: operationId,
+				body_sha256: createHash('sha256').update(bytes).digest('hex'),
 				jti: randomUUID(),
 				iat: now,
 				exp: now + 30,

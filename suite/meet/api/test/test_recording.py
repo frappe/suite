@@ -255,6 +255,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             "job": recording.recorder_job_id,
             "operation": "stopped",
             "operation_id": "2",
+            "body_sha256": hashlib.sha256(b"{}").hexdigest(),
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + 30,
@@ -266,7 +267,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             headers={"typ": CALLBACK_TYPE},
         )
         original_request = getattr(frappe.local, "request", None)
-        frappe.local.request = Mock(headers={"X-Meet-Recorder-Authorization": f"Bearer {token}"})
+        frappe.local.request = Mock(
+            headers={"X-Meet-Recorder-Authorization": f"Bearer {token}"},
+            get_data=Mock(return_value=b"{}"),
+        )
         try:
             self.assertEqual(
                 authenticate_callback(
