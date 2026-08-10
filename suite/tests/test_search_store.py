@@ -57,6 +57,23 @@ class IndexDocuments(unittest.TestCase):
         )
         self.assertEqual([document["count"] for document in written], [6, 7])
 
+    def test_a_source_that_replaces_is_written_as_given(self):
+        # A recount states the whole total, so nothing is read to fold into it.
+        store = mock.Mock(spec=SearchStore)
+        store.ID_FIELD = "id"
+        store.to_document.side_effect = lambda source: source
+        store._to_tantivy_document.side_effect = lambda document: document
+        writer = store._open.return_value.writer.return_value
+
+        with mock.patch("suite.store.search_store.write_lock", return_value=nullcontext()):
+            SearchStore.index_documents(store, [{"id": "a", "count": 3}], merge=False)
+
+        store.get_documents.assert_not_called()
+        store.merge_document.assert_not_called()
+        self.assertEqual(
+            [call.args[0] for call in writer.add_document.call_args_list], [{"id": "a", "count": 3}]
+        )
+
     def test_sources_without_an_id_never_reach_the_writer(self):
         written = self.index_documents([{"count": 1}, {"id": None, "count": 1}, {"id": "a", "count": 1}])
         self.assertEqual(written, [{"id": "a", "count": 1}])

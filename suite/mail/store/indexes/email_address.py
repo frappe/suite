@@ -144,7 +144,7 @@ class EmailAddressIndex(SearchStore):
 
         return {**document, "count": document["count"] + _interactions(replaced)}
 
-    def index_addresses(self, addresses: list[dict]) -> int:
+    def index_addresses(self, addresses: list[dict], merge: bool = True) -> int:
         """Upsert the given {name, email, count} dicts; dedupes the batch and silently skips entries
         whose email is missing or syntactically invalid.
 
@@ -152,6 +152,9 @@ class EmailAddressIndex(SearchStore):
         address-book entry 0, since having someone in your contacts says nothing about how often you
         write to them. Repeats within the batch add up, and so does whatever the index already held,
         so ten messages from one sender leave a count of ten however they were batched.
+
+        `merge=False` writes the counts given here as the totals, rather than adding them to what
+        the index holds — for a recount, where the caller has totalled every message itself.
         """
 
         unique = {}
@@ -164,7 +167,7 @@ class EmailAddressIndex(SearchStore):
             key = email.lower()
             unique[key] = {**address, "count": _interactions(address) + _interactions(unique.get(key))}
 
-        return self.index_documents(list(unique.values()))
+        return self.index_documents(list(unique.values()), merge=merge)
 
     def search_email_addresses(self, query: str, limit: int = 10) -> list[dict]:
         """Return up to `limit` {name, email} addresses matching `query`, most relevant first.

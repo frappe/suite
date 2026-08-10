@@ -134,14 +134,14 @@ def destroy_search_index() -> None:
 def rebuild_email_address_index(account: str, in_background: bool = True) -> None:
     """Rebuild an account's email-address index from scratch.
 
-    Drops the existing index, then re-indexes every cached mail message and contact card in
-    batches (bounding memory and the size of each index commit). Runs in a background job by
-    default; pass `in_background=False` to run inline (e.g. from within the job itself).
+    Totals every cached mail message per address and writes those totals over whatever the index
+    held, then re-indexes the cached contact cards. Runs in a background job by default; pass
+    `in_background=False` to run inline (e.g. from within the job itself).
 
-    A sync running alongside this can leave a message it cached in the meantime uncounted, since
-    the rebuild counts what the cache held when it started. Every step here is ordered to fail that
-    way round: a rebuild is what repairs undercounted addresses, while nothing repairs a count that
-    has been added twice short of another rebuild.
+    Nothing is dropped first. A rebuild used to clear the index and count it back up, which meant
+    anything a sync indexed while it ran was erased and never counted again; writing totals leaves
+    a sync's work either counted in the totals or added on top of them. An address the cache no
+    longer mentions keeps the count it had, in keeping with an index that outlives its messages.
     """
 
     if in_background:
@@ -161,23 +161,18 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
     from suite.mail.doctype.mail_message.mail_message import _message_addresses
 
     store = get_data_store(account)
-
-    # Read the cache before dropping the index, so this counts no message that a sync adds after
-    # the drop: that message is counted by the sync that cached it, and counting it here as well
-    # would leave it counted twice.
-    messages = list(store.scan(Entity.EMAIL).items())
-
-    # Drop the stale index, then take a fresh handle so its directory is recreated before writing.
-    get_email_address_index(account).drop()
     index = get_email_address_index(account)
 
-    for batch in create_batch(messages, _REBUILD_BATCH_SIZE):
-        # Claim the batch before counting it, never after. A sync reaching one of these messages
-        # in between finds it claimed and adds nothing, leaving the count to this rebuild; were the
-        # claims recorded afterwards, that sync would count what this batch is about to count too.
-        # Should the indexing then fail, the batch goes uncounted until the next rebuild.
+    addresses = []
+    for batch in create_batch(list(store.scan(Entity.EMAIL).items()), _REBUILD_BATCH_SIZE):
+        # Claim as we go, so a sync reaching one of these messages afterwards adds nothing on top
+        # of the total about to be written for it.
         store.set_many(Entity.COUNTED_EMAIL, items={message_id: True for message_id, _ in batch})
-        index.index_addresses(_message_addresses([message for _message_id, message in batch]))
+        addresses.extend(_message_addresses([message for _message_id, message in batch]))
+
+    # One write, holding each address's total across every cached message — batching it would make
+    # each batch overwrite the last, since these totals replace rather than add.
+    index.index_addresses(addresses, merge=False)
 
     contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
     for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):
