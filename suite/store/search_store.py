@@ -18,6 +18,16 @@ from suite.utils.lock import write_lock
 SCHEMA_VERSION_FILE = "schema.version"
 
 
+class IndexWriteAborted(Exception):
+    """An index write failed before committing anything, so the index is exactly as it was.
+
+    Raised in place of the original failure, which it keeps as its cause. A caller that recorded
+    something alongside the write — a marker saying these documents have been indexed — needs to
+    tell a write that changed nothing from one that may have landed, and undo its half of only
+    the former; undoing the latter would let the work be applied twice.
+    """
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     """Describes one field of a search index's schema."""
@@ -72,39 +82,53 @@ class SearchStore:
         Each source is deleted-then-added by its ID_FIELD, so re-indexing an existing document
         replaces it — `merge_document` first gets to fold anything worth keeping out of the
         document being replaced. Sources without an ID are skipped.
+
+        Raises `IndexWriteAborted` when the write failed with nothing committed, and the original
+        failure once anything has been.
         """
 
         if not sources:
             return 0
 
-        with write_lock(self._lockname, acquire_timeout=30, lock_timeout=300):
-            documents = [self.to_document(source) for source in sources]
-            documents = [document for document in documents if document.get(self.ID_FIELD) is not None]
+        committed = False
 
-            # Read the documents being replaced from inside the lock: a read taken before it could
-            # be stale by the time this writer commits, silently dropping a concurrent update.
-            replaced = self.get_documents([str(document[self.ID_FIELD]) for document in documents])
+        try:
+            with write_lock(self._lockname, acquire_timeout=30, lock_timeout=300):
+                documents = [self.to_document(source) for source in sources]
+                documents = [document for document in documents if document.get(self.ID_FIELD) is not None]
 
-            index = self._open()
-            writer = index.writer(heap_size=self.HEAP_SIZE, num_threads=1)
+                # Read the documents being replaced from inside the lock: a read taken before it
+                # could be stale by the time this writer commits, dropping a concurrent update.
+                replaced = self.get_documents([str(document[self.ID_FIELD]) for document in documents])
 
-            try:
-                for document in documents:
-                    doc_id = str(document[self.ID_FIELD])
-                    merged = self.merge_document(document, replaced.get(doc_id))
-                    # Should this ID come round again later in the batch, it merges onto what was
-                    # just written rather than onto the document that write already replaced.
-                    replaced[doc_id] = merged
+                index = self._open()
+                writer = index.writer(heap_size=self.HEAP_SIZE, num_threads=1)
 
-                    # Delete any existing doc with this ID first so re-indexing is an upsert.
-                    writer.delete_documents(self.ID_FIELD, doc_id)
-                    writer.add_document(self._to_tantivy_document(merged))
+                try:
+                    for document in documents:
+                        doc_id = str(document[self.ID_FIELD])
+                        merged = self.merge_document(document, replaced.get(doc_id))
+                        # Should this ID come round again later in the batch, it merges onto what
+                        # was just written rather than the document that write already replaced.
+                        replaced[doc_id] = merged
 
-                writer.commit()
-                writer.wait_merging_threads()
-            finally:
-                # Release the writer's lock even if commit raised.
-                del writer
+                        # Delete any existing doc with this ID first so re-indexing is an upsert.
+                        writer.delete_documents(self.ID_FIELD, doc_id)
+                        writer.add_document(self._to_tantivy_document(merged))
+
+                    writer.commit()
+                    committed = True
+                    writer.wait_merging_threads()
+                finally:
+                    # Release the writer's lock even if commit raised.
+                    del writer
+        except Exception as error:
+            # Tantivy throws away an uncommitted writer's work, so everything up to the commit
+            # leaves the index untouched; past it, the documents are in and must stay accounted for.
+            if committed:
+                raise
+
+            raise IndexWriteAborted(f"{self.ENTITY} index write aborted") from error
 
         return len(sources)
 

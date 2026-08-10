@@ -3,6 +3,7 @@
 
 import json
 import re
+from contextlib import suppress
 from email.utils import formataddr
 from functools import cached_property
 from typing import Literal
@@ -36,6 +37,7 @@ from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
 from suite.mail.utils.email_parser import EmailParser
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
+from suite.store.search_store import IndexWriteAborted
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
 from suite.utils.dt import get_utc_now
 from suite.utils.lock import acquire_lock, release_lock
@@ -1302,7 +1304,15 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     try:
         addresses = _message_addresses(fresh) + _message_addresses(known, count=0)
         get_email_address_index(account).index_addresses(addresses)
-    except Exception:
+    except Exception as error:
+        # Being in the cache is what marks a message counted, so when nothing reached the index,
+        # hand that claim back: left cached, these would read as counted, and the retry would
+        # contribute nothing but leave their participants short for good. A write that got as far
+        # as committing keeps its claim, since a retry would otherwise count it twice.
+        if added and isinstance(error, IndexWriteAborted):
+            with suppress(Exception):
+                store.delete_many(Entity.EMAIL, keys=list(added))
+
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
         )

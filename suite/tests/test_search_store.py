@@ -10,7 +10,7 @@ from unittest import mock
 
 import tantivy
 
-from suite.store.search_store import SearchStore
+from suite.store.search_store import IndexWriteAborted, SearchStore
 
 
 class IndexDocuments(unittest.TestCase):
@@ -60,6 +60,52 @@ class IndexDocuments(unittest.TestCase):
     def test_sources_without_an_id_never_reach_the_writer(self):
         written = self.index_documents([{"count": 1}, {"id": None, "count": 1}, {"id": "a", "count": 1}])
         self.assertEqual(written, [{"id": "a", "count": 1}])
+
+
+class IndexWriteFailures(unittest.TestCase):
+    """``index_documents`` — a write that changed nothing says so, so a caller can undo its half."""
+
+    def store(self):
+        store = mock.Mock(spec=SearchStore)
+        store.ID_FIELD = "id"
+        store.ENTITY = "thing"
+        store.to_document.side_effect = lambda source: source
+        store.get_documents.return_value = {}
+        store.merge_document.side_effect = lambda document, replaced: document
+        store._to_tantivy_document.side_effect = lambda document: document
+        return store
+
+    def index(self, store):
+        with mock.patch("suite.store.search_store.write_lock", return_value=nullcontext()):
+            return SearchStore.index_documents(store, [{"id": "a"}])
+
+    def test_a_failure_before_the_commit_reports_an_untouched_index(self):
+        store = self.store()
+        store._open.return_value.writer.return_value.commit.side_effect = OSError("no space left")
+
+        with self.assertRaises(IndexWriteAborted):
+            self.index(store)
+
+    def test_a_read_that_fails_reports_an_untouched_index(self):
+        store = self.store()
+        store.get_documents.side_effect = OSError("index unreadable")
+
+        with self.assertRaises(IndexWriteAborted):
+            self.index(store)
+
+    def test_the_lock_going_untaken_reports_an_untouched_index(self):
+        with mock.patch("suite.store.search_store.write_lock", side_effect=RuntimeError("held")):
+            with self.assertRaises(IndexWriteAborted):
+                SearchStore.index_documents(self.store(), [{"id": "a"}])
+
+    def test_a_failure_after_the_commit_is_left_as_it_is(self):
+        # The documents are in the index by now, so this must not read as "nothing happened":
+        # a caller undoing its half here would let the same work be counted twice on retry.
+        store = self.store()
+        store._open.return_value.writer.return_value.wait_merging_threads.side_effect = OSError("merge")
+
+        with self.assertRaises(OSError):
+            self.index(store)
 
 
 class SearchPhrasePrefix(unittest.TestCase):
