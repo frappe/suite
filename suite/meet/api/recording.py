@@ -328,6 +328,18 @@ def start(meeting_id: str, request_id: str) -> dict:
         return existing
     destination = _get_drive_destination(room.owner)
     acquire_owner_storage_lock(room.owner)
+    owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
+    if (
+        frappe.db.count(
+            "Meet Recording",
+            {
+                "room_owner": room.owner,
+                "status": ["in", ("Pending", *ACTIVE_RECORDING_STATUSES)],
+            },
+        )
+        >= owner_limit
+    ):
+        frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
     preflight = get_preflight(meeting_id)
     if not preflight["eligible"]:
         frappe.throw(_("Recording is not currently available for this meeting"))

@@ -687,6 +687,35 @@ describe('JobStore and JobManager', () => {
 		expect(bridge.hasWorker('job-2')).toBe(true);
 	});
 
+	it('keeps stopping jobs in capacity until they become terminal', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const manager = new JobManager(store, bridge, 1);
+		await manager.reserve(baseClaims);
+		await manager.stop(baseClaims, 'stop-1');
+
+		expect(manager.activeCount).toBe(1);
+		expect(
+			await manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).toEqual({ status: 'rejected', reason: 'capacity' });
+
+		await bridge.emit({ job: 'job', type: 'failed' });
+		expect(
+			(
+				await manager.reserve({
+					...baseClaims,
+					job: 'job-2',
+					recording: 'recording-2',
+				})
+			).status,
+		).toBe('accepted');
+	});
+
 	it('stops a reserved browser when the durable store update fails', async () => {
 		const store = new JobStore(path);
 		await store.initialize();

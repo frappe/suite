@@ -127,9 +127,7 @@ export class JobManager {
 		);
 	}
 	get activeCount(): number {
-		return this.store
-			.all()
-			.filter((job) => !terminal(job) && job.state !== 'stopping').length;
+		return this.store.all().filter((job) => !terminal(job)).length;
 	}
 
 	async reserve(command: CommandClaims): Promise<ReserveResult> {

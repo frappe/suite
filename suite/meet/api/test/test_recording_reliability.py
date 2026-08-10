@@ -111,6 +111,17 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             1,
         )
 
+    def test_one_active_recording_per_room_owner_by_default(self):
+        other = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+        first = start(self.room.name, str(uuid.uuid4()))
+
+        with self.assertRaisesRegex(frappe.ValidationError, "Room Owner already has"):
+            start(other.name, str(uuid.uuid4()))
+
+        stop(self.room.name)
+        self.assertEqual(start(other.name, str(uuid.uuid4()))["status"], "Recording")
+        self.assertEqual(frappe.db.get_value("Meet Recording", first["name"], "status"), "Processing")
+
     def test_e2ee_and_recording_are_mutually_exclusive(self):
         self.room.enable_e2ee()
         frappe.db.commit()
