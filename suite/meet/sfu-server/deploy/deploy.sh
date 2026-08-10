@@ -94,6 +94,38 @@ check_env() {
         ok "JWT_SECRET is set"
     fi
 
+    if [ -z "${RECORDER_SECRET:-}" ] || [[ "$RECORDER_SECRET" == change-me-* ]] || (( ${#RECORDER_SECRET} < 32 )); then
+        err "RECORDER_SECRET must be set to an independent strong random value."
+        echo "  Generate one: openssl rand -base64 48"
+        errors=true
+    elif [ "$RECORDER_SECRET" = "${JWT_SECRET:-}" ]; then
+        err "RECORDER_SECRET must not reuse JWT_SECRET."
+        errors=true
+    else
+        ok "RECORDER_SECRET is set"
+    fi
+
+    if [ -z "${RECORDER_METRICS_TOKEN:-}" ] || [[ "$RECORDER_METRICS_TOKEN" == change-me-* ]] || (( ${#RECORDER_METRICS_TOKEN} < 32 )); then
+        err "RECORDER_METRICS_TOKEN must be set to an independent strong random value."
+        echo "  Generate one: openssl rand -hex 32"
+        errors=true
+    elif [ "$RECORDER_METRICS_TOKEN" = "${RECORDER_SECRET:-}" ] || [ "$RECORDER_METRICS_TOKEN" = "${JWT_SECRET:-}" ]; then
+        err "RECORDER_METRICS_TOKEN must not reuse another service credential."
+        errors=true
+    else
+        ok "RECORDER_METRICS_TOKEN is set"
+    fi
+
+    if [ -z "${RECORDER_SITE:-}" ] || [ "$RECORDER_SITE" = "example.com" ] || [[ "$RECORDER_SITE" == *.example.com ]]; then
+        err "RECORDER_SITE must be set to the exact Frappe site name."
+        errors=true
+    fi
+
+    if [ -z "${RECORDER_SITE_ORIGIN:-}" ] || [[ ! "$RECORDER_SITE_ORIGIN" =~ ^https://[^/]+$ ]] || [[ "$RECORDER_SITE_ORIGIN" =~ ^https://([^/]+\.)?example\.com$ ]]; then
+        err "RECORDER_SITE_ORIGIN must be the exact deployed HTTPS origin."
+        errors=true
+    fi
+
     if [ -z "${WEBRTC_ANNOUNCED_IP:-}" ]; then
         err "WEBRTC_ANNOUNCED_IP must be set to your server's public IP."
         echo "  Find it: curl -4 ifconfig.me"

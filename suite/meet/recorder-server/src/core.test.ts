@@ -106,7 +106,9 @@ describe('configuration', () => {
 
 	it.each([
 		['RECORDER_SECRET', 'short'],
+		['RECORDER_SECRET', 'change-me-to-an-independent-strong-random-string'],
 		['RECORDER_METRICS_TOKEN', 'short'],
+		['RECORDER_METRICS_TOKEN', 'change-me-to-an-independent-metrics-token'],
 		['RECORDER_SITE_ORIGIN', 'http://site.test'],
 		['RECORDER_SITE_ORIGIN', 'https://site.test/'],
 		['RECORDER_MAX_CONCURRENT', '0'],
@@ -126,6 +128,23 @@ describe('configuration', () => {
 			[name]: value,
 		};
 		expect(() => loadConfig(env)).toThrow();
+	});
+
+	it('rejects credential reuse', () => {
+		const reused = 'r'.repeat(32);
+		expect(() =>
+			loadConfig({
+				RECORDER_SECRET: reused,
+				RECORDER_METRICS_TOKEN: reused,
+				RECORDER_SITE: 'site.test',
+				RECORDER_SITE_ORIGIN: 'https://site.test',
+				RECORDER_LEDGER_PATH: '/data/jobs.json',
+				CHROMIUM_EXECUTABLE: '/usr/bin/chromium',
+				RECORDER_RENDERER_ASSET_DIR: '/app/renderer',
+				SFU_ORIGIN: 'https://sfu.test',
+				SFU_SOCKET_PATH: '/socket.io',
+			}),
+		).toThrow('must be independent');
 	});
 
 	it('allows exact HTTP origins only when explicitly enabled', () => {
