@@ -9,6 +9,7 @@ from urllib.parse import quote
 import frappe
 import tantivy
 from frappe import _
+from frappe.deprecation_dumpster import deprecation_warning
 
 from suite.store import get_search_base_path
 from suite.store.base_store import Namespace, normalize_namespace, resolve_namespace_path
@@ -195,6 +196,33 @@ class SearchStore:
         return self._run_search(
             lambda _index: self._build_prefix_query(terms, fields), limit, offset, order_by
         )
+
+    def search_phrase_prefix(
+        self,
+        terms: list[str],
+        limit: int = 20,
+        offset: int = 0,
+        fields: list[str] | None = None,
+        order_by: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """Deprecated name for `search_prefix`, which this forwards to.
+
+        Kept so callers written against the old name keep working. It warns rather than forwarding
+        quietly because the contract loosened with the rename: the terms no longer have to be
+        adjacent or in order, so this now matches strictly more than the phrase-prefix search it
+        used to be — "jane doe" reaches "Jane Ann Doe" as well as "Jane Doe".
+        """
+
+        deprecation_warning(
+            marked="2026-08-10",
+            graduation="v1",
+            msg=(
+                "SearchStore.search_phrase_prefix has been renamed to SearchStore.search_prefix, "
+                "which no longer requires the terms to be adjacent or in order."
+            ),
+        )
+
+        return self.search_prefix(terms, limit=limit, offset=offset, fields=fields, order_by=order_by)
 
     def _run_search(
         self, build_query, limit: int, offset: int, order_by: str | None, swallow_errors: bool = True

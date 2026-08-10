@@ -59,5 +59,26 @@ class IndexDocuments(unittest.TestCase):
         self.assertEqual(written, [{"id": "a", "count": 1}])
 
 
+class SearchPhrasePrefix(unittest.TestCase):
+    """``search_phrase_prefix`` — the pre-rename name still works, and says it is on its way out."""
+
+    def test_the_old_name_forwards_to_search_prefix(self):
+        store = mock.Mock(spec=SearchStore)
+
+        with self.assertWarns(Warning):
+            SearchStore.search_phrase_prefix(store, ["jane", "d"], limit=5)
+
+        store.search_prefix.assert_called_once_with(
+            ["jane", "d"], limit=5, offset=0, fields=None, order_by=None
+        )
+
+    def test_the_result_comes_straight_back(self):
+        store = mock.Mock(spec=SearchStore)
+        store.search_prefix.return_value = ([{"id": "a"}], 1)
+
+        with self.assertWarns(Warning):
+            self.assertEqual(SearchStore.search_phrase_prefix(store, ["jane"]), ([{"id": "a"}], 1))
+
+
 if __name__ == "__main__":
     unittest.main()
