@@ -266,6 +266,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(artifact.folder, recording.drive_home_folder)
             self.assertEqual(artifact.file_type, "Video")
             self.assertEqual(artifact.mime_type, "video/mp4")
+            self.assertTrue(artifact.file_name.startswith(f"{self.room.name} - "))
             artifact.status = "Trashed"
             artifact.save(ignore_permissions=True)
             self.assertTrue(frappe.db.exists("Meet Recording", recording.name))
