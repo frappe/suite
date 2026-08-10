@@ -1309,9 +1309,15 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
         # hand that claim back: left cached, these would read as counted, and the retry would
         # contribute nothing but leave their participants short for good. A write that got as far
         # as committing keeps its claim, since a retry would otherwise count it twice.
+        #
+        # Only the entries still holding what was just cached are given back. Another sync may have
+        # stored a newer version of one of these meanwhile — that one keeps both the value and the
+        # claim, which costs a message its count, rather than this taking the newer write away.
         if added and isinstance(error, IndexWriteAborted):
             with suppress(Exception):
-                store.delete_many(Entity.EMAIL, keys=list(added))
+                store.delete_many_unchanged(
+                    Entity.EMAIL, {message_id: messages[message_id] for message_id in added}
+                )
 
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
