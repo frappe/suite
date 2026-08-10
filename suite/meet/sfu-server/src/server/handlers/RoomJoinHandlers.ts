@@ -17,6 +17,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 		const { roomId, participantId, userData, e2ee } = data;
 		const startedAt = performance.now();
 		const scope = socket.scope ?? 'unknown';
+		let participantClaimed = false;
 		const rejoin = Boolean(
 			deps.mediasoup.getRoomPeers?.(getRoomId(socket))?.get(participantId),
 		);
@@ -51,6 +52,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
 				deps.registry.claimParticipant(socket, scopedRoomId, participantId);
+				participantClaimed = true;
 				const senderId = deps.registry.assignSenderId(
 					scopedRoomId,
 					participantId,
@@ -143,6 +145,13 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			);
 		} catch (error) {
 			if (socket.scope === 'full') {
+				if (participantClaimed) {
+					deps.registry.releaseParticipant(
+						socket,
+						getRoomId(socket),
+						participantId,
+					);
+				}
 				deps.roomLifecycle.scheduleCleanupIfHumanEmpty(getRoomId(socket));
 			}
 			deps.telemetry.recordRoomJoin(

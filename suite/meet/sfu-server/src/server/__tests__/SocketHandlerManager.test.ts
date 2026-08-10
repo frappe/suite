@@ -26,6 +26,7 @@ function emitJoin(
 		videoEnabled?: boolean;
 		e2ee?: { enabled?: boolean; capability?: { supported?: boolean } };
 	} = {},
+	callback: (result: unknown) => void = () => {},
 ): void {
 	socket.fire(
 		'join_room',
@@ -43,7 +44,7 @@ function emitJoin(
 			},
 			e2ee: opts.e2ee,
 		},
-		() => {},
+		callback,
 	);
 }
 
@@ -747,6 +748,30 @@ describe('SocketHandlerManager characterization', () => {
 			error: 'Authentication required',
 		});
 		expect(harness.mediasoup.createRoom).not.toHaveBeenCalled();
+	});
+
+	it('cleans a human-empty room after a full join fails after claiming occupancy', async () => {
+		vi.useFakeTimers();
+		const harness = createManager();
+		const socket = connectFullSocket(harness);
+		const callback = vi.fn();
+		vi.spyOn(harness.roster, 'add').mockRejectedValueOnce(
+			new Error('roster unavailable'),
+		);
+
+		emitJoin(socket, {}, callback);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(callback).toHaveBeenCalledWith({
+			success: false,
+			error: 'roster unavailable',
+		});
+		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(harness.mediasoup.closeRoom).toHaveBeenCalledWith('room-1');
+		harness.manager.stop();
+		vi.useRealTimers();
 	});
 
 	it('disconnect of a full-access socket removes the peer, broadcasts participant_left, and closes the room after grace when the last human leaves', async () => {
