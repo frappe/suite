@@ -8,6 +8,7 @@ import { AuthError, AuthManager } from './AuthManager.js';
 import { createApp } from './app.js';
 import type { Config } from './config.js';
 import { loadConfig } from './config.js';
+import { DiskGuard, type StorageGuard } from './DiskGuard.js';
 import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
 import type { LogEntry, Logger } from './logger.js';
@@ -100,6 +101,7 @@ describe('configuration', () => {
 		});
 		expect(config.port).toBe(3010);
 		expect(config.maxConcurrent).toBe(1);
+		expect(config.minimumFreeBytes).toBe(1024 * 1024 * 1024);
 	});
 
 	it.each([
@@ -108,6 +110,7 @@ describe('configuration', () => {
 		['RECORDER_SITE_ORIGIN', 'http://site.test'],
 		['RECORDER_SITE_ORIGIN', 'https://site.test/'],
 		['RECORDER_MAX_CONCURRENT', '0'],
+		['RECORDER_MIN_FREE_BYTES', '-1'],
 		['PORT', 'x'],
 	])('rejects invalid %s', (name, value) => {
 		const env: NodeJS.ProcessEnv = {
@@ -272,6 +275,49 @@ describe('JobStore and JobManager', () => {
 		]);
 		const again = await manager.reserve(baseClaims);
 		expect(again.status).toBe('accepted');
+	});
+
+	it('reserves finalization space for every active job', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const storage: StorageGuard = {
+			ready: () => true,
+			canReserve: vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false),
+		};
+		const manager = new JobManager(
+			store,
+			new FakeRendererBridge(),
+			2,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			storage,
+		);
+
+		expect((await manager.reserve(baseClaims)).status).toBe('accepted');
+		expect(
+			await manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).toEqual({ status: 'rejected', reason: 'storage' });
+		expect(storage.canReserve).toHaveBeenNthCalledWith(1, 2_000_000);
+		expect(storage.canReserve).toHaveBeenNthCalledWith(2, 4_000_000);
+	});
+
+	it('fails disk readiness and admission closed', () => {
+		const enough = new DiskGuard('/data', 1_000, () => 1_500);
+		expect(enough.ready()).toBe(true);
+		expect(enough.canReserve(500)).toBe(true);
+		expect(enough.canReserve(501)).toBe(false);
+
+		const unavailable = new DiskGuard('/missing', 1, () => {
+			throw new Error('disk unavailable');
+		});
+		expect(unavailable.ready()).toBe(false);
+		expect(unavailable.canReserve(1)).toBe(false);
 	});
 
 	it('ends a persisted active job instead of resuming it after restart', async () => {
@@ -653,13 +699,27 @@ describe('HTTP contract', () => {
 	let bridge: FakeRendererBridge;
 	let logs: LogEntry[];
 	let config: Config;
+	let storageAllowed: boolean;
 
 	beforeEach(async () => {
 		const directory = await mkdtemp(join(tmpdir(), 'recorder-http-'));
 		const store = new JobStore(join(directory, 'ledger.json'));
 		await store.initialize();
 		bridge = new FakeRendererBridge();
-		const jobs = new JobManager(store, bridge, 1);
+		storageAllowed = true;
+		const jobs = new JobManager(
+			store,
+			bridge,
+			1,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			{
+				ready: () => true,
+				canReserve: () => storageAllowed,
+			},
+		);
 		config = {
 			port: 3010,
 			secret,
@@ -676,6 +736,13 @@ describe('HTTP contract', () => {
 			rendererConfigureTimeoutMs: 10_000,
 			sfuOrigin: 'https://sfu.test',
 			sfuSocketPath: '/socket.io',
+			dataRoot: directory,
+			minimumFreeBytes: 1024,
+			segmentSeconds: 30,
+			ffmpegExecutable: '/usr/bin/ffmpeg',
+			xvfbExecutable: '/usr/bin/Xvfb',
+			pulseaudioExecutable: '/usr/bin/pulseaudio',
+			pactlExecutable: '/usr/bin/pactl',
 		};
 		logs = [];
 		const logger: Logger = {
@@ -773,6 +840,21 @@ describe('HTTP contract', () => {
 				acceptedAt: expect.any(String),
 			},
 		]);
+	});
+
+	it('rejects a new reservation when disk admission closes', async () => {
+		storageAllowed = false;
+		const response = await call(
+			app,
+			'/v1/recordings',
+			authenticated('POST', { job: 'job' }),
+		);
+		expect(response.status).toBe(507);
+		expect(await response.json()).toEqual({
+			status: 'rejected',
+			job: 'job',
+			reason: 'storage',
+		});
 	});
 
 	it('binds route and body to signed job and rejects extra fields', async () => {

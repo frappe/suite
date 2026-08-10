@@ -1,8 +1,10 @@
+import { mkdir } from 'node:fs/promises';
 import { AuthManager } from './AuthManager.js';
 import { createApp } from './app.js';
 import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
 import { loadConfig } from './config.js';
+import { DiskGuard } from './DiskGuard.js';
 import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
 import { logger } from './logger.js';
@@ -10,6 +12,8 @@ import { ChromiumRendererBridge } from './RendererBridge.js';
 
 async function main(): Promise<void> {
 	const config = loadConfig();
+	await mkdir(config.dataRoot, { recursive: true, mode: 0o700 });
+	const disk = new DiskGuard(config.dataRoot, config.minimumFreeBytes);
 	const store = new JobStore(config.ledgerPath);
 	await store.initialize();
 	let capture!: CaptureWorkerManager;
@@ -65,6 +69,7 @@ async function main(): Promise<void> {
 				}),
 			);
 		},
+		disk,
 	);
 	await jobs.initialize();
 	const auth = new AuthManager(

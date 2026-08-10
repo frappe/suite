@@ -18,7 +18,7 @@ COMMAND_AUDIENCE = "meet-recorder-control"
 COMMAND_TYPE = "meet-recorder-command+jwt"
 MAX_RESPONSE_BYTES = 16 * 1024
 TIMEOUT = (2, 5)
-REJECTION_REASONS = {"capacity", "policy", "invalid_job"}
+REJECTION_REASONS = {"capacity", "storage", "policy", "invalid_job"}
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ class RecorderClient:
                 state=body["state"],
                 health_reason=body.get("health_reason"),
             )
-        if response.status_code in (409, 422, 429) and set(body) == {"status", "job", "reason"}:
+        if response.status_code in (409, 422, 429, 507) and set(body) == {"status", "job", "reason"}:
             reason = body["reason"]
             if body["status"] == "rejected" and reason in REJECTION_REASONS:
                 return RecorderOutcome("rejected", reason=reason)

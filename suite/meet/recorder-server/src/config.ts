@@ -17,6 +17,7 @@ export interface Config {
 	sfuOrigin: string;
 	sfuSocketPath: string;
 	dataRoot: string;
+	minimumFreeBytes: number;
 	segmentSeconds: number;
 	ffmpegExecutable: string;
 	xvfbExecutable: string;
@@ -119,6 +120,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 		sfuOrigin: origin(required(env, 'SFU_ORIGIN'), allowHttp),
 		sfuSocketPath: socketPath(required(env, 'SFU_SOCKET_PATH')),
 		dataRoot: resolve(env.RECORDER_DATA_ROOT ?? '/data/captures'),
+		minimumFreeBytes: integer(
+			env,
+			'RECORDER_MIN_FREE_BYTES',
+			1024 * 1024 * 1024,
+			0,
+			Number.MAX_SAFE_INTEGER,
+		),
 		segmentSeconds: integer(
 			env,
 			'RECORDER_SEGMENT_SECONDS',

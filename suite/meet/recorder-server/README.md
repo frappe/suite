@@ -29,7 +29,9 @@ openssl rand -hex 32
 
 Set `RECORDER_SECRET` to the first value and `RECORDER_METRICS_TOKEN` to the
 second. Set the exact Frappe site, Frappe HTTPS origin, existing public SFU
-origin, recorder hostname, and TLS email before starting:
+origin, recorder hostname, TLS email, and `RECORDER_MIN_FREE_BYTES` floor before
+starting. New sessions reserve twice their byte budget for retained segments and
+finalization output; `/ready` fails when free space falls below the floor.
 
 ```sh
 ./deploy.sh setup

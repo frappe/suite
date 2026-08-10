@@ -159,7 +159,13 @@ export function createApp(
 			}
 			starts.inc({ outcome: 'rejected', reason: result.reason });
 			return res
-				.status(result.reason === 'capacity' ? 429 : 422)
+				.status(
+					result.reason === 'capacity'
+						? 429
+						: result.reason === 'storage'
+							? 507
+							: 422,
+				)
 				.json({ status: 'rejected', job: claims.job, reason: result.reason });
 		} catch (error) {
 			next(error);

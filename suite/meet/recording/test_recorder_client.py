@@ -92,6 +92,13 @@ class TestRecorderClient(unittest.TestCase):
         self.assertEqual(self.client.reserve(**self.arguments).outcome, "rejected")
 
         self.session.request.return_value = response(
+            507, {"status": "rejected", "job": "job", "reason": "storage"}
+        )
+        outcome = self.client.reserve(**self.arguments)
+        self.assertEqual(outcome.outcome, "rejected")
+        self.assertEqual(outcome.reason, "storage")
+
+        self.session.request.return_value = response(
             429, {"status": "rejected", "job": "job", "reason": "anything"}
         )
         self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")

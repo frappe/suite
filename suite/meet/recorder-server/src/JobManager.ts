@@ -1,3 +1,4 @@
+import type { StorageGuard } from './DiskGuard.js';
 import type { JobStore } from './JobStore.js';
 import type { RendererBridge } from './RendererBridge.js';
 import type { CommandClaims, JobRecord } from './types.js';
@@ -26,7 +27,15 @@ function terminal(job: JobRecord): boolean {
 
 export type ReserveResult =
 	| { status: 'accepted'; job: JobRecord }
-	| { status: 'rejected'; reason: 'capacity' | 'policy' | 'invalid_job' };
+	| {
+			status: 'rejected';
+			reason: 'capacity' | 'storage' | 'policy' | 'invalid_job';
+	  };
+
+const unrestrictedStorage: StorageGuard = {
+	ready: () => true,
+	canReserve: () => true,
+};
 
 function sameCommand(job: JobRecord, command: CommandClaims): boolean {
 	return (
@@ -54,6 +63,7 @@ export class JobManager {
 		private readonly sleep: (ms: number) => Promise<void> = (ms) =>
 			new Promise((resolve) => setTimeout(resolve, ms)),
 		private readonly onRecovered?: (job: JobRecord) => Promise<void>,
+		private readonly storage: StorageGuard = unrestrictedStorage,
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
@@ -110,7 +120,10 @@ export class JobManager {
 
 	get ready(): boolean {
 		return (
-			this.store.ready && this.bridge.productionReady && !this.recoveryRequired
+			this.store.ready &&
+			this.bridge.productionReady &&
+			!this.recoveryRequired &&
+			this.storage.ready()
 		);
 	}
 	get activeCount(): number {
@@ -134,6 +147,18 @@ export class JobManager {
 			}
 			if (this.activeCount >= this.capacity) {
 				result = { status: 'rejected', reason: 'capacity' };
+				return;
+			}
+			const activeBudget = this.store
+				.all()
+				.filter((job) => !terminal(job))
+				.reduce((total, job) => total + job.limits.budget_bytes, 0);
+			const requiredBytes = (activeBudget + command.limits.budget_bytes) * 2;
+			if (
+				!Number.isSafeInteger(requiredBytes) ||
+				!this.storage.canReserve(requiredBytes)
+			) {
+				result = { status: 'rejected', reason: 'storage' };
 				return;
 			}
 			const publicJwk = await this.bridge.reserve(command);
