@@ -101,6 +101,8 @@ class File(FrappeFile):
         super().on_trash()
 
     def after_delete(self):
+        if self.status == STATUS_REMOVED and not self._not_in_disk():
+            self._delete_blob_after_commit(not self.manager.flat)
         if self.is_folder:
             for child_name in frappe.get_all("File", filters={"folder": self.name}, pluck="name"):
                 frappe.delete_doc("File", child_name, ignore_permissions=True)
@@ -378,11 +380,32 @@ class File(FrappeFile):
         if not (write_access or parent_write_access):
             frappe.throw("Not permitted", frappe.PermissionError)
 
+        delete_blob = not self._not_in_disk()
+        blob_is_trashed = self.status == STATUS_TRASHED and not self.manager.flat
         self.status = STATUS_REMOVED
         if self.is_folder:
             for child in self.get_children():
                 child.permanent_delete()
         self.save()
+        if delete_blob:
+            self._delete_blob_after_commit(blob_is_trashed)
+
+    def _delete_blob_after_commit(self, blob_is_trashed: bool):
+        entity = frappe._dict(name=self.name, file_url=self.file_url)
+
+        def delete_blob():
+            try:
+                if blob_is_trashed:
+                    self.manager.delete_from_trash(entity)
+                else:
+                    self.manager.delete_file(entity)
+            except Exception:
+                frappe.log_error(
+                    "Drive: could not permanently delete blob",
+                    frappe.get_traceback(),
+                )
+
+        frappe.db.after_commit.add(delete_blob)
 
     # Utils
     @property

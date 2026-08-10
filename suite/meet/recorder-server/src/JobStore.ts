@@ -71,6 +71,7 @@ function validLedger(value: unknown): value is Ledger {
 			'state',
 			'stop_operation_ids',
 			...(job.health_reason === undefined ? [] : ['health_reason']),
+			...(job.event_sequence === undefined ? [] : ['event_sequence']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
 			...(job.callback_completed_at === undefined
 				? []
@@ -89,6 +90,9 @@ function validLedger(value: unknown): value is Ledger {
 			nonempty(job.origin) &&
 			nonempty(job.room) &&
 			nonempty(job.recording) &&
+			(job.event_sequence === undefined ||
+				(Number.isSafeInteger(job.event_sequence) &&
+					job.event_sequence >= 1)) &&
 			validUtcTimestamp(job.accepted_at) &&
 			[
 				'reserved',

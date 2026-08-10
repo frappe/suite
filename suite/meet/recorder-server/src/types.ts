@@ -53,6 +53,7 @@ export interface JobRecord {
 	accepted_at: string;
 	public_jwk: PublicJwk;
 	state: JobState;
+	event_sequence?: number;
 	health_reason?: string;
 	terminal_at?: string;
 	callback_completed_at?: string;

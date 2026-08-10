@@ -20,21 +20,27 @@ interface CallbackClientOptions {
 interface InterruptedRequest {
 	recording_id: string;
 	job: string;
-	event_sequence: 2;
+	event_sequence: number;
 	reason: string;
+}
+
+interface RecoveredRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: number;
 }
 
 interface FailedRequest {
 	recording_id: string;
 	job: string;
-	event_sequence: 3;
+	event_sequence: number;
 	failure_code: 'capture_failed';
 }
 
 interface StoppedRequest {
 	recording_id: string;
 	job: string;
-	event_sequence: 3;
+	event_sequence: number;
 	size: number;
 	sha256: string;
 	duration_ms: number;
@@ -46,23 +52,26 @@ interface StoppedRequest {
 interface CompleteUploadRequest {
 	recording_id: string;
 	job: string;
-	event_sequence: 4;
+	event_sequence: number;
 }
 
 type CallbackRequest =
 	| InterruptedRequest
+	| RecoveredRequest
 	| FailedRequest
 	| StoppedRequest
 	| CompleteUploadRequest;
 
 type CallbackMethod =
 	| 'recorder_interrupted'
+	| 'recorder_recovered'
 	| 'recorder_failed'
 	| 'recorder_stopped'
 	| 'recorder_complete_upload';
 
 type CallbackOperation =
 	| 'interrupted'
+	| 'recovered'
 	| 'failed'
 	| 'stopped'
 	| 'upload_chunk'
@@ -88,18 +97,39 @@ export class CallbackClient {
 	}
 
 	async interrupted(job: JobRecord): Promise<void> {
-		await this.json(
-			'recorder_interrupted',
-			job,
-			'interrupted',
-			'2',
-			{
-				recording_id: job.recording,
-				job: job.job,
-				event_sequence: 2,
-				reason: job.health_reason ?? 'capture_interrupted',
-			},
-			parseStatusResponse,
+		const sequence = job.event_sequence ?? 2;
+		await this.retryHealthCallback(() =>
+			this.json(
+				'recorder_interrupted',
+				job,
+				'interrupted',
+				String(sequence),
+				{
+					recording_id: job.recording,
+					job: job.job,
+					event_sequence: sequence,
+					reason: job.health_reason ?? 'capture_interrupted',
+				},
+				parseStatusResponse,
+			),
+		);
+	}
+
+	async recovered(job: JobRecord): Promise<void> {
+		const sequence = job.event_sequence ?? 2;
+		await this.retryHealthCallback(() =>
+			this.json(
+				'recorder_recovered',
+				job,
+				'recovered',
+				String(sequence),
+				{
+					recording_id: job.recording,
+					job: job.job,
+					event_sequence: sequence,
+				},
+				parseStatusResponse,
+			),
 		);
 	}
 
@@ -122,16 +152,17 @@ export class CallbackClient {
 	}
 
 	private async performUpload(job: JobRecord): Promise<void> {
+		const terminalSequence = (job.event_sequence ?? 2) + 1;
 		if (job.state === 'failed') {
 			await this.json(
 				'recorder_failed',
 				job,
 				'failed',
-				'3',
+				String(terminalSequence),
 				{
 					recording_id: job.recording,
 					job: job.job,
-					event_sequence: 3,
+					event_sequence: terminalSequence,
 					failure_code: 'capture_failed',
 				},
 				parseStatusResponse,
@@ -146,12 +177,12 @@ export class CallbackClient {
 			!['complete', 'partial'].includes(artifact.state)
 		)
 			throw new Error('terminal recording artifact is incomplete');
-		const stoppedSequence = 3;
+		const stoppedSequence = terminalSequence;
 		const begun = await this.json(
 			'recorder_stopped',
 			job,
 			'stopped',
-			'3',
+			String(stoppedSequence),
 			{
 				recording_id: job.recording,
 				job: job.job,
@@ -200,14 +231,30 @@ export class CallbackClient {
 			'recorder_complete_upload',
 			job,
 			'complete_upload',
-			'4',
+			String(stoppedSequence + 1),
 			{
 				recording_id: job.recording,
 				job: job.job,
-				event_sequence: 4,
+				event_sequence: stoppedSequence + 1,
 			},
 			parseStatusResponse,
 		);
+	}
+
+	private async retryHealthCallback(
+		callback: () => Promise<unknown>,
+	): Promise<void> {
+		let delay = 250;
+		for (let attempt = 0; ; attempt += 1) {
+			try {
+				await callback();
+				return;
+			} catch (error) {
+				if (attempt === 4) throw error;
+				await new Promise((resolve) => setTimeout(resolve, delay));
+				delay *= 2;
+			}
+		}
 	}
 
 	private async binary(

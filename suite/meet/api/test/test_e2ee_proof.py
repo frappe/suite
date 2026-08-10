@@ -80,6 +80,49 @@ class IntegrationTestE2EEEpoch(IntegrationTestCase):
         )
         self.assertEqual(stored, second_key)
 
+    def test_e2ee_device_keys_are_isolated_by_user(self):
+        other = "other-e2ee@example.com"
+        self._ensure_user(other, "OtherE2EE")
+        first_key = _b64(b"\x41" * 32)
+        rotated_key = _b64(b"\x42" * 32)
+        other_key = _b64(b"\x43" * 32)
+
+        frappe.set_user(self.host_email)
+        register_e2ee_device("shared-device", first_key)
+        frappe.set_user(other)
+        register_e2ee_device("shared-device", other_key)
+        frappe.set_user(self.host_email)
+        register_e2ee_device("shared-device", rotated_key)
+
+        rows = frappe.get_all(
+            "E2EE Device Key",
+            filters={"device_id": "shared-device", "user": ["in", (self.host_email, other)]},
+            fields=["user", "ed25519_public_key"],
+        )
+        self.assertEqual(
+            {row.user: row.ed25519_public_key for row in rows},
+            {self.host_email: rotated_key, other: other_key},
+        )
+
+    def test_e2ee_device_key_rejects_malformed_and_anonymous_values(self):
+        frappe.set_user(self.host_email)
+        with self.assertRaises(frappe.exceptions.FrappeTypeError):
+            register_e2ee_device("invalid-device", None)
+        invalid = (
+            "not-base64!",
+            _b64(b""),
+            _b64(b"x" * 31),
+            _b64(b"x" * 33),
+            _b64(b"x" * 32) + "=",
+        )
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
+                register_e2ee_device("invalid-device", value)
+
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.AuthenticationError):
+            register_e2ee_device("anonymous-device", _b64(b"x" * 32))
+
     def test_register_e2ee_device_recovers_from_concurrent_insert_race(self):
         frappe.set_user(self.host_email)
         public_key = _b64(b"\x33" * 32)

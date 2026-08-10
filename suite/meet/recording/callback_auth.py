@@ -50,6 +50,7 @@ def authenticate_callback(
         frappe.throw(_("Invalid recorder callback authorization"), frappe.AuthenticationError)
     if (
         set(claims) != CLAIM_KEYS
+        or claims.get("aud") != CALLBACK_AUDIENCE
         or claims.get("site") != frappe.local.site
         or claims.get("iss") != f"meet-recorder:{claims.get('site')}"
         or claims.get("recording") != recording

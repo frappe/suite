@@ -38,6 +38,7 @@
   "grant_jti",
   "grant_issued_at",
   "grant_expires_at",
+  "grant_delivered",
   "stop_operation_id",
   "pending_deadline",
   "drive_home_folder"
@@ -77,6 +78,7 @@
   {"fieldname": "grant_jti", "fieldtype": "Data", "label": "Grant JTI"},
   {"fieldname": "grant_issued_at", "fieldtype": "Long Int", "label": "Grant Issued At"},
   {"fieldname": "grant_expires_at", "fieldtype": "Long Int", "label": "Grant Expires At"},
+  {"default": "0", "fieldname": "grant_delivered", "fieldtype": "Check", "label": "Grant Delivered", "read_only": 1},
   {"fieldname": "stop_operation_id", "fieldtype": "Data", "label": "Stop Operation ID"},
   {"fieldname": "pending_deadline", "fieldtype": "Datetime", "label": "Pending Deadline", "search_index": 1},
   {"fieldname": "drive_home_folder", "fieldtype": "Link", "label": "Drive Home Folder", "options": "File", "reqd": 1}

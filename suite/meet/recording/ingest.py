@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_system_timezone, now_datetime
+from frappe.utils import add_to_date, cint, get_datetime, get_system_timezone, now_datetime
 
 from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage
 from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
@@ -63,11 +64,15 @@ def begin_upload(
         recording.status = "Processing"
         recording.state_revision += 1
         recording.recorder_event_sequence = cint(event_sequence)
-        recording.ended_at = (
-            get_datetime(ended_at).astimezone(ZoneInfo(get_system_timezone())).replace(tzinfo=None)
-            if ended_at
-            else now_datetime()
+        current_utc = (
+            get_datetime(now_datetime())
+            .replace(tzinfo=ZoneInfo(get_system_timezone()))
+            .astimezone(UTC)
+            .replace(tzinfo=None)
         )
+        recording.ended_at = _callback_datetime(ended_at) if ended_at else current_utc
+        if recording.ended_at > add_to_date(current_utc, minutes=5):
+            frappe.throw(_("Recording end time is too far in the future"))
         recording.end_reason = end_reason or recording.end_reason
         recording.capture_gaps = json.dumps(gaps or [])
     elif recording.upload_size and (
@@ -91,7 +96,7 @@ def begin_upload(
 
 def append_chunk(recording_name: str, *, offset: int, chunk: bytes, chunk_sha256: str) -> dict:
     offset = cint(offset)
-    if not chunk or len(chunk) > CHUNK_SIZE or not _sha256(chunk_sha256):
+    if not isinstance(chunk, bytes) or not chunk or len(chunk) > CHUNK_SIZE or not _sha256(chunk_sha256):
         frappe.throw(_("Invalid recording upload chunk"))
     if hashlib.sha256(chunk).hexdigest() != chunk_sha256:
         frappe.throw(_("Recording upload chunk hash does not match"))
@@ -228,7 +233,11 @@ def _delete_drive_blob(manager: FileManager, drive_file):
 
 
 def _sha256(value: str) -> bool:
-    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _file_digest(path: Path) -> tuple[int, str]:
@@ -245,58 +254,95 @@ def _file_digest(path: Path) -> tuple[int, str]:
 
 
 def _validate_media(path: Path) -> dict:
-    result = subprocess.run(
-        [
-            frappe.conf.get("ffprobe_executable") or "ffprobe",
-            "-v",
-            "error",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            str(path),
-        ],
-        capture_output=True,
-        check=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            [
+                frappe.conf.get("ffprobe_executable") or "ffprobe",
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError):
+        frappe.throw(_("Recording media metadata could not be read"))
     if len(result.stdout) > 1024 * 1024:
         frappe.throw(_("Recording media metadata is too large"))
-    media = json.loads(result.stdout)
+    try:
+        media = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        frappe.throw(_("Recording media metadata is invalid"))
+    if not isinstance(media, dict):
+        frappe.throw(_("Recording media metadata is invalid"))
     streams = media.get("streams", [])
+    if not isinstance(streams, list) or any(not isinstance(stream, dict) for stream in streams):
+        frappe.throw(_("Recording media metadata is invalid"))
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
-    if (
-        len(streams) != 2
-        or not video
-        or video.get("codec_name") != "h264"
-        or video.get("profile") != "High"
-        or video.get("pix_fmt") != "yuv420p"
-        or video.get("width") != 1920
-        or video.get("height") != 1080
-        or abs(float(Fraction(video.get("avg_frame_rate", "0/1"))) - 30) > 1
-        or not audio
-        or audio.get("codec_name") != "aac"
-        or audio.get("profile") != "LC"
-        or cint(audio.get("sample_rate")) != 48000
-        or audio.get("channels") != 2
-        or float(video.get("start_time", -1)) < 0
-        or float(audio.get("start_time", -1)) < 0
-        or abs(float(video.get("start_time", 0)) - float(audio.get("start_time", 0))) > 0.1
-    ):
+    try:
+        valid_profile = (
+            len(streams) == 2
+            and video
+            and video.get("codec_name") == "h264"
+            and video.get("profile") == "High"
+            and video.get("pix_fmt") == "yuv420p"
+            and video.get("width") == 1920
+            and video.get("height") == 1080
+            and abs(float(Fraction(video.get("avg_frame_rate", "0/1"))) - 30) <= 1
+            and audio
+            and audio.get("codec_name") == "aac"
+            and audio.get("profile") == "LC"
+            and cint(audio.get("sample_rate")) == 48000
+            and audio.get("channels") == 2
+            and float(video.get("start_time", -1)) >= 0
+            and float(audio.get("start_time", -1)) >= 0
+            and abs(float(video.get("start_time", 0)) - float(audio.get("start_time", 0))) <= 0.1
+        )
+    except (TypeError, ValueError, ZeroDivisionError):
+        valid_profile = False
+    if not valid_profile:
         frappe.throw(_("Recording artifact media profile is invalid"))
-    duration = float(media.get("format", {}).get("duration", 0))
-    if duration <= 0:
+    try:
+        media_format = media.get("format", {})
+        duration = float(media_format.get("duration", 0)) if isinstance(media_format, dict) else 0
+    except (TypeError, ValueError):
+        duration = 0
+    if not math.isfinite(duration) or duration <= 0:
         frappe.throw(_("Recording artifact duration is invalid"))
-    subprocess.run(
-        [frappe.conf.get("ffmpeg_executable") or "ffmpeg", "-v", "error", "-i", str(path), "-f", "null", "-"],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=6 * 60 * 60,
-    )
+    try:
+        subprocess.run(
+            [
+                frappe.conf.get("ffmpeg_executable") or "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(path),
+                "-f",
+                "null",
+                "-",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=6 * 60 * 60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        frappe.throw(_("Recording artifact could not be decoded"))
     return {"duration_ms": round(duration * 1000)}
+
+
+def _callback_datetime(value):
+    parsed = get_datetime(value)
+    if parsed.tzinfo is None:
+        frappe.throw(_("Recording callback timestamps must include a timezone"))
+    return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
 def _recordings_folder(recording) -> str:

@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
+from frappe.utils import now_datetime
 
 from suite.drive.api.storage import get_storage_usage
 from suite.meet.api.recording import (
@@ -351,9 +352,12 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         stop(self.room.name)
         content = b"partial-mp4"
         digest = hashlib.sha256(content).hexdigest()
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        gap_started = recording.started_at.replace(tzinfo=UTC)
+        gap_ended = recording.ended_at.replace(tzinfo=UTC)
         gap = {
-            "started_at": "2026-08-01T00:00:00.000Z",
-            "ended_at": "2026-08-01T00:00:01.000Z",
+            "started_at": gap_started.isoformat().replace("+00:00", "Z"),
+            "ended_at": gap_ended.isoformat().replace("+00:00", "Z"),
             "reason": "ffmpeg_exited",
         }
         begin_upload(
@@ -363,9 +367,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             sha256=digest,
             duration_ms=1000,
             gaps=[gap],
-            ended_at="2026-08-01T00:00:01.000Z",
+            ended_at=gap["ended_at"],
         )
-        recording = frappe.get_doc("Meet Recording", started["name"])
+        recording.reload()
         self.assertIsNone(recording.ended_at.tzinfo)
         path = _upload_path(recording.upload_id)
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
@@ -412,7 +416,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
     def test_http_acceptance_persists_recorder_timestamp_and_key_then_delivers_grant(self):
         frappe.conf.recording_fixture_mode = False
         client = Mock()
-        accepted_at = datetime(2026, 7, 31, 10, 11, 12, 123000, tzinfo=UTC)
+        accepted_at = _system_datetime_as_utc(now_datetime())
         client.reserve.return_value = RecorderOutcome("accepted", accepted_at, PUBLIC_JWK)
         client.deliver_grant.return_value = True
 
@@ -471,11 +475,16 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
 
     def test_reconciliation_continues_after_one_recording_fails(self):
         with (
-            patch("suite.meet.api.recording.frappe.get_all", side_effect=[["first", "second"], []]),
+            patch(
+                "suite.meet.api.recording.frappe.get_all",
+                side_effect=[["first", "second"], [], [], [], []],
+            ),
             patch(
                 "suite.meet.api.recording._reconcile_pending",
                 side_effect=[RuntimeError("broken recording"), None],
             ) as reconcile,
+            patch("suite.meet.api.recording.frappe.db.commit"),
+            patch("suite.meet.api.recording.frappe.db.rollback"),
             patch("suite.meet.api.recording.frappe.log_error") as log_error,
         ):
             reconcile_pending_recordings()
@@ -485,11 +494,16 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
 
     def test_stop_retries_continue_after_one_recording_fails(self):
         with (
-            patch("suite.meet.api.recording.frappe.get_all", side_effect=[[], ["first", "second"]]),
+            patch(
+                "suite.meet.api.recording.frappe.get_all",
+                side_effect=[[], ["first", "second"], [], [], []],
+            ),
             patch(
                 "suite.meet.api.recording._retry_stopping",
                 side_effect=[RuntimeError("broken stop"), None],
             ) as retry,
+            patch("suite.meet.api.recording.frappe.db.commit"),
+            patch("suite.meet.api.recording.frappe.db.rollback"),
             patch("suite.meet.api.recording.frappe.log_error") as log_error,
         ):
             reconcile_pending_recordings()
@@ -556,7 +570,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         frappe.conf.recording_fixture_mode = False
         client = Mock()
         client.reserve.return_value = RecorderOutcome(
-            "accepted", datetime(2026, 7, 31, tzinfo=UTC), PUBLIC_JWK
+            "accepted", _system_datetime_as_utc(now_datetime()), PUBLIC_JWK
         )
         client.deliver_grant.return_value = False
         client.stop.return_value = True
@@ -600,7 +614,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
     def test_pending_reconciliation_accepts_rejects_and_keeps_indeterminate(self):
         frappe.conf.recording_fixture_mode = False
         outcomes = [
-            RecorderOutcome("accepted", datetime(2026, 7, 31, tzinfo=UTC), PUBLIC_JWK),
+            RecorderOutcome("accepted", _system_datetime_as_utc(now_datetime()), PUBLIC_JWK),
             RecorderOutcome("rejected", reason="capacity"),
             RecorderOutcome("indeterminate"),
         ]
@@ -631,7 +645,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
             frappe.clear_cache(doctype="Meet Settings")
             client.query.return_value = RecorderOutcome(
-                "accepted", datetime(2026, 7, 31, tzinfo=UTC), PUBLIC_JWK
+                "accepted", _system_datetime_as_utc(now_datetime()), PUBLIC_JWK
             )
             client.stop.return_value = False
             reconcile_pending_recordings()

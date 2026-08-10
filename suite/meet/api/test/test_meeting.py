@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+import time
 from unittest.mock import patch
 
 import frappe
@@ -103,28 +104,46 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 
         self.assertFalse(result["recording_enabled"])
 
-    def test_sfu_token_site_claim_keeps_cross_site_meetings_isolated(self):
-        """Two sites with meetings of the same name must mint tokens that
-        carry different `site` claims so the SFU can route them to distinct
-        rooms."""
+    def test_sfu_token_reserved_extra_claims_cannot_be_overridden(self):
         from suite.meet.api.meeting import _generate_sfu_token
 
-        token_a = _generate_sfu_token(
-            user_id="user-a",
-            meeting_id="all-hands",
-            site="site-a.example.com",
-        )
-        token_b = _generate_sfu_token(
-            user_id="user-b",
-            meeting_id="all-hands",
-            site="site-b.example.com",
-        )
+        for claim, value in (
+            ("site", "other.example.com"),
+            ("iat", 1),
+            ("exp", 2),
+        ):
+            with self.subTest(claim=claim), self.assertRaises(frappe.ValidationError):
+                _generate_sfu_token("user-a", "all-hands", **{claim: value})
 
-        decoded_a = jwt.decode(token_a, frappe.conf.sfu_secret, algorithms=["HS256"])
-        decoded_b = jwt.decode(token_b, frappe.conf.sfu_secret, algorithms=["HS256"])
+    def test_full_sfu_token_has_exact_server_issued_claims(self):
+        self.meeting.add_user_to_table("members", self.host_email, save=True, ignore_permissions=True)
+        frappe.set_user(self.host_email)
 
-        self.assertEqual(decoded_a["meeting_id"], decoded_b["meeting_id"])
-        self.assertNotEqual(decoded_a["site"], decoded_b["site"])
+        now = int(time.time())
+        with patch("suite.meet.api.meeting.time.time", return_value=now):
+            result = get_sfu_connection_details(self.meeting.name)
+        decoded = jwt.decode(result["auth_token"], frappe.conf.sfu_secret, algorithms=["HS256"])
+
+        self.assertEqual(
+            set(decoded),
+            {
+                "user_id",
+                "meeting_id",
+                "site",
+                "scope",
+                "exp",
+                "iat",
+                "user_name",
+                "user_avatar",
+                "is_host",
+                "is_cohost",
+                "e2ee_required",
+            },
+        )
+        self.assertEqual(decoded["site"], frappe.local.site)
+        self.assertEqual(decoded["iat"], now)
+        self.assertEqual(decoded["exp"], now + 3600)
+        self.assertEqual(decoded["scope"], "full")
 
     def test_restricted_meeting_non_member_cannot_get_sfu_connection_details(self):
         frappe.set_user(self.outsider_email)

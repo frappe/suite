@@ -1,17 +1,27 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
+from datetime import UTC
+from zoneinfo import ZoneInfo
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, get_datetime
+from frappe.utils import cint, get_datetime, get_system_timezone
 
 ACTIVE_RECORDING_STATUSES = ("Recording", "Interrupted", "Stopping")
 TERMINAL_STATUSES = ("Ready", "Partial", "Failed")
 IMMUTABLE_FIELDS = ("meet_room", "room_owner", "initiated_by", "recorder_job_id", "request_id")
-WRITE_ONCE_FIELDS = ("grant_jti", "grant_issued_at", "grant_expires_at", "stop_operation_id")
+IMMUTABLE_CONFIGURATION_FIELDS = ("budget_bytes", "max_ends_at", "drive_home_folder")
+WRITE_ONCE_FIELDS = (
+    "recorder_key_thumbprint",
+    "grant_jti",
+    "grant_issued_at",
+    "grant_expires_at",
+    "stop_operation_id",
+)
 ALLOWED_TRANSITIONS = {
-    "Pending": {"Recording"},
+    "Pending": {"Recording", "Failed"},
     "Recording": {"Interrupted", "Stopping", "Failed"},
     "Interrupted": {"Recording", "Stopping", "Failed"},
     "Stopping": {"Processing", "Failed"},
@@ -39,11 +49,19 @@ class MeetRecording(Document):
             return
         if any(self.get(fieldname) != previous.get(fieldname) for fieldname in IMMUTABLE_FIELDS):
             frappe.throw(_("Recording identity cannot change"))
+        if any(self.has_value_changed(fieldname) for fieldname in IMMUTABLE_CONFIGURATION_FIELDS):
+            frappe.throw(_("Recording configuration cannot change"))
+        if previous.recorder_public_jwk and frappe.parse_json(self.recorder_public_jwk) != frappe.parse_json(
+            previous.recorder_public_jwk
+        ):
+            frappe.throw(_("Recording operation identifiers cannot change"))
         if any(
             previous.get(fieldname) and self.get(fieldname) != previous.get(fieldname)
             for fieldname in WRITE_ONCE_FIELDS
         ):
             frappe.throw(_("Recording operation identifiers cannot change"))
+        if cint(previous.grant_delivered) and not cint(self.grant_delivered):
+            frappe.throw(_("Grant delivery acknowledgement cannot be cleared"))
 
     def validate_transition(self):
         if self.is_new():
@@ -67,8 +85,16 @@ class MeetRecording(Document):
                 frappe.throw(_("Invalid recording state transition"))
             if self.state_revision != previous.state_revision + 1:
                 frappe.throw(_("State revision must increase by one"))
-            is_host_stop = self.status == "Stopping" and previous.status in ("Recording", "Interrupted")
-            if not is_host_stop and self.recorder_event_sequence <= previous.recorder_event_sequence:
+            is_local_transition = (
+                (self.status == "Stopping" and previous.status in ("Recording", "Interrupted"))
+                or getattr(self.flags, "reconciliation_update", False)
+                or (
+                    previous.status == "Interrupted"
+                    and self.status == "Recording"
+                    and getattr(self.flags, "recovery_update", False)
+                )
+            )
+            if not is_local_transition and self.recorder_event_sequence <= previous.recorder_event_sequence:
                 frappe.throw(_("A recording state change requires a newer recorder event"))
         elif self.state_revision != previous.state_revision:
             frappe.throw(_("State revision changes only with recording state"))
@@ -81,16 +107,27 @@ class MeetRecording(Document):
         if not isinstance(capture_gaps, list):
             frappe.throw(_("Capture gaps must be a list"))
         previous_end = None
+        started_at = _utc_naive(self.started_at) if self.started_at else None
+        ended_at = _utc_naive(self.ended_at) if self.ended_at else None
+        max_ends_at = _system_utc_naive(self.max_ends_at) if self.max_ends_at else None
+        if started_at and max_ends_at and started_at > max_ends_at:
+            frappe.throw(_("Recording start must be before its maximum end"))
+        if started_at and ended_at and ended_at < started_at:
+            frappe.throw(_("Recording end must not precede its start"))
+        if ended_at and max_ends_at and ended_at > max_ends_at:
+            frappe.throw(_("Recording end must not exceed its maximum end"))
         for gap in capture_gaps:
             if not isinstance(gap, dict) or set(gap) != {"started_at", "ended_at", "reason"}:
                 frappe.throw(_("Capture gap metadata is invalid"))
             if gap["reason"] not in ("capture_interrupted", "ffmpeg_exited", "renderer_interrupted"):
                 frappe.throw(_("Capture gap reason is invalid"))
-            started_at = get_datetime(gap["started_at"])
-            ended_at = get_datetime(gap["ended_at"])
-            if ended_at < started_at or (previous_end and started_at < previous_end):
+            gap_started_at = _callback_utc_naive(gap["started_at"])
+            gap_ended_at = _callback_utc_naive(gap["ended_at"])
+            if gap_ended_at < gap_started_at or (previous_end and gap_started_at < previous_end):
                 frappe.throw(_("Capture gaps must be ordered and non-overlapping"))
-            previous_end = ended_at
+            if (started_at and gap_started_at < started_at) or (ended_at and gap_ended_at > ended_at):
+                frappe.throw(_("Capture gaps must be within the recording interval"))
+            previous_end = gap_ended_at
         if self.status in ("Ready", "Partial"):
             if not all(artifact_fields) or not self.ended_at:
                 frappe.throw(_("A completed recording requires a validated artifact"))
@@ -139,6 +176,29 @@ class MeetRecording(Document):
                 or cint(self.upload_duration_ms) <= 0
             ):
                 frappe.throw(_("Recording upload metadata is invalid"))
+
+
+def _utc_naive(value):
+    parsed = get_datetime(value)
+    if parsed.tzinfo is not None:
+        return parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def _system_utc_naive(value):
+    return (
+        get_datetime(value)
+        .replace(tzinfo=ZoneInfo(get_system_timezone()))
+        .astimezone(UTC)
+        .replace(tzinfo=None)
+    )
+
+
+def _callback_utc_naive(value):
+    parsed = get_datetime(value)
+    if parsed.tzinfo is None:
+        frappe.throw(_("Capture gap timestamps must include a timezone"))
+    return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
 def get_permission_query_conditions(user: str | None = None) -> str:

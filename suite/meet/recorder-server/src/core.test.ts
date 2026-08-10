@@ -378,6 +378,68 @@ describe('JobStore and JobManager', () => {
 		);
 	});
 
+	it('does not block unrelated jobs while a health callback is pending', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const interrupted = vi.fn(async () => pending);
+		const manager = new JobManager(store, bridge, 2, undefined, interrupted);
+		await manager.reserve(baseClaims);
+		await bridge.emit({ job: 'job', type: 'configured' });
+		await bridge.emit({ job: 'job', type: 'proof_complete' });
+		await bridge.emit({ job: 'job', type: 'joined' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+
+		const delivery = bridge.emit({ job: 'job', type: 'interrupted' });
+		await vi.waitFor(() => expect(interrupted).toHaveBeenCalledOnce());
+		await expect(
+			manager.reserve({
+				...baseClaims,
+				job: 'job-2',
+				recording: 'recording-2',
+			}),
+		).resolves.toMatchObject({ status: 'accepted' });
+
+		release();
+		await delivery;
+	});
+
+	it('notifies the control plane when interrupted capture recovers', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const recovered = vi.fn(async () => undefined);
+		const manager = new JobManager(
+			store,
+			bridge,
+			1,
+			undefined,
+			undefined,
+			async () => undefined,
+			recovered,
+		);
+		await manager.reserve(baseClaims);
+		await bridge.emit({ job: 'job', type: 'configured' });
+		await bridge.emit({ job: 'job', type: 'proof_complete' });
+		await bridge.emit({ job: 'job', type: 'joined' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+		await bridge.emit({ job: 'job', type: 'interrupted' });
+
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ job: 'job', state: 'capture_ready' }),
+		);
+		await bridge.emit({ job: 'job', type: 'interrupted' });
+		await bridge.emit({ job: 'job', type: 'capture_ready' });
+		expect(store.get('job')?.event_sequence).toBe(3);
+		expect(recovered).toHaveBeenCalledTimes(2);
+	});
+
 	it.each(['complete', 'partial', 'failed'] as const)(
 		'keeps %s terminal despite delayed lifecycle callbacks',
 		async (outcome) => {

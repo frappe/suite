@@ -49,9 +49,18 @@ async function main(): Promise<void> {
 		config.maxConcurrent,
 		(job) => callbacks.upload(job),
 		async (job) => {
-			void callbacks.interrupted(job).catch((error: unknown) =>
+			await callbacks.interrupted(job).catch((error: unknown) =>
 				logger.error({
 					event: 'interruption_callback_failed',
+					reason: error instanceof Error ? error.message : 'callback_failed',
+				}),
+			);
+		},
+		undefined,
+		async (job) => {
+			await callbacks.recovered(job).catch((error: unknown) =>
+				logger.error({
+					event: 'recovery_callback_failed',
 					reason: error instanceof Error ? error.message : 'callback_failed',
 				}),
 			);

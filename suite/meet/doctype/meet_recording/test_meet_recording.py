@@ -113,6 +113,14 @@ class TestMeetRecording(IntegrationTestCase):
         with self.assertRaisesRegex(ValidationError, "terminal recording cannot be modified"):
             recording.save(ignore_permissions=True)
 
+    def test_recording_end_cannot_exceed_authorized_maximum(self):
+        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+        recording = self._recording_in_status(room, "Processing")
+        recording.ended_at = "2026-08-03 00:00:00"
+
+        with self.assertRaisesRegex(ValidationError, "must not exceed its maximum end"):
+            recording.save(ignore_permissions=True)
+
     def test_recording_identity_and_operation_ids_are_immutable(self):
         room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
         recording = self._recording_in_status(room, "Recording")
@@ -122,10 +130,29 @@ class TestMeetRecording(IntegrationTestCase):
             recording.save(ignore_permissions=True)
 
         recording.reload()
+        recording.max_ends_at = "2026-08-03 00:00:00"
+        with self.assertRaisesRegex(ValidationError, "Recording configuration cannot change"):
+            recording.save(ignore_permissions=True)
+
+        recording.reload()
+        recording.recorder_public_jwk = '{"kty":"EC"}'
+        recording.save(ignore_permissions=True)
+        recording.recorder_public_jwk = '{"kty":"RSA"}'
+        with self.assertRaisesRegex(ValidationError, "operation identifiers cannot change"):
+            recording.save(ignore_permissions=True)
+
+        recording.reload()
         recording.grant_jti = "original-grant"
         recording.save(ignore_permissions=True)
         recording.grant_jti = "replacement-grant"
         with self.assertRaisesRegex(ValidationError, "operation identifiers cannot change"):
+            recording.save(ignore_permissions=True)
+
+        recording.reload()
+        recording.grant_delivered = 1
+        recording.save(ignore_permissions=True)
+        recording.grant_delivered = 0
+        with self.assertRaisesRegex(ValidationError, "acknowledgement cannot be cleared"):
             recording.save(ignore_permissions=True)
 
     def test_transition_requires_exact_revision_and_newer_recorder_sequence(self):
@@ -154,6 +181,7 @@ class TestMeetRecording(IntegrationTestCase):
                 "estimated_seconds": 3600,
                 "estimated_bytes": 1024,
                 "budget_bytes": 1024,
+                "max_ends_at": "2026-08-02 00:00:00",
                 "recorder_job_id": frappe.generate_hash(),
                 "request_id": frappe.generate_hash(),
                 "drive_home_folder": "missing",
@@ -177,7 +205,7 @@ class TestMeetRecording(IntegrationTestCase):
     def _state_values(self, status: str) -> dict:
         values = {}
         if status in ("Recording", "Interrupted", "Stopping", "Processing", "Ready", "Partial"):
-            values.update({"started_at": "2026-08-01 00:00:00", "max_ends_at": "2026-08-01 04:00:00"})
+            values["started_at"] = "2026-08-01 00:00:00"
         if status in ("Processing", "Ready", "Partial"):
             values.update({"ended_at": "2026-08-01 00:01:00", "end_reason": "host_stop"})
         if status in ("Ready", "Partial"):
@@ -193,8 +221,8 @@ class TestMeetRecording(IntegrationTestCase):
             values["capture_gaps"] = json.dumps(
                 [
                     {
-                        "started_at": "2026-08-01 00:00:10",
-                        "ended_at": "2026-08-01 00:00:20",
+                        "started_at": "2026-08-01T00:00:10Z",
+                        "ended_at": "2026-08-01T00:00:20Z",
                         "reason": "capture_interrupted",
                     }
                 ]

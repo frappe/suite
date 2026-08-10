@@ -30,6 +30,10 @@ def _generate_sfu_token(
     **extra,
 ) -> str:
     """Generate a JWT token for SFU authentication."""
+    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat"}
+    if reserved_claims.intersection(extra):
+        frappe.throw(_("Reserved SFU token claims cannot be overridden"), frappe.ValidationError)
+
     sfu_config = get_sfu_config()
     secret = sfu_config.get("sfu_secret")
     if not secret:
@@ -682,11 +686,16 @@ def register_e2ee_device(
     if not _is_valid_e2ee_device_id(device_id):
         frappe.throw(_("device_id must be 1-64 chars of [a-zA-Z0-9._-]"), frappe.ValidationError)
 
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+    if not isinstance(ed25519_public_key, str):
+        frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
+
     try:
         raw = base64.b64decode(ed25519_public_key, validate=True)
-    except (binascii.Error, TypeError):
+    except binascii.Error:
         frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
-    if len(raw) != 32:
+    if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != ed25519_public_key:
         frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
 
     user = frappe.session.user

@@ -53,6 +53,70 @@ describe('CallbackClient', () => {
 		});
 	});
 
+	it('publishes recovery for the active interruption sequence', async () => {
+		const fetch = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ message: { status: 'Recording' } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+		);
+		vi.stubGlobal('fetch', fetch);
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+			state: 'capture_ready',
+		} as JobRecord;
+
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+		}).recovered(job);
+
+		expect(String(fetch.mock.calls[0]?.[0])).toContain('recorder_recovered');
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			event_sequence: 2,
+		});
+	});
+
+	it('publishes later interruption cycles with their persisted sequence', async () => {
+		const fetch = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ message: { status: 'Interrupted' } }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				}),
+		);
+		vi.stubGlobal('fetch', fetch);
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+			state: 'interrupted',
+			event_sequence: 4,
+		} as JobRecord;
+
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+		}).interrupted(job);
+
+		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual(
+			expect.objectContaining({ event_sequence: 4 }),
+		);
+	});
+
 	it('rejects string offsets while uploading with scoped chunk tokens', async () => {
 		vi.useFakeTimers();
 		const root = join(tmpdir(), `callback-client-${crypto.randomUUID()}`);

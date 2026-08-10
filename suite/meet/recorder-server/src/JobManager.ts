@@ -43,6 +43,7 @@ export class JobManager {
 	private operations: Promise<void> = Promise.resolve();
 	private recoveryRequired = false;
 	private readonly terminalDeliveries = new Map<string, Promise<void>>();
+	private readonly healthDeliveries = new Map<string, Promise<void>>();
 
 	constructor(
 		private readonly store: JobStore,
@@ -52,6 +53,7 @@ export class JobManager {
 		private readonly onInterrupted?: (job: JobRecord) => Promise<void>,
 		private readonly sleep: (ms: number) => Promise<void> = (ms) =>
 			new Promise((resolve) => setTimeout(resolve, ms)),
+		private readonly onRecovered?: (job: JobRecord) => Promise<void>,
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
@@ -145,6 +147,7 @@ export class JobManager {
 				accepted_at: new Date().toISOString(),
 				public_jwk: publicJwk,
 				state: 'reserved',
+				event_sequence: 1,
 				stop_operation_ids: [],
 			};
 			try {
@@ -225,6 +228,22 @@ export class JobManager {
 		this.terminalDeliveries.set(job.job, delivery);
 	}
 
+	private scheduleHealth(
+		job: JobRecord,
+		callback: (job: JobRecord) => Promise<void>,
+	): Promise<void> {
+		const previous = this.healthDeliveries.get(job.job) ?? Promise.resolve();
+		const delivery = previous
+			.catch(() => undefined)
+			.then(() => callback(job))
+			.finally(() => {
+				if (this.healthDeliveries.get(job.job) === delivery)
+					this.healthDeliveries.delete(job.job);
+			});
+		this.healthDeliveries.set(job.job, delivery);
+		return delivery;
+	}
+
 	private async deliverTerminal(jobId: string): Promise<void> {
 		let delay = 1_000;
 		while (this.onTerminal) {
@@ -277,12 +296,17 @@ export class JobManager {
 		gaps?: Array<{ started_at: string; ended_at?: string; reason: string }>,
 	): Promise<void> {
 		let cleanup = false;
+		let healthDelivery: Promise<void> | undefined;
 		await this.serial(async () => {
 			const current = this.store.get(job);
 			if (!current || !ACTIVE_TRANSITIONS[current.state].includes(type)) return;
+			const recovered =
+				current.state === 'interrupted' && type === 'capture_ready';
 			await this.store.update((jobs) => {
 				const record = jobs[job];
 				if (!record) return;
+				if (type === 'interrupted')
+					record.event_sequence = (record.event_sequence ?? 1) + 1;
 				record.state = type;
 				if (type === 'complete' || type === 'partial')
 					record.artifact = {
@@ -303,10 +327,18 @@ export class JobManager {
 					record.terminal_at ??= new Date().toISOString();
 			});
 			cleanup = type === 'failed';
+			const updated = this.store.get(job);
+			if (updated?.state === 'interrupted' && this.onInterrupted)
+				healthDelivery = this.scheduleHealth(
+					{ ...updated },
+					this.onInterrupted,
+				);
+			if (recovered && updated?.state === 'capture_ready' && this.onRecovered)
+				healthDelivery = this.scheduleHealth({ ...updated }, this.onRecovered);
 		});
+		await healthDelivery;
 		if (cleanup) await this.bridge.stop(job);
 		const terminal = this.store.get(job);
-		if (terminal?.state === 'interrupted') await this.onInterrupted?.(terminal);
 		if (
 			terminal &&
 			TERMINAL_STATES.includes(
