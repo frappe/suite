@@ -296,8 +296,14 @@ def refresh_sfu_token(meeting_id: str) -> dict:
     """
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
 
+    if meeting.is_user_banned(frappe.session.user):
+        frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
+
     if frappe.session.user not in meeting.get_members():
-        frappe.throw(_("Not a meeting member"))
+        frappe.throw(_("Not a meeting member"), frappe.PermissionError)
+
+    if not meeting.can_join(frappe.session.user):
+        frappe.throw(_("Access denied"), frappe.PermissionError)
 
     user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
     e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
@@ -491,10 +497,17 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
     if not session_data:
         frappe.throw(_("Guest session not found or expired"))
 
+    if session_data.get("meeting_id") != meeting_id:
+        frappe.throw(_("Guest session does not belong to this meeting"), frappe.PermissionError)
+
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
 
     meeting = frappe.get_doc("Meet Room", meeting_id)
+
+    settings = frappe.get_cached_doc("Meet Settings")
+    if not settings.allow_guest or not meeting.allow_guest:
+        frappe.throw(_("Guests are not allowed in this meeting"), frappe.PermissionError)
 
     if not meeting.is_user_approved(guest_id):
         frappe.throw(_("Guest not approved"))
@@ -559,6 +572,21 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
+
+    guest_id = decoded.get("user_id")
+    session_data = get_guest_session(guest_id) if isinstance(guest_id, str) else None
+    if not session_data or session_data.get("meeting_id") != meeting_id:
+        frappe.throw(_("Guest session not found or expired"), frappe.PermissionError)
+
+    meeting = frappe.get_doc("Meet Room", meeting_id)
+    settings = frappe.get_cached_doc("Meet Settings")
+    if (
+        not settings.allow_guest
+        or not meeting.allow_guest
+        or meeting.is_user_banned(guest_id)
+        or guest_id not in meeting.get_members()
+    ):
+        frappe.throw(_("Guest access denied"), frappe.PermissionError)
 
     return {
         "sfu_url": sfu_config["sfu_server_url"],

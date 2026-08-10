@@ -259,13 +259,7 @@ def start(meeting_id: str, request_id: str) -> dict:
     if existing:
         if existing.status != "Pending":
             if existing.status == "Recording":
-                recording = frappe.get_doc("Meet Recording", existing.name)
-                outcome = RecorderOutcome(
-                    "accepted",
-                    accepted_at=get_datetime(recording.started_at).replace(tzinfo=UTC),
-                    public_jwk=_stored_public_jwk(recording),
-                )
-                return _finish_start(room, recording, outcome, None if _fixture_enabled() else _client())
+                return {"name": existing.name, "status": existing.status, "grant_delivered": True}
             return existing
         recording = frappe.get_doc("Meet Recording", existing.name)
         client = None if _fixture_enabled() else _client()
@@ -608,10 +602,16 @@ def reconcile_pending_recordings():
         pluck="name",
     )
     for name in names:
-        _reconcile_pending(name)
+        try:
+            _reconcile_pending(name)
+        except Exception:
+            frappe.log_error(title="Meet recording reconciliation failed", message=frappe.get_traceback())
 
     for name in frappe.get_all("Meet Recording", filters={"status": "Stopping"}, pluck="name"):
-        _retry_stopping(name)
+        try:
+            _retry_stopping(name)
+        except Exception:
+            frappe.log_error(title="Meet recording stop retry failed", message=frappe.get_traceback())
 
 
 def _retry_stopping(name: str):

@@ -11,12 +11,14 @@ import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 
+from suite.drive.api.storage import get_storage_usage
 from suite.meet.api.recording import (
     _limits,
     _system_datetime_as_utc,
     get_preflight,
     get_state,
     reconcile_pending_recordings,
+    recorder_failed,
     recorder_interrupted,
     start,
     stop,
@@ -105,6 +107,34 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         stopped = stop(self.room.name)
         self.assertEqual(stopped["status"], "Processing")
         self.assertIsNone(get_state(self.room.name))
+
+    def test_start_retry_after_grant_expiry_keeps_active_recording(self):
+        request_id = str(uuid.uuid4())
+        started = start(self.room.name, request_id)
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        recording.db_set("grant_expires_at", int(time.time()) - 1, update_modified=False)
+        before = {
+            "status": recording.status,
+            "state_revision": recording.state_revision,
+            "stop_operation_id": recording.stop_operation_id,
+            "end_reason": recording.end_reason,
+        }
+
+        with patch("suite.meet.api.recording._client") as client:
+            retried = start(self.room.name, request_id)
+
+        recording.reload()
+        self.assertEqual(retried, started)
+        self.assertEqual(
+            {
+                "status": recording.status,
+                "state_revision": recording.state_revision,
+                "stop_operation_id": recording.stop_operation_id,
+                "end_reason": recording.end_reason,
+            },
+            before,
+        )
+        client.assert_not_called()
 
     def test_non_host_cannot_stop_recording(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -223,7 +253,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 frappe.local.request = original_request
 
     def test_completed_upload_creates_owner_drive_file_and_consumes_reservation(self):
+        usage_before = get_storage_usage(self.owner)
         started = start(self.room.name, str(uuid.uuid4()))
+        reserved = get_storage_usage(self.owner)
+        budget = frappe.db.get_value("Meet Recording", started["name"], "budget_bytes")
+        self.assertEqual(reserved["reserved_size"], usage_before.get("reserved_size", 0) + budget)
         stop(self.room.name)
         content = b"validated-mp4"
         digest = hashlib.sha256(content).hexdigest()
@@ -266,6 +300,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(artifact.folder, recording.drive_home_folder)
             self.assertEqual(artifact.file_type, "Video")
             self.assertEqual(artifact.mime_type, "video/mp4")
+            completed_usage = get_storage_usage(self.owner)
+            self.assertEqual(completed_usage["reserved_size"], usage_before.get("reserved_size", 0))
+            self.assertEqual(completed_usage["total_size"], usage_before["total_size"] + len(content))
             artifact.status = "Trashed"
             artifact.save(ignore_permissions=True)
             self.assertTrue(frappe.db.exists("Meet Recording", recording.name))
@@ -374,6 +411,46 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertEqual(result, {"status": "Interrupted"})
         self.assertEqual(recording.status, "Interrupted")
         self.assertEqual(recording.recorder_event_sequence, 2)
+
+    def test_duplicate_interruption_callback_does_not_advance_state(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            first = recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost")
+            second = recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost")
+
+        recording.reload()
+        self.assertEqual(first, second)
+        self.assertEqual(recording.state_revision, 2)
+        self.assertEqual(recording.recorder_event_sequence, 2)
+
+    def test_failed_recording_releases_storage_reservation(self):
+        usage_before = get_storage_usage(self.owner)
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        self.assertGreater(
+            get_storage_usage(self.owner)["reserved_size"], usage_before.get("reserved_size", 0)
+        )
+
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            recorder_failed(recording.name, recording.recorder_job_id, 2, "capture_failed")
+
+        self.assertEqual(get_storage_usage(self.owner)["reserved_size"], usage_before.get("reserved_size", 0))
+
+    def test_reconciliation_continues_after_one_recording_fails(self):
+        with (
+            patch("suite.meet.api.recording.frappe.get_all", side_effect=[["first", "second"], []]),
+            patch(
+                "suite.meet.api.recording._reconcile_pending",
+                side_effect=[RuntimeError("broken recording"), None],
+            ) as reconcile,
+            patch("suite.meet.api.recording.frappe.log_error") as log_error,
+        ):
+            reconcile_pending_recordings()
+
+        self.assertEqual(reconcile.call_count, 2)
+        log_error.assert_called_once()
 
     def test_explicit_rejection_deletes_pending_but_indeterminate_keeps_it(self):
         frappe.conf.recording_fixture_mode = False

@@ -8,6 +8,8 @@ from frappe.utils import cint, get_datetime
 
 ACTIVE_RECORDING_STATUSES = ("Recording", "Interrupted", "Stopping")
 TERMINAL_STATUSES = ("Ready", "Partial", "Failed")
+IMMUTABLE_FIELDS = ("meet_room", "room_owner", "initiated_by", "recorder_job_id", "request_id")
+WRITE_ONCE_FIELDS = ("grant_jti", "grant_issued_at", "grant_expires_at", "stop_operation_id")
 ALLOWED_TRANSITIONS = {
     "Pending": {"Recording"},
     "Recording": {"Interrupted", "Stopping", "Failed"},
@@ -33,10 +35,15 @@ class MeetRecording(Document):
             return
 
         previous = self.get_doc_before_save()
-        if previous and (
-            self.room_owner != previous.room_owner or self.initiated_by != previous.initiated_by
+        if not previous:
+            return
+        if any(self.get(fieldname) != previous.get(fieldname) for fieldname in IMMUTABLE_FIELDS):
+            frappe.throw(_("Recording identity cannot change"))
+        if any(
+            previous.get(fieldname) and self.get(fieldname) != previous.get(fieldname)
+            for fieldname in WRITE_ONCE_FIELDS
         ):
-            frappe.throw(_("Recording ownership and initiator cannot change"))
+            frappe.throw(_("Recording operation identifiers cannot change"))
 
     def validate_transition(self):
         if self.is_new():
@@ -47,6 +54,12 @@ class MeetRecording(Document):
         previous = self.get_doc_before_save()
         if not previous:
             return
+        if previous.status in TERMINAL_STATUSES:
+            changed = [
+                field.fieldname for field in self.meta.fields if self.has_value_changed(field.fieldname)
+            ]
+            if changed:
+                frappe.throw(_("A terminal recording cannot be modified"))
         if previous.status in TERMINAL_STATUSES and self.has_value_changed("status"):
             frappe.throw(_("A terminal recording cannot change state"))
         if self.has_value_changed("status"):

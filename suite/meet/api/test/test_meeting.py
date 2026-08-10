@@ -9,17 +9,27 @@ from frappe.client import delete as delete_document
 from frappe.tests import IntegrationTestCase
 
 from suite.meet.api.meeting import (
+    approve_all_join_requests,
+    approve_join_request,
+    get_approved_guest_connection_details,
+    get_guest_sfu_connection_details,
     get_public_meeting_preview,
     get_sfu_connection_details,
     get_sfu_presence_preview_token,
+    get_waiting_room,
     join_meeting,
     join_meeting_as_guest,
+    refresh_sfu_token,
+    reject_join_request,
 )
+from suite.meet.utils.user import set_guest_session
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
     def setUp(self):
         frappe.conf.sfu_secret = "test-sfu-secret"
+        frappe.db.set_single_value("Meet Settings", "allow_guest", 1)
+        frappe.clear_cache(doctype="Meet Settings")
 
         self.host_email = "host-meet@example.com"
         self.member_email = "member-meet@example.com"
@@ -226,6 +236,109 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             algorithms=["HS256"],
         )
         self.assertEqual(decoded["scope"], "presence-preview")
+
+    def test_banned_member_cannot_refresh_sfu_token(self):
+        self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+        self.meeting.add_user_to_table("banned_users", self.member_email, save=True, ignore_permissions=True)
+        frappe.set_user(self.member_email)
+
+        with self.assertRaises(frappe.PermissionError):
+            refresh_sfu_token(self.meeting.name)
+
+    def test_approved_guest_session_cannot_cross_meet_rooms(self):
+        guest_id = f"guest_{frappe.generate_hash(length=16)}"
+        set_guest_session(
+            guest_id,
+            {"guest_id": guest_id, "guest_name": "Room A Guest", "meeting_id": self.meeting.name},
+        )
+        other_room = self._create_meeting(self.host_email, meeting_type="restricted")
+        other_room.add_user_to_table("members", guest_id, save=True, ignore_permissions=True)
+        frappe.set_user("Guest")
+
+        with self.assertRaises(frappe.PermissionError):
+            get_approved_guest_connection_details(other_room.name, guest_id)
+
+    def test_approved_guest_rechecks_current_guest_policy(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Policy Guest")
+        guest_id = waiting["guest_id"]
+        frappe.set_user(self.host_email)
+        approve_join_request(self.meeting.name, guest_id)
+
+        frappe.db.set_single_value("Meet Settings", "allow_guest", 0)
+        frappe.clear_cache(doctype="Meet Settings")
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            get_approved_guest_connection_details(self.meeting.name, guest_id)
+
+    def test_guest_connection_details_recheck_ban_and_session(self):
+        self.meeting.db_set("meeting_type", "open")
+        frappe.set_user("Guest")
+        joined = join_meeting_as_guest(self.meeting.name, "Banned Guest")
+
+        frappe.set_user(self.host_email)
+        room = frappe.get_doc("Meet Room", self.meeting.name)
+        room.add_user_to_table("banned_users", joined["guest_id"], save=True, ignore_permissions=True)
+        frappe.set_user("Guest")
+
+        with self.assertRaises(frappe.PermissionError):
+            get_guest_sfu_connection_details(self.meeting.name, joined["auth_token"])
+
+    def test_waiting_room_apis_reject_member_and_outsider(self):
+        self._join_waiting(self.member_email)
+
+        for user in (self.member_email, self.outsider_email):
+            with self.subTest(user=user):
+                frappe.set_user(user)
+                with self.assertRaises(frappe.ValidationError):
+                    get_waiting_room(self.meeting.name)
+                with self.assertRaises(frappe.ValidationError):
+                    approve_join_request(self.meeting.name, self.member_email)
+                with self.assertRaises(frappe.ValidationError):
+                    reject_join_request(self.meeting.name, self.member_email)
+
+        self.meeting.reload()
+        self.assertIn(self.member_email, self.meeting.get_waiting_room())
+        self.assertNotIn(self.member_email, self.meeting.get_members())
+
+    def test_approval_atomically_moves_waiting_user_to_members(self):
+        self._join_waiting(self.member_email)
+        frappe.set_user(self.host_email)
+
+        approve_join_request(self.meeting.name, self.member_email)
+
+        self.meeting.reload()
+        self.assertNotIn(self.member_email, self.meeting.get_waiting_room())
+        self.assertEqual(self.meeting.get_members().count(self.member_email), 1)
+
+    def test_rejection_removes_and_bans_waiting_user_once(self):
+        self._join_waiting(self.member_email)
+        frappe.set_user(self.host_email)
+
+        reject_join_request(self.meeting.name, self.member_email)
+
+        self.meeting.reload()
+        self.assertNotIn(self.member_email, self.meeting.get_waiting_room())
+        self.assertEqual(self.meeting.get_table_users("banned_users").count(self.member_email), 1)
+
+    def test_approve_all_moves_every_waiting_user_and_handles_empty_room(self):
+        another = "another-member-meet@example.com"
+        self._ensure_user(another, "Another")
+        self._join_waiting(self.member_email)
+        self._join_waiting(another)
+        frappe.set_user(self.host_email)
+
+        approve_all_join_requests(self.meeting.name)
+        approve_all_join_requests(self.meeting.name)
+
+        self.meeting.reload()
+        self.assertEqual(self.meeting.get_waiting_room(), [])
+        self.assertTrue({self.member_email, another}.issubset(self.meeting.get_members()))
+
+    def _join_waiting(self, user: str):
+        frappe.set_user(user)
+        self.assertEqual(join_meeting(self.meeting.name)["status"], "waiting_for_approval")
+        self.meeting.reload()
 
     def _ensure_user(self, email: str, first_name: str):
         if frappe.db.exists("User", email):
