@@ -246,7 +246,7 @@ const moreOptions = computed(() => [
 						props.recordingStatus || "",
 					)
 						? "lucide-circle-stop"
-						: "lucide-circle-dot",
+						: "lucide-disc",
 					label: props.recordingStatus === "Pending"
 						? "Starting recording..."
 						: ["Recording", "Interrupted", "Stopping"].includes(
