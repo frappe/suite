@@ -106,6 +106,25 @@ describe("RecorderRenderer", () => {
 		app.unmount();
 	});
 
+	it("rings the active speaker tile", () => {
+		const context = meetingContext();
+		context.participantStore.activeSpeakerIds = ["alice"];
+		const root = document.createElement("div");
+		const app = createApp(RecorderRenderer, {
+			startedAt: Date.now(),
+			videoManager: {
+				registerVideoElement: vi.fn(),
+				removeVideoElement: vi.fn(),
+			},
+			meetingContext: context,
+		});
+		app.mount(root);
+
+		const tile = root.querySelector('[data-testid="participant-tile-alice"]');
+		expect(tile?.getAttribute("data-active-speaker")).toBe("true");
+		app.unmount();
+	});
+
 	it("attaches each screen-share tile to its own consumer stream", async () => {
 		const context = meetingContext();
 		context.gridLayout.displayScreenShares.value = [

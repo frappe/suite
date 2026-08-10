@@ -3,6 +3,7 @@
 		class="group relative rounded-md overflow-hidden min-h-0"
 		:class="tileBackgroundClass"
 		:data-testid="`participant-tile-${participant.user_id}`"
+		:data-active-speaker="String(isActiveSpeaker)"
 		:data-audio-enabled="String(isAudioEnabled)"
 		:data-video-enabled="String(isVideoEnabled)"
 		:data-tile-id="`${pinType}-${tileId}`"
