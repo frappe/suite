@@ -131,16 +131,39 @@ def destroy_search_index() -> None:
     destroy_namespace(get_search_base_path(), MAIL_NAMESPACE)
 
 
+def _address_totals(addresses: list[dict]) -> dict[str, dict]:
+    """Total the given address entries per address, keyed the way the index keys its documents.
+
+    The last entry seen names an address, matching what indexing them one after another would
+    have left; entries without an email are dropped, since there is nothing to total them under.
+    """
+
+    totals: dict[str, dict] = {}
+    for address in addresses:
+        email = (address.get("email") or "").strip()
+        if not email:
+            continue
+
+        total = totals.setdefault(email.lower(), {"name": None, "email": email, "count": 0})
+        total["name"] = address.get("name") or total["name"]
+        total["email"] = email
+        total["count"] += int(address.get("count") or 0)
+
+    return totals
+
+
 def rebuild_email_address_index(account: str, in_background: bool = True) -> None:
     """Rebuild an account's email-address index from scratch.
 
-    Totals every cached mail message per address and writes those totals over whatever the index
-    held, then re-indexes the cached contact cards. Runs in a background job by default; pass
+    Totals every cached mail message per address and corrects the index towards those totals, then
+    re-indexes the cached contact cards. Runs in a background job by default; pass
     `in_background=False` to run inline (e.g. from within the job itself).
 
-    Nothing is dropped first. A rebuild used to clear the index and count it back up, which meant
-    anything a sync indexed while it ran was erased and never counted again; writing totals leaves
-    a sync's work either counted in the totals or added on top of them. An address the cache no
+    Nothing is dropped, and no total is written as such. A rebuild used to clear the index and
+    count it back up, so anything a sync indexed while it ran was erased and never counted again;
+    writing totals instead would overwrite whatever a sync added while this was running. So what
+    goes in is the difference between the total and what the index holds, which the write adds —
+    leaving a sync's increment intact whichever side of it lands first. An address the cache no
     longer mentions keeps the count it had, in keeping with an index that outlives its messages.
     """
 
@@ -166,13 +189,20 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
     addresses = []
     for batch in create_batch(list(store.scan(Entity.EMAIL).items()), _REBUILD_BATCH_SIZE):
         # Claim as we go, so a sync reaching one of these messages afterwards adds nothing on top
-        # of the total about to be written for it.
+        # of the total being worked out for it here.
         store.set_many(Entity.COUNTED_EMAIL, items={message_id: True for message_id, _ in batch})
         addresses.extend(_message_addresses([message for _message_id, message in batch]))
 
-    # One write, holding each address's total across every cached message — batching it would make
-    # each batch overwrite the last, since these totals replace rather than add.
-    index.index_addresses(addresses, merge=False)
+    totals = _address_totals(addresses)
+    indexed = index.get_documents(list(totals))
+
+    # Turn each total into the difference from what the index holds, so the write corrects the
+    # count rather than replacing it: an increment landing either side of this survives, since
+    # the write adds to whatever it finds rather than to what was read here.
+    for address_id, address in totals.items():
+        address["count"] -= int((indexed.get(address_id) or {}).get("count") or 0)
+
+    index.index_addresses(list(totals.values()))
 
     contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
     for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):

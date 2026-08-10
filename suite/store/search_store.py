@@ -76,16 +76,12 @@ class SearchStore:
         self._schema = self._build_schema()
         self._reconcile_schema_version()
 
-    def index_documents(self, sources: list[dict], merge: bool = True) -> int:
+    def index_documents(self, sources: list[dict]) -> int:
         """Upsert the given source dicts into the index; returns the number processed.
 
         Each source is deleted-then-added by its ID_FIELD, so re-indexing an existing document
         replaces it — `merge_document` first gets to fold anything worth keeping out of the
         document being replaced. Sources without an ID are skipped.
-
-        Pass `merge=False` for a source that already states the whole truth about its document,
-        such as a total recomputed from scratch: the document being replaced is neither read nor
-        folded in, so the value written is exactly the one given.
 
         Raises `IndexWriteAborted` when the write failed with nothing committed, and the original
         failure once anything has been.
@@ -103,11 +99,7 @@ class SearchStore:
 
                 # Read the documents being replaced from inside the lock: a read taken before it
                 # could be stale by the time this writer commits, dropping a concurrent update.
-                replaced = (
-                    self.get_documents([str(document[self.ID_FIELD]) for document in documents])
-                    if merge
-                    else {}
-                )
+                replaced = self.get_documents([str(document[self.ID_FIELD]) for document in documents])
 
                 index = self._open()
                 writer = index.writer(heap_size=self.HEAP_SIZE, num_threads=1)
@@ -115,7 +107,7 @@ class SearchStore:
                 try:
                     for document in documents:
                         doc_id = str(document[self.ID_FIELD])
-                        merged = self.merge_document(document, replaced.get(doc_id)) if merge else document
+                        merged = self.merge_document(document, replaced.get(doc_id))
                         # Should this ID come round again later in the batch, it merges onto what
                         # was just written rather than the document that write already replaced.
                         replaced[doc_id] = merged

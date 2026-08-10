@@ -7,6 +7,7 @@ back ordered by how well the query matches a name or address rather than in inde
 import unittest
 from unittest import mock
 
+from suite.mail.store import _address_totals
 from suite.mail.store.indexes.email_address import (
     EmailAddressIndex,
     _relevance_key,
@@ -140,6 +141,43 @@ class IndexAddresses(unittest.TestCase):
     def test_missing_count_is_no_interactions(self):
         address = {"name": "Jane", "email": "jane@example.com"}
         self.assertEqual(self.index_addresses([address]), [{**address, "count": 0}])
+
+
+class AddressTotals(unittest.TestCase):
+    """``_address_totals`` — what a recount works out each address is owed, before the index is read."""
+
+    def test_counts_add_up_per_address_regardless_of_casing(self):
+        totals = _address_totals(
+            [
+                {"name": "Jane", "email": "jane@example.com", "count": 1},
+                {"name": "Jane Doe", "email": "Jane@Example.com", "count": 1},
+                {"name": "John Doe", "email": "john@example.com", "count": 1},
+            ]
+        )
+        self.assertEqual(totals["jane@example.com"]["count"], 2)
+        self.assertEqual(totals["john@example.com"]["count"], 1)
+
+    def test_the_last_entry_names_the_address(self):
+        totals = _address_totals(
+            [
+                {"name": "Jane", "email": "jane@example.com", "count": 1},
+                {"name": "Jane Doe", "email": "Jane@Example.com", "count": 1},
+            ]
+        )
+        self.assertEqual(totals["jane@example.com"]["name"], "Jane Doe")
+        self.assertEqual(totals["jane@example.com"]["email"], "Jane@Example.com")
+
+    def test_a_missing_name_leaves_the_one_already_found(self):
+        totals = _address_totals(
+            [{"name": "Jane Doe", "email": "jane@example.com"}, {"email": "jane@example.com"}]
+        )
+        self.assertEqual(totals["jane@example.com"]["name"], "Jane Doe")
+
+    def test_entries_without_an_email_are_dropped(self):
+        self.assertEqual(_address_totals([{"name": "Jane"}, {"email": "  ", "count": 1}]), {})
+
+    def test_an_entry_without_a_count_is_owed_nothing(self):
+        self.assertEqual(_address_totals([{"email": "jane@example.com"}])["jane@example.com"]["count"], 0)
 
 
 class Tokenize(unittest.TestCase):
