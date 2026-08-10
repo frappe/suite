@@ -11,7 +11,12 @@
 		}
 
 		@control path /v1/recordings /v1/recordings/*
-		reverse_proxy @control 127.0.0.1:3010
+		handle @control {
+			request_body {
+				max_size 16KB
+			}
+			reverse_proxy 127.0.0.1:3010
+		}
 
 		@status path /health /ready
 		reverse_proxy @status 127.0.0.1:3010

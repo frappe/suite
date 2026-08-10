@@ -876,6 +876,23 @@ describe('HTTP contract', () => {
 		});
 	});
 
+	it('authenticates control requests before parsing bounded JSON', async () => {
+		const unauthorized = await call(app, '/v1/recordings', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{invalid',
+		});
+		expect(unauthorized.status).toBe(401);
+
+		const oversized = await call(
+			app,
+			'/v1/recordings',
+			authenticated('POST', { job: 'job', padding: 'x'.repeat(17 * 1024) }),
+		);
+		expect(oversized.status).toBe(413);
+		expect(await oversized.json()).toEqual({ status: 'indeterminate' });
+	});
+
 	it('binds route and body to signed job and rejects extra fields', async () => {
 		expect(
 			(

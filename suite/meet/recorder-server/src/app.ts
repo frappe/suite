@@ -100,9 +100,11 @@ export function createApp(
 	capacity.set(config.maxConcurrent);
 	void active;
 	app.disable('x-powered-by');
-	app.use(
-		express.json({ limit: '16kb', strict: true, type: 'application/json' }),
-	);
+	const json = express.json({
+		limit: '16kb',
+		strict: true,
+		type: 'application/json',
+	});
 
 	app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 	app.get('/ready', (_req, res) =>
@@ -142,35 +144,44 @@ export function createApp(
 		};
 	}
 
-	app.post('/v1/recordings', command('reserve'), async (req, res, next) => {
-		try {
-			const claims = res.locals.command as CommandClaims;
-			const body: unknown = req.body;
-			if (!reserveBody(body) || body.job !== claims.job)
+	app.post(
+		'/v1/recordings',
+		command('reserve'),
+		json,
+		async (req, res, next) => {
+			try {
+				const claims = res.locals.command as CommandClaims;
+				const body: unknown = req.body;
+				if (!reserveBody(body) || body.job !== claims.job)
+					return res
+						.status(422)
+						.json({
+							status: 'rejected',
+							job: claims.job,
+							reason: 'invalid_job',
+						});
+				await auth.consume(claims);
+				const result = await jobs.reserve(claims);
+				if (result.status === 'accepted') {
+					starts.inc({ outcome: 'accepted', reason: 'none' });
+					log.info({ event: 'job_reservation', status: 'accepted' });
+					return res.status(202).json(accepted(result.job));
+				}
+				starts.inc({ outcome: 'rejected', reason: result.reason });
 				return res
-					.status(422)
-					.json({ status: 'rejected', job: claims.job, reason: 'invalid_job' });
-			await auth.consume(claims);
-			const result = await jobs.reserve(claims);
-			if (result.status === 'accepted') {
-				starts.inc({ outcome: 'accepted', reason: 'none' });
-				log.info({ event: 'job_reservation', status: 'accepted' });
-				return res.status(202).json(accepted(result.job));
+					.status(
+						result.reason === 'capacity'
+							? 429
+							: result.reason === 'storage'
+								? 507
+								: 422,
+					)
+					.json({ status: 'rejected', job: claims.job, reason: result.reason });
+			} catch (error) {
+				next(error);
 			}
-			starts.inc({ outcome: 'rejected', reason: result.reason });
-			return res
-				.status(
-					result.reason === 'capacity'
-						? 429
-						: result.reason === 'storage'
-							? 507
-							: 422,
-				)
-				.json({ status: 'rejected', job: claims.job, reason: result.reason });
-		} catch (error) {
-			next(error);
-		}
-	});
+		},
+	);
 
 	app.get('/v1/recordings/:id', command('query'), async (_req, res, next) => {
 		try {
@@ -192,6 +203,7 @@ export function createApp(
 	app.post(
 		'/v1/recordings/:id/grant',
 		command('grant'),
+		json,
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
@@ -220,6 +232,7 @@ export function createApp(
 	app.post(
 		'/v1/recordings/:id/stop',
 		command('stop'),
+		json,
 		async (req, res, next) => {
 			try {
 				const claims = res.locals.command as CommandClaims;
@@ -252,13 +265,22 @@ export function createApp(
 	app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
 		if (error instanceof AuthError)
 			return res.status(401).json({ status: 'unauthorized' });
+		const status =
+			'status' in error && error.status === 413
+				? 413
+				: error instanceof SyntaxError
+					? 400
+					: 503;
 		log.error({
 			event: 'service_error',
-			reason: error instanceof SyntaxError ? 'invalid_json' : 'unavailable',
+			reason:
+				status === 413
+					? 'request_too_large'
+					: status === 400
+						? 'invalid_json'
+						: 'unavailable',
 		});
-		res
-			.status(error instanceof SyntaxError ? 400 : 503)
-			.json({ status: 'indeterminate' });
+		res.status(status).json({ status: 'indeterminate' });
 	});
 	return app;
 }
