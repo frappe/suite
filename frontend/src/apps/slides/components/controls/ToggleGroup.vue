@@ -35,7 +35,7 @@ const getButtonClass = (value) => [buttonClasses, isActive(value) ? activeClasse
 
 const getIconClass = (value) => [
 	iconClasses,
-	isActive(value) ? 'text-ink-gray-9' : 'text-ink-gray-7',
+	isActive(value) ? 'text-ink-gray-7' : 'text-ink-gray-6',
 ]
 
 const toggle = (value) => {

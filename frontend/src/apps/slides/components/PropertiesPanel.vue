@@ -7,6 +7,8 @@
 			<PositionSection />
 			<Divider flexItem />
 			<LayoutSection />
+			<Divider flexItem />
+			<ElementSection />
 			<template v-if="activeElement?.type === 'text' || isEditingShapeText">
 				<Divider flexItem />
 				<TypographySection />
@@ -45,15 +47,21 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
 
-import { activeElement, activeElementIds, focusElementId } from '@/apps/slides/stores/element'
+import {
+	activeElement,
+	activeElementIds,
+	focusElementId,
+	isSelectionLocked,
+} from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 import { Divider } from 'frappe-ui'
 
 import PositionSection from './PositionSection.vue'
 import LayoutSection from './LayoutSection.vue'
+import ElementSection from './ElementSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
 import TypographySection from './TypographySection.vue'
 import ShapeStyleSection from './ShapeStyleSection.vue'
@@ -63,6 +71,8 @@ import BorderSection from './BorderSection.vue'
 import ShadowSection from './ShadowSection.vue'
 import BackgroundSection from './BackgroundSection.vue'
 import TransitionSection from './TransitionSection.vue'
+
+provide('sectionInert', isSelectionLocked)
 
 const isEditingShapeText = computed(
 	() => activeElement.value?.type === 'shape' && focusElementId.value === activeElement.value?.id,

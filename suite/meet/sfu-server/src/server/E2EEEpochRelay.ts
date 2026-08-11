@@ -107,6 +107,7 @@ export class E2EEEpochRelay {
 		private readonly persistence: E2eeCoordinatorPersistence = new InMemoryE2eeCoordinatorPersistence(),
 		private readonly rateLimiter: RateLimiter | null = null,
 		private readonly telemetry: Telemetry | null = null,
+		private readonly bypassRateLimits = false,
 	) {
 		this.io = io;
 		this.fullAccessSockets = fullAccessSockets;
@@ -136,6 +137,7 @@ export class E2EEEpochRelay {
 			E2EE_EPOCH_USER_LIMIT,
 			E2EE_EPOCH_IP_LIMIT,
 			E2EE_EPOCH_RATE_WINDOW_MS,
+			this.bypassRateLimits,
 		);
 		if (!allowed) {
 			this.telemetry?.recordE2EEEvent('unknown', 'rate_limited');
@@ -1386,7 +1388,7 @@ export class E2EEEpochRelay {
 	private async getCommitterDebugState(
 		roomId: string,
 		excludeSenderIds: number[],
-	): Promise<Record<string, unknown>> {
+	) {
 		const rosterEntries = (await this.roster?.list(roomId)) ?? [];
 		const fullAccessSocketIds = Array.from(
 			this.fullAccessSockets.get(roomId) ?? [],
@@ -1484,9 +1486,7 @@ export class E2EEEpochRelay {
 		if (!socketsInRoom) return null;
 
 		for (const socketId of socketsInRoom) {
-			const socket = this.io.sockets.sockets.get(socketId) as
-				| TypedSocket
-				| undefined;
+			const socket = this.io.sockets.sockets.get(socketId);
 			if (socket && socket.participantId === participantId) {
 				return socket;
 			}
@@ -1569,8 +1569,7 @@ export class E2EEEpochRelay {
 		for (const socketId of socketIds) {
 			const socket = this.io.sockets.sockets.get(socketId);
 			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: typed-socket emit with narrowed payload
-				(socket as any).emit('e2ee:epoch', data);
+				socket.emit('e2ee:epoch', data);
 			}
 		}
 	}

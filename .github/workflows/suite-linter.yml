@@ -1,11 +1,18 @@
 name: Suite Linters
 
 on:
+  schedule:
+    - cron: "47 2 * * *"
   pull_request:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "e2e/**"
+      - "package.json"
+      - "yarn.lock"
+      - "knip.json"
       - "pyproject.toml"
+      - ".github/scripts/**"
       - ".github/workflows/suite-linter.yml"
   workflow_dispatch:
 
@@ -13,15 +20,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: suite-linters-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   linter:
     name: Frappe Linter
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +46,6 @@ jobs:
   ruff-format:
     name: Ruff Format Check
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
 
     steps:
       - uses: actions/checkout@v4
@@ -51,10 +55,72 @@ jobs:
           python-version: "3.14"
           cache: pip
 
+      - name: Install Ruff
+        run: pip install ruff==0.12.3
+
+      - name: Test CI scripts
+        run: python -m unittest discover .github/scripts -p 'test_*.py'
+
       - name: Check formatting
+        run: ruff format --check .
+
+      # Existing lint findings make this evidence-only until the baseline is clean.
+      - name: Check lint baseline
+        continue-on-error: true
         run: |
-          pip install ruff==0.12.3
-          ruff format --check .
+          ruff check .
+
+  javascript-health:
+    name: JavaScript Health Baseline
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: yarn.lock
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # Existing findings make these evidence-only until their baselines are clean.
+      - name: Check frontend dead code
+        continue-on-error: true
+        run: yarn knip:frontend
+
+      - name: Check E2E dead code
+        continue-on-error: true
+        run: yarn knip:e2e
+
+      - name: Check SFU dead code
+        continue-on-error: true
+        run: yarn knip:sfu-server
+
+      - name: Check Sheets collaboration dead code
+        continue-on-error: true
+        run: yarn knip:sheets-collab
+
+      - name: Audit production dependencies
+        continue-on-error: true
+        run: |
+          mkdir -p test-results
+          status=0
+          yarn audit --groups dependencies --level high 2>&1 | tee test-results/yarn-audit.txt || status=1
+          yarn --cwd suite/meet/sfu-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
+          yarn --cwd suite/meet/recorder-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
+          exit "$status"
+
+      - name: Upload dependency audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-javascript-health
+          path: test-results/yarn-audit.txt
+          if-no-files-found: warn
+          retention-days: 30
 
   deps-vulnerable-check:
     name: Vulnerable Dependency Check

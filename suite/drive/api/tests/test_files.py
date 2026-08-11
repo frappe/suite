@@ -13,18 +13,23 @@ from suite.drive.api.files import (
     move,
     remove_or_restore,
     rename,
+    stream_file_content,
     track_visit,
     update_access,
     upload_file,
 )
 from suite.drive.api.list import get_attachments
 from suite.drive.api.permissions import (
+    can_create_in_folder,
     get_general_access,
     get_user_access,
     get_user_access_for_user,
     user_has_permission,
 )
+from suite.drive.overrides.file import File as DriveFile
 from suite.drive.utils import (
+    APP_FOLDERS,
+    FRAMEWORK_FOLDERS,
     GENERAL_USER,
     STATUS_ACTIVE,
     STATUS_TRASHED,
@@ -134,6 +139,153 @@ class TestDriveFilesAPI(IntegrationTestCase):
             with self.assertRaises(frappe.PermissionError):
                 get_file_content(self.file.name)
 
+    def test_content_link_cannot_be_forged_to_hijack_another_users_document(self):
+        """content_doctype/content_docname are the sole permission delegation
+        point for content documents like Writer Document (see
+        content_has_permission in suite/drive/overrides/file.py): whoever's
+        File claims a document inherits full access to it. Only Drive's own
+        creation flow may ever set these fields — a user must not be able to
+        point their own File at someone else's document and hijack it."""
+        with self.set_user(OWNER):
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            DriveFile.create_for_doc(victim_doc)
+
+        with self.set_user(OTHER_USER):
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
+
+            attacker_file = create_drive_file(
+                f"{frappe.generate_hash(8)}.txt",
+                get_user_folder(OTHER_USER).name,
+                "Text",
+                None,
+            )
+
+            # Forging the link via an update to a File the attacker owns must fail.
+            forged = frappe.get_doc("File", attacker_file.name)
+            forged.content_doctype = "Writer Document"
+            forged.content_docname = victim_doc.name
+            with self.assertRaises(frappe.PermissionError):
+                forged.save()
+
+            # Forging the link directly at insert time must fail too.
+            with self.assertRaises(frappe.PermissionError):
+                frappe.get_doc(
+                    {
+                        "doctype": "File",
+                        "file_name": "forged.txt",
+                        "is_private": 1,
+                        "folder": get_user_folder(OTHER_USER).name,
+                        "content_doctype": "Writer Document",
+                        "content_docname": victim_doc.name,
+                    }
+                ).insert()
+
+            self.assertFalse(frappe.has_permission("Writer Document", "read", victim_doc.name))
+
+    def test_content_link_cannot_be_cleared_by_a_shared_collaborator(self):
+        """File write access can come from a Drive share, not just ownership.
+        A collaborator who only has write access to the File backing a
+        document must not be able to clear content_doctype/content_docname —
+        doing so would sever content_has_permission's delegation and orphan
+        the document relative to after_delete's cascade-delete."""
+        with self.set_user(OWNER):
+            victim_doc = frappe.get_doc({"doctype": "Writer Document"}).insert()
+            backing_file = DriveFile.create_for_doc(victim_doc)
+            backing_file.share(user=MEMBER, write=True)
+
+        with self.set_user(MEMBER):
+            self.assertTrue(user_has_permission(backing_file, "write"))
+            doc = frappe.get_doc("File", backing_file.name)
+            doc.content_doctype = None
+            doc.content_docname = None
+            with self.assertRaises(frappe.PermissionError):
+                doc.save()
+
+        self.assertEqual(
+            frappe.db.get_value("File", backing_file.name, "content_docname"),
+            victim_doc.name,
+        )
+
+    def test_cannot_create_inside_another_users_folder(self):
+        """`create` used to be granted unconditionally, so the generic REST API
+        (`frappe.client.insert`, core's `/api/method/upload_file`) let any user
+        insert a File with `folder` pointing anywhere - planting content inside a
+        folder they hold no `upload` on. Drive's own endpoints checked `upload`,
+        but nothing checked it behind them."""
+        with self.set_user(OTHER_USER):
+            self.assertFalse(user_has_permission(self.folder, "upload"))
+
+            for values in (
+                {"file_name": "planted.txt", "is_private": 1},
+                {"file_name": "planted", "is_folder": 1},
+            ):
+                with self.assertRaises(frappe.PermissionError):
+                    frappe.get_doc({"doctype": "File", "folder": self.folder.name, **values}).insert()
+
+        self.assertFalse(
+            frappe.db.exists("File", {"folder": self.folder.name, "file_name": ["like", "planted%"]})
+        )
+
+    def test_upload_access_is_enough_to_create(self):
+        """The check is `upload` on the parent, not ownership: a collaborator
+        granted upload keeps `create`, so sharing a folder for contribution still
+        works. Asserted at the hook the framework actually calls on insert."""
+        with self.set_user(OWNER):
+            self.folder.share(user=MEMBER, read=True, upload=True)
+
+        incoming = frappe.get_doc(
+            {
+                "doctype": "File",
+                "folder": self.folder.name,
+                "file_name": f"{frappe.generate_hash(8)}.txt",
+                "is_private": 1,
+            }
+        )
+
+        with self.set_user(MEMBER):
+            self.assertTrue(user_has_permission(self.folder, "upload"))
+            self.assertTrue(user_has_permission(incoming, "create"))
+
+        with self.set_user(OTHER_USER):
+            self.assertFalse(user_has_permission(incoming, "create"))
+
+    def test_framework_upload_flow_still_permitted(self):
+        """Core inserts attachments into `Home`/`Home/Attachments`, and resolves
+        an unset `folder` to one of them in `validate` - after the create check.
+        Denying either would break every attachment upload in the suite."""
+        with self.set_user(OTHER_USER):
+            for folder in (*FRAMEWORK_FOLDERS, None, ""):
+                self.assertTrue(can_create_in_folder(folder))
+
+            # Drive's own flow inserts into the user's own folder.
+            self.assertTrue(can_create_in_folder(get_user_folder(OTHER_USER).name))
+
+    def test_app_folder_upload_still_permitted(self):
+        """Mail's compose uploads name `Home/Frappe Mail` explicitly. It is an
+        app-owned bucket outside Drive's tree, created by Administrator at
+        install, so no user holds `upload` on it - denying it broke every
+        attachment sent from the Mail UI."""
+        for folder in APP_FOLDERS:
+            self.assertTrue(frappe.db.exists("File", folder), f"{folder} should exist")
+
+            with self.set_user(OTHER_USER):
+                self.assertFalse(get_user_access_for_user(folder, OTHER_USER).get("upload"))
+                self.assertTrue(can_create_in_folder(folder))
+
+                attachment = frappe.get_doc(
+                    {
+                        "doctype": "File",
+                        "folder": folder,
+                        "file_name": f"{frappe.generate_hash(8)}.txt",
+                        "is_private": 1,
+                        "content": "attachment contents",
+                    }
+                ).insert()
+
+            # What lands there stays owner-scoped: the bucket is shared, the rows aren't.
+            with self.set_user(MEMBER):
+                self.assertFalse(user_has_permission(attachment, "read"))
+
     def test_site_share_and_guest_public_access(self):
         # Inside a user folder, other site users are denied by default.
         with self.set_user(MEMBER):
@@ -205,6 +357,31 @@ class TestDriveFilesAPI(IntegrationTestCase):
             Bucket=manager.bucket,
             Key=uploaded.file_url.lstrip("/"),
         )
+
+    def test_private_video_range_stream_uses_storage_relative_path(self):
+        self.file.file_type = "Video"
+        self.file.mime_type = "video/mp4"
+        self.file.file_size = 12
+        self.file.save()
+        request = Request(EnvironBuilder(headers={"Range": "bytes=0-"}).get_environ())
+
+        @contextmanager
+        def stored_file(path):
+            self.assertEqual(path, self.file.file_url.lstrip("/"))
+            yield BytesIO(b"video bytes!")
+
+        frappe.local.request = request
+        try:
+            with (
+                self.set_user(OWNER),
+                patch.object(FileManager, "open_file", side_effect=stored_file),
+            ):
+                response = stream_file_content(self.file.name)
+        finally:
+            del frappe.local.request
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.data, b"video bytes!")
 
     def test_direct_and_inherited_shares_grant_read_access(self):
         with self.set_user(OWNER):

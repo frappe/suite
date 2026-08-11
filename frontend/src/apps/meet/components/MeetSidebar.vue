@@ -66,6 +66,24 @@ function selectTheme(theme: string) {
 
 const apps = { get data() { return getAppSwitcherItems("meet"); } };
 
+function renderAppLink(app: ReturnType<typeof getAppSwitcherItems>[number]) {
+	const className =
+		"flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2";
+	const children = [
+		h("img", { src: app.logo, class: "size-6" }),
+		h(
+			"span",
+			{
+				class: "max-w-18 text-sm w-full truncate text-ink-gray-9",
+			},
+			app.title,
+		),
+	];
+	return app.spa
+		? h(RouterLink, { class: className, to: app.route }, () => children)
+		: h("a", { class: className, href: app.route }, children);
+}
+
 const userName = computed(
 	() => userResource.data?.full_name || userResource.data?.name || "User",
 );
@@ -79,34 +97,18 @@ const settingsItems = computed(() => [
 				icon: LucideLayoutGrid,
 				label: "Apps",
 				submenu:
-					apps.data?.map((app: any) => ({
+					apps.data?.map((app) => ({
 						label: app.title,
 						icon: app.logo,
-						component: h(
-							app.spa ? RouterLink : "a",
-							{
-								class:
-									"flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2",
-								...(app.spa ? { to: app.route } : { href: app.route }),
-							},
-							[
-								h("img", { src: app.logo, class: "size-6" }),
-								h(
-									"span",
-									{
-										class:
-											"max-w-18 text-sm w-full truncate text-ink-gray-9",
-									},
-									app.title,
-								),
-							],
-						),
+						component: renderAppLink(app),
 					})) || [],
 			},
 			{
 				icon: LucideKeyboard,
 				label: "Shortcuts",
-				onClick: () => (showShortcutsDialog.value = true),
+				onClick: () => {
+					showShortcutsDialog.value = true;
+				},
 			},
 			{
 				icon: LucideSunMoon,
@@ -162,7 +164,10 @@ const sidebarSections = computed(() => [
 	},
 ]);
 
-const showShortcutsDialog = inject("showShortcutsDialog") as unknown as ReturnType<typeof ref<boolean>>;
+const showShortcutsDialog = inject(
+	"showShortcutsDialog",
+	ref(false),
+);
 </script>
 
 <template>

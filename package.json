@@ -11,11 +11,14 @@
     "test:e2e": "yarn --cwd e2e test",
     "test:e2e:drive-backed-apps": "yarn --cwd e2e test:drive-backed-apps",
     "test:e2e:meet": "yarn --cwd e2e test:meet",
+    "test:realtime": "node --test realtime/*.test.js",
     "knip:e2e": "knip --workspace e2e",
     "knip:frontend": "knip --workspace frontend",
     "knip:sfu-server": "knip --workspace suite/meet/sfu-server",
     "knip:sheets-collab": "knip --workspace suite/sheets/collab-server",
-    "knip": "knip"
+    "knip": "knip",
+    "check:meet-types": "node suite/meet/type-policy/check.mjs",
+    "test:meet-type-policy": "node --test suite/meet/type-policy/check.test.mjs"
   },
   "resolutions": {
     "@tiptap/core": "3.26.0",

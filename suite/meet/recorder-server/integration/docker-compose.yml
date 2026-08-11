@@ -1,0 +1,11 @@
+services:
+  recorder-integration:
+    image: suite-recorder-integration:local
+    build:
+      context: ../../../..
+      dockerfile: suite/meet/recorder-server/Dockerfile
+      target: integration
+    init: true
+    shm_size: 1gb
+    volumes:
+      - ./output:/output

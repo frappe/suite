@@ -3,11 +3,12 @@
 		ref="container"
 		class="flex-1 min-h-0"
 		data-testid="meeting-layout"
-		:class="
+		:class="[
 			mode === 'sidebar'
 				? 'relative flex flex-col md:flex-row overflow-hidden rounded-lg'
-				: 'relative h-full rounded-lg overflow-hidden'
-		"
+				: 'relative h-full rounded-lg overflow-hidden',
+			!interactive ? 'pointer-events-none' : '',
+		]"
 	>
 		<!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->
 		<div
@@ -48,6 +49,7 @@
 		>
 			<!-- Local camera tile -->
 			<ParticipantTile
+				v-if="showLocalTile"
 				:key="`local-${localParticipant.user_id}`"
 				:participant="localParticipant"
 				:isLocal="true"
@@ -84,7 +86,7 @@
 				:participants="displayParticipants.hidden"
 				:size="mode === 'sidebar' ? 'xl' : '2xl'"
 				:style="tileStyle"
-				@click="emit('open-people-panel')"
+				@click="interactive && emit('open-people-panel')"
 			/>
 		</TransitionGroup>
 
@@ -92,7 +94,7 @@
 		<FloatingReactions
 			class="!z-[60]"
 			:reactions="floatingReactions"
-			:container-ref="container"
+			:container-ref="container || undefined"
 		/>
 	</div>
 </template>
@@ -103,7 +105,10 @@ import { useLayout } from "../composables/useLayout";
 import { useMeetingContext } from "../composables/useMeetingContext";
 import { usePinnedTileAnimation } from "../composables/usePinnedTileAnimation";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
-import { useScreenShareTiles } from "../composables/useScreenShareTiles";
+import {
+	type ScreenShareTile,
+	useScreenShareTiles,
+} from "../composables/useScreenShareTiles";
 import { useTileAdaptiveStreaming } from "../composables/useTileAdaptiveStreaming";
 import type { Participant } from "../utils/media/ParticipantManager";
 import { getInitials } from "../utils/text";
@@ -115,15 +120,26 @@ const emit = defineEmits<{
 	"open-people-panel": [];
 }>();
 
-const meetingCtx = useMeetingContext();
-const setLocalVideoRef = inject<(el: unknown) => void>("setLocalVideoRef");
+const props = withDefaults(defineProps<{
+	showLocalTile?: boolean;
+	interactive?: boolean;
+}>(), {
+	showLocalTile: true,
+	interactive: true,
+});
+const showLocalTile = computed(() => props.showLocalTile);
+const interactive = computed(() => props.interactive);
+
+const meetingCtx = useMeetingContext()!;
+const setLocalVideoRef =
+	inject<(el: unknown) => void>("setLocalVideoRef") || (() => {});
 const setRemoteVideoRef =
 	inject<(participantId: string, el: HTMLVideoElement | null) => void>(
 		"setRemoteVideoRef",
-	);
-const setScreenShareVideoRef = inject<(el: HTMLVideoElement | null) => void>(
-	"setScreenShareVideoRef",
-);
+	) || (() => {});
+const setScreenShareVideoRef = inject<
+	(consumerId: string, el: HTMLVideoElement | null) => void
+>("setScreenShareVideoRef");
 const getParticipantName =
 	inject<(participantId: string) => string>("getParticipantName") ||
 	(() => "Unknown");
@@ -135,8 +151,8 @@ const pinnedPanelsMap = ref<Record<string, HTMLElement>>({});
 
 const setPinnedPanelRef = (el: unknown, tile: { type: string; id: string }) => {
 	const key = `${tile.type}-${tile.id}`;
-	if (el) {
-		pinnedPanelsMap.value[key] = el as HTMLElement;
+	if (el instanceof HTMLElement) {
+		pinnedPanelsMap.value[key] = el;
 	} else {
 		delete pinnedPanelsMap.value[key];
 	}
@@ -147,18 +163,19 @@ const videoRefHandlers = new Map<string, (el: unknown) => void>();
 const getRemoteVideoRef = (participantId: string): ((el: unknown) => void) => {
 	if (!videoRefHandlers.has(participantId)) {
 		videoRefHandlers.set(participantId, (el: unknown) => {
-			setRemoteVideoRef(participantId, el as HTMLVideoElement | null);
-			registerTile(participantId, el as HTMLVideoElement | null);
+			const video = el instanceof HTMLVideoElement ? el : null;
+			setRemoteVideoRef(participantId, video);
+			registerTile(participantId, video);
 		});
 	}
-	return videoRefHandlers.get(participantId);
+	return videoRefHandlers.get(participantId)!;
 };
 
 // ── Reactive state from meeting context ───────────────────────────────────────
 
-const participants = computed(
+const participants: ComputedRef<Record<string, Participant>> = computed(
 	() => meetingCtx.participantStore.participants,
-) as ComputedRef<Record<string, Participant>>;
+);
 const currentUser = computed(() => meetingCtx.currentUser.currentUser.value);
 const isCameraOn = computed(() => meetingCtx.mediaState.isCameraOn);
 const isMicOn = computed(() => meetingCtx.mediaState.isMicOn);
@@ -185,10 +202,10 @@ watch(
 
 // ── Pin helpers ───────────────────────────────────────────────────────────────
 
-const isPinnedParticipant = (userId) =>
+const isPinnedParticipant = (userId: string) =>
 	pinnedTiles.value.some((t) => t.type === "participant" && t.id === userId);
 
-const isPinnedScreenShare = (pinId) =>
+const isPinnedScreenShare = (pinId: string) =>
 	pinnedTiles.value.some((t) => t.type === "screenshare" && t.id === pinId);
 
 const { screenShareTiles: allScreenShareTiles } = useScreenShareTiles({
@@ -199,19 +216,17 @@ const { screenShareTiles: allScreenShareTiles } = useScreenShareTiles({
 	getParticipantName,
 });
 
-const getScreenShareTileBindings = (shareTile: {
-	pinId: string;
-	participant:
-		| Record<string, unknown>
-		| { user_id: string; user_name: string; avatar: string };
-}) => {
+const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
 	const isPinned = isPinnedScreenShare(shareTile.pinId);
-	const wrappedVideoRef = setScreenShareVideoRef
-		? (el: unknown) => setScreenShareVideoRef(el as HTMLVideoElement | null)
-		: undefined;
+	const wrappedVideoRef = (el: unknown) => {
+		if (setScreenShareVideoRef) {
+				const video = el instanceof HTMLVideoElement ? el : null;
+				setScreenShareVideoRef(shareTile.consumerId, video);
+			}
+	};
 
 	return {
-		participant: shareTile.participant as unknown as Participant,
+		participant: shareTile.participant,
 		isLocal: false,
 		isVideoEnabled: true,
 		isAudioEnabled: false,
@@ -229,6 +244,7 @@ const getScreenShareTileBindings = (shareTile: {
 		tileBackgroundClass: isPinned ? "bg-black" : undefined,
 		showAvatar: !isPinned,
 		showReaction: !isPinned,
+		showPinButton: interactive.value,
 		showRaisedHand: !isPinned,
 		showAudioState: !isPinned,
 		showNetworkState: !isPinned,
@@ -252,6 +268,7 @@ const getParticipantTileBindings = (
 		isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
 		videoRef: getRemoteVideoRef(participant.user_id),
 		showReaction: pinnedTiles.value.length === 0,
+		showPinButton: interactive.value,
 		style: isPinned
 			? pinnedTileStyles.value[`participant-${participant.user_id}`]
 			: participant.isVisible
@@ -322,6 +339,7 @@ const {
 		),
 	},
 	extraTileCount,
+	{ localTileCount: props.showLocalTile ? 1 : 0 },
 );
 
 const tileStyle = computed(() => {
@@ -361,8 +379,7 @@ const { pinnedTileStyles } = usePinnedTileAnimation({
 
 const floatingReactions = computed(() => {
 	const reactions = meetingCtx.reactionStore.reactions;
-	const currentUserId = (currentUser.value as Record<string, unknown> | null)
-		?.user_id as string | undefined;
+	const currentUserId = currentUser.value?.user_id;
 
 	let sourceIds: Set<string>;
 	if (mode.value === "grid") {
@@ -386,12 +403,15 @@ const floatingReactions = computed(() => {
 		if (!sourceIds.has(userId) || !reaction) continue;
 		const participant =
 			userId === currentUserId ? currentUser.value : participants.value[userId];
-		const p = participant as Record<string, unknown> | null;
 		const userName =
-			(p?.user_name as string) ||
-			(p?.full_name as string) ||
-			(p?.name as string) ||
-			(p?.user_id as string) ||
+			(participant && "user_name" in participant
+				? participant.user_name
+				: undefined) ||
+			(participant && "full_name" in participant
+				? participant.full_name
+				: undefined) ||
+			(participant && "name" in participant ? participant.name : undefined) ||
+			participant?.user_id ||
 			"Unknown";
 		result.push({
 			userId,

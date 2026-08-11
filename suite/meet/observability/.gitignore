@@ -2,3 +2,6 @@
 secrets/*
 !secrets/.gitkeep
 prometheus/targets/*.yml
+alloy/.env
+alloy/secrets/*
+!alloy/secrets/.gitkeep

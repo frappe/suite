@@ -58,6 +58,7 @@ class MailSettings(Document):
         exchange_log_max_file_size: DF.Int
         exchange_max_export: DF.Int
         exchange_max_import: DF.Int
+        expand_mailing_list_participants: DF.Check
         inbound_log_file_count: DF.Int
         inbound_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
         inbound_log_max_file_size: DF.Int
@@ -66,6 +67,7 @@ class MailSettings(Document):
         jmap_push_private_key: DF.Password | None
         mail_client_configurations: DF.Table[MailClientConfiguration]
         max_email_sync: DF.Int
+        max_mailing_list_participants: DF.Int
         max_message_payload_size_mb: DF.Int
         max_push_notifications: DF.Int
         outbound_log_file_count: DF.Int

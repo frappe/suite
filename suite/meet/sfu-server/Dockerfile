@@ -31,8 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends tini ca-certifi
 
 COPY --from=build /app /app
 
-# Create logs dir and set ownership to existing 'node' user (already in base image)
-RUN mkdir -p /app/sfu-server/logs && chown -R node:node /app
+# Persistent volumes mount over /data, so initialize its ownership in the image.
+RUN mkdir -p /app/sfu-server/logs /data && chown -R node:node /app /data
 
 USER node
 

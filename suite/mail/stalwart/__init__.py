@@ -168,6 +168,17 @@ def get_domains() -> list[dict]:
     )
 
 
+@redis_cache(ttl=60)
+def get_mailing_list_index() -> dict[str, list[str]]:
+    """Returns ``{list address: [recipient addresses]}`` for every mailing list (cached briefly).
+
+    Membership edits are visible once the cache expires; mail routing itself is unaffected, so the
+    only window is between a membership change and the next calendar invitation.
+    """
+
+    return get_mailing_list_service().get_address_index()
+
+
 @redis_cache(ttl=3600)
 def get_permissions() -> list[dict]:
     """Returns all assignable permissions as ``{value, label}`` from the Stalwart server schema.

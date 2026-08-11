@@ -212,6 +212,9 @@ const props = defineProps<{
 	statsVisible?: boolean;
 	cameraPermissionGranted?: boolean;
 	microphonePermissionGranted?: boolean;
+	canManageRecording?: boolean;
+	recordingStatus?: string;
+	recordingLoading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -229,12 +232,38 @@ const emit = defineEmits<{
 	"device-changed": [event: unknown];
 	"update:isReactionPickerOpen": [value: boolean];
 	"visibility-change": [visible: boolean];
+	"manage-recording": [];
 }>();
 
 const { isMobile } = useResponsiveGrid();
 const { isContextReady: isE2EEContextReady } = useE2EEState();
 
 const moreOptions = computed(() => [
+	...(props.canManageRecording
+		? [
+				{
+					icon: ["Recording", "Interrupted", "Stopping"].includes(
+						props.recordingStatus || "",
+					)
+						? "lucide-circle-stop"
+						: "lucide-disc",
+					label: props.recordingStatus === "Pending"
+						? "Starting recording..."
+						: ["Recording", "Interrupted", "Stopping"].includes(
+						props.recordingStatus || "",
+					)
+						? "Stop recording"
+						: "Start recording",
+					disabled:
+						props.recordingLoading ||
+						["Pending", "Stopping"].includes(props.recordingStatus || ""),
+					onClick: () => {
+						emit("manage-recording");
+						resetHideTimer();
+					},
+				},
+			]
+		: []),
 	{
 		icon: "lucide-settings",
 		label: "Settings",

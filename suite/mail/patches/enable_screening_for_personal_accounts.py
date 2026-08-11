@@ -50,14 +50,14 @@ def enable_screening_for_personal_accounts() -> None:
 
 
 def get_eligible_personal_accounts() -> list[str]:
-    """Deduplicated personal accounts to backfill, scoped to users who still schedule-fetch.
+    """Deduplicated personal accounts to backfill, scoped to users with push subscriptions enabled.
 
     A JMAP Account is shared across every user with access to it, so User Account links it to one
     or more users. We only want personal accounts (is_personal) that don't already have screening
     on (enable_screening = 0), and only for enabled users who have JMAP configured (username set)
-    and whose User Settings leaves scheduled change fetching on (skip_schedule_fetch_changes = 0)
-    — enabling screening relies on that periodic fetch to keep the Screening folder current, so
-    disabled users, unconfigured users, and users who opted out are left alone.
+    and whose User Settings leaves push subscriptions enabled (disable_push_subscriptions = 0)
+    — enabling screening relies on push-driven change fetching to keep the Screening folder
+    current, so disabled users, unconfigured users, and users who opted out are left alone.
 
     `.distinct()` collapses the per-user User Account rows down to one entry per account.
     """
@@ -77,7 +77,7 @@ def get_eligible_personal_accounts() -> list[str]:
         .on(USER_ACCOUNT.account == JMAP_ACCOUNT.name)
         .where(USER.enabled == 1)
         .where(USER_SETTINGS.username.isnotnull() & (USER_SETTINGS.username != ""))
-        .where(USER_SETTINGS.skip_schedule_fetch_changes == 0)
+        .where(USER_SETTINGS.disable_push_subscriptions == 0)
         .where(JMAP_ACCOUNT.is_personal == 1)
         .where(JMAP_ACCOUNT.enable_screening == 0)
         .select(USER_ACCOUNT.account)

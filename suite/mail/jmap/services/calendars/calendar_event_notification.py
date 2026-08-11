@@ -7,19 +7,30 @@ class CalendarEventNotificationService(CalendarsService):
     """Service for handling calendar event notification-related functionality based on the JMAP server capabilities."""
 
     type: ClassVar[str] = "CalendarEventNotification"
+    EVENT_NOTIFICATION_PROPERTIES: ClassVar[list[str]] = [
+        "id",
+        "created",
+        "changedBy",
+        "comment",
+        "type",
+        "calendarEventId",
+        "isDraft",
+        "event",
+        "eventPatch",
+    ]
 
-    def get(self, ids: list[str] | None = None) -> list[dict]:
+    def get(self, ids: list[str] | None = None, properties: list[str] | None = None) -> list[dict]:
         """Public method to get calendar event notifications, handling batching if a list of ids is provided."""
 
         results = []
         if ids:
             for batch in self.create_batches(ids, self.max_objects_in_get):
-                response = self._get(batch)
+                response = self._get(batch, properties=properties or self.EVENT_NOTIFICATION_PROPERTIES)
 
                 if method_responses := response.get("methodResponses"):
                     results.extend(method_responses[0][1].get("list", []))
         else:
-            response = self._get()
+            response = self._get(properties=properties or self.EVENT_NOTIFICATION_PROPERTIES)
             if method_responses := response.get("methodResponses"):
                 results.extend(method_responses[0][1].get("list", []))
 

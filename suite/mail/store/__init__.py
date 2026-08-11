@@ -133,6 +133,10 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
     Drops the existing index, then re-indexes every cached mail message and contact card in
     batches (bounding memory and the size of each index commit). Runs in a background job by
     default; pass `in_background=False` to run inline (e.g. from within the job itself).
+
+    Correspondence counts are recomputed from the messages the cache holds now, so a rebuild both
+    clears the drift a re-fetched message leaves behind and forgets the addresses an evicted one
+    contributed. They rank suggestions against each other; they are not a record of every message.
     """
 
     if in_background:
@@ -163,7 +167,7 @@ def rebuild_email_address_index(account: str, in_background: bool = True) -> Non
 
     contact_cards = list(store.scan(Entity.CONTACT_CARD).values())
     for batch in create_batch(contact_cards, _REBUILD_BATCH_SIZE):
-        index.index_addresses(_contact_addresses(batch))
+        index.index_addresses(_contact_addresses(batch), count=False)
 
 
 @frappe.whitelist()

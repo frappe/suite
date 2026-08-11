@@ -36,6 +36,7 @@ Thumbs.db
 *~
 
 # Runtime data
+data/
 pids/
 *.pid
 *.seed
@@ -43,6 +44,7 @@ pids/
 
 # Coverage directory used by tools like istanbul
 coverage/
+test-results/
 *.lcov
 
 # nyc test coverage

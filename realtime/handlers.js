@@ -20,7 +20,7 @@ const suite_handlers = (socket) => {
 			})
 			.then((res) => res.json())
 			.then(({ message }) => {
-				if (!message.valid) {
+				if (!message?.valid) {
 					return;
 				}
 				const room = guest_room(guest_id);

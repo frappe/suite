@@ -101,7 +101,10 @@ const elementStyle = computed(() => {
 		height: elementHeight,
 		left: `${element.value.left}px`,
 		top: `${element.value.top}px`,
-		outline: props.highlight ? `${selectionColor}92 solid ${2 / slideBounds.scale}px` : 'none',
+		outline: props.highlight
+			? `${selectionColor}92 ${element.value.locked ? 'dashed' : 'solid'} ${1.5 / slideBounds.scale}px`
+			: 'none',
+		outlineOffset: `-${0.75 / slideBounds.scale}px`,
 		boxSizing: 'border-box',
 		zIndex: element.value.zIndex,
 		transform: transform,

@@ -13,6 +13,7 @@ from frappe.utils import cint, today
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_service
 from suite.utils import parse_filters
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 class Calendar(Document):
@@ -162,6 +163,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def add_calendar(
     account: str,
     name: str,
@@ -217,6 +219,7 @@ def get_calendar(account: str, id: str) -> dict:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def update_calendar(
     account: str,
     id: str,
@@ -257,6 +260,7 @@ def update_calendar(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -> None:
     """Deletes calendars for the specified account and ID(s)."""
 

@@ -4,6 +4,7 @@ import { E2EEMeeting } from "../utils/media/E2EEMeeting";
 import type { SFUClient } from "../utils/SFUClient";
 import type { ChatMessage, ChatStore } from "./useChatStore";
 import type { CurrentUser } from "./useCurrentUser";
+import { isUnknownRecord } from "../types";
 
 interface ChatAPI {
 	setupChatEvents: (notify: (notification: ChatNotification) => void) => void;
@@ -16,6 +17,31 @@ interface ChatNotification {
 	fromUser: string;
 	fromName: string;
 	type: "chat";
+}
+
+interface IncomingChatMessage {
+	fromUser: string;
+	fromName: string;
+	message: string;
+	timestamp: string;
+}
+
+function normalizeChatMessage(value: unknown): IncomingChatMessage | null {
+	if (
+		!isUnknownRecord(value) ||
+		typeof value.fromUser !== "string" ||
+		typeof value.message !== "string"
+	) return null;
+	return {
+		fromUser: value.fromUser,
+		fromName:
+			typeof value.fromName === "string" ? value.fromName : value.fromUser,
+		message: value.message,
+		timestamp:
+			typeof value.timestamp === "string"
+				? value.timestamp
+				: new Date().toISOString(),
+	};
 }
 
 const E2EE_CHAT_PREFIX = "e2ee:";
@@ -88,12 +114,14 @@ export function useChat(deps: {
 	}
 
 	const setupChatEvents = (notify: (notification: ChatNotification) => void) => {
-		sfuClient.on("chat:message", async (data: Record<string, unknown>) => {
+		sfuClient.on("chat:message", async (value: unknown) => {
+			const data = normalizeChatMessage(value);
+			if (!data) return;
 			if (data.fromUser === currentUser.currentUser.value?.user_id) {
 				return;
 			}
 
-			let plaintext = data.message as string;
+			let plaintext = data.message;
 
 			if (isEncryptedChatMessage(plaintext)) {
 				const key = await getChatKey();
@@ -117,12 +145,10 @@ export function useChat(deps: {
 
 			const message: ChatMessage = {
 				id: Date.now() + Math.random(),
-				user_id: data.fromUser as string,
-				user_name: (data.fromName || data.fromUser) as string,
+				user_id: data.fromUser,
+				user_name: data.fromName,
 				message: plaintext,
-				timestamp:
-					(typeof data.timestamp === "string" && data.timestamp) ||
-					new Date().toISOString(),
+				timestamp: data.timestamp,
 			};
 
 			chatStore.addMessage(message);
@@ -135,19 +161,21 @@ export function useChat(deps: {
 
 				notify({
 					message: plaintext,
-					fromUser: data.fromUser as string,
-					fromName: (data.fromName || data.fromUser) as string,
+					fromUser: data.fromUser,
+					fromName: data.fromName,
 					type: "chat",
 				});
 				audioNotificationManager.playChatNotification();
 			}
 		});
-		sfuClient.on("chat:restriction_updated", (data: any) => {
-			chatStore.hostOnlyChat = data.enabled;
+		sfuClient.on("chat:restriction_updated", (value: unknown) => {
+			if (isUnknownRecord(value) && typeof value.enabled === "boolean") {
+				chatStore.hostOnlyChat = value.enabled;
+			}
 		});
 
-		sfuClient.on("sfu_error", (data: any) => {
-			if (data?.code === "HOST_ONLY_CHAT") {
+		sfuClient.on("sfu_error", (value: unknown) => {
+			if (isUnknownRecord(value) && value.code === "HOST_ONLY_CHAT") {
 				toast.error("The host has restricted chat to hosts and co-hosts only.");
 				chatStore.hostOnlyChat = true;
 			}

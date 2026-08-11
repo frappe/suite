@@ -1,18 +1,25 @@
 name: Meet E2E Tests
 
 on:
+  schedule:
+    - cron: "7 2 * * *"
   push:
     branches:
       - develop
       - main
     paths:
       - "suite/meet/**"
+      - "suite/hooks.py"
+      - "suite/tests/ci_smoke.py"
+      - "realtime/**"
       - "e2e/meet/**"
       - "e2e/shared/**"
       - "e2e/package.json"
       - "e2e/yarn.lock"
       - "e2e/tsconfig.json"
-      - "frontend/src/apps/meet/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/vite.config.ts"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
@@ -20,12 +27,17 @@ on:
   pull_request:
     paths:
       - "suite/meet/**"
+      - "suite/hooks.py"
+      - "suite/tests/ci_smoke.py"
+      - "realtime/**"
       - "e2e/meet/**"
       - "e2e/shared/**"
       - "e2e/package.json"
       - "e2e/yarn.lock"
       - "e2e/tsconfig.json"
-      - "frontend/src/apps/meet/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
+      - "frontend/vite.config.ts"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
@@ -33,12 +45,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: meet-e2e-${{ github.event.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Playwright --shard=N/M splits the suite; each job is self-contained.
     strategy:
       fail-fast: false
@@ -150,6 +162,11 @@ jobs:
           bench --site meet.test set-config ignore_csrf 1
           bench --site meet.test set-config allow_tests true
           bench --site meet.test set-config host_name "http://meet.test:8000"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            bench set-config -g scheduler_tick_interval 5
+            bench --site meet.test enable-scheduler
+            bench --site meet.test execute suite.tests.ci_smoke.enable_scheduler_smoke_logging
+          fi
 
       - name: Build SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
@@ -166,10 +183,13 @@ jobs:
           google-chrome --version
 
       - name: Start Frappe Server
+        id: start-frappe
         working-directory: /home/runner/frappe-bench
         run: |
           sed -i 's/^watch:/# watch:/g' Procfile
-          sed -i 's/^schedule:/# schedule:/g' Procfile
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            sed -i 's/^schedule:/# schedule:/g' Procfile
+          fi
           bench start &> bench_start.log &
           echo "Waiting for Frappe server to start..."
           timeout 60 bash -c 'until curl -s http://meet.test:8000 > /dev/null; do sleep 2; done'
@@ -202,6 +222,11 @@ jobs:
           SFU_E2E_DISCONNECT_TEST: true
           SFU_E2E_DISCONNECT_WAIT_MS: 7000
 
+      - name: Check Scheduled Job Execution
+        if: always() && github.event_name == 'schedule' && steps.start-frappe.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: timeout 90 bash -c 'until [ "$(bench --site meet.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
+
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
         if: failure()
@@ -211,5 +236,15 @@ jobs:
             e2e/meet/playwright-report/
             e2e/meet/test-results/
             e2e/meet/results.xml
+            /home/runner/frappe-bench/bench_start.log
           compression-level: 1
-          retention-days: 7
+          retention-days: 30
+
+      - name: Upload JUnit Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: meet-junit-shard-${{ matrix.shardIndex }}
+          path: e2e/meet/results.xml
+          if-no-files-found: warn
+          retention-days: 30

@@ -76,18 +76,18 @@ const flipTransform = computed(
 	() => `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
 )
 
-const editorStyles = computed(() => ({
-	cursor: isEditable.value ? 'text' : '',
-	userSelect: isEditable.value ? 'text' : 'none',
-	transform: flipTransform.value,
-}))
-
 const elementLineHeightStyle = computed(() => {
 	const styles = { transform: flipTransform.value }
 	const lh = element.value?.lineHeight
 	if (lh) styles['--el-line-height'] = lh
 	return styles
 })
+
+const editorStyles = computed(() => ({
+	...elementLineHeightStyle.value,
+	cursor: isEditable.value ? 'text' : '',
+	userSelect: isEditable.value ? 'text' : 'none',
+}))
 
 const handleMouseDown = (e) => {
 	if (!isEditable.value || inReadonlyMode.value) return
@@ -97,7 +97,8 @@ const handleMouseDown = (e) => {
 
 const handleDoubleClick = (e) => {
 	e.stopPropagation()
-	if (inSlideShowMode.value || isEditable.value || inReadonlyMode.value) return
+	if (inSlideShowMode.value || isEditable.value || inReadonlyMode.value || element.value.locked)
+		return
 
 	activeElementIds.value = [element.value.id]
 	focusElementId.value = element.value.id

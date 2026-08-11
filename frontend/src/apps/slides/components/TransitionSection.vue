@@ -148,5 +148,5 @@ const applyTransitionToAllSlides = () => {
 	toast.success('Applied transition to all slides')
 }
 
-const valueClasses = 'block text-right font-text text-base text-ink-gray-8'
+const valueClasses = 'block text-right font-text text-base text-ink-gray-7'
 </script>

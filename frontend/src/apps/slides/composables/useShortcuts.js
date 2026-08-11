@@ -18,6 +18,8 @@ import {
 } from '@/apps/slides/stores/slide'
 import {
 	resetFocus,
+	exitTextEditing,
+	focusElementId,
 	addTextElement,
 	pendingShapeType,
 	selectAllElements,
@@ -26,6 +28,8 @@ import {
 	deleteElements,
 	duplicateElements,
 	activeElement,
+	isSelectionLocked,
+	toggleLock,
 } from '@/apps/slides/stores/element'
 import {
 	changeSlideInSlideshow,
@@ -50,6 +54,8 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasActiveTextEditor = () => hasElements() && !!activeEditor.value
 
 	const nudge = (key) => {
+		if (isSelectionLocked.value) return
+
 		let dx = 0
 		let dy = 0
 
@@ -92,7 +98,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			return
 		}
 
-		if (activeEditor.value?.can()[operation]() && activeElement.value?.type == 'text') {
+		if (
+			activeEditor.value?.can()[operation]() &&
+			activeElement.value?.type == 'text' &&
+			!isSelectionLocked.value
+		) {
 			activeEditor.value.commands[operation]()
 			return
 		}
@@ -107,8 +117,11 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const handleBold = (e) => {
-		if (inEditMode() && hasActiveTextEditor()) toggleMark('bold')
-		else if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
+		if (inEditMode() && hasActiveTextEditor()) {
+			if (!isSelectionLocked.value) toggleMark('bold')
+			return
+		}
+		if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
 	}
 
 	const handleArrowUp = () => {
@@ -144,6 +157,18 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 
 	const addShape = (shapeType) => {
 		pendingShapeType.value = shapeType
+	}
+
+	// overlays dismiss on Escape only if the event wasn't defaultPrevented,
+	// and matching a shortcut always prevents — so don't match while one is open
+	const hasOpenOverlay = () =>
+		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
+
+	const handleEscape = (e) => {
+		if (isPlainInput(e)) return e.target.blur()
+		if (focusElementId.value) return exitTextEditing()
+		if (e.target?.isContentEditable) return e.target.blur()
+		resetFocus()
 	}
 
 	useShortcut([
@@ -254,21 +279,24 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Escape',
 			description: 'Deselect',
 			group: 'Edit',
-			condition: inEditMode,
-			handler: () => resetFocus(),
+			allowInInput: true,
+			condition: () => inEditMode() && !hasOpenOverlay(),
+			handler: handleEscape,
 		},
 		{
 			key: 'Escape',
 			description: 'Exit crop mode',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => cancelCrop(),
 		},
 		{
 			key: 'Enter',
 			description: 'Apply crop',
 			group: 'Edit',
-			condition: () => inCropMode.value,
+			allowInInput: true,
+			condition: () => inCropMode.value && !hasOpenOverlay(),
 			handler: () => commitCrop(),
 		},
 		{
@@ -295,6 +323,19 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Edit',
 			condition: inEditMode,
 			handler: deleteElementOrSlide,
+		},
+		{
+			key: 'l',
+			ctrl: true,
+			shift: true,
+			description: 'Lock or unlock element',
+			group: 'Edit',
+			allowInInput: true,
+			condition: inEditMode,
+			handler: (e) => {
+				if (isPlainInput(e)) return
+				toggleLock()
+			},
 		},
 		{
 			key: 'ArrowUp',
@@ -352,7 +393,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (hasActiveTextEditor()) toggleMark('italic')
+				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('italic')
 			},
 		},
 		{
@@ -362,7 +403,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Format Text',
 			condition: inEditMode,
 			handler: () => {
-				if (hasActiveTextEditor()) toggleMark('underline')
+				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('underline')
 			},
 		},
 

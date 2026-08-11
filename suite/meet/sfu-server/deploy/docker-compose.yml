@@ -2,9 +2,9 @@
 # Frappe Meet SFU — Docker Compose Stack
 # ==============================================================================
 # Services:
-#   sfu     – Mediasoup SFU server (signaling on port 3000, fixed UDP media ports)
-#   nginx   – Reverse proxy (SSL termination + WebSocket upgrade)
-#   certbot – Let's Encrypt certificate provisioning & renewal
+#   sfu      – Mediasoup SFU server (signaling on port 3000, fixed UDP media ports)
+#   nginx    – Reverse proxy (SSL termination + WebSocket upgrade)
+#   certbot  – Let's Encrypt certificate provisioning & renewal
 #
 # Usage:
 #   docker compose up -d        # start everything
@@ -15,19 +15,39 @@
 # ==============================================================================
 
 services:
+  grant-store-init:
+    image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
+    container_name: suite-sfu-grant-store-init
+    restart: "no"
+    volumes:
+      - sfu-grants:/data
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        import { RecordingGrantPersistenceFile } from
+        './dist/sfu-server/src/server/RecordingGrantPersistenceFile.js';
+        await RecordingGrantPersistenceFile.bootstrap('/data/recording-grants.json');
+
   # ── SFU Server ──────────────────────────────────────────────────────────────
   sfu:
     image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}
     container_name: suite-sfu
     restart: unless-stopped
+    depends_on:
+      grant-store-init:
+        condition: service_completed_successfully
     network_mode: host
     environment:
       - JWT_SECRET=${JWT_SECRET}
       - METRICS_TOKEN=${METRICS_TOKEN:-}
       - PORT=${PORT:-3000}
       - HOST=${HOST:-127.0.0.1}
+      - SOCKET_PING_TIMEOUT=${SOCKET_PING_TIMEOUT:-60000}
+      - SOCKET_PING_INTERVAL=${SOCKET_PING_INTERVAL:-25000}
       - WEBRTC_LISTEN_IP=${WEBRTC_LISTEN_IP:-}
-      - WEBRTC_ANNOUNCED_IP=${WEBRTC_ANNOUNCED_IP}
+      - WEBRTC_ANNOUNCED_IP=${WEBRTC_ANNOUNCED_IP:?WEBRTC_ANNOUNCED_IP is required}
       - WEBRTC_SERVER_PORT=${WEBRTC_SERVER_PORT:-40000}
       - MEDIASOUP_NUM_WORKERS=${MEDIASOUP_NUM_WORKERS:-}
       - MEDIASOUP_WORKER_LOGLEVEL=${MEDIASOUP_WORKER_LOGLEVEL:-warn}
@@ -35,7 +55,10 @@ services:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
+      - RECORDING_GRANT_PERSISTENCE_FILE=/data/recording-grants.json
       - NODE_ENV=production
+    volumes:
+      - sfu-grants:/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${PORT:-3000}/health"]
       interval: 30s
@@ -88,6 +111,36 @@ services:
         max-size: "10m"
         max-file: "2"
 
+  alloy:
+    image: grafana/alloy:v1.18.1@sha256:0f4434c92b3e6cdac38bb129b344e1790c246f7b6e2eaffcc16a5fa363240e33
+    restart: unless-stopped
+    profiles:
+      - observability
+    command:
+      - run
+      - --server.http.listen-addr=127.0.0.1:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/sfu.alloy
+    environment:
+      - ALLOY_ENVIRONMENT=${ALLOY_ENVIRONMENT:-production}
+      - ALLOY_HOST=${ALLOY_HOST:-}
+      - LOKI_PUSH_URL=${LOKI_PUSH_URL:-}
+      - LOKI_PUSH_USER=${LOKI_PUSH_USER:-alloy}
+    volumes:
+      - ./alloy/sfu.alloy:/etc/alloy/sfu.alloy:ro
+      - ./secrets/loki-password:/run/secrets/loki-password:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
 volumes:
+  alloy-data:
+  sfu-grants:
   certbot-webroot:
   certbot-certs:

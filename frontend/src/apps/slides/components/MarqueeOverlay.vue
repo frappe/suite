@@ -123,6 +123,7 @@ const getElementsWithinMarquee = (rect) => {
 	}
 
 	return currentSlide.value.elements
+		.filter((element) => !element.locked)
 		.filter((element) => isElementWithinMarquee(element, marqueeBounds))
 		.map((element) => element.id)
 }
@@ -171,7 +172,10 @@ const watchForSelectionIntent = (downEvent) => {
 
 const handleMouseDown = (e) => {
 	if (pendingShapeType.value) return
-	if (![slideDiv.value, slideContainerDiv.value].includes(e.target)) return
+	const onBlankSurface =
+		[slideDiv.value, slideContainerDiv.value].includes(e.target) ||
+		e.target?.matches?.('[data-slide-surface]')
+	if (!onBlankSurface) return
 
 	watchForSelectionIntent(e)
 }

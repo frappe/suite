@@ -69,11 +69,7 @@ export function registerChatHandlers(deps: HandlerDeps) {
 				if (data.clientId) payload.clientId = String(data.clientId);
 				callback?.({ success: true, timestamp: payload.timestamp });
 
-				deps.registry.emitToFullAccessParticipants(
-					roomId,
-					'chat:message',
-					payload,
-				);
+				deps.registry.emitPublicChat(roomId, payload);
 			} catch (e) {
 				callback?.({
 					success: false,

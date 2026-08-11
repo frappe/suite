@@ -1,11 +1,18 @@
 <template>
 	<Section label="Border" :initialState="hasBorder">
+		<PropertyRow label="Style">
+			<LineStyleSelect
+				:modelValue="displayStyle"
+				:options="borderStyleOptions"
+				@update:modelValue="setBorderStyle"
+			/>
+		</PropertyRow>
 		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="activeElement.borderColor || defaultBorderColor"
-				@update:modelValue="borderColor.set"
-				@colordown="borderColor.begin"
-				@colorup="borderColor.commit"
+				@update:modelValue="setBorderColor"
+				@colordown="beginBorderEdit"
+				@colorup="commitBorderEdit"
 			/>
 		</PropertyRow>
 		<NumberControl
@@ -16,9 +23,9 @@
 			:max="50"
 			:max-digits="3"
 			:step="0.5"
-			@update:modelValue="borderWidth.set"
-			@change-start="borderWidth.begin"
-			@change-end="borderWidth.commit"
+			@update:modelValue="setBorderWidth"
+			@change-start="beginBorderEdit"
+			@change-end="commitBorderEdit"
 		/>
 		<NumberControl
 			:modelValue="activeElement.borderRadius ?? 0"
@@ -32,13 +39,6 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<PropertyRow label="Style">
-			<LineStyleSelect
-				:modelValue="displayStyle"
-				:options="borderStyleOptions"
-				@update:modelValue="setBorderStyle"
-			/>
-		</PropertyRow>
 	</Section>
 </template>
 
@@ -85,7 +85,45 @@ const setBorderStyle = (style) => {
 	])
 }
 
-const borderColor = useElementProperty('borderColor')
-const borderWidth = useElementProperty('borderWidth')
+const hasVisibleStyle = () =>
+	activeElement.value.borderStyle && activeElement.value.borderStyle !== 'none'
+
+let borderSnapshot = null
+
+const beginBorderEdit = () => {
+	const el = activeElement.value
+	borderSnapshot = {
+		borderColor: el.borderColor,
+		borderWidth: el.borderWidth,
+		borderStyle: el.borderStyle,
+	}
+}
+
+const setBorderColor = (value) => {
+	const el = activeElement.value
+	el.borderColor = value
+	if (!hasVisibleStyle()) el.borderStyle = 'solid'
+	if (!Number(el.borderWidth)) el.borderWidth = defaultBorderWidth
+}
+
+const setBorderWidth = (value) => {
+	const el = activeElement.value
+	el.borderWidth = value
+	if (Number(value) && !hasVisibleStyle()) el.borderStyle = 'solid'
+}
+
+const commitBorderEdit = () => {
+	if (!borderSnapshot) return
+	const el = activeElement.value
+	setElementProperties(
+		['borderColor', 'borderWidth', 'borderStyle'].map((property) => ({
+			property,
+			oldValue: borderSnapshot[property],
+			newValue: el[property],
+		})),
+	)
+	borderSnapshot = null
+}
+
 const borderRadius = useElementProperty('borderRadius')
 </script>

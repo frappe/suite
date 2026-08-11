@@ -210,7 +210,9 @@ export class StallDetector {
 }
 
 export function extractInboundBytesReceived(
-	stats: RTCStatsReport,
+	stats: {
+		values(): IterableIterator<{ type: string; bytesReceived?: number }>;
+	},
 ): number | null {
 	for (const report of stats.values()) {
 		if (

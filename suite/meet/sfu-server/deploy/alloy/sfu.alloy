@@ -1,0 +1,123 @@
+discovery.docker "suite" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "name"
+    values = ["suite-sfu", "suite-recorder", "suite-sfu-nginx"]
+  }
+}
+
+discovery.relabel "suite" {
+  targets = discovery.docker.suite.targets
+
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(suite-sfu|suite-recorder|suite-sfu-nginx)"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(suite-sfu|suite-recorder|suite-sfu-nginx)"
+    target_label  = "service"
+    replacement   = "$1"
+  }
+
+  rule {
+    action = "labelkeep"
+    regex  = "(__meta_docker_container_id|service)"
+  }
+}
+
+loki.source.docker "suite" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.suite.output
+  labels     = {}
+  forward_to = [loki.process.suite.receiver]
+}
+
+loki.process "suite" {
+  forward_to = [loki.write.remote.receiver]
+
+  stage.json {
+    expressions = {
+      timestamp = "timestamp",
+      level     = "level",
+    }
+    drop_malformed = false
+  }
+
+  stage.regex {
+    expression = `^\[(?P<timestamp>[^]]+)\] \[(?P<level>DEBUG|INFO|WARN|ERROR)\] \[(?P<component>[^]]+)\] .*$`
+  }
+
+  stage.timestamp {
+    source                        = "timestamp"
+    format                        = "RFC3339Nano"
+    action_on_failure             = "skip"
+    action_on_duplicate_timestamp = "keep"
+  }
+
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = { level = "level" }
+  }
+
+  stage.replace {
+    expression = `(?i)["'](?:authorization|cookie|password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)["']\s*:\s*["'](?P<quoted_secret>[^"']*)["']`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*["'](?P<quoted_kv_secret>[^"']*)["']`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*(?P<kv_secret>[^"'\s,;}&]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\bauthorization\s*[:=]\s*["']?(?P<auth_secret>[^"'\r\n,}]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:cookie|set-cookie)\s*[:=]\s*["']?(?P<cookie_secret>[^"'\r\n]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<jwt>eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<aws_key>\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)`
+    replace    = "[REDACTED]"
+  }
+}
+
+loki.write "remote" {
+  external_labels = {
+    environment = sys.env("ALLOY_ENVIRONMENT"),
+    host        = sys.env("ALLOY_HOST"),
+  }
+
+  endpoint {
+    url                 = sys.env("LOKI_PUSH_URL")
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "5m"
+    max_backoff_retries = 100
+
+    basic_auth {
+      username      = sys.env("LOKI_PUSH_USER")
+      password_file = "/run/secrets/loki-password"
+    }
+  }
+}

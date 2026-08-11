@@ -107,6 +107,12 @@ function onArrowStep(event) {
 		inputRef.value?.blur()
 		return
 	}
+	if (event.key === 'Escape') {
+		event.stopPropagation()
+		live.value = null
+		inputRef.value?.blur()
+		return
+	}
 	if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
 	event.preventDefault()
 	const typed = live.value !== null ? parseFloat(live.value) : Number(model.value)
@@ -149,7 +155,7 @@ const plainTextInput = [
 	'[&::-webkit-outer-spin-button]:appearance-none',
 ]
 
-const textColor = computed(() => (props.disabled ? 'text-ink-gray-4' : 'text-ink-gray-9'))
+const textColor = computed(() => (props.disabled ? 'text-ink-gray-4' : 'text-ink-gray-7'))
 
 const rowClasses = computed(() => [
 	'flex h-7 w-full items-center justify-between',

@@ -102,7 +102,7 @@ interface CurrentUser {
 	user_id?: string;
 	full_name?: string;
 	name?: string;
-	avatar?: string;
+	avatar?: string | null;
 	initials?: string;
 	is_guest?: boolean;
 }

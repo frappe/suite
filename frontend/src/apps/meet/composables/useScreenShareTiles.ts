@@ -13,7 +13,7 @@ interface CurrentUser {
 	name?: string;
 }
 
-interface ScreenShareTileParticipant {
+export interface ScreenShareTileParticipant {
 	user_id: string;
 	user_name: string;
 	avatar: string;
@@ -21,8 +21,9 @@ interface ScreenShareTileParticipant {
 	isLocalScreenShare: boolean;
 }
 
-interface ScreenShareTile {
+export interface ScreenShareTile {
 	pinId: string;
+	consumerId: string;
 	participant: ScreenShareTileParticipant;
 }
 
@@ -88,6 +89,7 @@ export function useScreenShareTiles({
 
 			return {
 				pinId: share.participantId,
+				consumerId: share.consumerId,
 				participant: {
 					user_id: share.participantId,
 					user_name: displayName,

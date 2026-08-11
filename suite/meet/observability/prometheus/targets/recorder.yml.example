@@ -1,0 +1,4 @@
+- targets:
+    - recorder.example.com
+  labels:
+    environment: production

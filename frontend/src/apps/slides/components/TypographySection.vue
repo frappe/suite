@@ -87,10 +87,12 @@ import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 const { editorStyles, updateProperty, toggleMark } = useTextEditor()
 
 const textFonts = [
+	'Anton',
 	'Arial',
 	'Arial Black',
 	'Comic Sans MS',
 	'Courier New',
+	'Courier Prime',
 	'Georgia',
 	'Helvetica',
 	'Impact',

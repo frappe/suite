@@ -12,9 +12,11 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import SERVER_MA
 from suite.mail.jmap import format_jmap_error, get_calendar_event_service, get_participant_identities
 from suite.mail.jmap.services.calendars.calendar import CalendarService
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def get_invite_details(account: str, blob_id: str) -> dict | None:
     """Parses a text/calendar mail attachment (already a blob in the account's JMAP namespace) and
     reports whether its event is on the calendar yet, so the thread view can offer "Add to Calendar".
@@ -62,6 +64,7 @@ def get_invite_details(account: str, blob_id: str) -> dict | None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def add_invite_to_calendar(account: str, blob_id: str) -> dict:
     """Creates the invite's event(s) from a text/calendar mail attachment on the account's default
     calendar and returns the calendar copy. No scheduling messages are sent — adding the invite is
@@ -77,6 +80,7 @@ def add_invite_to_calendar(account: str, blob_id: str) -> dict:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
     """Records the viewer's RSVP to an invite attachment: puts the event on their calendar first
     if it isn't yet, then records the response via `record_rsvp` — which notifies the organizer

@@ -35,6 +35,7 @@ export interface SignalChannel {
 
 export class SocketIOSignalChannel implements SignalChannel {
 	private socket: Socket | null = null;
+	private pendingListeners = new Map<string, Set<(...args: unknown[]) => void>>();
 	private static readonly MANAGER_EVENTS = new Set([
 		"reconnect_attempt",
 		"reconnect_error",
@@ -65,7 +66,11 @@ export class SocketIOSignalChannel implements SignalChannel {
 			timeout: config.timeout || 20000,
 			forceNew: true,
 			withCredentials: false,
+			autoConnect: false,
 		});
+		for (const [event, handlers] of this.pendingListeners) {
+			for (const handler of handlers) this.addListener(event, handler);
+		}
 
 		return new Promise<void>((resolve, reject) => {
 			const onConnect = () => resolve();
@@ -75,6 +80,7 @@ export class SocketIOSignalChannel implements SignalChannel {
 			};
 			this.socket?.once("connect", onConnect);
 			this.socket?.once("connect_error", onConnectError);
+			this.socket?.connect();
 
 			// Safety timeout
 			setTimeout(() => {
@@ -110,6 +116,16 @@ export class SocketIOSignalChannel implements SignalChannel {
 	}
 
 	on(event: string, handler: (...args: unknown[]) => void): void {
+		if (!this.socket) {
+			const handlers = this.pendingListeners.get(event) ?? new Set();
+			handlers.add(handler);
+			this.pendingListeners.set(event, handlers);
+			return;
+		}
+		this.addListener(event, handler);
+	}
+
+	private addListener(event: string, handler: (...args: unknown[]) => void): void {
 		if (!this.socket) return;
 		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
 			this.socket.io.on(event, handler);
@@ -119,6 +135,10 @@ export class SocketIOSignalChannel implements SignalChannel {
 	}
 
 	off(event: string, handler?: (...args: unknown[]) => void): void {
+		const pending = this.pendingListeners.get(event);
+		if (handler) pending?.delete(handler);
+		else this.pendingListeners.delete(event);
+		if (pending?.size === 0) this.pendingListeners.delete(event);
 		if (!this.socket) return;
 		if (SocketIOSignalChannel.MANAGER_EVENTS.has(event)) {
 			if (handler) {
@@ -145,13 +165,10 @@ export class SocketIOSignalChannel implements SignalChannel {
 
 	updateAuth(token: string): void {
 		if (!this.socket) return;
-		(this.socket.auth as Record<string, unknown>).token = token;
-		const ioOpts = this.socket.io?.opts as Record<string, unknown> | undefined;
-		if (ioOpts && "auth" in ioOpts) {
-			ioOpts.auth = {
-				...((ioOpts.auth as Record<string, unknown> | undefined) || {}),
-				token,
-			};
-		}
+		this.socket.auth = { token };
+		const managerOptions = this.socket.io.opts as typeof this.socket.io.opts & {
+			auth?: { token?: string };
+		};
+		managerOptions.auth = { token };
 	}
 }

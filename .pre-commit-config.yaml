@@ -83,6 +83,22 @@ repos:
               suite/meet/sfu-server/tsconfig\.json
           )$
 
+      - id: meet-type-policy
+        name: Meet Type Policy
+        entry: yarn check:meet-types
+        language: system
+        pass_filenames: false
+        files: |
+          (?x)^(
+              frontend/src/apps/meet/.*\.(ts|tsx|vue)|
+              frontend/recorder/.*\.(ts|tsx|vue)|
+              suite/meet/(types|sfu-server/src|recorder-server/src)/.*\.(ts|tsx)|
+              suite/meet/type-policy/.*|
+              e2e/meet/.*\.(ts|tsx)|
+              package\.json|
+              yarn\.lock
+          )$
+
 ci:
   autoupdate_schedule: weekly
   skip: []

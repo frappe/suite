@@ -21,6 +21,7 @@ import type { ConnectionState } from "./useConnectionState";
 import type { CurrentUser } from "./useCurrentUser";
 import type { MediaState } from "./useMediaState";
 import type { RaiseHandStore } from "./useRaiseHandStore";
+import type { BackgroundEffectOptions } from "./useBackgroundEffects";
 
 const BLUETOOTH_DEVICE_LABEL_REGEX =
 	/airpods|bluetooth|\bbt\b|wireless|jbl|bose|sony|beats|sennheiser|akg|jabra|anker|skullcandy|shure|bang\s*&\s*olufsen|b\s*&\s*o|marley|skullcandy|logitech\s*bt|plantronics|poly|razer\s*(?:bt|opus)|corsair|steelseries|hyperx|audeze|sennheiser|soundcore|tozo|earfun|earbuds|earbud/i;
@@ -53,11 +54,11 @@ function getBackgroundEffectsFromStorage() {
 interface BackgroundEffectsAPI {
 	applyBackgroundEffects: (
 		stream: MediaStream,
-		options: Record<string, unknown>,
+		options: BackgroundEffectOptions,
 	) => Promise<{
 		stream: MediaStream;
 		cleanup: () => void;
-		updateOptions: (opts: Record<string, unknown>) => Promise<void>;
+		updateOptions: (opts: BackgroundEffectOptions) => Promise<void>;
 	}>;
 	stopProcessing: () => void;
 	processedStream: Ref<MediaStream | null>;
@@ -107,17 +108,17 @@ interface MediaControlsAPI {
 	acquireUserMedia: (
 		videoEnabled: boolean,
 		audioEnabled: boolean,
-		deviceOverrides?: Record<string, string>,
-	) => Promise<{ stream: MediaStream; constraints: Record<string, unknown> }>;
+		deviceOverrides?: MediaDeviceOverrides,
+	) => Promise<{ stream: MediaStream; constraints: MediaStreamConstraints }>;
 	toggleMicrophone: () => Promise<void>;
 	toggleCamera: () => Promise<void>;
 	toggleScreenShare: () => Promise<void>;
 	switchInputDevice: (type: DeviceType, deviceId: string) => Promise<void>;
 	applySpeakerDevice: () => Promise<void>;
 	applyBackgroundEffectsToLocalStream: () => Promise<void>;
-	setLocalVideoRef: (el: HTMLElement | null) => void;
-	setRemoteVideoRef: (participantId: string, el: HTMLElement) => void;
-	setScreenShareVideoRef: (el: HTMLElement) => void;
+	setLocalVideoRef: (el: HTMLVideoElement | null) => void;
+	setRemoteVideoRef: (participantId: string, el: HTMLVideoElement) => void;
+	setScreenShareVideoRef: (el: HTMLVideoElement) => void;
 	processedStream: MediaStream | null;
 }
 
@@ -151,6 +152,15 @@ type ScreenShareStopReason =
 	| "publish-failed"
 	| "cleanup";
 
+interface MediaDeviceOverrides {
+	cameraDeviceId?: string;
+	micDeviceId?: string;
+}
+
+interface ScreenShareStopExtra {
+	message?: string;
+}
+
 function getMediaHandler(
 	manager: SFUMeetingManager | null,
 ): MediaHandlerLike | null {
@@ -170,14 +180,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		noiseCancellation,
 	} = deps;
 
-	const localVideo = ref<HTMLElement | null>(null);
-	const screenShareVideoElements = new Map<string, HTMLElement>();
+	const localVideo = ref<HTMLVideoElement | null>(null);
+	const screenShareVideoElements = new Map<string, HTMLVideoElement>();
 	const _unmutedByPushToTalk = ref(false);
 
 	let backgroundSession: {
 		stream: MediaStream;
 		cleanup: () => void;
-		updateOptions: (opts: Record<string, unknown>) => Promise<void>;
+		updateOptions: (opts: BackgroundEffectOptions) => Promise<void>;
 	} | null = null;
 	let noiseCancellationSession: {
 		stream: MediaStream;
@@ -190,22 +200,19 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				title: "Start Screen Share Anyway?",
 				message:
 					"Someone is already sharing their screen. Starting yours may result in multiple active screen shares.",
-				onConfirm: ({ hideDialog }: { hideDialog: () => void }) => {
-					hideDialog();
-					resolve(true);
-				},
+				onConfirm: () => resolve(true),
 				onCancel: () => resolve(false),
 			});
 		});
 
 	const getScreenShareStopMetadata = (
 		reason: ScreenShareStopReason,
-		extra: Record<string, unknown> = {},
+		extra: ScreenShareStopExtra = {},
 	) => {
 		const screenTrack = mediaState.screenShareStream?.getVideoTracks?.()[0];
 		return {
 			reason,
-			source: "screen-share",
+			source: "screen-share" as const,
 			details: {
 				trackId: screenTrack?.id,
 				trackReadyState: screenTrack?.readyState,
@@ -568,7 +575,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		videoEnabled: boolean,
 		audioEnabled: boolean,
 	) => {
-		const constraints: Record<string, unknown> = {};
+		const constraints: MediaStreamConstraints = {};
 
 		const audioConstraints = {
 			channelCount: { ideal: 2 },
@@ -578,7 +585,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		};
 
 		if (videoEnabled) {
-			constraints.video = {
+			const videoConstraints: MediaTrackConstraints = {
 				width: { ideal: 1280, min: 960 },
 				height: { ideal: 720, min: 540 },
 				frameRate: { ideal: 30, max: 30 },
@@ -589,10 +596,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				"camera",
 			);
 			if (validCameraId) {
-				(constraints.video as Record<string, unknown>).deviceId = {
+				videoConstraints.deviceId = {
 					exact: validCameraId,
 				};
 			}
+			constraints.video = videoConstraints;
 		}
 
 		if (audioEnabled) {
@@ -606,13 +614,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			if (isBluetoothMicLabel(selectedMic?.label)) {
 				audioConstraints.autoGainControl = false;
 			}
-			constraints.audio = { ...audioConstraints };
+			const mediaAudioConstraints: MediaTrackConstraints = {
+				...audioConstraints,
+			};
 
 			if (validMicId) {
-				(constraints.audio as Record<string, unknown>).deviceId = {
+				mediaAudioConstraints.deviceId = {
 					exact: validMicId,
 				};
 			}
+			constraints.audio = mediaAudioConstraints;
 		}
 
 		return constraints;
@@ -621,35 +632,35 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const acquireUserMedia = async (
 		videoEnabled: boolean,
 		audioEnabled: boolean,
-		deviceOverrides: Record<string, string> = {},
+		deviceOverrides: MediaDeviceOverrides = {},
 	) => {
 		const constraints = await buildMediaConstraints(videoEnabled, audioEnabled);
 
 		if (videoEnabled && Object.hasOwn(deviceOverrides, "cameraDeviceId")) {
 			const validCameraId = await getValidDeviceId(
-				deviceOverrides.cameraDeviceId,
+				deviceOverrides.cameraDeviceId ?? null,
 				"camera",
 			);
-			if (validCameraId && constraints.video) {
-				(constraints.video as Record<string, unknown>).deviceId = {
+			if (validCameraId && typeof constraints.video === "object") {
+				constraints.video.deviceId = {
 					exact: validCameraId,
 				};
-			} else if ((constraints.video as Record<string, unknown>)?.deviceId) {
-				delete (constraints.video as Record<string, unknown>).deviceId;
+			} else if (typeof constraints.video === "object") {
+				delete constraints.video.deviceId;
 			}
 		}
 
 		if (audioEnabled && Object.hasOwn(deviceOverrides, "micDeviceId")) {
 			const validMicId = await getValidDeviceId(
-				deviceOverrides.micDeviceId,
+				deviceOverrides.micDeviceId ?? null,
 				"microphone",
 			);
-			if (validMicId && constraints.audio) {
-				(constraints.audio as Record<string, unknown>).deviceId = {
+			if (validMicId && typeof constraints.audio === "object") {
+				constraints.audio.deviceId = {
 					exact: validMicId,
 				};
-			} else if ((constraints.audio as Record<string, unknown>)?.deviceId) {
-				delete (constraints.audio as Record<string, unknown>).deviceId;
+			} else if (typeof constraints.audio === "object") {
+				delete constraints.audio.deviceId;
 			}
 		}
 
@@ -824,12 +835,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				if (mh?.audioProducer) {
 					const audioProducer = mh.audioProducer;
 					const currentTrack = audioProducer.track;
-					if (currentTrack && currentTrack.readyState === "ended") {
-						if (track && typeof audioProducer.replaceTrack === "function") {
+					if (track) {
+						track.enabled = true;
+						if (
+							currentTrack !== track &&
+							typeof audioProducer.replaceTrack === "function"
+						) {
 							await audioProducer.replaceTrack({ track });
 						}
-					} else if (track) {
-						track.enabled = true;
 					}
 					audioProducer.resume?.();
 
@@ -1082,7 +1095,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const stopScreenShare = async (
 		reason: ScreenShareStopReason,
-		extra: Record<string, unknown> = {},
+		extra: ScreenShareStopExtra = {},
 	) => {
 		const metadata = getScreenShareStopMetadata(reason, extra);
 		const mediaHandler = getMediaHandler(sfuManager.value);
@@ -1239,10 +1252,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	};
 
-	function setLocalVideoRef(el: HTMLElement | null) {
+	function setLocalVideoRef(el: HTMLVideoElement | null) {
 		localVideo.value = el;
 		if (el && mediaState.localStream) {
-			const videoEl = el as HTMLVideoElement;
+			const videoEl = el;
 			const streamToUse = mediaState.processedStream || mediaState.localStream;
 
 			const currentStreamId = streamToUse.id;
@@ -1263,18 +1276,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		mediaState.localVideo = el;
 	}
 
-	const setRemoteVideoRef = (participantId: string, el: HTMLElement) => {
+	const setRemoteVideoRef = (participantId: string, el: HTMLVideoElement) => {
 		if (sfuManager.value?.videoManager) {
 			sfuManager.value.videoManager.registerVideoElement(participantId, el);
 		}
 	};
 
-	const setScreenShareVideoRef = (el: HTMLElement) => {
+	const setScreenShareVideoRef = (el: HTMLVideoElement) => {
 		if (!el) return;
 
-		const participantId = (
-			el as HTMLElement & { dataset: Record<string, string> }
-		).dataset?.participantId;
+		const participantId = el.dataset.participantId;
 		if (participantId) {
 			screenShareVideoElements.set(participantId, el);
 
@@ -1286,16 +1297,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 			if (stream instanceof MediaStream) {
 				const currentStreamId = stream.id;
-				const srcObject = (el as HTMLVideoElement).srcObject;
+				const srcObject = el.srcObject;
 				const existingStreamId =
 					srcObject instanceof MediaStream ? srcObject.id : undefined;
 
 				if (
-					!(el as HTMLVideoElement).srcObject ||
+					!el.srcObject ||
 					existingStreamId !== currentStreamId
 				) {
-					(el as HTMLVideoElement).srcObject = stream;
-					(el as HTMLVideoElement).play?.().catch(() => {});
+					el.srcObject = stream;
+					el.play?.().catch(() => {});
 				}
 			}
 		}

@@ -34,7 +34,7 @@ const probeNaturalAspect = async (element) => {
 }
 
 const startCrop = async (element) => {
-	if (!element || element.type != 'image') return
+	if (!element || element.type != 'image' || element.locked) return
 
 	ensureExplicitHeight(element)
 	// without a height the frame-aspect math below is NaN

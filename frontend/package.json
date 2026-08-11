@@ -8,8 +8,11 @@
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
     "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
     "build": "vite build",
+    "build:recorder": "vite build --config vite.recorder.config.ts",
+    "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
   },
   "dependencies": {
@@ -103,6 +106,7 @@
     "yjs": "^13.6.30"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.9",
     "@vitejs/plugin-vue": "^6.0.6",
     "autoprefixer": "^10.4.20",
     "fake-indexeddb": "^6.2.5",

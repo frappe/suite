@@ -151,6 +151,15 @@ import LucideZap from "~icons/lucide/zap";
 import LucideLink from "~icons/lucide/link";
 import LucideLock from "~icons/lucide/lock";
 
+interface CalendarParticipant {
+	email: string;
+	_name?: string;
+	user_image?: string;
+	participation_status?: string;
+	expect_reply?: boolean;
+	isNew?: boolean;
+}
+
 const router = useRouter();
 const connectionState = useConnectionState();
 const calendarStore = useCalendarUserStore();
@@ -162,7 +171,7 @@ const scheduleTitle = ref("");
 const scheduleDate = ref(dayjs().format("YYYY-MM-DD"));
 const scheduleStartTime = ref(dayjs().add(1, "hour").startOf("hour").format("HH:mm"));
 const scheduleEndTime = ref(dayjs().add(2, "hour").startOf("hour").format("HH:mm"));
-const scheduleParticipants = ref<any[]>([]);
+const scheduleParticipants = ref<CalendarParticipant[]>([]);
 const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null);
 
 const userResource = createResource({
@@ -186,7 +195,7 @@ const createMeeting = createResource({
 		});
 		connectionState.justCreated = true;
 	},
-	onError: (error: any) => {
+	onError: (error: unknown) => {
 		console.error("Error creating meeting:", error);
 		toast.error("Failed to create meeting. Please try again.");
 	},
@@ -216,7 +225,7 @@ const currentUserEmail = computed(() => calendarStore.userResource.data?.name ||
 const scheduledParticipants = computed(() => {
 	const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name;
 	const currentImage = calendarStore.userResource.data?.user_image || userResource.data?.user_image;
-	const participants = currentUserEmail.value
+	const participants: CalendarParticipant[] = currentUserEmail.value
 		? [
 				{
 					email: currentUserEmail.value,
@@ -248,7 +257,7 @@ const scheduleMeeting = createResource({
 		toast.success("Meeting scheduled.");
 		upcomingMeetingsRef.value?.reload();
 	},
-	onError: (error: any) => {
+	onError: (error: unknown) => {
 		console.error("Error scheduling meeting:", error);
 	},
 });

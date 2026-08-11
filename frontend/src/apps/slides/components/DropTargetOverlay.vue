@@ -34,7 +34,7 @@ const getTargetElement = (e) => {
 	const elementId = target.getAttribute('data-index')
 	const element = currentSlide.value.elements.find((el) => el.id == elementId)
 
-	if (element && ['image', 'video'].includes(element.type)) {
+	if (element && !element.locked && ['image', 'video'].includes(element.type)) {
 		return element
 	}
 }

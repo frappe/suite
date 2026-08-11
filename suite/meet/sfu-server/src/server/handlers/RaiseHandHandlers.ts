@@ -25,7 +25,7 @@ export function registerRaiseHandHandlers(deps: HandlerDeps) {
 					deps.registry.clearRaisedHand(roomId, socket.participantId);
 				}
 
-				deps.registry.emitToFullAccessParticipants(roomId, 'hand_raised', {
+				deps.registry.emitRaisedHand(roomId, {
 					participantId: socket.participantId,
 					raised,
 					timestamp: new Date().toISOString(),

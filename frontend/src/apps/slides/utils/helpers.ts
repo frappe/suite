@@ -66,8 +66,11 @@ const handleScrollBarWheelEvent = (e: WheelEvent) => {
 
 const cloneObj = (obj: any) => JSON.parse(JSON.stringify(obj))
 
-const getThumbnailCardStyles = (thumbnail: string) => {
-	const thumbnailUrl = getAttachmentUrl(thumbnail)
+const getThumbnailCardStyles = (
+	thumbnail: string,
+	sourcePresentation?: { name: string; owner: string },
+) => {
+	const thumbnailUrl = getAttachmentUrl(thumbnail, sourcePresentation)
 	return {
 		backgroundImage: `url(${thumbnailUrl})`,
 		backgroundSize: 'cover',

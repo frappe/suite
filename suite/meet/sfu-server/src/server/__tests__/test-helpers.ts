@@ -1,5 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import { vi } from 'vitest';
+import type { SFUConfig } from '../../config';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
 import { Telemetry } from '../../telemetry/Telemetry';
 import type {
@@ -11,6 +12,7 @@ import type {
 import type { AuthManager } from '../AuthManager';
 import { InMemoryRosterPersistence } from '../E2eeRosterPersistence';
 import { E2eeRosterStore } from '../E2eeRosterStore';
+import type { RecordingGrantManager } from '../RecordingGrantManager';
 import { SocketHandlerManager } from '../SocketHandlerManager';
 
 export type TypedSocket = Socket<
@@ -25,6 +27,7 @@ export interface MockSocket extends TypedSocket {
 	emitCalls: { event: string; data: unknown }[];
 	toEmits: { roomId: string; event: string; data: unknown }[];
 	joinCalls: string[];
+	packetMiddleware?: (packet: unknown[], next: () => void) => void;
 }
 
 const SOCKET_DEFAULTS = {
@@ -61,6 +64,21 @@ export function createMockSocket(
 			handlers.set(event, list);
 			return this;
 		},
+		once(event: string, handler: (...args: unknown[]) => void) {
+			const wrapped = (...args: unknown[]) => {
+				const list = handlers.get(event);
+				if (list)
+					handlers.set(
+						event,
+						list.filter((item) => item !== wrapped),
+					);
+				handler(...args);
+			};
+			const list = handlers.get(event) ?? [];
+			list.push(wrapped);
+			handlers.set(event, list);
+			return this;
+		},
 		emit(event: string, data?: unknown) {
 			emitCalls.push({ event, data });
 			return true;
@@ -94,7 +112,8 @@ export function createMockSocket(
 		disconnect(_close: boolean) {
 			return socket;
 		},
-		use() {
+		use(fn: (packet: unknown[], next: () => void) => void) {
+			this.packetMiddleware = fn;
 			return this;
 		},
 		fire(event: string, ...args: unknown[]) {
@@ -168,12 +187,20 @@ function createMockMediasoupManager(): MediasoupManager {
 			iceCandidates: [],
 			dtlsParameters: {},
 		}),
+		createPlainTransport: vi.fn().mockResolvedValue({ id: 'plain-1' }),
 		connectWebRtcTransport: vi.fn().mockResolvedValue(undefined),
+		restartWebRtcTransportIce: vi.fn().mockResolvedValue({}),
+		assertProducerAccess: vi.fn(),
+		assertConsumerAccess: vi.fn(),
+		closeConsumer: vi.fn().mockResolvedValue(undefined),
+		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
+		updateConsumerPreferences: vi.fn().mockResolvedValue({ paused: false }),
 		createProducer: vi.fn().mockResolvedValue({
 			id: 'producer-1',
 			kind: 'video',
 			appData: { type: 'screen' },
 		}),
+		applyMediaControl: vi.fn(),
 	} as unknown as MediasoupManager;
 }
 
@@ -181,6 +208,8 @@ function createMockAuthManager() {
 	return {
 		authenticateSocket: vi.fn().mockReturnValue(true),
 		ensureFullAccess: vi.fn(),
+		ensureMediaConsumerAccess: vi.fn(),
+		ensureRecorderAccess: vi.fn(),
 		ensurePresenceAccess: vi.fn(),
 		isTokenExpired: vi.fn((socket: { tokenExpiresAt?: number }) => {
 			if (!socket?.tokenExpiresAt) return false;
@@ -202,7 +231,14 @@ interface ManagerHarness {
 	createSocket(overrides?: Partial<TypedSocket>): MockSocket;
 }
 
-export function createManager(): ManagerHarness {
+export function createManager(
+	recordingGrantManager?: RecordingGrantManager,
+	runtime: SFUConfig['runtime'] = {
+		mode: 'test',
+		allowPlainTransport: false,
+		bypassRateLimits: false,
+	},
+): ManagerHarness {
 	const io = createMockServer();
 	const mediasoup = createMockMediasoupManager();
 	const authManager = createMockAuthManager();
@@ -214,6 +250,9 @@ export function createManager(): ManagerHarness {
 		authManager as unknown as AuthManager,
 		telemetry,
 		roster,
+		runtime,
+		undefined,
+		recordingGrantManager,
 	);
 	manager.setupSocketHandlers();
 

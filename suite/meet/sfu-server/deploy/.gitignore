@@ -6,3 +6,7 @@ certbot-data/
 
 # Temp files generated during SSL provisioning
 nginx/templates/_acme_temp.conf.template
+
+# Alloy push credentials
+secrets/*
+!secrets/.gitkeep

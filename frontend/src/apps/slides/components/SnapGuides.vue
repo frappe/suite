@@ -26,6 +26,9 @@ const GUIDE_COLOR = `${guideColor}80`
 const EDGE_GUIDE_COLOR = guideColor
 const commonStyles = { position: 'absolute', zIndex: 9999 }
 
+// a constant 1px on screen, like every other stroke on the canvas
+const guideThickness = () => 1 / (slideBounds.scale || 1)
+
 const getScaledValue = (value, axis) => {
 	if (axis == 'X') return (value - slideBounds.left) / slideBounds.scale
 	return (value - slideBounds.top) / slideBounds.scale
@@ -58,12 +61,13 @@ const getVerticalCenterStyle = () => {
 	const snapped = props.ongoingInteraction && props.activeGuides?.x?.source === 'slide'
 	if (!snapped && !guideVisibilityMap.centerY) return null
 
+	const thickness = guideThickness()
 	return {
 		...commonStyles,
 		backgroundColor: GUIDE_COLOR,
-		width: '1px',
+		width: `${thickness}px`,
 		height: '100%',
-		left: '50%',
+		left: `calc(50% - ${thickness / 2}px)`,
 		top: '0',
 	}
 }
@@ -72,13 +76,14 @@ const getHorizontalCenterStyle = () => {
 	const snapped = props.ongoingInteraction && props.activeGuides?.y?.source === 'slide'
 	if (!snapped && !guideVisibilityMap.centerX) return null
 
+	const thickness = guideThickness()
 	return {
 		...commonStyles,
 		backgroundColor: GUIDE_COLOR,
 		width: '100%',
-		height: '1px',
+		height: `${thickness}px`,
 		left: '0',
-		top: '50%',
+		top: `calc(50% - ${thickness / 2}px)`,
 	}
 }
 
@@ -95,12 +100,13 @@ const getVerticalElementStyle = () => {
 	const top = Math.min(selection.top, neighbour.top)
 	const bottom = Math.max(selection.bottom, neighbour.bottom)
 
+	const thickness = guideThickness()
 	return {
 		...commonStyles,
 		borderColor: GUIDE_COLOR,
 		borderStyle: 'dashed',
-		borderWidth: '0 0 0 1px',
-		left: `${neighbour[guide.line]}px`,
+		borderWidth: `0 0 0 ${thickness}px`,
+		left: `${neighbour[guide.line] - thickness / 2}px`,
 		top: `${top}px`,
 		height: `${bottom - top}px`,
 	}
@@ -117,12 +123,13 @@ const getHorizontalElementStyle = () => {
 	const left = Math.min(selection.left, neighbour.left)
 	const right = Math.max(selection.right, neighbour.right)
 
+	const thickness = guideThickness()
 	return {
 		...commonStyles,
 		borderColor: GUIDE_COLOR,
 		borderStyle: 'dashed',
-		borderWidth: '1px 0 0 0',
-		top: `${neighbour[guide.line]}px`,
+		borderWidth: `${thickness}px 0 0 0`,
+		top: `${neighbour[guide.line] - thickness / 2}px`,
 		left: `${left}px`,
 		width: `${right - left}px`,
 	}

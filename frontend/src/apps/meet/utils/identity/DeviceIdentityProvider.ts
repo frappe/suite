@@ -139,12 +139,10 @@ async function loadOrCreateKeyPair(
 	publicKeyId: string,
 ): Promise<CryptoKeyPair> {
 	const privJwk = await idbGet(privateKeyId);
-	if (privJwk) {
+	const pubJwk = await idbGet(publicKeyId);
+	if (privJwk && pubJwk) {
 		const privateKey = await loadPrivateSigningKey(privateKeyId, privJwk);
-		const pubJwk = await idbGet(publicKeyId);
-		const publicKey = pubJwk
-			? await loadPublicVerifyKey(publicKeyId, pubJwk)
-			: (null as unknown as CryptoKey);
+		const publicKey = await loadPublicVerifyKey(publicKeyId, pubJwk);
 		return { privateKey, publicKey };
 	}
 	const kp = await ed25519KeyPair();

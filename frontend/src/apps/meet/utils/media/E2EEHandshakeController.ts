@@ -245,16 +245,7 @@ export class E2EEHandshakeController {
 
 	private async listCurrentNonHostSenderIds(): Promise<number[]> {
 		try {
-			const participants = (await this.deps.sfuClient.getRoomParticipants()) as
-				| Array<{
-						user_id?: string;
-						sender_id?: number;
-						senderId?: number;
-						is_host?: boolean;
-						isHost?: boolean;
-					}>
-				| undefined;
-			if (!Array.isArray(participants)) return [];
+			const participants = await this.deps.sfuClient.getRoomParticipants();
 			const hostParticipantId = this.ownParticipantId();
 			return participants
 				.filter((p) => {
@@ -266,7 +257,10 @@ export class E2EEHandshakeController {
 						p.user_id !== hostParticipantId
 					);
 				})
-				.map((p) => (p.sender_id ?? p.senderId) as number);
+				.flatMap((p) => {
+					const senderId = p.sender_id ?? p.senderId;
+					return typeof senderId === "number" ? [senderId] : [];
+				});
 		} catch (error) {
 			console.warn(
 				"[DEBUG-e2ee] listCurrentNonHostSenderIds: getRoomParticipants failed",

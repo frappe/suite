@@ -5,32 +5,51 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
-  "column_break_klzk",
-  "session_state",
-  "session_last_update",
   "jmap_credentials_section",
   "server_url",
   "column_break_uxkb",
   "username",
   "app_password",
-  "inbound_section",
-  "skip_schedule_fetch_changes",
-  "column_break_nqwp",
   "recovery_section",
   "backup_email",
   "column_break_gotn",
+  "push_section",
+  "disable_push_subscriptions",
+  "column_break_nqwp",
   "session_section",
+  "session_state",
+  "column_break_klzk",
+  "session_last_update",
   "jmap_session",
   "ui_tab",
   "appearance_section",
   "color_scheme",
-  "column_break_cxak",
+  "mail_list_section",
   "group_messages_by",
+  "column_break_cxak",
   "show_reading_pane"
  ],
  "fields": [
   {
-   "description": "URL of the JMAP server.",
+   "description": "The user these settings belong to.",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "no_copy": 1,
+   "options": "User",
+   "reqd": 1,
+   "set_only_once": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "jmap_credentials_section",
+   "fieldtype": "Section Break",
+   "label": "JMAP Credentials"
+  },
+  {
+   "description": "URL of the JMAP server, read from the site configuration and shared by all users.",
    "fieldname": "server_url",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -46,7 +65,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Email address or username used to sign in to your JMAP account.",
+   "description": "Email address or username used to sign in to the JMAP account.",
    "fieldname": "username",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -56,7 +75,7 @@
    "search_index": 1
   },
   {
-   "description": "App-specific password or account password used for authentication with the JMAP server.",
+   "description": "App-specific password or account password used to authenticate with the JMAP server. Saving with a username validates the credentials by connecting to the server.",
    "fieldname": "app_password",
    "fieldtype": "Password",
    "label": "App Password",
@@ -64,9 +83,9 @@
    "no_copy": 1
   },
   {
-   "fieldname": "jmap_credentials_section",
+   "fieldname": "recovery_section",
    "fieldtype": "Section Break",
-   "label": "JMAP Credentials"
+   "label": "Recovery"
   },
   {
    "description": "Secondary email address used for account recovery and important notifications.",
@@ -78,21 +97,65 @@
    "search_index": 1
   },
   {
-   "description": "The user this settings belongs to.",
-   "fieldname": "user",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "User",
+   "fieldname": "column_break_gotn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.username",
+   "fieldname": "push_section",
+   "fieldtype": "Section Break",
+   "label": "Push Notifications"
+  },
+  {
+   "default": "0",
+   "description": "Prevent JMAP push subscriptions from being created or renewed for this user. Mailbox changes are fetched only when the server sends a push notification, so without an active subscription this user's mail stops syncing automatically. Existing subscriptions are not deleted; they lapse when they expire.",
+   "fieldname": "disable_push_subscriptions",
+   "fieldtype": "Check",
+   "label": "Disable Push Subscriptions",
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_nqwp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "collapsible": 1,
+   "depends_on": "eval: doc.username",
+   "fieldname": "session_section",
+   "fieldtype": "Section Break",
+   "label": "Session"
+  },
+  {
+   "description": "State of the cached JMAP session, as reported by the server.",
+   "fieldname": "session_state",
+   "fieldtype": "Data",
+   "is_virtual": 1,
+   "label": "Session State",
    "no_copy": 1,
-   "options": "User",
-   "reqd": 1,
-   "set_only_once": 1,
-   "unique": 1
+   "read_only": 1
   },
   {
    "fieldname": "column_break_klzk",
    "fieldtype": "Column Break"
+  },
+  {
+   "description": "When the cached JMAP session was last refreshed.",
+   "fieldname": "session_last_update",
+   "fieldtype": "Datetime",
+   "is_virtual": 1,
+   "label": "Session Last Update",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.jmap_session && doc.jmap_session != \"{}\"",
+   "description": "Raw JMAP session data cached from the server.",
+   "fieldname": "jmap_session",
+   "fieldtype": "JSON",
+   "is_virtual": 1,
+   "label": "JMAP Session",
+   "no_copy": 1,
+   "read_only": 1
   },
   {
    "fieldname": "ui_tab",
@@ -106,7 +169,7 @@
   },
   {
    "default": "System Default",
-   "description": "Choose your preferred interface theme.",
+   "description": "Preferred interface theme.",
    "fieldname": "color_scheme",
    "fieldtype": "Select",
    "label": "Color Scheme",
@@ -114,12 +177,13 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_cxak",
-   "fieldtype": "Column Break"
+   "depends_on": "eval: doc.username",
+   "fieldname": "mail_list_section",
+   "fieldtype": "Section Break",
+   "label": "Mail List"
   },
   {
-   "default": "Day",
-   "depends_on": "eval: doc.username",
+   "default": "None",
    "description": "Group email messages in the list by time period (e.g., day or month).",
    "fieldname": "group_messages_by",
    "fieldtype": "Select",
@@ -127,69 +191,15 @@
    "options": "None\nDay\nMonth"
   },
   {
+   "fieldname": "column_break_cxak",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "1",
-   "depends_on": "eval: doc.username",
    "description": "Show a split view with an email preview beside the email list.",
    "fieldname": "show_reading_pane",
    "fieldtype": "Check",
    "label": "Split View"
-  },
-  {
-   "fieldname": "recovery_section",
-   "fieldtype": "Section Break",
-   "label": "Recovery"
-  },
-  {
-   "fieldname": "column_break_gotn",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval: doc.username",
-   "fieldname": "inbound_section",
-   "fieldtype": "Section Break",
-   "label": "Inbound"
-  },
-  {
-   "fieldname": "column_break_nqwp",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Skip periodic fetching of email changes (new, updated, or deleted).",
-   "fieldname": "skip_schedule_fetch_changes",
-   "fieldtype": "Check",
-   "label": "Skip Schedule Fetch Changes",
-   "search_index": 1
-  },
-  {
-   "fieldname": "session_state",
-   "fieldtype": "Data",
-   "is_virtual": 1,
-   "label": "Session State",
-   "no_copy": 1,
-   "read_only": 1
-  },
-  {
-   "fieldname": "session_last_update",
-   "fieldtype": "Datetime",
-   "is_virtual": 1,
-   "label": "Session Last Update",
-   "no_copy": 1,
-   "read_only": 1
-  },
-  {
-   "collapsible": 1,
-   "fieldname": "session_section",
-   "fieldtype": "Section Break",
-   "label": "Session"
-  },
-  {
-   "depends_on": "eval: doc.jmap_session && doc.jmap_session != \"{}\"",
-   "fieldname": "jmap_session",
-   "fieldtype": "JSON",
-   "is_virtual": 1,
-   "no_copy": 1,
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,
@@ -201,7 +211,7 @@
    "link_fieldname": "user_settings"
   }
  ],
- "modified": "2026-07-21 00:00:00.000000",
+ "modified": "2026-08-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

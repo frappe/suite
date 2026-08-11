@@ -139,6 +139,8 @@ export interface Mail {
 	}
 	reply_to: { display_name: string; email: string }[]
 	attachments: Attachment[]
+	// Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
+	dsn_blob_id?: string | null
 	user_image?: string
 	collapsed?: boolean
 }
@@ -201,6 +203,7 @@ export interface MailboxData {
 	name: string
 	id: string
 	role: string | null
+	total_emails: number
 	total_threads: number
 	unread_threads: number
 	_name: string

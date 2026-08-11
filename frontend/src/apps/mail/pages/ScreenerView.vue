@@ -525,9 +525,10 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 // Poll the Screening folder's count and only refetch the (heavier) sender list when it changes — the
 // same cheap-count-then-reload approach the mailbox uses, so a quiet screener isn't reloaded every tick.
+// Counting messages rather than threads: another mail from a sender already waiting here doesn't move
+// the thread count.
 const screeningCount = () =>
-	store.mailboxes.data?.find((m: MailboxData) => m.id === store.mailboxIds.screener)
-		?.total_threads
+	store.mailboxes.data?.find((m: MailboxData) => m.id === store.mailboxIds.screener)?.total_emails
 
 const pollForChanges = async () => {
 	const prev = screeningCount()

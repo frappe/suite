@@ -180,7 +180,9 @@ def save_presentation_thumbnail(presentation_name: str, base64_data: str) -> str
     file_url = replace_thumbnail_file(presentation, base64_data)
 
     if presentation.thumbnail != file_url:
-        presentation.db_set("thumbnail", file_url)
+        # the thumbnail is derived, not an edit: bumping modified would make the
+        # editor discard local changes it had not synced yet
+        presentation.db_set("thumbnail", file_url, update_modified=False)
     return file_url
 
 
@@ -372,7 +374,7 @@ def update_title(name: str, title: str):
     presentation.check_permission("write")
     presentation.title = title
     presentation.save()
-    return slug(title)
+    return {"slug": slug(title), "modified": presentation.modified}
 
 
 def get_attachment(presentation, file_url):

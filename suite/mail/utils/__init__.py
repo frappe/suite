@@ -26,6 +26,7 @@ CONFIG_KEYS = [
     "disabled_account_role",
     "enable_gravatar",
     "default_gravatar",
+    "expand_mailing_list_participants",
     "stalwart_version",
     "stalwart_cli_version",
     # Logs
@@ -49,6 +50,7 @@ CONFIG_KEYS = [
     "exchange_max_import",
     "exchange_export_batch_size",
     "max_email_sync",
+    "max_mailing_list_participants",
     "max_message_payload_size_mb",
     "max_push_notifications",
     "process_pending_emails_batch_size",

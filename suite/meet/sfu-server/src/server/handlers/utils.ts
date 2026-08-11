@@ -16,20 +16,15 @@ export function getRoomId(socket: Socket): string {
 	return `${site}::${meetingId}`;
 }
 
-function isDevOrCiEnvironment(): boolean {
-	const devEnv = process.env.NODE_ENV === 'development';
-	const inCi = process.env.CI === 'true' || !!process.env.GITHUB_ACTIONS;
-	return devEnv || inCi;
-}
-
 export function checkSocketRateLimits(
 	socket: Socket,
 	rateLimiter: RateLimiter,
 	userLimit: number,
 	ipLimit: number,
 	windowMs: number,
+	bypass = false,
 ): boolean {
-	if (isDevOrCiEnvironment()) {
+	if (bypass) {
 		return true;
 	}
 	const forwardedFor = socket.handshake.headers['x-forwarded-for'];

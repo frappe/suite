@@ -4,3 +4,4 @@ dist
 *.local
 auto-imports.d.ts
 components.d.ts
+test-results/

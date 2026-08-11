@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "path": "frontend/src/apps/meet/composables/useRTCStats.ts",
+      "line": 6,
+      "column": 20,
+      "rule": "MTP001",
+      "lineText": "type StatsReport = Record<string, unknown> & {",
+      "reason": "Browser RTC statistics are an extensible cross-browser metadata dictionary with guarded reads."
+    },
+    {
+      "path": "frontend/src/apps/meet/types.ts",
+      "line": 116,
+      "column": 13,
+      "rule": "MTP001",
+      "lineText": "): value is Record<string, unknown> {",
+      "reason": "This central guard narrows untrusted values only for immediate field-by-field validation."
+    },
+    {
+      "path": "frontend/src/apps/meet/utils/media/E2EEEpochSignalingController.ts",
+      "line": 640,
+      "column": 29,
+      "rule": "MTP001",
+      "lineText": "\t\tconst envelope = value as Record<string, unknown>;",
+      "reason": "The assertion is contained inside an exhaustive discriminated runtime envelope validator."
+    },
+    {
+      "path": "frontend/src/apps/meet/utils/SFUClient.ts",
+      "line": 223,
+      "column": 58,
+      "rule": "MTP001",
+      "lineText": "function requireObject(value: unknown, context: string): Record<string, unknown> {",
+      "reason": "The helper rejects non-objects before event-specific parsers validate and construct response DTOs."
+    },
+    {
+      "path": "suite/meet/sfu-server/src/server/handlers/ClientTelemetryHandlers.ts",
+      "line": 158,
+      "column": 45,
+      "rule": "MTP001",
+      "lineText": "function isRecord(value: unknown): value is Record<string, unknown> {",
+      "reason": "The socket telemetry parser validates exact keys and every value before constructing an event."
+    },
+    {
+      "path": "suite/meet/sfu-server/src/server/handlers/ClientTelemetryHandlers.ts",
+      "line": 162,
+      "column": 29,
+      "rule": "MTP001",
+      "lineText": "function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {",
+      "reason": "The helper is confined to exact-key validation of untrusted socket telemetry payloads."
+    }
+  ]
+}

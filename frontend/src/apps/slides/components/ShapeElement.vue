@@ -217,7 +217,13 @@ const handleDoubleClick = (e) => {
 	e.stopPropagation()
 	// don't enter edit mode when the gesture was a drag
 	if (dragOccurred.value) return
-	if (inSlideShowMode.value || inReadonlyMode.value || !canHaveText.value || isEditable.value)
+	if (
+		inSlideShowMode.value ||
+		inReadonlyMode.value ||
+		!canHaveText.value ||
+		isEditable.value ||
+		element.value.locked
+	)
 		return
 	activeElementIds.value = [element.value.id]
 	focusElementId.value = element.value.id

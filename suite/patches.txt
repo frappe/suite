@@ -76,7 +76,7 @@ suite.mail.patches.sync_jmap_accounts_for_configured_users
 suite.mail.patches.copy_sync_history_account_id_to_account
 suite.mail.patches.destroy_data_store
 suite.mail.patches.backfill_screened_email_address_account
-suite.mail.patches.rebuild_email_address_indexes #2
+suite.mail.patches.rebuild_email_address_indexes #3
 suite.mail.patches.enable_screening_for_personal_accounts
 suite.mail.patches.create_suite_user_role
 suite.mail.patches.rename_mail_admin_to_suite_admin
@@ -90,8 +90,12 @@ execute:frappe.db.set_single_value("Mail Settings", "verify_ssl", 1)
 execute:frappe.db.set_single_value("Mail Settings", "show_mail_client_config", 1)
 execute:frappe.db.set_single_value("Mail Settings", "custom_event_invites", 1)
 suite.mail.patches.reset_push_subscription_types_to_all
+suite.mail.patches.rename_skip_schedule_fetch_changes
+execute:frappe.db.set_single_value("Mail Settings", "expand_mailing_list_participants", 1)
+execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participants", 100)
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
 execute:frappe.db.set_single_value("Suite Settings", "is_onboarded", 1) if frappe.is_setup_complete() else None
+suite.suite_core.patches.move_blob_store_out_of_private

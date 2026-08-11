@@ -8,11 +8,11 @@ from suite.store import get_blob_base_path
 
 
 def execute() -> None:
-    """Relocate the blob store from ``private/files/blob-store`` to ``private/blob-store``.
+    """Relocate the blob store from ``private/files/blob-store`` to the current blob base path.
 
     The blob store used to live inside ``private/files``, so every files backup tarred the whole
-    blob cache. It now sits directly under ``private``, which backups do not include. Migrating is
-    a single directory move — the internal layout is unchanged.
+    blob cache. It now sits at ``get_blob_base_path()`` (the site directory root), which backups
+    do not include. Migrating is a single directory move — the internal layout is unchanged.
 
     Best-effort: blobs are a cache refetched on demand, so if the new directory already exists
     (an interrupted earlier run, or stores already created at the new location) the old directory

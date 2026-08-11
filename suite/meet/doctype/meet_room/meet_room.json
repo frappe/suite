@@ -12,7 +12,8 @@
    "host_only_chat",
    "column_break_1",
    "e2ee_section",
-    "e2ee_enabled",
+     "e2ee_enabled",
+    "calendar_event",
     "users_section",
    "co_hosts",
    "members",
@@ -56,7 +57,14 @@
    "default": "0",
    "fieldname": "e2ee_enabled",
    "fieldtype": "Check",
-   "label": "E2EE Enabled"
+    "label": "E2EE Enabled",
+    "read_only": 1
+   },
+   {
+    "description": "Opaque Calendar Event identifier used for recording estimates.",
+    "fieldname": "calendar_event",
+    "fieldtype": "Data",
+    "label": "Calendar Event"
   },
   {
     "fieldname": "members",
@@ -101,7 +109,7 @@
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "links": [],
  "modified": "2026-06-04 12:36:16.782160",
  "modified_by": "Administrator",

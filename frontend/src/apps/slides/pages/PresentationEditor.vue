@@ -15,13 +15,7 @@
 				v-model:hasOngoingInteraction="isSlideInteractionActive"
 			/>
 
-			<NavigationPanel
-				class="absolute bottom-0 top-0"
-				@changeSlide="changeEditorSlide"
-				@openLayoutDialog="openLayoutDialog"
-				@duplicate="duplicateSlide"
-				@delete="(index) => deleteSlide(false, index)"
-			/>
+			<NavigationPanel class="absolute bottom-0 top-0" @changeSlide="changeEditorSlide" />
 
 			<Toolbar v-if="!inReadonlyMode && presentationDoc" />
 
@@ -93,7 +87,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
-import { call, usePageMeta, KeyboardShortcutsModal, Dialog, Button } from 'frappe-ui'
+import { call, toast, usePageMeta, KeyboardShortcutsModal, Dialog, Button } from 'frappe-ui'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -126,8 +120,6 @@ import {
 	focusedSlide,
 	setSlideIndex,
 	changeEditorSlide,
-	deleteSlide,
-	duplicateSlide,
 	addEmptySlide,
 	handleInsertSlide,
 } from '@/apps/slides/stores/slide'
@@ -364,18 +356,31 @@ const createPresentation = async (theme) => {
 }
 
 const updatePresentationTheme = async (theme) => {
-	if (!presentationId.value) return
+	const id = presentationId.value
+	if (!id) return
 
 	showThemeDialog.value = false
 
-	call('frappe.client.set_value', {
-		doctype: 'Presentation',
-		name: presentationId.value,
-		fieldname: 'theme',
-		value: theme,
-	}).then(() => {
+	try {
+		const doc = await call('frappe.client.set_value', {
+			doctype: 'Presentation',
+			name: id,
+			fieldname: 'theme',
+			value: theme,
+		})
+
+		// the editor can move on mid-request; writing then would apply the theme
+		// and the modified stamp to a different presentation
+		if (presentationDoc.value?.name !== id) return
+
 		presentationDoc.value.theme = theme
-	})
+		// autosave stamps this onto the local copy, so a stale value would make the
+		// next load discard edits that had not synced yet
+		presentationDoc.value.modified = doc.modified
+	} catch (error) {
+		console.error('Failed to update theme: ', error)
+		toast.error('Could not update the theme. Please try again.')
+	}
 }
 
 const performNavbarDropdownAction = async (action) => {
@@ -405,6 +410,8 @@ const openLayoutDialog = (index) => {
 	showLayoutDialog.value = true
 	insertIndex.value = index
 }
+
+provide('openLayoutDialog', openLayoutDialog)
 
 const cleanup = () => {
 	showExportView.value = false

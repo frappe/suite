@@ -7,12 +7,15 @@ import { useChatStore } from "./useChatStore";
 import { PollPayloadFE } from "../types";
 import { getErrorMessage } from "../utils/error";
 import audioNotificationManager from "../utils/audioNotifications";
+import type { InjectionKey } from "vue";
 
-interface PollAPI {
+export interface PollAPI {
 	setupPollEvents: (notify: (notification: PollNotification) => void) => void;
 	createPoll: (question: string, options: { text: string }[]) => Promise<void>;
-	submitVote: (pollId: string, optionId: string) => void;
+	submitVote: (pollId: string, optionId: string) => Promise<void>;
 }
+
+export const pollKey: InjectionKey<PollAPI> = Symbol("poll");
 
 interface PollNotification {
 	message: string;
@@ -22,6 +25,83 @@ interface PollNotification {
 }
 
 const E2EE_POLL_PREFIX = "e2ee:";
+
+interface PollResponse {
+	success: boolean;
+	error?: string;
+	poll?: PollPayloadFE;
+	polls?: PollPayloadFE[];
+}
+
+function isPollOption(value: unknown): value is PollPayloadFE["options"][number] {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"text" in value &&
+		typeof value.text === "string" &&
+		"votes" in value &&
+		typeof value.votes === "number"
+	);
+}
+
+function isPollPayload(value: unknown): value is PollPayloadFE {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"pollId" in value &&
+		typeof value.pollId === "string" &&
+		"createdBy" in value &&
+		typeof value.createdBy === "string" &&
+		(!("createdByName" in value) ||
+			value.createdByName === undefined ||
+			typeof value.createdByName === "string") &&
+		"question" in value &&
+		typeof value.question === "string" &&
+		"options" in value &&
+		Array.isArray(value.options) &&
+		value.options.every(isPollOption) &&
+		"isActive" in value &&
+		typeof value.isActive === "boolean" &&
+		(!("hasVoted" in value) ||
+			value.hasVoted === undefined ||
+			typeof value.hasVoted === "boolean") &&
+		"createdAt" in value &&
+		typeof value.createdAt === "string"
+	);
+}
+
+function isPollResponse(value: unknown): value is PollResponse {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"success" in value &&
+		typeof value.success === "boolean" &&
+		(!("error" in value) ||
+			value.error === undefined ||
+			typeof value.error === "string") &&
+		(!("poll" in value) || value.poll === undefined || isPollPayload(value.poll)) &&
+		(!("polls" in value) ||
+			value.polls === undefined ||
+			(Array.isArray(value.polls) && value.polls.every(isPollPayload)))
+	);
+}
+
+function isExistingPollsEvent(value: unknown): value is { polls: PollPayloadFE[] } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"polls" in value &&
+		Array.isArray(value.polls) &&
+		value.polls.every(isPollPayload)
+	);
+}
+
+function requirePollResponse(value: unknown, operation: string): PollResponse {
+	if (!isPollResponse(value)) throw new Error(`Invalid ${operation} response`);
+	return value;
+}
 
 function isEncryptedPollText(text: string): boolean {
 	return typeof text === "string" && text.startsWith(E2EE_POLL_PREFIX);
@@ -95,7 +175,11 @@ async function decryptPollPayload(
 			return { ...opt, text };
 		}),
 	);
-	if (options.some((option) => option === null)) return null;
+	if (
+		!options.every(
+			(option): option is PollPayloadFE["options"][number] => option !== null,
+		)
+	) return null;
 	return { ...poll, question, options };
 }
 
@@ -144,9 +228,10 @@ export function usePoll(deps: {
 		await Promise.all(
 			plaintextPolls.map(async (poll) => {
 				const payload = await encryptExistingPollPayload(key, poll);
-				const response = await sfuClient.sendRequest("poll:sync_encrypted", payload) as {
-					success?: boolean;
-				};
+				const response = requirePollResponse(
+					await sfuClient.sendRequest("poll:sync_encrypted", payload),
+					"poll sync",
+				);
 				if (!response?.success) return;
 			}),
 		);
@@ -157,10 +242,10 @@ export function usePoll(deps: {
 		const key = await E2EEMeeting.instance.getE2EEPollKey();
 		if (!key && sfuClient.isE2EERequired?.()) return;
 		try {
-			const response = (await sfuClient.sendRequest("get_existing_polls", {})) as {
-				success: boolean;
-				polls?: PollPayloadFE[];
-			};
+			const response = requirePollResponse(
+				await sfuClient.sendRequest("get_existing_polls", {}),
+				"existing polls",
+			);
 			if (response.success && response.polls) {
 				if (!key && response.polls.some(hasEncryptedPollText)) return;
 				const decrypted = (
@@ -186,10 +271,10 @@ export function usePoll(deps: {
 
 	const setupPollEvents = (notify: (notification: PollNotification) => void) => {
 		sfuClient.on("poll:new", async (data: unknown) => {
+			if (!isPollPayload(data)) return;
 			const key = await E2EEMeeting.instance.getE2EEPollKey();
-			const payload = data as PollPayloadFE;
-			if (!key && hasEncryptedPollText(payload)) return;
-			const poll = await decryptPollPayload(key, payload);
+			if (!key && hasEncryptedPollText(data)) return;
+			const poll = await decryptPollPayload(key, data);
 			if (!poll) return;
 			pollStore.addPoll(poll);
 			if (poll.createdBy !== currentUserId() && !chatStore.isChatOpen) {
@@ -205,24 +290,24 @@ export function usePoll(deps: {
 		});
 
 		sfuClient.on("poll:update", async (data: unknown) => {
+			if (!isPollPayload(data)) return;
 			const key = await E2EEMeeting.instance.getE2EEPollKey();
-			const payload = data as PollPayloadFE;
-			if (!key && hasEncryptedPollText(payload)) return;
-			const poll = await decryptPollPayload(key, payload);
+			if (!key && hasEncryptedPollText(data)) return;
+			const poll = await decryptPollPayload(key, data);
 			if (!poll) return;
 			pollStore.updatePoll(poll);
 		});
 
 		sfuClient.on("existing_polls", async (data: unknown) => {
+			if (!isExistingPollsEvent(data)) return;
 			const key = await E2EEMeeting.instance.getE2EEPollKey();
-			const payload = data as { polls: PollPayloadFE[] };
-			if (!key && payload.polls.some(hasEncryptedPollText)) return;
+			if (!key && data.polls.some(hasEncryptedPollText)) return;
 			const decrypted = (
 				await Promise.all(
-					payload.polls.map((p) => decryptPollPayload(key, p)),
+					data.polls.map((p) => decryptPollPayload(key, p)),
 				)
 			).filter((poll): poll is PollPayloadFE => poll !== null);
-			if (decrypted.length === 0 && payload.polls.length > 0) return;
+			if (decrypted.length === 0 && data.polls.length > 0) return;
 			pollStore.setExistingPolls(decrypted);
 		});
 
@@ -250,7 +335,10 @@ export function usePoll(deps: {
 				createdByName: currentUserName(),
 			};
 
-			const response = (await sfuClient.sendRequest("poll:create", payload)) as any;
+			const response = requirePollResponse(
+				await sfuClient.sendRequest("poll:create", payload),
+				"poll creation",
+			);
 
 			if (response && response.success) {
 				if (response.poll) {
@@ -275,10 +363,10 @@ export function usePoll(deps: {
 		}
 
 		try {
-			const response = await sfuClient.sendRequest("poll:vote", {
-				pollId,
-				optionId,
-			}) as { success: boolean; error?: string };
+			const response = requirePollResponse(
+				await sfuClient.sendRequest("poll:vote", { pollId, optionId }),
+				"poll vote",
+			);
 
 			if (!response.success) {
 				throw new Error(response.error ?? "Failed to submit vote");
@@ -287,7 +375,7 @@ export function usePoll(deps: {
 			pollStore.markPollAsVoted(pollId);
 		} catch (error) {
 			console.error("Failed to submit vote:", error);
-			toast.error((error as Error).message);
+			toast.error(getErrorMessage(error));
 			throw error;
 		}
 	};

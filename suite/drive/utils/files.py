@@ -477,11 +477,26 @@ class FileManager:
                 pass
         else:
             try:
-                self.get_local_path(entity.file_url).unlink()
+                path = self.get_local_path(entity.file_url)
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
                 if thumbnail_path:
                     (self.site_folder / thumbnail_path).unlink()
             except FileNotFoundError:
                 pass
+
+    def delete_from_trash(self, entity):
+        trash_path = self.__get_trash_path(entity)
+        if self.s3_enabled:
+            self.conn.delete_object(Bucket=self.bucket, Key=str(trash_path))
+            return
+        local_path = self.site_folder / trash_path
+        if local_path.is_dir():
+            shutil.rmtree(local_path)
+        else:
+            local_path.unlink(missing_ok=True)
 
 
 # Utils

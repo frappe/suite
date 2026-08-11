@@ -34,7 +34,10 @@ const selectionBounds = reactive({
 
 const slideBounds = reactive({})
 
+// an element measures zero in one axis while its text editor is swapped out, and
+// a selection box never legitimately collapses, so keep the last known size
 const updateSelectionBounds = (newBounds) => {
+	if (newBounds.width === 0 || newBounds.height === 0) return
 	Object.assign(selectionBounds, newBounds)
 }
 

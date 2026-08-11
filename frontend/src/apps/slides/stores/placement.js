@@ -4,6 +4,7 @@ import { selectionBounds, slideBounds, currentSlide } from './slide'
 import {
 	activeElements,
 	activeElementIds,
+	isSelectionLocked,
 	getElementPosition,
 	isWithinOverlappingBounds,
 	normalizeZIndices,
@@ -69,6 +70,7 @@ const alignElementsToEachOther = (direction) => {
 }
 
 const alignElement = (direction) => {
+	if (isSelectionLocked.value) return
 	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
 
 	const axis = isHorizontalDirection(direction) ? 'X' : 'Y'
@@ -190,6 +192,8 @@ const getPlacementUpdateCommands = (action) => {
 }
 
 const arrangeElements = (action) => {
+	if (isSelectionLocked.value) return
+
 	const commands = getPlacementUpdateCommands(action)
 	if (!commands.length) return
 	commandHistory.execute(

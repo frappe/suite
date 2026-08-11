@@ -1,6 +1,7 @@
 <template>
 	<ContextMenu :options="contextMenuOptions">
-		<div>
+		<!-- the trigger has to cover the slide, or a blank-canvas right-click never reaches it -->
+		<div data-slide-surface class="absolute inset-0">
 			<slot />
 		</div>
 	</ContextMenu>
@@ -14,14 +15,23 @@ import {
 	activeElements,
 	focusElementId,
 	setActiveElements,
+	selectAllElements,
+	resetFocus,
 	duplicateElements,
 	deleteElements,
 	flipElements,
+	isSelectionLocked,
+	hasLockedElements,
+	hasUnlockedElements,
+	toggleLock,
+	lockAll,
+	unlockAll,
 } from '@/apps/slides/stores/element'
 
 import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
 import { inCropMode, startCrop } from '@/apps/slides/stores/imageCrop'
-import { currentSlide } from '@/apps/slides/stores/slide'
+import { currentSlide, slideIndex } from '@/apps/slides/stores/slide'
+import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
 
 import BringToFront from '@/apps/slides/icons/BringToFront.vue'
 import SendToBack from '@/apps/slides/icons/SendToBack.vue'
@@ -37,11 +47,11 @@ import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
+const openLayoutDialog = inject('openLayoutDialog', () => {})
 
 const contextMenuOptions = ref([])
 
-// the underlying trigger opens the menu unless the event is defaultPrevented, so
-// we open it only for right-clicks that land on an element or the selection box
+// the underlying trigger opens the menu unless the event is defaultPrevented
 const handleContextMenu = (e) => {
 	if (e.target?.isContentEditable) return e.stopPropagation()
 
@@ -54,15 +64,43 @@ const handleContextMenu = (e) => {
 		)
 		if (!element || focusElementId.value == element.id) return e.preventDefault()
 		setActiveElements([element.id])
-	} else if (!e.target?.closest?.('[data-selection-box]')) {
-		return e.preventDefault()
+		contextMenuOptions.value = buildElementContextOptions()
+	} else if (e.target?.closest?.('[data-selection-box]')) {
+		contextMenuOptions.value = buildElementContextOptions()
+	} else {
+		resetFocus()
+		contextMenuOptions.value = buildBlankSlideOptions()
 	}
+}
 
-	contextMenuOptions.value = buildElementContextOptions()
+const buildBlankSlideOptions = () => {
+	const slideOptions = [
+		{ label: 'Select all', icon: 'lucide-box-select', onClick: () => selectAllElements() },
+		{
+			label: 'Lock all',
+			icon: 'lucide-lock',
+			condition: () => hasUnlockedElements.value,
+			onClick: () => lockAll(),
+		},
+		{
+			label: 'Unlock all',
+			icon: 'lucide-lock-open',
+			condition: () => hasLockedElements.value,
+			onClick: () => unlockAll(),
+		},
+	]
+
+	return [
+		{ group: '', options: slideOptions },
+		{
+			group: '',
+			options: buildSlideContextOptions({ index: slideIndex.value, openLayoutDialog }),
+		},
+	]
 }
 
 const buildElementContextOptions = () => {
-	const canFlip = activeElements.value.every((el) => ['shape', 'image'].includes(el.type))
+	const canCrop = activeElements.value.length == 1 && activeElements.value[0].type == 'image'
 
 	const orderOptions = [
 		{ label: 'Bring to front', icon: BringToFront, onClick: () => arrangeElements('front') },
@@ -80,18 +118,6 @@ const buildElementContextOptions = () => {
 		{ label: 'Bottom', icon: AlignBottom, onClick: () => alignElement('bottom') },
 	]
 
-	const arrangeOptions = [
-		{ label: 'Order', icon: BringToFront, submenu: orderOptions },
-		{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
-	]
-
-	if (canFlip) {
-		arrangeOptions.push(
-			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
-			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
-		)
-	}
-
 	const clipboardOptions = [
 		{ label: 'Copy', icon: 'lucide-copy', onClick: () => document.execCommand('copy') },
 		{
@@ -101,23 +127,43 @@ const buildElementContextOptions = () => {
 		},
 	]
 
-	const canCrop = activeElements.value.length == 1 && activeElements.value[0].type == 'image'
-	if (canCrop) {
-		clipboardOptions.push({
-			label: 'Crop',
-			icon: 'lucide-crop',
-			onClick: () => startCrop(activeElements.value[0]),
+	const transformOptions = []
+	if (!isSelectionLocked.value) {
+		if (canCrop) {
+			transformOptions.push({
+				label: 'Crop',
+				icon: 'lucide-crop',
+				onClick: () => startCrop(activeElements.value[0]),
+			})
+		}
+
+		transformOptions.push(
+			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
+			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
+			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
+			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
+		)
+	}
+
+	const objectOptions = [
+		isSelectionLocked.value
+			? { label: 'Unlock', icon: 'lucide-lock-open', onClick: () => toggleLock() }
+			: { label: 'Lock', icon: 'lucide-lock', onClick: () => toggleLock() },
+	]
+
+	if (!isSelectionLocked.value) {
+		objectOptions.push({
+			label: 'Delete',
+			icon: 'lucide-trash-2',
+			theme: 'red',
+			onClick: () => deleteElements(),
 		})
 	}
 
-	const deleteOptions = [
-		{ label: 'Delete', icon: 'lucide-trash-2', theme: 'red', onClick: () => deleteElements() },
-	]
-
 	return [
 		{ group: '', options: clipboardOptions },
-		{ group: '', options: arrangeOptions },
-		{ group: '', options: deleteOptions },
+		{ group: '', options: transformOptions },
+		{ group: '', options: objectOptions },
 	]
 }
 

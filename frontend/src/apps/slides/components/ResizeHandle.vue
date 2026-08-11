@@ -24,12 +24,11 @@ const scaledPx = (value) => `${value / slideBounds.scale}px`
 
 const EDGE_THICKNESS = 7
 const EDGE_LENGTH = 18
-const OUTLINE_WIDTH = 2
 
 const getWidthResizerStyles = () => {
 	const resizer = props.direction
 
-	const offset = `-${scaledPx(EDGE_THICKNESS / 2 + OUTLINE_WIDTH / 2)}`
+	const offset = `-${scaledPx(EDGE_THICKNESS / 2)}`
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
 		borderRadius: '9999px',
@@ -45,7 +44,7 @@ const getWidthResizerStyles = () => {
 const getHeightResizerStyles = () => {
 	const resizer = props.direction
 
-	const offset = `-${scaledPx(EDGE_THICKNESS / 2 + OUTLINE_WIDTH / 2)}`
+	const offset = `-${scaledPx(EDGE_THICKNESS / 2)}`
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
 		borderRadius: '9999px',
@@ -67,7 +66,7 @@ const getDimensionResizerStyles = () => {
 		'bottom-right': 'nwse-resize',
 	}
 	const size = props.currentResizer ? 11 : 9
-	const offset = `-${scaledPx(size / 2 + OUTLINE_WIDTH / 2)}`
+	const offset = `-${scaledPx(size / 2)}`
 	return {
 		...getHandleBaseStyles(slideBounds.scale),
 		borderRadius: '9999px',

@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import { nextTick, useTemplateRef } from 'vue'
+import { toRef, useTemplateRef } from 'vue'
 
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 
@@ -29,7 +29,7 @@ const props = defineProps({
 
 const captureRef = useTemplateRef('captureRef')
 
-const thumbnailCaptureControls = useThumbnailCapture(captureRef, props.disableCapture)
+const thumbnailCaptureControls = useThumbnailCapture(captureRef, toRef(props, 'disableCapture'))
 
 defineExpose(thumbnailCaptureControls)
 </script>

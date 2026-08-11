@@ -32,7 +32,7 @@
 							<div
 								v-if="presentation.thumbnail"
 								class="size-full"
-								:style="getThumbnailCardStyles(presentation.thumbnail)"
+								:style="getThumbnailCardStyles(presentation.thumbnail, presentation)"
 							></div>
 							<div
 								v-else

@@ -2,13 +2,13 @@
 	<Section label="Playback">
 		<PropertyRow label="Replace">
 			<Button variant="ghost" class="max-w-[45%]" :title="fileName" @click="openFilePicker">
-				<span class="min-w-0 truncate">{{ fileName }}</span>
+				<span class="min-w-0 truncate text-ink-gray-7">{{ fileName }}</span>
 			</Button>
 		</PropertyRow>
-		<PropertyRow label="Autoplay">
+		<PropertyRow label="Autoplay" class="cursor-pointer" @click="toggleFromRow($event, 'autoplay')">
 			<Switch :modelValue="activeElement.autoplay" @update:modelValue="setAutoplay" />
 		</PropertyRow>
-		<PropertyRow label="Loop">
+		<PropertyRow label="Loop" class="cursor-pointer" @click="toggleFromRow($event, 'loop')">
 			<Switch :modelValue="activeElement.loop" @update:modelValue="setLoop" />
 		</PropertyRow>
 		<NumberControl
@@ -45,6 +45,11 @@ import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
 const setAutoplay = (value) => setElementProperty('autoplay', value)
 const setLoop = (value) => setElementProperty('loop', value)
+
+// the switch handles its own clicks; the rest of the row forwards to it
+const toggleFromRow = (e, property) => {
+	if (!e.target.closest('button')) setElementProperty(property, !activeElement.value[property])
+}
 
 const playbackRate = useElementProperty('playbackRate')
 

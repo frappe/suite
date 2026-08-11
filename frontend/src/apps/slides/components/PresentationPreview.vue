@@ -98,7 +98,7 @@ const getActionIconClasses = (action) => {
 }
 
 const previewStyles = computed(() => {
-	return getThumbnailCardStyles(props.presentation.thumbnail)
+	return getThumbnailCardStyles(props.presentation.thumbnail, props.presentation)
 })
 
 const previewDetails = computed(() => {

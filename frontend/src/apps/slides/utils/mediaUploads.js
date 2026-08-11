@@ -98,7 +98,7 @@ export const handleUploadedMedia = (files, targetElement) => {
 	})
 }
 
-export const getAttachmentUrl = (fileUrl) => {
+export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 	if (!fileUrl) return ''
 
 	// if starts with data: or /assets return as it is
@@ -108,14 +108,22 @@ export const getAttachmentUrl = (fileUrl) => {
 	if (fileUrl.startsWith('/files')) fileUrl = `/private${fileUrl}`
 
 	if (fileUrl.startsWith('/private')) {
-		// if owner is trying to access just send static path
+		const name = sourcePresentation ? sourcePresentation.name : presentationId.value
+		const owner = sourcePresentation ? sourcePresentation.owner : presentationDoc.value?.owner
 		const user = session.user?.sessionUser
-		if (presentationDoc.value?.owner === user || user === 'Administrator') {
+
+		// if owner is trying to access just send static path
+		if (owner === user || user === 'Administrator') {
+			// a duplicate borrows its source's thumbnail url, so the proxy can't serve it
+			if (sourcePresentation) return fileUrl
 			// Tag the request so the slides service worker can cache it without
 			// touching other apps' /private/files/ traffic (Drive, Mail, ...).
 			// Non-owner media already goes through the slides-namespaced proxy below.
 			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
 		}
-		return `/api/method/suite.slides.api.file.get_media_file?src=${fileUrl}`
+		if (!name) return fileUrl
+		return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
+			fileUrl,
+		)}&presentation=${encodeURIComponent(name)}`
 	}
 }

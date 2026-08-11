@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 
@@ -11,6 +11,22 @@ from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url, storage
 
 
 class TestStorageHelpers(unittest.TestCase):
+    def test_permanent_delete_uses_the_blob_current_location(self):
+        for blob_is_trashed in (False, True):
+            with self.subTest(blob_is_trashed=blob_is_trashed):
+                manager = Mock()
+                entity = frappe._dict(name="file-id", file_url="private/files/file-id", manager=manager)
+                with patch.object(frappe.db, "after_commit", Mock()) as after_commit:
+                    File._delete_blob_after_commit(entity, blob_is_trashed)
+                after_commit.add.call_args.args[0]()
+
+                if blob_is_trashed:
+                    manager.delete_from_trash.assert_called_once()
+                    manager.delete_file.assert_not_called()
+                else:
+                    manager.delete_file.assert_called_once()
+                    manager.delete_from_trash.assert_not_called()
+
     def test_writer_container_is_disk_managed(self):
         writer = frappe._dict(
             file_type="Document",

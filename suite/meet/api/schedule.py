@@ -68,6 +68,7 @@ def create_scheduled_meeting(
         use_default_alerts=use_default_alerts,
         send_scheduling_messages=send_scheduling_messages,
     )
+    frappe.db.set_value("Meet Room", meeting_id, "calendar_event", f"{account}|{event_id}")
 
     return {"meeting_id": meeting_id, "meeting_url": meet_url, "event_id": event_id}
 

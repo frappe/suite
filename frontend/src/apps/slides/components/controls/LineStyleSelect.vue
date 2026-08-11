@@ -11,9 +11,9 @@
 			<span v-else :class="linePreviewClasses(selectedOption?.value)" />
 			<span :class="chevronClasses" />
 		</template>
-		<template #item-label="{ option }">
-			<span v-if="option.value === 'none'" :class="noneLabelClasses">None</span>
-			<span v-else :class="linePreviewClasses(option.value)" />
+		<template #item-label="{ item }">
+			<span v-if="item.value === 'none'" :class="noneLabelClasses">None</span>
+			<span v-else :class="linePreviewClasses(item.value)" />
 		</template>
 	</Select>
 </template>

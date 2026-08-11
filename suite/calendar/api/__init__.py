@@ -14,6 +14,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 )
 from suite.mail.jmap import get_calendar_event_service
 from suite.mail.utils.dt import normalize_utc_z
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 @frappe.whitelist()
@@ -124,6 +125,7 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def rsvp_calendar_event(account: str, id: str, response: str) -> None:
     """Records the logged-in user's RSVP (accepted / declined / tentative) on the event.
 
@@ -135,6 +137,7 @@ def rsvp_calendar_event(account: str, id: str, response: str) -> None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def edit_calendar_event(account: str, id: str, **kwargs) -> None:
     events = get_calendar_events_by_ids(account, [id])
     if not events:

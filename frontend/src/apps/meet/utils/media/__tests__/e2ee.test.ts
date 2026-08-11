@@ -9,16 +9,8 @@ beforeAll(() => {
 });
 
 afterEach(() => {
-	delete (
-		RTCRtpSender.prototype as unknown as {
-			createEncodedStreams?: () => unknown;
-		}
-	).createEncodedStreams;
-	delete (
-		RTCRtpReceiver.prototype as unknown as {
-			createEncodedStreams?: () => unknown;
-		}
-	).createEncodedStreams;
+	Reflect.deleteProperty(RTCRtpSender.prototype, "createEncodedStreams");
+	Reflect.deleteProperty(RTCRtpReceiver.prototype, "createEncodedStreams");
 });
 
 import { decodeFrameHeader, encodeFrameHeader } from "../frameCodec";
@@ -782,9 +774,10 @@ describe("ReceiverChainState anti-replay behavior", () => {
 			expect("key" in result).toBe(true);
 		}
 
-		const seenFrames = (
-			state as unknown as { seenFrames: Map<string, Set<number>> }
-		).seenFrames;
+		const seenFrames = Reflect.get(state, "seenFrames") as Map<
+			string,
+			Set<number>
+		>;
 		const seen = seenFrames.get("1:video");
 		expect(seen ? Array.from(seen).sort((a, b) => a - b) : []).toEqual([
 			97, 98, 99,
@@ -1201,18 +1194,15 @@ function makeMockSender(): RTCRtpSender {
 	const writable = new WritableStream<{ data: ArrayBuffer }>({
 		write() {},
 	});
-	const sender = {
-		createEncodedStreams: () => ({ readable, writable }),
-	} as unknown as RTCRtpSender;
-	(
-		RTCRtpSender.prototype as unknown as {
-			createEncodedStreams?: () => unknown;
-		}
-	).createEncodedStreams = () => ({ readable, writable });
-	(
-		RTCRtpReceiver.prototype as unknown as {
-			createEncodedStreams?: () => unknown;
-		}
-	).createEncodedStreams = () => ({ readable, writable });
+	const sender: RTCRtpSender = Object.create(RTCRtpSender.prototype);
+	Reflect.set(sender, "createEncodedStreams", () => ({ readable, writable }));
+	Reflect.set(RTCRtpSender.prototype, "createEncodedStreams", () => ({
+		readable,
+		writable,
+	}));
+	Reflect.set(RTCRtpReceiver.prototype, "createEncodedStreams", () => ({
+		readable,
+		writable,
+	}));
 	return sender;
 }

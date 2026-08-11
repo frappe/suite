@@ -25,6 +25,10 @@ const argv = yargs(hideBin(process.argv))
 		default: 3000,
 		describe: "SFU port if not implicit in URL",
 	})
+	.option("site", {
+		type: "string",
+		describe: "Frappe site namespace for the room",
+	})
 	.option("secret", {
 		type: "string",
 		default: process.env.JWT_SECRET,
@@ -34,6 +38,11 @@ const argv = yargs(hideBin(process.argv))
 		type: "boolean",
 		default: false,
 		describe: "Create real fake audio/video producers using FFmpeg",
+	})
+	.option("all-producers", {
+		type: "boolean",
+		default: false,
+		describe: "Create producers for every fake user instead of odd-indexed users",
 	})
 	.option("auto-toggle", {
 		type: "boolean",
@@ -52,8 +61,10 @@ const {
 	count,
 	sfuUrl,
 	sfuPort,
+	site,
 	secret,
 	withProducers,
+	allProducers,
 	autoToggle,
 	lifetime,
 } = argv;
@@ -161,6 +172,7 @@ function makeToken(userId, userName) {
 			meeting_id: meetingId,
 			user_name: userName,
 			scope: "full",
+			site,
 			iat: now,
 			exp: now + 3600,
 		},
@@ -343,7 +355,7 @@ async function spawnUser(index) {
 					console.log(`[#${index}] ✅ Joined room ${meetingId}`);
 
 					// Only half the users get producers (odd-indexed users)
-					const hasMedia = index % 2 === 1;
+					const hasMedia = allProducers || index % 2 === 1;
 					if (withProducers && hasMedia) {
 						try {
 							// Request Audio PlainTransport

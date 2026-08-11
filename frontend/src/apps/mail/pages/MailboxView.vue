@@ -1035,8 +1035,8 @@ const selectActions = computed((): SelectAction[] => [
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
 const refillPending = ref(false)
-// Current mailbox's record (carries total_threads/unread_threads); used by the periodic poll to
-// detect count changes and by the tab title's unread badge.
+// Current mailbox's record (carries total_emails/total_threads/unread_threads); used by the periodic
+// poll to detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
 
 // ── Screener banner ─────────────────────────────────────────────────────────────────────────────
@@ -1337,12 +1337,15 @@ watch(
 )
 
 // Periodically refresh the mailbox list (keeps sidebar counts current), then merge in new threads only
-// when the mailbox's thread count actually changed — so a quiet mailbox isn't touched (and the reader
+// when the mailbox's message count actually changed — so a quiet mailbox isn't touched (and the reader
 // isn't disturbed) every 30s.
+//
+// Messages, not threads: a reply landing in a thread that's already here leaves total_threads flat, so
+// gating on that count made this backstop blind to exactly the arrivals the socket exists to deliver.
 const pollForChanges = async () => {
-	const prevTotal = mailboxObj.value?.total_threads
+	const prevTotal = mailboxObj.value?.total_emails
 	await mailboxes.reload()
-	if (mailboxObj.value?.total_threads !== prevTotal) refreshThreads(false)
+	if (mailboxObj.value?.total_emails !== prevTotal) refreshThreads(false)
 }
 
 onMounted(() => {

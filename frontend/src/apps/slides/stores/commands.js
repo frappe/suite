@@ -1,4 +1,3 @@
-import { findElement } from '@/apps/slides/stores/element'
 import { slidesLength } from '@/apps/slides/stores/presentation'
 import { cloneObj } from '@/apps/slides/utils/helpers'
 
@@ -7,6 +6,20 @@ import { cloneObj } from '@/apps/slides/utils/helpers'
 const cloneValue = (value) => (typeof value === 'object' && value !== null ? cloneObj(value) : value)
 
 const findSlide = (state, slideId) => state.find((s) => s.clientId === slideId)
+
+const findElement = (state, slideId, elementId) =>
+	findSlide(state, slideId)?.elements.find((el) => el.id === elementId)
+
+// lock protects the element, not the editor's cross-slide bookkeeping
+const LOCK_EXEMPT_PROPERTIES = ['locked', 'zIndex', 'refId']
+
+const isBlockedByLock = (command, state) => {
+	if (command.key === 'batch') return command.commands.some((c) => isBlockedByLock(c, state))
+	if (!command.elementIds) return false
+	if (LOCK_EXEMPT_PROPERTIES.includes(command.property)) return false
+
+	return command.elementIds.some((id) => findElement(state, command.slideId, id)?.locked)
+}
 
 const addElement = (state, slideId, element) => {
 	const slide = findSlide(state, slideId)
@@ -37,6 +50,8 @@ const addElementCommand = ({ slideId, element }) => ({
 
 const removeElementCommand = ({ slideId, element }) => ({
 	key: 'removeElement',
+	slideId,
+	elementIds: [element.id],
 	jumpToSlideId: slideId,
 	jumpToElementIds: [element.id],
 	focusElementId: element.type === 'text' ? element.id : null,
@@ -69,6 +84,9 @@ const editElementCommand = ({
 
 	return {
 		key: 'editElement',
+		slideId,
+		elementIds,
+		property,
 		jumpToSlideId: slideId,
 		jumpToElementIds: elementIds,
 		skipJumpOnExecute,
@@ -105,6 +123,8 @@ const addSlideCommand = ({ slide, index, slideIndex }) => ({
 	fromSlideIndex: slideIndex,
 	debug: `Add slide ${slide.clientId} at index ${index}`,
 	execute(state) {
+		// a name carried over from another row would make the next save update it
+		slide.name = ''
 		addSlide(state, index, slide)
 	},
 	undo(state) {
@@ -121,6 +141,8 @@ const removeSlideCommand = ({ slide, index, slideIndex }) => ({
 		removeSlide(state, index, slide)
 	},
 	undo(state) {
+		// autosave may already have deleted the row, so the next save has to insert it
+		slide.name = ''
 		addSlide(state, index, slide)
 	},
 })
@@ -170,6 +192,7 @@ const reorderSlidesCommand = ({ oldIndex, newIndex }) => ({
 
 const batchCommand = ({ slideId, elementIds, focusElementId, commands, skipJumpOnExecute }) => ({
 	key: 'batch',
+	commands,
 	jumpToSlideId: slideId,
 	jumpToElementIds: elementIds,
 	focusElementId: focusElementId,
@@ -195,4 +218,5 @@ export {
 	editSlideCommand,
 	reorderSlidesCommand,
 	batchCommand,
+	isBlockedByLock,
 }

@@ -1,7 +1,12 @@
 <template>
+	<!-- The list indents are ours rather than prose-sm's 22px: an outside marker is drawn in
+	     that padding, and "10." is wider than it, so from the tenth item on the number was cut
+	     off by the editor's own scroll container (it starts at x=0 — the body carries no
+	     horizontal padding on desktop). Both lists move together so a document mixing them
+	     keeps one indent. -->
 	<TextEditor
 		ref="textEditor"
-		editor-class="prose-sm max-w-none"
+		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
 		:extensions="[CustomImageExtension, CustomParagraphExtension, ...MentionExtensions]"
 		:content="mail.html_body.replaceAll('<div><br></div>', '<div></div>')"
 		:upload-function

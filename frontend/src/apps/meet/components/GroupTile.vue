@@ -31,7 +31,7 @@ const props = defineProps<{
 	participants?: Array<{
 		user_id: string;
 		user_name?: string;
-		avatar?: string;
+		avatar?: string | null;
 		initials?: string;
 	}>;
 	size?: "sm" | "md" | "lg" | "xl" | "2xl";
@@ -41,7 +41,7 @@ const avatarParticipants = computed(() =>
 	(props.participants || []).map((participant) => ({
 		user_id: participant.user_id,
 		full_name: participant.user_name || participant.initials || participant.user_id,
-		avatar_url: participant.avatar,
+		avatar_url: participant.avatar ?? undefined,
 	})),
 );
 </script>

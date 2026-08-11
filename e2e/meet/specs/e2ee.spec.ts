@@ -38,14 +38,16 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 	await openMeetingAccessSettings(page);
 	const toggle = page.getByRole("switch", { name: "End-to-end encryption" });
 	await expect(toggle).toBeVisible();
-	await toggle.click();
-	await expect(toggle).toBeChecked({ timeout: 15_000 });
-	await expect(page.getByText("Encryption fingerprint")).toBeVisible({
-		timeout: 30_000,
-	});
+	if (!(await toggle.isChecked())) {
+		await toggle.click();
+		await expect(toggle).toBeChecked({ timeout: 15_000 });
+		await expect(page.getByText("Encryption fingerprint")).toBeVisible({
+			timeout: 30_000,
+		});
+	}
 	await page.keyboard.press("Escape");
 	if (await toggle.isVisible()) {
-		await page.mouse.click(20, 20);
+		await page.keyboard.press("Escape");
 	}
 	await expect(toggle).not.toBeVisible();
 }

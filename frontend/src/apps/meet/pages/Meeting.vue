@@ -14,6 +14,12 @@
 				:meetingTitle="previewTitle"
 			>
 				<template #right>
+					<RecordingIndicator
+						v-if="!showPreview && recording.isLive.value && recording.state.value"
+						:recording="recording.state.value"
+						:can-stop="isCurrentUserHost || isCurrentUserCohost"
+						@click="handleRecordingAction"
+					/>
 					<Button
 						v-if="showPreview"
 						size="sm"
@@ -54,7 +60,7 @@
 				:isMicOn="mediaState.isMicOn"
 				:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 				:microphonePermissionGranted="mediaState.microphonePermissionGranted"
-				:isConnecting="connectionState.isConnecting"
+				:isConnecting="sfuConnection.isConnecting.value"
 				:userInitials="currentUser.userInitials.value"
 				:userAvatar="currentUser.userAvatar.value"
 				:currentUserName="
@@ -194,6 +200,9 @@
 						:currentUser="currentUser.currentUser.value"
 						:cameraPermissionGranted="mediaState.cameraPermissionGranted"
 						:microphonePermissionGranted="mediaState.microphonePermissionGranted"
+						:canManageRecording="recording.globalEnabled.value && (isCurrentUserHost || isCurrentUserCohost)"
+						:recordingStatus="recording.state.value?.status"
+						:recordingLoading="recording.startLoading.value || recording.stopLoading.value"
 						@toggle-chat="toggleChat"
 						@toggle-people="togglePeople"
 						@toggle-reactions="toggleReactions($event)"
@@ -207,6 +216,7 @@
 						@end-call="sfuConnection.endCall()"
 						@device-changed="handleDeviceChanged"
 						@visibility-change="isToolbarVisible = $event"
+						@manage-recording="handleRecordingAction"
 					/>
 				</div>
 			</div>
@@ -228,6 +238,17 @@
 			@approve-user="lobby.approveUser"
 			@reject-user="lobby.rejectUser"
 		/>
+
+		<RecordingPreflightDialog
+			v-model:open="recordingDialogOpen"
+			:preflight="recordingPreflight"
+			:confirm="confirmRecordingStart"
+		/>
+		<RecordingStopDialog
+			v-model="recordingStopDialogOpen"
+			:loading="recording.stopLoading.value"
+			@confirm="confirmRecordingStop"
+		/>
 	</div>
 </template>
 
@@ -243,6 +264,9 @@ import MeetAvatar from "../components/MeetAvatar.vue";
 import MeetingLayout from "../components/MeetingLayout.vue";
 import MeetingPreview from "../components/MeetingPreview.vue";
 import MeetingHeader from "../components/MeetingHeader.vue";
+import RecordingIndicator from "../components/RecordingIndicator.vue";
+import RecordingPreflightDialog from "../components/RecordingPreflightDialog.vue";
+import RecordingStopDialog from "../components/RecordingStopDialog.vue";
 import MeetingToolbar from "../components/MeetingToolbar.vue";
 import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
@@ -261,7 +285,6 @@ import { useMediaState } from "../composables/useMediaState";
 import { provideMeetingContext } from "../composables/useMeetingContext";
 import { useMeetingDoc } from "../composables/useMeetingDoc";
 import {
-	type MeetingDocLike,
 	useMeetingHandlers,
 } from "../composables/useMeetingHandlers";
 import { useNoiseCancellation } from "../composables/useNoiseCancellation";
@@ -269,6 +292,10 @@ import { useNetworkQuality } from "../composables/useNetworkQuality";
 import { useParticipantStore } from "../composables/useParticipantStore";
 import { useRaiseHand } from "../composables/useRaiseHand";
 import { useRaiseHandStore } from "../composables/useRaiseHandStore";
+import {
+	type RecordingPreflight,
+	useRecording,
+} from "../composables/useRecording";
 import { useReactionStore } from "../composables/useReactionStore";
 import { useReactions } from "../composables/useReactions";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
@@ -290,7 +317,7 @@ import { session, userResource } from "@/boot/session";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
-import { usePoll } from "../composables/usePoll.js";
+import { pollKey, usePoll } from "../composables/usePoll.js";
 import { usePollStore } from "../composables/usePollStore.js";
 
 // Router
@@ -339,6 +366,43 @@ const {
 	meetingCoHosts,
 } = useMeetingDoc();
 const meetingDoc = getMeetingDoc(meetingId.value);
+const recording = useRecording(meetingId.value);
+const recordingDialogOpen = ref(false);
+const recordingStopDialogOpen = ref(false);
+const recordingPreflight = ref<RecordingPreflight | null>(null);
+
+async function handleRecordingAction() {
+	try {
+		if (recording.isStarting.value) return;
+		if (recording.isLive.value) {
+			if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return;
+			if (recording.state.value?.status !== "Stopping") recordingStopDialogOpen.value = true;
+			return;
+		}
+		recordingPreflight.value = await recording.getPreflight();
+		recordingDialogOpen.value = true;
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not manage recording");
+	}
+}
+
+async function confirmRecordingStop() {
+	try {
+		await recording.stop();
+		recordingStopDialogOpen.value = false;
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not stop recording");
+	}
+}
+
+async function confirmRecordingStart() {
+	try {
+		await recording.start();
+	} catch (error) {
+		toast.error(error instanceof Error ? error.message : "Could not start recording");
+		throw error;
+	}
+}
 const previewDetails = createResource({
 	url: "suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },
@@ -488,6 +552,8 @@ const sfuConnection = useSFUConnection({
 	onActiveSpeakerChanged: (participantIds: string[]) => {
 		participantStore.activeSpeakerIds = participantIds;
 	},
+	onRecordingState: recording.syncState,
+	onRecordingEnabled: recording.setGlobalEnabled,
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,
@@ -610,7 +676,12 @@ provideMeetingContext({
 // Provide legacy injects for components not yet migrated to useMeetingContext
 provide("setLocalVideoRef", mediaControls.setLocalVideoRef);
 provide("setRemoteVideoRef", mediaControls.setRemoteVideoRef);
-provide("setScreenShareVideoRef", mediaControls.setScreenShareVideoRef);
+provide(
+	"setScreenShareVideoRef",
+	(_consumerId: string, element: HTMLVideoElement | null) => {
+		if (element) mediaControls.setScreenShareVideoRef(element);
+	},
+);
 provide("getParticipantName", participantStore.getParticipantName);
 provide("meetingId", meetingId.value);
 provide("sfuManager", sfuConnection.sfuManager);
@@ -624,10 +695,10 @@ provide("hostControls", {
 });
 provide("meetingTitle", computed(() => meetingTitle.value));
 
-provide("poll", poll);
+provide(pollKey, poll);
 
 // --- Computed properties ---
-const isConnecting = computed(() => connectionState.isConnecting);
+const isConnecting = sfuConnection.isConnecting;
 const hasConnectionError = computed(() => !!connectionState.connectionError);
 const isInLobby = computed(() => lobbyStore.isInLobby || false);
 const isWaitingForApproval = computed(
@@ -697,7 +768,7 @@ watch(
 		connectingToastTimer = setTimeout(() => {
 			connectingToastTimer = null;
 			if (
-				!connectionState.isConnecting ||
+				!sfuConnection.isConnecting.value ||
 				connectionState.isInPreview ||
 				lobbyStore.isWaitingForApproval ||
 				lobbyStore.isInLobby ||
@@ -761,7 +832,7 @@ const handlers = useMeetingHandlers({
 	sfuConnection,
 	mediaControls,
 	lobby,
-	meetingDoc: meetingDoc as unknown as MeetingDocLike,
+	meetingDoc,
 	meetingId: meetingId.value,
 	isCurrentUserHost,
 	isPeopleOpen,
@@ -921,7 +992,7 @@ const handleE2EENeedsMediaRepublish = async () => {
 		if (mediaState.isMicOn) {
 			mediaState.microphonePermissionGranted = true;
 		}
-		if (mediaState.localVideo) {
+		if (mediaState.localVideo instanceof HTMLVideoElement) {
 			mediaControls.setLocalVideoRef(mediaState.localVideo);
 		}
 		if (mediaState.localStream && sfuConnection.sfuManager.value) {

@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { markDirty } from '@/apps/slides/stores/saving'
+import { isBlockedByLock } from '@/apps/slides/stores/commands'
 
 export const useCommandHistory = (state, historyMeta = {}) => {
 	const actionOrder = historyMeta.actionOrder
@@ -36,6 +37,9 @@ export const useCommandHistory = (state, historyMeta = {}) => {
 	}
 
 	const execute = async (command) => {
+		// undo and redo must still be able to restore a lock
+		if (isBlockedByLock(command, state.value)) return
+
 		const sequence = getActionSequence(command.key, 'execute')
 		for (const action of sequence) {
 			await executeAction(action, command, 'execute')

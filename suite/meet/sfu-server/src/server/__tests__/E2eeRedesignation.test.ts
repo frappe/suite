@@ -121,7 +121,7 @@ async function main(): Promise<void> {
 	const makeSocket = (
 		id: string,
 		participantId: string,
-		overrides: Record<string, unknown> = {},
+		overrides: { isHost?: boolean; senderId?: number } = {},
 	) => ({
 		id,
 		participantId,

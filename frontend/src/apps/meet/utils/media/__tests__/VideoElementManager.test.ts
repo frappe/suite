@@ -3,7 +3,7 @@ import { VideoElementManager } from "../VideoElementManager";
 
 type StreamCtor = new (tracks: MediaStreamTrack[]) => MediaStream;
 
-const globalAny = globalThis as unknown as { MediaStream?: StreamCtor };
+const globalAny = globalThis as typeof globalThis & { MediaStream?: StreamCtor };
 
 beforeEach(() => {
 	if (globalAny.MediaStream === undefined) {
@@ -24,16 +24,16 @@ beforeEach(() => {
 				return this.tracks;
 			}
 		}
-		globalAny.MediaStream = MockMediaStream as unknown as StreamCtor;
+		Reflect.set(globalAny, "MediaStream", MockMediaStream);
 	}
 });
 
 function makeTrack(id: string): MediaStreamTrack {
-	return {
+	return Object.assign(Object.create(null), {
 		id,
 		kind: "video",
 		stop: vi.fn(),
-	} as unknown as MediaStreamTrack;
+	}) as MediaStreamTrack;
 }
 
 function makeStream(tracks: MediaStreamTrack[]): MediaStream {
@@ -72,6 +72,60 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		expect((el.srcObject as MediaStream).getVideoTracks()[0].id).toBe(
 			"track-2",
 		);
+	});
+
+	it("strict mode waits for a delayed video tile to mount and play", async () => {
+		manager = new VideoElementManager(1000);
+		const attached = manager.attachStream("p1", makeStream([makeTrack("track-1")]), false);
+		let settled = false;
+		void attached.then(() => settled = true);
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		const el = makeVideoElement();
+		manager.registerVideoElement("p1", el);
+		await attached;
+		expect(el.srcObject).not.toBeNull();
+		expect(el.play).toHaveBeenCalledOnce();
+	});
+
+	it("strict mode rejects when delayed video playback fails", async () => {
+		manager = new VideoElementManager(1000);
+		const attached = manager.attachStream("p1", makeStream([makeTrack("track-1")]), false);
+		const el = makeVideoElement();
+		el.play = vi.fn().mockRejectedValue(new Error("decoder failed"));
+		manager.registerVideoElement("p1", el);
+		await expect(attached).rejects.toThrow("decoder failed");
+	});
+
+	it("strict mode times out while waiting for a video tile", async () => {
+		vi.useFakeTimers();
+		manager = new VideoElementManager(100);
+		const attached = manager.attachStream("p1", makeStream([makeTrack("track-1")]), false);
+		const rejected = expect(attached).rejects.toThrow("Timed out waiting for video element");
+		await vi.advanceTimersByTimeAsync(100);
+		await rejected;
+	});
+
+	it("attaches audio and surfaces autoplay failure", async () => {
+		manager = new VideoElementManager(1000);
+		const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValueOnce(new Error("blocked"));
+		const track = { ...makeTrack("audio-1"), kind: "audio" } as MediaStreamTrack;
+		await expect(manager.attachStream("p1", makeStream([track]), false)).rejects.toThrow("blocked");
+		expect(manager.audioElements.get("p1")?.srcObject).not.toBeNull();
+		play.mockRestore();
+	});
+
+	it("retries blocked audio after user interaction outside strict mode", async () => {
+		const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+			.mockRejectedValueOnce(new DOMException("blocked", "NotAllowedError"))
+			.mockResolvedValue(undefined);
+		const track = { ...makeTrack("audio-1"), kind: "audio" } as MediaStreamTrack;
+
+		await expect(manager.attachStream("p1", makeStream([track]), false)).resolves.toBeUndefined();
+		document.dispatchEvent(new Event("click"));
+		await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+		play.mockRestore();
 	});
 
 	it("skips re-attach when track id is unchanged", async () => {

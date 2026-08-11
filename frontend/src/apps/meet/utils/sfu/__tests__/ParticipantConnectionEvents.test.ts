@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { E2EEMeeting } from "../../media/E2EEMeeting";
 import { ParticipantManager } from "../../media/ParticipantManager";
-import { SFUConnectionManager } from "../SFUConnectionManager";
+import { ParticipantConnection } from "../ParticipantConnection";
 
 function createManager({ e2eeRequired = false } = {}) {
 	const participantManager = new ParticipantManager();
@@ -40,16 +40,17 @@ function createManager({ e2eeRequired = false } = {}) {
 		initialize: vi.fn(),
 		isDeviceLoaded: vi.fn(() => true),
 	};
-	const manager = new SFUConnectionManager({
+	const recoveryManager = {
+		setupTransportEventHandlers: vi.fn(),
+		reset: vi.fn(),
+	};
+	const manager = new ParticipantConnection({
 		sfuClient: sfuClient as never,
 		videoManager: {} as never,
 		participantManager,
 		transportManager: transportManager as never,
 		mediaManager: mediaManager as never,
-		recoveryManager: {
-			setupTransportEventHandlers: vi.fn(),
-			reset: vi.fn(),
-		} as never,
+		recoveryManager: recoveryManager as never,
 	});
 	manager.currentUser = { value: { user_id: "me" } };
 	return {
@@ -59,11 +60,11 @@ function createManager({ e2eeRequired = false } = {}) {
 		participantManager,
 		sfuClient,
 		transportManager,
-		recoveryManager: manager.recoveryManager,
+		recoveryManager,
 	};
 }
 
-describe("SFUConnectionManager", () => {
+describe("ParticipantConnection", () => {
 	afterEach(() => {
 		E2EEMeeting.instance.wipeMeetingContext();
 	});
@@ -150,6 +151,62 @@ describe("SFUConnectionManager", () => {
 			producerId: "producer-1",
 			isScreen: false,
 		});
+	});
+
+	it("claims duplicate producer events before awaiting E2EE", async () => {
+		const { handlers, manager, mediaManager } = createManager({
+			e2eeRequired: true,
+		});
+		await manager.connect("token");
+		const event = {
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "audio",
+		};
+
+		const first = handlers.get("producer_created")?.(event);
+		const duplicate = handlers.get("producer_created")?.(event);
+		E2EEMeeting.instance.setMeetingContext(
+			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
+			1,
+		);
+		await Promise.all([first, duplicate]);
+
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledOnce();
+	});
+
+	it("replays participant leaves and producer closes over stale snapshots", async () => {
+		const { handlers, manager, mediaManager, participantManager, sfuClient } =
+			createManager();
+		await manager.connect("token");
+		sfuClient.getRoomParticipants.mockImplementationOnce(async () => {
+			handlers.get("participant_left")?.({ participantId: "remote-1" });
+			return [{ participantId: "remote-1", user_id: "remote-1" }];
+		});
+		sfuClient.getExistingProducers.mockImplementationOnce(async () => {
+			handlers.get("producer_closed")?.({
+				participantId: "remote-1",
+				producerId: "producer-1",
+			});
+			return [{ id: "producer-1", participantId: "remote-1" }];
+		});
+
+		await manager.setupExistingParticipants();
+
+		expect(participantManager.hasParticipant("remote-1")).toBe(false);
+		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
+	it("preserves participant state during producer-only reconciliation", async () => {
+		const { manager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote" },
+		});
+
+		await manager.requestExistingProducers();
+
+		expect(participantManager.hasParticipant("remote-1")).toBe(true);
 	});
 
 	it("rejoins the room and rebuilds media after signaling reconnect", async () => {

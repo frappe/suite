@@ -20,6 +20,7 @@ from suite.calendar.doctype.calendar_event.invitations import (
     acting_as_organizer,
     custom_event_invites_enabled,
 )
+from suite.calendar.doctype.calendar_event.mailing_lists import expand_mailing_list_participants
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_event_service, get_jmap_connection
 from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
@@ -28,6 +29,7 @@ from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.logger import get_push_logger
 from suite.utils import enqueue_job, parse_filters, user_context
 from suite.utils.dt import utcnow
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 class CalendarEvent(Document):
@@ -343,6 +345,7 @@ def bulk_delete(names: str | list[str]) -> None:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def add_calendar_event(
     account: str,
     organizer: str | None = None,
@@ -369,6 +372,7 @@ def add_calendar_event(
 
     uid = uuid7().hex
     creation_id = str(uuid7())
+    participants = expand_mailing_list_participants(participants)
     event = {
         "creation_id": creation_id,
         "uid": uid,
@@ -455,6 +459,7 @@ def get_calendar_events(account: str, ids: list[str]) -> list[dict]:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def update_calendar_event(
     account: str,
     id: str,
@@ -481,6 +486,7 @@ def update_calendar_event(
 ) -> None:
     """Updates a calendar event for the given account and event ID."""
 
+    participants = expand_mailing_list_participants(participants)
     event = {
         "id": id,
         "uid": uid,
@@ -531,6 +537,7 @@ def update_calendar_event(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def update_calendar_event_instance(
     account: str,
     master_id: str,
@@ -539,6 +546,9 @@ def update_calendar_event_instance(
     send_scheduling_messages: bool = False,
 ) -> None:
     """Updates a specific instance of a recurring calendar event based on its master ID and recurrence ID."""
+
+    if "participants" in patch:
+        patch = patch | {"participants": expand_mailing_list_participants(patch["participants"])}
 
     use_custom_invites = False
     next_sequence = None
@@ -571,6 +581,7 @@ def update_calendar_event_instance(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def delete_calendar_events(account: str, ids: list[str], send_scheduling_messages: bool = False) -> None:
     """Deletes a calendar event for the given account by its ID."""
 
@@ -600,6 +611,7 @@ def delete_calendar_events(account: str, ids: list[str], send_scheduling_message
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def delete_calendar_event_instance(
     account: str, master_id: str, recurrence_id: str, send_scheduling_messages: bool = False
 ) -> None:

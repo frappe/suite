@@ -1,4 +1,20 @@
 {$GRAFANA_DOMAIN} {
-	encode zstd gzip
-	reverse_proxy grafana:3000
+	@loki_push {
+		method POST
+		path /loki/api/v1/push
+	}
+
+	handle @loki_push {
+		basic_auth {
+			{$LOKI_PUSH_USER} {$LOKI_PUSH_PASSWORD_HASH}
+		}
+		reverse_proxy loki:3100 {
+			header_up -Authorization
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy grafana:3000
+	}
 }

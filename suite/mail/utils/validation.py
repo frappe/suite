@@ -10,21 +10,21 @@ from frappe.utils.caching import request_cache
 from suite.mail.utils import get_config
 
 # A domain label is 1-63 chars of letters/digits/hyphens (no leading/trailing hyphen); a domain name is
-# two or more such labels joined by dots, at most 253 chars overall (e.g. "frappe.io").
+# two or more such labels joined by dots, at most 253 chars overall (e.g. "example.com").
 DOMAIN_NAME_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)(\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))+$"
 )
 
 
 def is_domain_entry(value: str) -> bool:
-    """Whether a screened value denotes a whole domain, i.e. is prefixed with '@' (e.g. '@frappe.io')."""
+    """Whether a screened value denotes a whole domain, i.e. is prefixed with '@' (e.g. '@example.com')."""
 
     return (value or "").startswith("@")
 
 
 def normalize_screened_value(value: str) -> str:
     """Normalise a screened value: trim it, and lowercase the domain of a '@domain' entry so that
-    '@Frappe.io' and '@frappe.io' collapse to a single rule."""
+    '@Example.com' and '@example.com' collapse to a single rule."""
 
     value = (value or "").strip()
     if is_domain_entry(value):

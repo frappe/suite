@@ -9,8 +9,9 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 				deps.authManager.ensureFullAccess(socket);
 				const { action, shareData } = data;
 				const roomId = socket.roomId;
+				const participantId = socket.participantId;
 
-				if (!roomId) return;
+				if (!roomId || !participantId) return;
 
 				if (action === 'start_share') {
 					loggers.socketHandler.info(
@@ -18,33 +19,39 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						socket.participantId || socket.userId,
 						shareData?.producerId || 'unspecified',
 					);
-					deps.registry.emitToFullAccessParticipants(
-						roomId,
-						'screen_share_started',
-						{
-							participantId: socket.participantId,
-							shareData,
-							timestamp: new Date().toISOString(),
+					deps.registry.emitScreenShare(roomId, 'screen_share_started', {
+						participantId,
+						shareData: {
+							...(typeof shareData?.producerId === 'string'
+								? { producerId: shareData.producerId }
+								: {}),
+							...(typeof shareData?.streamId === 'string'
+								? { streamId: shareData.streamId }
+								: {}),
+							...(shareData?.kind === 'video' ? { kind: shareData.kind } : {}),
+							...(typeof shareData?.isScreen === 'boolean'
+								? { isScreen: shareData.isScreen }
+								: {}),
+							...(typeof shareData?.startedAt === 'number' &&
+							Number.isFinite(shareData.startedAt)
+								? { startedAt: shareData.startedAt }
+								: {}),
 						},
-					);
+						timestamp: new Date().toISOString(),
+					});
 				} else if (action === 'stop_share') {
 					loggers.socketHandler.info(
-						'screen_share action=stop_share peer=%s producer=%s reason=%s source=%s details=%o',
+						'screen_share action=stop_share peer=%s producer=%s reason=%s source=%s',
 						socket.participantId || socket.userId,
 						shareData?.producerId || 'unspecified',
 						shareData?.reason || 'unspecified',
 						shareData?.source || 'unspecified',
-						shareData?.details || {},
 					);
-					deps.registry.emitToFullAccessParticipants(
-						roomId,
-						'screen_share_stopped',
-						{
-							participantId: socket.participantId,
-							reason: shareData?.reason,
-							timestamp: new Date().toISOString(),
-						},
-					);
+					deps.registry.emitScreenShare(roomId, 'screen_share_stopped', {
+						participantId,
+						reason: shareData?.reason,
+						timestamp: new Date().toISOString(),
+					});
 				}
 			} catch (error) {
 				loggers.socketHandler.warn(

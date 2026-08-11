@@ -58,12 +58,13 @@
 							placeholder="Set Color"
 							:aria-label="'Hex color input'"
 							:value="getDisplayColor()"
-							class="max-w-[94px] border-none text-sm uppercase"
+							class="max-w-[94px] border-none text-sm"
 							@update:modelValue="
 								(val) => {
 									setColor(val)
 								}
 							"
+							@keydown.enter.prevent.stop="(e) => e.target.blur()"
 							@click="handleColorInputClick"
 						/>
 
@@ -300,29 +301,38 @@ watch(sRGBHex, (newColor) => {
 })
 
 const setColor = (newColor) => {
-	if (!tinycolor(newColor).isValid()) {
+	const parsed = tinycolor(newColor)
+	if (!parsed.isValid()) {
 		revertKey.value++
 		return
 	}
+
+	// keep the slider's transparency unless the typed value carries its own alpha
+	if (parsed.getAlpha() === 1 && currentOpacity.value < 1) {
+		parsed.setAlpha(currentOpacity.value)
+	}
+
 	emit('colordown')
-	currentColor.value = newColor
-	const initialHsv = tinycolor(newColor).toHsv()
+	currentColor.value = parsed.toHex8String()
+	const initialHsv = parsed.toHsv()
 	colorHue.value = initialHsv.h
 	colorSaturation.value = initialHsv.s
 	colorValue.value = initialHsv.v
 	currentOpacity.value = initialHsv.a
 	currentHue.value = tinycolor({ h: colorHue.value, s: 1, l: 0.5 })
 	emit('colorup')
+
+	// remount the input so the display re-syncs to the normalized value
+	revertKey.value++
 }
 
 const getDisplayColor = () => {
 	if (!currentColor.value) return ''
-	return tinycolor(currentColor.value).toHex8String()
+	return tinycolor(currentColor.value).toHexString().toUpperCase()
 }
 
 const handleClipboardCopy = () => {
-	const color = getDisplayColor().toUpperCase()
-	copyToClipboard(color)
+	copyToClipboard(getDisplayColor())
 }
 
 const handleColorInputClick = (e) => {

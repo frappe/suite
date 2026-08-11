@@ -13,7 +13,11 @@
 				@mouseenter="emit('hover', option.value)"
 				@mouseleave="emit('hover', null)"
 			>
-				<component :is="option.icon" class="size-4" />
+				<component
+					:is="option.icon"
+					class="size-4"
+					:class="{ 'text-ink-gray-4': option.disabled }"
+				/>
 			</button>
 		</div>
 	</div>
@@ -38,9 +42,9 @@ const emit = defineEmits(['select', 'hover'])
 
 const rowClasses = 'flex h-7 w-full items-center justify-between'
 const buttonClasses =
-	'flex cursor-pointer items-center justify-center rounded p-1 text-ink-gray-7 hover:bg-surface-gray-3'
-const activeClasses = 'bg-surface-gray-3 text-ink-gray-9'
-const disabledClasses = 'pointer-events-none opacity-40'
+	'flex cursor-pointer items-center justify-center rounded p-1 text-ink-gray-6 hover:bg-surface-gray-3'
+const activeClasses = 'bg-surface-gray-3 text-ink-gray-7'
+const disabledClasses = 'pointer-events-none'
 
 const getButtonClasses = (option) => [
 	buttonClasses,

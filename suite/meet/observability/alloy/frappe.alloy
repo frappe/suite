@@ -1,0 +1,152 @@
+loki.source.file "frappe" {
+  targets = [
+    {
+      __path__ = "/var/log/frappe/web.log",
+      service  = "frappe-web",
+    },
+    {
+      __path__ = "/var/log/frappe/web.error.log",
+      service  = "frappe-web",
+    },
+    {
+      __path__ = "/var/log/frappe/node-socketio.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/node-socketio.error.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/socketio.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/socketio.error.log",
+      service  = "frappe-socketio",
+    },
+    {
+      __path__ = "/var/log/frappe/worker.log",
+      service  = "frappe-worker",
+    },
+    {
+      __path__ = "/var/log/frappe/worker.error.log",
+      service  = "frappe-worker",
+    },
+    {
+      __path__ = "/var/log/frappe/schedule.log",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/schedule.error.log",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/scheduler.log",
+      service  = "frappe-scheduler",
+    },
+    {
+      __path__ = "/var/log/frappe/monitor.json.log",
+      service  = "frappe-monitor",
+    },
+  ]
+
+  forward_to             = [loki.process.frappe.receiver]
+  tail_from_end           = true
+  on_positions_file_error = "restart_from_end"
+
+  file_match {
+    enabled     = true
+    sync_period = "10s"
+  }
+}
+
+loki.process "frappe" {
+  forward_to = [loki.write.remote.receiver]
+
+  stage.json {
+    expressions = {
+      timestamp = "timestamp",
+      level     = "level",
+    }
+    drop_malformed = false
+  }
+
+  stage.regex {
+    expression = `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}\s+(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\b.*$`
+  }
+
+  stage.timestamp {
+    source                        = "timestamp"
+    format                        = "RFC3339Nano"
+    fallback_formats              = ["2006-01-02 15:04:05.999999999Z07:00"]
+    action_on_failure             = "skip"
+    action_on_duplicate_timestamp = "keep"
+  }
+
+  stage.template {
+    source   = "level"
+    template = "{{ ToLower .Value }}"
+  }
+
+  stage.labels {
+    values = { level = "level" }
+  }
+
+  stage.label_drop {
+    values = ["filename"]
+  }
+
+  stage.replace {
+    expression = `(?i)["'](?:authorization|cookie|password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)["']\s*:\s*["'](?P<quoted_secret>[^"']*)["']`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*["'](?P<quoted_kv_secret>[^"']*)["']`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:password|passwd|secret|token|(?:access|refresh|id|csrf|session)[_-]?token|client[_-]?secret|aws[_-]?secret[_-]?access[_-]?key|private[_-]?key|api[_-]?key|x[_-]?api[_-]?key|sid)\s*[:=]\s*(?P<kv_secret>[^"'\s,;}&]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\bauthorization\s*[:=]\s*["']?(?P<auth_secret>[^"'\r\n,}]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?i)\b(?:cookie|set-cookie)\s*[:=]\s*["']?(?P<cookie_secret>[^"'\r\n]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<jwt>eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`
+    replace    = "[REDACTED]"
+  }
+
+  stage.replace {
+    expression = `(?P<aws_key>\b(?:AKIA|ASIA)[A-Z0-9]{16}\b)`
+    replace    = "[REDACTED]"
+  }
+}
+
+loki.write "remote" {
+  external_labels = {
+    environment = sys.env("ALLOY_ENVIRONMENT"),
+    host        = sys.env("ALLOY_HOST"),
+  }
+
+  endpoint {
+    url                 = sys.env("LOKI_PUSH_URL")
+    min_backoff_period  = "500ms"
+    max_backoff_period  = "5m"
+    max_backoff_retries = 100
+
+    basic_auth {
+      username      = sys.env("LOKI_PUSH_USER")
+      password_file = "/run/secrets/loki-password"
+    }
+  }
+}

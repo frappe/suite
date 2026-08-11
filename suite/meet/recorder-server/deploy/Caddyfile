@@ -1,0 +1,26 @@
+{
+	email {$TLS_EMAIL}
+}
+
+{$RECORDER_DOMAIN} {
+	route {
+		@metrics path /recorder/metrics
+		handle @metrics {
+			rewrite * /metrics
+			reverse_proxy 127.0.0.1:3010
+		}
+
+		@control path /v1/recordings /v1/recordings/*
+		handle @control {
+			request_body {
+				max_size 16KB
+			}
+			reverse_proxy 127.0.0.1:3010
+		}
+
+		@status path /health /ready
+		reverse_proxy @status 127.0.0.1:3010
+
+		respond 404
+	}
+}

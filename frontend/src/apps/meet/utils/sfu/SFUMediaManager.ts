@@ -59,10 +59,26 @@ interface MediaManagerOptions {
 	participantManager: ParticipantManager;
 }
 
+export interface PublishedMedia {
+	videoProducer?: Producer;
+	audioProducer?: Producer;
+	screenProducer?: Producer;
+}
+
+export interface ConsumerMetadata {
+	isScreen?: boolean;
+}
+
 interface MediaEventHandlers {
-	onScreenShareStarted?: (data: unknown) => void;
-	onScreenShareStopped?: (data: unknown) => void;
+	onScreenShareStarted?: (data: MediaScreenShareEvent) => void;
+	onScreenShareStopped?: (data: MediaScreenShareEvent) => void;
 	onRecoveryExhausted?: () => void;
+}
+
+export interface MediaScreenShareEvent {
+	participantId: string;
+	stream?: MediaStream;
+	consumer?: ConsumerEntry;
 }
 
 export class SFUMediaManager {
@@ -107,9 +123,9 @@ export class SFUMediaManager {
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
-	): Promise<Record<string, unknown>> {
+	): Promise<PublishedMedia> {
 		const { publishVideo = true, publishAudio = true } = options;
-		const results: Record<string, unknown> = {};
+		const results: PublishedMedia = {};
 
 		try {
 			this.mediaHandler.localStream = localStream;
@@ -163,7 +179,7 @@ export class SFUMediaManager {
 		}
 	}
 
-	async rebuildSendSide(): Promise<Record<string, unknown>> {
+	async rebuildSendSide(): Promise<PublishedMedia> {
 		const localStream = this.mediaHandler.localStream;
 		const screenTrack = this.mediaHandler.screenProducer?.track;
 		const hasLiveScreen = screenTrack?.readyState === "live";
@@ -205,8 +221,8 @@ export class SFUMediaManager {
 	async subscribeToProducer(
 		producerId: string,
 		participantId: string,
-		metadata: Record<string, unknown> = {},
-	): Promise<unknown> {
+		metadata: ConsumerMetadata = {},
+	): Promise<ConsumerEntry | false> {
 		const generation = this.subscriptionGeneration;
 		try {
 			const consumer = await this.transportManager.createConsumer(
@@ -409,6 +425,7 @@ export class SFUMediaManager {
 				`Failed to attach video consumer for ${participantId}:`,
 				error,
 			);
+			throw error;
 		}
 	}
 
@@ -426,6 +443,7 @@ export class SFUMediaManager {
 				`Failed to attach audio consumer for ${participantId}:`,
 				error,
 			);
+			throw error;
 		}
 	}
 
@@ -466,6 +484,7 @@ export class SFUMediaManager {
 			}
 		} catch (error) {
 			console.error("Failed to handle screen share consumer:", error);
+			throw error;
 		}
 	}
 

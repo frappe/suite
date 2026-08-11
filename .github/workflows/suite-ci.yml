@@ -1,28 +1,34 @@
 name: Suite CI
 
 on:
+  schedule:
+    - cron: "17 1 * * *"
   push:
     branches:
       - develop
     paths:
       - "suite/**"
       - "frontend/**"
+      - "realtime/**"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
+      - ".github/scripts/**"
       - ".github/workflows/suite-ci.yml"
   pull_request:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "realtime/**"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
+      - ".github/scripts/**"
       - ".github/workflows/suite-ci.yml"
   workflow_dispatch:
 
 concurrency:
-  group: suite-ci-${{ github.event.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -56,13 +62,15 @@ jobs:
       - name: Check node server changes
         id: node-server-changes
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_sheets=1
             run_meet=1
+            run_recorder=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
               changed_files="$(git diff --name-only HEAD~1 HEAD)"
@@ -71,12 +79,15 @@ jobs:
             fi
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
           fi
 
           echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
           echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
+          echo "run_recorder=$run_recorder" >> $GITHUB_OUTPUT
           echo "Run sheets collab server tests: $run_sheets"
           echo "Run meet sfu server tests: $run_meet"
+          echo "Run meet recorder server tests: $run_recorder"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -88,6 +99,14 @@ jobs:
         with:
           node-version: 24
           check-latest: true
+
+      - name: Run Realtime Handler Tests
+        run: |
+          mkdir -p test-results/realtime
+          node --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination=test-results/realtime/junit.xml \
+            'realtime/*.test.js'
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -117,12 +136,13 @@ jobs:
 
       - name: Setup Bench
         run: |
-          pip install frappe-bench
+          pip install frappe-bench "unittest-xml-reporting~=4.0"
           bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
       - name: Install Suite
+        id: install-suite
         working-directory: /home/runner/frappe-bench
         run: |
           bench get-app suite $GITHUB_WORKSPACE
@@ -136,24 +156,93 @@ jobs:
       - name: Run Backend Tests
         working-directory: /home/runner/frappe-bench
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
           bench --site test_site set-config allow_tests true
-          bench --site test_site run-tests --app suite
+          status=0
+          bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/backend/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
+          exit "$status"
         env:
           TYPE: server
 
+      - name: Check Background Worker
+        if: always() && steps.install-suite.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: |
+          marker=/home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready
+          rm -f "$marker"
+          mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          bench worker --queue short > "$GITHUB_WORKSPACE/test-results/backend/worker.log" 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          bench --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
+          timeout 60 bash -c 'until [ -f /home/runner/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
+          kill "$worker_pid" 2>/dev/null || true
+          wait "$worker_pid" 2>/dev/null || true
+          trap - EXIT
+
       - name: Run Sheets Collab Server Tests
-        if: steps.node-server-changes.outputs.run_sheets == '1'
+        if: always() && steps.node-server-changes.outputs.run_sheets == '1'
         working-directory: suite/sheets/collab-server
         run: |
           npm install
-          npm test
+          mkdir -p "$GITHUB_WORKSPACE/test-results/sheets-collab"
+          node --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination="$GITHUB_WORKSPACE/test-results/sheets-collab/junit.xml" \
+            'test/**/*.test.js'
 
       - name: Run Meet SFU Server Tests
-        if: steps.node-server-changes.outputs.run_meet == '1'
+        if: always() && steps.node-server-changes.outputs.run_meet == '1'
         working-directory: suite/meet/sfu-server
         run: |
           yarn install --frozen-lockfile
-          yarn test
+          mkdir -p test-results
+          yarn test:ci
+
+      - name: Build Meet Recorder UI
+        if: always() && steps.node-server-changes.outputs.run_recorder == '1'
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts
+          yarn workspace @suite/frontend build:recorder
+
+      - name: Run Meet Recorder Server Tests
+        if: always() && steps.node-server-changes.outputs.run_recorder == '1'
+        working-directory: suite/meet/recorder-server
+        run: |
+          yarn install --frozen-lockfile
+          mkdir -p test-results
+          xvfb-run --auto-servernum yarn test:ci
+        env:
+          RECORDER_CHROMIUM_NO_SANDBOX: "1"
+
+      - name: Run Meet Recorder Integration Tests
+        if: always() && github.event_name == 'schedule' && steps.node-server-changes.outputs.run_recorder == '1'
+        working-directory: suite/meet/recorder-server
+        run: yarn test:integration
+
+      - name: Collect Backend Evidence
+        if: always()
+        run: |
+          if [ -f /home/runner/frappe-bench/coverage.xml ]; then
+            cp /home/runner/frappe-bench/coverage.xml test-results/backend/coverage.xml
+          fi
+
+      - name: Upload Backend Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-backend-evidence
+          path: |
+            test-results/
+            suite/meet/sfu-server/test-results/
+            suite/meet/recorder-server/test-results/
+            suite/meet/recorder-server/integration/output/
+          if-no-files-found: warn
+          retention-days: 30
 
   mail-calendar:
     runs-on: ubuntu-latest
@@ -196,7 +285,7 @@ jobs:
       - name: Check mail/calendar changes
         id: mail-calendar-changes
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_tests=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -258,7 +347,7 @@ jobs:
       - name: Setup Bench
         if: steps.mail-calendar-changes.outputs.run == '1'
         run: |
-          pip install frappe-bench
+          pip install frappe-bench "unittest-xml-reporting~=4.0"
           bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
@@ -278,6 +367,7 @@ jobs:
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/${{ matrix.module }}"
           bench --site test_site set-config allow_tests true
           # Invite/OTP flows send transactional emails; with mute_emails set, frappe
           # builds the queue against a dummy outgoing account and never sends.
@@ -288,16 +378,33 @@ jobs:
           bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
           bench --site test_site clear-cache
 
+          status=0
           for path in $GITHUB_WORKSPACE/suite/${{ matrix.module }}/tests/test_*.py; do
             [ -e "$path" ] || continue
             rel="${path#"$GITHUB_WORKSPACE"/}"
             module="$(echo "${rel%.py}" | tr / .)"
+            fragments="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}-fragments.xml"
+            junit="$GITHUB_WORKSPACE/test-results/${{ matrix.module }}/${module}.xml"
             echo "::group::$module"
-            bench --site test_site run-tests --module "$module"
+            if ! bench --site test_site run-tests --module "$module" --junit-xml-output "$fragments"; then
+              status=1
+            fi
+            python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" "$fragments" "$junit"
+            rm "$fragments"
             echo "::endgroup::"
           done
+          exit "$status"
         env:
           TYPE: server
+
+      - name: Upload ${{ matrix.name }} Evidence
+        if: always() && steps.mail-calendar-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-${{ matrix.module }}-evidence
+          path: test-results/${{ matrix.module }}/
+          if-no-files-found: warn
+          retention-days: 30
 
   frontend:
     runs-on: ubuntu-latest
@@ -312,7 +419,7 @@ jobs:
       - name: Check frontend changes
         id: frontend-changes
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
             changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -356,7 +463,17 @@ jobs:
         working-directory: frontend
         run: |
           if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
-            yarn test
+            mkdir -p test-results
+            yarn test:ci
           else
             echo "No frontend test script configured"
           fi
+
+      - name: Upload Frontend Evidence
+        if: always() && steps.frontend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-frontend-evidence
+          path: frontend/test-results/
+          if-no-files-found: warn
+          retention-days: 30

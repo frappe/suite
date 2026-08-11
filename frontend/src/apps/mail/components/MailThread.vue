@@ -281,19 +281,28 @@
 										:attachment="icsAttachment(mail)"
 										:account="scopeAccountId"
 									/>
-									<EmailContent
-										v-if="hasHtmlContent(mail.html_body)"
-										:content="mail.html_body"
-										:block-images="shouldBlockImages(mail)"
-										:can-trust="!readonly"
-										@trust="trustSender.submit(mail.from_email)"
+									<DeliveryStatusBanner
+										v-if="showsDsnCard(mail)"
+										:key="`dsn-${mail.name}`"
+										:blob-id="mail.dsn_blob_id!"
+										:account="scopeAccountId"
+										@loaded="dsnCardRendered[mail.name] = $event"
 									/>
+									<template v-if="!dsnReplacesBody(mail)">
+										<EmailContent
+											v-if="hasHtmlContent(mail.html_body)"
+											:content="mail.html_body"
+											:block-images="shouldBlockImages(mail)"
+											:can-trust="!readonly"
+											@trust="trustSender.submit(mail.from_email)"
+										/>
 
-									<LinkifiedText
-										v-else
-										:text="mail.html_body || mail.text_body"
-										class="pt-4 font-sans text-base !leading-5 sm:text-sm"
-									/>
+										<LinkifiedText
+											v-else
+											:text="getPlainTextBody(mail)"
+											class="pt-4 font-sans text-base !leading-5 sm:text-sm"
+										/>
+									</template>
 
 									<div v-if="filteredAttachments(mail).length" class="mt-8">
 										<div
@@ -421,6 +430,7 @@ import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui
 
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
+	decodeHtmlEntities,
 	downloadUrlAsFile,
 	escapeHtml,
 	extractQuotedContent,
@@ -440,6 +450,7 @@ import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
+import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
@@ -870,6 +881,16 @@ const filteredAttachments = (mail: Mail) =>
 		(a: Attachment) => a.disposition === 'attachment' || !a.type.startsWith('image/'),
 	)
 
+// A bounce (DSN) message renders as a friendly card built from its message/delivery-status
+// part instead of the raw MAILER-DAEMON text. The body only comes back as fallback if the
+// banner reports there was nothing to render (part unreadable or without recipients).
+const dsnCardRendered = ref<Record<string, boolean>>({})
+
+const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id
+
+const dsnReplacesBody = (mail: Mail) =>
+	showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false
+
 // The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
 // part or a file merely named *.ics.
 const icsAttachment = (mail: Mail) =>
@@ -1101,13 +1122,19 @@ const getReplyAllRecipients = (mail: Mail) => {
 const isUserEmail = (email: string) =>
 	identities.value.data?.map((i: Identity) => i.email).includes(email)
 
+// The plain-text reading of a body, normalised. Servers hand some bodies over already
+// entity-escaped, and those carry no real tags — so they take this path, where showing
+// them verbatim (or escaping them again) puts `&lt;` in front of the reader instead of
+// the address it stands for. Both consumers below start from here.
+const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || mail.text_body || '')
+
 // A body with no markup is plain text, so it has to be escaped before going into the
 // <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
 // their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
 // silently deleting the very addresses the notice is about.
 const getBodyContent = (mail: Mail) => {
 	if (hasHtmlContent(mail.html_body)) return mail.html_body
-	const text = mail.html_body || mail.text_body
+	const text = getPlainTextBody(mail)
 	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
 }
 

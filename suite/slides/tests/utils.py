@@ -22,10 +22,16 @@ def make_presentation(title):
     ).insert()
 
 
-def make_private_image(presentation_name):
+def unique_image_content():
+    return base64.b64decode(PNG_1PX.split(",", 1)[1]) + uuid.uuid4().bytes
+
+
+def make_private_image(presentation_name, content=None):
     # unique content per call: frappe dedupes Files by content hash, which
     # would otherwise share one file_url across unrelated test fixtures
-    content = base64.b64decode(PNG_1PX.split(",", 1)[1]) + uuid.uuid4().bytes
+    if content is None:
+        content = unique_image_content()
+
     return frappe.get_doc(
         {
             "doctype": "File",

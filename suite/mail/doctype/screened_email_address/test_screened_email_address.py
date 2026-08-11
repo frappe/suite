@@ -25,7 +25,7 @@ class IntegrationTestScreenedEmailAddress(IntegrationTestCase):
         # Trims whitespace and leaves a plain email address untouched.
         self.assertEqual(normalize_screened_value("  john@example.com  "), "john@example.com")
         # Lowercases the domain of a '@domain' entry so it collapses to a single rule.
-        self.assertEqual(normalize_screened_value("@Frappe.io"), "@frappe.io")
+        self.assertEqual(normalize_screened_value("@Mail.Example.com"), "@mail.example.com")
         self.assertEqual(normalize_screened_value(" @Example.COM "), "@example.com")
 
     def test_validate_screened_value(self):

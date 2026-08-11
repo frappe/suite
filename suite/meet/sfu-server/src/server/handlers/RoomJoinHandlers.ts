@@ -17,6 +17,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 		const { roomId, participantId, userData, e2ee } = data;
 		const startedAt = performance.now();
 		const scope = socket.scope ?? 'unknown';
+		let participantClaimed = false;
 		const rejoin = Boolean(
 			deps.mediasoup.getRoomPeers?.(getRoomId(socket))?.get(participantId),
 		);
@@ -31,18 +32,17 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			const scopedRoomId = getRoomId(socket);
 			if (socket.scope === 'full') {
 				enforceE2EEJoinPolicy(socket, e2ee);
+				await deps.roomLifecycle.humanJoined(scopedRoomId);
 			}
 
-			await deps.mediasoup.createRoom(
-				scopedRoomId,
-				(roomIdInner, participantIds) => {
-					deps.registry.emitToFullAccessParticipants(
-						roomIdInner,
-						'active_speaker',
-						{ participantIds },
-					);
-				},
-			);
+			if (socket.scope === 'full') {
+				await deps.mediasoup.createRoom(
+					scopedRoomId,
+					(roomIdInner, participantIds) => {
+						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
+					},
+				);
+			}
 
 			socket.join(scopedRoomId);
 
@@ -52,6 +52,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
 				deps.registry.claimParticipant(socket, scopedRoomId, participantId);
+				participantClaimed = true;
 				const senderId = deps.registry.assignSenderId(
 					scopedRoomId,
 					participantId,
@@ -111,10 +112,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 
 			socket.emit('existing_raised_hands', {
-				hands: deps.registry.getRaisedHands(scopedRoomId) as unknown as Record<
-					string,
-					boolean
-				>,
+				hands: deps.registry.getRaisedHands(scopedRoomId),
 			});
 
 			if (socket.scope === 'full' && !socket.e2eeRequired) {
@@ -146,6 +144,16 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				(performance.now() - startedAt) / 1000,
 			);
 		} catch (error) {
+			if (socket.scope === 'full') {
+				if (participantClaimed) {
+					deps.registry.releaseParticipant(
+						socket,
+						getRoomId(socket),
+						participantId,
+					);
+				}
+				deps.roomLifecycle.scheduleCleanupIfHumanEmpty(getRoomId(socket));
+			}
 			deps.telemetry.recordRoomJoin(
 				{ scope, rejoin, outcome: 'failure' },
 				(performance.now() - startedAt) / 1000,
@@ -160,8 +168,43 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 	}
 
 	return (socket: Socket) => {
+		socket.on('recording:join', async (data, callback) => {
+			try {
+				deps.authManager.ensureRecorderAccess(socket);
+				if (data?.roomId !== socket.meetingId)
+					throw new Error('Room ID mismatch');
+				const roomId = getRoomId(socket);
+				const peerId = socket.userId;
+				await deps.mediasoup.createRoom(
+					roomId,
+					(roomIdInner, participantIds) => {
+						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
+					},
+				);
+				socket.join(roomId);
+				socket.roomId = roomId;
+				socket.participantId = peerId;
+				deps.registry.joinRecorder(socket, roomId, peerId);
+				deps.mediasoup.addPeer(roomId, peerId, {
+					name: 'Recorder',
+					userId: peerId,
+					audio_enabled: false,
+					video_enabled: false,
+				});
+				deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
+				socket.emit('existing_raised_hands', {
+					hands: deps.registry.getRaisedHands(roomId),
+				});
+				callback({ success: true });
+			} catch (error) {
+				callback({ success: false, error: (error as Error).message });
+			}
+		});
+
 		socket.on('join_room', async (data, callback) => {
 			try {
+				if (socket.scope === 'recording')
+					throw new Error('Recorder must use recording:join');
 				if (!socket.userId || !socket.meetingId) {
 					callback({ success: false, error: 'Authentication required' });
 					return;
@@ -220,6 +263,16 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			const participantId = socket.participantId;
 			if (roomId && participantId) {
 				try {
+					if (socket.scope === 'recording') {
+						const ownsPeer = deps.registry.leaveRecorder(
+							socket,
+							roomId,
+							participantId,
+						);
+						if (ownsPeer) {
+							await deps.mediasoup.removePeer(roomId, participantId);
+						}
+					}
 					const shouldCleanupPeer = deps.registry.releaseParticipant(
 						socket,
 						roomId,
@@ -234,35 +287,30 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						await deps.mediasoup.removePeer(roomId, participantId);
 
 						if (isRealParticipant(participantId)) {
-							socket
-								.to(roomId)
-								.emit('participant_left', { roomId, participantId });
+							deps.registry.emitParticipantEvent(
+								roomId,
+								'participant_left',
+								participantId,
+							);
 						}
 
 						if (deps.registry.hasRaisedHand(roomId, participantId)) {
 							deps.registry.clearRaisedHand(roomId, participantId);
-							deps.registry.emitToFullAccessParticipants(
-								roomId,
-								'hand_raised',
-								{
-									participantId,
-									raised: false,
-									timestamp: new Date().toISOString(),
-								},
-							);
+							deps.registry.emitRaisedHand(roomId, {
+								participantId,
+								raised: false,
+								timestamp: new Date().toISOString(),
+							});
 						}
+					}
+					if (socket.scope === 'full') {
+						deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
 					}
 
 					socket.leave(roomId);
 					deps.registry.leaveScope(socket, roomId, 'full');
 					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 					socket.roomId = undefined;
-					if (deps.registry.isEmpty(roomId)) {
-						deps.registry.cleanupRoom(roomId);
-						deps.e2eeEpochRelay.clearRoom(roomId);
-						await deps.e2eeRoster.clearRoom(roomId);
-						deps.mediasoup.closeRoom(roomId);
-					}
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
 					loggers.socketHandler.warn(

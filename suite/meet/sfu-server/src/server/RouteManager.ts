@@ -30,11 +30,12 @@ export class RouteManager {
 		mediasoup: MediasoupManager,
 		telemetry: Telemetry,
 		getSocketCount: () => number,
+		metricsToken?: string,
 	) {
 		this.app = app;
 		this.mediasoup = mediasoup;
 		this.telemetry = telemetry;
-		this.metricsToken = process.env.METRICS_TOKEN;
+		this.metricsToken = metricsToken;
 		this.getSocketCount = getSocketCount;
 	}
 
@@ -52,7 +53,7 @@ export class RouteManager {
 				status: 'healthy',
 				uptime: process.uptime(),
 				rooms: this.mediasoup.rooms.getRoomCount(),
-				peers: this.mediasoup.peers.getPeerCount(),
+				peers: this.mediasoup.rooms.getParticipantCount(),
 			};
 			res.json(stats);
 		});

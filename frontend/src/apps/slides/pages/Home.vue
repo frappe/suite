@@ -57,6 +57,7 @@ import {
 	templateList,
 	templateListResource,
 } from '@/apps/slides/stores/presentation'
+import { requestFullscreen } from '@/apps/slides/stores/slideshow'
 
 const router = useRouter()
 
@@ -87,6 +88,7 @@ const navigateToPresentation = (name, present) => {
 	name = name || previewPresentation.value?.name
 	previewPresentation.value = null
 	if (present) {
+		requestFullscreen()
 		router.replace({
 			name: 'slides-slideshow',
 			params: { presentationId: name },

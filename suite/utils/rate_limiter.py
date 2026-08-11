@@ -11,9 +11,12 @@ def dynamic_rate_limit() -> callable:
     """A decorator to apply rate limits dynamically based on the method path."""
 
     def decorator(fn):
-        # Resolved once, at decoration time. Only frappe's v1 dispatcher populates form_dict.cmd;
-        # the v2 one calls the method directly, so keying off cmd alone meant every limit could be
-        # skipped by posting to /api/v2/method/... instead of /api/method/....
+        # Resolved once, at decoration time, and used in preference to form_dict.cmd - which names
+        # the request, not this function. Reading cmd instead meant a limit was skipped entirely
+        # when the request arrived under some other name (frappe's v2 dispatcher leaves cmd unset,
+        # and override_whitelisted_methods leaves the caller's alias in it, neither of which any
+        # Rate Limit row can match), and that one decorated endpoint calling another charged the
+        # outer endpoint's bucket twice while never touching the inner one's.
         declared_method_path = f"{fn.__module__}.{fn.__qualname__}"
 
         @wraps(fn)
@@ -22,7 +25,7 @@ def dynamic_rate_limit() -> callable:
             if not getattr(frappe.local, "request", None):
                 return fn(*args, **kwargs)
 
-            method_path = frappe.form_dict.cmd or declared_method_path
+            method_path = declared_method_path
             rate_limits = get_rate_limits(method_path)
             if not rate_limits:
                 return fn(*args, **kwargs)
@@ -59,9 +62,11 @@ def dynamic_rate_limit() -> callable:
                     ip_based=rl["ip_based"],
                 )(wrapped_fn)
 
-            # frappe's rate_limit builds its counter key from form_dict.cmd too, so publish the
-            # resolved path for the duration of the call - otherwise every v2 request would share
-            # a single bucket keyed on None.
+            # frappe's rate_limit builds its counter key from form_dict.cmd too, so publish this
+            # method's path for the duration of the call - otherwise the counter lands in whatever
+            # bucket the request happens to be named after (a single one keyed on None for every
+            # v2 request, or the calling endpoint's for a nested call). Restored on the way out, so
+            # the caller's own counter stays its own.
             previous_cmd = frappe.form_dict.cmd
             frappe.form_dict.cmd = method_path
             try:

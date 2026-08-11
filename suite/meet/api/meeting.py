@@ -11,6 +11,7 @@ import jwt
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
+from suite.meet.api.recording import get_active_recording_state
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.utils.sfu_config import get_sfu_config
 from suite.meet.utils.user import (
@@ -29,6 +30,10 @@ def _generate_sfu_token(
     **extra,
 ) -> str:
     """Generate a JWT token for SFU authentication."""
+    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat"}
+    if reserved_claims.intersection(extra):
+        frappe.throw(_("Reserved SFU token claims cannot be overridden"), frappe.ValidationError)
+
     sfu_config = get_sfu_config()
     secret = sfu_config.get("sfu_secret")
     if not secret:
@@ -83,6 +88,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
 
     sfu_config = get_sfu_config()
+    settings = frappe.get_cached_doc("Meet Settings")
     user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, user)
     e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
 
@@ -105,7 +111,8 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         "meeting_id": meeting.name,
         "is_host": is_host,
         "is_cohost": is_cohost,
-        "codec_strategy": _get_codec_strategy(),
+        "codec_strategy": settings.codec_strategy or "svc",
+        "recording_enabled": bool(settings.enable_recording),
         "e2ee_required": e2ee_required,
         "user_data": {
             "name": user_fullname,
@@ -293,8 +300,14 @@ def refresh_sfu_token(meeting_id: str) -> dict:
     """
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
 
+    if meeting.is_user_banned(frappe.session.user):
+        frappe.throw(_("You are banned from this meeting"), frappe.PermissionError)
+
     if frappe.session.user not in meeting.get_members():
-        frappe.throw(_("Not a meeting member"))
+        frappe.throw(_("Not a meeting member"), frappe.PermissionError)
+
+    if not meeting.can_join(frappe.session.user):
+        frappe.throw(_("Access denied"), frappe.PermissionError)
 
     user_fullname, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
     e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
@@ -340,6 +353,7 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 
     expiry_seconds = 300
     session_id = str(secrets.token_urlsafe(16))
+    user_name, user_avatar, is_host, is_cohost = _user_payload(meeting, frappe.session.user)
 
     auth_token = _generate_sfu_token(
         user_id=frappe.session.user,
@@ -347,6 +361,11 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
         scope="presence-preview",
         expires_in=expiry_seconds,
         session_id=session_id,
+        user_name=user_name,
+        user_avatar=user_avatar,
+        is_host=is_host,
+        is_cohost=is_cohost,
+        is_guest=False,
     )
 
     return {
@@ -427,6 +446,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
                 "codec_strategy": _get_codec_strategy(),
                 "host_only_chat": bool(meeting.host_only_chat),
                 "e2ee_required": e2ee_required,
+                "recording": get_active_recording_state(meeting_id),
                 "message": "Successfully joined meeting",
             }
         elif guest_id not in meeting.get_waiting_room():
@@ -465,6 +485,7 @@ def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None
         "codec_strategy": _get_codec_strategy(),
         "host_only_chat": bool(meeting.host_only_chat),
         "e2ee_required": e2ee_required,
+        "recording": get_active_recording_state(meeting_id),
         "message": "Successfully joined meeting",
     }
 
@@ -480,10 +501,17 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
     if not session_data:
         frappe.throw(_("Guest session not found or expired"))
 
+    if session_data.get("meeting_id") != meeting_id:
+        frappe.throw(_("Guest session does not belong to this meeting"), frappe.PermissionError)
+
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
 
     meeting = frappe.get_doc("Meet Room", meeting_id)
+
+    settings = frappe.get_cached_doc("Meet Settings")
+    if not settings.allow_guest or not meeting.allow_guest:
+        frappe.throw(_("Guests are not allowed in this meeting"), frappe.PermissionError)
 
     if not meeting.is_user_approved(guest_id):
         frappe.throw(_("Guest not approved"))
@@ -517,6 +545,7 @@ def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dic
         "codec_strategy": _get_codec_strategy(),
         "host_only_chat": bool(meeting.host_only_chat),
         "e2ee_required": e2ee_required,
+        "recording": get_active_recording_state(meeting_id),
         "message": "Successfully joined meeting",
     }
 
@@ -547,6 +576,21 @@ def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
 
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
+
+    guest_id = decoded.get("user_id")
+    session_data = get_guest_session(guest_id) if isinstance(guest_id, str) else None
+    if not session_data or session_data.get("meeting_id") != meeting_id:
+        frappe.throw(_("Guest session not found or expired"), frappe.PermissionError)
+
+    meeting = frappe.get_doc("Meet Room", meeting_id)
+    settings = frappe.get_cached_doc("Meet Settings")
+    if (
+        not settings.allow_guest
+        or not meeting.allow_guest
+        or meeting.is_user_banned(guest_id)
+        or guest_id not in meeting.get_members()
+    ):
+        frappe.throw(_("Guest access denied"), frappe.PermissionError)
 
     return {
         "sfu_url": sfu_config["sfu_server_url"],
@@ -642,11 +686,16 @@ def register_e2ee_device(
     if not _is_valid_e2ee_device_id(device_id):
         frappe.throw(_("device_id must be 1-64 chars of [a-zA-Z0-9._-]"), frappe.ValidationError)
 
+    if frappe.session.user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+    if not isinstance(ed25519_public_key, str):
+        frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
+
     try:
         raw = base64.b64decode(ed25519_public_key, validate=True)
-    except (binascii.Error, TypeError):
+    except binascii.Error:
         frappe.throw(_("ed25519_public_key must be base64"), frappe.ValidationError)
-    if len(raw) != 32:
+    if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != ed25519_public_key:
         frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
 
     user = frappe.session.user

@@ -114,6 +114,22 @@ def _get_total_cache_key(user: str) -> str:
     return f"{user}:push_subscriptions:total"
 
 
+def is_push_subscription_disabled(user: str, raise_exception: bool = False) -> bool:
+    """Returns True if push subscriptions are disabled for the given user in their User Settings."""
+
+    disabled = bool(frappe.db.get_value("User Settings", {"user": user}, "disable_push_subscriptions"))
+
+    if disabled and raise_exception:
+        frappe.throw(
+            _("Push subscriptions are disabled for user {0} in their User Settings.").format(
+                frappe.bold(user)
+            ),
+            title=_("Push Subscriptions Disabled"),
+        )
+
+    return disabled
+
+
 @frappe.whitelist()
 def bulk_delete(names: str | list[str]) -> None:
     """Deletes multiple push subscriptions given their names."""
@@ -161,6 +177,8 @@ def _add_push_subscription(
 
     if not ignore_permissions:
         has_permission_for_user(user, raise_exception=True)
+
+    is_push_subscription_disabled(user, raise_exception=True)
 
     device_client_id = device_client_id or generate_uuid_style_hash(
         f"frappe-{frappe.local.site.replace('.', '-')}-{user}"
@@ -247,6 +265,8 @@ def renew_push_subscription(user: str, id: str) -> None:
 
     has_permission_for_user(user, raise_exception=True)
 
+    is_push_subscription_disabled(user, raise_exception=True)
+
     service = get_push_subscription_service(user)
     response = service.update([{"id": id}])
 
@@ -263,7 +283,8 @@ def renew_expiring_push_subscriptions() -> None:
 
     Scheduled to run daily. A subscription is renewed when its expiry is within
     ``RENEW_THRESHOLD_DAYS`` of the run; subscriptions without an expiry or expiring
-    later are left untouched.
+    later are left untouched. Users who disabled push subscriptions in their User
+    Settings are skipped.
     """
 
     if not frappe.utils.get_url().startswith("https://"):
@@ -272,6 +293,9 @@ def renew_expiring_push_subscriptions() -> None:
     cutoff = get_utc_now() + timedelta(days=RENEW_THRESHOLD_DAYS)
 
     for user in get_jmap_configured_users():
+        if is_push_subscription_disabled(user):
+            continue
+
         try:
             service = get_push_subscription_service(user, ignore_permissions=True)
 

@@ -11,7 +11,7 @@ import {
 import { WebGLManager } from "../utils/webglShaders";
 
 // Types and interfaces
-interface BackgroundEffectOptions {
+export interface BackgroundEffectOptions {
 	backgroundBlurEnabled?: boolean;
 	backgroundImageEnabled?: boolean;
 	selectedBackgroundImage?: string | null;
@@ -280,7 +280,7 @@ export function useBackgroundEffects(): UseBackgroundEffectsReturn {
 
 			if ("MediaStreamTrackProcessor" in window) {
 				const MediaStreamTrackProcessor = (
-					window as unknown as {
+					window as typeof window & {
 						MediaStreamTrackProcessor: new (init: {
 							track: MediaStreamTrack;
 						}) => {
@@ -664,12 +664,14 @@ export function useBackgroundEffects(): UseBackgroundEffectsReturn {
 			processFrame();
 
 			let outputStream: MediaStream;
-			let trackGenerator: MediaStreamTrack | null = null;
+			let trackGenerator:
+				| (MediaStreamTrack & { writable: WritableStream })
+				| null = null;
 			let trackWriter: WritableStreamDefaultWriter | null = null;
 
 			if (useOffscreenCanvas) {
 				const MediaStreamTrackGenerator = (
-					window as unknown as {
+					window as typeof window & {
 						MediaStreamTrackGenerator: new (init: {
 							kind: string;
 						}) => MediaStreamTrack & {
@@ -678,9 +680,7 @@ export function useBackgroundEffects(): UseBackgroundEffectsReturn {
 					}
 				).MediaStreamTrackGenerator;
 				trackGenerator = new MediaStreamTrackGenerator({ kind: "video" });
-				trackWriter = (
-					trackGenerator as unknown as { writable: WritableStream }
-				).writable.getWriter();
+				trackWriter = trackGenerator.writable.getWriter();
 				outputStream = new MediaStream([trackGenerator]);
 			} else {
 				outputStream = (outputCanvas as HTMLCanvasElement).captureStream(30); // 30 FPS
@@ -821,11 +821,9 @@ export function useBackgroundEffects(): UseBackgroundEffectsReturn {
 		}
 
 		latestResults = null;
-		const resetFn = (
-			selfieSegmentation as unknown as {
-				reset?: () => void;
-			}
-		).reset;
+		const resetFn = Reflect.get(selfieSegmentation, "reset") as
+			| (() => void)
+			| undefined;
 		if (typeof resetFn === "function") {
 			try {
 				resetFn.call(selfieSegmentation);

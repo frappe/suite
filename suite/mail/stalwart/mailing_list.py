@@ -41,3 +41,46 @@ class MailingListService(ManagementService):
             frappe.throw(_("Mailing list {0} not found on the Stalwart server.").format(name))
 
         return mailing_list
+
+    def get_address_index(self) -> dict[str, list[str]]:
+        """Returns ``{list address: [recipient addresses]}`` for every list with recipients.
+
+        A list is reachable at its primary address and at each of its enabled aliases, so all of
+        them are indexed; the server resolves any of them to the same recipients.
+        """
+
+        from suite.mail.stalwart import get_domains
+
+        domain_names = {d["id"]: d["name"] for d in get_domains()}
+        index = {}
+        for mailing_list in self.get_all(properties=["id", "emailAddress", "aliases", "recipients"]):
+            recipients = sorted({r.lower() for r in (mailing_list.get("recipients") or {})})
+            if not recipients:
+                continue
+
+            for address in get_mailing_list_addresses(mailing_list, domain_names):
+                index[address] = recipients
+
+        return index
+
+
+def get_mailing_list_addresses(mailing_list: dict, domain_names: dict[str, str]) -> list[str]:
+    """Returns the list's primary address plus its enabled aliases, lowercased.
+
+    Disabled aliases are skipped: the server stops routing mail to them, so an invitation sent to
+    one would never reach the members either.
+    """
+
+    addresses = []
+    if primary := (mailing_list.get("emailAddress") or "").lower():
+        addresses.append(primary)
+
+    for alias in (mailing_list.get("aliases") or {}).values():
+        if not alias.get("enabled", True):
+            continue
+
+        name = alias.get("name")
+        if name and (domain := domain_names.get(alias.get("domainId"))):
+            addresses.append(f"{name}@{domain}".lower())
+
+    return addresses

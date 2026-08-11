@@ -2,6 +2,7 @@
 # See license.txt
 
 import frappe
+from frappe.client import set_value
 from frappe.tests import IntegrationTestCase
 
 from suite.slides.doctype.presentation.presentation import (
@@ -131,3 +132,31 @@ class TestPresentationSecurity(IntegrationTestCase):
             result = get_composite_presentation(composite.name)
 
         self.assertEqual(result["slides"], [])
+
+
+class TestSlideRows(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+
+    def test_slide_resent_without_a_name_is_reinserted(self):
+        """Undoing a delete restores a slide whose row an autosave already dropped, so
+        the editor blanks the row name and the next save has to insert it again."""
+        with self.set_user(OWNER):
+            presentation = make_presentation("Undo Delete Presentation")
+            presentation.append("slides", {"elements": "[]"})
+            presentation.save()
+            kept, removed = (slide.as_dict() for slide in presentation.slides)
+
+            set_value("Presentation", presentation.name, {"slides": [kept]})
+            self.assertFalse(frappe.db.exists("Slide", removed.name))
+
+            restored = removed.copy()
+            restored.name = ""
+            set_value("Presentation", presentation.name, {"slides": [kept, restored]})
+
+        slides = frappe.get_doc("Presentation", presentation.name).slides
+        self.assertEqual(len(slides), 2)
+        self.assertEqual(slides[0].name, kept.name)
+        self.assertNotIn(slides[1].name, ("", removed.name))

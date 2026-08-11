@@ -1,5 +1,9 @@
 import { ref, computed, nextTick } from 'vue'
-import { applyReverseTransition, presentationDoc } from '@/apps/slides/stores/presentation'
+import {
+	applyReverseTransition,
+	presentationDoc,
+	presentationId,
+} from '@/apps/slides/stores/presentation'
 import { focusedSlide, slideIndex, slides, setSlideIndex } from '@/apps/slides/stores/slide'
 
 import { router } from '@/apps/slides/router'
@@ -7,7 +11,32 @@ import { session } from '@/boot/session'
 
 const inSlideShowMode = ref(false)
 
+// the click's user activation expires before the slideshow route finishes
+// loading, so fullscreen has to be requested here and not on the other side
+let pendingFullscreen = null
+
+const requestFullscreen = () => {
+	if (pendingFullscreen) return pendingFullscreen
+
+	const el = document.documentElement
+	if (!el.requestFullscreen) return Promise.resolve(false)
+
+	// a second request would consume the already-spent activation and reject
+	pendingFullscreen = el
+		.requestFullscreen()
+		.then(() => true)
+		.catch(() => false)
+		.finally(() => (pendingFullscreen = null))
+
+	return pendingFullscreen
+}
+
+const exitFullscreen = () => {
+	if (document.fullscreenElement) document.exitFullscreen()
+}
+
 const startSlideShow = () => {
+	requestFullscreen()
 	router.replace({
 		name: 'slides-slideshow',
 		params: router.currentRoute.value.params,
@@ -16,6 +45,7 @@ const startSlideShow = () => {
 }
 
 const endSlideShow = () => {
+	exitFullscreen()
 	inSlideShowMode.value = false
 	focusedSlide.value = null
 	const slide =
@@ -53,7 +83,10 @@ const getAssetUrl = (url) => {
 	if (presentationDoc.value?.owner === user || user === 'Administrator') {
 		return url
 	}
-	return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(url)}`
+	if (!presentationId.value) return url
+	return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
+		url,
+	)}&presentation=${encodeURIComponent(presentationId.value)}`
 }
 
 const prefetchAsset = async (src, type) => {
@@ -129,6 +162,8 @@ const changeSlideInSlideshow = (index) => {
 export {
 	inSlideShowMode,
 	showSlideshowEndScreen,
+	requestFullscreen,
+	exitFullscreen,
 	startSlideShow,
 	endSlideShow,
 	prefetchNextSlide,

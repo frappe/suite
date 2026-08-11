@@ -582,7 +582,7 @@ export class E2EEMeeting {
 
 	private installScriptTransform(
 		target: TransformableSender | TransformableReceiver,
-		options: Record<string, unknown>,
+		options: E2EETransformOptions,
 	): Worker | null {
 		const RTCRtpScriptTransform = this.getRTCRtpScriptTransform();
 		if (!RTCRtpScriptTransform) return null;
@@ -604,5 +604,15 @@ export class E2EEMeeting {
 
 type RTCRtpScriptTransformConstructor = new (
 	worker: Worker,
-	options: Record<string, unknown>,
-) => unknown;
+	options: E2EETransformOptions,
+) => RTCRtpScriptTransform;
+
+type E2EETransformOptions = {
+	direction: "send" | "recv";
+	meetingSecret: Uint8Array;
+	keyVersion: number;
+	senderId: number;
+	mediaType: string;
+	senderSigningPrivateKey?: CryptoKey;
+	senderSigningPubs?: Array<[number, CryptoKey]>;
+};

@@ -80,7 +80,8 @@ const showReplaceImageButton = computed(() => {
 		props.mode == 'editor' &&
 		element.value.useTemplateDimensions &&
 		activeElement.value?.id == element.value.id &&
-		element.value.src.includes('placeholder')
+		element.value.src.includes('placeholder') &&
+		!element.value.locked
 	)
 })
 

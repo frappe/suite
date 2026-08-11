@@ -5,6 +5,7 @@ import { toast } from 'frappe-ui'
 import { FOLDER_ICON_MAP, SCREENER_MAILBOX_NAME } from '@/apps/mail/constants'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { flattenMentions } from '@/apps/mail/utils/mentions'
+import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
@@ -360,6 +361,11 @@ export const processInlineImages = (mail: ComposeMailData, { sending = false } =
 	const htmlBody = mail.html_body! + mail.quoted_content
 	const $ = cheerio.load(htmlBody)
 
+	// Unconditional, unlike the mention flattening below: a draft is rendered by the reader too,
+	// in the same iframe that can't see the editor's stylesheet, so a draft left holding the
+	// variables would already be showing the wrong colours back to its own author.
+	preserveEditorColors($)
+
 	if (sending) flattenMentions($)
 
 	const regularAttachments = mail.attachments?.filter((a) => a.disposition !== 'inline') || []
@@ -407,7 +413,7 @@ export const getScriptName = (scriptName: string) => {
 export const isSystemScript = (scriptName: string) =>
 	['vacation', 'frappe_mail_automation'].includes(scriptName)
 
-export { escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
+export { decodeHtmlEntities, escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
 
 export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a

@@ -3,6 +3,7 @@
 
 import secrets
 import string
+from typing import ClassVar
 
 import frappe
 from frappe import _
@@ -16,6 +17,17 @@ from suite.meet.utils.user import (
 
 
 class MeetRoom(Document):
+    CONTROLLED_FIELDS: ClassVar[set[str]] = {
+        "owner",
+        "allow_guest",
+        "meeting_type",
+        "host_only_chat",
+        "members",
+        "co_hosts",
+        "waiting_room",
+        "banned_users",
+    }
+
     # begin: auto-generated types
     # This code is auto-generated. Do not modify anything in this block.
 
@@ -28,6 +40,7 @@ class MeetRoom(Document):
 
         allow_guest: DF.Check
         banned_users: DF.Table[MeetRoomUser]
+        calendar_event: DF.Data | None
         co_hosts: DF.Table[MeetRoomUser]
         e2ee_enabled: DF.Check
         meeting_type: DF.Literal["open", "restricted"]
@@ -41,7 +54,58 @@ class MeetRoom(Document):
             self.name = generate()
 
     def validate(self):
+        self.validate_recording_policy()
+        self.validate_controlled_updates()
         self.backfill_display_names()
+
+    def validate_controlled_updates(self):
+        if self.is_new():
+            return
+
+        allowed = set(getattr(self.flags, "meet_controlled_updates", None) or ())
+        previous = self.get_doc_before_save()
+        changed = {
+            fieldname
+            for fieldname in self.CONTROLLED_FIELDS
+            if self.controlled_field_changed(previous, fieldname) and fieldname not in allowed
+        }
+        self.flags.meet_controlled_updates = set()
+        if changed:
+            frappe.throw(_("Use the dedicated meeting methods to update room access and participants"))
+
+    def controlled_field_changed(self, previous, fieldname: str) -> bool:
+        if fieldname not in ("members", "co_hosts", "waiting_room", "banned_users"):
+            return self.get(fieldname) != previous.get(fieldname)
+        current_rows = [(row.user, row.user_name) for row in self.get(fieldname) or []]
+        previous_rows = [(row.user, row.user_name) for row in previous.get(fieldname) or []]
+        return current_rows != previous_rows
+
+    def allow_controlled_update(self, *fieldnames: str):
+        allowed = set(getattr(self.flags, "meet_controlled_updates", None) or ())
+        self.flags.meet_controlled_updates = allowed | set(fieldnames)
+
+    def validate_recording_policy(self):
+        policy_fields_changed = not self.is_new() and self.has_value_changed("e2ee_enabled")
+        if policy_fields_changed and not getattr(self.flags, "recording_policy_update", False):
+            frappe.throw(_("Use the dedicated meeting policy method to change E2EE"))
+        if self.has_value_changed("e2ee_enabled") and self.e2ee_enabled and self.has_active_recording():
+            frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
+
+    def has_active_recording(self) -> bool:
+        from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
+
+        return bool(
+            frappe.db.exists(
+                "Meet Recording", {"meet_room": self.name, "status": ["in", ACTIVE_RECORDING_STATUSES]}
+            )
+        )
+
+    def recording_policy_lock(self):
+        lock = frappe.cache.lock(f"meet-recording-policy:{frappe.local.site}:{self.name}", timeout=300)
+        if not lock.acquire(blocking=True, blocking_timeout=10):
+            frappe.throw(_("Meeting policy is being updated; try again"))
+        frappe.db.after_commit.add(lock.release)
+        frappe.db.after_rollback.add(lock.release)
 
     def backfill_display_names(self):
         """Backfill display names for existing child rows."""
@@ -81,10 +145,12 @@ class MeetRoom(Document):
             if not row.user_name:
                 row.user_name = self.get_user_display_name(user)
                 if save:
+                    self.allow_controlled_update(fieldname)
                     self.save(ignore_permissions=ignore_permissions)
             return False
 
         self.append(fieldname, self.build_user_row(user))
+        self.allow_controlled_update(fieldname)
         if save:
             self.save(ignore_permissions=ignore_permissions)
         return True
@@ -201,6 +267,7 @@ class MeetRoom(Document):
         for row in self.get("waiting_room") or []:
             if row.user == user:
                 self.remove(row)
+                self.allow_controlled_update("waiting_room")
                 return
 
     def approve_user(self, user, save=True):
@@ -213,6 +280,7 @@ class MeetRoom(Document):
             frappe.throw("User is not in waiting room")
 
         self.add_user_to_table("members", user)
+        self.allow_controlled_update("members", "waiting_room")
 
         self.remove_from_waiting_room(user)
         if save:
@@ -295,6 +363,8 @@ class MeetRoom(Document):
         if not already_banned:
             self.append("banned_users", self.build_user_row(user))
 
+        self.allow_controlled_update("waiting_room", "banned_users")
+
         self.save()
 
         frappe.publish_realtime(
@@ -355,6 +425,7 @@ class MeetRoom(Document):
         self.validate_can_promote_to_cohost(user, target_user)
 
         self.add_user_to_table("co_hosts", target_user)
+        self.allow_controlled_update("co_hosts")
         self.save()
 
         return {
@@ -390,7 +461,14 @@ class MeetRoom(Document):
         if not self.is_host_or_cohost(frappe.session.user):
             frappe.throw(_("Only hosts and co-hosts can convert meetings to E2EE"), frappe.PermissionError)
 
+        self.recording_policy_lock()
+        self.reload()
+        if not self.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Only hosts and co-hosts can convert meetings to E2EE"), frappe.PermissionError)
+        if self.has_active_recording():
+            frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
         self.e2ee_enabled = True
+        self.flags.recording_policy_update = True
         self.save()
 
         users_notified = set()
@@ -450,6 +528,7 @@ class MeetRoom(Document):
             updated_fields["host_only_chat"] = self.host_only_chat
 
         if updated_fields:
+            self.allow_controlled_update(*updated_fields)
             self.save()
 
 

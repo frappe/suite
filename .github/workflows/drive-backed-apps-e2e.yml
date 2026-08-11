@@ -1,6 +1,8 @@
 name: Drive-Backed Apps E2E Tests
 
 on:
+  schedule:
+    - cron: "37 1 * * *"
   push:
     branches:
       - develop
@@ -14,13 +16,11 @@ on:
       - "e2e/package.json"
       - "e2e/yarn.lock"
       - "e2e/tsconfig.json"
-      - "frontend/src/apps/drive/**"
-      - "frontend/src/apps/writer/**"
-      - "frontend/src/apps/slides/**"
-      - "frontend/src/boot/**"
-      - "frontend/src/router/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
       - "frontend/vite.config.ts"
       - "suite/hooks.py"
+      - "suite/tests/ci_smoke.py"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
@@ -36,13 +36,11 @@ on:
       - "e2e/package.json"
       - "e2e/yarn.lock"
       - "e2e/tsconfig.json"
-      - "frontend/src/apps/drive/**"
-      - "frontend/src/apps/writer/**"
-      - "frontend/src/apps/slides/**"
-      - "frontend/src/boot/**"
-      - "frontend/src/router/**"
+      - "frontend/src/**"
+      - "frontend/package.json"
       - "frontend/vite.config.ts"
       - "suite/hooks.py"
+      - "suite/tests/ci_smoke.py"
       - "package.json"
       - "yarn.lock"
       - "pyproject.toml"
@@ -51,12 +49,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: drive-backed-apps-e2e-${{ github.event.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 45
 
     services:
@@ -145,6 +143,11 @@ jobs:
           bench --site drive-writer.test set-config allow_tests true
           bench --site drive-writer.test set-config ignore_csrf 1
           bench --site drive-writer.test set-config host_name "http://drive-writer.test:8000"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            bench set-config -g scheduler_tick_interval 5
+            bench --site drive-writer.test enable-scheduler
+            bench --site drive-writer.test execute suite.tests.ci_smoke.enable_scheduler_smoke_logging
+          fi
 
       - name: Install E2E dependencies
         working-directory: ${{ github.workspace }}/e2e
@@ -155,10 +158,13 @@ jobs:
           google-chrome --version
 
       - name: Start Frappe server
+        id: start-frappe
         working-directory: /home/runner/frappe-bench
         run: |
           sed -i 's/^watch:/# watch:/g' Procfile
-          sed -i 's/^schedule:/# schedule:/g' Procfile
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            sed -i 's/^schedule:/# schedule:/g' Procfile
+          fi
           bench start &> bench_start.log &
           timeout 60 bash -c 'until curl -s http://drive-writer.test:8000 > /dev/null; do sleep 2; done'
 
@@ -168,6 +174,11 @@ jobs:
         env:
           BASE_URL: http://drive-writer.test:8000
           CI: true
+
+      - name: Check scheduled job execution
+        if: always() && github.event_name == 'schedule' && steps.start-frappe.outcome == 'success'
+        working-directory: /home/runner/frappe-bench
+        run: timeout 90 bash -c 'until [ "$(bench --site drive-writer.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -180,4 +191,13 @@ jobs:
             e2e/drive-backed-apps/results.xml
             /home/runner/frappe-bench/bench_start.log
           compression-level: 1
-          retention-days: 7
+          retention-days: 30
+
+      - name: Upload JUnit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: drive-backed-apps-junit
+          path: e2e/drive-backed-apps/results.xml
+          if-no-files-found: warn
+          retention-days: 30

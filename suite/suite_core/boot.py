@@ -33,6 +33,7 @@ def after_install():
     through Drive's overridden hooks. So create Drive's File columns FIRST, before
     any app's after_install runs.
     """
+    from suite.calendar.install import after_install as calendar_after_install
     from suite.drive.install import after_install as drive_after_install
     from suite.drive.install import ensure_custom_fields
     from suite.mail.install import after_install as mail_after_install
@@ -40,6 +41,7 @@ def after_install():
     _run("drive.ensure_custom_fields", ensure_custom_fields)
     _run("drive.after_install", drive_after_install)
     _run("mail.after_install", mail_after_install)
+    _run("calendar.after_install", calendar_after_install)
 
 
 def after_migrate():

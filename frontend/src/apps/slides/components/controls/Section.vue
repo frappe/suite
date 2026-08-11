@@ -1,18 +1,28 @@
 <template>
-	<div class="flex flex-col gap-3 py-3">
+	<div class="flex flex-col gap-3 py-3" :class="{ 'cursor-not-allowed': sectionInert }">
 		<div class="flex cursor-pointer items-center justify-between" @click="toggleContent">
 			<span :class="labelClasses">{{ label }}</span>
-			<lucide-chevron-down v-if="!showContent" class="size-4 stroke-[1.5] text-ink-gray-7" />
+			<lucide-chevron-down
+				class="size-4 stroke-[1.5] text-ink-gray-7 transition-transform duration-200"
+				:class="{ '-rotate-90': !showContent }"
+			/>
 		</div>
 
-		<div v-if="showContent" class="flex flex-col gap-2">
+		<div
+			v-if="showContent"
+			class="flex flex-col gap-2"
+			:inert="sectionInert"
+			:class="{ '[&_*]:text-ink-gray-5': sectionInert }"
+		>
 			<slot />
 		</div>
 	</div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { inject, ref } from 'vue'
+
+const sectionInert = inject('sectionInert', false)
 
 const props = defineProps({
 	label: String,

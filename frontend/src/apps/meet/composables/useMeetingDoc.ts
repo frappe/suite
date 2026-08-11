@@ -14,18 +14,22 @@ interface MeetingDocument {
 	banned_users?: { user: string }[];
 }
 
-interface DocumentResource {
+export interface DocumentResource {
 	doc?: MeetingDocument;
 	setValue: {
-		submit(params: Record<string, unknown>): Promise<unknown>;
+		submit(params: { banned_users: { user: string }[] }): Promise<unknown>;
 	};
 	reload(): Promise<void>;
 	updateSettings: {
-		submit(params: Record<string, unknown>): Promise<unknown>;
+		submit(params: {
+			allow_guest: boolean;
+			meeting_type: string;
+			host_only_chat: boolean;
+		}): Promise<unknown>;
 		loading: boolean;
 	};
 	enableE2ee: {
-		submit(params?: Record<string, unknown>): Promise<unknown>;
+		submit(): Promise<unknown>;
 		loading: boolean;
 	};
 	get: {
@@ -62,7 +66,7 @@ export function useMeetingDoc(): UseMeetingDocReturn {
 			clearMeetingDoc();
 		}
 
-		const docResource = createDocumentResource({
+		const resource = createDocumentResource({
 			doctype: "Meet Room",
 			name: meetingId,
 			auto: session.isLoggedIn,
@@ -70,6 +74,10 @@ export function useMeetingDoc(): UseMeetingDocReturn {
 				updateSettings: "update_settings",
 				enableE2ee: "enable_e2ee",
 			},
+		});
+		const docResource: DocumentResource = Object.assign(resource, {
+			updateSettings: Reflect.get(resource, "updateSettings"),
+			enableE2ee: Reflect.get(resource, "enableE2ee"),
 		});
 
 		meetingDoc.value = docResource;

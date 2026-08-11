@@ -6,6 +6,13 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('auth:update_token', (data, callback) => {
 			try {
+				if (socket.scope === 'recording') {
+					callback({
+						success: false,
+						error: 'Token refresh is unavailable for recording',
+					});
+					return;
+				}
 				const token = typeof data?.token === 'string' ? data.token : null;
 				if (!token) {
 					deps.telemetry.authEvents.inc({

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import DOMPurify from 'dompurify'
 
-import { escapeBracketedAddresses, escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
+import {
+	decodeHtmlEntities,
+	escapeBracketedAddresses,
+	escapeHtml,
+	hasHtmlContent,
+} from '@/apps/mail/utils/html'
 
 // A real MAILER-DAEMON bounce: no markup, addresses in angle brackets.
 const BOUNCE = `Your message could not be delivered to the following recipients:
@@ -57,4 +62,56 @@ describe('addresses in angle brackets', () => {
 
 		expect(escapeBracketedAddresses(html)).toBe(html)
 	})
+})
+
+// The same bounce as the server hands it over when it has already escaped the body: no
+// real tags left, so it takes the plain-text path — where a second escape would show the
+// reader the entity instead of the address.
+const ESCAPED_BOUNCE = escapeHtml(BOUNCE)
+
+describe('a body the server already escaped', () => {
+	it('is not read as markup', () => {
+		expect(hasHtmlContent(ESCAPED_BOUNCE)).toBe(false)
+	})
+
+	it('shows the entity text when escaped a second time', () => {
+		expect(escapeHtml(ESCAPED_BOUNCE)).toContain('&amp;lt;arushi@frappe.io&amp;gt;')
+	})
+
+	it('reads as the addresses it stands for once normalised', () => {
+		expect(decodeHtmlEntities(ESCAPED_BOUNCE)).toBe(BOUNCE)
+	})
+
+	it('survives normalise-then-escape as a single escape', () => {
+		const normalized = escapeHtml(decodeHtmlEntities(ESCAPED_BOUNCE))
+		const sanitized = DOMPurify.sanitize(`<pre>${normalized}</pre>`)
+
+		expect(sanitized).toContain('RCPT TO:&lt;arushi@frappe.io&gt;')
+		expect(sanitized).not.toContain('&amp;lt;')
+	})
+})
+
+describe('normalising entities', () => {
+	// One pass, so text a sender wrote *about* markup stays text: `&amp;lt;` means the
+	// literal "&lt;", and decoding it twice would hand a real tag to the sanitizer.
+	it('decodes once, not repeatedly', () => {
+		expect(decodeHtmlEntities('&amp;lt;b&amp;gt;')).toBe('&lt;b&gt;')
+	})
+
+	it.each([
+		['&#60;user@host&#62;', '<user@host>', 'decimal references'],
+		['&#x3C;user@host&#x3E;', '<user@host>', 'hex references'],
+		['&quot;Ada&quot; &lt;ada@host&gt;', '"Ada" <ada@host>', 'a quoted display name'],
+	])('decodes %s (%s)', (input, expected) => {
+		expect(decodeHtmlEntities(input)).toBe(expected)
+	})
+
+	// Prose that merely looks like an entity is left exactly as written — decoding it
+	// would silently rewrite what the sender typed.
+	it.each(['AT&T; the company', 'Ben & Jerry', 'a & b &notanentity; c', '&#x110000;'])(
+		'leaves %s untouched',
+		(text) => {
+			expect(decodeHtmlEntities(text)).toBe(text)
+		},
+	)
 })

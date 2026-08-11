@@ -1,0 +1,75 @@
+name: Meet Type Policy
+
+on:
+  schedule:
+    - cron: "27 2 * * *"
+  push:
+    branches:
+      - develop
+    paths:
+      - "frontend/src/apps/meet/**"
+      - "frontend/recorder/**"
+      - "suite/meet/types/**"
+      - "suite/meet/sfu-server/src/**"
+      - "suite/meet/recorder-server/src/**"
+      - "suite/meet/type-policy/**"
+      - "e2e/meet/**"
+      - "package.json"
+      - "yarn.lock"
+      - ".github/workflows/meet-type-policy.yml"
+  pull_request:
+    paths:
+      - "frontend/src/apps/meet/**"
+      - "frontend/recorder/**"
+      - "suite/meet/types/**"
+      - "suite/meet/sfu-server/src/**"
+      - "suite/meet/recorder-server/src/**"
+      - "suite/meet/type-policy/**"
+      - "e2e/meet/**"
+      - "package.json"
+      - "yarn.lock"
+      - ".github/workflows/meet-type-policy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Test policy
+        run: |
+          mkdir -p test-results
+          node --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination=test-results/meet-type-policy.xml \
+            suite/meet/type-policy/check.test.mjs
+
+      - name: Check Meet types
+        run: yarn check:meet-types
+
+      - name: Upload policy results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-type-policy-results
+          path: test-results/meet-type-policy.xml
+          if-no-files-found: warn
+          retention-days: 30

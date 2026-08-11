@@ -2211,6 +2211,7 @@ def cancel_all_queued_messages(
 
 
 @frappe.whitelist(methods=["GET"])
+@dynamic_rate_limit()
 def stream_delivery_test(target: str):
     """Proxies Stalwart's live SMTP delivery trace for ``target`` as a Server-Sent Events stream.
 

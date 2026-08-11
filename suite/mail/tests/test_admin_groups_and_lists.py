@@ -31,6 +31,7 @@ from suite.mail.api.admin import (
     update_mailing_list,
 )
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+from suite.mail.stalwart import get_mailing_list_service
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -130,6 +131,26 @@ class TestAdminGroupsAndLists(StalwartIntegrationTestCase):
         throwaway = self.create_mailing_list()
         delete_mailing_lists([throwaway])
         self.assertEqual([ml for ml in get_mailing_lists() if ml["id"] == throwaway], [])
+
+    def test_mailing_list_address_index_resolves_every_live_address(self):
+        """The index calendar invites use to turn a list address into its members."""
+
+        list_id = self.create_mailing_list()
+        add_mailing_list_recipients(list_id, [self.member1.email])
+        primary = get_mailing_list(list_id)["email"]
+
+        enabled = f"{unique_name('lalias')}@{self.domain}"
+        disabled = f"{unique_name('lalias')}@{self.domain}"
+        add_mailing_list_email(list_id, enabled)
+        add_mailing_list_email(list_id, disabled)
+        set_mailing_list_email_enabled(list_id, disabled, 0)
+
+        index = get_mailing_list_service().get_address_index()
+
+        self.assertEqual(index.get(primary), [self.member1.email.lower()])
+        self.assertEqual(index.get(enabled), [self.member1.email.lower()])
+        # Mail to a disabled alias is not delivered, so an invite to it must not expand either.
+        self.assertNotIn(disabled, index)
 
     def test_mail_to_list_reaches_recipient_inbox(self):
         self.disable_screening(self.member2)

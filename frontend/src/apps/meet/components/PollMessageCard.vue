@@ -54,13 +54,14 @@
 import { computed, inject, ref } from "vue";
 import { PollPayloadFE } from "../types";
 import { usePollStore } from "../composables/usePollStore";
+import { pollKey } from "../composables/usePoll";
 
 const props = defineProps<{
 	poll: PollPayloadFE;
 	isGuest?: boolean;
 }>();
 
-const pollService = inject("poll") as any;
+const pollService = inject(pollKey);
 const pollStore = usePollStore()
 
 const localVotedOption = ref<string | null>(null);

@@ -2,6 +2,7 @@ import type { RouteLocationNormalized, Router } from "vue-router";
 
 import suiteRouter from "@/router";
 import { userResource } from "@/boot/session";
+import { isUnknownRecord } from "./types";
 
 /**
  * Meet-local guard on the shared suite router: the `requiresAdmin` role check
@@ -28,8 +29,14 @@ function installMeetGuard(r: Router) {
 				// userResource onError already redirects to /login on auth errors.
 				return false;
 			}
-			const user = userResource.data as Record<string, unknown> | null;
-			const isAdmin = (user?.roles as string[])?.some((r) =>
+			const user = userResource.data;
+			const roles =
+				isUnknownRecord(user) &&
+				Array.isArray(user.roles) &&
+				user.roles.every((role) => typeof role === "string")
+					? user.roles
+					: [];
+			const isAdmin = roles.some((r) =>
 				["System Manager", "Administrator"].includes(r),
 			);
 			if (!isAdmin) {

@@ -5,6 +5,7 @@ import type {
 	DtlsParameters,
 	IceCandidate,
 	IceParameters,
+	PlainTransport,
 	Producer,
 	Router,
 	RouterRtpCodecCapability,
@@ -38,11 +39,17 @@ import type {
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
 	PreviewParticipantInfo,
+	ProducerCloseDetails,
 	ProducerClosedEvent,
+	ProducerCloseReason,
+	ProducerCloseSource,
+	ProducerCloseTrackSettings,
 	ProducerCreatedEvent,
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecordingJoinRequest,
+	RecordingProofRequest,
 	ScreenShareRequest,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
@@ -80,13 +87,20 @@ export type {
 	ParticipantInfo,
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
+	PlainTransport,
 	PreviewParticipantInfo,
 	Producer,
+	ProducerCloseDetails,
 	ProducerClosedEvent,
+	ProducerCloseReason,
+	ProducerCloseSource,
+	ProducerCloseTrackSettings,
 	ProducerCreatedEvent,
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecordingJoinRequest,
+	RecordingProofRequest,
 	Router,
 	RouterRtpCodecCapability,
 	RtpCapabilities,
@@ -107,6 +121,9 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
+	'recording:challenge': (
+		data: import('../server/RecordingGrantManager').RecordingProofChallenge,
+	) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
 	producer_created: (data: ProducerCreatedEvent) => void;
@@ -132,6 +149,14 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+	'recording:proof': (
+		data: RecordingProofRequest,
+		callback: (response: SFUResponse) => void,
+	) => void;
+	'recording:join': (
+		data: RecordingJoinRequest,
+		callback: (response: SFUResponse) => void,
+	) => void;
 	client_telemetry: (data: ClientTelemetryEvent) => void;
 	'auth:update_token': (
 		data: UpdateTokenRequest,
@@ -162,7 +187,7 @@ export interface ClientToServerEvents {
 			transportId: string;
 			rtpParameters: RtpParameters;
 			kind: 'audio' | 'video';
-			appData?: Record<string, unknown>;
+			appData?: AppData;
 		},
 		callback: (response: ProducerResponse) => void,
 	) => void;
@@ -177,9 +202,9 @@ export interface ClientToServerEvents {
 	close_producer: (
 		data: {
 			producerId: string;
-			reason?: string;
-			source?: string;
-			details?: Record<string, unknown>;
+			reason?: ProducerCloseReason;
+			source?: ProducerCloseSource;
+			details?: ProducerCloseDetails;
 		},
 		callback: (response: CloseProducerResponse) => void,
 	) => void;
@@ -336,8 +361,25 @@ export interface RoomParticipantsResponse extends SFUResponse {
 export interface ProducerInfo {
 	id: string;
 	kind: 'audio' | 'video';
-	appData: Record<string, unknown>;
+	appData: ProducerAppData;
 }
+
+export interface ProducerAppData extends AppData {
+	type?: 'screen';
+	e2eeStartPaused?: boolean;
+	senderId?: number;
+}
+
+export type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
+
+export type JsonObject = { [key: string]: JsonValue };
+
 export interface ConsumerInfo {
 	id: string;
 	producerId: string;
@@ -388,12 +430,23 @@ export interface PeerInfo extends UserData {
 	isHost?: boolean;
 }
 
-export interface TransportData {
+export interface WebRtcTransportData {
 	roomId: string;
 	peerId: string;
 	transport: WebRtcTransport;
-	direction?: 'send' | 'recv';
+	direction: 'send' | 'recv';
+	type: 'webrtc';
 }
+
+export interface PlainTransportData {
+	roomId: string;
+	peerId: string;
+	transport: PlainTransport;
+	direction: 'send';
+	type: 'plain';
+}
+
+export type TransportData = WebRtcTransportData | PlainTransportData;
 
 export interface ProducerData {
 	roomId: string;
@@ -412,6 +465,7 @@ export interface RoomStats {
 	id: string;
 	created: Date;
 	peerCount: number;
+	participantCount: number;
 	peers: string[];
 	producerCount?: number;
 	consumerCount?: number;
@@ -456,13 +510,6 @@ export interface JWTPayload {
 	session_id?: string;
 	exp?: number;
 	iat?: number;
-}
-
-// Server types
-export interface ServerConfig {
-	port: number;
-	host: string;
-	jwtSecret: string;
 }
 
 export interface HealthStats {
@@ -606,5 +653,7 @@ declare module 'socket.io' {
 		scope?: SFUScope;
 		e2eeRequired?: boolean;
 		e2eeReady?: boolean;
+		recordingProofComplete?: boolean;
+		recordingClaims?: import('../server/RecordingGrantManager').RecordingGrantClaims;
 	}
 }

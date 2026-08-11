@@ -24,11 +24,7 @@ export function registerReactionHandlers(deps: HandlerDeps) {
 					timestamp: new Date().toISOString(),
 				};
 
-				deps.registry.emitToFullAccessParticipants(
-					roomId,
-					'reaction:message',
-					payload,
-				);
+				deps.registry.emitReaction(roomId, payload);
 			} catch (e) {
 				loggers.socketHandler.warn(
 					'reaction:send handling failed: %s',

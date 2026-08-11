@@ -426,6 +426,7 @@ def send_reset_password_link(user: str) -> str:
 
 
 @frappe.whitelist(allow_guest=True)
+@dynamic_rate_limit()
 def get_user_for_reset_password_key(key: str) -> str:
     """Return the user for a reset password key"""
 
@@ -434,6 +435,7 @@ def get_user_for_reset_password_key(key: str) -> str:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_mail_import(
     account: str,
     format: Literal["eml", "jmap", "mbox", "maildir", "maildir-nested"],
@@ -456,6 +458,7 @@ def create_mail_import(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_mail_export(
     account: str,
     format: Literal["jmap", "mbox", "maildir", "maildir-nested"],
@@ -483,6 +486,7 @@ def create_mail_export(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_calendar_import(
     account: str,
     format: Literal["ics", "jmap"],
@@ -504,6 +508,7 @@ def create_calendar_import(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_calendar_export(
     account: str,
     format: Literal["ics", "jmap"],
@@ -549,6 +554,7 @@ def normalize_calendar_filter(filter: dict) -> dict:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_contacts_import(
     account: str,
     format: Literal["vcf", "jmap"],
@@ -570,6 +576,7 @@ def create_contacts_import(
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def create_contacts_export(
     account: str,
     format: Literal["jmap", "vcf"],

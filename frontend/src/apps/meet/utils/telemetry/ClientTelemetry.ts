@@ -1,4 +1,4 @@
-import type { MeetingRecoveryState } from "../../composables/useConnectionState";
+import type { MeetingRecoveryState } from "../../composables/useParticipantConnectionState";
 
 export type ClientTelemetryEvent =
 	| {

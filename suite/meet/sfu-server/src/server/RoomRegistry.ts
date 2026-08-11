@@ -1,22 +1,49 @@
 import type { Server, Socket } from 'socket.io';
 import type {
 	ActivePoll,
+	ChatMessage,
 	ClientToServerEvents,
+	HandRaisedEvent,
+	MediaControlAction,
+	ProducerCloseDetails,
+	ProducerCloseReason,
+	ProducerCloseSource,
+	ReactionMessage,
+	ScreenShareStartedEvent,
+	ScreenShareStoppedEvent,
 	ServerToClientEvents,
+	SocketData,
 	UserData,
 } from '../types';
 
+type ServerSocket = Socket<
+	ClientToServerEvents,
+	ServerToClientEvents,
+	Record<string, never>,
+	SocketData
+>;
+type ServerEventName = keyof ServerToClientEvents;
+
 const fullRoom = (roomId: string) => `${roomId}:full`;
 const previewRoom = (roomId: string) => `${roomId}:preview`;
+const recorderRoom = (roomId: string) => `${roomId}:recorders`;
 
 export class RoomRegistry {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
 	private participantSockets: Record<string, Record<string, string>> = {};
+	private participantConnections = new Map<string, Map<string, Set<string>>>();
 	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 	private fullAccessSockets: Map<string, Set<string>> = new Map();
 	private previewSockets: Map<string, Set<string>> = new Map();
+	private recorderSockets: Map<string, Set<string>> = new Map();
+	private recorderPeerIds: Map<string, Set<string>> = new Map();
+	private recorderPeerSockets: Map<string, Map<string, string>> = new Map();
+	private activeRecordings = new Map<
+		string,
+		{ jobId: string; socket: Socket }
+	>();
 	private nextSenderIdByRoom: Map<string, number> = new Map();
 	private participantToSender: Map<string, Map<string, number>> = new Map();
 
@@ -55,6 +82,56 @@ export class RoomRegistry {
 		return this.participantToSender;
 	}
 
+	activateRecorder(socket: Socket, recordingId: string, jobId: string): void {
+		const current = this.activeRecordings.get(recordingId);
+		if (current && current.jobId !== jobId) {
+			throw new Error('Recording session is already connected');
+		}
+		this.activeRecordings.set(recordingId, { jobId, socket });
+		if (current && current.socket.id !== socket.id)
+			current.socket.disconnect(true);
+	}
+
+	deactivateRecorder(socket: Socket): void {
+		const recordingId = socket.recordingClaims?.recording_id;
+		if (
+			recordingId &&
+			this.activeRecordings.get(recordingId)?.socket.id === socket.id
+		) {
+			this.activeRecordings.delete(recordingId);
+		}
+	}
+
+	joinRecorder(socket: Socket, roomId: string, peerId: string): void {
+		socket.join(recorderRoom(roomId));
+		if (!this.recorderSockets.has(roomId))
+			this.recorderSockets.set(roomId, new Set());
+		this.recorderSockets.get(roomId)?.add(socket.id);
+		if (!this.recorderPeerIds.has(roomId))
+			this.recorderPeerIds.set(roomId, new Set());
+		this.recorderPeerIds.get(roomId)?.add(peerId);
+		if (!this.recorderPeerSockets.has(roomId))
+			this.recorderPeerSockets.set(roomId, new Map());
+		this.recorderPeerSockets.get(roomId)?.set(peerId, socket.id);
+	}
+
+	leaveRecorder(socket: Socket, roomId: string, peerId: string): boolean {
+		this.recorderSockets.get(roomId)?.delete(socket.id);
+		socket.leave(recorderRoom(roomId));
+		const ownsPeer =
+			this.recorderPeerSockets.get(roomId)?.get(peerId) === socket.id;
+		if (ownsPeer) {
+			this.recorderPeerIds.get(roomId)?.delete(peerId);
+			this.recorderPeerSockets.get(roomId)?.delete(peerId);
+		}
+		this.deactivateRecorder(socket);
+		return ownsPeer;
+	}
+
+	isRecorderPeer(roomId: string, peerId: string): boolean {
+		return this.recorderPeerIds.get(roomId)?.has(peerId) ?? false;
+	}
+
 	assignSenderId(roomId: string, participantId: string): number {
 		const map = this.participantToSender.get(roomId) || new Map();
 		const existing = map.get(participantId);
@@ -77,6 +154,17 @@ export class RoomRegistry {
 		participantId: string,
 	): void {
 		if (!this.participantSockets[roomId]) this.participantSockets[roomId] = {};
+		let participants = this.participantConnections.get(roomId);
+		if (!participants) {
+			participants = new Map();
+			this.participantConnections.set(roomId, participants);
+		}
+		let connections = participants.get(participantId);
+		if (!connections) {
+			connections = new Set();
+			participants.set(participantId, connections);
+		}
+		connections.add(socket.id);
 		this.participantSockets[roomId][participantId] = socket.id;
 	}
 
@@ -85,12 +173,29 @@ export class RoomRegistry {
 		roomId: string,
 		participantId: string,
 	): boolean {
+		const participants = this.participantConnections.get(roomId);
+		const connections = participants?.get(participantId);
+		connections?.delete(socket.id);
+		if (connections?.size === 0) {
+			participants?.delete(participantId);
+			if (participants?.size === 0) this.participantConnections.delete(roomId);
+		}
 		if (this.participantSockets[roomId]?.[participantId] !== socket.id) {
 			return false;
 		}
 
 		delete this.participantSockets[roomId][participantId];
 		return true;
+	}
+
+	hasHumanParticipants(roomId: string): boolean {
+		return (this.participantConnections.get(roomId)?.size ?? 0) > 0;
+	}
+
+	getRecorderSockets(roomId: string): Socket[] {
+		return [...(this.recorderSockets.get(roomId) ?? [])]
+			.map((socketId) => this.io.sockets.sockets.get(socketId))
+			.filter((socket): socket is Socket => Boolean(socket));
 	}
 
 	setRaisedHand(roomId: string, peerId: string, isoTimestamp: string): void {
@@ -130,52 +235,186 @@ export class RoomRegistry {
 		const adapter = this.io.sockets.adapter;
 		const full = adapter.rooms.get(fullRoom(roomId))?.size ?? 0;
 		const preview = adapter.rooms.get(previewRoom(roomId))?.size ?? 0;
-		return full === 0 && preview === 0;
+		const recorders = adapter.rooms.get(recorderRoom(roomId))?.size ?? 0;
+		return full === 0 && preview === 0 && recorders === 0;
 	}
 
 	cleanupRoom(roomId: string): void {
+		this.cleanupMediaRoom(roomId);
+		this.previewSockets.delete(roomId);
+	}
+
+	cleanupMediaRoom(roomId: string): void {
+		const recorderSocketIds = this.recorderSockets.get(roomId) ?? new Set();
+		for (const [recordingId, active] of this.activeRecordings) {
+			if (recorderSocketIds.has(active.socket.id))
+				this.activeRecordings.delete(recordingId);
+		}
 		delete this.raisedHands[roomId];
 		delete this.hostOnlyChat[roomId];
 		delete this.participantSockets[roomId];
+		this.participantConnections.delete(roomId);
 		delete this.activePolls[roomId];
 		this.fullAccessSockets.delete(roomId);
-		this.previewSockets.delete(roomId);
+		this.recorderSockets.delete(roomId);
+		this.recorderPeerIds.delete(roomId);
+		this.recorderPeerSockets.delete(roomId);
 		this.nextSenderIdByRoom.delete(roomId);
 		this.participantToSender.delete(roomId);
 	}
 
-	emitToScope(
+	emitToScope<Event extends ServerEventName>(
 		roomId: string,
 		scope: 'full' | 'presence-preview',
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
 		const key = scope === 'full' ? fullRoom(roomId) : previewRoom(roomId);
 		const ids = this.io.sockets.adapter.rooms.get(key);
 		if (!ids) return;
 		for (const id of ids) {
-			const socket = this.io.sockets.sockets.get(id);
+			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
 			if (socket) {
-				// biome-ignore lint/suspicious/noExplicitAny: Internal utility for type-safe emission to dynamic event names
-				(socket as any).emit(event, data);
+				socket.emit(event, ...args);
 			}
 		}
 	}
 
-	emitToFullAccessParticipants(
+	emitToFullAccessParticipants<Event extends ServerEventName>(
 		roomId: string,
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
-		this.emitToScope(roomId, 'full', event, data);
+		this.emitToScope(roomId, 'full', event, ...args);
 	}
 
-	emitToPreviewParticipants(
+	emitToPreviewParticipants<Event extends ServerEventName>(
 		roomId: string,
-		event: string,
-		data: unknown,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
-		this.emitToScope(roomId, 'presence-preview', event, data);
+		this.emitToScope(roomId, 'presence-preview', event, ...args);
+	}
+
+	private emitToRecorders<Event extends ServerEventName>(
+		roomId: string,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
+	): void {
+		const ids = this.io.sockets.adapter.rooms.get(recorderRoom(roomId));
+		if (!ids) return;
+		for (const id of ids) {
+			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
+			if (socket) {
+				socket.emit(event, ...args);
+			}
+		}
+	}
+
+	emitProducerCreated(
+		roomId: string,
+		data: {
+			participantId: string;
+			producerId: string;
+			kind: 'audio' | 'video';
+			paused: boolean;
+			isScreen: boolean;
+		},
+	): void {
+		const payload = { roomId, ...data };
+		this.emitToFullAccessParticipants(roomId, 'producer_created', payload);
+		this.emitToRecorders(roomId, 'producer_created', payload);
+	}
+
+	emitProducerClosed(
+		roomId: string,
+		data: {
+			participantId: string;
+			producerId: string;
+			isScreen: boolean;
+			reason?: ProducerCloseReason;
+			source?: ProducerCloseSource;
+			details?: ProducerCloseDetails;
+		},
+	): void {
+		this.emitToFullAccessParticipants(roomId, 'producer_closed', {
+			roomId,
+			...data,
+		});
+		this.emitToRecorders(roomId, 'producer_closed', {
+			roomId,
+			participantId: data.participantId,
+			producerId: data.producerId,
+			isScreen: data.isScreen,
+		});
+	}
+
+	emitActiveSpeaker(roomId: string, participantIds: string[]): void {
+		const payload = { participantIds };
+		this.emitToFullAccessParticipants(roomId, 'active_speaker', payload);
+		this.emitToRecorders(roomId, 'active_speaker', payload);
+	}
+
+	emitScreenShare(
+		roomId: string,
+		event: 'screen_share_started',
+		data: ScreenShareStartedEvent,
+	): void;
+	emitScreenShare(
+		roomId: string,
+		event: 'screen_share_stopped',
+		data: ScreenShareStoppedEvent,
+	): void;
+	emitScreenShare(
+		roomId: string,
+		event: 'screen_share_started' | 'screen_share_stopped',
+		data: ScreenShareStartedEvent | ScreenShareStoppedEvent,
+	): void {
+		this.emitToFullAccessParticipants(roomId, event, data);
+		const producerId =
+			'shareData' in data && typeof data.shareData.producerId === 'string'
+				? data.shareData.producerId
+				: undefined;
+		this.emitToRecorders(roomId, event, {
+			participantId: data.participantId,
+			...(event === 'screen_share_started' && producerId
+				? { shareData: { producerId } }
+				: {}),
+			timestamp: data.timestamp,
+		});
+	}
+
+	emitReaction(roomId: string, data: ReactionMessage): void {
+		this.emitToFullAccessParticipants(roomId, 'reaction:message', data);
+		this.emitToRecorders(roomId, 'reaction:message', data);
+	}
+
+	emitRaisedHand(roomId: string, data: HandRaisedEvent): void {
+		this.emitToFullAccessParticipants(roomId, 'hand_raised', data);
+		this.emitToRecorders(roomId, 'hand_raised', data);
+	}
+
+	emitPublicChat(roomId: string, data: ChatMessage): void {
+		this.emitToFullAccessParticipants(roomId, 'chat:message', data);
+		this.emitToRecorders(roomId, 'chat:message', {
+			roomId: data.roomId,
+			message: data.message,
+			fromUser: data.fromUser,
+			fromName: data.fromName,
+			timestamp: data.timestamp,
+		});
+	}
+
+	emitMediaControlUpdate(
+		roomId: string,
+		data: {
+			participantId: string;
+			action: MediaControlAction;
+			timestamp: string;
+		},
+	): void {
+		this.emitToFullAccessParticipants(roomId, 'media_control_update', data);
+		this.emitToRecorders(roomId, 'media_control_update', data);
 	}
 
 	emitParticipantEvent(
@@ -197,6 +436,21 @@ export class RoomRegistry {
 			});
 		}
 
+		if (event === 'participant_joined' && userData) {
+			this.emitToRecorders(roomId, event, {
+				roomId,
+				participantId,
+				userData: {
+					name: userData.name,
+					avatar: userData.avatar,
+					audio_enabled: userData.audio_enabled,
+					video_enabled: userData.video_enabled,
+				},
+			});
+		} else if (event === 'participant_left') {
+			this.emitToRecorders(roomId, event, { roomId, participantId });
+		}
+
 		if (!participantId.startsWith('preview-')) {
 			if (event === 'participant_joined' && userData) {
 				this.emitToPreviewParticipants(roomId, event, {
@@ -205,7 +459,7 @@ export class RoomRegistry {
 					userData: {
 						name: userData.name,
 						avatar: userData.avatar,
-					} as UserData,
+					},
 				});
 			} else if (event === 'participant_left') {
 				this.emitToPreviewParticipants(roomId, event, {

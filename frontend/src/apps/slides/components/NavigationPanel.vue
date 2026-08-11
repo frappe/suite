@@ -45,7 +45,7 @@
 			<div
 				v-if="!inReadonlyMode && presentationDoc"
 				:class="insertButtonClasses"
-				@click="emit('openLayoutDialog', slidesLength - 1)"
+				@click="openLayoutDialog(slidesLength - 1)"
 			>
 				<LucidePlus class="size-4 stroke-[1.5]" />
 				<span class="font-text text-base">Add Slide</span>
@@ -76,12 +76,15 @@ import { reorderSlidesCommand } from '@/apps/slides/stores/commands'
 import { resetFocus } from '@/apps/slides/stores/element'
 import { slidesLength, presentationDoc } from '@/apps/slides/stores/presentation'
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
+import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
 
 const attrs = useAttrs()
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
-const emit = defineEmits(['changeSlide', 'openLayoutDialog', 'duplicate', 'delete'])
+const emit = defineEmits(['changeSlide'])
+
+const openLayoutDialog = inject('openLayoutDialog', () => {})
 
 const activeOptions = ref([])
 
@@ -92,27 +95,8 @@ const menuWrapperProps = computed(() =>
 
 const handleSlideContextMenu = (index) => {
 	if (inReadonlyMode.value) return
-	activeOptions.value = buildSlideOptions(index)
+	activeOptions.value = buildSlideContextOptions({ index, openLayoutDialog })
 }
-
-const buildSlideOptions = (index) => [
-	{
-		label: 'New Slide',
-		icon: 'lucide-plus',
-		onClick: () => emit('openLayoutDialog', index),
-	},
-	{
-		label: 'Duplicate',
-		icon: 'lucide-copy',
-		onClick: () => emit('duplicate', index),
-	},
-	{
-		label: 'Delete',
-		icon: 'lucide-trash-2',
-		theme: 'red',
-		onClick: () => emit('delete', index),
-	},
-]
 
 const SLIDE_WIDTH = 960
 const SLIDE_ASPECT = 540 / 960

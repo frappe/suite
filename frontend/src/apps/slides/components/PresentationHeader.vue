@@ -7,6 +7,7 @@
 		@focus="setCursorPositionAtEnd"
 		@blur="saveTitle"
 		@keydown.enter.prevent.stop="(e) => e.target.blur()"
+		@keydown.esc.prevent.stop="cancelTitle"
 	>
 		{{ title }}
 	</div>
@@ -52,6 +53,11 @@ const makeTitleEditable = (e) => {
 	editingTitle.value = true
 	e.target.focus()
 	e.target.tabIndex = 0
+}
+
+const cancelTitle = (e) => {
+	e.target.innerText = props.title
+	e.target.blur()
 }
 
 const saveTitle = async (e) => {

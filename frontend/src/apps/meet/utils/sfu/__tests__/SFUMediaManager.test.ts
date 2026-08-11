@@ -95,7 +95,12 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 
 	it("discards a subscription that finishes after receive teardown", async () => {
 		const { mediaManager, transportManager, consumerManager } = createManager();
-		let resolveConsumer: (consumer: Record<string, unknown>) => void = () => {};
+		let resolveConsumer: (consumer: {
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}) => void = () => {};
 		transportManager.createConsumer.mockReturnValue(
 			new Promise((resolve) => {
 				resolveConsumer = resolve;
@@ -120,6 +125,21 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		await cancellation;
 		expect(consumer.close).toHaveBeenCalledTimes(1);
 		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
+	});
+});
+
+describe("SFUMediaManager.attachAudioConsumer", () => {
+	it("propagates audio attachment failures", async () => {
+		const { mediaManager, videoManager } = createManager();
+		vi.stubGlobal("MediaStream", class {
+			constructor(_tracks: unknown[]) {}
+		});
+		videoManager.attachStream.mockRejectedValue(new Error("audio blocked"));
+
+		await expect(mediaManager.attachAudioConsumer("remote-1", {
+			track: { kind: "audio" },
+		} as never)).rejects.toThrow("audio blocked");
+		vi.unstubAllGlobals();
 	});
 });
 

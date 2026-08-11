@@ -2,7 +2,9 @@ import frappe
 from frappe.model.document import Document
 
 from suite.drive.utils import (
+    APP_FOLDERS,
     FILE_FIELDS,
+    FRAMEWORK_FOLDERS,
     GENERAL_USER,
     GROUP_PREFIX,
     PERMISSION_TYPES,
@@ -105,16 +107,18 @@ def _ref_doc_access(entity, user):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_entity_with_permissions(entity_name: str):
+def get_entity_with_permissions(entity_name: str | None = None):
     """
     Return file data with permissions
     """
-    entity = frappe.get_all(
-        "File",
-        filters={"name": entity_name, "status": STATUS_ACTIVE},
-        fields=FILE_FIELDS,
-        limit=1,
-    )
+    entity = None
+    if entity_name:
+        entity = frappe.get_all(
+            "File",
+            filters={"name": entity_name, "status": STATUS_ACTIVE},
+            fields=FILE_FIELDS,
+            limit=1,
+        )
     if not entity:
         # Mimic API v2 points
         frappe.local.response.errors = [
@@ -261,13 +265,48 @@ def activity_log_has_permission(doc, ptype="read", user=None):
     return ptype in ("read", "select") and bool(user_has_permission(doc.entity, "read", user))
 
 
+def can_create_in_folder(folder: str | None, user: str | None = None):
+    """Whether `user` may add a child to `folder`, which Drive spells `upload`.
+
+    `create` on a File is only meaningful relative to its parent, so it has to be
+    answered against the destination folder rather than the row being inserted -
+    the row has no permissions of its own yet, and its owner (the inserter) would
+    otherwise hold everything on it via the ownership short-circuit above.
+
+    Framework folders are the exception. Core's uploader inserts into `Home` /
+    `Home/Attachments` (`frappe/handler.py`) and `after_file_upload` adopts the
+    row into the uploader's own folder before it is saved; guests, and uploads
+    that never reach that hook, legitimately stay behind. Those two are framework
+    scaffolding rather than anyone's private space, so creating in them stays
+    open. `folder` is likewise still empty here for attachments that let core's
+    `set_folder_name` resolve it - to one of the same two folders - during
+    `validate`, which runs after this check, so treat empty the same way.
+
+    `APP_FOLDERS` are open for the same reason: they sit outside Drive's tree and
+    belong to an app rather than to a user, so adding to one takes nothing from
+    anybody. Access to what lands there is still per row - the uploader owns it,
+    and nobody else gets it without a share.
+    """
+    user = user or frappe.session.user
+    if not folder or folder in FRAMEWORK_FOLDERS or folder in APP_FOLDERS:
+        return True
+    try:
+        return bool(get_user_access_for_user(folder, user).get("upload"))
+    except frappe.DoesNotExistError:
+        # Link validation would reject it during `validate` anyway; denying here
+        # keeps a bad parent from reading as permitted.
+        return False
+
+
 def user_has_permission(doc, ptype, user=None):
     if isinstance(doc, str):
         doc = frappe.get_doc("File", doc)
     if not user:
         user = frappe.session.user
-    if user == "Administrator" or ptype == "create":
+    if user == "Administrator":
         return True
+    if ptype == "create":
+        return can_create_in_folder(doc.get("folder"), user)
     if ptype not in PERMISSION_TYPES:
         # Should ideally deflect to Framework
         ptype = "write"
