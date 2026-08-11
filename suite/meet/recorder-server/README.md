@@ -2,9 +2,8 @@
 
 ## Dedicated production deployment
 
-Use the standalone deployment when the Recorder Endpoint runs on a dedicated
-host rather than beside the SFU. It deploys only the recorder and its HTTPS
-control proxy; it does not deploy or modify an SFU.
+The Recorder Endpoint uses a standalone production deployment. It deploys only
+the recorder and its HTTPS control proxy; it does not deploy or modify an SFU.
 
 Prerequisites:
 

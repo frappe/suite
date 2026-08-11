@@ -7,7 +7,7 @@
 #   ./deploy.sh start      — Start all services
 #   ./deploy.sh stop       — Stop all services
 #   ./deploy.sh restart    — Restart all services
-#   ./deploy.sh pull       — Pull the latest SFU and recorder images
+#   ./deploy.sh pull       — Pull the latest SFU image
 #   ./deploy.sh logs       — Tail logs from all services
 #   ./deploy.sh status     — Show container status and health
 #   ./deploy.sh ssl-init   — Provision SSL certificate (first time only)
@@ -94,38 +94,6 @@ check_env() {
         ok "JWT_SECRET is set"
     fi
 
-    if [ -z "${RECORDER_SECRET:-}" ] || [[ "$RECORDER_SECRET" == change-me-* ]] || (( ${#RECORDER_SECRET} < 32 )); then
-        err "RECORDER_SECRET must be set to an independent strong random value."
-        echo "  Generate one: openssl rand -base64 48"
-        errors=true
-    elif [ "$RECORDER_SECRET" = "${JWT_SECRET:-}" ]; then
-        err "RECORDER_SECRET must not reuse JWT_SECRET."
-        errors=true
-    else
-        ok "RECORDER_SECRET is set"
-    fi
-
-    if [ -z "${RECORDER_METRICS_TOKEN:-}" ] || [[ "$RECORDER_METRICS_TOKEN" == change-me-* ]] || (( ${#RECORDER_METRICS_TOKEN} < 32 )); then
-        err "RECORDER_METRICS_TOKEN must be set to an independent strong random value."
-        echo "  Generate one: openssl rand -hex 32"
-        errors=true
-    elif [ "$RECORDER_METRICS_TOKEN" = "${RECORDER_SECRET:-}" ] || [ "$RECORDER_METRICS_TOKEN" = "${JWT_SECRET:-}" ]; then
-        err "RECORDER_METRICS_TOKEN must not reuse another service credential."
-        errors=true
-    else
-        ok "RECORDER_METRICS_TOKEN is set"
-    fi
-
-    if [ -z "${RECORDER_SITE:-}" ] || [ "$RECORDER_SITE" = "example.com" ] || [[ "$RECORDER_SITE" == *.example.com ]]; then
-        err "RECORDER_SITE must be set to the exact Frappe site name."
-        errors=true
-    fi
-
-    if [ -z "${RECORDER_SITE_ORIGIN:-}" ] || [[ ! "$RECORDER_SITE_ORIGIN" =~ ^https://[^/]+$ ]] || [[ "$RECORDER_SITE_ORIGIN" =~ ^https://([^/]+\.)?example\.com$ ]]; then
-        err "RECORDER_SITE_ORIGIN must be the exact deployed HTTPS origin."
-        errors=true
-    fi
-
     if [ -z "${WEBRTC_ANNOUNCED_IP:-}" ]; then
         err "WEBRTC_ANNOUNCED_IP must be set to your server's public IP."
         echo "  Find it: curl -4 ifconfig.me"
@@ -148,7 +116,6 @@ check_env() {
 
     # Informational
     info "SFU Image: ${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    info "Recorder Image: ${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
     info "SFU Port: ${PORT:-3000}"
     if [ -n "${MEDIASOUP_NUM_WORKERS:-}" ]; then
         local media_port_start="${WEBRTC_SERVER_PORT:-40000}"
@@ -212,8 +179,7 @@ cmd_setup() {
     header "Pulling service images"
     set -a; source "$ENV_FILE"; set +a
     docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
-    ok "Images pulled"
+    ok "Image pulled"
 
     # Start SFU first (nginx depends on it being healthy)
     header "Starting SFU"
@@ -277,19 +243,18 @@ cmd_restart() {
 
 cmd_pull() {
     set -a; source "$ENV_FILE"; set +a
-    header "Pulling latest service images"
+    header "Pulling latest SFU image"
     docker pull "${SFU_IMAGE:-ghcr.io/frappe/suite/meet-sfu-server:latest}"
-    docker pull "${RECORDER_IMAGE:-ghcr.io/frappe/suite/meet-recorder-server:latest}"
-    ok "Images pulled"
+    ok "Image pulled"
     info "Run './deploy.sh update' to use the new images"
 }
 
 cmd_update() {
-    header "Updating SFU and recorder"
+    header "Updating SFU"
     cmd_pull
     header "Recreating service containers"
-    compose up -d --force-recreate grant-store-init sfu recorder
-    ok "SFU and recorder updated"
+    compose up -d --force-recreate grant-store-init sfu
+    ok "SFU updated"
     cmd_status
 }
 
@@ -356,7 +321,7 @@ cmd_help() {
     echo "  start      Start all services"
     echo "  stop       Stop all services"
     echo "  restart    Restart all services"
-    echo "  pull       Pull the latest SFU and recorder images"
+    echo "  pull       Pull the latest SFU image"
     echo "  update     Pull latest images and recreate service containers"
     echo "  logs       Tail logs (append service name to filter, e.g., logs sfu)"
     echo "  observability-start  Validate and start the Alloy log collector"
