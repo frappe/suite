@@ -529,40 +529,6 @@ describe("getNetworkStats", () => {
 		expect(stats.isValid).toBe(true);
 	});
 
-	it("calculates downlink loss from packet deltas between polls", async () => {
-		const manager = createManager();
-		manager.recvTransport = {
-			id: "r",
-			connectionState: "connected",
-			getStats: vi
-				.fn()
-				.mockResolvedValueOnce(
-					new Map([
-						[
-							"in1",
-							{ type: "inbound-rtp", packetsReceived: 100, packetsLost: 0 },
-						],
-					]),
-				)
-				.mockResolvedValueOnce(
-					new Map([
-						[
-							"in1",
-							{ type: "inbound-rtp", packetsReceived: 180, packetsLost: 20 },
-						],
-					]),
-				),
-		} as never;
-		manager.sendTransport = null;
-
-		const first = await manager.getNetworkStats();
-		const second = await manager.getNetworkStats();
-
-		expect(first.hasDownlinkSample).toBe(false);
-		expect(second.hasDownlinkSample).toBe(true);
-		expect(second.downlinkPacketLoss).toBe(20);
-	});
-
 	it("includes remote-inbound-rtp RTT in average", async () => {
 		const manager = createManager();
 		manager.sendTransport = {

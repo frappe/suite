@@ -62,7 +62,7 @@ export class StallDetector {
 		this.now = options.now ?? (() => Date.now());
 	}
 
-	check(samples: ConsumerSample[]): string[] {
+	check(samples: ConsumerSample[], recoveryEnabled = true): string[] {
 		const now = this.now();
 		const activeIds = new Set<string>();
 		const stalled: string[] = [];
@@ -100,7 +100,7 @@ export class StallDetector {
 				}
 				if (now - st.stallStartedAt >= timeoutMs) {
 					this.activeStall = true;
-					if (this.shouldRecover(st, now)) {
+					if (recoveryEnabled && this.shouldRecover(st, now)) {
 						stalled.push(sample.id);
 						st.lastRecoveredAt = now;
 						st.recoveryAttempts += 1;
@@ -131,7 +131,7 @@ export class StallDetector {
 
 			if (now - st.stallStartedAt >= timeoutMs) {
 				this.activeStall = true;
-				if (this.shouldRecover(st, now)) {
+				if (recoveryEnabled && this.shouldRecover(st, now)) {
 					stalled.push(sample.id);
 					st.lastRecoveredAt = now;
 					st.recoveryAttempts += 1;

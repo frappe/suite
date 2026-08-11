@@ -49,29 +49,16 @@ describe("useNetworkQuality", () => {
 		};
 	};
 
-	it("requires consecutive degraded downlink samples and healthy samples to recover", async () => {
-		const stats = {
+	it("does not treat packet loss alone as visible downlink degradation", async () => {
+		const { observedDownlink, unmount } = mountWithStats({
 			rtt: 50,
-			packetLoss: 0,
+			packetLoss: 20,
 			availableOutgoingBitrate: 900_000,
-			downlinkPacketLoss: 10,
-			hasDownlinkSample: true,
 			timestamp: Date.now(),
 			isValid: true,
-		};
-		const { observedDownlink, unmount } = mountWithStats(stats);
+		});
 
-		await vi.advanceTimersByTimeAsync(3000);
-		expect(observedDownlink.value).toBe("good");
-
-		await vi.advanceTimersByTimeAsync(3000);
-		expect(observedDownlink.value).toBe("poor");
-
-		stats.downlinkPacketLoss = 0;
 		await vi.advanceTimersByTimeAsync(6000);
-		expect(observedDownlink.value).toBe("poor");
-
-		await vi.advanceTimersByTimeAsync(3000);
 		expect(observedDownlink.value).toBe("good");
 
 		unmount();
@@ -256,8 +243,6 @@ describe("useNetworkQuality", () => {
 					rtt: 50,
 					packetLoss: 0,
 					availableOutgoingBitrate: 800_000,
-					downlinkPacketLoss: 0,
-					hasDownlinkSample: true,
 					timestamp: Date.now(),
 					isValid: true,
 				}),
@@ -376,9 +361,6 @@ describe("useNetworkQuality", () => {
 		qualityStats.rtt = 50;
 		qualityStats.packetLoss = 0;
 		qualityStats.availableOutgoingBitrate = 800_000;
-		await vi.advanceTimersByTimeAsync(18_000);
-		expect(resetReceiveSide).not.toHaveBeenCalled();
-
 		await vi.advanceTimersByTimeAsync(3000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledTimes(1);
 		expect(resetReceiveSide).not.toHaveBeenCalled();

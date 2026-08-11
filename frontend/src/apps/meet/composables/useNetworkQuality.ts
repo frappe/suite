@@ -13,8 +13,6 @@ interface NetworkStats {
 	rtt: number;
 	packetLoss: number;
 	availableOutgoingBitrate: number;
-	downlinkPacketLoss?: number;
-	hasDownlinkSample?: boolean;
 	timestamp: number;
 	isValid: boolean;
 }
@@ -32,9 +30,6 @@ export function useNetworkQuality(
 	const networkQuality = ref<NetworkQuality>("good");
 	const downlinkQuality = ref<NetworkQuality>("good");
 	const isTransportFailed = ref(false);
-	let degradedDownlinkSamples = 0;
-	let healthyDownlinkSamples = 0;
-	let pendingDownlinkQuality: NetworkQuality = "good";
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
@@ -73,47 +68,21 @@ export function useNetworkQuality(
 		}
 	};
 
-	const updateDownlinkQuality = (stats: NetworkStats) => {
-		if (!stats.hasDownlinkSample) return;
-
-		const packetLoss = stats.downlinkPacketLoss ?? 0;
-		const sampleQuality: NetworkQuality =
-			packetLoss > CRITICAL_PACKET_LOSS_PERCENT
-				? "critical"
-				: packetLoss > POOR_PACKET_LOSS_PERCENT
-					? "poor"
-					: "good";
-
-		if (sampleQuality === "good") {
-			degradedDownlinkSamples = 0;
-			pendingDownlinkQuality = "good";
-			healthyDownlinkSamples++;
-			if (healthyDownlinkSamples >= 3) downlinkQuality.value = "good";
-			return;
-		}
-
-		healthyDownlinkSamples = 0;
-		degradedDownlinkSamples++;
-		if (
-			sampleQuality === "critical" ||
-			pendingDownlinkQuality === "good"
-		) {
-			pendingDownlinkQuality = sampleQuality;
-		}
-		if (degradedDownlinkSamples >= 2) {
-			downlinkQuality.value = pendingDownlinkQuality;
-		}
-	};
-
-	const checkConsumerStalls = async (): Promise<void> => {
+	const checkConsumerStalls = async (allowRecovery: boolean): Promise<void> => {
 		const sfuManager = sfuManagerRef?.value;
 		if (!sfuManager) return;
 
 		const consumerManager = sfuManager.mediaManager?.consumerManager;
-		if (!consumerManager) return;
+		if (!consumerManager) {
+			downlinkQuality.value = "good";
+			return;
+		}
 
 		const consumers = consumerManager.getAllConsumers();
-		if (consumers.length === 0) return;
+		if (consumers.length === 0) {
+			downlinkQuality.value = "good";
+			return;
+		}
 
 		const statsResults = await Promise.all(
 			consumers.map(async (entry) => {
@@ -156,11 +125,10 @@ export function useNetworkQuality(
 			}
 		}
 
-		const stalledIds = stallDetector.check(samples);
-		if (stallDetector.hasActiveStall()) {
-			downlinkQuality.value = "critical";
-			healthyDownlinkSamples = 0;
-		}
+		const stalledIds = stallDetector.check(samples, allowRecovery);
+		downlinkQuality.value = stallDetector.hasActiveStall()
+			? "critical"
+			: "good";
 		if (stalledIds.length === 0) return;
 		const stalledSet = new Set(stalledIds);
 		clientTelemetry?.reportMediaStalls(
@@ -228,18 +196,12 @@ export function useNetworkQuality(
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
 				updateQuality(stats);
-				updateDownlinkQuality(stats);
 				const sfuClient = sfuManagerRef?.value?.sfuClient;
 				if (sfuClient && stats.isValid) {
 					getClientTelemetry(sfuClient).reportNetworkQuality(stats);
 				}
 			}
-			if (networkQuality.value !== "good") {
-				stallDetector.suspend();
-				return;
-			}
-
-			await checkConsumerStalls();
+			await checkConsumerStalls(networkQuality.value === "good");
 		} finally {
 			isPolling.value = false;
 		}
