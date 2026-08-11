@@ -86,6 +86,10 @@ def upload_file(
     file = frappe.request.files["file"]
     file_name = get_new_file_name(file.filename, parent)
     upload_session = frappe.form_dict.uuid
+    if not upload_session and total_chunks == 1:
+        upload_session = frappe.generate_hash(12)
+    if not isinstance(upload_session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", upload_session):
+        frappe.throw("Invalid upload session.", frappe.ValidationError)
     temp_path = get_upload_path(f"{upload_session}_{secure_filename(file_name)}")
     with temp_path.open("ab") as f:
         f.seek(offset)
@@ -930,7 +934,11 @@ def get_upload_path(file_name):
     root_folder = frappe.get_single("Drive Disk Settings").root_folder or ""
     uploads_path = Path(frappe.get_site_path("private/files"), root_folder, ".uploads")
     uploads_path.mkdir(exist_ok=True)
-    return uploads_path / file_name
+    uploads_path = uploads_path.resolve()
+    upload_path = (uploads_path / file_name).resolve()
+    if not upload_path.is_relative_to(uploads_path):
+        frappe.throw("Invalid upload path.", frappe.ValidationError)
+    return upload_path
 
 
 @frappe.whitelist()
