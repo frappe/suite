@@ -30,7 +30,7 @@ export default defineConfig({
 			],
 	use: {
 		baseURL,
-		trace: "on-first-retry",
+		trace: "retain-on-failure",
 		video: "on-first-retry",
 		screenshot: "only-on-failure",
 		viewport: { width: 1440, height: 900 },

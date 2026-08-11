@@ -24,7 +24,7 @@ on:
       - "yarn.lock"
       - "pyproject.toml"
       - ".github/workflows/meet-e2e.yml"
-  pull_request:
+  pull_request_target:
     paths:
       - "suite/meet/**"
       - "suite/hooks.py"
@@ -50,7 +50,8 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: suite-e2e
     # Playwright --shard=N/M splits the suite; each job is self-contained.
     strategy:
       fail-fast: false
@@ -59,6 +60,8 @@ jobs:
         shardTotal: [3]
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     timeout-minutes: 60
+    permissions:
+      contents: read
 
     services:
       redis-cache:
@@ -79,24 +82,29 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.14"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           check-latest: true
+
+      - name: Setup Yarn
+        run: corepack enable && corepack prepare yarn@1.22.22 --activate
 
       - name: Add to Hosts
         run: echo "127.0.0.1 meet.test" | sudo tee -a /etc/hosts
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml') }}
@@ -108,7 +116,7 @@ jobs:
         run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
 
       - name: Cache yarn
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
           key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
@@ -117,27 +125,22 @@ jobs:
 
       - name: Cache bench directory
         id: cache-bench
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~/frappe-bench
+          path: ${{ runner.temp }}/frappe-bench
           key: ${{ runner.os }}-bench-${{ hashFiles('**/pyproject.toml', '**/yarn.lock', '**/requirements.txt', '**/package.json') }}
           restore-keys: |
             ${{ runner.os }}-bench-
-
-      - name: Install MariaDB Client
-        run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
 
       - name: Setup Bench
         run: |
           pip install frappe-bench
           if [ "${{ steps.cache-bench.outputs.cache-hit }}" != "true" ]; then
-            bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+            bench init --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
           fi
 
       - name: Install Suite
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           rm -rf apps/suite sites/meet.test sites/assets/suite
           bench get-app suite $GITHUB_WORKSPACE
@@ -148,13 +151,13 @@ jobs:
           cd apps/suite
           yarn install --frozen-lockfile --non-interactive
           yarn build
-          cd /home/runner/frappe-bench
+          cd "$RUNNER_TEMP/frappe-bench"
           bench build
         env:
           CI: "Yes"
 
       - name: Configure Site for E2E
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           bench --site meet.test set-config sfu_secret "e2e-test-secret-key-12345"
           bench --site meet.test set-config sfu_server_url "http://localhost"
@@ -167,6 +170,7 @@ jobs:
             bench --site meet.test enable-scheduler
             bench --site meet.test execute suite.tests.ci_smoke.enable_scheduler_smoke_logging
           fi
+          bench --site meet.test clear-cache
 
       - name: Build SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
@@ -179,12 +183,11 @@ jobs:
         timeout-minutes: 20
         run: |
           yarn install --frozen-lockfile --non-interactive
-          yarn playwright install-deps chromium
           google-chrome --version
 
       - name: Start Frappe Server
         id: start-frappe
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           sed -i 's/^watch:/# watch:/g' Procfile
           if [ "${{ github.event_name }}" != "schedule" ]; then
@@ -224,27 +227,27 @@ jobs:
 
       - name: Check Scheduled Job Execution
         if: always() && github.event_name == 'schedule' && steps.start-frappe.outcome == 'success'
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: timeout 90 bash -c 'until [ "$(bench --site meet.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
 
       - name: Upload Test Results
-        uses: actions/upload-artifact@v4
-        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && !cancelled()
         with:
           name: meet-playwright-report-shard-${{ matrix.shardIndex }}
           path: |
             e2e/meet/playwright-report/
             e2e/meet/test-results/
             e2e/meet/results.xml
-            /home/runner/frappe-bench/bench_start.log
+            ${{ runner.temp }}/frappe-bench/bench_start.log
           compression-level: 1
-          retention-days: 30
+          retention-days: 14
 
       - name: Upload JUnit Results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: meet-junit-shard-${{ matrix.shardIndex }}
           path: e2e/meet/results.xml
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 14

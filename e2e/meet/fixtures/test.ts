@@ -23,6 +23,19 @@ function appUrl(pathname: string): string {
 	return new URL(pathname, baseURL).toString();
 }
 
+async function gotoAppPage(page: Page, pathname: string): Promise<void> {
+	const url = appUrl(pathname);
+	const response = await page.goto(url);
+	if (!response || response.ok()) return;
+
+	const traceback = (
+		await page.locator(".error-content").textContent().catch(() => "")
+	)?.trim();
+	throw new Error(
+		`${url} returned HTTP ${response.status()}${traceback ? `\n${traceback}` : ""}`,
+	);
+}
+
 interface Participant {
 	context: BrowserContext;
 	page: Page;
@@ -91,7 +104,7 @@ async function joinHostAndGuest(
 ): Promise<void> {
 	await Promise.all([
 		(async () => {
-			await hostPage.goto(appUrl(`/meet/${meetingId}`));
+			await gotoAppPage(hostPage, `/meet/${meetingId}`);
 			await joinFromPreview(hostPage);
 		})(),
 		guest.joinAsGuest(meetingId, guestName),
@@ -133,11 +146,11 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 		context,
 		page,
 		async joinMeeting(meetingId: string) {
-			await page.goto(appUrl(`/meet/${meetingId}`));
+			await gotoAppPage(page, `/meet/${meetingId}`);
 			await joinFromPreview(page);
 		},
 		async joinAsGuest(meetingId: string, guestName: string) {
-			await page.goto(appUrl(`/meet/${meetingId}`));
+			await gotoAppPage(page, `/meet/${meetingId}`);
 			await expect(page.getByRole("heading", { name: "Ready to join?" })).toBeVisible({
 				timeout: previewTimeout,
 			});
@@ -151,8 +164,8 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 		},
 		async joinAsHost(meetingId: string) {
 			await loginViaApi(context.request, meetHost);
-			await page.goto(appUrl("/meet/"));
-			await page.goto(appUrl(`/meet/${meetingId}`));
+			await gotoAppPage(page, "/meet/");
+			await gotoAppPage(page, `/meet/${meetingId}`);
 			await joinFromPreview(page);
 		},
 		async endCall() {
@@ -168,7 +181,7 @@ export const test = base.extend<TestFixtures>({
 		await prepareContext(context);
 		await loginViaApi(context.request, meetHost);
 		const page = await context.newPage();
-		await page.goto(appUrl("/meet/"));
+		await gotoAppPage(page, "/meet/");
 		await use(page);
 		await context.close();
 	},

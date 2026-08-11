@@ -26,7 +26,7 @@ on:
       - "pyproject.toml"
       - "knip.json"
       - ".github/workflows/drive-backed-apps-e2e.yml"
-  pull_request:
+  pull_request_target:
     paths:
       - "suite/drive/**"
       - "suite/writer/**"
@@ -54,8 +54,11 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: suite-e2e
     timeout-minutes: 45
+    permissions:
+      contents: read
 
     services:
       redis-cache:
@@ -76,24 +79,29 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.14"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           check-latest: true
+
+      - name: Setup Yarn
+        run: corepack enable && corepack prepare yarn@1.22.22 --activate
 
       - name: Add to hosts
         run: echo "127.0.0.1 drive-writer.test" | sudo tee -a /etc/hosts
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml') }}
@@ -105,25 +113,20 @@ jobs:
         run: echo "dir=$(yarn cache dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache yarn
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ steps.yarn-cache-dir.outputs.dir }}
           key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-
 
-      - name: Install MariaDB client
-        run: |
-          sudo apt update
-          sudo apt-get install -y mariadb-client
-
       - name: Setup Bench
         run: |
           pip install frappe-bench
-          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" ~/frappe-bench
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
 
       - name: Install Suite
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           rm -rf apps/suite sites/drive-writer.test sites/assets/suite
           bench get-app suite "$GITHUB_WORKSPACE"
@@ -138,7 +141,7 @@ jobs:
           CI: "Yes"
 
       - name: Configure site for E2E
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           bench --site drive-writer.test set-config allow_tests true
           bench --site drive-writer.test set-config ignore_csrf 1
@@ -154,12 +157,11 @@ jobs:
         timeout-minutes: 20
         run: |
           yarn install --frozen-lockfile --non-interactive
-          yarn playwright install-deps chromium
           google-chrome --version
 
       - name: Start Frappe server
         id: start-frappe
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
           sed -i 's/^watch:/# watch:/g' Procfile
           if [ "${{ github.event_name }}" != "schedule" ]; then
@@ -177,11 +179,11 @@ jobs:
 
       - name: Check scheduled job execution
         if: always() && github.event_name == 'schedule' && steps.start-frappe.outcome == 'success'
-        working-directory: /home/runner/frappe-bench
+        working-directory: ${{ runner.temp }}/frappe-bench
         run: timeout 90 bash -c 'until [ "$(bench --site drive-writer.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: drive-backed-apps-playwright-report
@@ -189,12 +191,12 @@ jobs:
             e2e/drive-backed-apps/playwright-report/
             e2e/drive-backed-apps/test-results/
             e2e/drive-backed-apps/results.xml
-            /home/runner/frappe-bench/bench_start.log
+            ${{ runner.temp }}/frappe-bench/bench_start.log
           compression-level: 1
           retention-days: 30
 
       - name: Upload JUnit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: drive-backed-apps-junit

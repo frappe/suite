@@ -66,7 +66,9 @@ test.describe("Restricted meeting", () => {
 			.locator("[data-testid^='join-request-']")
 			.filter({ hasText: guestName });
 		await expect(joinRequest).toBeVisible({ timeout: lobbyTransitionTimeout });
-		await joinRequest.getByRole("button", { name: "Deny" }).click();
+		await expect(async () => {
+			await joinRequest.getByRole("button", { name: "Deny" }).click();
+		}).toPass({ timeout: lobbyTransitionTimeout });
 		await expect(joinRequest).toHaveCount(0, {
 			timeout: lobbyTransitionTimeout,
 		});

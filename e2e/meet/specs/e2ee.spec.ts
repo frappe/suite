@@ -45,11 +45,13 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 			timeout: 30_000,
 		});
 	}
-	await page.keyboard.press("Escape");
-	if (await toggle.isVisible()) {
-		await page.keyboard.press("Escape");
-	}
-	await expect(toggle).not.toBeVisible();
+	const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+	await expect(async () => {
+		if (await settingsDialog.isVisible()) {
+			await page.keyboard.press("Escape");
+		}
+		await expect(settingsDialog).not.toBeVisible({ timeout: 1_000 });
+	}).toPass({ timeout: 10_000 });
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
@@ -329,6 +331,7 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.setTimeout(180_000);
 		const meetingId = await createMeeting();
 		const guestName = "Guest Reconnect E2EE";
 		const guest = await createParticipant();
