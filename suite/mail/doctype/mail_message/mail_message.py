@@ -40,7 +40,7 @@ from suite.mail.utils import (
     log_mail_error,
 )
 from suite.mail.utils.dt import normalize_utc_z, to_user_timezone
-from suite.mail.utils.email_parser import EmailParser
+from suite.mail.utils.email_parser import EmailParser, decode_encoded_words
 from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.user import get_account_emails, get_sync_state, update_sync_state
 from suite.utils import clean_text, convert_html_to_text, enqueue_job, parse_filters, user_context
@@ -1188,14 +1188,22 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
         "received_after": time_diff_in_seconds(received_at, sent_at),
     }
 
+    # Display names pass through `decode_encoded_words`: a client that MIME-encoded a name inside
+    # a quoted string leaves the server nothing it is allowed to decode, and the raw
+    # `=?UTF-8?B?...?=` would otherwise be what the reader sees — and what the address index
+    # learns the person as.
     for key in ["sender", "from"]:
-        formatted_message[f"{key}_name"] = message[key][0]["name"] if message[key] else None
+        formatted_message[f"{key}_name"] = (
+            decode_encoded_words(message[key][0]["name"]) if message[key] else None
+        )
         formatted_message[f"{key}_email"] = message[key][0]["email"] if message[key] else None
 
     formatted_message["reply_to"] = []
     if reply_to := message["replyTo"]:
         for rt in reply_to:
-            formatted_message["reply_to"].append({"display_name": rt["name"], "email": rt["email"]})
+            formatted_message["reply_to"].append(
+                {"display_name": decode_encoded_words(rt["name"]), "email": rt["email"]}
+            )
 
     formatted_message["recipients"] = []
     for key in ["to", "cc", "bcc"]:
@@ -1203,7 +1211,11 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
             titled_key = key.title()
             for rcpt in rcpts:
                 formatted_message["recipients"].append(
-                    {"type": titled_key, "display_name": rcpt["name"], "email": rcpt["email"]}
+                    {
+                        "type": titled_key,
+                        "display_name": decode_encoded_words(rcpt["name"]),
+                        "email": rcpt["email"],
+                    }
                 )
 
     for key, field in {"htmlBody": "html_body", "textBody": "text_body"}.items():

@@ -2,6 +2,7 @@ import re
 
 from frappe.utils import EMAIL_MATCH_PATTERN
 
+from suite.mail.utils.email_parser import decode_encoded_words
 from suite.store.search_store import FieldSpec, SearchStore
 
 # Runs of alphanumerics, Unicode-aware, mirroring the tokenizer the indexed text went through —
@@ -80,9 +81,15 @@ def _relevance_key(query: list[str], hit: dict) -> tuple:
 
 
 def _sanitize_name(name: str | None) -> str | None:
-    """Strip whitespace and any matching quote pairs wrapping a display name."""
+    """Strip whitespace and any matching quote pairs wrapping a display name.
 
-    name = (name or "").strip()
+    Encoded-words are decoded here as well as where messages are cached: contact cards and any
+    other feed reach the index without passing through that, and a name indexed as
+    `=?UTF-8?B?...?=` is both unreadable and unsearchable — nobody types the base64 of a name.
+    """
+
+    name = decode_encoded_words(name) or ""
+    name = name.strip()
     while len(name) >= 2 and name[0] == name[-1] and name[0] in _WRAPPING_QUOTES:
         name = name[1:-1].strip()
 

@@ -212,6 +212,48 @@ def remove_whitespace_characters(text: str) -> str:
     return text.replace("\t", "").replace("\r", "").replace("\n", "").strip()
 
 
+ENCODED_WORD = re.compile(r"=\?[^?\s]+\?[bBqQ]\?[^?\s]*\?=")
+# Whitespace between two encoded-words belongs to the encoding, not to the text (RFC 2047, §6.2).
+ENCODED_WORD_SEPARATOR = re.compile(r"(\?=)\s+(=\?)")
+
+
+def decode_encoded_words(text: str | None) -> str | None:
+    """Decodes any RFC 2047 encoded-words in the text, leaving the rest of it untouched.
+
+    Display names arrive decoded from the mail server, except where the sending client put an
+    encoded-word inside a quoted string — which RFC 2047 does not allow, so a strict parser
+    leaves it alone and `"Jungeun Yun/=?UTF-8?B?...?="` reaches us verbatim.
+
+    Decoding a word at a time rather than through `make_header`, which separates the pieces it
+    decodes with a space and would break that same name into two.
+    """
+
+    if not text or "=?" not in text:
+        return text
+
+    return ENCODED_WORD.sub(_decode_word, ENCODED_WORD_SEPARATOR.sub(r"\1\2", text))
+
+
+def _decode_word(match: re.Match) -> str:
+    """Decodes a single encoded-word, keeping it as it is if that isn't possible."""
+
+    word = match.group(0)
+
+    try:
+        text, charset = decode_header(word)[0]
+    except Exception:
+        return word
+
+    if not isinstance(text, bytes):
+        return text
+
+    try:
+        return text.decode(charset or "utf-8", errors="replace")
+    except LookupError:
+        # A charset the sender named and Python doesn't know.
+        return text.decode("utf-8", errors="replace")
+
+
 def extract_ip_and_host(header: str | None = None) -> tuple[str | None, str | None]:
     """Extracts the IP and Host from the given `Received` header."""
 
