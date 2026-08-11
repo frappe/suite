@@ -6,7 +6,8 @@
           <component :is="Component" />
         </router-view>
       </div>
-      <DesktopShell v-else-if="isDesktop" :scroll="shellScroll">
+      <!-- Keep sticky page chrome below dialogs portalled to body. -->
+      <DesktopShell v-else-if="isDesktop" :scroll="shellScroll" class="isolate">
         <template v-if="normalView" #sidebar>
           <Sidebar />
         </template>
@@ -16,7 +17,7 @@
           </router-view>
         </div>
       </DesktopShell>
-      <MobileShell v-else>
+      <MobileShell v-else class="isolate">
         <div id="dropzone" class="relative flex min-h-full flex-col bg-surface-base" :class="{ 'h-full': !shellScroll }">
           <router-view :key="$route.fullPath" v-slot="{ Component }">
             <component :is="Component" />
