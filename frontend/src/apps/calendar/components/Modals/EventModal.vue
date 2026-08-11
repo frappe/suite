@@ -56,6 +56,9 @@ const getEventData = () => {
 	}
 }
 
+// How long an event runs when the end hasn't been set by hand.
+const DEFAULT_DURATION_MINUTES = 60
+
 const getDefaultEventData = () => {
 	const startTime = selectedEvent?.time
 		? dayjs(selectedEvent.time, 'h a').format('HH:mm')
@@ -71,7 +74,7 @@ const getDefaultEventData = () => {
 		startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
 		startTime,
 		endDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
-		endTime: dayjs(startTime, 'HH:mm').add(1, 'hour').format('HH:mm'),
+		endTime: dayjs(startTime, 'HH:mm').add(DEFAULT_DURATION_MINUTES, 'minute').format('HH:mm'),
 		locations: [],
 		links: [],
 		alerts: [],
@@ -260,11 +263,44 @@ const meetLinkDisplay = computed(() =>
 
 // --- Watchers ---
 
+// Moving the start drags the end along, keeping the gap the user set. A gap that
+// hasn't been set — or one the start has overtaken — falls back to the default.
+let previousStart = null
+
 watch(show, (val) => {
 	if (!val) return
+	previousStart = null
 	Object.assign(event, getEventData())
 	originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
+
+watch(
+	() => [event.startDate, event.startTime],
+	([startDate, startTime]) => {
+		const previous = previousStart
+		previousStart = { date: startDate, time: startTime }
+
+		if (!previous?.date || !startDate) return
+		if (previous.date === startDate && previous.time === startTime) return
+
+		if (event.isAllDay) {
+			const days = dayjs(event.endDate).diff(dayjs(previous.date), 'day')
+			event.endDate = dayjs(startDate).add(Math.max(days, 0), 'day').format('YYYY-MM-DD')
+			return
+		}
+
+		const start = dayjs(`${startDate}T${startTime}`)
+		if (!start.isValid()) return
+
+		const gap = dayjs(`${event.endDate}T${event.endTime}`).diff(
+			dayjs(`${previous.date}T${previous.time}`),
+			'minute',
+		)
+		const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
+		event.endDate = end.format('YYYY-MM-DD')
+		event.endTime = end.format('HH:mm')
+	},
+)
 
 const showRepeatSettings = ref(false)
 watch(showRepeatSettings, (val) => {
