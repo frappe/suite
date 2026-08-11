@@ -3,7 +3,7 @@
 		class="absolute bg-black/60 text-white rounded-full pointer-events-none max-w-[calc(100%-0.5rem)] whitespace-nowrap overflow-hidden w-fit flex items-center gap-2"
 		:class="pillClasses"
 	>
-		<span class="min-w-0 truncate">{{ name }}</span>
+		<span class="min-w-0 truncate leading-normal">{{ name }}</span>
 		<slot />
 	</div>
 </template>
