@@ -2,7 +2,9 @@
 # See license.txt
 
 from unittest.mock import patch
+
 from frappe.tests import IntegrationTestCase
+
 from suite.writer.api.general import search
 
 
@@ -31,9 +33,7 @@ class TestWriterSearch(IntegrationTestCase):
         }
 
         # doc1 is readable, doc2 is unreadable
-        mock_get_user_access.side_effect = lambda name: {
-            "read": name == "doc1"
-        }
+        mock_get_user_access.side_effect = lambda name: {"read": name == "doc1"}
 
         res = search("test")
 

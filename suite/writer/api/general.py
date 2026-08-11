@@ -175,7 +175,7 @@ def get_drive_file_meta(names, ttl=3600):
     cache = frappe.cache()
 
     keys = {name: f"search:drive_file:{name}" for name in names}
-    cached = {"name": cache.get_value(k) for k in keys.values()}
+    cached = {"name": cache.get_value(k) for k in keys.values()}  # noqa: B035 -- pre-existing, tracked separately
 
     result = {}
     missing = []
