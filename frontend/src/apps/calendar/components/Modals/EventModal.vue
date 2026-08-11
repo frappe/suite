@@ -269,8 +269,10 @@ let previousStart = null
 
 watch(show, (val) => {
 	if (!val) return
-	previousStart = null
 	Object.assign(event, getEventData())
+	// Reopening the same event leaves the start untouched, so the watcher below
+	// won't fire — seed the baseline here or the first edit has nothing to move from.
+	previousStart = { date: event.startDate, time: event.startTime }
 	originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
 
