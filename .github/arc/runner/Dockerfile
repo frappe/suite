@@ -3,6 +3,7 @@
 FROM node:24.12.0-bookworm-slim@sha256:7326fb2dbdce998edd72140946851be64ef4a643e8715e138ca467e8e9d92c99 AS yarn-cache
 
 ENV YARN_CACHE_FOLDER=/var/cache/yarn
+ENV COREPACK_HOME=/var/cache/corepack
 
 WORKDIR /warm
 
@@ -21,6 +22,11 @@ RUN yarn --cwd root install --frozen-lockfile --ignore-scripts --non-interactive
 FROM ghcr.io/actions/actions-runner:2.336.0
 
 USER root
+
+ARG PYTHON_VERSION=3.14.7
+ARG PYTHON_RELEASE=31064857500
+ARG PYTHON_SHA256=76d5ddab6d2dd89a39c06220f6efeda486a48ed481eae97bfc596c74ac3623db
+ARG FRAPPE_BENCH_VERSION=5.31.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -57,8 +63,34 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
+ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+ENV PYTHON_ROOT=/opt/hostedtoolcache/Python/${PYTHON_VERSION}/x64
+ENV PATH="/opt/hostedtoolcache/Python/${PYTHON_VERSION}/x64/bin:${PATH}"
 ENV YARN_CACHE_FOLDER=/var/cache/yarn
+ENV COREPACK_HOME=/var/cache/corepack
+
+COPY --from=yarn-cache /usr/local/ /opt/hostedtoolcache/node/24.12.0/x64/
+COPY --from=yarn-cache --chown=runner:runner /var/cache/corepack/ /var/cache/corepack/
+
+RUN touch /opt/hostedtoolcache/node/24.12.0/x64.complete
+
+RUN mkdir -p /tmp/python-toolcache \
+    && curl -fsSL \
+        "https://github.com/actions/python-versions/releases/download/${PYTHON_VERSION}-${PYTHON_RELEASE}/python-${PYTHON_VERSION}-linux-24.04-x64.tar.gz" \
+        -o /tmp/python-toolcache/python.tar.gz \
+    && echo "${PYTHON_SHA256}  /tmp/python-toolcache/python.tar.gz" | sha256sum -c - \
+    && mkdir -p "$PYTHON_ROOT" \
+    && tar -xzf /tmp/python-toolcache/python.tar.gz -C "$PYTHON_ROOT" \
+    && rm "$PYTHON_ROOT/setup.sh" \
+    && ln -s ./bin/python3.14 "$PYTHON_ROOT/python" \
+    && ln -s python3.14 "$PYTHON_ROOT/bin/python" \
+    && ln -s python3.14 "$PYTHON_ROOT/bin/python314" \
+    && touch "$RUNNER_TOOL_CACHE/Python/${PYTHON_VERSION}/x64.complete" \
+    && rm -rf /tmp/python-toolcache \
+    && chown -R runner:runner "$RUNNER_TOOL_CACHE"
 
 COPY --from=yarn-cache --chown=runner:runner /var/cache/yarn/ /var/cache/yarn/
+
+RUN "$PYTHON_ROOT/bin/python" -m pip install "frappe-bench==$FRAPPE_BENCH_VERSION"
 
 USER runner
