@@ -101,3 +101,12 @@ The Yarn Classic cache is baked into the runner image at `/var/cache/yarn`.
 Rebuild the image to update the shared seed. Changes made by jobs, workspaces,
 benches, sites, dependency install trees, and build output remain pod-local and
 are discarded with every runner.
+
+After migrating from the host cache, drain the scale set and remove the unused
+ConfigMap and cache directory:
+
+```bash
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl delete configmap \
+  --namespace arc-runners suite-e2e-yarn-config --ignore-not-found
+sudo rm -rf /var/cache/suite-e2e/yarn
+```
