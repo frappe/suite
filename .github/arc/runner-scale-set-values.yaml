@@ -64,6 +64,8 @@ template:
             value: unix:///var/run/docker.sock
           - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
             value: "120"
+          - name: YARN_CACHE_FOLDER
+            value: /var/cache/yarn
         resources:
           requests:
             cpu: "3"
@@ -76,6 +78,12 @@ template:
             mountPath: /home/runner/_work
           - name: dind-sock
             mountPath: /var/run
+          - name: yarn-cache
+            mountPath: /var/cache/yarn
+          - name: yarn-config
+            mountPath: /home/runner/.yarnrc
+            subPath: .yarnrc
+            readOnly: true
     volumes:
       - name: work
         emptyDir:
@@ -85,3 +93,10 @@ template:
       - name: dind-externals
         emptyDir:
           sizeLimit: 1Gi
+      - name: yarn-cache
+        hostPath:
+          path: /var/cache/suite-e2e/yarn
+          type: Directory
+      - name: yarn-config
+        configMap:
+          name: suite-e2e-yarn-config

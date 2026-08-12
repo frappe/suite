@@ -11,6 +11,10 @@ workflows require MariaDB and Redis service containers.
 - E2E jobs run only for pushes, manual dispatches, and `pull_request_target`
   events whose head repository is `frappe/suite`. The protected base workflow
   enforces that gate before explicitly checking out the internal PR commit.
+- Runner pods share a host-local Yarn cache. Yarn installs use a global mutex so
+  concurrent ephemeral runners cannot corrupt Yarn Classic's extracted cache.
+  Do not allow fork code to run on this scale set because the cache is writable
+  and persists between jobs.
 - Runner pods receive no Kubernetes API token and have no inbound network access.
 - Egress permits DNS and public SSH/HTTP/HTTPS, but excludes private, loopback,
   carrier-grade NAT, link-local, and multicast IPv4 ranges.
@@ -93,3 +97,14 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e \
 Restore the four-runner limit with the bootstrap script. This configuration was
 validated with 16 vCPUs and 30 GiB of allocatable memory; smaller hosts may not
 schedule or reliably run four concurrent jobs.
+
+The Yarn cache lives at `/var/cache/suite-e2e/yarn`. To clear it, first drain the
+scale set as above and wait for all runner pods to exit, then run:
+
+```bash
+sudo find /var/cache/suite-e2e/yarn -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+sudo .github/arc/bootstrap.sh
+```
+
+Never clear the cache while jobs are running. Workspaces, benches, sites, and
+build output remain pod-local and are discarded after every job.

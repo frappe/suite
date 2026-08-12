@@ -111,33 +111,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
-
-      - name: Cache yarn
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
-
-      - name: Cache bench directory
-        id: cache-bench
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ runner.temp }}/frappe-bench
-          key: ${{ runner.os }}-bench-${{ hashFiles('**/pyproject.toml', '**/yarn.lock', '**/requirements.txt', '**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-bench-
-
       - name: Setup Bench
         run: |
           pip install frappe-bench
-          if [ "${{ steps.cache-bench.outputs.cache-hit }}" != "true" ]; then
-            bench init --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
-          fi
+          bench init --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
 
       - name: Install Suite
         working-directory: ${{ runner.temp }}/frappe-bench

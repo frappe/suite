@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: suite-e2e-yarn-config
+  namespace: arc-runners
+data:
+  .yarnrc: |
+    --install.mutex "file:/var/cache/yarn/.install-mutex"

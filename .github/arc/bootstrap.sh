@@ -39,6 +39,8 @@ fi
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
+install -d -o 1001 -g 1001 -m 0750 /var/cache/suite-e2e/yarn
+
 kubectl create namespace arc-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace arc-runners --dry-run=client -o yaml | kubectl apply -f -
 
@@ -59,6 +61,7 @@ kubectl rollout status deployment \
   --timeout=180s
 
 kubectl apply -f "$ROOT_DIR/network-policy.yaml"
+kubectl apply -f "$ROOT_DIR/yarn-config.yaml"
 
 helm upgrade --install suite-e2e \
   --namespace arc-runners \
