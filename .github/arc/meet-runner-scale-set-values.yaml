@@ -1,0 +1,87 @@
+githubConfigUrl: https://github.com/frappe/suite
+githubConfigSecret: arc-github-app
+
+runnerScaleSetName: suite-e2e-meet
+minRunners: 0
+maxRunners: 3
+
+controllerServiceAccount:
+  namespace: arc-system
+  name: arc-controller-gha-rs-controller
+
+template:
+  metadata:
+    labels:
+      app.kubernetes.io/part-of: suite-e2e
+  spec:
+    automountServiceAccountToken: false
+    initContainers:
+      - name: init-dind-externals
+        image: ghcr.io/frappe/suite-actions-runner:2.336.0
+        imagePullPolicy: Always
+        command: ["cp", "-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: docker:29.1.3-dind@sha256:173f284a4299164772a90f52b373e73e087583c0963f1334c9995f190ef6f3f5
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=123
+        env:
+          - name: DOCKER_TLS_CERTDIR
+            value: ""
+        restartPolicy: Always
+        securityContext:
+          privileged: true
+        startupProbe:
+          exec:
+            command: ["docker", "info"]
+          failureThreshold: 24
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: ghcr.io/frappe/suite-actions-runner:2.336.0
+        imagePullPolicy: Always
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+        resources:
+          requests:
+            cpu: "3"
+            memory: 6Gi
+          limits:
+            cpu: "6"
+            memory: 13Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+    volumes:
+      - name: work
+        emptyDir:
+          sizeLimit: 100Gi
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir:
+          sizeLimit: 1Gi

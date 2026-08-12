@@ -1,13 +1,13 @@
 # Suite E2E Actions Runners
 
-This directory deploys a repository-scoped ARC runner scale set on the dedicated
-Suite CI host. Runner pods are ephemeral and use Docker-in-Docker because the E2E
-workflows require MariaDB and Redis service containers.
+This directory deploys repository-scoped Meet and Drive ARC runner scale sets on
+the dedicated Suite CI host. Runner pods are ephemeral and use Docker-in-Docker
+because the E2E workflows require MariaDB and Redis service containers.
 
 ## Security boundary
 
-- The scale set is scoped to `frappe/suite`, starts at zero, and permits four
-  concurrent jobs.
+- Both scale sets are scoped to `frappe/suite` and start at zero. Meet permits
+  three 6-CPU jobs; Drive permits one 3-CPU job.
 - E2E jobs run only for pushes, manual dispatches, and `pull_request_target`
   events whose head repository is `frappe/suite`. The protected base workflow
   enforces that gate before explicitly checking out the internal PR commit.
@@ -70,9 +70,9 @@ sudo .github/arc/bootstrap.sh
 ```
 
 The script installs pinned k3s and ARC releases, applies the network policy, and
-installs the `suite-e2e` scale set. It stops if an existing k3s installation has
-the wrong version, is inactive, lacks the required flags, or if the GitHub App
-secret is absent.
+installs the `suite-e2e-meet` and `suite-e2e-drive` scale sets. It stops if an
+existing k3s installation has the wrong version, is inactive, lacks the required
+flags, or if the GitHub App secret is absent.
 
 Verify the listener and trigger one E2E workflow manually:
 
@@ -83,19 +83,32 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm list -A
 
 ## Operations
 
-Drain the scale set before maintenance:
+Drain both scale sets before maintenance:
 
 ```bash
-sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e \
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e-meet \
+  --namespace arc-runners \
+  --version 0.14.2 \
+  --reuse-values --set minRunners=0 --set maxRunners=0 \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e-drive \
   --namespace arc-runners \
   --version 0.14.2 \
   --reuse-values --set minRunners=0 --set maxRunners=0 \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 ```
 
-Restore the four-runner limit with the bootstrap script. This configuration was
-validated with 16 vCPUs and 30 GiB of allocatable memory; smaller hosts may not
-schedule or reliably run four concurrent jobs.
+Restore the runner limits with the bootstrap script. The split reserves one Drive
+slot while all three Meet shards run concurrently.
+
+When migrating from the legacy `suite-e2e` scale set, run the bootstrap script
+before merging the workflow label changes. After no queued or running job uses
+`suite-e2e`, remove the old release:
+
+```bash
+sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm uninstall suite-e2e \
+  --namespace arc-runners
+```
 
 The Yarn Classic cache is baked into the runner image at `/var/cache/yarn`.
 Rebuild the image to update the shared seed. Changes made by jobs, workspaces,

@@ -1,9 +1,9 @@
 githubConfigUrl: https://github.com/frappe/suite
 githubConfigSecret: arc-github-app
 
-runnerScaleSetName: suite-e2e
+runnerScaleSetName: suite-e2e-drive
 minRunners: 0
-maxRunners: 4
+maxRunners: 1
 
 controllerServiceAccount:
   namespace: arc-system
@@ -66,10 +66,10 @@ template:
             value: "120"
         resources:
           requests:
-            cpu: "3"
+            cpu: "2"
             memory: 6Gi
           limits:
-            cpu: "8"
+            cpu: "3"
             memory: 13Gi
         volumeMounts:
           - name: work

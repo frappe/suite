@@ -60,10 +60,16 @@ kubectl rollout status deployment \
 
 kubectl apply -f "$ROOT_DIR/network-policy.yaml"
 
-helm upgrade --install suite-e2e \
+helm upgrade --install suite-e2e-meet \
   --namespace arc-runners \
   --version "$ARC_VERSION" \
-  --values "$ROOT_DIR/runner-scale-set-values.yaml" \
+  --values "$ROOT_DIR/meet-runner-scale-set-values.yaml" \
+  oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+
+helm upgrade --install suite-e2e-drive \
+  --namespace arc-runners \
+  --version "$ARC_VERSION" \
+  --values "$ROOT_DIR/drive-runner-scale-set-values.yaml" \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 
 kubectl get pods --all-namespaces
