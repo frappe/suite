@@ -32,6 +32,11 @@ on:
       - "suite/meet/sfu-server/package.json"
       - "suite/meet/sfu-server/yarn.lock"
   workflow_dispatch:
+    inputs:
+      benchmark:
+        description: Publish an isolated benchmark image for this commit
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
@@ -65,7 +70,7 @@ jobs:
   publish:
     if: >-
       github.event_name != 'pull_request' &&
-      github.ref == 'refs/heads/develop'
+      (github.ref == 'refs/heads/develop' || inputs.benchmark)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -91,6 +96,6 @@ jobs:
           file: .github/arc/runner/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/frappe/suite-actions-runner:2.336.0
+          tags: ${{ inputs.benchmark && format('ghcr.io/frappe/suite-actions-runner:benchmark-{0}', github.sha) || 'ghcr.io/frappe/suite-actions-runner:2.336.0' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
