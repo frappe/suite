@@ -69,7 +69,7 @@ template:
             cpu: "3"
             memory: 6Gi
           limits:
-            cpu: "7"
+            cpu: "8"
             memory: 13Gi
         volumeMounts:
           - name: work
