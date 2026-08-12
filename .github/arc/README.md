@@ -7,7 +7,7 @@ because the E2E workflows require MariaDB and Redis service containers.
 ## Security boundary
 
 - Both scale sets are scoped to `frappe/suite` and start at zero. Meet permits
-  three 6-CPU jobs; Drive permits one 3-CPU job.
+  three 6-CPU jobs; Drive permits two 2-CPU jobs.
 - E2E jobs run only for pushes, manual dispatches, and `pull_request_target`
   events whose head repository is `frappe/suite`. The protected base workflow
   enforces that gate before explicitly checking out the internal PR commit.
@@ -98,8 +98,8 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm upgrade suite-e2e-drive \
   oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
 ```
 
-Restore the runner limits with the bootstrap script. The split reserves one Drive
-slot while all three Meet shards run concurrently.
+Restore the runner limits with the bootstrap script. The split reserves two Drive
+slots while all three Meet shards run concurrently.
 
 When migrating from the legacy `suite-e2e` scale set, run the bootstrap script
 before merging the workflow label changes. After no queued or running job uses

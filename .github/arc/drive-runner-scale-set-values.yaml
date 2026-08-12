@@ -3,7 +3,7 @@ githubConfigSecret: arc-github-app
 
 runnerScaleSetName: suite-e2e-drive
 minRunners: 0
-maxRunners: 1
+maxRunners: 2
 
 controllerServiceAccount:
   namespace: arc-system
@@ -69,7 +69,7 @@ template:
             cpu: "2"
             memory: 6Gi
           limits:
-            cpu: "3"
+            cpu: "2"
             memory: 13Gi
         volumeMounts:
           - name: work
