@@ -9,7 +9,9 @@ from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
     create_auth_token,
+    does_entity_exist,
     get_file_content,
+    get_new_title,
     move,
     remove_or_restore,
     rename,
@@ -506,3 +508,49 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 rename(self.file.name, "forbidden.txt")
             with self.assertRaises(frappe.PermissionError):
                 move([self.file.name], new_parent=destination.name)
+
+    def test_unrelated_user_cannot_probe_folder_for_filenames(self):
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_revoked_user_cannot_probe_folder_for_filenames(self):
+        """The realistic caller: access was granted, the folder ID was learned,
+        then access was taken away. The ID outlives the grant."""
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True)
+
+        with self.set_user(OTHER_USER):
+            # Read alone is not enough - only the upload flow needs these.
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "unshare", cmd="unshare", user=OTHER_USER)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_upload_access_still_answers_both_helpers(self):
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True, upload=True)
+
+        with self.set_user(OTHER_USER):
+            # Answered, not refused. What `get_new_title` answers for a user whose
+            # access is inherited is a separate matter - `get_new_file_name` lists
+            # siblings with `get_list`, whose criterion does not follow inheritance -
+            # so this asserts it returns rather than what it returns.
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertIsInstance(get_new_title(self.file.file_name, self.folder.name), str)
+
+    def test_owner_can_still_probe_own_folder_and_default_home(self):
+        with self.set_user(OWNER):
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertFalse(does_entity_exist(name=f"{frappe.generate_hash(8)}.txt"))
+            self.assertNotEqual(get_new_title(self.file.file_name, self.folder.name), self.file.file_name)
+            self.assertEqual(get_new_title("unclaimed.txt", self.folder.name), "unclaimed.txt")

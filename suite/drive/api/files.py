@@ -779,14 +779,31 @@ def remove_recents(entity_names: list[str] | None = None, clear_all: bool = Fals
 
 @frappe.whitelist()
 def does_entity_exist(name: str | None = None, folder: str | None = None):
+    """Whether `folder` already holds a file called `name`.
+
+    Answers about a folder the caller cannot open are an enumeration oracle:
+    the reply is derived from names the caller is not entitled to see. Gate it
+    on `upload` rather than `read` - this only ever serves the uploader naming
+    a file it is about to write, so it should refuse anyone who could not write
+    there, and `upload_file` resolves the same folder against the same level.
+    """
     if not folder:
         folder = get_user_folder().name
+    if not user_has_permission(folder, "upload"):
+        frappe.throw("Ask the folder owner for upload access.", frappe.PermissionError)
     result = frappe.db.exists("File", {"folder": folder, "file_name": name})
     return result
 
 
 @frappe.whitelist()
 def get_new_title(title: str, parent_name: str, folder: bool = False):
+    """Return `title`, suffixed to avoid a collision inside `parent_name`.
+
+    Leaks strictly more than `does_entity_exist` - the suffix is a count of the
+    matching siblings - so it takes the same `upload` gate, for the same reason.
+    """
+    if not user_has_permission(parent_name, "upload"):
+        frappe.throw("Ask the folder owner for upload access.", frappe.PermissionError)
     return get_new_file_name(title, parent_name, folder)
 
 
