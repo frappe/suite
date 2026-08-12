@@ -6,11 +6,27 @@ on:
       - develop
     paths:
       - ".github/arc/runner/Dockerfile"
+      - ".github/arc/runner/Dockerfile.dockerignore"
       - ".github/workflows/arc-runner-image.yml"
+      - "package.json"
+      - "yarn.lock"
+      - "frontend/package.json"
+      - "e2e/package.json"
+      - "e2e/yarn.lock"
+      - "suite/meet/sfu-server/package.json"
+      - "suite/meet/sfu-server/yarn.lock"
   pull_request:
     paths:
       - ".github/arc/runner/Dockerfile"
+      - ".github/arc/runner/Dockerfile.dockerignore"
       - ".github/workflows/arc-runner-image.yml"
+      - "package.json"
+      - "yarn.lock"
+      - "frontend/package.json"
+      - "e2e/package.json"
+      - "e2e/yarn.lock"
+      - "suite/meet/sfu-server/package.json"
+      - "suite/meet/sfu-server/yarn.lock"
   workflow_dispatch:
 
 concurrency:
@@ -34,7 +50,8 @@ jobs:
       - name: Build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: .github/arc/runner
+          context: .
+          file: .github/arc/runner/Dockerfile
           platforms: linux/amd64
           push: false
           tags: ghcr.io/frappe/suite-actions-runner:2.336.0
@@ -66,7 +83,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: .github/arc/runner
+          context: .
+          file: .github/arc/runner/Dockerfile
           platforms: linux/amd64
           push: true
           tags: ghcr.io/frappe/suite-actions-runner:2.336.0
