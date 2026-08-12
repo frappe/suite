@@ -122,9 +122,6 @@ jobs:
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
           bench new-site --db-root-password root --admin-password admin drive-writer.test
           bench --site drive-writer.test install-app suite
-          yarn --cwd apps/suite install --frozen-lockfile --non-interactive
-          yarn --cwd apps/suite build
-          bench build
         env:
           CI: "Yes"
 
