@@ -129,7 +129,6 @@ test.describe("E2EE", () => {
 	});
 
 	test.describe("heavy coverage", () => {
-		test.skip(!!process.env.CI, "Skipped in CI to keep media e2e lightweight");
 		test.describe.configure({ timeout: 180_000 });
 
 	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({

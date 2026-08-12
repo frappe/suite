@@ -6,8 +6,8 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
 	testDir: "./specs",
-	// Calls share a local SFU, so run serially; CI shards jobs independently.
-	fullyParallel: !isCI,
+	// Distribute individual tests across CI shards; workers keep each shard serial.
+	fullyParallel: true,
 	forbidOnly: isCI,
 	outputDir: resolve(__dirname, "test-results"),
 	retries: isCI ? 2 : 0,
