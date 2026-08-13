@@ -1,6 +1,6 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
-test.describe("Chat", () => {
+test.describe("Chat", { tag: "@meet-group-1" }, () => {
 	test("messages are delivered between host and guest", async ({
 		hostPage,
 		createMeeting,

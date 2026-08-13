@@ -91,13 +91,12 @@ jobs:
   e2e:
     if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: suite-e2e-meet
-    # Playwright --shard=N/M splits the suite; each job is self-contained.
+    # Historical durations keep each self-contained group near the same runtime.
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2, 3]
-        shardTotal: [3]
-    name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+        group: [1, 2, 3]
+    name: E2E Tests (group ${{ matrix.group }})
     timeout-minutes: 60
     permissions:
       contents: read
@@ -231,11 +230,12 @@ jobs:
 
       - name: Run E2E Tests
         working-directory: ${{ github.workspace }}/e2e
-        run: yarn test:meet --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        run: yarn test:meet
         env:
           BASE_URL: http://meet.test:8000
           SFU_URL: http://localhost:3000
           CI: true
+          MEET_E2E_GROUP: ${{ matrix.group }}
           SFU_E2E_DISCONNECT_TEST: true
           SFU_E2E_DISCONNECT_WAIT_MS: 7000
 
@@ -248,7 +248,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && !cancelled()
         with:
-          name: meet-playwright-report-shard-${{ matrix.shardIndex }}
+          name: meet-playwright-report-group-${{ matrix.group }}
           path: |
             e2e/meet/playwright-report/
             e2e/meet/test-results/
@@ -261,7 +261,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: meet-junit-shard-${{ matrix.shardIndex }}
+          name: meet-junit-group-${{ matrix.group }}
           path: e2e/meet/results.xml
           if-no-files-found: warn
           retention-days: 14

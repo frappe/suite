@@ -3,12 +3,23 @@ import { resolve } from "node:path";
 
 const baseURL = process.env.BASE_URL ?? "http://localhost:8098";
 const isCI = !!process.env.CI;
+const meetGroup = process.env.MEET_E2E_GROUP;
+
+if (meetGroup && !["1", "2", "3"].includes(meetGroup)) {
+	throw new Error(`Invalid MEET_E2E_GROUP: ${meetGroup}`);
+}
 
 export default defineConfig({
 	testDir: "./specs",
-	// Distribute individual tests across CI shards; workers keep each shard serial.
 	fullyParallel: true,
 	forbidOnly: isCI,
+	grep:
+		meetGroup === "1"
+			? /@meet-group-1/
+			: meetGroup === "2"
+				? /@meet-group-2/
+				: undefined,
+	grepInvert: meetGroup === "3" ? /@meet-group-[12]/ : undefined,
 	outputDir: resolve(__dirname, "test-results"),
 	retries: isCI ? 2 : 0,
 	workers: 1,

@@ -113,7 +113,7 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 
 test.describe("E2EE", () => {
 	// Join first so media is healthy, then enable E2EE (avoids host-only avatar on CI).
-	test("participants keep video after E2EE is enabled", async ({
+	test("participants keep video after E2EE is enabled", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -133,7 +133,7 @@ test.describe("E2EE", () => {
 	test.describe("heavy coverage", () => {
 		test.describe.configure({ timeout: 90_000 });
 
-	test("active participants keep receiving streams after E2EE is enabled mid-call", async ({
+	test("active participants keep receiving streams after E2EE is enabled mid-call", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -155,7 +155,7 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, guestName);
 	});
 
-	test("a participant can rejoin an E2EE meeting after leaving", async ({
+	test("a participant can rejoin an E2EE meeting after leaving", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -196,7 +196,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("the host can leave and rejoin an E2EE meeting while a guest stays", async ({
+	test("the host can leave and rejoin an E2EE meeting while a guest stays", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -248,7 +248,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("screen share streams stay healthy in an E2EE meeting", async ({
+	test("screen share streams stay healthy in an E2EE meeting", { tag: "@meet-group-1" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -275,7 +275,7 @@ test.describe("E2EE", () => {
 		guestErrors.assertNoErrors();
 	});
 
-	test("multiple participants can join an active E2EE meeting and see the same fingerprint", async ({
+	test("multiple participants can join an active E2EE meeting and see the same fingerprint", { tag: "@meet-group-1" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
