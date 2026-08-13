@@ -259,6 +259,21 @@ const joinMeet = () => {
 	else window.open(meetUrl.value, '_blank', 'noopener')
 }
 
+// --- Details block ---
+
+// Every row of it is individually optional, so an event with nothing but a
+// title and a time has none of them — and the block would otherwise render as
+// a hollow band of padding between two dividers.
+const hasDetails = computed(
+	() =>
+		!!calendarEvent.recurrence_id ||
+		!!meetUrl.value ||
+		!!calendarEvent.locations?.length ||
+		!!calendarEvent.alerts?.length ||
+		!!calendarEvent.free_busy_status ||
+		!!calendarEvent.privacy,
+)
+
 // --- Actions dropdown (delete) ---
 
 const dropdownOptions = computed(() => {
@@ -457,8 +472,10 @@ const openUrl = (location: string) => {
 
 			<div class="border-t" />
 
-			<!-- Details -->
-			<div class="flex flex-col py-2">
+			<!-- Details. The block goes, trailing divider included, when the event
+			     carries none of these rows — the divider above it stays, so the
+			     panel reads title / date / participants. -->
+			<div v-if="hasDetails" class="flex flex-col py-2">
 				<!-- Recurrence -->
 				<div
 					v-if="calendarEvent.recurrence_id"
@@ -542,7 +559,7 @@ const openUrl = (location: string) => {
 				</div>
 			</div>
 
-			<div class="border-t" />
+			<div v-if="hasDetails" class="border-t" />
 
 			<!-- Participants: the section's own y padding matches the header row's
 			     py-2, so it reads as evenly spaced. Counting the row's padding
