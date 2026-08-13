@@ -14,11 +14,19 @@ COPY frontend/package.json root/frontend/
 COPY e2e/package.json e2e/yarn.lock e2e/
 COPY suite/meet/sfu-server/package.json suite/meet/sfu-server/yarn.lock sfu/
 
-RUN yarn config set yarn-offline-mirror /var/cache/yarn-mirror \
+RUN yarn config set yarn-offline-mirror /tmp/suite-yarn-mirror \
     && yarn --cwd root install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
+    && mkdir -p root/frontend/node_modules /var/cache/suite-node-modules \
+    && (cd root && { node --version; yarn --version; sha256sum package.json yarn.lock frontend/package.json; } \
+        | sha256sum | cut -d ' ' -f 1) \
+        > /var/cache/suite-node-modules/key \
+    && tar -C root -cf - node_modules frontend/node_modules \
+        | gzip -1 > /var/cache/suite-node-modules/node_modules.tar.gz \
+    && rm -rf root/node_modules root/frontend/node_modules /tmp/suite-yarn-mirror /tmp/yarn-cache \
+    && yarn config set yarn-offline-mirror /var/cache/yarn-mirror \
     && yarn --cwd e2e install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
     && yarn --cwd sfu install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
-    && rm -rf root/node_modules root/frontend/node_modules e2e/node_modules sfu/node_modules /tmp/yarn-cache
+    && rm -rf e2e/node_modules sfu/node_modules /tmp/yarn-cache
 
 FROM ghcr.io/actions/actions-runner:2.336.0
 
@@ -94,6 +102,7 @@ RUN mkdir -p /tmp/python-toolcache \
     && chown -R runner:runner "$RUNNER_TOOL_CACHE"
 
 COPY --from=yarn-cache --chown=runner:runner /var/cache/yarn-mirror/ /var/cache/yarn-mirror/
+COPY --from=yarn-cache --chown=runner:runner /var/cache/suite-node-modules/ /var/cache/suite-node-modules/
 COPY --chown=runner:runner pyproject.toml /tmp/suite-cache/pyproject.toml
 
 RUN mkdir -p /var/cache/yarn "$UV_CACHE_DIR" \
