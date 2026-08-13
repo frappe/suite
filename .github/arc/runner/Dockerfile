@@ -2,7 +2,7 @@
 
 FROM node:24.12.0-bookworm-slim@sha256:7326fb2dbdce998edd72140946851be64ef4a643e8715e138ca467e8e9d92c99 AS yarn-cache
 
-ENV YARN_CACHE_FOLDER=/var/cache/yarn
+ENV YARN_CACHE_FOLDER=/tmp/yarn-cache
 ENV COREPACK_HOME=/var/cache/corepack
 
 WORKDIR /warm
@@ -14,10 +14,11 @@ COPY frontend/package.json root/frontend/
 COPY e2e/package.json e2e/yarn.lock e2e/
 COPY suite/meet/sfu-server/package.json suite/meet/sfu-server/yarn.lock sfu/
 
-RUN yarn --cwd root install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
+RUN yarn config set yarn-offline-mirror /var/cache/yarn-mirror \
+    && yarn --cwd root install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
     && yarn --cwd e2e install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
     && yarn --cwd sfu install --frozen-lockfile --ignore-scripts --non-interactive --production=false \
-    && rm -rf root/node_modules root/frontend/node_modules e2e/node_modules sfu/node_modules
+    && rm -rf root/node_modules root/frontend/node_modules e2e/node_modules sfu/node_modules /tmp/yarn-cache
 
 FROM ghcr.io/actions/actions-runner:2.336.0
 
@@ -90,7 +91,11 @@ RUN mkdir -p /tmp/python-toolcache \
     && rm -rf /tmp/python-toolcache \
     && chown -R runner:runner "$RUNNER_TOOL_CACHE"
 
-COPY --from=yarn-cache --chown=runner:runner /var/cache/yarn/ /var/cache/yarn/
+COPY --from=yarn-cache --chown=runner:runner /var/cache/yarn-mirror/ /var/cache/yarn-mirror/
+
+RUN mkdir -p /var/cache/yarn \
+    && printf '%s\n' 'yarn-offline-mirror "/var/cache/yarn-mirror"' > /home/runner/.yarnrc \
+    && chown -R runner:runner /var/cache/yarn /home/runner/.yarnrc
 
 RUN "$PYTHON_ROOT/bin/python" -m pip install "frappe-bench==$FRAPPE_BENCH_VERSION"
 
