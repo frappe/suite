@@ -668,9 +668,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		try {
 			stream = await navigator.mediaDevices.getUserMedia(constraints);
 		} catch (error) {
-			const isMissingDeviceError = (candidate: unknown) =>
-				(candidate as Error).name === "NotFoundError" ||
-				(candidate as Error).name === "OverconstrainedError";
+			const isMissingDeviceError = (candidate: unknown) => {
+				const mediaError = candidate as Error & { constraint?: string };
+				return (
+					mediaError.name === "NotFoundError" ||
+					(mediaError.name === "OverconstrainedError" &&
+						mediaError.constraint === "deviceId")
+				);
+			};
 			const audioConstraints =
 				typeof constraints.audio === "object" ? constraints.audio : null;
 			const videoConstraints =

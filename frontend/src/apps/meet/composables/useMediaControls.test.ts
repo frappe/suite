@@ -174,6 +174,47 @@ describe("useMediaControls", () => {
 		expect(setSelectedCameraId).not.toHaveBeenCalled();
 	});
 
+	it("does not clear device selections for other overconstrained settings", async () => {
+		const resolutionError = Object.assign(
+			new DOMException("Resolution unavailable", "OverconstrainedError"),
+			{ constraint: "width" },
+		);
+		const getUserMedia = vi.fn().mockRejectedValue(resolutionError);
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: { getUserMedia },
+		});
+
+		const controls = useMediaControls({
+			mediaState: {},
+			connectionState: {},
+			raiseHandStore: {},
+			currentUser: {},
+			sfuClient: {},
+			sfuManager: ref(null),
+			deviceManager: {
+				enumerateDevices: vi.fn().mockResolvedValue(undefined),
+				isDeviceAvailable: vi.fn(() => true),
+				findDeviceById: vi.fn(() => ({ label: "Built-in Microphone" })),
+			},
+			backgroundEffects: {},
+			noiseCancellation: { error: ref(null) },
+			toast: {},
+			mediaPreferences: {},
+		} as never);
+
+		await expect(
+			controls.acquireUserMedia(true, true, {
+				cameraDeviceId: "selected-camera",
+				micDeviceId: "selected-mic",
+			}),
+		).rejects.toBe(resolutionError);
+
+		expect(getUserMedia).toHaveBeenCalledTimes(1);
+		expect(setSelectedMicId).not.toHaveBeenCalled();
+		expect(setSelectedCameraId).not.toHaveBeenCalled();
+	});
+
 	it("replaces a stale live processed track before resuming the microphone", async () => {
 		const sourceTrack = audioTrack("source");
 		const staleProcessedTrack = audioTrack("stale-processed");
