@@ -66,9 +66,11 @@ RUN apt-get update \
 
 ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
 ENV PYTHON_ROOT=/opt/hostedtoolcache/Python/${PYTHON_VERSION}/x64
-ENV PATH="/opt/hostedtoolcache/Python/${PYTHON_VERSION}/x64/bin:${PATH}"
+ENV NODE_ROOT=/opt/hostedtoolcache/node/24.12.0/x64
+ENV PATH="/opt/hostedtoolcache/Python/${PYTHON_VERSION}/x64/bin:/opt/hostedtoolcache/node/24.12.0/x64/bin:${PATH}"
 ENV YARN_CACHE_FOLDER=/var/cache/yarn
 ENV COREPACK_HOME=/var/cache/corepack
+ENV UV_CACHE_DIR=/var/cache/uv
 
 COPY --from=yarn-cache /usr/local/ /opt/hostedtoolcache/node/24.12.0/x64/
 COPY --from=yarn-cache --chown=runner:runner /var/cache/corepack/ /var/cache/corepack/
@@ -92,11 +94,19 @@ RUN mkdir -p /tmp/python-toolcache \
     && chown -R runner:runner "$RUNNER_TOOL_CACHE"
 
 COPY --from=yarn-cache --chown=runner:runner /var/cache/yarn-mirror/ /var/cache/yarn-mirror/
+COPY --chown=runner:runner pyproject.toml /tmp/suite-cache/pyproject.toml
 
-RUN mkdir -p /var/cache/yarn \
+RUN mkdir -p /var/cache/yarn "$UV_CACHE_DIR" \
     && printf '%s\n' 'yarn-offline-mirror "/var/cache/yarn-mirror"' > /home/runner/.yarnrc \
-    && chown -R runner:runner /var/cache/yarn /home/runner/.yarnrc
+    && chown -R runner:runner /var/cache/yarn "$UV_CACHE_DIR" /home/runner/.yarnrc
 
 RUN "$PYTHON_ROOT/bin/python" -m pip install "frappe-bench==$FRAPPE_BENCH_VERSION"
 
 USER runner
+
+RUN bench init --skip-redis-config-generation --skip-assets --python "$PYTHON_ROOT/bin/python" /tmp/frappe-bench \
+    && uv pip compile --quiet /tmp/suite-cache/pyproject.toml -o /tmp/suite-cache/requirements.txt \
+    && grep -v '^-e ' /tmp/suite-cache/requirements.txt > /tmp/suite-cache/dependencies.txt \
+    && uv pip install --quiet --target /tmp/suite-cache/packages -r /tmp/suite-cache/dependencies.txt \
+    && uv cache prune --ci \
+    && rm -rf /tmp/frappe-bench /tmp/suite-cache /var/cache/yarn/* /home/runner/.cache/puccinialin
