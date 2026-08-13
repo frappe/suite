@@ -123,8 +123,10 @@
 			</div>
 		</template>
 		<template #editor="{ editor }">
+			<!-- max-sm:text-lg — a contenteditable, so index.css's input rule doesn't cover
+			     it, and anything under 16px makes iOS zoom the page on focus. -->
 			<div
-				class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 sm:overflow-y-auto"
+				class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 max-sm:text-lg sm:overflow-y-auto"
 				:class="{
 					'max-h-96 min-h-32': isInThread,
 					'!border-outline-gray-3 rounded border-dashed': isDragging,

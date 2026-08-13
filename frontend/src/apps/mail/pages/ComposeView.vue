@@ -165,9 +165,14 @@
 					</div>
 
 					<!-- flex-1 so the body claims the rest of the scroller: a tap anywhere in the empty
-					     space below the last line lands in the message. -->
+					     space below the last line lands in the message.
+
+					     text-lg (16px), not the 13px it used to be: this is a contenteditable, so
+					     the global input rule in index.css deliberately doesn't reach it, and under
+					     16px iOS zooms the page the moment the body takes focus. This route is
+					     mobile-only, so the size is unconditional. -->
 					<div
-						class="flex flex-1 cursor-text flex-col px-4 py-3 text-sm"
+						class="flex flex-1 cursor-text flex-col px-4 py-3 text-lg"
 						@click="editor.commands.focus('end')"
 					>
 						<!-- Stopped here, or the wrapper's focus('end') would fire for taps on the text
