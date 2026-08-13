@@ -85,6 +85,7 @@ RUN mkdir -p /tmp/python-toolcache \
     && ln -s ./bin/python3.14 "$PYTHON_ROOT/python" \
     && ln -s python3.14 "$PYTHON_ROOT/bin/python" \
     && ln -s python3.14 "$PYTHON_ROOT/bin/python314" \
+    && ln -s pip3 "$PYTHON_ROOT/bin/pip" \
     && touch "$RUNNER_TOOL_CACHE/Python/${PYTHON_VERSION}/x64.complete" \
     && rm -rf /tmp/python-toolcache \
     && chown -R runner:runner "$RUNNER_TOOL_CACHE"
