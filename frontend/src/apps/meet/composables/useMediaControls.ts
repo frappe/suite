@@ -668,29 +668,54 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		try {
 			stream = await navigator.mediaDevices.getUserMedia(constraints);
 		} catch (error) {
-			const missingDevice =
-				(error as Error).name === "NotFoundError" ||
-				(error as Error).name === "OverconstrainedError";
-			const hasExactDevice =
-				(typeof constraints.audio === "object" &&
-					constraints.audio.deviceId !== undefined) ||
-				(typeof constraints.video === "object" &&
-					constraints.video.deviceId !== undefined);
+			const isMissingDeviceError = (candidate: unknown) =>
+				(candidate as Error).name === "NotFoundError" ||
+				(candidate as Error).name === "OverconstrainedError";
+			const audioConstraints =
+				typeof constraints.audio === "object" ? constraints.audio : null;
+			const videoConstraints =
+				typeof constraints.video === "object" ? constraints.video : null;
+			const audioDeviceId = audioConstraints?.deviceId;
+			const videoDeviceId = videoConstraints?.deviceId;
 
-			if (!missingDevice || !hasExactDevice) throw error;
-
-			if (typeof constraints.audio === "object") {
-				if (constraints.audio.deviceId !== undefined) {
-					setSelectedMicId("");
-				}
-				delete constraints.audio.deviceId;
+			if (!isMissingDeviceError(error) || (!audioDeviceId && !videoDeviceId)) {
+				throw error;
 			}
-			if (typeof constraints.video === "object") {
-				if (constraints.video.deviceId !== undefined) {
+
+			if (audioDeviceId && videoDeviceId) {
+				delete audioConstraints.deviceId;
+				try {
+					stream = await navigator.mediaDevices.getUserMedia(constraints);
+					setSelectedMicId("");
+					return { stream, constraints };
+				} catch (audioFallbackError) {
+					if (!isMissingDeviceError(audioFallbackError)) {
+						throw audioFallbackError;
+					}
+					audioConstraints.deviceId = audioDeviceId;
+					delete videoConstraints.deviceId;
+				}
+
+				try {
+					stream = await navigator.mediaDevices.getUserMedia(constraints);
+					setSelectedCameraId("");
+					return { stream, constraints };
+				} catch (videoFallbackError) {
+					if (!isMissingDeviceError(videoFallbackError)) {
+						throw videoFallbackError;
+					}
+					delete audioConstraints.deviceId;
+					setSelectedMicId("");
 					setSelectedCameraId("");
 				}
-				delete constraints.video.deviceId;
+			} else if (audioDeviceId) {
+				delete audioConstraints?.deviceId;
+				setSelectedMicId("");
+			} else {
+				delete videoConstraints?.deviceId;
+				setSelectedCameraId("");
 			}
+
 			stream = await navigator.mediaDevices.getUserMedia(constraints);
 		}
 		return { stream, constraints };

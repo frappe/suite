@@ -26,6 +26,10 @@ vi.mock("../data/mediaPreferences", () => ({
 }));
 
 import { useMediaControls } from "./useMediaControls";
+import {
+	setSelectedCameraId,
+	setSelectedMicId,
+} from "../data/mediaPreferences";
 
 class FakeMediaStream {
 	id = "fake-media-stream";
@@ -120,6 +124,54 @@ describe("useMediaControls", () => {
 		expect(
 			(requestedConstraints[1].audio as MediaTrackConstraints).deviceId,
 		).toBeUndefined();
+	});
+
+	it("preserves the selected camera when only the microphone is unavailable", async () => {
+		const fallbackStream = new FakeMediaStream([audioTrack("fallback")]);
+		const requestedConstraints: MediaStreamConstraints[] = [];
+		const getUserMedia = vi.fn((constraints: MediaStreamConstraints) => {
+			requestedConstraints.push(structuredClone(constraints));
+			if (requestedConstraints.length === 1) {
+				return Promise.reject(new DOMException("Missing device", "NotFoundError"));
+			}
+			return Promise.resolve(fallbackStream);
+		});
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: { getUserMedia },
+		});
+
+		const controls = useMediaControls({
+			mediaState: {},
+			connectionState: {},
+			raiseHandStore: {},
+			currentUser: {},
+			sfuClient: {},
+			sfuManager: ref(null),
+			deviceManager: {
+				enumerateDevices: vi.fn().mockResolvedValue(undefined),
+				isDeviceAvailable: vi.fn(() => true),
+				findDeviceById: vi.fn(() => ({ label: "Built-in Microphone" })),
+			},
+			backgroundEffects: {},
+			noiseCancellation: { error: ref(null) },
+			toast: {},
+			mediaPreferences: {},
+		} as never);
+
+		await controls.acquireUserMedia(true, true, {
+			cameraDeviceId: "selected-camera",
+			micDeviceId: "missing-mic",
+		});
+
+		expect(
+			(requestedConstraints[1].audio as MediaTrackConstraints).deviceId,
+		).toBeUndefined();
+		expect(
+			(requestedConstraints[1].video as MediaTrackConstraints).deviceId,
+		).toEqual({ exact: "selected-camera" });
+		expect(setSelectedMicId).toHaveBeenCalledWith("");
+		expect(setSelectedCameraId).not.toHaveBeenCalled();
 	});
 
 	it("replaces a stale live processed track before resuming the microphone", async () => {
