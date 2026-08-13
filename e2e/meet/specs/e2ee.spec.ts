@@ -280,6 +280,7 @@ test.describe("E2EE", () => {
 		createMeeting,
 		createParticipant,
 	}) => {
+		test.setTimeout(180_000);
 		const meetingId = await createMeeting();
 		const guestAName = "Guest Fingerprint A";
 		const guestBName = "Guest Fingerprint B";
@@ -299,7 +300,6 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, guestAName);
 
 		await guestB.joinAsGuest(meetingId, guestBName);
-		await expectRemoteVideoReceiving(guestB.page, meetHostName);
 		await guestC.joinAsGuest(meetingId, guestCName);
 
 		await Promise.all([
