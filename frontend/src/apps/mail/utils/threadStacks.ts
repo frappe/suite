@@ -7,30 +7,42 @@ import type { Thread } from '@/apps/mail/types'
 // single stack row. Two in a row is normal correspondence, not a flood — hence three.
 const MIN_STACK_SIZE = 3
 
-// The thread's lone sending address, or null when more than one has written in it. Search results are
-// single messages with no conversation behind them, so their sender is all there is to go on.
+// The thread's lone sender — display name AND address — or null when more than one of either has
+// written in it. Search results are single messages with no conversation behind them, so their
+// sender is all there is to go on.
 //
-// Distinct ADDRESSES, not the names the row goes by: a relay (Discourse, GitHub, Jira) gives every
-// writer the same address and its own display name, so one notification thread names as many people
-// as it had posters. Those are exactly the floods stacking exists to bury, and counting people here
-// would unstack them the moment a second one posted. What names the row and what identifies a flood
-// are different questions — the row wants people, the stack wants the machine sending them.
+// The name is part of the identity, not decoration. A relay (a mailing list, Discourse, GitHub)
+// gives every writer the same address and rewrites the display name per original sender, so keying
+// on the address alone piled a whole list digest into one row headed by whichever member happened
+// to be newest — ten distinct people and ten distinct subjects presented as ten from Scaleway.
+// Burying distinct writers is worse than a longer list, so they stay apart. The cost is that
+// relays now rarely stack at all, since a run has to be three ADJACENT threads and a busy list
+// interleaves its senders; that is the intended trade.
+//
+// A blank name is not a name: bots that fill it on some messages and not others would otherwise
+// look like two writers.
 const loneSenderOf = (thread: Thread): string | null => {
-	const emails = new Set(
-		(thread.messages ?? []).map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean),
-	)
+	const messages = thread.messages ?? []
 
+	const emails = new Set(messages.map((m) => (m.from_email ?? '').trim().toLowerCase()).filter(Boolean))
 	if (emails.size > 1) return null
 
-	const [only] = emails
-	return only || (thread.from_email ?? '').trim().toLowerCase() || null
+	const names = new Set(messages.map((m) => (m.from_name ?? '').trim().toLowerCase()).filter(Boolean))
+	if (names.size > 1) return null
+
+	const email = [...emails][0] || (thread.from_email ?? '').trim().toLowerCase()
+	if (!email) return null
+
+	const name = [...names][0] ?? (thread.from_name ?? '').trim().toLowerCase()
+	return `${name}|${email}`
 }
 
 /**
  * The stack identity of a thread, or null when it must never stack.
  *
- * Only threads that ONE person has written in can stack, and they stack by that person — never by the
- * subject. Matching subjects too was tried and measured against a real 300-thread inbox, and the two
+ * Only threads that ONE person has written in can stack, and they stack by that person — name and
+ * address both, see loneSenderOf — never by the subject. Matching subjects too was tried and
+ * measured against a real 300-thread inbox, and the two
  * classes turned out not to be separable: "Outbound IP Change — KSA Region" vs "… Johannesburg Region"
  * (one template, must stack) scored 0.71 similarity, while "Your CRM trial just expired" vs "Your
  * Learning trial just expired" (distinct notices, must not stack) scored 0.74 — higher. Any threshold

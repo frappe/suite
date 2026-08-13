@@ -2,25 +2,18 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createResource, toast } from 'frappe-ui'
 
+import { useScreenSize } from '@/composables/useScreenSize'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 
 import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
-// Decided once, at load, and deliberately not reactive to resize. Mobile and desktop are
-// separate component trees here, not one tree restyled: crossing 640px mid-session swaps
-// them and unmounts whatever they were holding — a half-written mail vanished this way
-// (#38), and every other open surface has the same exposure. A resized window therefore
-// keeps the layout it started with until the page is reloaded.
-//
-// Which is why this is for STRUCTURE — which tree to mount, which route to take — and not
-// for sizing. Tailwind's `max-sm:` keys on the same 640px but follows the viewport live, so
-// a component that sizes itself from this ref ends up disagreeing with the one next to it
-// after a resize. The mobile steps live in src/index.css.
-const isMobile = ref(window.innerWidth < 640)
-
-export const useScreenSize = () => ({ isMobile })
+// Re-exported from the suite-wide composable so mail's many callers keep one import, and so the
+// calendar reads the same ref rather than a second copy of the same window width. Imported at the
+// top rather than `export ... from`, which would re-export the name without binding it here — this
+// file calls it too.
+export { useScreenSize }
 
 /**
  * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
@@ -285,6 +278,8 @@ const isEditable = (el: Element | null) => {
  * listeners aren't worth attaching.
  */
 export const useKeyboardOpen = () => {
+	const { isMobile } = useScreenSize()
+
 	if (!watchingFocus && isMobile.value) {
 		watchingFocus = true
 		// Re-read the focus on the next frame rather than trusting the event: moving between two

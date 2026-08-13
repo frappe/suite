@@ -3,18 +3,34 @@
 		v-if="showImagesBanner"
 		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded border p-2.5 px-4 sm:flex-row sm:items-center"
 	>
-		<div class="flex min-w-0 flex-1 items-center gap-3">
-			<ImageOff class="h-4.5 w-4.5 shrink-0 stroke-1.5" />
-			<span class="text-ink-gray-8 min-w-0 flex-1"> {{ blockedLabel }} </span>
+		<div class="flex min-w-0 flex-1 items-start gap-3">
+			<!-- Centered on the FIRST line, not on the block: the label wraps to two lines
+			     at 393px and a block-centered icon would float between them.
+
+			     leading-5 states the line box instead of leaving it at the preset's 1.15,
+			     which lands on 16.1px — tighter than a wrapped label wants, and not a
+			     number an icon can be centered on. At a stated 20px the offset is
+			     arithmetic: an 18px glyph, 1px of it either side. -->
+			<ImageOff class="mt-px h-4.5 w-4.5 shrink-0 stroke-1.5" />
+			<span class="text-ink-gray-8 min-w-0 flex-1 leading-5"> {{ blockedLabel }} </span>
 		</div>
-		<div class="flex shrink-0 items-center justify-end gap-3">
+		<!-- On mobile the two answers split the width the row was already spending,
+		     40px tall — the same treatment the invite strip's RSVP control gets. -->
+		<div class="flex shrink-0 items-center justify-end gap-3 max-sm:w-full">
+			<!-- Outline, not ghost: at full width a borderless button reads as loose
+			     text rather than the other half of a pair of answers. -->
 			<Button
 				v-if="canTrust"
-				variant="ghost"
+				variant="outline"
+				class="max-sm:!h-10 max-sm:flex-1"
 				:label="__('Mark Sender as Trusted')"
 				@click="handleTrust"
 			/>
-			<Button :label="__('Load Images')" class="w-28" @click="imagesLoaded = true" />
+			<Button
+				class="max-sm:!h-10 max-sm:flex-1 sm:w-28"
+				:label="__('Load Images')"
+				@click="imagesLoaded = true"
+			/>
 		</div>
 	</div>
 	<div v-if="!isIframeReady" class="animate-pulse space-y-2 py-4">

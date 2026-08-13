@@ -15,7 +15,7 @@
 		>
 			{{ month }}
 		</div>
-		<div class="text-ink-gray-9 text-lg-semibold py-px leading-5 tabular-nums">{{ day }}</div>
+		<div class="text-ink-gray-8 text-lg-semibold py-px leading-5 tabular-nums">{{ day }}</div>
 	</div>
 </template>
 

@@ -9,7 +9,7 @@
 				:options="textFonts"
 				:modelValue="displayFont"
 				class="-me-1"
-				@update:modelValue="(value) => onUpdate('fontFamily', value)"
+				@update:modelValue="(value) => updateProperty('fontFamily', value)"
 			/>
 		</PropertyRow>
 		<NumberControl
@@ -20,53 +20,27 @@
 			:max="800"
 			:max-digits="3"
 			:step="1"
-			@update:modelValue="(value) => onUpdate('fontSize', value)"
+			@update:modelValue="(value) => updateProperty('fontSize', value)"
 		/>
 		<PropertyRow label="Color">
 			<ColorPicker
 				:modelValue="editorStyles.color"
-				@update:modelValue="(value) => onUpdate('color', value)"
+				@update:modelValue="(value) => updateProperty('color', value)"
 			/>
 		</PropertyRow>
-		<NumberControl
-			:modelValue="parseFloat(editorStyles.lineHeight) || 1.5"
-			label="Line Height"
-			:min="1"
-			:max="5"
-			:max-digits="3"
-			:step="0.1"
-			@update:modelValue="(value) => onUpdate('lineHeight', value, true)"
-		/>
-		<NumberControl
-			:modelValue="editorStyles.letterSpacing || 0"
-			label="Letter Spacing"
-			suffix="px"
-			:min="-10"
-			:max="50"
-			:max-digits="3"
-			:step="1"
-			@update:modelValue="(value) => onUpdate('letterSpacing', value, true)"
-		/>
+		<PropertyRow label="Case">
+			<TabButtons
+				:modelValue="editorStyles.textTransform"
+				:options="caseOptions"
+				@update:modelValue="(value) => updateProperty('textTransform', value)"
+			/>
+		</PropertyRow>
 		<ToggleGroup
 			label="Decor"
 			:modelValue="decorValues"
 			:options="decorOptions"
 			@update:modelValue="onDecorToggle"
 		/>
-		<PropertyRow label="Align">
-			<TabButtons
-				:modelValue="editorStyles.textAlign"
-				:options="alignOptions"
-				@update:modelValue="(value) => onUpdate('textAlign', value)"
-			/>
-		</PropertyRow>
-		<PropertyRow label="List Style">
-			<TabButtons
-				:modelValue="listStyle"
-				:options="listStyleOptions"
-				@update:modelValue="(value) => onUpdate('list', value)"
-			/>
-		</PropertyRow>
 	</Section>
 </template>
 
@@ -106,6 +80,12 @@ const textFonts = [
 	'Inter',
 ]
 
+const caseOptions = [
+	{ value: 'none', tooltip: 'As typed', icon: 'lucide-ban' },
+	{ value: 'uppercase', tooltip: 'Uppercase', icon: 'lucide-case-upper' },
+	{ value: 'lowercase', tooltip: 'Lowercase', icon: 'lucide-case-lower' },
+]
+
 const decorOptions = [
 	{ value: 'bold', label: 'Bold', icon: Bold },
 	{ value: 'italic', label: 'Italic', icon: Italic },
@@ -113,33 +93,11 @@ const decorOptions = [
 	{ value: 'strike', label: 'Strikethrough', icon: Strikethrough },
 ]
 
-const alignOptions = [
-	{ value: 'left', tooltip: 'Align left', icon: 'lucide-align-left' },
-	{ value: 'center', tooltip: 'Align center', icon: 'lucide-align-center' },
-	{ value: 'right', tooltip: 'Align right', icon: 'lucide-align-right' },
-	{ value: 'justify', tooltip: 'Justify', icon: 'lucide-align-justify' },
-]
-
-const listStyleOptions = [
-	{ value: 'none', tooltip: 'None', icon: 'lucide-ban' },
-	{ value: 'bullet', tooltip: 'Bulleted', icon: 'lucide-list' },
-	{ value: 'ordered', tooltip: 'Numbered', icon: 'lucide-list-ordered' },
-]
+const displayFont = computed(() => editorStyles.fontFamily?.replace(/['"]/g, ''))
 
 const decorValues = computed(() =>
 	decorOptions.filter((option) => editorStyles[option.value]).map((option) => option.value),
 )
-
-const listStyle = computed(() =>
-	editorStyles.orderedList ? 'ordered' : editorStyles.bulletList ? 'bullet' : 'none',
-)
-
-const displayFont = computed(() => editorStyles.fontFamily?.replace(/['"]/g, ''))
-
-const onUpdate = (property, value, parse = false) => {
-	const nextValue = parse ? parseFloat(value) : value
-	updateProperty(property, nextValue)
-}
 
 const onDecorToggle = (values) => {
 	const changed = decorOptions.find(

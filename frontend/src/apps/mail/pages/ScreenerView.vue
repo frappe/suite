@@ -307,9 +307,13 @@
 							     place the same kind of decision is made everywhere else in the app. -->
 							<div v-if="!isMobile" class="flex shrink-0 gap-2">
 								<div class="flex items-center">
+									<!-- The key is named on the tooltip rather than in the label: this is the
+									     desktop split-button pair, so there is a keyboard to press it on, and
+									     the qualified verdicts in the menu behind it name theirs the same way. -->
 									<Button
 										variant="outline"
 										:label="__('Deny')"
+										:tooltip="__('Deny ({0})', ['D'])"
 										class="!rounded-r-none"
 										@click="screenOut([openSender.from_email])"
 									/>
@@ -326,6 +330,7 @@
 									<Button
 										variant="solid"
 										:label="__('Allow')"
+										:tooltip="__('Allow ({0})', ['A'])"
 										class="!rounded-r-none"
 										@click="allow([openSender.from_email])"
 									/>
@@ -654,8 +659,8 @@ watch(openSender, (sender) => {
 	if (sender) senderPaneKey.value = sender.from_email
 })
 
-// Once a mail is open: ↑/↓ (or k/j) step senders, E and Delete allow the sender straight to Archive
-// or Trash, and Esc closes. Else inert.
+// Once a mail is open: ↑/↓ (or k/j) step senders, A and D give the two plain verdicts, E and Delete
+// allow the sender straight to Archive or Trash, and Esc closes. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
 
@@ -671,6 +676,20 @@ const handleKeydown = (e: KeyboardEvent) => {
 	if (key === 'escape') {
 		e.preventDefault()
 		closeSender()
+		return
+	}
+
+	// The two plain verdicts — the ones every other key here is a qualified version of. Only these
+	// were missing from the keyboard, so a pass down the queue could file the rarer decisions and had
+	// to reach for the pointer for the common ones. Both keys are free: the mailbox map spends A only
+	// with a modifier and never binds D.
+	//
+	// Modifier-free only, unlike the keys below — Cmd/Ctrl+A is Select All in the lists and select-all
+	// in the browser, and neither should turn into a verdict on a stranger.
+	if ((key === 'a' || key === 'd') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		e.preventDefault()
+		if (key === 'a') allow([openSender.value.from_email])
+		else screenOut([openSender.value.from_email])
 		return
 	}
 
@@ -736,6 +755,11 @@ onUnmounted(() => {
 })
 
 usePageMeta(() => {
+	// Name the open sender, the way the mailbox view names the open thread. The queue's own title is
+	// the right one for the list, but it made every sender's page — each its own URL, each shareable
+	// and restorable — read as the same tab, and the count kept moving under it as you triaged.
+	if (openSender.value) return { title: openSender.value.from_name || openSender.value.from_email }
+
 	const n = senders.data?.length ?? 0
 	return { title: n ? `(${n}) ${__('Screener')}` : __('Screener') }
 })
@@ -901,7 +925,15 @@ const runAction = (
 	// Optimistically drop the acted senders so the rows leave immediately and every other row stays
 	// interactive. Their names are remembered until the advance below lands, so the route naming one
 	// of them for that tick isn't mistaken for a stale URL (see `justActed`).
-	list.filter(matchSender).forEach((s: ScreeningSender) => justActed.add(s.from_email))
+	//
+	// The rows themselves are kept, with where they sat, so undo can put them back without waiting
+	// for the server to confirm what this never waited for either.
+	const removed: RemovedSender[] = []
+	list.forEach((s: ScreeningSender, index: number) => {
+		if (!matchSender(s)) return
+		justActed.add(s.from_email)
+		removed.push({ index, sender: s })
+	})
 	senders.data = list.filter((s: ScreeningSender) => !matchSender(s))
 
 	// Advance to the next sender (or close the preview if there's nothing below).
@@ -923,7 +955,7 @@ const runAction = (
 			: undefined
 
 	queueScreening(action, fromEmails, destination)
-	announce(action, fromEmails, destination, movedIds, acted?.from_name)
+	announce(action, fromEmails, destination, movedIds, removed, acted?.from_name)
 }
 
 /**
@@ -943,14 +975,61 @@ const settledVerdictIds = async (movedIds: Promise<string[]>) => {
 }
 
 /**
+ * A row the verdict took off the list, and where it sat, so undo can put it back.
+ */
+interface RemovedSender {
+	index: number
+	sender: ScreeningSender
+}
+
+/**
+ * Put the acted rows back where they were, skipping any the list has since regained (a reload
+ * overlapping the undo). Ascending index, so each splice lands before the next one is measured.
+ */
+const restoreSenders = (removed: RemovedSender[]) => {
+	const list = [...((senders.data ?? []) as ScreeningSender[])]
+	const present = new Set(list.map((s) => s.from_email))
+
+	for (const { index, sender } of [...removed].sort((a, b) => a.index - b.index)) {
+		if (present.has(sender.from_email)) continue
+		list.splice(Math.min(index, list.length), 0, sender)
+	}
+
+	senders.data = list
+}
+
+/**
  * Take a verdict back: drop the rules it wrote and return the mail to the Screener, so the senders are
  * waiting to be decided about again exactly as they were.
+ *
+ * The rows come back first, before any of it. Applying a verdict never waited — it drops the rows and
+ * batches the write behind a timer — so an undo that waited for that deferred write, then its own
+ * round trip, then a full reload left the row missing for all three while the press that caused it
+ * cost nothing. The ids the server needs only exist once the flush returns, but the list doesn't
+ * depend on them.
  */
-const undoVerdict = async (fromEmails: string[], undone: string, movedIds: Promise<string[]>) => {
+const undoVerdict = async (
+	fromEmails: string[],
+	undone: string,
+	movedIds: Promise<string[]>,
+	removed: RemovedSender[],
+) => {
 	// The verdict's own toast has served its purpose. Sonner clears it when its button is what was
 	// pressed, but not when the keyboard was, so say so either way rather than leave it beside the
 	// line about to replace it.
 	toast.dismiss()
+
+	// Back on the list, and answerable again: the route watcher can find these senders now, so the
+	// names held for the advance are no longer standing in for them.
+	restoreSenders(removed)
+	for (const email of fromEmails) justActed.delete(email)
+
+	// Said now, not when the server agrees. The rows are already back, so a confirmation arriving a
+	// round trip later describes something the reader watched happen — and the line itself ("… is back
+	// in the Screener") is about the list, which is already true. This is what raiseOptimisticToast
+	// does for every other undoable action in mail; not reused here because its failure branch is one
+	// generic line, and an undo that did not land is worth naming precisely.
+	const pendingToast = raiseToast(undone)
 
 	try {
 		const ids = await settledVerdictIds(movedIds)
@@ -961,10 +1040,14 @@ const undoVerdict = async (fromEmails: string[], undone: string, movedIds: Promi
 			from_emails: fromEmails,
 			ids,
 		})
+		// Reconciliation, not the mechanism: the rows are already back. This settles what the optimistic
+		// splice can only approximate — the server's ordering, and counts that moved while it was away.
 		senders.reload()
 		store.mailboxes.reload()
-		raiseToast(undone)
 	} catch (error) {
+		// The undo did not land, so the verdict still stands: retract the line that said otherwise and
+		// let the refetch take the rows away again.
+		toast.dismiss(pendingToast)
 		senders.reload()
 		raiseToast((error as Error).message || __('Could not undo that.'), 'error')
 	}
@@ -988,6 +1071,7 @@ const announce = (
 	fromEmails: string[],
 	destination: AllowDestination,
 	movedIds: Promise<string[]>,
+	removed: RemovedSender[],
 	senderName?: string,
 ) => {
 	const target = fromEmails[0] ?? ''
@@ -1021,7 +1105,7 @@ const announce = (
 
 	// Cmd/Ctrl+Z reaches the same verdict as the toast's button, and only the latest one: a triage
 	// pass is a run of decisions, and each replaces the last as the one still in reach.
-	setUndoAction(() => undoVerdict(fromEmails, undone, movedIds))
+	setUndoAction(() => undoVerdict(fromEmails, undone, movedIds, removed))
 
 	// One toast at a time. A run of verdicts would otherwise stack them over the list they are about,
 	// and only the newest is still undoable — the rest would offer a button that took back someone

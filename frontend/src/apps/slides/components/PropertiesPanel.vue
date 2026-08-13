@@ -12,6 +12,10 @@
 			<template v-if="activeElement?.type === 'text' || isEditingShapeText">
 				<Divider flexItem />
 				<TypographySection />
+				<Divider flexItem />
+				<ParagraphSection />
+				<Divider flexItem />
+				<SpacingSection />
 			</template>
 			<template v-if="activeElement?.type === 'shape' && !isEditingShapeText">
 				<Divider flexItem />
@@ -64,6 +68,8 @@ import LayoutSection from './LayoutSection.vue'
 import ElementSection from './ElementSection.vue'
 import AppearanceSection from './AppearanceSection.vue'
 import TypographySection from './TypographySection.vue'
+import ParagraphSection from './ParagraphSection.vue'
+import SpacingSection from './SpacingSection.vue'
 import ShapeStyleSection from './ShapeStyleSection.vue'
 import ImageSection from './ImageSection.vue'
 import PlaybackSection from './PlaybackSection.vue'

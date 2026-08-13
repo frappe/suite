@@ -14,6 +14,9 @@ because the E2E workflows require MariaDB and Redis service containers.
 - The Yarn Classic cache is baked into the runner image. Each runner receives a
   private writable copy-on-write view, so cache misses and dependency changes
   remain pod-local and are discarded with the runner.
+- Python, Node, Yarn, and `frappe-bench` are baked into the runner image. Jobs
+  still initialize a fresh framework Bench, install the checked-out Suite
+  commit, and create a fresh site in their private container layer.
 - Runner pods receive no Kubernetes API token and have no inbound network access.
 - Egress permits DNS and public SSH/HTTP/HTTPS, but excludes private, loopback,
   carrier-grade NAT, link-local, and multicast IPv4 ranges.
@@ -30,6 +33,10 @@ because the E2E workflows require MariaDB and Redis service containers.
 | k3s | `v1.36.3+k3s1` |
 | ARC charts | `0.14.2` |
 | Actions Runner | `2.336.0` |
+| Python | `3.14.7` |
+| Node | `24.12.0` |
+| Yarn | `1.22.22` |
+| Frappe Bench | `5.31.0` |
 | Docker DinD | `29.1.3` (digest pinned) |
 
 ## GitHub App
@@ -111,9 +118,10 @@ sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml helm uninstall suite-e2e \
 ```
 
 The Yarn Classic cache is baked into the runner image at `/var/cache/yarn`.
-Rebuild the image to update the shared seed. Changes made by jobs, workspaces,
-benches, sites, dependency install trees, and build output remain pod-local and
-are discarded with every runner.
+Python, Node, Yarn, and `frappe-bench` are also baked in. Rebuild the image to
+update those tools or the dependency seed. Framework benches, Suite installs,
+sites, dependency install trees, and build output remain pod-local and are
+discarded with every runner.
 
 After migrating from the host cache, drain the scale set and remove the unused
 ConfigMap and cache directory:

@@ -159,9 +159,13 @@
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>
+												<!-- leading-4: truncate is overflow-hidden, and the preset's 1.15 puts 13px
+												     text in a 14.95px box while Inter's glyph box wants ~15.7 — so the
+												     descenders of a g or a p were shaved off. 16px still sits under the
+												     sender name beside it, so the row does not grow. -->
 												<span
 													v-if="!isMobile"
-													class="text-ink-gray-5 truncate"
+													class="text-ink-gray-5 truncate leading-4"
 												>
 													<span>&lt;</span>
 													<Tooltip :text="__('Filter messages from this sender')">
@@ -192,7 +196,8 @@
 													<MailDetailsPopover v-else :mail />
 												</template>
 											</div>
-											<div class="truncate">
+											<!-- Same 13px truncate, same shaved descenders. -->
+											<div class="truncate leading-4">
 												{{ getFormattedRecipients(mail.recipients) }}
 											</div>
 										</div>
@@ -297,10 +302,16 @@
 											@trust="trustSender.submit(mail.from_email)"
 										/>
 
+										<!-- font-sans is the system stack, not Inter: the preset leaves
+										     fontFamily.sans alone and puts InterVar on <html> instead. So this is
+										     deliberately off the variable font — and text-base's 420 then has no
+										     face to land on, which CSS resolves upward to the system Medium,
+										     rendering the body bolder than everything around it. font-normal pins
+										     it to Regular. -->
 										<LinkifiedText
 											v-else
 											:text="getPlainTextBody(mail)"
-											class="pt-4 font-sans text-base !leading-5 sm:text-sm"
+											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
 										/>
 									</template>
 
