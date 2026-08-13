@@ -664,7 +664,35 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 		}
 
-		const stream = await navigator.mediaDevices.getUserMedia(constraints);
+		let stream: MediaStream;
+		try {
+			stream = await navigator.mediaDevices.getUserMedia(constraints);
+		} catch (error) {
+			const missingDevice =
+				(error as Error).name === "NotFoundError" ||
+				(error as Error).name === "OverconstrainedError";
+			const hasExactDevice =
+				(typeof constraints.audio === "object" &&
+					constraints.audio.deviceId !== undefined) ||
+				(typeof constraints.video === "object" &&
+					constraints.video.deviceId !== undefined);
+
+			if (!missingDevice || !hasExactDevice) throw error;
+
+			if (typeof constraints.audio === "object") {
+				if (constraints.audio.deviceId !== undefined) {
+					setSelectedMicId("");
+				}
+				delete constraints.audio.deviceId;
+			}
+			if (typeof constraints.video === "object") {
+				if (constraints.video.deviceId !== undefined) {
+					setSelectedCameraId("");
+				}
+				delete constraints.video.deviceId;
+			}
+			stream = await navigator.mediaDevices.getUserMedia(constraints);
+		}
 		return { stream, constraints };
 	};
 

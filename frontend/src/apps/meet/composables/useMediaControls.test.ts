@@ -71,6 +71,57 @@ describe("useMediaControls", () => {
 		vi.stubGlobal("MediaStream", FakeMediaStream);
 	});
 
+	it("falls back to the default microphone when Firefox cannot find the selected device", async () => {
+		const fallbackStream = new FakeMediaStream([audioTrack("fallback")]);
+		const requestedConstraints: MediaStreamConstraints[] = [];
+		const getUserMedia = vi.fn((constraints: MediaStreamConstraints) => {
+			requestedConstraints.push(structuredClone(constraints));
+			if (requestedConstraints.length === 1) {
+				return Promise.reject(
+					new DOMException("The object can not be found here.", "NotFoundError"),
+				);
+			}
+			return Promise.resolve(fallbackStream);
+		});
+		Object.defineProperty(navigator, "mediaDevices", {
+			configurable: true,
+			value: { getUserMedia },
+		});
+
+		const controls = useMediaControls({
+			mediaState: {},
+			connectionState: {},
+			raiseHandStore: {},
+			currentUser: {},
+			sfuClient: {},
+			sfuManager: ref(null),
+			deviceManager: {
+				enumerateDevices: vi.fn().mockResolvedValue(undefined),
+				isDeviceAvailable: vi.fn(() => true),
+				findDeviceById: vi.fn(() => ({ label: "Built-in Microphone" })),
+			},
+			backgroundEffects: {},
+			noiseCancellation: { error: ref(null) },
+			toast: {},
+			mediaPreferences: {},
+		} as never);
+
+		const result = await controls.acquireUserMedia(false, true, {
+			micDeviceId: "remembered-mic",
+		});
+
+		expect(result.stream).toBe(fallbackStream);
+		expect(getUserMedia).toHaveBeenCalledTimes(2);
+		expect(
+			(requestedConstraints[0].audio as MediaTrackConstraints).deviceId,
+		).toEqual({
+			exact: "remembered-mic",
+		});
+		expect(
+			(requestedConstraints[1].audio as MediaTrackConstraints).deviceId,
+		).toBeUndefined();
+	});
+
 	it("replaces a stale live processed track before resuming the microphone", async () => {
 		const sourceTrack = audioTrack("source");
 		const staleProcessedTrack = audioTrack("stale-processed");
