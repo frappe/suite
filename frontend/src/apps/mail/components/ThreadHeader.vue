@@ -1,14 +1,19 @@
 <template>
 	<!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
-	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
+	     ghost buttons' own padding so the edge glyphs land on that axis too.
+
+	     Mobile targets are 44px (the HIG minimum) rather than the 32px they were:
+	     this is the toolbar a reader hits most, and a ghost button paints nothing
+	     until it is pressed, so the box can grow without the row looking any
+	     heavier. Six of them at 44px still leave ~90px spare at 393px. -->
 	<div class="bg-surface-base border-b sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:border-b-0 max-sm:py-0">
 		<Button
 			variant="ghost"
-			class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8"
+			class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-11 max-sm:!w-11"
 			@click="$router.push(backRoute)"
 		>
 			<template #icon>
-				<ChevronLeft class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+				<ChevronLeft class="icon max-sm:!size-4.5" />
 			</template>
 		</Button>
 		<template v-if="thread?.length">
@@ -20,7 +25,7 @@
 			<div class="ml-auto shrink-0 space-x-2 max-sm:-mr-2">
 				<Button
 					variant="ghost"
-					class="max-sm:!h-8 max-sm:!w-8"
+					class="max-sm:!h-11 max-sm:!w-11"
 					:tooltip="isFlagged ? __('Unstar') : __('Star')"
 					@click="
 						emit(
@@ -33,36 +38,36 @@
 					<template #icon>
 						<Star
 							:style="isFlagged ? FLAGGED_STAR_STYLE : undefined"
-							class="icon max-sm:!h-[18px] max-sm:!w-[18px]"
+							class="icon max-sm:!size-4.5"
 						/>
 					</template>
 				</Button>
 
 				<AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
-					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
+					<Button variant="ghost" class="max-sm:!h-11 max-sm:!w-11" :tooltip="__('Move To')">
 						<template #icon>
-							<FolderInput class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+							<FolderInput class="icon max-sm:!size-4.5" />
 						</template>
 					</Button>
 				</AdaptiveDropdown>
 				<AdaptiveDropdown v-if="showAddTo" :options="addToOptions" :title="__('Add To')">
-					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Add To')">
+					<Button variant="ghost" class="max-sm:!h-11 max-sm:!w-11" :tooltip="__('Add To')">
 						<template #icon>
-							<FolderPlus class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+							<FolderPlus class="icon max-sm:!size-4.5" />
 						</template>
 					</Button>
 				</AdaptiveDropdown>
 				<AdaptiveDropdown v-if="canRemoveFrom" :options="removeFromOptions" :title="__('Remove From')">
-					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Remove From')">
+					<Button variant="ghost" class="max-sm:!h-11 max-sm:!w-11" :tooltip="__('Remove From')">
 						<template #icon>
-							<FolderMinus class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+							<FolderMinus class="icon max-sm:!size-4.5" />
 						</template>
 					</Button>
 				</AdaptiveDropdown>
 				<AdaptiveDropdown :options="moreActions">
-					<Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('More')">
+					<Button variant="ghost" class="max-sm:!h-11 max-sm:!w-11" :tooltip="__('More')">
 						<template #icon>
-							<Ellipsis class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
+							<Ellipsis class="icon max-sm:!size-4.5" />
 						</template>
 					</Button>
 				</AdaptiveDropdown>
