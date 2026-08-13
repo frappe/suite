@@ -7,18 +7,18 @@
 		"
 	>
 		<div v-if="isMobile" class="flex items-center border-b px-4 py-2">
-			<Search class="text-ink-gray-5 h-4 w-4 shrink-0" />
+			<Search class="text-ink-gray-5 size-5 shrink-0" />
 			<input
 				readonly
 				:value="searchQuery"
 				:placeholder="__('Search')"
 				:aria-label="__('Edit search')"
-				class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-base focus:ring-0"
+				class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-lg focus:ring-0"
 				@mousedown.prevent="openSearch()"
 			/>
 			<Button variant="ghost" :aria-label="__('Filters')" @click="openSearch(true)">
 				<template #icon>
-					<SlidersHorizontal class="text-ink-gray-5 h-4 w-4" />
+					<SlidersHorizontal class="text-ink-gray-5 size-5" />
 				</template>
 			</Button>
 		</div>
@@ -58,7 +58,7 @@
 				:key="chip.key"
 				class="bg-surface-gray-2 inline-flex items-center gap-1 rounded pl-2 pr-1"
 				:class="[
-					isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
+					isMobile ? 'h-9 text-sm' : 'h-7 text-xs',
 					{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) },
 				]"
 				@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
@@ -69,7 +69,7 @@
 					:aria-label="__('Remove filter')"
 					@click.stop="removeSearchFilter(chip.key)"
 				>
-					<X class="size-3" />
+					<X :class="isMobile ? 'size-3.5' : 'size-3'" />
 				</button>
 			</span>
 

@@ -14,9 +14,9 @@
 					     action and neither leaves a spent entry behind.
 
 					     A bare button rather than the styled one, matching the results header's icon
-					     exactly — same 16px glyph, no box of its own — so the field starts in the same
+					     exactly — same 20px glyph, no box of its own — so the field starts in the same
 					     place in both and nothing shifts as the overlay opens over the page. `-m-2 p-2`
-					     buys back a 32px tap target without the padding counting towards layout. -->
+					     buys back a 36px tap target without the padding counting towards layout. -->
 					<button
 						v-if="isMobile"
 						type="button"
@@ -24,15 +24,19 @@
 						:aria-label="__('Back')"
 						@click="closeSearch"
 					>
-						<ArrowLeft class="text-ink-gray-5 size-4" />
+						<ArrowLeft class="text-ink-gray-5 size-5" />
 					</button>
 					<Search v-else class="text-ink-gray-5 size-4 shrink-0" />
+					<!-- text-lg (16px) on mobile, and not only for legibility: iOS zooms the
+					     whole page when a focused input is under 16px, which it then never
+					     zooms back out of. -->
 					<input
 						ref="searchInput"
 						v-model="filter.text"
 						icon-left="search"
 						type="search"
-						class="placeholder-ink-gray-4 w-full border-none bg-transparent text-base focus:ring-0"
+						class="placeholder-ink-gray-4 w-full border-none bg-transparent focus:ring-0"
+						:class="isMobile ? 'text-lg' : 'text-base'"
 						placeholder="Search"
 						@click="showAdvancedFilters = false"
 						@input="showAdvancedFilters = false"
@@ -44,7 +48,7 @@
 						@click="showAdvancedFilters = !showAdvancedFilters"
 					>
 						<template #icon>
-							<SlidersHorizontal class="text-ink-gray-5 h-4 w-4" />
+							<SlidersHorizontal class="text-ink-gray-5" :class="isMobile ? 'size-5' : 'size-4'" />
 						</template>
 					</Button>
 				</div>
@@ -57,7 +61,7 @@
 						:key="chip.key"
 						class="bg-surface-gray-2 inline-flex items-center gap-1 rounded pl-2 pr-1"
 						:class="[
-							isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
+							isMobile ? 'h-9 text-sm' : 'h-7 text-xs',
 							{ 'hover:bg-surface-gray-3 cursor-pointer': isClickableChip(chip.key) },
 						]"
 						@click="isClickableChip(chip.key) && handleChipClick(chip.key)"
@@ -68,18 +72,18 @@
 							:aria-label="__('Remove filter')"
 							@click.stop="removeFilter(chip.key)"
 						>
-							<X class="size-3" />
+							<X :class="isMobile ? 'size-3.5' : 'size-3'" />
 						</button>
 					</span>
 					<Button
 						v-for="f in inactiveQuickFilters"
 						:key="f.label"
 						variant="outline"
-						:class="isMobile ? '!h-8 text-sm' : '!h-7 text-xs'"
+						:class="isMobile ? '!h-9 text-sm' : '!h-7 text-xs'"
 						@click="applyQuickFilter(f)"
 					>
 						<span class="flex items-center gap-1">
-							<Plus class="size-3" />
+							<Plus :class="isMobile ? 'size-3.5' : 'size-3'" />
 							{{ f.label }}
 						</span>
 					</Button>
@@ -175,31 +179,39 @@
 					class="px-2 pb-2"
 					:class="{ 'pt-2': !activeFilters.length }"
 				>
+					<!-- These rows are the one place the search is driven entirely by
+					     tapping, so mobile gets the taller row and the larger glyph the
+					     rest of the overlay now uses. -->
 					<button
 						v-for="mb in folderMatches"
 						:key="mb.id"
-						class="hover:bg-surface-gray-1 flex w-full items-center gap-2 rounded p-2 text-left"
+						class="hover:bg-surface-gray-1 flex w-full items-center gap-2 rounded text-left"
+						:class="isMobile ? 'gap-2.5 p-2.5' : 'p-2'"
 						@click="applyFolder(mb)"
 					>
 						<Icon
 							:name="getIcon(mb)"
-							class="size-4 shrink-0"
-							:class="FOLDER_ICON_COLOR_MAP[mb.color]"
+							class="shrink-0"
+							:class="[isMobile ? 'size-5' : 'size-4', FOLDER_ICON_COLOR_MAP[mb.color]]"
 						/>
-						<span class="text-sm">{{ mb._name }}</span>
+						<span :class="isMobile ? 'text-base' : 'text-sm'">{{ mb._name }}</span>
 					</button>
 					<button
 						v-for="c in contactMatches"
 						:key="c.email"
-						class="hover:bg-surface-gray-1 flex w-full items-center gap-2 rounded p-2 text-left"
+						class="hover:bg-surface-gray-1 flex w-full items-center gap-2 rounded text-left"
+						:class="isMobile ? 'gap-2.5 p-2.5' : 'p-2'"
 						@click="applyContact(c)"
 					>
 						<Avatar :image="c.image" :label="c.name || c.email" size="lg" />
 						<div class="min-w-0">
-							<div class="truncate text-sm">{{ c.name || c.email }}</div>
+							<div class="truncate" :class="isMobile ? 'text-base' : 'text-sm'">
+								{{ c.name || c.email }}
+							</div>
 							<div
 								v-if="c.name && c.name !== c.email"
-								class="text-ink-gray-5 truncate text-xs"
+								class="text-ink-gray-5 truncate"
+								:class="isMobile ? 'text-sm' : 'text-xs'"
 							>
 								{{ c.email }}
 							</div>
@@ -207,7 +219,8 @@
 					</button>
 					<div
 						v-if="!folderMatches.length && !contactMatches.length"
-						class="text-ink-gray-5 px-2 py-2 text-sm"
+						class="text-ink-gray-5 px-2 py-2"
+						:class="isMobile ? 'text-base' : 'text-sm'"
 					>
 						{{ isContactOp && contactSearch.loading ? __('Loading…') : __('No matches') }}
 					</div>
@@ -230,23 +243,28 @@
 									</span>
 								</template>
 							</div>
+							<!-- The mailbox tags and the date/attachment column are the smallest
+							     type in the row; a step up on mobile keeps them legible at arm's
+							     length without changing the desktop density. -->
 							<div
 								v-for="m in result.mailboxes"
 								:key="m.mailbox_id"
-								class="bg-surface-gray-2 group-hover:bg-surface-gray-3 mr-1.5 inline-flex rounded p-1 text-xs"
+								class="bg-surface-gray-2 group-hover:bg-surface-gray-3 mr-1.5 inline-flex rounded"
+								:class="isMobile ? 'px-1.5 py-1 text-sm' : 'p-1 text-xs'"
 							>
 								{{ m.mailbox_name }}
 							</div>
 						</div>
 						<div
-							class="text-ink-gray-4 ml-auto flex shrink-0 flex-col justify-between text-xs"
+							class="text-ink-gray-4 ml-auto flex shrink-0 flex-col justify-between"
+							:class="isMobile ? 'text-sm' : 'text-xs'"
 						>
 							<span>{{ getFormattedDate(result.received_at) }}</span>
 							<div
 								v-if="noOfAttachments(result)"
 								class="ml-auto flex items-center space-x-1"
 							>
-								<Paperclip class="text-ink-gray-4 h-3.5 w-3.5" />
+								<Paperclip class="text-ink-gray-4" :class="isMobile ? 'size-4' : 'size-3.5'" />
 								<span>{{ noOfAttachments(result) }}</span>
 							</div>
 						</div>
