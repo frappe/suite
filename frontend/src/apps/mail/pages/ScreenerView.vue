@@ -36,7 +36,7 @@
 				</div>
 				<!-- The rows act through icon buttons, so the copy shows the icons next to the words
 				     they stand for — "Allow" and "Deny" appear nowhere else in the view. -->
-				<p class="text-ink-gray-6 mt-1 text-sm !leading-[1.5]">
+				<p class="text-ink-gray-6 mt-1 text-sm !leading-normal">
 					{{
 						__(
 							'The first time someone emails you, their message lands in the Screener instead of your Inbox.',
@@ -118,7 +118,7 @@
 											<div class="text-ink-gray-8 mb-1.5 text-sm !font-semibold">
 												{{ __('How the Screener works') }}
 											</div>
-											<p class="text-ink-gray-6 text-sm !leading-[1.5]">
+											<p class="text-ink-gray-6 text-sm !leading-normal">
 												{{ __('First-time senders wait here until you decide.') }}
 												<!-- nowrap keeps each word+icon parenthetical on one line -->
 												<span class="whitespace-nowrap">
@@ -134,7 +134,7 @@
 												</span>
 												{{ __('sends them to Junk.') }}
 											</p>
-											<p class="text-ink-gray-6 mt-3 text-sm !leading-[1.5]">
+											<p class="text-ink-gray-6 mt-3 text-sm !leading-normal">
 												{{ __('You can undo decisions or turn the Screener off in') }}
 												<a
 													class="cursor-pointer underline"
@@ -178,7 +178,7 @@
 									<!-- Weights follow the mail rows: medium once read, semibold while unread,
 									     so a screened sender reads the same as anything else in a list. -->
 									<span
-										class="text-ink-gray-8 truncate text-[15px] !font-medium sm:text-base"
+										class="text-ink-gray-8 truncate text-lg !font-medium sm:text-base"
 										:class="{ '!font-semibold': sender.unread }"
 									>
 										{{ sender.from_name || sender.from_email }}
@@ -192,14 +192,14 @@
 									/>
 								</div>
 								<div
-									class="text-ink-gray-8 truncate text-sm !leading-[1.5]"
+									class="text-ink-gray-8 truncate text-sm !leading-normal"
 									:class="{ '!font-semibold': sender.unread }"
 								>
 									{{ sender.subject || __('[No subject]') }}
 								</div>
 								<div
 									v-if="sender.preview || sender.count > 1"
-									class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
+									class="text-ink-gray-5 truncate text-sm !leading-normal"
 								>
 									<span v-if="sender.preview">{{ sender.preview }}</span>
 									<span v-if="sender.count > 1">

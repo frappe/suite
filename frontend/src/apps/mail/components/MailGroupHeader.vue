@@ -15,7 +15,7 @@
 			<!-- The mailbox list puts its "select the whole day" checkbox here. -->
 			<slot name="lead" />
 
-			<span class="select-none pt-[2px]">
+			<span class="select-none pt-0.5">
 				{{ getFormattedDate(dateKey, monthly).toUpperCase() }}
 			</span>
 

@@ -62,8 +62,10 @@
 			>
 				<div class="mr-2 mt-0.5 flex items-center space-x-1.5 truncate">
 					<span v-if="unread" class="min-h-2 min-w-2 rounded-full bg-blue-500" />
+					<!-- 16px on a phone, 14 on the desktop row. Was text-[15px], reaching for a
+					     step the scale doesn't have; 16 is the mobile body size (see index.css). -->
 					<h3
-						class="truncate text-[15px] !font-medium sm:text-base"
+						class="truncate text-lg !font-medium sm:text-base"
 						:class="{ '!font-semibold': unread }"
 					>
 						<slot name="sender" />
@@ -84,7 +86,7 @@
 			</div>
 
 			<h4
-				class="truncate text-sm !leading-[1.5]"
+				class="truncate text-sm !leading-normal"
 				:class="{ italic: subjectItalic, '!text-base': isFullWidth, '!font-semibold': unread }"
 			>
 				<!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
@@ -100,7 +102,7 @@
 				:class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
 			>
 				<h5
-					class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
+					class="text-ink-gray-5 truncate text-sm !leading-normal"
 					:class="{ italic: previewItalic, '!text-base': isFullWidth }"
 				>
 					<slot name="preview" />
