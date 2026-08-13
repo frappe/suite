@@ -297,10 +297,16 @@
 											@trust="trustSender.submit(mail.from_email)"
 										/>
 
+										<!-- font-sans is the system stack, not Inter: the preset leaves
+										     fontFamily.sans alone and puts InterVar on <html> instead. So this is
+										     deliberately off the variable font — and text-base's 420 then has no
+										     face to land on, which CSS resolves upward to the system Medium,
+										     rendering the body bolder than everything around it. font-normal pins
+										     it to Regular. -->
 										<LinkifiedText
 											v-else
 											:text="getPlainTextBody(mail)"
-											class="pt-4 font-sans text-base !leading-5 sm:text-sm"
+											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
 										/>
 									</template>
 
