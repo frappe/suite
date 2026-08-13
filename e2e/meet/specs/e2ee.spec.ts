@@ -25,8 +25,10 @@ async function expectParticipantsAndVideo(
 			timeout: 30_000,
 		}),
 	]);
-	await expectRemoteVideoReceiving(guestPage, meetHostName);
-	await expectRemoteVideoReceiving(hostPage, guestName);
+	await Promise.all([
+		expectRemoteVideoReceiving(guestPage, meetHostName),
+		expectRemoteVideoReceiving(hostPage, guestName),
+	]);
 }
 
 async function openMeetingAccessSettings(page: Page): Promise<void> {
@@ -291,13 +293,17 @@ test.describe("E2EE", () => {
 
 		await joinHostAndGuest(hostPage, guestA, meetingId, guestAName);
 
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestAName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestAName),
+		]);
 
 		await enableE2EEInSettings(hostPage);
 
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestAName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestAName),
+		]);
 
 		await guestB.joinAsGuest(meetingId, guestBName);
 		await guestC.joinAsGuest(meetingId, guestCName);
@@ -317,12 +323,14 @@ test.describe("E2EE", () => {
 			}),
 		]);
 
-		await expectRemoteVideoReceiving(hostPage, guestAName);
-		await expectRemoteVideoReceiving(hostPage, guestBName);
-		await expectRemoteVideoReceiving(hostPage, guestCName);
-		await expectRemoteVideoReceiving(guestA.page, meetHostName);
-		await expectRemoteVideoReceiving(guestB.page, meetHostName);
-		await expectRemoteVideoReceiving(guestC.page, meetHostName);
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, guestAName),
+			expectRemoteVideoReceiving(hostPage, guestBName),
+			expectRemoteVideoReceiving(hostPage, guestCName),
+			expectRemoteVideoReceiving(guestA.page, meetHostName),
+			expectRemoteVideoReceiving(guestB.page, meetHostName),
+			expectRemoteVideoReceiving(guestC.page, meetHostName),
+		]);
 
 		const [guestAFingerprint, guestBFingerprint, guestCFingerprint] =
 			await Promise.all([
