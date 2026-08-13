@@ -307,9 +307,13 @@
 							     place the same kind of decision is made everywhere else in the app. -->
 							<div v-if="!isMobile" class="flex shrink-0 gap-2">
 								<div class="flex items-center">
+									<!-- The key is named on the tooltip rather than in the label: this is the
+									     desktop split-button pair, so there is a keyboard to press it on, and
+									     the qualified verdicts in the menu behind it name theirs the same way. -->
 									<Button
 										variant="outline"
 										:label="__('Deny')"
+										:tooltip="__('Deny ({0})', ['D'])"
 										class="!rounded-r-none"
 										@click="screenOut([openSender.from_email])"
 									/>
@@ -326,6 +330,7 @@
 									<Button
 										variant="solid"
 										:label="__('Allow')"
+										:tooltip="__('Allow ({0})', ['A'])"
 										class="!rounded-r-none"
 										@click="allow([openSender.from_email])"
 									/>
@@ -654,8 +659,8 @@ watch(openSender, (sender) => {
 	if (sender) senderPaneKey.value = sender.from_email
 })
 
-// Once a mail is open: ↑/↓ (or k/j) step senders, E and Delete allow the sender straight to Archive
-// or Trash, and Esc closes. Else inert.
+// Once a mail is open: ↑/↓ (or k/j) step senders, A and D give the two plain verdicts, E and Delete
+// allow the sender straight to Archive or Trash, and Esc closes. Else inert.
 const handleKeydown = (e: KeyboardEvent) => {
 	const key = e.key.toLowerCase()
 
@@ -671,6 +676,20 @@ const handleKeydown = (e: KeyboardEvent) => {
 	if (key === 'escape') {
 		e.preventDefault()
 		closeSender()
+		return
+	}
+
+	// The two plain verdicts — the ones every other key here is a qualified version of. Only these
+	// were missing from the keyboard, so a pass down the queue could file the rarer decisions and had
+	// to reach for the pointer for the common ones. Both keys are free: the mailbox map spends A only
+	// with a modifier and never binds D.
+	//
+	// Modifier-free only, unlike the keys below — Cmd/Ctrl+A is Select All in the lists and select-all
+	// in the browser, and neither should turn into a verdict on a stranger.
+	if ((key === 'a' || key === 'd') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		e.preventDefault()
+		if (key === 'a') allow([openSender.value.from_email])
+		else screenOut([openSender.value.from_email])
 		return
 	}
 
