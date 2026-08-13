@@ -1,7 +1,7 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
 test.describe("Host controls", () => {
-	test("host can mute a guest participant", async ({
+	test("host can mute a guest participant", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,

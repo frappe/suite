@@ -1,6 +1,6 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
-test.describe("Reactions and raise hand", () => {
+test.describe("Reactions and raise hand", { tag: "@meet-group-2" }, () => {
 	test("guest reaction and raised hand are visible to the host", async ({
 		hostPage,
 		createMeeting,

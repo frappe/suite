@@ -113,7 +113,7 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 
 test.describe("E2EE", () => {
 	// Join first so media is healthy, then enable E2EE (avoids host-only avatar on CI).
-	test("participants keep video after E2EE is enabled", { tag: "@meet-group-2" }, async ({
+	test("participants keep video after E2EE is enabled", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,

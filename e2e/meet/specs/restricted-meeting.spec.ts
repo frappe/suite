@@ -2,7 +2,7 @@ import { test, expect, joinFromPreview, appUrl } from "../fixtures/test";
 
 const lobbyTransitionTimeout = process.env.CI ? 60_000 : 30_000;
 
-test.describe("Restricted meeting", () => {
+test.describe("Restricted meeting", { tag: "@meet-group-1" }, () => {
 	test("guest waits for approval and host can admit from people panel", async ({
 		hostPage,
 		createMeeting,

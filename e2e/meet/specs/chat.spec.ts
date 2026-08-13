@@ -1,7 +1,7 @@
 import { test, expect, joinHostAndGuest } from "../fixtures/test";
 
-test.describe("Chat", { tag: "@meet-group-1" }, () => {
-	test("messages are delivered between host and guest", async ({
+test.describe("Chat", () => {
+	test("messages are delivered between host and guest", { tag: "@meet-group-2" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -30,7 +30,7 @@ test.describe("Chat", { tag: "@meet-group-1" }, () => {
 		).toBeVisible();
 	});
 
-	test("unread badge appears when chat is closed and clears when opened", async ({
+	test("unread badge appears when chat is closed and clears when opened", { tag: "@meet-group-1" }, async ({
 		hostPage,
 		createMeeting,
 		createParticipant,

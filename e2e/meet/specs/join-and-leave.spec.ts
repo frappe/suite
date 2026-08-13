@@ -1,6 +1,6 @@
 import { test, expect, joinFromPreview } from "../fixtures/test";
 
-test.describe("Joining and leaving", { tag: "@meet-group-2" }, () => {
+test.describe("Joining and leaving", { tag: "@meet-group-1" }, () => {
 	test("host can join a new meeting and leave it", async ({
 		hostPage,
 		createMeetingViaUi,
