@@ -901,7 +901,15 @@ const runAction = (
 	// Optimistically drop the acted senders so the rows leave immediately and every other row stays
 	// interactive. Their names are remembered until the advance below lands, so the route naming one
 	// of them for that tick isn't mistaken for a stale URL (see `justActed`).
-	list.filter(matchSender).forEach((s: ScreeningSender) => justActed.add(s.from_email))
+	//
+	// The rows themselves are kept, with where they sat, so undo can put them back without waiting
+	// for the server to confirm what this never waited for either.
+	const removed: RemovedSender[] = []
+	list.forEach((s: ScreeningSender, index: number) => {
+		if (!matchSender(s)) return
+		justActed.add(s.from_email)
+		removed.push({ index, sender: s })
+	})
 	senders.data = list.filter((s: ScreeningSender) => !matchSender(s))
 
 	// Advance to the next sender (or close the preview if there's nothing below).
@@ -923,7 +931,7 @@ const runAction = (
 			: undefined
 
 	queueScreening(action, fromEmails, destination)
-	announce(action, fromEmails, destination, movedIds, acted?.from_name)
+	announce(action, fromEmails, destination, movedIds, removed, acted?.from_name)
 }
 
 /**
@@ -943,14 +951,54 @@ const settledVerdictIds = async (movedIds: Promise<string[]>) => {
 }
 
 /**
+ * A row the verdict took off the list, and where it sat, so undo can put it back.
+ */
+interface RemovedSender {
+	index: number
+	sender: ScreeningSender
+}
+
+/**
+ * Put the acted rows back where they were, skipping any the list has since regained (a reload
+ * overlapping the undo). Ascending index, so each splice lands before the next one is measured.
+ */
+const restoreSenders = (removed: RemovedSender[]) => {
+	const list = [...((senders.data ?? []) as ScreeningSender[])]
+	const present = new Set(list.map((s) => s.from_email))
+
+	for (const { index, sender } of [...removed].sort((a, b) => a.index - b.index)) {
+		if (present.has(sender.from_email)) continue
+		list.splice(Math.min(index, list.length), 0, sender)
+	}
+
+	senders.data = list
+}
+
+/**
  * Take a verdict back: drop the rules it wrote and return the mail to the Screener, so the senders are
  * waiting to be decided about again exactly as they were.
+ *
+ * The rows come back first, before any of it. Applying a verdict never waited — it drops the rows and
+ * batches the write behind a timer — so an undo that waited for that deferred write, then its own
+ * round trip, then a full reload left the row missing for all three while the press that caused it
+ * cost nothing. The ids the server needs only exist once the flush returns, but the list doesn't
+ * depend on them.
  */
-const undoVerdict = async (fromEmails: string[], undone: string, movedIds: Promise<string[]>) => {
+const undoVerdict = async (
+	fromEmails: string[],
+	undone: string,
+	movedIds: Promise<string[]>,
+	removed: RemovedSender[],
+) => {
 	// The verdict's own toast has served its purpose. Sonner clears it when its button is what was
 	// pressed, but not when the keyboard was, so say so either way rather than leave it beside the
 	// line about to replace it.
 	toast.dismiss()
+
+	// Back on the list, and answerable again: the route watcher can find these senders now, so the
+	// names held for the advance are no longer standing in for them.
+	restoreSenders(removed)
+	for (const email of fromEmails) justActed.delete(email)
 
 	try {
 		const ids = await settledVerdictIds(movedIds)
@@ -961,10 +1009,13 @@ const undoVerdict = async (fromEmails: string[], undone: string, movedIds: Promi
 			from_emails: fromEmails,
 			ids,
 		})
+		// Reconciliation, not the mechanism: the rows are already back. This settles what the optimistic
+		// splice can only approximate — the server's ordering, and counts that moved while it was away.
 		senders.reload()
 		store.mailboxes.reload()
 		raiseToast(undone)
 	} catch (error) {
+		// The undo did not land, so the verdict still stands and the rows this put back are wrong.
 		senders.reload()
 		raiseToast((error as Error).message || __('Could not undo that.'), 'error')
 	}
@@ -988,6 +1039,7 @@ const announce = (
 	fromEmails: string[],
 	destination: AllowDestination,
 	movedIds: Promise<string[]>,
+	removed: RemovedSender[],
 	senderName?: string,
 ) => {
 	const target = fromEmails[0] ?? ''
@@ -1021,7 +1073,7 @@ const announce = (
 
 	// Cmd/Ctrl+Z reaches the same verdict as the toast's button, and only the latest one: a triage
 	// pass is a run of decisions, and each replaces the last as the one still in reach.
-	setUndoAction(() => undoVerdict(fromEmails, undone, movedIds))
+	setUndoAction(() => undoVerdict(fromEmails, undone, movedIds, removed))
 
 	// One toast at a time. A run of verdicts would otherwise stack them over the list they are about,
 	// and only the newest is still undoable — the rest would offer a button that took back someone
