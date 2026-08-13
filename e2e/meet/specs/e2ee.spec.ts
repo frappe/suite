@@ -299,6 +299,7 @@ test.describe("E2EE", () => {
 		await expectRemoteVideoReceiving(hostPage, guestAName);
 
 		await guestB.joinAsGuest(meetingId, guestBName);
+		await expectRemoteVideoReceiving(guestB.page, meetHostName);
 		await guestC.joinAsGuest(meetingId, guestCName);
 
 		await Promise.all([
