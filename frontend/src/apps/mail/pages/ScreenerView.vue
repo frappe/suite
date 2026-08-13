@@ -1000,6 +1000,13 @@ const undoVerdict = async (
 	restoreSenders(removed)
 	for (const email of fromEmails) justActed.delete(email)
 
+	// Said now, not when the server agrees. The rows are already back, so a confirmation arriving a
+	// round trip later describes something the reader watched happen — and the line itself ("… is back
+	// in the Screener") is about the list, which is already true. This is what raiseOptimisticToast
+	// does for every other undoable action in mail; not reused here because its failure branch is one
+	// generic line, and an undo that did not land is worth naming precisely.
+	const pendingToast = raiseToast(undone)
+
 	try {
 		const ids = await settledVerdictIds(movedIds)
 		// One call so the rules are dropped and the mail comes home together: a half-undone verdict —
@@ -1013,9 +1020,10 @@ const undoVerdict = async (
 		// splice can only approximate — the server's ordering, and counts that moved while it was away.
 		senders.reload()
 		store.mailboxes.reload()
-		raiseToast(undone)
 	} catch (error) {
-		// The undo did not land, so the verdict still stands and the rows this put back are wrong.
+		// The undo did not land, so the verdict still stands: retract the line that said otherwise and
+		// let the refetch take the rows away again.
+		toast.dismiss(pendingToast)
 		senders.reload()
 		raiseToast((error as Error).message || __('Could not undo that.'), 'error')
 	}
