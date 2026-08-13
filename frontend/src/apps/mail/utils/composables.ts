@@ -13,6 +13,11 @@ import type { COLOR_SCHEME, ComposeMailData, Identity, ScreenedAddress } from '@
 // them and unmounts whatever they were holding — a half-written mail vanished this way
 // (#38), and every other open surface has the same exposure. A resized window therefore
 // keeps the layout it started with until the page is reloaded.
+//
+// Which is why this is for STRUCTURE — which tree to mount, which route to take — and not
+// for sizing. Tailwind's `max-sm:` keys on the same 640px but follows the viewport live, so
+// a component that sizes itself from this ref ends up disagreeing with the one next to it
+// after a resize. The mobile steps live in src/index.css.
 const isMobile = ref(window.innerWidth < 640)
 
 export const useScreenSize = () => ({ isMobile })

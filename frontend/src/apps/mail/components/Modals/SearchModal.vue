@@ -68,7 +68,8 @@
 					>
 						<span class="max-w-40 truncate">{{ chip.label }}</span>
 						<button
-							class="text-ink-gray-5 hover:text-ink-gray-8 rounded p-1"
+							class="text-ink-gray-5 hover:text-ink-gray-8 rounded"
+							:class="isMobile ? '-mr-1 p-2' : 'p-1'"
 							:aria-label="__('Remove filter')"
 							@click.stop="removeFilter(chip.key)"
 						>
