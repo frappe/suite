@@ -127,35 +127,15 @@ test.describe("E2EE", () => {
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
 
+		const hostErrors = capturePageErrors(hostPage);
 		await enableE2EEInSettings(hostPage);
 
 		await expectParticipantsAndVideo(hostPage, guest.page, guestName);
+		hostErrors.assertNoErrors();
 	});
 
 	test.describe("heavy coverage", () => {
 		test.describe.configure({ timeout: 90_000 });
-
-	test("active participants keep receiving streams after E2EE is enabled mid-call", { tag: "@meet-group-2" }, async ({
-		hostPage,
-		createMeeting,
-		createParticipant,
-	}) => {
-		const meetingId = await createMeeting();
-		const guestName = "Guest Convert E2EE";
-		const guest = await createParticipant();
-
-		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
-
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
-
-		const hostErrors = capturePageErrors(hostPage);
-		await enableE2EEInSettings(hostPage);
-		hostErrors.assertNoErrors();
-
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
-	});
 
 	test("a participant can rejoin an E2EE meeting after leaving", { tag: "@meet-group-2" }, async ({
 		hostPage,
