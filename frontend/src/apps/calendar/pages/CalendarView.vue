@@ -3,6 +3,7 @@ import { computed, inject, onMounted, reactive, ref, useTemplateRef, watch } fro
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Calendar, Dialog, createResource, usePageMeta } from 'frappe-ui'
 
+import { useScreenSize } from '@/composables/useScreenSize'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -14,6 +15,7 @@ const dayjs = inject('$dayjs')
 
 const store = userStore()
 const { participantIdentities } = store
+const { isMobile } = useScreenSize()
 
 const route = useRoute()
 const router = useRouter()
@@ -385,8 +387,12 @@ const NOTIFY_MODAL_OPTIONS = {
 					@update="handleUpdate"
 				/>
 			</div>
+			<!-- Desktop only: it is a side panel with a fixed width, so on a phone it
+			     covered the grid it is meant to sit beside. The selection still happens
+			     (?event= stays in the URL, so a shared link still names its event),
+			     there is just nowhere to show it until this gets a sheet of its own. -->
 			<EventDetailSidebar
-				v-if="selectedCalendarEvent"
+				v-if="selectedCalendarEvent && !isMobile"
 				:key="selectedCalendarEvent.id + (selectedCalendarEvent.recurrence_id ?? '')"
 				:calendar-event="selectedCalendarEvent"
 				@close="closeEventDetail"
