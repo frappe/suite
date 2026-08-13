@@ -78,8 +78,7 @@ const shortcutGroups = computed(() => [
 				[[modifier.value, 'Z'], __('Undo Last Action')],
 			],
 		},
-	],
-	[
+
 		{
 			// The two plain verdicts first, then the qualified ones. Those two keep the keys the
 			// Actions above use, because they are the same intent — allowing the sender is implied,
@@ -92,12 +91,13 @@ const shortcutGroups = computed(() => [
 				[['Delete'], __('Allow Sender, Trash Their Mail')],
 			],
 		},
-
+	],
+	[
 		{
 			title: __('Navigation'),
 			shortcuts: [
-				[['↓', __('or'), 'J'], __('Go to Next Mail')],
-				[['↑', __('or'), 'K'], __('Go to Previous Mail')],
+				[['↓', __('or'), 'J'], __('Go to Next Item')],
+				[['↑', __('or'), 'K'], __('Go to Previous Item')],
 				[['G', __('then'), 'G'], __('Go to Top of List')],
 				[['Shift', 'G'], __('Go to Bottom of List')],
 				[['Enter'], __('Open Mail, or Fold Stack')],
