@@ -74,16 +74,27 @@ describe('stackKeyOf', () => {
 		expect(stackKeyOf(thread({ messages: two }))).toBeNull()
 	})
 
-	it('counts addresses rather than people, so a relay thread still stacks', () => {
-		// Three posters, one envelope address: a notification, not correspondence.
-		const posted = thread({
-			messages: [post('Sarfaraz Shaikh'), post('M Umair Sayed'), post('Jay1987')],
-		})
-		expect(stackKeyOf(posted)).toBe(stackKeyOf(thread({ messages: [post('Neha Sankhe')] })))
+	it('separates relay posters, who share an address but are different people', () => {
+		// A mailing list rewrites the display name per original sender. Keying on the address alone
+		// piled a whole digest under whichever member was newest.
+		expect(stackKeyOf(thread({ messages: [post('Sarfaraz Shaikh')] }))).not.toBe(
+			stackKeyOf(thread({ messages: [post('Neha Sankhe')] })),
+		)
+		// Several posters in ONE thread is no single writer either, so it never stacks.
+		expect(
+			stackKeyOf(thread({ messages: [post('Sarfaraz Shaikh'), post('M Umair Sayed')] })),
+		).toBeNull()
 		// Your own reply is a second address, and takes the thread out of the pile as it always did.
 		expect(
 			stackKeyOf(thread({ messages: [post('Jay1987'), message('vibhav@frappe.io', 'Vibhav')] })),
 		).toBeNull()
+	})
+
+	it('treats a blank display name as absent, not as a second writer', () => {
+		// Bots fill from_name on some messages and not others.
+		expect(
+			stackKeyOf(thread({ messages: [message('alerts@uptimerobot.com'), message('alerts@uptimerobot.com', 'UptimeRobot')] })),
+		).toBe(stackKeyOf(thread()))
 	})
 
 	it('is case- and whitespace-insensitive about the sender', () => {
@@ -158,13 +169,24 @@ describe('buildListRows', () => {
 		])
 	})
 
-	it('collapses a run of relay threads however many posted in each', () => {
-		const notifications = run(3, {
-			messages: [post('Sarfaraz Shaikh'), post('M Umair Sayed')],
-		})
+	it('collapses a run of relay threads from one poster', () => {
+		const notifications = run(3, { messages: [post('Sarfaraz Shaikh')] })
 		const rows = buildListRows(notifications, rowOptions)
 		expect(rows).toHaveLength(1)
 		expect(rows[0].type === 'stack' && rows[0].threads).toHaveLength(3)
+	})
+
+	it('leaves a mailing list alone when its posters differ', () => {
+		// The Developers-list case: one address, a different writer each time. Three rows in, three
+		// rows out — burying distinct people under one of their names is worse than a longer list.
+		const digest = [
+			thread({ name: 'm0', thread_id: 't0', messages: [post('Scaleway')] }),
+			thread({ name: 'm1', thread_id: 't1', messages: [post('Twilio Notifications')] }),
+			thread({ name: 'm2', thread_id: 't2', messages: [post('Oracle Support')] }),
+		]
+		const rows = buildListRows(digest, rowOptions)
+		expect(rows).toHaveLength(3)
+		expect(rows.every((r) => r.type === 'thread')).toBe(true)
 	})
 
 	it('breaks a run where the user has replied to one of its threads', () => {
