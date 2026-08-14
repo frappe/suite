@@ -42,8 +42,8 @@
 				:tabindex="minimised ? 0 : undefined"
 				:aria-label="minimised ? __('Restore') : undefined"
 				@click="emit('toggleMinimised')"
-				@keydown.enter.prevent="minimised && emit('toggleMinimised')"
-				@keydown.space.prevent="minimised && emit('toggleMinimised')"
+				@keydown.enter="restore"
+				@keydown.space="restore"
 			>
 				<h2 class="text-ink-gray-8 min-w-0 flex-1 truncate text-base font-medium">
 					{{ title || __('Compose Mail') }}
@@ -105,4 +105,16 @@ const { title, minimised = false } = defineProps<{ title?: string; minimised?: b
 const emit = defineEmits<{ expand: []; toggleMinimised: [] }>()
 
 const show = defineModel<boolean>()
+
+// Folded, the bar carries the button role, and Enter and Space are what a button answers to.
+//
+// Only when the bar itself has focus, and prevented only then. It is the ancestor of Minimise,
+// Expand and Close, so every Enter pressed on one of those passes through here on its way up — and
+// a preventDefault written across the whole handler cancelled the very keypress the browser turns
+// into that button's click. The three controls could be reached by keyboard and then not used.
+const restore = (e: KeyboardEvent) => {
+	if (!minimised || e.target !== e.currentTarget) return
+	e.preventDefault()
+	emit('toggleMinimised')
+}
 </script>
