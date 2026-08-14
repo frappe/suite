@@ -498,7 +498,7 @@ import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vu
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
-import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -1227,8 +1227,7 @@ const popOutDraft = (mail: ComposeMailData) => {
 	// that was just sent is there in the refetch, and a local draft that was discarded is gone with
 	// the component that was holding it.
 	if (isMobile.value) {
-		setPendingCompose(mail)
-		router.push({ name: 'mail-compose', params: { accountId: scopeAccountId.value } })
+		openComposePage(router, scopeAccountId.value, mail)
 		return
 	}
 

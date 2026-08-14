@@ -94,7 +94,7 @@ import { Icon } from 'frappe-ui/icons'
 import { getIcon, getMailboxName } from '@/apps/mail/utils'
 import { useFolderSheet, useKeyboardOpen, useMobileSelection } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
-import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import MobileFolderSheet from '@/apps/mail/components/mobile/MobileFolderSheet.vue'
 
@@ -126,10 +126,7 @@ const showSearchModal = ref(false)
 
 // Compose is a route now, not an overlay, so the back gesture closes it and the composer owns a
 // whole screen to lay itself out in rather than floating over this one.
-const openCompose = () => {
-	setPendingCompose(undefined)
-	router.push({ name: 'mail-compose', params: { accountId: store.accountId } })
-}
+const openCompose = () => openComposePage(router, store.accountId)
 
 const MAIL_ROUTES = ['mail-mailbox', 'mail-all-inboxes']
 const isThreadOpen = computed(() => !!route.params.threadID)

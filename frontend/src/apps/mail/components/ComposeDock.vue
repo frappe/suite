@@ -7,9 +7,9 @@
 	     (#407), and a Dialog is `fixed inset-0` with a backdrop over exactly that. Nothing here
 	     traps focus, locks scrolling or answers to Esc — the page behind is simply live.
 
-	     Teleported to body for the reason SendMailMobileLayout is: the layout's `isolate` paints
-	     its subtree as one unit, so a composer opened from inside a thread would lose to the
-	     thread pane, which teleports out itself.
+	     Teleported to body for the reason the thread pane is: the layout's `isolate` paints its
+	     subtree as one unit, so a composer opened from inside a thread would lose to the pane,
+	     which teleports out itself.
 
 	     surface-elevation-1, not surface-base: that is what the Dialog paints itself and its body
 	     with, and the two states are the same window. They match in light mode either way; in dark

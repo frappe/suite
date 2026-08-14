@@ -29,8 +29,15 @@
 					@email-participants="emailParticipants"
 				/>
 				<!-- Compose prefilled with the event's participants; keyed so each
-				     open starts a fresh draft rather than resuming the last one. -->
-				<SendMail v-model="showCompose" :key="composeKey" :mail-details="composeDetails" />
+				     open starts a fresh draft rather than resuming the last one.
+				     Desktop only — mobile composes on its own page, which openCompose
+				     navigates to instead. -->
+				<SendMail
+					v-if="!isMobile"
+					v-model="showCompose"
+					:key="composeKey"
+					:mail-details="composeDetails"
+				/>
 			</div>
 		</div>
 		<MobileTabBar v-if="isMobile" />
@@ -44,6 +51,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { userStore } from '@/apps/mail/stores/user'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
 import MobileTabBar from '@/apps/mail/components/mobile/MobileTabBar.vue'
@@ -80,6 +88,12 @@ const composeKey = ref(0)
 const composeDetails = ref<ComposeMailData>()
 
 const openCompose = (details: ComposeMailData) => {
+	// Mobile has no composer window to open — compose is a page there, and the draft
+	// travels to it through the handoff.
+	if (isMobile.value) {
+		openComposePage(router, store.accountId, details)
+		return
+	}
 	composeDetails.value = details
 	// Remount, so a second request replaces the draft on screen instead of being
 	// swallowed by the composer already holding one.

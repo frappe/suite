@@ -17,7 +17,12 @@
 		/>
 	</div>
 
-	<SendMail :key="composeKey" v-model="showSendModal" @reload-mails="emit('reloadMails')" />
+	<SendMail
+		v-if="!isMobile"
+		:key="composeKey"
+		v-model="showSendModal"
+		@reload-mails="emit('reloadMails')"
+	/>
 	<SearchModal
 		v-model="showSearchModal"
 		v-model:show-advanced="showSearchAdvanced"
@@ -26,12 +31,18 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { userStore } from '@/apps/mail/stores/user'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
+
+const router = useRouter()
+const store = userStore()
 
 const { isMobile } = useScreenSize()
 
@@ -55,7 +66,14 @@ const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 // The key bump is what makes it new: `show` is already true when this composer is the one being
 // replaced, so setting it again would be answered with nothing happening. Remounting starts a
 // draft from scratch.
+//
+// The header is hidden on mobile but stays mounted, so the shortcut below still reaches here at
+// that width — and there it means the compose page, the only composer mobile has.
 const compose = () => {
+	if (isMobile.value) {
+		openComposePage(router, store.accountId)
+		return
+	}
 	composeKey.value++
 	showSendModal.value = true
 }

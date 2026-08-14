@@ -1,18 +1,8 @@
 <template>
-	<SendMailMobileLayout
-		v-if="isMobile"
-		v-model="show"
-		@reload-mails="() => emit('reloadMails')"
-		@send-mail="editor?.sendMail()"
-		@discard-mail="editor?.discardMail()"
-		@schedule-send="editor?.openScheduleModal()"
-	>
-		<template #body-content>
-			<div ref="host" class="flex min-h-0 flex-1 flex-col" />
-		</template>
-	</SendMailMobileLayout>
+	<!-- Desktop's composer window. Mobile composes on a page of its own — see ComposeView — so
+	     nothing here has a mobile form; the openers navigate there instead of mounting this.
 
-	<!-- Modal is the default, and is the Dialog it always was; docked and minimised are the other
+	     Modal is the default, and is the Dialog it always was; docked and minimised are the other
 	     two states (#407).
 
 	     All three controls live in the header's `title` slot, with the Dialog's own close button
@@ -24,7 +14,7 @@
 	     `props.x ?? options.x` but this one only reads the prop, so in `:options` it is dropped
 	     and the built-in close comes back. -->
 	<Dialog
-		v-else-if="state === 'modal'"
+		v-if="state === 'modal'"
 		v-model="show"
 		:show-close-button="false"
 		:dismissible="false"
@@ -108,11 +98,9 @@ import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vu
 import { ChevronDown, Minimize2, X } from 'lucide-vue-next'
 import { Button, Dialog } from 'frappe-ui'
 
-import { useScreenSize } from '@/apps/mail/utils/composables'
 import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import ComposeDock from '@/apps/mail/components/ComposeDock.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
-import SendMailMobileLayout from '@/apps/mail/components/SendMailMobileLayout.vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
 
@@ -122,12 +110,9 @@ const { mailDetails } = defineProps<{ mailDetails?: ComposeMailData }>()
 
 const emit = defineEmits(['reloadMails', 'discardMail', 'discardStarted'])
 
-const { isMobile } = useScreenSize()
-
-// Desktop only: mobile composes on a full page, so there is no window to contend for.
-if (!isMobile.value) claimComposeWindow(show, () => editor.value?.mail?.id)
-
 const editor = useTemplateRef('composeMailEditor')
+
+claimComposeWindow(show, () => editor.value?.mail?.id)
 
 // The draft as it stands in here, for a host that has to take it back. A thread that popped a reply
 // out handed over a set of details and got a composer with a draft of its own built from them —
