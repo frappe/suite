@@ -161,7 +161,9 @@ test.describe("E2EE", () => {
 		]);
 
 		await guest.page.goto(appUrl("/meet/"));
-		await guest.page.waitForTimeout(2000);
+		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(1, {
+			timeout: 30_000,
+		});
 
 		const hostErrors = capturePageErrors(hostPage);
 		const guestErrors = capturePageErrors(guest.page, [
