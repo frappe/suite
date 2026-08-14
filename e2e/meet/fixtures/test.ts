@@ -164,7 +164,6 @@ async function buildParticipant(browser: Browser): Promise<Participant> {
 		},
 		async joinAsHost(meetingId: string) {
 			await loginViaApi(context.request, meetHost);
-			await gotoAppPage(page, "/meet/");
 			await gotoAppPage(page, `/meet/${meetingId}`);
 			await joinFromPreview(page);
 		},
@@ -181,7 +180,6 @@ export const test = base.extend<TestFixtures>({
 		await prepareContext(context);
 		await loginViaApi(context.request, meetHost);
 		const page = await context.newPage();
-		await gotoAppPage(page, "/meet/");
 		await use(page);
 		await context.close();
 	},
@@ -202,6 +200,7 @@ export const test = base.extend<TestFixtures>({
 	createMeetingViaUi: async ({ hostPage }, use) => {
 		await use(async (meetingType = "open") => {
 			await clearMeetingCreateRateLimit(hostPage.request);
+			await gotoAppPage(hostPage, "/meet/");
 			return createMeetingViaUi(hostPage, meetingType);
 		});
 	},
