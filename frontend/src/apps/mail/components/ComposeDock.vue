@@ -22,11 +22,16 @@
 	     The width used to be the toolbar's rather than a choice — it wrapped, so anything narrower
 	     than its two groups dropped Discard and Send onto a second line. The toolbar holds one line
 	     now and scrolls its buttons instead (see ComposeMailToolbar), so this is a choice again:
-	     wide enough for a subject and a line of recipients, and no wider than a mail is read. -->
+	     wide enough for a subject and a line of recipients, and no wider than a mail is read.
+
+	     Folded away there is nothing in it but a title and a Close, so it gives most of that back —
+	     enough for a subject to be read, and no more. A bar the width of the composer it is standing
+	     in for reads as a window that failed to close rather than one set aside. -->
 	<Teleport to="body">
 		<div
 			v-if="show"
-			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] w-[40rem] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-lg border border-b-0 shadow-2xl"
+			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-lg border border-b-0 shadow-2xl"
+			:class="minimised ? 'w-[28rem]' : 'w-[40rem]'"
 		>
 			<!-- The whole bar toggles: a bar carrying one small target invites the miss that
 			     closes the draft instead. The buttons stop propagation so they keep their own job.
