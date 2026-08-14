@@ -30,15 +30,21 @@
 				class="flex flex-col gap-2.5 border-b pb-2.5 max-sm:px-3 max-sm:pt-2.5"
 				:class="[
 					isDragging ? 'border-transparent' : '',
-					// Bleed the rule to the window's edges while the fields stay on the content
-					// axis: the containers pad this block (Dialog's body wrapper, ComposeDock's
-					// px-6), so without cancelling that the separator stops short of both sides
-					// and reads as underlining the fields rather than dividing the window. Not in
-					// a thread, where the editor is inline and the padding is the thread's own.
-					isInThread ? '' : 'sm:-mx-6 sm:px-6',
+					// Bleed the rule to its container's edges while the fields stay on the content
+					// axis: every host pads this block, so without cancelling that the separator
+					// stops short of both sides and reads as underlining the fields rather than
+					// dividing the composer. The amount is whichever host it is — the message card
+					// in a thread pads by 5, the Dialog's body wrapper and ComposeDock by 6.
+					isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
 				]"
 			>
-				<div v-if="!mailDetails?.type || isMobile" class="flex justify-between gap-2">
+				<!-- A reply inside a thread leaves From and Subject out: the conversation around it
+				     says both. Detached into a window there is no conversation around it, so a
+				     popped-out reply shows them like any other composer. -->
+				<div
+					v-if="!isInThread || !mailDetails?.type || isMobile"
+					class="flex justify-between gap-2"
+				>
 					<div class="flex items-center gap-2">
 						<span class="text-ink-gray-4 text-sm">{{ __('From') }}</span>
 						<Combobox
@@ -125,7 +131,7 @@
 					</div>
 				</div>
 				<label
-					v-if="!mailDetails?.type || isMobile"
+					v-if="!isInThread || !mailDetails?.type || isMobile"
 					class="flex cursor-text items-center gap-2"
 				>
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
@@ -219,7 +225,7 @@
 				:class="[
 					isDragging ? 'border-transparent' : '',
 					// Same bleed as the field block above, so both rules span the same width.
-					isInThread ? '' : 'sm:-mx-6 sm:px-6',
+					isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
 				]"
 				@select-files="(files: File[]) => uploadFiles(files)"
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
@@ -291,7 +297,7 @@ const {
 	docked?: boolean
 }>()
 
-const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
+const emit = defineEmits(['discardMail', 'discardStarted', 'reply', 'replyAll', 'forward', 'popOut'])
 
 const { isMobile } = useScreenSize()
 
@@ -330,6 +336,7 @@ const {
 	close: () => (show.value = false),
 	isOpen: () => !!show.value,
 	onDiscardUnsaved: () => emit('discardMail'),
+	onDiscardStarted: () => emit('discardStarted'),
 	host: () => textEditor.value,
 	// The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
 	// rather than at <body>, where it would be unreachable.
