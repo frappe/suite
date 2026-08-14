@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from suite.drive.api.storage import get_storage_usage
 from suite.meet.api.recording import (
@@ -660,6 +660,38 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     frappe.db.commit()
         self.assertFalse(frappe.db.exists("Meet Recording", names[1]))
         self.assertEqual(frappe.db.get_value("Meet Recording", names[2], "status"), "Pending")
+
+    def test_reconciliation_without_recorder_skips_client_phases_but_fails_stale(self):
+        frappe.conf.recording_fixture_mode = False
+        client = Mock()
+        client.reserve.return_value = RecorderOutcome("indeterminate")
+        with patch("suite.meet.api.recording._client", return_value=client):
+            name = start(self.room.name, str(uuid.uuid4()))["name"]
+        frappe.db.set_value("Meet Recording", name, "pending_deadline", "2000-01-01")
+
+        url = frappe.conf.pop("recorder_server_url")
+        try:
+            with patch("suite.meet.api.recording._client") as client_factory:
+                # Pending past its deadline is left alone instead of erroring per recording.
+                reconcile_pending_recordings()
+                self.assertEqual(frappe.db.get_value("Meet Recording", name, "status"), "Pending")
+
+                frappe.db.set_value("Meet Recording", name, "status", "Stopping")
+                reconcile_pending_recordings()
+                self.assertEqual(frappe.db.get_value("Meet Recording", name, "status"), "Stopping")
+
+                frappe.db.set_value(
+                    "Meet Recording", name, "max_ends_at", add_to_date(now_datetime(), days=-1)
+                )
+                reconcile_pending_recordings()
+                client_factory.assert_not_called()
+            failed = frappe.db.get_value(
+                "Meet Recording", name, ["status", "failure_code"], as_dict=True
+            )
+            self.assertEqual(failed.status, "Failed")
+            self.assertEqual(failed.failure_code, "recorder_unavailable")
+        finally:
+            frappe.conf.recorder_server_url = url
 
     def test_reconciliation_compensates_policy_change_without_blind_delete(self):
         frappe.conf.recording_fixture_mode = False
