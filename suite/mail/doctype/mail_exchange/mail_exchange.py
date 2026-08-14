@@ -44,6 +44,7 @@ from suite.mail.jmap import (
     chunked_get,
     chunked_set,
     download_blobs,
+    format_set_error,
     get_cached_mailboxes,
     get_jmap_client,
     omit_none,
@@ -812,6 +813,8 @@ class MailExchange(OwnerFromUser, Document):
             if len(meta) > self.max_import:
                 frappe.throw(_("Import limit exceeded."))
 
+            self._validate_destination_mailboxes(client, meta)
+
             # Stage everything into one throwaway mailbox first, then move it to the destination
             # mailbox(es). A failure before the move leaves nothing scattered across the account: the
             # staging mailbox and every email in it are deleted on rollback.
@@ -1034,14 +1037,51 @@ class MailExchange(OwnerFromUser, Document):
         result = chunked_set(client, lambda b, chunk: b.mail.email.set(update=chunk), updates)
 
         if result.not_updated:
-            logger.warning("import-email-not-moved", count=len(result.not_updated))
+            # 13k bare "failed to move" rows are undebuggable — log the server's reasons,
+            # aggregated by message, and surface the first one to the user.
+            reasons: dict[str, int] = {}
+            for error in result.not_updated.values():
+                key = error.get("description") or error.get("type") or "unknown"
+                reasons[key] = reasons.get(key, 0) + 1
+            logger.warning("import-email-not-moved", count=len(result.not_updated), reasons=reasons)
             frappe.throw(
-                _("Failed to move {0} email(s) into the destination folder(s).").format(
-                    len(result.not_updated)
+                _("Failed to move {0} email(s) into the destination folder(s): {1}").format(
+                    len(result.not_updated),
+                    format_set_error(next(iter(result.not_updated.values()))),
                 )
             )
 
         logger.info("import-emails-moved", emails=len(result.updated))
+
+    def _validate_destination_mailboxes(self, client: SuiteJMAPClient, meta: list[ImportEmailMeta]) -> None:
+        """Fails fast when the metadata names destination mailboxes that don't exist.
+
+        JMAP mailbox ids are account-local: an archive exported from another account (or from
+        this account before its folders were recreated) names ids the server rejects one by one
+        at the move step — after everything has already been staged — and any id that happens to
+        collide with a real mailbox would silently land mail in the wrong folder. Checked against
+        a fresh mailbox read so a stale cache can't produce false failures.
+        """
+
+        wanted: set[str] = set()
+        for row in meta:
+            if not row.mailbox_ids:
+                frappe.throw(_("Import metadata contains an email with no destination mailbox."))
+            wanted.update(row.mailbox_ids)
+
+        with client.batch() as b:
+            h = b.mail.mailbox.get(properties=["id"])
+        existing = {m.to_wire()["id"] for m in h.result.items}
+
+        if unknown := sorted(wanted - existing):
+            shown = ", ".join(unknown[:5]) + ("…" if len(unknown) > 5 else "")
+            frappe.throw(
+                _(
+                    "The import references {0} destination mailbox id(s) that do not exist in "
+                    "this account (e.g. {1}). Mailbox ids are account-specific — a JMAP archive "
+                    "can only be restored into the account it was exported from."
+                ).format(len(unknown), shown)
+            )
 
     def _discard_staging_mailbox(
         self, client: SuiteJMAPClient, staging_mailbox_id: str, logger: ExchangeLogger
