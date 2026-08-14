@@ -685,9 +685,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 )
                 reconcile_pending_recordings()
                 client_factory.assert_not_called()
-            failed = frappe.db.get_value(
-                "Meet Recording", name, ["status", "failure_code"], as_dict=True
-            )
+            failed = frappe.db.get_value("Meet Recording", name, ["status", "failure_code"], as_dict=True)
             self.assertEqual(failed.status, "Failed")
             self.assertEqual(failed.failure_code, "recorder_unavailable")
         finally:
