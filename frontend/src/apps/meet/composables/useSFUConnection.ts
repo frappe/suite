@@ -167,6 +167,7 @@ export function useSFUConnection(deps: {
 	onActiveSpeakerChanged: (participantIds: string[]) => void;
 	onRecordingState?: (recording: RecordingState | null) => void;
 	onRecordingEnabled?: (enabled: boolean) => void;
+	onCohostPromoted?: () => Promise<void>;
 }): SFUConnectionAPI {
 	const {
 		connectionState,
@@ -184,6 +185,7 @@ export function useSFUConnection(deps: {
 		onActiveSpeakerChanged,
 		onRecordingState,
 		onRecordingEnabled,
+		onCohostPromoted,
 	} = deps;
 
 	const router = useRouter();
@@ -871,6 +873,20 @@ export function useSFUConnection(deps: {
 		}
 	};
 
+	const handleCohostPromoted = async (value: unknown) => {
+		const data = normalizeMeetingRealtimeEvent(value);
+		const currentUserId = currentUser.currentUser.value?.user_id;
+		if (data?.meeting !== meetingId || data.user !== currentUserId) return;
+
+		try {
+			await Promise.all([sfuClient.refreshToken(), onCohostPromoted?.()]);
+			toast.success("You are now a co-host");
+		} catch (error) {
+			console.error("Failed to activate co-host permissions:", error);
+			toast.error("Could not activate co-host permissions");
+		}
+	};
+
 	const setupFrappeRealtimeEventListeners = () => {
 		if (realtimeListenersSetup.value) {
 			return;
@@ -886,6 +902,7 @@ export function useSFUConnection(deps: {
 		socket.on("meeting_join_rejected", handleMeetingJoinRejected);
 		socket.on("meeting_user_approved", handleMeetingUserApproved);
 		socket.on("meeting_user_rejected", handleMeetingUserRejected);
+		socket.on("meeting:cohost_promoted", handleCohostPromoted);
 		socket.on("meeting:e2ee_enabled", e2eeHandshake.handleMeetingE2EEEnabled);
 
 		// SFU signal channel handlers and document listeners live in the
@@ -903,6 +920,7 @@ export function useSFUConnection(deps: {
 		socket.off("meeting_join_rejected", handleMeetingJoinRejected);
 		socket.off("meeting_user_approved", handleMeetingUserApproved);
 		socket.off("meeting_user_rejected", handleMeetingUserRejected);
+		socket.off("meeting:cohost_promoted", handleCohostPromoted);
 		socket.off("meeting:e2ee_enabled", e2eeHandshake.handleMeetingE2EEEnabled);
 
 		e2eeHandshake.teardownRealtimeEventListeners();

@@ -150,8 +150,8 @@ const hostOptions = computed(() => {
 			onClick: () => emit("lowerHand", props.participant.user_id),
 		},
 		{
-            icon: "lucide-user-plus",
-            label: "Promote to Co-host",
+			icon: "lucide-user-shield",
+			label: "Promote to Co-host",
 			condition: () => props.canPromoteToCohost,
 			onClick: () => emit("promoteToCohost", props.participant.user_id),
 		},

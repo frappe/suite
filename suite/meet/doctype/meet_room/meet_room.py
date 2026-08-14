@@ -411,8 +411,8 @@ class MeetRoom(Document):
         if user != self.owner:
             frappe.throw(_("Only the meeting host can promote users to co-host"))
 
-        if target_user.startswith("guest_"):
-            frappe.throw(_("Guests cannot be promoted to co-host"))
+        if target_user.startswith("guest_") or not frappe.db.exists("User", target_user):
+            frappe.throw(_("Only authenticated users can be promoted to co-host"))
 
         if self.is_host_or_cohost(target_user):
             frappe.throw(_("User is already a host or co-host"))
@@ -427,6 +427,12 @@ class MeetRoom(Document):
         self.add_user_to_table("co_hosts", target_user)
         self.allow_controlled_update("co_hosts")
         self.save()
+        frappe.publish_realtime(
+            "meeting:cohost_promoted",
+            message={"meeting": self.name, "user": target_user},
+            user=target_user,
+            after_commit=True,
+        )
 
         return {
             "meeting_id": self.name,

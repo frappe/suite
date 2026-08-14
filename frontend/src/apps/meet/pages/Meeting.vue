@@ -583,6 +583,7 @@ const sfuConnection = useSFUConnection({
 	},
 	onRecordingState: recording.syncState,
 	onRecordingEnabled: recording.setGlobalEnabled,
+	onCohostPromoted: () => meetingDoc.reload(),
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,

@@ -369,6 +369,52 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertIn(self.member_email, self.meeting.get_waiting_room())
         self.assertNotIn(self.member_email, self.meeting.get_members())
 
+    def test_host_can_promote_authenticated_member_to_cohost(self):
+        self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+        frappe.set_user(self.host_email)
+
+        with patch("suite.meet.doctype.meet_room.meet_room.frappe.publish_realtime") as publish:
+            result = promote_to_cohost(self.meeting.name, self.member_email)
+
+        self.meeting.reload()
+        self.assertEqual(result["user_id"], self.member_email)
+        self.assertIn(self.member_email, self.meeting.get_co_hosts())
+        publish.assert_any_call(
+            "meeting:cohost_promoted",
+            message={"meeting": self.meeting.name, "user": self.member_email},
+            user=self.member_email,
+            after_commit=True,
+        )
+
+        frappe.set_user(self.member_email)
+        frappe.get_doc("Meet Room", self.meeting.name).check_permission("read")
+        refreshed = refresh_sfu_token(self.meeting.name)
+        decoded = jwt.decode(refreshed["auth_token"], frappe.conf.sfu_secret, algorithms=["HS256"])
+        self.assertTrue(decoded["is_cohost"])
+
+    def test_cohost_cannot_promote_member_to_cohost(self):
+        self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+        self.meeting.add_user_to_table("members", self.outsider_email, save=True, ignore_permissions=True)
+        self.meeting.add_user_to_table("co_hosts", self.outsider_email, save=True, ignore_permissions=True)
+        frappe.set_user(self.outsider_email)
+
+        with self.assertRaisesRegex(frappe.ValidationError, "Only the meeting host"):
+            promote_to_cohost(self.meeting.name, self.member_email)
+
+        self.meeting.reload()
+        self.assertNotIn(self.member_email, self.meeting.get_co_hosts())
+
+    def test_host_cannot_promote_unauthenticated_member_to_cohost(self):
+        unauthenticated_users = ("guest_123", "missing-user@example.com")
+        for user in unauthenticated_users:
+            self.meeting.add_user_to_table("members", user, save=True, ignore_permissions=True)
+
+        frappe.set_user(self.host_email)
+        for user in unauthenticated_users:
+            with self.subTest(user=user):
+                with self.assertRaisesRegex(frappe.ValidationError, "Only authenticated users"):
+                    promote_to_cohost(self.meeting.name, user)
+
     def test_approval_atomically_moves_waiting_user_to_members(self):
         self._join_waiting(self.member_email)
         frappe.set_user(self.host_email)

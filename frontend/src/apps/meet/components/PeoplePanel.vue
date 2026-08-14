@@ -60,6 +60,7 @@
 							:isCurrentUser="participant.isCurrentUser"
 							:isHost="participant.isHost"
 							:canControlParticipant="participant.canControlParticipant"
+							:canPromoteToCohost="participant.canPromoteToCohost"
 							:reserveHostControlSpace="isHostOrCohost"
 							@muteParticipant="handleMuteParticipant"
 							@kickParticipant="handleKickParticipant"
