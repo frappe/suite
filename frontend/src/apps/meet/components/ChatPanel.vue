@@ -95,7 +95,7 @@
 												:href="token.url"
 												target="_blank"
 												rel="noopener noreferrer"
-												class="text-ink-blue-5 underline"
+												class="break-all text-ink-blue-5 underline"
 											>{{ token.text }}</a>
 											<span v-else>{{ token.text }}</span>
 										</template>
