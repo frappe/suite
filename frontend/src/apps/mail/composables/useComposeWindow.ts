@@ -13,14 +13,12 @@ import { onScopeDispose, ref, watch, type Ref } from 'vue'
  * when it is, this is the file that stops being a guard and starts being a list.
  */
 const holder = ref<symbol | null>(null)
-let unfold: (() => void) | null = null
 let dismiss: (() => void) | null = null
 let heldDraft: (() => string | undefined) | null = null // the draft's server id
 
 const release = (id: symbol) => {
 	if (holder.value !== id) return
 	holder.value = null
-	unfold = null
 	dismiss = null
 	heldDraft = null
 }
@@ -31,7 +29,6 @@ const release = (id: symbol) => {
  */
 export const claimComposeWindow = (
 	show: Ref<boolean | undefined>,
-	onRestore?: () => void,
 	draftId?: () => string | undefined,
 ) => {
 	const id = Symbol('compose-window')
@@ -41,16 +38,14 @@ export const claimComposeWindow = (
 		(open) => {
 			if (open) {
 				holder.value = id
-				unfold = onRestore ?? null
 				dismiss = () => (show.value = false)
 				heldDraft = draftId ?? null
 			} else release(id)
 		},
-		// Immediate, because a composer routinely mounts already open: DefaultLayout bumps its key
-		// and sets `show` in the same tick so a second request replaces the draft on screen, and a
-		// draft popped out of a thread flips a v-if the same way. On change alone, neither would
-		// ever claim the window — leaving two composers in one corner, and a Compose that finds no
-		// holder to bring back.
+		// Immediate, because a composer routinely mounts already open: Compose bumps its key and sets
+		// `show` in the same tick so a second request replaces the draft on screen, and a draft
+		// popped out of a thread flips a v-if the same way. On change alone, neither would ever
+		// claim the window — leaving two composers in one corner, each unaware of the other.
 		{ immediate: true },
 	)
 
@@ -62,19 +57,6 @@ export const claimComposeWindow = (
 	// longer exists: Compose would report it handled the request and hand it to a dead closure.
 	// Scope disposal rather than onUnmounted so this is exercisable without mounting anything.
 	onScopeDispose(() => release(id))
-}
-
-/**
- * What Compose should do when a composer is already open: bring that one back rather than start a
- * second. Minimised, it is folded into the corner and a new one would close it — taking the draft
- * with it — which is the opposite of what pressing Compose meant.
- *
- * Returns true when it handled the request, so the caller opens nothing.
- */
-export const restoreComposeWindow = () => {
-	if (!holder.value) return false
-	unfold?.()
-	return true
 }
 
 /**

@@ -124,14 +124,8 @@ const emit = defineEmits(['reloadMails', 'discardMail', 'discardStarted'])
 
 const { isMobile } = useScreenSize()
 
-// Desktop only: mobile composes on a full page, so there is no window to contend for. The
-// callback is how Compose reaches a composer that is already open — see restoreComposeWindow.
-if (!isMobile.value)
-	claimComposeWindow(
-		show,
-		() => state.value === 'minimised' && minimise(),
-		() => editor.value?.mail?.id,
-	)
+// Desktop only: mobile composes on a full page, so there is no window to contend for.
+if (!isMobile.value) claimComposeWindow(show, () => editor.value?.mail?.id)
 
 const editor = useTemplateRef('composeMailEditor')
 
@@ -206,27 +200,11 @@ const onEscape = (e: KeyboardEvent) => {
 	show.value = false
 }
 
-// `c` is Compose, and a composer is already open — so it is swallowed here rather than reaching
-// the list and opening a second one. Minimised, that left the key doing nothing at all while the
-// draft it would have opened sat folded in the corner, so there it restores instead.
-const handleKeydown = (e: KeyboardEvent) => {
-	if (!show.value || e.key !== 'c' || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
-
-	const el = e.target as HTMLElement
-	if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) return
-
-	e.preventDefault()
-	e.stopPropagation()
-	if (state.value === 'minimised') minimise()
-}
-
 onMounted(() => {
-	window.addEventListener('keydown', handleKeydown, true)
 	window.addEventListener('keydown', onEscape)
 	window.addEventListener('pointerdown', onPointerDown, true)
 })
 onUnmounted(() => {
-	window.removeEventListener('keydown', handleKeydown, true)
 	window.removeEventListener('keydown', onEscape)
 	window.removeEventListener('pointerdown', onPointerDown, true)
 })

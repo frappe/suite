@@ -17,7 +17,7 @@
 		/>
 	</div>
 
-	<SendMail v-model="showSendModal" @reload-mails="emit('reloadMails')" />
+	<SendMail :key="composeKey" v-model="showSendModal" @reload-mails="emit('reloadMails')" />
 	<SearchModal
 		v-model="showSearchModal"
 		v-model:show-advanced="showSearchAdvanced"
@@ -30,7 +30,6 @@ import { Button } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { restoreComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 
@@ -44,14 +43,20 @@ const showSearchAdvanced = defineModel<boolean>('showAdvanced', { default: false
 // Filter key a results-page chip asked to reopen inline; forwarded to the search modal.
 const showSearchEditFilter = defineModel<string>('editFilter', { default: '' })
 const showSendModal = ref(false)
+const composeKey = ref(0)
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
-// Compose means "put a composer in front of me". If one is already open it is that one, brought
-// back from the corner if it was minimised — starting a second would close it and take the draft
-// with it. Only with nothing open does this begin a new draft.
+// Compose means "a new mail", always — never the draft already in the corner. A composer that is
+// open loses the window to this one and closes, which costs it nothing: it saves what it holds on
+// the way out, and the draft is waiting in Drafts. Reaching back for it instead made the button
+// answer a request nobody had made, and left no way at all to start a second mail.
+//
+// The key bump is what makes it new: `show` is already true when this composer is the one being
+// replaced, so setting it again would be answered with nothing happening. Remounting starts a
+// draft from scratch.
 const compose = () => {
-	if (restoreComposeWindow()) return
+	composeKey.value++
 	showSendModal.value = true
 }
 
@@ -69,8 +74,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 		return
 	}
 
-	// Compose shortcut. A composer that is already open swallows `c` before this (SendMail listens
-	// in the capture phase), so this only ever starts a new one.
+	// Compose shortcut. It reaches here with a composer already open, too — `c` starts a new mail
+	// wherever it is pressed, and typing into a composer is caught by the field test above.
 	if (key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
 		e.preventDefault()
 		compose()
