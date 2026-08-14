@@ -12,7 +12,7 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
-from suite.mail.jmap.connection import JMAPConnection
+from suite.mail.jmap import SuiteJMAPClient
 from suite.mail.stalwart.connection import MANAGEMENT_SESSION_CACHE_KEY
 from suite.mail.utils import get_config, is_stalwart_configured
 
@@ -34,7 +34,7 @@ def unique_name(prefix: str = "user") -> str:
 def clear_mail_caches() -> None:
     """Drops every cache through which a test could see a stale Stalwart config or session."""
 
-    frappe.local.request_cache.clear()  # get_config, get_management_connection, get_jmap_connection
+    frappe.local.request_cache.clear()  # get_config, get_management_connection, get_jmap_client
     frappe.cache.delete_value(MANAGEMENT_SESSION_CACHE_KEY)
     frappe.cache.delete_value("jmap:sessions")
 
@@ -127,12 +127,12 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
                 frappe.local.request_cache.clear()
 
     @classmethod
-    def get_user_jmap_connection(cls, user: str) -> JMAPConnection:
-        """Returns a per-user JMAP connection (username + app password from User Settings)."""
+    def get_user_jmap_client(cls, user: str) -> SuiteJMAPClient:
+        """Returns a per-user JMAP client (username + app password from User Settings)."""
 
-        from suite.mail.jmap import get_jmap_connection
+        from suite.mail.jmap import get_jmap_client
 
-        return get_jmap_connection(user, ignore_permissions=True)
+        return get_jmap_client(user, ignore_permissions=True)
 
     @staticmethod
     def get_app_password(user: str) -> str:

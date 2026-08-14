@@ -8,9 +8,16 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_mailbox_service
+from suite.mail.jmap import (
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+    invalidate_jmap_mailboxes_cache,
+)
 from suite.utils import parse_filters
 
 DEFAULT_MAILBOX_GAP = 1000
@@ -154,34 +161,39 @@ def add_mailbox(
 
     creation_id = str(uuid7())
     mailbox = {
-        "creation_id": creation_id,
         "name": name,
-        "role": role,
-        "parent_id": parent,
-        "sort_order": sort_order,
-        "is_subscribed": subscribed,
+        "role": role or None,
+        "parentId": parent or None,
+        "sortOrder": int(sort_order or 0),
+        "isSubscribed": bool(subscribed or False),
     }
 
-    service = get_mailbox_service(account)
-    response = service.create([mailbox])
-
+    client = get_account_client(account)
     title = _("Mailbox Creation Error")
-    if response.get("created"):
-        service.invalidate_cache(service.account, key="mailboxes")
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.mail.mailbox.set(create={creation_id: mailbox})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id := response.created_id(creation_id):
+        invalidate_jmap_mailboxes_cache(account)
+        return id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def get_mailbox(account: str, id: str, raise_exception: bool = False) -> dict | None:
     """Returns mailbox details for the given account and id."""
 
-    service = get_mailbox_service(account)
-    if mailboxes := service.get([id]):
-        return format_mailbox(account, mailboxes[0])
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.mail.mailbox.get(ids=[id])
+
+    if mailboxes := h.result.items:
+        return format_mailbox(account, mailboxes[0].to_wire())
 
     if raise_exception:
         frappe.throw(
@@ -207,52 +219,58 @@ def update_mailbox(
         frappe.throw(_("Mailbox cannot be a parent of itself."), title=title)
 
     mailbox = {
-        "id": id,
         "name": name,
-        "role": role,
-        "parent_id": parent,
-        "sort_order": sort_order,
-        "is_subscribed": subscribed,
+        "role": role or None,
+        "parentId": parent or None,
+        "sortOrder": int(sort_order or 0),
+        "isSubscribed": bool(subscribed or False),
     }
 
-    service = get_mailbox_service(account)
-    response = service.update([mailbox])
+    client = get_account_client(account)
+    try:
+        with client.batch() as b:
+            h = b.mail.mailbox.set(update={id: mailbox})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
-    service.invalidate_cache(service.account, key="mailboxes")
+    invalidate_jmap_mailboxes_cache(account)
 
 
 @frappe.whitelist()
 def delete_mailboxes(account: str, ids: list[str], remove_emails: bool = True) -> None:
     """Deletes a mailbox for the given account by its ID."""
 
-    service = get_mailbox_service(account)
-    response = service.delete(ids, remove_emails=remove_emails)
+    client = get_account_client(account)
+    result = chunked_set(
+        client, lambda b, chunk: b.mail.mailbox.set(destroy=chunk, onDestroyRemoveEmails=remove_emails), ids
+    )
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Mailbox Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
             title=_("Mailbox Deletion Error"),
         )
 
     # Drop the stale list so later lookups (e.g. sieve regeneration) don't see the deleted mailbox.
-    service.invalidate_cache(service.account, key="mailboxes")
+    invalidate_jmap_mailboxes_cache(account)
 
 
 @frappe.whitelist()
 def fetch_mailboxes(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of mailboxes for the given account."""
 
-    service = get_mailbox_service(account)
-    mailboxes = service.get()
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.mail.mailbox.get()
+
+    mailboxes = [m.to_wire() for m in h.result.items]
     formatted_mailboxes = [format_mailbox(account, mailbox) for mailbox in mailboxes]
     sorted_mailboxes = sorted(
         formatted_mailboxes, key=lambda m: (m["sort_order"], get_sort_order(m["role"]), m["_name"], m["id"])
@@ -344,36 +362,25 @@ def update_mailbox_position(
 
         return updates
 
-    service = get_mailbox_service(account)
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.mail.mailbox.get()
+
     mailboxes = sorted(
-        service.get(), key=lambda m: (m["sortOrder"], get_sort_order(m["role"]), m["name"], m["id"])
+        (m.to_wire() for m in h.result.items),
+        key=lambda m: (m["sortOrder"], get_sort_order(m["role"]), m["name"], m["id"]),
     )
     updates = get_updates(mailboxes, target_mailbox_id, prior_mailbox_id)
 
-    result = {"updated": [], "notUpdated": {}}
-    for batch in service.batch_dict(updates, service.max_objects_in_set):
-        response = service._call(
-            capabilities=service.capabilities,
-            method_calls=[
-                [
-                    f"{service.type}/set",
-                    {
-                        "accountId": service.account,
-                        "update": {k: {"sortOrder": v} for k, v in batch.items()},
-                    },
-                    "0",
-                ]
-            ],
-        )
-
-        if method_responses := response.get("methodResponses"):
-            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
-            if not_updated := method_responses[0][1].get("notUpdated", {}):
-                result["notUpdated"].update(not_updated)
+    result = chunked_set(
+        client,
+        lambda b, chunk: b.mail.mailbox.set(update={k: {"sortOrder": v} for k, v in chunk.items()}),
+        updates,
+    )
 
     title = _("Mailbox Position Update Error")
-    if not result.get("updated"):
-        frappe.throw(_(result["description"]), title=title)
+    if not result.updated:
+        frappe.throw(_(format_set_error(next(iter(result.not_updated.values()), None))), title=title)
 
 
 def format_mailbox(account: str, mailbox: dict) -> dict:

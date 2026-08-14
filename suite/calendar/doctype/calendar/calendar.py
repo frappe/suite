@@ -9,9 +9,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_service
+from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
 from suite.utils import parse_filters
 from suite.utils.rate_limiter import dynamic_rate_limit
 
@@ -179,38 +180,36 @@ def add_calendar(
     """Adds a calendar for the given account with the specified parameters."""
 
     creation_id = str(uuid7())
-    calendar = {
-        "creation_id": creation_id,
-        "name": name,
-        "color": color,
-        "description": description,
-        "sort_order": sort_order,
-        "include_in_availability": include_in_availability.lower(),
-        "time_zone": time_zone,
-        "is_subscribed": subscribed,
-        "is_visible": visible,
-        "is_default": default,
-    }
+    payload = _calendar_payload(
+        name, color, description, sort_order, include_in_availability, time_zone, subscribed, visible
+    )
+    kwargs = {"onSuccessSetIsDefault": f"#{creation_id}"} if default else {}
 
-    service = get_calendar_service(account)
-    response = service.create([calendar])
-
+    client = get_account_client(account)
     title = _("Calendar Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.set(create={creation_id: payload}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if created := response.created.get(creation_id):
+        return created.id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def get_calendar(account: str, id: str) -> dict:
     """Returns calendar details for the given account and id."""
 
-    service = get_calendar_service(account)
-    if calendars := service.get([id]):
-        return format_calendar(account, calendars[0])
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.calendars.calendar.get(ids=[id])
+
+    if calendars := h.result.items:
+        return format_calendar(account, calendars[0].to_wire())
 
     frappe.throw(
         _("Calendar with ID {0} not found for account {1}").format(frappe.bold(id), frappe.bold(account)),
@@ -235,28 +234,22 @@ def update_calendar(
 ) -> None:
     """Updates an existing calendar with the given parameters."""
 
-    calendar = {
-        "id": id,
-        "name": name,
-        "color": color,
-        "description": description,
-        "sort_order": sort_order,
-        "include_in_availability": include_in_availability.lower(),
-        "time_zone": time_zone,
-        "is_subscribed": subscribed,
-        "is_visible": visible,
-        "is_default": default,
-    }
+    payload = _calendar_payload(
+        name, color, description, sort_order, include_in_availability, time_zone, subscribed, visible
+    )
+    kwargs = {"onSuccessSetIsDefault": id} if default else {}
 
-    service = get_calendar_service(account)
-    response = service.update([calendar])
-
+    client = get_account_client(account)
     title = _("Calendar Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.set(update={id: payload}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
@@ -264,13 +257,17 @@ def update_calendar(
 def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -> None:
     """Deletes calendars for the specified account and ID(s)."""
 
-    service = get_calendar_service(account)
-    response = service.delete(ids, remove_events=remove_events)
+    client = get_account_client(account)
+    result = chunked_set(
+        client,
+        lambda b, chunk: b.calendars.calendar.set(destroy=chunk, onDestroyRemoveEvents=remove_events),
+        ids,
+    )
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Calendar Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
             title=_("Calendar Deletion Error"),
@@ -281,8 +278,11 @@ def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -
 def fetch_calendars(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of calendars for the given account."""
 
-    service = get_calendar_service(account)
-    calendars = service.get()
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.calendars.calendar.get()
+
+    calendars = [c.to_wire() for c in h.result.items]
     formatted_calendars = [format_calendar(account, calendar) for calendar in calendars]
     frappe.cache.set_value(_get_total_cache_key(account), len(calendars), expires_in_sec=600)
 
@@ -290,6 +290,30 @@ def fetch_calendars(account: str, page: int = 1, limit: int = 10) -> list:
     end = start + limit
 
     return formatted_calendars[start:end]
+
+
+def _calendar_payload(
+    name: str,
+    color: str | None,
+    description: str | None,
+    sort_order: int,
+    include_in_availability: str,
+    time_zone: str | None,
+    subscribed: bool,
+    visible: bool,
+) -> dict:
+    """Calendar/set object for a create or update."""
+
+    return {
+        "name": name,
+        "color": color,
+        "description": description,
+        "sortOrder": int(sort_order or 0),
+        "timeZone": time_zone,
+        "isSubscribed": bool(subscribed or False),
+        "isVisible": bool(visible),
+        "includeInAvailability": include_in_availability.lower(),
+    }
 
 
 def format_calendar(account: str, calendar: dict) -> dict:

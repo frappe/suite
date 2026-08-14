@@ -110,10 +110,10 @@ def clear_sessions_on_disable(doc: Document, method: str | None = None) -> None:
 
     from frappe.sessions import clear_sessions
 
-    from suite.mail.jmap import get_jmap_session_manager
+    from suite.mail.jmap import clear_jmap_session
 
     clear_sessions(user=doc.name, force=True)
-    get_jmap_session_manager(doc.name).clear_session()
+    clear_jmap_session(doc.name)
 
 
 def apply_disabled_account_role(doc: Document, method: str | None = None) -> None:
@@ -187,6 +187,6 @@ def delete_account(doc: Document, method: str | None = None) -> None:
     # The cached JMAP session carries the account's ids. Left behind, a user recreated on the same
     # address would inherit the deleted account's ids and every call would be scoped to an account
     # the server no longer considers theirs.
-    from suite.mail.jmap import get_jmap_session_manager
+    from suite.mail.jmap import clear_jmap_session
 
-    get_jmap_session_manager(user).clear_session()
+    clear_jmap_session(user)

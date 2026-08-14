@@ -8,9 +8,24 @@ from frappe.model.document import Document
 from frappe.utils import cint
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_calendar_event_notification_service
+from suite.mail.jmap import SuiteJMAPClient, chunked_set, format_set_error, get_account_client
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils import parse_filters
+
+# ``CalendarEventNotification/get`` must always name the properties it wants: Stalwart returns a
+# reduced default property set when a ``get`` omits ``properties``, which silently drops
+# ``event``/``eventPatch`` from every notification.
+EVENT_NOTIFICATION_PROPERTIES = [
+    "id",
+    "created",
+    "changedBy",
+    "comment",
+    "type",
+    "calendarEventId",
+    "isDraft",
+    "event",
+    "eventPatch",
+]
 
 
 class EventNotification(Document):
@@ -132,8 +147,8 @@ def fetch_event_notifications(
     """Returns a list of event notifications and total count based on the provided filter."""
 
     notifications = []
-    service = get_calendar_event_notification_service(account)
-    data = service.query(filter, position, limit, sort)
+    client = get_account_client(account)
+    data = _query_notifications(client, filter, position, limit, sort)
 
     ids = data.get("ids", [])
     total = data.get("total", 0)
@@ -147,10 +162,10 @@ def fetch_event_notifications(
 def get_event_notifications(account: str, ids: list[str]) -> list[dict]:
     """Returns a list of event notifications for the specified account and IDs."""
 
-    service = get_calendar_event_notification_service(account)
+    client = get_account_client(account)
 
     notifications = {}
-    for notification in service.get(ids):
+    for notification in fetch_notifications(client, ids):
         notification = format_event_notification(account, notification)
         notifications[notification["id"]] = notification
 
@@ -161,17 +176,77 @@ def get_event_notifications(account: str, ids: list[str]) -> list[dict]:
 def delete_event_notifications(account: str, ids: list[str]) -> None:
     """Deletes event notifications for the specified account and ID(s)."""
 
-    service = get_calendar_event_notification_service(account)
-    response = service.delete(ids)
+    client = get_account_client(account)
+    result = chunked_set(
+        client, lambda b, chunk: b.calendars.calendar_event_notification.set(destroy=chunk), ids
+    )
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Event Notification Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
             title=_("Event Notification Deletion Error"),
         )
+
+
+def fetch_notifications(
+    client: SuiteJMAPClient, ids: list[str] | None = None, properties: list[str] | None = None
+) -> list[dict]:
+    """Fetches raw notification objects, always naming the properties (``[]`` means "no
+    preference", not "no properties" — an empty set would fetch nothing usable). jmaplib
+    chunks oversized id lists itself, carrying the properties on every chunk."""
+
+    properties = properties or EVENT_NOTIFICATION_PROPERTIES
+
+    with client.batch() as b:
+        if ids:
+            h = b.calendars.calendar_event_notification.get(ids=ids, properties=properties)
+        else:
+            h = b.calendars.calendar_event_notification.get(properties=properties)
+
+    return [n.to_wire() for n in h.result.items]
+
+
+def _query_notifications(
+    client: SuiteJMAPClient,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
+) -> dict:
+    """Queries notification ids with the old service's pagination loop; returns {"ids", "total"}."""
+
+    ids = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+    sort = sort or [{"property": "created", "isAscending": True}]
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            h = b.calendars.calendar_event_notification.query(
+                filter=filter,
+                position=position,
+                limit=current_batch_size,
+                sort=sort,
+                calculate_total=total is None,
+            )
+        response = h.result
+
+        ids.extend(response.ids)
+
+        if total is None:
+            total = response.total
+
+        if len(response.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(response.ids)
+
+    return {"ids": ids[:limit], "total": total}
 
 
 def format_event_notification(account: str, notification: dict) -> dict:

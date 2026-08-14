@@ -11,6 +11,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
+from jmap import MethodError
 
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
@@ -18,13 +19,18 @@ from suite.mail.doctype.screened_email_address.screened_email_address import (
 )
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
+    chunked_set,
+    download_blobs,
     format_jmap_error,
-    get_jmap_set_error_message,
+    format_method_error,
+    format_set_error,
+    get_account_client,
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
     get_mailbox_name_by_id,
     get_mailboxes,
-    get_sieve_script_service,
+    get_set_error_message,
+    invalidate_jmap_mailboxes_cache,
 )
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_account_emails
@@ -142,23 +148,25 @@ class SieveScript(Document):
         if name == AUTOMATION_SCRIPT_NAME and not frappe.flags.allow_automation_script_creation:
             frappe.throw(_("Not allowed to create automation script."))
 
+        title = _("Sieve Script Creation Error")
         creation_id = str(uuid7())
-        service = get_sieve_script_service(account)
-        sieve_script = {
-            "creation_id": creation_id,
-            "name": name,
-            "content": content,
-            "is_active": active,
-        }
-        response = service.create([sieve_script])
+        client = get_account_client(account)
+        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
 
-        if created := response.get("created"):
-            return created[creation_id]["id"]
+        extra = {"onSuccessActivateScript": f"#{creation_id}"} if active else {}
+        try:
+            with client.batch() as b:
+                h = b.sieve.sieve_script.set(
+                    create={creation_id: {"name": name, "blobId": blob.blob_id}}, **extra
+                )
+            response = h.result
+        except MethodError as e:
+            frappe.throw(format_method_error(e), title=title)
 
-        frappe.throw(
-            get_jmap_set_error_message(response, "notCreated", creation_id),
-            title=_("Sieve Script Creation Error"),
-        )
+        if script_id := response.created_id(creation_id):
+            return script_id
+
+        frappe.throw(get_set_error_message(response, "create", creation_id), title=title)
 
     @classmethod
     def _fetch_sieve_scripts(
@@ -170,14 +178,12 @@ class SieveScript(Document):
     ) -> tuple[list, int]:
         """Returns a list of sieve scripts for the given account."""
 
-        scripts = []
-        service = get_sieve_script_service(account)
-        data = service.query(filter, position, limit)
+        data = _query_sieve_scripts(account, filter, position, limit)
 
         ids = data.get("ids", [])
         total = data.get("total", 0)
 
-        scripts.extend(SieveScript._get_sieve_scripts(account, ids))
+        scripts = SieveScript._get_sieve_scripts(account, ids)
 
         return scripts[:limit], total
 
@@ -185,17 +191,22 @@ class SieveScript(Document):
     def _get_sieve_scripts(cls, account: str, ids: list[str], download_content: bool = False) -> list[dict]:
         """Returns a list of sieve scripts for the provided IDs in the same order as ids."""
 
-        sieve_scripts = {}
-        service = get_sieve_script_service(account)
-        scripts = service.get(ids)
+        if not ids:
+            return []
+
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.sieve.sieve_script.get(ids=ids)
+        scripts = [s.to_wire() for s in h.result.items]
 
         if download_content:
             blobs = [(s["blobId"], None) for s in scripts if s["blobId"]]
-            data = service.download_blobs_concurrently(blobs)
+            data = download_blobs(client, blobs) if blobs else {}
 
             for script in scripts:
                 script["content"] = data.get(script["blobId"], b"").decode("utf-8")
 
+        sieve_scripts = {}
         for script in scripts:
             script = format_sieve_script(account, script)
             sieve_scripts[script["id"]] = script
@@ -209,11 +220,21 @@ class SieveScript(Document):
         if not content or not content.strip():
             frappe.throw(_("Sieve script content cannot be empty."))
 
-        service = get_sieve_script_service(account)
-        response = service.validate(content)
+        title = _("Sieve Script Validation Error")
+        client = get_account_client(account)
+        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
 
-        if error := response.get("error"):
-            frappe.throw(format_jmap_error(error), title=_("Sieve Script Validation Error"))
+        try:
+            with client.batch() as b:
+                h = b.sieve.sieve_script.validate(blob_id=blob.blob_id)
+            response = h.result
+        except MethodError as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        # A syntactically invalid script is not a method error: the call succeeds and
+        # reports the problem in its `error` argument.
+        if response.error:
+            frappe.throw(format_jmap_error(response.error), title=title)
 
     @classmethod
     def _update_sieve_script(
@@ -229,42 +250,56 @@ class SieveScript(Document):
         if not content or not content.strip():
             frappe.throw(_("Sieve script content cannot be empty."))
 
-        service = get_sieve_script_service(account)
-        scripts = service.get([id])
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.sieve.sieve_script.get(ids=[id])
 
-        if not scripts:
+        if not h.result.items:
             frappe.throw(
                 _("Sieve Script with ID {0} not found.").format(frappe.bold(id)),
                 title=_("Sieve Script Not Found"),
             )
 
-        script = scripts[0]
+        script = h.result.items[0].to_wire()
         deactivate = script["isActive"] and not active
-        sieve_script = {"id": id, "name": name, "content": content, "is_active": bool(active)}
-        response = service.update([sieve_script], deactivate=deactivate)
 
-        if not response.get("updated"):
-            frappe.throw(
-                get_jmap_set_error_message(response, "notUpdated", id),
-                title=_("Sieve Script Update Error"),
-            )
+        title = _("Sieve Script Update Error")
+        blob = client.upload(content.encode("utf-8"), content_type="application/sieve")
+
+        extra = {}
+        if active:
+            extra["onSuccessActivateScript"] = id
+        if deactivate:
+            extra["onSuccessDeactivateScript"] = True
+
+        try:
+            with client.batch() as b:
+                h = b.sieve.sieve_script.set(update={id: {"name": name, "blobId": blob.blob_id}}, **extra)
+            response = h.result
+        except MethodError as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        if id not in response.updated:
+            frappe.throw(get_set_error_message(response, "update", id), title=title)
 
     @classmethod
     def _delete_sieve_scripts(cls, account: str, ids: list[str]) -> None:
         """Deletes sieve scripts for the given list of IDs and account."""
 
-        service = get_sieve_script_service(account)
-        response = service.delete(ids)
-
         title = _("Sieve Script Deletion Error")
-        if not_destroyed := response.get("notDestroyed"):
-            error_messages = [f"{id}: {format_jmap_error(error)}" for id, error in not_destroyed.items()]
+        client = get_account_client(account)
+
+        try:
+            result = chunked_set(client, lambda b, chunk: b.sieve.sieve_script.set(destroy=chunk), ids)
+        except MethodError as e:
+            frappe.throw(format_method_error(e), title=title)
+
+        if not_destroyed := result.not_destroyed:
+            error_messages = [f"{id}: {format_set_error(error)}" for id, error in not_destroyed.items()]
             frappe.throw(
                 _("Sieve Script Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
                 title=title,
             )
-        elif error := response.get("error"):
-            frappe.throw(format_jmap_error(error), title=title)
 
     def validate(self) -> None:
         if self.read_only:
@@ -293,6 +328,49 @@ def parse_sieve_script_name(name: str) -> tuple[str, str]:
 
     account, id = name.split("|")
     return account, id
+
+
+def _query_sieve_scripts(
+    account: str, filter: dict | None = None, position: int = 0, limit: int = 50
+) -> dict:
+    """Queries sieve script ids, paging in server-sized batches until `limit` is reached."""
+
+    _filter = {}
+    filter = filter or {}
+    for key in ["name", "isActive"]:
+        if key in filter and filter[key] is not None:
+            _filter[key] = filter[key]
+
+    client = get_account_client(account)
+
+    ids = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            h = b.sieve.sieve_script.query(
+                filter=_filter,
+                position=position,
+                limit=current_batch_size,
+                calculate_total=total is None,
+            )
+        query_response = h.result
+
+        batch_ids = query_response.ids
+        ids.extend(batch_ids)
+
+        if total is None:
+            total = query_response.total
+
+        if len(batch_ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(batch_ids)
+
+    return {"ids": ids[:limit], "total": total}
 
 
 @frappe.whitelist()
@@ -334,8 +412,7 @@ def bulk_delete(names: str | list[str]) -> None:
 def get_active_sieve_script_id(account: str) -> str | None:
     """Returns the ID of the currently active sieve script for the given account, if any."""
 
-    service = get_sieve_script_service(account)
-    query_result = service.query({"isActive": True})
+    query_result = _query_sieve_scripts(account, {"isActive": True})
 
     if query_result.get("ids") and len(query_result["ids"]) > 0:
         return query_result["ids"][0]
@@ -961,14 +1038,13 @@ def get_screening_mailbox_path(account: str) -> str:
     """
 
     from suite.mail.doctype.mailbox.mailbox import add_mailbox
-    from suite.mail.jmap.services.core import CoreService
 
     # The mailbox list lives in a per-process TTL cache, so a negative lookup can be stale — another
     # worker may already have created the Screener. Refresh from the server before deciding to create,
     # so we never try to recreate an existing mailbox (which JMAP rejects with "already exists").
-    CoreService.invalidate_cache(account, key="mailboxes")
+    invalidate_jmap_mailboxes_cache(account)
     if not get_mailbox_id_by_name(account, SCREENER_MAILBOX_NAME):
         add_mailbox(account, SCREENER_MAILBOX_NAME)
-        CoreService.invalidate_cache(account, key="mailboxes")
+        invalidate_jmap_mailboxes_cache(account)
 
     return get_mailbox_path(account, SCREENER_MAILBOX_NAME, raise_exception=True)

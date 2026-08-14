@@ -2,16 +2,22 @@ from uuid import uuid7
 
 import frappe
 from frappe import _
+from jmap import MethodError
 
+from suite.calendar import jmap_events
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar_event.calendar_event import (
     format_calendar_event,
     get_calendar_events,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import SERVER_MANAGED_KEYS
-from suite.mail.jmap import format_jmap_error, get_calendar_event_service, get_participant_identities
-from suite.mail.jmap.services.calendars.calendar import CalendarService
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
+from suite.mail.jmap import (
+    SuiteJMAPClient,
+    format_set_error,
+    get_account_client,
+    get_default_calendar_id,
+    get_participant_identities,
+)
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 
@@ -30,8 +36,8 @@ def get_invite_details(account: str, blob_id: str) -> dict | None:
     Caveat: the UID lookup runs on the server's search index, which is updated asynchronously, so
     an event added moments ago may still report ``exists: False``."""
 
-    service = get_calendar_event_service(account)
-    events = _parse_events(service, blob_id)
+    client = get_account_client(account)
+    events = _parse_events(client, blob_id)
     if not events:
         return None
 
@@ -46,7 +52,7 @@ def get_invite_details(account: str, blob_id: str) -> dict | None:
 
     exists = False
     event = None
-    if master_ids := service.get_master_ids([uid]):
+    if master_ids := jmap_events.get_master_ids(client, [uid]):
         if existing := get_calendar_events(account, master_ids[:1]):
             exists = True
             event = existing[0]
@@ -70,8 +76,8 @@ def add_invite_to_calendar(account: str, blob_id: str) -> dict:
     calendar and returns the calendar copy. No scheduling messages are sent — adding the invite is
     not an RSVP. Idempotent: an event whose UID is already on the calendar is not recreated."""
 
-    service = get_calendar_event_service(account)
-    event_id = _ensure_on_calendar(service, _parse_events(service, blob_id))
+    client = get_account_client(account)
+    event_id = _ensure_on_calendar(client, account, _parse_events(client, blob_id))
 
     if formatted := get_calendar_events(account, [event_id]):
         return formatted[0]
@@ -87,8 +93,8 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
     through the custom event_response template when custom event invites are enabled, or the JMAP
     server's own scheduling mail otherwise. Returns the updated calendar copy."""
 
-    service = get_calendar_event_service(account)
-    event_id = _ensure_on_calendar(service, _parse_events(service, blob_id))
+    client = get_account_client(account)
+    event_id = _ensure_on_calendar(client, account, _parse_events(client, blob_id))
     record_rsvp(account, event_id, response)
 
     if formatted := get_calendar_events(account, [event_id]):
@@ -97,7 +103,7 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
     frappe.throw(_("Could not record your response."))
 
 
-def _ensure_on_calendar(service: CalendarEventService, events: list[dict]) -> str:
+def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict]) -> str:
     """Creates the parsed events that aren't on the calendar yet (idempotent by UID, on the default
     calendar, no scheduling messages) and returns the master id of the invite's event."""
 
@@ -105,8 +111,12 @@ def _ensure_on_calendar(service: CalendarEventService, events: list[dict]) -> st
     if not uids:
         frappe.throw(_("The attachment does not contain a valid calendar event."))
 
-    existing_ids = service.get_master_ids(uids)
-    existing_uids = {e["uid"] for e in service.get(existing_ids) if e.get("uid")} if existing_ids else set()
+    existing_ids = jmap_events.get_master_ids(client, uids)
+    existing_uids = (
+        {e["uid"] for e in jmap_events.get_events(client, existing_ids) if e.get("uid")}
+        if existing_ids
+        else set()
+    )
 
     default_calendar_id = None
 
@@ -115,9 +125,7 @@ def _ensure_on_calendar(service: CalendarEventService, events: list[dict]) -> st
         if not event.get("uid") or event["uid"] in existing_uids:
             continue
         if default_calendar_id is None:
-            default_calendar_id = CalendarService(service.account, service.connection).get_default(
-                raise_exception=True
-            )
+            default_calendar_id = get_default_calendar_id(account, raise_exception=True)
         event = {k: v for k, v in event.items() if k not in SERVER_MANAGED_KEYS}
         event["@type"] = "Event"
         event["calendarIds"] = {default_calendar_id: True}
@@ -125,26 +133,31 @@ def _ensure_on_calendar(service: CalendarEventService, events: list[dict]) -> st
 
     created_ids = []
     if payload:
-        response = service._create(payload, sendSchedulingMessages=False)
-        method_responses = response.get("methodResponses") or []
-        result = method_responses[0][1] if method_responses else {}
-        created_ids = [info["id"] for info in (result.get("created") or {}).values()]
+        with client.batch() as b:
+            h = b.calendars.calendar_event.set(create=payload, sendSchedulingMessages=False)
+        result = h.result
+        created_ids = [str(created.id) for created in result.created.values()]
 
-        if not_created := result.get("notCreated"):
-            error = next(iter(not_created.values()), None)
-            frappe.throw(_("Could not add the event to the calendar: {0}").format(format_jmap_error(error)))
+        if result.not_created:
+            error = next(iter(result.not_created.values()), None)
+            frappe.throw(_("Could not add the event to the calendar: {0}").format(format_set_error(error)))
 
     return (created_ids or existing_ids)[0]
 
 
-def _parse_events(service: CalendarEventService, blob_id: str) -> list[dict]:
+def _parse_events(client: SuiteJMAPClient, blob_id: str) -> list[dict]:
     """Parses the blob into JSCalendar events. A mail attachment's blob id lives in the same JMAP
     account namespace as calendar blobs, so it can be parsed directly without re-uploading."""
 
     if not blob_id:
         frappe.throw(_("Blob ID is required."))
 
-    response = service.parse([blob_id])
+    try:
+        response = jmap_events.parse_event_blobs(client, [blob_id])
+    except MethodError:
+        # The old dict-parsing path yielded no events for a failed parse; keep the same
+        # user-facing outcome (the callers' "not a valid calendar event" flow).
+        return []
 
     events = []
     for parsed in (response.get("parsed") or {}).values():

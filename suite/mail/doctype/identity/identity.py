@@ -8,9 +8,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_identity_service
+from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
 from suite.utils import parse_filters
 
 
@@ -171,34 +172,39 @@ def add_identity(
 
     creation_id = str(uuid7())
     identity = {
-        "creation_id": creation_id,
         "email": email,
         "name": name,
-        "reply_to": reply_to,
+        "replyTo": reply_to,
         "bcc": bcc,
-        "text_signature": text_signature,
-        "html_signature": html_signature,
+        "textSignature": text_signature,
+        "htmlSignature": html_signature,
     }
 
-    service = get_identity_service(account)
-    response = service.create([identity])
-
+    client = get_account_client(account)
     title = _("Identity Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.submission.identity.set(create={creation_id: identity})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id := response.created_id(creation_id):
+        return id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def get_identity(account: str, id: str, raise_exception: bool = True) -> dict | None:
     """Returns identity details for the given account and id."""
 
-    service = get_identity_service(account)
-    if identities := service.get([id]):
-        return format_identity(account, identities[0])
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.submission.identity.get(ids=[id])
+
+    if identities := h.result.items:
+        return format_identity(account, identities[0].to_wire())
 
     if raise_exception:
         frappe.throw(
@@ -220,36 +226,37 @@ def update_identity(
     """Updates an existing identity with the given parameters."""
 
     identity = {
-        "id": id,
         "name": name,
-        "reply_to": reply_to,
+        "replyTo": reply_to,
         "bcc": bcc,
-        "text_signature": text_signature,
-        "html_signature": html_signature,
+        "textSignature": text_signature,
+        "htmlSignature": html_signature,
     }
 
-    service = get_identity_service(account)
-    response = service.update([identity])
+    client = get_account_client(account)
+    title = _("Identity Update Error")
+    try:
+        with client.batch() as b:
+            h = b.submission.identity.set(update={id: identity})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
 
-    if not response.get("updated"):
-        title = _("Identity Update Error")
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
 def delete_identities(account: str, ids: list[str]) -> None:
     """Deletes identities for the given account and list of identity IDs."""
 
-    service = get_identity_service(account, ignore_permissions=True)
-    response = service.delete(ids)
+    client = get_account_client(account, ignore_permissions=True)
+    result = chunked_set(client, lambda b, chunk: b.submission.identity.set(destroy=chunk), ids)
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Identity Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
             title=_("Identity Deletion Error"),
@@ -260,9 +267,11 @@ def delete_identities(account: str, ids: list[str]) -> None:
 def fetch_identities(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of identities for the given account."""
 
-    service = get_identity_service(account, ignore_permissions=True)
-    identities = service.get()
+    client = get_account_client(account, ignore_permissions=True)
+    with client.batch() as b:
+        h = b.submission.identity.get()
 
+    identities = [i.to_wire() for i in h.result.items]
     formatted_identities = [format_identity(account, identity) for identity in identities]
     frappe.cache.set_value(_get_total_cache_key(account), len(identities), expires_in_sec=600)
 

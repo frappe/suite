@@ -8,9 +8,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_address_book_service
+from suite.mail.jmap import chunked_set, format_method_error, format_set_error, get_account_client
 from suite.utils import parse_filters
 
 
@@ -160,33 +161,38 @@ def add_address_book(
 
     creation_id = str(uuid7())
     address_book = {
-        "creation_id": creation_id,
         "name": name,
         "description": description,
-        "sort_order": sort_order,
-        "is_default": default,
-        "is_subscribed": subscribed,
+        "sortOrder": int(sort_order or 0),
+        "isSubscribed": bool(subscribed or False),
     }
+    kwargs = {"onSuccessSetIsDefault": f"#{creation_id}"} if default else {}
 
-    service = get_address_book_service(account)
-    response = service.create([address_book])
-
+    client = get_account_client(account)
     title = _("Address Book Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.contacts.address_book.set(create={creation_id: address_book}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id := response.created_id(creation_id):
+        return id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def get_address_book(account: str, id: str, raise_exception: bool = True) -> dict | None:
     """Returns address book details for the given account and id."""
 
-    service = get_address_book_service(account)
-    if address_books := service.get([id]):
-        return format_address_book(account, address_books[0])
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.contacts.address_book.get(ids=[id])
+
+    if address_books := h.result.items:
+        return format_address_book(account, address_books[0].to_wire())
 
     if raise_exception:
         frappe.throw(
@@ -210,36 +216,39 @@ def update_address_book(
     """Updates an existing address book with the given parameters."""
 
     address_book = {
-        "id": id,
         "name": name,
         "description": description,
-        "sort_order": sort_order,
-        "is_default": default,
-        "is_subscribed": subscribed,
+        "sortOrder": int(sort_order or 0),
+        "isSubscribed": bool(subscribed or False),
     }
+    kwargs = {"onSuccessSetIsDefault": id} if default else {}
 
-    service = get_address_book_service(account)
-    response = service.update([address_book])
-
+    client = get_account_client(account)
     title = _("Address Book Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.contacts.address_book.set(update={id: address_book}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
 def delete_address_books(account: str, ids: list[str]) -> None:
     """Deletes address books for the given account and list of address book IDs."""
 
-    service = get_address_book_service(account)
-    response = service.delete(ids, remove_contents=True)
+    client = get_account_client(account)
+    result = chunked_set(
+        client, lambda b, chunk: b.contacts.address_book.set(destroy=chunk, onDestroyRemoveContents=True), ids
+    )
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Address Book Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
             title=_("Address Book Deletion Error"),
@@ -250,8 +259,11 @@ def delete_address_books(account: str, ids: list[str]) -> None:
 def fetch_address_books(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of address books for the given account."""
 
-    service = get_address_book_service(account)
-    address_books = service.get()
+    client = get_account_client(account)
+    with client.batch() as b:
+        h = b.contacts.address_book.get()
+
+    address_books = [a.to_wire() for a in h.result.items]
     formatted_address_books = [format_address_book(account, book) for book in address_books]
     sorted_address_books = sorted(formatted_address_books, key=lambda x: x["sort_order"])
     frappe.cache.set_value(_get_total_cache_key(account), len(address_books), expires_in_sec=600)

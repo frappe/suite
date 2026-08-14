@@ -48,11 +48,11 @@ def sync_configured_users() -> None:
 
     for user in users:
         try:
-            connection = frappe.get_doc("User Settings", {"user": user}).connection
-            if not connection:
+            client = frappe.get_doc("User Settings", {"user": user}).client
+            if not client:
                 continue
 
-            accounts = connection.accounts
+            accounts = client.session.raw.get("accounts") or {}
             sync_jmap_accounts(user, accounts)
             backfill_identity_fields(accounts)
             frappe.db.commit()

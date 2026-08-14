@@ -10,8 +10,15 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, today
+from jmap import MethodError
 
-from suite.mail.jmap import get_push_subscription_service
+from suite.mail.jmap import (
+    SetResult,
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_jmap_client,
+)
 from suite.mail.utils import generate_uuid_style_hash, log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
 from suite.mail.utils.user import get_jmap_configured_users, is_jmap_configured
@@ -114,6 +121,41 @@ def _get_total_cache_key(user: str) -> str:
     return f"{user}:push_subscriptions:total"
 
 
+def _fetch_subscriptions(
+    user: str, ids: list[str] | None = None, ignore_permissions: bool = False
+) -> list[dict]:
+    """Returns raw PushSubscription objects for the user, all of them when `ids` is None.
+
+    PushSubscription is user-scoped, not account-scoped — requests carry no accountId, so the
+    user client is used directly (never an account view).
+    """
+
+    client = get_jmap_client(user, ignore_permissions=ignore_permissions)
+    with client.batch() as b:
+        h = b.core.push_subscription.get(ids=ids) if ids is not None else b.core.push_subscription.get()
+
+    return [s.to_wire() for s in h.result.items]
+
+
+def _set_subscriptions(
+    user: str,
+    *,
+    create: dict | None = None,
+    update: dict | None = None,
+    destroy: list[str] | None = None,
+    ignore_permissions: bool = False,
+) -> SetResult:
+    """Runs a PushSubscription/set for the user, chunked by the server's set limit."""
+
+    client = get_jmap_client(user, ignore_permissions=ignore_permissions)
+
+    if create is not None:
+        return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(create=chunk), create)
+    if update is not None:
+        return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(update=chunk), update)
+    return chunked_set(client, lambda b, chunk: b.core.push_subscription.set(destroy=chunk), destroy or [])
+
+
 def is_push_subscription_disabled(user: str, raise_exception: bool = False) -> bool:
     """Returns True if push subscriptions are disabled for the given user in their User Settings."""
 
@@ -198,25 +240,27 @@ def _add_push_subscription(
 
     types = types or None
 
+    title = _("Push Subscription Creation Error")
     creation_id = str(uuid7())
-    push_subscription = {
-        "creation_id": creation_id,
-        "device_client_id": device_client_id,
+    creation = {
+        "deviceClientId": device_client_id,
         "url": url,
-        "types": types,
+        # None values go out as null: null keys means no encryption, null types means all types.
         "keys": get_push_subscription_keys(),
+        "types": types,
     }
 
-    service = get_push_subscription_service(user, ignore_permissions=ignore_permissions)
-    response = service.create([push_subscription])
+    try:
+        result = _set_subscriptions(
+            user, create={creation_id: creation}, ignore_permissions=ignore_permissions
+        )
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
 
-    title = _("Push Subscription Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    if created := result.created.get(creation_id):
+        return created.id
+
+    frappe.throw(_(format_set_error(result.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
@@ -225,8 +269,7 @@ def get_push_subscription(user: str, id: str, raise_exception: bool = True) -> d
 
     has_permission_for_user(user, raise_exception=raise_exception)
 
-    service = get_push_subscription_service(user)
-    if subscriptions := service.get([id]):
+    if subscriptions := _fetch_subscriptions(user, [id]):
         return format_push_subscription(user, subscriptions[0])
 
     if raise_exception:
@@ -246,17 +289,16 @@ def verify_push_subscription(user: str, id: str, verification_code: str) -> None
 
     is_jmap_configured(user, raise_exception=True)
 
-    push_subscription = {"id": id, "verification_code": verification_code}
-
-    service = get_push_subscription_service(user, ignore_permissions=True)
-    response = service.update([push_subscription])
-
     title = _("Push Subscription Renewal Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        result = _set_subscriptions(
+            user, update={id: {"verificationCode": verification_code}}, ignore_permissions=True
+        )
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
+
+    if id not in result.updated:
+        frappe.throw(_(format_set_error(result.not_updated.get(id))), title=title)
 
 
 @frappe.whitelist()
@@ -267,15 +309,16 @@ def renew_push_subscription(user: str, id: str) -> None:
 
     is_push_subscription_disabled(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    response = service.update([{"id": id}])
-
     title = _("Push Subscription Renewal Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        # A bare {"expires": null} renewal makes the server bump the subscription to its
+        # maximum lifetime.
+        result = _set_subscriptions(user, update={id: {"expires": None}})
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
+
+    if id not in result.updated:
+        frappe.throw(_(format_set_error(result.not_updated.get(id))), title=title)
 
 
 def renew_expiring_push_subscriptions() -> None:
@@ -297,10 +340,8 @@ def renew_expiring_push_subscriptions() -> None:
             continue
 
         try:
-            service = get_push_subscription_service(user, ignore_permissions=True)
-
             expiring_ids = []
-            for subscription in service.get():
+            for subscription in _fetch_subscriptions(user, ignore_permissions=True):
                 expires = subscription.get("expires")
                 if expires and parse_iso_datetime(expires, as_str=False) <= cutoff:
                     expiring_ids.append(subscription["id"])
@@ -308,9 +349,11 @@ def renew_expiring_push_subscriptions() -> None:
             if not expiring_ids:
                 continue
 
-            response = service.update([{"id": id} for id in expiring_ids])
-            if not_updated := response.get("notUpdated"):
-                errors = "<br>".join(f"{id}: {error['description']}" for id, error in not_updated.items())
+            result = _set_subscriptions(
+                user, update={id: {"expires": None} for id in expiring_ids}, ignore_permissions=True
+            )
+            if not_updated := result.not_updated:
+                errors = "<br>".join(f"{id}: {format_set_error(error)}" for id, error in not_updated.items())
                 log_mail_error(
                     _("Push Subscription Renewal Failed"),
                     _("Failed to renew push subscriptions for user {0}:<br>{1}").format(user, errors),
@@ -328,16 +371,19 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
 
     has_permission_for_user(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    response = service.delete(ids)
+    title = _("Push Subscription Deletion Error")
+    try:
+        result = _set_subscriptions(user, destroy=ids)
+    except MethodError as e:
+        frappe.throw(format_method_error(e), title=title)
 
-    if response.get("notDestroyed"):
+    if result.not_destroyed:
         error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
+        for id, error in result.not_destroyed.items():
+            error_messages.append(f"{id}: {format_set_error(error)}")
         frappe.throw(
             _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Push Subscription Deletion Error"),
+            title=title,
         )
 
 
@@ -347,8 +393,7 @@ def fetch_push_subscriptions(user: str, page: int = 1, limit: int = 10) -> list:
 
     has_permission_for_user(user, raise_exception=True)
 
-    service = get_push_subscription_service(user)
-    subscriptions = service.get()
+    subscriptions = _fetch_subscriptions(user)
     formatted_subscriptions = [format_push_subscription(user, sub) for sub in subscriptions]
     frappe.cache.set_value(_get_total_cache_key(user), len(subscriptions), expires_in_sec=600)
 

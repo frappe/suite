@@ -22,15 +22,19 @@ import json
 import frappe
 from frappe import _
 from frappe.utils import escape_html
+from jmap import MethodError
 
+from suite.calendar import jmap_events
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
-    format_jmap_error,
-    get_calendar_event_service,
-    get_jmap_connection,
+    SuiteJMAPClient,
+    account_view,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+    get_jmap_client,
     get_participant_identities,
 )
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
 from suite.utils import log_error
 from suite.utils.dt import get_utc_now
 
@@ -77,9 +81,9 @@ def resolve_rsvp(token: str) -> dict:
     status = response[0]
 
     try:
-        service = _guest_calendar_service(payload["a"])
-        result = service.set_participation_status(payload["e"], payload["u"], status)
-        if not result.get("notUpdated"):
+        client = _guest_calendar_client(payload["a"])
+        result = jmap_events.set_participation_status(client, payload["e"], payload["u"], status)
+        if not result.not_updated:
             _notify_organizer(payload, status)
             _sync_participant_calendars(payload, status)
         frappe.db.commit()
@@ -91,7 +95,7 @@ def resolve_rsvp(token: str) -> dict:
             _("We couldn't record your response. The event may no longer exist."),
         )
 
-    if result.get("notUpdated"):
+    if result.not_updated:
         return _result(
             False,
             _("Something Went Wrong"),
@@ -99,7 +103,7 @@ def resolve_rsvp(token: str) -> dict:
         )
 
     state, heading, sub = _confirmation_copy(payload["r"])
-    event = _fetch_event(service, payload["e"])
+    event = _fetch_event(client, payload["e"])
     return {
         "success": True,
         "state": state,
@@ -129,8 +133,8 @@ def record_rsvp(account: str, event_id: str, response: str) -> str:
     if response not in PARTICIPATION_RESPONSES:
         frappe.throw(_("Invalid RSVP response."))
 
-    service = get_calendar_event_service(account)
-    copies = service.get([event_id])
+    client = get_account_client(account)
+    copies = jmap_events.get_events(client, [event_id])
     if not copies:
         frappe.throw(_("Could not record your response. The event may no longer exist."))
 
@@ -149,12 +153,16 @@ def record_rsvp(account: str, event_id: str, response: str) -> str:
         frappe.throw(_("You are not a participant of this event."))
 
     use_custom_reply = custom_event_invites_enabled()
-    result = service.set_participation_status(
-        event_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
-    )
-    if result.get("notUpdated"):
-        error = next(iter(result["notUpdated"].values()), None)
-        frappe.throw(_("Could not record your response: {0}").format(format_jmap_error(error)))
+    try:
+        result = jmap_events.set_participation_status(
+            client, event_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
+        )
+    except MethodError as e:
+        frappe.throw(_("Could not record your response: {0}").format(format_method_error(e)))
+
+    if result.not_updated:
+        error = next(iter(result.not_updated.values()), None)
+        frappe.throw(_("Could not record your response: {0}").format(format_set_error(error)))
 
     if use_custom_reply:
         frappe.enqueue(
@@ -219,8 +227,8 @@ def sync_response_to_participant_calendars(
     have no reachable calendar and are skipped.
     """
 
-    organizer_service = _guest_calendar_service(account)
-    events = organizer_service.get([event_id])
+    organizer_client = _guest_calendar_client(account)
+    events = jmap_events.get_events(organizer_client, [event_id])
     if not events:
         return
 
@@ -240,20 +248,18 @@ def sync_response_to_participant_calendars(
                 continue
 
             # The account may still be linked to a user who has since been disabled or
-            # deleted; their calendar is unreachable (get_jmap_connection would refuse the
+            # deleted; their calendar is unreachable (get_jmap_client would refuse the
             # user), so skip them instead of logging a failure for this best-effort sync.
             user = get_user_for_jmap_account(participant_account, ignore_permissions=True)
             if not user or not frappe.get_cached_value("User", user, "enabled"):
                 continue
 
-            service = CalendarEventService(
-                participant_account, get_jmap_connection(user, ignore_permissions=True)
-            )
-            copy_ids = service.get_master_ids([uid])
+            client = account_view(get_jmap_client(user, ignore_permissions=True), participant_account)
+            copy_ids = jmap_events.get_master_ids(client, [uid])
             if not copy_ids:
                 continue
 
-            copies = service.get([copy_ids[0]])
+            copies = jmap_events.get_events(client, [copy_ids[0]])
             if not copies:
                 continue
 
@@ -263,7 +269,7 @@ def sync_response_to_participant_calendars(
             if not responder_uid:
                 continue
 
-            service.set_participation_status(copy_ids[0], responder_uid, status)
+            jmap_events.set_participation_status(client, copy_ids[0], responder_uid, status)
         except Exception:
             log_error(
                 "Calendar",
@@ -317,11 +323,11 @@ def _confirmation_copy(response_key: str) -> tuple[str, str, str]:
     }[response_key]
 
 
-def _fetch_event(service: CalendarEventService, event_id: str) -> dict | None:
+def _fetch_event(client: SuiteJMAPClient, event_id: str) -> dict | None:
     """Best-effort fetch of the event for the confirmation card; None if unavailable."""
 
     try:
-        events = service.get([event_id])
+        events = jmap_events.get_events(client, [event_id])
         return events[0] if events else None
     except Exception:
         return None
@@ -352,15 +358,14 @@ def _format_event_when(event: dict) -> str:
     return when
 
 
-def _guest_calendar_service(account: str) -> CalendarEventService:
-    """Builds a CalendarEventService for the organizer's account without a logged-in user."""
+def _guest_calendar_client(account: str) -> SuiteJMAPClient:
+    """Builds a JMAP client for the organizer's account without a logged-in user."""
 
     user = get_user_for_jmap_account(account, ignore_permissions=True)
     if not user:
         frappe.throw(_("Calendar account not found."))
 
-    connection = get_jmap_connection(user, ignore_permissions=True)
-    return CalendarEventService(account, connection)
+    return account_view(get_jmap_client(user, ignore_permissions=True), account)
 
 
 def _rsvp_url(

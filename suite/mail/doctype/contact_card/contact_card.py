@@ -8,10 +8,17 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint
+from jmap import MethodError
 
 from suite.mail.doctype.address_book.address_book import validate_address_book_name_format
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import get_contact_card_service
+from suite.mail.jmap import (
+    chunked_set,
+    format_method_error,
+    format_set_error,
+    get_account_client,
+    get_cached_address_books,
+)
 from suite.mail.store import Entity, get_data_store, get_email_address_index
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import normalize_utc_z
@@ -267,42 +274,51 @@ def add_contact_card(
     """Adds a contact card for the given account with the specified parameters."""
 
     creation_id = str(uuid7())
-    contact_card = {
-        "creation_id": creation_id,
-        "address_book_ids": address_book_ids,
-        "full_name": full_name,
-        "emails": emails,
-        "phones": phones,
-        "addresses": addresses,
-        "kind": kind or "individual",
-    }
+    contact_card = _card_create_payload(
+        creation_id, address_book_ids, full_name, emails, phones, addresses, kind
+    )
 
-    service = get_contact_card_service(account)
-    response = service.create([contact_card])
-
+    client = get_account_client(account)
     title = _("Contact Card Creation Error")
-    if response.get("created"):
-        return response["created"][creation_id]["id"]
-    elif response.get("notCreated"):
-        frappe.throw(_(response["notCreated"][creation_id]["description"]), title=title)
-    else:
-        frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.contacts.contact_card.set(create={creation_id: contact_card})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id := response.created_id(creation_id):
+        return id
+
+    frappe.throw(_(format_set_error(response.not_created.get(creation_id))), title=title)
 
 
 @frappe.whitelist()
 def bulk_add_contact_cards(account: str, contact_cards: list[dict], raise_exception: bool = True) -> None:
     """Adds multiple contact cards for the given account and returns their IDs."""
 
-    service = get_contact_card_service(account)
-
     for card in contact_cards:
         if not card.get("creation_id"):
             card["creation_id"] = str(uuid7())
 
-    response = service.create(contact_cards)
+    creates = {
+        card["creation_id"]: _card_create_payload(
+            card["creation_id"],
+            card["address_book_ids"],
+            card.get("full_name"),
+            card.get("emails"),
+            card.get("phones"),
+            card.get("addresses"),
+            card.get("kind"),
+        )
+        for card in contact_cards
+    }
+
+    client = get_account_client(account)
+    result = chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(create=chunk), creates)
 
     title = _("Contact Card Creation Error")
-    if response.get("notCreated"):
+    if result.not_created:
         if raise_exception:
             frappe.throw(_("One or more contact cards failed to create"), title=title)
 
@@ -318,8 +334,8 @@ def fetch_contact_cards(
     """Returns a list of contact cards and total count based on the provided filter."""
 
     contact_cards = []
-    service = get_contact_card_service(account)
-    data = service.query(filter, position, limit, sort)
+    client = get_account_client(account)
+    data = _query_contact_cards(client, filter, position, limit, sort)
 
     ids = data.get("ids", [])
     total = data.get("total", 0)
@@ -349,9 +365,12 @@ def get_contact_cards(account: str, ids: list[str]) -> list[dict]:
             ids_to_fetch.append(id)
 
     if ids_to_fetch:
-        service = get_contact_card_service(account)
-        cards = service.get(ids_to_fetch)
-        address_book_map = {ab["id"]: ab["name"] for ab in service.address_books}
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.contacts.contact_card.get(ids=ids_to_fetch, properties=CARD_PROPERTIES)
+
+        cards = [c.to_wire() for c in h.result.items]
+        address_book_map = {ab["id"]: ab["name"] for ab in get_cached_address_books(account)}
 
         contact_cards_to_cache = {}
         for card in cards:
@@ -378,25 +397,19 @@ def update_contact_card(
 ) -> None:
     """Updates an existing contact card with the given parameters."""
 
-    contact_card = {
-        "id": id,
-        "address_book_ids": address_book_ids,
-        "full_name": full_name,
-        "emails": emails,
-        "phones": phones,
-        "addresses": addresses,
-        "kind": kind or "individual",
-    }
+    contact_card = _card_update_payload(address_book_ids, full_name, emails, phones, addresses, kind)
 
-    service = get_contact_card_service(account)
-    response = service.update([contact_card])
-
+    client = get_account_client(account)
     title = _("Contact Card Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][id]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    try:
+        with client.batch() as b:
+            h = b.contacts.contact_card.set(update={id: contact_card})
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id not in response.updated:
+        frappe.throw(_(format_set_error(response.not_updated.get(id))), title=title)
 
     _remove_cached_contact_cards(account, [id])
 
@@ -418,17 +431,34 @@ def contact_card_update_address_books(
     - move_to_address_book_id: replaces addressBookIds entirely
     """
 
-    service = get_contact_card_service(account)
-    response = service.update_address_book_ids(
-        ids, add_address_book_id, remove_address_book_id, move_to_address_book_id
+    if move_to_address_book_id and (add_address_book_id or remove_address_book_id):
+        raise ValueError(
+            "Cannot specify 'move_to_address_book_id' together with 'add_address_book_id' or 'remove_address_book_id'."
+        )
+
+    if not any([add_address_book_id, remove_address_book_id, move_to_address_book_id]):
+        raise ValueError(
+            "At least one of 'add_address_book_id', 'remove_address_book_id', or 'move_to_address_book_id' must be specified."
+        )
+
+    if move_to_address_book_id:
+        payload = {"addressBookIds": {move_to_address_book_id: True}, "updated": utcnow()}
+    else:
+        payload = {"updated": utcnow()}
+        if add_address_book_id:
+            payload[f"addressBookIds/{add_address_book_id}"] = True
+        if remove_address_book_id:
+            payload[f"addressBookIds/{remove_address_book_id}"] = None
+
+    client = get_account_client(account)
+    result = chunked_set(
+        client, lambda b, chunk: b.contacts.contact_card.set(update={id: payload for id in chunk}), ids
     )
 
     title = _("Contact Card Update Error")
-    if not response.get("updated"):
-        if response.get("notUpdated"):
-            frappe.throw(_(response["notUpdated"][ids[0]]["description"]), title=title)
-        else:
-            frappe.throw(_(response["description"]), title=title)
+    if not result.updated:
+        error = result.not_updated.get(ids[0]) or next(iter(result.not_updated.values()), None)
+        frappe.throw(_(format_set_error(error)), title=title)
 
     _remove_cached_contact_cards(account, ids)
 
@@ -480,8 +510,8 @@ def contact_card_move_to_address_book(
 def delete_contact_cards(account: str, ids: list[str]) -> None:
     """Deletes contact cards for the given account by its IDs."""
 
-    service = get_contact_card_service(account)
-    service.delete(ids)
+    client = get_account_client(account)
+    chunked_set(client, lambda b, chunk: b.contacts.contact_card.set(destroy=chunk), ids)
     _remove_cached_contact_cards(account, ids)
 
 
@@ -539,6 +569,191 @@ def _contact_addresses(contact_cards: list[dict]) -> list[dict]:
             addresses.append({"name": name, "email": email.get("address")})
 
     return addresses
+
+
+# Every JSContact property, requested explicitly so a server trimming its default set
+# cannot silently drop fields the formatter reads.
+CARD_PROPERTIES = [
+    # --- JMAP-specific ---
+    "id",
+    "addressBookIds",
+    "blobId",
+    # --- JSContact core fields ---
+    "uid",
+    "kind",
+    "prodId",
+    "version",
+    "created",
+    "updated",
+    "fullName",
+    "name",
+    "nickNames",
+    "categories",
+    "notes",
+    "anniversaries",
+    "urls",
+    "relatedTo",
+    "organizations",
+    "titles",
+    "roles",
+    "emails",
+    "phones",
+    "addresses",
+    "onlineServices",
+    "preferredLanguages",
+    "speakToAs",
+    "gender",
+    "timeZones",
+    "photos",
+    "members",
+    "preferredContactChannels",
+    "localizations",
+    "extensions",
+]
+
+
+def _query_contact_cards(
+    client, filter: dict | None = None, position: int = 0, limit: int = 50, sort: list[dict] | None = None
+) -> dict:
+    """Queries contact card ids with pagination, fetching the total only on the first page."""
+
+    ids = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+        kwargs = {}
+        if filter is not None:
+            kwargs["filter"] = filter
+        if sort is not None:
+            kwargs["sort"] = sort
+
+        with client.batch() as b:
+            h = b.contacts.contact_card.query(
+                position=position, limit=current_batch_size, calculate_total=total is None, **kwargs
+            )
+
+        response = h.result
+        ids.extend(response.ids)
+
+        if total is None:
+            total = response.total
+
+        if len(response.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(response.ids)
+
+    return {"ids": ids[:limit], "total": total}
+
+
+def _card_create_payload(
+    creation_id: str,
+    address_book_ids: list[str],
+    full_name: str | None = None,
+    emails: list[dict] | None = None,
+    phones: list[dict] | None = None,
+    addresses: list[dict] | None = None,
+    kind: str | None = None,
+) -> dict:
+    """ContactCard/set create payload in JSContact form."""
+
+    timestamp = utcnow()
+    return {
+        "@type": "Card",
+        "version": "1.0",
+        "uid": creation_id,
+        "kind": kind or "individual",
+        "name": _name_map(full_name),
+        "emails": _emails_map(emails),
+        "phones": _phones_map(phones),
+        "addresses": _addresses_map(addresses),
+        "addressBookIds": {id: True for id in address_book_ids},
+        "created": timestamp,
+        "updated": timestamp,
+    }
+
+
+def _card_update_payload(
+    address_book_ids: list[str],
+    full_name: str | None = None,
+    emails: list[dict] | None = None,
+    phones: list[dict] | None = None,
+    addresses: list[dict] | None = None,
+    kind: str | None = None,
+) -> dict:
+    """ContactCard/set update payload in JSContact form."""
+
+    return {
+        "kind": kind or "individual",
+        "name": _name_map(full_name),
+        "emails": _emails_map(emails),
+        "phones": _phones_map(phones),
+        "addresses": _addresses_map(addresses),
+        "addressBookIds": {id: True for id in address_book_ids},
+        "updated": utcnow(),
+    }
+
+
+def _name_map(full_name: str | None = None) -> dict:
+    if full_name:
+        given, surname = full_name.split(" ", 1) if " " in full_name else (full_name, None)
+        return {
+            "@type": "Name",
+            "full": full_name,
+            "components": [{"kind": "given", "value": given}, {"kind": "surname", "value": surname}],
+            "isOrdered": True,
+        }
+
+    return {}
+
+
+def _emails_map(emails: list[dict] | None = None) -> dict[str, dict] | None:
+    if emails:
+        return {
+            str(uuid7()): {
+                "address": email["address"],
+                "label": email.get("label"),
+                "contexts": {email["type"]: True},
+            }
+            for email in emails
+        }
+
+
+def _phones_map(phones: list[dict] | None = None) -> dict[str, dict] | None:
+    if phones:
+        return {
+            str(uuid7()): {
+                "number": phone["number"],
+                "label": phone.get("label"),
+                "contexts": {phone["type"]: True},
+            }
+            for phone in phones
+        }
+
+
+def _addresses_map(addresses: list[dict] | None = None) -> dict[str, dict] | None:
+    if addresses:
+        addresses_map = {}
+        for counter, address in enumerate(addresses):
+            components = []
+            for field, key in {
+                "street": "name",
+                "locality": "locality",
+                "region": "region",
+                "postcode": "postcode",
+                "country": "country",
+            }.items():
+                components.append({"kind": key, "value": address.get(field)})
+
+            addresses_map[f"{counter}"] = {
+                "components": components,
+                "timeZone": address.get("time_zone"),
+                "contexts": {address["type"]: True},
+            }
+
+        return addresses_map
 
 
 def format_contact_card(account: str, address_book_map: dict, contact_card: dict) -> dict:

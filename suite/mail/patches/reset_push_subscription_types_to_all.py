@@ -1,7 +1,11 @@
 import frappe
 from frappe import _
 
-from suite.mail.jmap import get_push_subscription_service
+from suite.mail.doctype.push_subscription.push_subscription import (
+    _fetch_subscriptions,
+    _set_subscriptions,
+)
+from suite.mail.jmap import format_set_error
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.user import get_jmap_configured_users
 
@@ -22,19 +26,16 @@ def execute() -> None:
 
     for user in get_jmap_configured_users():
         try:
-            service = get_push_subscription_service(user, ignore_permissions=True)
-
-            updates = [{"id": subscription["id"], "types": None} for subscription in service.get()]
+            updates = {
+                subscription["id"]: {"types": None}
+                for subscription in _fetch_subscriptions(user, ignore_permissions=True)
+            }
             if not updates:
                 continue
 
-            response = service.update(updates)
-            if not_updated := response.get("notUpdated"):
-                errors = "<br>".join(
-                    # SetError's description is optional; fall back to its required type
-                    f"{id}: {error.get('description') or error.get('type')}"
-                    for id, error in not_updated.items()
-                )
+            result = _set_subscriptions(user, update=updates, ignore_permissions=True)
+            if not_updated := result.not_updated:
+                errors = "<br>".join(f"{id}: {format_set_error(error)}" for id, error in not_updated.items())
                 log_mail_error(
                     _("Push Subscription Update Failed"),
                     _("Failed to reset push subscription types for user {0}:<br>{1}").format(user, errors),
