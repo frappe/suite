@@ -47,6 +47,11 @@
 				>
 					<div class="flex items-center gap-2">
 						<span class="text-ink-gray-4 text-sm">{{ __('From') }}</span>
+						<!-- Button mode, like the phone composer's: the trigger takes the width of the
+						     identity it is showing. As an input it was a box of a fixed 16rem with the
+						     name and address inside it, and anything longer than that — which is most
+						     addresses once the display name is in front of them — was cut off mid-domain.
+						     The list is filtered from the popover's own search box instead. -->
 						<Combobox
 							v-model="mail.from_email"
 							:options="
@@ -55,8 +60,8 @@
 									value: i.email,
 								})) || []
 							"
-							:open-on-click="true"
-							class="min-w-64"
+							trigger="button"
+							class="min-w-0 max-w-full"
 						/>
 					</div>
 					<Button
