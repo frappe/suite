@@ -196,6 +196,21 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// nothing to come back to.
 	let discarded = false
 
+	// Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
+	let listOwesReload = false
+
+	/**
+	 * Bring the list up to date with the draft, once the editor is done with it.
+	 *
+	 * Called on the way out, after the last save has landed — earlier and the reload would fetch the
+	 * draft as it was a keystroke ago and put that back on screen.
+	 */
+	const payListDebt = () => {
+		if (!listOwesReload) return
+		listOwesReload = false
+		reloadMails()
+	}
+
 	const saveDraft = async () => {
 		if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
 
@@ -304,6 +319,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		if (isDiscarding.value) return
 
 		if (!isInThread || status === 'Submitted' || status === 'Scheduled') reloadMails()
+		// In a thread the list is where the messages come from — the pane is built from the rows the
+		// list is holding, not from a fetch of its own. So a draft saved in here goes to the server
+		// and the list goes on holding the version from before this sitting: leave the thread, open
+		// it again, and the edits are not there. Nothing was lost; the list simply never asked again.
+		//
+		// It cannot be a reload on each autosave, which is why this is a debt and not a call: that
+		// rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
+		// when the editor goes — see `payListDebt`.
+		else if (status === 'Drafted') listOwesReload = true
+
 		if (isOpen()) return
 
 		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
@@ -495,6 +520,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		isSavingDraft,
 		isDiscarding,
 		saveDraft,
+		payListDebt,
 		sendMail,
 		discardMail,
 		onClosed,

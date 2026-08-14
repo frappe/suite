@@ -864,7 +864,17 @@ const filterRelevantMails = (mail: Mail) => {
 let forceReload = false
 
 const reload = () => {
-	if (!threadID) return
+	// The thread can be gone by the time this is called: a draft's editor squares up with the list
+	// as it unmounts, and what unmounted it was usually the reader leaving. There is no pane left to
+	// refresh — the list is the whole of what is being asked for.
+	//
+	// Still flagged for a re-derive, because the reader can be back inside the thread before the rows
+	// arrive: the pane would then have been built from the very copy this reload is replacing, and a
+	// background sync leaves drafts alone by design.
+	if (!threadID) {
+		forceReload = true
+		return emit('reloadMails')
+	}
 	// A directly-fetched thread isn't in the list, so refresh it in place.
 	if (!messages?.length) return threadFallback.reload()
 	forceReload = true

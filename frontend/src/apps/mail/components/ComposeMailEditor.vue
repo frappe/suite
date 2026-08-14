@@ -317,6 +317,7 @@ const {
 	isRecipientsEmpty,
 	updateOriginalMail,
 	saveDraft,
+	payListDebt,
 	sendMail,
 	discardMail,
 	onClosed,
@@ -391,7 +392,16 @@ const popOut = () => {
 // Otherwise this is the last chance to keep what was typed since the autosave last ran. Closing a
 // composer now unmounts this editor outright — the dialog drops it, the phone leaves the compose
 // route — so the debounced save that would have caught up in a second's time never gets to.
-onUnmounted(() => !handedOff && saveDraft())
+//
+// And then the list is told, if a draft in a thread has been going to the server without it (see
+// payListDebt). After the save, so the reload finds the draft as it was left rather than as it was
+// a keystroke before that. Not on a hand-off: the window this draft has gone to is saving it now,
+// and it tells the list itself.
+onUnmounted(async () => {
+	if (handedOff) return
+	await saveDraft()
+	payListDebt()
+})
 
 // `mail` is exposed so the window around this one can read the draft — the minimised bar names
 // itself after the subject, which only exists in here.
