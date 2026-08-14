@@ -4,6 +4,10 @@
 	     off by the editor's own scroll container (it starts at x=0 — the body carries no
 	     horizontal padding on desktop). Both lists move together so a document mixing them
 	     keeps one indent. -->
+	<!-- 75vh is a modal's height — it has the screen to itself. Docked, the composer sits beside
+	     the mail it is being written about, so it takes a fixed 30rem and leaves the rest of the
+	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
+	     height is the thread's. -->
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
@@ -11,7 +15,10 @@
 		:content="editorContent"
 		:upload-function="uploadFunction"
 		class="flex flex-col"
-		:class="{ 'pointer-events-none opacity-50': !show, 'sm:h-[75vh]': !isInThread }"
+		:class="[
+			{ 'pointer-events-none opacity-50': !show },
+			isInThread ? '' : compact ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
+		]"
 		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
 		@dragover.prevent="handleDragOver"
@@ -21,7 +28,15 @@
 		<template #top>
 			<div
 				class="flex flex-col gap-2.5 border-b pb-2.5 max-sm:px-3 max-sm:pt-2.5"
-				:class="{ 'border-transparent': isDragging }"
+				:class="[
+					isDragging ? 'border-transparent' : '',
+					// Bleed the rule to the window's edges while the fields stay on the content
+					// axis: the containers pad this block (Dialog's body wrapper, ComposeDock's
+					// px-6), so without cancelling that the separator stops short of both sides
+					// and reads as underlining the fields rather than dividing the window. Not in
+					// a thread, where the editor is inline and the padding is the thread's own.
+					isInThread ? '' : 'sm:-mx-6 sm:px-6',
+				]"
 			>
 				<div v-if="!mailDetails?.type || isMobile" class="flex justify-between gap-2">
 					<div class="flex items-center gap-2">
@@ -200,8 +215,13 @@
 		<template #bottom>
 			<ComposeMailToolbar
 				:is-recipients-empty
+				:compact
 				class="border-t"
-				:class="{ 'border-transparent': isDragging }"
+				:class="[
+					isDragging ? 'border-transparent' : '',
+					// Same bleed as the field block above, so both rules span the same width.
+					isInThread ? '' : 'sm:-mx-6 sm:px-6',
+				]"
 				@select-files="(files: File[]) => uploadFiles(files)"
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
 				@discard-mail="discardMail"
@@ -263,10 +283,13 @@ const {
 	reloadMails,
 	mailDetails,
 	isInThread = false,
+	compact = false,
 } = defineProps<{
 	reloadMails: () => void
 	mailDetails?: ComposeMailData
 	isInThread?: boolean
+	// Passed to the toolbar: the docked window is narrower than the full button row.
+	compact?: boolean
 }>()
 
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
@@ -351,7 +374,9 @@ onMounted(() => {
 
 onUnmounted(() => saveDraft())
 
-defineExpose({ sendMail, discardMail, openScheduleModal })
+// `mail` is exposed so the window around this one can read the draft — the minimised bar names
+// itself after the subject, which only exists in here.
+defineExpose({ mail, sendMail, discardMail, openScheduleModal })
 
 // Local draft actions
 

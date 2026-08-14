@@ -9,7 +9,15 @@
 			:class="{ 'pb-2.5': isMobile }"
 		>
 			<!-- Text editor buttons -->
-			<div class="flex items-center gap-1 overflow-x-auto" :class="{ 'px-3': isMobile }">
+			<!-- frappe-ui's TextEditorMenu pads its own row by 4px and each button by another 4, so
+			     left alone the toolbar sits 8px in from the fields and body above it. -ml-1 cancels
+			     the row's half: the buttons' boxes then start on the content axis, so the pressed
+			     state lines up with the column instead of hanging off it. The glyphs stay 4px in,
+			     which is the price of squaring the boxes — -ml-2 buys the reverse. -->
+			<div
+				class="flex items-center gap-1 overflow-x-auto"
+				:class="isMobile ? 'px-3' : '-ml-1'"
+			>
 				<TextEditorFixedMenu :buttons class="!bg-inherit" />
 				<EmojiPicker
 					v-if="!isMobile"
@@ -38,12 +46,16 @@
 
 			<!-- Send & Discard -->
 			<div v-if="!isMobile" class="ml-auto flex items-center space-x-2">
+				<!-- Docked, the panel is narrow enough that this label is the difference between
+				     one row of toolbar and two, and it is the one control here whose icon says it
+				     on its own. The tooltip keeps the word. -->
 				<Button
-					:label="__('Discard')"
+					:label="compact ? undefined : __('Discard')"
 					:tooltip="__('Discard ({0}+D)', [modifier])"
-					:icon-left="Trash2"
 					@click="emit('discardMail')"
-				/>
+				>
+					<template #icon><Trash2 class="size-4" /></template>
+				</Button>
 				<!-- Split button: one pill, the 1px gap shows the toolbar background as the divider. -->
 				<div class="flex items-center gap-px">
 					<Button
@@ -81,8 +93,10 @@ import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 
-const { isRecipientsEmpty } = defineProps<{
+const { isRecipientsEmpty, compact = false } = defineProps<{
 	isRecipientsEmpty: boolean
+	// Docked composer: trade the Discard label for its icon so the bar stays on one row.
+	compact?: boolean
 }>()
 
 const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail', 'scheduleSend'])
