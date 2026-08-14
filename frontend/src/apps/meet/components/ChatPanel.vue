@@ -119,7 +119,7 @@
 						>
 							<div
 								v-if="emojiMenuActive"
-								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-modal p-1 shadow-lg"
+								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
 								role="listbox"
 								aria-label="Emoji suggestions"
 								data-testid="chat-emoji-suggestions"
