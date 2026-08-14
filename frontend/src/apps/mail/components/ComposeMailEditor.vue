@@ -64,10 +64,13 @@
 							class="min-w-0 max-w-full"
 						/>
 					</div>
+					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
+					     it stands, in memory, rather than fetched back from the server. Only a save
+					     actually in flight holds it up — see popOut. -->
 					<Button
 						v-if="isInThread"
 						variant="ghost"
-						:disabled="isLoading || isDraftUpdated"
+						:disabled="isLoading"
 						@click="popOut()"
 					>
 						<template #icon>
@@ -388,6 +391,11 @@ onMounted(() => {
 // it, so this editor leaves without a word. Saving anyway would race the window into writing the
 // same reply twice — one draft from each — which is the duplicate the debounced save is held back
 // from making, arriving by the other door.
+//
+// A save in flight is the one thing that has to finish first, and is why both entry points are
+// withheld while `isLoading`: the id the server is about to hand back lands on this composable, and
+// the window — which copies the draft as it is at the moment of the hand-off — would never hear of
+// it. Its first save would then create a second draft rather than update this one.
 let handedOff = false
 const popOut = () => {
 	handedOff = true
