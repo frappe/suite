@@ -193,10 +193,16 @@ const onPointerDown = (e: PointerEvent) => {
 // Esc closed the modal before `dismissible: false` took that over, so it is reinstated here.
 // Ignored while a popover is open: it belongs to whatever is layered above, which reka closes on
 // the same key.
+// A dialog layered over this one takes the key with it, for the same reason: Send later and the
+// contacts picker are Dialogs of their own, and reka closes them without marking the event handled,
+// so backing out of the date picker closed the composer underneath it too. Counting the open ones
+// is what tells them apart — this composer is always one of them, so anything above one belongs to
+// whatever is on top.
 const onEscape = (e: KeyboardEvent) => {
 	if (e.key !== 'Escape' || e.defaultPrevented) return
 	if (!show.value || state.value !== 'modal') return
 	if (document.querySelector('[data-reka-popper-content-wrapper]')) return
+	if (document.querySelectorAll('.dialog-content[data-state="open"]').length > 1) return
 	show.value = false
 }
 
