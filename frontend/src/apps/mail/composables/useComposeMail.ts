@@ -1,4 +1,4 @@
-import { computed, inject, reactive, ref, watch } from 'vue'
+import { computed, inject, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { createResource } from 'frappe-ui'
@@ -33,6 +33,13 @@ export interface ComposeMailOptions {
 	isOpen: () => boolean
 	/** Called instead of a server delete when discarding something never saved. */
 	onDiscardUnsaved?: () => void
+	/**
+	 * Fired the moment Discard is pressed, before the composer comes off screen — unlike
+	 * `onDiscardUnsaved`, which reports the outcome once the network is done. A host that shows the
+	 * draft somewhere else needs the earlier signal: `discardMail` closes first and deletes after,
+	 * so anything keyed on the composer being open takes the draft back for the moment in between.
+	 */
+	onDiscardStarted?: () => void
 	/** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
 	host: () => EditorHost | null | undefined
 	/**
@@ -52,6 +59,13 @@ export interface ComposeMailOptions {
  */
 export const useComposeMail = (options: ComposeMailOptions) => {
 	const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
+
+	// A composer that has gone away must not still be writing drafts. Saving is debounced by two
+	// seconds, and the timer outlives the component: pop a draft out inside that window and the
+	// editor left behind in the thread would wake up and create a second draft of its own, next to
+	// the one the composer window creates. The window's copy is the only one that should land.
+	let disposed = false
+	onScopeDispose(() => (disposed = true))
 
 	const router = useRouter()
 	const route = useRoute()
@@ -165,6 +179,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const isDiscarding = ref(false)
 
 	const saveDraft = async () => {
+		if (disposed) return
 		if (!isDraftUpdated.value || isLoading.value || isDiscarding.value) return
 
 		isSavingDraft.value = true
@@ -203,6 +218,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		if (deleteMail.loading) return
 
 		isDiscarding.value = true
+		// Before close(), and synchronously: the host has to learn the draft is going while it is
+		// still on screen. Told afterwards, it sees the composer close first and puts the draft
+		// back for as long as the delete takes.
+		options.onDiscardStarted?.()
 		close()
 		if (createMail.loading) await createMail.promise
 		if (updateDraft.loading) await updateDraft.promise
