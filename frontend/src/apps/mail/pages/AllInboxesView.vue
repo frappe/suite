@@ -190,6 +190,7 @@ import {
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
 import { useUndo, useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
+import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import {
@@ -899,8 +900,9 @@ const withUndo = (thread: Thread, restore: () => void, undoSuccess: string) => {
 	return undoAction
 }
 
-const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
-	call('suite.mail.api.mail.move_mails', {
+const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) => {
+	closeComposeWindowFor(messageIds(thread))
+	return call('suite.mail.api.mail.move_mails', {
 		account: thread.account,
 		ids: messageIds(thread),
 		mailbox,
@@ -909,6 +911,7 @@ const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
 		restore()
 		throw error
 	})
+}
 
 const handleArchive = (thread: Thread) => {
 	if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
@@ -962,6 +965,7 @@ const stackSetSeen = (threads: Thread[], seen: boolean) => {
 // Restores run in reverse so each row splices back at the index captured when it was removed.
 const stackMoveOut = (threads: Thread[], mailboxId: string | undefined, done: string) => {
 	if (!mailboxId) return raiseToast(__('No such folder for this account.'), 'error')
+	closeComposeWindowFor(threads.flatMap(messageIds))
 	const restores = threads.map(removeFromList)
 	const promise = call('suite.mail.api.mail.move_mails', {
 		account: threads[0].account,

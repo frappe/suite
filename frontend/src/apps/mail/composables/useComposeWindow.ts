@@ -79,5 +79,19 @@ export const closeComposeWindow = () => {
 	return true
 }
 
+/**
+ * Give up the window if what it is writing is one of these mails.
+ *
+ * For a list acting on the draft's own row — trashed, junked, deleted. Left alone the window goes on
+ * writing a message the reader has just thrown away, autosaving it every couple of seconds: the row
+ * is gone from the list and the draft is very much still being written. Closing saves what is in it,
+ * which is right either way — for a move the text belongs with the mail wherever it has gone, and
+ * for a delete it is the last thing that ever happens to it.
+ */
+export const closeComposeWindowFor = (mailIds: string[]) => {
+	const held = composeWindowDraft()
+	if (held && mailIds.includes(held)) closeComposeWindow()
+}
+
 /** Whether a composer window is on screen — docked or minimised, it floats over the app. */
 export const isComposeWindowOpen = () => !!holder.value
