@@ -13,7 +13,7 @@
 			icon-left="edit"
 			:label="__('Compose')"
 			:tooltip="__('Compose (C)')"
-			@click="showSendModal = true"
+			@click="compose()"
 		/>
 	</div>
 
@@ -30,6 +30,7 @@ import { Button } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { restoreComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 
@@ -46,6 +47,14 @@ const showSendModal = ref(false)
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
+// Compose means "put a composer in front of me". If one is already open it is that one, brought
+// back from the corner if it was minimised — starting a second would close it and take the draft
+// with it. Only with nothing open does this begin a new draft.
+const compose = () => {
+	if (restoreComposeWindow()) return
+	showSendModal.value = true
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
 	const target = e.target as HTMLElement
 	if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
@@ -60,10 +69,11 @@ const handleKeydown = (e: KeyboardEvent) => {
 		return
 	}
 
-	// Compose shortcut
+	// Compose shortcut. A composer that is already open swallows `c` before this (SendMail listens
+	// in the capture phase), so this only ever starts a new one.
 	if (key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
 		e.preventDefault()
-		showSendModal.value = true
+		compose()
 	}
 }
 
