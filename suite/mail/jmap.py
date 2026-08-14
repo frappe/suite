@@ -23,13 +23,27 @@ from jmap.defaults import default_registry
 from jmap.models.responses import SetResponse
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap.connection import (
-    UNAVAILABLE_STATUS_CODES,
-    MailServerUnavailableError,
-)
 from suite.mail.store import Entity, get_data_store
 from suite.mail.utils import get_config
 from suite.utils.user import is_system_manager
+
+# Gateway statuses a reverse proxy returns when the JMAP server behind it is down or overloaded.
+UNAVAILABLE_STATUS_CODES = (502, 503, 504)
+
+
+class MailServerUnavailableError(Exception):
+    """The JMAP server could not be reached (connection refused, DNS failure, timeout) or an
+    upstream gateway reported it down.
+
+    ``http_status_code`` makes Frappe respond with 503 instead of a generic 500, so clients can
+    distinguish "the mail server is temporarily down" from an application bug and show a friendly
+    message. The original transport exception is always chained for diagnosis.
+    """
+
+    http_status_code = 503
+
+    def __init__(self, message: str = "The mail server is temporarily unavailable.") -> None:
+        super().__init__(message)
 
 
 def invalidate_jmap_identities_cache(account: str) -> None:
