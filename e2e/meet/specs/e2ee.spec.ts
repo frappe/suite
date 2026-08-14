@@ -148,13 +148,17 @@ test.describe("E2EE", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 
 		await enableE2EEInSettings(hostPage);
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 
 		await guest.page.goto(appUrl("/meet/"));
 		await guest.page.waitForTimeout(2000);
@@ -172,8 +176,10 @@ test.describe("E2EE", () => {
 		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 30_000,
 		});
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 		hostErrors.assertNoErrors();
 		guestErrors.assertNoErrors();
 	});
@@ -189,13 +195,17 @@ test.describe("E2EE", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 
 		await enableE2EEInSettings(hostPage);
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 
 		await hostPage.goto(appUrl("/meet/"));
 
@@ -224,8 +234,10 @@ test.describe("E2EE", () => {
 			timeout: 45_000,
 		});
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 		hostErrors.assertNoErrors();
 		guestErrors.assertNoErrors();
 	});
@@ -241,8 +253,10 @@ test.describe("E2EE", () => {
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
 
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
+		await Promise.all([
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+			expectRemoteVideoReceiving(hostPage, guestName),
+		]);
 
 		await enableE2EEInSettings(hostPage);
 

@@ -25,8 +25,10 @@ test.describe("SFU reconnect", () => {
 		const guest = await createParticipant();
 
 		await joinHostAndGuest(hostPage, guest, meetingId, guestName);
-		await expectRemoteVideoReceiving(hostPage, guestName);
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, guestName),
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+		]);
 
 		await guest.context.setOffline(true);
 		await expect(hostPage.locator("[data-participant-id]")).toHaveCount(1, {
@@ -40,7 +42,9 @@ test.describe("SFU reconnect", () => {
 		await expect(guest.page.locator("[data-participant-id]")).toHaveCount(2, {
 			timeout: 45_000,
 		});
-		await expectRemoteVideoReceiving(hostPage, guestName);
-		await expectRemoteVideoReceiving(guest.page, meetHostName);
+		await Promise.all([
+			expectRemoteVideoReceiving(hostPage, guestName),
+			expectRemoteVideoReceiving(guest.page, meetHostName),
+		]);
 	});
 });
