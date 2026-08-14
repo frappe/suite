@@ -45,6 +45,7 @@ from suite.mail.jmap import (
     download_blobs,
     get_cached_mailboxes,
     get_jmap_client,
+    omit_none,
     upload_blobs,
 )
 from suite.mail.utils import (
@@ -1228,11 +1229,11 @@ def query_email_ids(
 
         with client.batch() as b:
             handle = b.mail.email.query(
-                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 sort=sort,
                 calculate_total=total is None,
+                **omit_none(filter=filter),
             )
 
         response = handle.result

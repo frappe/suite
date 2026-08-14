@@ -21,6 +21,7 @@ from suite.mail.jmap import (
     chunked_set,
     get_default_calendar_id,
     get_default_participant_identity,
+    omit_none,
 )
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.dt import utcnow
@@ -202,13 +203,11 @@ def query_events(
 
         with client.batch() as b:
             h = b.calendars.calendar_event.query(
-                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 sort=sort,
                 calculate_total=total is None,
-                timeZone=time_zone,
-                expandRecurrences=expand_recurrences,
+                **omit_none(filter=filter, timeZone=time_zone, expandRecurrences=expand_recurrences),
             )
         response = h.result
 
@@ -226,8 +225,8 @@ def query_events(
 
 
 def parse_event_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
-    """Parses calendar blobs into JSCalendar events via `CalendarEvent/parse` (a custom method:
-    raw dict results, no automatic chunking)."""
+    """Parses calendar blobs into JSCalendar events via `CalendarEvent/parse` (typed ParsedEvents
+    result — `parsed` maps a blob id to an *array* of events; no automatic chunking)."""
 
     result = {"parsed": {}, "notFound": {}, "notParsable": {}}
     for batch in chunk_list(blob_ids, client.capabilities.limits.max_objects_in_get):
@@ -235,15 +234,15 @@ def parse_event_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
             h = b.add("CalendarEvent/parse", {"blobIds": batch})
         response = h.result
 
-        result["parsed"].update(response.get("parsed") or {})
+        result["parsed"].update(
+            {blob_id: [e.to_wire() for e in events] for blob_id, events in (response.parsed or {}).items()}
+        )
         # The server reports notFound/notParsable as blob-id arrays; keep the
         # dict shape callers read (.keys()) by keying the ids.
-        if not_found := response.get("notFound"):
-            result["notFound"].update(dict.fromkeys(not_found) if isinstance(not_found, list) else not_found)
-        if not_parsable := response.get("notParsable"):
-            result["notParsable"].update(
-                dict.fromkeys(not_parsable) if isinstance(not_parsable, list) else not_parsable
-            )
+        if response.not_found:
+            result["notFound"].update(dict.fromkeys(response.not_found))
+        if response.not_parsable:
+            result["notParsable"].update(dict.fromkeys(response.not_parsable))
 
     return result
 

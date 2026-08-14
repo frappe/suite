@@ -226,13 +226,17 @@ def _query_notifications(
     while len(ids) < limit:
         current_batch_size = min(batch_size, limit - len(ids))
 
+        # An explicit ``filter=None`` serializes as ``"filter": null``, which Stalwart
+        # rejects with ``notRequest`` — omit the argument instead (UNSET), like the old
+        # transport did for every None argument.
+        filter_kwargs = {"filter": filter} if filter is not None else {}
         with client.batch() as b:
             h = b.calendars.calendar_event_notification.query(
-                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 sort=sort,
                 calculate_total=total is None,
+                **filter_kwargs,
             )
         response = h.result
 

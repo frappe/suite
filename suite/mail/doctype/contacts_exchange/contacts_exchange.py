@@ -39,6 +39,7 @@ from suite.mail.jmap import (
     get_cached_address_books,
     get_default_address_book_id,
     get_jmap_client,
+    omit_none,
     upload_blobs,
 )
 from suite.mail.utils import (
@@ -950,10 +951,10 @@ def query_card_ids(client: SuiteJMAPClient, filter: dict | None, limit: int) -> 
 
         with client.batch() as b:
             handle = b.contacts.contact_card.query(
-                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 calculate_total=total is None,
+                **omit_none(filter=filter),
             )
 
         response = handle.result
@@ -985,7 +986,7 @@ def parse_contact_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
     batch_size = min(len(remaining), client.capabilities.limits.max_objects_in_get) or 1
     while remaining:
         batch = remaining[:batch_size]
-        # ContactCard/parse has no typed builder; the handle resolves to the raw wire dict.
+        # The handle resolves to a typed ParsedCards; `parsed` maps a blob id to ONE Card.
         with client.batch() as b:
             handle = b.add("ContactCard/parse", {"blobIds": batch})
 
@@ -997,15 +998,13 @@ def parse_contact_blobs(client: SuiteJMAPClient, blob_ids: list[str]) -> dict:
                 continue
             raise RuntimeError(f"ContactCard/parse failed: {e.arguments or e.type}") from e
 
-        result["parsed"].update(body.get("parsed", {}))
+        result["parsed"].update({blob_id: card.to_wire() for blob_id, card in (body.parsed or {}).items()})
         # The server reports notFound/notParsable as blob-id arrays; keep the
         # dict shape callers read (.keys()) by keying the ids.
-        if not_found := body.get("notFound"):
-            result["notFound"].update(dict.fromkeys(not_found) if isinstance(not_found, list) else not_found)
-        if not_parsable := body.get("notParsable"):
-            result["notParsable"].update(
-                dict.fromkeys(not_parsable) if isinstance(not_parsable, list) else not_parsable
-            )
+        if body.not_found:
+            result["notFound"].update(dict.fromkeys(body.not_found))
+        if body.not_parsable:
+            result["notParsable"].update(dict.fromkeys(body.not_parsable))
 
         remaining = remaining[batch_size:]
 

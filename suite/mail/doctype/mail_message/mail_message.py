@@ -33,6 +33,7 @@ from suite.mail.jmap import (
     get_cached_mailboxes,
     get_jmap_client,
     get_mailbox_id_by_role,
+    omit_none,
 )
 from suite.mail.store import (
     Entity,
@@ -760,11 +761,11 @@ def query_message_ids(
 
         with client.batch() as b:
             h = b.mail.email.query(
-                filter=filter,
                 position=position,
                 limit=current_batch_size,
                 sort=sort,
                 calculate_total=total is None,
+                **omit_none(filter=filter),
             )
 
         result = h.result

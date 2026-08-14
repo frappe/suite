@@ -277,6 +277,17 @@ SUBMISSION_URN = "urn:ietf:params:jmap:submission"
 _lookup_cache: TTLCache = TTLCache(maxsize=100_000, ttl=60 * 60)
 
 
+def omit_none(**kwargs) -> dict:
+    """Keyword arguments minus the Nones.
+
+    Stalwart rejects an explicit ``null`` for arguments like ``filter`` with ``notRequest``;
+    the old transport dropped None arguments entirely, so callers splat this instead of
+    passing a possibly-None value straight to a batch call.
+    """
+
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
 @contextmanager
 def translated_errors() -> Iterator[None]:
     """Translate transport-level failures into MailServerUnavailableError (HTTP 503).
