@@ -17,7 +17,7 @@
 		class="flex flex-col"
 		:class="[
 			{ 'pointer-events-none opacity-50': !show },
-			isInThread ? '' : compact ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
+			isInThread ? '' : docked ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
 		]"
 		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
@@ -215,7 +215,6 @@
 		<template #bottom>
 			<ComposeMailToolbar
 				:is-recipients-empty
-				:compact
 				class="border-t"
 				:class="[
 					isDragging ? 'border-transparent' : '',
@@ -283,13 +282,13 @@ const {
 	reloadMails,
 	mailDetails,
 	isInThread = false,
-	compact = false,
+	docked = false,
 } = defineProps<{
 	reloadMails: () => void
 	mailDetails?: ComposeMailData
 	isInThread?: boolean
-	// Passed to the toolbar: the docked window is narrower than the full button row.
-	compact?: boolean
+	// Docked composer: shorter than a modal, which has the screen to itself.
+	docked?: boolean
 }>()
 
 const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
