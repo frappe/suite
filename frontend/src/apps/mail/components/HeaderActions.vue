@@ -17,12 +17,6 @@
 		/>
 	</div>
 
-	<SendMail
-		v-if="!isMobile"
-		:key="composeKey"
-		v-model="showSendModal"
-		@reload-mails="emit('reloadMails')"
-	/>
 	<SearchModal
 		v-model="showSearchModal"
 		v-model:show-advanced="showSearchAdvanced"
@@ -30,53 +24,35 @@
 	/>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { Button } from 'frappe-ui'
 
 import { isMac } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
-import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { userStore } from '@/apps/mail/stores/user'
+import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
 import SearchModal from '@/apps/mail/components/Modals/SearchModal.vue'
-import SendMail from '@/apps/mail/components/SendMail.vue'
-
-const router = useRouter()
-const store = userStore()
 
 const { isMobile } = useScreenSize()
-
-const emit = defineEmits(['reloadMails'])
+const { requestCompose } = useComposeMail()
 
 // Exposed as a model so other views (e.g. the search results header's query chip) can reopen the modal.
 const showSearchModal = defineModel<boolean>('showSearch', { default: false })
 const showSearchAdvanced = defineModel<boolean>('showAdvanced', { default: false })
 // Filter key a results-page chip asked to reopen inline; forwarded to the search modal.
 const showSearchEditFilter = defineModel<string>('editFilter', { default: '' })
-const showSendModal = ref(false)
-const composeKey = ref(0)
 
 const modifier = computed(() => (isMac ? '⌘' : 'Ctrl'))
 
+// Asked of the layout rather than answered here, because a composer mounted in this header would be
+// a composer belonging to this view: leave the mailbox for the screener and the draft goes with the
+// header it was started from. The layout outlives every route in the app, so that is where the
+// window lives — and it is the layout that knows a request means the dock on desktop and the
+// compose page on mobile.
+//
 // Compose means "a new mail", always — never the draft already in the corner. A composer that is
 // open loses the window to this one and closes, which costs it nothing: it saves what it holds on
 // the way out, and the draft is waiting in Drafts. Reaching back for it instead made the button
 // answer a request nobody had made, and left no way at all to start a second mail.
-//
-// The key bump is what makes it new: `show` is already true when this composer is the one being
-// replaced, so setting it again would be answered with nothing happening. Remounting starts a
-// draft from scratch.
-//
-// The header is hidden on mobile but stays mounted, so the shortcut below still reaches here at
-// that width — and there it means the compose page, the only composer mobile has.
-const compose = () => {
-	if (isMobile.value) {
-		openComposePage(router, store.accountId)
-		return
-	}
-	composeKey.value++
-	showSendModal.value = true
-}
+const compose = () => requestCompose({})
 
 const handleKeydown = (e: KeyboardEvent) => {
 	const target = e.target as HTMLElement

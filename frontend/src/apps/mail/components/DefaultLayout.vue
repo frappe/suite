@@ -37,6 +37,7 @@
 					v-model="showCompose"
 					:key="composeKey"
 					:mail-details="composeDetails"
+					@reload-mails="requestListReload()"
 				/>
 			</div>
 		</div>
@@ -50,7 +51,7 @@ import { useRoute, useRouter } from 'vue-router'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
-import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
+import { useComposeMail, useListReload, useScreenSize } from '@/apps/mail/utils/composables'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { userStore } from '@/apps/mail/stores/user'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
@@ -63,6 +64,7 @@ const store = userStore()
 const { userResource } = store
 
 const { isMobile } = useScreenSize()
+const { requestListReload } = useListReload()
 
 const router = useRouter()
 const { events, selectedEvent } = useUpcomingEvents()

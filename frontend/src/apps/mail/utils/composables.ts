@@ -347,6 +347,18 @@ export const useComposeMail = () => ({
 	clearComposeRequest: () => (composeRequest.value = undefined),
 })
 
+// That composer outlives the route it was started on, which is the point of it — a draft begun in
+// the inbox is still there in the screener. It also means the list it affects is no longer an
+// ancestor it can hand an event to: a mail sent or a draft saved is announced here instead, and
+// whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
+// Inboxes refreshes in place, the screener reloads its senders.
+const listReloadRequest = ref(0)
+
+export const useListReload = () => ({
+	listReloadRequest,
+	requestListReload: () => listReloadRequest.value++,
+})
+
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
 // <ScreenedEmailAddressModal> (rendered in MailboxView) reacts to this, so any view can open it.
 export interface BlockableSender {

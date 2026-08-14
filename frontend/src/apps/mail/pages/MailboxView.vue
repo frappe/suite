@@ -20,7 +20,6 @@
 			v-model:show-search="showSearchModal"
 			v-model:show-advanced="showSearchAdvanced"
 			v-model:edit-filter="searchEditFilter"
-			@reload-mails="resetThreads(true, ['drafts', 'sent'])"
 		/>
 	</header>
 
@@ -501,6 +500,7 @@ import {
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import {
+	useListReload,
 	useMobileSelection,
 	useReadingPane,
 	useScreenSize,
@@ -541,6 +541,7 @@ const { accountId, mailbox, threadID } = defineProps<{
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { listReloadRequest } = useListReload()
 const { setMobileSelectionActive } = useMobileSelection()
 const { undo, setUndoAction } = useUndo()
 
@@ -1231,6 +1232,11 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 	threadsResource.value.reload()
 	if (reloadMailboxes) mailboxes.reload()
 }
+
+// The composer lives in the layout now, above every route, so it has no view to hand an event to —
+// it announces a send or a draft saved instead (see useListReload). Drafts and Sent are the two lists
+// that answer: everywhere else the mail it wrote does not belong.
+watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
 
 // Check for new mail without losing the reader's place: refetch the newest window and prepend only the
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
