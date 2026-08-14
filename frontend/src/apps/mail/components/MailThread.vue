@@ -1158,13 +1158,29 @@ defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)
+const composeWindow = useTemplateRef('composeWindow')
+
+// The id of the draft that went to the window, kept here rather than asked of the window itself.
+//
+// It has to be a ref, and the reason is the whole of this: a draft popped out is written to on the
+// way — the reply learns its own id on the first save — and the thread has to notice. The window
+// knows, but it knows in a plain variable inside `useComposeWindow`, which no render is watching;
+// a card checking it as it drew got the answer from before the window opened and never asked
+// again, so the editor stayed in the thread underneath the very window that had taken it.
+const poppedOutDraftId = ref<string>()
+watch(
+	() => composeWindow.value?.mail?.id,
+	(id) => id && (poppedOutDraftId.value = id),
+)
 
 // The one draft the composer window is holding, whichever row it has become.
 //
-// The window's own id for it, and not the name it was popped out under: a local `draft:<source>`
-// entry becomes the server's draft on its first autosave, the thread reloads under the new name,
-// and a match on that name quietly stopped finding it — the card came straight back beside the
-// window still writing it. Before that first save there is no id yet, and the name is all there is.
+// Either name answers, because the row is one thing and then the other. A reply started in the pane
+// is a local `draft:<source>` entry with no id at all — a save from in here does not reload the
+// thread, so the row keeps that name and never learns one. Popped out, the same save does reload:
+// the local row goes, and the server's draft takes its place under a name and an id of its own.
+// Matching on the id alone missed the first, and on the name alone missed the second — either way
+// the editor sat in the thread underneath the window that had taken it.
 //
 // Asked of a row rather than assumed of every draft, because "a draft is in the window" is not the
 // same question. This pane is reused as the reader moves between threads, so a draft popped out of
@@ -1172,8 +1188,8 @@ const showSendModal = ref(false)
 // not the one being written elsewhere.
 const isDraftInWindow = (mail: Mail) => {
 	if (!mail.draft) return false
-	const held = composeWindowDraft()
-	return held ? mail.id === held : mail.name === focusedDraft.value
+	if (mail.name === focusedDraft.value) return true
+	return !!poppedOutDraftId.value && mail.id === poppedOutDraftId.value
 }
 
 // A draft being written in the composer window rather than in the thread. The thread stands the
@@ -1184,8 +1200,6 @@ const isDraftInWindow = (mail: Mail) => {
 // draft it meant.
 const isPoppedOut = (mail: Mail) =>
 	showSendModal.value && !!focusedDraft.value && isDraftInWindow(mail)
-
-const composeWindow = useTemplateRef('composeWindow')
 
 // Bring the reply back into the conversation, carrying whatever it has become.
 //
@@ -1231,6 +1245,9 @@ const popOutDraft = (mail: ComposeMailData) => {
 		return
 	}
 
+	// Taken here as well as from the window, so the card goes the moment the window opens rather than
+	// a frame later, once the composer inside it has mounted and can be asked.
+	poppedOutDraftId.value = mail.id
 	focusedDraft.value = mail.name
 	showSendModal.value = true
 }
