@@ -19,14 +19,14 @@
 	     and the list's rows both sit on `sm:px-5`. Any other offset leaves the panel a few pixels
 	     off a line that is on screen next to it.
 
-	     The width is the toolbar's, not a taste: it is `flex-wrap justify-between`, so anything
-	     narrower than its two groups drops Discard and Send onto a second line. 42rem fits because
-	     the composer's toolbar has no alignment group (see useTextEditorButtons); put those three
-	     back and this has to grow to about 48rem. -->
+	     The width used to be the toolbar's rather than a choice — it wrapped, so anything narrower
+	     than its two groups dropped Discard and Send onto a second line. The toolbar holds one line
+	     now and scrolls its buttons instead (see ComposeMailToolbar), so this is a choice again:
+	     wide enough for a subject and a line of recipients, and no wider than a mail is read. -->
 	<Teleport to="body">
 		<div
 			v-if="show"
-			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] w-[42rem] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-lg border border-b-0 shadow-2xl"
+			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] w-[40rem] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-lg border border-b-0 shadow-2xl"
 		>
 			<!-- The whole bar toggles: a bar carrying one small target invites the miss that
 			     closes the draft instead. The buttons stop propagation so they keep their own job.
