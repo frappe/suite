@@ -64,8 +64,13 @@
 								class="hover:text-ink-gray-8"
 							/>
 						</button>
+						<!-- A draft that is popped out drops out of the thread entirely: it is being
+						     written in the composer window, and it must be the card that goes, not
+						     just the editor inside it — the wrapper carries the draft's own border,
+						     padding and shadow, so hiding only its contents left an empty white
+						     card sitting in the thread. -->
 						<div
-							v-if="!collapsedMailNames.has(mail.name)"
+							v-if="!collapsedMailNames.has(mail.name) && !isPoppedOut(mail)"
 							:data-mail-name="mail.name"
 							:class="{
 								'px-3.5 py-5': isMobile,
@@ -365,6 +370,24 @@
 									</div>
 								</div>
 							</template>
+						</div>
+
+						<!-- Stands in for the card while the reply is being written in the composer
+						     window, so the conversation still shows there is a draft in it — and
+						     offers the way back. rounded-xl to match the card it stands in for, and
+						     every other message card in the thread; slimmer padding, because it is a
+						     line about a message rather than a message. v-else-if, so it appears only
+						     where the card was withheld; the collapsed test tells that reason from
+						     this one. -->
+						<div
+							v-else-if="!collapsedMailNames.has(mail.name)"
+							class="bg-surface-gray-1 text-ink-gray-7 rounded-xl px-4 py-3 text-sm"
+						>
+							{{ __('You are currently editing your reply in a separate window.') }}
+							<button
+								class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
+								@click="showDraftInThread()"
+							>{{ __('Show your draft here.') }}</button>
 						</div>
 					</template>
 				</template>
@@ -1109,6 +1132,24 @@ defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)
+
+// A draft being written in the composer window rather than in the thread. The thread stands the
+// notice in its place, or the same reply sits in two editors that do not share their state.
+//
+// Not matched on the draft's name, which does not survive being typed into: a local `draft:<source>`
+// entry becomes the server's draft on the first autosave, the thread reloads under its new name,
+// and the card came straight back. Only one composer window is open at a time, so "a draft from
+// this thread is in the window" is answer enough. The cost is a thread holding two drafts at once,
+// where both would show the notice — which no flow here produces.
+//
+// Keyed on the window still being open rather than on clearing `focusedDraft`: the card returns the
+// moment it closes, and discarding — which reads `focusedDraft` as it fires — still knows which
+// draft it meant.
+const isPoppedOut = (mail: Mail) => showSendModal.value && !!focusedDraft.value && !!mail.draft
+
+// Bring the reply back into the conversation. Closing the window is all it takes: the card is
+// withheld only while that window is open, so it returns with whatever the draft has become.
+const showDraftInThread = () => (showSendModal.value = false)
 
 const popOutDraft = (mail: ComposeMailData) => {
 	draftMails[mail.name as string] = mail
