@@ -2353,11 +2353,16 @@ def get_logs(search: str | None = None, anchor: str | None = None, page_length: 
         limit=page_length,
     )
     labels = get_log_labels()
-    logs = [_log_row(e, labels) for e in result["items"]]
+    items = result["items"]
+    logs = [_log_row(e, labels) for e in items]
+    # The log store orders by id, which is not reliably newest-first (a server upgrade that
+    # changes the id format interleaves the epochs) and rejects a timestamp sort — so sort
+    # the page for display. The anchor must stay in server order, or paging would loop.
+    logs.sort(key=lambda row: row["timestamp"] or "", reverse=True)
     return {
         "logs": logs,
         "total": result["total"],
-        "next_anchor": logs[-1]["id"] if len(logs) == page_length else None,
+        "next_anchor": items[-1]["id"] if len(items) == page_length else None,
     }
 
 
@@ -2473,8 +2478,12 @@ def get_overview() -> dict:
         overview["queued_messages"] = result["total"]
 
     with suppress(Exception):
-        result = stalwart.manage_list_page("Log", filter=None, anchor=None, limit=6)
+        # A wider page, reduced to the 6 newest by timestamp: the store's id order is not
+        # reliably newest-first (see get_logs), so the head alone may hold stale entries.
+        result = stalwart.manage_list_page("Log", filter=None, anchor=None, limit=100)
         labels = get_log_labels()
-        overview["recent_logs"] = [_log_row(entry, labels) for entry in result["items"]]
+        rows = [_log_row(entry, labels) for entry in result["items"]]
+        rows.sort(key=lambda row: row["timestamp"] or "", reverse=True)
+        overview["recent_logs"] = rows[:6]
 
     return overview

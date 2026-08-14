@@ -62,6 +62,11 @@ class TestAdminOps(StalwartIntegrationTestCase):
         self.assertLessEqual(len(page["logs"]), 5)
         self.assertIsInstance(page["total"], int)
 
+        # The dashboard shows newest entries first; the store's own id order does not
+        # guarantee that (see get_logs), so the endpoint must sort the page.
+        timestamps = [row["timestamp"] for row in page["logs"]]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+
         if not page["logs"]:
             self.skipTest("Server has no log entries to page through.")
 
