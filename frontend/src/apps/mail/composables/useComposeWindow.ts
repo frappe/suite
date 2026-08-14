@@ -14,18 +14,26 @@ import { onScopeDispose, ref, watch, type Ref } from 'vue'
  */
 const holder = ref<symbol | null>(null)
 let unfold: (() => void) | null = null
+let dismiss: (() => void) | null = null
+let heldDraft: (() => string | undefined) | null = null // the draft's server id
 
 const release = (id: symbol) => {
 	if (holder.value !== id) return
 	holder.value = null
 	unfold = null
+	dismiss = null
+	heldDraft = null
 }
 
 /**
  * Ties a composer's `show` to the window: opening claims it and closes whoever held it, and
  * closing — or unmounting — releases it. Call once per SendMail instance, from setup.
  */
-export const claimComposeWindow = (show: Ref<boolean | undefined>, onRestore?: () => void) => {
+export const claimComposeWindow = (
+	show: Ref<boolean | undefined>,
+	onRestore?: () => void,
+	draftId?: () => string | undefined,
+) => {
 	const id = Symbol('compose-window')
 
 	watch(
@@ -34,6 +42,8 @@ export const claimComposeWindow = (show: Ref<boolean | undefined>, onRestore?: (
 			if (open) {
 				holder.value = id
 				unfold = onRestore ?? null
+				dismiss = () => (show.value = false)
+				heldDraft = draftId ?? null
 			} else release(id)
 		},
 		// Immediate, because a composer routinely mounts already open: DefaultLayout bumps its key
@@ -66,3 +76,26 @@ export const restoreComposeWindow = () => {
 	unfold?.()
 	return true
 }
+
+/**
+ * The id of the draft the open composer window is holding, if it is holding one.
+ *
+ * The id, not the name: a save writes only `id` back onto the composer's draft (see
+ * onMailUpdateSuccess), so a mail composed from scratch never learns its own name and matching on
+ * that silently never fires.
+ */
+export const composeWindowDraft = () => heldDraft?.()
+
+/**
+ * Give up the window. For a host that is about to show the same draft itself — opening a draft
+ * from the list puts it in the thread, and a copy left in the window would be a second editor on
+ * one draft, each saving over the other.
+ */
+export const closeComposeWindow = () => {
+	if (!holder.value) return false
+	dismiss?.()
+	return true
+}
+
+/** Whether a composer window is on screen — docked or minimised, it floats over the app. */
+export const isComposeWindowOpen = () => !!holder.value

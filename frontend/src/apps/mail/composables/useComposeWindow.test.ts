@@ -1,18 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref, type EffectScope } from 'vue'
 
-import { claimComposeWindow, restoreComposeWindow } from './useComposeWindow'
+import {
+	claimComposeWindow,
+	closeComposeWindow,
+	composeWindowDraft,
+	restoreComposeWindow,
+} from './useComposeWindow'
 
 // The window is module state shared by every composer, so each test has to leave it empty for the
 // next one — the same reason the composable has to release on dispose at all.
 const scopes: EffectScope[] = []
 
 /** A composer, mounted open or closed the way SendMail's `show` arrives. */
-const composer = (open: boolean, onRestore?: () => void) => {
+const composer = (open: boolean, onRestore?: () => void, draftId?: string) => {
 	const show = ref<boolean | undefined>(open)
 	const scope = effectScope()
 	scopes.push(scope)
-	scope.run(() => claimComposeWindow(show, onRestore))
+	scope.run(() => claimComposeWindow(show, onRestore, draftId ? () => draftId : undefined))
 	return { show, unmount: () => scope.stop() }
 }
 
@@ -91,5 +96,32 @@ describe('restoreComposeWindow', () => {
 		restoreComposeWindow()
 		expect(first).not.toHaveBeenCalled()
 		expect(second).toHaveBeenCalledOnce()
+	})
+})
+
+describe('closeComposeWindow', () => {
+	it('names the id of the draft the window is holding', () => {
+		composer(true, undefined, 'draft-7')
+		expect(composeWindowDraft()).toBe('draft-7')
+	})
+
+	it('names nothing once the window is closed', async () => {
+		const only = composer(true, undefined, 'draft-7')
+		only.show.value = false
+		await nextTick()
+
+		expect(composeWindowDraft()).toBeUndefined()
+	})
+
+	it('gives the window up, so the thread can take the draft', () => {
+		// Opening the same draft from the list must not leave a second editor on it.
+		const only = composer(true, undefined, 'draft-7')
+
+		expect(closeComposeWindow()).toBe(true)
+		expect(only.show.value).toBe(false)
+	})
+
+	it('reports nothing to close when no composer is open', () => {
+		expect(closeComposeWindow()).toBe(false)
 	})
 })
