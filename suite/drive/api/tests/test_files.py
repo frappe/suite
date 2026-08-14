@@ -29,6 +29,7 @@ from suite.drive.api.permissions import (
     user_has_permission,
 )
 from suite.drive.overrides.file import File as DriveFile
+from suite.drive.patches.normalize_attachment_file_types import execute as normalize_attachment_file_types
 from suite.drive.utils import (
     APP_FOLDERS,
     FRAMEWORK_FOLDERS,
@@ -82,6 +83,24 @@ class TestDriveFilesAPI(IntegrationTestCase):
             attachments = get_attachments("User", OWNER)
 
         self.assertEqual([attachment["name"] for attachment in attachments], [self.file.name])
+
+    def test_attachment_patch_normalizes_framework_file_type(self):
+        try:
+            self.file.db_set(
+                {
+                    "attached_to_doctype": "User",
+                    "attached_to_name": OWNER,
+                    "file_type": "TXT",
+                }
+            )
+
+            normalize_attachment_file_types()
+
+            self.file.reload()
+            self.assertEqual(self.file.file_type, "Text")
+            self.assertEqual(self.file.mime_type, "text/plain")
+        finally:
+            self.file.db_set({"attached_to_doctype": None, "attached_to_name": None})
 
     def test_track_visit_resolves_backing_file(self):
         self.file.db_set({"content_doctype": "User", "content_docname": OWNER})

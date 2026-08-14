@@ -1,11 +1,13 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+import io
 import os
 
 import frappe
 from frappe.client import set_value
 from frappe.tests import IntegrationTestCase
+from PIL import Image
 
 from suite.slides.doctype.presentation.presentation import (
     create_presentation,
@@ -14,6 +16,7 @@ from suite.slides.doctype.presentation.presentation import (
     get_public_presentation,
     get_templates,
     get_updated_json,
+    get_webp_doc,
     save_base64_image,
     save_presentation_thumbnail,
     update_slide_attachments,
@@ -111,8 +114,21 @@ class TestPresentationSecurity(IntegrationTestCase):
         self.assertTrue(url.endswith(".png"))
         file = frappe.get_doc("File", {"file_url": url})
         self.assertEqual(file.is_private, 1)
+        self.assertEqual(file.file_type, "Image")
+        self.assertEqual(file.mime_type, "image/png")
         self.assertEqual(file.attached_to_doctype, "Presentation")
         self.assertEqual(file.attached_to_name, self.other_presentation)
+
+    def test_webp_conversion_keeps_drive_image_metadata(self):
+        content = io.BytesIO()
+        Image.new("RGB", (2, 1), (17, 34, 51)).save(content, "PNG")
+
+        with self.set_user(OWNER):
+            source = make_private_image(self.owner_presentation, content.getvalue())
+            converted = get_webp_doc(self.owner_presentation, source.as_dict())
+
+        self.assertEqual(converted.file_type, "Image")
+        self.assertEqual(converted.mime_type, "image/webp")
 
     def test_composite_blocks_private_presentation(self):
         with self.set_user("Guest"):

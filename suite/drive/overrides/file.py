@@ -100,7 +100,10 @@ class File(FrappeFile):
     def before_insert(self):
         # Drive's upload flow owns storage; framework uploads keep core's flow.
         if not self.flags.file_created:
-            return super().before_insert()
+            super().before_insert()
+            if not self.mime_type:
+                self.mime_type = mimemapper.get_mime_type(self.file_name, native_first=False)
+            self.file_type = get_file_type(self.mime_type)
 
     def autoname(self):
         if not self.flags.file_created:
