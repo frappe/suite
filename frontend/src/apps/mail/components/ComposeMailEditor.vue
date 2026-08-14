@@ -63,7 +63,7 @@
 						v-if="isInThread"
 						variant="ghost"
 						:disabled="isLoading || isDraftUpdated"
-						@click="emit('popOut', mail)"
+						@click="popOut()"
 					>
 						<template #icon>
 							<component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
@@ -378,7 +378,20 @@ onMounted(() => {
 	}, 50)
 })
 
-onUnmounted(() => saveDraft())
+// Popping out is a hand-off, not a close: the window is given this very draft and takes over saving
+// it, so this editor leaves without a word. Saving anyway would race the window into writing the
+// same reply twice — one draft from each — which is the duplicate the debounced save is held back
+// from making, arriving by the other door.
+let handedOff = false
+const popOut = () => {
+	handedOff = true
+	emit('popOut', mail)
+}
+
+// Otherwise this is the last chance to keep what was typed since the autosave last ran. Closing a
+// composer now unmounts this editor outright — the dialog drops it, the phone leaves the compose
+// route — so the debounced save that would have caught up in a second's time never gets to.
+onUnmounted(() => !handedOff && saveDraft())
 
 // `mail` is exposed so the window around this one can read the draft — the minimised bar names
 // itself after the subject, which only exists in here.
@@ -401,7 +414,7 @@ const localDraftActions = computed(() => [
 			{
 				label: __('Pop Out'),
 				icon: ExternalLink,
-				onClick: () => emit('popOut', mail),
+				onClick: () => popOut(),
 				condition: () => !isLoading.value,
 			},
 		],

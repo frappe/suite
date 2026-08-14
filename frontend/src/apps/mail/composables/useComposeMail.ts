@@ -60,10 +60,20 @@ export interface ComposeMailOptions {
 export const useComposeMail = (options: ComposeMailOptions) => {
 	const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
 
-	// A composer that has gone away must not still be writing drafts. Saving is debounced by two
-	// seconds, and the timer outlives the component: pop a draft out inside that window and the
-	// editor left behind in the thread would wake up and create a second draft of its own, next to
-	// the one the composer window creates. The window's copy is the only one that should land.
+	// A composer that has gone away must not still be writing drafts of its own accord. Saving is
+	// debounced by two seconds, and the timer outlives the component: pop a draft out inside that
+	// window and the editor left behind in the thread would wake up and create a second draft, next
+	// to the one the composer window creates. The window's copy is the only one that should land.
+	//
+	// Stopping the watcher is not enough to arrange that. @vueuse's debounceFilter keeps its timer
+	// in a closure and returns only the watch handle, so a call already pending arrives whether or
+	// not anything is still listening — which is why the guard is a flag read at the last moment.
+	//
+	// It gates the debounced callback and nothing else. An explicit save is a decision, not a
+	// leftover timer, and the composer makes one on the way out: Vue's unmountComponent stops the
+	// effect scope — running this hook — before it so much as queues `onUnmounted`, which is a
+	// post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
+	// when it is needed most, and everything typed since the last tick would go with the component.
 	let disposed = false
 	onScopeDispose(() => (disposed = true))
 
@@ -178,9 +188,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const isSavingDraft = ref(false)
 	const isDiscarding = ref(false)
 
+	// Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
+	// say that on its own: the host clears it through `onClosed` as soon as the composer is off
+	// screen, which is well before the component is torn down — so the save on the way out would find
+	// the flag down and write back a draft that is already being deleted, or worse, create one for a
+	// message that was never saved in the first place. This one is not cleared, because there is
+	// nothing to come back to.
+	let discarded = false
+
 	const saveDraft = async () => {
-		if (disposed) return
-		if (!isDraftUpdated.value || isLoading.value || isDiscarding.value) return
+		if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
 
 		isSavingDraft.value = true
 		if (mail.id) await updateDraft.submit({ submit: false })
@@ -188,7 +205,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		isSavingDraft.value = false
 	}
 
-	watchDebounced(mail, () => saveDraft(), { debounce: 2000 })
+	watchDebounced(
+		mail,
+		() => {
+			if (disposed) return
+			saveDraft()
+		},
+		{ debounce: 2000 },
+	)
 
 	// Mirrors UNDO_SEND_WINDOW_SECONDS in api/mail.py; the server holds delivery a few seconds
 	// longer than this so a last-moment Undo still lands in time.
@@ -217,6 +241,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const discardMail = async () => {
 		if (deleteMail.loading) return
 
+		discarded = true
 		isDiscarding.value = true
 		// Before close(), and synchronously: the host has to learn the draft is going while it is
 		// still on screen. Told afterwards, it sees the composer close first and puts the draft

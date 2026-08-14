@@ -135,6 +135,12 @@ if (!isMobile.value)
 
 const editor = useTemplateRef('composeMailEditor')
 
+// The draft as it stands in here, for a host that has to take it back. A thread that popped a reply
+// out handed over a set of details and got a composer with a draft of its own built from them —
+// nothing typed since has reached the thread, so when the reader asks for the draft back it has to
+// come from the composer rather than from the copy the thread still remembers.
+defineExpose({ mail: computed(() => editor.value?.mail) })
+
 // --- Window state (desktop) ---
 
 type ComposeState = 'modal' | 'dock' | 'minimised'

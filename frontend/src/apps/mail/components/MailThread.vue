@@ -427,6 +427,7 @@
 		</div>
 		<SendMail
 			v-if="focusedDraft"
+			ref="composeWindow"
 			v-model="showSendModal"
 			:mail-details="draftMails[focusedDraft]"
 			@reload-mails="reload"
@@ -1170,9 +1171,26 @@ const showSendModal = ref(false)
 // draft it meant.
 const isPoppedOut = (mail: Mail) => showSendModal.value && !!focusedDraft.value && !!mail.draft
 
-// Bring the reply back into the conversation. Closing the window is all it takes: the card is
-// withheld only while that window is open, so it returns with whatever the draft has become.
-const showDraftInThread = () => (showSendModal.value = false)
+const composeWindow = useTemplateRef('composeWindow')
+
+// Bring the reply back into the conversation, carrying whatever it has become.
+//
+// Closing the window is not by itself enough. The window's composer built a draft of its own out of
+// the details it was handed, so nothing typed into it has ever reached `draftMails` — the card came
+// back reading as it did at the moment of pop-out, and its own autosave then wrote that stale text
+// over the server's copy. So the live draft is taken from the composer while it is still there.
+// Reading it back from the server instead would mean waiting on the two-second autosave, and a
+// reader who clicks this a second after typing is exactly the case that goes wrong.
+//
+// Copied rather than adopted, and layered over the entry already there: the composer models the
+// message and not the thread's bookkeeping, so the reply type — which is what draws the card's
+// icon and decides whether From and Subject are shown — survives from underneath.
+const showDraftInThread = () => {
+	const live = composeWindow.value?.mail
+	const name = focusedDraft.value
+	if (live && name) draftMails[name] = { ...draftMails[name], ...JSON.parse(JSON.stringify(live)) }
+	showSendModal.value = false
+}
 
 // Discard, heard as it starts rather than once the delete lands. The card is withheld only while
 // the window is open, and `discardMail` closes before it deletes — so without this the thread took
