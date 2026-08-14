@@ -37,19 +37,19 @@
 				</h3>
 				<Button
 					variant="ghost"
-					:aria-label="__('Dock to corner')"
-					:tooltip="__('Dock to corner')"
-					@click="state = 'dock'"
-				>
-					<template #icon><Minimize2 class="icon" /></template>
-				</Button>
-				<Button
-					variant="ghost"
 					:aria-label="__('Minimise')"
 					:tooltip="__('Minimise')"
 					@click="minimise()"
 				>
 					<template #icon><ChevronDown class="icon" /></template>
+				</Button>
+				<Button
+					variant="ghost"
+					:aria-label="__('Dock to corner')"
+					:tooltip="__('Dock to corner')"
+					@click="state = 'dock'"
+				>
+					<template #icon><Minimize2 class="icon" /></template>
 				</Button>
 				<Button
 					variant="ghost"
@@ -94,7 +94,7 @@
 				ref="composeMailEditor"
 				v-model="show"
 				:mail-details
-				:compact="state !== 'modal'"
+				:docked="state === 'dock'"
 				:reload-mails="() => emit('reloadMails')"
 				@discard-mail="emit('discardMail')"
 			/>

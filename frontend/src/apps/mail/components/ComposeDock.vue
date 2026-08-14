@@ -20,9 +20,9 @@
 	     off a line that is on screen next to it.
 
 	     The width is the toolbar's, not a taste: it is `flex-wrap justify-between`, so anything
-	     narrower than its two groups drops Discard and Send onto a second line. 42rem works only
-	     because the docked toolbar runs `compact` and spends its Discard label on an icon; put
-	     the label back and this has to grow to about 48rem. -->
+	     narrower than its two groups drops Discard and Send onto a second line. 42rem fits because
+	     the composer's toolbar has no alignment group (see useTextEditorButtons); put those three
+	     back and this has to grow to about 48rem. -->
 	<Teleport to="body">
 		<div
 			v-if="show"
@@ -48,15 +48,6 @@
 				<h2 class="text-ink-gray-8 min-w-0 flex-1 truncate text-base font-medium">
 					{{ title || __('Compose Mail') }}
 				</h2>
-				<Button
-					v-if="!minimised"
-					variant="ghost"
-					:aria-label="__('Expand')"
-					:tooltip="__('Expand')"
-					@click.stop="emit('expand')"
-				>
-					<template #icon><Maximize2 class="icon" /></template>
-				</Button>
 				<!-- No restore button: folded, the bar is one wide target that already does it, and a
 				     second control saying the same thing beside a Close that does not is the arrangement
 				     most likely to lose someone their draft. The bar carries the button role instead, so
@@ -69,6 +60,15 @@
 					@click.stop="emit('toggleMinimised')"
 				>
 					<template #icon><ChevronDown class="icon" /></template>
+				</Button>
+				<Button
+					v-if="!minimised"
+					variant="ghost"
+					:aria-label="__('Expand')"
+					:tooltip="__('Expand')"
+					@click.stop="emit('expand')"
+				>
+					<template #icon><Maximize2 class="icon" /></template>
 				</Button>
 				<Button
 					variant="ghost"
