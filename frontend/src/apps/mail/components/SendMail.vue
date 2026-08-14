@@ -97,6 +97,7 @@
 				:docked="state === 'dock'"
 				:reload-mails="() => emit('reloadMails')"
 				@discard-mail="emit('discardMail')"
+				@discard-started="emit('discardStarted')"
 			/>
 		</div>
 	</Teleport>
@@ -119,13 +120,18 @@ const show = defineModel<boolean>()
 
 const { mailDetails } = defineProps<{ mailDetails?: ComposeMailData }>()
 
-const emit = defineEmits(['reloadMails', 'discardMail'])
+const emit = defineEmits(['reloadMails', 'discardMail', 'discardStarted'])
 
 const { isMobile } = useScreenSize()
 
 // Desktop only: mobile composes on a full page, so there is no window to contend for. The
 // callback is how Compose reaches a composer that is already open — see restoreComposeWindow.
-if (!isMobile.value) claimComposeWindow(show, () => state.value === 'minimised' && minimise())
+if (!isMobile.value)
+	claimComposeWindow(
+		show,
+		() => state.value === 'minimised' && minimise(),
+		() => editor.value?.mail?.id,
+	)
 
 const editor = useTemplateRef('composeMailEditor')
 

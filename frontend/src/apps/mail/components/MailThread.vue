@@ -36,9 +36,17 @@
 		</div>
 		<div ref="threadContainer" class="flex-1 overflow-y-auto">
 
+			<!-- The composer window floats over the app, so while one is up the thread keeps a
+			     little room under its last message — enough to scroll clear of a minimised bar
+			     rather than ending beneath it. Not reserved otherwise, or every thread would
+			     end in a gap explaining nothing. -->
 			<div
-				class="sm:space-y-4 sm:px-5 sm:py-6"
-				:class="{ 'pb-16': isMobile && !thread?.at(-1)?.draft }"
+				class="sm:space-y-4 sm:px-5 sm:pt-6"
+				:class="{
+					'pb-16': isMobile && !thread?.at(-1)?.draft,
+					'sm:pb-24': isComposeWindowOpen(),
+					'sm:pb-6': !isComposeWindowOpen(),
+				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
 					<ThreadDivider
@@ -373,21 +381,21 @@
 						</div>
 
 						<!-- Stands in for the card while the reply is being written in the composer
-						     window, so the conversation still shows there is a draft in it — and
-						     offers the way back. rounded-xl to match the card it stands in for, and
-						     every other message card in the thread; slimmer padding, because it is a
-						     line about a message rather than a message. v-else-if, so it appears only
-						     where the card was withheld; the collapsed test tells that reason from
-						     this one. -->
+						     window, so the conversation still shows there is a draft in it — and offers
+						     the way back. Same border, radius and horizontal padding as the card it
+						     replaces, so it keeps the thread's rhythm and its text lines up with the
+						     messages above; only the vertical padding is slimmer, because it is a line
+						     about a message rather than a message. v-else-if, so it appears only where
+						     the card was withheld; the collapsed test tells that reason from this one. -->
 						<div
 							v-else-if="!collapsedMailNames.has(mail.name)"
-							class="bg-surface-gray-1 text-ink-gray-7 rounded-xl px-4 py-3 text-sm"
+							class="text-ink-gray-8 rounded-xl border px-5 py-3 text-sm"
 						>
-							{{ __('You are currently editing your reply in a separate window.') }}
+							{{ __('This draft is open in another window. Keep writing there, or') }}
 							<button
 								class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
 								@click="showDraftInThread()"
-							>{{ __('Show your draft here.') }}</button>
+							>{{ __('bring it back here') }}</button>
 						</div>
 					</template>
 				</template>
@@ -423,6 +431,7 @@
 			:mail-details="draftMails[focusedDraft]"
 			@reload-mails="reload"
 			@discard-mail="discardLocalDraft(focusedDraft)"
+			@discard-started="dropPoppedOutDraft()"
 		/>
 		<AttachmentViewer
 			v-model="showAttachmentViewer"
@@ -493,6 +502,11 @@ import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import {
+	closeComposeWindow,
+	composeWindowDraft,
+	isComposeWindowOpen,
+} from '@/apps/mail/composables/useComposeWindow'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
@@ -732,6 +746,15 @@ const loadThread = () => {
 
 	thread.value = data
 	setCollapsedGroup(data)
+
+	// Opening a draft from the list puts it in the thread, so a composer window still holding that
+	// same draft would be a second editor on it — two copies saving over each other, which is how
+	// the pair in the screenshot came to disagree. The window gives it up; the thread has it now.
+	// Skipped while this thread is the one that popped a draft out, or reloading would shut the
+	// window the reader is typing in.
+	const held = composeWindowDraft()
+	if (held && !showSendModal.value && data.some((mail: Mail) => mail.id === held))
+		closeComposeWindow()
 
 	data.forEach((mail) => {
 		if (mail.draft) {
@@ -1150,6 +1173,18 @@ const isPoppedOut = (mail: Mail) => showSendModal.value && !!focusedDraft.value 
 // Bring the reply back into the conversation. Closing the window is all it takes: the card is
 // withheld only while that window is open, so it returns with whatever the draft has become.
 const showDraftInThread = () => (showSendModal.value = false)
+
+// Discard, heard as it starts rather than once the delete lands. The card is withheld only while
+// the window is open, and `discardMail` closes before it deletes — so without this the thread took
+// the draft back and showed it for the length of the request, on its way to being destroyed.
+//
+// Dropping every draft row matches how `isPoppedOut` reads the situation: one window, one draft in
+// flight. The row is going anyway; a delete that fails is put back by the reload behind it.
+const dropPoppedOutDraft = () => {
+	if (!focusedDraft.value) return
+	delete draftMails[focusedDraft.value]
+	thread.value = thread.value.filter((m: Mail) => !m.draft)
+}
 
 const popOutDraft = (mail: ComposeMailData) => {
 	draftMails[mail.name as string] = mail
