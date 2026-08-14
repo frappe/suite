@@ -391,11 +391,11 @@
 							v-else-if="!collapsedMailNames.has(mail.name)"
 							class="text-ink-gray-8 rounded-xl border px-5 py-3 text-sm"
 						>
-							{{ __('This draft is open in another window. Keep writing there, or') }}
+							{{ __('This draft is open in another window.') }}
 							<button
 								class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
 								@click="showDraftInThread()"
-							>{{ __('bring it back here') }}</button>
+							>{{ __('Edit here instead') }}</button>.
 						</div>
 					</template>
 				</template>
