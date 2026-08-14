@@ -13,7 +13,7 @@ import requests
 from frappe.tests import IntegrationTestCase
 
 from suite.mail.jmap import SuiteJMAPClient
-from suite.mail.stalwart.connection import MANAGEMENT_SESSION_CACHE_KEY
+from suite.mail.stalwart import MANAGEMENT_SESSION_CACHE_KEY
 from suite.mail.utils import get_config, is_stalwart_configured
 
 # Names embed a fresh per-run token: Stalwart state never rolls back with the test database, and
@@ -34,7 +34,7 @@ def unique_name(prefix: str = "user") -> str:
 def clear_mail_caches() -> None:
     """Drops every cache through which a test could see a stale Stalwart config or session."""
 
-    frappe.local.request_cache.clear()  # get_config, get_management_connection, get_jmap_client
+    frappe.local.request_cache.clear()  # get_config, get_management_client, get_jmap_client
     frappe.cache.delete_value(MANAGEMENT_SESSION_CACHE_KEY)
     frappe.cache.delete_value("jmap:sessions")
 
@@ -248,9 +248,9 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
             domain_id = add_domain(name, description="Integration test domain")
 
         def cleanup(domain_id=domain_id):
-            from suite.mail.stalwart import get_domain_service
+            from suite.mail.stalwart import delete_domains
 
-            get_domain_service().delete(domain_id)
+            delete_domains(domain_id)
 
         cls._stalwart_cleanups.append(cleanup)
         return name
@@ -381,5 +381,7 @@ def _delete_stalwart_account(email: str) -> None:
 def _delete_stalwart(kind: str, resource_id: str) -> None:
     from suite.mail import stalwart
 
-    service = getattr(stalwart, f"get_{kind}_service")()
-    service.delete(resource_id)
+    if kind == "group":
+        stalwart.delete_groups(resource_id)
+    else:
+        stalwart.manage_delete({"mailing_list": "MailingList", "role": "Role"}[kind], resource_id)

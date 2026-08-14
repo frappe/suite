@@ -9,7 +9,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.mail.doctype.dns_record.dns_record import get_dns_provider
-from suite.mail.stalwart import get_domain_service
+from suite.mail.stalwart import get_domain_by_name
 from suite.mail.utils import is_stalwart_configured
 
 
@@ -181,7 +181,7 @@ class MailSettings(Document):
         for domain in signup_domains:
             domain = domain.strip().lower()
             if domain:
-                get_domain_service().get_by_name(domain, raise_exception=True)
+                get_domain_by_name(domain, raise_exception=True)
                 valid_signup_domains.append(domain)
 
         self.signup_domains = "\n".join(valid_signup_domains)

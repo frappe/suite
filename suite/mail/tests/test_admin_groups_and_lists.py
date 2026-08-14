@@ -31,7 +31,7 @@ from suite.mail.api.admin import (
     update_mailing_list,
 )
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
-from suite.mail.stalwart import get_mailing_list_service
+from suite.mail.stalwart import get_mailing_list_address_index
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 
 
@@ -145,7 +145,7 @@ class TestAdminGroupsAndLists(StalwartIntegrationTestCase):
         add_mailing_list_email(list_id, disabled)
         set_mailing_list_email_enabled(list_id, disabled, 0)
 
-        index = get_mailing_list_service().get_address_index()
+        index = get_mailing_list_address_index()
 
         self.assertEqual(index.get(primary), [self.member1.email.lower()])
         self.assertEqual(index.get(enabled), [self.member1.email.lower()])
