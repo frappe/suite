@@ -171,12 +171,22 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 		return element.textContent?.trim() ?? ''
 	}
 
+	// A draft that already exists on the server arrives with the body it was left with, and an empty
+	// one is a decision: the signature was deleted and the draft saved that way. So nothing is put
+	// back into it — not on the way in (this watcher is immediate, and a composer starts afresh every
+	// time a draft is opened), and not when the identity changes later.
+	//
+	// A composition that has never been saved is the other case entirely: its empty body is merely
+	// empty, and is where a signature belongs.
+	const isSavedDraft = !!mailDetails?.id
+
 	// Swap the signature when the From identity changes — but only while the body is still the
 	// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
 	// Compared by text so the editor's HTML normalization doesn't defeat the match.
 	watch(
 		() => mail.from_email,
 		(val, oldVal) => {
+			if (isBodyEmpty.value && isSavedDraft) return
 			if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal)))
 				mail.html_body = buildSignature(val)
 		},
