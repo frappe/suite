@@ -566,6 +566,11 @@ mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.mat
 
 const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
 
+// The write behind the theme toggle, in flight and waiting. Module-level, so every
+// useTheme() shares the one queue — the setting is one row, whoever writes it.
+let writingColorScheme = false
+let queuedColorScheme: COLOR_SCHEME | null = null
+
 export const useTheme = () => {
 	const { userResource } = userStore()
 
@@ -582,11 +587,36 @@ export const useTheme = () => {
 			name: userResource.data?.user_settings,
 			fieldname: { color_scheme },
 		}),
-		onSuccess: () => {
-			// Reconcile the optimistic value against server truth (sets the same value; harmless).
-			userResource.reload()
-		},
 	})
+
+	// The theme flips before the server answers, so the shortcut can be pressed faster than
+	// the round-trip: two set_value calls in flight against the same User Settings row have
+	// both read the same `modified` timestamp, and the server rejects the second as stale —
+	// a failure toast for a toggle that was working. So one write at a time, and only ever
+	// the newest scheme: the schemes a fast cycle passes through are on their way somewhere
+	// else, and none of them is worth a round-trip of its own.
+	const persistColorScheme = async (scheme: COLOR_SCHEME) => {
+		queuedColorScheme = scheme
+		if (writingColorScheme) return
+
+		writingColorScheme = true
+		try {
+			while (queuedColorScheme) {
+				const next = queuedColorScheme
+				queuedColorScheme = null
+				await updateColorScheme.submit(next)
+			}
+		} catch {
+			// The optimistic value now describes a write that did not land, and unwinding to
+			// the scheme before it would land on one the user may have already cycled past.
+			// Take the server's word for where the cycle actually stands.
+			queuedColorScheme = null
+			userResource.reload()
+			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+		} finally {
+			writingColorScheme = false
+		}
+	}
 
 	// Cycle System Default → Light → Dark. Bound to Cmd/Ctrl+Shift+L app-wide (see App.vue).
 	const cycleTheme = () => {
@@ -595,16 +625,10 @@ export const useTheme = () => {
 		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
 
 		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-		const prev = current
 		if (userResource.data) userResource.data.color_scheme = next
 		raiseToast(__('Color scheme updated to {0}.', [next]))
 
-		updateColorScheme.submit(next, {
-			onError: () => {
-				if (userResource.data) userResource.data.color_scheme = prev
-				raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-			},
-		})
+		persistColorScheme(next)
 	}
 
 	return { dataTheme, cycleTheme }
