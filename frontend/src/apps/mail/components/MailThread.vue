@@ -154,7 +154,7 @@
 								<div
 									class="flex items-center space-x-3"
 									:class="{
-										'cursor-pointer': mail !== thread[thread.length - 1],
+										'cursor-pointer': mail !== lastMessage,
 										'pb-6': mail.preview || !isCollapsed(mail),
 									}"
 									@click.stop="mail.collapsed = !mail.collapsed"
@@ -1009,8 +1009,17 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 	}
 }
 
-const isCollapsed = (mail: Mail) =>
-	!!(mail.collapsed && mail !== thread.value[thread.value.length - 1])
+// The message at the end of the conversation stays open — it is the one being read. Drafts do not
+// count towards which that is: a reply written at the bottom of the thread is not a newer message,
+// it is a thing being written about the last one, and the reader wants both on screen. Read as the
+// last row outright, the message being replied to folded itself away the moment the draft under it
+// was saved and the thread reloaded around it — every mail already seen comes back collapsed, and
+// the exemption had moved on to the draft.
+const lastMessage = computed(
+	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
+)
+
+const isCollapsed = (mail: Mail) => !!(mail.collapsed && mail !== lastMessage.value)
 
 const showReplyAll = (mail: Mail) =>
 	!mail.draft &&
