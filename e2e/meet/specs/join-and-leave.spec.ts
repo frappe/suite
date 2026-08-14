@@ -5,7 +5,9 @@ test.describe("Joining and leaving", { tag: "@meet-group-1" }, () => {
 		hostPage,
 		createMeetingViaUi,
 	}) => {
-		await createMeetingViaUi();
+		const meetingId = await createMeetingViaUi();
+
+		await hostPage.goto(`/meet/${meetingId}`);
 		await joinFromPreview(hostPage);
 
 		await hostPage.getByRole("button", { name: "End Call" }).click();
