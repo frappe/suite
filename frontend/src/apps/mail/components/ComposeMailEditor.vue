@@ -416,8 +416,19 @@ const TYPE_ICON_MAP = {
 
 // Shortcuts
 
+// Every mounted composer listens on the window, and a thread can hold more than one — a draft
+// being replied to below another, or one open here and another in the composer window. Without
+// this the shortcuts went to all of them at once: ⌘D discarded every open draft, ⌘Enter sent them.
+// The one the keystroke belongs to is the one it was typed into.
+const ownsEvent = (e: KeyboardEvent) => {
+	const root = textEditor.value?.$el as HTMLElement | undefined
+	const target = e.target as Node | null
+	return !!root && !!target && root.contains(target)
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
 	if (!show.value || (isInThread && isOverlayPresent())) return
+	if (!ownsEvent(e)) return
 
 	handleSendShortcut(e)
 	handleDiscardShortcut(e)
