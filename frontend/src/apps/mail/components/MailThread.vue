@@ -751,10 +751,12 @@ const loadThread = () => {
 	// Opening a draft from the list puts it in the thread, so a composer window still holding that
 	// same draft would be a second editor on it — two copies saving over each other, which is how
 	// the pair in the screenshot came to disagree. The window gives it up; the thread has it now.
-	// Skipped while this thread is the one that popped a draft out, or reloading would shut the
-	// window the reader is typing in.
+	// Skipped while the window is this thread's own pop-out, or reloading would shut the window the
+	// reader is typing in. Asked of the rows being loaded rather than of `showSendModal` alone, which
+	// says only that a window was opened from this pane at some point and stays true across a move to
+	// another conversation.
 	const held = composeWindowDraft()
-	if (held && !showSendModal.value && data.some((mail: Mail) => mail.id === held))
+	if (held && data.some((mail: Mail) => mail.id === held) && !data.some(isPoppedOut))
 		closeComposeWindow()
 
 	data.forEach((mail) => {
@@ -1157,19 +1159,31 @@ defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)
 
+// The one draft the composer window is holding, whichever row it has become.
+//
+// The window's own id for it, and not the name it was popped out under: a local `draft:<source>`
+// entry becomes the server's draft on its first autosave, the thread reloads under the new name,
+// and a match on that name quietly stopped finding it — the card came straight back beside the
+// window still writing it. Before that first save there is no id yet, and the name is all there is.
+//
+// Asked of a row rather than assumed of every draft, because "a draft is in the window" is not the
+// same question. This pane is reused as the reader moves between threads, so a draft popped out of
+// one conversation is still in the window while another is on screen — and that one's own draft is
+// not the one being written elsewhere.
+const isDraftInWindow = (mail: Mail) => {
+	if (!mail.draft) return false
+	const held = composeWindowDraft()
+	return held ? mail.id === held : mail.name === focusedDraft.value
+}
+
 // A draft being written in the composer window rather than in the thread. The thread stands the
 // notice in its place, or the same reply sits in two editors that do not share their state.
-//
-// Not matched on the draft's name, which does not survive being typed into: a local `draft:<source>`
-// entry becomes the server's draft on the first autosave, the thread reloads under its new name,
-// and the card came straight back. Only one composer window is open at a time, so "a draft from
-// this thread is in the window" is answer enough. The cost is a thread holding two drafts at once,
-// where both would show the notice — which no flow here produces.
 //
 // Keyed on the window still being open rather than on clearing `focusedDraft`: the card returns the
 // moment it closes, and discarding — which reads `focusedDraft` as it fires — still knows which
 // draft it meant.
-const isPoppedOut = (mail: Mail) => showSendModal.value && !!focusedDraft.value && !!mail.draft
+const isPoppedOut = (mail: Mail) =>
+	showSendModal.value && !!focusedDraft.value && isDraftInWindow(mail)
 
 const composeWindow = useTemplateRef('composeWindow')
 
@@ -1196,12 +1210,13 @@ const showDraftInThread = () => {
 // the window is open, and `discardMail` closes before it deletes — so without this the thread took
 // the draft back and showed it for the length of the request, on its way to being destroyed.
 //
-// Dropping every draft row matches how `isPoppedOut` reads the situation: one window, one draft in
-// flight. The row is going anyway; a delete that fails is put back by the reload behind it.
+// Only the row being discarded: a thread can hold a second draft — a server one and a reply just
+// started in the pane — and that one is not going anywhere. The row is going anyway; a delete that
+// fails is put back by the reload behind it.
 const dropPoppedOutDraft = () => {
 	if (!focusedDraft.value) return
 	delete draftMails[focusedDraft.value]
-	thread.value = thread.value.filter((m: Mail) => !m.draft)
+	thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m))
 }
 
 const popOutDraft = (mail: ComposeMailData) => {
