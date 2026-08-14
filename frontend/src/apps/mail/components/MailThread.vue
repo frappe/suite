@@ -877,6 +877,16 @@ watch(
 		resetCollapsedGroup()
 		removedMailIds.clear()
 		thread.value = []
+		// Going back to the list takes the composer window with it: everything in this pane hangs off
+		// `threadID`, the popped-out composer included, so it is unmounted along with the thread it
+		// came from. What is left behind is only the memory of it, and the next thread opened mounted
+		// a composer on that — the draft from the last conversation, over a thread that had nothing to
+		// do with it, in a window that had forgotten it was ever folded away.
+		if (!threadID) {
+			showSendModal.value = false
+			focusedDraft.value = undefined
+			poppedOutDraftId.value = undefined
+		}
 		loadThread()
 	},
 )
