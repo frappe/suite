@@ -1,4 +1,4 @@
-import { ref, watch, type Ref } from 'vue'
+import { onScopeDispose, ref, watch, type Ref } from 'vue'
 
 /**
  * One composer window at a time.
@@ -15,27 +15,43 @@ import { ref, watch, type Ref } from 'vue'
 const holder = ref<symbol | null>(null)
 let unfold: (() => void) | null = null
 
+const release = (id: symbol) => {
+	if (holder.value !== id) return
+	holder.value = null
+	unfold = null
+}
+
 /**
  * Ties a composer's `show` to the window: opening claims it and closes whoever held it, and
- * closing releases it. Call once per SendMail instance, from setup.
+ * closing — or unmounting — releases it. Call once per SendMail instance, from setup.
  */
 export const claimComposeWindow = (show: Ref<boolean | undefined>, onRestore?: () => void) => {
 	const id = Symbol('compose-window')
 
-	watch(show, (open) => {
-		if (open) {
-			holder.value = id
-			unfold = onRestore ?? null
-		} else if (holder.value === id) {
-			holder.value = null
-			unfold = null
-		}
-	})
+	watch(
+		show,
+		(open) => {
+			if (open) {
+				holder.value = id
+				unfold = onRestore ?? null
+			} else release(id)
+		},
+		// Immediate, because a composer routinely mounts already open: DefaultLayout bumps its key
+		// and sets `show` in the same tick so a second request replaces the draft on screen, and a
+		// draft popped out of a thread flips a v-if the same way. On change alone, neither would
+		// ever claim the window — leaving two composers in one corner, and a Compose that finds no
+		// holder to bring back.
+		{ immediate: true },
+	)
 
-	// Someone else claimed it while this one was open.
 	watch(holder, (current) => {
 		if (show.value && current !== id) show.value = false
 	})
+
+	// Unmounting while open has to release too, or the window is held by a component that no
+	// longer exists: Compose would report it handled the request and hand it to a dead closure.
+	// Scope disposal rather than onUnmounted so this is exercisable without mounting anything.
+	onScopeDispose(() => release(id))
 }
 
 /**
