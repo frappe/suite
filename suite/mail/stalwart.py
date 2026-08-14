@@ -17,6 +17,7 @@ from jmap.core.retry import RetryPolicy
 from jmap.core.session import Session
 
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+from suite.mail.jmap import UNAVAILABLE_STATUS_CODES, MailServerUnavailableError, translated_errors
 from suite.mail.utils import get_config, is_stalwart_configured, log_mail_error
 from suite.utils.dt import utcnow
 
@@ -276,7 +277,7 @@ def _connect(username: str, cache_key: str | None, timeout: tuple[float, float])
                 session_url=session_url,
             )
         else:
-            with _guarded("Session"):
+            with translated_errors():
                 client = ManagementClient.connect(
                     session_url,
                     auth=auth,
@@ -1022,20 +1023,35 @@ def run_action(action_type: str, params: dict | None = None) -> dict:
 # --- REST helpers (non-JMAP paths on the same authenticated client) ---------
 
 
+def _rest_get(path: str) -> httpx.Response:
+    """GETs a non-JMAP management path, translating server-down into the 503 the UI keys on.
+
+    Mirrors the old transport: connect/timeout failures and gateway 502/503/504 become
+    MailServerUnavailableError; any other HTTP error surfaces as-is.
+    """
+
+    try:
+        response = get_management_client().http.get(urljoin(get_config("server_url"), path))
+    except httpx.HTTPError as e:
+        raise MailServerUnavailableError() from e
+
+    if response.status_code in UNAVAILABLE_STATUS_CODES:
+        raise MailServerUnavailableError()
+
+    response.raise_for_status()
+    return response
+
+
 def _schema() -> dict:
     """Fetches the server schema (labels + enum choices for the admin UI)."""
 
-    response = get_management_client().http.get(urljoin(get_config("server_url"), "/api/schema"))
-    response.raise_for_status()
-    return response.json()
+    return _rest_get("/api/schema").json()
 
 
 def get_delivery_token() -> str:
     """Mints a short-lived token for the live delivery trace endpoint."""
 
-    response = get_management_client().http.get(urljoin(get_config("server_url"), "/api/token/delivery"))
-    response.raise_for_status()
-    return response.text
+    return _rest_get("/api/token/delivery").text
 
 
 def iter_delivery_trace(target: str):
@@ -1061,7 +1077,7 @@ def download_message_blob(blob_id: str) -> bytes:
     """Downloads a queued message's raw RFC822 source via the session's download endpoint."""
 
     client = get_management_client()
-    with _guarded("QueuedMessage"):
+    with translated_errors():
         return client.download(
             blob_id, name="message.eml", content_type="message/rfc822", account_id=client.default_account
         )

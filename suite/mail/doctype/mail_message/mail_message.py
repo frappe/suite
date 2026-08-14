@@ -27,6 +27,7 @@ from suite.mail.doctype.sieve_script.sieve_script import SCREENER_MAILBOX_NAME
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
     account_view,
+    chunked_get,
     chunked_set,
     download_blobs,
     get_account_client,
@@ -856,10 +857,11 @@ def get_thread_email_ids(account: str, thread_ids: list[str]) -> dict[str, list[
     """Returns a mapping of thread ID to the email IDs in that thread."""
 
     client = get_account_client(account)
-    with client.batch() as b:
-        h = b.mail.thread.get(ids=thread_ids, properties=["emailIds"])
+    threads = chunked_get(
+        client, lambda b, chunk: b.mail.thread.get(ids=chunk, properties=["emailIds"]), thread_ids
+    )
 
-    return {thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in h.result.items)}
+    return {thread["id"]: thread.get("emailIds", []) for thread in (th.to_wire() for th in threads)}
 
 
 def search_messages(
@@ -907,9 +909,16 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
 
     if ids_to_fetch:
         client = get_account_client(account)
-        with client.batch() as b:
-            h = b.mail.email.get(ids=ids_to_fetch, properties=EMAIL_PROPERTIES, fetchAllBodyValues=True)
-        emails = [e.to_wire() for e in h.result.items]
+        emails = [
+            e.to_wire()
+            for e in chunked_get(
+                client,
+                lambda b, chunk: b.mail.email.get(
+                    ids=chunk, properties=EMAIL_PROPERTIES, fetchAllBodyValues=True
+                ),
+                ids_to_fetch,
+            )
+        ]
         mailbox_map = {mb["id"]: mb["name"] for mb in get_cached_mailboxes(account)}
 
         messages_to_cache = {}
@@ -940,9 +949,12 @@ def get_message_ids(
             return ids
 
         client = get_account_client(account)
-        with client.batch() as b:
-            h = b.mail.email.get(ids=ids, properties=["id", "mailboxIds"])
-        emails = [e.to_wire() for e in h.result.items]
+        emails = [
+            e.to_wire()
+            for e in chunked_get(
+                client, lambda b, chunk: b.mail.email.get(ids=chunk, properties=["id", "mailboxIds"]), ids
+            )
+        ]
         if isinstance(mailbox_id, str):
             return [email["id"] for email in emails if mailbox_id in email["mailboxIds"]]
         else:

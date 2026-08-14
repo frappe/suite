@@ -18,6 +18,7 @@ from suite.mail.jmap import (
     SetResult,
     SuiteJMAPClient,
     chunk_list,
+    chunked_get,
     chunked_set,
     get_default_calendar_id,
     get_default_participant_identity,
@@ -137,12 +138,17 @@ def update_events(
 
 
 def get_events(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[dict]:
-    """Returns raw calendar event objects; jmaplib chunks oversized id lists itself."""
+    """Returns raw calendar event objects, chunking large id lists (concatenated like the old
+    client — a concurrent calendar change must not abort the read)."""
 
-    with client.batch() as b:
-        h = b.calendars.calendar_event.get(ids=ids) if ids else b.calendars.calendar_event.get()
+    if ids:
+        events = chunked_get(client, lambda b, chunk: b.calendars.calendar_event.get(ids=chunk), ids)
+    else:
+        with client.batch() as b:
+            h = b.calendars.calendar_event.get()
+        events = h.result.items
 
-    return [e.to_wire() for e in h.result.items]
+    return [e.to_wire() for e in events]
 
 
 def get_calendars(client: SuiteJMAPClient) -> list[dict]:
@@ -255,11 +261,14 @@ def get_base_event_ids(client: SuiteJMAPClient, ids: list[str]) -> dict[str, str
     directly from the id itself — unlike a uid query, it does not depend on the search index
     (updated asynchronously), so it works immediately after an event is created."""
 
-    with client.batch() as b:
-        h = b.calendars.calendar_event.get(ids=ids, properties=["id", "baseEventId"])
+    events = chunked_get(
+        client,
+        lambda b, chunk: b.calendars.calendar_event.get(ids=chunk, properties=["id", "baseEventId"]),
+        ids,
+    )
 
     base_ids = {}
-    for event in h.result.items:
+    for event in events:
         event = event.to_wire()
         base_ids[event["id"]] = event.get("baseEventId") or event["id"]
 

@@ -35,6 +35,7 @@ from suite.mail.jmap import (
     SuiteJMAPClient,
     account_view,
     chunk_list,
+    chunked_get,
     chunked_set,
     get_cached_address_books,
     get_default_address_book_id,
@@ -469,9 +470,14 @@ class ContactsExchange(OwnerFromUser, Document):
             if not ids:
                 frappe.throw(_("No contacts found for export."))
 
-            with client.batch() as b:
-                handle = b.contacts.contact_card.get(ids=ids, properties=CARD_PROPERTIES)
-            cards = [c.to_wire() for c in handle.result.items]
+            cards = [
+                c.to_wire()
+                for c in chunked_get(
+                    client,
+                    lambda b, chunk: b.contacts.contact_card.get(ids=chunk, properties=CARD_PROPERTIES),
+                    ids,
+                )
+            ]
 
             if self.deduplicate_export:
                 fetched = len(cards)
@@ -653,11 +659,12 @@ class ContactsExchange(OwnerFromUser, Document):
         existing_uids: set[str] = set()
         if uids:
             if existing_ids := get_card_ids_by_uids(client, uids):
-                with client.batch() as b:
-                    handle = b.contacts.contact_card.get(ids=existing_ids, properties=["id", "uid"])
-                existing_uids = {
-                    card["uid"] for card in (c.to_wire() for c in handle.result.items) if card.get("uid")
-                }
+                existing = chunked_get(
+                    client,
+                    lambda b, chunk: b.contacts.contact_card.get(ids=chunk, properties=["id", "uid"]),
+                    existing_ids,
+                )
+                existing_uids = {card["uid"] for card in (c.to_wire() for c in existing) if card.get("uid")}
 
         default_address_book_id: str | None = None
 

@@ -10,6 +10,7 @@ import requests
 from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import add_to_date, cint, now, random_string
+from jmap import MethodError
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -386,9 +387,15 @@ def get_all_inbox_unread_count() -> int:
     total = 0
     for account in get_user_jmap_accounts():
         client = get_account_client(account["name"])
-        with client.batch() as b:
-            h = b.mail.mailbox.get()
-        for mailbox in h.result.items:
+        try:
+            with client.batch() as b:
+                h = b.mail.mailbox.get()
+            mailboxes = h.result.items
+        except MethodError:
+            # A stale/revoked account answers with a method-level error; the old client
+            # treated that as "no mailboxes" — keep the badge working for the rest.
+            continue
+        for mailbox in mailboxes:
             wire = mailbox.to_wire()
             if (wire.get("role") or "").lower() == "inbox":
                 total += cint(wire.get("unreadThreads"))

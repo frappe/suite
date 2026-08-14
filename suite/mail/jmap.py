@@ -670,6 +670,29 @@ def chunked_set(
     return result
 
 
+def chunked_get(
+    client: SuiteJMAPClient,
+    run: Callable[[Any, list], Any],
+    ids: list,
+    chunk_size: int | None = None,
+) -> list:
+    """Runs a /get over `ids` in separate per-chunk requests and concatenates the items.
+
+    jmaplib auto-chunks an oversized /get but refuses to merge chunks whose type states
+    differ (TornReadError); the bulk read/export paths keep the old client's semantics
+    instead — a concurrent mailbox change must not abort a large read.
+    """
+
+    size = chunk_size or client.capabilities.limits.max_objects_in_get
+    items: list = []
+    for chunk in chunk_list(list(ids), size):
+        with client.batch() as b:
+            handle = run(b, chunk)
+        items.extend(handle.result.items)
+
+    return items
+
+
 def chunk_list(items: list, size: int) -> Iterator[list]:
     for i in range(0, len(items), size):
         yield items[i : i + size]

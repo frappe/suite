@@ -41,6 +41,7 @@ from suite.mail.jmap import (
     EXCHANGE_TIMEOUT,
     SuiteJMAPClient,
     account_view,
+    chunked_get,
     chunked_set,
     download_blobs,
     get_cached_mailboxes,
@@ -875,9 +876,12 @@ class MailExchange(OwnerFromUser, Document):
                 frappe.throw(_("No emails found for export."))
 
             properties = ["id", "from", "blobId", "keywords", "mailboxIds", "messageId", "receivedAt"]
-            with client.batch() as b:
-                handle = b.mail.email.get(ids=ids, properties=properties)
-            emails = [e.to_wire() for e in handle.result.items]
+            emails = [
+                e.to_wire()
+                for e in chunked_get(
+                    client, lambda b, chunk: b.mail.email.get(ids=chunk, properties=properties), ids
+                )
+            ]
 
             if self.deduplicate_export:
                 fetched = len(emails)
