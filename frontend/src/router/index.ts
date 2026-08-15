@@ -80,6 +80,13 @@ const routes: RouteRecordRaw[] = [
     meta: { isShell: true, title: 'Set up Frappe Suite', favicon: SUITE_FAVICON },
   },
   ...placeholderGroups,
+  // PROTOTYPE — remove: throwaway workspace-shell prototype (/prototype/shell).
+  {
+    path: '/prototype/shell/:area?/:sub?',
+    name: 'prototype-shell',
+    component: () => import('@/prototypes/shell/PrototypeShell.vue'),
+    meta: { title: 'Shell Prototype', allowGuest: true },
+  },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
