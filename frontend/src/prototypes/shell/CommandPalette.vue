@@ -5,16 +5,24 @@
 <template>
   <Dialog v-model:open="open" size="xl" position="top" bare>
     <div class="flex flex-col">
-      <div class="flex items-center gap-2 border-b border-outline-gray-1 px-4">
-        <span class="lucide-search size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
-        <input
+      <!-- TextInput, not a bare <input>: the suite's global form styles were
+           painting a blue border and their own padding inside the palette. -->
+      <div class="border-b border-outline-gray-1 p-1.5">
+        <TextInput
           ref="inputEl"
           v-model="query"
-          type="text"
+          size="lg"
+          variant="ghost"
           placeholder="Search or jump to…"
-          class="h-12 w-full bg-transparent text-base text-ink-gray-9 placeholder-ink-gray-4 focus-visible:outline-none"
-        />
-        <KeyboardShortcut combo="Esc" />
+          class="palette-input"
+        >
+          <template #prefix>
+            <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+          </template>
+          <template #suffix>
+            <KeyboardShortcut combo="Esc" />
+          </template>
+        </TextInput>
       </div>
       <div class="max-h-96 overflow-y-auto p-2">
         <div v-for="group in GROUPS" :key="group.label" class="pb-1">
@@ -36,7 +44,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Dialog, KeyboardShortcut } from 'frappe-ui'
+import { Dialog, KeyboardShortcut, TextInput } from 'frappe-ui'
 
 import { DOC_KIND_META, RECENT_DOCS, type AreaId } from './fixtures'
 import { commandPaletteOpen as open } from './useCommandPalette'
@@ -44,7 +52,8 @@ import { useShellNav } from './useShellNav'
 
 const { go } = useShellNav()
 const query = ref('')
-const inputEl = ref<HTMLInputElement | null>(null)
+// TextInput exposes its native element as `el`.
+const inputEl = ref<{ el: HTMLInputElement | null } | null>(null)
 
 interface PaletteItem {
   label: string
@@ -95,10 +104,22 @@ function onKeydown(e: KeyboardEvent) {
 watch(open, (isOpen) => {
   if (isOpen) {
     query.value = ''
-    nextTick(() => inputEl.value?.focus())
+    nextTick(() => inputEl.value?.el?.focus())
   }
 })
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
+
+<!--
+  Not scoped: @tailwindcss/forms paints every text input white, and that
+  survives dark mode inside the dialog. TextInput routes a class prop to its
+  wrapper rather than the control, and the control carries no scope attribute,
+  so :deep() cannot reach it. One selector, named for this component only.
+-->
+<style>
+.palette-input input {
+  @apply bg-transparent placeholder-ink-gray-4;
+}
+</style>
