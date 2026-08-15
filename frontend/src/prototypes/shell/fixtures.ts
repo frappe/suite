@@ -249,6 +249,25 @@ export function pathTo(id: string): FileRow[] {
   return chain
 }
 
+export interface MeetingRoom {
+  id: string
+  name: string
+  /** The claimed part of the URL. Unique across the workspace. */
+  handle: string
+  /** When the room is normally used. Prose, not a schedule. */
+  cadence: string
+}
+
+// Rooms are claimed names, not events: the workspace owns the handle, and the
+// same URL is reused every week. That is why they live beside Recent rather
+// than inside the Calendar.
+export const MEETING_ROOMS: MeetingRoom[] = [
+  { id: 'm1', name: 'Frappe Suite standup', handle: 'frappe-suite', cadence: 'Weekdays, 09:30' },
+  { id: 'm2', name: 'Timeless weekly', handle: 'timeless', cadence: 'Thursdays, 16:00' },
+  { id: 'm3', name: 'Design review', handle: 'design', cadence: 'Tuesdays, 15:00' },
+  { id: 'm4', name: 'Faris', handle: 'faris', cadence: 'Ad hoc' },
+]
+
 export const CALENDARS = [
   { id: 'work', label: 'Work', dot: 'bg-surface-blue-5' },
   { id: 'personal', label: 'Personal', dot: 'bg-surface-green-5' },

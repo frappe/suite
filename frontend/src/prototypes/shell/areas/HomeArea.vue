@@ -81,6 +81,39 @@
         </ListGroup>
       </List>
     </section>
+
+    <!-- Rooms -->
+    <section>
+      <div class="flex items-center justify-between pb-3">
+        <h2 class="text-lg font-medium text-ink-gray-9">Rooms</h2>
+        <Button label="Claim a name" icon-left="lucide-plus" variant="ghost" />
+      </div>
+      <!-- The handle is the point, so it gets its own column rather than
+           hiding under the name: these are URLs the workspace has taken. -->
+      <List
+        class="-mx-3 list-row-px-3"
+        :columns="['minmax(0,1fr)', '12rem', '10rem', '7rem']"
+        :row-height="40"
+      >
+        <ListRow v-for="room in MEETING_ROOMS" :key="room.id" :value="room.id" @click="() => {}">
+          <ListCell>
+            <span class="truncate text-base text-ink-gray-8">{{ room.name }}</span>
+          </ListCell>
+          <ListCell>
+            <span class="truncate font-mono text-sm text-ink-gray-5">
+              /meet/{{ room.handle }}
+            </span>
+          </ListCell>
+          <ListCell>
+            <span class="truncate text-base text-ink-gray-5">{{ room.cadence }}</span>
+          </ListCell>
+          <ListCell class="justify-end gap-1">
+            <Button icon="lucide-link" variant="ghost" label="Copy link" />
+            <Button label="Join" icon-left="lucide-video" variant="outline" />
+          </ListCell>
+        </ListRow>
+      </List>
+    </section>
   </div>
 </template>
 
@@ -89,7 +122,7 @@ import { computed } from 'vue'
 import { Button, Dropdown, PageHeader } from 'frappe-ui'
 import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 
-import { DOC_KIND_META, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
+import { DOC_KIND_META, MEETING_ROOMS, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
 import { useShellNav } from '../useShellNav'
 
