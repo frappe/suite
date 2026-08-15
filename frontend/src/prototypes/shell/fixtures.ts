@@ -2,6 +2,14 @@
 // Nothing here persists or talks to the backend.
 
 export const WORKSPACE = { name: 'Frappe' }
+
+// Two workspaces only, to ask whether the switcher belongs in the sidebar at
+// all. `kind` is the subtitle line, so the org and the personal one are
+// tellable apart without an avatar.
+export const WORKSPACES = [
+  { id: 'frappe', name: 'Frappe', kind: 'Organization' },
+  { id: 'personal', name: 'Personal', kind: 'Just you' },
+]
 export const USER = { name: 'Faris', initial: 'F' }
 
 export type AreaId = 'home' | 'files' | 'mail' | 'calendar'

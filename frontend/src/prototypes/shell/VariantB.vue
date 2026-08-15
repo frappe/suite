@@ -7,8 +7,8 @@
   <DesktopShell :scroll="isOverview">
     <template #rail>
       <Rail class="gap-1">
-        <RailItem label="Frappe" variant="tile" :active="false">
-          <span class="text-base font-medium text-ink-gray-7">{{ WORKSPACE.name.charAt(0) }}</span>
+        <RailItem :label="WORKSPACE.name" variant="tile" :active="false">
+          <FrappeMark class="h-3.5 text-ink-gray-8" />
         </RailItem>
 
         <div class="my-1 h-px w-6 shrink-0 bg-surface-gray-4" />
@@ -38,9 +38,7 @@
       <Sidebar width="14rem" disable-collapse>
         <div class="flex h-full flex-col border-l border-outline-gray-2 p-2">
           <template v-if="isOverview">
-            <div class="flex h-12 shrink-0 items-center px-1.5">
-              <span class="text-base font-medium text-ink-gray-8">{{ WORKSPACE.name }}</span>
-            </div>
+            <WorkspaceSwitcher />
             <h3 class="px-2 pb-1.5 pt-2 text-sm text-ink-gray-5">Folders</h3>
             <nav class="flex flex-col gap-0.5">
               <SidebarItem
@@ -91,8 +89,10 @@ import FilesArea from './areas/FilesArea.vue'
 import HomeArea from './areas/HomeArea.vue'
 import MailArea from './areas/MailArea.vue'
 import { CALENDARS, FOLDERS, NAV_ITEMS, USER, WORKSPACE } from './fixtures'
+import FrappeMark from './parts/FrappeMark.vue'
 import MailboxList from './parts/MailboxList.vue'
 import MiniMonth from './parts/MiniMonth.vue'
+import WorkspaceSwitcher from './parts/WorkspaceSwitcher.vue'
 import { useShellNav } from './useShellNav'
 
 const { area, areaTo } = useShellNav()
