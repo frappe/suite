@@ -60,6 +60,12 @@
           <WorkspaceSwitcher />
         </div>
 
+        <!-- Search sits in the panel, not in a page header: it is the same
+             control everywhere, and Mail and Calendar have no page header. -->
+        <div class="shrink-0 px-2 pb-2">
+          <SearchTrigger />
+        </div>
+
         <!--
           The app owns the scroll region: frappe-ui's ScrollArea keeps the thin,
           auto-hiding overlay scrollbar; padding the viewport gives the active
@@ -137,6 +143,7 @@ import MailArea from './areas/MailArea.vue'
 import { CALENDARS, FOLDERS, NAV_ITEMS, USER } from './fixtures'
 import MailboxList from './parts/MailboxList.vue'
 import MiniMonth from './parts/MiniMonth.vue'
+import SearchTrigger from './parts/SearchTrigger.vue'
 import WorkspaceSwitcher from './parts/WorkspaceSwitcher.vue'
 import { useShellNav } from './useShellNav'
 
