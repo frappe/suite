@@ -86,7 +86,7 @@
     <section>
       <div class="flex items-center justify-between pb-3">
         <h2 class="text-lg font-medium text-ink-gray-9">Rooms</h2>
-        <Button label="Claim" icon-left="lucide-plus" variant="ghost" />
+        <Button label="New" icon-left="lucide-plus" variant="ghost" />
       </div>
       <!-- The handle is the point, so it gets its own column rather than
            hiding under the name: these are URLs the workspace has taken. -->
