@@ -72,10 +72,12 @@
             </div>
             <nav class="mt-0.5 space-y-0.5">
               <SidebarItem
-                v-for="folder in FOLDERS"
-                :key="folder.id"
-                :label="folder.label"
-                :icon="folder.icon"
+                v-for="item in FOLDERS"
+                :key="item.id"
+                :label="item.label"
+                :icon="item.icon"
+                :to="areaTo('files', item.id)"
+                :active="folder === item.id"
               />
             </nav>
           </template>
@@ -138,7 +140,7 @@ import MiniMonth from './parts/MiniMonth.vue'
 import WorkspaceSwitcher from './parts/WorkspaceSwitcher.vue'
 import { useShellNav } from './useShellNav'
 
-const { area, areaTo } = useShellNav()
+const { area, folder, areaTo } = useShellNav()
 const { currentTheme, setTheme, getSystemTheme } = useTheme()
 
 // currentTheme starts at 'system', so both the label and the toggle have to go

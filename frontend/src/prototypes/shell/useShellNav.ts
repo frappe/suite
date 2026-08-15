@@ -18,6 +18,10 @@ export function useShellNav() {
 
   const sub = computed(() => (route.params.sub as string) || '')
 
+  // The Folders list also shows on Home, where nothing is open yet — so an
+  // active folder only exists inside the Files area.
+  const folder = computed(() => (area.value === 'files' ? sub.value || 'all' : ''))
+
   function areaTo(target: AreaId, targetSub?: string): RouteLocationRaw {
     return {
       name: 'prototype-shell',
@@ -29,5 +33,5 @@ export function useShellNav() {
     router.push(areaTo(target, targetSub))
   }
 
-  return { area, sub, areaTo, go }
+  return { area, sub, folder, areaTo, go }
 }

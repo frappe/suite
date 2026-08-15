@@ -119,20 +119,34 @@ export interface FileRow {
   kind: DocKind | 'folder'
   owner: string
   modified: string
+  shared?: boolean
+  starred?: boolean
+  trashed?: boolean
 }
 
 export const FILES: FileRow[] = [
   { id: 'f1', name: 'Product', kind: 'folder', owner: 'Faris', modified: '2d ago' },
-  { id: 'f2', name: 'Design', kind: 'folder', owner: 'Faris', modified: '5d ago' },
-  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', owner: 'Faris', modified: '12m ago' },
-  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', owner: 'Faris', modified: '1h ago' },
-  { id: 'f5', name: 'Suite launch deck', kind: 'slides', owner: 'Faris', modified: '2h ago' },
-  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', owner: 'Faris', modified: '3h ago' },
-  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', owner: 'Faris', modified: 'yesterday' },
+  { id: 'f2', name: 'Design', kind: 'folder', owner: 'Neha Kulkarni', modified: '5d ago', shared: true },
+  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', owner: 'Faris', modified: '12m ago', starred: true },
+  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', owner: 'Priya Nair', modified: '1h ago', shared: true },
+  { id: 'f5', name: 'Suite launch deck', kind: 'slides', owner: 'Faris', modified: '2h ago', starred: true },
+  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', owner: 'Rushabh Mehta', modified: '3h ago', shared: true },
+  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', owner: 'Aditya Verma', modified: 'yesterday', shared: true },
   { id: 'f8', name: 'Expense tracker', kind: 'sheet', owner: 'Faris', modified: 'yesterday' },
-  { id: 'f9', name: 'Design review deck', kind: 'slides', owner: 'Faris', modified: '2d ago' },
-  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', owner: 'Faris', modified: '3d ago' },
+  { id: 'f9', name: 'Design review deck', kind: 'slides', owner: 'Neha Kulkarni', modified: '2d ago', shared: true, starred: true },
+  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', owner: 'Faris', modified: '3d ago', starred: true },
+  { id: 'f11', name: 'Archive 2025', kind: 'folder', owner: 'Faris', modified: '2w ago', trashed: true },
+  { id: 'f12', name: 'Old roadmap', kind: 'writer', owner: 'Faris', modified: '3w ago', trashed: true },
 ]
+
+/** Owner faces, so the Files list reads as real data instead of initials. */
+export const PEOPLE: Record<string, string> = {
+  Faris: USER.avatar,
+  'Neha Kulkarni': 'https://avatars.githubusercontent.com/u/583231?v=4',
+  'Priya Nair': 'https://avatars.githubusercontent.com/u/1?v=4',
+  'Aditya Verma': 'https://avatars.githubusercontent.com/u/2?v=4',
+  'Rushabh Mehta': 'https://avatars.githubusercontent.com/u/4?v=4',
+}
 
 export const FOLDERS = [
   { id: 'all', label: 'All files', icon: 'lucide-folder' },
@@ -140,6 +154,15 @@ export const FOLDERS = [
   { id: 'starred', label: 'Starred', icon: 'lucide-star' },
   { id: 'trash', label: 'Trash', icon: 'lucide-trash-2' },
 ]
+
+/** Sidebar folders are saved views, not a tree: every live file is in "all". */
+export function filesInFolder(folderId: string): FileRow[] {
+  if (folderId === 'trash') return FILES.filter((file) => file.trashed)
+  const live = FILES.filter((file) => !file.trashed)
+  if (folderId === 'shared') return live.filter((file) => file.shared)
+  if (folderId === 'starred') return live.filter((file) => file.starred)
+  return live
+}
 
 export const CALENDARS = [
   { id: 'work', label: 'Work', dot: 'bg-surface-blue-5' },
