@@ -1,7 +1,12 @@
-<!-- PROTOTYPE — remove. Solid "New" button with a static create dropdown. -->
+<!-- PROTOTYPE — remove. Subtle "New" button with a static create dropdown. -->
 <template>
   <Dropdown :options="NEW_MENU_ITEMS" align="end">
-    <Button variant="solid" label="New" icon-left="lucide-plus" />
+    <Button
+      variant="subtle"
+      label="New"
+      icon-left="lucide-plus"
+      icon-right="lucide-chevrons-up-down"
+    />
   </Dropdown>
 </template>
 
