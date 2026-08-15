@@ -6,16 +6,15 @@
   here would take focus the palette immediately steals back.
 -->
 <template>
-  <RailItem
-    label="Search"
-    icon="lucide-search"
-    variant="ghost"
-    @click="commandPaletteOpen = true"
-  />
+  <RailItem label="Search" variant="ghost" @click="commandPaletteOpen = true">
+    <span class="lucide-search size-4" aria-hidden="true" />
+    <ShortcutHint label="K" />
+  </RailItem>
 </template>
 
 <script setup lang="ts">
 import { RailItem } from 'frappe-ui'
 
 import { commandPaletteOpen } from '../useCommandPalette'
+import ShortcutHint from './ShortcutHint.vue'
 </script>

@@ -22,16 +22,20 @@
 
         <div class="flex w-full shrink-0 flex-col items-center gap-0.5 border-t pt-3">
           <SearchTrigger />
+          <!-- The unread pill sits in the same corner as the shortcut hint, so
+               the count stands down while Cmd is held. -->
           <RailItem
             v-for="item in NAV_ITEMS"
             :key="item.id"
             :label="item.label"
-            :icon="item.icon"
             variant="ghost"
             :to="areaTo(item.id)"
             :active="area === item.id"
-            :badge="item.id === 'mail' ? 12 : undefined"
-          />
+            :badge="item.id === 'mail' && !modifierHeld ? 12 : undefined"
+          >
+            <span :class="[item.icon, 'size-4']" aria-hidden="true" />
+            <ShortcutHint :label="shortcutFor(item.id)" />
+          </RailItem>
         </div>
 
         <div class="flex-1" />
@@ -140,10 +144,14 @@ import { FOLDERS, NAV_ITEMS, USER } from './fixtures'
 import MailboxList from './parts/MailboxList.vue'
 import MiniMonth from './parts/MiniMonth.vue'
 import SearchTrigger from './parts/SearchTrigger.vue'
+import ShortcutHint from './parts/ShortcutHint.vue'
 import WorkspaceSwitcher from './parts/WorkspaceSwitcher.vue'
 import { useShellNav } from './useShellNav'
+import { modifierHeld, shortcutFor, useShellShortcuts } from './useShellShortcuts'
 
-const { area, folder, areaTo } = useShellNav()
+const { area, folder, areaTo, go } = useShellNav()
+
+useShellShortcuts(go)
 const { currentTheme, setTheme, getSystemTheme } = useTheme()
 
 // currentTheme starts at 'system', so both the label and the toggle have to go
