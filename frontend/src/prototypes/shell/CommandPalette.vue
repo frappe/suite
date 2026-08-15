@@ -30,7 +30,7 @@
           <button
             v-for="item in group.items"
             :key="item.label"
-            class="flex w-full items-center gap-2 rounded-4 px-2 py-1.5 text-base text-ink-gray-8 hover:bg-surface-gray-2"
+            class="flex h-10 w-full items-center gap-2 rounded-4 px-2 text-base text-ink-gray-8 hover:bg-surface-gray-2"
             @click="onItemClick(item)"
           >
             <span class="size-4 shrink-0 text-ink-gray-5" :class="item.icon" aria-hidden="true" />
