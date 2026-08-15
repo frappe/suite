@@ -21,7 +21,7 @@
           <!-- No tile behind the icon: the kind already reads from its colour,
                so the grey box was carrying nothing. -->
           <span
-            class="size-6"
+            class="size-4.5"
             :class="[DOC_KIND_META[doc.kind].icon, DOC_KIND_META[doc.kind].tint]"
             aria-hidden="true"
           />
