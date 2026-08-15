@@ -1,6 +1,8 @@
 <!-- PROTOTYPE — remove. Static mini month (August 2026, today = 15). -->
 <template>
-  <div class="px-2 py-2">
+  <!-- No horizontal padding: the sidebar's scroll viewport already owns the
+       px-2 gutter. -->
+  <div class="py-2">
     <div class="flex items-center justify-between px-1 pb-2">
       <span class="text-sm font-medium text-ink-gray-8">August 2026</span>
       <div class="flex items-center gap-1 text-ink-gray-5">
@@ -19,7 +21,7 @@
         class="mx-auto flex size-6 items-center justify-center rounded-full text-xs"
         :class="
           day === 15
-            ? 'bg-surface-gray-7 font-medium text-ink-white'
+            ? 'bg-surface-gray-7 font-medium text-ink-gray-1'
             : 'text-ink-gray-7'
         "
       >

@@ -10,7 +10,11 @@ export const WORKSPACES = [
   { id: 'frappe', name: 'Frappe', kind: 'Organization' },
   { id: 'personal', name: 'Personal', kind: 'Just you' },
 ]
-export const USER = { name: 'Faris', initial: 'F' }
+export const USER = {
+  name: 'Faris',
+  initial: 'F',
+  avatar: 'https://avatars.githubusercontent.com/u/9355208?v=4',
+}
 
 export type AreaId = 'home' | 'files' | 'mail' | 'calendar'
 

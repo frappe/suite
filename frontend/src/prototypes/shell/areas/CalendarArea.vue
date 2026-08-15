@@ -19,7 +19,7 @@
           class="flex size-6 items-center justify-center rounded-full text-sm"
           :class="
             day.today
-              ? 'bg-surface-gray-7 font-medium text-ink-white'
+              ? 'bg-surface-gray-7 font-medium text-ink-gray-1'
               : 'text-ink-gray-8'
           "
         >
