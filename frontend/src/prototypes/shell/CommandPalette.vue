@@ -7,7 +7,7 @@
     <div class="flex flex-col">
       <!-- TextInput, not a bare <input>: the suite's global form styles were
            painting a blue border and their own padding inside the palette. -->
-      <div class="border-b border-outline-gray-1">
+      <div class="border-b border-outline-gray-2">
         <TextInput
           ref="inputEl"
           v-model="query"
@@ -18,9 +18,6 @@
         >
           <template #prefix>
             <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-          </template>
-          <template #suffix>
-            <KeyboardShortcut combo="Esc" />
           </template>
         </TextInput>
       </div>
@@ -44,7 +41,7 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Dialog, KeyboardShortcut, TextInput } from 'frappe-ui'
+import { Dialog, TextInput } from 'frappe-ui'
 
 import { DOC_KIND_META, RECENT_DOCS, type AreaId } from './fixtures'
 import { commandPaletteOpen as open } from './useCommandPalette'
