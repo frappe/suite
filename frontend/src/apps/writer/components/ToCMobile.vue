@@ -59,17 +59,24 @@ const selectTab = (id) => {
   if (id && id !== activeTabId.value) props.editor.commands.changeTab(id)
 }
 
+// Held from mount: on teardown the editor view may already be destroyed, and
+// tiptap's post-destroy `view` proxy throws on any key it doesn't stub (`dom`
+// is one). Throwing here aborts Vue's unmount, so the next route never mounts.
+let editorDom = null
+
 onMounted(() => {
   updateTabs()
   activeTabId.value = props.editor.storage.tab?.activeTabId ?? activeTabId.value
   props.editor.on('update', updateTabs)
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  editorDom = props.editor.view.dom
+  editorDom.addEventListener('tab-changed', handleTabChange)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   setBarHeight(0)
   props.editor.off('update', updateTabs)
-  props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+  editorDom?.removeEventListener('tab-changed', handleTabChange)
+  editorDom = null
 })
 </script>
