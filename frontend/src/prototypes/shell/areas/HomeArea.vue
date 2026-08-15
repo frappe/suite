@@ -49,39 +49,54 @@
         <h2 class="text-lg font-medium text-ink-gray-9">Upcoming</h2>
         <Button label="View all" variant="ghost" />
       </div>
-      <!-- One row per event: day and time share a cell so nothing stacks. -->
-      <List :columns="['11rem', 'minmax(0,1fr)', '5rem']" :row-height="40">
-        <ListRows :items="UPCOMING_EVENTS" row-key="id">
-          <template #default="{ item: event }">
-            <ListRow :value="event.id" @click="() => {}">
-              <ListCell>
-                <span class="truncate text-base text-ink-gray-5">
-                  {{ event.day }} · {{ event.time }}
-                </span>
-              </ListCell>
-              <ListCell>
-                <span class="truncate text-base text-ink-gray-8">{{ event.title }}</span>
-              </ListCell>
-              <ListCell>
-                <Button
-                  v-if="event.meet"
-                  label="Join"
-                  icon-left="lucide-video"
-                  variant="outline"
-                />
-              </ListCell>
-            </ListRow>
-          </template>
-        </ListRows>
+      <!-- One row per event, grouped by day. The day lives in the group
+           header, so each row carries only its time. -->
+      <List :columns="['7rem', 'minmax(0,1fr)', '5rem']" :row-height="40">
+        <ListGroup v-for="group in eventsByDay" :key="group.day" :label="group.day">
+          <ListRow
+            v-for="event in group.events"
+            :key="event.id"
+            :value="event.id"
+            @click="() => {}"
+          >
+            <ListCell>
+              <span class="truncate text-base text-ink-gray-5">{{ event.time }}</span>
+            </ListCell>
+            <ListCell>
+              <span class="truncate text-base text-ink-gray-8">{{ event.title }}</span>
+            </ListCell>
+            <ListCell>
+              <Button
+                v-if="event.meet"
+                label="Join"
+                icon-left="lucide-video"
+                variant="outline"
+              />
+            </ListCell>
+          </ListRow>
+        </ListGroup>
       </List>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Button, PageHeader } from 'frappe-ui'
-import { List, ListCell, ListRow, ListRows } from 'frappe-ui/list'
+import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 
 import { DOC_KIND_META, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
+
+// Groups in the order the days first appear, so the list stays chronological
+// without a second sort.
+const eventsByDay = computed(() => {
+  const groups: { day: string; events: typeof UPCOMING_EVENTS }[] = []
+  for (const event of UPCOMING_EVENTS) {
+    const group = groups.find((g) => g.day === event.day)
+    if (group) group.events.push(event)
+    else groups.push({ day: event.day, events: [event] })
+  }
+  return groups
+})
 </script>
