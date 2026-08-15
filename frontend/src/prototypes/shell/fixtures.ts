@@ -265,7 +265,7 @@ export const MEETING_ROOMS: MeetingRoom[] = [
   { id: 'm1', name: 'Frappe Suite standup', handle: 'frappe-suite', cadence: 'Weekdays, 09:30' },
   { id: 'm2', name: 'Timeless weekly', handle: 'timeless', cadence: 'Thursdays, 16:00' },
   { id: 'm3', name: 'Design review', handle: 'design', cadence: 'Tuesdays, 15:00' },
-  { id: 'm4', name: 'Faris', handle: 'faris', cadence: 'Ad hoc' },
+  { id: 'm4', name: 'Faris', handle: 'faris', cadence: '' },
 ]
 
 export const CALENDARS = [

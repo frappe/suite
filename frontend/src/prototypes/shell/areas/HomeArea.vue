@@ -86,7 +86,7 @@
     <section>
       <div class="flex items-center justify-between pb-3">
         <h2 class="text-lg font-medium text-ink-gray-9">Rooms</h2>
-        <Button label="Claim a name" icon-left="lucide-plus" variant="ghost" />
+        <Button label="Claim" icon-left="lucide-plus" variant="ghost" />
       </div>
       <!-- The handle is the point, so it gets its own column rather than
            hiding under the name: these are URLs the workspace has taken. -->
@@ -101,7 +101,7 @@
           </ListCell>
           <ListCell>
             <span class="truncate font-mono text-sm text-ink-gray-5">
-              /meet/{{ room.handle }}
+              {{ room.handle }}
             </span>
           </ListCell>
           <ListCell>
