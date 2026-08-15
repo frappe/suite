@@ -22,11 +22,14 @@
           class="size-6 shrink-0"
         />
         <FrappeTile v-else class="size-6 shrink-0" />
-        <span class="flex min-w-0 flex-1 flex-col text-left">
-          <span class="truncate text-base font-medium text-ink-gray-8">
+        <!-- Both lines run tight so the 2px gap fits inside the 40px row. -->
+        <span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+          <span class="truncate text-base font-medium leading-tight text-ink-gray-8">
             {{ current.name }}
           </span>
-          <span class="truncate text-xs text-ink-gray-5">{{ current.kind }}</span>
+          <span class="truncate text-xs leading-tight text-ink-gray-5">
+            {{ current.kind }}
+          </span>
         </span>
         <div class="grid size-7 shrink-0 place-content-center">
           <span class="lucide-chevrons-up-down size-4 shrink-0 text-ink-gray-5" />
