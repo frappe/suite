@@ -21,6 +21,7 @@
         </div>
 
         <div class="flex w-full shrink-0 flex-col items-center gap-0.5 border-t pt-3">
+          <SearchTrigger />
           <RailItem
             v-for="item in NAV_ITEMS"
             :key="item.id"
@@ -58,12 +59,6 @@
       <Sidebar disable-collapse width="14rem">
         <div class="flex shrink-0 items-center p-1.5">
           <WorkspaceSwitcher />
-        </div>
-
-        <!-- Search sits in the panel, not in a page header: it is the same
-             control everywhere, and Mail and Calendar have no page header. -->
-        <div class="shrink-0 px-2 pb-2">
-          <SearchTrigger />
         </div>
 
         <!--
@@ -140,7 +135,8 @@ import CalendarArea from './areas/CalendarArea.vue'
 import FilesArea from './areas/FilesArea.vue'
 import HomeArea from './areas/HomeArea.vue'
 import MailArea from './areas/MailArea.vue'
-import { CALENDARS, FOLDERS, NAV_ITEMS, USER } from './fixtures'
+import { CALENDARS } from './calendarFixtures'
+import { FOLDERS, NAV_ITEMS, USER } from './fixtures'
 import MailboxList from './parts/MailboxList.vue'
 import MiniMonth from './parts/MiniMonth.vue'
 import SearchTrigger from './parts/SearchTrigger.vue'
