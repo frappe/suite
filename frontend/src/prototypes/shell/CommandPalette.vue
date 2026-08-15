@@ -14,7 +14,7 @@
           placeholder="Search or jump to…"
           class="h-12 w-full bg-transparent text-base text-ink-gray-9 placeholder-ink-gray-4 focus-visible:outline-none"
         />
-        <KeyboardShortcut keys="esc" />
+        <KeyboardShortcut combo="Esc" />
       </div>
       <div class="max-h-96 overflow-y-auto p-2">
         <div v-for="group in GROUPS" :key="group.label" class="pb-1">
@@ -39,11 +39,10 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Dialog, KeyboardShortcut } from 'frappe-ui'
 
 import { DOC_KIND_META, RECENT_DOCS, type AreaId } from './fixtures'
+import { commandPaletteOpen as open } from './useCommandPalette'
 import { useShellNav } from './useShellNav'
 
 const { go } = useShellNav()
-
-const open = ref(false)
 const query = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 

@@ -2,7 +2,10 @@
 <template>
   <PageHeader>
     <div class="text-xl font-semibold text-ink-gray-9">Home</div>
-    <NewMenu />
+    <div class="flex items-center gap-2">
+      <SearchTrigger />
+      <NewMenu />
+    </div>
   </PageHeader>
 
   <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
@@ -91,6 +94,7 @@ import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 
 import { DOC_KIND_META, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
+import SearchTrigger from '../parts/SearchTrigger.vue'
 import { useShellNav } from '../useShellNav'
 
 const { areaTo } = useShellNav()
