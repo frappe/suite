@@ -122,6 +122,14 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					await deps.mediasoup.requestConsumerKeyFrame(consumerId);
 				callback({ success: true, requested });
 			} catch (error) {
+				if (
+					error instanceof Error &&
+					error.message.startsWith('Consumer ') &&
+					error.message.endsWith(' not found')
+				) {
+					callback({ success: true, requested: false });
+					return;
+				}
 				loggers.socketHandler.error(
 					'Error requesting consumer key frame: %s',
 					(error as Error).message,

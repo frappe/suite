@@ -1165,6 +1165,31 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
 	});
 
+	it('treats a keyframe request for an already-closed consumer as a no-op', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			userId: 'viewer-1',
+			roomId: 'room-1',
+		});
+		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
+			throw new Error('Consumer stale-consumer not found');
+		});
+		const callback = vi.fn();
+
+		socket.fire(
+			'request_consumer_keyframe',
+			{ consumerId: 'stale-consumer' },
+			callback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			requested: false,
+		});
+		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
+	});
+
 	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {
