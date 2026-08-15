@@ -11,7 +11,7 @@
     <template #default="{ open }">
       <button
         type="button"
-        class="flex w-full min-w-0 items-center gap-2 rounded-4 px-2 py-1 text-ink-gray-7 transition"
+        class="flex h-10 w-full min-w-0 items-center gap-2 rounded-4 px-1.5 text-ink-gray-7 transition"
         :class="open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-2'"
         :title="current.name"
       >
@@ -22,8 +22,11 @@
           class="size-6 shrink-0"
         />
         <FrappeTile v-else class="size-6 shrink-0" />
-        <span class="min-w-0 flex-1 truncate text-left text-lg-medium">
-          {{ current.name }}
+        <span class="flex min-w-0 flex-1 flex-col text-left">
+          <span class="truncate text-base font-medium text-ink-gray-8">
+            {{ current.name }}
+          </span>
+          <span class="truncate text-xs text-ink-gray-5">{{ current.kind }}</span>
         </span>
         <div class="grid size-7 shrink-0 place-content-center">
           <span class="lucide-chevrons-up-down size-4 shrink-0 text-ink-gray-5" />
