@@ -4,6 +4,7 @@ import {
 	ParticipantConnection,
 	type ParticipantConnectionStartOptions,
 } from "../ParticipantConnection";
+import { SFUMediaManager } from "../SFUMediaManager";
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -242,7 +243,13 @@ describe("ParticipantConnection lifecycle", () => {
 		const { connection, participantManager, sfuClient } = createConnection();
 		const snapshot =
 			deferred<Array<{ participantId: string; user_id: string }>>();
-		sfuClient.getRoomParticipants.mockReturnValueOnce(snapshot.promise);
+		const snapshotResolutionObserved = deferred<void>();
+		sfuClient.getRoomParticipants.mockReturnValueOnce(
+			snapshot.promise.then((participants) => {
+				snapshotResolutionObserved.resolve();
+				return participants;
+			}),
+		);
 		const start = connection.start(startOptions());
 		await vi.waitFor(() =>
 			expect(sfuClient.getRoomParticipants).toHaveBeenCalled(),
@@ -251,7 +258,7 @@ describe("ParticipantConnection lifecycle", () => {
 		await connection.disconnect();
 		await expect(start).rejects.toMatchObject({ name: "AbortError" });
 		snapshot.resolve([{ participantId: "late", user_id: "late" }]);
-		await Promise.resolve();
+		await snapshotResolutionObserved.promise;
 		expect(participantManager.hasParticipant("late")).toBe(false);
 		expect(connection.state).toBe("stopped");
 	});
@@ -332,5 +339,100 @@ describe("ParticipantConnection lifecycle", () => {
 		await expect(queued).rejects.toMatchObject({ name: "AbortError" });
 		expect(sfuClient.connect).toHaveBeenCalledOnce();
 		expect(connection.state).toBe("stopped");
+	});
+
+	it("waits for media cleanup before disconnecting transports and signaling", async () => {
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		const mediaCleanup = deferred<void>();
+		const mediaCleanupEntered = deferred<void>();
+		mediaManager.cleanup.mockImplementation(() => {
+			mediaCleanupEntered.resolve();
+			return mediaCleanup.promise;
+		});
+
+		const disconnect = connection.disconnect();
+		await mediaCleanupEntered.promise;
+
+		expect(mediaManager.cleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).not.toHaveBeenCalled();
+		expect(sfuClient.disconnect).not.toHaveBeenCalled();
+
+		mediaCleanup.resolve();
+		await disconnect;
+
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		expect(mediaManager.cleanup.mock.invocationCallOrder[0]).toBeLessThan(
+			transportManager.cleanup.mock.invocationCallOrder[0],
+		);
+	});
+
+	it("disconnects transports and signaling when media cleanup rejects", async () => {
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		const cleanupError = new Error("media cleanup failed");
+		mediaManager.cleanup.mockRejectedValue(cleanupError);
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await expect(connection.disconnect()).resolves.toBeUndefined();
+
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		expect(consoleError).toHaveBeenCalledWith(
+			"Error disconnecting from SFU:",
+			cleanupError,
+		);
+		expect(connection.state).toBe("stopped");
+	});
+
+	it("disconnects transports while a cancelled consumer request is still pending", async () => {
+		const { connection, sfuClient, transportManager } = createConnection();
+		const consumerRequest = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const createConsumer = vi.fn(() => consumerRequest.promise);
+		Object.assign(transportManager, { createConsumer });
+		const addConsumer = vi.fn();
+		const mediaManager = new SFUMediaManager(
+			{
+				transportManager: transportManager as never,
+				videoManager: {} as never,
+				consumerManager: {
+					addConsumer,
+					getConsumersByParticipant: vi.fn(() => []),
+				} as never,
+				participantManager: {} as never,
+			},
+			() => "me",
+		);
+		Reflect.set(connection, "mediaManager", mediaManager);
+		const handlerCleanup = vi.spyOn(mediaManager.mediaHandler, "cleanup");
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const observedSubscription = subscription.catch((error: unknown) => error);
+		await vi.waitFor(() => expect(createConsumer).toHaveBeenCalledOnce());
+
+		await connection.disconnect();
+
+		expect(handlerCleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		consumerRequest.resolve({
+			id: "late-consumer",
+			producerId: "producer-1",
+			kind: "video",
+			close: vi.fn(),
+		});
+		await expect(observedSubscription).resolves.toMatchObject({
+			message: "Consumer subscription was cancelled",
+		});
+		expect(addConsumer).not.toHaveBeenCalled();
 	});
 });

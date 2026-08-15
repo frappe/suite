@@ -486,7 +486,7 @@ export class ParticipantConnection {
 	}
 
 	async setupExistingParticipants(
-		signal?: AbortSignal,
+		signal: AbortSignal = this.lifecycleAbortController.signal,
 		keepBufferingOnFailure = false,
 	): Promise<void> {
 		const generation = this.lifecycleGeneration;
@@ -494,9 +494,7 @@ export class ParticipantConnection {
 			this.initialSyncInProgress = true;
 
 			const participantSnapshot = this.sfuClient.getRoomParticipants();
-			const participants = signal
-				? await this.awaitAbortable(participantSnapshot, signal)
-				: await participantSnapshot;
+			const participants = await this.awaitAbortable(participantSnapshot, signal);
 			const currentUserId = this.getCurrentUserId();
 
 			const normalized: ReconciledParticipant[] = participants
@@ -509,9 +507,10 @@ export class ParticipantConnection {
 				}))
 				.filter((p) => p.participantId && p.user_id !== currentUserId);
 			const producerSnapshot = this.sfuClient.getExistingProducers();
-			const existingProducers = signal
-				? await this.awaitAbortable(producerSnapshot, signal)
-				: await producerSnapshot;
+			const existingProducers = await this.awaitAbortable(
+				producerSnapshot,
+				signal,
+			);
 			if (generation !== this.lifecycleGeneration) {
 				throw new DOMException("Participant sync cancelled", "AbortError");
 			}
@@ -532,9 +531,11 @@ export class ParticipantConnection {
 			]);
 
 			this.initialSyncInProgress = false;
-			await this.flushBufferedProducers();
+			await this.flushBufferedProducers(signal);
 		} catch (error) {
-			console.error("Error in setupExistingParticipants:", error);
+			if (!signal.aborted) {
+				console.error("Error in setupExistingParticipants:", error);
+			}
 			if (!keepBufferingOnFailure) this.initialSyncInProgress = false;
 			throw error;
 		}
@@ -585,7 +586,10 @@ export class ParticipantConnection {
 		}
 	}
 
-	async flushBufferedProducers(): Promise<void> {
+	async flushBufferedProducers(
+		signal: AbortSignal = this.lifecycleAbortController.signal,
+	): Promise<void> {
+		this.throwIfAborted(signal);
 		if (!this.reconciliation.producers.size) {
 			console.log("No buffered producer events to flush");
 			return;
@@ -595,9 +599,11 @@ export class ParticipantConnection {
 			`Flushing ${this.reconciliation.producers.size} buffered producer events`,
 		);
 		for (const event of this.reconciliation.producers.values()) {
+			this.throwIfAborted(signal);
 			try {
-				await this.subscribeToReconciledProducer(event);
+				await this.subscribeToReconciledProducer(event, signal);
 			} catch (error) {
+				if (signal.aborted) throw error;
 				console.warn("Failed to process buffered producer:", error);
 			}
 		}
@@ -785,7 +791,9 @@ export class ParticipantConnection {
 
 	private async subscribeToReconciledProducer(
 		event: SFUProducerEvent,
+		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<void> {
+		this.throwIfAborted(signal);
 		if (
 			this.reconciliation.producers.get(event.producerId) !== event ||
 			this.producerClaims.has(event.producerId) ||
@@ -796,9 +804,14 @@ export class ParticipantConnection {
 
 		this.producerClaims.add(event.producerId);
 		try {
-			if (!(await this.waitForE2EEContextIfRequired())) return;
+			if (!(await this.waitForE2EEContextIfRequired(signal))) return;
+			this.throwIfAborted(signal);
 			if (this.reconciliation.producers.get(event.producerId) !== event) return;
-			await this.mediaManager.subscribeToRemoteProducer(event);
+			await this.awaitAbortable(
+				this.mediaManager.subscribeToRemoteProducer(event),
+				signal,
+			);
+			this.throwIfAborted(signal);
 			if (this.reconciliation.producers.get(event.producerId) !== event) {
 				this.removeProducerConsumers(event);
 			}
@@ -862,7 +875,7 @@ export class ParticipantConnection {
 	}
 
 	private async waitForE2EEContextIfRequired(
-		signal?: AbortSignal,
+		signal: AbortSignal = this.lifecycleAbortController.signal,
 	): Promise<boolean> {
 		if (!this.sfuClient.isE2EERequired?.()) {
 			return true;
@@ -870,9 +883,10 @@ export class ParticipantConnection {
 		if (this.e2eeReadyForLifecycle) return true;
 		try {
 			const readiness = waitForE2EEContextReady();
-			await (signal ? this.awaitAbortable(readiness, signal) : readiness);
+			await this.awaitAbortable(readiness, signal);
 			return true;
 		} catch (error) {
+			if (signal.aborted) throw error;
 			console.warn("E2EE context not ready for media subscription:", error);
 			return false;
 		}
@@ -1282,11 +1296,23 @@ export class ParticipantConnection {
 		try {
 			this.lifecycleGeneration++;
 			this.recoveryManager.reset();
-			this.mediaManager.cleanup();
-			this.transportManager?.cleanup?.();
-			if (this.sfuClient) {
-				await this.sfuClient.disconnect();
+			let disconnectError: unknown = null;
+			try {
+				await this.mediaManager.cleanup();
+			} catch (error) {
+				disconnectError = error;
 			}
+			try {
+				this.transportManager?.cleanup?.();
+			} catch (error) {
+				disconnectError ??= error;
+			}
+			try {
+				if (this.sfuClient) await this.sfuClient.disconnect();
+			} catch (error) {
+				disconnectError ??= error;
+			}
+			if (disconnectError) throw disconnectError;
 			this.isConnected = false;
 		} catch (error) {
 			console.error("Error disconnecting from SFU:", error);

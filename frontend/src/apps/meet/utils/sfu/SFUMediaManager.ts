@@ -98,6 +98,10 @@ export class SFUMediaManager {
 	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
 	private resubscribeTimers = new Set<ReturnType<typeof setTimeout>>();
 	private subscriptionGeneration = 0;
+	private receiveSubscriptionsClosed = false;
+	private sendMediaMutationQueue: Promise<unknown> = Promise.resolve();
+	private sendMediaMutationGeneration = 0;
+	private cleanupPromise: Promise<void> | null = null;
 	private static readonly MAX_RESUBSCRIBE_ATTEMPTS = 3;
 	private static readonly RESUBSCRIBE_DELAY_MS = 250;
 
@@ -120,55 +124,144 @@ export class SFUMediaManager {
 		this.eventHandlers = handlers;
 	}
 
+	setLocalTrack(
+		kind: "audio" | "video",
+		track: MediaStreamTrack | null,
+	): void {
+		const localStream = this.mediaHandler.localStream ?? new MediaStream();
+		this.mediaHandler.localStream = localStream;
+		const existingTracks =
+			kind === "video"
+				? localStream.getVideoTracks()
+				: localStream.getAudioTracks();
+		for (const existingTrack of existingTracks) {
+			localStream.removeTrack(existingTrack);
+		}
+		if (track?.readyState === "live") {
+			localStream.addTrack(track);
+		}
+	}
+
+	serializeSendMediaMutation<T>(operation: () => Promise<T>): Promise<T> {
+		const generation = this.sendMediaMutationGeneration;
+		const lifecycleAbort = new DOMException(
+			"Send media lifecycle has ended",
+			"AbortError",
+		);
+		if (this.cleanupPromise) {
+			return this.cleanupPromise.then(() => Promise.reject(lifecycleAbort));
+		}
+
+		const queuedResult = this.sendMediaMutationQueue.then(() => {
+			if (
+				generation !== this.sendMediaMutationGeneration ||
+				this.cleanupPromise
+			) {
+				throw lifecycleAbort;
+			}
+			return operation();
+		});
+		this.sendMediaMutationQueue = queuedResult.catch(() => undefined);
+		return queuedResult.catch(async (error) => {
+			if (error === lifecycleAbort && this.cleanupPromise) {
+				await this.cleanupPromise;
+			}
+			throw error;
+		});
+	}
+
 	async publishMedia(
+		localStream: MediaStream,
+		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
+	): Promise<PublishedMedia> {
+		return this.serializeSendMediaMutation(() =>
+			this.publishMediaNow(localStream, options),
+		);
+	}
+
+	private async publishMediaNow(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
 	): Promise<PublishedMedia> {
 		const { publishVideo = true, publishAudio = true } = options;
 		const results: PublishedMedia = {};
+		const videoTrack = publishVideo
+			? localStream.getVideoTracks().find((track) => track.readyState === "live") ??
+				null
+			: null;
+		const audioTrack = publishAudio
+			? localStream.getAudioTracks().find((track) => track.readyState === "live") ??
+				null
+			: null;
+		const videoTrackToPublish = this.mediaHandler.videoProducer
+			? null
+			: videoTrack;
+		const audioTrackToPublish = this.mediaHandler.audioProducer
+			? null
+			: audioTrack;
+		const previousVideoTrack =
+			this.mediaHandler.localStream
+				?.getVideoTracks()
+				.find((track) => track.readyState === "live") ?? null;
+		const previousAudioTrack =
+			this.mediaHandler.localStream
+				?.getAudioTracks()
+				.find((track) => track.readyState === "live") ?? null;
 
 		try {
-			this.mediaHandler.localStream = localStream;
+			if (!videoTrackToPublish && !audioTrackToPublish) return results;
 
 			await this.transportManager.createSendTransport();
 
-			if (publishVideo && localStream) {
-				const videoTrack = localStream.getVideoTracks()[0];
-				if (videoTrack) {
-					try {
-						const videoProducer = await this.transportManager.createProducer(
-							videoTrack,
-							{ type: "camera" },
-						);
+			if (videoTrackToPublish?.readyState === "live") {
+				this.setLocalTrack("video", videoTrackToPublish);
+				try {
+					const videoProducer = await this.transportManager.createProducer(
+						videoTrackToPublish,
+						{ type: "camera" },
+					);
+					if (
+						videoTrackToPublish.readyState !== "live" ||
+						videoProducer.track?.readyState === "ended"
+					) {
+						videoProducer.close();
+						this.setLocalTrack("video", previousVideoTrack);
+					} else {
 						results.videoProducer = videoProducer;
 						this.mediaHandler.setProducers({ videoProducer });
 						console.log("Video published successfully");
-					} catch (error: unknown) {
-						console.warn(
-							"Failed to publish video, continuing without video:",
-							(error as Error).message,
-						);
 					}
+				} catch (error: unknown) {
+					console.warn(
+						"Failed to publish video, continuing without video:",
+						(error as Error).message,
+					);
 				}
 			}
 
-			if (publishAudio && localStream) {
-				const audioTrack = localStream.getAudioTracks()[0];
-				if (audioTrack) {
-					try {
-						const audioProducer = await this.transportManager.createProducer(
-							audioTrack,
-							{ type: "microphone" },
-						);
+			if (audioTrackToPublish?.readyState === "live") {
+				this.setLocalTrack("audio", audioTrackToPublish);
+				try {
+					const audioProducer = await this.transportManager.createProducer(
+						audioTrackToPublish,
+						{ type: "microphone" },
+					);
+					if (
+						audioTrackToPublish.readyState !== "live" ||
+						audioProducer.track?.readyState === "ended"
+					) {
+						audioProducer.close();
+						this.setLocalTrack("audio", previousAudioTrack);
+					} else {
 						results.audioProducer = audioProducer;
 						this.mediaHandler.setProducers({ audioProducer });
 						console.log("Audio published successfully");
-					} catch (error: unknown) {
-						console.warn(
-							"Failed to publish audio, continuing without audio:",
-							(error as Error).message,
-						);
 					}
+				} catch (error: unknown) {
+					console.warn(
+						"Failed to publish audio, continuing without audio:",
+						(error as Error).message,
+					);
 				}
 			}
 			console.log("Media published successfully");
@@ -180,6 +273,10 @@ export class SFUMediaManager {
 	}
 
 	async rebuildSendSide(): Promise<PublishedMedia> {
+		return this.serializeSendMediaMutation(() => this.rebuildSendSideNow());
+	}
+
+	private async rebuildSendSideNow(): Promise<PublishedMedia> {
 		const localStream = this.mediaHandler.localStream;
 		const screenTrack = this.mediaHandler.screenProducer?.track;
 		const hasLiveScreen = screenTrack?.readyState === "live";
@@ -201,7 +298,7 @@ export class SFUMediaManager {
 		if (!hasLiveVideo && !hasLiveAudio && !hasLiveScreen) return {};
 
 		const results = localStream
-			? await this.publishMedia(localStream, {
+			? await this.publishMediaNow(localStream, {
 					publishAudio: hasLiveAudio,
 					publishVideo: hasLiveVideo,
 				})
@@ -268,6 +365,9 @@ export class SFUMediaManager {
 		participantId: string;
 		isScreen: boolean;
 	}): Promise<unknown | null> {
+		if (this.receiveSubscriptionsClosed) {
+			throw new DOMException("Receive media lifecycle has ended", "AbortError");
+		}
 		if (!producerId || !participantId) {
 			return null;
 		}
@@ -357,14 +457,15 @@ export class SFUMediaManager {
 		return `${participantId}:${producerId}`;
 	}
 
-	async cancelPendingSubscriptions(): Promise<void> {
+	cancelPendingSubscriptions(): Promise<void> {
 		this.subscriptionGeneration++;
 		for (const timer of this.resubscribeTimers) clearTimeout(timer);
 		this.resubscribeTimers.clear();
 		this.resubscribeAttempts.clear();
 		const pending = Array.from(this.pendingSubscriptions.values());
 		this.pendingSubscriptions.clear();
-		await Promise.allSettled(pending);
+		void Promise.allSettled(pending);
+		return Promise.resolve();
 	}
 
 	async handleNewConsumer(consumer: ConsumerEntry): Promise<void> {
@@ -488,10 +589,22 @@ export class SFUMediaManager {
 		}
 	}
 
-	cleanup(): void {
-		void this.cancelPendingSubscriptions();
-		this.mediaHandler.cleanup();
-		this.processedConsumers.clear();
-		this.isScreenShareActive = false;
+	cleanup(): Promise<void> {
+		if (this.cleanupPromise) return this.cleanupPromise;
+
+		this.sendMediaMutationGeneration++;
+		this.receiveSubscriptionsClosed = true;
+		const receiveCancellation = this.cancelPendingSubscriptions();
+		void receiveCancellation.catch((error: unknown) => {
+			console.warn("Failed to cancel pending media subscriptions:", error);
+		});
+		const terminalCleanup = this.sendMediaMutationQueue.then(() => {
+			this.mediaHandler.cleanup();
+			this.processedConsumers.clear();
+			this.isScreenShareActive = false;
+		});
+		this.cleanupPromise = terminalCleanup;
+		this.sendMediaMutationQueue = terminalCleanup.catch(() => undefined);
+		return terminalCleanup;
 	}
 }

@@ -11,6 +11,47 @@ type MockParticipantManager = {
 	hasParticipant: ReturnType<typeof vi.fn>;
 };
 
+class FakeMediaStream {
+	private tracks: MediaStreamTrack[];
+
+	constructor(tracks: MediaStreamTrack[] = []) {
+		this.tracks = [...tracks];
+	}
+
+	getAudioTracks() {
+		return this.tracks.filter((track) => track.kind === "audio");
+	}
+
+	getVideoTracks() {
+		return this.tracks.filter((track) => track.kind === "video");
+	}
+
+	addTrack(track: MediaStreamTrack) {
+		this.tracks.push(track);
+	}
+
+	removeTrack(track: MediaStreamTrack) {
+		this.tracks = this.tracks.filter((candidate) => candidate !== track);
+	}
+}
+
+const mediaTrack = (
+	id: string,
+	kind: "audio" | "video",
+	readyState: MediaStreamTrackState = "live",
+) =>
+	({ id, kind, readyState, stop: vi.fn() }) as unknown as MediaStreamTrack;
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, reject, resolve };
+}
+
 function createManager(
 	opts: { currentUserId?: string | null; hasParticipant?: boolean } = {},
 ): {
@@ -126,6 +167,44 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		expect(consumer.close).toHaveBeenCalledTimes(1);
 		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
 	});
+
+	it("does not hold terminal cleanup for a pending consumer", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		const consumerRequest = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		transportManager.createConsumer.mockReturnValue(consumerRequest.promise);
+		const consumer = {
+			id: "late-consumer",
+			producerId: "producer-1",
+			kind: "video",
+			close: vi.fn(),
+		};
+		const handlerCleanup = vi.spyOn(mediaManager.mediaHandler, "cleanup");
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const observedSubscription = subscription.catch((error: unknown) => error);
+		await vi.waitFor(() =>
+			expect(transportManager.createConsumer).toHaveBeenCalledOnce(),
+		);
+
+		await mediaManager.cleanup();
+
+		expect(handlerCleanup).toHaveBeenCalledOnce();
+		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
+		consumerRequest.resolve(consumer);
+		await expect(observedSubscription).resolves.toMatchObject({
+			message: "Consumer subscription was cancelled",
+		});
+		expect(consumer.close).toHaveBeenCalledOnce();
+		expect(consumerManager.addConsumer).not.toHaveBeenCalled();
+	});
 });
 
 describe("SFUMediaManager.attachAudioConsumer", () => {
@@ -148,10 +227,10 @@ describe("SFUMediaManager.rebuildSendSide", () => {
 		const { mediaManager, transportManager } = createManager();
 		const videoTrack = { kind: "video", readyState: "live" };
 		const audioTrack = { kind: "audio", readyState: "live" };
-		mediaManager.mediaHandler.localStream = {
-			getAudioTracks: () => [audioTrack],
-			getVideoTracks: () => [videoTrack],
-		} as never;
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			videoTrack as never,
+			audioTrack as never,
+		]) as never;
 		mediaManager.mediaHandler.setProducers({
 			audioProducer: { close: vi.fn() } as never,
 			videoProducer: { close: vi.fn() } as never,
@@ -196,6 +275,419 @@ describe("SFUMediaManager.rebuildSendSide", () => {
 		expect(transportManager.createProducer).toHaveBeenCalledWith(screenTrack, {
 			type: "screen",
 		});
+	});
+
+	it("waits for camera reconciliation before rebuilding the send side", async () => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const { mediaManager, transportManager } = createManager();
+		const oldVideo = mediaTrack("old-video", "video");
+		const nextVideo = mediaTrack("next-video", "video");
+		const oldProducer = { id: "old-producer", track: oldVideo };
+		const replacementStarted = deferred<void>();
+		const releaseReplacement = deferred<void>();
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			oldVideo,
+		]) as never;
+		mediaManager.mediaHandler.setProducers({ videoProducer: oldProducer as never });
+		const rebuiltProducer = { id: "rebuilt-producer", track: nextVideo };
+		transportManager.createProducer.mockResolvedValue(rebuiltProducer);
+
+		const cameraMutation = mediaManager.serializeSendMediaMutation(async () => {
+			replacementStarted.resolve();
+			await releaseReplacement.promise;
+			oldProducer.track = nextVideo;
+			mediaManager.setLocalTrack("video", nextVideo);
+		});
+		await replacementStarted.promise;
+		const rebuild = mediaManager.rebuildSendSide();
+
+		expect(transportManager.closeSendTransport).not.toHaveBeenCalled();
+		releaseReplacement.resolve();
+		await Promise.all([cameraMutation, rebuild]);
+
+		expect(transportManager.createProducer).toHaveBeenCalledOnce();
+		expect(transportManager.createProducer).toHaveBeenCalledWith(nextVideo, {
+			type: "camera",
+		});
+		expect(mediaManager.mediaHandler.videoProducer).toBe(rebuiltProducer);
+		expect(mediaManager.mediaHandler.videoProducer).not.toBe(oldProducer);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			nextVideo,
+		]);
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("SFUMediaManager local recovery tracks", () => {
+	beforeEach(() => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("replaces video while preserving audio without stopping displaced tracks", () => {
+		const { mediaManager } = createManager();
+		const audio = mediaTrack("audio", "audio");
+		const oldVideo = mediaTrack("old-video", "video");
+		const nextVideo = mediaTrack("next-video", "video");
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			audio,
+			oldVideo,
+		]) as never;
+
+		mediaManager.setLocalTrack("video", nextVideo);
+
+		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([
+			audio,
+		]);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			nextVideo,
+		]);
+		expect(oldVideo.stop).not.toHaveBeenCalled();
+	});
+
+	it("clears every video track while preserving audio", () => {
+		const { mediaManager } = createManager();
+		const audio = mediaTrack("audio", "audio");
+		const firstVideo = mediaTrack("first-video", "video");
+		const secondVideo = mediaTrack("second-video", "video");
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			audio,
+			firstVideo,
+			secondVideo,
+		]) as never;
+
+		mediaManager.setLocalTrack("video", null);
+
+		expect(mediaManager.mediaHandler.localStream).not.toBeNull();
+		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([
+			audio,
+		]);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([]);
+		expect(firstVideo.stop).not.toHaveBeenCalled();
+		expect(secondVideo.stop).not.toHaveBeenCalled();
+	});
+
+	it("rebuilds with the newly synchronized video track", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const oldVideo = mediaTrack("old-video", "video");
+		const nextVideo = mediaTrack("next-video", "video");
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			oldVideo,
+		]) as never;
+		mediaManager.setLocalTrack("video", nextVideo);
+
+		await mediaManager.rebuildSendSide();
+
+		expect(transportManager.createProducer).toHaveBeenCalledWith(nextVideo, {
+			type: "camera",
+		});
+		expect(transportManager.createProducer).not.toHaveBeenCalledWith(
+			oldVideo,
+			expect.anything(),
+		);
+	});
+
+	it("synchronizes only live requested initial tracks before producer creation", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const video = mediaTrack("video", "video");
+		const audio = mediaTrack("audio", "audio");
+		const input = new FakeMediaStream([video, audio]);
+		const synchronize = vi.spyOn(mediaManager, "setLocalTrack");
+		transportManager.createProducer.mockRejectedValueOnce(
+			new Error("producer failed"),
+		);
+
+		await mediaManager.publishMedia(input as never, {
+			publishVideo: true,
+			publishAudio: false,
+		});
+
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			video,
+		]);
+		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([]);
+		expect(synchronize).toHaveBeenCalledWith("video", video);
+		expect(synchronize).not.toHaveBeenCalledWith("audio", expect.anything());
+		expect(synchronize.mock.invocationCallOrder[0]).toBeLessThan(
+			transportManager.createProducer.mock.invocationCallOrder[0],
+		);
+
+		transportManager.createProducer.mockResolvedValueOnce({});
+		await mediaManager.rebuildSendSide();
+
+		expect(transportManager.createProducer).toHaveBeenCalledTimes(2);
+		expect(transportManager.createProducer).toHaveBeenLastCalledWith(video, {
+			type: "camera",
+		});
+		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([]);
+	});
+
+	it("finishes initial publication before a later send-media mutation", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const initialTrack = mediaTrack("initial-video", "video");
+		const finalTrack = mediaTrack("final-video", "video");
+		const initialProducer = { id: "initial-producer", track: initialTrack };
+		const finalProducer = { id: "final-producer", track: finalTrack };
+		const producerCreation = deferred<typeof initialProducer>();
+		const producerCreationEntered = deferred<void>();
+		transportManager.createProducer.mockImplementation(() => {
+			producerCreationEntered.resolve();
+			return producerCreation.promise;
+		});
+
+		const publication = mediaManager.publishMedia(
+			new FakeMediaStream([initialTrack]) as never,
+			{ publishVideo: true, publishAudio: false },
+		);
+		await producerCreationEntered.promise;
+		let mutationRan = false;
+		const mutation = mediaManager.serializeSendMediaMutation(async () => {
+			mutationRan = true;
+			mediaManager.mediaHandler.setProducers({
+				videoProducer: finalProducer as never,
+			});
+			mediaManager.setLocalTrack("video", finalTrack);
+		});
+
+		expect(mutationRan).toBe(false);
+		producerCreation.resolve(initialProducer);
+		await Promise.all([publication, mutation]);
+
+		expect(mediaManager.mediaHandler.videoProducer).toBe(finalProducer);
+		expect(mediaManager.mediaHandler.videoProducer).not.toBe(initialProducer);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			finalTrack,
+		]);
+	});
+
+	it("does not duplicate producers or overwrite their recovery tracks", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const currentVideo = mediaTrack("current-video", "video");
+		const currentAudio = mediaTrack("current-audio", "audio");
+		const replacementVideo = mediaTrack("replacement-video", "video");
+		const replacementAudio = mediaTrack("replacement-audio", "audio");
+		const videoProducer = { id: "video-producer", track: currentVideo };
+		const audioProducer = { id: "audio-producer", track: currentAudio };
+		mediaManager.mediaHandler.setProducers({
+			videoProducer: videoProducer as never,
+			audioProducer: audioProducer as never,
+		});
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			currentVideo,
+			currentAudio,
+		]) as never;
+
+		await mediaManager.publishMedia(
+			new FakeMediaStream([replacementVideo, replacementAudio]) as never,
+			{ publishVideo: true, publishAudio: true },
+		);
+
+		expect(transportManager.createSendTransport).not.toHaveBeenCalled();
+		expect(transportManager.createProducer).not.toHaveBeenCalled();
+		expect(mediaManager.mediaHandler.videoProducer).toBe(videoProducer);
+		expect(mediaManager.mediaHandler.audioProducer).toBe(audioProducer);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			currentVideo,
+		]);
+		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([
+			currentAudio,
+		]);
+	});
+
+	it("closes a producer whose track ends during creation", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const previous = mediaTrack("previous-video", "video");
+		const candidate = mediaTrack("candidate-video", "video");
+		const creationEntered = deferred<void>();
+		const releaseCreation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const unusableProducer = {
+			id: "unusable-producer",
+			track: candidate,
+			close: vi.fn(),
+		};
+		mediaManager.mediaHandler.localStream = new FakeMediaStream([
+			previous,
+		]) as never;
+		transportManager.createProducer.mockImplementation(() => {
+			creationEntered.resolve();
+			return releaseCreation.promise;
+		});
+
+		const publication = mediaManager.publishMedia(
+			new FakeMediaStream([candidate]) as never,
+			{ publishVideo: true, publishAudio: false },
+		);
+		await creationEntered.promise;
+		Reflect.set(candidate, "readyState", "ended");
+		releaseCreation.resolve(unusableProducer);
+
+		await expect(publication).resolves.toEqual({});
+		expect(unusableProducer.close).toHaveBeenCalledOnce();
+		expect(mediaManager.mediaHandler.videoProducer).toBeNull();
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			previous,
+		]);
+	});
+
+	it("does not erase newer media for false options or missing live tracks", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const newerVideo = mediaTrack("newer-video", "video");
+		const producer = { id: "newer-producer", track: newerVideo };
+		const installation = mediaManager.serializeSendMediaMutation(async () => {
+			mediaManager.mediaHandler.setProducers({ videoProducer: producer as never });
+			mediaManager.setLocalTrack("video", newerVideo);
+		});
+		const staleFalsePublication = mediaManager.publishMedia(
+			new FakeMediaStream([]) as never,
+			{ publishVideo: false, publishAudio: false },
+		);
+
+		await Promise.all([installation, staleFalsePublication]);
+		expect(mediaManager.mediaHandler.videoProducer).toBe(producer);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			newerVideo,
+		]);
+
+		await mediaManager.publishMedia(
+			new FakeMediaStream([mediaTrack("ended", "video", "ended")]) as never,
+			{ publishVideo: true, publishAudio: false },
+		);
+		expect(mediaManager.mediaHandler.videoProducer).toBe(producer);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
+			newerVideo,
+		]);
+		expect(transportManager.createProducer).not.toHaveBeenCalled();
+
+		mediaManager.setLocalTrack("video", null);
+		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([]);
+	});
+});
+
+describe("SFUMediaManager cleanup", () => {
+	beforeEach(() => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it("invalidates queued send work and performs terminal cleanup once", async () => {
+		const { mediaManager } = createManager();
+		const ordering: string[] = [];
+		const releaseActive = deferred<void>();
+		const activeStarted = deferred<void>();
+		const releaseReceiveCancellation = deferred<void>();
+		let receiveCancellationSettled = false;
+		void releaseReceiveCancellation.promise.then(() => {
+			receiveCancellationSettled = true;
+		});
+		const activeProducer = { id: "active-producer", close: vi.fn() };
+		const queuedOperation = vi.fn().mockResolvedValue(undefined);
+		const cancelPendingSubscriptions = vi
+			.spyOn(mediaManager, "cancelPendingSubscriptions")
+			.mockReturnValue(releaseReceiveCancellation.promise);
+		const originalHandlerCleanup =
+			mediaManager.mediaHandler.cleanup.bind(mediaManager.mediaHandler);
+		const handlerCleanup = vi
+			.spyOn(mediaManager.mediaHandler, "cleanup")
+			.mockImplementation(() => {
+				ordering.push("cleanup");
+				originalHandlerCleanup();
+			});
+		const queuedRejectionObserved = deferred<void>();
+		mediaManager.processedConsumers.add("consumer-1");
+		mediaManager.isScreenShareActive = true;
+
+		const activeMutation = mediaManager.serializeSendMediaMutation(async () => {
+			activeStarted.resolve();
+			await releaseActive.promise;
+			mediaManager.mediaHandler.setProducers({
+				videoProducer: activeProducer as never,
+			});
+		});
+		await activeStarted.promise;
+		const queuedMutation = mediaManager.serializeSendMediaMutation(queuedOperation);
+		let queuedError: unknown;
+		let callerRejected = false;
+		const observeQueuedMutation = queuedMutation.catch((error: unknown) => {
+			queuedError = error;
+			callerRejected = true;
+			ordering.push("rejected");
+			queuedRejectionObserved.resolve();
+		});
+		const cleanup = mediaManager.cleanup();
+		const duplicateCleanup = mediaManager.cleanup();
+
+		expect(duplicateCleanup).toBe(cleanup);
+		expect(cancelPendingSubscriptions).toHaveBeenCalledOnce();
+		expect(handlerCleanup).not.toHaveBeenCalled();
+		releaseActive.resolve();
+		await activeMutation;
+		await queuedRejectionObserved.promise;
+		expect(queuedOperation).not.toHaveBeenCalled();
+		expect(callerRejected).toBe(true);
+		expect(handlerCleanup).toHaveBeenCalledOnce();
+		expect(ordering).toEqual(["cleanup", "rejected"]);
+		expect(activeProducer.close).toHaveBeenCalledOnce();
+		expect(receiveCancellationSettled).toBe(false);
+		await cleanup;
+		await observeQueuedMutation;
+
+		expect(queuedError).toMatchObject({ name: "AbortError" });
+		expect(mediaManager.mediaHandler.localStream).toBeNull();
+		expect(mediaManager.processedConsumers).toEqual(new Set());
+		expect(mediaManager.isScreenShareActive).toBe(false);
+
+		const postCleanupOperation = vi.fn().mockResolvedValue(undefined);
+		await expect(
+			mediaManager.serializeSendMediaMutation(postCleanupOperation),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(postCleanupOperation).not.toHaveBeenCalled();
+		expect(handlerCleanup).toHaveBeenCalledOnce();
+		releaseReceiveCancellation.resolve();
+	});
+
+	it("handles receive cancellation rejection without blocking cleanup", async () => {
+		const { mediaManager } = createManager();
+		const cancellationError = new Error("receive cancellation failed");
+		vi.spyOn(mediaManager, "cancelPendingSubscriptions").mockRejectedValue(
+			cancellationError,
+		);
+		const warningObserved = deferred<void>();
+		const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {
+			warningObserved.resolve();
+		});
+
+		await expect(mediaManager.cleanup()).resolves.toBeUndefined();
+		await warningObserved.promise;
+
+		expect(consoleWarn).toHaveBeenCalledWith(
+			"Failed to cancel pending media subscriptions:",
+			cancellationError,
+		);
+	});
+
+	it("rejects new subscriptions after cleanup starts", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const cleanup = mediaManager.cleanup();
+
+		await expect(
+			mediaManager.subscribeToRemoteProducer({
+				producerId: "producer-after-cleanup",
+				participantId: "remote-1",
+				isScreen: false,
+			}),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(transportManager.createConsumer).not.toHaveBeenCalled();
+		await cleanup;
 	});
 });
 

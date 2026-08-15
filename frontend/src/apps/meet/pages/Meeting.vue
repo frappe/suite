@@ -422,7 +422,7 @@ watch(
 );
 
 // --- Background effects & noise cancellation ---
-const backgroundEffects = useBackgroundEffects();
+const backgroundEffects = useBackgroundEffects({ autoCleanupOnUnmount: false });
 const noiseCancellation = useNoiseCancellation();
 
 // --- Lobby notification conversion ---
@@ -977,35 +977,12 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 	await Promise.all(promises);
 };
 
-const handleE2EENeedsMediaRepublish = async () => {
-	if (!mediaState.isCameraOn && !mediaState.isMicOn) return;
+const handleE2EENeedsMediaRepublish = async (event: Event) => {
+	const detail = (event as CustomEvent).detail as
+		| { needsCamera?: boolean; needsMicrophone?: boolean }
+		| undefined;
 	try {
-		const { stream } = await mediaControls.acquireUserMedia(
-			mediaState.isCameraOn,
-			mediaState.isMicOn,
-		);
-		mediaState.localStream = stream;
-		if (mediaState.isCameraOn) {
-			mediaState.cameraPermissionGranted = true;
-			await mediaControls.applyBackgroundEffectsToLocalStream();
-		}
-		if (mediaState.isMicOn) {
-			mediaState.microphonePermissionGranted = true;
-		}
-		if (mediaState.localVideo instanceof HTMLVideoElement) {
-			mediaControls.setLocalVideoRef(mediaState.localVideo);
-		}
-		if (mediaState.localStream && sfuConnection.sfuManager.value) {
-			const videoTracks = mediaState.processedStream
-				? mediaState.processedStream.getVideoTracks()
-				: mediaState.localStream.getVideoTracks();
-			const audioTracks = mediaState.localStream.getAudioTracks();
-			const streamToPublish = new MediaStream([...videoTracks, ...audioTracks]);
-			await sfuConnection.sfuManager.value.publishMedia(streamToPublish, {
-				publishVideo: mediaState.isCameraOn,
-				publishAudio: mediaState.isMicOn,
-			});
-		}
+		await mediaControls.republishMediaAfterE2EE(detail);
 	} catch (error) {
 		console.error(
 			"Failed to republish media after E2EE reconfiguration:",
