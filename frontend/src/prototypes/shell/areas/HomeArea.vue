@@ -1,4 +1,4 @@
-<!-- PROTOTYPE — remove. Fake Home overview page: create row, Recent, Upcoming. -->
+<!-- PROTOTYPE — remove. Fake Home overview page: Recent, Upcoming. -->
 <template>
   <PageHeader>
     <div class="text-xl font-semibold text-ink-gray-9">Home</div>
@@ -6,12 +6,9 @@
   </PageHeader>
 
   <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
-    <!-- Create row -->
+    <!-- Join with code stays on the page: it is the one create-adjacent action
+         the New menu does not carry, because it opens someone else's meeting. -->
     <div class="flex flex-wrap items-center gap-2">
-      <Button label="New document" icon-left="lucide-file-text" variant="outline" size="md" />
-      <Button label="New spreadsheet" icon-left="lucide-table" variant="outline" size="md" />
-      <Button label="New presentation" icon-left="lucide-presentation" variant="outline" size="md" />
-      <Button label="New meeting" icon-left="lucide-video" variant="outline" size="md" />
       <Button label="Join with code" icon-left="lucide-arrow-right" variant="outline" size="md" />
     </div>
 
@@ -31,8 +28,8 @@
             class="flex size-8 items-center justify-center rounded-4 bg-surface-gray-2"
           >
             <span
-              class="size-4"
-              :class="[DOC_KIND_META[doc.kind].icon, DOC_KIND_META[doc.kind].tint]"
+              class="size-4 text-ink-gray-7"
+              :class="DOC_KIND_META[doc.kind].icon"
               aria-hidden="true"
             />
           </span>
@@ -52,34 +49,38 @@
         <h2 class="text-lg font-medium text-ink-gray-9">Upcoming</h2>
         <Button label="View all" variant="ghost" />
       </div>
-      <div class="flex flex-col rounded-5 border border-outline-gray-1">
-        <div
-          v-for="(event, i) in UPCOMING_EVENTS"
-          :key="event.id"
-          class="flex items-center gap-4 px-4 py-3"
-          :class="i > 0 ? 'border-t border-outline-gray-1' : ''"
-        >
-          <div class="flex w-24 shrink-0 flex-col">
-            <span class="text-sm font-medium text-ink-gray-8">{{ event.day }}</span>
-            <span class="text-xs text-ink-gray-5">{{ event.time }}</span>
-          </div>
-          <span class="min-w-0 flex-1 truncate text-base text-ink-gray-8">
-            {{ event.title }}
-          </span>
-          <Button
-            v-if="event.meet"
-            label="Join"
-            icon-left="lucide-video"
-            variant="outline"
-          />
-        </div>
-      </div>
+      <!-- One row per event: day and time share a cell so nothing stacks. -->
+      <List :columns="['11rem', 'minmax(0,1fr)', '5rem']" :row-height="40">
+        <ListRows :items="UPCOMING_EVENTS" row-key="id">
+          <template #default="{ item: event }">
+            <ListRow :value="event.id" @click="() => {}">
+              <ListCell>
+                <span class="truncate text-base text-ink-gray-5">
+                  {{ event.day }} · {{ event.time }}
+                </span>
+              </ListCell>
+              <ListCell>
+                <span class="truncate text-base text-ink-gray-8">{{ event.title }}</span>
+              </ListCell>
+              <ListCell>
+                <Button
+                  v-if="event.meet"
+                  label="Join"
+                  icon-left="lucide-video"
+                  variant="outline"
+                />
+              </ListCell>
+            </ListRow>
+          </template>
+        </ListRows>
+      </List>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { Button, PageHeader } from 'frappe-ui'
+import { List, ListCell, ListRow, ListRows } from 'frappe-ui/list'
 
 import { DOC_KIND_META, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
