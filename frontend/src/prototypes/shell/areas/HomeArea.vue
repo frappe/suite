@@ -10,7 +10,7 @@
     <section>
       <div class="flex items-center justify-between pb-3">
         <h2 class="text-lg font-medium text-ink-gray-9">Recent</h2>
-        <Button label="View all" variant="ghost" />
+        <Button label="View all" variant="ghost" :route="areaTo('files')" />
       </div>
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <button
@@ -43,7 +43,7 @@
           <Dropdown :options="SCHEDULE_MENU_ITEMS" align="end">
             <Button label="Schedule" icon-right="lucide-chevron-down" variant="ghost" />
           </Dropdown>
-          <Button label="View all" variant="ghost" />
+          <Button label="View all" variant="ghost" :route="areaTo('calendar')" />
         </div>
       </div>
       <!-- One row per event, grouped by day. The day lives in the group
@@ -91,6 +91,9 @@ import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 
 import { DOC_KIND_META, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
+import { useShellNav } from '../useShellNav'
+
+const { areaTo } = useShellNav()
 
 const SCHEDULE_MENU_ITEMS = [
   { label: 'Event', icon: 'lucide-calendar-plus', onClick: () => {} },
