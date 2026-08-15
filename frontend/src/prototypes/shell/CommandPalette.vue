@@ -7,7 +7,7 @@
     <div class="flex flex-col">
       <!-- TextInput, not a bare <input>: the suite's global form styles were
            painting a blue border and their own padding inside the palette. -->
-      <div class="border-b border-outline-gray-1 p-1.5">
+      <div class="border-b border-outline-gray-1">
         <TextInput
           ref="inputEl"
           v-model="query"
