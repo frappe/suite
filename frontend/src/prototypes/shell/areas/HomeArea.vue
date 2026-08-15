@@ -2,16 +2,16 @@
 <template>
   <PageHeader>
     <div class="text-xl font-semibold text-ink-gray-9">Home</div>
-    <NewMenu />
+    <!-- Join sits beside New but stays outline, not solid: it is the rarer
+         action, and it opens someone else's meeting rather than creating
+         anything. -->
+    <div class="flex items-center gap-2">
+      <Button label="Join with code" icon-left="lucide-arrow-right" variant="outline" />
+      <NewMenu />
+    </div>
   </PageHeader>
 
   <div class="mx-auto flex w-full max-w-4xl flex-col gap-8 px-5 py-6">
-    <!-- Join with code stays on the page: it is the one create-adjacent action
-         the New menu does not carry, because it opens someone else's meeting. -->
-    <div class="flex flex-wrap items-center gap-2">
-      <Button label="Join with code" icon-left="lucide-arrow-right" variant="outline" size="md" />
-    </div>
-
     <!-- Recent -->
     <section>
       <div class="flex items-center justify-between pb-3">
