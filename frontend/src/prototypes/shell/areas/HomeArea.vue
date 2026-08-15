@@ -18,15 +18,13 @@
           :key="doc.id"
           class="flex flex-col items-start gap-3 rounded-5 border border-outline-gray-1 bg-surface-base p-3 text-left hover:bg-surface-gray-1"
         >
+          <!-- No tile behind the icon: the kind already reads from its colour,
+               so the grey box was carrying nothing. -->
           <span
-            class="flex size-8 items-center justify-center rounded-4 bg-surface-gray-2"
-          >
-            <span
-              class="size-4 text-ink-gray-7"
-              :class="DOC_KIND_META[doc.kind].icon"
-              aria-hidden="true"
-            />
-          </span>
+            class="size-6"
+            :class="[DOC_KIND_META[doc.kind].icon, DOC_KIND_META[doc.kind].tint]"
+            aria-hidden="true"
+          />
           <span class="flex min-w-0 flex-col gap-0.5">
             <span class="w-full truncate text-base font-medium text-ink-gray-8">
               {{ doc.name }}
