@@ -2433,6 +2433,116 @@ describe("useMediaControls", () => {
 		app.unmount();
 	});
 
+	it("moves another active effects owner onto a replacement model", async () => {
+		const releaseFatalSend = deferred<void>();
+		const peerReadEntered = deferred<void>();
+		const releasePeerRead = deferred<{ done: boolean; value: VideoFrame }>();
+		const neverRead = new Promise<never>(() => {});
+		const ownerFrame = { close: vi.fn() } as unknown as VideoFrame;
+		const peerFrame = { close: vi.fn() } as unknown as VideoFrame;
+		let processorIndex = 0;
+		class FakeTrackProcessor {
+			readonly index = processorIndex++;
+			readable = {
+				getReader: () => ({
+					cancel: vi.fn().mockResolvedValue(undefined),
+					read:
+						this.index === 0
+							? vi
+									.fn()
+									.mockResolvedValueOnce({ done: false, value: ownerFrame })
+									.mockImplementation(() => neverRead)
+							: vi
+									.fn(() => {
+										peerReadEntered.resolve();
+										return releasePeerRead.promise;
+									})
+									.mockImplementationOnce(() => {
+										peerReadEntered.resolve();
+										return releasePeerRead.promise;
+									})
+									.mockImplementation(() => neverRead),
+				}),
+			};
+		}
+		const instances: FakeSelfieSegmentation[] = [];
+		class FakeSelfieSegmentation {
+			readonly index = instances.length;
+			close = vi.fn().mockResolvedValue(undefined);
+			reset = vi.fn(() => {
+				if (this.index === 0) throw new Error("reset failed");
+			});
+			send = vi.fn(async () => {
+				if (this.index !== 0) return;
+				await releaseFatalSend.promise;
+				const error = new Error("poisoned wasm state");
+				error.name = "RuntimeError";
+				throw error;
+			});
+			constructor() {
+				instances.push(this);
+			}
+			setOptions() {}
+			onResults() {}
+			initialize = vi.fn().mockResolvedValue(undefined);
+		}
+		const context = { drawImage: vi.fn(), clearRect: vi.fn() };
+		vi.stubGlobal("SelfieSegmentation", FakeSelfieSegmentation);
+		vi.stubGlobal("MediaStreamTrackProcessor", FakeTrackProcessor);
+		vi.stubGlobal("OffscreenCanvas", undefined);
+		vi.stubGlobal(
+			"createImageBitmap",
+			vi.fn().mockResolvedValue({ close: vi.fn() }),
+		);
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+			context as never,
+		);
+		Object.defineProperty(HTMLCanvasElement.prototype, "captureStream", {
+			configurable: true,
+			value: vi.fn(() => new FakeMediaStream([videoTrack("output")])),
+		});
+		const firstInput = Object.assign(videoTrack("first-input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		const secondInput = Object.assign(videoTrack("second-input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		let firstEffects!: ReturnType<typeof useBackgroundEffects>;
+		let secondEffects!: ReturnType<typeof useBackgroundEffects>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					firstEffects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					secondEffects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+
+		const firstSession = await firstEffects.applyBackgroundEffects(
+			new FakeMediaStream([firstInput]) as never,
+			{ backgroundBlurEnabled: true },
+		);
+		const secondSession = await secondEffects.applyBackgroundEffects(
+			new FakeMediaStream([secondInput]) as never,
+			{ backgroundBlurEnabled: true },
+		);
+		await peerReadEntered.promise;
+		releaseFatalSend.resolve();
+		await vi.waitFor(() => expect(instances).toHaveLength(2));
+
+		releasePeerRead.resolve({ done: false, value: peerFrame });
+		await vi.waitFor(() => expect(instances[1].send).toHaveBeenCalledOnce());
+		expect(instances[0].send).toHaveBeenCalledOnce();
+		expect(secondEffects.isProcessing.value).toBe(true);
+
+		firstSession.cleanup();
+		secondSession.cleanup();
+		await Promise.all([firstEffects.dispose(), secondEffects.dispose()]);
+		app.unmount();
+	});
+
 	it("halts fatal recovery when poisoned model invalidation cannot close", async () => {
 		const firstFrame = { close: vi.fn() } as unknown as VideoFrame;
 		const releaseRead = deferred<{ done: boolean }>();

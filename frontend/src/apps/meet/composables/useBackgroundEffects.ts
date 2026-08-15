@@ -334,13 +334,11 @@ export function useBackgroundEffects({
 
 		const shouldContinueProcessing = (
 			sessionId: number,
-			model: SelfieSegmentation | null,
 		): boolean => {
 			return (
 				isProcessing.value &&
 				!signal?.aborted &&
-				sessionId === activeSessionId &&
-				model === selfieSegmentation
+				sessionId === activeSessionId
 			);
 		};
 		let trackProcessor: ReadableStreamDefaultReader<VideoFrame> | null = null;
@@ -408,6 +406,13 @@ export function useBackgroundEffects({
 			assertOwnerActive(signal);
 			let sessionId = ++instanceSessionCounter;
 			activeSessionId = sessionId;
+			const adoptCurrentModel = async () => {
+				if (model === selfieSegmentation) return;
+				model = await loadModel(signal);
+				assertOwnerActive(signal);
+				sessionId = ++instanceSessionCounter;
+				activeSessionId = sessionId;
+			};
 			const videoTrack = inputStream.getVideoTracks()[0];
 
 			if (!videoTrack) {
@@ -643,7 +648,7 @@ export function useBackgroundEffects({
 
 			const processFrame = async () => {
 				if (trackProcessor) {
-					while (shouldContinueProcessing(sessionId, model)) {
+					while (shouldContinueProcessing(sessionId)) {
 						let videoFrame: VideoFrame | null = null;
 						try {
 							const result = await trackProcessor.read();
@@ -661,13 +666,14 @@ export function useBackgroundEffects({
 							ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 							bitmap.close();
 
+							await adoptCurrentModel();
 							await model.send({ image: canvas });
 							assertOwnerActive(signal);
 
 							videoFrame.close();
 							videoFrame = null;
 
-							if (!shouldContinueProcessing(sessionId, model)) {
+							if (!shouldContinueProcessing(sessionId)) {
 								break;
 							}
 
@@ -740,7 +746,7 @@ export function useBackgroundEffects({
 
 			const processFrameWithRAF = async (currentTime = 0) => {
 				try {
-					if (!shouldContinueProcessing(sessionId, model)) {
+					if (!shouldContinueProcessing(sessionId)) {
 						return;
 					}
 
@@ -762,10 +768,11 @@ export function useBackgroundEffects({
 					}
 					ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+					await adoptCurrentModel();
 					await model.send({ image: canvas });
 					assertOwnerActive(signal);
 
-					if (!shouldContinueProcessing(sessionId, model)) {
+					if (!shouldContinueProcessing(sessionId)) {
 						return;
 					}
 
