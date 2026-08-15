@@ -31,10 +31,10 @@ export const DOC_KIND_META: Record<
   DocKind,
   { icon: string; tint: string; label: string }
 > = {
-  writer: { icon: 'lucide-file-text', tint: 'text-ink-blue-5', label: 'Document' },
-  sheet: { icon: 'lucide-table', tint: 'text-ink-green-5', label: 'Spreadsheet' },
-  slides: { icon: 'lucide-presentation', tint: 'text-ink-orange-5', label: 'Presentation' },
-  pdf: { icon: 'lucide-file', tint: 'text-ink-red-5', label: 'PDF' },
+  writer: { icon: 'lucide-file-text', tint: 'text-ink-blue-6', label: 'Document' },
+  sheet: { icon: 'lucide-table', tint: 'text-ink-green-6', label: 'Spreadsheet' },
+  slides: { icon: 'lucide-presentation', tint: 'text-ink-orange-6', label: 'Presentation' },
+  pdf: { icon: 'lucide-file', tint: 'text-ink-red-6', label: 'PDF' },
 }
 
 export interface RecentDoc {
@@ -119,24 +119,85 @@ export interface FileRow {
   kind: DocKind | 'folder'
   owner: string
   modified: string
+  /** Backs the Modified sort — the `modified` label is prose and can't sort. */
+  minutesAgo: number
+  /** Parent folder id; `null` sits at the root of the tree. */
+  parent: string | null
   shared?: boolean
   starred?: boolean
   trashed?: boolean
 }
 
+// A real tree, not a flat list: `parent` is the only structure, so the Files
+// area can walk it to any depth. Deepest branch is Product / Roadmap / Q3.
 export const FILES: FileRow[] = [
-  { id: 'f1', name: 'Product', kind: 'folder', owner: 'Faris', modified: '2d ago' },
-  { id: 'f2', name: 'Design', kind: 'folder', owner: 'Neha Kulkarni', modified: '5d ago', shared: true },
-  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', owner: 'Faris', modified: '12m ago', starred: true },
-  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', owner: 'Priya Nair', modified: '1h ago', shared: true },
-  { id: 'f5', name: 'Suite launch deck', kind: 'slides', owner: 'Faris', modified: '2h ago', starred: true },
-  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', owner: 'Rushabh Mehta', modified: '3h ago', shared: true },
-  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', owner: 'Aditya Verma', modified: 'yesterday', shared: true },
-  { id: 'f8', name: 'Expense tracker', kind: 'sheet', owner: 'Faris', modified: 'yesterday' },
-  { id: 'f9', name: 'Design review deck', kind: 'slides', owner: 'Neha Kulkarni', modified: '2d ago', shared: true, starred: true },
-  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', owner: 'Faris', modified: '3d ago', starred: true },
-  { id: 'f11', name: 'Archive 2025', kind: 'folder', owner: 'Faris', modified: '2w ago', trashed: true },
-  { id: 'f12', name: 'Old roadmap', kind: 'writer', owner: 'Faris', modified: '3w ago', trashed: true },
+  // Root
+  { id: 'f1', name: 'Product', kind: 'folder', parent: null, owner: 'Faris', modified: '2d ago', minutesAgo: 2880 },
+  { id: 'f2', name: 'Design', kind: 'folder', parent: null, owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7200, shared: true },
+  { id: 'f13', name: 'Operations', kind: 'folder', parent: null, owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, shared: true },
+  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', parent: null, owner: 'Faris', modified: '12m ago', minutesAgo: 12, starred: true },
+  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', parent: null, owner: 'Priya Nair', modified: '1h ago', minutesAgo: 60, shared: true },
+  { id: 'f5', name: 'Suite launch deck', kind: 'slides', parent: null, owner: 'Faris', modified: '2h ago', minutesAgo: 120, starred: true },
+  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', parent: null, owner: 'Rushabh Mehta', modified: '3h ago', minutesAgo: 180, shared: true },
+  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1440, shared: true },
+  { id: 'f8', name: 'Expense tracker', kind: 'sheet', parent: null, owner: 'Faris', modified: 'yesterday', minutesAgo: 1500 },
+  { id: 'f9', name: 'Design review deck', kind: 'slides', parent: null, owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2940, shared: true, starred: true },
+  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', parent: null, owner: 'Faris', modified: '3d ago', minutesAgo: 4320, starred: true },
+
+  // Product
+  { id: 'p1', name: 'Roadmap', kind: 'folder', parent: 'f1', owner: 'Faris', modified: '6h ago', minutesAgo: 360 },
+  { id: 'p2', name: 'Specs', kind: 'folder', parent: 'f1', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1380, shared: true },
+  { id: 'p3', name: 'Product brief', kind: 'writer', parent: 'f1', owner: 'Faris', modified: '4h ago', minutesAgo: 240, starred: true },
+  { id: 'p4', name: 'Pricing model', kind: 'sheet', parent: 'f1', owner: 'Rushabh Mehta', modified: '2d ago', minutesAgo: 3000, shared: true },
+
+  // Product / Roadmap
+  { id: 'r1', name: 'Q3', kind: 'folder', parent: 'p1', owner: 'Faris', modified: '30m ago', minutesAgo: 30 },
+  { id: 'r2', name: 'Q4', kind: 'folder', parent: 'p1', owner: 'Faris', modified: '5h ago', minutesAgo: 300 },
+  { id: 'r3', name: 'Roadmap overview', kind: 'writer', parent: 'p1', owner: 'Rushabh Mehta', modified: '1d ago', minutesAgo: 1560, shared: true, starred: true },
+
+  // Product / Roadmap / Q3
+  { id: 'q1', name: 'Q3 objectives', kind: 'writer', parent: 'r1', owner: 'Faris', modified: '30m ago', minutesAgo: 30, starred: true },
+  { id: 'q2', name: 'Q3 metrics', kind: 'sheet', parent: 'r1', owner: 'Priya Nair', modified: '2h ago', minutesAgo: 150, shared: true },
+  { id: 'q3', name: 'Q3 review deck', kind: 'slides', parent: 'r1', owner: 'Faris', modified: '1d ago', minutesAgo: 1620 },
+
+  // Product / Roadmap / Q4
+  { id: 'q4', name: 'Q4 objectives', kind: 'writer', parent: 'r2', owner: 'Faris', modified: '5h ago', minutesAgo: 300 },
+  { id: 'q5', name: 'Q4 budget', kind: 'sheet', parent: 'r2', owner: 'Aditya Verma', modified: '3d ago', minutesAgo: 4400, shared: true },
+
+  // Product / Specs
+  { id: 's1', name: 'Auth spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1400, shared: true },
+  { id: 's2', name: 'Billing spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '2d ago', minutesAgo: 3100, shared: true },
+  { id: 's3', name: 'Search spec', kind: 'writer', parent: 'p2', owner: 'Faris', modified: '6d ago', minutesAgo: 8640 },
+
+  // Design
+  { id: 'd1', name: 'Brand', kind: 'folder', parent: 'f2', owner: 'Neha Kulkarni', modified: '3d ago', minutesAgo: 4500, shared: true },
+  { id: 'd2', name: 'Mockups', kind: 'folder', parent: 'f2', owner: 'Neha Kulkarni', modified: '8h ago', minutesAgo: 480, shared: true },
+  { id: 'd3', name: 'Component audit', kind: 'sheet', parent: 'f2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2900, shared: true },
+  { id: 'd4', name: 'Icon set.pdf', kind: 'pdf', parent: 'f2', owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7300, shared: true },
+
+  // Design / Brand
+  { id: 'b1', name: 'Logo guidelines.pdf', kind: 'pdf', parent: 'd1', owner: 'Neha Kulkarni', modified: '3d ago', minutesAgo: 4500, shared: true },
+  { id: 'b2', name: 'Colour tokens', kind: 'sheet', parent: 'd1', owner: 'Faris', modified: '1w ago', minutesAgo: 10080, starred: true },
+
+  // Design / Mockups
+  { id: 'm1', name: 'Shell mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '8h ago', minutesAgo: 480, shared: true, starred: true },
+  { id: 'm2', name: 'Mobile mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 3200, shared: true },
+  { id: 'm3', name: 'Dark mode mockups', kind: 'slides', parent: 'd2', owner: 'Faris', modified: '4d ago', minutesAgo: 5900 },
+
+  // Operations
+  { id: 'o1', name: 'HR', kind: 'folder', parent: 'f13', owner: 'Priya Nair', modified: '2d ago', minutesAgo: 3300, shared: true },
+  // Deliberately empty, so the empty state is reachable by clicking.
+  { id: 'o2', name: 'Archive', kind: 'folder', parent: 'f13', owner: 'Priya Nair', modified: '1mo ago', minutesAgo: 43200 },
+  { id: 'o3', name: 'Vendor list', kind: 'sheet', parent: 'f13', owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, shared: true },
+  { id: 'o4', name: 'Office lease.pdf', kind: 'pdf', parent: 'f13', owner: 'Rushabh Mehta', modified: '2w ago', minutesAgo: 20200 },
+
+  // Operations / HR
+  { id: 'h1', name: 'Hiring plan', kind: 'writer', parent: 'o1', owner: 'Priya Nair', modified: '2d ago', minutesAgo: 3300, shared: true },
+  { id: 'h2', name: 'Interview rubric', kind: 'writer', parent: 'o1', owner: 'Aditya Verma', modified: '1w ago', minutesAgo: 10100, shared: true },
+
+  // Trash spans the tree, so it is a view rather than a place.
+  { id: 't1f', name: 'Archive 2025', kind: 'folder', parent: null, owner: 'Faris', modified: '2w ago', minutesAgo: 20160, trashed: true },
+  { id: 't2f', name: 'Old roadmap', kind: 'writer', parent: 'p1', owner: 'Faris', modified: '3w ago', minutesAgo: 30240, trashed: true },
 ]
 
 /** Owner faces, so the Files list reads as real data instead of initials. */
@@ -148,6 +209,9 @@ export const PEOPLE: Record<string, string> = {
   'Rushabh Mehta': 'https://avatars.githubusercontent.com/u/4?v=4',
 }
 
+/** Every owner in the tree, for the Files filter's Owner field. */
+export const OWNERS = [...new Set(FILES.map((file) => file.owner))].sort()
+
 export const FOLDERS = [
   { id: 'all', label: 'All files', icon: 'lucide-folder' },
   { id: 'shared', label: 'Shared with me', icon: 'lucide-users' },
@@ -155,13 +219,34 @@ export const FOLDERS = [
   { id: 'trash', label: 'Trash', icon: 'lucide-trash-2' },
 ]
 
-/** Sidebar folders are saved views, not a tree: every live file is in "all". */
-export function filesInFolder(folderId: string): FileRow[] {
-  if (folderId === 'trash') return FILES.filter((file) => file.trashed)
+const BY_ID = new Map(FILES.map((file) => [file.id, file]))
+
+/** Rows inside one folder. `null` is the root. Trashed rows live only in Trash. */
+export function childrenOf(parentId: string | null): FileRow[] {
+  return FILES.filter((file) => file.parent === parentId && !file.trashed)
+}
+
+/**
+ * Sidebar saved views cut across the whole tree, so they are flat. "All files"
+ * is the tree root, which is what makes descending from it feel continuous.
+ */
+export function filesInView(viewId: string): FileRow[] {
+  if (viewId === 'trash') return FILES.filter((file) => file.trashed)
   const live = FILES.filter((file) => !file.trashed)
-  if (folderId === 'shared') return live.filter((file) => file.shared)
-  if (folderId === 'starred') return live.filter((file) => file.starred)
-  return live
+  if (viewId === 'shared') return live.filter((file) => file.shared)
+  if (viewId === 'starred') return live.filter((file) => file.starred)
+  return childrenOf(null)
+}
+
+/** Ancestor chain for a row, root first, ending with the row itself. */
+export function pathTo(id: string): FileRow[] {
+  const chain: FileRow[] = []
+  let current = BY_ID.get(id)
+  while (current) {
+    chain.unshift(current)
+    current = current.parent ? BY_ID.get(current.parent) : undefined
+  }
+  return chain
 }
 
 export const CALENDARS = [

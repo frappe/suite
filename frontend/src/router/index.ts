@@ -82,7 +82,9 @@ const routes: RouteRecordRaw[] = [
   ...placeholderGroups,
   // PROTOTYPE — remove: throwaway workspace-shell prototype (/prototype/shell).
   {
-    path: '/prototype/shell/:area?/:sub?',
+    // `:sub*` is repeatable so the Files area can carry a folder path of any
+    // depth (`files/folder/<id>/<id>/…`); every other area reads one segment.
+    path: '/prototype/shell/:area?/:sub*',
     name: 'prototype-shell',
     component: () => import('@/prototypes/shell/PrototypeShell.vue'),
     meta: { title: 'Shell Prototype', allowGuest: true },

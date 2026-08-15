@@ -16,16 +16,42 @@ export function useShellNav() {
     return AREAS.includes(raw) ? raw : 'home'
   })
 
-  const sub = computed(() => (route.params.sub as string) || '')
+  // `:sub*` hands back an array. Every area except Files reads one segment.
+  const segments = computed(() => {
+    const raw = route.params.sub
+    if (Array.isArray(raw)) return raw.filter(Boolean)
+    return raw ? [String(raw)] : []
+  })
 
-  // The Folders list also shows on Home, where nothing is open yet — so an
-  // active folder only exists inside the Files area.
-  const folder = computed(() => (area.value === 'files' ? sub.value || 'all' : ''))
+  const sub = computed(() => segments.value[0] ?? '')
+
+  /** Folder ids under `files/folder/…`; empty means the tree root. */
+  const folderPath = computed(() =>
+    area.value === 'files' && segments.value[0] === 'folder'
+      ? segments.value.slice(1)
+      : [],
+  )
+
+  // The saved view the sidebar highlights. Descending into the tree is a
+  // different mode, so it deliberately reports none — the sidebar would
+  // otherwise claim "All files" while the list shows one folder's contents.
+  const folder = computed(() => {
+    if (area.value !== 'files' || folderPath.value.length) return ''
+    return sub.value || 'all'
+  })
 
   function areaTo(target: AreaId, targetSub?: string): RouteLocationRaw {
     return {
       name: 'prototype-shell',
-      params: { area: target, sub: targetSub ?? '' },
+      params: { area: target, sub: targetSub ? [targetSub] : [] },
+    }
+  }
+
+  /** Route for a folder in the Files tree; an empty path is the tree root. */
+  function folderTo(path: string[]): RouteLocationRaw {
+    return {
+      name: 'prototype-shell',
+      params: { area: 'files', sub: path.length ? ['folder', ...path] : [] },
     }
   }
 
@@ -33,5 +59,5 @@ export function useShellNav() {
     router.push(areaTo(target, targetSub))
   }
 
-  return { area, sub, folder, areaTo, go }
+  return { area, sub, folder, folderPath, areaTo, folderTo, go }
 }
