@@ -12,9 +12,12 @@
     :placeholder="options.find((k) => k.key === font_family)?.label"
     :open-on-click="true"
     class="min-w-[10rem]"
-    variant="outline"
     @update:model-value="onSelect"
   >
+    <!-- Forwarded so the toolbar can swap the boxed trigger for a compact one. -->
+    <template v-if="$slots.trigger" #trigger="slotProps">
+      <slot name="trigger" v-bind="slotProps" />
+    </template>
     <template #font="{ option }"
       ><span :style="{ fontFamily: `var(--font-${option.key})` }">
         {{ option.label }}</span
