@@ -70,6 +70,27 @@ describe("CameraFramingTracker", () => {
 		expect(reset.height).toBeCloseTo(720, 0);
 	});
 
+	it("eases back to the full frame when disabled", () => {
+		const tracker = new CameraFramingTracker();
+		const face = [{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }];
+		for (let now = 0; now <= 1000; now += 20) {
+			if (now % 200 === 0) tracker.updateFaces(face, now);
+			tracker.getCrop(1280, 720, now);
+		}
+		const fitted = tracker.getCrop(1280, 720, 1000);
+
+		tracker.setEnabled(false);
+		const easing = tracker.getCrop(1280, 720, 1020);
+		let fullFrame = easing;
+		for (let now = 1040; now <= 4000; now += 20) {
+			fullFrame = tracker.getCrop(1280, 720, now);
+		}
+
+		expect(easing.width).toBeGreaterThan(fitted.width);
+		expect(easing.width).toBeLessThan(1280);
+		expect(fullFrame.width).toBeCloseTo(1280, 0);
+	});
+
 	it("ignores small face-box fluctuations while the subject is stationary", () => {
 		const tracker = new CameraFramingTracker();
 		const widths: number[] = [];

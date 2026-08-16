@@ -504,7 +504,7 @@ export function useBackgroundEffects({
 			};
 			const drawCameraFrame = async (source: CanvasImageSource) => {
 				let crop = { x: 0, y: 0, width, height };
-				if (settings.autoFramingEnabled && !framingUnavailable) {
+				if ((settings.autoFramingEnabled || cameraFraming) && !framingUnavailable) {
 					try {
 						if (!cameraFraming && !cameraFramingDisposal) {
 							cameraFraming = new CameraFramingProcessor();
@@ -517,7 +517,10 @@ export function useBackgroundEffects({
 							ctx.drawImage(source, 0, 0, width, height);
 							return;
 						}
-						cameraFraming.setPaused(settings.autoFramingPaused);
+						cameraFraming.setEnabled(settings.autoFramingEnabled);
+						cameraFraming.setPaused(
+							settings.autoFramingEnabled && settings.autoFramingPaused,
+						);
 						crop = await cameraFraming.process(
 							() => getDetectionImage(source),
 							width,
@@ -1030,7 +1033,6 @@ export function useBackgroundEffects({
 				if ("autoFramingEnabled" in normalizedOptions) {
 					framingUnavailable = false;
 					if (!settings.autoFramingEnabled) {
-						stopCameraFraming();
 						setFramingCrop(null);
 					}
 				}
