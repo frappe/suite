@@ -527,6 +527,9 @@ export function useBackgroundEffects({
 							height,
 							performance.now(),
 						);
+						if (!settings.autoFramingEnabled && cameraFraming.isAtFullFrame()) {
+							stopCameraFraming();
+						}
 						assertOwnerActive(signal);
 					} catch (framingError) {
 						if (isDisposed || signal?.aborted) throw framingError;

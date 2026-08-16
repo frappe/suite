@@ -205,6 +205,17 @@ export class CameraFramingTracker {
 		return this.hasAcquiredCrop ? { ...this.current } : null;
 	}
 
+	isAtFullFrame(): boolean {
+		return (
+			!this.enabled &&
+			Math.max(
+				Math.abs(this.current.x),
+				Math.abs(this.current.y),
+				Math.abs(1 - this.current.size),
+			) <= CROP_CONVERGENCE_EPSILON
+		);
+	}
+
 	restoreCrop(crop: NormalizedCrop): void {
 		const size = clamp(crop.size, 0, 1);
 		this.current = {
@@ -391,6 +402,10 @@ export class CameraFramingProcessor {
 
 	getNormalizedCrop(): NormalizedCrop | null {
 		return this.tracker.getNormalizedCrop();
+	}
+
+	isAtFullFrame(): boolean {
+		return this.tracker.isAtFullFrame();
 	}
 
 	restoreCrop(crop: NormalizedCrop): void {

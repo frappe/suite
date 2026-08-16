@@ -81,6 +81,7 @@ describe("CameraFramingTracker", () => {
 
 		tracker.setEnabled(false);
 		const easing = tracker.getCrop(1280, 720, 1020);
+		expect(tracker.isAtFullFrame()).toBe(false);
 		let fullFrame = easing;
 		for (let now = 1040; now <= 4000; now += 20) {
 			fullFrame = tracker.getCrop(1280, 720, now);
@@ -89,6 +90,7 @@ describe("CameraFramingTracker", () => {
 		expect(easing.width).toBeGreaterThan(fitted.width);
 		expect(easing.width).toBeLessThan(1280);
 		expect(fullFrame.width).toBeCloseTo(1280, 0);
+		expect(tracker.isAtFullFrame()).toBe(true);
 	});
 
 	it("ignores small face-box fluctuations while the subject is stationary", () => {
