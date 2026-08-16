@@ -69,6 +69,7 @@ export class CameraFramingTracker {
 	private pendingSizeSamples = 0;
 	private paused = false;
 	private awaitingResumeDetection = false;
+	private hasTrackedFace = false;
 	private hasAcquiredCrop = false;
 
 	private resetPendingSize(): void {
@@ -143,6 +144,7 @@ export class CameraFramingTracker {
 			size,
 		};
 		this.lastFaceAt = now;
+		this.hasTrackedFace = true;
 	}
 
 	getCrop(sourceWidth: number, sourceHeight: number, now: number): CropRect {
@@ -167,10 +169,7 @@ export class CameraFramingTracker {
 			Math.abs(this.target.y - this.current.y),
 			Math.abs(this.target.size - this.current.size),
 		);
-		if (
-			this.lastFaceAt !== null &&
-			maxDrift <= CROP_CONVERGENCE_EPSILON
-		) {
+		if (this.hasTrackedFace && maxDrift <= CROP_CONVERGENCE_EPSILON) {
 			this.hasAcquiredCrop = true;
 		}
 
@@ -198,6 +197,7 @@ export class CameraFramingTracker {
 		this.target = { ...this.current };
 		this.lastFaceAt = null;
 		this.lastFrameAt = null;
+		this.hasTrackedFace = true;
 		this.hasAcquiredCrop = true;
 		this.resetPendingSize();
 	}
@@ -220,6 +220,7 @@ export class CameraFramingTracker {
 		this.lastFrameAt = null;
 		this.paused = false;
 		this.awaitingResumeDetection = false;
+		this.hasTrackedFace = false;
 		this.hasAcquiredCrop = false;
 		this.resetPendingSize();
 	}

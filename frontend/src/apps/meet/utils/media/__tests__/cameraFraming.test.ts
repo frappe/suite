@@ -194,6 +194,13 @@ describe("CameraFramingTracker", () => {
 		tracker.getCrop(1280, 720, 500);
 		expect(tracker.getNormalizedCrop()).toBeNull();
 
+		tracker.setPaused(true);
+		tracker.setPaused(false);
+		tracker.updateFaces([], 600);
+		tracker.getCrop(1280, 720, 620);
+		tracker.getCrop(1280, 720, 640);
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
 		tracker.updateFaces(
 			[{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }],
 			0,
