@@ -149,6 +149,7 @@ describe("CameraFramingTracker", () => {
 		expect(paused).toEqual(fixed);
 
 		tracker.setPaused(false);
+		expect(tracker.getCrop(1280, 720, 4020)).toEqual(fixed);
 		tracker.updateFaces(face(0.75), 4200);
 		for (let now = 4200; now <= 5500; now += 20) {
 			tracker.getCrop(1280, 720, now);

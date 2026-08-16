@@ -67,6 +67,7 @@ export class CameraFramingTracker {
 	private pendingSizeDirection = 0;
 	private pendingSizeSamples = 0;
 	private paused = false;
+	private awaitingResumeDetection = false;
 
 	private resetPendingSize(): void {
 		this.pendingSize = 0;
@@ -76,13 +77,18 @@ export class CameraFramingTracker {
 
 	updateFaces(faces: NormalizedFaceBox[], now: number): void {
 		if (this.paused) return;
+		const wasAwaitingResumeDetection = this.awaitingResumeDetection;
+		this.awaitingResumeDetection = false;
 		const face = faces.reduce<NormalizedFaceBox | null>((largest, candidate) => {
 			if (!largest) return candidate;
 			return candidate.width * candidate.height > largest.width * largest.height
 				? candidate
 				: largest;
 		}, null);
-		if (!face) return;
+		if (!face) {
+			if (wasAwaitingResumeDetection) this.lastFaceAt = now;
+			return;
+		}
 
 		const detectedSize = clamp(
 			Math.max(face.width * 2.8, face.height * 3.4),
@@ -92,7 +98,7 @@ export class CameraFramingTracker {
 		const previousCenterX = this.target.x + this.target.size / 2;
 		const previousCenterY = this.target.y + this.target.size / 2;
 		let size = this.target.size;
-		if (this.lastFaceAt === null) {
+		if (this.lastFaceAt === null || wasAwaitingResumeDetection) {
 			size = detectedSize;
 			this.resetPendingSize();
 		} else {
@@ -138,7 +144,8 @@ export class CameraFramingTracker {
 	}
 
 	getCrop(sourceWidth: number, sourceHeight: number, now: number): CropRect {
-		if (this.paused) {
+		if (this.paused || this.awaitingResumeDetection) {
+			this.lastFrameAt = now;
 			return this.toCropRect(sourceWidth, sourceHeight);
 		}
 		if (this.lastFaceAt === null || now - this.lastFaceAt > FACE_HOLD_MS) {
@@ -160,8 +167,8 @@ export class CameraFramingTracker {
 	setPaused(paused: boolean): void {
 		if (this.paused === paused) return;
 		this.paused = paused;
+		this.awaitingResumeDetection = !paused;
 		this.resetPendingSize();
-		if (!paused) this.lastFaceAt = null;
 	}
 
 	private toCropRect(sourceWidth: number, sourceHeight: number): CropRect {
@@ -181,6 +188,7 @@ export class CameraFramingTracker {
 		this.lastFaceAt = null;
 		this.lastFrameAt = null;
 		this.paused = false;
+		this.awaitingResumeDetection = false;
 		this.resetPendingSize();
 	}
 }
