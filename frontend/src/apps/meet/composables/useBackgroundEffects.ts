@@ -1036,13 +1036,8 @@ export function useBackgroundEffects({
 				}
 				if ("autoFramingPaused" in normalizedOptions) {
 					if (settings.autoFramingPaused) {
-						setFramingCrop(
-							cameraFraming?.getNormalizedCrop() ?? {
-								x: 0,
-								y: 0,
-								size: 1,
-							},
-						);
+						const crop = cameraFraming?.getNormalizedCrop();
+						if (crop) setFramingCrop(crop);
 					} else {
 						setFramingCrop(null);
 					}
