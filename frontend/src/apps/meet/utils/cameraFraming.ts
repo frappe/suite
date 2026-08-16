@@ -187,7 +187,7 @@ export class CameraFramingTracker {
 	setPaused(paused: boolean): void {
 		if (this.paused === paused) return;
 		this.paused = paused;
-		this.awaitingResumeDetection = !paused;
+		this.awaitingResumeDetection = !paused && this.enabled;
 		this.resetPendingSize();
 	}
 
@@ -195,6 +195,8 @@ export class CameraFramingTracker {
 		if (this.enabled === enabled) return;
 		this.enabled = enabled;
 		if (enabled) return;
+		this.paused = false;
+		this.awaitingResumeDetection = false;
 		this.target = { ...FULL_FRAME };
 		this.lastFaceAt = null;
 		this.hasAcquiredCrop = false;

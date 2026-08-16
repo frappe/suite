@@ -79,7 +79,9 @@ describe("CameraFramingTracker", () => {
 		}
 		const fitted = tracker.getCrop(1280, 720, 1000);
 
+		tracker.setPaused(true);
 		tracker.setEnabled(false);
+		tracker.setPaused(false);
 		const easing = tracker.getCrop(1280, 720, 1020);
 		expect(tracker.isAtFullFrame()).toBe(false);
 		let fullFrame = easing;
