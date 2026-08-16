@@ -89,7 +89,9 @@ export class CameraFramingTracker {
 				: largest;
 		}, null);
 		if (!face) {
-			if (wasAwaitingResumeDetection) this.lastFaceAt = now;
+			if (wasAwaitingResumeDetection && this.hasAcquiredCrop) {
+				this.lastFaceAt = now;
+			}
 			return;
 		}
 

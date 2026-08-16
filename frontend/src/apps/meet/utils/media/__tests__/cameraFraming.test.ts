@@ -242,6 +242,14 @@ describe("CameraFramingTracker", () => {
 		}
 
 		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.setPaused(true);
+		tracker.setPaused(false);
+		tracker.updateFaces([], 8100);
+		tracker.getCrop(1280, 720, 8120);
+		tracker.getCrop(1280, 720, 8140);
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
 	});
 });
 
