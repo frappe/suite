@@ -155,6 +155,7 @@ export class CameraFramingTracker {
 		if (this.lastFaceAt === null || now - this.lastFaceAt > FACE_HOLD_MS) {
 			this.target = { ...FULL_FRAME };
 			this.lastFaceAt = null;
+			this.hasAcquiredCrop = false;
 			this.resetPendingSize();
 		}
 
@@ -169,7 +170,11 @@ export class CameraFramingTracker {
 			Math.abs(this.target.y - this.current.y),
 			Math.abs(this.target.size - this.current.size),
 		);
-		if (this.hasTrackedFace && maxDrift <= CROP_CONVERGENCE_EPSILON) {
+		if (
+			this.hasTrackedFace &&
+			this.lastFaceAt !== null &&
+			maxDrift <= CROP_CONVERGENCE_EPSILON
+		) {
 			this.hasAcquiredCrop = true;
 		}
 

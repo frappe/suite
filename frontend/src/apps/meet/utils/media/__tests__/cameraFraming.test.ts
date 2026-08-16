@@ -226,6 +226,23 @@ describe("CameraFramingTracker", () => {
 		expect(crop.width).toBe(1280);
 		expect(crop.height).toBe(720);
 	});
+
+	it("stops reporting a crop after face loss falls back to the full frame", () => {
+		const tracker = new CameraFramingTracker();
+		const face = [{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }];
+		tracker.updateFaces(face, 0);
+		for (let now = 0; now <= 2000; now += 20) {
+			if (now % 200 === 0) tracker.updateFaces(face, now);
+			tracker.getCrop(1280, 720, now);
+		}
+		expect(tracker.getNormalizedCrop()).not.toBeNull();
+
+		for (let now = 2000; now <= 8000; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
+	});
 });
 
 describe("CameraFramingProcessor", () => {
