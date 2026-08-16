@@ -186,6 +186,19 @@ describe("CameraFramingTracker", () => {
 		expect(restored.getCrop(1280, 720, 6500).x).toBeGreaterThan(locked.x);
 	});
 
+	it("does not report a crop before the first detection or restore", () => {
+		const tracker = new CameraFramingTracker();
+
+		expect(tracker.getNormalizedCrop()).toBeNull();
+
+		tracker.restoreCrop({ x: 0.1, y: 0.1, size: 0.5 });
+		expect(tracker.getNormalizedCrop()).toEqual({
+			x: 0.1,
+			y: 0.1,
+			size: 0.5,
+		});
+	});
+
 	it("clamps an out-of-bounds restored crop into the frame", () => {
 		const tracker = new CameraFramingTracker();
 		tracker.restoreCrop({ x: -0.5, y: 2, size: 1.5 });

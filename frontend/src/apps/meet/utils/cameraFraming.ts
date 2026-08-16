@@ -68,6 +68,7 @@ export class CameraFramingTracker {
 	private pendingSizeSamples = 0;
 	private paused = false;
 	private awaitingResumeDetection = false;
+	private hasAcquiredCrop = false;
 
 	private resetPendingSize(): void {
 		this.pendingSize = 0;
@@ -141,6 +142,7 @@ export class CameraFramingTracker {
 			size,
 		};
 		this.lastFaceAt = now;
+		this.hasAcquiredCrop = true;
 	}
 
 	getCrop(sourceWidth: number, sourceHeight: number, now: number): CropRect {
@@ -171,8 +173,8 @@ export class CameraFramingTracker {
 		this.resetPendingSize();
 	}
 
-	getNormalizedCrop(): NormalizedCrop {
-		return { ...this.current };
+	getNormalizedCrop(): NormalizedCrop | null {
+		return this.hasAcquiredCrop ? { ...this.current } : null;
 	}
 
 	restoreCrop(crop: NormalizedCrop): void {
@@ -185,6 +187,7 @@ export class CameraFramingTracker {
 		this.target = { ...this.current };
 		this.lastFaceAt = null;
 		this.lastFrameAt = null;
+		this.hasAcquiredCrop = true;
 		this.resetPendingSize();
 	}
 
@@ -206,6 +209,7 @@ export class CameraFramingTracker {
 		this.lastFrameAt = null;
 		this.paused = false;
 		this.awaitingResumeDetection = false;
+		this.hasAcquiredCrop = false;
 		this.resetPendingSize();
 	}
 }
@@ -342,7 +346,7 @@ export class CameraFramingProcessor {
 		if (!paused) this.nextDetectionAt = 0;
 	}
 
-	getNormalizedCrop(): NormalizedCrop {
+	getNormalizedCrop(): NormalizedCrop | null {
 		return this.tracker.getNormalizedCrop();
 	}
 
