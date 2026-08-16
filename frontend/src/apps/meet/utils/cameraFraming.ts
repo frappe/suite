@@ -52,6 +52,10 @@ const SIZE_CONFIRMATION_SAMPLES = 5;
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
 
+/**
+ * Converts face detections into a smooth, bounded square crop. Call `getCrop`
+ * for every frame; pausing freezes the exact current crop until resumed.
+ */
 export class CameraFramingTracker {
 	private current = { ...FULL_FRAME };
 	private target = { ...FULL_FRAME };
@@ -207,6 +211,10 @@ async function createFaceDetector(): Promise<FaceDetectorLike> {
 	return detector;
 }
 
+/**
+ * Owns a lazily initialized face detector and applies its detections to a crop
+ * tracker at a limited cadence. Call `dispose` when the processing session ends.
+ */
 export class CameraFramingProcessor {
 	private readonly tracker = new CameraFramingTracker();
 	private readonly detectorFactory: () => Promise<FaceDetectorLike>;
