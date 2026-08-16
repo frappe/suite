@@ -167,7 +167,10 @@ export class CameraFramingTracker {
 			Math.abs(this.target.y - this.current.y),
 			Math.abs(this.target.size - this.current.size),
 		);
-		if (maxDrift <= CROP_CONVERGENCE_EPSILON) {
+		if (
+			this.lastFaceAt !== null &&
+			maxDrift <= CROP_CONVERGENCE_EPSILON
+		) {
 			this.hasAcquiredCrop = true;
 		}
 

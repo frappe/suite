@@ -190,6 +190,9 @@ describe("CameraFramingTracker", () => {
 		const tracker = new CameraFramingTracker();
 
 		expect(tracker.getNormalizedCrop()).toBeNull();
+		tracker.getCrop(1280, 720, 0);
+		tracker.getCrop(1280, 720, 500);
+		expect(tracker.getNormalizedCrop()).toBeNull();
 
 		tracker.updateFaces(
 			[{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }],
