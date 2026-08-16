@@ -1,9 +1,6 @@
 import { confirmDialog, toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref, watch } from "vue";
-import {
-	autoFramingPaused,
-	setAutoFramingPaused,
-} from "../data/backgroundEffects";
+import { autoFramingPaused } from "../data/backgroundEffects";
 import {
 	cameraEnabled as prefCameraEnabled,
 	micEnabled as prefMicEnabled,
@@ -636,10 +633,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				});
 				assertCurrentCameraOperation(operation);
 			} else {
-				if (bgEffects.autoFramingPaused) {
-					setAutoFramingPaused(false);
-					bgEffects.autoFramingPaused = false;
-				}
 				if (backgroundSession) {
 					await reconcileRawEffectsTrack(
 						rawTrack,

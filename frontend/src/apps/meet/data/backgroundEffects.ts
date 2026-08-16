@@ -50,7 +50,39 @@ export const blurIntensity: Ref<number> = ref(
 export const autoFramingEnabled: Ref<boolean> = ref(
 	readBool("backgroundEffects.autoFraming", false),
 );
-export const autoFramingPaused: Ref<boolean> = ref(false);
+
+export interface FramingCropSnapshot {
+	x: number;
+	y: number;
+	size: number;
+}
+
+function readFramingCrop(): FramingCropSnapshot | null {
+	try {
+		const raw = localStorage.getItem("backgroundEffects.framingCrop");
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as Partial<FramingCropSnapshot> | null;
+		if (
+			typeof parsed?.x !== "number" ||
+			typeof parsed?.y !== "number" ||
+			typeof parsed?.size !== "number" ||
+			!Number.isFinite(parsed.x) ||
+			!Number.isFinite(parsed.y) ||
+			!Number.isFinite(parsed.size)
+		) {
+			return null;
+		}
+		return { x: parsed.x, y: parsed.y, size: parsed.size };
+	} catch {
+		return null;
+	}
+}
+
+export const autoFramingPaused: Ref<boolean> = ref(
+	readBool("backgroundEffects.autoFramingPaused", false),
+);
+export const framingCrop: Ref<FramingCropSnapshot | null> =
+	ref(readFramingCrop());
 
 // Custom background images
 export const customBackgroundImages: Ref<BackgroundImage[]> = ref([]);
@@ -150,10 +182,25 @@ export function setAutoFramingEnabled(val: boolean): void {
 		"backgroundEffects.autoFraming",
 		autoFramingEnabled.value ? "1" : "0",
 	);
+	if (!autoFramingEnabled.value) setAutoFramingPaused(false);
 }
 
 export function setAutoFramingPaused(val: boolean): void {
 	autoFramingPaused.value = !!val;
+	localStorage.setItem(
+		"backgroundEffects.autoFramingPaused",
+		autoFramingPaused.value ? "1" : "0",
+	);
+	if (!autoFramingPaused.value) setFramingCrop(null);
+}
+
+export function setFramingCrop(crop: FramingCropSnapshot | null): void {
+	framingCrop.value = crop;
+	if (crop) {
+		localStorage.setItem("backgroundEffects.framingCrop", JSON.stringify(crop));
+	} else {
+		localStorage.removeItem("backgroundEffects.framingCrop");
+	}
 }
 
 // Add a custom background image

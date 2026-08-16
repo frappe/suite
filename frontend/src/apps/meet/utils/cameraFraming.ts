@@ -19,7 +19,7 @@ export interface CropRect {
 	height: number;
 }
 
-interface NormalizedCrop {
+export interface NormalizedCrop {
 	x: number;
 	y: number;
 	size: number;
@@ -168,6 +168,23 @@ export class CameraFramingTracker {
 		if (this.paused === paused) return;
 		this.paused = paused;
 		this.awaitingResumeDetection = !paused;
+		this.resetPendingSize();
+	}
+
+	getNormalizedCrop(): NormalizedCrop {
+		return { ...this.current };
+	}
+
+	restoreCrop(crop: NormalizedCrop): void {
+		const size = clamp(crop.size, 0, 1);
+		this.current = {
+			x: clamp(crop.x, 0, 1 - size),
+			y: clamp(crop.y, 0, 1 - size),
+			size,
+		};
+		this.target = { ...this.current };
+		this.lastFaceAt = null;
+		this.lastFrameAt = null;
 		this.resetPendingSize();
 	}
 
@@ -323,6 +340,14 @@ export class CameraFramingProcessor {
 		this.detectionGeneration++;
 		this.tracker.setPaused(paused);
 		if (!paused) this.nextDetectionAt = 0;
+	}
+
+	getNormalizedCrop(): NormalizedCrop {
+		return this.tracker.getNormalizedCrop();
+	}
+
+	restoreCrop(crop: NormalizedCrop): void {
+		this.tracker.restoreCrop(crop);
 	}
 
 	async dispose(): Promise<void> {
