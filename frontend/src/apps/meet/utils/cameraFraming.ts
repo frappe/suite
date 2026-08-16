@@ -50,6 +50,7 @@ const SMOOTHING_TIME_MS = 420;
 const CENTER_DEAD_ZONE = 0.035;
 const SIZE_DEAD_ZONE = 0.05;
 const SIZE_CONFIRMATION_SAMPLES = 5;
+const CROP_CONVERGENCE_EPSILON = 0.02;
 
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(max, Math.max(min, value));
@@ -142,7 +143,6 @@ export class CameraFramingTracker {
 			size,
 		};
 		this.lastFaceAt = now;
-		this.hasAcquiredCrop = true;
 	}
 
 	getCrop(sourceWidth: number, sourceHeight: number, now: number): CropRect {
@@ -162,6 +162,14 @@ export class CameraFramingTracker {
 		this.current.y += (this.target.y - this.current.y) * blend;
 		this.current.size += (this.target.size - this.current.size) * blend;
 		this.lastFrameAt = now;
+		const maxDrift = Math.max(
+			Math.abs(this.target.x - this.current.x),
+			Math.abs(this.target.y - this.current.y),
+			Math.abs(this.target.size - this.current.size),
+		);
+		if (maxDrift <= CROP_CONVERGENCE_EPSILON) {
+			this.hasAcquiredCrop = true;
+		}
 
 		return this.toCropRect(sourceWidth, sourceHeight);
 	}
