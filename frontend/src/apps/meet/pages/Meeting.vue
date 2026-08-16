@@ -254,7 +254,7 @@
 
 <script setup lang="ts">
 import { Badge, Button, createResource, frappeRequest, toast } from "frappe-ui";
-import { computed, h, onMounted, onUnmounted, provide, ref, watch } from "vue";
+import { computed, h, onMounted, onUnmounted, provide, ref, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import ChatPanel from "../components/ChatPanel.vue";
@@ -666,7 +666,7 @@ provideMeetingContext({
 	reactionStore,
 	lobbyStore,
 	sfuManager: sfuConnection.sfuManager.value,
-	processedStream: mediaState.processedStream,
+	processedStream: toRef(mediaState, "processedStream"),
 	isInMeeting: computed(() => true),
 	onBackgroundEffectsChanged: mediaControls.applyBackgroundEffectsToLocalStream,
 	networkQuality,

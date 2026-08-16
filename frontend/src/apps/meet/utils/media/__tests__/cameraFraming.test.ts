@@ -187,6 +187,44 @@ describe("CameraFramingProcessor", () => {
 		expect(bundledFaceDetector.close).toHaveBeenCalledOnce();
 	});
 
+	it("does not block crop production while detection is in flight", async () => {
+		let releaseSend!: () => void;
+		const sendPending = new Promise<void>((resolve) => {
+			releaseSend = resolve;
+		});
+		const send = vi.fn(() => sendPending);
+		const close = vi.fn().mockResolvedValue(undefined);
+		const processor = new CameraFramingProcessor({
+			detectorFactory: async () => ({
+				close,
+				initialize: vi.fn().mockResolvedValue(undefined),
+				onResults: vi.fn(),
+				send,
+				setOptions: vi.fn(),
+			}),
+			detectionIntervalMs: 0,
+		});
+		const image = document.createElement("canvas");
+
+		const firstCrop = processor.process(image, 1280, 720, 0);
+		await expect(
+			Promise.race([
+				firstCrop.then(() => "resolved"),
+				new Promise((resolve) => setTimeout(() => resolve("pending"), 0)),
+			]),
+		).resolves.toBe("resolved");
+		await processor.process(image, 1280, 720, 1);
+		expect(send).toHaveBeenCalledOnce();
+
+		releaseSend();
+		await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await processor.process(image, 1280, 720, 2);
+		await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+		await processor.dispose();
+		expect(close).toHaveBeenCalledOnce();
+	});
+
 	it("limits detection cadence and closes its detector", async () => {
 		const send = vi.fn().mockResolvedValue(undefined);
 		const close = vi.fn().mockResolvedValue(undefined);
@@ -230,8 +268,10 @@ describe("CameraFramingProcessor", () => {
 		const image = document.createElement("canvas");
 
 		await processor.process(image, 1280, 720, 0);
+		await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
 		await processor.process(image, 1280, 720, 100);
 		await processor.process(image, 1280, 720, 200);
+		await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
 		await processor.dispose();
 
 		expect(send).toHaveBeenCalledTimes(2);
@@ -253,9 +293,13 @@ describe("CameraFramingProcessor", () => {
 			}),
 		});
 
-		await expect(
-			processor.process(document.createElement("canvas"), 1280, 720, 0),
-		).rejects.toThrow("initialization failed");
+		const image = document.createElement("canvas");
+		await processor.process(image, 1280, 720, 0);
+		await vi.waitFor(async () => {
+			await expect(processor.process(image, 1280, 720, 1)).rejects.toThrow(
+				"initialization failed",
+			);
+		});
 
 		expect(close).toHaveBeenCalledOnce();
 	});

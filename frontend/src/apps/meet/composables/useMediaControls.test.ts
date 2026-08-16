@@ -25,10 +25,19 @@ vi.mock("../data/mediaPreferences", () => ({
 	setSelectedSpeakerId: vi.fn(),
 }));
 
+const webglSpies = vi.hoisted(() => ({
+	construct: vi.fn(),
+	dispose: vi.fn(),
+	initializeShaders: vi.fn(),
+}));
+
 vi.mock("../utils/webglShaders", () => ({
 	WebGLManager: class {
-		initializeShaders() {}
-		dispose() {}
+		constructor() {
+			webglSpies.construct();
+		}
+		initializeShaders = webglSpies.initializeShaders;
+		dispose = webglSpies.dispose;
 	},
 }));
 
@@ -2301,6 +2310,110 @@ describe("useMediaControls", () => {
 		expect(toast.error).not.toHaveBeenCalled();
 		expect(toast.warning).not.toHaveBeenCalled();
 		releasePlayback.resolve();
+		app.unmount();
+	});
+
+	it("draws each source frame once when auto framing is disabled", async () => {
+		const frame = { close: vi.fn() } as unknown as VideoFrame;
+		const bitmap = { close: vi.fn() };
+		const read = vi
+			.fn()
+			.mockResolvedValueOnce({ done: false, value: frame })
+			.mockImplementation(() => new Promise(() => {}));
+		class FakeTrackProcessor {
+			readable = {
+				getReader: () => ({
+					cancel: vi.fn().mockResolvedValue(undefined),
+					read,
+				}),
+			};
+		}
+		const processingContext = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputContext = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputTrack = videoTrack("output");
+		vi.stubGlobal("MediaStreamTrackProcessor", FakeTrackProcessor);
+		vi.stubGlobal("OffscreenCanvas", undefined);
+		vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue(bitmap));
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext")
+			.mockReturnValueOnce(processingContext as never)
+			.mockReturnValueOnce(outputContext as never);
+		Object.defineProperty(HTMLCanvasElement.prototype, "captureStream", {
+			configurable: true,
+			value: vi.fn(() => new FakeMediaStream([outputTrack])),
+		});
+		const inputTrack = Object.assign(videoTrack("input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		let effects!: ReturnType<typeof useBackgroundEffects>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					effects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+
+		const session = await effects.applyBackgroundEffects(
+			new FakeMediaStream([inputTrack]) as never,
+			{ autoFramingEnabled: false },
+		);
+		await vi.waitFor(() => expect(bitmap.close).toHaveBeenCalledOnce());
+
+		expect(
+			processingContext.drawImage.mock.calls.filter(([source]) => source === bitmap),
+		).toHaveLength(1);
+		session.cleanup();
+		await effects.dispose();
+		app.unmount();
+	});
+
+	it("initializes WebGL only when a background effect is enabled", async () => {
+		class FakeTrackProcessor {
+			readable = {
+				getReader: () => ({
+					cancel: vi.fn().mockResolvedValue(undefined),
+					read: vi.fn(() => new Promise(() => {})),
+				}),
+			};
+		}
+		const context = { drawImage: vi.fn(), clearRect: vi.fn() };
+		const outputTrack = videoTrack("output");
+		vi.stubGlobal("MediaStreamTrackProcessor", FakeTrackProcessor);
+		vi.stubGlobal("OffscreenCanvas", undefined);
+		vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+			context as never,
+		);
+		Object.defineProperty(HTMLCanvasElement.prototype, "captureStream", {
+			configurable: true,
+			value: vi.fn(() => new FakeMediaStream([outputTrack])),
+		});
+		const inputTrack = Object.assign(videoTrack("input"), {
+			getSettings: () => ({ width: 640, height: 480 }),
+		});
+		let effects!: ReturnType<typeof useBackgroundEffects>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					effects = useBackgroundEffects({ autoCleanupOnUnmount: false });
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+
+		const session = await effects.applyBackgroundEffects(
+			new FakeMediaStream([inputTrack]) as never,
+			{ autoFramingEnabled: true },
+		);
+		expect(webglSpies.construct).not.toHaveBeenCalled();
+
+		await session.updateOptions({ backgroundBlurEnabled: true });
+		expect(webglSpies.construct).toHaveBeenCalledOnce();
+		expect(webglSpies.initializeShaders).toHaveBeenCalledOnce();
+		session.cleanup();
+		await effects.dispose();
 		app.unmount();
 	});
 

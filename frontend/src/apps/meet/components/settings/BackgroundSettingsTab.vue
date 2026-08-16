@@ -212,7 +212,7 @@ const props = withDefaults(
 
 const meetingContext = useMeetingContext();
 const isInMeeting = computed(() => !!meetingContext?.isInMeeting?.value);
-const processedStream = computed(() => meetingContext?.processedStream || null);
+const processedStream = computed(() => meetingContext?.processedStream.value || null);
 const onBackgroundEffectsChanged = meetingContext?.onBackgroundEffectsChanged;
 
 // Video preview
@@ -228,6 +228,9 @@ let previewSession: {
 } | null = null;
 let previewInputStream: MediaStream | null = null; // Raw stream feeding the preview pipeline
 let isPreviewStreamDedicated = false; // Track if preview stream is dedicated (not meeting's processed stream; needed when cam is off in meeting)
+let previewRequestId = 0;
+let isMounted = false;
+let previewController: AbortController | null = null;
 
 // Background effects
 const backgroundBlurEnabledLocal = ref(backgroundBlurEnabled.value);
@@ -362,32 +365,14 @@ async function handleDeleteCustomImage(imageId: string) {
 }
 
 async function startVideoPreview(deviceId: string) {
+	if (!props.isVisible) return;
+	stopVideoPreview();
+	const requestId = ++previewRequestId;
+	const controller = new AbortController();
+	previewController = controller;
+	let rawStream: MediaStream | null = null;
 	try {
 		isLoadingPreview.value = true;
-
-		// Stop any existing processing before creating a new preview session
-		stopBackgroundProcessing();
-
-		if (previewSession) {
-			previewSession.cleanup();
-			previewSession = null;
-		}
-
-		if (previewStream.value && isPreviewStreamDedicated) {
-			for (const track of previewStream.value.getTracks()) {
-				track.stop();
-			}
-		}
-
-		if (previewInputStream) {
-			for (const track of previewInputStream.getTracks()) {
-				track.stop();
-			}
-			previewInputStream = null;
-		}
-
-		previewStream.value = null;
-		isPreviewStreamDedicated = false;
 
 		// If in a meeting, don't create a new stream
 		// Reuse processedStream to avoid breaking
@@ -409,7 +394,11 @@ async function startVideoPreview(deviceId: string) {
 			audio: false,
 		};
 
-		const rawStream = await navigator.mediaDevices.getUserMedia(constraints);
+		rawStream = await navigator.mediaDevices.getUserMedia(constraints);
+		if (requestId !== previewRequestId || !props.isVisible) {
+			for (const track of rawStream.getTracks()) track.stop();
+			return;
+		}
 		previewInputStream = rawStream;
 
 		const hasBackgroundEffects =
@@ -419,21 +408,32 @@ async function startVideoPreview(deviceId: string) {
 
 		if (hasBackgroundEffects) {
 			try {
-				previewSession = await applyBackgroundEffects(rawStream, {
-					backgroundBlurEnabled: backgroundBlurEnabledLocal.value,
-					backgroundImageEnabled: backgroundImageEnabledLocal.value,
-					selectedBackgroundImage: (() => {
-						const img = selectedBackgroundImageLocal.value;
-						if (typeof img === "string") return img;
-						if (img && typeof img === "object") return img.value;
-						return null;
-					})(),
-					blurIntensity: blurIntensityLocal.value,
-					autoFramingEnabled: autoFramingEnabledLocal.value,
-					autoFramingPaused: autoFramingPausedLocal.value,
-				});
+				const session = await applyBackgroundEffects(
+					rawStream,
+					{
+						backgroundBlurEnabled: backgroundBlurEnabledLocal.value,
+						backgroundImageEnabled: backgroundImageEnabledLocal.value,
+						selectedBackgroundImage: (() => {
+							const img = selectedBackgroundImageLocal.value;
+							if (typeof img === "string") return img;
+							if (img && typeof img === "object") return img.value;
+							return null;
+						})(),
+						blurIntensity: blurIntensityLocal.value,
+						autoFramingEnabled: autoFramingEnabledLocal.value,
+						autoFramingPaused: autoFramingPausedLocal.value,
+					},
+					controller.signal,
+				);
+				if (requestId !== previewRequestId || !props.isVisible) {
+					session.cleanup();
+					for (const track of rawStream.getTracks()) track.stop();
+					return;
+				}
+				previewSession = session;
 				previewStream.value = previewSession.stream;
 			} catch (error) {
+				if (controller.signal.aborted || requestId !== previewRequestId) return;
 				console.error("Failed to apply background effects to preview:", error);
 				previewSession = null;
 				previewStream.value = rawStream;
@@ -448,6 +448,7 @@ async function startVideoPreview(deviceId: string) {
 
 		isLoadingPreview.value = false;
 	} catch (error) {
+		if (controller.signal.aborted || requestId !== previewRequestId) return;
 		console.error("Failed to start video preview:", error);
 		previewStream.value = null;
 		previewSession = null;
@@ -462,6 +463,11 @@ async function startVideoPreview(deviceId: string) {
 }
 
 function stopVideoPreview() {
+	previewRequestId++;
+	previewController?.abort(
+		new DOMException("Video preview was stopped", "AbortError"),
+	);
+	previewController = null;
 	isLoadingPreview.value = false;
 	stopBackgroundProcessing();
 
@@ -474,9 +480,9 @@ function stopVideoPreview() {
 		for (const track of previewStream.value.getTracks()) {
 			track.stop();
 		}
-		previewStream.value = null;
-		isPreviewStreamDedicated = false;
 	}
+	previewStream.value = null;
+	isPreviewStreamDedicated = false;
 
 	if (previewInputStream) {
 		for (const track of previewInputStream.getTracks()) {
@@ -698,31 +704,28 @@ watch(selectedBackgroundImageLocal, (newImageOption) => {
 	}
 });
 
-watch(processedStream, (newStream) => {
-	if (isInMeeting.value && newStream && videoPreviewRef.value) {
-		previewStream.value = newStream;
-		videoPreviewRef.value.srcObject = newStream;
-	}
-});
-
 onMounted(() => {
-	if (selectedCameraId.value) {
-		startVideoPreview(selectedCameraId.value);
+	isMounted = true;
+	if (props.isVisible && selectedCameraId.value) {
+		void startVideoPreview(selectedCameraId.value);
 	}
 });
 
 onUnmounted(() => {
+	isMounted = false;
 	stopVideoPreview();
 	stopBackgroundProcessing();
 });
 
 watch(
-	() => props.isVisible,
-	(isVisible) => {
-		if (!isVisible) {
+	[() => props.isVisible, selectedCameraId, processedStream],
+	([isVisible, deviceId]) => {
+		if (!isMounted) return;
+		if (!isVisible || !deviceId) {
 			stopVideoPreview();
-			stopBackgroundProcessing();
+			return;
 		}
+		void startVideoPreview(deviceId);
 	},
 );
 </script>

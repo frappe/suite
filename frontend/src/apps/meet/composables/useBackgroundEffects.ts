@@ -121,8 +121,26 @@ export function useBackgroundEffects({
 
 	let animationId: number | null = null;
 	let activeSessionCleanup: (() => void) | null = null;
+	let cameraFramingDisposal: Promise<void> | null = null;
 
 	let webglManager: WebGLManager | null = null;
+	const ensureWebGL = (): void => {
+		if (webglManager) return;
+		let manager: WebGLManager | null = null;
+		try {
+			const webglCanvas = document.createElement("canvas");
+			manager = new WebGLManager(webglCanvas);
+			manager.initializeShaders();
+			webglManager = manager;
+		} catch (error) {
+			manager?.dispose();
+			console.warn("WebGL initialization failed:", error);
+			toast.warning(
+				"WebGL is not available. Background blur effects will be disabled.",
+			);
+			webglManager = null;
+		}
+	};
 
 	const defaultOptions: Required<BackgroundEffectOptions> = {
 		autoFramingEnabled: false,
@@ -360,7 +378,12 @@ export function useBackgroundEffects({
 		const stopCameraFraming = () => {
 			const framing = cameraFraming;
 			cameraFraming = null;
-			if (framing) void framing.dispose().catch(() => {});
+			if (!framing) return;
+			const disposal = framing.dispose().catch(() => {});
+			cameraFramingDisposal = disposal;
+			void disposal.finally(() => {
+				if (cameraFramingDisposal === disposal) cameraFramingDisposal = null;
+			});
 		};
 		let provisionalResourcesCleaned = false;
 		const cleanupProvisionalResources = (): void => {
@@ -406,18 +429,8 @@ export function useBackgroundEffects({
 			isProcessing.value = true;
 			error.value = null;
 
-			if (!webglManager) {
-				try {
-					const webglCanvas = document.createElement("canvas");
-					webglManager = new WebGLManager(webglCanvas);
-					webglManager.initializeShaders();
-				} catch (error) {
-					console.warn("WebGL initialization failed:", error);
-					toast.warning(
-						"WebGL is not available. Background blur effects will be disabled.",
-					);
-					webglManager = null;
-				}
+			if (settings.backgroundBlurEnabled || settings.backgroundImageEnabled) {
+				ensureWebGL();
 			}
 
 			let model: SelfieSegmentation | null = null;
@@ -462,17 +475,44 @@ export function useBackgroundEffects({
 
 			canvas.width = width;
 			canvas.height = height;
-			const drawCameraFrame = async (
-				source: CanvasImageSource,
-				detectionImage: HTMLCanvasElement | HTMLVideoElement,
-			) => {
+			let detectionCanvas: HTMLCanvasElement | null = null;
+			let detectionContext: CanvasRenderingContext2D | null = null;
+			const getDetectionImage = (source: CanvasImageSource): HTMLCanvasElement => {
+				if (!detectionCanvas) {
+					detectionCanvas = document.createElement("canvas");
+					detectionCanvas.width = Math.min(width, 320);
+					detectionCanvas.height = Math.round(
+						(height * detectionCanvas.width) / width,
+					);
+					detectionContext = detectionCanvas.getContext("2d");
+					if (!detectionContext) {
+						throw new Error("Failed to get face detection canvas context");
+					}
+				}
+				detectionContext?.drawImage(
+					source,
+					0,
+					0,
+					detectionCanvas.width,
+					detectionCanvas.height,
+				);
+				return detectionCanvas;
+			};
+			const drawCameraFrame = async (source: CanvasImageSource) => {
 				let crop = { x: 0, y: 0, width, height };
 				if (settings.autoFramingEnabled && !framingUnavailable) {
 					try {
-						cameraFraming ??= new CameraFramingProcessor();
+						if (!cameraFraming && !cameraFramingDisposal) {
+							cameraFraming = new CameraFramingProcessor();
+						}
+						if (!cameraFraming) {
+							ctx.clearRect(0, 0, width, height);
+							ctx.drawImage(source, 0, 0, width, height);
+							return;
+						}
 						cameraFraming.setPaused(settings.autoFramingPaused);
 						crop = await cameraFraming.process(
-							detectionImage,
+							() => getDetectionImage(source),
 							width,
 							height,
 							performance.now(),
@@ -729,8 +769,7 @@ export function useBackgroundEffects({
 								resizeHeight: canvas.height,
 							});
 							assertOwnerActive(signal);
-							ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-							await drawCameraFrame(bitmap, canvas);
+							await drawCameraFrame(bitmap);
 							bitmap.close();
 							bitmap = null;
 
@@ -839,7 +878,7 @@ export function useBackgroundEffects({
 						animationId = requestAnimationFrame(processFrameWithRAF);
 						return;
 					}
-					await drawCameraFrame(video, video);
+					await drawCameraFrame(video);
 
 					await adoptCurrentModel();
 					if (model) {
@@ -978,6 +1017,9 @@ export function useBackgroundEffects({
 				}
 
 				Object.assign(settings, normalizedOptions);
+				if (settings.backgroundBlurEnabled || settings.backgroundImageEnabled) {
+					ensureWebGL();
+				}
 				if ("autoFramingEnabled" in normalizedOptions) {
 					framingUnavailable = false;
 					if (!settings.autoFramingEnabled) stopCameraFraming();

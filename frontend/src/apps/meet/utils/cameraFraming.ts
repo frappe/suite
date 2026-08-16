@@ -42,6 +42,8 @@ interface CameraFramingProcessorOptions {
 	detectionIntervalMs?: number;
 }
 
+type DetectionImageSource = InputImage | (() => InputImage);
+
 const FULL_FRAME: NormalizedCrop = { x: 0, y: 0, size: 1 };
 const FACE_HOLD_MS = 1500;
 const SMOOTHING_TIME_MS = 420;
@@ -221,6 +223,9 @@ export class CameraFramingProcessor {
 	private readonly detectionIntervalMs: number;
 	private detector: FaceDetectorLike | null = null;
 	private detectorPromise: Promise<FaceDetectorLike> | null = null;
+	private detectionPromise: Promise<void> | null = null;
+	private detectionError: unknown = null;
+	private detectionGeneration = 0;
 	private detections: Detection[] = [];
 	private nextDetectionAt = 0;
 	private disposed = false;
@@ -264,28 +269,50 @@ export class CameraFramingProcessor {
 	}
 
 	async process(
-		image: InputImage,
+		image: DetectionImageSource,
 		sourceWidth: number,
 		sourceHeight: number,
 		now: number,
 	): Promise<CropRect> {
-		if (!this.paused && now >= this.nextDetectionAt) {
-			const detector = await this.getDetector();
-			await detector.send({ image });
-			if (this.disposed) {
-				throw new DOMException("Camera framing stopped", "AbortError");
-			}
-			this.tracker.updateFaces(
-				this.detections.map(({ boundingBox }) => boundingBox),
-				now,
-			);
+		if (this.detectionError) {
+			const error = this.detectionError;
+			this.detectionError = null;
+			throw error;
+		}
+		if (!this.paused && !this.detectionPromise && now >= this.nextDetectionAt) {
 			this.nextDetectionAt = now + this.detectionIntervalMs;
+			const generation = this.detectionGeneration;
+			const input = typeof image === "function" ? image() : image;
+			const detection = (async () => {
+				const detector = await this.getDetector();
+				if (this.disposed || this.paused || generation !== this.detectionGeneration) {
+					return;
+				}
+				await detector.send({ image: input });
+				if (this.disposed || this.paused || generation !== this.detectionGeneration) {
+					return;
+				}
+				this.tracker.updateFaces(
+					this.detections.map(({ boundingBox }) => boundingBox),
+					now,
+				);
+			})();
+			this.detectionPromise = detection;
+			void detection
+				.catch((error) => {
+					if (!this.disposed) this.detectionError = error;
+				})
+				.finally(() => {
+					if (this.detectionPromise === detection) this.detectionPromise = null;
+				});
 		}
 		return this.tracker.getCrop(sourceWidth, sourceHeight, now);
 	}
 
 	setPaused(paused: boolean): void {
+		if (this.paused === paused) return;
 		this.paused = paused;
+		this.detectionGeneration++;
 		this.tracker.setPaused(paused);
 		if (!paused) this.nextDetectionAt = 0;
 	}
@@ -293,7 +320,9 @@ export class CameraFramingProcessor {
 	async dispose(): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.detectionGeneration++;
 		this.tracker.reset();
+		await this.detectionPromise?.catch(() => {});
 		const pending = this.detectorPromise;
 		if (pending) {
 			try {
