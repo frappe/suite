@@ -22,6 +22,7 @@
     "@hocuspocus/provider": "^4.1.0",
     "@iframe-resizer/child": "5.5.9",
     "@iframe-resizer/vue": "5.5.9",
+    "@mediapipe/face_detection": "0.4.1646425229",
     "@mediapipe/selfie_segmentation": "0.1.1671057942",
     "@noble/ciphers": "2.1.1",
     "@noble/hashes": "^2.2.0",

@@ -1,6 +1,10 @@
 import { confirmDialog, toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref, watch } from "vue";
 import {
+	autoFramingPaused,
+	setAutoFramingPaused,
+} from "../data/backgroundEffects";
+import {
 	cameraEnabled as prefCameraEnabled,
 	micEnabled as prefMicEnabled,
 	noiseCancellationEnabled as prefNoiseCancellationEnabled,
@@ -34,19 +38,23 @@ const isBluetoothMicLabel = (label: string | undefined): boolean => {
 function getBackgroundEffectsFromStorage() {
 	const blurEnabled = localStorage.getItem("backgroundEffects.blur") === "1";
 	const imageEnabled = localStorage.getItem("backgroundEffects.image") === "1";
+	const autoFramingEnabled =
+		localStorage.getItem("backgroundEffects.autoFraming") === "1";
 	const selectedImage =
 		localStorage.getItem("backgroundEffects.imageName") || "";
 	const blurIntensity = Number.parseInt(
 		localStorage.getItem("backgroundEffects.blurIntensity") || "12",
 		10,
 	);
-	const anyEnabled = blurEnabled || imageEnabled;
+	const anyEnabled = blurEnabled || imageEnabled || autoFramingEnabled;
 
 	return {
 		blurEnabled,
 		imageEnabled,
 		selectedImage,
 		blurIntensity,
+		autoFramingEnabled,
+		autoFramingPaused: autoFramingPaused.value,
 		anyEnabled,
 	};
 }
@@ -622,10 +630,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					blurIntensity: bgEffects.blurIntensity,
 					backgroundBlurEnabled: bgEffects.blurEnabled,
 					backgroundImageEnabled: bgEffects.imageEnabled,
+					autoFramingEnabled: bgEffects.autoFramingEnabled,
+					autoFramingPaused: bgEffects.autoFramingPaused,
 					selectedBackgroundImage: bgEffects.selectedImage,
 				});
 				assertCurrentCameraOperation(operation);
 			} else {
+				if (bgEffects.autoFramingPaused) {
+					setAutoFramingPaused(false);
+					bgEffects.autoFramingPaused = false;
+				}
 				if (backgroundSession) {
 					await reconcileRawEffectsTrack(
 						rawTrack,
@@ -643,6 +657,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 						blurIntensity: bgEffects.blurIntensity,
 						backgroundBlurEnabled: bgEffects.blurEnabled,
 						backgroundImageEnabled: bgEffects.imageEnabled,
+						autoFramingEnabled: bgEffects.autoFramingEnabled,
+						autoFramingPaused: bgEffects.autoFramingPaused,
 						selectedBackgroundImage: bgEffects.selectedImage,
 					},
 					operation?.signal,

@@ -1857,6 +1857,11 @@
   resolved "https://registry.yarnpkg.com/@marijn/find-cluster-break/-/find-cluster-break-1.0.3.tgz#bdbe907e00c17c84e33fc51b1519d9aa211e7e8e"
   integrity sha512-FY+MKLBoTsLNJF/eLWaOsXGdz6uh3Iu1axjPf6TUq92IYumcTcXWHoS747JARLkcdlJ/Waiaxc5wQfFO8jC6NA==
 
+"@mediapipe/face_detection@0.4.1646425229":
+  version "0.4.1646425229"
+  resolved "https://registry.yarnpkg.com/@mediapipe/face_detection/-/face_detection-0.4.1646425229.tgz#76cd4b4938d5a641dfdad2951ff9f37dcf18e636"
+  integrity sha512-aeCN+fRAojv9ch3NXorP6r5tcGVLR3/gC1HmtqB0WEZBRXrdP6/3W/sGR0dHr1iT6ueiK95G9PVjbzFosf/hrg==
+
 "@mediapipe/selfie_segmentation@0.1.1671057942":
   version "0.1.1671057942"
   resolved "https://registry.yarnpkg.com/@mediapipe/selfie_segmentation/-/selfie_segmentation-0.1.1671057942.tgz#525d06bb430427e85b90d19ba4e6b8416df87c5f"

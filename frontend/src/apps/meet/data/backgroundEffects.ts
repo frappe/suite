@@ -47,6 +47,10 @@ export const selectedBackgroundImage: Ref<string> = ref(
 export const blurIntensity: Ref<number> = ref(
 	Number.parseInt(readString("backgroundEffects.blurIntensity", "4"), 10) || 4,
 );
+export const autoFramingEnabled: Ref<boolean> = ref(
+	readBool("backgroundEffects.autoFraming", false),
+);
+export const autoFramingPaused: Ref<boolean> = ref(false);
 
 // Custom background images
 export const customBackgroundImages: Ref<BackgroundImage[]> = ref([]);
@@ -138,6 +142,18 @@ export function setSelectedBackgroundImage(imageName: string): void {
 export function setBlurIntensity(intensity: number): void {
 	blurIntensity.value = intensity;
 	localStorage.setItem("backgroundEffects.blurIntensity", intensity.toString());
+}
+
+export function setAutoFramingEnabled(val: boolean): void {
+	autoFramingEnabled.value = !!val;
+	localStorage.setItem(
+		"backgroundEffects.autoFraming",
+		autoFramingEnabled.value ? "1" : "0",
+	);
+}
+
+export function setAutoFramingPaused(val: boolean): void {
+	autoFramingPaused.value = !!val;
 }
 
 // Add a custom background image

@@ -1,0 +1,262 @@
+import { describe, expect, it, vi } from "vitest";
+
+const bundledFaceDetector = vi.hoisted(() => {
+	const close = vi.fn().mockResolvedValue(undefined);
+	class FaceDetection {
+		close = close;
+		initialize = vi.fn().mockResolvedValue(undefined);
+		onResults = vi.fn();
+		send = vi.fn().mockResolvedValue(undefined);
+		setOptions = vi.fn();
+	}
+	const moduleDefault: { FaceDetection: typeof FaceDetection | undefined } = {
+		FaceDetection,
+	};
+	return { close, FaceDetection, moduleDefault };
+});
+
+vi.mock("@mediapipe/face_detection", () => ({
+	default: bundledFaceDetector.moduleDefault,
+}));
+
+import {
+	CameraFramingProcessor,
+	CameraFramingTracker,
+} from "../../cameraFraming";
+
+describe("CameraFramingTracker", () => {
+	it("tracks the largest face and keeps the crop inside the source", () => {
+		const tracker = new CameraFramingTracker();
+		tracker.updateFaces(
+			[
+				{ xCenter: 0.8, yCenter: 0.2, width: 0.08, height: 0.1 },
+				{ xCenter: 0.95, yCenter: 0.4, width: 0.2, height: 0.24 },
+			],
+			0,
+		);
+
+		let crop = tracker.getCrop(1280, 720, 16);
+		for (let now = 32; now <= 1500; now += 16) {
+			crop = tracker.getCrop(1280, 720, now);
+		}
+
+		expect(crop.width).toBeLessThan(1280);
+		expect(crop.x).toBeGreaterThanOrEqual(0);
+		expect(crop.x + crop.width).toBeLessThanOrEqual(1280);
+		expect(crop.y).toBeGreaterThanOrEqual(0);
+		expect(crop.y + crop.height).toBeLessThanOrEqual(720);
+	});
+
+	it("holds a missing face briefly and then eases back to the full frame", () => {
+		const tracker = new CameraFramingTracker();
+		tracker.updateFaces(
+			[{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height: 0.24 }],
+			0,
+		);
+		for (let now = 16; now <= 1000; now += 16) {
+			tracker.getCrop(1280, 720, now);
+		}
+		const zoomed = tracker.getCrop(1280, 720, 1000);
+		const held = tracker.getCrop(1280, 720, 1400);
+		const resetting = tracker.getCrop(1280, 720, 1800);
+		let reset = resetting;
+		for (let now = 1816; now <= 4000; now += 16) {
+			reset = tracker.getCrop(1280, 720, now);
+		}
+
+		expect(held.width).toBeLessThanOrEqual(zoomed.width);
+		expect(resetting.width).toBeGreaterThan(held.width);
+		expect(reset.width).toBeCloseTo(1280, 0);
+		expect(reset.height).toBeCloseTo(720, 0);
+	});
+
+	it("ignores small face-box fluctuations while the subject is stationary", () => {
+		const tracker = new CameraFramingTracker();
+		const widths: number[] = [];
+
+		for (let detectedAt = 0; detectedAt <= 5000; detectedAt += 200) {
+			const height =
+				detectedAt < 3000 ? 0.235 : detectedAt % 400 === 0 ? 0.225 : 0.255;
+			tracker.updateFaces(
+				[{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height }],
+				detectedAt,
+			);
+			for (let now = detectedAt; now < detectedAt + 200; now += 20) {
+				const crop = tracker.getCrop(1280, 720, now);
+				if (now >= 4000) widths.push(crop.width);
+			}
+		}
+
+		expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(3);
+	});
+
+	it("accepts a sustained zoom change", () => {
+		const tracker = new CameraFramingTracker();
+		const face = (height: number) => [
+			{ xCenter: 0.5, yCenter: 0.3, width: 0.2, height },
+		];
+		tracker.updateFaces(face(0.24), 0);
+		for (let now = 0; now <= 600; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+		const initialWidth = tracker.getCrop(1280, 720, 600).width;
+
+		for (const detectedAt of [600, 800, 1000, 1200, 1400]) {
+			tracker.updateFaces(face(0.18), detectedAt);
+			for (let now = detectedAt; now < detectedAt + 200; now += 20) {
+				tracker.getCrop(1280, 720, now);
+			}
+		}
+
+		expect(tracker.getCrop(1280, 720, 1600).width).toBeLessThan(
+			initialWidth - 100,
+		);
+	});
+
+	it("zooms to the minimum crop for a distant detected face", () => {
+		const tracker = new CameraFramingTracker();
+		tracker.updateFaces(
+			[{ xCenter: 0.5, yCenter: 0.35, width: 0.04, height: 0.05 }],
+			0,
+		);
+		let crop = tracker.getCrop(1280, 720, 0);
+		for (let now = 20; now <= 1500; now += 20) {
+			tracker.updateFaces(
+				[{ xCenter: 0.5, yCenter: 0.35, width: 0.04, height: 0.05 }],
+				now,
+			);
+			crop = tracker.getCrop(1280, 720, now);
+		}
+
+		expect(crop.width).toBeLessThan(520);
+	});
+
+	it("holds the current crop while paused and resumes tracking", () => {
+		const tracker = new CameraFramingTracker();
+		const face = (xCenter: number) => [
+			{ xCenter, yCenter: 0.3, width: 0.2, height: 0.24 },
+		];
+		tracker.updateFaces(face(0.35), 0);
+		for (let now = 0; now <= 1000; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+		const fixed = tracker.getCrop(1280, 720, 1000);
+
+		tracker.setPaused(true);
+		tracker.updateFaces(face(0.75), 1200);
+		const paused = tracker.getCrop(1280, 720, 4000);
+
+		expect(paused).toEqual(fixed);
+
+		tracker.setPaused(false);
+		tracker.updateFaces(face(0.75), 4200);
+		for (let now = 4200; now <= 5500; now += 20) {
+			tracker.getCrop(1280, 720, now);
+		}
+
+		expect(tracker.getCrop(1280, 720, 5500).x).toBeGreaterThan(fixed.x);
+	});
+});
+
+describe("CameraFramingProcessor", () => {
+	it("loads the constructor from the package's bundled default export", async () => {
+		bundledFaceDetector.close.mockClear();
+		const processor = new CameraFramingProcessor();
+
+		await processor.process(document.createElement("canvas"), 1280, 720, 0);
+		await processor.dispose();
+
+		expect(bundledFaceDetector.close).toHaveBeenCalledOnce();
+	});
+
+	it("loads the constructor exposed globally by the browser UMD bundle", async () => {
+		bundledFaceDetector.close.mockClear();
+		bundledFaceDetector.moduleDefault.FaceDetection = undefined;
+		Reflect.set(globalThis, "FaceDetection", bundledFaceDetector.FaceDetection);
+		const processor = new CameraFramingProcessor();
+
+		try {
+			await processor.process(document.createElement("canvas"), 1280, 720, 0);
+			await processor.dispose();
+		} finally {
+			Reflect.deleteProperty(globalThis, "FaceDetection");
+			bundledFaceDetector.moduleDefault.FaceDetection =
+				bundledFaceDetector.FaceDetection;
+		}
+
+		expect(bundledFaceDetector.close).toHaveBeenCalledOnce();
+	});
+
+	it("limits detection cadence and closes its detector", async () => {
+		const send = vi.fn().mockResolvedValue(undefined);
+		const close = vi.fn().mockResolvedValue(undefined);
+		const setOptions = vi.fn();
+		let onResults: (results: {
+			detections: Array<{
+				boundingBox: {
+					xCenter: number;
+					yCenter: number;
+					width: number;
+					height: number;
+				};
+			}>;
+		}) => void = () => {};
+		const processor = new CameraFramingProcessor({
+			detectorFactory: async () => ({
+				close,
+				initialize: vi.fn().mockResolvedValue(undefined),
+				onResults: (listener) => {
+					onResults = listener;
+				},
+				send: async (input) => {
+					send(input);
+					onResults({
+						detections: [
+							{
+								boundingBox: {
+									xCenter: 0.5,
+									yCenter: 0.3,
+									width: 0.2,
+									height: 0.24,
+								},
+							},
+						],
+					});
+				},
+				setOptions,
+			}),
+			detectionIntervalMs: 200,
+		});
+		const image = document.createElement("canvas");
+
+		await processor.process(image, 1280, 720, 0);
+		await processor.process(image, 1280, 720, 100);
+		await processor.process(image, 1280, 720, 200);
+		await processor.dispose();
+
+		expect(send).toHaveBeenCalledTimes(2);
+		expect(setOptions).toHaveBeenCalledWith(
+			expect.objectContaining({ model: "full" }),
+		);
+		expect(close).toHaveBeenCalledOnce();
+	});
+
+	it("closes a detector that fails to initialize", async () => {
+		const close = vi.fn().mockResolvedValue(undefined);
+		const processor = new CameraFramingProcessor({
+			detectorFactory: async () => ({
+				close,
+				initialize: vi.fn().mockRejectedValue(new Error("initialization failed")),
+				onResults: vi.fn(),
+				send: vi.fn(),
+				setOptions: vi.fn(),
+			}),
+		});
+
+		await expect(
+			processor.process(document.createElement("canvas"), 1280, 720, 0),
+		).rejects.toThrow("initialization failed");
+
+		expect(close).toHaveBeenCalledOnce();
+	});
+});

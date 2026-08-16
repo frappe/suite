@@ -42,6 +42,7 @@ import {
 	setSelectedCameraId,
 	setSelectedMicId,
 } from "../data/mediaPreferences";
+import { setAutoFramingPaused } from "../data/backgroundEffects";
 
 class FakeMediaStream {
 	id = "fake-media-stream";
@@ -291,6 +292,7 @@ describe("useMediaControls", () => {
 		localStorage.clear();
 		cameraEnabled.value = false;
 		selectedCameraId.value = "";
+		setAutoFramingPaused(false);
 	});
 
 	it("falls back to the default microphone when Firefox cannot find the selected device", async () => {
@@ -708,6 +710,69 @@ describe("useMediaControls", () => {
 		expect(replaceTrack).toHaveBeenCalledTimes(1);
 		expect(replaceTrack).toHaveBeenCalledWith({ track: processed });
 		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", processed);
+	});
+
+	it("publishes auto-framed output without requiring a background effect", async () => {
+		localStorage.setItem("backgroundEffects.autoFraming", "1");
+		const raw = videoTrack("raw");
+		const framed = videoTrack("framed");
+		const replaceTrack = vi.fn().mockResolvedValue(undefined);
+		const applyBackgroundEffects = vi.fn().mockResolvedValue({
+			stream: new FakeMediaStream([framed]),
+			cleanup: vi.fn(),
+			updateOptions: vi.fn(),
+		});
+		const { controls, setLocalMediaTrack } = createCameraHarness({
+			getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
+			videoProducer: {
+				id: "camera-producer",
+				track: videoTrack("old"),
+				replaceTrack,
+			},
+			applyBackgroundEffects,
+		});
+
+		await controls.toggleCamera();
+
+		expect(applyBackgroundEffects).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({
+				autoFramingEnabled: true,
+				backgroundBlurEnabled: false,
+				backgroundImageEnabled: false,
+			}),
+			expect.any(AbortSignal),
+		);
+		expect(replaceTrack).toHaveBeenCalledWith({ track: framed });
+		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", framed);
+	});
+
+	it("pauses an active auto-framing session without replacing its track", async () => {
+		localStorage.setItem("backgroundEffects.autoFraming", "1");
+		const raw = videoTrack("raw");
+		const framed = videoTrack("framed");
+		const updateOptions = vi.fn().mockResolvedValue(undefined);
+		const applyBackgroundEffects = vi.fn().mockResolvedValue({
+			stream: new FakeMediaStream([framed]),
+			cleanup: vi.fn(),
+			updateOptions,
+		});
+		const { controls } = createCameraHarness({
+			mediaState: {
+				isCameraOn: true,
+				localStream: new FakeMediaStream([raw]),
+			},
+			applyBackgroundEffects,
+		});
+		await controls.applyBackgroundEffectsToLocalStream();
+
+		setAutoFramingPaused(true);
+		await controls.applyBackgroundEffectsToLocalStream();
+
+		expect(applyBackgroundEffects).toHaveBeenCalledOnce();
+		expect(updateOptions).toHaveBeenCalledWith(
+			expect.objectContaining({ autoFramingPaused: true }),
+		);
 	});
 
 	it("falls back to live raw video when processed output has ended", async () => {
@@ -2241,12 +2306,13 @@ describe("useMediaControls", () => {
 
 	it("closes every provisional stream resource when allocation aborts", async () => {
 		const operation = new AbortController();
+		const lateFrame = { close: vi.fn() } as unknown as VideoFrame;
 		const releaseRead = deferred<{
 			done: boolean;
 			value?: VideoFrame;
 		}>();
 		const cancel = vi.fn(() => {
-			releaseRead.resolve({ done: true });
+			releaseRead.resolve({ done: false, value: lateFrame });
 			return Promise.reject(new Error("reader cancel rejected"));
 		});
 		const closeWriter = vi
@@ -2336,6 +2402,7 @@ describe("useMediaControls", () => {
 		).rejects.toMatchObject({ name: "AbortError" });
 
 		expect(cancel).toHaveBeenCalledOnce();
+		expect(lateFrame.close).toHaveBeenCalledOnce();
 		expect(closeWriter).toHaveBeenCalledOnce();
 		expect(generatedTrack.stop).toHaveBeenCalledOnce();
 		expect(consoleError).not.toHaveBeenCalled();

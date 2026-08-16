@@ -1,12 +1,12 @@
 <template>
 	<AppSettingsHeader
-		title="Background"
-		description="Customize your video background with blur effects or virtual backgrounds"
+		title="Video effects"
+		description="Keep yourself framed and customize your video background"
 	/>
 	<AppSettingsBody>
 			<!-- Video Preview -->
 			<div class="flex justify-center mb-4">
-				<div class="w-96 h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
+				<div class="w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
 					<video
 						ref="videoPreviewRef"
 						autoplay
@@ -21,6 +21,59 @@
 							<p class="text-sm">
 								Loading preview...
 							</p>
+						</div>
+					</div>
+					<div
+						class="absolute inset-x-0 bottom-0 flex items-end justify-end bg-gradient-to-t from-black/70 via-black/30 to-transparent p-3 pt-8"
+					>
+						<div class="flex items-center gap-2">
+							<Tooltip
+								:text="autoFramingEnabledLocal ? 'Auto framing on' : 'Auto framing off'"
+							>
+								<Button
+									variant="outline"
+									theme="gray"
+									:aria-pressed="autoFramingEnabledLocal"
+									:aria-label="autoFramingEnabledLocal ? 'Auto framing on' : 'Auto framing off'"
+									@click="autoFramingEnabledLocal = !autoFramingEnabledLocal"
+								>
+									<template #icon>
+										<span
+											:class="[
+												autoFramingEnabledLocal ? 'lucide-scan-face' : 'lucide-scan',
+												'text-ink-gray-6 size-4',
+											]"
+											aria-hidden="true"
+										/>
+									</template>
+								</Button>
+							</Tooltip>
+							<Tooltip
+								:text="!autoFramingEnabledLocal
+									? 'Turn on auto framing to lock it'
+									: autoFramingPausedLocal
+										? 'Framing locked'
+										: 'Framing unlocked'"
+							>
+								<Button
+									variant="outline"
+									theme="gray"
+									:disabled="!autoFramingEnabledLocal"
+									:aria-pressed="autoFramingPausedLocal"
+									:aria-label="autoFramingPausedLocal ? 'Framing locked' : 'Framing unlocked'"
+									@click="autoFramingPausedLocal = !autoFramingPausedLocal"
+								>
+									<template #icon>
+										<span
+											:class="[
+												autoFramingPausedLocal ? 'lucide-locate-fixed' : 'lucide-locate',
+												'text-ink-gray-6 size-4',
+											]"
+											aria-hidden="true"
+										/>
+									</template>
+								</Button>
+							</Tooltip>
 						</div>
 					</div>
 				</div>
@@ -106,7 +159,7 @@
 <script setup lang="ts">
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import { toast } from 'frappe-ui';
+import { Button, Tooltip, toast } from 'frappe-ui';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
 	type BackgroundEffectOptions,
@@ -116,6 +169,8 @@ import { useMeetingContext } from "../../composables/useMeetingContext";
 import {
 	addCustomBackgroundImage,
 	allBackgroundOptions,
+	autoFramingEnabled,
+	autoFramingPaused,
 	availableBackgroundImages,
 	backgroundBlurEnabled,
 	backgroundImageEnabled,
@@ -125,6 +180,8 @@ import {
 	selectedBackgroundImage,
 	setBackgroundBlurEnabled,
 	setBackgroundImageEnabled,
+	setAutoFramingEnabled,
+	setAutoFramingPaused,
 	setBlurIntensity,
 	setSelectedBackgroundImage,
 } from "../../data/backgroundEffects";
@@ -179,6 +236,8 @@ const selectedBackgroundImageLocal = ref<BackgroundImageOption | string | null>(
 	selectedBackgroundImage.value,
 );
 const blurIntensityLocal = ref(blurIntensity.value);
+const autoFramingEnabledLocal = ref(autoFramingEnabled.value);
+const autoFramingPausedLocal = ref(autoFramingPaused.value);
 
 const allBackgroundOptionsTyped = computed<BackgroundOption[]>(() =>
 	allBackgroundOptions.value.map((option) => ({
@@ -354,7 +413,9 @@ async function startVideoPreview(deviceId: string) {
 		previewInputStream = rawStream;
 
 		const hasBackgroundEffects =
-			backgroundBlurEnabledLocal.value || backgroundImageEnabledLocal.value;
+			backgroundBlurEnabledLocal.value ||
+			backgroundImageEnabledLocal.value ||
+			autoFramingEnabledLocal.value;
 
 		if (hasBackgroundEffects) {
 			try {
@@ -368,6 +429,8 @@ async function startVideoPreview(deviceId: string) {
 						return null;
 					})(),
 					blurIntensity: blurIntensityLocal.value,
+					autoFramingEnabled: autoFramingEnabledLocal.value,
+					autoFramingPaused: autoFramingPausedLocal.value,
 				});
 				previewStream.value = previewSession.stream;
 			} catch (error) {
@@ -456,6 +519,8 @@ async function applyPreviewOptions() {
 			backgroundImageEnabled: backgroundImageEnabledLocal.value,
 			selectedBackgroundImage: selectedImageValue,
 			blurIntensity: blurIntensityLocal.value,
+			autoFramingEnabled: autoFramingEnabledLocal.value,
+			autoFramingPaused: autoFramingPausedLocal.value,
 		});
 	} catch (error) {
 		console.error("Failed to update preview background options:", error);
@@ -527,6 +592,8 @@ watch(
 		backgroundImageEnabledLocal,
 		selectedBackgroundImageLocal,
 		blurIntensityLocal,
+		autoFramingEnabledLocal,
+		autoFramingPausedLocal,
 	],
 	() => {
 		const shouldUpdateMeeting =
@@ -564,6 +631,23 @@ watch(backgroundBlurEnabled, (newVal) => {
 
 watch(backgroundImageEnabled, (newVal) => {
 	backgroundImageEnabledLocal.value = newVal;
+});
+
+watch(autoFramingEnabledLocal, (newVal) => {
+	setAutoFramingEnabled(newVal);
+	if (!newVal) setAutoFramingPaused(false);
+}, { flush: "sync" });
+
+watch(autoFramingPausedLocal, (newVal) => {
+	setAutoFramingPaused(newVal);
+}, { flush: "sync" });
+
+watch(autoFramingEnabled, (newVal) => {
+	autoFramingEnabledLocal.value = newVal;
+});
+
+watch(autoFramingPaused, (newVal) => {
+	autoFramingPausedLocal.value = newVal;
 });
 
 watch(selectedBackgroundImage, (newVal) => {

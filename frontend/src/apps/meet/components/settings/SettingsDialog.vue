@@ -146,7 +146,7 @@ const tabs = computed((): TabGroup[] => {
 					component: markRaw(AudioSettingsTab),
 				},
 				{
-					label: "Background",
+					label: "Video",
 					value: "background",
 					icon: h(LucideCamera),
 					component: markRaw(BackgroundSettingsTab),
