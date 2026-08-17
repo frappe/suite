@@ -415,8 +415,8 @@
 			</template>
 		</div>
 
-		<Dialog v-model="showClearAll" :options="clearAllOptions" />
-		<Dialog v-model="showBulkConfirm" :options="bulkConfirmOptions" />
+		<Dialog v-model:open="showClearAll" v-bind="clearAllOptions" />
+		<Dialog v-model:open="showBulkConfirm" v-bind="bulkConfirmOptions" />
 	</div>
 </template>
 

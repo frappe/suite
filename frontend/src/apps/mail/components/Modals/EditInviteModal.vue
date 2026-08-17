@@ -1,8 +1,8 @@
 <template>
 	<Dialog
 		v-if="accountRequest?.doc"
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit Invite'),
 			actions: [
 				...(canSendInvite
@@ -24,7 +24,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl
 					:label="__('Assigned Email')"

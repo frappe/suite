@@ -35,7 +35,7 @@
 	</DashboardLayout>
 
 	<AddContactModal v-model="showAddContact" />
-	<Dialog v-model="showDeleteContacts" :options="DELETE_CONTACTS_OPTIONS" />
+	<Dialog v-model:open="showDeleteContacts" v-bind="DELETE_CONTACTS_OPTIONS" />
 </template>
 
 <script setup lang="ts">
@@ -139,7 +139,7 @@ const LIST_COLUMNS = [
 const DELETE_CONTACTS_OPTIONS = {
 	title: __('Delete Contacts'),
 	message: __('Are you sure you want to delete the selected contacts?'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteContacts.submit }],
 }
 </script>

@@ -1,5 +1,5 @@
 <template>
-	<Dialog v-model="show" :options="dialogOptions" />
+	<Dialog v-model:open="show" v-bind="dialogOptions" />
 </template>
 
 <script setup lang="ts">
@@ -20,7 +20,7 @@ const activeScript = computed(() => sieveScripts.data?.find((s) => s.active)?._n
 const dialogOptions = computed(() => ({
 	title: title.value,
 	message: message.value,
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [
 		{
 			label:

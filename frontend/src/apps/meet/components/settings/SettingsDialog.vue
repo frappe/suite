@@ -1,6 +1,6 @@
 <template>
 	<UiSettingsDialog
-		v-model="show"
+		v-model:open="show"
 		v-model:tab="activeTabValue"
 		size="5xl"
 	>

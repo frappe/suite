@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Add Contacts'),
 			actions: [
 				{
@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<div class="space-y-2">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Contacts') }}</label>

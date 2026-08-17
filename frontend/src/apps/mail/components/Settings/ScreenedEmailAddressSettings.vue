@@ -111,8 +111,8 @@
 		</div>
 
 		<AddScreenedSenderModal v-model="showAddModal" />
-		<Dialog v-model="showRemoveModal" :options="removeModalOptions" />
-		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
+		<Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
+		<Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
 	</div>
 </template>
 

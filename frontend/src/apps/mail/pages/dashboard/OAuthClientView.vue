@@ -80,7 +80,7 @@
 	<EditOAuthClientModal v-if="client.data" v-model="showEdit" :client="client.data" @reload="client.reload()" />
 	<AddOAuthContactsModal v-model="showAddContacts" :client-id="clientId" @reload="client.reload()" />
 	<AddOAuthRedirectUrisModal v-model="showAddRedirectUris" :client-id="clientId" @reload="client.reload()" />
-	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
+	<Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -173,7 +173,7 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete OAuth Client'),
 	message: __('Are you sure you want to delete this OAuth client? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteClient.submit }],
 }))
 

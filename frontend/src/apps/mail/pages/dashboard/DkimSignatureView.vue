@@ -63,7 +63,7 @@
 			</div>
 		</template>
 	</DashboardLayout>
-	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
+	<Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -149,7 +149,7 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete DKIM Signature'),
 	message: __('Are you sure you want to delete this DKIM signature? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteSignature.submit }],
 }))
 

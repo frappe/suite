@@ -22,7 +22,7 @@
             dragState.dropIndex === index &&
             dragState.dropIndex !== dragState.draggedIndex &&
             dragState.dropIndex !== dragState.draggedIndex + 1
-          " class="h-8 my-0.5 border border-dashed rounded-sm mx-2" />
+          " class="h-8 my-0.5 border border-dashed rounded-1 mx-2" />
           <div v-if="editingTabId === tab.id && delayedEdit" class="flex items-center">
             <TextInput v-model="editingTabLabel" v-on-outside-click="() => finishRenaming(false)" autofocus
               aria-label="Tab name" @keydown.enter="finishRenaming(false)" @keydown.esc="finishRenaming(true)"
@@ -60,7 +60,7 @@
             <div v-if="showHeadings" class="table-of-contents flex flex-col gap-0.5 ms-6 my-1">
               <div v-for="anchor in currentTabAnchors" class="flex pr-2.5">
                 <a :href="'#' + anchor.id"
-                  class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-sm cursor-pointer truncate grow"
+                  class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-1 cursor-pointer truncate grow"
                   :title="anchor.textContent" :data-item-index="anchor.itemIndex"
                   @click.prevent="onAnchorClick(anchor.id)" :key="anchor.id" :class="anchor.isActive &&
                     'text-ink-gray-8 bg-surface-gray-3 hover:bg-surface-gray-4'
@@ -72,12 +72,12 @@
           </template>
         </div>
         <div v-if="dragState.isDragging && dragState.dropIndex === tabs.length" @dragover.prevent
-          class="h-8 my-0.5 border border-dashed rounded-sm mx-2" />
+          class="h-8 my-0.5 border border-dashed rounded-1 mx-2" />
       </div>
       <div v-else-if="anchors.length > 1" class="table-of-contents flex flex-col gap-0.5 mb-2 px-0.5 pr-2.5">
         <div v-for="anchor in anchors" class="flex">
           <a :href="'#' + anchor.id"
-            class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-sm cursor-pointer truncate grow"
+            class="link text-ink-gray-5 hover:bg-surface-gray-2 text-sm px-2 py-1 rounded-1 cursor-pointer truncate grow"
             :title="anchor.textContent" :data-item-index="anchor.itemIndex" @click.prevent="onAnchorClick(anchor.id)"
             :key="anchor.id" :class="anchor.isActive && 'text-ink-gray-8'"
             :style="{ '--level': anchor.level - maxLevel }">

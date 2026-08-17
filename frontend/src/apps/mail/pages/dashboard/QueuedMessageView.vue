@@ -72,9 +72,9 @@
 		:options="options"
 		@reload="message.reload()"
 	/>
-	<Dialog v-model="showCancel" :options="cancelDialogOptions" />
-	<Dialog v-model="showSource" :options="{ title: __('Message Source'), size: '4xl' }">
-		<template #body-content>
+	<Dialog v-model:open="showCancel" v-bind="cancelDialogOptions" />
+	<Dialog v-model:open="showSource" v-bind="{ title: __('Message Source'), size: '4xl' }">
+		<template>
 			<pre
 				v-if="source.data"
 				class="bg-surface-gray-2 max-h-[70vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
@@ -237,7 +237,7 @@ const cancel = createResource({
 const cancelDialogOptions = computed(() => ({
 	title: __('Cancel Message'),
 	message: __('Cancel (delete) this queued message? This cannot be undone.'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: cancel.submit }],
 }))
 

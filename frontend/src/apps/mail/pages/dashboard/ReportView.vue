@@ -40,7 +40,7 @@
 			</div>
 		</template>
 	</DashboardLayout>
-	<Dialog v-model="showDelete" :options="deleteOptions" />
+	<Dialog v-model:open="showDelete" v-bind="deleteOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -125,7 +125,7 @@ const deleteReport = createResource({
 const deleteOptions = computed(() => ({
 	title: __('Delete Report'),
 	message: __('Delete this report? This cannot be undone.'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteReport.submit }],
 }))
 

@@ -59,7 +59,7 @@
 			v-model="showAddModal"
 			@created="pushSubscriptions.reload()"
 		/>
-		<Dialog v-model="showDeleteModal" :options="deleteModalOptions" />
+		<Dialog v-model:open="showDeleteModal" v-bind="deleteModalOptions" />
 	</div>
 </template>
 

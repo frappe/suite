@@ -79,8 +79,8 @@
 		</div>
 
 		<Dialog
-			v-model="showAddDialogState"
-			:options="{
+			v-model:open="showAddDialogState"
+			v-bind="{
 				title: __('New Participant Identity'),
 				actions: [
 					{
@@ -93,7 +93,7 @@
 				],
 			}"
 		>
-			<template #body-content>
+			<template #default>
 				<FormControl
 					v-model="newEmail"
 					:label="__('Email')"
@@ -117,8 +117,8 @@
 		</Dialog>
 
 		<Dialog
-			v-model="showDeleteDialog"
-			:options="{
+			v-model:open="showDeleteDialog"
+			v-bind="{
 				title: __('Delete Participant Identity'),
 				message: __('Are you sure you want to delete this participant identity?'),
 				actions: [

@@ -85,11 +85,11 @@
 		<!-- In the sheet, logging out took two deliberate steps (open the sheet, tap the red
 		     row). Here it's whatever happens to be resting at the bottom of a scroll, so it asks. -->
 		<Dialog
-			v-model="showLogoutConfirm"
-			:options="{
+			v-model:open="showLogoutConfirm"
+		 v-bind="{
 				title: __('Log Out'),
 				message: __('Are you sure you want to log out?'),
-				icon: { name: 'alert-triangle', appearance: 'warning' },
+				icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 				actions: [{ label: __('Log Out'), theme: 'red', onClick: logout.submit }],
 			}"
 		/>

@@ -11,7 +11,7 @@
 				<template #actions>
 					<Dropdown
 						:options="exportOptions"
-						:button="{ label: __('Export DNS'), iconLeft: 'download' }"
+						:button="{ label: __('Export DNS'), iconLeft: 'lucide-download' }"
 					/>
 					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
@@ -76,7 +76,7 @@
 			</div>
 		</template>
 	</DashboardLayout>
-	<Dialog v-model="showConfirmDialog" :options="confirmDialogOptions" />
+	<Dialog v-model:open="showConfirmDialog" v-bind="confirmDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -229,7 +229,7 @@ const confirmDialogOptions = computed(() => {
 		title: config.title,
 		message: config.message,
 		size: 'xl',
-		icon: { name: 'alert-triangle', appearance: 'warning' },
+		icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 		actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: config.action }],
 	}
 })

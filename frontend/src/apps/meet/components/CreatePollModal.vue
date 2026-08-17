@@ -1,5 +1,5 @@
 <template>
-    <Dialog v-model="isOpen" title="Create a Poll">
+    <Dialog v-model:open="isOpen" title="Create a Poll">
         <template #default>
             <div class="space-y-4">
                 <div>

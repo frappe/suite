@@ -35,7 +35,7 @@ const inputClasses = computed(() => {
 	const baseClasses = [
 		'p-1 px-2',
 		'text-base font-medium cursor-text text-ink-gray-8',
-		'outline-none rounded-sm',
+		'outline-none rounded-1',
 		'focus:ring-1 focus:ring-outline-gray-3',
 		'transition ease-in-out duration-400',
 		'whitespace-nowrap',

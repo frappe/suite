@@ -57,12 +57,13 @@ const unavailable = computed(() =>
 				Everyone in the meeting will see a recording notice. The video will be saved privately to the room owner's Drive.
 			</p>
 
-			<Alert v-if="unavailable" theme="red" variant="subtle" :title="unavailable.title">
-				{{ unavailable.message }}
-			</Alert>
-			<Alert v-else-if="limitedByStorage" theme="orange" variant="subtle" title="Storage may end the recording early">
-				Recording will stop when its available storage budget is reached.
-			</Alert>
+			<Alert v-if="unavailable" theme="red" :title="unavailable.title" :description="unavailable.message" />
+			<Alert
+				v-else-if="limitedByStorage"
+				theme="amber"
+				title="Storage may end the recording early"
+				description="Recording will stop when its available storage budget is reached."
+			/>
 		</div>
 	</Dialog>
 </template>

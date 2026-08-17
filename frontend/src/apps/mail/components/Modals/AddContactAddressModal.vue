@@ -1,6 +1,6 @@
 <template>
-	<Dialog v-model="show" :options="options">
-		<template #body-content>
+	<Dialog v-model:open="show" v-bind="options">
+		<template>
 			<div class="space-y-4">
 				<FormControl
 					v-model="address.type"

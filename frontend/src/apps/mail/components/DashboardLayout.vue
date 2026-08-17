@@ -1,7 +1,7 @@
 <template>
 	<div class="flex h-full flex-col">
 		<header class="flex items-center border-b px-3 py-2.5 sm:px-5">
-			<Button v-if="isMobile" icon="menu" variant="ghost" @click="openSidebar" />
+			<Button v-if="isMobile" icon="lucide-menu" variant="ghost" @click="openSidebar" />
 			<Breadcrumbs :items="breadcrumbs" class="mx-2" />
 			<Badge v-if="badgeLabel && !loading" :label="badgeLabel" :theme="badgeTheme" />
 			<div class="ml-auto flex space-x-2">
@@ -9,7 +9,7 @@
 					<Button
 						v-if="buttonLabel"
 						:label="buttonLabel"
-						icon-left="plus"
+						icon-left="lucide-plus"
 						@click="buttonAction"
 					/>
 				</slot>
@@ -40,7 +40,7 @@ const { removeSpacing = false, loading = false } = defineProps<{
 	buttonLabel?: string
 	buttonAction?: () => void
 	badgeLabel?: string
-	badgeTheme?: 'green' | 'red' | 'gray' | 'amber' | 'orange' | 'blue' | 'violet'
+	badgeTheme?: 'green' | 'red' | 'gray' | 'amber'  | 'blue' | 'violet'
 	removeSpacing?: boolean
 	loading?: boolean
 }>()

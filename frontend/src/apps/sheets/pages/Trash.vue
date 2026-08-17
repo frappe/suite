@@ -3,7 +3,7 @@
     <!-- Top bar — mirrors Home's chrome, minus search/view-toggle/New. -->
     <div class="home-topbar">
       <div class="home-brand">
-        <Button variant="ghost" size="sm" icon="arrow-left" tooltip="Back to sheets" @click="goHome()" />
+        <Button variant="ghost" size="sm" icon="lucide-arrow-left" tooltip="Back to sheets" @click="goHome()" />
         <span class="home-brand-name">Trash</span>
       </div>
       <div class="home-topbar-right">
@@ -47,8 +47,8 @@
     </div>
 
     <!-- Permanent delete confirm -->
-    <Dialog v-model="showPurgeDialog" :options="{ title: 'Delete forever?', size: 'sm' }">
-      <template #body-content>
+    <Dialog v-model:open="showPurgeDialog" title="Delete forever?" size="sm">
+      <template #default>
         <p class="home-confirm-text">
           "<strong>{{ purgeTarget?.title }}</strong>" and its full history will be
           <strong>permanently deleted</strong>. This can't be undone.

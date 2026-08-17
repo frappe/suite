@@ -1,6 +1,6 @@
 <template>
-	<Dialog v-model="showBlockSender" :options="options">
-		<template v-if="isMultiple" #body-content>
+	<Dialog v-model:open="showBlockSender" v-bind="options">
+		<template v-if="isMultiple">
 			<div class="border-outline-gray-2 overflow-hidden rounded-4 border">
 				<!-- Select all -->
 				<div

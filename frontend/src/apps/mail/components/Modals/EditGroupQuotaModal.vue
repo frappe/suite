@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit Quota'),
 			actions: [
 				{
@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl v-model="quotaGb" type="number" :min="0" :label="__('Quota (GB, 0 = unlimited)')" />
 				<ErrorMessage

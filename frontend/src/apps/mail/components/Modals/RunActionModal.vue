@@ -1,6 +1,6 @@
 <template>
-	<Dialog v-model="show" :options="dialogOptions">
-		<template #body-content>
+	<Dialog v-model:open="show" v-bind="dialogOptions">
+		<template>
 			<div class="space-y-4">
 				<template v-for="field in fields" :key="field.name">
 					<!-- A set-valued input (e.g. the recipients): one row per entry. -->

@@ -2,7 +2,7 @@
 	<AppSettingsHeader :title="__('Export')" />
 	<AppSettingsBody>
 		<div class="flex flex-col gap-5">
-			<TabButtons v-model="activeType" :buttons="typeButtons" />
+			<TabButtons v-model="activeType" :options="typeButtons" />
 			<component :is="activeComponent" :key="activeType" />
 		</div>
 	</AppSettingsBody>

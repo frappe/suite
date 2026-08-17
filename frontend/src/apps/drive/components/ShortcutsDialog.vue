@@ -12,7 +12,7 @@
             </div>
             <div class="flex space-x-1 w-[9rem] gap-1 justify-start">
               <span v-for="(key, kIndex) in shortcut[0]" :key="kIndex"
-                class="px-2 py-0.5 bg-surface-gray-2 border border-outline-gray-2 text-xs rounded-sm font-mono text-ink-gray-8 shadow-sm">
+                class="px-2 py-0.5 bg-surface-gray-2 border border-outline-gray-2 text-xs rounded-1 font-mono text-ink-gray-8 shadow-sm">
                 {{ key }}
               </span>
             </div>

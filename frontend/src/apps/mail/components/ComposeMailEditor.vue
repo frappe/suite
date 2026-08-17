@@ -431,9 +431,9 @@ const localDraftActions = computed(() => [
 ])
 
 const TYPE_ICON_MAP = {
-	reply: Reply,
-	replyAll: ReplyAll,
-	forward: Forward,
+	reply: 'lucide-reply',
+	replyAll: 'lucide-reply-all',
+	forward: 'lucide-forward',
 }
 
 // Shortcuts

@@ -94,6 +94,6 @@ const RELATIVE_TO_OPTIONS = [
 				@update:model-value="updateAlert(i, 'time', $event)"
 			/>
 		</template>
-		<Button icon="x" class="mt-auto" @click="removeAlert(i)" />
+		<Button icon="lucide-x" class="mt-auto" @click="removeAlert(i)" />
 	</div>
 </template>

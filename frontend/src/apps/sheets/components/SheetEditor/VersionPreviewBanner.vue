@@ -1,7 +1,7 @@
 <template>
 	<div v-if="open" class="sn-vp-banner">
 		<div class="sn-vp-left">
-			<Button variant="ghost" size="sm" icon="arrow-left"
+			<Button variant="ghost" size="sm" icon="lucide-arrow-left"
 			        :tooltip="'Exit version history'"
 			        @click="$emit('exit')" />
 			<span class="sn-vp-text">
@@ -17,7 +17,7 @@
 		</div>
 		<div class="sn-vp-mid">
 			<Button v-if="diff && diff.total_changed_cells > 0"
-			        size="sm" variant="ghost" icon="chevron-up"
+			        size="sm" variant="ghost" icon="lucide-chevron-up"
 			        :tooltip="'Previous change'"
 			        :disabled="!canStep"
 			        @click="$emit('step', -1)" />
@@ -26,13 +26,13 @@
 				{{ stepIndex + 1 }} / {{ diff.total_changed_cells }}
 			</span>
 			<Button v-if="diff && diff.total_changed_cells > 0"
-			        size="sm" variant="ghost" icon="chevron-down"
+			        size="sm" variant="ghost" icon="lucide-chevron-down"
 			        :tooltip="'Next change'"
 			        :disabled="!canStep"
 			        @click="$emit('step', +1)" />
 		</div>
 		<div class="sn-vp-right">
-			<Button size="sm" variant="ghost" iconLeft="edit-2"
+			<Button size="sm" variant="ghost" iconLeft="lucide-edit-2"
 			        @click="$emit('name')">{{ version?.version_name ? 'Rename' : 'Name version' }}</Button>
 			<Button size="sm" variant="solid"
 			        :loading="restoring"

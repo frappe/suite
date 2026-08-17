@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit OAuth Client'),
 			actions: [
 				{
@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl v-model="clientId" :label="__('Client ID')" autocomplete="off" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />

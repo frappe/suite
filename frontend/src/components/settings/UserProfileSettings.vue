@@ -90,8 +90,8 @@
 		</div>
 	</AppSettingsBody>
 
-	<Dialog v-model="showPasswordDialog" :options="passwordDialogOptions">
-		<template #body-content>
+	<Dialog v-model:open="showPasswordDialog" v-bind="passwordDialogOptions">
+		<template #default>
 			<form class="space-y-4" @submit.prevent>
 				<!-- Capture username here so Chrome doesn't fill profile last name -->
 				<input

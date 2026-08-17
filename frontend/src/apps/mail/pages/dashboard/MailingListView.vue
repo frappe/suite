@@ -104,7 +104,7 @@
 	<EditMailingListModal v-if="list.data" v-model="showEdit" :list="list.data" @reload="list.reload()" />
 	<AddMailingListEmailModal v-model="showAddEmail" :list-id="listId" @reload="list.reload()" />
 	<AddMailingListRecipientsModal v-model="showAddRecipients" :list-id="listId" @reload="list.reload()" />
-	<Dialog v-model="showDelete" :options="deleteDialogOptions" />
+	<Dialog v-model:open="showDelete" v-bind="deleteDialogOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -224,7 +224,7 @@ const deleteDialogOptions = computed(() => ({
 	title: __('Delete Mailing List'),
 	message: __('Are you sure you want to delete this mailing list? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteList.submit }],
 }))
 

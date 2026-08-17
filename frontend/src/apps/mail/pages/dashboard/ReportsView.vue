@@ -42,7 +42,7 @@
 		<DashboardListSkeleton v-else :columns="3" />
 		<DashboardPager :page="page" :page-length="PAGE_LENGTH" :total="total" @update:page="(p) => (page = p)" />
 	</DashboardLayout>
-	<Dialog v-model="showDelete" :options="deleteOptions" />
+	<Dialog v-model:open="showDelete" v-bind="deleteOptions" />
 </template>
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
@@ -143,7 +143,7 @@ const deleteReports = createResource({
 const deleteOptions = computed(() => ({
 	title: __('Delete Reports'),
 	message: __('Delete the selected reports? This cannot be undone.'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', theme: 'red', onClick: deleteReports.submit }],
 }))
 </script>

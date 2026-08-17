@@ -4,13 +4,13 @@
 	     remain reachable via v-model from views. -->
 	<div v-if="!isMobile" class="flex space-x-2">
 		<Button
-			icon="search"
+			icon="lucide-search"
 			:tooltip="__('Search ({0}+K)', [modifier])"
 			variant="ghost"
 			@click="showSearchModal = true"
 		/>
 		<Button
-			icon-left="edit"
+			icon-left="lucide-pencil"
 			:label="__('Compose')"
 			:tooltip="__('Compose (C)')"
 			@click="compose()"

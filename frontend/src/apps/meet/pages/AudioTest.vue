@@ -135,7 +135,7 @@
 						</div>
 						<Button
 							variant="solid"
-							theme="orange"
+							theme="amber"
 							class="w-full"
 							@click="playRaiseHandNotification"
 							:disabled="isPlaying"

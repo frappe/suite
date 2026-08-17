@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit Member'),
 			actions: [
 				{
@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl v-model="role" type="select" :label="__('Role')" :options="ROLE_OPTIONS" />
 				<FormControl v-model="description" :label="__('Full Name')" />

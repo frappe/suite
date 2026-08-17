@@ -9,7 +9,7 @@
 				:side="'top'"
 				:align="'center'"
 				:side-offset="12"
-				class="rounded-2xl bg-surface-base p-3 shadow-xl max-w-sm w-full z-[70]"
+				class="rounded-8 bg-surface-base p-3 shadow-xl max-w-sm w-full z-[70]"
 				data-testid="reaction-picker"
 			>
 				<div class="grid grid-cols-7 gap-2">

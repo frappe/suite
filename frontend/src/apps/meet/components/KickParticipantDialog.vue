@@ -1,6 +1,6 @@
 <template>
 	<Dialog
-		v-model="showDialog"
+		v-model:open="showDialog"
 		title="Remove Participant"
 		size="sm"
 	>

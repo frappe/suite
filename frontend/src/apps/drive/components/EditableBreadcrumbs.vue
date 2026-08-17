@@ -1,9 +1,9 @@
 <template>
   <div class="flex min-w-0 items-center" data-testid="breadcrumbs">
     <div v-if="loading" class="flex items-center gap-1.5" data-testid="breadcrumbs-loading">
-      <Skeleton class="h-4 w-16 rounded-sm" />
+      <Skeleton class="h-4 w-16 rounded-1" />
       <span class="text-lg-medium text-ink-gray-4" aria-hidden="true">/</span>
-      <Skeleton class="h-4 w-32 rounded-sm" />
+      <Skeleton class="h-4 w-32 rounded-1" />
     </div>
     <template v-else-if="isEditing">
       <template v-if="parentItems.length">

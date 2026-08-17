@@ -35,7 +35,7 @@
 		</div>
 		<DashboardListSkeleton v-else :columns="2" />
 	</DashboardLayout>
-	<Dialog v-model="showConfirm" :options="confirmOptions" />
+	<Dialog v-model:open="showConfirm" v-bind="confirmOptions" />
 	<RunActionModal v-model="showRun" :action="activeAction" :fields="activeFields" />
 </template>
 <script setup lang="ts">

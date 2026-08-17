@@ -1,7 +1,10 @@
 <template>
   <FileUploader
     file-types="image/png,image/jpeg,image/jpg,image/webp"
-    :upload-args="uploadArgs"
+    :private="false"
+    doctype="Suite Settings"
+    docname="Suite Settings"
+    fieldname="workspace_logo"
     @success="(file) => (logo = file.file_url)"
   >
     <template #default="{ openFileSelector, uploading, error }">
@@ -81,13 +84,6 @@ function logoMenuOptions(openFileSelector: () => void) {
       onClick: () => (logo.value = ''),
     },
   ]
-}
-
-const uploadArgs = {
-  private: false,
-  doctype: 'Suite Settings',
-  docname: 'Suite Settings',
-  fieldname: 'workspace_logo',
 }
 
 const saveWorkspace = createResource({ url: 'suite.api.account.update_workspace' })

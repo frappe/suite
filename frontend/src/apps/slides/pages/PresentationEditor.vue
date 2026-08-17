@@ -36,7 +36,7 @@
 		:update="themeDialogAction == 'update'"
 	/>
 
-	<Dialog v-model="showDeleteDialog" class="pb-0" size="sm">
+	<Dialog v-model:open="showDeleteDialog" class="pb-0" size="sm">
 		<template #title>
 			<div class="font-semibold">Delete Presentation</div>
 		</template>

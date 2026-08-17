@@ -391,8 +391,8 @@
 		</div>
 	</div>
 
-	<Dialog v-model="showEmptyMailbox" :options="emptyMailboxOptions" />
-	<Dialog v-model="showJunkOrDeleteThreads" :options="junkOrDeleteThreadsOptions" />
+	<Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
+	<Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
 	<ScreenedEmailAddressModal />
 	<!-- Selection action bar (design: 5·Selection) — replaces the tab bar while
 	     selecting: thumb reach, Delete last and red. -->
@@ -1561,7 +1561,7 @@ const emptyMailbox = createResource({
 const emptyMailboxOptions = computed(() => ({
 	title: __('Empty {0}', [mailboxName.value]),
 	message: __(`Are you sure you want to empty the contents of this mailbox?`),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [
 		{
 			label: __('Confirm'),

@@ -2,9 +2,11 @@
 	<component
 		:is="isMobile ? SearchMobileLayout : Dialog"
 		v-model="show"
-		:options="{ size: '2xl', paddingTop: '2%' }"
+		v-model:open="show"
+		v-bind="{ size: '2xl', paddingTop: '2%' }"
+		:bare="!isMobile"
 	>
-		<template #body>
+		<template>
 			<div class="bg-surface-base">
 				<div class="flex items-center border-b px-4 py-2">
 					<!-- Mobile trades the decorative magnifier for the way out: search is a
@@ -30,7 +32,7 @@
 					<input
 						ref="searchInput"
 						v-model="filter.text"
-						icon-left="search"
+						icon-left="lucide-search"
 						type="search"
 						class="placeholder-ink-gray-4 w-full border-none bg-transparent text-base focus:ring-0"
 						placeholder="Search"

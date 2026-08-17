@@ -100,9 +100,9 @@
 		</ListSelectBanner>
 	</ListView>
 	<DashboardListSkeleton v-else :columns="4" />
-	<Dialog v-model="showEnableMembers" :options="ENABLE_MEMBERS_OPTIONS" />
-	<Dialog v-model="showDisableMembers" :options="DISABLE_MEMBERS_OPTIONS" />
-	<Dialog v-model="showDeleteMembers" :options="DELETE_MEMBERS_OPTIONS" />
+	<Dialog v-model:open="showEnableMembers" v-bind="ENABLE_MEMBERS_OPTIONS" />
+	<Dialog v-model:open="showDisableMembers" v-bind="DISABLE_MEMBERS_OPTIONS" />
+	<Dialog v-model:open="showDeleteMembers" v-bind="DELETE_MEMBERS_OPTIONS" />
 </template>
 
 <script setup lang="ts">

@@ -89,7 +89,7 @@
 
 		<ErrorMessage :message="jmapAccount.save.error" />
 
-		<Dialog v-model="showMoveToInbox" :options="moveToInboxOptions" />
+		<Dialog v-model:open="showMoveToInbox" v-bind="moveToInboxOptions" />
 		</div>
 	</template>
 	</AppSettingsBody>

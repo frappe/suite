@@ -2,7 +2,7 @@
 	<AppSettingsHeader :title="__('Automation')">
 		<template #actions>
 			<Button
-				icon-left="refresh-cw"
+				icon-left="lucide-refresh-cw"
 				:label="__('Rebuild Automation')"
 				:loading="rebuildAutomation.loading"
 				:tooltip="
@@ -10,7 +10,7 @@
 				"
 				@click="rebuildAutomation.submit()"
 			/>
-			<Button icon-left="plus" :label="__('New')" @click="addScript" />
+			<Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
 		</template>
 	</AppSettingsHeader>
 	<AppSettingsBody>

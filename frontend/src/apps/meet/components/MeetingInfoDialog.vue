@@ -1,5 +1,5 @@
 <template>
-	<Dialog v-model="show" title="Meeting Information">
+	<Dialog v-model:open="show" title="Meeting Information">
 		<template #default>
 			<div class="space-y-4">
 				<div class="space-y-2">

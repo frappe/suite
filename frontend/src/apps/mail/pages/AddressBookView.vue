@@ -78,7 +78,7 @@
 			}
 		"
 	/>
-	<Dialog v-model="showDeleteAddressBook" :options="deleteAddressBookOptions" />
+	<Dialog v-model:open="showDeleteAddressBook" v-bind="deleteAddressBookOptions" />
 
 	<AddAddressBookContactsModal
 		v-if="addressBook?.originalDoc"
@@ -86,7 +86,7 @@
 		:current-contacts="contacts.data?.map((c) => c.id) || []"
 		@add="(selections) => addContacts.submit(selections)"
 	/>
-	<Dialog v-model="showRemoveContacts" :options="removeContactsOptions" />
+	<Dialog v-model:open="showRemoveContacts" v-bind="removeContactsOptions" />
 </template>
 
 <script setup lang="ts">
@@ -241,14 +241,14 @@ const removeContacts = createResource({
 const deleteAddressBookOptions = computed(() => ({
 	title: __('Delete Address Book'),
 	message: __('Are you sure you want to delete {0}?', [addressBook.doc?._name]),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: deleteAddressBook.submit }],
 }))
 
 const removeContactsOptions = computed(() => ({
 	title: __('Remove Contacts'),
 	message: __('Are you sure you want to remove the selected contacts?'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [{ label: __('Confirm'), variant: 'solid', onClick: removeContacts.submit }],
 }))
 

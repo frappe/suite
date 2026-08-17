@@ -1,10 +1,11 @@
 <template>
   <Dialog
-    v-model="show"
-    :options="{ title: pivotId ? 'Edit pivot table' : 'Create pivot table', size: 'lg' }"
-    :disable-outside-click-to-close="pickerOpenCount > 0"
+    v-model:open="show"
+    :title="pivotId ? 'Edit pivot table' : 'Create pivot table'"
+    size="lg"
+    :dismissible="pickerOpenCount === 0"
   >
-    <template #body-content>
+    <template #default>
 
       <!-- ── Source range ─────────────────────────────────────────────────── -->
       <div class="pv-section">

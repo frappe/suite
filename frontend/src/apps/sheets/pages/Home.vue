@@ -63,7 +63,7 @@
          search changes can still trigger a refetch. -->
     <div v-if="loading || loadError || !isTrueEmpty" class="home-toolbar">
       <div class="home-toolbar-inner">
-        <TabButtons v-model="ownerTab" :buttons="ownerTabs" />
+        <TabButtons v-model="ownerTab" :options="ownerTabs" />
         <FormControl
           type="text"
           size="sm"
@@ -255,8 +255,8 @@
     </div>
 
     <!-- Rename dialog -->
-    <Dialog v-model="showRenameDialog" :options="{ title: 'Rename sheet', size: 'sm' }">
-      <template #body-content>
+    <Dialog v-model:open="showRenameDialog" title="Rename sheet" size="sm">
+      <template #default>
         <FormControl v-model="renameValue" label="New title" placeholder="Untitled Sheet" @keydown.enter="confirmRename" />
       </template>
       <template #actions>
@@ -269,10 +269,11 @@
 
     <!-- Delete confirm dialog -->
     <Dialog
-      v-model="showDeleteDialog"
-      :options="{ title: 'Move to trash?', size: 'sm' }"
+      v-model:open="showDeleteDialog"
+      title="Move to trash?"
+      size="sm"
     >
-      <template #body-content>
+      <template #default>
         <p class="home-confirm-text">
           "<strong>{{ deleteTarget?.title }}</strong>" will be moved to Trash. You
           can restore it from there before it's permanently deleted.

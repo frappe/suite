@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
 			size: '3xl',
 			actions: [
@@ -15,7 +15,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl v-model="script._name" :label="__('Script Name')" required />
 				<div class="space-y-1.5">

@@ -66,7 +66,7 @@ const getParticipantStatusValues = (status: string) => {
 			<Button
 				v-if="showRemoveParticipant(p)"
 				variant="ghost"
-				icon="x"
+				icon="lucide-x"
 				@click="$emit('removeParticipant', p.email)"
 			/>
 		</div>

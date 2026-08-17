@@ -2,7 +2,10 @@
   <div class="group relative shrink-0">
     <FileUploader
       file-types=".png,.jpg,.jpeg,.webp"
-      :upload-args="uploadArgs"
+      :private="false"
+      doctype="Suite Settings"
+      docname="Suite Settings"
+      fieldname="workspace_logo"
       @success="(file) => (logo = file.file_url)"
     >
       <template #default="{ openFileSelector }">
@@ -52,10 +55,4 @@ import { FileUploader } from 'frappe-ui'
 
 const logo = defineModel<string>({ required: true })
 
-const uploadArgs = {
-  private: false,
-  doctype: 'Suite Settings',
-  docname: 'Suite Settings',
-  fieldname: 'workspace_logo',
-}
 </script>

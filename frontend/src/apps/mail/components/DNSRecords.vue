@@ -52,7 +52,7 @@ const { title, description, records } = defineProps<{
 	description: string
 	records: Record<string, string>[]
 	badgeLabel?: string
-	badgeTheme?: 'green' | 'red' | 'gray' | 'amber' | 'orange' | 'blue'
+	badgeTheme?: 'green' | 'red' | 'gray' | 'amber'  | 'blue'
 }>()
 
 const LIST_COLUMNS = [

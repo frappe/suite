@@ -2,7 +2,7 @@
   <div class="fr-panel" ref="panelRef">
     <div class="fr-header">
       <span class="fr-title">Find &amp; Replace</span>
-      <Button variant="ghost" size="sm" icon="x" @click="emit('close')" />
+      <Button variant="ghost" size="sm" icon="lucide-x" @click="emit('close')" />
     </div>
     <FormControl
       type="text"

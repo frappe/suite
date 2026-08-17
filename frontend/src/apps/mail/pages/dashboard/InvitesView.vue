@@ -71,7 +71,7 @@
 		:invite-i-d="selectedInvite"
 		@reload-invites="invites.reload()"
 	/>
-	<Dialog v-model="showDeleteInvites" :options="DELETE_INVITES_OPTIONS" />
+	<Dialog v-model:open="showDeleteInvites" v-bind="DELETE_INVITES_OPTIONS" />
 </template>
 
 <script setup lang="ts">

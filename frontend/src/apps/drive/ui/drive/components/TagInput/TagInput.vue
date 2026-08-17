@@ -114,7 +114,7 @@ function removeTag(tag: string) {
         getLabel(item)
       }}</TagsInputItemText>
       <TagsInputItemDelete
-        class="p-0.5 rounded-sm bg-transparent hover:bg-surface-gray-3"
+        class="p-0.5 rounded-1 bg-transparent hover:bg-surface-gray-3"
         @click="removeTag(getValue(item))"
       >
         <span class="lucide-x size-3.5 text-ink-gray-6" aria-hidden="true" />

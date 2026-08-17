@@ -4,7 +4,7 @@
       <ListCell />
       <ListCell>
         <div class="flex items-center" :style="indent(item.depth)">
-          <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-sm" />
+          <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-1" />
           <Skeleton class="h-3.5 w-40 rounded" />
         </div>
       </ListCell>
@@ -89,14 +89,14 @@
               <img
                 v-if="!loadedThumbnails.has(row.name)"
                 loading="lazy"
-                class="absolute inset-0 h-[16px] w-[16px] rounded-sm"
+                class="absolute inset-0 h-[16px] w-[16px] rounded-1"
                 :src="thumbnail(row).fallback"
                 :draggable="false"
               />
               <img
                 loading="lazy"
                 decoding="async"
-                class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-sm"
+                class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-1"
                 :class="loadedThumbnails.has(row.name) ? 'opacity-100' : 'opacity-0'"
                 :src="thumbnail(row).src"
                 :draggable="false"

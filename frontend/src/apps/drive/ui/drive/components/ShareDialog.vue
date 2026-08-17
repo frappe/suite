@@ -30,7 +30,7 @@
         </div>
         <!-- Members section -->
         <div class="text-ink-gray-5 text-sm mb-2">Members</div>
-        <div class="flex items-start gap-2 rounded bg-surface-white p-1.5 ring-1 ring-outline-gray-2 mb-4">
+        <div class="flex items-start gap-2 rounded bg-surface-base p-1.5 ring-1 ring-outline-gray-2 mb-4">
           <TagInput autofocus v-model="usersToAdd" v-model:options="filteredUsers" class="flex-1 min-w-0" :render-icon="(k) =>
             k.is_group
               ? h(LucideUsers, { class: 'size-3.5 text-ink-gray-6' })

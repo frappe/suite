@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Add to Groups'),
 			actions: [
 				{
@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
 				<MultiSelect v-model="groupIds" :options="options" />

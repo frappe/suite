@@ -25,7 +25,7 @@
           <Button v-if="
             !comment.resolved &&
             (comment.owner == currentUserId || file.doc.write)
-          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-1"
             @click="resolve(comment)">
             <template #prefix>
               <LucideCheck class="size-3.5" />
@@ -35,7 +35,7 @@
           <Button v-if="
             comment.resolved &&
             (comment.owner == currentUserId || file.doc.write)
-          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-1"
             @click="resolve(comment, false)">
             <template #prefix>
               <LucideMessageCircleCode class="size-3.5" />
@@ -45,7 +45,7 @@
           <Button v-if="
             comment.owner == currentUserId ||
             (comment.owner === 'Guest' && file.doc.write)
-          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-sm"
+          " :disabled="comment.loading" variant="ghost" class="!h-5 !text-xs !px-1.5 !rounded-1"
             @click="removeComment(comment.id, true)">
             <template #prefix>
               <LucideX class="size-3.5" />

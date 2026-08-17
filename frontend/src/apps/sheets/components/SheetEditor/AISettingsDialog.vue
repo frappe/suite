@@ -1,6 +1,6 @@
 <template>
-  <Dialog v-model="show" :options="{ title: 'AI Assist', size: 'md' }">
-    <template #body-content>
+  <Dialog v-model:open="show" title="AI Assist" size="md">
+    <template #default>
 
       <!-- Inline error banner (permission / network failures). Auto-clears. -->
       <Badge
@@ -77,7 +77,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Badge, Switch, FormControl, Spinner } from 'frappe-ui'
+import { Badge, Button, Dialog, Switch, FormControl, Spinner } from 'frappe-ui'
 import { call } from '../../utils/api.js'
 
 const props = defineProps({

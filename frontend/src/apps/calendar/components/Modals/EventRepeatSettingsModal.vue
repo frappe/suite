@@ -182,8 +182,8 @@ const removeRepeat = () => {
 </script>
 
 <template>
-	<Dialog v-model="show" :options="DIALOG_OPTIONS">
-		<template #body-content>
+	<Dialog v-model:open="show" v-bind="DIALOG_OPTIONS">
+		<template #default>
 			<div class="space-y-4">
 				<!-- Interval + segmented frequency -->
 				<div>
@@ -247,7 +247,7 @@ const removeRepeat = () => {
 
 				<!-- Summary -->
 				<div
-					class="flex items-center gap-2.5 rounded bg-surface-gray-2 px-3 py-2 text-base text-ink-gray-8"
+					class="flex items-center gap-2.5 rounded-4 bg-surface-gray-2 px-3 py-2 text-base text-ink-gray-8"
 				>
 					<Repeat :size="14" class="shrink-0 text-ink-gray-5" />
 					{{ getRepeatMessage(recurrenceRule) }}

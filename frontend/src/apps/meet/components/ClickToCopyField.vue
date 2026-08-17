@@ -17,7 +17,7 @@
 		</div>
 		<button
 			type="button"
-			class="absolute right-2 top-2 rounded-sm border border-outline-gray-2 bg-surface-gray-1 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
+			class="absolute right-2 top-2 rounded-1 border border-outline-gray-2 bg-surface-gray-1 px-2 py-1 text-xs text-ink-gray-7 hover:bg-surface-gray-3"
 			@click="copyTextContentToClipboard"
 		>
 			{{ copied ? "copied" : "copy" }}

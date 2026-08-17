@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit Recipient'),
 			size: '3xl',
 			actions: [
@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-6">
 				<!-- Recipient -->
 				<section class="space-y-3">

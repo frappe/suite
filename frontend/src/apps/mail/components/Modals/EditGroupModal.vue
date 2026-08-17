@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Edit Group'),
 			actions: [
 				{
@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<div class="space-y-4">
 				<FormControl v-model="description" :label="__('Description')" />
 				<div class="space-y-1.5">

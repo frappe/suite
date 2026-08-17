@@ -513,7 +513,7 @@ const VISIBILITY_OPTIONS = [
 
 const showNotifyParticipantsOptions = computed(() => ({
 	title: __('Notify Participants'),
-	icon: { name: 'bell' },
+	icon: { name: 'lucide-bell' },
 	message: isNew.value
 		? __("Send an email to let attendees know they've been invited?")
 		: __('Send an email to let attendees know this event has been updated?'),
@@ -521,13 +521,13 @@ const showNotifyParticipantsOptions = computed(() => ({
 
 const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 	title: __('Update Recurring Event'),
-	icon: { name: 'repeat' },
+	icon: { name: 'lucide-repeat' },
 	message: __('Do you want to update just this instance, or all events in the series?'),
 }
 </script>
 
 <template>
-	<Dialog v-model="show" size="4xl" bare>
+	<Dialog v-model:open="show" size="4xl" bare>
 		<template #default="{ close }">
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8">
 				<!-- header -->
@@ -550,7 +550,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						/>
 
 						<!-- date & time — one grouped card -->
-						<div class="rounded-xl border border-outline-gray-2">
+						<div class="rounded-7 border border-outline-gray-2">
 							<div class="flex items-center gap-3 border-b px-3.5 py-3">
 								<Clock :size="18" class="icon shrink-0 text-ink-gray-5" />
 								<span class="flex-1 text-base font-medium">
@@ -656,7 +656,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 											:placeholder="__('Meeting location {0}', [i + 1])"
 											class="w-full"
 										/>
-										<Button icon="x" class="mt-auto" @click="event.locations.splice(i, 1)" />
+									<Button icon="lucide-x" class="mt-auto" @click="event.locations.splice(i, 1)" />
 									</div>
 									<Button
 										v-if="(event.locations?.length ?? 0) < 3"
@@ -755,14 +755,14 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 		:r-rule="event?.recurrence_rule"
 		@update-recurrence-rule="(val) => (event.recurrence_rule = val)"
 	/>
-	<Dialog v-model="showRecurringEventModal" :options="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
+	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
 			</div>
 		</template>
 	</Dialog>
-	<Dialog v-model="showNotifyParticipantsModal" :options="showNotifyParticipantsOptions">
+	<Dialog v-model:open="showNotifyParticipantsModal" v-bind="showNotifyParticipantsOptions">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
 				<Button variant="outline" @click="submitEvent(false)">

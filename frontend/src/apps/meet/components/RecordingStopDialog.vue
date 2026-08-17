@@ -1,5 +1,5 @@
 <template>
-	<Dialog v-model="open" title="Stop recording?" size="sm">
+	<Dialog v-model:open="open" title="Stop recording?" size="sm">
 		<template #default>
 			<p class="text-base text-ink-gray-7">
 				The recording will stop and the video will be saved privately to the room owner's Drive.

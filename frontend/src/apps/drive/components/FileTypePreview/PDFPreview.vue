@@ -5,9 +5,9 @@
       <span class="text-sm">{{ Math.round(scale * 100) }}%</span>
       <Button @click="scale += 0.25" :disabled="scale >= 2" label="+" />
     </div>
-    <div class="grow flex items-center justify-center border rounded-sm max-h-[70vh] overflow-auto">
-      <Skeleton v-if="loading" class="w-full h-[70vh] rounded-sm" />
-      <canvas ref="canvasRef" :class="{ hidden: loading }" class="rounded-sm" />
+    <div class="grow flex items-center justify-center border rounded-1 max-h-[70vh] overflow-auto">
+      <Skeleton v-if="loading" class="w-full h-[70vh] rounded-1" />
+      <canvas ref="canvasRef" :class="{ hidden: loading }" class="rounded-1" />
     </div>
     <div v-if="totalPages" class="flex gap-2 justify-center items-center">
       <Button label="Prev" :disabled="currentPage <= 1" @click="currentPage--" />

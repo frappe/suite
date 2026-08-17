@@ -2,7 +2,7 @@
 	<Popover @open="syncCurrentColor">
 		<template #trigger>
 			<div
-				class="me-0.5 size-4 cursor-pointer rounded-sm ring-[1.5px] ring-outline-gray-2 ring-offset-1"
+				class="me-0.5 size-4 cursor-pointer rounded-1 ring-[1.5px] ring-outline-gray-2 ring-offset-1"
 				:style="{ backgroundColor: currentColor }"
 			></div>
 		</template>
@@ -22,7 +22,7 @@
 					</div>
 					<div class="flex h-8 justify-between py-1">
 						<div
-							class="h-full w-6 rounded-sm ring-1 ring-outline-gray-1 ring-offset-1"
+							class="h-full w-6 rounded-1 ring-1 ring-outline-gray-1 ring-offset-1"
 							:style="{ backgroundColor: currentColor }"
 						></div>
 						<div class="flex flex-col justify-between px-1">

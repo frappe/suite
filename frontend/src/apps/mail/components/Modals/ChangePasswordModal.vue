@@ -1,6 +1,6 @@
 <template>
-	<Dialog v-model="show" :options="dialogOptions">
-		<template #body-content>
+	<Dialog v-model:open="show" v-bind="dialogOptions">
+		<template>
 			<div class="space-y-4">
 				<FormControl
 					v-model="currentPassword"

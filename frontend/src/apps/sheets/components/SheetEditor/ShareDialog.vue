@@ -1,6 +1,6 @@
 <template>
-  <Dialog v-model="show" :options="{ title: dialogTitle, size: 'lg' }">
-    <template #body-content>
+  <Dialog v-model:open="show" :title="dialogTitle" size="lg">
+    <template #default>
 
       <!-- Inline error banner for permission / network failures from any of
            the share endpoints. Auto-clears after 5 s. -->
@@ -132,7 +132,7 @@
           :disabled="!staged.length || inviting"
           @click="inviteStaged"
         />
-        <Button variant="outline" size="sm" icon-left="link-2" label="Copy link" @click="copyLink" />
+        <Button variant="outline" size="sm" icon-left="lucide-link-2" label="Copy link" @click="copyLink" />
       </div>
     </template>
   </Dialog>

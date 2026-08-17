@@ -1,10 +1,10 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Delete Sieve Script'),
 			message: __(`Are you sure you want to delete '{0}'? `, [script._name]),
-			icon: { name: 'alert-triangle', appearance: 'warning' },
+			icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 			actions: [
 				{ label: __('Confirm'), theme: 'red', onClick: () => deleteScript.submit() },
 			],

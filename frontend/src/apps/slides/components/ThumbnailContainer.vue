@@ -2,7 +2,7 @@
 	<div :class="getThumbnailClasses()" :style="getThumbnailStyles(slide)">
 		<SlidePreview :slide="slide" :scale="scale" />
 		<div
-			class="absolute inset-0 flex w-full justify-between rounded-sm p-2"
+			class="absolute inset-0 flex w-full justify-between rounded-1 p-2"
 			:style="getGradientOverlayStyles(slide)"
 		>
 			<div class="text-[10px] font-medium">{{ slide.idx }}</div>

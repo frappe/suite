@@ -16,7 +16,7 @@
 
 					<div class="mt-[42px] grid grid-cols-2 gap-4 md:grid-cols-4">
 						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 							@click="startInstantMeeting"
 						>
 							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
@@ -28,7 +28,7 @@
 						</button>
 
 						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 							@click="startRestrictedMeeting"
 						>
 							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
@@ -40,7 +40,7 @@
 						</button>
 
 						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 							@click="openScheduleDialog"
 						>
 							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
@@ -52,7 +52,7 @@
 						</button>
 
 						<button
-							class="group flex flex-1 flex-col items-center gap-2.5 rounded-2xl border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
+							class="group flex flex-1 flex-col items-center gap-2.5 rounded-8 border border-outline-gray-1 bg-surface-gray-1 p-1.5 transition-colors hover:bg-surface-gray-2"
 							@click="showJoinDialog = true"
 						>
 							<div class="flex h-[100px] w-full items-center justify-center rounded-[14px] border border-outline-gray-1 bg-surface-base">
@@ -70,9 +70,9 @@
 		</div>
 
 		<Dialog
-			v-model="showJoinDialog"
+			v-model:open="showJoinDialog"
 			:title="'Join with meeting code'"
-			:dismissable="true"
+			dismissible
 		>
 			<template #default>
 				<FormControl
@@ -96,7 +96,7 @@
 			</template>
 		</Dialog>
 
-		<Dialog v-model="showScheduleDialog" :title="'Schedule meet'" :dismissable="true">
+		<Dialog v-model:open="showScheduleDialog" :title="'Schedule meet'" dismissible>
 			<template #default>
 				<div class="space-y-4">
 					<FormControl v-model="scheduleTitle" label="Title" placeholder="Team meeting" />

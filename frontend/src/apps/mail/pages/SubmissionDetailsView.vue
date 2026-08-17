@@ -180,9 +180,9 @@
 			:initial-value="data?.send_at"
 			@confirm="(sendAt: string) => rescheduleMail.submit({ send_at: sendAt })"
 		/>
-		<Dialog v-model="showSendNow" :options="sendNowOptions" />
-		<Dialog v-model="showRetry" :options="retryOptions" />
-		<Dialog v-model="showCancel" :options="cancelOptions" />
+		<Dialog v-model:open="showSendNow" v-bind="sendNowOptions" />
+		<Dialog v-model:open="showRetry" v-bind="retryOptions" />
+		<Dialog v-model:open="showCancel" v-bind="cancelOptions" />
 	</div>
 </template>
 
@@ -432,7 +432,7 @@ const cancelOptions = computed(() => ({
 	message: data.value?.email_deleted
 		? __('Cancel the scheduled delivery?')
 		: __('Cancel the scheduled delivery and move the message back to Drafts?'),
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [
 		{
 			label: __('Confirm'),

@@ -1,13 +1,13 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: __('Delete {0}', [mailbox?._name]),
 			message: __(
 				`Are you sure you want to delete '{0}'? Mails in this folder will be permanently removed.`,
 				[mailbox?._name],
 			),
-			icon: { name: 'alert-triangle', appearance: 'warning' },
+			icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 			actions: [{ label: __('Confirm'), theme: 'red', onClick: deleteFolder.submit }],
 		}"
 	/>

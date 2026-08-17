@@ -1,7 +1,7 @@
 <template>
 	<Dialog
-		v-model="show"
-		:options="{
+		v-model:open="show"
+	 v-bind="{
 			title: isNew ? __('New Folder') : __('Folder Settings'),
 			size: 'xl',
 			paddingTop: '10%',
@@ -15,7 +15,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<Tabs v-model="tab" :tabs="TABS" class="[&>[role=tablist]]:px-0">
 				<template #tab-panel>
 					<!-- px-0.5: the tab panel is an `overflow-auto` scroll container, and a focus ring

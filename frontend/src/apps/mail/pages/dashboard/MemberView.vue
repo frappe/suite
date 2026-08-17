@@ -150,9 +150,9 @@
 			</DashboardCard>
 		</div>
 	</DashboardLayout>
-	<Dialog v-model="showResetPassword" :options="RESET_PASSWORD_OPTIONS" />
-	<Dialog v-model="showToggleEnabled" :options="TOGGLE_ENABLED_OPTIONS" />
-	<Dialog v-model="showDeleteMember" :options="DELETE_MEMBER_OPTIONS" />
+	<Dialog v-model:open="showResetPassword" v-bind="RESET_PASSWORD_OPTIONS" />
+	<Dialog v-model:open="showToggleEnabled" v-bind="TOGGLE_ENABLED_OPTIONS" />
+	<Dialog v-model:open="showDeleteMember" v-bind="DELETE_MEMBER_OPTIONS" />
 	<ChangeMemberPasswordModal v-model="showChangePassword" :member-id="memberId" />
 	<EditMemberModal v-if="data" v-model="showEdit" :member="data" @reload="member.reload()" />
 	<EditMemberQuotaModal v-if="data" v-model="showEditQuota" :member="data" @reload="member.reload()" />
@@ -380,7 +380,7 @@ const DELETE_MEMBER_OPTIONS = {
 	title: __('Delete Member'),
 	message: __('Are you sure you want to delete this member? This action cannot be undone.'),
 	size: 'xl',
-	icon: { name: 'alert-triangle', appearance: 'warning' },
+	icon: { name: 'lucide-alert-triangle', theme: 'amber' },
 	actions: [
 		{
 			label: __('Confirm'),

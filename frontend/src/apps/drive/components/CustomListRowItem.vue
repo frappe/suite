@@ -5,14 +5,14 @@
         <img
           v-if="!imgLoaded"
           loading="lazy"
-          class="absolute inset-0 h-[16px] w-[16px] rounded-sm"
+          class="absolute inset-0 h-[16px] w-[16px] rounded-1"
           :src="fallback"
           :draggable="false"
         />
         <img
           loading="lazy"
           decoding="async"
-          class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-sm"
+          class="absolute inset-0 h-[16px] w-[16px] object-cover rounded-1"
           :class="imgLoaded ? 'opacity-100' : 'opacity-0'"
           :src="src"
           :draggable="false"

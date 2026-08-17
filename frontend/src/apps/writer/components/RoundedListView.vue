@@ -24,13 +24,11 @@
               label: 'Grid',
               value: 'grid',
               icon: LucideGrid,
-              hideLabel: true,
             },
             {
               label: 'List',
               value: 'list',
               icon: LucideList,
-              hideLabel: true,
             },
           ]"
         />

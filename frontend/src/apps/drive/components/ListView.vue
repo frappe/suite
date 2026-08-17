@@ -73,7 +73,7 @@
           <ListCell />
           <ListCell>
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
-              <Skeleton class="h-[16px] w-[16px] rounded-sm" />
+              <Skeleton class="h-[16px] w-[16px] rounded-1" />
             </div>
             <Skeleton class="h-3.5 w-40 rounded" />
           </ListCell>

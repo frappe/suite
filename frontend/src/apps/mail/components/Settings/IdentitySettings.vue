@@ -110,8 +110,8 @@
 			</div>
 
 			<Dialog
-				v-model="showDialog"
-				:options="{
+				v-model:open="showDialog"
+			 v-bind="{
 					title: isAddReplyTo ? __('New Reply To') : __('New Bcc'),
 					actions: [
 						{
@@ -123,7 +123,7 @@
 					],
 				}"
 			>
-				<template #body-content>
+				<template>
 					<FormControl
 						v-model="email"
 						:label="__('Email')"
@@ -144,8 +144,8 @@
 	</template>
 
 	<Dialog
-		v-model="showAddIdentityDialog"
-		:options="{
+		v-model:open="showAddIdentityDialog"
+	 v-bind="{
 			title: __('New Identity'),
 			actions: [
 				{
@@ -158,7 +158,7 @@
 			],
 		}"
 	>
-		<template #body-content>
+		<template>
 			<FormControl
 				v-model="newEmail"
 				:label="__('Email')"

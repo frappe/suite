@@ -2,7 +2,7 @@
 	<AppSettingsHeader :title="__('Folders')">
 		<template #actions>
 			<Button
-				icon-left="plus"
+				icon-left="lucide-plus"
 				:label="__('New')"
 				:size="isMobile ? 'md' : 'sm'"
 				@click="editMailbox()"

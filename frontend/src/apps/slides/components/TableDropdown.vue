@@ -12,7 +12,7 @@
 						<div
 							v-for="col in maxColumns"
 							:key="col"
-							class="size-4 cursor-pointer rounded-sm border"
+							class="size-4 cursor-pointer rounded-1 border"
 							:class="
 								row <= hovered.rows && col <= hovered.columns
 									? 'border-outline-gray-3 bg-surface-gray-4'

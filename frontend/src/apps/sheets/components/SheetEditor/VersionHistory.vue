@@ -2,7 +2,7 @@
 	<aside v-if="open" class="sn-vh-panel" @click.stop>
 		<header class="sn-vh-header">
 			<div class="sn-vh-title">Version history</div>
-			<Button variant="ghost" size="sm" icon="x" @click="$emit('close')" />
+			<Button variant="ghost" size="sm" icon="lucide-x" @click="$emit('close')" />
 		</header>
 
 		<div class="sn-vh-filter">

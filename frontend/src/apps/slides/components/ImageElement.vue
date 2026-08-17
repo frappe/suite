@@ -15,11 +15,9 @@
 		>
 			<FileUploader
 				:fileTypes="allowedImageFileTypes"
-				:uploadArgs="{
-					doctype: 'Presentation',
-					docname: presentationId,
-					private: true,
-				}"
+				doctype="Presentation"
+				:docname="presentationId"
+				private
 				@success="replaceTemplateImage"
 			>
 				<template #default="{ openFileSelector }">

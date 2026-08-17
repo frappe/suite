@@ -4,7 +4,7 @@
 	     the two filled shapes flanking a message read as one family. Caveat: that lands at 3.6:1
 	     in dark mode, and this text is 11px. -->
 	<div
-		class="border-outline-gray-2 bg-surface-base w-10 shrink-0 overflow-hidden rounded border text-center"
+		class="border-outline-gray-2 bg-surface-base w-10 shrink-0 overflow-hidden rounded-4 border text-center"
 	>
 		<!-- Both rows are sized by leading rather than by padding around the text's own line box:
 		     16 + 20, a hairline of breathing room each, and the borders lands the chip at ~43px
