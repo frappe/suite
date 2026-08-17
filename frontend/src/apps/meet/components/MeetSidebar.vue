@@ -10,16 +10,15 @@ import {
 } from "frappe-ui";
 import { computed, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 
-import { getAppSwitcherItems } from "@/apps/registry";
+import { useAppSwitcher } from "@/composables/useAppSwitcher";
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 
 import LucideHome from "~icons/lucide/home";
 import LucideCalendar from "~icons/lucide/calendar";
 import LucideKeyboard from "~icons/lucide/keyboard";
-import LucideLayoutGrid from "~icons/lucide/layout-grid";
 import LucideSunMoon from "~icons/lucide/sun-moon";
 import LucideSun from "~icons/lucide/sun";
 import LucideMoon from "~icons/lucide/moon";
@@ -27,7 +26,6 @@ import LucideMonitor from "~icons/lucide/monitor";
 import LucideCheck from "~icons/lucide/check";
 
 const route = useRoute();
-const router = useRouter();
 const sessionStore = useSessionStore();
 
 const isCollapsed = useStorage("isSidebarCollapsed", false);
@@ -73,7 +71,7 @@ function selectTheme(theme: string) {
 	themeMode.value = theme.toLowerCase();
 }
 
-const apps = { get data() { return getAppSwitcherItems("meet"); } };
+const appsMenuOption = useAppSwitcher("meet");
 
 const userName = computed(
 	() => userResource.data?.full_name || userResource.data?.name || "User",
@@ -84,16 +82,7 @@ const settingsItems = computed(() => [
 		group: "Manage",
 		hideLabel: true,
 		options: [
-			{
-				icon: LucideLayoutGrid,
-				label: "Apps",
-				submenu:
-					apps.data?.map((app) => ({
-						label: app.title,
-						onClick: () =>
-							app.spa ? router.push(app.route) : window.location.assign(app.route),
-					})) || [],
-			},
+			appsMenuOption.value,
 			{
 				icon: LucideKeyboard,
 				label: "Shortcuts",

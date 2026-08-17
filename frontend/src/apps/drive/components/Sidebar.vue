@@ -1,21 +1,15 @@
 <template>
-  <Sidebar id="sidebar" v-model:collapsed="sidebarCollapsed" class="hidden md:flex" :header="{
-    title: 'Drive',
-    subtitle: currentUserFullName,
-    menuItems: settingsItems,
-    logo: FrappeDriveLogo,
-  }" :sections="sidebarItems">
-    <template #footer-items>
+  <Sidebar id="sidebar" v-model:collapsed="sidebarCollapsed" class="hidden md:flex">
+    <SidebarHeader title="Drive" :subtitle="currentUserFullName" :menu-items="settingsItems" :logo="FrappeDriveLogo" />
+    <div class="flex-1 overflow-y-auto px-2">
+      <SidebarSection v-for="(section, index) in sidebarItems" :key="section.label || index" :label="section.label" :collapsible="section.collapsible">
+        <SidebarItem v-for="item in section.items" :key="item.label" :class="draggedSpace === item.label && 'ring-1 ring-outline-gray-3 !bg-surface-gray-3'" :label="item.label" :access-key="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to" :active="item.isActive" :on-click="item.onClick" @dragover.prevent=";['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)" @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
+      </SidebarSection>
+    </div>
+    <div class="p-2">
       <StorageBar :is-expanded="!sidebarCollapsed" />
-    </template>
-    <template #sidebar-item="{ item, isCollapsed }">
-      <SidebarItem :class="draggedSpace === item.label &&
-        'ring-1 ring-outline-gray-3 !bg-surface-gray-3'
-        " :label="item.label" :accessKey="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to"
-        :isActive="item.isActive" :isCollapsed :onClick="item.onClick" @dragover.prevent="
-          ;['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)
-          " @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
-    </template>
+      <SidebarCollapseToggle />
+    </div>
   </Sidebar>
   <SettingsDialog v-model="showSettings" :suggested-tab="suggestedTab" />
   <ShortcutsDialog v-if="showShortcuts" v-model="showShortcuts" />
@@ -24,7 +18,7 @@
 import FrappeDriveLogo from '@/apps/drive/components/FrappeDriveLogo.vue'
 
 import StorageBar from './StorageBar.vue'
-import { Sidebar, SidebarItem } from 'frappe-ui'
+import { Sidebar, SidebarCollapseToggle, SidebarHeader, SidebarItem, SidebarSection } from 'frappe-ui'
 import { notifCount, apps } from '@/apps/drive/resources/permissions'
 import { rootInfo } from '@/apps/drive/resources/files'
 import { dynamicList } from '@/apps/drive/utils/files'
@@ -88,7 +82,7 @@ const settingsItems = computed(() => [
   {
     group: __('Manage'),
     hideLabel: true,
-    items: [
+    options: [
       appsMenuOption.value,
       {
         icon: LucideBook,
@@ -126,7 +120,7 @@ const settingsItems = computed(() => [
   {
     group: __('Others'),
     hideLabel: true,
-    items: [
+    options: [
       {
         icon: 'settings',
         label: __('Settings'),

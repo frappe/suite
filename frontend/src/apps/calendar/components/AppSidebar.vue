@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, inject, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, Eye, EyeOff, LogOut, Settings, User } from 'lucide-vue-next'
-import { Avatar, Sidebar } from 'frappe-ui'
+import { Eye, EyeOff, LogOut, Settings, User } from 'lucide-vue-next'
+import { Sidebar, SidebarCollapseToggle, SidebarHeader, SidebarItem, SidebarSection } from 'frappe-ui'
 import { useStorage } from '@vueuse/core'
 
 import { useSessionStore } from '@/boot/session'
@@ -48,11 +48,11 @@ const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
 const menuItems = computed(() => [
 	{
 		group: '',
-		items: [appsMenuOption.value],
+		options: [appsMenuOption.value],
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: Settings,
 				label: __('Settings'),
@@ -62,28 +62,14 @@ const menuItems = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: User,
 				label: __('Accounts'),
 				submenu: user.data.accounts.map?.((a) => ({
-					component: h(
-						'div',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-							onClick: () =>
-								router.push({
-									name: route.name,
-									params: { ...route.params, accountId: a.id },
-								}),
-						},
-						[
-							h(Avatar, { label: a._name, size: 'md' }),
-							h('span', { class: 'text-sm w-full truncate' }, a._name),
-							a.id === store.accountId &&
-								h(Check, { label: a._name, class: 'h-4 shrink-0 stroke-1.5' }),
-						],
-					),
+					label: a._name,
+					selected: a.id === store.accountId,
+					onClick: () => router.push({ name: route.name, params: { ...route.params, accountId: a.id } }),
 				})),
 				condition: () => user.data.accounts?.length > 1,
 			},
@@ -110,15 +96,14 @@ const sidebarItems = computed(() => [
 </script>
 
 <template>
-	<Sidebar
-		v-model:collapsed="isSidebarCollapsed"
-		:header="{
-			title,
-			subtitle,
-			menuItems,
-			logo: branding.data?.brand_html || CalendarLogo,
-		}"
-		:sections="sidebarItems"
-	/>
+	<Sidebar v-model:collapsed="isSidebarCollapsed">
+		<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
+		<div class="flex-1 px-2">
+			<SidebarSection v-for="section in sidebarItems" :key="section.label" :label="section.label">
+				<SidebarItem v-for="item in section.items" :key="item.label" :label="item.label" :icon="item.icon" :on-click="item.onClick" />
+			</SidebarSection>
+		</div>
+		<div class="p-2"><SidebarCollapseToggle /></div>
+	</Sidebar>
 	<SettingsModal v-model="showSettings" />
 </template>

@@ -33,13 +33,13 @@
 						v-for="section in sidebarItems"
 						:key="section.key ?? section.label"
 						:label="section.label"
-						:items="section.items"
 						:collapsible="section.collapsible"
 						:collapsed="isSectionCollapsed(section)"
 						@update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
 					>
-						<template #sidebar-item="{ item }">
-							<SidebarItem
+						<SidebarItem
+							v-for="item in section.items"
+							:key="item.label"
 								:label="item.label"
 								:icon="item.icon"
 								:to="item.to"
@@ -72,8 +72,7 @@
 										</span>
 									</div>
 								</template>
-							</SidebarItem>
-						</template>
+						</SidebarItem>
 					</SidebarSection>
 				</div>
 
