@@ -13,7 +13,7 @@ VIEWER = "drive-list-viewer@example.com"
 
 class TestDriveListPagination(IntegrationTestCase):
     """
-    Cover for F5: the dedupe and the permission filter in `get_query_data` run
+    The dedupe and the permission filter in `get_query_data` run
     *after* LIMIT/OFFSET, so a raw SQL window can yield fewer visible rows than
     `limit` while rows still remain. The client used to infer end-of-list from the
     row count, which stranded the rest of the folder behind a dead scroll.

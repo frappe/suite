@@ -170,13 +170,13 @@ describe('GenericPage grouped rows', () => {
 })
 
 /**
- * F5: the server dedupes and permission-filters *after* LIMIT/OFFSET, so a full
+ * The server dedupes and permission-filters *after* LIMIT/OFFSET, so a full
  * SQL window can answer with fewer rows than PAGE_SIZE while rows still remain.
  * End-of-list therefore has to come from the server's `has_next`, never from the
  * row count.
  *
- * N1: the shell registers its scroll container a tick *after* this component
- * sets up, so the binding has to survive the container arriving late.
+ * Separately, the shell registers its scroll container a tick *after* this
+ * component sets up, so the binding has to survive the container arriving late.
  */
 function makeHost({ scrollHeight = 3000, clientHeight = 800, scrollTop = 0 } = {}) {
   const el = document.createElement('div')
@@ -278,7 +278,7 @@ describe('GenericPage pagination', () => {
   })
 
   it('binds to a scroll container that only registers after mount', async () => {
-    // N1 regression. `useScrollContainer` is a module-level registry the app
+    // Regression. `useScrollContainer` is a module-level registry the app
     // shell fills in, and on a cold mount it does so a tick after this component
     // sets up. Binding once at setup caught `null` and never re-armed, so the
     // list loaded page 1 and then never paginated however far you scrolled.
