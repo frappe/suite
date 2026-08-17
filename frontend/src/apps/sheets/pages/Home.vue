@@ -30,7 +30,7 @@
         <div class="home-viewtoggle" role="tablist" aria-label="View mode">
           <Button
             :variant="viewMode === 'list' ? 'subtle' : 'ghost'"
-            size="sm" icon="list"
+            size="sm" icon="lucide-list"
             tooltip="List view"
             role="tab"
             :aria-selected="viewMode === 'list'"
@@ -38,7 +38,7 @@
           />
           <Button
             :variant="viewMode === 'grid' ? 'subtle' : 'ghost'"
-            size="sm" icon="grid"
+            size="sm" icon="lucide-grid-2x2"
             tooltip="Grid view"
             role="tab"
             :aria-selected="viewMode === 'grid'"
@@ -245,16 +245,12 @@
           />
         </template>
       </ListView>
-      <!-- The empty #left slot suppresses ListFooter's page-size TabButtons —
-           we only want its Load More button + "X of Y" count. -->
-      <ListFooter
-        v-if="sheets.length"
-        class="home-listfooter"
-        :options="{ rowCount: sheets.length, totalCount: total }"
-        @loadMore="loadMore"
-      >
-        <template #left><span /></template>
-      </ListFooter>
+      <div v-if="sheets.length" class="home-listfooter flex items-center justify-end gap-3">
+        <Button v-if="sheets.length < total" label="Load More" @click="loadMore" />
+        <div class="flex items-center gap-1 text-base text-ink-gray-5">
+          <span>{{ sheets.length }}</span><span>of</span><span>{{ total }}</span>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -301,7 +297,7 @@
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
   Avatar, Badge, Button, Dialog, Spinner, FormControl, Dropdown, TabButtons, debounce } from 'frappe-ui'
-import { Icon as FeatherIcon, ListView, ListRowItem, ListFooter } from 'frappe-ui/experimental'
+import { Icon as FeatherIcon, ListView, ListRowItem } from 'frappe-ui/experimental'
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'

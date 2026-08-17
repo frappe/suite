@@ -13,14 +13,14 @@
     </div>
     <div v-if="!selectionMode && $route.name === 'drive-Home'"
       class="bg-surface-gray-2 rounded-4 space-x-0.5 h-7 flex items-center sm:mr-2 py-1">
-      <TabButtons v-model="shareView" :options="[
+      <TabButtons v-model="shareViewTab" :options="[
         {
           label: __('Yours'),
-          value: false,
+          value: 'personal',
         },
         {
           label: __('With you'),
-          value: true,
+          value: 'shared',
         },
       ]" />
     </div>
@@ -107,6 +107,11 @@ import { onKeyDown } from '@vueuse/core'
 import SortControl from '@/components/SortControl.vue'
 
 import LucideX from '~icons/lucide/x'
+
+const shareViewTab = computed({
+  get: () => (shareView.value ? 'shared' : 'personal'),
+  set: (value) => (shareView.value = value === 'shared'),
+})
 
 const sortOrder = defineModel('sortOrder')
 const search = defineModel('search')
