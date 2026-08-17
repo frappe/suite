@@ -122,12 +122,12 @@ const settingsItems = computed(() => [
     hideLabel: true,
     options: [
       {
-        icon: 'settings',
+        icon: 'lucide-settings',
         label: __('Settings'),
         onClick: () => (showSettings.value = true),
       },
       {
-        icon: 'log-out',
+        icon: 'lucide-log-out',
         label: __('Log out'),
         onClick: logout,
       },
