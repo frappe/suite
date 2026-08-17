@@ -162,9 +162,8 @@
   </template>
 </template>
 <script setup>
-import { ListCell } from 'frappe-ui/list'
+import { ListCell, ListRow } from 'frappe-ui/list'
 import { Avatar, Button, Checkbox, Skeleton, Tooltip } from 'frappe-ui'
-import { ListRow } from 'frappe-ui/experimental'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSessionStore } from '@/boot/session'

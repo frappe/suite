@@ -9,7 +9,7 @@
       :id="file.name"
       :key="file.name"
       :data-testid="`drive-entity-${file.name}`"
-      class="grid-item rounded-md group select-none entity cursor-pointer relative h-40 sm:h-[172px] border bg-surface-base [-webkit-touch-callout:none]"
+      class="grid-item rounded-6 group select-none entity cursor-pointer relative h-40 sm:h-[172px] border bg-surface-base [-webkit-touch-callout:none]"
       :class="[
         selections.has(file.name) || selectedRow?.name === file.name
           ? 'border-outline-gray-3 bg-surface-gray-2 shadow-sm'

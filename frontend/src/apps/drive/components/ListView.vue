@@ -92,9 +92,8 @@
     :close="() => (rowEvent = false)" :action-items="dropdownActionItems(selectedRow)" :event="rowEvent" />
 </template>
 <script setup>
-import { ListHeaderCell, ListHeaderCellSort, ListGroup, ListCell } from 'frappe-ui/list'
+import { List, ListCell, ListGroup, ListHeader, ListHeaderCell, ListHeaderCellSort, ListRow } from 'frappe-ui/list'
 import { Checkbox, Skeleton, vOnOutsideClick } from 'frappe-ui'
-import { List, ListHeader, ListRow } from 'frappe-ui/experimental'
 import { activeEntity, setActiveEntity } from '@/apps/drive/data/selection'
 import { computed, ref, watch } from 'vue'
 import ContextMenu from '@/apps/drive/components/ContextMenu.vue'
