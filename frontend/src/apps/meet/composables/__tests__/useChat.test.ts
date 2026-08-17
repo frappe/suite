@@ -172,7 +172,11 @@ describe("useChat pinning", () => {
 
 		await chat.pinMessage("msg-42");
 
-		expect(sfuClient.sendChatPin).toHaveBeenCalledWith("msg-42", "pin");
+		expect(sfuClient.sendChatPin).toHaveBeenCalledWith(
+			"msg-42",
+			"pin",
+			undefined,
+		);
 	});
 
 	it("updates the pinned message on chat:pin_updated", async () => {

@@ -625,6 +625,7 @@ const chat = useChat({
 	chatStore,
 	currentUser,
 	sfuClient: sfuConnection.sfuClient,
+	canPin: () => isCurrentUserHost.value || isCurrentUserCohost.value,
 });
 
 function unpinChatMessage() {

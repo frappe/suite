@@ -110,8 +110,9 @@ export function useChat(deps: {
 	chatStore: ChatStore;
 	currentUser: CurrentUser;
 	sfuClient: SFUClient;
+	canPin?: () => boolean;
 }): ChatAPI {
-	const { chatStore, currentUser, sfuClient } = deps;
+	const { chatStore, currentUser, sfuClient, canPin = () => false } = deps;
 
 	async function getChatKey(): Promise<CryptoKey | null> {
 		return E2EEMeeting.instance.getE2EEChatKey();
@@ -203,6 +204,9 @@ export function useChat(deps: {
 			if (pendingPinnedMessage) {
 				void applyPinnedMessage({ pinned: pendingPinnedMessage });
 			}
+			if (canPin() && chatStore.pinnedMessage?.messageId) {
+				void pinMessage(chatStore.pinnedMessage.messageId);
+			}
 		});
 		sfuClient.on("chat:restriction_updated", (value: unknown) => {
 			if (isUnknownRecord(value) && typeof value.enabled === "boolean") {
@@ -274,7 +278,17 @@ export function useChat(deps: {
 	) => {
 		try {
 			if (sfuClient.isConnected()) {
-				await sfuClient.sendChatPin(messageId, action);
+				let encryptedMessage: string | undefined;
+				if (action === "pin" && shouldEncryptChat()) {
+					const message = chatStore.chatMessages.find(
+						(item) => item.messageId === messageId,
+					);
+					const key = await getChatKey();
+					if (message && key && !isEncryptedChatMessage(message.message)) {
+						encryptedMessage = await encryptChatMessage(key, message.message);
+					}
+				}
+				await sfuClient.sendChatPin(messageId, action, encryptedMessage);
 			}
 		} catch (error) {
 			console.error("Failed to pin chat message:", error);

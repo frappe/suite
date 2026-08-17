@@ -1364,6 +1364,18 @@ describe('SocketHandlerManager characterization', () => {
 		});
 
 		participant.emitCalls.length = 0;
+		host.fire(
+			'chat:pin',
+			{ messageId, action: 'pin', encryptedMessage: 'e2ee:refreshed' },
+			pinCallback,
+		);
+		expect(participant.emitCalls.at(-1)?.data).toEqual({
+			pinned: expect.objectContaining({
+				messageId,
+				message: 'e2ee:refreshed',
+			}),
+		});
+		participant.emitCalls.length = 0;
 		const secondSendCallback = vi.fn();
 		host.fire('chat:send', { message: 'pin me too' }, secondSendCallback);
 		const secondMessageId = secondSendCallback.mock.calls[0]?.[0]

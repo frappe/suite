@@ -4,10 +4,13 @@ import type { ChatMessage, PinnedChatMessage } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 
-function toPinnedChatMessage(message: ChatMessage): PinnedChatMessage {
+function toPinnedChatMessage(
+	message: ChatMessage,
+	content = message.message,
+): PinnedChatMessage {
 	return {
 		messageId: message.messageId,
-		message: message.message,
+		message: content,
 		fromUser: message.fromUser,
 		fromName: message.fromName,
 		timestamp: message.timestamp,
@@ -137,7 +140,10 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					callback?.({ success: true });
 					return;
 				}
-				if (existing?.messageId === messageId) {
+				if (
+					existing?.messageId === messageId &&
+					typeof data.encryptedMessage !== 'string'
+				) {
 					callback?.({ success: true });
 					return;
 				}
@@ -151,7 +157,11 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				const pinned = toPinnedChatMessage(message);
+				const encryptedMessage =
+					typeof data.encryptedMessage === 'string'
+						? data.encryptedMessage
+						: message.message;
+				const pinned = toPinnedChatMessage(message, encryptedMessage);
 				deps.registry.setPinnedChatMessage(roomId, pinned);
 				deps.registry.emitToFullAccessParticipants(roomId, 'chat:pin_updated', {
 					pinned,

@@ -1014,14 +1014,17 @@ export class SFUClient {
 	async sendChatPin(
 		messageId: string,
 		action: "pin" | "unpin" = "pin",
+		encryptedMessage?: string,
 	): Promise<unknown> {
 		if (!this.connected) {
 			throw new SFURequestError("DISCONNECTED", "Not connected to SFU");
 		}
-		return this.sendRequest("chat:pin", {
+		const payload: Record<string, string> = {
 			messageId: String(messageId),
 			action,
-		});
+		};
+		if (encryptedMessage) payload.encryptedMessage = encryptedMessage;
+		return this.sendRequest("chat:pin", payload);
 	}
 
 	// ==================== REACTION OPERATIONS ====================
