@@ -51,12 +51,17 @@ import {
   isManaged,
   isAttachmentRef,
 } from '@/apps/drive/utils/files'
-import { toggleFav, clearRecent, PAGE_SIZE } from '@/apps/drive/resources/files'
+import {
+  toggleFav,
+  clearRecent,
+  PAGE_SIZE,
+  formatRows,
+} from '@/apps/drive/resources/files'
 import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { onKeyDown, useEventListener, useInfiniteScroll } from '@vueuse/core'
+import { onKeyDown, useEventListener } from '@vueuse/core'
 import { request, useScrollContainer } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
@@ -267,13 +272,20 @@ const refreshData = () => {
   if (res.paginated) {
     params.start = 0
     params.limit = PAGE_SIZE
+    params.paginated = 1
   }
   res.fetch(
     { ...res.params, ...params },
     res.paginated
       ? {
+          // onSuccess receives the untransformed payload, so this reads the
+          // server's own signal rather than counting rows. A page can be short
+          // while more rows remain: the server dedupes and permission-filters
+          // *after* LIMIT/OFFSET, so any dropped row would otherwise look like
+          // the end of the list and freeze infinite scroll for good.
           onSuccess: (data) => {
-            hasNextPage.value = (data?.length || 0) >= PAGE_SIZE
+            hasNextPage.value = !!data?.has_next
+            nextTick(fillViewport)
           },
         }
       : {}
@@ -296,14 +308,18 @@ async function loadMore() {
         ...queryParams(),
         start: next,
         limit: PAGE_SIZE,
+        paginated: 1,
       },
       credentials: 'include',
     })
     // request() is a raw fetch that skips the resource's transform, so the page
-    // rows arrive unformatted — run prettyData before appending.
-    const page = prettyData(Array.isArray(resp) ? resp : resp?.message ?? [])
+    // rows arrive unformatted — run them through the same formatter the resource
+    // uses, or this page would keep the dotfiles page 1 hides.
+    const payload = resp?.message ?? resp
+    const page = formatRows(payload?.rows ?? [])
     pageStart.value = next
-    hasNextPage.value = page.length >= PAGE_SIZE
+    // The server's signal, not the row count — see the note in refreshData.
+    hasNextPage.value = !!payload?.has_next
     if (page.length) res.setData([...(res.data || []), ...page])
   } catch {
     hasNextPage.value = false
@@ -312,14 +328,49 @@ async function loadMore() {
   }
 }
 
-useInfiniteScroll(scrollHost, () => loadMore(), {
-  distance: 200,
-  canLoadMore: () =>
-    !!props.getEntities?.paginated &&
-    hasNextPage.value &&
-    !loadingMore.value &&
-    !props.getEntities.loading,
-})
+// Infinite scroll is driven off the shell's scroll container directly rather
+// than through `useInfiniteScroll`. That composable resolves its target once, at
+// setup — but `useScrollContainer` is a module-level registry the *shell* fills
+// in, and on a cold mount the shell registers a tick after this component sets
+// up. So it bound to `null`, its internal `arrivedState` never updated again,
+// and the list loaded page 1 and then never paginated no matter how far you
+// scrolled. It only appeared to work on a revisit, where the cached rows let the
+// container register before setup ran. Binding on the ref's transitions instead
+// survives both orders, and the layout swap the registry exists for.
+const NEAR_BOTTOM_PX = 200
+
+const onHostScroll = () => {
+  const el = scrollHost.value
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) return
+  loadMore()
+}
+
+// A page can also arrive too short to scroll — 50 rows in a tall window, or a
+// page thinned by the server's post-LIMIT permission filter. No scroll event can
+// ever follow, so top up until the container overflows or the list runs out.
+const fillViewport = async () => {
+  for (let i = 0; i < 20; i++) {
+    const el = scrollHost.value
+    if (!el || !hasNextPage.value || loadingMore.value) return
+    if (el.scrollHeight > el.clientHeight + NEAR_BOTTOM_PX) return
+    const before = pageStart.value
+    await loadMore()
+    if (pageStart.value === before) return
+  }
+}
+
+watch(
+  scrollHost,
+  (el, prev) => {
+    prev?.removeEventListener('scroll', onHostScroll)
+    el?.addEventListener('scroll', onHostScroll, { passive: true })
+  },
+  { immediate: true }
+)
+onBeforeUnmount(() =>
+  scrollHost.value?.removeEventListener('scroll', onHostScroll)
+)
 
 watch(
   [verifyAccess, () => props.getEntities],

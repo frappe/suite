@@ -407,13 +407,21 @@ function getCacheKey(cacheKey) {
   }
   return JSON.stringify(cacheKey)
 }
+/**
+ * Rows out of whatever a list resource was handed. The paginated list endpoints
+ * answer with `{rows, has_next}`; everything else answers with a bare list.
+ * Kept here rather than in resources/files.js so `setCache` can use it without
+ * importing back from a module that already imports this one.
+ */
+export const unwrapRows = (data) => (Array.isArray(data) ? data : (data?.rows ?? []))
+
 export function setCache(t, cache) {
   t.setData = async (data) => {
-    if (typeof data === 'function') {
-      t.data = data(t.data)
-    } else {
-      t.data = data
-    }
+    // This replaces frappe-ui's own setData, which is what the offline restore
+    // calls — with the *raw* persisted response, envelope and all. Normalise, or
+    // `resource.data` comes back as an object and every consumer that treats it
+    // as an array breaks on the second visit to a folder.
+    t.data = unwrapRows(typeof data === 'function' ? data(t.data) : data)
     await set(getCacheKey(cache), JSON.stringify(t.data))
   }
 }

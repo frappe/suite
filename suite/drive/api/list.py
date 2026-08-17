@@ -224,6 +224,7 @@ def files(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns active files in a folder. Pass `start`/`limit` to page through large
@@ -254,6 +255,7 @@ def files(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -266,6 +268,7 @@ def shared(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns shared files based on shared_type parameter.
@@ -282,6 +285,7 @@ def shared(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -293,6 +297,7 @@ def favourites(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all files marked as favourite by the current user.
@@ -307,6 +312,7 @@ def favourites(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -318,6 +324,7 @@ def recents(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all files marked recently by the current user.
@@ -332,6 +339,7 @@ def recents(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -343,6 +351,7 @@ def trash(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all deleted files (trash) for the current user.
@@ -362,6 +371,7 @@ def trash(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -387,9 +397,15 @@ def get_query_data(
     ascending=True,
     start=0,
     limit=None,
+    paginated=False,
 ):
     """
     Runs all the necessary commands to obtain files in the structure expected by Drive frontend.
+
+    With `paginated`, returns `{"rows": [...], "has_next": bool}` instead of a bare list.
+    Callers that page MUST use it: the dedupe and permission filter below run *after*
+    LIMIT/OFFSET, so a full SQL window can return fewer rows than `limit` while more
+    still remain — making the row count an unsound end-of-list signal.
     """
     if order_by not in ALLOWED_SORT_FIELDS:
         order_by = "modified"
@@ -440,6 +456,11 @@ def get_query_data(
 
     res = query.run(as_dict=True)
 
+    # Whether the SQL window came back full. This is the only sound "more rows exist"
+    # signal, so it has to be measured here — before the dedupe and the permission
+    # filter below, either of which can shrink `res` while rows still remain.
+    window_was_full = bool(limit) and len(res) == int(limit)
+
     default = get_default_access(entity_name) if entity_name else 0
 
     # Deduplicate results
@@ -480,7 +501,10 @@ def get_query_data(
         hide_storage_key(r)
         r |= get_user_access(name)
 
-    return [r for r in res if r["read"]]
+    rows = [r for r in res if r["read"]]
+    if paginated:
+        return {"rows": rows, "has_next": window_was_full}
+    return rows
 
 
 @frappe.whitelist()
