@@ -375,6 +375,15 @@ def trash(
     )
 
 
+# Ceiling on the raw windows one paginated call will walk looking for visible
+# rows. Without it a folder whose rows are nearly all denied would scan the whole
+# table, running the per-row access check on every one. On hitting the cap we
+# report has_next=True, which is the safe direction: it costs at most one extra
+# request rather than hiding rows.
+MAX_SCAN_WINDOWS = 20
+# Window used when a paginated caller passes no explicit limit.
+MAX_PAGE_SIZE = 100
+
 ALLOWED_SORT_FIELDS = {
     "name",
     "file_name",
@@ -402,10 +411,12 @@ def get_query_data(
     """
     Runs all the necessary commands to obtain files in the structure expected by Drive frontend.
 
-    With `paginated`, returns `{"rows": [...], "has_next": bool}` instead of a bare list.
-    Callers that page MUST use it: the dedupe and permission filter below run *after*
-    LIMIT/OFFSET, so a full SQL window can return fewer rows than `limit` while more
-    still remain — making the row count an unsound end-of-list signal.
+    With `paginated`, returns `{"rows": [...], "has_next": bool, "next_start": int}`
+    instead of a bare list. Callers that page MUST use it: the dedupe and permission
+    filter run *after* LIMIT/OFFSET, so a raw SQL window can yield fewer visible rows
+    than `limit` while more still remain, and the row count is an unsound end-of-list
+    signal. `next_start` is the raw offset to resume from — it is not
+    `start + limit`, because filling a page can consume several windows.
     """
     if order_by not in ALLOWED_SORT_FIELDS:
         order_by = "modified"
@@ -450,27 +461,53 @@ def get_query_data(
     # Apply file kind filter
     query = _apply_file_kinds_filter(query, file_kinds)
 
-    # Page through large result sets (aggregation below is scoped to the page).
-    if limit:
-        query = query.limit(int(limit)).offset(int(start or 0))
+    if not paginated:
+        if limit:
+            query = query.limit(int(limit)).offset(int(start or 0))
+        return _visible_rows(query.run(as_dict=True), entity_name, shared_type, set())
 
-    res = query.run(as_dict=True)
+    # Paginated: walk raw SQL windows until we have a full page of rows the caller
+    # can actually see, or the query is exhausted. `has_next` must never be derived
+    # from the raw row count — the permission filter runs per row *after* the query,
+    # so a window full of denied rows would otherwise report "more exist" and turn
+    # an empty page into proof that something is there. See test_list.py.
+    window = int(limit) if limit else MAX_PAGE_SIZE
+    cursor = int(start or 0)
+    seen: set[str] = set()
+    rows: list = []
+    exhausted = False
 
-    # Whether the SQL window came back full. This is the only sound "more rows exist"
-    # signal, so it has to be measured here — before the dedupe and the permission
-    # filter below, either of which can shrink `res` while rows still remain.
-    window_was_full = bool(limit) and len(res) == int(limit)
+    for _ in range(MAX_SCAN_WINDOWS):
+        # Only ask for what the page still needs, so a page never overshoots
+        # `limit` and `next_start` stays exact.
+        need = window - len(rows)
+        batch = query.limit(need).offset(cursor).run(as_dict=True)
+        cursor += len(batch)
+        if len(batch) < need:
+            exhausted = True
+        rows.extend(_visible_rows(batch, entity_name, shared_type, seen))
+        if exhausted or len(rows) >= window:
+            break
 
+    return {"rows": rows, "has_next": not exhausted, "next_start": cursor}
+
+
+def _visible_rows(res, entity_name, shared_type, seen):
+    """
+    Enrich a batch of raw rows and drop the ones the caller cannot read.
+
+    `seen` carries dedupe state across batches, so a file reachable by two share
+    paths is dropped even when the duplicates straddle a window boundary.
+    """
     default = get_default_access(entity_name) if entity_name else 0
 
     # Deduplicate results
     if shared_type:
-        added = set()
         filtered_list = []
         for r in res:
-            if r["name"] not in added:
+            if r["name"] not in seen:
                 filtered_list.append(r)
-            added.add(r["name"])
+            seen.add(r["name"])
         res = filtered_list
 
     # Get aggregated data, scoped to the files we're returning
@@ -501,10 +538,7 @@ def get_query_data(
         hide_storage_key(r)
         r |= get_user_access(name)
 
-    rows = [r for r in res if r["read"]]
-    if paginated:
-        return {"rows": rows, "has_next": window_was_full}
-    return rows
+    return [r for r in res if r["read"]]
 
 
 @frappe.whitelist()

@@ -253,6 +253,12 @@ watchEffect(() => {
 const pageStart = ref(0)
 const hasNextPage = ref(false)
 const loadingMore = ref(false)
+// Bumped by every refresh (search, sort, the refresh event). A page request in
+// flight when the query changes belongs to the old query: its rows would be
+// appended onto the new result set and its cursor would overwrite the reset
+// pagination state, mixing two queries together and skipping a page of the
+// current one. Responses that come back against a stale epoch are dropped.
+let queryEpoch = 0
 
 const queryParams = () => {
   const params = {}
@@ -267,8 +273,13 @@ const queryParams = () => {
 const refreshData = () => {
   const res = props.getEntities
   const params = queryParams()
+  const epoch = ++queryEpoch
   pageStart.value = 0
   hasNextPage.value = false
+  // The new epoch owns the in-flight flag: a stale loadMore deliberately leaves
+  // it alone on the way out, so it has to be cleared here or the first stale
+  // response would wedge pagination shut.
+  loadingMore.value = false
   if (res.paginated) {
     params.start = 0
     params.limit = PAGE_SIZE
@@ -284,7 +295,9 @@ const refreshData = () => {
           // *after* LIMIT/OFFSET, so any dropped row would otherwise look like
           // the end of the list and freeze infinite scroll for good.
           onSuccess: (data) => {
+            if (epoch !== queryEpoch) return
             hasNextPage.value = !!data?.has_next
+            pageStart.value = data?.next_start ?? PAGE_SIZE
             nextTick(fillViewport)
           },
         }
@@ -297,7 +310,10 @@ async function loadMore() {
   if (!res?.paginated || res.loading || loadingMore.value || !hasNextPage.value)
     return
   loadingMore.value = true
-  const next = pageStart.value + PAGE_SIZE
+  const epoch = queryEpoch
+  // Resume from the offset the server stopped at, not start + PAGE_SIZE: filling
+  // a page can consume several raw windows when rows are filtered out.
+  const next = pageStart.value
   try {
     const path = res.url.startsWith('/') ? res.url : `/api/method/${res.url}`
     const resp = await request({
@@ -315,16 +331,19 @@ async function loadMore() {
     // request() is a raw fetch that skips the resource's transform, so the page
     // rows arrive unformatted — run them through the same formatter the resource
     // uses, or this page would keep the dotfiles page 1 hides.
+    // The query moved on while this was in flight — these rows belong to the
+    // previous search/sort. Appending them would mix two result sets.
+    if (epoch !== queryEpoch) return
     const payload = resp?.message ?? resp
     const page = formatRows(payload?.rows ?? [])
-    pageStart.value = next
+    pageStart.value = payload?.next_start ?? next + PAGE_SIZE
     // The server's signal, not the row count — see the note in refreshData.
     hasNextPage.value = !!payload?.has_next
     if (page.length) res.setData([...(res.data || []), ...page])
   } catch {
-    hasNextPage.value = false
+    if (epoch === queryEpoch) hasNextPage.value = false
   } finally {
-    loadingMore.value = false
+    if (epoch === queryEpoch) loadingMore.value = false
   }
 }
 
@@ -350,8 +369,10 @@ const onHostScroll = () => {
 // page thinned by the server's post-LIMIT permission filter. No scroll event can
 // ever follow, so top up until the container overflows or the list runs out.
 const fillViewport = async () => {
+  const epoch = queryEpoch
   for (let i = 0; i < 20; i++) {
     const el = scrollHost.value
+    if (epoch !== queryEpoch) return
     if (!el || !hasNextPage.value || loadingMore.value) return
     if (el.scrollHeight > el.clientHeight + NEAR_BOTTOM_PX) return
     const before = pageStart.value

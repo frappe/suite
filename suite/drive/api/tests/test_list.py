@@ -13,12 +13,14 @@ VIEWER = "drive-list-viewer@example.com"
 
 class TestDriveListPagination(IntegrationTestCase):
     """
-    Regression cover for F5: the dedupe and the permission filter in `get_query_data`
-    run *after* LIMIT/OFFSET, so a full SQL window can come back with fewer rows than
-    `limit` while rows still remain. The client used to infer end-of-list from the row
-    count, which meant one filtered row permanently stopped infinite scroll and made
-    the rest of the folder unreachable. `has_next` has to reflect the SQL window, not
-    the row count.
+    Cover for F5: the dedupe and the permission filter in `get_query_data` run
+    *after* LIMIT/OFFSET, so a raw SQL window can yield fewer visible rows than
+    `limit` while rows still remain. The client used to infer end-of-list from the
+    row count, which stranded the rest of the folder behind a dead scroll.
+
+    The paginated path therefore walks raw windows until it has a full page of
+    *visible* rows, and reports `has_next` from that — never from the raw count,
+    which would otherwise turn an empty page into proof that hidden rows exist.
     """
 
     @classmethod
@@ -34,19 +36,20 @@ class TestDriveListPagination(IntegrationTestCase):
         with self.set_user(OWNER):
             manager = FileManager()
             self.folder = create_drive_file(
-                frappe.generate_hash(8),
+                "list-pagination",
                 self.home,
                 "Folder",
                 lambda file: manager.create_folder(file),
             )
-            self.files = [self._make_file() for _ in range(3)]
+            # Deterministic names so a failing run names the same rows every time.
+            self.files = [self._make_file(i) for i in range(10)]
 
-    def _make_file(self):
+    def _make_file(self, index):
         return create_drive_file(
-            f"{frappe.generate_hash(8)}.txt",
+            f"page-{index:02d}.txt",
             self.folder.name,
             "Text",
-            f"{self.folder.file_url}{frappe.generate_hash(8)}.txt",
+            f"{self.folder.file_url}page-{index:02d}.txt",
             "text/plain",
             12,
         )
@@ -54,12 +57,17 @@ class TestDriveListPagination(IntegrationTestCase):
     def _list(self, **kwargs):
         return files(entity_name=self.folder.name, paginated=True, **kwargs)
 
+    def _share_folder_denying(self, denied):
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=VIEWER, read=True)
+            for entity in denied:
+                update_access(entity.name, "share", cmd="share", user=VIEWER, read=True, deny=True)
+
     def test_paginated_returns_envelope(self):
         with self.set_user(OWNER):
             page = self._list(limit=2)
 
-        self.assertIsInstance(page, dict)
-        self.assertEqual(set(page), {"rows", "has_next"})
+        self.assertEqual(set(page), {"rows", "has_next", "next_start"})
 
     def test_bare_list_without_paginated(self):
         """The opt-in must not change the shape for the callers that never page."""
@@ -68,48 +76,67 @@ class TestDriveListPagination(IntegrationTestCase):
 
         self.assertIsInstance(result, list)
 
-    def test_full_window_reports_more(self):
+    def test_full_page_reports_more(self):
         with self.set_user(OWNER):
-            page = self._list(limit=2)
+            page = self._list(limit=4)
 
-        self.assertEqual(len(page["rows"]), 2)
+        self.assertEqual(len(page["rows"]), 4)
         self.assertTrue(page["has_next"])
 
-    def test_short_window_reports_end(self):
+    def test_exhausted_query_reports_end(self):
         with self.set_user(OWNER):
-            page = self._list(limit=10)
+            page = self._list(limit=50)
 
-        self.assertEqual(len(page["rows"]), 3)
+        self.assertEqual(len(page["rows"]), 10)
         self.assertFalse(page["has_next"])
 
-    def test_filtered_row_does_not_end_the_list(self):
+    def test_denied_rows_never_leak_through_has_next(self):
         """
-        The actual F5 regression. VIEWER can read the folder but is denied one file,
-        so a full SQL window of 3 yields 2 rows. Counting rows says "end of list" and
-        strands the remaining files; `has_next` must still be True.
+        The security case. VIEWER can read the folder but every file in it is
+        denied, so the page is legitimately empty. `has_next` must be False:
+        deriving it from the raw row count would report True and turn the empty
+        page into proof that files are there — an existence oracle over content
+        the caller is explicitly denied.
         """
-        with self.set_user(OWNER):
-            update_access(self.folder.name, "share", cmd="share", user=VIEWER, read=True)
-            update_access(self.files[0].name, "share", cmd="share", user=VIEWER, read=True, deny=True)
+        self._share_folder_denying(self.files)
 
         with self.set_user(VIEWER):
-            page = self._list(limit=3)
+            page = self._list(limit=1)
 
-        self.assertLess(len(page["rows"]), 3, "expected the deny row to shrink the window")
-        self.assertTrue(page["has_next"], "a shrunken full window still has more rows")
+        self.assertEqual(page["rows"], [])
+        self.assertFalse(
+            page["has_next"], "an empty page must not advertise hidden rows"
+        )
 
-    def test_pages_cover_every_visible_row(self):
-        """Walking the pages the way the client does must reach all three files."""
+    def test_page_fills_past_denied_rows(self):
+        """
+        A window thinned by denies must still deliver a full page of visible rows
+        rather than a short one, or the client is back to guessing.
+        """
+        self._share_folder_denying(self.files[:3])
+
+        with self.set_user(VIEWER):
+            page = self._list(limit=5)
+
+        self.assertEqual(len(page["rows"]), 5)
+        self.assertTrue(page["has_next"])
+        self.assertGreater(page["next_start"], 5, "should have scanned past the denied rows")
+
+    def test_pages_cover_every_visible_row_exactly_once(self):
+        """Walking pages the way the client does must reach all 7 visible files."""
+        self._share_folder_denying(self.files[:3])
+        visible = {f.name for f in self.files[3:]}
+
         seen, start = [], 0
-        with self.set_user(OWNER):
+        with self.set_user(VIEWER):
             while True:
                 page = self._list(start=start, limit=2)
                 seen.extend(r["name"] for r in page["rows"])
                 if not page["has_next"]:
                     break
-                start += 2
+                start = page["next_start"]
 
-        self.assertCountEqual(seen, [f.name for f in self.files])
+        self.assertCountEqual(seen, visible)
 
     def tearDown(self):
         frappe.flags.mute_drive_activity_log = False

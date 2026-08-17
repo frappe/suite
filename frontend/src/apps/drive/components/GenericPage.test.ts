@@ -96,6 +96,7 @@ vi.mock('@/apps/drive/resources/permissions', () => ({
   settings: { fetched: true, data: {}, fetch: vi.fn() },
 }))
 
+import emitter from '@/apps/drive/emitter'
 import GenericPage from './GenericPage.vue'
 
 const entities = [
@@ -185,7 +186,11 @@ function makeHost({ scrollHeight = 3000, clientHeight = 800, scrollTop = 0 } = {
   return el
 }
 
-function mountPaginated(firstPage: { rows: unknown[]; has_next: boolean }) {
+function mountPaginated(firstPage: {
+  rows: unknown[]
+  has_next: boolean
+  next_start?: number
+}) {
   const getEntities = {
     data: firstPage.rows,
     error: null,
@@ -224,7 +229,11 @@ describe('GenericPage pagination', () => {
     host.el = ref(null)
     frappeUI.request.mockReset()
     frappeUI.request.mockResolvedValue({
-      message: { rows: [{ name: 'c', file_name: 'C' }], has_next: false },
+      message: {
+        rows: [{ name: 'c', file_name: 'C' }],
+        has_next: false,
+        next_start: 90,
+      },
     })
     window.__ = (message: string) => message
   })
@@ -317,6 +326,35 @@ describe('GenericPage pagination', () => {
     await scrollTo(el, 2300)
 
     expect(frappeUI.request).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('discards a page that lands after the query moved on', async () => {
+    // Greptile P1: search/sort/refresh resets pagination while a loadMore is
+    // still awaiting. Appending the stale rows mixes two result sets and the
+    // stale cursor overwrites the reset, skipping a page of the new query.
+    const el = makeHost()
+    host.el = ref(el)
+    const { app, getEntities } = mountPaginated({
+      rows: [{ name: 'a', file_name: 'A' }],
+      has_next: true,
+      next_start: 50,
+    })
+    await nextTick()
+
+    let release: (v: unknown) => void = () => {}
+    frappeUI.request.mockReturnValue(new Promise((r) => (release = r)))
+    await scrollTo(el, 2300)
+    expect(frappeUI.request).toHaveBeenCalledTimes(1)
+
+    getEntities.setData.mockClear()
+    emitter.emit('refresh') // a new query starts under the in-flight page
+
+    release({ message: { rows: [{ name: 'stale' }], has_next: true, next_start: 999 } })
+    await nextTick()
+    await nextTick()
+
+    expect(getEntities.setData).not.toHaveBeenCalled()
     app.unmount()
   })
 
