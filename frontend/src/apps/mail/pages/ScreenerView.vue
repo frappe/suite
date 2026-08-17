@@ -12,7 +12,7 @@
 				:count="senders.data?.length ? waitingLabel : undefined"
 			>
 				<template #actions>
-					<AdaptiveDropdown :options="bulkOptions" placement="bottom-end">
+					<AdaptiveDropdown :options="bulkOptions">
 						<Button variant="ghost" class="!h-10 !w-10 !rounded-full">
 							<template #icon><Ellipsis class="icon" /></template>
 						</Button>
@@ -145,7 +145,7 @@
 								</Popover>
 							</div>
 							<div class="-mr-2 flex shrink-0 items-center space-x-2">
-								<Dropdown :options="bulkOptions" placement="bottom-end">
+								<Dropdown :options="bulkOptions">
 									<Button variant="ghost" class="!px-1.5">
 										<template #icon><Ellipsis class="icon" /></template>
 									</Button>
@@ -1159,7 +1159,7 @@ const domainOption = (action: 'allow' | 'screenOut', sender: ScreeningSender) =>
 const allowOptions = (sender: ScreeningSender) => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow and Archive ({0})', ['E']),
 				icon: Archive,
@@ -1172,7 +1172,7 @@ const allowOptions = (sender: ScreeningSender) => [
 			},
 		],
 	},
-	{ group: '', items: [domainOption('allow', sender)] },
+	{ group: '', options: [domainOption('allow', sender)] },
 ]
 
 const denyOptions = (sender: ScreeningSender) => [domainOption('screenOut', sender)]
@@ -1186,7 +1186,7 @@ const moreOptions = (sender: ScreeningSender) => [
 	// domain rows read as a pair (same phrasing, same globes) and shouldn't be split from each other.
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow and Archive'),
 				icon: Archive,
@@ -1204,7 +1204,7 @@ const moreOptions = (sender: ScreeningSender) => [
 	// without a divider of its own — it is the only row here that shuts someone out.
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Allow all emails from {0}', [domainOf(sender.from_email)]),
 				icon: Globe,

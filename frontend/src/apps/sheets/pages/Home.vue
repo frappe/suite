@@ -47,7 +47,7 @@
         </div>
         <!-- Overflow menu for secondary home-level destinations. Kept separate
              from the New Sheet CTA so a nav item isn't styled as a peer action. -->
-        <Dropdown :options="overflowActions" placement="bottom-end">
+        <Dropdown :options="overflowActions">
           <template #default="{ open }">
             <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="More" />
           </template>
@@ -159,7 +159,7 @@
               </span>
             </div>
             <div class="home-card-menu" @click.stop>
-              <Dropdown :options="cardActions(sheet)" placement="right">
+              <Dropdown :options="cardActions(sheet)" align="end">
                 <template #default="{ open }">
                   <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-ellipsis-vertical" tooltip="Actions" />
                 </template>
@@ -225,7 +225,7 @@
             class="flex w-full justify-end"
             @click.stop
           >
-            <Dropdown :options="cardActions(row)" placement="right">
+            <Dropdown :options="cardActions(row)" align="end">
               <template #default="{ open }">
                 <Button
                   :variant="open ? 'subtle' : 'ghost'"

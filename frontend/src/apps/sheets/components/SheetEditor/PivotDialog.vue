@@ -85,7 +85,6 @@
             <div v-for="v in valueFields" :key="v.field" class="pv-chip pv-chip--value">
               <Dropdown
                 :options="aggOpts(v)"
-                placement="bottom-start"
                 @update:open="onAggDropdownToggle"
               >
                 <template #default="{ open }">

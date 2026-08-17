@@ -22,7 +22,7 @@
         <Button class="hidden md:block" variant="solid" label="Try out Drive"
           @click="open('https://frappecloud.com/dashboard/signup?product=drive')" />
       </template>
-      <Dropdown v-else-if="defaultActions" :options="defaultActions" placement="right" :button="{
+      <Dropdown v-else-if="defaultActions" :options="defaultActions" align="end" :button="{
         variant: 'ghost',
         icon: LucideMoreHorizontal,
         label: 'Entity actions',
@@ -39,7 +39,7 @@
           id: 'create-button',
           label: 'Create',
           iconLeft: h(LucidePlus, { class: 'size-4' }),
-        }" :options="newEntityOptions" placement="right" />
+        }" :options="newEntityOptions" align="end" />
       <Button v-else-if="$route.name === 'drive-Documents' || $route.name === 'drive-Presentations'" id="create-button"
         label="Create" variant="solid" :icon-left="h(LucidePlus, { class: 'size-4' })"
         @click="newExternal($route.name === 'drive-Documents' ? 'Document' : 'Presentation')" />
@@ -201,9 +201,9 @@ const defaultActions = computed(() => {
   }
   return [
     {
-      group: true,
+      group: '',
       hideLabel: true,
-      items: [
+      options: [
         {
           label: __('Open in Desk'),
           icon: LucideMonitorCog,
@@ -242,9 +242,9 @@ const defaultActions = computed(() => {
       ],
     },
     {
-      group: true,
+      group: '',
       hideLabel: true,
-      items: [
+      options: [
         {
           label: __('Share'),
           icon: LucideShare2,
@@ -289,9 +289,9 @@ const defaultActions = computed(() => {
       ],
     },
     {
-      group: true,
+      group: '',
       hideLabel: true,
-      items: [
+      options: [
         {
           label: __('Delete'),
           icon: LucideTrash,
@@ -303,7 +303,7 @@ const defaultActions = computed(() => {
     },
     ...actions,
   ].map((k) => {
-    return { ...k, items: k.items.filter((l) => !l.isEnabled || l.isEnabled()) }
+    return { ...k, options: k.options.filter((l) => !l.isEnabled || l.isEnabled()) }
   })
 })
 const isPrivate = computed(() => (isHomeContext() ? 1 : 0))
@@ -340,7 +340,7 @@ const button = computed(() => possibleButtons.find((k) => k.route == route.name)
 const newEntityOptions = computed(() => [
   {
     group: 'Create',
-    items: dynamicList([
+    options: dynamicList([
       {
         label: 'Document',
         icon: LucideFilePlus2,
@@ -372,7 +372,7 @@ const newEntityOptions = computed(() => [
   },
   {
     group: 'Upload',
-    items: [
+    options: [
       {
         label: 'Upload File',
         icon: LucideFileUp,

@@ -258,6 +258,6 @@ const dropdownOptions = computed(() => {
 		})
 	}
 	items.push({ label: __('Cancel'), icon: 'trash-2', onClick: () => (showCancel.value = true) })
-	return [{ group: '', items }]
+	return [{ group: '', options: items }]
 })
 </script>

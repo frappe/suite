@@ -242,7 +242,7 @@ const addedAgo = computed(() => {
 const exportOptions = [
 	{
 		group: '',
-		items: [
+		options: [
 			{ label: __('Zone File'), icon: 'file-text', onClick: downloadDNSZone.submit },
 			{ label: __('CSV'), icon: 'file-text', onClick: downloadDNSCsv.submit },
 			{ label: __('JSON'), icon: 'file-text', onClick: downloadDNSJson.submit },
@@ -253,7 +253,7 @@ const exportOptions = [
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Delete Domain'),
 				icon: 'trash-2',

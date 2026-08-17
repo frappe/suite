@@ -70,7 +70,7 @@
 						class="!rounded-r-none"
 						@click="emit('sendMail')"
 					/>
-					<Dropdown :options="sendOptions" placement="top-end">
+					<Dropdown :options="sendOptions">
 						<Button
 							variant="solid"
 							:tooltip="__('Schedule send')"

@@ -11,7 +11,7 @@
 			</template>
 		</Button>
 
-		<Dropdown :options="orderByItems" placement="right">
+		<Dropdown :options="orderByItems" align="end">
 			<Button class="text-base h-7 rounded-l-none" :disabled>
 				<span class="flex items-center gap-2">
 					{{ __(sortOrder.label) }}

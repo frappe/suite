@@ -241,7 +241,7 @@ const goToMailbox = () => {
 const menuItems = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				...appsMenuOption.value,
 				condition: () => !isMobile.value,
@@ -269,7 +269,7 @@ const menuItems = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: Settings,
 				label: __('Settings'),
@@ -285,24 +285,28 @@ const menuItems = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				icon: User,
 				label: __('Accounts'),
 				submenu: user.data.accounts.map?.((a) => ({
-					component: h(
-						'div',
-						{
-							class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-							onClick: () => switchAccount(a.id),
-						},
-						[
-							h(Avatar, { label: a._name, size: 'md' }),
-							h('span', { class: 'text-sm w-full truncate' }, a._name),
-							a.id === store.accountId &&
-								h(Check, { label: a._name, class: 'shrink-0 icon' }),
-						],
-					),
+					label: a._name,
+					slots: {
+						item: () =>
+							h(
+								'div',
+								{
+									class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
+									onClick: () => switchAccount(a.id),
+								},
+								[
+									h(Avatar, { label: a._name, size: 'md' }),
+									h('span', { class: 'text-sm w-full truncate' }, a._name),
+									a.id === store.accountId &&
+										h(Check, { label: a._name, class: 'shrink-0 icon' }),
+								],
+							),
+					},
 				})),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
 			},

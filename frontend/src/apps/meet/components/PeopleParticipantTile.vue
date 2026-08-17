@@ -62,7 +62,7 @@
 
 			<!-- Host Controls -->
 			<div v-if="canControlParticipant" class="relative">
-				<Dropdown :options="hostOptions" placement="bottom-end">
+				<Dropdown :options="hostOptions">
 					<template #default>
 						<button
 							class="flex items-center justify-center rounded-lg p-1.5 text-ink-gray-6 hover:bg-surface-gray-3"

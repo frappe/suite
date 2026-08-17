@@ -1,5 +1,5 @@
 <template>
-  <Dropdown placement="right" :options="users">
+  <Dropdown align="end" :options="users">
     <template #default>
       <div class="ml-2.5 flex items-center rounded-md cursor-pointer">
         <div

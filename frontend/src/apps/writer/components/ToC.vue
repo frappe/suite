@@ -363,9 +363,9 @@ const tabActions = [
       ),
   },
   {
-    group: true,
+    group: '',
     hideLabel: true,
-    items: [
+    options: [
       {
         label: 'Delete',
         icon: LucideTrash,

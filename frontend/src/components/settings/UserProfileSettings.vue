@@ -13,7 +13,7 @@
 							<Dropdown
 								v-if="user.doc.user_image"
 								:options="avatarMenuOptions(openFileSelector)"
-								placement="right"
+								align="end"
 							>
 								<button
 									type="button"

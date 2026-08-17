@@ -425,7 +425,7 @@ defineExpose({ mail, sendMail, discardMail, openScheduleModal })
 const localDraftActions = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{ label: __('Reply'), icon: Reply, onClick: () => emit('reply') },
 			{ label: __('Reply All'), icon: ReplyAll, onClick: () => emit('replyAll') },
 			{ label: __('Forward'), icon: Forward, onClick: () => emit('forward') },
@@ -433,7 +433,7 @@ const localDraftActions = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Pop Out'),
 				icon: ExternalLink,

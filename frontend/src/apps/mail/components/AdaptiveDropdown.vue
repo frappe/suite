@@ -50,8 +50,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 
 // Drop-in Dropdown replacement: desktop renders a frappe-ui Dropdown untouched,
 // mobile renders the same options as a bottom sheet (popup menus at the bottom
-// edge are thumb-hostile). Supports flat and grouped option arrays; `component`
-// items (custom rendered entries) are not supported here.
+// edge are thumb-hostile). Supports flat and grouped option arrays.
 
 interface OptionItem {
 	label: string
@@ -67,7 +66,7 @@ interface OptionItem {
 	theme?: string
 }
 
-type Options = (OptionItem | { group: string; items: OptionItem[] })[]
+type Options = (OptionItem | { group: string; options: OptionItem[] })[]
 
 defineOptions({ inheritAttrs: false })
 
@@ -88,8 +87,8 @@ const groups = computed(() => {
 	const flat: OptionItem[] = []
 	const grouped: { label: string; items: OptionItem[] }[] = []
 	for (const entry of options ?? []) {
-		if (entry && 'items' in entry) {
-			const items = visible(entry.items ?? [])
+		if (entry && 'options' in entry) {
+			const items = visible(entry.options ?? [])
 			if (items.length) grouped.push({ label: entry.group, items })
 		} else if (entry) {
 			flat.push(entry as OptionItem)

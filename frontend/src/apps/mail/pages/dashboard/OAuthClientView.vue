@@ -179,7 +179,7 @@ const deleteDialogOptions = computed(() => ({
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		items: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
+		options: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
 	},
 ])
 </script>

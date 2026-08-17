@@ -50,7 +50,7 @@
         </div>
         <Button v-if="delayedLoading" :loading="true" label="Loading..." />
         <div data-testid="drive-filter">
-          <Dropdown :options="filterOptions" :disabled placement="right">
+          <Dropdown :options="filterOptions" :disabled align="end">
             <template #trigger="{ open }">
               <Button :active="open" :disabled icon="lucide-filter" tooltip="Filter" />
             </template>
@@ -199,9 +199,9 @@ const columnHeaders = [
 
 const sortMenuItems = computed(() => [
   {
-    group: true,
+    group: '',
     hideLabel: true,
-    items: [
+    options: [
       {
         label: __('Smart'),
         disabled: sortOrder.value.field !== 'file_name',

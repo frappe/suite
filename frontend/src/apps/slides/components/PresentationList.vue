@@ -55,7 +55,7 @@
 							<Dropdown
 								v-if="presentation"
 								:options="getContextMenuOptions(presentation)"
-								placement="right"
+								align="end"
 							>
 								<template #default>
 									<LucideEllipsis class="size-3.5 cursor-pointer text-ink-gray-5" />

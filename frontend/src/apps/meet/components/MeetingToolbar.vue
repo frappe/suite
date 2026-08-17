@@ -72,7 +72,7 @@
 
 				<!-- More Options -->
 				<div class="relative">
-					<Dropdown :options="moreOptions" placement="top">
+					<Dropdown :options="moreOptions">
 						<template #default>
 							<Button
 								size="lg"

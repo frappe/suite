@@ -36,7 +36,7 @@
         </div>
       </div>
       <div v-if="commentsPainted && comments._map.size" class="hidden md:block absolute top-4 right-4">
-        <Dropdown :options="commentFilterOptions" placement="right">
+        <Dropdown :options="commentFilterOptions" align="end">
           <Button :icon="LucideMessageSquareQuote" variant="outline" />
         </Dropdown>
       </div>

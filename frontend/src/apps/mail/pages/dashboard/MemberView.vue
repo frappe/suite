@@ -401,7 +401,7 @@ const DELETE_MEMBER_OPTIONS = {
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Reset Password'),
 				icon: 'mail',
@@ -416,7 +416,7 @@ const dropdownOptions = computed(() => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			data.value?.enabled
 				? {
 						label: __('Disable'),
