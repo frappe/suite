@@ -47,7 +47,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { Mails, Plus } from 'lucide-vue-next'
 import { BottomSheet } from 'frappe-ui'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 
 import FolderModal from '@/apps/mail/components/Modals/FolderModal.vue'
 

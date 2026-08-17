@@ -281,7 +281,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import { ArrowLeft, Paperclip, Plus, Search, SlidersHorizontal, X } from 'lucide-vue-next'
 import { Avatar, Button, Dialog, FormControl, Switch, createResource } from 'frappe-ui'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 
 import { FOLDER_ICON_COLOR_MAP, getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import { getFormattedDate, getIcon } from '@/apps/mail/utils'

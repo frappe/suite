@@ -1,5 +1,5 @@
 import { type ComputedRef, type Ref, computed, h, ref } from 'vue'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 import { createResource } from 'frappe-ui'
 
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'

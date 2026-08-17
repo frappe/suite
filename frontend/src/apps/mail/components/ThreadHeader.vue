@@ -99,7 +99,7 @@
 <script setup lang="ts">
 import { type Component, computed, h } from 'vue'
 import { useRoute } from 'vue-router'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 import {
 	Archive,
 	ArrowLeft,

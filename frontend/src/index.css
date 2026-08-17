@@ -3,7 +3,6 @@
    CSS-layer classes in the beta line — use them in markup (see SuiteLayout.vue),
    NOT via @apply (they are not registered Tailwind color utilities). */
 @import 'frappe-ui/style.css';
-@import 'frappe-ui/list-style.css';
 
 html,
 body,

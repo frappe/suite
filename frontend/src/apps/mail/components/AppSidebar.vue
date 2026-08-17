@@ -117,7 +117,7 @@
 import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 import { Check, Keyboard, User } from 'lucide-vue-next'
 import {
 	Avatar,

@@ -58,7 +58,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Icon } from 'frappe-ui/icons'
+import { Icon } from 'frappe-ui/experimental'
 import { Ellipsis, Eye, EyeOff, Settings, Trash2 } from 'lucide-vue-next'
 import {
 	Button,

@@ -1,7 +1,6 @@
 @import url('./fonts.css');
 @import url('./comment.css');
 @import url('./print.css');
-@import 'frappe-ui/editor-style.css';
 
 .prose.ProseMirror {
   font-size: var(--editor-font-size, 15px);

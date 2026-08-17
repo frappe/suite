@@ -157,7 +157,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { IconPicker } from 'frappe-ui/icons'
+import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
 import { Alert, Button, Dialog, FormControl, Switch, Tabs, createResource } from 'frappe-ui'
 

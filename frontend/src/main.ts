@@ -2,7 +2,7 @@ import './index.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import { spritePlugin } from 'frappe-ui/icons'
+import { spritePlugin } from 'frappe-ui/experimental'
 import { pageMetaPlugin } from 'frappe-ui'
 
 import App from '@/App.vue'
