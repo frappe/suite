@@ -3,10 +3,10 @@ import { ref } from 'vue'
 
 // frappe-ui's barrel drags in resources that don't resolve under vitest, and we
 // only care that the right shortcut *configs* get registered — so mock
-// `useShortcut` to capture every config it's handed.
+// `useKeyboardShortcut` to capture every config it's handed.
 const { registered } = vi.hoisted(() => ({ registered: [] }))
 vi.mock('frappe-ui', () => ({
-  useShortcut: (configs) => registered.push(...(Array.isArray(configs) ? configs : [configs])),
+  useKeyboardShortcut: (configs) => registered.push(...(Array.isArray(configs) ? configs : [configs])),
 }))
 
 import { useShortcuts } from './useShortcuts.js'
@@ -65,10 +65,18 @@ function key(opts = {}) {
 
 // Find a registered shortcut with a real handler by combo, then fire it.
 function find(combo) {
-  return registered.find(c =>
-    c.key === combo.key &&
-    !!c.ctrl === !!combo.ctrl && !!c.shift === !!combo.shift && !!c.alt === !!combo.alt &&
-    typeof c.handler === 'function')
+  const keyName = {
+    ' ': 'Space',
+    '=': 'Equal',
+    '-': 'Minus',
+    '0': 'Digit0',
+  }[combo.key] ?? (combo.key.length === 1 ? combo.key.toUpperCase() : combo.key)
+  const parts = []
+  if (combo.ctrl) parts.push('Mod')
+  if (combo.alt) parts.push('Alt')
+  if (combo.shift) parts.push('Shift')
+  parts.push(keyName)
+  return registered.find(c => c.combo === parts.join('+') && typeof c.handler === 'function')
 }
 function fire(combo) { find(combo)?.handler?.() }
 
@@ -77,7 +85,7 @@ beforeEach(() => {
   stubActiveElement('DIV')
 })
 
-// ── Registered shortcuts (frappe-ui useShortcut) ─────────────────────────────
+// ── Registered shortcuts (frappe-ui useKeyboardShortcut) ─────────────────────
 
 describe('registered shortcuts', () => {
   it('Mod+Z registers undo', () => {
@@ -137,17 +145,17 @@ describe('registered shortcuts', () => {
   })
 })
 
-// ── Read-only gating (via the registered condition) ──────────────────────────
+// ── Read-only gating (via the registered enabled getter) ─────────────────────
 
 describe('read-only gating', () => {
-  it('mutating shortcuts carry a condition that is false when read-only', () => {
+  it('mutating shortcuts are disabled when read-only', () => {
     const a = makeActions({ readOnly: () => true }); useShortcuts(a)
-    expect(find({ key: 'z', ctrl: true }).condition()).toBe(false)  // undo
-    expect(find({ key: 'b', ctrl: true }).condition()).toBe(false)  // bold
+    expect(find({ key: 'z', ctrl: true }).enabled()).toBe(false)  // undo
+    expect(find({ key: 'b', ctrl: true }).enabled()).toBe(false)  // bold
   })
-  it('view shortcuts have no condition (stay live when read-only)', () => {
+  it('view shortcuts stay enabled when read-only', () => {
     const a = makeActions({ readOnly: () => true }); useShortcuts(a)
-    expect(find({ key: 's', ctrl: true }).condition).toBeUndefined()  // save
+    expect(find({ key: 's', ctrl: true }).enabled).toBeUndefined()  // save
   })
 })
 
