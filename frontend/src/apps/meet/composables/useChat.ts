@@ -193,8 +193,24 @@ export function useChat(deps: {
 			if (!data) return;
 			pendingPinnedMessage = data;
 			if (isEncryptedChatMessage(data.message) && !(await getChatKey())) return;
-			data.message = await resolvePlaintext(data.message);
-			chatStore.setPinnedMessage(toChatMessage(data));
+			const plaintext = await resolvePlaintext(data.message);
+			if (
+				isEncryptedChatMessage(data.message) &&
+				plaintext.startsWith("[Encrypted")
+			) {
+				return;
+			}
+			data.message = plaintext;
+			const message = toChatMessage(data);
+			if (
+				message.messageId &&
+				!chatStore.chatMessages.some(
+					(existing) => existing.messageId === message.messageId,
+				)
+			) {
+				chatStore.addMessage(message);
+			}
+			chatStore.setPinnedMessage(message);
 			pendingPinnedMessage = null;
 		};
 

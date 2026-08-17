@@ -253,6 +253,9 @@ describe("useChat pinning", () => {
 		expect(chatStore.setPinnedMessage).toHaveBeenCalledWith(
 			expect.objectContaining({ messageId: "msg-9", message: "Welcome" }),
 		);
+		expect(chatStore.addMessage).toHaveBeenCalledWith(
+			expect.objectContaining({ messageId: "msg-9", message: "Welcome" }),
+		);
 	});
 
 	it("carries the server message id onto inbound messages", async () => {
