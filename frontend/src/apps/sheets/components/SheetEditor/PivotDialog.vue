@@ -50,7 +50,7 @@
             </div>
             <PivotFieldPicker :fields="pickableFields('rows')" @select="f => addTo('rows', f)" @opened="pickerOpenCount++" @closed="pickerOpenCount--">
               <template #default="{ isOpen }">
-                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="plus" label="Add field" class="pv-add-btn" />
+                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="lucide-plus" label="Add field" class="pv-add-btn" />
               </template>
             </PivotFieldPicker>
           </div>
@@ -70,7 +70,7 @@
             </div>
             <PivotFieldPicker :fields="pickableFields('cols')" @select="f => addTo('cols', f)" @opened="pickerOpenCount++" @closed="pickerOpenCount--">
               <template #default="{ isOpen }">
-                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="plus" label="Add field" class="pv-add-btn" />
+                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="lucide-plus" label="Add field" class="pv-add-btn" />
               </template>
             </PivotFieldPicker>
           </div>
@@ -101,7 +101,7 @@
             </div>
             <PivotFieldPicker :fields="pickableFields('values')" @select="f => addTo('values', f)" @opened="pickerOpenCount++" @closed="pickerOpenCount--">
               <template #default="{ isOpen }">
-                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="plus" label="Add field" class="pv-add-btn" />
+                <Button size="sm" :variant="isOpen ? 'subtle' : 'ghost'" icon="lucide-plus" label="Add field" class="pv-add-btn" />
               </template>
             </PivotFieldPicker>
           </div>

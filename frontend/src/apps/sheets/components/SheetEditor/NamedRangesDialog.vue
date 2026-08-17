@@ -55,8 +55,8 @@
             <div class="nr-sheet">{{ e.sheet || '(current)' }}</div>
             <div class="nr-range"><code>{{ e.range }}</code></div>
             <div class="nr-row-actions">
-              <Button size="sm" variant="ghost" icon="edit-2"  @click="_edit(e)"  tooltip="Edit"   />
-              <Button size="sm" variant="ghost" icon="trash-2" @click="_delete(e)" theme="red" tooltip="Delete" />
+              <Button size="sm" variant="ghost" icon="lucide-edit-2"  @click="_edit(e)"  tooltip="Edit"   />
+              <Button size="sm" variant="ghost" icon="lucide-trash-2" @click="_delete(e)" theme="red" tooltip="Delete" />
             </div>
           </div>
         </div>

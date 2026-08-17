@@ -299,7 +299,7 @@
       <div class="sn-tool-more">
         <Dropdown :options="moreToolbarOptions">
           <template #default="{ open }">
-            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="more-horizontal" tooltip="More" />
+            <Button :variant="open ? 'subtle' : 'ghost'" size="sm" icon="lucide-more-horizontal" tooltip="More" />
           </template>
         </Dropdown>
       </div>
@@ -641,7 +641,7 @@
       <!-- Add-sheet is a mutation, so viewers don't get it — hide the whole
            wrapper (button + its divider) rather than leave a dead, greyed pill. -->
       <div v-if="!readOnly" class="sn-tab-add-wrap">
-        <Button variant="ghost" size="sm" icon="plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
+        <Button variant="ghost" size="sm" icon="lucide-plus" class="sn-tab-add" tooltip="Add sheet" @click="addSheet" />
       </div>
       <div class="sn-tabs-track">
         <div
@@ -1108,7 +1108,7 @@
           <div class="sn-comment-reply-head">
             <span class="sn-comment-author">{{ r.name || r.author || 'Someone' }}</span>
             <span class="sn-comment-time">{{ commentTime(r.ts) }}</span>
-            <Button v-if="r.author && r.author === userEmail" variant="ghost" size="sm" icon="trash-2"
+            <Button v-if="r.author && r.author === userEmail" variant="ghost" size="sm" icon="lucide-trash-2"
                     tooltip="Delete" class="sn-comment-del" @click="deleteCommentReply(i)" />
           </div>
           <div class="sn-comment-text">{{ r.text }}</div>

@@ -67,7 +67,7 @@
 												<Mail class="text-ink-gray-5 h-4 w-4" />
 											</template>
 										</Button>
-										<AdaptiveDropdown :options="rowOptions(row)" placement="bottom-end">
+										<AdaptiveDropdown :options="rowOptions(row)" align="end">
 											<Button variant="ghost" @click.stop.prevent>
 												<template #icon>
 													<EllipsisVertical class="text-ink-gray-5 h-4 w-4" />

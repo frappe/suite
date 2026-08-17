@@ -318,7 +318,7 @@
 									/>
 									<AdaptiveDropdown
 										:options="denyOptions(openSender)"
-										placement="bottom-end"
+										align="end"
 									>
 										<Button variant="outline" class="-ml-px !rounded-l-none !px-1.5">
 											<template #icon><ChevronDown class="h-4 w-4" /></template>
@@ -335,7 +335,7 @@
 									/>
 									<AdaptiveDropdown
 										:options="allowOptions(openSender)"
-										placement="bottom-end"
+										align="end"
 									>
 										<Button
 											variant="solid"

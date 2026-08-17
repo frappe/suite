@@ -26,10 +26,10 @@
 				<TextEditorFixedMenu :buttons class="!bg-inherit" />
 				<EmojiPicker
 					v-if="!isMobile"
-					v-slot="{ togglePopover }"
+					v-slot="{ toggle }"
 					@update:model-value="emit('appendEmoji', $event)"
 				>
-					<Button variant="ghost" class="max-h-6 max-w-6" @click="togglePopover()">
+					<Button variant="ghost" class="max-h-6 max-w-6" @click="toggle()">
 						<template #icon>
 							<Laugh class="icon" />
 						</template>

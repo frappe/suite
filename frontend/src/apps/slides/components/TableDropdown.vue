@@ -1,7 +1,7 @@
 <template>
 	<Popover side="top" align="center" :offset="12">
-		<template #trigger="{ isOpen }">
-			<div :class="triggerClass(isOpen)">
+		<template #trigger="{ open }">
+			<div :class="triggerClass(open)">
 				<Table class="size-4.5 stroke-[1.5] text-ink-gray-7" />
 			</div>
 		</template>

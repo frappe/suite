@@ -5,15 +5,15 @@
 		<TabButtons v-model="filters.undoStatus" :options="STATUS_TABS" />
 
 		<Popover side="bottom" align="end">
-			<template #target="{ togglePopover }">
-				<Button :label="__('Filter')" @click="togglePopover()">
+			<template #trigger>
+				<Button :label="__('Filter')">
 					<template #prefix><ListFilter class="h-4 w-4" /></template>
 					<template v-if="activeCount" #suffix>
 						<Badge :label="String(activeCount)" theme="gray" />
 					</template>
 				</Button>
 			</template>
-			<template #body-main>
+			<template #default>
 				<div class="flex w-72 flex-col gap-3 p-4">
 					<FormControl
 						v-model="filters.identityId"

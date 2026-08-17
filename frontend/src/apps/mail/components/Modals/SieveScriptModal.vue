@@ -54,7 +54,7 @@
 									'Activating this script will deactivate the currently active script.',
 								)
 					"
-					theme="yellow"
+					theme="amber"
 					:dismissable="false"
 				/>
 			</div>

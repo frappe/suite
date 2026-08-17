@@ -7,7 +7,7 @@
 	>
 		<template #actions>
 			<Dropdown :options="dropdownOptions">
-				<Button icon="more-horizontal" class="text-ink-gray-5" />
+				<Button icon="lucide-more-horizontal" class="text-ink-gray-5" />
 			</Dropdown>
 		</template>
 		<template #default>

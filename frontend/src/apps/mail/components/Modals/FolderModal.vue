@@ -68,7 +68,7 @@
 										[activeScript],
 									)
 								"
-								theme="yellow"
+								theme="amber"
 								:dismissable="false"
 							>
 								<template #footer>
