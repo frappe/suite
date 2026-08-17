@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FrappeUIProvider, Dialogs, KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
+import { FrappeUIProvider, KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
 import { computed, provide, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -31,7 +31,6 @@ useKeyboardShortcut({
 <template>
 	<FrappeUIProvider>
 		<router-view />
-		<Dialogs />
 		<KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
 	</FrappeUIProvider>
 </template>
