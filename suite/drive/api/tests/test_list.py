@@ -104,9 +104,7 @@ class TestDriveListPagination(IntegrationTestCase):
             page = self._list(limit=1)
 
         self.assertEqual(page["rows"], [])
-        self.assertFalse(
-            page["has_next"], "an empty page must not advertise hidden rows"
-        )
+        self.assertFalse(page["has_next"], "an empty page must not advertise hidden rows")
 
     def test_page_fills_past_denied_rows(self):
         """
