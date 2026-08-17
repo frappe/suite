@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Sidebar, createResource, frappeRequest } from "frappe-ui";
+import {
+	Sidebar,
+	SidebarCollapseToggle,
+	SidebarHeader,
+	SidebarItem,
+	SidebarSection,
+	createResource,
+	frappeRequest,
+} from "frappe-ui";
 import { computed, h, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { RouterLink, useRoute } from "vue-router";
@@ -146,24 +154,6 @@ const settingsItems = computed(() => [
 	},
 ]);
 
-const sidebarSections = computed(() => [
-	{
-		items: [
-			{
-				label: "Home",
-				to: "/meet",
-				icon: LucideHome,
-				isActive: route.name === "meet-home",
-			},
-			{
-				label: "Calendar",
-				to: "/calendar",
-				icon: LucideCalendar,
-			},
-		],
-	},
-]);
-
 const showShortcutsDialog = inject(
 	"showShortcutsDialog",
 	ref(false),
@@ -174,13 +164,27 @@ const showShortcutsDialog = inject(
 	<Sidebar
 		v-model:collapsed="isCollapsed"
 		class="hidden sm:flex"
-		:header="{
-			title: 'Meet',
-			subtitle: userName,
-			menuItems: settingsItems,
-			logo: FrappeMeetingLogo,
-		}"
-		:sections="sidebarSections"
-	/>
+	>
+		<SidebarHeader
+			title="Meet"
+			:subtitle="userName"
+			:menu-items="settingsItems"
+			:logo="FrappeMeetingLogo"
+		/>
+		<div class="flex-1 px-2">
+			<SidebarSection>
+				<SidebarItem
+					label="Home"
+					to="/meet"
+					:icon="LucideHome"
+					:active="route.name === 'meet-home'"
+				/>
+				<SidebarItem label="Calendar" to="/calendar" :icon="LucideCalendar" />
+			</SidebarSection>
+		</div>
+		<div class="p-2">
+			<SidebarCollapseToggle />
+		</div>
+	</Sidebar>
 
 </template>
