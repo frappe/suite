@@ -19,7 +19,7 @@
 					<button
 						v-for="item in group.items"
 						:key="item.label"
-						class="active:bg-surface-gray-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-base"
+						class="active:bg-surface-gray-1 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
 						:class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
 						@click="run(item)"
 					>

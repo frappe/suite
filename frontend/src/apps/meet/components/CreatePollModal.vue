@@ -46,7 +46,7 @@
                     </div>
                 </div>
 
-                <div class="rounded-md border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm flex gap-4">
+                <div class="rounded-4 border border-outline-gray-2 bg-surface-gray-1 p-4 text-sm flex gap-4">
                     <lucide-alert-triangle class="h-5 w-5 text-ink-gray-6"/>
                     <span class="text-ink-gray-8">
                         Polls are temporary and will be deleted once everyone leaves the meeting.

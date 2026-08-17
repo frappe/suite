@@ -1,6 +1,6 @@
 <template>
   <div
-    class="bg-white rounded-lg shadow-2xl w-[420px] max-w-[90vw] border border-gray-200"
+    class="bg-white rounded-6 shadow-2xl w-[420px] max-w-[90vw] border border-gray-200"
     @click.stop
   >
     <div class="flex items-center justify-between px-3 border-b border-surface-gray-2">

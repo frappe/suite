@@ -7,7 +7,7 @@
 			<template #icon><Megaphone class="h-5 w-5" /></template>
 			<template #actions>
 				<Button :label="__('Edit')" @click="showEdit = true" />
-				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 			</template>
 		</DashboardDetailHeader>
 
@@ -231,7 +231,7 @@ const deleteDialogOptions = computed(() => ({
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		options: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
+		options: [{ label: __('Delete'), icon: 'lucide-trash-2', onClick: () => (showDelete.value = true) }],
 	},
 ])
 </script>

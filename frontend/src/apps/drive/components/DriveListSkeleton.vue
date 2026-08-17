@@ -25,9 +25,8 @@
 </template>
 
 <script setup>
-import { ListCell } from 'frappe-ui/list'
+import { List, ListCell, ListRow } from 'frappe-ui/list'
 import { Skeleton } from 'frappe-ui'
-import { List, ListRow } from 'frappe-ui/experimental'
 import { useListColumns } from '@/apps/drive/data/listColumns'
 
 const columnTracks = useListColumns()

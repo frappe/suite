@@ -1849,20 +1849,20 @@ const FILTER_OPERATOR_OPTIONS = [
 
 const fileDropdownOptions = computed(() => [
   { group: 'Export', options: [
-    { label: 'Export as CSV',  icon: 'download',  onClick: () => exportCSV() },
-    { label: 'Export as XLSX', icon: 'download',  onClick: () => exportXLSX() },
-    { label: 'Export as PDF',  icon: 'printer',   onClick: () => exportPDF() },
+    { label: 'Export as CSV',  icon: 'lucide-download', onClick: () => exportCSV() },
+    { label: 'Export as XLSX', icon: 'lucide-download', onClick: () => exportXLSX() },
+    { label: 'Export as PDF',  icon: 'lucide-printer',  onClick: () => exportPDF() },
   ]},
   // Import writes cells — hide it for viewers (export/read stays available).
   ...(readOnly.value ? [] : [{ group: 'Import', options: [
-    { label: 'Import CSV',  icon: 'upload', onClick: () => csvInputRef.value?.click() },
-    { label: 'Import XLSX', icon: 'upload', onClick: () => xlsxInputRef.value?.click() },
+    { label: 'Import CSV',  icon: 'lucide-upload', onClick: () => csvInputRef.value?.click() },
+    { label: 'Import XLSX', icon: 'lucide-upload', onClick: () => xlsxInputRef.value?.click() },
   ]}]),
   // Only shown to admins — gated server-side via the boot flag so non-admins
   // never see a settings entry they can't use.
   ...(window.frappe?.boot?.ai_assist_can_configure
     ? [{ group: 'AI', options: [
-        { label: 'AI settings', icon: 'cpu', onClick: () => { aiSettingsOpen.value = true } },
+        { label: 'AI settings', icon: 'lucide-cpu', onClick: () => { aiSettingsOpen.value = true } },
       ]}]
     : []),
 ])

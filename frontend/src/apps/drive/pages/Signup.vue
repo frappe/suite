@@ -4,7 +4,7 @@
       <div class="relative h-full">
         <div class="relative z-10 mx-auto pt-8 sm:w-max sm:pt-20">
           <div class="flex flex-col items-center">
-            <FrappeDriveLogo class="inline-block h-12 w-12 rounded-md" />
+            <FrappeDriveLogo class="inline-block h-12 w-12 rounded-4" />
           </div>
           <div
             class="mx-auto w-full bg-surface-base p-5 sm:mt-6 sm:w-96 sm:rounded-xl sm:p-6 sm:shadow-md"

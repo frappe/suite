@@ -107,7 +107,7 @@ const el = useTemplateRef('videoElement')
 const overlay = useTemplateRef('overlay')
 
 const toggleButtonClasses =
-	'absolute inset-[calc(50%-16px)] flex size-8 cursor-pointer items-center justify-center rounded-lg bg-white-overlay-200 opacity-95'
+	'absolute inset-[calc(50%-16px)] flex size-8 cursor-pointer items-center justify-center rounded-6 bg-white-overlay-200 opacity-95'
 
 const getBarClasses = (type) => {
 	const commonClasses = 'bg-white-overlay-900 h-full absolute left-0 top-0'

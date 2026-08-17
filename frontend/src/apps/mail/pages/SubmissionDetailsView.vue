@@ -158,7 +158,7 @@
 		>
 			<div class="mx-auto flex max-w-5xl flex-col gap-5 md:flex-row md:items-start">
 				<div v-for="stack in 2" :key="stack" class="flex min-w-0 flex-1 flex-col gap-5">
-					<div v-for="card in 2" :key="card" class="rounded-md border">
+					<div v-for="card in 2" :key="card" class="rounded-4 border">
 						<div class="flex h-13 items-center border-b px-4">
 							<Skeleton class="h-3.5 w-24 rounded" />
 						</div>

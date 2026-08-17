@@ -4,7 +4,7 @@
 			<DashboardDetailHeader :title="detailTitle" :meta="[data.domain || data.from, reportId]">
 				<template #icon><FileChartColumn class="h-5 w-5" /></template>
 				<template #actions>
-					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
 			</DashboardDetailHeader>
 
@@ -130,6 +130,6 @@ const deleteOptions = computed(() => ({
 }))
 
 const dropdownOptions = computed(() => [
-	{ group: '', options: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }] },
+	{ group: '', options: [{ label: __('Delete'), icon: 'lucide-trash-2', onClick: () => (showDelete.value = true) }] },
 ])
 </script>

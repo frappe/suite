@@ -400,7 +400,7 @@
 
 					<div v-else class="flex-1 overflow-hidden">
 						<div
-							class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-md"
+							class="bg-surface-gray-1 m-5 flex h-[calc(100%-2.9em)] items-center justify-center rounded-4"
 						>
 							<div class="flex flex-col items-center space-y-3">
 								<NoMails class="text-ink-gray-2 h-16 w-16" />

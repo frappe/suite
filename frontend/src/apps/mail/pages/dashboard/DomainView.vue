@@ -13,10 +13,10 @@
 						:options="exportOptions"
 						:button="{ label: __('Export DNS'), iconLeft: 'download' }"
 					/>
-					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
 			</DashboardDetailHeader>
-			<div class="bg-surface-blue-1 flex items-start gap-3 rounded-md border p-4">
+			<div class="bg-surface-blue-1 flex items-start gap-3 rounded-4 border p-4">
 				<Info class="text-ink-blue-5 mt-0.5 h-4 w-4 shrink-0" />
 				<div class="space-y-1">
 					<h3 class="text-base font-medium">{{ BANNER.title }}</h3>
@@ -24,7 +24,7 @@
 					<p class="text-ink-gray-5 text-sm">{{ BANNER.subtitle }}</p>
 				</div>
 			</div>
-			<div class="rounded-md border">
+			<div class="rounded-4 border">
 				<h2 class="h-13 flex shrink-0 items-center px-4">{{ __('DNS Records') }}</h2>
 				<DNSRecords
 					:title="__('Email Deliverability')"
@@ -243,9 +243,9 @@ const exportOptions = [
 	{
 		group: '',
 		options: [
-			{ label: __('Zone File'), icon: 'file-text', onClick: downloadDNSZone.submit },
-			{ label: __('CSV'), icon: 'file-text', onClick: downloadDNSCsv.submit },
-			{ label: __('JSON'), icon: 'file-text', onClick: downloadDNSJson.submit },
+			{ label: __('Zone File'), icon: 'lucide-file-text', onClick: downloadDNSZone.submit },
+			{ label: __('CSV'), icon: 'lucide-file-text', onClick: downloadDNSCsv.submit },
+			{ label: __('JSON'), icon: 'lucide-file-text', onClick: downloadDNSJson.submit },
 		],
 	},
 ]
@@ -256,7 +256,7 @@ const dropdownOptions = computed(() => [
 		options: [
 			{
 				label: __('Delete Domain'),
-				icon: 'trash-2',
+				icon: 'lucide-trash-2',
 				onClick: () => {
 					confirmDialogAction.value = 'deleteDomain'
 					showConfirmDialog.value = true

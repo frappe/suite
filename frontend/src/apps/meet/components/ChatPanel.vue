@@ -160,12 +160,12 @@
 				<form class="relative shrink-0 p-3" @submit.prevent="handleSend">
 					<template v-if="canSendMessages">
 						<div
-							class="chat-composer relative flex cursor-text items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-outline-gray-3 focus-within:shadow-[0_0_0_1px_var(--outline-gray-3)]"
+							class="chat-composer relative flex cursor-text items-center gap-2 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-2.5 py-1.5 shadow-sm transition-[border-color,box-shadow] focus-within:border-outline-gray-3 focus-within:shadow-[0_0_0_1px_var(--outline-gray-3)]"
 							@click="focusInput"
 						>
 							<div
 								v-if="emojiMenuActive"
-								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
+								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-6 border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
 								role="listbox"
 								aria-label="Emoji suggestions"
 								data-testid="chat-emoji-suggestions"
@@ -175,7 +175,7 @@
 									:key="item.name"
 									type="button"
 									role="option"
-									class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
+									class="flex w-full items-center gap-2 rounded-4 px-2 py-1.5 text-left text-sm"
 									:class="
 										index === emojiSelectedIndex
 											? 'bg-surface-gray-3'
@@ -208,7 +208,7 @@
 								type="submit"
 								variant="subtle"
 								theme="gray"
-								class="!h-7 !w-7 shrink-0 !rounded-md p-0"
+								class="!h-7 !w-7 shrink-0 !rounded-4 p-0"
 								label="Send message"
 							>
 								<template #icon>
@@ -217,7 +217,7 @@
 							</Button>
 						</div>
 					</template>
-					<div v-else class="m-2 rounded-lg border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5">
+					<div v-else class="m-2 rounded-6 border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5">
 						The host has restricted chat to hosts and co-hosts only.
 					</div>
 				</form>

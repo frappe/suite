@@ -5,7 +5,7 @@
 				<template #icon><Mail class="h-5 w-5" /></template>
 				<template #actions>
 					<Button :label="__('Retry Now')" @click="retry.submit()" />
-					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
 			</DashboardDetailHeader>
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -246,11 +246,11 @@ const dropdownOptions = computed(() => {
 	if (data.value?.has_content) {
 		items.push({
 			label: __('View Source'),
-			icon: 'file-text',
+			icon: 'lucide-file-text',
 			onClick: () => ((showSource.value = true), source.fetch()),
 		})
 	}
-	items.push({ label: __('Cancel'), icon: 'trash-2', onClick: () => (showCancel.value = true) })
+	items.push({ label: __('Cancel'), icon: 'lucide-trash-2', onClick: () => (showCancel.value = true) })
 	return [{ group: '', options: items }]
 })
 </script>

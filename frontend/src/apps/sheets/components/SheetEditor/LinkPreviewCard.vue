@@ -1,7 +1,7 @@
 <template>
 	<div
 		v-if="open"
-		class="sn-lp-card absolute z-40 w-[340px] overflow-hidden rounded-lg border border-outline-gray-1 bg-surface-white shadow-2xl"
+		class="sn-lp-card absolute z-40 w-[340px] overflow-hidden rounded-6 border border-outline-gray-1 bg-surface-white shadow-2xl"
 		:style="style"
 		@mouseenter="$emit('enter')"
 		@mouseleave="$emit('leave')"

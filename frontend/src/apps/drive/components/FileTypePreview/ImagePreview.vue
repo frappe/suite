@@ -4,7 +4,7 @@
     v-else
     v-show="!loading"
     draggable="false"
-    class="self-center justify-center max-h-[70vh] max-w-full rounded-lg"
+    class="self-center justify-center max-h-[70vh] max-w-full rounded-6"
     :src="previewURL"
   />
 </template>

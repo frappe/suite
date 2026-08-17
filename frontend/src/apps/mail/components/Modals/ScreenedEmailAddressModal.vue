@@ -1,7 +1,7 @@
 <template>
 	<Dialog v-model="showBlockSender" :options="options">
 		<template v-if="isMultiple" #body-content>
-			<div class="border-outline-gray-2 overflow-hidden rounded-md border">
+			<div class="border-outline-gray-2 overflow-hidden rounded-4 border">
 				<!-- Select all -->
 				<div
 					class="bg-surface-gray-1 flex cursor-pointer items-center gap-3 px-3.5 py-2.5"

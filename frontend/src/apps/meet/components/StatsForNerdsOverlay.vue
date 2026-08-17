@@ -17,18 +17,18 @@
 			</div>
 			<div class="flex items-center gap-1">
 				<Tooltip text="Copy diagnostics">
-					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Copy diagnostics" @click="copyDiagnostics">
+					<button class="rounded-4 p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Copy diagnostics" @click="copyDiagnostics">
 						<LucideCopy class="size-4" />
 					</button>
 				</Tooltip>
 				<Tooltip :text="expanded ? 'Show less' : 'Show more'">
-					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" :aria-label="expanded ? 'Show less' : 'Show more'" @click="expanded = !expanded">
+					<button class="rounded-4 p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" :aria-label="expanded ? 'Show less' : 'Show more'" @click="expanded = !expanded">
 						<LucideChevronUp v-if="expanded" class="size-4" />
 						<LucideChevronDown v-else class="size-4" />
 					</button>
 				</Tooltip>
 				<Tooltip text="Close">
-					<button class="rounded-md p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Close" @click="close">
+					<button class="rounded-4 p-1.5 text-ink-gray-5 hover:bg-surface-gray-2 hover:text-ink-gray-8" aria-label="Close" @click="close">
 						<LucideX class="size-4" />
 					</button>
 				</Tooltip>
@@ -79,7 +79,7 @@
 					</div>
 				</StatsSection>
 
-				<p v-if="error" class="mt-3 rounded-md bg-surface-red-2 px-2.5 py-2 text-ink-red-4">{{ error }}</p>
+				<p v-if="error" class="mt-3 rounded-4 bg-surface-red-2 px-2.5 py-2 text-ink-red-4">{{ error }}</p>
 			</template>
 		</div>
 	</section>

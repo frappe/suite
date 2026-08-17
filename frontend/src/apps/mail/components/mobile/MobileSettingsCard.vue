@@ -4,7 +4,7 @@
 	     one block instead of a run of loose rows. -->
 	<section>
 		<div v-if="label" class="text-ink-gray-5 px-1 pb-1.5 text-sm">{{ label }}</div>
-		<div class="divide-outline-gray-1 bg-surface-gray-1 divide-y overflow-hidden rounded-lg">
+		<div class="divide-outline-gray-1 bg-surface-gray-1 divide-y overflow-hidden rounded-6">
 			<slot />
 		</div>
 	</section>

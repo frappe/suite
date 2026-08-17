@@ -28,7 +28,7 @@
 			<!-- It stays outside a card: it's the screen's subject, not one more group. -->
 			<button
 				v-if="profileTab"
-				class="active:bg-surface-gray-1 flex w-full items-center gap-3.5 rounded-lg px-1 py-3.5"
+				class="active:bg-surface-gray-1 flex w-full items-center gap-3.5 rounded-6 px-1 py-3.5"
 				@click="openTab(profileTab)"
 			>
 				<Avatar :label="fullName" :image="user.data?.user_image" size="2xl" class="size-14" />

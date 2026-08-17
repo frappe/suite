@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="group relative rounded-md overflow-hidden min-h-0"
+		class="group relative rounded-4 overflow-hidden min-h-0"
 		:class="tileBackgroundClass"
 		:data-testid="`participant-tile-${participant.user_id}`"
 		:data-active-speaker="String(isActiveSpeaker)"
@@ -72,7 +72,7 @@
 		<!-- Reaction -->
 		<div
 			v-if="showReaction && currentReaction"
-			class="absolute top-1 px-2 py-1 rounded-md text-3xl pointer-events-none animate-pop"
+			class="absolute top-1 px-2 py-1 rounded-4 text-3xl pointer-events-none animate-pop"
 			:class="{ 'left-2': !isHandRaised, 'left-10': isHandRaised }"
 			:aria-label="`Reaction ${currentReaction.emoji} from ${resolvedDisplayName}`"
 			role="img"

@@ -140,7 +140,7 @@ const labelFunction = (val: Value, selected = false) => {
           :hide-when-detached="true"
           :align="'start'"
           position="popper"
-          class="z-10 min-w-[--reka-select-trigger-width] mt-1 bg-surface-elevation-2 overflow-hidden rounded-lg shadow-2xl"
+          class="z-10 min-w-[--reka-select-trigger-width] mt-1 bg-surface-elevation-2 overflow-hidden rounded-6 shadow-2xl"
         >
           <SelectViewport
             class="max-h-60 overflow-auto p-1.5"

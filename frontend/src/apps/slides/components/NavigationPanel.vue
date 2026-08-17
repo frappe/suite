@@ -124,7 +124,7 @@ const handleSortEnd = (sortChange) => {
 const slideSort = useDragSort(scrollableArea, slidesLength, rowSize, handleSortEnd)
 
 const insertButtonClasses =
-	'mb-10 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
+	'mb-10 flex aspect-video w-full cursor-pointer items-center justify-center gap-2 rounded-6 bg-surface-gray-2 text-ink-gray-5 hover:bg-surface-gray-3'
 
 const panelClasses = computed(() => {
 	// can't add it from parent attrs.class since attrs is not reactive

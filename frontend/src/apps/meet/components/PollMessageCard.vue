@@ -1,5 +1,5 @@
 <template>
-	<div class="w-full border border-outline-gray-2 rounded-lg p-3 flex flex-col gap-3">
+	<div class="w-full border border-outline-gray-2 rounded-6 p-3 flex flex-col gap-3">
 		<div>
 			<h3 class="text-base text-ink-gray-9 leading-snug">{{ livePoll.question }}</h3>
 		</div>

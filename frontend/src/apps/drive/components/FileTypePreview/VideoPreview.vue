@@ -4,7 +4,7 @@
     v-show="!loading"
     :key="src"
     ref="mediaRef"
-    class="max-h-[70vh] max-w-full rounded-lg"
+    class="max-h-[70vh] max-w-full rounded-6"
     autoplay
     muted
     preload="none"

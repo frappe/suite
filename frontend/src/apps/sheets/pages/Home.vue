@@ -320,7 +320,7 @@ function newSheet() {
 // Top-level overflow menu (the ⋮ next to New Sheet). Just Trash for now; this
 // is the home for future home-level destinations (Shared, Settings, …).
 const overflowActions = [
-  { label: 'Trash', icon: 'trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
+  { label: 'Trash', icon: 'lucide-trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
 ]
 
 const PAGE_SIZE = 50
@@ -520,11 +520,11 @@ watch(
 function cardActions(sheet) {
   const actions = []
   if (isOwnedByMe(sheet)) {
-    actions.push({ label: 'Rename', icon: 'edit-2', onClick: () => openRenameDialog(sheet) })
+    actions.push({ label: 'Rename', icon: 'lucide-edit-2', onClick: () => openRenameDialog(sheet) })
   }
-  actions.push({ label: 'Duplicate', icon: 'copy', onClick: () => duplicate(sheet) })
+  actions.push({ label: 'Duplicate', icon: 'lucide-copy', onClick: () => duplicate(sheet) })
   if (isOwnedByMe(sheet)) {
-    actions.push({ label: 'Delete', icon: 'trash-2', onClick: () => confirmDelete(sheet) })
+    actions.push({ label: 'Delete', icon: 'lucide-trash-2', onClick: () => confirmDelete(sheet) })
   }
   return actions
 }

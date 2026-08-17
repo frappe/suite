@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="relative rounded-lg border border-outline-gray-2 bg-surface-gray-2 p-3"
+		class="relative rounded-6 border border-outline-gray-2 bg-surface-gray-2 p-3"
 	>
 		<div class="select-all break-all text-xs text-ink-gray-8">
 			<pre

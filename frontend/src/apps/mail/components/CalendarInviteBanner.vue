@@ -5,7 +5,7 @@
 	     hold a selection. -->
 	<div
 		v-if="invite"
-		class="border-outline-gray-2 bg-surface-base mb-3 flex flex-col gap-3 rounded-md border px-4 py-3 sm:flex-row sm:items-center"
+		class="border-outline-gray-2 bg-surface-base mb-3 flex flex-col gap-3 rounded-4 border px-4 py-3 sm:flex-row sm:items-center"
 	>
 		<!-- Opening the event is the first thing anyone tries to tap, so the target is the dates and
 		     the text together rather than the title alone — but it stops at the content: no flex-1,

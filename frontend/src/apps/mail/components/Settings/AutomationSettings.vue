@@ -132,12 +132,12 @@ const scriptOptions = (script: SieveScript) => [
 	},
 	{
 		label: __('Edit'),
-		icon: 'edit-2',
+		icon: 'lucide-edit-2',
 		onClick: () => editScript(script),
 	},
 	{
 		label: __('Delete'),
-		icon: 'trash-2',
+		icon: 'lucide-trash-2',
 		theme: 'red',
 		onClick: () => {
 			selectedScript.value = script

@@ -5,7 +5,7 @@
 	<div>
 		<div
 			v-if="items.length"
-			class="bg-surface-base max-h-64 min-w-56 overflow-y-auto rounded-lg p-1 shadow-lg"
+			class="bg-surface-base max-h-64 min-w-56 overflow-y-auto rounded-6 p-1 shadow-lg"
 		>
 			<!-- Picks on mousedown, default prevented: letting the press land would pull
 			     focus out of the editor, and the suggester drops the popup the moment the

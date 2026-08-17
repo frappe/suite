@@ -61,7 +61,7 @@
               <InviteStep v-else-if="step === 'invite'" ref="inviteStep" @sent="onInvitesSent" />
 
               <div v-else class="flex justify-center">
-                <div class="flex w-full items-center gap-3 rounded-lg bg-surface-gray-2 p-4">
+                <div class="flex w-full items-center gap-3 rounded-6 bg-surface-gray-2 p-4">
                   <component
                     :is="inviteSummary ? LucideMail : LucideUser"
                     class="size-7 shrink-0 stroke-[1.5] text-ink-gray-5"

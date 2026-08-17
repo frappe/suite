@@ -7,7 +7,7 @@
       />
     </template>
     <template #default>
-      <div ref="colorPicker" class="rounded-lg bg-surface-base p-3 shadow-lg dark:bg-zinc-900">
+      <div ref="colorPicker" class="rounded-6 bg-surface-base p-3 shadow-lg dark:bg-zinc-900">
         <div
           ref="colorMap"
           :style="{
@@ -17,7 +17,7 @@
 							hsl(${hue}, 100%, 50%)
 						`,
           }"
-          class="relative m-auto h-24 w-44 rounded-md"
+          class="relative m-auto h-24 w-44 rounded-4"
           @mousedown.stop="handleSelectorMove"
           @click.prevent="setColor"
         >
@@ -39,7 +39,7 @@
         </div>
         <div
           ref="hueMap"
-          class="relative m-auto mt-2 h-3 w-44 rounded-md"
+          class="relative m-auto mt-2 h-3 w-44 rounded-4"
           :style="{
             background: `
 							linear-gradient(90deg, hsl(0, 100%, 50%),

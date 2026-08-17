@@ -1,7 +1,7 @@
 <template>
   <Dropdown align="end" :options="users">
     <template #default>
-      <div class="ml-2.5 flex items-center rounded-md cursor-pointer">
+      <div class="ml-2.5 flex items-center rounded-4 cursor-pointer">
         <div
           v-for="user in users.slice(0, 3)"
           :key="user.name"

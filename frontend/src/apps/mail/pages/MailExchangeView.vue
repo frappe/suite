@@ -5,7 +5,7 @@
 			<Dropdown
 				v-if="user.data.is_system_manager"
 				:options="dropdownOptions"
-				:button="{ icon: 'more-horizontal' }"
+				:button="{ icon: 'lucide-more-horizontal' }"
 			/>
 		</header>
 		<div class="mx-auto my-5 rounded border p-12 sm:w-[60rem]">
@@ -110,7 +110,7 @@ const attachment = createResource({
 const dropdownOptions = computed(() => [
 	{
 		label: __('View in Desk'),
-		icon: 'external-link',
+		icon: 'lucide-external-link',
 		onClick: () => window.open(`/app/mail-exchange/${id}`, '_blank')?.focus(),
 	},
 ])

@@ -2,7 +2,7 @@
 	<div
 		:class="showText ? (alignment === 'left' ? 'min-h-[4.5rem] py-4' : 'min-h-[4.5rem] p-4') : ''"
 	>
-		<div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+		<div v-if="error" class="bg-red-500/10 border border-red-500/30 rounded-6 p-4">
 			<p class="text-sm text-red-400">
 				<lucide-alert-circle class="w-4 h-4 inline mr-2" />
 				{{ error }}

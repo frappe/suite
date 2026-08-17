@@ -198,7 +198,7 @@ defineExpose({ reload })
 			>
 				<div class="flex min-w-0 flex-1 items-center gap-2.5">
 					<div
-						class="flex w-11 shrink-0 items-center justify-center rounded-lg border border-outline-gray-1 bg-surface-base p-1"
+						class="flex w-11 shrink-0 items-center justify-center rounded-6 border border-outline-gray-1 bg-surface-base p-1"
 					>
 						<div
 							class="flex h-[38px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-center"

@@ -1,7 +1,7 @@
 <template>
 	<div class="flex flex-wrap items-center gap-x-4 gap-y-3">
 		<div
-			class="bg-surface-gray-2 text-ink-gray-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
+			class="bg-surface-gray-2 text-ink-gray-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-6"
 		>
 			<slot name="icon">
 				<span class="text-lg font-semibold uppercase">{{ initial }}</span>

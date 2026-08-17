@@ -595,7 +595,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 							</div>
 							<div class="px-3.5 pb-3.5">
 								<div
-									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-surface-gray-2"
+									class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-6 px-1.5 py-1.5 hover:bg-surface-gray-2"
 									@click="toggleRepeat"
 								>
 									<FormControl
@@ -611,7 +611,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						</div>
 
 						<!-- meet link -->
-						<div class="mt-4 flex items-center gap-3 rounded-lg border border-outline-gray-2 px-3.5 py-3">
+						<div class="mt-4 flex items-center gap-3 rounded-6 border border-outline-gray-2 px-3.5 py-3">
 							<template v-if="meetUrl">
 								<img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
 								<div class="min-w-0 flex-1">

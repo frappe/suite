@@ -1,5 +1,5 @@
 <template>
-	<div class="flex shrink-0 flex-col rounded-md border">
+	<div class="flex shrink-0 flex-col rounded-4 border">
 		<div class="h-13 py-auto flex shrink-0 items-center justify-between border-b px-4">
 			<h2>{{ title }}</h2>
 			<slot name="actions">

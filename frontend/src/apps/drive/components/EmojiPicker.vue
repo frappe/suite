@@ -43,7 +43,7 @@
                   v-for="_emoji in emojis"
                   :key="_emoji.value"
                   variant="ghost"
-                  class="hover:bg-surface-gray-2 h-8 w-8 rounded-md p-1 text-4xl"
+                  class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-4xl"
                   :title="_emoji.value"
                   :icon="_emoji.icon"
                   @click="() => (emojiValue = _emoji.value) && toggle()"

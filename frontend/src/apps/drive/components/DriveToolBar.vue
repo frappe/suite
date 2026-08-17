@@ -12,7 +12,7 @@
         @click="emit('select-all')" />
     </div>
     <div v-if="!selectionMode && $route.name === 'drive-Home'"
-      class="bg-surface-gray-2 rounded-md space-x-0.5 h-7 flex items-center sm:mr-2 py-1">
+      class="bg-surface-gray-2 rounded-4 space-x-0.5 h-7 flex items-center sm:mr-2 py-1">
       <TabButtons v-model="shareView" :options="[
         {
           label: __('Yours'),

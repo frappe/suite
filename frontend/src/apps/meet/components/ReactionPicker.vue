@@ -18,7 +18,7 @@
 						:key="emoji"
 						type="button"
 						@click="handleReactionSelect(emoji)"
-						class="mx-auto flex items-center justify-center size-9 rounded-lg bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors text-xl"
+						class="mx-auto flex items-center justify-center size-9 rounded-6 bg-surface-gray-2 hover:bg-surface-gray-3 transition-colors text-xl"
 						:aria-label="`Send ${emoji} reaction`"
 						:data-testid="`reaction-${emoji}`"
 					>

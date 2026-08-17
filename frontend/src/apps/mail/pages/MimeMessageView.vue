@@ -1,7 +1,7 @@
 <template>
 	<div class="sm:bg-surface-gray-1 min-h-screen py-4 sm:py-12">
 		<div
-			class="bg-surface-base mx-auto max-w-full space-y-6 rounded-md border p-4 sm:w-[75rem] sm:space-y-8 sm:p-12"
+			class="bg-surface-base mx-auto max-w-full space-y-6 rounded-4 border p-4 sm:w-[75rem] sm:space-y-8 sm:p-12"
 		>
 			<template v-if="mime.data">
 				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -12,7 +12,7 @@
 						@click="copyToClipBoard(message)"
 					/>
 				</div>
-				<div class="rounded-md border">
+				<div class="rounded-4 border">
 					<div class="border-b px-4 py-4 sm:px-6">
 						<h2>{{ __('Message Information') }}</h2>
 					</div>

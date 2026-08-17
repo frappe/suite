@@ -8,7 +8,7 @@
 		>
 			<template #actions>
 				<Button :label="__('Edit')" @click="showEdit = true" />
-				<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+				<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 			</template>
 		</DashboardDetailHeader>
 
@@ -397,12 +397,12 @@ const dropdownOptions = computed(() => [
 		options: [
 			{
 				label: __('Reset Password'),
-				icon: 'mail',
+				icon: 'lucide-mail',
 				onClick: () => (showResetPassword.value = true),
 			},
 			{
 				label: __('Change Password'),
-				icon: 'key',
+				icon: 'lucide-key',
 				onClick: () => (showChangePassword.value = true),
 			},
 		],
@@ -413,17 +413,17 @@ const dropdownOptions = computed(() => [
 			data.value?.enabled
 				? {
 						label: __('Disable'),
-						icon: 'user-x',
+						icon: 'lucide-user-x',
 						onClick: () => (showToggleEnabled.value = true),
 					}
 				: {
 						label: __('Enable'),
-						icon: 'user-check',
+						icon: 'lucide-user-check',
 						onClick: () => (showToggleEnabled.value = true),
 					},
 			{
 				label: __('Delete'),
-				icon: 'trash-2',
+				icon: 'lucide-trash-2',
 				onClick: () => (showDeleteMember.value = true),
 			},
 		],

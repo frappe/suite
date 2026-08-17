@@ -7,7 +7,7 @@
 			></div>
 		</template>
 		<template #default>
-			<div class="m-2 rounded-lg border bg-surface-elevation-2 p-3 shadow-xl">
+			<div class="m-2 rounded-6 border bg-surface-elevation-2 p-3 shadow-xl">
 				<div class="flex flex-col gap-3">
 					<div
 						ref="shadeSlider"

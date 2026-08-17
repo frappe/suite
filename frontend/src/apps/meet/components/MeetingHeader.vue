@@ -24,7 +24,7 @@ const crumbs = computed(() => [
 	<div class="flex items-center justify-between px-4 py-4 shrink-0 z-30">
 		<!-- Left: Logo + Breadcrumb -->
 		<div class="flex items-center gap-2">
-			<div class="size-7 rounded-md overflow-hidden">
+			<div class="size-7 rounded-4 overflow-hidden">
 				<FrappeMeetingLogo class="w-full h-full" />
 			</div>
 			<Breadcrumbs :items="crumbs" />

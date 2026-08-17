@@ -19,7 +19,7 @@
             <div class="px-1 py-1 h-64 overflow-auto flex flex-col">
               <Tree v-if="tree.children.length" :nodes="tree.children" node-key="value" guides="none">
                 <template #item="{ node, expanded, hasChildren, toggle }">
-                  <div class="group grow min-w-0 flex items-center gap-2 rounded-md px-1 -mx-1"
+                  <div class="group grow min-w-0 flex items-center gap-2 rounded-4 px-1 -mx-1"
                     :class="entities[0].folder === node.value
                       ? 'cursor-not-allowed'
                       : 'cursor-pointer hover:bg-surface-gray-2'"

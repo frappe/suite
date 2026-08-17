@@ -6,7 +6,7 @@
 	<AppSettingsBody>
 			<!-- Video Preview -->
 			<div class="flex justify-center mb-4">
-				<div class="w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
+				<div class="w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-6 overflow-hidden shadow-sm relative">
 					<video
 						ref="videoPreviewRef"
 						autoplay
@@ -87,7 +87,7 @@
 				<div class="grid grid-cols-4 gap-3">
 					<div v-for="option in allBackgroundOptionsTyped" :key="option.name"
 						@click="handleBackgroundOptionClick(option)"
-						class="relative cursor-pointer rounded-lg border-2 overflow-hidden transition-all duration-200 hover:shadow-sm group"
+						class="relative cursor-pointer rounded-6 border-2 overflow-hidden transition-all duration-200 hover:shadow-sm group"
 						:class="[
 							selectedBackgroundOption === option.name
 								? 'border-outline-gray-3 ring-1 ring-outline-gray-2'
@@ -140,7 +140,7 @@
 				</div>
 			</div>
 
-			<div class="bg-surface-amber-2 border border-outline-amber-2 rounded-lg p-3 mt-4">
+			<div class="bg-surface-amber-2 border border-outline-amber-2 rounded-6 p-3 mt-4">
 				<div class="flex">
 					<div class="flex-shrink-0">
 						<lucide-alert-triangle class="h-5 w-5 text-ink-amber-5" />

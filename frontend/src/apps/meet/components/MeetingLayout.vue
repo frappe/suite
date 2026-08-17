@@ -5,8 +5,8 @@
 		data-testid="meeting-layout"
 		:class="[
 			mode === 'sidebar'
-				? 'relative flex flex-col md:flex-row overflow-hidden rounded-lg'
-				: 'relative h-full rounded-lg overflow-hidden',
+				? 'relative flex flex-col md:flex-row overflow-hidden rounded-6'
+				: 'relative h-full rounded-6 overflow-hidden',
 			!interactive ? 'pointer-events-none' : '',
 		]"
 	>
@@ -19,7 +19,7 @@
 				v-for="tile in pinnedTiles"
 				:key="`${tile.type}-${tile.id}`"
 				:ref="(el) => setPinnedPanelRef(el, tile)"
-				class="relative rounded-lg overflow-hidden flex-1 h-full"
+				class="relative rounded-6 overflow-hidden flex-1 h-full"
 			></div>
 		</div>
 

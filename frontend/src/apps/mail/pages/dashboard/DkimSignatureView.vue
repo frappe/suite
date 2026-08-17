@@ -7,7 +7,7 @@
 			>
 				<template #icon><FileKey2 class="h-5 w-5" /></template>
 				<template #actions>
-					<Dropdown :options="dropdownOptions" :button="{ icon: 'more-horizontal' }" />
+					<Dropdown :options="dropdownOptions" :button="{ icon: 'lucide-more-horizontal' }" />
 				</template>
 			</DashboardDetailHeader>
 			<div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
@@ -156,7 +156,7 @@ const deleteDialogOptions = computed(() => ({
 const dropdownOptions = computed(() => [
 	{
 		group: '',
-		options: [{ label: __('Delete'), icon: 'trash-2', onClick: () => (showDelete.value = true) }],
+		options: [{ label: __('Delete'), icon: 'lucide-trash-2', onClick: () => (showDelete.value = true) }],
 	},
 ])
 </script>
