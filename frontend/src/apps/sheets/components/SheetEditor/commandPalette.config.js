@@ -2,7 +2,7 @@
 // buildCommandGroups takes a map of action callbacks and returns the groups array
 // consumed by the <CommandPalette> component.
 
-import { CommandPaletteItem } from 'frappe-ui'
+import { CommandPaletteItem } from 'frappe-ui/experimental'
 
 function item(name, title, description, fn) {
   return { name, title, description, fn }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FrappeUIProvider, Dialogs, KeyboardShortcutsModal, useShortcut } from "frappe-ui";
+import { FrappeUIProvider, Dialogs, KeyboardShortcutsDialog, useKeyboardShortcut } from "frappe-ui";
 import { computed, provide, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -19,8 +19,8 @@ useKeyboardShortcuts(() => isInMeeting.value);
 const showShortcutsDialog = ref(false);
 provide("showShortcutsDialog", showShortcutsDialog);
 
-useShortcut({
-	key: "?",
+useKeyboardShortcut({
+	combo: "Shift+Slash",
 	description: "View shortcuts",
 	group: "General",
 	allowInDialog: true,
@@ -32,6 +32,6 @@ useShortcut({
 	<FrappeUIProvider>
 		<router-view />
 		<Dialogs />
-		<KeyboardShortcutsModal v-model:open="showShortcutsDialog" />
+		<KeyboardShortcutsDialog v-model:open="showShortcutsDialog" />
 	</FrappeUIProvider>
 </template>

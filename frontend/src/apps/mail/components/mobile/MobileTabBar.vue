@@ -88,7 +88,8 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Avatar, Button, FeatherIcon } from 'frappe-ui'
+import { Avatar, Button } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { Icon } from 'frappe-ui/experimental'
 
 import { getIcon, getMailboxName } from '@/apps/mail/utils'

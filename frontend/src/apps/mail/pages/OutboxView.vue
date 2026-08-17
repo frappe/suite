@@ -111,27 +111,10 @@ import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from '
 import { useRouter } from 'vue-router'
 import { watchDebounced } from '@vueuse/core'
 import {
-	CalendarClock,
-	EllipsisVertical,
-	Mail,
-	RefreshCw,
-	SendHorizontal,
-	X,
-} from 'lucide-vue-next'
+	CalendarClock, EllipsisVertical, Mail, RefreshCw, SendHorizontal, X, } from 'lucide-vue-next'
 import {
-	Badge,
-	Breadcrumbs,
-	Button,
-	Dialog,
-	ListEmptyState,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListView,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Badge, Breadcrumbs, Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow, utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'

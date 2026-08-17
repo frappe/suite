@@ -260,16 +260,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch 
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { EditorContent } from '@tiptap/vue-3'
 import {
-	CalendarClock,
-	ChevronDown,
-	ChevronUp,
-	EllipsisVertical,
-	Paperclip,
-	SendHorizontal,
-	Trash2,
-	X,
-} from 'lucide-vue-next'
-import { Button, Combobox, FeatherIcon, TextEditor, TextEditorFixedMenu } from 'frappe-ui'
+	CalendarClock, ChevronDown, ChevronUp, EllipsisVertical, Paperclip, SendHorizontal, Trash2, X, } from 'lucide-vue-next'
+import { Button, Combobox } from 'frappe-ui'
+import { Icon as FeatherIcon, TextEditor, TextEditorFixedMenu } from 'frappe-ui/experimental'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { useKeyboardInsets, useTextEditorButtons } from '@/apps/mail/utils/composables'

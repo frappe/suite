@@ -50,7 +50,8 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { Popover, FeatherIcon } from 'frappe-ui'
+import { Popover } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 // Tailwind palette, one family per row (50→900), flattened in row order so the
 // grid reads as 9 columns × 8 families — same source palette Gameplan uses.

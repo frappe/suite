@@ -42,16 +42,8 @@
 </template>
 
 <script setup lang="ts">
-import {
-	Badge,
-	FeatherIcon,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListView,
-	Tooltip,
-} from 'frappe-ui'
+import { Badge, Tooltip } from 'frappe-ui'
+import { Icon as FeatherIcon, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { copyToClipBoard } from '@/apps/mail/utils'
 

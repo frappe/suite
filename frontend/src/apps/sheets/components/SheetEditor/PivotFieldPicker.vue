@@ -62,7 +62,7 @@
 
 <script setup>
 import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue'
-import { FeatherIcon } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { FocusScope } from 'reka-ui'
 
 const props = defineProps({

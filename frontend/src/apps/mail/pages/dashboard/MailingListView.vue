@@ -110,16 +110,8 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-	Button,
-	Dialog,
-	Dropdown,
-	FeatherIcon,
-	FormControl,
-	Switch,
-	Tooltip,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import Megaphone from '~icons/lucide/megaphone'
 

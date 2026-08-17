@@ -95,20 +95,8 @@ import { useRouter } from 'vue-router'
 import { useDebounceFn, watchDebounced } from '@vueuse/core'
 import { Pin, Trash2 } from 'lucide-vue-next'
 import {
-	Button,
-	Dialog,
-	Dropdown,
-	FeatherIcon,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-	createDocumentResource,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, Dropdown, FormControl, createDocumentResource, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

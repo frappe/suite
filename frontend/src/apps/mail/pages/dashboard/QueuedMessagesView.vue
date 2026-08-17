@@ -62,20 +62,8 @@
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
-	Button,
-	Dialog,
-	FeatherIcon,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, FormControl, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { fromNow as formatFromNow } from '@/apps/mail/utils/datetime'

@@ -43,7 +43,8 @@
 <script setup lang="ts">
 import { computed, h, isVNode, type Component, type VNode } from 'vue'
 import { Check } from 'lucide-vue-next'
-import { BottomSheet, Dropdown, FeatherIcon } from 'frappe-ui'
+import { BottomSheet, Dropdown } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import { stripShortcutHint } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'

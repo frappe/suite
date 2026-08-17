@@ -181,14 +181,8 @@
 <script setup lang="ts">
 import { inject, ref, watch } from 'vue'
 import {
-	Button,
-	Dialog,
-	FormControl,
-	TextEditor,
-	createDocumentResource,
-	createResource,
-	useList,
-} from 'frappe-ui'
+	Button, Dialog, FormControl, createDocumentResource, createResource, useList } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 

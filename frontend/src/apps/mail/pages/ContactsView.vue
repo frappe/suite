@@ -42,18 +42,8 @@
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useDebounceFn, watchDebounced } from '@vueuse/core'
 import {
-	Button,
-	Dialog,
-	FeatherIcon,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, FormControl, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { extractNameFromEmail, raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

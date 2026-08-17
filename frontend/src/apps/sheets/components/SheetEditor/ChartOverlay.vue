@@ -51,7 +51,7 @@
 
 <script setup>
 import { computed, defineAsyncComponent, ref } from 'vue'
-import { FeatherIcon } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 // Lazy-load ChartView so ECharts (~600 KB) only enters the bundle when a
 // sheet actually has charts. Vite produces a separate chunk for the
 // component and all its transitive `echarts/*` imports.

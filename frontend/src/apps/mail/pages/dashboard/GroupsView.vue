@@ -44,18 +44,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { watchDebounced } from '@vueuse/core'
-import {
-	FeatherIcon,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListView,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+import { FormControl, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
+import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'

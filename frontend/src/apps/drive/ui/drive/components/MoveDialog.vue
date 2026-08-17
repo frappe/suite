@@ -133,7 +133,7 @@ import {
   Tabs,
   Dropdown,
   Tree,
-  Input,
+   TextInput as Input,
   Skeleton,
   toast,
 } from 'frappe-ui'

@@ -31,7 +31,8 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Dialog, FormControl, TextEditor, createResource } from 'frappe-ui'
+import { Dialog, FormControl, createResource } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'

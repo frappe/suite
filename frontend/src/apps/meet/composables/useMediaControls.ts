@@ -1,4 +1,4 @@
-import { confirmDialog, toast } from "frappe-ui";
+import { dialog, toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref, watch } from "vue";
 import { autoFramingPaused } from "../data/backgroundEffects";
 import {
@@ -378,7 +378,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const confirmScreenShareOverride = () =>
 		new Promise<boolean>((resolve) => {
-			confirmDialog({
+			dialog.confirm({
 				title: "Start Screen Share Anyway?",
 				message:
 					"Someone is already sharing their screen. Starting yours may result in multiple active screen shares.",

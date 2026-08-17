@@ -255,24 +255,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { EditorContent } from '@tiptap/vue-3'
 import {
-	ChevronDown,
-	ChevronUp,
-	ExternalLink,
-	Forward,
-	Reply,
-	ReplyAll,
-	UploadCloud,
-} from 'lucide-vue-next'
+	ChevronDown, ChevronUp, ExternalLink, Forward, Reply, ReplyAll, UploadCloud, } from 'lucide-vue-next'
 import {
-	Button,
-	Combobox,
-	Dropdown,
-	FeatherIcon,
-	Progress,
-	TextEditor,
-	Tooltip,
-	useFileUpload,
-} from 'frappe-ui'
+	Button, Combobox, Dropdown, Progress, Tooltip, useFileUpload } from 'frappe-ui'
+import { Icon as FeatherIcon, TextEditor } from 'frappe-ui/experimental'
 
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'

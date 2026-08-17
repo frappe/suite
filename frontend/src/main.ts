@@ -3,7 +3,6 @@ import './index.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { spritePlugin } from 'frappe-ui/experimental'
-import { pageMetaPlugin } from 'frappe-ui'
 
 import App from '@/App.vue'
 import router from '@/router'
@@ -24,7 +23,6 @@ await initSentry(app, router)
 
 app.use(createPinia())
 app.use(router)
-app.use(pageMetaPlugin)
 app.use(spritePlugin)
 app.use(translationPlugin)
 

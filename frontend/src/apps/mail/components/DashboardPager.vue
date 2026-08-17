@@ -15,7 +15,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button, FeatherIcon } from 'frappe-ui'
+import { Button } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 // `hasNextPage` overrides the count-derived limit, for listings whose total cannot be trusted to
 // bound the pages (the log store reports how many entries it retains, ignoring any search).

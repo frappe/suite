@@ -1,5 +1,6 @@
 import { PluginKey } from '@tiptap/pm/state'
-import { call, createSuggestionExtension } from 'frappe-ui'
+import { call } from 'frappe-ui'
+import { createSuggestionExtension } from 'frappe-ui/experimental'
 import type { BaseSuggestionItem } from 'frappe-ui'
 
 import MentionList from '@/apps/mail/components/Controls/MentionList.vue'

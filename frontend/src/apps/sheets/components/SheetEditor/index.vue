@@ -1057,7 +1057,7 @@
     <!-- Keyboard shortcut help — frappe-ui's KeyboardShortcutsModal, generated
          from the shortcut registry populated by useShortcuts.js (via useShortcut),
          so it can never drift from the handlers. -->
-    <KeyboardShortcutsModal v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
+    <KeyboardShortcutsDialog v-model:open="showShortcutsHelp" title="Keyboard shortcuts" />
 
     <!-- Slicers — floating value-filter controls bound to a filter column -->
     <div v-for="sl in activeSlicers" :key="sl.id" class="sn-slicer"
@@ -1320,21 +1320,8 @@ import NamedRangesDialog       from './NamedRangesDialog.vue'
 import { useSmartFill }        from './useSmartFill.js'
 import * as versionsApi        from '../../services/versions.js'
 import {
-  Avatar,
-  Badge,
-  Button,
-  Checkbox,
-  CommandPalette,
-  Dialog,
-  Dropdown,
-  FeatherIcon,
-  FormControl,
-  KeyboardShortcut,
-  KeyboardShortcutsModal,
-  Spinner,
-  TextInput,
-  Tooltip,
-} from 'frappe-ui'
+   Avatar, Badge, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
+import { CommandPalette, Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])

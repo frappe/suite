@@ -63,13 +63,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import {
-	Button,
-	FormControl,
-	SettingsRow,
-	Switch,
-	TextEditor,
-	createResource,
-} from 'frappe-ui'
+	Button, FormControl, SettingsRow, Switch, createResource } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 

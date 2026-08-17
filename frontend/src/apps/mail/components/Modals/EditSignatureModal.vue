@@ -26,7 +26,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Dialog, FormControl, TextEditor, createDocumentResource } from 'frappe-ui'
+import { Dialog, FormControl, createDocumentResource } from 'frappe-ui'
+import { TextEditor } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { useTextEditorButtons } from '@/apps/mail/utils/composables'

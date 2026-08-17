@@ -73,7 +73,7 @@
 		:disableCapture="isSlideInteractionActive"
 	/>
 
-	<KeyboardShortcutsModal v-model:open="showShortcutsModal" />
+	<KeyboardShortcutsDialog v-model:open="showShortcutsModal" />
 </template>
 
 <script setup>
@@ -89,7 +89,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
-import { call, toast, usePageMeta, KeyboardShortcutsModal, Dialog, Button } from 'frappe-ui'
+import { call, toast, usePageMeta, KeyboardShortcutsDialog, Dialog, Button } from 'frappe-ui'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'

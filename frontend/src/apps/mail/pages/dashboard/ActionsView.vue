@@ -40,7 +40,8 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Button, Dialog, FeatherIcon, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, Tooltip, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import { getSessionUser } from '@/boot/session'
 

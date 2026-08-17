@@ -90,7 +90,8 @@
 <script setup lang="ts">
 import { computed, useTemplateRef } from 'vue'
 import { CalendarClock, ChevronDown, Laugh, Paperclip, SendHorizontal, Trash2 } from 'lucide-vue-next'
-import { Button, Dropdown, TextEditorFixedMenu } from 'frappe-ui'
+import { Button, Dropdown } from 'frappe-ui'
+import { TextEditorFixedMenu } from 'frappe-ui/experimental'
 
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'

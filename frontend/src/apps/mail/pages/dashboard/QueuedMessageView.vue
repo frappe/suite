@@ -90,15 +90,8 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-	Badge,
-	Button,
-	Dialog,
-	Dropdown,
-	FeatherIcon,
-	LoadingIndicator,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Badge, Button, Dialog, Dropdown, LoadingIndicator, createResource, usePageMeta } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import Mail from '~icons/lucide/mail'
 

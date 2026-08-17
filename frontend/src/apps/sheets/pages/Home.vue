@@ -300,20 +300,8 @@
 <script setup>
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
-  Avatar,
-  Badge,
-  Button,
-  Dialog,
-  Spinner,
-  FormControl,
-  FeatherIcon,
-  Dropdown,
-  ListView,
-  ListRowItem,
-  ListFooter,
-  TabButtons,
-  debounce,
-} from 'frappe-ui'
+  Avatar, Badge, Button, Dialog, Spinner, FormControl, Dropdown, TabButtons, debounce } from 'frappe-ui'
+import { Icon as FeatherIcon, ListView, ListRowItem, ListFooter } from 'frappe-ui/experimental'
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'

@@ -30,14 +30,8 @@
 </template>
 
 <script setup lang="ts">
-import {
-	Button,
-	ListEmptyState,
-	ListHeader,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-} from 'frappe-ui'
+import { Button } from 'frappe-ui'
+import { ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 

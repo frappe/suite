@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Calendar, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Button, Dialog, createResource, usePageMeta } from 'frappe-ui'
+import { Calendar } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
 import { raiseToast } from '@/apps/calendar/utils'

@@ -58,7 +58,8 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Button, Dialog, FeatherIcon } from 'frappe-ui'
+import { Button, Dialog } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 // Initialize deferredPrompt for use later to show browser install prompt.
 const deferredPrompt = ref(null)

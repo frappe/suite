@@ -62,19 +62,8 @@ import { computed, inject, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { HardDriveDownload, HardDriveUpload } from 'lucide-vue-next'
 import {
-	Badge,
-	Breadcrumbs,
-	ErrorMessage,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListView,
-	Tabs,
-	useList,
-} from 'frappe-ui'
+	Badge, Breadcrumbs, ErrorMessage, FormControl, Tabs, useList } from 'frappe-ui'
+import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
 import { getTheme } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'

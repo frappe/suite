@@ -213,18 +213,8 @@ import { capitalize, computed, inject, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { Trash2 } from 'lucide-vue-next'
 import {
-	Button,
-	Dialog,
-	Dropdown,
-	ListEmptyState,
-	ListHeader,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-	createDocumentResource,
-	createResource,
-	usePageMeta,
-} from 'frappe-ui'
+	Button, Dialog, Dropdown, createDocumentResource, createResource, usePageMeta } from 'frappe-ui'
+import { ListEmptyState, ListHeader, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { userStore } from '@/apps/mail/stores/user'

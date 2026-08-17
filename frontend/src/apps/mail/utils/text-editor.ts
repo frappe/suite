@@ -1,5 +1,6 @@
 import { Node } from '@tiptap/core'
-import { ImageExtension, useFileUpload } from 'frappe-ui'
+import { useFileUpload } from 'frappe-ui'
+import { ImageExtension } from 'frappe-ui/experimental'
 
 import { randomString } from '@/apps/mail/utils'
 

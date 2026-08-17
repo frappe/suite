@@ -148,7 +148,8 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Button, Dialog, FormControl, FeatherIcon, Dropdown } from 'frappe-ui'
+import { Button, Dialog, FormControl, Dropdown } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { AGG_OPTIONS, computePivot } from '../../engine/pivot.js'
 import PivotFieldPicker from './PivotFieldPicker.vue'
 

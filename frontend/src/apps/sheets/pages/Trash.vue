@@ -66,7 +66,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Badge, Button, Dialog, Spinner, FeatherIcon, ListView, ListRowItem } from 'frappe-ui'
+import { Badge, Button, Dialog, Spinner } from 'frappe-ui'
+import { Icon as FeatherIcon, ListView, ListRowItem } from 'frappe-ui/experimental'
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'

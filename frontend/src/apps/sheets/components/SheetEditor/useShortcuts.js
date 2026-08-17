@@ -1,4 +1,4 @@
-import { useShortcut } from 'frappe-ui'
+import { useKeyboardShortcut } from 'frappe-ui'
 
 /**
  * Keyboard shortcut dispatch for SheetEditor.
@@ -76,12 +76,11 @@ export function useShortcuts(actions) {
 
   // ── Registry (source of truth for the modal) ─────────────────────────────────
   // Shortcuts frappe-ui can match on `e.key`, registered with handler + label.
-  useShortcut([
+  useKeyboardShortcut([
     // View / tools — available even in read-only.
-    { key: 's',  ctrl: true, description: 'Save',            group: 'View', handler: onSave },
+    { combo: 'Mod+S',  description: 'Save',            group: 'View', handler: onSave },
     {
-      key: 'f',
-      ctrl: true,
+      combo: 'Mod+F',
       description: 'Find & replace',
       group: 'View',
       allowInInput: true,
@@ -91,75 +90,75 @@ export function useShortcuts(actions) {
         else if (showFindReplace) showFindReplace.value = true
       },
     },
-    { key: '`',  ctrl: true, description: 'Show formulas',   group: 'View', handler: toggleShowFormulas },
-    { key: '=',  ctrl: true, description: 'Zoom in',         group: 'View', handler: () => zoomBy(+0.1) },
-    { key: '+',  ctrl: true, description: 'Zoom in',         group: 'View', handler: () => zoomBy(+0.1) },
-    { key: '-',  ctrl: true, description: 'Zoom out',        group: 'View', handler: () => zoomBy(-0.1) },
-    { key: '0',  ctrl: true, description: 'Reset zoom',      group: 'View', handler: resetZoom },
+    { combo: 'Mod+Backtick', description: 'Show formulas', group: 'View', handler: toggleShowFormulas },
+    { combo: 'Mod+Equal', description: 'Zoom in', group: 'View', handler: () => zoomBy(+0.1) },
+    { combo: 'Mod+Shift+Equal', description: 'Zoom in', group: 'View', handler: () => zoomBy(+0.1) },
+    { combo: 'Mod+Minus', description: 'Zoom out', group: 'View', handler: () => zoomBy(-0.1) },
+    { combo: 'Mod+Digit0',  description: 'Reset zoom',      group: 'View', handler: resetZoom },
 
     // Editing — mutating, so hidden + inert while read-only.
-    { key: 'z', ctrl: true,              description: 'Undo',                    group: 'Editing', condition: notReadOnly, handler: undo },
-    { key: 'z', ctrl: true, shift: true, description: 'Redo',                    group: 'Editing', condition: notReadOnly, handler: redo },
-    { key: 'y', ctrl: true,              description: 'Redo',                    group: 'Editing', condition: notReadOnly, handler: redo },
-    { key: 'F4',                         description: 'Repeat last action',      group: 'Editing', condition: notReadOnly, handler: repeatLast },
-    { key: 'd', ctrl: true,              description: 'Fill down',               group: 'Editing', condition: notReadOnly, handler: fillDown },
-    { key: 'r', ctrl: true,              description: 'Fill right',              group: 'Editing', condition: notReadOnly, handler: fillRight },
-    { key: 'e', ctrl: true,              description: 'Smart Fill from examples', group: 'Editing', condition: notReadOnly, handler: () => runSmartFill?.() },
-    { key: 'v', ctrl: true, shift: true, description: 'Paste values only',       group: 'Editing', condition: notReadOnly, handler: () => pasteValues?.() },
-    { key: 'l', ctrl: true,              description: 'Insert hyperlink',        group: 'Editing', condition: notReadOnly, handler: openHyperlinkDialog },
-    { key: 'F2', shift: true,            description: 'Add / edit comment',      group: 'Editing', condition: notReadOnly, handler: openCommentPanel },
-    { key: 'ArrowDown', alt: true,       description: 'Quick filter on column',  group: 'Editing', condition: notReadOnly, handler: openQuickFilterForActive },
-    { key: 'h', ctrl: true, alt: true, shift: true, description: 'Version history', group: 'Editing', condition: notReadOnly, handler: openVersionHistory },
+    { combo: 'Mod+Z', description: 'Undo',                    group: 'Editing', enabled: notReadOnly, handler: undo },
+    { combo: 'Mod+Shift+Z', description: 'Redo',                    group: 'Editing', enabled: notReadOnly, handler: redo },
+    { combo: 'Mod+Y', description: 'Redo',                    group: 'Editing', enabled: notReadOnly, handler: redo },
+    { combo: 'F4',                         description: 'Repeat last action',      group: 'Editing', enabled: notReadOnly, handler: repeatLast },
+    { combo: 'Mod+D', description: 'Fill down',               group: 'Editing', enabled: notReadOnly, handler: fillDown },
+    { combo: 'Mod+R', description: 'Fill right',              group: 'Editing', enabled: notReadOnly, handler: fillRight },
+    { combo: 'Mod+E', description: 'Smart Fill from examples', group: 'Editing', enabled: notReadOnly, handler: () => runSmartFill?.() },
+    { combo: 'Mod+Shift+V', description: 'Paste values only',       group: 'Editing', enabled: notReadOnly, handler: () => pasteValues?.() },
+    { combo: 'Mod+L', description: 'Insert hyperlink',        group: 'Editing', enabled: notReadOnly, handler: openHyperlinkDialog },
+    { combo: 'Shift+F2', description: 'Add / edit comment',      group: 'Editing', enabled: notReadOnly, handler: openCommentPanel },
+    { combo: 'Alt+ArrowDown', description: 'Quick filter on column',  group: 'Editing', enabled: notReadOnly, handler: openQuickFilterForActive },
+    { combo: 'Mod+Alt+Shift+H', description: 'Version history', group: 'Editing', enabled: notReadOnly, handler: openVersionHistory },
 
     // Formatting — mutating.
-    { key: 'b', ctrl: true,              description: 'Bold',          group: 'Formatting', condition: notReadOnly, handler: () => toggleFmt('bold') },
-    { key: 'i', ctrl: true,              description: 'Italic',        group: 'Formatting', condition: notReadOnly, handler: () => toggleFmt('italic') },
-    { key: 'u', ctrl: true,              description: 'Underline',     group: 'Formatting', condition: notReadOnly, handler: () => toggleFmt('underline') },
-    { key: 'x', ctrl: true, shift: true, description: 'Strikethrough', group: 'Formatting', condition: notReadOnly, handler: () => toggleFmt('strikethrough') },
+    { combo: 'Mod+B', description: 'Bold',          group: 'Formatting', enabled: notReadOnly, handler: () => toggleFmt('bold') },
+    { combo: 'Mod+I', description: 'Italic',        group: 'Formatting', enabled: notReadOnly, handler: () => toggleFmt('italic') },
+    { combo: 'Mod+U', description: 'Underline',     group: 'Formatting', enabled: notReadOnly, handler: () => toggleFmt('underline') },
+    { combo: 'Mod+Shift+X', description: 'Strikethrough', group: 'Formatting', enabled: notReadOnly, handler: () => toggleFmt('strikethrough') },
   ])
 
   // ── Display-only entries ─────────────────────────────────────────────────────
   // Real handlers live in the grid canvas, the native clipboard events, or the
   // residual onGlobalKey below. `preventDefault: false` + no handler keeps them
   // passive — they never intercept a keystroke, they just populate the modal.
-  useShortcut([
+  useKeyboardShortcut([
     // Navigation (grid canvas)
-    { key: 'ArrowUp',    description: 'Move selection', group: 'Navigation', preventDefault: false },
-    { key: 'ArrowDown',  description: 'Move selection', group: 'Navigation', preventDefault: false },
-    { key: 'ArrowLeft',  description: 'Move selection', group: 'Navigation', preventDefault: false },
-    { key: 'ArrowRight', description: 'Move selection', group: 'Navigation', preventDefault: false },
-    { key: 'ArrowRight', shift: true, description: 'Extend selection',       group: 'Navigation', preventDefault: false },
-    { key: 'ArrowLeft',  ctrl: true,  description: 'Jump to data-region edge', group: 'Navigation', preventDefault: false },
-    { key: 'Home',       ctrl: true,  description: 'Jump to start / end',    group: 'Navigation', preventDefault: false },
-    { key: 'End',        ctrl: true,  description: 'Jump to start / end',    group: 'Navigation', preventDefault: false },
-    { key: 'PageDown',   description: 'Scroll one screen', group: 'Navigation', preventDefault: false },
-    { key: 'PageUp',     description: 'Scroll one screen', group: 'Navigation', preventDefault: false },
+    { combo: 'ArrowUp',    description: 'Move selection', group: 'Navigation', preventDefault: false },
+    { combo: 'ArrowDown',  description: 'Move selection', group: 'Navigation', preventDefault: false },
+    { combo: 'ArrowLeft',  description: 'Move selection', group: 'Navigation', preventDefault: false },
+    { combo: 'ArrowRight', description: 'Move selection', group: 'Navigation', preventDefault: false },
+    { combo: 'Shift+ArrowRight', description: 'Extend selection',       group: 'Navigation', preventDefault: false },
+    { combo: 'Mod+ArrowLeft',  description: 'Jump to data-region edge', group: 'Navigation', preventDefault: false },
+    { combo: 'Mod+Home',       description: 'Jump to start / end',    group: 'Navigation', preventDefault: false },
+    { combo: 'Mod+End',        description: 'Jump to start / end',    group: 'Navigation', preventDefault: false },
+    { combo: 'PageDown',   description: 'Scroll one screen', group: 'Navigation', preventDefault: false },
+    { combo: 'PageUp',     description: 'Scroll one screen', group: 'Navigation', preventDefault: false },
 
     // Selection (grid canvas)
-    { key: ' ', shift: true,             description: 'Select row',          group: 'Selection', preventDefault: false },
-    { key: ' ', ctrl: true,              description: 'Select column',       group: 'Selection', preventDefault: false },
-    { key: 'a', ctrl: true,              description: 'Select data / all',   group: 'Selection', preventDefault: false },
-    { key: ' ', ctrl: true, shift: true, description: 'Select entire sheet', group: 'Selection', preventDefault: false },
+    { combo: 'Shift+Space', description: 'Select row',          group: 'Selection', preventDefault: false },
+    { combo: 'Mod+Space', description: 'Select column',       group: 'Selection', preventDefault: false },
+    { combo: 'Mod+A', description: 'Select data / all',   group: 'Selection', preventDefault: false },
+    { combo: 'Mod+Shift+Space', description: 'Select entire sheet', group: 'Selection', preventDefault: false },
 
     // Editing (grid canvas / native clipboard / residual handler)
-    { key: 'F2',                         description: 'Edit cell',            group: 'Editing', preventDefault: false },
-    { key: 'Delete',                     description: 'Clear cell',           group: 'Editing', preventDefault: false },
-    { key: 'Backspace',                  description: 'Clear cell',           group: 'Editing', preventDefault: false },
-    { key: 'Enter',                      description: 'Commit + move down',   group: 'Editing', preventDefault: false },
-    { key: 'Tab',                        description: 'Commit + move right',  group: 'Editing', preventDefault: false },
-    { key: 'Enter', alt: true,           description: 'New line in cell',     group: 'Editing', condition: notReadOnly, preventDefault: false },
-    { key: 'c', ctrl: true,              description: 'Copy',                 group: 'Editing', preventDefault: false },
-    { key: 'x', ctrl: true,              description: 'Cut',                  group: 'Editing', condition: notReadOnly, preventDefault: false },
-    { key: 'v', ctrl: true,              description: 'Paste',                group: 'Editing', condition: notReadOnly, preventDefault: false },
-    { key: '=', ctrl: true, alt: true,   description: 'Insert rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
-    { key: '-', ctrl: true, alt: true,   description: 'Delete rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
+    { combo: 'F2',                         description: 'Edit cell',            group: 'Editing', preventDefault: false },
+    { combo: 'Delete',                     description: 'Clear cell',           group: 'Editing', preventDefault: false },
+    { combo: 'Backspace',                  description: 'Clear cell',           group: 'Editing', preventDefault: false },
+    { combo: 'Enter',                      description: 'Commit + move down',   group: 'Editing', preventDefault: false },
+    { combo: 'Tab',                        description: 'Commit + move right',  group: 'Editing', preventDefault: false },
+    { combo: 'Alt+Enter', description: 'New line in cell',     group: 'Editing', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+C', description: 'Copy',                 group: 'Editing', preventDefault: false },
+    { combo: 'Mod+X', description: 'Cut',                  group: 'Editing', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+V', description: 'Paste',                group: 'Editing', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Alt+Equal', description: 'Insert rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Alt+Minus', description: 'Delete rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
 
     // Number formats (Ctrl+Shift+1..5) — handled via e.code below; here for display.
-    { key: '1', ctrl: true, shift: true, description: 'Format as number',   group: 'Formatting', condition: notReadOnly, preventDefault: false },
-    { key: '2', ctrl: true, shift: true, description: 'Format as time',     group: 'Formatting', condition: notReadOnly, preventDefault: false },
-    { key: '3', ctrl: true, shift: true, description: 'Format as date',     group: 'Formatting', condition: notReadOnly, preventDefault: false },
-    { key: '4', ctrl: true, shift: true, description: 'Format as currency', group: 'Formatting', condition: notReadOnly, preventDefault: false },
-    { key: '5', ctrl: true, shift: true, description: 'Format as percent',  group: 'Formatting', condition: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Shift+Digit1', description: 'Format as number',   group: 'Formatting', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Shift+Digit2', description: 'Format as time',     group: 'Formatting', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Shift+Digit3', description: 'Format as date',     group: 'Formatting', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Shift+Digit4', description: 'Format as currency', group: 'Formatting', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Shift+Digit5', description: 'Format as percent',  group: 'Formatting', enabled: notReadOnly, preventDefault: false },
   ])
 
   // ── Residual handler (window keydown) ────────────────────────────────────────

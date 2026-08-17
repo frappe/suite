@@ -36,7 +36,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
-import { Button, ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui'
+import { Button } from 'frappe-ui'
+import { ListEmptyState, ListHeader, ListRow, ListRows, ListView } from 'frappe-ui/experimental'
 
 const { data, emptyStateDescription } = defineProps<{
 	data: { name: string; email: string; display_name?: string }[]

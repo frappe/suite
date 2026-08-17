@@ -78,20 +78,8 @@
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { watchDebounced } from '@vueuse/core'
 import {
-	Badge,
-	Button,
-	Dialog,
-	FeatherIcon,
-	FormControl,
-	ListEmptyState,
-	ListHeader,
-	ListRow,
-	ListRowItem,
-	ListRows,
-	ListSelectBanner,
-	ListView,
-	createResource,
-} from 'frappe-ui'
+	Badge, Button, Dialog, FormControl, createResource } from 'frappe-ui'
+import { Icon as FeatherIcon, ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListSelectBanner, ListView } from 'frappe-ui/experimental'
 
 import { raiseToast } from '@/apps/mail/utils'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'

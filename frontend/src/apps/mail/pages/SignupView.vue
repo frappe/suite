@@ -111,7 +111,8 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, ErrorMessage, FeatherIcon, FormControl, createResource } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, createResource } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
 import { sessionStore } from '@/apps/mail/stores/session'
 

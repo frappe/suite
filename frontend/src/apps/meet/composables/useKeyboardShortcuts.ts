@@ -1,4 +1,4 @@
-import { useShortcut } from "frappe-ui";
+import { useKeyboardShortcut } from "frappe-ui";
 import { reactive } from "vue";
 import { pushToTalkEnabled } from "../data/mediaPreferences";
 
@@ -13,33 +13,30 @@ export function useKeyboardShortcuts(isActive?: () => boolean) {
 
 	let unmutedByPushToTalk = false;
 
-	useShortcut([
+	useKeyboardShortcut([
 		{
-			key: "d",
-			ctrl: true,
+			combo: "Mod+D",
 			description: "Toggle microphone",
 			group: "Meeting controls",
-			condition: isNotTyping,
+			enabled: isNotTyping,
 			handler: () => {
 				if (isActiveFn()) meetingControls.toggleMicrophone();
 			},
 		},
 		{
-			key: "e",
-			ctrl: true,
+			combo: "Mod+E",
 			description: "Toggle camera",
 			group: "Meeting controls",
-			condition: isNotTyping,
+			enabled: isNotTyping,
 			handler: () => {
 				if (isActiveFn()) meetingControls.toggleCamera();
 			},
 		},
 		{
-			key: " ",
+			combo: "Space",
 			description: "Push to talk",
 			group: "Meeting controls",
-			triggeredOn: "hold",
-			condition: isNotTyping,
+			enabled: isNotTyping,
 			onHold: () => {
 				if (isActiveFn() && pushToTalkEnabled.value && !meetingControls.isMicOn) {
 					unmutedByPushToTalk = true;
