@@ -32,8 +32,8 @@
     </div>
   </div>
   <div class="flex h-full overflow-hidden">
-    <div class="self-stretch w-72 border-e h-full relative">
-      <div class="flex flex-col items-center w-full">
+    <div class="self-stretch w-72 border-e h-full relative flex flex-col">
+      <div class="flex flex-col items-center w-full shrink-0">
         <Tabs
           v-model="tab"
           class="w-full"
@@ -47,7 +47,7 @@
           @click="showVersions = false"
         />
       </div>
-      <div class="p-3.5 gap-4 flex flex-col h-full overflow-y-auto">
+      <div class="p-3.5 gap-4 flex flex-col flex-1 min-h-0 overflow-y-auto">
         <Button
           v-if="tab === 1"
           :icon="LucidePlus"

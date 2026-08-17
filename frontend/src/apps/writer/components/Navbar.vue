@@ -91,6 +91,17 @@
         }"
       />
     </div>
+    <!-- Kept out of the navbar DOM: the rename field is meant to be the only <input> in there, and e2e locates it as such. -->
+    <Teleport to="body">
+      <input
+        ref="docxInputRef"
+        name="docx-import"
+        type="file"
+        accept=".docx"
+        style="display: none"
+        @change="onImportDocx"
+      />
+    </Teleport>
     <Dialogs v-model="dialog" :docs="file?.doc && [file]" />
   </nav>
 </template>
@@ -109,6 +120,9 @@ import Dialogs from '@/apps/writer/components/Dialogs.vue'
 import { dynamicList } from '@/apps/writer/utils/'
 import { downloadZippedHTML, downloadMD } from '@/apps/writer/utils'
 import { downloadDocxFromHtml } from '../utils/docxexporter'
+import { importDocx } from '../utils/docximporter'
+import { orderedTabs } from '@/apps/writer/extensions/tabs'
+import { createDialog } from '@/apps/writer/utils/dialogs'
 
 import LucideUsers from '~icons/lucide/users'
 import LucideBuilding2 from '~icons/lucide/building-2'
@@ -123,6 +137,7 @@ import LucideTrash from '~icons/lucide/trash'
 import LucideMoreHorizontal from '~icons/lucide/more-horizontal'
 import LucideShare2 from '~icons/lucide/share-2'
 import LucideDownload from '~icons/lucide/download'
+import LucideUpload from '~icons/lucide/upload'
 import LucidePlus from '~icons/lucide/plus'
 import LucideLink from '~icons/lucide/link'
 import LucideArrowLeftRight from '~icons/lucide/arrow-left-right'
@@ -164,6 +179,42 @@ const showTemplates = defineModel('showTemplates')
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const dialog = inject('dialog', ref(''))
 const editor = inject('editor', null)
+const docxInputRef = ref(null)
+
+const exportDocx = () => {
+  if (!editor.value) return
+  const filename = `${props.file.doc.file_name}.docx`
+  const settings = props.document?.doc?.settings
+  const tabs = orderedTabs(editor.value.state.doc)
+
+  if (tabs.length <= 1) {
+    downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+    return
+  }
+
+  createDialog({
+    title: 'Export DOCX',
+    message: 'This document has multiple tabs. Export just the current tab, or all of them?',
+    actions: [
+      {
+        label: 'All Tabs',
+        variant: 'outline',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.getHTML(), filename, settings)
+          close()
+        },
+      },
+      {
+        label: 'Current Tab',
+        variant: 'solid',
+        onClick: ({ close }) => {
+          downloadDocxFromHtml(editor.value.commands.getCurrentTabHTML(), filename, settings)
+          close()
+        },
+      },
+    ],
+  })
+}
 
 const route = useRoute()
 const formattedCrumbs = computed(() => {
@@ -322,13 +373,7 @@ const fileActions = computed(() =>
                 {
                   label: 'DOCX',
                   icon: LucideFileText,
-                  onClick: () => {
-                    downloadDocxFromHtml(
-                      editor.getHTML(),
-                      `${file.doc.file_name}.docx`,
-                      props.document?.doc?.settings,
-                    )
-                  },
+                  onClick: () => exportDocx(),
                 },
                 {
                   label: 'Folder',
@@ -351,6 +396,18 @@ const fileActions = computed(() =>
                   label: 'Blog',
                   icon: LucideFileUser,
                   cond: apps.data && apps.data.find((k) => k.name === 'blog'),
+                },
+              ],
+            },
+            {
+              label: 'Import',
+              icon: LucideUpload,
+              cond: props.file.doc.write,
+              submenu: [
+                {
+                  label: 'DOCX',
+                  icon: LucideFileText,
+                  onClick: () => docxInputRef.value?.click(),
                 },
               ],
             },
@@ -394,6 +451,13 @@ const fileActions = computed(() =>
       })
     : [],
 )
+
+const onImportDocx = async (e) => {
+  const file = e.target.files?.[0]
+  e.target.value = ''
+  if (!file) return
+  await importDocx(file, { editor, currentFileId: props.file.doc.name })
+}
 
 // Utility functions for doc
 const clearCache = () => {
