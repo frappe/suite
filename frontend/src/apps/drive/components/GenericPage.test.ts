@@ -39,8 +39,8 @@ vi.mock('./ErrorPage.vue', () => ({ default: defineComponent(stub) }))
 vi.mock('./DriveListSkeleton.vue', () => ({ default: defineComponent(stub) }))
 
 vi.mock('frappe-ui', () => ({
-  request: vi.fn(),
-  useScrollContainer: () => ({ el: ref(null) }),
+  frappeRequest: vi.fn(),
+  shellScrollContainer: ref(null),
 }))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ name: 'drive-Recents', params: {} }),

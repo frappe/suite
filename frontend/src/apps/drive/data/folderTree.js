@@ -1,5 +1,5 @@
 import { computed, reactive, ref } from 'vue'
-import { request } from 'frappe-ui'
+import { frappeRequest } from 'frappe-ui'
 import { prettyData, sortEntities } from '@/apps/drive/utils/files'
 
 export const expandedFolders = ref(new Set())
@@ -21,7 +21,7 @@ async function fetchChildren(name, sortOrder) {
   node.loading = true
   let rows = []
   try {
-    const data = await request({
+    const data = await frappeRequest({
       url: '/api/method/suite.drive.api.list.files',
       method: 'GET',
       params: {

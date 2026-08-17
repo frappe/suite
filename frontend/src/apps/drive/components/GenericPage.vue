@@ -57,7 +57,7 @@ import { entitiesDownload } from '@/apps/drive/utils/download'
 import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { onKeyDown, useEventListener, useInfiniteScroll } from '@vueuse/core'
-import { request, useScrollContainer } from 'frappe-ui'
+import { frappeRequest, shellScrollContainer as scrollHost } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
 import { uploads } from '@/apps/drive/data/uploads'
@@ -104,7 +104,6 @@ const props = defineProps({
   getEntities: Object,
 })
 const route = useRoute()
-const { el: scrollHost } = useScrollContainer()
 
 const listDialog = ref('')
 provide('listDialog', listDialog)
@@ -288,7 +287,7 @@ async function loadMore() {
   const next = pageStart.value + PAGE_SIZE
   try {
     const path = res.url.startsWith('/') ? res.url : `/api/method/${res.url}`
-    const resp = await request({
+    const resp = await frappeRequest({
       url: path,
       method: 'GET',
       params: {
@@ -299,8 +298,7 @@ async function loadMore() {
       },
       credentials: 'include',
     })
-    // request() is a raw fetch that skips the resource's transform, so the page
-    // rows arrive unformatted — run prettyData before appending.
+    // The paginated endpoint returns raw file rows, so format them before appending.
     const page = prettyData(Array.isArray(resp) ? resp : resp?.message ?? [])
     pageStart.value = next
     hasNextPage.value = page.length >= PAGE_SIZE

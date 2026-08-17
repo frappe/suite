@@ -195,7 +195,7 @@ import {
   onBeforeUnmount,
   nextTick,
 } from 'vue'
-import { Avatar, Button, Dropdown, onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
+import { Avatar, Button, Dropdown, vOnOutsideClick } from 'frappe-ui'
 import { formatDate } from '@/apps/writer/utils/format'
 import { dynamicList } from '@/apps/writer/utils/'
 import { v4 } from 'uuid'

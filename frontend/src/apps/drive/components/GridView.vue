@@ -99,7 +99,7 @@ import { openEntity, isModKey } from '@/apps/drive/utils/files'
 import { useRoute } from 'vue-router'
 import { setActiveEntity, renamingEntity } from '@/apps/drive/data/selection'
 import { settings } from '@/apps/drive/resources/permissions'
-import { onOutsideClickDirective as vOnOutsideClick } from 'frappe-ui'
+import { vOnOutsideClick } from 'frappe-ui'
 
 const props = defineProps({
   folderContents: Object,

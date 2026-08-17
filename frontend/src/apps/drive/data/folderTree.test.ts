@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }))
+const mocks = vi.hoisted(() => ({ frappeRequest: vi.fn() }))
 
-vi.mock('frappe-ui', () => ({ request: mocks.request }))
+vi.mock('frappe-ui', () => ({ frappeRequest: mocks.frappeRequest }))
 vi.mock('@/apps/drive/utils/files', () => ({
   prettyData: (rows: unknown[]) => rows,
   sortEntities: (rows: { file_name?: string }[], order?: { ascending?: boolean }) =>
@@ -44,12 +44,12 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 beforeEach(() => {
   resetTree()
-  mocks.request.mockReset()
+  mocks.frappeRequest.mockReset()
 })
 
 describe('toggleFolder', () => {
   it('expands, fetches children and exposes them as loaded rows', async () => {
-    mocks.request.mockResolvedValue([file('b'), file('a')])
+    mocks.frappeRequest.mockResolvedValue([file('b'), file('a')])
 
     toggleFolder(folder('parent'), { field: 'file_name', ascending: true })
     expect(expandedFolders.value.has('parent')).toBe(true)
@@ -60,7 +60,7 @@ describe('toggleFolder', () => {
     expect(folderChildren.parent.rows.map((r) => r.name)).toEqual(['a', 'b'])
     expect(loadedChildRows.value.map((r) => r.name)).toEqual(['a', 'b'])
 
-    const [{ params }] = mocks.request.mock.calls[0]
+    const [{ params }] = mocks.frappeRequest.mock.calls[0]
     expect(params).toMatchObject({
       entity_name: 'parent',
       order_by: 'file_name',
@@ -69,7 +69,7 @@ describe('toggleFolder', () => {
   })
 
   it('unwraps a message-envelope response and drops dotfiles', async () => {
-    mocks.request.mockResolvedValue({ message: [file('.hidden'), file('shown')] })
+    mocks.frappeRequest.mockResolvedValue({ message: [file('.hidden'), file('shown')] })
 
     toggleFolder(folder('parent'))
     await flush()
@@ -78,7 +78,7 @@ describe('toggleFolder', () => {
   })
 
   it('leaves an empty subtree behind when the fetch fails', async () => {
-    mocks.request.mockRejectedValue(new Error('403'))
+    mocks.frappeRequest.mockRejectedValue(new Error('403'))
 
     toggleFolder(folder('parent'))
     await flush()
@@ -87,7 +87,7 @@ describe('toggleFolder', () => {
   })
 
   it('does not refetch a subtree that is already cached', async () => {
-    mocks.request.mockResolvedValue([file('a')])
+    mocks.frappeRequest.mockResolvedValue([file('a')])
     toggleFolder(folder('parent'))
     await flush()
 
@@ -95,15 +95,15 @@ describe('toggleFolder', () => {
     toggleFolder(folder('parent')) // expand again
     await flush()
     // The collapse drops the cache, so this is a fresh fetch — but only one.
-    expect(mocks.request).toHaveBeenCalledTimes(2)
+    expect(mocks.frappeRequest).toHaveBeenCalledTimes(2)
   })
 
   it('collapsing drops the whole subtree and reports the hidden names', async () => {
-    mocks.request.mockResolvedValueOnce([file('child'), folder('nested')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('child'), folder('nested')])
     toggleFolder(folder('parent'))
     await flush()
 
-    mocks.request.mockResolvedValueOnce([file('deep')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('deep')])
     toggleFolder(folder('nested'))
     await flush()
 
@@ -118,12 +118,12 @@ describe('toggleFolder', () => {
 
   it('ignores a stale response that resolves after a newer one', async () => {
     let resolveFirst: (rows: Row[]) => void = () => {}
-    mocks.request.mockReturnValueOnce(
+    mocks.frappeRequest.mockReturnValueOnce(
       new Promise<Row[]>((resolve) => (resolveFirst = resolve))
     )
     toggleFolder(folder('parent'))
 
-    mocks.request.mockResolvedValueOnce([file('fresh')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('fresh')])
     refreshFolder('parent')
     await flush()
     expect(folderChildren.parent.rows.map((r) => r.name)).toEqual(['fresh'])
@@ -136,7 +136,7 @@ describe('toggleFolder', () => {
 
 describe('removeFromTree / resetTree', () => {
   it('removes moved or deleted rows from every loaded subtree', async () => {
-    mocks.request.mockResolvedValue([file('a'), file('b')])
+    mocks.frappeRequest.mockResolvedValue([file('a'), file('b')])
     toggleFolder(folder('parent'))
     await flush()
 
@@ -145,17 +145,17 @@ describe('removeFromTree / resetTree', () => {
   })
 
   it('moving a subfile out drops it from its old subtree and into the new one', async () => {
-    mocks.request.mockResolvedValueOnce([file('moved'), file('stays')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('moved'), file('stays')])
     toggleFolder(folder('source'))
     await flush()
-    mocks.request.mockResolvedValueOnce([])
+    mocks.frappeRequest.mockResolvedValueOnce([])
     toggleFolder(folder('destination', 0))
     await flush()
 
     removeFromTree(['moved'])
     expect(folderChildren.source.rows.map((r) => r.name)).toEqual(['stays'])
 
-    mocks.request.mockResolvedValueOnce([file('moved')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('moved')])
     refreshFolder('destination')
     await flush()
 
@@ -167,14 +167,14 @@ describe('removeFromTree / resetTree', () => {
   })
 
   it('a failed move restores both subtrees from the server', async () => {
-    mocks.request.mockResolvedValueOnce([file('moved')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('moved')])
     toggleFolder(folder('source'))
     await flush()
 
     removeFromTree(['moved'])
     expect(folderChildren.source.rows).toEqual([])
 
-    mocks.request.mockResolvedValueOnce([file('moved')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('moved')])
     refreshExpanded()
     await flush()
 
@@ -183,11 +183,11 @@ describe('removeFromTree / resetTree', () => {
 
   it('refreshFolder is a no-op for a folder that was never expanded', () => {
     refreshFolder('unknown')
-    expect(mocks.request).not.toHaveBeenCalled()
+    expect(mocks.frappeRequest).not.toHaveBeenCalled()
   })
 
   it('resetTree clears expansion and cached children', async () => {
-    mocks.request.mockResolvedValue([file('a')])
+    mocks.frappeRequest.mockResolvedValue([file('a')])
     toggleFolder(folder('parent'))
     await flush()
 
@@ -207,10 +207,10 @@ describe('flattenRows', () => {
   })
 
   it('inlines children under their folder with an incremented depth', async () => {
-    mocks.request.mockResolvedValueOnce([file('child'), folder('nested')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('child'), folder('nested')])
     toggleFolder(folder('parent'))
     await flush()
-    mocks.request.mockResolvedValueOnce([file('deep')])
+    mocks.frappeRequest.mockResolvedValueOnce([file('deep')])
     toggleFolder(folder('nested'))
     await flush()
 
@@ -226,7 +226,7 @@ describe('flattenRows', () => {
   })
 
   it('keys rows by path so the same entity can appear at two depths', async () => {
-    mocks.request.mockResolvedValue([file('dupe')])
+    mocks.frappeRequest.mockResolvedValue([file('dupe')])
     toggleFolder(folder('parent'))
     await flush()
 
@@ -238,7 +238,7 @@ describe('flattenRows', () => {
   })
 
   it('shows one skeleton per known child while loading, capped', () => {
-    mocks.request.mockReturnValue(new Promise(() => {}))
+    mocks.frappeRequest.mockReturnValue(new Promise(() => {}))
 
     toggleFolder(folder('small', 2))
     let items = flattenRows([folder('small', 2)])
@@ -253,7 +253,7 @@ describe('flattenRows', () => {
   })
 
   it('falls back to a single skeleton when the child count is unknown', () => {
-    mocks.request.mockReturnValue(new Promise(() => {}))
+    mocks.frappeRequest.mockReturnValue(new Promise(() => {}))
     const unknown = { name: 'x', file_name: 'x', is_folder: true }
 
     toggleFolder(unknown)
@@ -263,7 +263,7 @@ describe('flattenRows', () => {
   })
 
   it('marks an expanded folder that turned out to be empty', async () => {
-    mocks.request.mockResolvedValue([])
+    mocks.frappeRequest.mockResolvedValue([])
     toggleFolder(folder('parent'))
     await flush()
 
@@ -272,7 +272,7 @@ describe('flattenRows', () => {
   })
 
   it('does not expand a non-folder row that shares a name with an expanded folder', async () => {
-    mocks.request.mockResolvedValue([file('a')])
+    mocks.frappeRequest.mockResolvedValue([file('a')])
     toggleFolder(folder('parent'))
     await flush()
 
