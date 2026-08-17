@@ -154,6 +154,7 @@ export function useChat(deps: {
 
 	const setupChatEvents = (notify: (notification: ChatNotification) => void) => {
 		let pendingPinnedMessage: IncomingChatMessage | null = null;
+		let pinnedMessageUpdate = 0;
 
 		sfuClient.on("chat:message", async (value: unknown) => {
 			const data = normalizeChatMessage(value);
@@ -184,6 +185,7 @@ export function useChat(deps: {
 		});
 
 		const applyPinnedMessage = async (value: unknown) => {
+			const update = ++pinnedMessageUpdate;
 			if (!isUnknownRecord(value) || value.pinned == null) {
 				pendingPinnedMessage = null;
 				chatStore.setPinnedMessage(null);
@@ -200,6 +202,7 @@ export function useChat(deps: {
 			) {
 				return;
 			}
+			if (update !== pinnedMessageUpdate) return;
 			data.message = plaintext;
 			const message = toChatMessage(data);
 			if (
