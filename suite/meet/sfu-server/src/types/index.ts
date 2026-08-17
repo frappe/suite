@@ -243,7 +243,7 @@ export interface ClientToServerEvents {
 	) => void;
 	'chat:toggle_restriction': (data: { enabled: boolean }) => void;
 	'chat:pin': (
-		data: { messageId: string },
+		data: { messageId: string; action: 'pin' | 'unpin' },
 		callback?: (response: SFUResponse) => void,
 	) => void;
 	'poll:create': (

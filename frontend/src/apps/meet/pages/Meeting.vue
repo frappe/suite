@@ -629,7 +629,7 @@ const chat = useChat({
 
 function unpinChatMessage() {
 	const messageId = chatStore.pinnedMessage?.messageId;
-	if (messageId) chat.pinMessage(messageId);
+	if (messageId) chat.pinMessage(messageId, "unpin");
 }
 
 // --- Poll ---

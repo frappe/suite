@@ -1316,7 +1316,7 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
-	it('chat:pin broadcasts the pinned message to full-access participants and unpins on a repeat pin', async () => {
+	it('chat:pin broadcasts pin and explicit unpin actions', async () => {
 		const harness = createManager();
 
 		const host = connectFullSocket(harness, {
@@ -1346,7 +1346,7 @@ describe('SocketHandlerManager characterization', () => {
 		participant.emitCalls.length = 0;
 
 		const pinCallback = vi.fn();
-		host.fire('chat:pin', { messageId }, pinCallback);
+		host.fire('chat:pin', { messageId, action: 'pin' }, pinCallback);
 
 		expect(pinCallback).toHaveBeenCalledWith({ success: true });
 		const pinnedUpdate = participant.emitCalls.find(
@@ -1364,9 +1364,30 @@ describe('SocketHandlerManager characterization', () => {
 		});
 
 		participant.emitCalls.length = 0;
-		host.fire('chat:pin', { messageId }, pinCallback);
+		const secondSendCallback = vi.fn();
+		host.fire('chat:send', { message: 'pin me too' }, secondSendCallback);
+		const secondMessageId = secondSendCallback.mock.calls[0]?.[0]
+			.messageId as string;
+		host.fire(
+			'chat:pin',
+			{ messageId: secondMessageId, action: 'pin' },
+			pinCallback,
+		);
+		const secondPinnedUpdate = participant.emitCalls.filter(
+			(c) => c.event === 'chat:pin_updated',
+		);
+		host.fire('chat:pin', { messageId, action: 'unpin' }, pinCallback);
 		expect(
-			participant.emitCalls.find((c) => c.event === 'chat:pin_updated')?.data,
+			participant.emitCalls.filter((c) => c.event === 'chat:pin_updated'),
+		).toEqual(secondPinnedUpdate);
+		host.fire(
+			'chat:pin',
+			{ messageId: secondMessageId, action: 'unpin' },
+			pinCallback,
+		);
+		expect(
+			participant.emitCalls.filter((c) => c.event === 'chat:pin_updated').at(-1)
+				?.data,
 		).toEqual({ pinned: null });
 	});
 
@@ -1393,7 +1414,11 @@ describe('SocketHandlerManager characterization', () => {
 
 		participant.emitCalls.length = 0;
 		const deniedCallback = vi.fn();
-		participant.fire('chat:pin', { messageId: 'any-id' }, deniedCallback);
+		participant.fire(
+			'chat:pin',
+			{ messageId: 'any-id', action: 'pin' },
+			deniedCallback,
+		);
 		expect(deniedCallback).toHaveBeenCalledWith({
 			success: false,
 			error: 'Only hosts and co-hosts can pin messages',
@@ -1404,7 +1429,11 @@ describe('SocketHandlerManager characterization', () => {
 
 		host.emitCalls.length = 0;
 		const unknownCallback = vi.fn();
-		host.fire('chat:pin', { messageId: 'missing-id' }, unknownCallback);
+		host.fire(
+			'chat:pin',
+			{ messageId: 'missing-id', action: 'pin' },
+			unknownCallback,
+		);
 		expect(unknownCallback).toHaveBeenCalledWith({
 			success: false,
 			error: 'Message is no longer available to pin',
@@ -1430,7 +1459,7 @@ describe('SocketHandlerManager characterization', () => {
 		const sendCallback = vi.fn();
 		host.fire('chat:send', { message: 'pinned greeting' }, sendCallback);
 		const messageId = sendCallback.mock.calls[0]?.[0].messageId as string;
-		host.fire('chat:pin', { messageId }, () => {});
+		host.fire('chat:pin', { messageId, action: 'pin' }, () => {});
 
 		const lateJoiner = connectFullSocket(harness, {
 			id: 'sock-pin-late',

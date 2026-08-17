@@ -1010,11 +1010,18 @@ export class SFUClient {
 		};
 	}
 
-	async sendChatPin(messageId: string): Promise<unknown> {
+	/** Pin or explicitly unpin a room chat message. */
+	async sendChatPin(
+		messageId: string,
+		action: "pin" | "unpin" = "pin",
+	): Promise<unknown> {
 		if (!this.connected) {
 			throw new SFURequestError("DISCONNECTED", "Not connected to SFU");
 		}
-		return this.sendRequest("chat:pin", { messageId: String(messageId) });
+		return this.sendRequest("chat:pin", {
+			messageId: String(messageId),
+			action,
+		});
 	}
 
 	// ==================== REACTION OPERATIONS ====================

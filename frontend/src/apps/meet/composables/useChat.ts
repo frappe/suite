@@ -10,7 +10,7 @@ interface ChatAPI {
 	setupChatEvents: (notify: (notification: ChatNotification) => void) => void;
 	onSendChat: (text: string) => void;
 	toggleRestriction: (enabled: boolean) => void;
-	pinMessage: (messageId: string) => void;
+	pinMessage: (messageId: string, action?: "pin" | "unpin") => void;
 }
 
 interface ChatNotification {
@@ -152,6 +152,8 @@ export function useChat(deps: {
 	}
 
 	const setupChatEvents = (notify: (notification: ChatNotification) => void) => {
+		let pendingPinnedMessage: IncomingChatMessage | null = null;
+
 		sfuClient.on("chat:message", async (value: unknown) => {
 			const data = normalizeChatMessage(value);
 			if (!data) return;
@@ -182,17 +184,26 @@ export function useChat(deps: {
 
 		const applyPinnedMessage = async (value: unknown) => {
 			if (!isUnknownRecord(value) || value.pinned == null) {
+				pendingPinnedMessage = null;
 				chatStore.setPinnedMessage(null);
 				return;
 			}
 			const data = normalizeChatMessage(value.pinned);
 			if (!data) return;
+			pendingPinnedMessage = data;
+			if (isEncryptedChatMessage(data.message) && !(await getChatKey())) return;
 			data.message = await resolvePlaintext(data.message);
 			chatStore.setPinnedMessage(toChatMessage(data));
+			pendingPinnedMessage = null;
 		};
 
 		sfuClient.on("chat:pin_updated", applyPinnedMessage);
 		sfuClient.on("existing_pinned_message", applyPinnedMessage);
+		document.addEventListener("meet:e2ee-context-ready", () => {
+			if (pendingPinnedMessage) {
+				void applyPinnedMessage({ pinned: pendingPinnedMessage });
+			}
+		});
 		sfuClient.on("chat:restriction_updated", (value: unknown) => {
 			if (isUnknownRecord(value) && typeof value.enabled === "boolean") {
 				chatStore.hostOnlyChat = value.enabled;
@@ -257,10 +268,13 @@ export function useChat(deps: {
 		}
 	};
 
-	const pinMessage = async (messageId: string) => {
+	const pinMessage = async (
+		messageId: string,
+		action: "pin" | "unpin" = "pin",
+	) => {
 		try {
 			if (sfuClient.isConnected()) {
-				await sfuClient.sendChatPin(messageId);
+				await sfuClient.sendChatPin(messageId, action);
 			}
 		} catch (error) {
 			console.error("Failed to pin chat message:", error);

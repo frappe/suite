@@ -325,7 +325,10 @@ describe("sendChatPin", () => {
 			success: true,
 		});
 		await client.sendChatPin("msg-1");
-		expect(sendRequest).toHaveBeenCalledWith("chat:pin", { messageId: "msg-1" });
+		expect(sendRequest).toHaveBeenCalledWith("chat:pin", {
+			messageId: "msg-1",
+			action: "pin",
+		});
 	});
 });
 

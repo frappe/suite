@@ -114,13 +114,18 @@ export function registerChatHandlers(deps: HandlerDeps) {
 
 				const messageId =
 					typeof data?.messageId === 'string' ? data.messageId : '';
-				if (!messageId) {
+				const action = data?.action;
+				if (!messageId || (action !== 'pin' && action !== 'unpin')) {
 					callback?.({ success: false, error: 'Invalid chat message' });
 					return;
 				}
 
 				const existing = deps.registry.getPinnedChatMessage(roomId);
-				if (existing?.messageId === messageId) {
+				if (action === 'unpin') {
+					if (existing?.messageId !== messageId) {
+						callback?.({ success: true });
+						return;
+					}
 					deps.registry.setPinnedChatMessage(roomId, null);
 					deps.registry.emitToFullAccessParticipants(
 						roomId,
@@ -129,6 +134,10 @@ export function registerChatHandlers(deps: HandlerDeps) {
 							pinned: null,
 						},
 					);
+					callback?.({ success: true });
+					return;
+				}
+				if (existing?.messageId === messageId) {
 					callback?.({ success: true });
 					return;
 				}

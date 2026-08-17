@@ -226,6 +226,7 @@ export class RoomRegistry {
 		return Boolean(this.hostOnlyChat[roomId]);
 	}
 
+	/** Keep the bounded message window used to resolve pin requests. */
 	recordChatMessage(roomId: string, message: ChatMessage): void {
 		const buffer = this.recentChatMessages[roomId] ?? [];
 		buffer.push(message);
@@ -233,6 +234,7 @@ export class RoomRegistry {
 		this.recentChatMessages[roomId] = buffer;
 	}
 
+	/** Resolve a message that is still eligible for pinning. */
 	getRecentChatMessage(
 		roomId: string,
 		messageId: string,
@@ -242,11 +244,13 @@ export class RoomRegistry {
 		);
 	}
 
+	/** Set or clear the room-wide pin; room cleanup removes this ephemeral state. */
 	setPinnedChatMessage(roomId: string, pinned: PinnedChatMessage | null): void {
 		if (pinned === null) delete this.pinnedChatMessage[roomId];
 		else this.pinnedChatMessage[roomId] = pinned;
 	}
 
+	/** Return the current room-wide pin, if one exists. */
 	getPinnedChatMessage(roomId: string): PinnedChatMessage | null {
 		return this.pinnedChatMessage[roomId] ?? null;
 	}
