@@ -56,7 +56,7 @@ function run(item, event) {
 <template>
   <!-- MenuItems.vue renders the toolbar Button via #default slot, but we
        ignore that slot and render our own button so the icon can be reactive. -->
-  <Popover v-model:open="isOpen" placement="bottom-start">
+  <Popover v-model:open="isOpen" side="bottom" align="start">
     <template #trigger>
       <Button
         size="xs"

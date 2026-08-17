@@ -4,9 +4,9 @@
          that button gets no tooltip (only plain command items do), so we render
          our own — same as DropdownMenuGroup.vue. It has to stay the direct child
          of #trigger: PopoverTrigger wires the click onto it via as-child. -->
-    <template #trigger="{ isOpen }">
+    <template #trigger="{ open }">
       <Button size="xs" variant="ghost" :icon="icon" label="Custom Spacing" tooltip="Custom Spacing"
-        class="aria-pressed:bg-surface-gray-3" :aria-pressed="isOpen" />
+        class="aria-pressed:bg-surface-gray-3" :aria-pressed="open" />
     </template>
     <template #default>
       <div class="p-4 flex flex-col gap-4 w-64">

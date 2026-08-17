@@ -13,12 +13,8 @@
     class="w-full flex justify-start items-start bg-surface-sidebar border rounded overflow-clip h-7 pl-0 mb-4"
   >
     <Tooltip v-for="[file_kind, i] in storageBreakdown.data?.total" :key="file_kind">
-      <template #body>
-        <div
-          class="text-center rounded bg-surface-gray-10 px-2 py-1 text-xs text-ink-base shadow-xl"
-        >
-          {{ i.kind }} <br />{{ i.h_size }} ({{ i.percentageFormat }})
-        </div>
+      <template #content>
+        {{ i.kind }} <br />{{ i.h_size }} ({{ i.percentageFormat }})
       </template>
       <div
         class="h-7"

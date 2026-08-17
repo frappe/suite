@@ -1,13 +1,12 @@
 <template>
 	<Popover @open="syncCurrentColor">
-		<template #target="{ togglePopover, isOpen }">
+		<template #trigger>
 			<div
 				class="me-0.5 size-4 cursor-pointer rounded-sm ring-[1.5px] ring-outline-gray-2 ring-offset-1"
 				:style="{ backgroundColor: currentColor }"
-				@click="handleColorPickerClick(togglePopover, isOpen)"
 			></div>
 		</template>
-		<template #body>
+		<template #default>
 			<div class="m-2 rounded-lg border bg-surface-elevation-2 p-3 shadow-xl">
 				<div class="flex flex-col gap-3">
 					<div
@@ -337,11 +336,6 @@ const handleClipboardCopy = () => {
 
 const handleColorInputClick = (e) => {
 	e.target.select()
-}
-
-const handleColorPickerClick = (togglePopover, isOpen) => {
-	if (!isOpen) syncCurrentColor()
-	togglePopover()
 }
 
 watch(

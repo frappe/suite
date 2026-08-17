@@ -72,17 +72,16 @@
 						@click.stop.prevent="openAttachment(idx)"
 					/>
 				</Tooltip>
-				<Popover v-if="attachments.length > 2" placement="bottom">
-					<template #target="{ togglePopover }">
+				<Popover v-if="attachments.length > 2" side="bottom">
+					<template #trigger>
 						<Tooltip :text="__('View remaining attachments')">
 							<AttachmentCapsule
 								:file-name="`+${String(attachments.length - 2)}`"
 								class="mr-2"
-								@click.stop.prevent="togglePopover()"
 							/>
 						</Tooltip>
 					</template>
-					<template #body-main>
+					<template #default>
 						<div class="max-h-80 overflow-y-auto p-1">
 							<Tooltip
 								v-for="(attachment, idx) in attachments.slice(2)"

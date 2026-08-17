@@ -7,8 +7,8 @@
       <div class="flex items-center">
         <Tooltip
           :text="__(label)"
-          placement="right"
-          arrow-class="fill-surface-gray-10"
+          side="right"
+          class="sidebar-item-tooltip"
           :disabled="!isCollapsed"
         >
           <slot name="icon">
@@ -58,3 +58,9 @@ function handleClick() {
   router.push({ path: props.to })
 }
 </script>
+
+<style>
+.sidebar-item-tooltip [data-slot='arrow'] {
+  fill: var(--surface-gray-10);
+}
+</style>

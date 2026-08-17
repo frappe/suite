@@ -1,11 +1,11 @@
 <template>
-  <Popover transition="default">
-    <template #target="{ togglePopover, isOpen }">
-      <slot v-bind="{ isOpen, togglePopover }">
-        <Button variant="subtle" :title="emoji.value" :icon="emoji.icon" @click="togglePopover" />
+  <Popover bare>
+    <template #trigger="{ toggle, open }">
+      <slot v-bind="{ open, toggle }">
+        <Button variant="subtle" :title="emoji.value" :icon="emoji.icon" />
       </slot>
     </template>
-    <template #body="{ togglePopover }">
+    <template #default="{ toggle }">
       <div class="bg-surface-base my-3 transform rounded px-4 sm:px-0">
         <div class="relative rounded shadow-2xl ring-1 ring-black ring-opacity-5">
           <div class="flex gap-2 px-3 pb-1 pt-3">
@@ -19,7 +19,7 @@
               @click="
                 () => {
                   setRandom()
-                  togglePopover()
+                  toggle()
                 }
               "
             />
@@ -46,7 +46,7 @@
                   class="hover:bg-surface-gray-2 h-8 w-8 rounded-md p-1 text-4xl"
                   :title="_emoji.value"
                   :icon="_emoji.icon"
-                  @click="() => (emojiValue = _emoji.value) && togglePopover()"
+                  @click="() => (emojiValue = _emoji.value) && toggle()"
                 />
               </div>
             </div>

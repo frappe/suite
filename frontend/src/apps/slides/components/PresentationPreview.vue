@@ -38,7 +38,7 @@
 					v-for="action in presentationActions"
 					:text="action.label"
 					:hover-delay="0.3"
-					placement="right"
+					side="right"
 				>
 					<div :class="getActionButtonClasses(action.label)" @click="action.onClick">
 						<component

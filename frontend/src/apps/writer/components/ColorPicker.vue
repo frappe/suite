@@ -1,19 +1,9 @@
 <template>
-  <Popover
-    placement="left"
-    class="!block w-full"
-    popover-class="!min-w-fit !mr-[30px]"
-  >
-    <template #trigger="{ togglePopover, isOpen }">
+  <Popover side="left" class="!block w-full" @open="setSelectorPosition(modelColor)">
+    <template #trigger="{ open }">
       <slot
         name="target"
-        :toggle-popover="
-          () => {
-            togglePopover()
-            setSelectorPosition(modelColor)
-          }
-        "
-        :is-open="isOpen"
+        :is-open="open"
       />
     </template>
     <template #default>
@@ -273,3 +263,10 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style scoped>
+:deep([data-slot='content']) {
+  min-width: fit-content !important;
+  margin-right: 30px !important;
+}
+</style>

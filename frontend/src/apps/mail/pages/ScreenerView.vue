@@ -102,18 +102,17 @@
 								<span class="truncate">{{ waitingLabel }}</span>
 								<!-- Redundant while the explainer slab is teaching the same lesson above,
 								     and skipped on mobile where the popover doesn't sit well. -->
-								<Popover v-if="explainerDismissed && !isMobile" placement="bottom-start">
-									<template #target="{ togglePopover }">
+								<Popover v-if="explainerDismissed && !isMobile" side="bottom" align="start">
+									<template #trigger>
 										<Button
 											variant="ghost"
 											class="ml-1 !px-1.5"
 											:tooltip="__('How the Screener works')"
-											@click="togglePopover()"
 										>
 											<template #icon><CircleHelp class="icon" /></template>
 										</Button>
 									</template>
-									<template #body-main>
+									<template #default>
 										<div class="w-80 p-4">
 											<div class="text-ink-gray-8 mb-1.5 text-sm !font-semibold">
 												{{ __('How the Screener works') }}
@@ -1325,4 +1324,3 @@ const bulkOptions = computed(() => [
 	{ label: __('Move All to Inbox'), icon: Inbox, onClick: () => (showClearAll.value = true) },
 ])
 </script>
-
