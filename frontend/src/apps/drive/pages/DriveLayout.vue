@@ -50,6 +50,7 @@ import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown, useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
 import { useEmitter } from '@/apps/drive/utils/useEmitter'
+import { isModKey } from '@/apps/drive/utils/files'
 import { initSocket } from '@/apps/drive/socket'
 import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
 import { useRoute } from 'vue-router'
@@ -109,10 +110,15 @@ onKeyDown((e) => {
         e.preventDefault()
       }
     }
-    if (e.key == 'k') {
-      showSearchPopup.value = true
-      e.preventDefault()
-    }
+  }
+
+  // Ctrl+K on Windows/Linux, Cmd+K on Mac - same convention as Mail's search
+  // shortcut (`HeaderActions.vue`). Not nested under the `e.metaKey` branch
+  // above: on Windows/Linux `metaKey` is the literal Windows key, which this
+  // never bound, so Ctrl+K did nothing there until now.
+  if (isModKey(e) && e.key.toLowerCase() == 'k') {
+    showSearchPopup.value = true
+    e.preventDefault()
   }
 })
 </script>

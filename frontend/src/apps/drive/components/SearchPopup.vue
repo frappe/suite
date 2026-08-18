@@ -113,8 +113,9 @@ const searchResults = createResource({
   url: 'suite.drive.api.files.search',
   // Typing fires this on every keystroke, and the endpoint resolves access one
   // row at a time - a wide query is the most expensive call in Drive. Wait for
-  // a pause first, as the list resources do.
-  debounce: 300,
+  // a pause first, as the list resources do. Short enough to still feel
+  // immediate; long enough to coalesce a normal typing burst.
+  debounce: 180,
 })
 
 watch(search, (val) => {

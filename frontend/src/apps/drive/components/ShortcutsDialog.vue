@@ -25,6 +25,7 @@
 <script setup>
 import { Dialog } from 'frappe-ui'
 import { computed } from 'vue'
+import { isApple } from '@/apps/drive/utils/files'
 const props = defineProps({
   modelValue: Boolean,
 })
@@ -41,11 +42,15 @@ const metaKey = computed(() => {
   }
   return 'Meta'
 })
+// Find Files binds Ctrl+K (Windows/Linux) or Cmd+K (Mac) - see
+// `isModKey`/DriveLayout.vue's onKeyDown - which is Ctrl, not the Windows key
+// `metaKey` above documents for the other Meta-only shortcuts below.
+const findFilesKey = computed(() => (isApple() ? '⌘' : 'Ctrl'))
 const shortcutGroups = [
   {
     title: 'General',
     shortcuts: [
-      [[metaKey.value, 'K'], 'Find Files'],
+      [[findFilesKey.value, 'K'], 'Find Files'],
       [[metaKey.value, 'Shift', ','], 'Open Settings'],
     ],
   },

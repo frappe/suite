@@ -727,7 +727,7 @@ export const newExternal = async (type) => {
   window.location.href = '/writer/w/' + data.name
 }
 
-function isApple() {
+export function isApple() {
   // Pattern borrowed from TinyKeys library.
   // --
   // https://github.com/jamiebuilds/tinykeys/blob/e0d23b4f248af59ffbbe52411505c3d681c73045/src/tinykeys.ts#L50-L54
