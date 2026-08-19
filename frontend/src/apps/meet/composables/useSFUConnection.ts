@@ -527,23 +527,25 @@ export function useSFUConnection(deps: {
 						{ publishVideo, publishAudio },
 						signal,
 					);
-					if (publishVideo && publication.videoProducer) {
+					const videoStillRequested = publishVideo && mediaState.isCameraOn;
+					const audioStillRequested = publishAudio && mediaState.isMicOn;
+					if (videoStillRequested && publication.videoProducer) {
 						sfuClient.sendMediaControl("video_on");
-					} else if (publishVideo) {
+					} else if (videoStillRequested) {
 						mediaState.isCameraOn = false;
 						for (const track of videoTracks) track.enabled = false;
 					}
-					if (publishAudio && publication.audioProducer) {
+					if (audioStillRequested && publication.audioProducer) {
 						sfuClient.sendMediaControl("unmute");
-					} else if (publishAudio) {
+					} else if (audioStillRequested) {
 						mediaState.isMicOn = false;
 						for (const track of mediaState.localStream.getAudioTracks()) {
 							track.enabled = false;
 						}
 					}
 					if (
-						(publishVideo && !publication.videoProducer) ||
-						(publishAudio && !publication.audioProducer)
+						(videoStillRequested && !publication.videoProducer) ||
+						(audioStillRequested && !publication.audioProducer)
 					) {
 						console.warn("Initial media publication did not fully recover", {
 							video: publication.videoError
