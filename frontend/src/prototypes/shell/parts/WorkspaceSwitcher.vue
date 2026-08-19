@@ -40,13 +40,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, h } from 'vue'
 import { Avatar, Dropdown } from 'frappe-ui'
 
 import { USER, WORKSPACES } from '../fixtures'
+import { workspaceId as currentId } from '../workspaceState'
 import FrappeTile from './FrappeTile.vue'
 
-const currentId = ref(WORKSPACES[0].id)
 const current = computed(
   () => WORKSPACES.find((w) => w.id === currentId.value) ?? WORKSPACES[0],
 )

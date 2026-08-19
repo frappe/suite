@@ -6,7 +6,9 @@ export const WORKSPACE = { name: 'Frappe' }
 // Two workspaces only, to ask whether the switcher belongs in the sidebar at
 // all. `kind` is the subtitle line, so the org and the personal one are
 // tellable apart without an avatar.
-export const WORKSPACES = [
+export type WorkspaceId = 'frappe' | 'personal'
+
+export const WORKSPACES: { id: WorkspaceId; name: string; kind: string }[] = [
   { id: 'frappe', name: 'Frappe', kind: 'Organization' },
   { id: 'personal', name: 'Personal', kind: 'Just you' },
 ]
@@ -121,6 +123,8 @@ export interface FileRow {
   modified: string
   /** Backs the Modified sort — the `modified` label is prose and can't sort. */
   minutesAgo: number
+  /** Raw size, formatted for the Size column. Folders carry none. */
+  bytes?: number
   /** Parent folder id; `null` sits at the root of the tree. */
   parent: string | null
   shared?: boolean
@@ -130,75 +134,115 @@ export interface FileRow {
 
 // A real tree, not a flat list: `parent` is the only structure, so the Files
 // area can walk it to any depth. Deepest branch is Product / Roadmap / Q3.
-export const FILES: FileRow[] = [
+const FRAPPE_FILES: FileRow[] = [
   // Root
   { id: 'f1', name: 'Product', kind: 'folder', parent: null, owner: 'Faris', modified: '2d ago', minutesAgo: 2880 },
   { id: 'f2', name: 'Design', kind: 'folder', parent: null, owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7200, shared: true },
   { id: 'f13', name: 'Operations', kind: 'folder', parent: null, owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, shared: true },
-  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', parent: null, owner: 'Faris', modified: '12m ago', minutesAgo: 12, starred: true },
-  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', parent: null, owner: 'Priya Nair', modified: '1h ago', minutesAgo: 60, shared: true },
-  { id: 'f5', name: 'Suite launch deck', kind: 'slides', parent: null, owner: 'Faris', modified: '2h ago', minutesAgo: 120, starred: true },
-  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', parent: null, owner: 'Rushabh Mehta', modified: '3h ago', minutesAgo: 180, shared: true },
-  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1440, shared: true },
-  { id: 'f8', name: 'Expense tracker', kind: 'sheet', parent: null, owner: 'Faris', modified: 'yesterday', minutesAgo: 1500 },
-  { id: 'f9', name: 'Design review deck', kind: 'slides', parent: null, owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2940, shared: true, starred: true },
-  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', parent: null, owner: 'Faris', modified: '3d ago', minutesAgo: 4320, starred: true },
+  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', parent: null, owner: 'Faris', modified: '12m ago', minutesAgo: 12, bytes: 48_200, starred: true },
+  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', parent: null, owner: 'Priya Nair', modified: '1h ago', minutesAgo: 60, bytes: 312_000, shared: true },
+  { id: 'f5', name: 'Suite launch deck', kind: 'slides', parent: null, owner: 'Faris', modified: '2h ago', minutesAgo: 120, bytes: 8_400_000, starred: true },
+  { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', parent: null, owner: 'Rushabh Mehta', modified: '3h ago', minutesAgo: 180, bytes: 1_260_000, shared: true },
+  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1440, bytes: 22_800, shared: true },
+  { id: 'f8', name: 'Expense tracker', kind: 'sheet', parent: null, owner: 'Faris', modified: 'yesterday', minutesAgo: 1500, bytes: 486_000 },
+  { id: 'f9', name: 'Design review deck', kind: 'slides', parent: null, owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2940, bytes: 12_700_000, shared: true, starred: true },
+  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', parent: null, owner: 'Faris', modified: '3d ago', minutesAgo: 4320, bytes: 64_500, starred: true },
 
   // Product
   { id: 'p1', name: 'Roadmap', kind: 'folder', parent: 'f1', owner: 'Faris', modified: '6h ago', minutesAgo: 360 },
   { id: 'p2', name: 'Specs', kind: 'folder', parent: 'f1', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1380, shared: true },
-  { id: 'p3', name: 'Product brief', kind: 'writer', parent: 'f1', owner: 'Faris', modified: '4h ago', minutesAgo: 240, starred: true },
-  { id: 'p4', name: 'Pricing model', kind: 'sheet', parent: 'f1', owner: 'Rushabh Mehta', modified: '2d ago', minutesAgo: 3000, shared: true },
+  { id: 'p3', name: 'Product brief', kind: 'writer', parent: 'f1', owner: 'Faris', modified: '4h ago', minutesAgo: 240, bytes: 91_300, starred: true },
+  { id: 'p4', name: 'Pricing model', kind: 'sheet', parent: 'f1', owner: 'Rushabh Mehta', modified: '2d ago', minutesAgo: 3000, bytes: 738_000, shared: true },
 
   // Product / Roadmap
   { id: 'r1', name: 'Q3', kind: 'folder', parent: 'p1', owner: 'Faris', modified: '30m ago', minutesAgo: 30 },
   { id: 'r2', name: 'Q4', kind: 'folder', parent: 'p1', owner: 'Faris', modified: '5h ago', minutesAgo: 300 },
-  { id: 'r3', name: 'Roadmap overview', kind: 'writer', parent: 'p1', owner: 'Rushabh Mehta', modified: '1d ago', minutesAgo: 1560, shared: true, starred: true },
+  { id: 'r3', name: 'Roadmap overview', kind: 'writer', parent: 'p1', owner: 'Rushabh Mehta', modified: '1d ago', minutesAgo: 1560, bytes: 57_600, shared: true, starred: true },
 
   // Product / Roadmap / Q3
-  { id: 'q1', name: 'Q3 objectives', kind: 'writer', parent: 'r1', owner: 'Faris', modified: '30m ago', minutesAgo: 30, starred: true },
-  { id: 'q2', name: 'Q3 metrics', kind: 'sheet', parent: 'r1', owner: 'Priya Nair', modified: '2h ago', minutesAgo: 150, shared: true },
-  { id: 'q3', name: 'Q3 review deck', kind: 'slides', parent: 'r1', owner: 'Faris', modified: '1d ago', minutesAgo: 1620 },
+  { id: 'q1', name: 'Q3 objectives', kind: 'writer', parent: 'r1', owner: 'Faris', modified: '30m ago', minutesAgo: 30, bytes: 33_400, starred: true },
+  { id: 'q2', name: 'Q3 metrics', kind: 'sheet', parent: 'r1', owner: 'Priya Nair', modified: '2h ago', minutesAgo: 150, bytes: 214_000, shared: true },
+  { id: 'q3', name: 'Q3 review deck', kind: 'slides', parent: 'r1', owner: 'Faris', modified: '1d ago', minutesAgo: 1620, bytes: 5_900_000 },
 
   // Product / Roadmap / Q4
-  { id: 'q4', name: 'Q4 objectives', kind: 'writer', parent: 'r2', owner: 'Faris', modified: '5h ago', minutesAgo: 300 },
-  { id: 'q5', name: 'Q4 budget', kind: 'sheet', parent: 'r2', owner: 'Aditya Verma', modified: '3d ago', minutesAgo: 4400, shared: true },
+  { id: 'q4', name: 'Q4 objectives', kind: 'writer', parent: 'r2', owner: 'Faris', modified: '5h ago', minutesAgo: 300, bytes: 28_900 },
+  { id: 'q5', name: 'Q4 budget', kind: 'sheet', parent: 'r2', owner: 'Aditya Verma', modified: '3d ago', minutesAgo: 4400, bytes: 402_000, shared: true },
 
   // Product / Specs
-  { id: 's1', name: 'Auth spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1400, shared: true },
-  { id: 's2', name: 'Billing spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '2d ago', minutesAgo: 3100, shared: true },
-  { id: 's3', name: 'Search spec', kind: 'writer', parent: 'p2', owner: 'Faris', modified: '6d ago', minutesAgo: 8640 },
+  { id: 's1', name: 'Auth spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1400, bytes: 76_100, shared: true },
+  { id: 's2', name: 'Billing spec', kind: 'writer', parent: 'p2', owner: 'Aditya Verma', modified: '2d ago', minutesAgo: 3100, bytes: 68_400, shared: true },
+  { id: 's3', name: 'Search spec', kind: 'writer', parent: 'p2', owner: 'Faris', modified: '6d ago', minutesAgo: 8640, bytes: 52_300 },
 
   // Design
   { id: 'd1', name: 'Brand', kind: 'folder', parent: 'f2', owner: 'Neha Kulkarni', modified: '3d ago', minutesAgo: 4500, shared: true },
   { id: 'd2', name: 'Mockups', kind: 'folder', parent: 'f2', owner: 'Neha Kulkarni', modified: '8h ago', minutesAgo: 480, shared: true },
-  { id: 'd3', name: 'Component audit', kind: 'sheet', parent: 'f2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2900, shared: true },
-  { id: 'd4', name: 'Icon set.pdf', kind: 'pdf', parent: 'f2', owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7300, shared: true },
+  { id: 'd3', name: 'Component audit', kind: 'sheet', parent: 'f2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2900, bytes: 168_000, shared: true },
+  { id: 'd4', name: 'Icon set.pdf', kind: 'pdf', parent: 'f2', owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7300, bytes: 3_400_000, shared: true },
 
   // Design / Brand
-  { id: 'b1', name: 'Logo guidelines.pdf', kind: 'pdf', parent: 'd1', owner: 'Neha Kulkarni', modified: '3d ago', minutesAgo: 4500, shared: true },
-  { id: 'b2', name: 'Colour tokens', kind: 'sheet', parent: 'd1', owner: 'Faris', modified: '1w ago', minutesAgo: 10080, starred: true },
+  { id: 'b1', name: 'Logo guidelines.pdf', kind: 'pdf', parent: 'd1', owner: 'Neha Kulkarni', modified: '3d ago', minutesAgo: 4500, bytes: 5_100_000, shared: true },
+  { id: 'b2', name: 'Colour tokens', kind: 'sheet', parent: 'd1', owner: 'Faris', modified: '1w ago', minutesAgo: 10080, bytes: 96_700, starred: true },
 
   // Design / Mockups
-  { id: 'm1', name: 'Shell mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '8h ago', minutesAgo: 480, shared: true, starred: true },
-  { id: 'm2', name: 'Mobile mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 3200, shared: true },
-  { id: 'm3', name: 'Dark mode mockups', kind: 'slides', parent: 'd2', owner: 'Faris', modified: '4d ago', minutesAgo: 5900 },
+  { id: 'm1', name: 'Shell mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '8h ago', minutesAgo: 480, bytes: 14_200_000, shared: true, starred: true },
+  { id: 'm2', name: 'Mobile mockups', kind: 'slides', parent: 'd2', owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 3200, bytes: 9_800_000, shared: true },
+  { id: 'm3', name: 'Dark mode mockups', kind: 'slides', parent: 'd2', owner: 'Faris', modified: '4d ago', minutesAgo: 5900, bytes: 7_300_000 },
 
   // Operations
   { id: 'o1', name: 'HR', kind: 'folder', parent: 'f13', owner: 'Priya Nair', modified: '2d ago', minutesAgo: 3300, shared: true },
   // Deliberately empty, so the empty state is reachable by clicking.
   { id: 'o2', name: 'Archive', kind: 'folder', parent: 'f13', owner: 'Priya Nair', modified: '1mo ago', minutesAgo: 43200 },
-  { id: 'o3', name: 'Vendor list', kind: 'sheet', parent: 'f13', owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, shared: true },
-  { id: 'o4', name: 'Office lease.pdf', kind: 'pdf', parent: 'f13', owner: 'Rushabh Mehta', modified: '2w ago', minutesAgo: 20200 },
+  { id: 'o3', name: 'Vendor list', kind: 'sheet', parent: 'f13', owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, bytes: 122_000, shared: true },
+  { id: 'o4', name: 'Office lease.pdf', kind: 'pdf', parent: 'f13', owner: 'Rushabh Mehta', modified: '2w ago', minutesAgo: 20200, bytes: 2_050_000 },
 
   // Operations / HR
-  { id: 'h1', name: 'Hiring plan', kind: 'writer', parent: 'o1', owner: 'Priya Nair', modified: '2d ago', minutesAgo: 3300, shared: true },
-  { id: 'h2', name: 'Interview rubric', kind: 'writer', parent: 'o1', owner: 'Aditya Verma', modified: '1w ago', minutesAgo: 10100, shared: true },
+  { id: 'h1', name: 'Hiring plan', kind: 'writer', parent: 'o1', owner: 'Priya Nair', modified: '2d ago', minutesAgo: 3300, bytes: 44_800, shared: true },
+  { id: 'h2', name: 'Interview rubric', kind: 'writer', parent: 'o1', owner: 'Aditya Verma', modified: '1w ago', minutesAgo: 10100, bytes: 39_200, shared: true },
 
   // Trash spans the tree, so it is a view rather than a place.
   { id: 't1f', name: 'Archive 2025', kind: 'folder', parent: null, owner: 'Faris', modified: '2w ago', minutesAgo: 20160, trashed: true },
-  { id: 't2f', name: 'Old roadmap', kind: 'writer', parent: 'p1', owner: 'Faris', modified: '3w ago', minutesAgo: 30240, trashed: true },
+  { id: 't2f', name: 'Old roadmap', kind: 'writer', parent: 'p1', owner: 'Faris', modified: '3w ago', minutesAgo: 30240, bytes: 61_500, trashed: true },
 ]
+
+// The personal workspace is one person's own drive, so it reads differently
+// from the org's: shallower, almost everything owned by the user, and only a
+// handful of rows shared — enough to keep every saved view reachable.
+const PERSONAL_FILES: FileRow[] = [
+  // Root
+  { id: 'x1', name: 'Finances', kind: 'folder', parent: null, owner: 'Faris', modified: '6h ago', minutesAgo: 360 },
+  { id: 'x2', name: 'Travel', kind: 'folder', parent: null, owner: 'Faris', modified: '4d ago', minutesAgo: 5760 },
+  { id: 'x3', name: 'Flat', kind: 'folder', parent: null, owner: 'Faris', modified: '2w ago', minutesAgo: 20160 },
+  { id: 'x4', name: 'Side project ideas', kind: 'writer', parent: null, owner: 'Faris', modified: '45m ago', minutesAgo: 45, bytes: 12_400, starred: true },
+  { id: 'x5', name: 'Reading list', kind: 'writer', parent: null, owner: 'Faris', modified: '3h ago', minutesAgo: 180, bytes: 18_600, starred: true },
+  { id: 'x6', name: 'Rent split', kind: 'sheet', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1500, bytes: 26_800, shared: true },
+  { id: 'x7', name: 'Health records.pdf', kind: 'pdf', parent: null, owner: 'Faris', modified: '2mo ago', minutesAgo: 86400, bytes: 3_120_000 },
+  { id: 'x8', name: 'Wedding speech', kind: 'writer', parent: null, owner: 'Faris', modified: '5d ago', minutesAgo: 7200, bytes: 21_300, shared: true },
+
+  // Finances
+  { id: 'x9', name: 'Monthly budget', kind: 'sheet', parent: 'x1', owner: 'Faris', modified: '2h ago', minutesAgo: 120, bytes: 96_400, starred: true },
+  { id: 'x10', name: 'Tax return 2025', kind: 'sheet', parent: 'x1', owner: 'Faris', modified: '1w ago', minutesAgo: 10080, bytes: 148_000 },
+  { id: 'x11', name: 'Insurance policy.pdf', kind: 'pdf', parent: 'x1', owner: 'Faris', modified: '3mo ago', minutesAgo: 129600, bytes: 2_460_000 },
+
+  // Travel
+  { id: 'x12', name: 'Japan itinerary', kind: 'writer', parent: 'x2', owner: 'Faris', modified: '4d ago', minutesAgo: 5760, bytes: 34_700, starred: true },
+  { id: 'x13', name: 'Goa trip plan', kind: 'writer', parent: 'x2', owner: 'Priya Nair', modified: '3d ago', minutesAgo: 4320, bytes: 41_000, shared: true },
+  { id: 'x14', name: 'Flight bookings.pdf', kind: 'pdf', parent: 'x2', owner: 'Faris', modified: '6d ago', minutesAgo: 8640, bytes: 940_000 },
+  { id: 'x15', name: 'Packing list', kind: 'sheet', parent: 'x2', owner: 'Faris', modified: '4d ago', minutesAgo: 5800, bytes: 8_200 },
+
+  // Flat
+  { id: 'x16', name: 'Lease.pdf', kind: 'pdf', parent: 'x3', owner: 'Faris', modified: '1mo ago', minutesAgo: 43200, bytes: 1_840_000 },
+  { id: 'x17', name: 'Renovation plan', kind: 'slides', parent: 'x3', owner: 'Faris', modified: '2w ago', minutesAgo: 20160, bytes: 6_400_000 },
+  { id: 'x18', name: 'Utility bills', kind: 'sheet', parent: 'x3', owner: 'Faris', modified: '3w ago', minutesAgo: 30240, bytes: 74_500 },
+
+  // Trash
+  { id: 'x19', name: 'Old resume', kind: 'writer', parent: null, owner: 'Faris', modified: '4mo ago', minutesAgo: 172800, bytes: 44_000, trashed: true },
+]
+
+/** Each workspace owns its whole tree, so switching swaps the Files area. */
+const WORKSPACE_FILES: Record<WorkspaceId, FileRow[]> = {
+  frappe: FRAPPE_FILES,
+  personal: PERSONAL_FILES,
+}
 
 /** Owner faces, so the Files list reads as real data instead of initials. */
 export const PEOPLE: Record<string, string> = {
@@ -209,9 +253,6 @@ export const PEOPLE: Record<string, string> = {
   'Rushabh Mehta': 'https://avatars.githubusercontent.com/u/4?v=4',
 }
 
-/** Every owner in the tree, for the Files filter's Owner field. */
-export const OWNERS = [...new Set(FILES.map((file) => file.owner))].sort()
-
 export const FOLDERS = [
   { id: 'all', label: 'All files', icon: 'lucide-folder' },
   { id: 'shared', label: 'Shared with me', icon: 'lucide-users' },
@@ -219,32 +260,43 @@ export const FOLDERS = [
   { id: 'trash', label: 'Trash', icon: 'lucide-trash-2' },
 ]
 
-const BY_ID = new Map(FILES.map((file) => [file.id, file]))
+const BY_ID: Record<WorkspaceId, Map<string, FileRow>> = {
+  frappe: new Map(FRAPPE_FILES.map((file) => [file.id, file])),
+  personal: new Map(PERSONAL_FILES.map((file) => [file.id, file])),
+}
 
 /** Rows inside one folder. `null` is the root. Trashed rows live only in Trash. */
-export function childrenOf(parentId: string | null): FileRow[] {
-  return FILES.filter((file) => file.parent === parentId && !file.trashed)
+export function childrenOf(parentId: string | null, workspace: WorkspaceId): FileRow[] {
+  return WORKSPACE_FILES[workspace].filter(
+    (file) => file.parent === parentId && !file.trashed,
+  )
 }
 
 /**
  * Sidebar saved views cut across the whole tree, so they are flat. "All files"
  * is the tree root, which is what makes descending from it feel continuous.
  */
-export function filesInView(viewId: string): FileRow[] {
-  if (viewId === 'trash') return FILES.filter((file) => file.trashed)
-  const live = FILES.filter((file) => !file.trashed)
+export function filesInView(viewId: string, workspace: WorkspaceId): FileRow[] {
+  const files = WORKSPACE_FILES[workspace]
+  if (viewId === 'trash') return files.filter((file) => file.trashed)
+  const live = files.filter((file) => !file.trashed)
   if (viewId === 'shared') return live.filter((file) => file.shared)
   if (viewId === 'starred') return live.filter((file) => file.starred)
-  return childrenOf(null)
+  return childrenOf(null, workspace)
 }
 
-/** Ancestor chain for a row, root first, ending with the row itself. */
-export function pathTo(id: string): FileRow[] {
+/**
+ * Ancestor chain for a row, root first, ending with the row itself. Empty when
+ * the id belongs to another workspace, which is how a stale folder URL is
+ * caught after a switch.
+ */
+export function pathTo(id: string, workspace: WorkspaceId): FileRow[] {
+  const byId = BY_ID[workspace]
   const chain: FileRow[] = []
-  let current = BY_ID.get(id)
+  let current = byId.get(id)
   while (current) {
     chain.unshift(current)
-    current = current.parent ? BY_ID.get(current.parent) : undefined
+    current = current.parent ? byId.get(current.parent) : undefined
   }
   return chain
 }
