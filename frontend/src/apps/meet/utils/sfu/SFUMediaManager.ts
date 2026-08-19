@@ -8,6 +8,7 @@ import type { ConsumerEntry, ConsumerManager } from "../media/ConsumerManager";
 import type { ParticipantManager } from "../media/ParticipantManager";
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
+import { publishInitialMediaWithRetry } from "./initialMediaPublication";
 
 interface MediaHandler {
 	localStream: MediaStream | null;
@@ -178,6 +179,22 @@ export class SFUMediaManager {
 	): Promise<PublishedMedia> {
 		return this.serializeSendMediaMutation(() =>
 			this.publishMediaNow(localStream, options),
+		);
+	}
+
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+	): Promise<PublishedMedia> {
+		return this.serializeSendMediaMutation(() =>
+			publishInitialMediaWithRetry(
+				(stream, retryOptions) =>
+					this.publishMediaNow(stream, retryOptions),
+				localStream,
+				options,
+				signal,
+			),
 		);
 	}
 

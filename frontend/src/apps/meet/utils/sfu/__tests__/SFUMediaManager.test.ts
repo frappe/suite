@@ -447,6 +447,36 @@ describe("SFUMediaManager local recovery tracks", () => {
 		expect(result.audioError).toEqual(new Error("audio failed"));
 	});
 
+	it("serializes controls behind all initial publication retries", async () => {
+		vi.useFakeTimers();
+		const { mediaManager, transportManager } = createManager();
+		const video = mediaTrack("video", "video");
+		const videoProducer = { id: "video-producer", track: video };
+		transportManager.createProducer
+			.mockRejectedValueOnce(new Error("temporary failure"))
+			.mockResolvedValueOnce(videoProducer);
+
+		const publication = mediaManager.publishInitialMedia(
+			new FakeMediaStream([video]) as never,
+			{ publishVideo: true, publishAudio: false },
+		);
+		await vi.waitFor(() =>
+			expect(transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		let controlRan = false;
+		const control = mediaManager.serializeSendMediaMutation(async () => {
+			controlRan = true;
+		});
+
+		expect(controlRan).toBe(false);
+		await vi.runAllTimersAsync();
+		await Promise.all([publication, control]);
+
+		expect(transportManager.createProducer).toHaveBeenCalledTimes(2);
+		expect(controlRan).toBe(true);
+		vi.useRealTimers();
+	});
+
 	it("finishes initial publication before a later send-media mutation", async () => {
 		const { mediaManager, transportManager } = createManager();
 		const initialTrack = mediaTrack("initial-video", "video");

@@ -134,6 +134,14 @@ export class SFUMeetingManager {
 		return this.mediaManager.publishMedia(localStream, options);
 	}
 
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+	): Promise<PublishedMedia> {
+		return this.mediaManager.publishInitialMedia(localStream, options, signal);
+	}
+
 	setLocalMediaTrack(
 		kind: "audio" | "video",
 		track: MediaStreamTrack | null,

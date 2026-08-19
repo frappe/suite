@@ -45,7 +45,6 @@ import type {
 	ParticipantUpdate,
 } from "../utils/media/ParticipantManager";
 import type { ParticipantConnectionState } from "../utils/sfu/ParticipantConnection";
-import { publishInitialMediaWithRetry } from "../utils/sfu/initialMediaPublication";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -523,8 +522,7 @@ export function useSFUConnection(deps: {
 						...videoTracks,
 						...mediaState.localStream.getAudioTracks(),
 					]);
-					const publication = await publishInitialMediaWithRetry(
-						manager!.publishMedia.bind(manager),
+					const publication = await manager!.publishInitialMedia(
 						streamToPublish,
 						{ publishVideo, publishAudio },
 						signal,
