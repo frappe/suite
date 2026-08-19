@@ -1,92 +1,173 @@
-<!-- PROTOTYPE — remove. Fake Calendar week grid with the 4 fixture events. -->
+<!--
+  PROTOTYPE — remove. Calendar screen: Week, Month and Year, all hand-rolled.
+
+  The area owns the date. One `cursor` plus the active view is enough to derive
+  every title, every range and every step, so the header and the three grids
+  never disagree about where they are.
+-->
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
-    <div class="flex h-12 shrink-0 items-center justify-between border-b border-outline-gray-1 px-5">
-      <span class="text-base font-medium text-ink-gray-9">August 10 – 16, 2026</span>
-      <Button label="Today" variant="outline" />
-    </div>
+  <PageHeader>
+    <span class="text-xl font-semibold text-ink-gray-9">{{ title }}</span>
 
-    <!-- Day header row -->
-    <div class="grid shrink-0 grid-cols-[3rem_repeat(7,1fr)] border-b border-outline-gray-1">
-      <div />
-      <div
-        v-for="day in WEEK_DAYS"
-        :key="day.label"
-        class="flex items-center justify-center gap-1.5 border-l border-outline-gray-1 py-2"
-      >
-        <span class="text-sm text-ink-gray-5">{{ day.label }}</span>
-        <span
-          class="flex size-6 items-center justify-center rounded-full text-sm"
-          :class="
-            day.today
-              ? 'bg-surface-gray-7 font-medium text-ink-gray-1'
-              : 'text-ink-gray-8'
-          "
-        >
-          {{ day.date }}
-        </span>
-      </div>
-    </div>
-
-    <!-- Hour grid -->
-    <ScrollArea class="min-h-0 flex-1">
-      <div class="grid grid-cols-[3rem_repeat(7,1fr)]">
-        <!-- Time labels -->
-        <div class="flex flex-col">
-          <div
-            v-for="hour in HOURS"
-            :key="hour"
-            class="flex h-12 items-start justify-end pr-2"
-          >
-            <span class="-mt-1.5 text-2xs text-ink-gray-4">{{ hour }}:00</span>
-          </div>
-        </div>
-        <!-- Day columns -->
-        <div
-          v-for="(day, dayIndex) in WEEK_DAYS"
-          :key="day.label"
-          class="relative border-l border-outline-gray-1"
-          :class="day.today ? 'bg-surface-gray-1' : ''"
-        >
-          <div
-            v-for="hour in HOURS"
-            :key="hour"
-            class="h-12 border-t border-outline-gray-1"
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-0.5">
+        <Tooltip placement="bottom">
+          <Button
+            variant="ghost"
+            icon="lucide-chevron-left"
+            :label="`Previous ${unit}`"
+            @click="step(-1)"
           />
-          <button
-            v-for="event in eventsForDay(dayIndex)"
-            :key="event.id"
-            class="absolute inset-x-1 flex flex-col overflow-hidden rounded-4 border-l-2 border-outline-blue-5 bg-surface-blue-2 px-1.5 py-1 text-left"
-            :style="eventStyle(event)"
-          >
-            <span class="flex items-center gap-1 truncate text-xs font-medium text-ink-blue-7">
-              <span v-if="event.meet" class="lucide-video size-3 shrink-0" aria-hidden="true" />
-              <span class="truncate">{{ event.title }}</span>
+          <template #content>
+            <span class="flex items-center gap-1.5">
+              Previous {{ unit }}
+              <KeyboardShortcut combo="left" />
             </span>
-            <span class="truncate text-2xs text-ink-blue-7">{{ event.time }}</span>
-          </button>
-        </div>
+          </template>
+        </Tooltip>
+        <Tooltip placement="bottom">
+          <Button variant="ghost" label="Today" @click="cursor = today()" />
+          <template #content>
+            <span class="flex items-center gap-1.5">
+              Today
+              <KeyboardShortcut combo="t" />
+            </span>
+          </template>
+        </Tooltip>
+        <Tooltip placement="bottom">
+          <Button
+            variant="ghost"
+            icon="lucide-chevron-right"
+            :label="`Next ${unit}`"
+            @click="step(1)"
+          />
+          <template #content>
+            <span class="flex items-center gap-1.5">
+              Next {{ unit }}
+              <KeyboardShortcut combo="right" />
+            </span>
+          </template>
+        </Tooltip>
       </div>
-    </ScrollArea>
-  </div>
+
+      <!-- The key rides inside its own tab rather than waiting behind a hover:
+           a switcher only three wide can afford to say how to use it. -->
+      <TabButtons v-model="view" :options="VIEW_OPTIONS">
+        <template #suffix="{ button }">
+          <span class="text-2xs text-ink-gray-4">{{ SHORTCUT[button.modelValue] }}</span>
+        </template>
+      </TabButtons>
+
+      <Button variant="solid" icon-left="lucide-plus" label="New event" />
+    </div>
+  </PageHeader>
+
+  <WeekGrid v-if="view === 'Week'" :date="cursor" />
+  <MonthView v-else-if="view === 'Month'" :date="cursor" @pick="openWeekOn" />
+  <YearView v-else :year="year" @pick="openWeekOn" />
 </template>
 
 <script setup lang="ts">
-import { Button, ScrollArea } from 'frappe-ui'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Button, KeyboardShortcut, PageHeader, TabButtons, Tooltip } from 'frappe-ui'
+import dayjs from 'dayjs'
 
-import { UPCOMING_EVENTS, WEEK_DAYS, type UpcomingEvent } from '../fixtures'
+import { ISO, today, weekOf } from '../calendarDates'
+import { jumpTo, visibleRange } from '../calendarState'
+import MonthView from '../parts/MonthView.vue'
+import WeekGrid from '../parts/WeekGrid.vue'
+import YearView from '../parts/YearView.vue'
 
-/** Grid runs 8:00–18:00, one hour = 3rem (h-12). */
-const HOURS = Array.from({ length: 10 }, (_, i) => i + 8)
+type View = 'Week' | 'Month' | 'Year'
 
-function eventsForDay(dayIndex: number) {
-  return UPCOMING_EVENTS.filter((e) => e.dayIndex === dayIndex)
+const VIEW_OPTIONS = [
+  { label: 'Week', value: 'Week' },
+  { label: 'Month', value: 'Month' },
+  { label: 'Year', value: 'Year' },
+]
+
+const SHORTCUT: Record<string, string> = { Week: 'W', Month: 'M', Year: 'Y' }
+
+// Day is dropped: the shell already gives every screen a wide content area, so
+// a single column has nothing to add over Week.
+const view = ref<View>('Week')
+const cursor = ref(today())
+
+const year = computed(() => dayjs(cursor.value).year())
+const unit = computed(() => view.value.toLowerCase())
+
+const title = computed(() => {
+  if (view.value === 'Year') return String(year.value)
+  if (view.value === 'Month') return dayjs(cursor.value).format('MMMM YYYY')
+
+  // A week that straddles a boundary names both sides, and only repeats the
+  // year when it changes too.
+  const [first] = weekOf(cursor.value)
+  const last = weekOf(cursor.value)[6]
+  if (first.isSame(last, 'month')) return first.format('MMMM YYYY')
+  if (first.isSame(last, 'year')) return `${first.format('MMM')} – ${last.format('MMM YYYY')}`
+  return `${first.format('MMM YYYY')} – ${last.format('MMM YYYY')}`
+})
+
+function step(delta: number) {
+  const by = view.value === 'Week' ? 'week' : view.value === 'Month' ? 'month' : 'year'
+  cursor.value = dayjs(cursor.value).add(delta, by).format(ISO)
 }
 
-function eventStyle(event: UpcomingEvent) {
-  return {
-    top: `${(event.startHour - 8) * 3}rem`,
-    height: `${(event.endHour - event.startHour) * 3}rem`,
-  }
+function openWeekOn(date: string) {
+  cursor.value = date
+  view.value = 'Week'
 }
+
+// ── Keyboard ────────────────────────────────────────────────────────────────
+// Single letters, no modifier: the shortcuts a calendar is expected to have.
+// They are bound on the window rather than on a focusable grid, so they work
+// wherever the user's focus happens to be on this screen.
+const KEYS: Record<string, () => void> = {
+  w: () => (view.value = 'Week'),
+  m: () => (view.value = 'Month'),
+  y: () => (view.value = 'Year'),
+  t: () => (cursor.value = today()),
+  arrowleft: () => step(-1),
+  arrowright: () => step(1),
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.metaKey || event.ctrlKey || event.altKey) return
+
+  // Never take a key off something the user is typing into.
+  const target = event.target as HTMLElement | null
+  if (target?.isContentEditable) return
+  if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+
+  const act = KEYS[event.key.toLowerCase()]
+  if (!act) return
+  event.preventDefault()
+  act()
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+
+// The sidebar mini-month asks for a date; open it in Week, since a month grid
+// tells the user nothing new about the day they just clicked.
+watch(() => jumpTo.value.seq, () => openWeekOn(jumpTo.value.date))
+
+// Publish where we are, so the sidebar's mini-month can follow and shade it.
+watch(
+  [cursor, view],
+  () => {
+    if (view.value === 'Week') {
+      const week = weekOf(cursor.value)
+      visibleRange.value = { start: week[0].format(ISO), end: week[6].format(ISO) }
+      return
+    }
+    const span = view.value === 'Month' ? 'month' : 'year'
+    visibleRange.value = {
+      start: dayjs(cursor.value).startOf(span).format(ISO),
+      end: dayjs(cursor.value).endOf(span).format(ISO),
+    }
+  },
+  { immediate: true },
+)
 </script>

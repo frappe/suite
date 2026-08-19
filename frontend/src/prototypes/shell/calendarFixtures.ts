@@ -105,6 +105,8 @@ const SEEDS: EventSeed[] = [
   { id: 'c09', title: '1:1 Faris / Rushabh', calendar: 'work', day: 0, from: '14:00', to: '14:30', participant: 'Rushabh Mehta', venue: 'Meet' },
   { id: 'c10', title: 'Token audit sync', calendar: 'work', day: 0, from: '14:00', to: '15:00', participant: 'Aditya Verma' },
   { id: 'c11', title: 'Design critique', calendar: 'work', day: 0, from: '14:15', to: '15:15', participant: 'Neha Kulkarni' },
+  // A fourth event in the same slot: the case the overlap variants disagree on.
+  { id: 'c30', title: 'Support escalation', calendar: 'work', day: 0, from: '14:20', to: '15:00', participant: 'Priya Nair' },
   { id: 'c12', title: 'Dentist', calendar: 'personal', day: 0, from: '17:00', to: '18:00', venue: 'Koramangala' },
 
   // — Tomorrow —
