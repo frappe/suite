@@ -132,7 +132,7 @@
 
 						<!-- Label -->
 						<div class="p-2 bg-surface-gray-1">
-							<p class="text-sm-medium text-center text-ink-gray-8 truncate">
+							<p class="text-sm-medium text-center text-ink-gray-8 truncate leading-4">
 								{{ option.label }}
 							</p>
 						</div>
