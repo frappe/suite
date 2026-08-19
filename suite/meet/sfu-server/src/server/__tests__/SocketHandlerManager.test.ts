@@ -1210,6 +1210,40 @@ describe('SocketHandlerManager characterization', () => {
 		).toBe(false);
 	});
 
+	it('broadcasts consumer closure when its owning peer socket is absent', async () => {
+		const harness = createManager();
+		const participant = connectFullSocket(harness, {
+			id: 'connected-peer',
+			userId: 'user-1',
+		});
+		emitJoin(participant);
+		await new Promise((resolve) => setImmediate(resolve));
+		participant.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'missing-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(participant.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1', peerId: 'missing-peer' },
+		});
+	});
+
 	it('passes explicit producer close metadata through the lifecycle finalizer', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {

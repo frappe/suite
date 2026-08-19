@@ -124,9 +124,20 @@ export class SocketHandlerManager {
 						socket.peerId === removed.peerId &&
 						socket.roomId === removed.roomId,
 				);
-				targetSocket?.emit('consumer_closed', {
-					consumerId: removed.consumerId,
-				});
+				if (targetSocket) {
+					targetSocket.emit('consumer_closed', {
+						consumerId: removed.consumerId,
+					});
+				} else {
+					this.registry.emitToFullAccessParticipants(
+						event.roomId,
+						'consumer_closed',
+						{
+							consumerId: removed.consumerId,
+							peerId: removed.peerId,
+						},
+					);
+				}
 			}
 		});
 
