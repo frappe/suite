@@ -171,8 +171,14 @@ function createMockServer(): MockServer {
 }
 
 function createMockMediasoupManager(): MediasoupManager {
+	let producerClosedListener:
+		| Parameters<MediasoupManager['onProducerClosed']>[0]
+		| undefined;
 	return {
 		onNetworkQualityUpdate: vi.fn().mockReturnValue(() => {}),
+		onProducerClosed: vi.fn((listener) => {
+			producerClosedListener = listener;
+		}),
 		createRoom: vi.fn().mockResolvedValue({
 			peers: new Map(),
 			activeSpeakerObserver: null,
@@ -192,6 +198,19 @@ function createMockMediasoupManager(): MediasoupManager {
 		connectWebRtcTransport: vi.fn().mockResolvedValue(undefined),
 		restartWebRtcTransportIce: vi.fn().mockResolvedValue({}),
 		assertProducerAccess: vi.fn(),
+		closeProducer: vi.fn((producerId, metadata = {}) => {
+			const result = { isScreen: false, removedConsumers: [] };
+			producerClosedListener?.({
+				roomId: 'room-1',
+				peerId: 'peer-1',
+				participantId: 'user-1',
+				producerId,
+				kind: 'video',
+				...result,
+				...metadata,
+			});
+			return result;
+		}),
 		assertConsumerAccess: vi.fn(),
 		closeConsumer: vi.fn().mockResolvedValue(undefined),
 		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),

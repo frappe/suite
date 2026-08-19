@@ -82,7 +82,11 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 					getRoomId(socket),
 					getPeerId(socket),
 				);
-				const result = deps.mediasoup.closeProducer(producerId);
+				const result = deps.mediasoup.closeProducer(producerId, {
+					reason,
+					source,
+					details,
+				});
 
 				loggers.socketHandler.info(
 					'close_producer peer=%s producer=%s isScreen=%s reason=%s source=%s details=%o',
@@ -95,40 +99,6 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				);
 
 				callback({ success: true, ...result });
-
-				const roomId = getRoomId(socket);
-				deps.registry.emitProducerClosed(roomId, {
-					participantId: socket.userId,
-					producerId,
-					isScreen: !!result.isScreen,
-					reason,
-					source,
-					details,
-				});
-
-				try {
-					for (const rc of result.removedConsumers) {
-						const targetPeerSocket = Array.from(
-							deps.io.sockets.sockets.values(),
-						).find((s) => s.peerId === rc.peerId && s.roomId === rc.roomId);
-						if (targetPeerSocket) {
-							targetPeerSocket.emit('consumer_closed', {
-								consumerId: rc.consumerId,
-							});
-						} else {
-							deps.registry.emitToFullAccessParticipants(
-								roomId,
-								'consumer_closed',
-								{ consumerId: rc.consumerId, peerId: rc.peerId },
-							);
-						}
-					}
-				} catch (e) {
-					loggers.socketHandler.warn(
-						'Failed to emit consumer_closed notifications: %s',
-						(e as Error).message,
-					);
-				}
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error closing producer: %s',

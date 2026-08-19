@@ -1160,6 +1160,90 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it('propagates producer lifecycle closure and targets dependent consumers', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		publisher.emitCalls.length = 0;
+		viewer.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'viewer-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_closed',
+			data: expect.objectContaining({
+				participantId: 'publisher-1',
+				producerId: 'producer-1',
+			}),
+		});
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1' },
+		});
+		expect(
+			publisher.emitCalls.some((call) => call.event === 'consumer_closed'),
+		).toBe(false);
+	});
+
+	it('passes explicit producer close metadata through the lifecycle finalizer', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'user-1',
+		});
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+		const callback = vi.fn();
+
+		socket.fire(
+			'close_producer',
+			{
+				producerId: 'producer-1',
+				reason: 'track-ended',
+				source: 'screen-share',
+				details: { message: 'display ended' },
+			},
+			callback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.closeProducer).toHaveBeenCalledWith('producer-1', {
+			reason: 'track-ended',
+			source: 'screen-share',
+			details: { message: 'display ended' },
+		});
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			isScreen: false,
+			removedConsumers: [],
+		});
+	});
+
 	it('allows an encrypted WebRTC transport to connect when E2EE is required', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {

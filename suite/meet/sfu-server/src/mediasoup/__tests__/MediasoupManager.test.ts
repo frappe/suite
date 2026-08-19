@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../config';
 import type { Consumer } from '../../types';
@@ -214,6 +215,103 @@ describe('MediasoupManager participant connections', () => {
 
 		await expect(mgr.getExistingProducers('room-1', 'user-1')).resolves.toEqual(
 			[expect.objectContaining({ id: 'remote', user_id: 'user-2' })],
+		);
+	});
+});
+
+describe('MediasoupManager producer cleanup', () => {
+	it('finalizes transport-closed producers, consumers, snapshots, and notifications once', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			producerManager: {
+				createProducer: (...args: unknown[]) => Promise<unknown>;
+				getProducerCount: () => number;
+			};
+			roomManager: { getRoom: (roomId: string) => unknown };
+		};
+		const producer = Object.assign(new EventEmitter(), {
+			id: 'producer-1',
+			kind: 'video' as const,
+			appData: {},
+			paused: false,
+			closed: false,
+			close: vi.fn(),
+		});
+		const consumer = Object.assign(new EventEmitter(), {
+			id: 'consumer-1',
+			producerId: producer.id,
+			kind: 'video' as const,
+			paused: false,
+			rtpParameters: {},
+			close: vi.fn(),
+			resume: vi.fn(),
+			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
+		});
+		const publisher = {
+			info: { userId: 'publisher-1', name: 'Publisher' },
+			producers: new Map([[producer.id, producer]]),
+			consumers: new Map(),
+		};
+		const viewer = {
+			info: { userId: 'viewer-1', name: 'Viewer' },
+			producers: new Map(),
+			consumers: new Map([[consumer.id, consumer]]),
+		};
+		const room = {
+			peers: new Map([
+				['publisher-peer', publisher],
+				['viewer-peer', viewer],
+			]),
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue(room);
+		await internals.producerManager.createProducer(
+			{ produce: vi.fn().mockResolvedValue(producer) },
+			'room-1',
+			'publisher-peer',
+			{},
+			'video',
+		);
+		await mgr.consumerManager.createConsumer(
+			{
+				id: 'recv-1',
+				closed: false,
+				dtlsState: 'connected',
+				consume: vi.fn().mockResolvedValue(consumer),
+			} as never,
+			producer as never,
+			producer.id,
+			'room-1',
+			'viewer-peer',
+			{} as never,
+		);
+		const onProducerClosed = vi.fn();
+		mgr.onProducerClosed(onProducerClosed);
+
+		producer.closed = true;
+		producer.emit('transportclose');
+		producer.emit('transportclose');
+
+		expect(internals.producerManager.getProducerCount()).toBe(0);
+		expect(mgr.consumerManager.getConsumerCount()).toBe(0);
+		expect(publisher.producers.has(producer.id)).toBe(false);
+		expect(viewer.consumers.has(consumer.id)).toBe(false);
+		await expect(
+			mgr.getExistingProducers('room-1', 'viewer-1'),
+		).resolves.toEqual([]);
+		expect(onProducerClosed).toHaveBeenCalledTimes(1);
+		expect(onProducerClosed).toHaveBeenCalledWith(
+			expect.objectContaining({
+				roomId: 'room-1',
+				peerId: 'publisher-peer',
+				participantId: 'publisher-1',
+				producerId: 'producer-1',
+				removedConsumers: [
+					expect.objectContaining({
+						consumerId: 'consumer-1',
+						peerId: 'viewer-peer',
+					}),
+				],
+			}),
 		);
 	});
 });

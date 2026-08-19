@@ -109,6 +109,27 @@ export class SocketHandlerManager {
 			registerErrorHandlers(deps),
 		];
 
+		this.mediasoup.onProducerClosed((event) => {
+			this.registry.emitProducerClosed(event.roomId, {
+				participantId: event.participantId,
+				producerId: event.producerId,
+				isScreen: event.isScreen,
+				reason: event.reason,
+				source: event.source,
+				details: event.details,
+			});
+			for (const removed of event.removedConsumers) {
+				const targetSocket = Array.from(this.io.sockets.sockets.values()).find(
+					(socket) =>
+						socket.peerId === removed.peerId &&
+						socket.roomId === removed.roomId,
+				);
+				targetSocket?.emit('consumer_closed', {
+					consumerId: removed.consumerId,
+				});
+			}
+		});
+
 		this.mediasoup.onNetworkQualityUpdate((roomId, peerId, quality) => {
 			this.registry.emitToFullAccessParticipants(
 				roomId,

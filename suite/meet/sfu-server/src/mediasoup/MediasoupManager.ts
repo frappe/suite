@@ -12,6 +12,9 @@ import type {
 	Peer,
 	PeerInfo,
 	ProducerAppData,
+	ProducerCloseDetails,
+	ProducerCloseReason,
+	ProducerCloseSource,
 	ProducerData,
 	Room,
 	RtpCapabilities,
@@ -27,6 +30,22 @@ import { ProducerManager } from './ProducerManager';
 import { RoomManager } from './RoomManager';
 import { TransportManager } from './TransportManager';
 import { WorkerManager } from './WorkerManager';
+
+export interface ProducerCloseMetadata {
+	reason?: ProducerCloseReason;
+	source?: ProducerCloseSource;
+	details?: ProducerCloseDetails;
+}
+
+export interface ProducerClosedLifecycle extends ProducerCloseMetadata {
+	roomId: string;
+	peerId: string;
+	participantId: string;
+	producerId: string;
+	kind: 'audio' | 'video';
+	isScreen: boolean;
+	removedConsumers: CloseProducerResult['removedConsumers'];
+}
 
 export class MediasoupManager {
 	private readonly closingRooms = new Set<string>();
@@ -46,6 +65,9 @@ export class MediasoupManager {
 	> = [];
 	private mediaScoreListeners: Array<
 		(direction: 'send' | 'recv', kind: 'audio' | 'video', score: number) => void
+	> = [];
+	private producerClosedListeners: Array<
+		(event: ProducerClosedLifecycle) => void
 	> = [];
 
 	private peerScores = new Map<
@@ -106,6 +128,12 @@ export class MediasoupManager {
 					delete peerState[kind];
 					this.evaluateAndEmitNetworkQuality(roomId, peerId);
 				}
+			},
+		);
+		this.producerManager.on(
+			'producer_transport_closed',
+			(producerId: string) => {
+				this.closeProducer(producerId);
 			},
 		);
 	}
@@ -171,6 +199,10 @@ export class MediasoupManager {
 		) => void,
 	): void {
 		this.mediaScoreListeners.push(listener);
+	}
+
+	onProducerClosed(listener: (event: ProducerClosedLifecycle) => void): void {
+		this.producerClosedListeners.push(listener);
 	}
 
 	async getWorkerResourceUsage(): Promise<{
@@ -519,13 +551,19 @@ export class MediasoupManager {
 		return this.producerManager.getProducer(producerId);
 	}
 
-	closeProducer(producerId: string): CloseProducerResult {
+	closeProducer(
+		producerId: string,
+		metadata: ProducerCloseMetadata = {},
+	): CloseProducerResult {
 		const producerData = this.producerManager.getProducerData(producerId);
 		if (!producerData) return { isScreen: false, removedConsumers: [] };
+		const room = this.roomManager.getRoom(producerData.roomId);
+		const participantId =
+			room?.peers.get(producerData.peerId)?.info.userId ?? producerData.peerId;
+		const kind = producerData.producer.kind;
 
 		const result = this.producerManager.closeProducer(producerId);
 
-		const room = this.roomManager.getRoom(producerData.roomId);
 		if (room) {
 			const peer = room.peers.get(producerData.peerId);
 			if (peer) {
@@ -555,7 +593,30 @@ export class MediasoupManager {
 			}
 		}
 
-		return { ...result, removedConsumers };
+		const closeResult = { ...result, removedConsumers };
+		const event: ProducerClosedLifecycle = {
+			roomId: producerData.roomId,
+			peerId: producerData.peerId,
+			participantId,
+			producerId,
+			kind,
+			isScreen: closeResult.isScreen,
+			removedConsumers,
+			...metadata,
+		};
+		for (const listener of this.producerClosedListeners) {
+			try {
+				listener(event);
+			} catch (error) {
+				loggers.mediasoupManager.warn(
+					'Producer close listener failed for %s: %s',
+					producerId,
+					(error as Error).message,
+				);
+			}
+		}
+
+		return closeResult;
 	}
 
 	closeConsumer(consumerId: string): void {
