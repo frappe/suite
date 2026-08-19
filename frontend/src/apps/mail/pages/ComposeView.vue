@@ -55,9 +55,9 @@
 		<TextEditor
 			ref="textEditor"
 			editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-			:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+			:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
 			:content="editorContent"
-			:upload-function="uploadFunction"
+			:upload-function="uploadInlineImage"
 			class="flex min-h-0 flex-1 flex-col"
 			@change="onEditorChange"
 		>
@@ -292,6 +292,16 @@ const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
 const isUploading = computed(() => pendingUploads.value > 0)
+
+const uploadInlineImage = async (file: File) => {
+	pendingUploads.value++
+	try {
+		return await uploadFunction(file)
+	} finally {
+		pendingUploads.value--
+	}
+}
+const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
 
 // Where each recipient input teleports its suggestion list, so the list spans the page rather than
 // the field's own column.

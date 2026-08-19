@@ -11,9 +11,9 @@
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
 		:content="editorContent"
-		:upload-function="uploadFunction"
+		:upload-function="uploadInlineImage"
 		class="flex flex-col"
 		:class="[
 			{ 'pointer-events-none opacity-50': !show },
@@ -316,7 +316,20 @@ const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 
 const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
-const isUploading = computed(() => fileUploads.value.some((upload) => upload.isUploading))
+const pendingInlineUploads = ref(0)
+const isUploading = computed(
+	() => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
+)
+
+const uploadInlineImage = async (file: File) => {
+	pendingInlineUploads.value++
+	try {
+		return await uploadFunction(file)
+	} finally {
+		pendingInlineUploads.value--
+	}
+}
+const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
 
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
