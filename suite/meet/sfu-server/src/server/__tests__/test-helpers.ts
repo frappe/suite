@@ -181,6 +181,7 @@ function createMockMediasoupManager(): MediasoupManager {
 		addPeer: vi.fn(),
 		removePeer: vi.fn().mockResolvedValue(undefined),
 		peerExistsInRoom: vi.fn().mockReturnValue(true),
+		participantExistsInRoom: vi.fn().mockReturnValue(true),
 		createWebRtcTransport: vi.fn().mockResolvedValue({
 			id: 'transport-1',
 			iceParameters: {},

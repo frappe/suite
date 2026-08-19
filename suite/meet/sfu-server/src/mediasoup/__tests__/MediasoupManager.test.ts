@@ -135,6 +135,89 @@ describe('MediasoupManager.createConsumer', () => {
 	});
 });
 
+describe('MediasoupManager participant connections', () => {
+	it('deduplicates participant snapshots while combining connection media', () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: { getRoom: (roomId: string) => unknown };
+		};
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([
+				[
+					'connection-1',
+					{
+						info: { userId: 'user-1', name: 'Alice', isHost: false },
+						producers: new Map([
+							['audio', { kind: 'audio', paused: false, appData: {} }],
+						]),
+					},
+				],
+				[
+					'connection-2',
+					{
+						info: { userId: 'user-1', name: 'Alice', isHost: true },
+						producers: new Map([
+							['video', { kind: 'video', paused: false, appData: {} }],
+						]),
+					},
+				],
+			]),
+		} as never);
+
+		const participants = mgr.getRoomParticipants('room-1');
+
+		expect(participants).toHaveLength(1);
+		expect(participants[0]).toMatchObject({
+			id: 'user-1',
+			user_id: 'user-1',
+			is_host: true,
+			info: { userId: 'user-1', audio_enabled: true, video_enabled: true },
+		});
+	});
+
+	it('excludes every connection owned by the requesting participant', async () => {
+		const mgr = createManager();
+		const internals = mgr as unknown as {
+			roomManager: { getRoom: (roomId: string) => unknown };
+		};
+		const producer = (id: string) => ({
+			id,
+			kind: 'video',
+			paused: false,
+			appData: {},
+		});
+		vi.spyOn(internals.roomManager, 'getRoom').mockReturnValue({
+			peers: new Map([
+				[
+					'connection-1',
+					{
+						info: { userId: 'user-1' },
+						producers: new Map([['own-1', producer('own-1')]]),
+					},
+				],
+				[
+					'connection-2',
+					{
+						info: { userId: 'user-1' },
+						producers: new Map([['own-2', producer('own-2')]]),
+					},
+				],
+				[
+					'connection-3',
+					{
+						info: { userId: 'user-2' },
+						producers: new Map([['remote', producer('remote')]]),
+					},
+				],
+			]),
+		} as never);
+
+		await expect(mgr.getExistingProducers('room-1', 'user-1')).resolves.toEqual(
+			[expect.objectContaining({ id: 'remote', user_id: 'user-2' })],
+		);
+	});
+});
+
 describe('MediasoupManager resource access', () => {
 	it('removes every peer resource before closing a populated room', async () => {
 		const mgr = createManager();

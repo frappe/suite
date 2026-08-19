@@ -196,9 +196,9 @@ export class E2EEEpochRelay {
 			const socket = this.io.sockets.sockets.get(socketId) as
 				| TypedSocket
 				| undefined;
-			if (!socket?.participantId || socket.senderId === excludedSenderId)
-				continue;
-			this.emitToTarget(roomId, socket.participantId, {
+			const peerId = socket?.peerId ?? socket?.participantId;
+			if (!peerId || socket?.senderId === excludedSenderId) continue;
+			this.emitToTarget(roomId, peerId, {
 				type: 'key-package-request',
 				epochNumber,
 				reason,
@@ -328,7 +328,7 @@ export class E2EEEpochRelay {
 			await this.hydrate();
 			if (socket.scope !== 'full') return;
 			const roomId = socket.roomId;
-			const fromParticipantId = socket.participantId;
+			const fromParticipantId = socket.peerId ?? socket.participantId;
 			const fromSenderId = socket.senderId;
 			loggers.socketHandler.debug(
 				'[DEBUG-e2ee] SFU: epoch envelope received %o',
@@ -1487,7 +1487,7 @@ export class E2EEEpochRelay {
 
 		for (const socketId of socketsInRoom) {
 			const socket = this.io.sockets.sockets.get(socketId);
-			if (socket && socket.participantId === participantId) {
+			if (socket && (socket.peerId ?? socket.participantId) === participantId) {
 				return socket;
 			}
 		}

@@ -877,15 +877,15 @@ export class MediasoupManager {
 			return existingProducers;
 		}
 
-		for (const [peerId, peer] of room.peers) {
+		for (const peer of room.peers.values()) {
 			// Exclude requester
-			if (peerId === userId) continue;
+			if (peer.info.userId === userId) continue;
 
 			for (const producer of peer.producers.values()) {
 				existingProducers.push({
 					id: producer.id,
 					roomId,
-					user_id: peerId,
+					user_id: peer.info.userId,
 					kind: producer.kind,
 					paused: producer.paused,
 					isScreen:
@@ -901,67 +901,71 @@ export class MediasoupManager {
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) return [];
 
-		return Array.from(room.peers.entries())
-			.filter(([_peerId, peer]) => !peer.info.userId.startsWith('preview-'))
-			.map(([peerId, peer]) => {
-				let audioEnabled = false;
-				let videoEnabled = false;
-				for (const producer of peer.producers.values()) {
-					const isScreen =
-						(producer.appData && producer.appData.type === 'screen') || false;
-					if (producer.kind === 'audio' && !producer.paused)
-						audioEnabled = true;
-					// Count video as enabled only if it's NOT a screen share producer
-					if (producer.kind === 'video' && !producer.paused && !isScreen)
-						videoEnabled = true;
-				}
-
-				return {
-					id: peerId,
-					user_id: peerId,
+		const participants = new Map<string, ParticipantInfo>();
+		for (const peer of room.peers.values()) {
+			const participantId = peer.info.userId;
+			if (participantId.startsWith('preview-')) continue;
+			let participant = participants.get(participantId);
+			if (!participant) {
+				participant = {
+					id: participantId,
+					user_id: participantId,
 					senderId: peer.info.senderId,
 					sender_id: peer.info.senderId,
 					is_host: peer.info.isHost || false,
 					info: {
 						name: peer.info.name,
-						userId: peer.info.userId,
+						userId: participantId,
 						avatar: peer.info.avatar,
-						audio_enabled: audioEnabled,
-						video_enabled: videoEnabled,
+						audio_enabled: false,
+						video_enabled: false,
 						is_guest: peer.info.is_guest || false,
 					},
 				};
-			});
+				participants.set(participantId, participant);
+			}
+			let audioEnabled = false;
+			let videoEnabled = false;
+			for (const producer of peer.producers.values()) {
+				const isScreen =
+					(producer.appData && producer.appData.type === 'screen') || false;
+				if (producer.kind === 'audio' && !producer.paused) audioEnabled = true;
+				// Count video as enabled only if it's NOT a screen share producer
+				if (producer.kind === 'video' && !producer.paused && !isScreen)
+					videoEnabled = true;
+			}
+
+			participant.info.audio_enabled ||= audioEnabled;
+			participant.info.video_enabled ||= videoEnabled;
+			participant.is_host ||= peer.info.isHost || false;
+		}
+		return Array.from(participants.values());
 	}
 
 	applyMediaControl(
 		roomId: string,
-		peerId: string,
+		participantId: string,
 		action: MediaControlAction,
 	): void {
 		const room = this.roomManager.getRoom(roomId);
 		if (!room) return;
 
-		const peer = room.peers.get(peerId);
-		if (!peer) return;
-
-		const setFlag = (k: 'audio_enabled' | 'video_enabled', v: boolean) => {
-			peer.info[k] = v;
-		};
-
-		switch (action) {
-			case 'mute':
-				setFlag('audio_enabled', false);
-				break;
-			case 'unmute':
-				setFlag('audio_enabled', true);
-				break;
-			case 'video_off':
-				setFlag('video_enabled', false);
-				break;
-			case 'video_on':
-				setFlag('video_enabled', true);
-				break;
+		for (const peer of room.peers.values()) {
+			if (peer.info.userId !== participantId) continue;
+			switch (action) {
+				case 'mute':
+					peer.info.audio_enabled = false;
+					break;
+				case 'unmute':
+					peer.info.audio_enabled = true;
+					break;
+				case 'video_off':
+					peer.info.video_enabled = false;
+					break;
+				case 'video_on':
+					peer.info.video_enabled = true;
+					break;
+			}
 		}
 	}
 
@@ -976,6 +980,13 @@ export class MediasoupManager {
 	peerExistsInRoom(roomId: string, peerId: string): boolean {
 		const room = this.roomManager.getRoom(roomId);
 		return room?.peers.has(peerId) || false;
+	}
+
+	participantExistsInRoom(roomId: string, participantId: string): boolean {
+		const room = this.roomManager.getRoom(roomId);
+		return Array.from(room?.peers.values() ?? []).some(
+			(peer) => peer.info.userId === participantId,
+		);
 	}
 
 	get rooms() {

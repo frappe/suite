@@ -108,6 +108,35 @@ describe('RoomRegistry', () => {
 		expect(registry.hasHumanParticipants('r1')).toBe(false);
 	});
 
+	it('reports departure only after the last connection regardless of leave order', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const first = makeSocket('first');
+		const second = makeSocket('second');
+
+		expect(registry.claimParticipant(first, 'r1', 'p1')).toBe(true);
+		expect(registry.claimParticipant(second, 'r1', 'p1')).toBe(false);
+		expect(registry.releaseParticipant(second, 'r1', 'p1')).toBe(false);
+		expect(registry.hasHumanParticipants('r1')).toBe(true);
+		expect(registry.releaseParticipant(first, 'r1', 'p1')).toBe(true);
+		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
+	it('assigns independent E2EE sender IDs to participant connections', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		const first = registry.assignSenderId('r1', 'peer-1');
+		const second = registry.assignSenderId('r1', 'peer-2');
+
+		expect(first).not.toBe(second);
+		expect(registry.assignSenderId('r1', 'peer-1')).toBe(first);
+		registry.removeSender('r1', 'peer-1');
+		expect(registry.getParticipantToSender().get('r1')?.get('peer-2')).toBe(
+			second,
+		);
+	});
+
 	it('does not count preview or recorder sockets as humans', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);

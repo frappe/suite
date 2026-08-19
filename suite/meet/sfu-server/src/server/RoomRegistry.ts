@@ -35,7 +35,6 @@ export class RoomRegistry {
 	private hostOnlyChat: Record<string, boolean> = {};
 	private recentChatMessages: Record<string, ChatMessage[]> = {};
 	private pinnedChatMessage: Record<string, PinnedChatMessage> = {};
-	private participantSockets: Record<string, Record<string, string>> = {};
 	private participantConnections = new Map<string, Map<string, Set<string>>>();
 	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 	private fullAccessSockets: Map<string, Set<string>> = new Map();
@@ -155,20 +154,20 @@ export class RoomRegistry {
 		socket: Socket,
 		roomId: string,
 		participantId: string,
-	): void {
-		if (!this.participantSockets[roomId]) this.participantSockets[roomId] = {};
+	): boolean {
 		let participants = this.participantConnections.get(roomId);
 		if (!participants) {
 			participants = new Map();
 			this.participantConnections.set(roomId, participants);
 		}
 		let connections = participants.get(participantId);
+		const isFirstConnection = !connections || connections.size === 0;
 		if (!connections) {
 			connections = new Set();
 			participants.set(participantId, connections);
 		}
 		connections.add(socket.id);
-		this.participantSockets[roomId][participantId] = socket.id;
+		return isFirstConnection;
 	}
 
 	releaseParticipant(
@@ -178,17 +177,13 @@ export class RoomRegistry {
 	): boolean {
 		const participants = this.participantConnections.get(roomId);
 		const connections = participants?.get(participantId);
-		connections?.delete(socket.id);
+		if (!connections?.delete(socket.id)) return false;
 		if (connections?.size === 0) {
 			participants?.delete(participantId);
 			if (participants?.size === 0) this.participantConnections.delete(roomId);
+			return true;
 		}
-		if (this.participantSockets[roomId]?.[participantId] !== socket.id) {
-			return false;
-		}
-
-		delete this.participantSockets[roomId][participantId];
-		return true;
+		return false;
 	}
 
 	hasHumanParticipants(roomId: string): boolean {
@@ -286,7 +281,6 @@ export class RoomRegistry {
 		delete this.hostOnlyChat[roomId];
 		delete this.recentChatMessages[roomId];
 		delete this.pinnedChatMessage[roomId];
-		delete this.participantSockets[roomId];
 		this.participantConnections.delete(roomId);
 		delete this.activePolls[roomId];
 		this.fullAccessSockets.delete(roomId);

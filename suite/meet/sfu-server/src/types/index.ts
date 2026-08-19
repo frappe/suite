@@ -316,6 +316,7 @@ export type ClientTelemetryEvent =
 
 export interface SocketData {
 	userId: string;
+	peerId?: string;
 	userName: string;
 	meetingId: string;
 	isHost: boolean;
@@ -653,6 +654,7 @@ export type E2eeEpochJoinStatus = {
 declare module 'socket.io' {
 	interface Socket {
 		userId: string;
+		peerId?: string;
 		userName: string;
 		meetingId: string;
 		site?: string;
