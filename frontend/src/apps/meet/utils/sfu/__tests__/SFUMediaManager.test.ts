@@ -455,10 +455,15 @@ describe("SFUMediaManager local recovery tracks", () => {
 		transportManager.createProducer
 			.mockRejectedValueOnce(new Error("temporary failure"))
 			.mockResolvedValueOnce(videoProducer);
+		const ordering: string[] = [];
 
 		const publication = mediaManager.publishInitialMedia(
 			new FakeMediaStream([video]) as never,
 			{ publishVideo: true, publishAudio: false },
+			undefined,
+			() => {
+				ordering.push("reconciled");
+			},
 		);
 		await vi.waitFor(() =>
 			expect(transportManager.createProducer).toHaveBeenCalledOnce(),
@@ -466,6 +471,7 @@ describe("SFUMediaManager local recovery tracks", () => {
 		let controlRan = false;
 		const control = mediaManager.serializeSendMediaMutation(async () => {
 			controlRan = true;
+			ordering.push("control");
 		});
 
 		expect(controlRan).toBe(false);
@@ -474,6 +480,7 @@ describe("SFUMediaManager local recovery tracks", () => {
 
 		expect(transportManager.createProducer).toHaveBeenCalledTimes(2);
 		expect(controlRan).toBe(true);
+		expect(ordering).toEqual(["reconciled", "control"]);
 		vi.useRealTimers();
 	});
 

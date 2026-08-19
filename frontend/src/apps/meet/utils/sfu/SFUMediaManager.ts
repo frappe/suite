@@ -186,16 +186,19 @@ export class SFUMediaManager {
 		localStream: MediaStream,
 		options: { publishVideo: boolean; publishAudio: boolean },
 		signal?: AbortSignal,
+		finalize?: (publication: PublishedMedia) => void | Promise<void>,
 	): Promise<PublishedMedia> {
-		return this.serializeSendMediaMutation(() =>
-			publishInitialMediaWithRetry(
+		return this.serializeSendMediaMutation(async () => {
+			const publication = await publishInitialMediaWithRetry(
 				(stream, retryOptions) =>
 					this.publishMediaNow(stream, retryOptions),
 				localStream,
 				options,
 				signal,
-			),
-		);
+			);
+			await finalize?.(publication);
+			return publication;
+		});
 	}
 
 	private async publishMediaNow(
