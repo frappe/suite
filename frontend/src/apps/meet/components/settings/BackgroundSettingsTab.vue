@@ -6,13 +6,13 @@
 	<AppSettingsBody>
 			<!-- Video Preview -->
 			<div class="flex justify-center mb-4">
-				<div class="w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
+				<div class="video-preview w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-lg overflow-hidden shadow-sm relative">
 					<video
 						ref="videoPreviewRef"
 						autoplay
 						muted
 						playsinline
-						class="w-full h-full object-cover transform scale-x-[-1]"
+						class="video-preview-media w-full h-full object-cover transform scale-x-[-1]"
 					/>
 					<div v-if="!previewStream"
 						class="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
@@ -729,3 +729,14 @@ watch(
 	},
 );
 </script>
+
+<style scoped>
+.video-preview {
+	clip-path: inset(0 round 0.5rem);
+}
+
+.video-preview-media {
+	border-radius: inherit;
+	clip-path: inset(0 round 0.5rem);
+}
+</style>
