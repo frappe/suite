@@ -63,6 +63,8 @@ export interface PublishedMedia {
 	videoProducer?: Producer;
 	audioProducer?: Producer;
 	screenProducer?: Producer;
+	videoError?: unknown;
+	audioError?: unknown;
 }
 
 export interface ConsumerMetadata {
@@ -232,6 +234,7 @@ export class SFUMediaManager {
 						console.log("Video published successfully");
 					}
 				} catch (error: unknown) {
+					results.videoError = error;
 					console.warn(
 						"Failed to publish video, continuing without video:",
 						(error as Error).message,
@@ -258,6 +261,7 @@ export class SFUMediaManager {
 						console.log("Audio published successfully");
 					}
 				} catch (error: unknown) {
+					results.audioError = error;
 					console.warn(
 						"Failed to publish audio, continuing without audio:",
 						(error as Error).message,

@@ -400,7 +400,7 @@ describe("SFUMediaManager local recovery tracks", () => {
 			new Error("producer failed"),
 		);
 
-		await mediaManager.publishMedia(input as never, {
+		const result = await mediaManager.publishMedia(input as never, {
 			publishVideo: true,
 			publishAudio: false,
 		});
@@ -414,6 +414,8 @@ describe("SFUMediaManager local recovery tracks", () => {
 		expect(synchronize.mock.invocationCallOrder[0]).toBeLessThan(
 			transportManager.createProducer.mock.invocationCallOrder[0],
 		);
+		expect(result.videoError).toEqual(new Error("producer failed"));
+		expect(result.audioError).toBeUndefined();
 
 		transportManager.createProducer.mockResolvedValueOnce({});
 		await mediaManager.rebuildSendSide();
@@ -423,6 +425,26 @@ describe("SFUMediaManager local recovery tracks", () => {
 			type: "camera",
 		});
 		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([]);
+	});
+
+	it("reports audio and video producer outcomes independently", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const video = mediaTrack("video", "video");
+		const audio = mediaTrack("audio", "audio");
+		const videoProducer = { id: "video-producer", track: video };
+		transportManager.createProducer
+			.mockResolvedValueOnce(videoProducer)
+			.mockRejectedValueOnce(new Error("audio failed"));
+
+		const result = await mediaManager.publishMedia(
+			new FakeMediaStream([video, audio]) as never,
+			{ publishVideo: true, publishAudio: true },
+		);
+
+		expect(result.videoProducer).toBe(videoProducer);
+		expect(result.videoError).toBeUndefined();
+		expect(result.audioProducer).toBeUndefined();
+		expect(result.audioError).toEqual(new Error("audio failed"));
 	});
 
 	it("finishes initial publication before a later send-media mutation", async () => {

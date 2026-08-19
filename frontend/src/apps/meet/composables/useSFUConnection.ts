@@ -45,6 +45,7 @@ import type {
 	ParticipantUpdate,
 } from "../utils/media/ParticipantManager";
 import type { ParticipantConnectionState } from "../utils/sfu/ParticipantConnection";
+import { publishInitialMediaWithRetry } from "../utils/sfu/initialMediaPublication";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -478,7 +479,7 @@ export function useSFUConnection(deps: {
 						userData,
 						mediaState: {
 							audio_enabled: false,
-							video_enabled: mediaState.isCameraOn,
+							video_enabled: false,
 						},
 					};
 				},
@@ -506,11 +507,15 @@ export function useSFUConnection(deps: {
 							for (const track of mediaState.localStream?.getAudioTracks() || []) {
 								track.enabled = false;
 							}
-						} else {
-							sfuClient.sendMediaControl("unmute");
 						}
 					}
-					if (!mediaState.localStream) return;
+					const publishVideo = mediaState.isCameraOn;
+					const publishAudio = mediaState.isMicOn;
+					if (!mediaState.localStream) {
+						mediaState.isCameraOn = false;
+						mediaState.isMicOn = false;
+						return;
+					}
 					const videoTracks = mediaState.processedStream
 						? mediaState.processedStream.getVideoTracks()
 						: mediaState.localStream.getVideoTracks();
@@ -518,16 +523,40 @@ export function useSFUConnection(deps: {
 						...videoTracks,
 						...mediaState.localStream.getAudioTracks(),
 					]);
-					try {
-						await manager!.publishMedia(streamToPublish, {
-							publishVideo: mediaState.isCameraOn,
-							publishAudio: mediaState.isMicOn,
+					const publication = await publishInitialMediaWithRetry(
+						manager!.publishMedia.bind(manager),
+						streamToPublish,
+						{ publishVideo, publishAudio },
+						signal,
+					);
+					if (publishVideo && publication.videoProducer) {
+						sfuClient.sendMediaControl("video_on");
+					} else if (publishVideo) {
+						mediaState.isCameraOn = false;
+						for (const track of videoTracks) track.enabled = false;
+					}
+					if (publishAudio && publication.audioProducer) {
+						sfuClient.sendMediaControl("unmute");
+					} else if (publishAudio) {
+						mediaState.isMicOn = false;
+						for (const track of mediaState.localStream.getAudioTracks()) {
+							track.enabled = false;
+						}
+					}
+					if (
+						(publishVideo && !publication.videoProducer) ||
+						(publishAudio && !publication.audioProducer)
+					) {
+						console.warn("Initial media publication did not fully recover", {
+							video: publication.videoError
+								? getErrorMessage(publication.videoError)
+								: undefined,
+							audio: publication.audioError
+								? getErrorMessage(publication.audioError)
+								: undefined,
 						});
-					} catch (error) {
-						if (signal.aborted) throw error;
-						console.warn(
-							"Media publishing failed, continuing without media:",
-							getErrorMessage(error),
+						toast.error(
+							"Some media could not be started. You can try enabling it again.",
 						);
 					}
 				},
