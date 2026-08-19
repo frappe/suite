@@ -42,6 +42,8 @@ export interface ComposeMailOptions {
 	onDiscardStarted?: () => void
 	/** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
 	host: () => EditorHost | null | undefined
+	/** Whether a file is still being attached. Sending must wait until it is part of the draft. */
+	isUploading?: () => boolean
 	/**
 	 * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
 	 * page inert; null anywhere `<body>` will do.
@@ -250,6 +252,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	const sendMail = async (sendAt?: string) => {
 		if (deleteMail.loading) return
+
+		if (options.isUploading?.())
+			return raiseToast(__('Please wait for attachments to finish uploading.'), 'error')
 
 		if (isRecipientsEmpty.value)
 			return raiseToast(__('Please add at least one recipient.'), 'error')
