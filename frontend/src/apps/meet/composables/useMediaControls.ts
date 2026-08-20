@@ -1569,6 +1569,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			noiseCancellationSession?.cleanup();
 			noiseCancellationSession = null;
 			const trackToPublish = await getProcessedAudioTrack(currentStream);
+			assertCurrentCameraOperation(operation);
 			if (!trackToPublish || trackToPublish.readyState !== "live") {
 				throw new Error("No live microphone track available after recovery");
 			}
@@ -1576,6 +1577,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			const manager = sfuManager.value;
 			if (manager) {
 				await manager.serializeSendMediaMutation(async () => {
+					assertCurrentCameraOperation(operation);
 					if (!mediaState.isMicOn || candidate.readyState !== "live") {
 						throw new Error("Microphone recovery became stale");
 					}

@@ -178,6 +178,7 @@ function createCameraHarness({
 	createProducer,
 	applyBackgroundEffects = vi.fn(),
 	backgroundEffects: backgroundEffectsOverride,
+	noiseCancellation: noiseCancellationOverride,
 	publishMedia: publishMediaOverride,
 	deviceManager = {},
 }: {
@@ -188,6 +189,7 @@ function createCameraHarness({
 	createProducer?: ReturnType<typeof vi.fn>;
 	applyBackgroundEffects?: ReturnType<typeof vi.fn>;
 	backgroundEffects?: ReturnType<typeof useBackgroundEffects>;
+	noiseCancellation?: object;
 	publishMedia?: ReturnType<typeof vi.fn>;
 	deviceManager?: object;
 } = {}) {
@@ -302,7 +304,7 @@ function createCameraHarness({
 		sfuManager: ref(manager),
 		deviceManager,
 		backgroundEffects: effectsApi,
-		noiseCancellation: { error: ref(null) },
+		noiseCancellation: noiseCancellationOverride ?? { error: ref(null) },
 		toast: {},
 		mediaPreferences: {},
 	} as never);
@@ -543,6 +545,60 @@ describe("useMediaControls", () => {
 		await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce());
 		expect(replaceTrack).not.toHaveBeenCalled();
 		expect(harness.state.localStream.getAudioTracks()).not.toContain(lateTrack);
+	});
+
+	it("does not publish microphone recovery after processing finishes post-unmount", async () => {
+		const oldTrack = audioTrack("old-mic");
+		const candidate = audioTrack("candidate-mic");
+		const processed = audioTrack("processed-mic");
+		const processing = deferred<{
+			stream: MediaStream;
+			cleanup: () => void;
+		}>();
+		const processingEntered = deferred<void>();
+		const replaceTrack = vi.fn();
+		const applyNoiseCancellation = vi.fn(() => {
+			processingEntered.resolve();
+			return processing.promise;
+		});
+		let harness!: ReturnType<typeof createCameraHarness>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					harness = createCameraHarness({
+						mediaState: {
+							isMicOn: true,
+							localStream: new FakeMediaStream([oldTrack]),
+						},
+						getUserMedia: vi
+							.fn()
+							.mockResolvedValue(new FakeMediaStream([candidate])),
+						audioProducer: {
+							id: "audio-producer",
+							track: oldTrack,
+							replaceTrack,
+						},
+						noiseCancellation: {
+							error: ref(null),
+							applyNoiseCancellation,
+						},
+					});
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+		Reflect.set(oldTrack, "readyState", "ended");
+		oldTrack.dispatchEvent(new Event("ended"));
+		await processingEntered.promise;
+		app.unmount();
+		processing.resolve({
+			stream: new FakeMediaStream([processed]) as never,
+			cleanup: vi.fn(),
+		});
+
+		await vi.waitFor(() => expect(candidate.stop).toHaveBeenCalledOnce());
+		expect(replaceTrack).not.toHaveBeenCalled();
 	});
 
 	it("falls back to the default microphone when Firefox cannot find the selected device", async () => {
