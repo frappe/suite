@@ -137,6 +137,7 @@ export class SFUMeetingManager {
 		return this.connectionManager.reconcileExpectedMedia();
 	}
 
+	/** Restarts playback, then reconciles expected media after browser resume. */
 	async recoverBrowserLifecycle(): Promise<void> {
 		await this.videoManager.retryPlayback();
 		await this.reconcileExpectedMedia();

@@ -128,6 +128,22 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		play.mockRestore();
 	});
 
+	it("deduplicates and removes pending playback interaction handlers", async () => {
+		const element = makeVideoElement();
+		element.play = vi.fn().mockRejectedValue(new Error("still blocked"));
+		manager.addUserInteractionHandler(element, "p1");
+		manager.addUserInteractionHandler(element, "p1");
+
+		document.dispatchEvent(new Event("click"));
+		await vi.waitFor(() => expect(element.play).toHaveBeenCalledOnce());
+
+		manager.registerVideoElement("p1", element);
+		manager.removeVideoElement("p1");
+		document.dispatchEvent(new Event("click"));
+		await Promise.resolve();
+		expect(element.play).toHaveBeenCalledOnce();
+	});
+
 	it("skips re-attach when track id is unchanged", async () => {
 		const el = makeVideoElement();
 		manager.registerVideoElement("p1", el);

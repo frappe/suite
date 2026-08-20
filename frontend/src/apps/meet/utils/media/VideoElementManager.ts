@@ -21,6 +21,7 @@ export class VideoElementManager {
 	deferredAttachments: Map<string, DeferredAttachment>;
 	private lastVideoAttachAt: Map<string, number>;
 	private lastAudioAttachAt: Map<string, number>;
+	private playbackHandlers: Map<HTMLMediaElement, () => void>;
 
 	constructor(private strictAttachmentTimeoutMs?: number) {
 		this.videoElements = new Map();
@@ -28,6 +29,7 @@ export class VideoElementManager {
 		this.deferredAttachments = new Map();
 		this.lastVideoAttachAt = new Map();
 		this.lastAudioAttachAt = new Map();
+		this.playbackHandlers = new Map();
 	}
 
 	registerVideoElement(participantId: string, element: HTMLElement): void {
@@ -221,6 +223,7 @@ export class VideoElementManager {
 	): Promise<boolean> {
 		try {
 			await element.play();
+			this.clearPlaybackHandler(element);
 			return true;
 		} catch (error) {
 			if ((error as DOMException).name === "NotAllowedError") {
@@ -238,6 +241,7 @@ export class VideoElementManager {
 		}
 	}
 
+	/** Retries playback for every attached remote media element after resume. */
 	async retryPlayback(): Promise<void> {
 		await Promise.all([
 			...Array.from(this.videoElements, ([participantId, element]) =>
@@ -249,6 +253,7 @@ export class VideoElementManager {
 				if (!element.srcObject) return false;
 				try {
 					await element.play();
+					this.clearPlaybackHandler(element);
 					return true;
 				} catch (error) {
 					if ((error as DOMException).name === "NotAllowedError") {
@@ -264,12 +269,11 @@ export class VideoElementManager {
 		element: HTMLMediaElement,
 		participantId: string,
 	): void {
+		if (this.playbackHandlers.has(element)) return;
 		const playOnInteraction = async () => {
 			try {
 				await element.play();
-
-				document.removeEventListener("click", playOnInteraction);
-				document.removeEventListener("touchstart", playOnInteraction);
+				this.clearPlaybackHandler(element);
 			} catch (error) {
 				console.warn(
 					`Unable to play video for ${participantId}:`,
@@ -278,8 +282,17 @@ export class VideoElementManager {
 			}
 		};
 
-		document.addEventListener("click", playOnInteraction, { once: true });
-		document.addEventListener("touchstart", playOnInteraction, { once: true });
+		this.playbackHandlers.set(element, playOnInteraction);
+		document.addEventListener("click", playOnInteraction);
+		document.addEventListener("touchstart", playOnInteraction);
+	}
+
+	private clearPlaybackHandler(element: HTMLMediaElement): void {
+		const handler = this.playbackHandlers.get(element);
+		if (!handler) return;
+		document.removeEventListener("click", handler);
+		document.removeEventListener("touchstart", handler);
+		this.playbackHandlers.delete(element);
 	}
 
 	removeVideoElement(participantId: string): void {
@@ -306,6 +319,8 @@ export class VideoElementManager {
 			audioElement.remove();
 			this.audioElements.delete(participantId);
 		}
+		if (element) this.clearPlaybackHandler(element);
+		if (audioElement) this.clearPlaybackHandler(audioElement);
 
 		this.videoElements.delete(participantId);
 		const deferred = this.deferredAttachments.get(participantId);
@@ -322,6 +337,9 @@ export class VideoElementManager {
 	}
 
 	cleanup(): void {
+		for (const element of this.playbackHandlers.keys()) {
+			this.clearPlaybackHandler(element);
+		}
 		for (const deferred of this.deferredAttachments.values()) {
 			if (deferred.timer) clearTimeout(deferred.timer);
 			deferred.reject?.(new Error("Video element manager cleaned up"));
