@@ -387,7 +387,7 @@ export class SFUMeetingManager {
 			});
 		}
 		if (!this.sfuClient?.isConnected()) {
-			return null;
+			throw new Error("Cannot update consumer preferences while disconnected");
 		}
 
 		try {
@@ -412,7 +412,7 @@ export class SFUMeetingManager {
 				consumerId,
 				(error as Error)?.message || error,
 			);
-			return null;
+			throw error;
 		} finally {
 			if (this.consumerPreferenceGenerations.get(consumerId) === generation) {
 				this.consumerPreferenceGenerations.delete(consumerId);

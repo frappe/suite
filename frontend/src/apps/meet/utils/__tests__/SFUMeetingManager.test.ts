@@ -77,6 +77,37 @@ function prepareE2EEManager() {
 }
 
 describe("SFUMeetingManager adaptive streaming", () => {
+	it("rejects visible preferences while disconnected", async () => {
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => false),
+		} as never);
+
+		await expect(
+			manager.updateConsumerStreamPreferences("consumer-1", {
+				visible: true,
+				width: 640,
+				height: 360,
+			}),
+		).rejects.toThrow("disconnected");
+	});
+
+	it("rejects a failed visible preference without clearing adaptive pause", async () => {
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => true),
+			updateConsumerPreferences: vi.fn().mockRejectedValue(new Error("offline")),
+		} as never);
+		const updateConsumer = vi.spyOn(manager.consumerManager, "updateConsumer");
+
+		await expect(
+			manager.updateConsumerStreamPreferences("consumer-1", {
+				visible: true,
+				width: 640,
+				height: 360,
+			}),
+		).rejects.toThrow("offline");
+		expect(updateConsumer).not.toHaveBeenCalled();
+	});
+
 	it("keeps the latest hidden preference when an older resume resolves late", async () => {
 		const visibleRequest = deferred<unknown>();
 		const hiddenRequest = deferred<unknown>();
