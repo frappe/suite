@@ -308,10 +308,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		cleanup: () => void;
 	} | null = null;
 	let cameraTransitionQueue: Promise<unknown> = Promise.resolve();
+	let microphoneTransitionQueue: Promise<unknown> = Promise.resolve();
 	let cameraLifecycleGeneration = 0;
 	const cameraLifecycleAbortController = new AbortController();
 	const lifecycleStoppedTracks = new WeakSet<MediaStreamTrack>();
 	const detachedCameraTracks = new Set<MediaStreamTrack>();
+	let observedCameraTrack: MediaStreamTrack | null = null;
+	let observedMicrophoneTrack: MediaStreamTrack | null = null;
+	let cameraEndedListener: (() => void) | null = null;
+	let microphoneEndedListener: (() => void) | null = null;
 
 	const cameraLifecycleAbort = () =>
 		new DOMException("Camera lifecycle has ended", "AbortError");
@@ -371,8 +376,27 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const enqueueCameraTransition = <T>(
 		operation: () => Promise<T>,
 	): Promise<T> => {
-		const result = cameraTransitionQueue.then(operation);
+		const result = cameraTransitionQueue.then(async () => {
+			try {
+				return await operation();
+			} finally {
+				observeLocalTracks();
+			}
+		});
 		cameraTransitionQueue = result.catch(() => undefined);
+		return result;
+	};
+	const enqueueMicrophoneTransition = <T>(
+		operation: () => Promise<T>,
+	): Promise<T> => {
+		const result = microphoneTransitionQueue.then(async () => {
+			try {
+				return await operation();
+			} finally {
+				observeLocalTracks();
+			}
+		});
+		microphoneTransitionQueue = result.catch(() => undefined);
 		return result;
 	};
 
@@ -1062,7 +1086,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			if (type === "speaker") {
 				await switchSpeaker(deviceId);
 			} else if (type === "microphone") {
-				await switchMic(deviceId);
+				await enqueueMicrophoneTransition(() => switchMic(deviceId));
 			} else if (type === "camera") {
 				await enqueueCameraTransition(() => switchCam(deviceId));
 			}
@@ -1432,6 +1456,212 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		return { stream, constraints };
 	};
 
+	const signalMediaDisabled = (kind: "audio" | "video") => {
+		if (!sfuClient.isConnected()) return;
+		try {
+			sfuClient.sendMediaControl(kind === "video" ? "video_off" : "mute");
+		} catch (_) {
+			sfuClient.sendMediaControl({ type: kind, enabled: false });
+		}
+	};
+
+	const failEndedTrackRecovery = async (kind: "audio" | "video") => {
+		if (kind === "video") {
+			try {
+				const operation = createCameraOperation();
+				await reconcileCameraTrack(null, "camera-track-ended", false, operation);
+			} catch (error) {
+				console.error("Failed to close ended camera publication:", error);
+			}
+			cleanupBackgroundSession();
+			for (const track of mediaState.localStream?.getVideoTracks() ?? []) {
+				mediaState.localStream?.removeTrack(track);
+				stopLifecycleTrack(track);
+			}
+			mediaState.isCameraOn = false;
+			setCameraEnabled(false);
+			toast.error(
+				"Camera stopped and could not be restarted. Check browser permissions and devices.",
+			);
+		} else {
+			const manager = sfuManager.value;
+			try {
+				if (manager) {
+					await manager.serializeSendMediaMutation(async () => {
+						const mediaHandler = getMediaHandler(manager);
+						const producer = mediaHandler?.audioProducer;
+						producer?.close?.();
+						if (producer?.id && sfuClient.isConnected()) {
+							void sfuClient.closeProducer(producer.id).catch(() => {});
+						}
+						if (mediaHandler) mediaHandler.audioProducer = null;
+						manager.setLocalMediaTrack("audio", null);
+					});
+				}
+			} catch (error) {
+				console.error("Failed to close ended microphone publication:", error);
+			}
+			noiseCancellationSession?.cleanup();
+			noiseCancellationSession = null;
+			for (const track of mediaState.localStream?.getAudioTracks() ?? []) {
+				mediaState.localStream?.removeTrack(track);
+				stopLifecycleTrack(track);
+			}
+			mediaState.isMicOn = false;
+			setMicEnabled(false);
+			toast.error(
+				"Microphone stopped and could not be restarted. Check browser permissions and devices.",
+			);
+		}
+		signalMediaDisabled(kind);
+	};
+
+	const recoverEndedCameraTrack = async (endedTrack: MediaStreamTrack) => {
+		if (
+			cameraLifecycleAbortController.signal.aborted ||
+			!mediaState.isCameraOn ||
+			!mediaState.localStream?.getVideoTracks().includes(endedTrack)
+		) return;
+		try {
+			await switchCam(selectedCameraId.value);
+		} catch (error) {
+			if (isCameraLifecycleAbort(error)) return;
+			console.error("Failed to recover ended camera track:", error);
+			await failEndedTrackRecovery("video");
+		}
+	};
+
+	const recoverEndedMicrophoneTrack = async (endedTrack: MediaStreamTrack) => {
+		if (
+			cameraLifecycleAbortController.signal.aborted ||
+			!mediaState.isMicOn ||
+			!mediaState.localStream?.getAudioTracks().includes(endedTrack)
+		) return;
+		try {
+			const currentStream = mediaState.localStream;
+			const { stream: acquiredStream } = await acquireUserMedia(false, true, {
+				micDeviceId: selectedMicId.value,
+			});
+			const candidate = acquiredStream
+				.getAudioTracks()
+				.find((track) => track.readyState === "live");
+			if (
+				!candidate ||
+				!mediaState.isMicOn ||
+				mediaState.localStream !== currentStream ||
+				!currentStream.getAudioTracks().includes(endedTrack)
+			) {
+				stopLifecycleStream(acquiredStream);
+				return;
+			}
+
+			for (const track of currentStream.getAudioTracks()) {
+				currentStream.removeTrack(track);
+			}
+			currentStream.addTrack(candidate);
+			noiseCancellationSession?.cleanup();
+			noiseCancellationSession = null;
+			const trackToPublish = await getProcessedAudioTrack(currentStream);
+			if (!trackToPublish || trackToPublish.readyState !== "live") {
+				throw new Error("No live microphone track available after recovery");
+			}
+
+			const manager = sfuManager.value;
+			if (manager) {
+				await manager.serializeSendMediaMutation(async () => {
+					if (!mediaState.isMicOn || candidate.readyState !== "live") {
+						throw new Error("Microphone recovery became stale");
+					}
+					const mediaHandler = getMediaHandler(manager);
+					const producer = mediaHandler?.audioProducer;
+					if (producer) {
+						if (typeof producer.replaceTrack !== "function") {
+							throw new Error("Microphone producer cannot replace its track");
+						}
+						await producer.replaceTrack({ track: trackToPublish });
+						if (trackToPublish.readyState !== "live") {
+							throw new Error("Microphone track ended during recovery");
+						}
+						producer.resume?.();
+					} else if (manager.transportManager) {
+						const nextProducer = await manager.transportManager.createProducer(
+							trackToPublish,
+							{ type: "microphone" },
+						);
+						if (trackToPublish.readyState !== "live") {
+							nextProducer.close?.();
+							throw new Error("Microphone track ended during recovery");
+						}
+						mediaHandler?.setProducers({
+							audioProducer: nextProducer as ProducerLike,
+						});
+					}
+					manager.setLocalMediaTrack("audio", trackToPublish);
+				});
+			}
+			for (const track of acquiredStream.getTracks()) {
+				if (track !== candidate) stopLifecycleTrack(track);
+			}
+			stopLifecycleTrack(endedTrack);
+		} catch (error) {
+			if (isCameraLifecycleAbort(error)) return;
+			console.error("Failed to recover ended microphone track:", error);
+			stopLifecycleTrack(endedTrack);
+			await failEndedTrackRecovery("audio");
+		}
+	};
+
+	function observeLocalTracks() {
+		const cameraTrack =
+			mediaState.localStream
+				?.getVideoTracks()
+				.find((track) => track.readyState === "live") ?? null;
+		if (cameraTrack !== observedCameraTrack) {
+			if (observedCameraTrack && cameraEndedListener) {
+				observedCameraTrack.removeEventListener("ended", cameraEndedListener);
+			}
+			observedCameraTrack = cameraTrack;
+			cameraEndedListener = cameraTrack
+				? () => {
+						void enqueueCameraTransition(() =>
+							recoverEndedCameraTrack(cameraTrack),
+						).catch((error) =>
+							console.error("Camera track recovery failed:", error),
+						);
+					}
+				: null;
+			if (cameraTrack && cameraEndedListener) {
+				cameraTrack.addEventListener("ended", cameraEndedListener);
+			}
+		}
+
+		const microphoneTrack =
+			mediaState.localStream
+				?.getAudioTracks()
+				.find((track) => track.readyState === "live") ?? null;
+		if (microphoneTrack !== observedMicrophoneTrack) {
+			if (observedMicrophoneTrack && microphoneEndedListener) {
+				observedMicrophoneTrack.removeEventListener(
+					"ended",
+					microphoneEndedListener,
+				);
+			}
+			observedMicrophoneTrack = microphoneTrack;
+			microphoneEndedListener = microphoneTrack
+				? () => {
+						void enqueueMicrophoneTransition(() =>
+							recoverEndedMicrophoneTrack(microphoneTrack),
+						).catch((error) =>
+							console.error("Microphone track recovery failed:", error),
+						);
+					}
+				: null;
+			if (microphoneTrack && microphoneEndedListener) {
+				microphoneTrack.addEventListener("ended", microphoneEndedListener);
+			}
+		}
+	}
+
 	const applySpeakerDevice = async () => {
 		try {
 			const validSpeakerId = await getValidDeviceId(
@@ -1541,7 +1771,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const initializeCamera = () =>
 		enqueueCameraTransition(initializeCameraImplementation);
 
-	const toggleMicrophone = async () => {
+	const toggleMicrophoneImplementation = async () => {
 		try {
 			const enable = !mediaState.isMicOn;
 			const mh = getMediaHandler(sfuManager.value);
@@ -1706,6 +1936,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			toast.error("Failed to toggle microphone");
 		}
 	};
+	const toggleMicrophone = () =>
+		enqueueMicrophoneTransition(toggleMicrophoneImplementation);
 
 	const toggleCameraImplementation = async () => {
 		const operation = createCameraOperation();
@@ -2165,10 +2397,21 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	});
 
+	observeLocalTracks();
+
 	onUnmounted(() => {
 		cameraLifecycleGeneration++;
 		cameraLifecycleAbortController.abort(cameraLifecycleAbort());
 		mediaState.isCameraOn = false;
+		if (observedCameraTrack && cameraEndedListener) {
+			observedCameraTrack.removeEventListener("ended", cameraEndedListener);
+		}
+		if (observedMicrophoneTrack && microphoneEndedListener) {
+			observedMicrophoneTrack.removeEventListener(
+				"ended",
+				microphoneEndedListener,
+			);
+		}
 
 		if (noiseCancellationSession) {
 			noiseCancellationSession.cleanup();
