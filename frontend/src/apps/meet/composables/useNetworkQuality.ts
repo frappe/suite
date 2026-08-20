@@ -106,6 +106,8 @@ export function useNetworkQuality(
 				);
 				return (
 					entry.consumer.paused ||
+					entry.consumer.producerPaused ||
+					entry.adaptivelyPaused ||
 					(entry.kind === "audio" && participant?.audio_enabled === false) ||
 					(entry.kind === "video" &&
 						!entry.isScreen &&
@@ -143,8 +145,21 @@ export function useNetworkQuality(
 		const stalledEntries = statsResults
 			.map(({ entry }) => entry)
 			.filter((entry) => stalledSet.has(entry.id));
-		const hasAudioStall = stalledEntries.some((entry) => entry.kind === "audio");
-		const hasExhaustedVideoRecovery = stalledEntries.some(
+		const neverStartedEntries = stalledEntries.filter(
+			(entry) => !stallDetector.hasReceivedMedia(entry.id),
+		);
+		for (const entry of neverStartedEntries) {
+			stallDetector.dispose(entry.id);
+			void sfuManager.mediaManager.recoverConsumer(entry);
+		}
+		const establishedStalls = stalledEntries.filter(
+			(entry) => stallDetector.hasReceivedMedia(entry.id),
+		);
+		if (establishedStalls.length === 0) return;
+		const hasAudioStall = establishedStalls.some(
+			(entry) => entry.kind === "audio",
+		);
+		const hasExhaustedVideoRecovery = establishedStalls.some(
 			(entry) =>
 				entry.kind === "video" && stallDetector.getRecoveryAttempts(entry.id) > 2,
 		);
@@ -154,7 +169,7 @@ export function useNetworkQuality(
 			return;
 		}
 
-		for (const entry of stalledEntries) {
+		for (const entry of establishedStalls) {
 			if (entry.kind === "video") {
 				void sfuManager.sfuClient
 					?.requestConsumerKeyFrame(entry.id)

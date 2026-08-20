@@ -76,6 +76,42 @@ function prepareE2EEManager() {
 	return manager;
 }
 
+describe("SFUMeetingManager adaptive streaming", () => {
+	it("keeps the latest hidden preference when an older resume resolves late", async () => {
+		const visibleRequest = deferred<unknown>();
+		const hiddenRequest = deferred<unknown>();
+		const updateConsumerPreferences = vi
+			.fn()
+			.mockReturnValueOnce(visibleRequest.promise)
+			.mockReturnValueOnce(hiddenRequest.promise);
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => true),
+			updateConsumerPreferences,
+		} as never);
+		const updateConsumer = vi.spyOn(manager.consumerManager, "updateConsumer");
+
+		const visible = manager.updateConsumerStreamPreferences("consumer-1", {
+			visible: true,
+			width: 640,
+			height: 360,
+		});
+		const hidden = manager.updateConsumerStreamPreferences("consumer-1", {
+			visible: false,
+			width: 0,
+			height: 0,
+		});
+		hiddenRequest.resolve(null);
+		await hidden;
+		visibleRequest.resolve(null);
+		await visible;
+
+		expect(updateConsumer).toHaveBeenCalledOnce();
+		expect(updateConsumer).toHaveBeenCalledWith("consumer-1", {
+			adaptivelyPaused: true,
+		});
+	});
+});
+
 describe("SFUMeetingManager recovery fallback", () => {
 	it("keeps existing consumers after a successful ICE restart", async () => {
 		const manager = new SFUMeetingManager({

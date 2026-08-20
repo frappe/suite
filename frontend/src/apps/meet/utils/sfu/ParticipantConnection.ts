@@ -821,6 +821,10 @@ export class ParticipantConnection {
 	}
 
 	private removeProducerConsumers(event: SFUProducerEvent): void {
+		this.mediaManager.cancelProducerSubscription?.(
+			event.participantId,
+			event.producerId,
+		);
 		const consumers =
 			this.mediaManager.consumerManager.getConsumersByParticipant(
 				event.participantId,

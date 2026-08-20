@@ -204,6 +204,75 @@ describe("useNetworkQuality", () => {
 		app.unmount();
 	});
 
+	it("recreates only a consumer that misses its first RTP deadline", async () => {
+		vi.useFakeTimers();
+		const recoverConsumer = vi.fn().mockResolvedValue(undefined);
+		const resetReceiveMedia = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
+		const zeroStats = new Map<string, { type: string; bytesReceived: number }>([
+			["in", { type: "inbound-rtp", bytesReceived: 0 }],
+		]);
+		const consumer = (id: string, adaptivelyPaused = false) => ({
+			id,
+			participantId: `participant-${id}`,
+			producerId: `producer-${id}`,
+			kind: "video",
+			isScreen: false,
+			adaptivelyPaused,
+			track: { muted: false } as MediaStreamTrack,
+			createdAt: Date.now() - 20_000,
+			consumer: {
+				paused: false,
+				producerPaused: false,
+				getStats: vi.fn().mockResolvedValue(zeroStats),
+			},
+		});
+		const expected = consumer("expected");
+		const hidden = consumer("hidden", true);
+		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
+			participantManager: {
+				getParticipant: () => ({ audio_enabled: true, video_enabled: true }),
+			},
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockResolvedValue({
+					rtt: 50,
+					packetLoss: 0,
+					availableOutgoingBitrate: 800_000,
+					timestamp: Date.now(),
+					isValid: true,
+				}),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [expected, hidden],
+				},
+				recoverConsumer,
+			},
+			resetReceiveMedia,
+		});
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(recoverConsumer).toHaveBeenCalledOnce();
+		expect(recoverConsumer).toHaveBeenCalledWith(expected);
+		expect(requestConsumerKeyFrame).not.toHaveBeenCalled();
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		app.unmount();
+	});
+
 	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 

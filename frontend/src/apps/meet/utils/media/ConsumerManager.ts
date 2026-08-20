@@ -11,6 +11,7 @@ export interface ConsumerEntry {
 	producerId: string;
 	kind: MediaKind;
 	isScreen: boolean;
+	adaptivelyPaused: boolean;
 	track?: MediaStreamTrack;
 	appData?: AppData;
 	createdAt: number;
@@ -81,6 +82,7 @@ export class ConsumerManager {
 			producerId: consumer.producerId,
 			kind: consumer.kind,
 			isScreen: consumer.appData?.type === "screen" || false,
+			adaptivelyPaused: false,
 			track: consumer.track,
 			appData: consumer.appData,
 			createdAt: Date.now(),

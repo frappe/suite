@@ -179,11 +179,37 @@ describe("StallDetector", () => {
 		expect(det.check([toSample(sample)])).toEqual([]);
 	});
 
+	it("gives a resumed consumer a fresh first-media deadline", () => {
+		const det = detector();
+		const sample = makeSample({ createdAt: now, paused: true, bytes: 0 });
+		det.check([toSample(sample)]);
+
+		now += 30_000;
+		sample.paused = false;
+		expect(det.check([toSample(sample)])).toEqual([]);
+
+		now += 14_000;
+		expect(det.check([toSample(sample)])).toEqual([]);
+		now += 1_000;
+		expect(det.check([toSample(sample)])).toEqual(["c1"]);
+	});
+
 	it("ignores consumers with no bytesReceived (stats unavailable)", () => {
 		const det = detector();
 		const sample = makeSample({ createdAt: now - 10_000, bytes: null });
 		now += 10_000;
 		expect(det.check([toSample(sample)])).toEqual([]);
+	});
+
+	it("reports an expected consumer that receives no RTP before its deadline", () => {
+		const det = detector();
+		const sample = makeSample({ createdAt: now, bytes: 0 });
+
+		now += 14_000;
+		expect(det.check([toSample(sample)])).toEqual([]);
+
+		now += 1_000;
+		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
 
 	it("disposes state for a removed consumer", () => {
@@ -211,7 +237,7 @@ describe("StallDetector", () => {
 			expect(det.check([audioSample])).toEqual(["c1"]);
 		});
 
-		it("uses the longer startup window for audio before RTP arrives", () => {
+		it("uses the longer startup window for audio before reporting no RTP", () => {
 			const det = detector();
 			const sample = makeSample({ createdAt: now - 10_000, bytes: 0 });
 			const audioSample = { ...toSample(sample), kind: "audio" };
@@ -227,10 +253,10 @@ describe("StallDetector", () => {
 
 			now += 5_000;
 			sample.bytes = 0;
-			expect(det.check([audioSample])).toEqual([]);
+			expect(det.check([audioSample])).toEqual(["c1"]);
 		});
 
-		it("does not report a startup video stall before RTP arrives", () => {
+		it("reports startup video that misses the first RTP deadline", () => {
 			const det = detector();
 			const sample = makeSample({ createdAt: now - 10_000, bytes: 0 });
 			const videoSample = { ...toSample(sample), kind: "video" };
@@ -242,7 +268,7 @@ describe("StallDetector", () => {
 
 			now += 6_000;
 			sample.bytes = 0;
-			expect(det.check([videoSample])).toEqual([]);
+			expect(det.check([videoSample])).toEqual(["c1"]);
 		});
 
 		it("uses the longer default window for video", () => {

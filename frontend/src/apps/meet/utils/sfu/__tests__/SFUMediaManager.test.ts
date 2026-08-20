@@ -61,6 +61,7 @@ function createManager(
 	consumerManager: {
 		addConsumer: ReturnType<typeof vi.fn>;
 		getConsumersByParticipant: ReturnType<typeof vi.fn>;
+		removeConsumer: ReturnType<typeof vi.fn>;
 	};
 	participantManager: MockParticipantManager;
 } {
@@ -84,6 +85,7 @@ function createManager(
 
 	const consumerManager = {
 		getConsumersByParticipant: vi.fn(() => []),
+		removeConsumer: vi.fn(),
 		addConsumer: vi.fn((c) => ({
 			id: c.id,
 			producerId: c.producerId,
@@ -118,6 +120,14 @@ function createManager(
 }
 
 describe("SFUMediaManager.subscribeToRemoteProducer", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("shares one subscription across concurrent callers", async () => {
 		const { mediaManager, transportManager } = createManager();
 		const request = {
@@ -132,6 +142,83 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		]);
 
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(1);
+	});
+
+	it("retries an initial subscription until it succeeds", async () => {
+		const { mediaManager, transportManager } = createManager();
+		transportManager.createConsumer
+			.mockRejectedValueOnce(new Error("not ready"))
+			.mockResolvedValueOnce({
+				id: "new-c1",
+				producerId: "producer-1",
+				kind: "video",
+				track: { kind: "video" },
+				appData: { type: "camera" },
+				close: vi.fn(),
+			});
+
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		await vi.advanceTimersByTimeAsync(250);
+
+		await expect(subscription).resolves.toMatchObject({ id: "new-c1" });
+		expect(transportManager.createConsumer).toHaveBeenCalledTimes(2);
+	});
+
+	it("exhausts one automatic retry chain", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const onRecoveryExhausted = vi.fn();
+		mediaManager.setEventHandlers({ onRecoveryExhausted });
+		transportManager.createConsumer.mockRejectedValue(new Error("server down"));
+
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		void subscription.catch(() => {});
+		await vi.advanceTimersByTimeAsync(1000);
+
+		await expect(subscription).rejects.toThrow("server down");
+		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
+		expect(onRecoveryExhausted).toHaveBeenCalledOnce();
+	});
+
+	it("discards an in-flight subscription when its producer closes", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		const request = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			track: { kind: string };
+			appData: { type: string };
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		transportManager.createConsumer.mockReturnValue(request.promise);
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const rejected = expect(subscription).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		mediaManager.cancelProducerSubscription("remote-1", "producer-1");
+		request.resolve({
+			id: "stale-c1",
+			producerId: "producer-1",
+			kind: "video",
+			track: { kind: "video" },
+			appData: { type: "camera" },
+			close: vi.fn(),
+		});
+
+		await rejected;
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stale-c1");
 	});
 
 	it("discards a subscription that finishes after receive teardown", async () => {
@@ -782,6 +869,21 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 		);
 	});
 
+	it("removes and recreates only the consumer that never started", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		await mediaManager.recoverConsumer({
+			id: "stalled-c1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+		} as never);
+
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stalled-c1");
+		await vi.advanceTimersByTimeAsync(250);
+		expect(transportManager.createConsumer).toHaveBeenCalledOnce();
+	});
+
 	it("does not re-subscribe if the participant has left", async () => {
 		const { mediaManager, transportManager } = createManager({
 			hasParticipant: false,
@@ -823,29 +925,16 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 		expect(transportManager.createConsumer).not.toHaveBeenCalled();
 	});
 
-	it("caps retries at 3, then resets and tries again on the next lost event", async () => {
+	it("automatically caps lost-consumer recovery at 3 attempts", async () => {
 		const { mediaManager, transportManager } = createManager();
+		const onRecoveryExhausted = vi.fn();
+		mediaManager.setEventHandlers({ onRecoveryExhausted });
 		transportManager.createConsumer.mockRejectedValue(new Error("server down"));
 
-		for (let i = 0; i < 3; i++) {
-			await mediaManager.handleConsumerLost(baseInfo);
-			await vi.advanceTimersByTimeAsync(250);
-		}
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
-
 		await mediaManager.handleConsumerLost(baseInfo);
-		await vi.advanceTimersByTimeAsync(250);
+		await vi.advanceTimersByTimeAsync(1000);
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
-
-		await mediaManager.handleConsumerLost(baseInfo);
-		await vi.advanceTimersByTimeAsync(250);
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(4);
-
-		for (let i = 0; i < 2; i++) {
-			await mediaManager.handleConsumerLost(baseInfo);
-			await vi.advanceTimersByTimeAsync(250);
-		}
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(6);
+		expect(onRecoveryExhausted).toHaveBeenCalledOnce();
 	});
 
 	it("treats a successful re-subscribe as a fresh retry budget", async () => {

@@ -36,6 +36,8 @@ interface StallDetectorOptions {
 interface ConsumerState {
 	lastBytesReceived: number;
 	hasReceivedBytes: boolean;
+	startupStartedAt: number;
+	wasPaused: boolean;
 	stallStartedAt: number | null;
 	lastRecoveredAt: number | null;
 	recoveryAttempts: number;
@@ -70,10 +72,17 @@ export class StallDetector {
 
 		for (const sample of samples) {
 			activeIds.add(sample.id);
+			const st = this.ensureState(sample.id, sample.getCreatedAt());
 
 			if (sample.isPaused()) {
-				this.state.delete(sample.id);
+				st.wasPaused = true;
+				st.hasReceivedBytes = false;
+				st.stallStartedAt = null;
 				continue;
+			}
+			if (st.wasPaused) {
+				st.wasPaused = false;
+				st.startupStartedAt = now;
 			}
 
 			if (now - sample.getCreatedAt() < this.minConsumerAgeMs) {
@@ -81,14 +90,24 @@ export class StallDetector {
 			}
 
 			const bytes = sample.getBytesReceived();
-			const st = this.ensureState(sample.id);
 			if (bytes !== null && bytes > 0) {
 				st.hasReceivedBytes = true;
 			}
 
 			if (!st.hasReceivedBytes) {
-				st.stallStartedAt = null;
 				st.lastBytesReceived = bytes ?? 0;
+				if (bytes === null) {
+					st.stallStartedAt = null;
+					continue;
+				}
+				if (now - st.startupStartedAt >= this.stallTimeoutMs) {
+					this.activeStall = true;
+					if (recoveryEnabled && this.shouldRecover(st, now)) {
+						stalled.push(sample.id);
+						st.lastRecoveredAt = now;
+						st.recoveryAttempts += 1;
+					}
+				}
 				continue;
 			}
 
@@ -160,12 +179,14 @@ export class StallDetector {
 			: this.stallTimeoutMs;
 	}
 
-	private ensureState(id: string): ConsumerState {
+	private ensureState(id: string, createdAt: number): ConsumerState {
 		let st = this.state.get(id);
 		if (!st) {
 			st = {
 				lastBytesReceived: 0,
 				hasReceivedBytes: false,
+				startupStartedAt: createdAt,
+				wasPaused: false,
 				stallStartedAt: null,
 				lastRecoveredAt: null,
 				recoveryAttempts: 0,
@@ -187,6 +208,10 @@ export class StallDetector {
 
 	getRecoveryAttempts(consumerId: string): number {
 		return this.state.get(consumerId)?.recoveryAttempts ?? 0;
+	}
+
+	hasReceivedMedia(consumerId: string): boolean {
+		return this.state.get(consumerId)?.hasReceivedBytes ?? false;
 	}
 
 	hasActiveStall(): boolean {
