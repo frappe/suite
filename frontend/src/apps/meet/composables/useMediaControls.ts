@@ -1098,11 +1098,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	let shouldApplyBackgroundEffectsWhenVideoAvailable = false;
 
-	const getFreshMicTrack = async () => {
+	const getFreshMicTrack = async (operation?: CameraOperation) => {
 		try {
-			const { stream: freshStream } = await acquireUserMedia(false, true, {
-				micDeviceId: selectedMicId.value,
-			});
+			const { stream: freshStream } = await acquireUserMedia(
+				false,
+				true,
+				{ micDeviceId: selectedMicId.value },
+				operation,
+			);
+			assertCurrentCameraOperation(operation);
 			const freshTrack = freshStream.getAudioTracks()[0];
 
 			if (!freshTrack) {
@@ -1126,7 +1130,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	};
 
-	const getProcessedAudioTrack = async (stream: MediaStream) => {
+	const getProcessedAudioTrack = async (
+		stream: MediaStream,
+		operation?: CameraOperation,
+	) => {
 		const originalTrack = stream.getAudioTracks()[0];
 		if (!originalTrack) {
 			return null;
@@ -1139,7 +1146,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 
 			if (originalTrack.readyState === "ended") {
-				return await getFreshMicTrack();
+				return await getFreshMicTrack(operation);
 			}
 
 			return originalTrack;
@@ -1149,6 +1156,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			const audioStream = new MediaStream([originalTrack]);
 			const result =
 				await noiseCancellation.applyNoiseCancellation(audioStream);
+			if (operation && !isCurrentCameraOperation(operation)) {
+				result.cleanup();
+				stopLifecycleStream(result.stream);
+				throw cameraLifecycleAbort();
+			}
 			noiseCancellationSession = result;
 
 			const processedTrack = result.stream.getAudioTracks()[0];
@@ -1159,6 +1171,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			console.warn("[Noise Cancellation] No processed track returned");
 			return originalTrack;
 		} catch (error) {
+			if (isCameraLifecycleAbort(error, operation)) throw error;
 			console.error("[Noise Cancellation] Failed to apply:", error);
 			return originalTrack;
 		}
@@ -1568,7 +1581,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			currentStream.addTrack(candidate);
 			noiseCancellationSession?.cleanup();
 			noiseCancellationSession = null;
-			const trackToPublish = await getProcessedAudioTrack(currentStream);
+			const trackToPublish = await getProcessedAudioTrack(currentStream, operation);
 			assertCurrentCameraOperation(operation);
 			if (!trackToPublish || trackToPublish.readyState !== "live") {
 				throw new Error("No live microphone track available after recovery");
@@ -2350,10 +2363,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	// Watch noise cancellation toggle
 	watch(prefNoiseCancellationEnabled, (enabled) => {
 		void enqueueMicrophoneTransition(async () => {
+			const operation = createCameraOperation();
 			const mh = getMediaHandler(sfuManager.value);
 			if (!mediaState.isMicOn || !mh) return;
 
-			const freshTrack = await getFreshMicTrack();
+			const freshTrack = await getFreshMicTrack(operation);
+			assertCurrentCameraOperation(operation);
 			if (!freshTrack) return;
 
 			if (noiseCancellationSession) {
@@ -2364,14 +2379,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			let trackToPublish = freshTrack;
 			if (enabled) {
 				const audioStream = new MediaStream([freshTrack]);
-				const result =
-					await noiseCancellation.applyNoiseCancellation(audioStream);
-				noiseCancellationSession = result;
-				const processedTrack = result.stream.getAudioTracks()[0];
+				const processedTrack = await getProcessedAudioTrack(
+					audioStream,
+					operation,
+				);
 				if (processedTrack && processedTrack.readyState === "live") {
 					trackToPublish = processedTrack;
 				}
 			}
+			assertCurrentCameraOperation(operation);
 			if (mh?.audioProducer && trackToPublish.readyState === "live") {
 				if (typeof mh.audioProducer.replaceTrack === "function") {
 					await mh.audioProducer.replaceTrack({ track: trackToPublish });

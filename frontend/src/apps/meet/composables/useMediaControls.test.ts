@@ -557,6 +557,7 @@ describe("useMediaControls", () => {
 		}>();
 		const processingEntered = deferred<void>();
 		const replaceTrack = vi.fn();
+		const cleanup = vi.fn();
 		const applyNoiseCancellation = vi.fn(() => {
 			processingEntered.resolve();
 			return processing.promise;
@@ -594,10 +595,66 @@ describe("useMediaControls", () => {
 		app.unmount();
 		processing.resolve({
 			stream: new FakeMediaStream([processed]) as never,
-			cleanup: vi.fn(),
+			cleanup,
 		});
 
 		await vi.waitFor(() => expect(candidate.stop).toHaveBeenCalledOnce());
+		expect(cleanup).toHaveBeenCalledOnce();
+		expect(processed.stop).toHaveBeenCalledOnce();
+		expect(replaceTrack).not.toHaveBeenCalled();
+	});
+
+	it("does not replace the microphone after noise cancellation resolves post-unmount", async () => {
+		const oldTrack = audioTrack("old-mic");
+		const freshTrack = audioTrack("fresh-mic");
+		const processed = audioTrack("processed-mic");
+		const processing = deferred<{
+			stream: MediaStream;
+			cleanup: () => void;
+		}>();
+		const processingEntered = deferred<void>();
+		const cleanup = vi.fn();
+		const replaceTrack = vi.fn();
+		noiseCancellationEnabled.value = false;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					createCameraHarness({
+						mediaState: {
+							isMicOn: true,
+							localStream: new FakeMediaStream([oldTrack]),
+						},
+						getUserMedia: vi
+							.fn()
+							.mockResolvedValue(new FakeMediaStream([freshTrack])),
+						audioProducer: {
+							id: "audio-producer",
+							track: oldTrack,
+							replaceTrack,
+						},
+						noiseCancellation: {
+							error: ref(null),
+							applyNoiseCancellation: vi.fn(() => {
+								processingEntered.resolve();
+								return processing.promise;
+							}),
+						},
+					});
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+		noiseCancellationEnabled.value = true;
+		await processingEntered.promise;
+		app.unmount();
+		processing.resolve({
+			stream: new FakeMediaStream([processed]) as never,
+			cleanup,
+		});
+
+		await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+		expect(processed.stop).toHaveBeenCalledOnce();
 		expect(replaceTrack).not.toHaveBeenCalled();
 	});
 
