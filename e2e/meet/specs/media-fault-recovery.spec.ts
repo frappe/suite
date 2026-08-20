@@ -130,7 +130,7 @@ test.describe("Media fault recovery", () => {
 
 	test(
 		"defers media repair while hidden and offline, then recovers on resume",
-		{ tag: "@meet-group-3" },
+		{ tag: "@meet-group-2" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			test.setTimeout(120_000);
 			const meetingId = await createMeeting();
