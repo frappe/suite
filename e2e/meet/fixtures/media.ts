@@ -125,9 +125,9 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 			const hiddenChanged = lifecycle.hidden !== next.hidden;
 			const onlineChanged = lifecycle.online !== next.online;
 			lifecycle.hidden = next.hidden;
+			if (hiddenChanged) document.dispatchEvent(new Event("visibilitychange"));
 			lifecycle.online = next.online;
 			if (onlineChanged) window.dispatchEvent(new Event(next.online ? "online" : "offline"));
-			if (hiddenChanged) document.dispatchEvent(new Event("visibilitychange"));
 		},
 	};
 })();`;
