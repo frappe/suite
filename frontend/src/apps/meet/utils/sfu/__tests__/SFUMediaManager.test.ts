@@ -9,6 +9,8 @@ type MockTransportManager = {
 };
 type MockParticipantManager = {
 	hasParticipant: ReturnType<typeof vi.fn>;
+	getParticipant: ReturnType<typeof vi.fn>;
+	updateParticipant: ReturnType<typeof vi.fn>;
 };
 
 class FakeMediaStream {
@@ -96,6 +98,8 @@ function createManager(
 
 	const participantManager: MockParticipantManager = {
 		hasParticipant: vi.fn().mockReturnValue(opts.hasParticipant ?? true),
+		getParticipant: vi.fn().mockReturnValue({ video_enabled: true }),
+		updateParticipant: vi.fn(),
 	};
 
 	const getCurrentUserId = vi.fn().mockReturnValue(opts.currentUserId ?? "me");
@@ -305,6 +309,50 @@ describe("SFUMediaManager.attachAudioConsumer", () => {
 		await expect(mediaManager.attachAudioConsumer("remote-1", {
 			track: { kind: "audio" },
 		} as never)).rejects.toThrow("audio blocked");
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("SFUMediaManager endpoint media handoff", () => {
+	it("reattaches the surviving consumer even when the closed consumer is already gone", async () => {
+		const { mediaManager, consumerManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const closed = {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never;
+		const survivor = {
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("track-2", "video"),
+			consumer: { closed: false },
+		} as never;
+		await mediaManager.attachVideoConsumer("remote-1", closed);
+		const attach = vi.spyOn(mediaManager, "attachVideoConsumer");
+		consumerManager.getConsumersByParticipant.mockReturnValue([survivor]);
+
+		await mediaManager.reattachAfterProducerClosed("remote-1", "producer-1");
+
+		expect(attach).toHaveBeenCalledWith("remote-1", survivor);
+		vi.unstubAllGlobals();
+	});
+
+	it("does not replace media when a non-attached endpoint closes", async () => {
+		const { mediaManager, consumerManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		await mediaManager.attachVideoConsumer("remote-1", {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never);
+		const attach = vi.spyOn(mediaManager, "attachVideoConsumer");
+		consumerManager.getConsumersByParticipant.mockReturnValue([]);
+
+		await mediaManager.reattachAfterProducerClosed("remote-1", "producer-2");
+
+		expect(attach).not.toHaveBeenCalled();
 		vi.unstubAllGlobals();
 	});
 });

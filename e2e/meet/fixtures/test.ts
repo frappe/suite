@@ -5,7 +5,7 @@ import {
 	type BrowserContext,
 	type Page,
 } from "@playwright/test";
-import { STUB_MEDIA_SCRIPT } from "./media";
+import { MEDIA_FAULT_SCRIPT, STUB_MEDIA_SCRIPT } from "./media";
 import { loginViaApi } from "../../shared/auth";
 import {
 	clearMeetingCreateRateLimit,
@@ -53,7 +53,9 @@ interface TestFixtures {
 }
 
 async function prepareContext(context: BrowserContext): Promise<void> {
-	await context.addInitScript({ content: STUB_MEDIA_SCRIPT });
+	await context.addInitScript({
+		content: `${STUB_MEDIA_SCRIPT}\n${MEDIA_FAULT_SCRIPT}`,
+	});
 	await context.grantPermissions(["camera", "microphone"]);
 }
 

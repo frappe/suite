@@ -30,7 +30,9 @@ function createManager({ e2eeRequired = false } = {}) {
 			clear: vi.fn(),
 			setEventHandlers: vi.fn(),
 			getConsumersByParticipant: vi.fn(() => []),
+			removeConsumer: vi.fn(),
 		},
+		reattachAfterProducerClosed: vi.fn().mockResolvedValue(undefined),
 		setEventHandlers: vi.fn(),
 	};
 	const transportManager = {
@@ -325,6 +327,56 @@ describe("ParticipantConnection", () => {
 
 		expect(participantManager.hasParticipant("remote-1")).toBe(false);
 		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
+	});
+
+	it("reattaches a surviving endpoint consumer when one producer closes", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+		});
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-2",
+			kind: "video",
+		});
+		const closed = {
+			id: "consumer-1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			consumer: { closed: false, producerId: "producer-1" },
+		};
+		const survivor = {
+			id: "consumer-2",
+			participantId: "remote-1",
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			consumer: { closed: false, producerId: "producer-2" },
+		};
+		let consumers = [closed, survivor];
+		mediaManager.consumerManager.getConsumersByParticipant.mockImplementation(
+			() => consumers,
+		);
+		mediaManager.consumerManager.removeConsumer.mockImplementation((id: string) => {
+			consumers = consumers.filter((entry) => entry.id !== id);
+		});
+
+		handlers.get("producer_closed")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+		});
+
+		await vi.waitFor(() =>
+			expect(mediaManager.reattachAfterProducerClosed).toHaveBeenCalledWith(
+				"remote-1",
+				"producer-1",
+			),
+		);
 	});
 
 	it("preserves participant state during producer-only reconciliation", async () => {

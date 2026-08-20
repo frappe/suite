@@ -1160,6 +1160,91 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it('reports a producer creation fault without broadcasting and allows retry', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		viewer.emitCalls.length = 0;
+		vi.mocked(harness.mediasoup.createProducer).mockRejectedValueOnce(
+			new Error('injected producer fault'),
+		);
+		const data = {
+			transportId: 'send-1',
+			rtpParameters: {},
+			kind: 'video',
+			appData: { type: 'camera' },
+		};
+		const failed = vi.fn();
+
+		publisher.fire('create_producer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected producer fault',
+		});
+		expect(viewer.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'producer_created' }),
+		);
+
+		const recovered = vi.fn();
+		publisher.fire('create_producer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'producer-1' }),
+		);
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_created',
+			data: expect.objectContaining({ producerId: 'producer-1' }),
+		});
+	});
+
+	it('reports a consumer creation fault and allows the same request to retry', async () => {
+		const harness = createManager();
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.mocked(harness.mediasoup.createConsumer).mockRejectedValueOnce(
+			new Error('injected consumer fault'),
+		);
+		const data = {
+			transportId: 'recv-1',
+			producerId: 'producer-1',
+			rtpCapabilities: {},
+		};
+		const failed = vi.fn();
+
+		viewer.fire('create_consumer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected consumer fault',
+		});
+
+		const recovered = vi.fn();
+		viewer.fire('create_consumer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'consumer-1' }),
+		);
+		expect(harness.mediasoup.createConsumer).toHaveBeenCalledTimes(2);
+	});
+
 	it('propagates producer lifecycle closure and targets dependent consumers', async () => {
 		const harness = createManager();
 		const publisher = connectFullSocket(harness, {

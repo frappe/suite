@@ -220,6 +220,18 @@ function createMockMediasoupManager(): MediasoupManager {
 			kind: 'video',
 			appData: { type: 'screen' },
 		}),
+		getProducer: vi.fn().mockReturnValue({
+			id: 'producer-1',
+			kind: 'video',
+			appData: { type: 'camera' },
+		}),
+		createConsumer: vi.fn().mockResolvedValue({
+			id: 'consumer-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			rtpParameters: {},
+			paused: false,
+		}),
 		applyMediaControl: vi.fn(),
 	} as unknown as MediasoupManager;
 }

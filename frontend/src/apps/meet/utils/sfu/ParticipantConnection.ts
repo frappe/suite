@@ -1129,6 +1129,11 @@ export class ParticipantConnection {
 				this.mediaManager.processedConsumers.delete(consumer.id);
 			}
 		}
+		void this.mediaManager
+			.reattachAfterProducerClosed(event.participantId, event.producerId)
+			.catch((error) =>
+				console.warn("Failed to attach surviving endpoint media:", error),
+			);
 	}
 
 	private applyReconciliationEvent(event: ReconciliationEvent): void {

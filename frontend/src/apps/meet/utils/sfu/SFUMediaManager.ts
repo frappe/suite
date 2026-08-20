@@ -97,6 +97,7 @@ export class SFUMediaManager {
 
 	private eventHandlers: MediaEventHandlers = {};
 	private getCurrentUserId: () => string | null;
+	private attachedProducerIds = new Map<string, string>();
 	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
 	private resubscribeTimers = new Map<
 		ReturnType<typeof setTimeout>,
@@ -673,10 +674,13 @@ export class SFUMediaManager {
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
+		const key = `video:${participantId}`;
+		const previousProducerId = this.attachedProducerIds.get(key);
 		try {
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
+			this.attachedProducerIds.set(key, consumer.producerId);
 			await this.videoManager.attachStream(participantId, stream, false);
 
 			const participant = this.participantManager.getParticipant(participantId);
@@ -686,6 +690,10 @@ export class SFUMediaManager {
 				});
 			}
 		} catch (error) {
+			if (this.attachedProducerIds.get(key) === consumer.producerId) {
+				if (previousProducerId) this.attachedProducerIds.set(key, previousProducerId);
+				else this.attachedProducerIds.delete(key);
+			}
 			console.error(
 				`Failed to attach video consumer for ${participantId}:`,
 				error,
@@ -698,17 +706,51 @@ export class SFUMediaManager {
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
+		const key = `audio:${participantId}`;
+		const previousProducerId = this.attachedProducerIds.get(key);
 		try {
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
+			this.attachedProducerIds.set(key, consumer.producerId);
 			await this.videoManager.attachStream(participantId, stream, false);
 		} catch (error) {
+			if (this.attachedProducerIds.get(key) === consumer.producerId) {
+				if (previousProducerId) this.attachedProducerIds.set(key, previousProducerId);
+				else this.attachedProducerIds.delete(key);
+			}
 			console.error(
 				`Failed to attach audio consumer for ${participantId}:`,
 				error,
 			);
 			throw error;
+		}
+	}
+
+	async reattachAfterProducerClosed(
+		participantId: string,
+		producerId: string,
+	): Promise<void> {
+		const consumers = this.consumerManager.getConsumersByParticipant(participantId);
+		for (const kind of ["audio", "video"] as const) {
+			const key = `${kind}:${participantId}`;
+			if (this.attachedProducerIds.get(key) !== producerId) continue;
+			const replacement = consumers.find(
+				(consumer) =>
+					consumer.producerId !== producerId &&
+					consumer.kind === kind &&
+					!consumer.isScreen &&
+					!consumer.consumer.closed,
+			);
+			if (!replacement) {
+				this.attachedProducerIds.delete(key);
+				continue;
+			}
+			if (kind === "video") {
+				await this.attachVideoConsumer(participantId, replacement);
+			} else {
+				await this.attachAudioConsumer(participantId, replacement);
+			}
 		}
 	}
 
@@ -765,6 +807,7 @@ export class SFUMediaManager {
 		const terminalCleanup = this.sendMediaMutationQueue.then(() => {
 			this.mediaHandler.cleanup();
 			this.processedConsumers.clear();
+			this.attachedProducerIds.clear();
 			this.isScreenShareActive = false;
 		});
 		this.cleanupPromise = terminalCleanup;
