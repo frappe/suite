@@ -156,7 +156,7 @@ const removeParticipant = (email: string) => {
 				@keyup.enter="handleParticipantEnter($event)"
 			>
 				<template #item-prefix="{ item }">
-					<Avatar :image="item.user_image" :label="item.description || item.label" size="sm" />
+					<Avatar :image="item.user_image" :label="item.description || item.label" size="md" />
 				</template>
 			</Combobox>
 		</div>
