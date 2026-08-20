@@ -47,6 +47,7 @@ import { toast } from "frappe-ui";
 import {
 	cameraEnabled,
 	micEnabled,
+	noiseCancellationEnabled,
 	selectedCameraId,
 	selectedMicId,
 	setCameraEnabled,
@@ -328,6 +329,7 @@ describe("useMediaControls", () => {
 		localStorage.clear();
 		cameraEnabled.value = false;
 		micEnabled.value = false;
+		noiseCancellationEnabled.value = true;
 		selectedCameraId.value = "";
 		selectedMicId.value = "";
 		setAutoFramingPaused(false);
@@ -468,6 +470,79 @@ describe("useMediaControls", () => {
 		expect(toast.error).toHaveBeenCalledWith(
 			"Microphone stopped and could not be restarted. Check browser permissions and devices.",
 		);
+	});
+
+	it("observes a microphone replaced by noise cancellation toggling", async () => {
+		const oldTrack = audioTrack("old-mic");
+		const freshTrack = audioTrack("fresh-mic");
+		const recoveredTrack = audioTrack("recovered-mic");
+		const producer: TestVideoProducer = {
+			id: "audio-producer",
+			track: oldTrack,
+			replaceTrack: vi.fn(async ({ track }) => {
+				producer.track = track;
+			}),
+		};
+		const getUserMedia = vi
+			.fn()
+			.mockResolvedValue(new FakeMediaStream([recoveredTrack]))
+			.mockResolvedValueOnce(new FakeMediaStream([freshTrack]))
+			.mockResolvedValueOnce(new FakeMediaStream([recoveredTrack]));
+		createCameraHarness({
+			mediaState: {
+				isMicOn: true,
+				localStream: new FakeMediaStream([oldTrack]),
+			},
+			getUserMedia,
+			audioProducer: producer,
+		});
+
+		noiseCancellationEnabled.value = false;
+		await vi.waitFor(() => expect(producer.replaceTrack).toHaveBeenCalledOnce());
+		Reflect.set(freshTrack, "readyState", "ended");
+		freshTrack.dispatchEvent(new Event("ended"));
+
+		await vi.waitFor(() => expect(getUserMedia.mock.calls.length).toBeGreaterThan(1));
+	});
+
+	it("stops microphone recovery that resolves after unmount", async () => {
+		const oldTrack = audioTrack("old-mic");
+		const lateTrack = audioTrack("late-mic");
+		const request = deferred<MediaStream>();
+		const replaceTrack = vi.fn();
+		let harness!: ReturnType<typeof createCameraHarness>;
+		const app = createApp(
+			defineComponent({
+				setup() {
+					harness = createCameraHarness({
+						mediaState: {
+							isMicOn: true,
+							localStream: new FakeMediaStream([oldTrack]),
+						},
+						getUserMedia: vi.fn(() => request.promise),
+						audioProducer: {
+							id: "audio-producer",
+							track: oldTrack,
+							replaceTrack,
+						},
+					});
+					return () => null;
+				},
+			}),
+		);
+		app.mount(document.createElement("div"));
+		Reflect.set(oldTrack, "readyState", "ended");
+		oldTrack.dispatchEvent(new Event("ended"));
+		await vi.waitFor(() =>
+			expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce(),
+		);
+
+		app.unmount();
+		request.resolve(new FakeMediaStream([lateTrack]) as never);
+
+		await vi.waitFor(() => expect(lateTrack.stop).toHaveBeenCalledOnce());
+		expect(replaceTrack).not.toHaveBeenCalled();
+		expect(harness.state.localStream.getAudioTracks()).not.toContain(lateTrack);
 	});
 
 	it("falls back to the default microphone when Firefox cannot find the selected device", async () => {

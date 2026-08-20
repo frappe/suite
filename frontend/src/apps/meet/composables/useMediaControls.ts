@@ -1539,14 +1539,21 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		) return;
 		try {
 			const currentStream = mediaState.localStream;
-			const { stream: acquiredStream } = await acquireUserMedia(false, true, {
-				micDeviceId: selectedMicId.value,
-			});
+			const operation = createCameraOperation();
+			const { stream: acquiredStream } = await acquireUserMedia(
+				false,
+				true,
+				{ micDeviceId: selectedMicId.value },
+				operation,
+			);
+			ownCameraStream(operation, acquiredStream);
+			assertCurrentCameraOperation(operation);
 			const candidate = acquiredStream
 				.getAudioTracks()
 				.find((track) => track.readyState === "live");
 			if (
 				!candidate ||
+				!isCurrentCameraOperation(operation) ||
 				!mediaState.isMicOn ||
 				mediaState.localStream !== currentStream ||
 				!currentStream.getAudioTracks().includes(endedTrack)
@@ -1603,6 +1610,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				if (track !== candidate) stopLifecycleTrack(track);
 			}
 			stopLifecycleTrack(endedTrack);
+			operation.ownedStreams.clear();
 		} catch (error) {
 			if (isCameraLifecycleAbort(error)) return;
 			console.error("Failed to recover ended microphone track:", error);
@@ -2338,17 +2346,13 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	};
 
 	// Watch noise cancellation toggle
-	watch(prefNoiseCancellationEnabled, async (enabled) => {
-		const mh = getMediaHandler(sfuManager.value);
-		if (!mediaState.isMicOn || !mh) {
-			return;
-		}
+	watch(prefNoiseCancellationEnabled, (enabled) => {
+		void enqueueMicrophoneTransition(async () => {
+			const mh = getMediaHandler(sfuManager.value);
+			if (!mediaState.isMicOn || !mh) return;
 
-		try {
 			const freshTrack = await getFreshMicTrack();
-			if (!freshTrack) {
-				return;
-			}
+			if (!freshTrack) return;
 
 			if (noiseCancellationSession) {
 				noiseCancellationSession.cleanup();
@@ -2356,27 +2360,25 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 
 			let trackToPublish = freshTrack;
-
 			if (enabled) {
 				const audioStream = new MediaStream([freshTrack]);
 				const result =
 					await noiseCancellation.applyNoiseCancellation(audioStream);
 				noiseCancellationSession = result;
-
 				const processedTrack = result.stream.getAudioTracks()[0];
 				if (processedTrack && processedTrack.readyState === "live") {
 					trackToPublish = processedTrack;
 				}
 			}
-
 			if (mh?.audioProducer && trackToPublish.readyState === "live") {
 				if (typeof mh.audioProducer.replaceTrack === "function") {
 					await mh.audioProducer.replaceTrack({ track: trackToPublish });
 				}
 			}
-		} catch (error) {
+		}).catch((error) => {
+			if (isCameraLifecycleAbort(error)) return;
 			console.error("[Noise Cancellation] Failed to toggle:", error);
-		}
+		});
 	});
 
 	// Watch chat state for notification context
