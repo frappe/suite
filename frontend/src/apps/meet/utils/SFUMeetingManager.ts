@@ -25,6 +25,8 @@ import {
 	SFURecoveryManager,
 	type RecoveryResult,
 } from "./sfu/SFURecoveryManager";
+import { ExpectedMediaReconciler } from "./sfu/ExpectedMediaReconciler";
+import { getClientTelemetry } from "./telemetry/ClientTelemetry";
 
 const isAbortError = (error: unknown) =>
 	(error as { name?: unknown } | null)?.name === "AbortError";
@@ -111,6 +113,9 @@ export class SFUMeetingManager {
 			transportManager: this.transportManager,
 			mediaManager: this.mediaManager,
 			recoveryManager: this.recoveryManager,
+			expectedMedia: new ExpectedMediaReconciler((event) =>
+				getClientTelemetry(sfuClient).reportMediaRepair(event),
+			),
 		});
 	}
 
@@ -126,6 +131,24 @@ export class SFUMeetingManager {
 		options: ParticipantConnectionStartOptions,
 	): Promise<ParticipantConnectionState> {
 		return this.connectionManager.start(options);
+	}
+
+	reconcileExpectedMedia(): Promise<void> {
+		return this.connectionManager.reconcileExpectedMedia();
+	}
+
+	observeRemoteMediaProgress(
+		producerId: string,
+		media: "audio" | "video",
+		flowing: boolean,
+		decoding: boolean,
+	): void {
+		this.connectionManager.observeRemoteMediaProgress(
+			producerId,
+			media,
+			flowing,
+			decoding,
+		);
 	}
 
 	async publishMedia(

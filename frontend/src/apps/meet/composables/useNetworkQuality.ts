@@ -134,7 +134,14 @@ export function useNetworkQuality(
 		const clientTelemetry = sfuManager.sfuClient
 			? getClientTelemetry(sfuManager.sfuClient)
 			: null;
-		for (const { entry, bytes } of statsResults) {
+		for (const { entry, bytes, framesDecoded } of statsResults) {
+			sfuManager.observeRemoteMediaProgress?.(
+				entry.producerId,
+				entry.kind === "audio" ? "audio" : "video",
+				bytes !== null && bytes > 0,
+				entry.kind !== "video" ||
+					(framesDecoded !== null && framesDecoded > 0),
+			);
 			if (bytes !== null && bytes > 0 && (entry.kind === "audio" || entry.kind === "video")) {
 				clientTelemetry?.markFirstRemoteMedia(entry.kind);
 			}
@@ -289,6 +296,7 @@ export function useNetworkQuality(
 					getClientTelemetry(sfuClient).reportNetworkQuality(stats);
 				}
 			}
+			await sfuManagerRef.value?.reconcileExpectedMedia?.();
 			await checkConsumerStalls(networkQuality.value === "good");
 		} finally {
 			isPolling.value = false;

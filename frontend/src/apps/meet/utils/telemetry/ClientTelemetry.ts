@@ -1,4 +1,5 @@
 import type { MeetingRecoveryState } from "../../composables/useParticipantConnectionState";
+import type { MediaRepairTelemetry } from "../sfu/ExpectedMediaReconciler";
 
 export type ClientTelemetryEvent =
 	| {
@@ -25,7 +26,8 @@ export type ClientTelemetryEvent =
 			rttMs: number;
 			packetLossPercent: number;
 			availableOutgoingBitrate: number;
-	  };
+	  }
+	| ({ event: "media_repair" } & MediaRepairTelemetry);
 
 type TelemetryClient = {
 	sendClientTelemetry(event: ClientTelemetryEvent): void;
@@ -78,6 +80,10 @@ export class ClientTelemetry {
 		event: "recovery_exhausted";
 	}>, "event">): void {
 		this.send({ event: "recovery_exhausted", ...event });
+	}
+
+	reportMediaRepair(event: MediaRepairTelemetry): void {
+		this.send({ event: "media_repair", ...event });
 	}
 
 	reportNetworkQuality(stats: {

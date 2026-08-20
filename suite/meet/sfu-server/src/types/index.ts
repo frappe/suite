@@ -312,6 +312,21 @@ export type ClientTelemetryEvent =
 			rttMs: number;
 			packetLossPercent: number;
 			availableOutgoingBitrate: number;
+	  }
+	| {
+			event: 'media_repair';
+			media: 'audio' | 'video';
+			source: 'camera' | 'microphone' | 'screen' | 'remote';
+			stage: 'capture' | 'publication' | 'subscription' | 'rtp' | 'decode';
+			action:
+				| 'reacquire'
+				| 'recreate_producer'
+				| 'subscribe'
+				| 'recreate_consumer'
+				| 'request_keyframe';
+			attempt: number;
+			outcome: 'success' | 'failure' | 'exhausted' | 'cancelled';
+			durationMs: number;
 	  };
 
 export interface SocketData {

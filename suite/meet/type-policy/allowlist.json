@@ -35,7 +35,7 @@
     },
     {
       "path": "suite/meet/sfu-server/src/server/handlers/ClientTelemetryHandlers.ts",
-      "line": 158,
+      "line": 208,
       "column": 45,
       "rule": "MTP001",
       "lineText": "function isRecord(value: unknown): value is Record<string, unknown> {",
@@ -43,7 +43,7 @@
     },
     {
       "path": "suite/meet/sfu-server/src/server/handlers/ClientTelemetryHandlers.ts",
-      "line": 162,
+      "line": 212,
       "column": 29,
       "rule": "MTP001",
       "lineText": "function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {",

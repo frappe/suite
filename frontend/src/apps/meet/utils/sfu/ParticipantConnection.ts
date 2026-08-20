@@ -23,6 +23,7 @@ import type { User } from "../../composables/useCurrentUser";
 import type { SFUMediaManager } from "./SFUMediaManager";
 import type { MediaScreenShareEvent } from "./SFUMediaManager";
 import type { RecoveryResult, SFURecoveryManager } from "./SFURecoveryManager";
+import { ExpectedMediaReconciler } from "./ExpectedMediaReconciler";
 import {
 	applyMeetingReconciliationEvent,
 	createMeetingReconciliationState,
@@ -35,6 +36,7 @@ interface SFUProducerEvent {
 	producerId: string;
 	participantId: string;
 	isScreen?: boolean;
+	kind?: "audio" | "video";
 }
 
 type ReconciledParticipant = ParticipantData & { participantId: string };
@@ -69,6 +71,8 @@ function normalizeProducerEvent(value: unknown): SFUProducerEvent | null {
 		producerId: value.producerId,
 		participantId: value.participantId,
 		isScreen: value.isScreen === true,
+		kind:
+			value.kind === "audio" || value.kind === "video" ? value.kind : undefined,
 	};
 }
 
@@ -166,6 +170,7 @@ interface ParticipantConnectionOptions {
 	transportManager: TransportManager;
 	mediaManager: SFUMediaManager;
 	recoveryManager: SFURecoveryManager;
+	expectedMedia?: ExpectedMediaReconciler;
 }
 
 export class ParticipantConnection {
@@ -175,6 +180,7 @@ export class ParticipantConnection {
 	transportManager: TransportManager;
 	mediaManager: SFUMediaManager;
 	recoveryManager: SFURecoveryManager;
+	readonly expectedMedia: ExpectedMediaReconciler;
 
 	meetingId: string | null = null;
 	currentUser: { value: User | null } = { value: null };
@@ -208,6 +214,7 @@ export class ParticipantConnection {
 		this.transportManager = options.transportManager;
 		this.mediaManager = options.mediaManager;
 		this.recoveryManager = options.recoveryManager;
+		this.expectedMedia = options.expectedMedia ?? new ExpectedMediaReconciler();
 	}
 
 	get state(): ParticipantConnectionState {
@@ -522,6 +529,10 @@ export class ParticipantConnection {
 						producerId: producer.id,
 						participantId: producer.participantId,
 						isScreen: producer.isScreen === true,
+						kind:
+							producer.kind === "audio" || producer.kind === "video"
+								? producer.kind
+								: undefined,
 					})),
 				},
 				this.bufferedReconciliationEvents.splice(0),
@@ -789,6 +800,131 @@ export class ParticipantConnection {
 		);
 	}
 
+	async reconcileExpectedMedia(): Promise<void> {
+		await this.reconcileExpectedLocalMedia();
+		for (const producer of this.reconciliation.producers.values()) {
+			const consumer = this.mediaManager.consumerManager
+				.getConsumersByParticipant(producer.participantId)
+				.find(
+					(entry) =>
+						!entry.consumer.closed &&
+						(entry.producerId === producer.producerId ||
+							entry.consumer.producerId === producer.producerId),
+				);
+			const media = consumer?.kind ?? producer.kind ?? (producer.isScreen ? "video" : null);
+			if (media !== "audio" && media !== "video") continue;
+			const key = `remote:${producer.producerId}`;
+			this.expectedMedia.observe({
+				key,
+				direction: "remote",
+				media,
+				source: "remote",
+				desired: true,
+				subscribed: Boolean(consumer),
+			});
+			if (!consumer) {
+				void this.expectedMedia
+					.repair(key, "subscription", "subscribe", () =>
+						this.subscribeToReconciledProducer(producer),
+					)
+					.catch((error) =>
+						console.warn("Expected media subscription repair failed:", error),
+					);
+			}
+		}
+	}
+
+	private async reconcileExpectedLocalMedia(): Promise<void> {
+		const stream = this.mediaManager.mediaHandler.localStream;
+		const local = [
+			{
+				key: "local:microphone",
+				media: "audio" as const,
+				source: "microphone" as const,
+				track: stream?.getAudioTracks().find((track) => track.readyState === "live"),
+				producer: this.mediaManager.mediaHandler.audioProducer,
+			},
+			{
+				key: "local:camera",
+				media: "video" as const,
+				source: "camera" as const,
+				track: stream?.getVideoTracks().find((track) => track.readyState === "live"),
+				producer: this.mediaManager.mediaHandler.videoProducer,
+			},
+			{
+				key: "local:screen",
+				media: "video" as const,
+				source: "screen" as const,
+				track: this.mediaManager.mediaHandler.screenProducer?.track,
+				producer: this.mediaManager.mediaHandler.screenProducer,
+			},
+		];
+
+		for (const item of local) {
+			let flowing = false;
+			if (item.producer && !item.producer.closed) {
+				try {
+					const stats = await item.producer.getStats();
+					for (const report of stats.values()) {
+						if (
+							report.type === "outbound-rtp" &&
+							typeof report.bytesSent === "number" &&
+							report.bytesSent > 0
+						) {
+							flowing = true;
+							break;
+						}
+					}
+				} catch {
+					// A later safety-net pass will retry the observation.
+				}
+			}
+			const desired = item.track?.readyState === "live";
+			this.expectedMedia.observe({
+				key: item.key,
+				direction: "local",
+				media: item.media,
+				source: item.source,
+				desired,
+				captured: desired,
+				published: Boolean(item.producer && !item.producer.closed),
+				flowing,
+			});
+			if (desired && !item.producer && item.source !== "screen" && stream) {
+				void this.expectedMedia
+					.repair(item.key, "publication", "recreate_producer", async () => {
+						await this.mediaManager.publishMedia(stream, {
+							publishAudio: item.media === "audio",
+							publishVideo: item.media === "video",
+						});
+					})
+					.catch((error) =>
+						console.warn("Expected local publication repair failed:", error),
+					);
+			}
+		}
+	}
+
+	observeRemoteMediaProgress(
+		producerId: string,
+		media: "audio" | "video",
+		flowing: boolean,
+		decoding: boolean,
+	): void {
+		const producer = this.reconciliation.producers.get(producerId);
+		if (!producer) return;
+		this.expectedMedia.observe({
+			key: `remote:${producerId}`,
+			direction: "remote",
+			media,
+			source: "remote",
+			desired: true,
+			subscribed: this.hasConsumerForProducer(producer.participantId, producerId),
+			flowing,
+			decoding,
+		});
+	}
+
 	private async subscribeToReconciledProducer(
 		event: SFUProducerEvent,
 		signal: AbortSignal = this.lifecycleAbortController.signal,
@@ -808,7 +944,11 @@ export class ParticipantConnection {
 			this.throwIfAborted(signal);
 			if (this.reconciliation.producers.get(event.producerId) !== event) return;
 			await this.awaitAbortable(
-				this.mediaManager.subscribeToRemoteProducer(event),
+				this.mediaManager.subscribeToRemoteProducer({
+					producerId: event.producerId,
+					participantId: event.participantId,
+					isScreen: event.isScreen,
+				}),
 				signal,
 			);
 			this.throwIfAborted(signal);
@@ -821,6 +961,8 @@ export class ParticipantConnection {
 	}
 
 	private removeProducerConsumers(event: SFUProducerEvent): void {
+		const existing = this.expectedMedia.get(`remote:${event.producerId}`);
+		if (existing) this.expectedMedia.observe({ ...existing, desired: false });
 		this.mediaManager.cancelProducerSubscription?.(
 			event.participantId,
 			event.producerId,
@@ -1299,6 +1441,7 @@ export class ParticipantConnection {
 		this.e2eeReadyForLifecycle = false;
 		try {
 			this.lifecycleGeneration++;
+			this.expectedMedia.reset();
 			this.recoveryManager.reset();
 			let disconnectError: unknown = null;
 			try {
@@ -1329,6 +1472,7 @@ export class ParticipantConnection {
 	reset(): void {
 		this.lifecycleAbortController.abort();
 		this.lifecycleGeneration++;
+		this.expectedMedia.reset();
 		this.meetingId = null;
 		this.currentUser = { value: null };
 		this.eventHandlers = {};

@@ -69,6 +69,21 @@ export function registerClientTelemetryHandlers(deps: HandlerDeps) {
 						event.availableOutgoingBitrate,
 					);
 					break;
+				case 'media_repair': {
+					const labels = {
+						media: event.media,
+						source: event.source,
+						stage: event.stage,
+						action: event.action,
+						outcome: event.outcome,
+					};
+					deps.telemetry.clientMediaRepairs.inc(labels);
+					deps.telemetry.clientMediaRepairDuration.observe(
+						labels,
+						event.durationMs / 1000,
+					);
+					break;
+				}
 			}
 		});
 	};
@@ -150,6 +165,41 @@ export function parseClientTelemetry(
 					packetLossPercent: data.packetLossPercent,
 					availableOutgoingBitrate: data.availableOutgoingBitrate,
 				}
+			: null;
+	}
+	if (data.event === 'media_repair') {
+		return hasOnlyKeys(data, [
+			'event',
+			'media',
+			'source',
+			'stage',
+			'action',
+			'attempt',
+			'outcome',
+			'durationMs',
+		]) &&
+			isMedia(data.media) &&
+			['camera', 'microphone', 'screen', 'remote'].includes(
+				String(data.source),
+			) &&
+			['capture', 'publication', 'subscription', 'rtp', 'decode'].includes(
+				String(data.stage),
+			) &&
+			[
+				'reacquire',
+				'recreate_producer',
+				'subscribe',
+				'recreate_consumer',
+				'request_keyframe',
+			].includes(String(data.action)) &&
+			Number.isInteger(data.attempt) &&
+			(data.attempt as number) >= 1 &&
+			(data.attempt as number) <= 3 &&
+			['success', 'failure', 'exhausted', 'cancelled'].includes(
+				String(data.outcome),
+			) &&
+			isDuration(data.durationMs)
+			? (data as ClientTelemetryEvent)
 			: null;
 	}
 	return null;
