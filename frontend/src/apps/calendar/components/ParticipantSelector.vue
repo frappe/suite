@@ -155,19 +155,8 @@ const removeParticipant = (email: string) => {
 				@update:model-value="handleParticipantSelect($event)"
 				@keyup.enter="handleParticipantEnter($event)"
 			>
-				<template #item-label="{ item }">
-					<div class="min-w-0">
-						<div class="truncate">{{ item.label }}</div>
-						<div v-if="item.description" class="mt-1 flex items-center gap-1.5 text-p-sm text-ink-gray-5">
-							<Avatar
-								:image="item.user_image"
-								:label="item.description"
-								size="sm"
-								class="shrink-0"
-							/>
-							<span class="truncate">{{ item.description }}</span>
-						</div>
-					</div>
+				<template #item-prefix="{ item }">
+					<Avatar :image="item.user_image" :label="item.description || item.label" size="sm" />
 				</template>
 			</Combobox>
 		</div>
