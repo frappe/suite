@@ -77,6 +77,50 @@ function prepareE2EEManager() {
 }
 
 describe("SFUMeetingManager adaptive streaming", () => {
+	it("escalates exhausted expected publication repair", async () => {
+		const manager = new SFUMeetingManager({} as never);
+		const connection = (
+			manager as unknown as {
+				connectionManager: {
+					expectedMedia: {
+						observe: (entry: unknown) => void;
+						repair: (
+							key: string,
+							stage: "publication",
+							action: "recreate_producer",
+							operation: () => Promise<void>,
+						) => Promise<boolean>;
+					};
+					escalateRecovery: (trigger: unknown) => Promise<boolean>;
+				};
+			}
+		).connectionManager;
+		const escalate = vi
+			.spyOn(connection, "escalateRecovery")
+			.mockResolvedValue(true);
+		connection.expectedMedia.observe({
+			key: "local:microphone",
+			direction: "local",
+			media: "audio",
+			source: "microphone",
+			desired: true,
+		});
+		for (let attempt = 0; attempt < 4; attempt += 1) {
+			await connection.expectedMedia.repair(
+				"local:microphone",
+				"publication",
+				"recreate_producer",
+				vi.fn().mockResolvedValue(undefined),
+			);
+		}
+
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "publication",
+			direction: "send",
+			reason: "retry_limit",
+		});
+	});
+
 	it("retries playback before reconciling media after browser resume", async () => {
 		const manager = new SFUMeetingManager({} as never);
 		const retryPlayback = vi
@@ -199,6 +243,14 @@ describe("SFUMeetingManager recovery fallback", () => {
 		vi.spyOn(manager.mediaManager, "rebuildSendSide").mockRejectedValue(
 			new Error("send rebuild failed"),
 		);
+		const connection = (
+			manager as unknown as {
+				connectionManager: { escalateRecovery: (trigger: unknown) => Promise<boolean> };
+			}
+		).connectionManager;
+		const escalate = vi
+			.spyOn(connection, "escalateRecovery")
+			.mockResolvedValue(true);
 		const closeReceiveTransport = vi.spyOn(
 			manager.transportManager,
 			"closeReceiveTransport",
@@ -209,6 +261,11 @@ describe("SFUMeetingManager recovery fallback", () => {
 		).resolves.toBe("failed");
 
 		expect(closeReceiveTransport).toHaveBeenCalledOnce();
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "transport",
+			direction: "both",
+			reason: "rebuild_failed",
+		});
 	});
 });
 

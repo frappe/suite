@@ -65,6 +65,7 @@ function createConnection({ e2eeRequired = false } = {}) {
 		mediaManager: mediaManager as never,
 		recoveryManager: recoveryManager as never,
 	});
+	vi.spyOn(connection.expectedMedia, "waitForHealthy").mockResolvedValue();
 	connection.initialize("meeting-1", { user_id: "me" });
 	return {
 		connection,
@@ -163,8 +164,8 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(participantManager.hasParticipant("alice")).toBe(true);
 	});
 
-	it("reports publication failure without failing startup", async () => {
-		const { connection } = createConnection();
+	it("escalates an exhausted initial publication after degraded startup", async () => {
+		const { connection, sfuClient } = createConnection();
 		const publicationError = new Error("camera failed");
 		const report = vi.fn();
 		connection.eventHandlers.onInitialPublicationError = report;
@@ -175,8 +176,10 @@ describe("ParticipantConnection lifecycle", () => {
 					publishLocalMedia: vi.fn().mockRejectedValue(publicationError),
 				}),
 			),
-		).resolves.toBe("ready");
+		).resolves.toBe("degraded");
 		expect(report).toHaveBeenCalledWith(publicationError);
+		await vi.waitFor(() => expect(connection.state).toBe("ready"));
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
 	});
 
 	it("resolves degraded then retries snapshots only after returning online", async () => {
@@ -263,7 +266,7 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(connection.state).toBe("stopped");
 	});
 
-	it("retries a failed full rebuild with increasing delay", async () => {
+	it("retries a failed fresh rebuild with bounded jitter", async () => {
 		vi.useFakeTimers();
 		const { connection, sfuClient } = createConnection();
 		await connection.joinRoom(
@@ -276,14 +279,14 @@ describe("ParticipantConnection lifecycle", () => {
 
 		const rebuild = connection.rejoinAfterSignalingReconnect();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(connection.state).toBe("degraded");
+		expect(connection.state).toBe("recovering");
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
-		await vi.advanceTimersByTimeAsync(999);
-		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
-		await vi.advanceTimersByTimeAsync(1);
+		await vi.advanceTimersByTimeAsync(1000);
 		await rebuild;
 
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(3);
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(2);
+		expect(sfuClient.connect).toHaveBeenCalledTimes(2);
 		expect(connection.state).toBe("ready");
 	});
 
@@ -298,13 +301,61 @@ describe("ParticipantConnection lifecycle", () => {
 
 		const rebuild = connection.rejoinAfterSignalingReconnect();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(connection.state).toBe("degraded");
+		expect(connection.state).toBe("recovering");
 		await connection.disconnect();
 		await expect(rebuild).rejects.toMatchObject({ name: "AbortError" });
 		await vi.advanceTimersByTimeAsync(60000);
 
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
 		expect(connection.state).toBe("stopped");
+	});
+
+	it("disconnects a fresh reconnect that completes after cleanup", async () => {
+		const { connection, sfuClient } = createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		const reconnect = deferred<void>();
+		sfuClient.connect.mockReturnValueOnce(reconnect.promise);
+
+		const rebuild = connection.rejoinAfterSignalingReconnect();
+		await vi.waitFor(() => expect(sfuClient.connect).toHaveBeenCalledOnce());
+		await connection.disconnect();
+		reconnect.resolve();
+
+		await expect(rebuild).rejects.toMatchObject({ name: "AbortError" });
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(3);
+		expect(connection.isConnected).toBe(false);
+		expect(connection.state).toBe("stopped");
+	});
+
+	it("enters terminal failure after three fresh rebuild attempts", async () => {
+		vi.spyOn(Math, "random").mockReturnValue(0);
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		const exhausted = vi.fn();
+		connection.eventHandlers.onRecoveryExhausted = exhausted;
+		sfuClient.joinRoom.mockRejectedValue(new Error("rebuild failed"));
+		const trigger = {
+			scope: "publication" as const,
+			direction: "send" as const,
+			reason: "retry_limit",
+		};
+
+		await expect(connection.escalateRecovery(trigger)).resolves.toBe(false);
+
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(4);
+		expect(sfuClient.connect).toHaveBeenCalledTimes(3);
+		expect(mediaManager.cleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(connection.isConnected).toBe(false);
+		expect(connection.state).toBe("failed");
+		expect(exhausted).toHaveBeenCalledWith(trigger);
 	});
 
 	it("serializes concurrent lifecycle starts", async () => {

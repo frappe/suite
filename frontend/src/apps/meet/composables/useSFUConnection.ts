@@ -44,7 +44,10 @@ import type {
 	Participant,
 	ParticipantUpdate,
 } from "../utils/media/ParticipantManager";
-import type { ParticipantConnectionState } from "../utils/sfu/ParticipantConnection";
+import type {
+	ParticipantConnectionState,
+	SFUEventHandlers,
+} from "../utils/sfu/ParticipantConnection";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -294,13 +297,18 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const createSFUEventHandlers = () => {
+	const createSFUEventHandlers = (): SFUEventHandlers => {
 		return {
-			onRecoveryExhausted: () => {
+			onRecoveryExhausted: (trigger) => {
 				clientTelemetry.reportRecoveryExhausted({
-					subsystem: "consumer",
-					direction: "recv",
-					reason: "retry_limit",
+					subsystem:
+						trigger?.scope === "subscription"
+							? "consumer"
+							: trigger?.scope === "transport" || trigger?.scope === "publication"
+								? "transport"
+								: "signaling",
+					direction: trigger?.direction ?? "both",
+					reason: "rebuild_failed",
 				});
 			},
 			onRecoveryStateChange: (
@@ -310,7 +318,13 @@ export function useSFUConnection(deps: {
 				participantConnectionState.recordRecovery(state, detail);
 				clientTelemetry.recordRecoveryState(state, detail);
 			},
-			onLifecycleStateChange: participantConnectionState.setLifecycleState,
+			onLifecycleStateChange: (state) => {
+				participantConnectionState.setLifecycleState(state);
+				if (state === "failed") {
+					connectionState.connectionError =
+						"We couldn't restore your meeting connection. Try joining again.";
+				}
+			},
 			onParticipantJoined: handleParticipantJoined,
 			onParticipantLeft: handleParticipantLeft,
 			onParticipantUpdated: handleParticipantUpdated,
@@ -532,17 +546,9 @@ export function useSFUConnection(deps: {
 							const audioStillRequested = publishAudio && mediaState.isMicOn;
 							if (videoStillRequested && publication.videoProducer) {
 								sfuClient.sendMediaControl("video_on");
-							} else if (videoStillRequested) {
-								mediaState.isCameraOn = false;
-								for (const track of videoTracks) track.enabled = false;
 							}
 							if (audioStillRequested && publication.audioProducer) {
 								sfuClient.sendMediaControl("unmute");
-							} else if (audioStillRequested) {
-								mediaState.isMicOn = false;
-								for (const track of localStream.getAudioTracks()) {
-									track.enabled = false;
-								}
 							}
 							if (
 								(videoStillRequested && !publication.videoProducer) ||
@@ -557,8 +563,9 @@ export function useSFUConnection(deps: {
 										: undefined,
 								});
 								toast.error(
-									"Some media could not be started. You can try enabling it again.",
+									"Some media could not be started. Trying to restore your connection.",
 								);
+								throw new Error("Initial media publication recovery exhausted");
 							}
 						}
 					);

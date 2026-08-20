@@ -53,6 +53,7 @@ function createManager({ e2eeRequired = false } = {}) {
 		mediaManager: mediaManager as never,
 		recoveryManager: recoveryManager as never,
 	});
+	vi.spyOn(manager.expectedMedia, "waitForHealthy").mockResolvedValue();
 	manager.currentUser = { value: { user_id: "me" } };
 	return {
 		handlers,
@@ -141,6 +142,82 @@ describe("ParticipantConnection", () => {
 				localStream,
 			),
 		);
+	});
+
+	it("verifies local health only when outbound RTP advances", async () => {
+		const { manager, mediaManager } = createManager();
+		let bytesSent = 100;
+		mediaManager.mediaHandler = {
+			localStream: {
+				getAudioTracks: () => [{ readyState: "live" }],
+				getVideoTracks: () => [],
+			},
+			audioProducer: {
+				id: "audio-producer",
+				closed: false,
+				getStats: vi.fn(async () =>
+					new Map([["outbound", { type: "outbound-rtp", bytesSent }]]),
+				),
+			},
+			videoProducer: null,
+			screenProducer: null,
+		} as never;
+
+		await manager.reconcileExpectedMedia();
+		expect(manager.expectedMedia.get("local:microphone")?.healthySamples).toBe(1);
+		await manager.reconcileExpectedMedia();
+		expect(manager.expectedMedia.get("local:microphone")?.healthySamples).toBe(0);
+		bytesSent = 200;
+		await manager.reconcileExpectedMedia();
+		bytesSent = 300;
+		await manager.reconcileExpectedMedia();
+		expect(manager.expectedMedia.get("local:microphone")?.healthySamples).toBe(2);
+	});
+
+	it("does not require progress from intentionally paused media", async () => {
+		const { handlers, manager, mediaManager, participantManager } = createManager();
+		participantManager.addParticipant({
+			participantId: "remote-1",
+			userData: { name: "Remote", video_enabled: true },
+		});
+		mediaManager.mediaHandler = {
+			localStream: {
+				getAudioTracks: () => [{ readyState: "live", enabled: false }],
+				getVideoTracks: () => [],
+			},
+			audioProducer: {
+				id: "audio-producer",
+				closed: false,
+				paused: true,
+				getStats: vi.fn().mockResolvedValue(new Map()),
+			},
+			videoProducer: null,
+			screenProducer: null,
+		} as never;
+		mediaManager.consumerManager.getConsumersByParticipant.mockReturnValue([
+			{
+				producerId: "producer-1",
+				kind: "video",
+				adaptivelyPaused: false,
+				consumer: {
+					closed: false,
+					paused: false,
+					producerPaused: true,
+					producerId: "producer-1",
+				},
+			},
+		]);
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+		});
+
+		await manager.reconcileExpectedMedia();
+
+		expect(manager.expectedMedia.get("local:microphone")?.desired).toBe(false);
+		expect(manager.expectedMedia.get("remote:producer-1")?.desired).toBe(false);
 	});
 
 	it("passes the screen-share flag for screen video producers", async () => {
@@ -273,6 +350,8 @@ describe("ParticipantConnection", () => {
 
 		await manager.rejoinAfterSignalingReconnect();
 
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		expect(sfuClient.connect).toHaveBeenCalledOnce();
 		expect(sfuClient.joinRoom).toHaveBeenNthCalledWith(
 			2,
 			"meeting-1",
@@ -285,6 +364,31 @@ describe("ParticipantConnection", () => {
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(mediaManager.rebuildSendSide).toHaveBeenCalledTimes(1);
 		expect(recoveryManager.setupTransportEventHandlers).toHaveBeenCalledTimes(1);
+	});
+
+	it("resubscribes expected remote media on a fresh Participant Connection", async () => {
+		const { manager, mediaManager, sfuClient } = createManager();
+		manager.initialize("meeting-1", { user_id: "me" });
+		await manager.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		sfuClient.getExistingProducers.mockResolvedValue([
+			{
+				id: "producer-1",
+				participantId: "remote-1",
+				kind: "audio",
+				isScreen: false,
+			},
+		]);
+
+		await manager.rejoinAfterSignalingReconnect();
+
+		expect(mediaManager.subscribeToRemoteProducer).toHaveBeenCalledWith({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
 	});
 
 	it("uses current live tracks for rejoin media state", async () => {
@@ -318,6 +422,35 @@ describe("ParticipantConnection", () => {
 		handlers.get("reconnect")?.({});
 
 		expect(rejoin).toHaveBeenCalledTimes(1);
+	});
+
+	it("escalates signaling reconnect exhaustion through the same coordinator", async () => {
+		const { handlers, manager } = createManager();
+		const escalate = vi.spyOn(manager, "escalateRecovery").mockResolvedValue(true);
+		await manager.connect("token");
+
+		handlers.get("reconnect_failed")?.({});
+
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "signaling",
+			direction: "both",
+			reason: "reconnect_failed",
+		});
+	});
+
+	it("escalates subscription exhaustion through the same coordinator", async () => {
+		const { manager, mediaManager } = createManager();
+		const escalate = vi.spyOn(manager, "escalateRecovery").mockResolvedValue(true);
+		await manager.connect("token");
+		const handlers = mediaManager.setEventHandlers.mock.calls.at(-1)?.[0];
+
+		handlers?.onRecoveryExhausted?.();
+
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "subscription",
+			direction: "recv",
+			reason: "retry_limit",
+		});
 	});
 
 	it("cancels transport recovery before signaling reconnect attempts", async () => {

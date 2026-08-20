@@ -58,11 +58,19 @@ interface ActiveRepair {
 	startedAt: number;
 }
 
+interface HealthWaiter {
+	resolve: () => void;
+	reject: (error: unknown) => void;
+	timer: ReturnType<typeof setTimeout>;
+	abort: () => void;
+}
+
 export class ExpectedMediaReconciler {
 	private readonly entries = new Map<string, ExpectedMediaEntry>();
 	private readonly tails = new Map<string, Promise<unknown>>();
 	private readonly activeRepairs = new Map<string, ActiveRepair>();
 	private readonly exhausted = new Set<string>();
+	private readonly healthWaiters = new Set<HealthWaiter>();
 	private generation = 0;
 
 	constructor(
@@ -93,6 +101,7 @@ export class ExpectedMediaReconciler {
 			this.exhausted.delete(observation.key);
 		}
 		this.entries.set(observation.key, entry);
+		this.resolveHealthyWaiters();
 		return { ...entry };
 	}
 
@@ -103,6 +112,29 @@ export class ExpectedMediaReconciler {
 
 	snapshot(): ExpectedMediaEntry[] {
 		return Array.from(this.entries.values(), (entry) => ({ ...entry }));
+	}
+
+	waitForHealthy(signal: AbortSignal, timeoutMs = 15_000): Promise<void> {
+		if (this.allExpectedMediaHealthy()) return Promise.resolve();
+		if (signal.aborted) return Promise.reject(signal.reason);
+		return new Promise<void>((resolve, reject) => {
+			const waiter = {} as HealthWaiter;
+			const finish = (complete: () => void) => {
+				clearTimeout(waiter.timer);
+				signal.removeEventListener("abort", waiter.abort);
+				this.healthWaiters.delete(waiter);
+				complete();
+			};
+			waiter.resolve = () => finish(resolve);
+			waiter.reject = (error) => finish(() => reject(error));
+			waiter.abort = () => waiter.reject(signal.reason);
+			waiter.timer = setTimeout(
+				() => waiter.reject(new Error("Expected media did not become healthy")),
+				timeoutMs,
+			);
+			this.healthWaiters.add(waiter);
+			signal.addEventListener("abort", waiter.abort, { once: true });
+		});
 	}
 
 	repair(
@@ -164,6 +196,9 @@ export class ExpectedMediaReconciler {
 		this.entries.clear();
 		this.tails.clear();
 		this.exhausted.clear();
+		for (const waiter of Array.from(this.healthWaiters)) {
+			waiter.reject(this.cancelled());
+		}
 	}
 
 	private stageFor(observation: ExpectedMediaObservation): ExpectedMediaStage {
@@ -181,6 +216,17 @@ export class ExpectedMediaReconciler {
 		return observation.media === "video"
 			? observation.decoding === true
 			: observation.flowing === true;
+	}
+
+	private allExpectedMediaHealthy(): boolean {
+		return Array.from(this.entries.values())
+			.filter((entry) => entry.desired)
+			.every((entry) => entry.healthySamples >= 2);
+	}
+
+	private resolveHealthyWaiters(): void {
+		if (!this.allExpectedMediaHealthy()) return;
+		for (const waiter of Array.from(this.healthWaiters)) waiter.resolve();
 	}
 
 	private finishRepair(

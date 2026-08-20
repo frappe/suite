@@ -25,6 +25,11 @@ import type { MediaScreenShareEvent } from "./SFUMediaManager";
 import type { RecoveryResult, SFURecoveryManager } from "./SFURecoveryManager";
 import { ExpectedMediaReconciler } from "./ExpectedMediaReconciler";
 import {
+	ParticipantConnectionRecovery,
+	type ParticipantRecoveryTransition,
+	type ParticipantRecoveryTrigger,
+} from "./ParticipantConnectionRecovery";
+import {
 	applyMeetingReconciliationEvent,
 	createMeetingReconciliationState,
 	reconcileMeetingSnapshot,
@@ -130,7 +135,7 @@ export interface SFUEventHandlers {
 			| "failed",
 		detail?: string,
 	) => void;
-	onRecoveryExhausted?: () => void;
+	onRecoveryExhausted?: (trigger?: ParticipantRecoveryTrigger) => void;
 	onLifecycleStateChange?: (state: ParticipantConnectionState) => void;
 	onInitialPublicationError?: (error: unknown) => void;
 }
@@ -181,6 +186,7 @@ export class ParticipantConnection {
 	mediaManager: SFUMediaManager;
 	recoveryManager: SFURecoveryManager;
 	readonly expectedMedia: ExpectedMediaReconciler;
+	readonly participantRecovery: ParticipantConnectionRecovery;
 
 	meetingId: string | null = null;
 	currentUser: { value: User | null } = { value: null };
@@ -196,13 +202,15 @@ export class ParticipantConnection {
 		audio_enabled: false,
 		video_enabled: false,
 	};
-	private activeRejoin: Promise<void> | null = null;
 	private activeReceiveReset: Promise<void> | null = null;
 	private lifecycleGeneration = 0;
 	private lifecycleTail: Promise<void> = Promise.resolve();
 	private lifecycleAbortController = new AbortController();
 	private snapshotRetry: Promise<void> | null = null;
 	private e2eeReadyForLifecycle = false;
+	private lastAuthToken: string | null = null;
+	private activeEscalation: Promise<boolean> | null = null;
+	private localProducerBytes = new Map<string, number>();
 	private _state: ParticipantConnectionState = "stopped";
 	private static readonly INITIAL_RETRY_DELAY_MS = 1000;
 	private static readonly MAX_RETRY_DELAY_MS = 30000;
@@ -215,6 +223,18 @@ export class ParticipantConnection {
 		this.mediaManager = options.mediaManager;
 		this.recoveryManager = options.recoveryManager;
 		this.expectedMedia = options.expectedMedia ?? new ExpectedMediaReconciler();
+		this.participantRecovery = new ParticipantConnectionRecovery({
+			rebuild: (trigger, attempt, signal) =>
+				this.serializeLifecycle(() =>
+					this.performFreshParticipantConnectionRebuild(
+						trigger,
+						attempt,
+						signal,
+					),
+				),
+			verify: (_trigger, signal) => this.verifyFreshParticipantConnection(signal),
+			onTransition: (transition) => this.handleRecoveryTransition(transition),
+		});
 	}
 
 	get state(): ParticipantConnectionState {
@@ -278,8 +298,20 @@ export class ParticipantConnection {
 					this.initialSyncInProgress = true;
 					this.setState("degraded");
 					this.startSnapshotRetry(signal);
-				} else {
+				} else if (publication.status === "fulfilled") {
 					this.setState("ready");
+				}
+				if (publication.status === "rejected") {
+					this.setState("degraded");
+					queueMicrotask(() => {
+						void this.escalateRecovery({
+							scope: "publication",
+							direction: "send",
+							reason: "retry_limit",
+						}).catch((error) =>
+							console.warn("Publication recovery escalation failed:", error),
+						);
+					});
 				}
 				return this._state;
 			} catch (error) {
@@ -409,6 +441,7 @@ export class ParticipantConnection {
 		authToken: string | null = null,
 		prefetchedDetails: ConnectionDetails | null = null,
 	): Promise<boolean> {
+		this.lastAuthToken = authToken;
 		if (this.isConnected) {
 			return true;
 		}
@@ -669,10 +702,14 @@ export class ParticipantConnection {
 	serializeTransportRecovery(
 		operation: () => Promise<RecoveryResult>,
 	): Promise<RecoveryResult> {
+		const generation = this.lifecycleGeneration;
 		return this.serializeLifecycle(async () => {
 			this.setState("recovering");
 			const result = await operation();
-			if (!this.lifecycleAbortController.signal.aborted) {
+			if (
+				generation === this.lifecycleGeneration &&
+				!this.lifecycleAbortController.signal.aborted
+			) {
 				this.setState(result === "failed" ? "degraded" : "ready");
 			}
 			return result;
@@ -709,80 +746,124 @@ export class ParticipantConnection {
 		this.eventHandlers.onRecoveryStateChange?.(state, detail);
 	}
 
-	async rejoinAfterSignalingReconnect(): Promise<void> {
-		if (this.activeRejoin) return this.activeRejoin;
+	escalateRecovery(trigger: ParticipantRecoveryTrigger): Promise<boolean> {
+		if (this.activeEscalation) return this.activeEscalation;
 		if (!this.meetingId || !this.lastJoinUserData) {
-			throw new Error("Cannot rejoin before joining a meeting");
+			return Promise.reject(new Error("Cannot recover before joining a meeting"));
+		}
+		this.lifecycleAbortController.abort(
+			new DOMException("Participant Connection generation replaced", "AbortError"),
+		);
+		this.lifecycleAbortController = new AbortController();
+		this.lifecycleGeneration += 1;
+		this.expectedMedia.reset();
+		this.localProducerBytes.clear();
+		const recovery = this.participantRecovery
+			.recover(trigger, this.lifecycleAbortController.signal)
+			.then(async (healthy) => {
+				if (!healthy) await this.cleanupFailedParticipantConnection();
+				return healthy;
+			})
+			.finally(() => {
+				if (this.activeEscalation === recovery) this.activeEscalation = null;
+			});
+		this.activeEscalation = recovery;
+		return recovery;
+	}
+
+	async rejoinAfterSignalingReconnect(): Promise<void> {
+		await this.escalateRecovery({
+			scope: "signaling",
+			direction: "both",
+			reason: "signaling_reconnected",
+		});
+	}
+
+	private async performFreshParticipantConnectionRebuild(
+		_trigger: ParticipantRecoveryTrigger,
+		_attempt: number,
+		signal: AbortSignal,
+	): Promise<void> {
+		if (!this.meetingId || !this.lastJoinUserData) {
+			throw new Error("Cannot rebuild before joining a meeting");
 		}
 		this.recoveryManager.reset();
+		this.expectedMedia.reset();
+		this.localProducerBytes.clear();
+		const pendingSubscriptions = this.mediaManager.cancelPendingSubscriptions();
+		this.transportManager.closeReceiveTransport();
+		this.mediaManager.consumerManager.clear();
+		this.mediaManager.processedConsumers.clear();
+		this.mediaManager.isScreenShareActive = false;
+		await pendingSubscriptions;
+		this.throwIfAborted(signal);
+		await this.sfuClient.disconnect();
+		this.isConnected = false;
+		await this.waitUntilOnline(signal);
+		this.throwIfAborted(signal);
 		const generation = this.lifecycleGeneration;
-		const lastJoinUserData = this.lastJoinUserData;
-		const meetingId = this.meetingId;
+		await this.sfuClient.connect(this.meetingId, this.lastAuthToken, null);
+		if (signal.aborted || generation !== this.lifecycleGeneration) {
+			await this.sfuClient.disconnect();
+			this.throwIfAborted(signal);
+			throw new DOMException("Participant connection rebuild replaced", "AbortError");
+		}
+		this.isConnected = true;
+		this.transportManager.initialize(this.sfuClient);
+		this.throwIfAborted(signal);
+		await this.sfuClient.joinRoom(
+			this.meetingId,
+			this.lastJoinUserData,
+			this.getCurrentRejoinMediaState(),
+		);
+		this.throwIfAborted(signal);
+		if (!(await this.waitForE2EEContextIfRequired(signal))) {
+			throw new Error("E2EE context is not ready after fresh reconnect");
+		}
+		await this.transportManager.initializeDevice();
+		this.throwIfAborted(signal);
+		if (!(await this.createReceiveTransport())) {
+			throw new Error("Failed to recreate receive transport");
+		}
+		const publication = await this.mediaManager.rebuildSendSide();
+		if (publication.audioError || publication.videoError) {
+			throw publication.audioError ?? publication.videoError;
+		}
+		this.throwIfAborted(signal);
+		await this.setupExistingParticipants(signal, true);
+		this.recoveryManager.setupTransportEventHandlers();
+	}
 
-		const rejoin = this.serializeLifecycle(async () => {
-			const signal = this.lifecycleAbortController.signal;
-			let retryDelay = ParticipantConnection.INITIAL_RETRY_DELAY_MS;
-			while (!signal.aborted) {
-				this.setState("recovering");
-				this.reportRecoveryState("rejoining", "signaling reconnected");
-				try {
-					const pendingSubscriptions =
-						this.mediaManager.cancelPendingSubscriptions();
-					this.transportManager.closeReceiveTransport();
-					this.mediaManager.consumerManager.clear();
-					this.mediaManager.processedConsumers.clear();
-					this.mediaManager.isScreenShareActive = false;
-					await pendingSubscriptions;
-					if (generation !== this.lifecycleGeneration) return;
-
-					await this.sfuClient.joinRoom(
-						meetingId,
-						lastJoinUserData,
-						this.getCurrentRejoinMediaState(),
-					);
-					if (generation !== this.lifecycleGeneration) return;
-					if (!(await this.waitForE2EEContextIfRequired(signal))) {
-						throw new Error(
-							"E2EE context is not ready after signaling reconnect",
-						);
-					}
-					if (generation !== this.lifecycleGeneration) return;
-
-					await this.transportManager.initializeDevice();
-					if (generation !== this.lifecycleGeneration) return;
-					if (!(await this.createReceiveTransport())) {
-						throw new Error(
-							"Failed to recreate receive transport after reconnect",
-						);
-					}
-					if (generation !== this.lifecycleGeneration) return;
-					await this.mediaManager.rebuildSendSide();
-					if (generation !== this.lifecycleGeneration) return;
-					await this.setupExistingParticipants(signal, true);
-					if (generation !== this.lifecycleGeneration) return;
-					this.recoveryManager.setupTransportEventHandlers();
-					this.reportRecoveryState("healthy", "session rebuilt");
-					this.setState("ready");
-					return;
-				} catch (error) {
-					if (signal.aborted || generation !== this.lifecycleGeneration) return;
-					this.reportRecoveryState("failed", "session rebuild failed");
-					this.setState("degraded");
-					console.warn("Session rebuild failed; retrying:", error);
-					await this.waitUntilOnline(signal);
-					await this.delay(retryDelay, signal);
-					retryDelay = Math.min(
-						retryDelay * 2,
-						ParticipantConnection.MAX_RETRY_DELAY_MS,
-					);
-				}
+	private async verifyFreshParticipantConnection(signal: AbortSignal): Promise<void> {
+		await this.reconcileExpectedMedia();
+		this.throwIfAborted(signal);
+		for (const producer of this.reconciliation.producers.values()) {
+			if (
+				(producer.kind === "audio" || producer.kind === "video") &&
+				this.isRemoteProducerDesired(producer) &&
+				!this.hasConsumerForProducer(producer.participantId, producer.producerId)
+			) {
+				throw new Error(`Expected subscription missing for ${producer.producerId}`);
 			}
-		}).finally(() => {
-			this.activeRejoin = null;
-		});
-		this.activeRejoin = rejoin;
+		}
+		await this.expectedMedia.waitForHealthy(signal);
+	}
 
-		return rejoin;
+	private handleRecoveryTransition(
+		transition: ParticipantRecoveryTransition,
+	): void {
+		const detail = `${transition.trigger.scope}:${transition.trigger.reason} attempt ${transition.attempt}/${transition.maxAttempts}`;
+		if (transition.phase === "rebuilding_participant_connection") {
+			this.setState("recovering");
+			this.reportRecoveryState("rejoining", detail);
+		} else if (transition.phase === "healthy") {
+			this.reportRecoveryState("healthy", detail);
+			this.setState("ready");
+		} else if (transition.phase === "terminal_failed") {
+			this.reportRecoveryState("failed", detail);
+			this.setState("failed");
+			this.eventHandlers.onRecoveryExhausted?.(transition.trigger);
+		}
 	}
 
 	private hasConsumerForProducer(
@@ -813,19 +894,24 @@ export class ParticipantConnection {
 				);
 			const media = consumer?.kind ?? producer.kind ?? (producer.isScreen ? "video" : null);
 			if (media !== "audio" && media !== "video") continue;
+			const desired = this.isRemoteProducerDesired(producer);
 			const key = `remote:${producer.producerId}`;
 			const existing = this.expectedMedia.get(key);
-			if (!existing || existing.subscribed !== Boolean(consumer)) {
+			if (
+				!existing ||
+				existing.desired !== desired ||
+				existing.subscribed !== Boolean(consumer)
+			) {
 				this.expectedMedia.observe({
 					key,
 					direction: "remote",
 					media,
 					source: "remote",
-					desired: true,
+					desired,
 					subscribed: Boolean(consumer),
 				});
 			}
-			if (!consumer) {
+			if (desired && !consumer) {
 				void this.expectedMedia
 					.repair(key, "subscription", "subscribe", () =>
 						this.subscribeToReconciledProducer(producer),
@@ -868,21 +954,31 @@ export class ParticipantConnection {
 			if (item.producer && !item.producer.closed) {
 				try {
 					const stats = await item.producer.getStats();
+					let bytesSent: number | null = null;
 					for (const report of stats.values()) {
 						if (
 							report.type === "outbound-rtp" &&
 							typeof report.bytesSent === "number" &&
-							report.bytesSent > 0
+							report.bytesSent >= 0
 						) {
-							flowing = true;
+							bytesSent = report.bytesSent;
 							break;
 						}
+					}
+					if (bytesSent !== null) {
+						flowing =
+							bytesSent > (this.localProducerBytes.get(item.producer.id) ?? 0);
+						this.localProducerBytes.set(item.producer.id, bytesSent);
 					}
 				} catch {
 					// A later safety-net pass will retry the observation.
 				}
 			}
-			const desired = item.track?.readyState === "live";
+			const desired = Boolean(
+				item.track?.readyState === "live" &&
+					item.track.enabled !== false &&
+					!item.producer?.paused,
+			);
 			this.expectedMedia.observe({
 				key: item.key,
 				direction: "local",
@@ -923,11 +1019,36 @@ export class ParticipantConnection {
 			direction: "remote",
 			media,
 			source: "remote",
-			desired: true,
+			desired: this.isRemoteProducerDesired(producer),
 			subscribed: this.hasConsumerForProducer(producer.participantId, producerId),
 			flowing,
 			decoding,
 		});
+	}
+
+	private isRemoteProducerDesired(producer: SFUProducerEvent): boolean {
+		const consumer = this.mediaManager.consumerManager
+			.getConsumersByParticipant(producer.participantId)
+			.find(
+				(entry) =>
+					!entry.consumer.closed &&
+					(entry.producerId === producer.producerId ||
+						entry.consumer.producerId === producer.producerId),
+			);
+		if (
+			consumer?.consumer.paused ||
+			consumer?.consumer.producerPaused ||
+			consumer?.adaptivelyPaused
+		) {
+			return false;
+		}
+		if (producer.isScreen) return true;
+		const participant = this.participantManager.getParticipant(
+			producer.participantId,
+		);
+		return producer.kind === "audio"
+			? participant?.audio_enabled !== false
+			: participant?.video_enabled !== false;
 	}
 
 	private async subscribeToReconciledProducer(
@@ -1018,11 +1139,38 @@ export class ParticipantConnection {
 			...this.lastJoinMediaState,
 			audio_enabled: localStream
 				.getAudioTracks()
-				.some((track) => track.readyState === "live"),
+				.some((track) => track.readyState === "live" && track.enabled !== false),
 			video_enabled: localStream
 				.getVideoTracks()
-				.some((track) => track.readyState === "live"),
+				.some((track) => track.readyState === "live" && track.enabled !== false),
 		};
+	}
+
+	private async cleanupFailedParticipantConnection(): Promise<void> {
+		this.lifecycleAbortController.abort(
+			new DOMException("Participant connection recovery exhausted", "AbortError"),
+		);
+		this.lifecycleGeneration += 1;
+		this.expectedMedia.reset();
+		this.localProducerBytes.clear();
+		this.recoveryManager.reset();
+		try {
+			await this.mediaManager.cleanup();
+		} catch (error) {
+			console.error("Error cleaning up failed participant media:", error);
+		}
+		try {
+			this.transportManager.cleanup?.();
+		} catch (error) {
+			console.error("Error cleaning up failed participant transports:", error);
+		}
+		try {
+			await this.sfuClient.disconnect();
+		} catch (error) {
+			console.error("Error disconnecting failed participant connection:", error);
+		} finally {
+			this.isConnected = false;
+		}
 	}
 
 	private async waitForE2EEContextIfRequired(
@@ -1099,7 +1247,13 @@ export class ParticipantConnection {
 
 		this.mediaManager.setEventHandlers({
 			onRecoveryExhausted: () => {
-				this.eventHandlers.onRecoveryExhausted?.();
+				void this.escalateRecovery({
+					scope: "subscription",
+					direction: "recv",
+					reason: "retry_limit",
+				}).catch((error) =>
+					console.warn("Subscription recovery escalation failed:", error),
+				);
 			},
 			onScreenShareStarted: (data: MediaScreenShareEvent) => {
 				if (this.eventHandlers.onScreenShareStarted) {
@@ -1121,7 +1275,13 @@ export class ParticipantConnection {
 		});
 
 		this.sfuClient.on("reconnect_failed", () => {
-			this.reportRecoveryState("failed", "signaling reconnect failed");
+			void this.escalateRecovery({
+				scope: "signaling",
+				direction: "both",
+				reason: "reconnect_failed",
+			}).catch((error) =>
+				console.warn("Signaling recovery escalation failed:", error),
+			);
 		});
 
 		this.sfuClient.on("reconnect", () => {
@@ -1447,6 +1607,7 @@ export class ParticipantConnection {
 		try {
 			this.lifecycleGeneration++;
 			this.expectedMedia.reset();
+			this.localProducerBytes.clear();
 			this.recoveryManager.reset();
 			let disconnectError: unknown = null;
 			try {
@@ -1478,6 +1639,7 @@ export class ParticipantConnection {
 		this.lifecycleAbortController.abort();
 		this.lifecycleGeneration++;
 		this.expectedMedia.reset();
+		this.localProducerBytes.clear();
 		this.meetingId = null;
 		this.currentUser = { value: null };
 		this.eventHandlers = {};
@@ -1491,7 +1653,7 @@ export class ParticipantConnection {
 			audio_enabled: false,
 			video_enabled: false,
 		};
-		this.activeRejoin = null;
+		this.activeEscalation = null;
 		this.activeReceiveReset = null;
 		this.snapshotRetry = null;
 		this.e2eeReadyForLifecycle = false;

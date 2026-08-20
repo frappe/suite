@@ -88,4 +88,33 @@ describe("ExpectedMediaReconciler", () => {
 			expect.objectContaining({ outcome: "exhausted", attempt: 3 }),
 		);
 	});
+
+	it("waits for two media-progress observations before verifying health", async () => {
+		const reconciler = new ExpectedMediaReconciler();
+		const controller = new AbortController();
+		reconciler.observe({ ...remoteVideo, subscribed: true });
+		let verified = false;
+		const verification = reconciler
+			.waitForHealthy(controller.signal, 1000)
+			.then(() => {
+				verified = true;
+			});
+
+		reconciler.observe({
+			...remoteVideo,
+			subscribed: true,
+			flowing: true,
+			decoding: true,
+		});
+		await Promise.resolve();
+		expect(verified).toBe(false);
+		reconciler.observe({
+			...remoteVideo,
+			subscribed: true,
+			flowing: true,
+			decoding: true,
+		});
+
+		await expect(verification).resolves.toBeUndefined();
+	});
 });

@@ -91,6 +91,20 @@ export class SFUMeetingManager {
 					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
 					this.connectionManager?.reportRecoveryState("failed", _reason);
+					void this.connectionManager
+						.escalateRecovery({
+							scope: "transport",
+							direction:
+								result.send === "failed" && result.recv === "failed"
+									? "both"
+									: result.send === "failed"
+										? "send"
+										: "recv",
+							reason: "rebuild_failed",
+						})
+						.catch((recoveryError) =>
+							console.warn("Transport recovery escalation failed:", recoveryError),
+						);
 					throw error;
 				}
 			},
@@ -113,9 +127,19 @@ export class SFUMeetingManager {
 			transportManager: this.transportManager,
 			mediaManager: this.mediaManager,
 			recoveryManager: this.recoveryManager,
-			expectedMedia: new ExpectedMediaReconciler((event) =>
-				getClientTelemetry(sfuClient).reportMediaRepair(event),
-			),
+			expectedMedia: new ExpectedMediaReconciler((event) => {
+				getClientTelemetry(sfuClient).reportMediaRepair(event);
+				if (event.outcome !== "exhausted") return;
+				void this.connectionManager
+					?.escalateRecovery({
+						scope: event.source === "remote" ? "subscription" : "publication",
+						direction: event.source === "remote" ? "recv" : "send",
+						reason: "retry_limit",
+					})
+					.catch((error) =>
+						console.warn("Expected media recovery escalation failed:", error),
+					);
+			}),
 		});
 	}
 
