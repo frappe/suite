@@ -130,6 +130,17 @@ export async function armNextRemoteVideoFault(
 	}, fault);
 }
 
+export async function setBrowserLifecycle(
+	page: Page,
+	state: { hidden: boolean; online: boolean },
+): Promise<void> {
+	await page.evaluate((next) => {
+		if (!window.__meetMediaFaults)
+			throw new Error("Media fault bridge unavailable");
+		window.__meetMediaFaults.setBrowserLifecycle(next);
+	}, state);
+}
+
 export async function expectRemoteTrackReplaced(
 	page: Page,
 	participantName: string,
@@ -152,6 +163,7 @@ declare global {
 			stopLatestLocalTrack(kind: MediaKind): string | null;
 			injectReceiverStats(trackId: string, fault: ReceiverFault): Promise<boolean>;
 			armNextVideoReceiverFault(fault: ReceiverFault): void;
+			setBrowserLifecycle(state: { hidden: boolean; online: boolean }): void;
 		};
 	}
 }

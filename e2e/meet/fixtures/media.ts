@@ -45,6 +45,18 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 	const localTracks = { audio: [], video: [] };
 	const peerConnections = [];
 	const pendingReceiverFaults = [];
+	const lifecycle = { hidden: document.hidden, online: navigator.onLine };
+	Object.defineProperties(document, {
+		hidden: { configurable: true, get: () => lifecycle.hidden },
+		visibilityState: {
+			configurable: true,
+			get: () => (lifecycle.hidden ? "hidden" : "visible"),
+		},
+	});
+	Object.defineProperty(navigator, "onLine", {
+		configurable: true,
+		get: () => lifecycle.online,
+	});
 	const injectReceiverStats = (receiver, fault) => {
 		const originalGetStats = receiver.getStats.bind(receiver);
 		receiver.getStats = async () => {
@@ -108,6 +120,14 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 		},
 		armNextVideoReceiverFault(fault) {
 			pendingReceiverFaults.push(fault);
+		},
+		setBrowserLifecycle(next) {
+			const hiddenChanged = lifecycle.hidden !== next.hidden;
+			const onlineChanged = lifecycle.online !== next.online;
+			lifecycle.hidden = next.hidden;
+			lifecycle.online = next.online;
+			if (onlineChanged) window.dispatchEvent(new Event(next.online ? "online" : "offline"));
+			if (hiddenChanged) document.dispatchEvent(new Event("visibilitychange"));
 		},
 	};
 })();`;

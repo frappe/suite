@@ -6,6 +6,7 @@ import {
 	injectRemoteVideoFault,
 	monitorRemoteVideoContinuity,
 	readRemoteVideoProgress,
+	setBrowserLifecycle,
 	stopLatestLocalTrack,
 } from "../helpers/faults";
 import { expectRemoteVideoReceiving } from "../helpers/media";
@@ -124,6 +125,59 @@ test.describe("Media fault recovery", () => {
 			} finally {
 				await controlMonitor.stop();
 			}
+		},
+	);
+
+	test(
+		"defers media repair while hidden and offline, then recovers on resume",
+		{ tag: "@meet-group-3" },
+		async ({ hostPage, createMeeting, createParticipant }) => {
+			test.setTimeout(120_000);
+			const meetingId = await createMeeting();
+			const target = await createParticipant();
+			const control = await createParticipant();
+			await Promise.all([
+				(async () => {
+					await hostPage.goto(appUrl(`/meet/${meetingId}`));
+					await joinFromPreview(hostPage);
+				})(),
+				target.joinAsGuest(meetingId, "Fault Target"),
+				control.joinAsGuest(meetingId, "Healthy Control"),
+			]);
+			await Promise.all([
+				expectRemoteVideoReceiving(hostPage, "Fault Target"),
+				expectRemoteVideoReceiving(hostPage, "Healthy Control"),
+			]);
+			await hostPage.waitForTimeout(3500);
+			const targetBaseline = await readRemoteVideoProgress(
+				hostPage,
+				"Fault Target",
+			);
+			const controlBaseline = await readRemoteVideoProgress(
+				hostPage,
+				"Healthy Control",
+			);
+
+			await setBrowserLifecycle(hostPage, { hidden: true, online: false });
+			await injectRemoteVideoFault(hostPage, "Fault Target", "decode-stall");
+			await hostPage.waitForTimeout(7000);
+			expect(
+				(await readRemoteVideoProgress(hostPage, "Fault Target")).trackId,
+			).toBe(targetBaseline.trackId);
+
+			await setBrowserLifecycle(hostPage, { hidden: false, online: true });
+			await expectRemoteTrackReplaced(
+				hostPage,
+				"Fault Target",
+				targetBaseline.trackId,
+			);
+			await Promise.all([
+				expectRemoteVideoReceiving(hostPage, "Fault Target"),
+				expectRemoteVideoReceiving(hostPage, "Healthy Control"),
+			]);
+			expect(
+				(await readRemoteVideoProgress(hostPage, "Healthy Control")).trackId,
+			).toBe(controlBaseline.trackId);
 		},
 	);
 });
