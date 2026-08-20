@@ -273,6 +273,94 @@ describe("useNetworkQuality", () => {
 		app.unmount();
 	});
 
+	it("requests a keyframe before recreating only a decode-stalled consumer", async () => {
+		vi.useFakeTimers();
+		const recoverConsumer = vi.fn().mockResolvedValue(undefined);
+		const resetReceiveMedia = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
+		let bytesReceived = 1000;
+		const stats = () =>
+			new Map<
+				string,
+				{
+					type: string;
+					kind: string;
+					bytesReceived: number;
+					framesDecoded: number;
+				}
+			>([
+				[
+					"in",
+					{
+						type: "inbound-rtp",
+						kind: "video",
+						bytesReceived: (bytesReceived += 1000),
+						framesDecoded: 10,
+					},
+				],
+			]);
+		const entry = {
+			id: "decode-stalled",
+			participantId: "remote-participant",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			adaptivelyPaused: false,
+			track: { muted: false } as MediaStreamTrack,
+			createdAt: Date.now() - 60_000,
+			consumer: {
+				paused: false,
+				producerPaused: false,
+				getStats: vi.fn().mockImplementation(async () => stats()),
+			},
+		};
+		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
+			participantManager: {
+				getParticipant: () => ({ video_enabled: true }),
+			},
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockResolvedValue({
+					rtt: 50,
+					packetLoss: 0,
+					availableOutgoingBitrate: 800_000,
+					timestamp: Date.now(),
+					isValid: true,
+				}),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [entry],
+					getConsumer: (id: string) => (id === entry.id ? entry : undefined),
+				},
+				recoverConsumer,
+			},
+			resetReceiveMedia,
+		});
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(18_000);
+		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
+		expect(recoverConsumer).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(15_000);
+		expect(recoverConsumer).toHaveBeenCalledOnce();
+		expect(recoverConsumer).toHaveBeenCalledWith(entry);
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		app.unmount();
+	});
+
 	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 

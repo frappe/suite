@@ -1,7 +1,8 @@
 import { inject, onMounted, onUnmounted, type Ref, ref } from "vue";
 import {
 	type ConsumerSample,
-	extractInboundBytesReceived,
+	DecodeStallDetector,
+	extractInboundRtpCounters,
 	StallDetector,
 } from "../utils/media/stallDetector";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
@@ -33,6 +34,8 @@ export function useNetworkQuality(
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
+	const decodeStallDetector = new DecodeStallDetector();
+	let active = true;
 
 	const pollIntervalMs = 3000;
 	const updateQuality = (stats: NetworkStats) => {
@@ -83,37 +86,47 @@ export function useNetworkQuality(
 			downlinkQuality.value = "good";
 			return;
 		}
+		if (!active || document.hidden) {
+			stallDetector.suspend();
+			decodeStallDetector.suspend();
+			return;
+		}
 
 		const statsResults = await Promise.all(
 			consumers.map(async (entry) => {
-				let bytes: number | null = null;
+				let bytesReceived: number | null = null;
+				let framesDecoded: number | null = null;
 				try {
 					const stats = await entry.consumer.getStats();
-					bytes = extractInboundBytesReceived(stats);
+					const counters = extractInboundRtpCounters(stats, entry.kind);
+					bytesReceived = counters.bytesReceived;
+					framesDecoded = counters.framesDecoded;
 				} catch {
-					bytes = null;
+					bytesReceived = null;
 				}
-				return { entry, bytes };
+				return { entry, bytes: bytesReceived, framesDecoded };
 			}),
 		);
+		if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) return;
+		const isPaused = (entry: (typeof statsResults)[number]["entry"]) => {
+			const participant = sfuManager.participantManager.getParticipant(
+				entry.participantId,
+			);
+			return (
+				entry.consumer.paused ||
+				entry.consumer.producerPaused ||
+				entry.adaptivelyPaused ||
+				(entry.kind === "audio" && participant?.audio_enabled === false) ||
+				(entry.kind === "video" &&
+					!entry.isScreen &&
+					participant?.video_enabled === false)
+			);
+		};
 
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
 			kind: entry.kind,
-			isPaused: () => {
-				const participant = sfuManager.participantManager.getParticipant(
-					entry.participantId,
-				);
-				return (
-					entry.consumer.paused ||
-					entry.consumer.producerPaused ||
-					entry.adaptivelyPaused ||
-					(entry.kind === "audio" && participant?.audio_enabled === false) ||
-					(entry.kind === "video" &&
-						!entry.isScreen &&
-						participant?.video_enabled === false)
-				);
-			},
+			isPaused: () => isPaused(entry),
 			isMuted: () => entry.track?.muted ?? false,
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,
@@ -128,9 +141,68 @@ export function useNetworkQuality(
 		}
 
 		const stalledIds = stallDetector.check(samples, allowRecovery);
-		downlinkQuality.value = stallDetector.hasActiveStall()
+		const decodeActions = decodeStallDetector.check(
+			statsResults
+				.filter(({ entry }) => entry.kind === "video")
+				.map(({ entry, bytes, framesDecoded }) => ({
+					id: entry.id,
+					isPaused: () => isPaused(entry),
+					bytesReceived: bytes,
+					framesDecoded,
+				})),
+			allowRecovery,
+		);
+		downlinkQuality.value =
+			stallDetector.hasActiveStall() || decodeStallDetector.hasActiveStall()
 			? "critical"
 			: "good";
+		for (const recovery of decodeActions) {
+			if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) {
+				return;
+			}
+			const result = statsResults.find(
+				({ entry }) => entry.id === recovery.consumerId,
+			);
+			if (!result) continue;
+			const current =
+				consumerManager.getConsumer?.(result.entry.id) ??
+				consumerManager
+					.getAllConsumers()
+					.find((entry) => entry.id === result.entry.id);
+			if (
+				!current ||
+				current.consumer !== result.entry.consumer ||
+				isPaused(current)
+			) {
+				decodeStallDetector.dispose(result.entry.id);
+				continue;
+			}
+			if (recovery.action === "request-keyframe") {
+				try {
+					await sfuManager.sfuClient?.requestConsumerKeyFrame(result.entry.id);
+				} catch (error) {
+					console.warn(
+						"Failed to request a keyframe for decode-stalled consumer",
+						result.entry.id,
+						error,
+					);
+				}
+			} else {
+				decodeStallDetector.dispose(result.entry.id);
+				try {
+					await sfuManager.mediaManager.recoverConsumer(current);
+				} catch (error) {
+					console.warn(
+						"Failed to recreate decode-stalled consumer",
+						result.entry.id,
+						error,
+					);
+				}
+			}
+			if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) {
+				return;
+			}
+		}
 		if (stalledIds.length === 0) return;
 		const stalledSet = new Set(stalledIds);
 		clientTelemetry?.reportMediaStalls(
@@ -205,6 +277,7 @@ export function useNetworkQuality(
 			if (isFailed) {
 				networkQuality.value = "critical";
 				stallDetector.suspend();
+				decodeStallDetector.suspend();
 				return;
 			}
 
@@ -222,16 +295,26 @@ export function useNetworkQuality(
 		}
 	};
 
+	const handleVisibilityChange = () => {
+		stallDetector.suspend();
+		decodeStallDetector.suspend();
+	};
+
 	onMounted(() => {
+		active = true;
+		document.addEventListener("visibilitychange", handleVisibilityChange);
 		pollInterval = setInterval(pollStats, pollIntervalMs);
 	});
 
 	onUnmounted(() => {
+		active = false;
+		document.removeEventListener("visibilitychange", handleVisibilityChange);
 		if (pollInterval) {
 			clearInterval(pollInterval);
 			pollInterval = null;
 		}
 		stallDetector.reset();
+		decodeStallDetector.reset();
 	});
 
 	return {

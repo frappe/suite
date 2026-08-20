@@ -234,18 +234,169 @@ export class StallDetector {
 	}
 }
 
+export interface DecodeSample {
+	id: string;
+	isPaused: () => boolean;
+	bytesReceived: number | null;
+	framesDecoded: number | null;
+}
+
+export interface DecodeRecoveryAction {
+	consumerId: string;
+	action: "request-keyframe" | "recreate";
+}
+
+interface DecodeState {
+	lastBytesReceived: number;
+	lastFramesDecoded: number;
+	stallStartedAt: number | null;
+	phase: "monitoring" | "keyframe-requested";
+}
+
+export class DecodeStallDetector {
+	private readonly stallTimeoutMs: number;
+	private readonly now: () => number;
+	private readonly state = new Map<string, DecodeState>();
+	private activeStall = false;
+
+	constructor(
+		options: { stallTimeoutMs?: number; now?: () => number } = {},
+	) {
+		this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
+		this.now = options.now ?? (() => Date.now());
+	}
+
+	check(
+		samples: DecodeSample[],
+		recoveryEnabled = true,
+	): DecodeRecoveryAction[] {
+		const now = this.now();
+		const activeIds = new Set<string>();
+		const actions: DecodeRecoveryAction[] = [];
+		this.activeStall = false;
+
+		for (const sample of samples) {
+			activeIds.add(sample.id);
+			if (
+				sample.isPaused() ||
+				sample.bytesReceived === null ||
+				sample.framesDecoded === null
+			) {
+				this.state.delete(sample.id);
+				continue;
+			}
+
+			const existing = this.state.get(sample.id);
+			if (!existing) {
+				this.state.set(sample.id, {
+					lastBytesReceived: sample.bytesReceived,
+					lastFramesDecoded: sample.framesDecoded,
+					stallStartedAt: now,
+					phase: "monitoring",
+				});
+				continue;
+			}
+
+			const rtpProgressed = sample.bytesReceived > existing.lastBytesReceived;
+			const decodeProgressed =
+				sample.framesDecoded > existing.lastFramesDecoded;
+			const countersReset =
+				sample.bytesReceived < existing.lastBytesReceived ||
+				sample.framesDecoded < existing.lastFramesDecoded;
+			existing.lastBytesReceived = sample.bytesReceived;
+			existing.lastFramesDecoded = sample.framesDecoded;
+
+			if (countersReset || decodeProgressed || !rtpProgressed) {
+				existing.stallStartedAt = null;
+				existing.phase = "monitoring";
+				continue;
+			}
+
+			if (existing.stallStartedAt === null) {
+				existing.stallStartedAt = now;
+				continue;
+			}
+			if (now - existing.stallStartedAt < this.stallTimeoutMs) continue;
+
+			this.activeStall = true;
+			if (!recoveryEnabled) continue;
+			if (existing.phase === "monitoring") {
+				actions.push({
+					consumerId: sample.id,
+					action: "request-keyframe",
+				});
+				existing.phase = "keyframe-requested";
+				existing.stallStartedAt = now;
+			} else {
+				actions.push({ consumerId: sample.id, action: "recreate" });
+				this.state.delete(sample.id);
+			}
+		}
+
+		for (const id of this.state.keys()) {
+			if (!activeIds.has(id)) this.state.delete(id);
+		}
+		return actions;
+	}
+
+	hasActiveStall(): boolean {
+		return this.activeStall;
+	}
+
+	reset(): void {
+		this.state.clear();
+		this.activeStall = false;
+	}
+
+	suspend(): void {
+		this.reset();
+	}
+
+	dispose(consumerId: string): void {
+		this.state.delete(consumerId);
+	}
+}
+
+interface InboundRtpReport {
+	type?: string;
+	isRemote?: boolean;
+	kind?: string;
+	mediaType?: string;
+	codecId?: string;
+	bytesReceived?: number;
+	framesDecoded?: number;
+	mimeType?: string;
+}
+
+export function extractInboundRtpCounters(
+	stats: {
+		values(): IterableIterator<InboundRtpReport>;
+		get?(id: string): InboundRtpReport | undefined;
+	},
+	kind?: "audio" | "video",
+): { bytesReceived: number | null; framesDecoded: number | null } {
+	let bytesReceived: number | null = null;
+	let framesDecoded: number | null = null;
+	for (const report of stats.values()) {
+		if (report.type !== "inbound-rtp" || report.isRemote) continue;
+		const reportKind = report.kind ?? report.mediaType;
+		if (kind && reportKind && reportKind !== kind) continue;
+		const codec = report.codecId ? stats.get?.(report.codecId) : undefined;
+		if (codec?.mimeType?.toLowerCase().includes("rtx")) continue;
+		if (typeof report.bytesReceived === "number") {
+			bytesReceived = (bytesReceived ?? 0) + report.bytesReceived;
+		}
+		if (typeof report.framesDecoded === "number") {
+			framesDecoded = (framesDecoded ?? 0) + report.framesDecoded;
+		}
+	}
+	return { bytesReceived, framesDecoded };
+}
+
 export function extractInboundBytesReceived(
 	stats: {
 		values(): IterableIterator<{ type: string; bytesReceived?: number }>;
 	},
 ): number | null {
-	for (const report of stats.values()) {
-		if (
-			report.type === "inbound-rtp" &&
-			typeof report.bytesReceived === "number"
-		) {
-			return report.bytesReceived;
-		}
-	}
-	return null;
+	return extractInboundRtpCounters(stats).bytesReceived;
 }
