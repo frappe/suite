@@ -330,6 +330,27 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(connection.state).toBe("stopped");
 	});
 
+	it("waits for a hidden tab to become visible before verifying recovery", async () => {
+		let hidden = true;
+		vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+		const { connection } = createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+
+		const recovery = connection.rejoinAfterSignalingReconnect();
+		await vi.waitFor(() => expect(connection.state).toBe("recovering"));
+		expect(connection.expectedMedia.waitForHealthy).not.toHaveBeenCalled();
+
+		hidden = false;
+		document.dispatchEvent(new Event("visibilitychange"));
+		await recovery;
+
+		expect(connection.expectedMedia.waitForHealthy).toHaveBeenCalledOnce();
+		expect(connection.state).toBe("ready");
+	});
+
 	it("enters terminal failure after three fresh rebuild attempts", async () => {
 		vi.spyOn(Math, "random").mockReturnValue(0);
 		const { connection, mediaManager, sfuClient, transportManager } =

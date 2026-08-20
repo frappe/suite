@@ -396,6 +396,24 @@ export class ParticipantConnection {
 		});
 	}
 
+	private async waitUntilVisible(signal: AbortSignal): Promise<void> {
+		if (typeof document === "undefined" || !document.hidden) return;
+		this.throwIfAborted(signal);
+		await new Promise<void>((resolve, reject) => {
+			const visibilityChange = () => {
+				if (!document.hidden) finish(resolve);
+			};
+			const abort = () => finish(() => reject(signal.reason));
+			const finish = (complete: () => void) => {
+				document.removeEventListener("visibilitychange", visibilityChange);
+				signal.removeEventListener("abort", abort);
+				complete();
+			};
+			document.addEventListener("visibilitychange", visibilityChange);
+			signal.addEventListener("abort", abort, { once: true });
+		});
+	}
+
 	private startSnapshotRetry(signal: AbortSignal): void {
 		if (this.snapshotRetry) return;
 		this.snapshotRetry = (async () => {
@@ -835,6 +853,7 @@ export class ParticipantConnection {
 	}
 
 	private async verifyFreshParticipantConnection(signal: AbortSignal): Promise<void> {
+		await this.waitUntilVisible(signal);
 		await this.reconcileExpectedMedia();
 		this.throwIfAborted(signal);
 		for (const producer of this.reconciliation.producers.values()) {
