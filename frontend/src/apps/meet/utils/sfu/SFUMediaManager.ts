@@ -99,6 +99,7 @@ export class SFUMediaManager {
 	private getCurrentUserId: () => string | null;
 	private selectedProducerIds = new Map<string, string>();
 	private attachmentTails = new Map<string, Promise<void>>();
+	private closedProducerIds = new Set<string>();
 	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
 	private resubscribeTimers = new Map<
 		ReturnType<typeof setTimeout>,
@@ -693,10 +694,12 @@ export class SFUMediaManager {
 					});
 				}
 			} catch (error) {
-				if (this.selectedProducerIds.get(key) === consumer.producerId) {
-					if (previousProducerId) this.selectedProducerIds.set(key, previousProducerId);
-					else this.selectedProducerIds.delete(key);
-				}
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
 				console.error(
 					`Failed to attach video consumer for ${participantId}:`,
 					error,
@@ -721,10 +724,12 @@ export class SFUMediaManager {
 			try {
 				await this.videoManager.attachStream(participantId, stream, false);
 			} catch (error) {
-				if (this.selectedProducerIds.get(key) === consumer.producerId) {
-					if (previousProducerId) this.selectedProducerIds.set(key, previousProducerId);
-					else this.selectedProducerIds.delete(key);
-				}
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
 				console.error(
 					`Failed to attach audio consumer for ${participantId}:`,
 					error,
@@ -750,10 +755,33 @@ export class SFUMediaManager {
 		return attachment;
 	}
 
+	private restoreSelectionAfterAttachmentFailure(
+		key: string,
+		participantId: string,
+		failedProducerId: string,
+		previousProducerId: string | undefined,
+	): void {
+		if (this.selectedProducerIds.get(key) !== failedProducerId) return;
+		if (previousProducerId && !this.closedProducerIds.has(previousProducerId)) {
+			this.selectedProducerIds.set(key, previousProducerId);
+			return;
+		}
+		this.selectedProducerIds.delete(key);
+		if (!previousProducerId) return;
+		this.selectedProducerIds.set(key, previousProducerId);
+		queueMicrotask(() => {
+			void this.reattachAfterProducerClosed(participantId, previousProducerId).catch(
+				(error) =>
+					console.warn("Failed to recover endpoint media after attachment error:", error),
+			);
+		});
+	}
+
 	async reattachAfterProducerClosed(
 		participantId: string,
 		producerId: string,
 	): Promise<void> {
+		this.closedProducerIds.add(producerId);
 		const consumers = this.consumerManager.getConsumersByParticipant(participantId);
 		for (const kind of ["audio", "video"] as const) {
 			const key = `${kind}:${participantId}`;
@@ -832,6 +860,7 @@ export class SFUMediaManager {
 			this.processedConsumers.clear();
 			this.selectedProducerIds.clear();
 			this.attachmentTails.clear();
+			this.closedProducerIds.clear();
 			this.isScreenShareActive = false;
 		});
 		this.cleanupPromise = terminalCleanup;
