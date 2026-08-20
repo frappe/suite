@@ -185,6 +185,26 @@ export class SFUMediaManager {
 		);
 	}
 
+	repairLocalPublication(
+		kind: "audio" | "video",
+		localStream: MediaStream,
+	): Promise<void> {
+		return this.serializeSendMediaMutation(async () => {
+			const producer =
+				kind === "audio"
+					? this.mediaHandler.audioProducer
+					: this.mediaHandler.videoProducer;
+			if (producer && !producer.closed) return;
+			this.mediaHandler.setProducers(
+				kind === "audio" ? { audioProducer: null } : { videoProducer: null },
+			);
+			await this.publishMediaNow(localStream, {
+				publishAudio: kind === "audio",
+				publishVideo: kind === "video",
+			});
+		});
+	}
+
 	async publishInitialMedia(
 		localStream: MediaStream,
 		options: { publishVideo: boolean; publishAudio: boolean },

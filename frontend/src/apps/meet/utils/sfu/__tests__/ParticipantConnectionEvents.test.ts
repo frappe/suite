@@ -21,6 +21,7 @@ function createManager({ e2eeRequired = false } = {}) {
 		cancelPendingSubscriptions: vi.fn(),
 		cleanup: vi.fn(),
 		rebuildSendSide: vi.fn().mockResolvedValue({}),
+		repairLocalPublication: vi.fn().mockResolvedValue(undefined),
 		subscribeToRemoteProducer: vi.fn().mockResolvedValue(undefined),
 		processedConsumers: new Set<string>(),
 		isScreenShareActive: false,
@@ -88,6 +89,58 @@ describe("ParticipantConnection", () => {
 			producerId: "producer-1",
 			isScreen: false,
 		});
+	});
+
+	it("preserves remote progress while the subscription remains present", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+		});
+		mediaManager.consumerManager.getConsumersByParticipant.mockReturnValue([
+			{
+				producerId: "producer-1",
+				kind: "video",
+				consumer: { closed: false, producerId: "producer-1" },
+			},
+		]);
+		manager.observeRemoteMediaProgress("producer-1", "video", true, true);
+
+		await manager.reconcileExpectedMedia();
+
+		expect(manager.expectedMedia.get("remote:producer-1")).toMatchObject({
+			healthySamples: 1,
+			flowing: true,
+			decoding: true,
+		});
+	});
+
+	it("repairs a closed local producer when its track remains live", async () => {
+		const { manager, mediaManager } = createManager();
+		const localStream = {
+			getAudioTracks: () => [{ readyState: "live" }],
+			getVideoTracks: () => [],
+		};
+		mediaManager.mediaHandler = {
+			localStream,
+			audioProducer: {
+				closed: true,
+				getStats: vi.fn().mockResolvedValue(new Map()),
+			},
+			videoProducer: null,
+			screenProducer: null,
+		} as never;
+
+		await manager.reconcileExpectedMedia();
+
+		await vi.waitFor(() =>
+			expect(mediaManager.repairLocalPublication).toHaveBeenCalledWith(
+				"audio",
+				localStream,
+			),
+		);
 	});
 
 	it("passes the screen-share flag for screen video producers", async () => {

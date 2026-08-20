@@ -814,14 +814,17 @@ export class ParticipantConnection {
 			const media = consumer?.kind ?? producer.kind ?? (producer.isScreen ? "video" : null);
 			if (media !== "audio" && media !== "video") continue;
 			const key = `remote:${producer.producerId}`;
-			this.expectedMedia.observe({
-				key,
-				direction: "remote",
-				media,
-				source: "remote",
-				desired: true,
-				subscribed: Boolean(consumer),
-			});
+			const existing = this.expectedMedia.get(key);
+			if (!existing || existing.subscribed !== Boolean(consumer)) {
+				this.expectedMedia.observe({
+					key,
+					direction: "remote",
+					media,
+					source: "remote",
+					desired: true,
+					subscribed: Boolean(consumer),
+				});
+			}
 			if (!consumer) {
 				void this.expectedMedia
 					.repair(key, "subscription", "subscribe", () =>
@@ -890,14 +893,16 @@ export class ParticipantConnection {
 				published: Boolean(item.producer && !item.producer.closed),
 				flowing,
 			});
-			if (desired && !item.producer && item.source !== "screen" && stream) {
+			if (
+				desired &&
+				(!item.producer || item.producer.closed) &&
+				item.source !== "screen" &&
+				stream
+			) {
 				void this.expectedMedia
-					.repair(item.key, "publication", "recreate_producer", async () => {
-						await this.mediaManager.publishMedia(stream, {
-							publishAudio: item.media === "audio",
-							publishVideo: item.media === "video",
-						});
-					})
+					.repair(item.key, "publication", "recreate_producer", () =>
+						this.mediaManager.repairLocalPublication(item.media, stream),
+					)
 					.catch((error) =>
 						console.warn("Expected local publication repair failed:", error),
 					);
