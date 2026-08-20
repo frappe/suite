@@ -278,6 +278,7 @@ describe("useNetworkQuality", () => {
 		const recoverConsumer = vi.fn().mockResolvedValue(undefined);
 		const resetReceiveMedia = vi.fn().mockResolvedValue(undefined);
 		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
+		const observeRemoteMediaProgress = vi.fn();
 		let bytesReceived = 1000;
 		const stats = () =>
 			new Map<
@@ -316,6 +317,7 @@ describe("useNetworkQuality", () => {
 		};
 		const sfuManager = ref({
 			sfuClient: { requestConsumerKeyFrame },
+			observeRemoteMediaProgress,
 			participantManager: {
 				getParticipant: () => ({ video_enabled: true }),
 			},
@@ -353,6 +355,12 @@ describe("useNetworkQuality", () => {
 		await vi.advanceTimersByTimeAsync(18_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
 		expect(recoverConsumer).not.toHaveBeenCalled();
+		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
+			"producer-1",
+			"video",
+			true,
+			false,
+		);
 
 		await vi.advanceTimersByTimeAsync(15_000);
 		expect(recoverConsumer).toHaveBeenCalledOnce();

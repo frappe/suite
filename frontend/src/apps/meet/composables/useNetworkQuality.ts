@@ -35,6 +35,10 @@ export function useNetworkQuality(
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
 	const decodeStallDetector = new DecodeStallDetector();
+	const expectedMediaCounters = new Map<
+		string,
+		{ bytesReceived: number | null; framesDecoded: number | null }
+	>();
 	let active = true;
 
 	const pollIntervalMs = 3000;
@@ -135,13 +139,19 @@ export function useNetworkQuality(
 			? getClientTelemetry(sfuManager.sfuClient)
 			: null;
 		for (const { entry, bytes, framesDecoded } of statsResults) {
+			const previous = expectedMediaCounters.get(entry.id);
 			sfuManager.observeRemoteMediaProgress?.(
 				entry.producerId,
 				entry.kind === "audio" ? "audio" : "video",
-				bytes !== null && bytes > 0,
+				bytes !== null && bytes > (previous?.bytesReceived ?? 0),
 				entry.kind !== "video" ||
-					(framesDecoded !== null && framesDecoded > 0),
+					(framesDecoded !== null &&
+						framesDecoded > (previous?.framesDecoded ?? 0)),
 			);
+			expectedMediaCounters.set(entry.id, {
+				bytesReceived: bytes,
+				framesDecoded,
+			});
 			if (bytes !== null && bytes > 0 && (entry.kind === "audio" || entry.kind === "video")) {
 				clientTelemetry?.markFirstRemoteMedia(entry.kind);
 			}
@@ -323,6 +333,7 @@ export function useNetworkQuality(
 		}
 		stallDetector.reset();
 		decodeStallDetector.reset();
+		expectedMediaCounters.clear();
 	});
 
 	return {
