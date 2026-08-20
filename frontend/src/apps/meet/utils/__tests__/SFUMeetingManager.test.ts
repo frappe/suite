@@ -77,6 +77,24 @@ function prepareE2EEManager() {
 }
 
 describe("SFUMeetingManager adaptive streaming", () => {
+	it("retries playback before reconciling media after browser resume", async () => {
+		const manager = new SFUMeetingManager({} as never);
+		const retryPlayback = vi
+			.spyOn(manager.videoManager, "retryPlayback")
+			.mockResolvedValue();
+		const reconcile = vi
+			.spyOn(manager, "reconcileExpectedMedia")
+			.mockResolvedValue();
+
+		await manager.recoverBrowserLifecycle();
+
+		expect(retryPlayback).toHaveBeenCalledOnce();
+		expect(reconcile).toHaveBeenCalledOnce();
+		expect(retryPlayback.mock.invocationCallOrder[0]).toBeLessThan(
+			reconcile.mock.invocationCallOrder[0],
+		);
+	});
+
 	it("rejects visible preferences while disconnected", async () => {
 		const manager = new SFUMeetingManager({
 			isConnected: vi.fn(() => false),

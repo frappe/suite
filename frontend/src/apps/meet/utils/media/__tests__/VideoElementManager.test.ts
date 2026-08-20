@@ -173,6 +173,23 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		await manager.attachStream("p1", makeStream([makeTrack("t1")]), false);
 		expect((el2.srcObject as MediaStream).getVideoTracks()[0].id).toBe("t1");
 	});
+
+	it("retries playback for attached video and audio after resume", async () => {
+		const video = makeVideoElement();
+		video.srcObject = makeStream([makeTrack("video-1")]);
+		manager.registerVideoElement("p1", video);
+		const audio = document.createElement("audio");
+		audio.srcObject = makeStream([
+			{ ...makeTrack("audio-1"), kind: "audio" } as MediaStreamTrack,
+		]);
+		audio.play = vi.fn().mockResolvedValue(undefined);
+		manager.audioElements.set("p1", audio);
+
+		await manager.retryPlayback();
+
+		expect(video.play).toHaveBeenCalledOnce();
+		expect(audio.play).toHaveBeenCalledOnce();
+	});
 });
 
 describe("VideoElementManager.attachAudioStream stale re-attach", () => {

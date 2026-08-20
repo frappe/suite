@@ -40,8 +40,16 @@ export function useNetworkQuality(
 		{ bytesReceived: number | null; framesDecoded: number | null }
 	>();
 	let active = true;
+	let lifecycleGeneration = 0;
 
 	const pollIntervalMs = 3000;
+	const isLifecycleSuspended = () =>
+		!active || document.hidden || navigator.onLine === false;
+	const resetHealthBaselines = () => {
+		stallDetector.suspend();
+		decodeStallDetector.suspend();
+		expectedMediaCounters.clear();
+	};
 	const updateQuality = (stats: NetworkStats) => {
 		if (!stats.isValid) {
 			// If we can't get valid stats, assume network is good
@@ -90,9 +98,8 @@ export function useNetworkQuality(
 			downlinkQuality.value = "good";
 			return;
 		}
-		if (!active || document.hidden) {
-			stallDetector.suspend();
-			decodeStallDetector.suspend();
+		if (isLifecycleSuspended()) {
+			resetHealthBaselines();
 			return;
 		}
 
@@ -111,7 +118,7 @@ export function useNetworkQuality(
 				return { entry, bytes: bytesReceived, framesDecoded };
 			}),
 		);
-		if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) return;
+		if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) return;
 		const isPaused = (entry: (typeof statsResults)[number]["entry"]) => {
 			const participant = sfuManager.participantManager.getParticipant(
 				entry.participantId,
@@ -174,7 +181,7 @@ export function useNetworkQuality(
 			? "critical"
 			: "good";
 		for (const recovery of decodeActions) {
-			if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) {
+			if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) {
 				return;
 			}
 			const result = statsResults.find(
@@ -216,7 +223,7 @@ export function useNetworkQuality(
 					);
 				}
 			}
-			if (!active || document.hidden || sfuManagerRef?.value !== sfuManager) {
+			if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) {
 				return;
 			}
 		}
@@ -271,8 +278,13 @@ export function useNetworkQuality(
 
 	const pollStats = async () => {
 		if (isPolling.value) return;
+		if (isLifecycleSuspended()) {
+			resetHealthBaselines();
+			return;
+		}
 
 		isPolling.value = true;
+		const generation = lifecycleGeneration;
 		try {
 			const transportManager = sfuManagerRef?.value?.transportManager;
 
@@ -300,6 +312,12 @@ export function useNetworkQuality(
 
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
+				if (
+					generation !== lifecycleGeneration ||
+					isLifecycleSuspended()
+				) {
+					return;
+				}
 				updateQuality(stats);
 				const sfuClient = sfuManagerRef?.value?.sfuClient;
 				if (sfuClient && stats.isValid) {
@@ -313,20 +331,49 @@ export function useNetworkQuality(
 		}
 	};
 
+	const suspendBrowserLifecycle = () => {
+		lifecycleGeneration += 1;
+		resetHealthBaselines();
+	};
+
+	const recoverBrowserLifecycle = async () => {
+		const generation = ++lifecycleGeneration;
+		resetHealthBaselines();
+		if (isLifecycleSuspended()) return;
+		const sfuManager = sfuManagerRef?.value;
+		await sfuManager?.recoverBrowserLifecycle?.();
+		if (
+			generation !== lifecycleGeneration ||
+			isLifecycleSuspended() ||
+			sfuManagerRef?.value !== sfuManager
+		) {
+			return;
+		}
+	};
+
 	const handleVisibilityChange = () => {
-		stallDetector.suspend();
-		decodeStallDetector.suspend();
+		if (document.hidden) {
+			suspendBrowserLifecycle();
+		} else {
+			void recoverBrowserLifecycle();
+		}
 	};
 
 	onMounted(() => {
 		active = true;
 		document.addEventListener("visibilitychange", handleVisibilityChange);
+		window.addEventListener("offline", suspendBrowserLifecycle);
+		window.addEventListener("online", recoverBrowserLifecycle);
+		window.addEventListener("pageshow", recoverBrowserLifecycle);
 		pollInterval = setInterval(pollStats, pollIntervalMs);
 	});
 
 	onUnmounted(() => {
 		active = false;
 		document.removeEventListener("visibilitychange", handleVisibilityChange);
+		window.removeEventListener("offline", suspendBrowserLifecycle);
+		window.removeEventListener("online", recoverBrowserLifecycle);
+		window.removeEventListener("pageshow", recoverBrowserLifecycle);
 		if (pollInterval) {
 			clearInterval(pollInterval);
 			pollInterval = null;

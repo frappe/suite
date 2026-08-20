@@ -238,6 +238,28 @@ export class VideoElementManager {
 		}
 	}
 
+	async retryPlayback(): Promise<void> {
+		await Promise.all([
+			...Array.from(this.videoElements, ([participantId, element]) =>
+				element.srcObject
+					? this.playVideo(element, participantId)
+					: Promise.resolve(false),
+			),
+			...Array.from(this.audioElements, async ([participantId, element]) => {
+				if (!element.srcObject) return false;
+				try {
+					await element.play();
+					return true;
+				} catch (error) {
+					if ((error as DOMException).name === "NotAllowedError") {
+						this.addUserInteractionHandler(element, participantId);
+					}
+					return false;
+				}
+			}),
+		]);
+	}
+
 	addUserInteractionHandler(
 		element: HTMLMediaElement,
 		participantId: string,

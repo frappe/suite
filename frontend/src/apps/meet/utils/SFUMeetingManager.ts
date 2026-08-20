@@ -137,6 +137,11 @@ export class SFUMeetingManager {
 		return this.connectionManager.reconcileExpectedMedia();
 	}
 
+	async recoverBrowserLifecycle(): Promise<void> {
+		await this.videoManager.retryPlayback();
+		await this.reconcileExpectedMedia();
+	}
+
 	observeRemoteMediaProgress(
 		producerId: string,
 		media: "audio" | "video",
