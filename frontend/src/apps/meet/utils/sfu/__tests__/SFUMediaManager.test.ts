@@ -355,6 +355,51 @@ describe("SFUMediaManager endpoint media handoff", () => {
 		expect(attach).not.toHaveBeenCalled();
 		vi.unstubAllGlobals();
 	});
+
+	it("lets a newer endpoint attachment win over an in-flight handoff", async () => {
+		const { mediaManager, consumerManager, videoManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const firstAttachment = deferred<void>();
+		const closed = {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never;
+		const survivor = {
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("track-2", "video"),
+			consumer: { closed: false },
+		} as never;
+		const newest = {
+			producerId: "producer-3",
+			kind: "video",
+			track: mediaTrack("track-3", "video"),
+		} as never;
+		await mediaManager.attachVideoConsumer("remote-1", closed);
+		videoManager.attachStream.mockClear();
+		consumerManager.getConsumersByParticipant.mockReturnValue([survivor]);
+		videoManager.attachStream
+			.mockImplementationOnce(() => firstAttachment.promise)
+			.mockResolvedValueOnce(undefined);
+
+		const handoff = mediaManager.reattachAfterProducerClosed(
+			"remote-1",
+			"producer-1",
+		);
+		await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledOnce());
+		const newerAttachment = mediaManager.attachVideoConsumer("remote-1", newest);
+		firstAttachment.resolve();
+		await Promise.all([handoff, newerAttachment]);
+
+		expect(videoManager.attachStream).toHaveBeenCalledTimes(2);
+		expect(
+			(videoManager.attachStream.mock.calls[1][1] as FakeMediaStream)
+				.getVideoTracks()[0]?.id,
+		).toBe("track-3");
+		vi.unstubAllGlobals();
+	});
 });
 
 describe("SFUMediaManager.rebuildSendSide", () => {

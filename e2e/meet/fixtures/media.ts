@@ -44,6 +44,26 @@ export const STUB_MEDIA_SCRIPT = `(() => {
 export const MEDIA_FAULT_SCRIPT = `(() => {
 	const localTracks = { audio: [], video: [] };
 	const peerConnections = [];
+	const pendingReceiverFaults = [];
+	const injectReceiverStats = (receiver, fault) => {
+		const originalGetStats = receiver.getStats.bind(receiver);
+		receiver.getStats = async () => {
+			const report = await originalGetStats();
+			const injected = new Map();
+			report.forEach((value, key) => {
+				if (value.type !== "inbound-rtp" || value.kind !== "video") {
+					injected.set(key, value);
+					return;
+				}
+				injected.set(key, {
+					...value,
+					...(fault === "zero-bytes" ? { bytesReceived: 0 } : {}),
+					...(fault === "decode-stall" ? { framesDecoded: 0 } : {}),
+				});
+			});
+			return injected;
+		};
+	};
 	const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(
 		navigator.mediaDevices,
 	);
@@ -60,6 +80,10 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 		constructor(...args) {
 			super(...args);
 			peerConnections.push(this);
+			this.addEventListener("track", (event) => {
+				if (event.track.kind !== "video" || pendingReceiverFaults.length === 0) return;
+				injectReceiverStats(event.receiver, pendingReceiverFaults.shift());
+			});
 		}
 	};
 
@@ -79,24 +103,11 @@ export const MEDIA_FAULT_SCRIPT = `(() => {
 				.flatMap((connection) => connection.getReceivers())
 				.find((item) => item.track?.id === trackId);
 			if (!receiver) return false;
-			const originalGetStats = receiver.getStats.bind(receiver);
-			receiver.getStats = async () => {
-				const report = await originalGetStats();
-				const injected = new Map();
-				report.forEach((value, key) => {
-					if (value.type !== "inbound-rtp" || value.kind !== "video") {
-						injected.set(key, value);
-						return;
-					}
-					injected.set(key, {
-						...value,
-						...(fault === "zero-bytes" ? { bytesReceived: 0 } : {}),
-						...(fault === "decode-stall" ? { framesDecoded: 0 } : {}),
-					});
-				});
-				return injected;
-			};
+			injectReceiverStats(receiver, fault);
 			return true;
+		},
+		armNextVideoReceiverFault(fault) {
+			pendingReceiverFaults.push(fault);
 		},
 	};
 })();`;

@@ -1,9 +1,11 @@
 import { appUrl, expect, joinFromPreview, test } from "../fixtures/test";
 import {
+	armNextRemoteVideoFault,
 	expectLocalTrackReplaced,
 	expectRemoteTrackReplaced,
 	injectRemoteVideoFault,
 	monitorRemoteVideoContinuity,
+	readRemoteVideoProgress,
 	stopLatestLocalTrack,
 } from "../helpers/faults";
 import { expectRemoteVideoReceiving } from "../helpers/media";
@@ -42,7 +44,7 @@ test.describe("Media fault recovery", () => {
 		}
 	});
 
-	test("recreates only a consumer with zero-byte stats while healthy media keeps advancing", async ({
+	test("recreates only a zero-byte consumer while healthy media keeps advancing", async ({
 		hostPage,
 		createMeeting,
 		createParticipant,
@@ -56,24 +58,20 @@ test.describe("Media fault recovery", () => {
 				await hostPage.goto(appUrl(`/meet/${meetingId}`));
 				await joinFromPreview(hostPage);
 			})(),
-			target.joinAsGuest(meetingId, "Fault Target"),
 			control.joinAsGuest(meetingId, "Healthy Control"),
 		]);
-		await Promise.all([
-			expectRemoteVideoReceiving(hostPage, "Fault Target"),
-			expectRemoteVideoReceiving(hostPage, "Healthy Control"),
-		]);
-		// Ensure the 3-second production stats poll has established stream health.
-		await hostPage.waitForTimeout(3500);
+		await expectRemoteVideoReceiving(hostPage, "Healthy Control");
 		const controlMonitor = monitorRemoteVideoContinuity(
 			hostPage,
 			"Healthy Control",
 		);
 		try {
-			const targetBaseline = await injectRemoteVideoFault(
+			await armNextRemoteVideoFault(hostPage, "zero-bytes");
+			await target.joinAsGuest(meetingId, "Fault Target");
+			await expectRemoteVideoReceiving(hostPage, "Fault Target");
+			const targetBaseline = await readRemoteVideoProgress(
 				hostPage,
 				"Fault Target",
-				"zero-bytes",
 			);
 			await expectRemoteTrackReplaced(
 				hostPage,

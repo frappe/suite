@@ -120,6 +120,16 @@ export async function injectRemoteVideoFault(
 	return baseline;
 }
 
+export async function armNextRemoteVideoFault(
+	page: Page,
+	fault: ReceiverFault,
+): Promise<void> {
+	await page.evaluate((faultName) => {
+		if (!window.__meetMediaFaults) throw new Error("Media fault bridge unavailable");
+		window.__meetMediaFaults.armNextVideoReceiverFault(faultName);
+	}, fault);
+}
+
 export async function expectRemoteTrackReplaced(
 	page: Page,
 	participantName: string,
@@ -141,6 +151,7 @@ declare global {
 			latestLocalTrackId(kind: MediaKind): string | null;
 			stopLatestLocalTrack(kind: MediaKind): string | null;
 			injectReceiverStats(trackId: string, fault: ReceiverFault): Promise<boolean>;
+			armNextVideoReceiverFault(fault: ReceiverFault): void;
 		};
 	}
 }
