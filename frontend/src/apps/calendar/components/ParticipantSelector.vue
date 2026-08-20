@@ -14,6 +14,7 @@ interface ContactSuggestion {
 interface ContactOption extends ContactSuggestion {
 	label: string
 	value: string
+	description?: string
 }
 
 const props = withDefaults(
@@ -47,8 +48,9 @@ const mailContacts = createResource({
 	transform: (data: ContactSuggestion[]): ContactOption[] =>
 		data.map((contact) => ({
 			...contact,
-			label: contact.name || contact.email,
+			label: contact.email,
 			value: contact.email,
+			description: contact.name || undefined,
 		})),
 })
 
@@ -147,6 +149,7 @@ const removeParticipant = (email: string) => {
 				v-model:open="showSuggestions"
 				class="w-full"
 				:options="options"
+				:filterable="false"
 				:placeholder="placeholder"
 				@update:query="handleInput($event)"
 				@update:model-value="handleParticipantSelect($event)"
