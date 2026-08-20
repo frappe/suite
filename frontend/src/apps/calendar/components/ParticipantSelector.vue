@@ -5,6 +5,17 @@ import { Combobox, createResource, toast } from 'frappe-ui'
 
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
 
+interface ContactSuggestion {
+	name?: string | null
+	email: string
+	user_image?: string | null
+}
+
+interface ContactOption extends ContactSuggestion {
+	label: string
+	value: string
+}
+
 const props = withDefaults(
 	defineProps<{
 		account?: string
@@ -33,7 +44,12 @@ const mailContacts = createResource({
 		account: props.account,
 		text,
 	}),
-	transform: (data: any[]) => data.map((contact) => contact.email),
+	transform: (data: ContactSuggestion[]): ContactOption[] =>
+		data.map((contact) => ({
+			...contact,
+			label: contact.name || contact.email,
+			value: contact.email,
+		})),
 })
 
 const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
@@ -64,7 +80,7 @@ const handleInput = (text: string) => {
 	debouncedSearch(text)
 }
 
-const addParticipant = (email: string) => {
+const addParticipant = (email: string, contact?: ContactSuggestion) => {
 	const value = email?.trim()
 	if (!value) return
 	if (!/^\S+@\S+\.\S+$/.test(value)) {
@@ -79,7 +95,14 @@ const addParticipant = (email: string) => {
 
 	participants.value = [
 		...participants.value,
-		{ email: value, participation_status: 'NEEDS-ACTION', expect_reply: true, isNew: true },
+		{
+			email: value,
+			_name: contact?.name,
+			user_image: contact?.user_image,
+			participation_status: 'NEEDS-ACTION',
+			expect_reply: true,
+			isNew: true,
+		},
 	]
 }
 
@@ -90,7 +113,10 @@ const addParticipant = (email: string) => {
 const handleParticipantSelect = async (email: string | null) => {
 	if (!email) return
 	justSelectedOption.value = true
-	addParticipant(email)
+	const contact = (mailContacts.data as ContactOption[] | undefined)?.find(
+		(option) => option.email.toLowerCase() === email.toLowerCase(),
+	)
+	addParticipant(email, contact)
 	await nextTick()
 	combobox.value?.clear()
 }
