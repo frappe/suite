@@ -2,13 +2,13 @@
 	<Popover v-model:open="show" side="top" align="start" arrow>
 		<template #trigger>
 			<ToolbarButton :title="title">
-				<MeetInfoIcon :encrypted="e2eeEnabled" />
+				<MeetInfoIcon :encrypted="isE2EEActive" />
 			</ToolbarButton>
 		</template>
 		<div class="w-[26rem] max-w-[calc(100vw-2rem)] space-y-4 p-4">
 			<div>
 				<h3 class="text-base-medium text-ink-gray-9">Meeting information</h3>
-				<p v-if="e2eeEnabled" class="mt-1 text-sm text-ink-gray-6">
+				<p v-if="isE2EEActive" class="mt-1 text-sm text-ink-gray-6">
 					This is an end-to-end encrypted call
 				</p>
 			</div>
@@ -35,7 +35,6 @@
 import { Popover } from "frappe-ui";
 import { computed } from "vue";
 import { useE2EEState } from "../composables/useE2EEState";
-import { useMeetingDoc } from "../composables/useMeetingDoc";
 import MeetInfoIcon from "../icons/MeetInfoIcon.vue";
 import ClickToCopyField from "./ClickToCopyField.vue";
 import ToolbarButton from "./ToolbarButton.vue";
@@ -54,11 +53,13 @@ const show = computed({
 	set: (value) => emit("update:open", value),
 });
 
-const { sessionFingerprint: e2eeFingerprint } = useE2EEState();
-const { e2eeEnabled } = useMeetingDoc();
+const {
+	isContextReady: isE2EEActive,
+	sessionFingerprint: e2eeFingerprint,
+} = useE2EEState();
 const meetingUrl = computed(() => window.location.href);
 const title = computed(() =>
-	e2eeEnabled.value
+	isE2EEActive.value
 		? "Meeting information - This is an end-to-end encrypted call"
 		: "Meeting information",
 );
