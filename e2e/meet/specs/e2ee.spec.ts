@@ -59,8 +59,7 @@ async function enableE2EEInSettings(page: Page): Promise<void> {
 }
 
 async function openMeetingInformation(page: Page): Promise<void> {
-	await page.getByRole("button", { name: "More options" }).click();
-	await page.getByRole("menuitem", { name: "Meeting information" }).click();
+	await page.getByRole("button", { name: /Meeting information/ }).click();
 }
 
 async function readFingerprint(page: Page): Promise<string> {
