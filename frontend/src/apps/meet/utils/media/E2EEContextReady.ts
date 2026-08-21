@@ -5,7 +5,7 @@ const E2EE_CONTEXT_READY_EVENT = "meet:e2ee-context-ready";
 let readinessGeneration = 0;
 
 export function notifyE2EEContextReady(): void {
-	const generation = readinessGeneration;
+	const generation = ++readinessGeneration;
 	void E2EEMeeting.instance
 		.getSessionFingerprint()
 		.then((fingerprint) => {

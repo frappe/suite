@@ -30,4 +30,29 @@ describe("E2EEContextReady", () => {
 		expect(useE2EEState().isContextReady.value).toBe(false);
 		expect(useE2EEState().sessionFingerprint.value).toBeNull();
 	});
+
+	it("keeps the newest fingerprint when rekeys complete out of order", async () => {
+		let resolveFirst!: (fingerprint: string) => void;
+		let resolveSecond!: (fingerprint: string) => void;
+		const first = new Promise<string>((resolve) => {
+			resolveFirst = resolve;
+		});
+		const second = new Promise<string>((resolve) => {
+			resolveSecond = resolve;
+		});
+		vi.spyOn(E2EEMeeting.instance, "getSessionFingerprint")
+			.mockReturnValueOnce(first)
+			.mockReturnValueOnce(second);
+
+		notifyE2EEContextReady();
+		notifyE2EEContextReady();
+		resolveSecond("new fingerprint");
+		await second;
+		await Promise.resolve();
+		resolveFirst("stale fingerprint");
+		await first;
+		await Promise.resolve();
+
+		expect(useE2EEState().sessionFingerprint.value).toBe("new fingerprint");
+	});
 });
