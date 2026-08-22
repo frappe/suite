@@ -1,3 +1,4 @@
+import time
 from uuid import uuid7
 
 import frappe
@@ -139,10 +140,28 @@ def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict
         created_ids = [str(created.id) for created in result.created.values()]
 
         if result.not_created:
+            # The uid lookup runs on the server's async search index and can miss an event
+            # created moments ago; the server then refuses the duplicate uid. Re-resolve
+            # before failing so a repeated add stays idempotent.
+            if not created_ids and (existing_ids := _settled_master_ids(client, uids)):
+                return existing_ids[0]
+
             error = next(iter(result.not_created.values()), None)
             frappe.throw(_("Could not add the event to the calendar: {0}").format(format_set_error(error)))
 
     return (created_ids or existing_ids)[0]
+
+
+def _settled_master_ids(client: SuiteJMAPClient, uids: list[str], timeout: float = 3.0) -> list[str]:
+    """Polls the uid lookup briefly for events that exist but are not yet searchable."""
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if ids := jmap_events.get_master_ids(client, uids):
+            return ids
+        if time.monotonic() >= deadline:
+            return []
+        time.sleep(0.25)
 
 
 def _parse_events(client: SuiteJMAPClient, blob_id: str) -> list[dict]:

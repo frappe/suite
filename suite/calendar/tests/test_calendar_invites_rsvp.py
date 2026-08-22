@@ -269,6 +269,12 @@ class TestCalendarInvitesRsvp(StalwartIntegrationTestCase):
             )
             copy_id = str(response.created["copy"].id)
 
+            # The sync locates the copy by uid on the server's async search index.
+            self.wait_until(
+                lambda: jmap_events.get_master_ids(client, [uid]) or None,
+                message="The attendee's copy never became searchable by uid.",
+            )
+
         # Propagate a tentative response recorded on the organizer's copy.
         sync_response_to_participant_calendars(
             self.organizer_account, event_id, self.attendee.email, "tentative"
