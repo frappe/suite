@@ -5,7 +5,7 @@ from frappe.utils import cstr
 
 
 @frappe.whitelist()
-def save_slides(name: str, slides: list[dict] | str, base_modified: str) -> dict:
+def save_slides(name: str, slides: list[dict], base_modified: str) -> dict:
     """Replace a presentation's slides with the editor's list.
 
     Rows are matched by `client_id`, the identity the editor owns, so a slide it
@@ -24,7 +24,6 @@ def save_slides(name: str, slides: list[dict] | str, base_modified: str) -> dict
             frappe.TimestampMismatchError,
         )
 
-    slides = frappe.parse_json(slides) if isinstance(slides, str) else slides
     doc.set("slides", merge_rows(doc.slides, slides))
     doc.save()
     return {"modified": doc.modified}
