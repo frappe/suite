@@ -22,28 +22,26 @@
 				</filter>
 
 				<marker
-					v-if="element.markerStart"
+					v-if="startMarker"
 					:id="markerStartId"
-					viewBox="0 0 10 10"
-					markerWidth="6"
-					markerHeight="6"
-					refX="2"
-					refY="5"
-					orient="auto"
+					:markerWidth="markerSize"
+					:markerHeight="markerSize"
+					markerUnits="userSpaceOnUse"
+					orient="auto-start-reverse"
+					overflow="visible"
 				>
-					<path d="M10,0 L0,5 L10,10 Z" :fill="element.strokeColor" stroke="none" />
+					<path v-bind="markerPathAttrs(startMarker)" />
 				</marker>
 				<marker
-					v-if="element.markerEnd"
+					v-if="endMarker"
 					:id="markerEndId"
-					viewBox="0 0 10 10"
-					markerWidth="6"
-					markerHeight="6"
-					refX="8"
-					refY="5"
+					:markerWidth="markerSize"
+					:markerHeight="markerSize"
+					markerUnits="userSpaceOnUse"
 					orient="auto"
+					overflow="visible"
 				>
-					<path d="M0,0 L10,5 L0,10 Z" :fill="element.strokeColor" stroke="none" />
+					<path v-bind="markerPathAttrs(endMarker)" />
 				</marker>
 			</defs>
 
@@ -88,6 +86,28 @@
 				:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 			/>
 
+			<g v-else-if="elbowPath" pointer-events="auto">
+				<path
+					v-if="element.strokeWidth < 10"
+					:d="elbowPath"
+					fill="none"
+					stroke="transparent"
+					stroke-width="16"
+				/>
+				<path
+					:d="elbowPath"
+					fill="none"
+					:stroke="`${element.strokeColor}`"
+					:stroke-width="`${element.strokeWidth}px`"
+					:stroke-dasharray="strokeDashArray"
+					:stroke-linecap="strokeLineCap"
+					stroke-linejoin="round"
+					:marker-start="startMarker ? `url(#${markerStartId})` : null"
+					:marker-end="endMarker ? `url(#${markerEndId})` : null"
+					:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
+				/>
+			</g>
+
 			<g v-else-if="element.shapeType == 'line'">
 				<line
 					v-if="element.strokeWidth < 10"
@@ -99,16 +119,16 @@
 					stroke-width="16"
 				/>
 				<line
-					:x1="0"
-					:x2="'100%'"
+					:x1="lineSpan.x1"
+					:x2="lineSpan.x2"
 					:y1="element.strokeWidth / 2"
 					:y2="element.strokeWidth / 2"
 					:stroke="`${element.strokeColor}`"
 					:stroke-width="`${element.strokeWidth}px`"
 					:stroke-dasharray="strokeDashArray"
 					:stroke-linecap="strokeLineCap"
-					:marker-start="element.markerStart ? `url(#${markerStartId})` : null"
-					:marker-end="element.markerEnd ? `url(#${markerEndId})` : null"
+					:marker-start="startMarker ? `url(#${markerStartId})` : null"
+					:marker-end="endMarker ? `url(#${markerEndId})` : null"
 					:filter="shadow.hasShadow ? `url(#${shadowFilterId})` : null"
 				/>
 			</g>
@@ -128,9 +148,16 @@
 import { computed, inject, ref } from 'vue'
 
 import TextElement from '@/apps/slides/components/TextElement.vue'
+import { getPolygonVertices, isPolygonShape } from '@/apps/slides/utils/shapeGeometry'
 import { useSvgShadow } from '@/apps/slides/composables/useShadow'
 import { focusElementId, activeElementIds, dragOccurred } from '@/apps/slides/stores/element'
-import { interactionOffset } from '@/apps/slides/stores/interaction'
+import {
+	interactionOffset,
+	followerGeometry,
+	pendingPoints,
+} from '@/apps/slides/stores/interaction'
+import { normalizeMarker, getMarkerShape, getMarkerSize } from '@/apps/slides/utils/lineMarkers'
+import { getElbowPathData } from '@/apps/slides/utils/connectors'
 
 const props = defineProps({
 	transitionStyles: {
@@ -159,12 +186,10 @@ const wrapperStyles = {
 
 const isLine = computed(() => element.value?.shapeType === 'line')
 
-const POLYGON_SIDES = { diamond: 4, triangle: 3, pentagon: 5 }
-const isPolygon = computed(() => element.value?.shapeType in POLYGON_SIDES)
+const isPolygon = computed(() => isPolygonShape(element.value?.shapeType))
 
 const polygonPoints = computed(() => {
-	const sides = POLYGON_SIDES[element.value?.shapeType]
-	if (!sides) return ''
+	if (!isPolygon.value) return ''
 
 	const isActiveInEditor = isActive.value && props.mode == 'editor'
 	const offsetWidth = isActiveInEditor ? interactionOffset.width : 0
@@ -173,22 +198,8 @@ const polygonPoints = computed(() => {
 	const height = (element.value?.height ?? 0) + offsetHeight
 	const strokeInset = (element.value?.strokeWidth ?? 0) / 2
 
-	// Unit-circle vertices evenly spaced, starting from the top (-π/2)
-	const unitVertices = Array.from({ length: sides }, (_, k) => {
-		const angle = -Math.PI / 2 + (k * 2 * Math.PI) / sides
-		return { x: Math.cos(angle), y: Math.sin(angle) }
-	})
-
-	const xMin = Math.min(...unitVertices.map((v) => v.x))
-	const xMax = Math.max(...unitVertices.map((v) => v.x))
-	const yMin = Math.min(...unitVertices.map((v) => v.y))
-	const yMax = Math.max(...unitVertices.map((v) => v.y))
-
-	const scaleX = (x) => strokeInset + ((x - xMin) / (xMax - xMin)) * (width - 2 * strokeInset)
-	const scaleY = (y) => strokeInset + ((y - yMin) / (yMax - yMin)) * (height - 2 * strokeInset)
-
-	return unitVertices
-		.map((v) => `${scaleX(v.x)},${scaleY(v.y)}`)
+	return getPolygonVertices(element.value.shapeType, width, height, strokeInset)
+		.map((v) => `${v.x},${v.y}`)
 		.join(' ')
 })
 
@@ -229,9 +240,51 @@ const handleDoubleClick = (e) => {
 	focusElementId.value = element.value.id
 }
 
-const hasMarkers = computed(
-	() => isLine.value && !!(element.value?.markerStart || element.value?.markerEnd),
+const startMarker = computed(() =>
+	isLine.value ? getMarkerShape(normalizeMarker(element.value?.markerStart), element.value?.strokeWidth) : null,
 )
+const endMarker = computed(() =>
+	isLine.value ? getMarkerShape(normalizeMarker(element.value?.markerEnd), element.value?.strokeWidth) : null,
+)
+const hasMarkers = computed(() => !!(startMarker.value || endMarker.value))
+
+const markerSize = computed(() => getMarkerSize(element.value?.strokeWidth ?? 0))
+
+const markerPathAttrs = (marker) => ({
+	d: marker.d,
+	fill: marker.filled ? element.value.strokeColor : 'none',
+	stroke: marker.filled ? 'none' : element.value.strokeColor,
+	'stroke-width': element.value.strokeWidth,
+	'stroke-linecap': 'round',
+	'stroke-linejoin': 'round',
+})
+
+const follower = computed(() =>
+	props.mode == 'editor' ? followerGeometry.value[element.value?.id] : undefined,
+)
+
+// the stroke stops short of a head, but the two ends never cross
+const lineSpan = computed(() => {
+	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const length =
+		follower.value?.width ??
+		(element.value?.width ?? 0) + (isActiveInEditor ? interactionOffset.width : 0)
+	const startInset = Math.min(startMarker.value?.inset ?? 0, length / 2)
+	const endInset = Math.min(endMarker.value?.inset ?? 0, length / 2)
+	return { x1: startInset, x2: length - endInset }
+})
+
+// live points while following a target or being end-dragged, stored ones otherwise
+const elbowPath = computed(() => {
+	if (!isLine.value) return ''
+	const isActiveInEditor = isActive.value && props.mode == 'editor'
+	const points =
+		follower.value?.points ??
+		(isActiveInEditor ? pendingPoints.value : null) ??
+		element.value?.points
+	if (!points) return ''
+	return getElbowPathData(points, startMarker.value?.inset ?? 0, endMarker.value?.inset ?? 0)
+})
 
 const markerStartId = computed(() => `line-marker-start-${element.value?.id || ''}`)
 const markerEndId = computed(() => `line-marker-end-${element.value?.id || ''}`)
@@ -255,7 +308,9 @@ const shapeStyles = computed(() => {
 		height: '100%',
 		opacity: (element.value?.opacity ?? 100) / 100,
 		overflow: hasMarkers.value || shadow.value.hasShadow || isLine.value ? 'visible' : '',
-		transform: `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
+		transform: element.value?.points
+			? ''
+			: `scale(${element.value?.invertX || 1}, ${element.value?.invertY || 1})`,
 	}
 	return {
 		...styles,

@@ -1,12 +1,14 @@
 <template>
   <Dialog v-model:open="open" size="lg">
     <template #title>
-      <div class="text-2xl-semibold text-ink-gray-8 flex text-nowrap overflow-hidden">
-        Sharing "
-        <div class="truncate max-w-[80%]">
-          {{ file?.file_name }}
+      <div class="grid grid-cols-[minmax(0,1fr)] pr-3">
+        <div class="text-2xl-semibold text-ink-gray-8 flex text-nowrap overflow-hidden">
+          Sharing "
+          <div class="truncate min-w-0">
+            {{ file?.file_name }}
+          </div>
+          "
         </div>
-        "
       </div>
     </template>
     <template #default>
@@ -143,7 +145,7 @@ const levelOptions = [
     icon: 'lucide-lock',
   },
   {
-    label: 'Accessible to all site users',
+    label: 'Accessible to organization',
     value: 'site',
     icon: 'lucide-building-2',
   },

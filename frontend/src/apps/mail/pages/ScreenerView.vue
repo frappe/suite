@@ -21,7 +21,7 @@
 			</MobileTitleHeader>
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs v-else :items="[{ label: __('Screener') }]" class="-ml-0.5" />
-			<HeaderActions @reload-mails="senders.reload()" />
+			<HeaderActions />
 		</header>
 
 		<!-- First-visit explainer — a full-width slab under the header, spanning list and reading
@@ -453,6 +453,7 @@ import {
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { isNavigationKey, navigationOffset } from '@/apps/mail/utils/listNavigation'
 import {
+	useListReload,
 	useReadingPane,
 	useScreenSize,
 	useSettings,
@@ -480,6 +481,7 @@ const { senderEmail } = defineProps<{
 
 const router = useRouter()
 const { isMobile } = useScreenSize()
+const { listReloadRequest } = useListReload()
 const { openSettings } = useSettings()
 
 const showReadingPane = useReadingPane()
@@ -591,6 +593,10 @@ const senders = createResource({
 	makeParams: () => ({ account: store.accountId }),
 	auto: true,
 })
+
+// The layout's composer, announcing that it sent something (see useListReload). Writing to someone
+// is what accepts them, so the waiting list can be one sender shorter for it.
+watch(listReloadRequest, () => senders.reload())
 
 /**
  * Senders this view has just judged, held only until the route stops naming them.

@@ -71,4 +71,31 @@ describe('parseClientTelemetry', () => {
 			}),
 		).toBeNull();
 	});
+
+	it('accepts bounded expected-media repair outcomes', () => {
+		expect(
+			parseClientTelemetry({
+				event: 'media_repair',
+				media: 'video',
+				source: 'remote',
+				stage: 'subscription',
+				action: 'subscribe',
+				attempt: 1,
+				outcome: 'success',
+				durationMs: 500,
+			}),
+		).not.toBeNull();
+		expect(
+			parseClientTelemetry({
+				event: 'media_repair',
+				media: 'video',
+				source: 'remote',
+				stage: 'subscription',
+				action: 'subscribe',
+				attempt: 4,
+				outcome: 'success',
+				durationMs: 500,
+			}),
+		).toBeNull();
+	});
 });

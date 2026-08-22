@@ -188,7 +188,7 @@ class FileManager:
         """
         file_url = storage_key(entity.file_url)
         try:
-            if self.s3_enabled:
+            if self.s3_enabled and not stored_on_disk(entity.file_url):
                 if range_header:
                     buf = self.conn.get_object(Bucket=self.bucket, Key=file_url, Range=range_header)["Body"]
                 else:
@@ -260,7 +260,7 @@ class FileManager:
 
     def iter_blocks(self, entity, block_size=4 * 1024 * 1024):
         """Yield a file's bytes lazily so a worker never holds the whole file."""
-        if self.s3_enabled:
+        if self.s3_enabled and not stored_on_disk(entity.file_url):
             source = self.get_file(entity)
             try:
                 while chunk := source.read(block_size):
@@ -286,7 +286,7 @@ class FileManager:
         - On disk: opens in binary mode, closes automatically.
         - On S3: yields the botocore StreamingBody, closes automatically.
         """
-        if self.s3_enabled:
+        if self.s3_enabled and not stored_on_disk(path):
             obj = self.conn.get_object(Bucket=self.bucket, Key=path)
             body = obj["Body"]
             try:
@@ -519,6 +519,16 @@ def storage_key(file_url):
     if file_url.startswith(S3_URL_PREFIX):
         return unquote(file_url[len(S3_URL_PREFIX) :])
     return file_url.lstrip("/")
+
+
+def stored_on_disk(file_url):
+    """Whether a file_url (or storage key) names a blob on the site's disk.
+
+    Framework-managed blobs (attachments, adopted uploads) keep their
+    /private/files url and live on the site's disk even when Drive stores its
+    own blobs on S3 — those always carry S3_URL_PREFIX or a bare bucket key.
+    """
+    return storage_key(file_url).startswith("private/files/")
 
 
 def content_disposition(download_name):

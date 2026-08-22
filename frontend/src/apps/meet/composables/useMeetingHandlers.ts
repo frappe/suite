@@ -101,9 +101,15 @@ interface MeetingHandlersDeps {
 }
 
 export function useMeetingHandlers(deps: MeetingHandlersDeps) {
-	const resetToPreview = () => {
-		deps.connectionState.connectionError = null;
-		deps.connectionState.isInPreview = true;
+	const resetToPreview = async () => {
+		const manager = deps.sfuConnection.sfuManager.value;
+		deps.sfuConnection.sfuManager.value = null;
+		try {
+			await manager?.cleanup();
+		} finally {
+			deps.connectionState.connectionError = null;
+			deps.connectionState.isInPreview = true;
+		}
 	};
 
 	const joinMeetingFromPreview = async () => {

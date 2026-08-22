@@ -305,10 +305,6 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
-    "hourly_long": [
-        # mail
-        "suite.mail.doctype.mail_queue.mail_queue.reconcile_scheduled_emails",
-    ],
     "cron": {
         "* * * * *": ["suite.meet.api.recording.reconcile_pending_recordings"],
         "*/5 * * * *": [
@@ -327,6 +323,7 @@ scheduler_events = {
 # ============================================================================
 from suite.suite_core import boot as _suite_boot
 
+before_install = "suite.suite_core.boot.before_install"
 after_install = "suite.suite_core.boot.after_install"
 after_migrate = "suite.suite_core.boot.after_migrate"
 after_app_install = "suite.suite_core.boot.after_app_install"

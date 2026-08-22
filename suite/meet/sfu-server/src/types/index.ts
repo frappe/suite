@@ -38,6 +38,7 @@ import type {
 	ParticipantInfo,
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
+	PinnedChatMessage,
 	PreviewParticipantInfo,
 	ProducerCloseDetails,
 	ProducerClosedEvent,
@@ -87,6 +88,7 @@ export type {
 	ParticipantInfo,
 	ParticipantJoinedEvent,
 	ParticipantLeftEvent,
+	PinnedChatMessage,
 	PlainTransport,
 	PreviewParticipantInfo,
 	Producer,
@@ -135,6 +137,8 @@ export interface ServerToClientEvents {
 	screen_share_stopped: (data: ScreenShareStoppedEvent) => void;
 	'chat:message': (data: ChatMessage) => void;
 	'chat:restriction_updated': (data: { enabled: boolean }) => void;
+	'chat:pin_updated': (data: { pinned: PinnedChatMessage | null }) => void;
+	existing_pinned_message: (data: { pinned: PinnedChatMessage | null }) => void;
 	'reaction:message': (data: ReactionMessage) => void;
 	'poll:new': (data: PollPayloadFE) => void;
 	'poll:update': (data: PollPayloadFE) => void;
@@ -233,9 +237,19 @@ export interface ClientToServerEvents {
 	screen_share: (data: ScreenShareRequest) => void;
 	'chat:send': (
 		data: ChatSendRequest,
-		callback?: (response: SFUResponse & { timestamp?: string }) => void,
+		callback?: (
+			response: SFUResponse & { timestamp?: string; messageId?: string },
+		) => void,
 	) => void;
 	'chat:toggle_restriction': (data: { enabled: boolean }) => void;
+	'chat:pin': (
+		data: {
+			messageId: string;
+			action: 'pin' | 'unpin';
+			encryptedMessage?: string;
+		},
+		callback?: (response: SFUResponse) => void,
+	) => void;
 	'poll:create': (
 		data: {
 			question: string;
@@ -298,10 +312,26 @@ export type ClientTelemetryEvent =
 			rttMs: number;
 			packetLossPercent: number;
 			availableOutgoingBitrate: number;
+	  }
+	| {
+			event: 'media_repair';
+			media: 'audio' | 'video';
+			source: 'camera' | 'microphone' | 'screen' | 'remote';
+			stage: 'capture' | 'publication' | 'subscription' | 'rtp' | 'decode';
+			action:
+				| 'reacquire'
+				| 'recreate_producer'
+				| 'subscribe'
+				| 'recreate_consumer'
+				| 'request_keyframe';
+			attempt: number;
+			outcome: 'success' | 'failure' | 'exhausted' | 'cancelled';
+			durationMs: number;
 	  };
 
 export interface SocketData {
 	userId: string;
+	peerId?: string;
 	userName: string;
 	meetingId: string;
 	isHost: boolean;
@@ -639,6 +669,7 @@ export type E2eeEpochJoinStatus = {
 declare module 'socket.io' {
 	interface Socket {
 		userId: string;
+		peerId?: string;
 		userName: string;
 		meetingId: string;
 		site?: string;

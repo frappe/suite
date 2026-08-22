@@ -680,16 +680,20 @@ def recorder_failed(
 
 
 def reconcile_pending_recordings():
-    names = frappe.get_all(
-        "Meet Recording",
-        filters={"status": "Pending", "pending_deadline": ["<=", now_datetime()]},
-        pluck="name",
-    )
-    for name in names:
-        _run_reconciliation(name, _reconcile_pending)
+    # Pending/Stopping reconciliation needs the recorder server. Without one configured,
+    # skip those phases instead of erroring per recording; the stale sweep below fails
+    # such recordings with "recorder_unavailable" once they pass max_ends_at.
+    if _fixture_enabled() or _recorder_available():
+        names = frappe.get_all(
+            "Meet Recording",
+            filters={"status": "Pending", "pending_deadline": ["<=", now_datetime()]},
+            pluck="name",
+        )
+        for name in names:
+            _run_reconciliation(name, _reconcile_pending)
 
-    for name in frappe.get_all("Meet Recording", filters={"status": "Stopping"}, pluck="name"):
-        _run_reconciliation(name, _retry_stopping)
+        for name in frappe.get_all("Meet Recording", filters={"status": "Stopping"}, pluck="name"):
+            _run_reconciliation(name, _retry_stopping)
 
     stale_active_cutoff = add_to_date(now_datetime(), seconds=-RECONCILIATION_GRACE_SECONDS)
     for name in frappe.get_all(

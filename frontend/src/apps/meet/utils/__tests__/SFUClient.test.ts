@@ -309,6 +309,29 @@ describe("sendChatMessage", () => {
 	});
 });
 
+describe("sendChatPin", () => {
+	it("throws when not connected", async () => {
+		const client = createClient();
+		client.connected = false;
+		await expect(client.sendChatPin("msg-1")).rejects.toThrow(
+			"Not connected to SFU",
+		);
+	});
+
+	it("sends chat:pin with the message id", async () => {
+		const client = createClient();
+		client.connected = true;
+		const sendRequest = vi.spyOn(client, "sendRequest").mockResolvedValue({
+			success: true,
+		});
+		await client.sendChatPin("msg-1");
+		expect(sendRequest).toHaveBeenCalledWith("chat:pin", {
+			messageId: "msg-1",
+			action: "pin",
+		});
+	});
+});
+
 describe("sendReaction", () => {
 	it("throws when not connected", () => {
 		const client = createClient();

@@ -60,7 +60,7 @@ const app = createApp({
 		const currentUser = { currentUser: computed(() => ({ user_id: "recorder", name: "Recorder" })), userInitials: computed(() => "R"), userAvatar: computed(() => ""), setCurrentUser: () => undefined, resetCurrentUser: () => undefined };
 		const meetingContext = {
 			mediaState, participantStore, currentUser, chatStore, gridLayout, raiseHandStore, reactionStore, lobbyStore,
-			sfuManager: null, processedStream: null, isInMeeting: computed(() => true), onBackgroundEffectsChanged: () => undefined, networkQuality: ref<"good" | "poor" | "critical">("good"),
+			sfuManager: null, processedStream: ref<MediaStream | null>(null), isInMeeting: computed(() => true), onBackgroundEffectsChanged: () => undefined, networkQuality: ref<"good" | "poor" | "critical">("good"),
 		};
 		return () => h(RecorderRenderer, { startedAt: config.startedAt, interruption: controller.interruption.value, messages: messages.value, meetingContext, videoManager: controller.videoManager, onPlaybackFailure: (reason: string) => controller.reportPlaybackFailure(reason), onScreenAttachment: (consumerId: string, attachment: Promise<void>) => attachment.then(pendingScreenAttachments.get(consumerId)?.resolve, pendingScreenAttachments.get(consumerId)?.reject) });
 	},

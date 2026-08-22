@@ -15,7 +15,7 @@
 				class="-ml-0.5"
 			/>
 		</div>
-		<HeaderActions @reload-mails="refreshThreads()" />
+		<HeaderActions />
 	</header>
 
 	<div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
@@ -189,7 +189,8 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
-import { useUndo, useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
+import { useListReload, useUndo, useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
+import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { useListRows } from '@/apps/mail/composables/useListRows'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import {
@@ -210,6 +211,7 @@ import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import type { Mail, Mailbox, MailboxData, Thread, UserResource } from '@/apps/mail/types'
 
 const { isMobile } = useScreenSize()
+const { listReloadRequest } = useListReload()
 
 // The `mail-all-inboxes-mail` route also carries the open thread's owning accountId and mailbox, but
 // nothing here reads them: every row already carries its own account and folder ids, which is what the
@@ -332,6 +334,10 @@ const refreshThreads = (reloadCounts = true) => {
 	threads.reload()
 	if (reloadCounts) refreshCounts()
 }
+
+// The layout's composer, announcing that it sent something (see useListReload). A refresh rather
+// than a reset, so the reader keeps their place in a list that spans every account.
+watch(listReloadRequest, () => refreshThreads())
 
 // The pane asked for a reload (a reply was sent, a message deleted, …). The list refresh keeps
 // already-loaded rows to hold the reader's place (see usePaginatedThreads), so it never updates the
@@ -899,8 +905,9 @@ const withUndo = (thread: Thread, restore: () => void, undoSuccess: string) => {
 	return undoAction
 }
 
-const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
-	call('suite.mail.api.mail.move_mails', {
+const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) => {
+	closeComposeWindowFor(messageIds(thread))
+	return call('suite.mail.api.mail.move_mails', {
 		account: thread.account,
 		ids: messageIds(thread),
 		mailbox,
@@ -909,6 +916,7 @@ const moveThreadOut = (thread: Thread, mailbox: string, restore: () => void) =>
 		restore()
 		throw error
 	})
+}
 
 const handleArchive = (thread: Thread) => {
 	if (!thread.archive) return raiseToast(__('No Archive folder for this account.'), 'error')
@@ -962,6 +970,7 @@ const stackSetSeen = (threads: Thread[], seen: boolean) => {
 // Restores run in reverse so each row splices back at the index captured when it was removed.
 const stackMoveOut = (threads: Thread[], mailboxId: string | undefined, done: string) => {
 	if (!mailboxId) return raiseToast(__('No such folder for this account.'), 'error')
+	closeComposeWindowFor(threads.flatMap(messageIds))
 	const restores = threads.map(removeFromList)
 	const promise = call('suite.mail.api.mail.move_mails', {
 		account: threads[0].account,

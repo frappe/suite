@@ -15,7 +15,8 @@ import {
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-import { getDocFromHTML, generateUniqueId } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
 
@@ -25,14 +26,18 @@ const { activeEditor } = useTextEditor()
 
 const isCopyTriggeredByButton = ref(false)
 
-const getCopiedElementsJSON = () => JSON.stringify(activeElements.value)
+// the source travels with the payload: a copy in one tab is pasted in another
+const getCopiedElementsJSON = () =>
+	JSON.stringify({
+		srcPresentation: presentationId.value,
+		srcSlide: slideIndex.value,
+		elements: activeElements.value,
+	})
 
 const getCopiedSlideJSON = () => {
 	const slide = getNewSlide(true)
 	return JSON.stringify(slide)
 }
-
-const copiedFrom = ref({})
 
 const copySlide = (e) => {
 	const clipboardJSON = getCopiedSlideJSON()
@@ -43,10 +48,6 @@ const copySlide = (e) => {
 const copyElements = (e) => {
 	const clipboardJSON = getCopiedElementsJSON()
 	e.clipboardData.setData('application/json', clipboardJSON)
-	copiedFrom.value = {
-		srcPresentation: presentationId.value,
-		srcSlide: slideIndex.value,
-	}
 }
 
 const handleCopy = (e) => {
@@ -86,8 +87,8 @@ const handlePastedText = async (clipboardText) => {
 	addTextElement(clipboardText)
 }
 
-const handlePastedJSON = async (json) => {
-	const pastedArray = Array.isArray(json) ? json : []
+const handlePastedJSON = async ({ srcPresentation, srcSlide, elements }) => {
+	const pastedArray = Array.isArray(elements) ? elements : []
 
 	if (
 		pastedArray[0]?.type == 'text' &&
@@ -98,18 +99,19 @@ const handlePastedJSON = async (json) => {
 		return
 	}
 
-	const { srcPresentation, srcSlide } = copiedFrom.value
-
+	let json = pastedArray
 	if (srcPresentation !== presentationId.value) {
 		// if pasted elements are from a different presentation
 		// add file attachments correctly to current presentation + update docnames in json
 		json = await call('suite.slides.doctype.presentation.presentation.get_updated_json', {
 			presentation: presentationId.value,
-			elements: json,
+			elements: pastedArray,
 		})
 	}
 
-	duplicateElements(null, json, srcSlide)
+	// a foreign slide index means nothing here, and there is no original to displace from
+	const sameSource = srcPresentation === presentationId.value
+	duplicateElements(null, json, sameSource ? srcSlide : null, sameSource)
 }
 
 const handleSvgText = (svgText) => {
@@ -118,10 +120,9 @@ const handleSvgText = (svgText) => {
 	handleUploadedMedia([{ kind: 'file', getAsFile: () => svgFile }])
 }
 
-const handlePastedSlideJSON = async (json) => {
+const handlePastedSlideJSON = async (slideJSON) => {
 	const index = slideIndex.value
 
-	let slideJSON = JSON.parse(json)
 	if (slideJSON.parent != presentationId.value) {
 		// if pasted slide is from a different presentation
 		// add file attachments correctly to current presentation + update docnames in json
@@ -140,10 +141,7 @@ const handlePastedSlideJSON = async (json) => {
 	// Give each paste a fresh identity so repeated pastes don't share ids.
 	// refId (cross-slide transition key) is intentionally kept.
 	slideJSON.clientId = uuid4()
-	slideJSON.elements = (slideJSON.elements || []).map((el) => ({
-		...el,
-		id: generateUniqueId(),
-	}))
+	slideJSON.elements = remapElementIds(slideJSON.elements || [])
 
 	insertSlide(slideJSON, index)
 }
@@ -166,12 +164,11 @@ const handleClipboardText = (clipboardText) => {
 }
 
 const handleClipboardJSON = async (clipboardJSON) => {
-	const isSlideJSON = !Array.isArray(clipboardJSON) && clipboardJSON.includes('"elements"')
-	if (isSlideJSON) {
-		await handlePastedSlideJSON(clipboardJSON)
-		return
-	}
-	return handlePastedJSON(JSON.parse(clipboardJSON))
+	const json = JSON.parse(clipboardJSON)
+	if (json?.srcPresentation) return handlePastedJSON(json)
+	if (json?.clientId) return handlePastedSlideJSON(json)
+	// a bare array is the pre-source payload: no origin known, so attach as if foreign
+	if (Array.isArray(json)) return handlePastedJSON({ srcPresentation: null, elements: json })
 }
 
 const dataURLToFile = (dataURL, filename) => {

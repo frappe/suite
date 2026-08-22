@@ -28,14 +28,15 @@ QUICK_MAP = {
 def create_document(title: str | None = None, parent: str | None = None, template: str | None = None):
     parent = parent or get_user_folder().name
     parent_doc = frappe.get_doc("File", parent)
-    if not title:
-        title = get_new_title("Untitled Document", parent)
 
     if not user_has_permission(parent, "upload"):
         frappe.throw(
             "Cannot access folder due to insufficient permissions",
             frappe.PermissionError,
         )
+
+    if not title:
+        title = get_new_title("Untitled Document", parent)
 
     writer_doc = frappe.new_doc("Writer Document")
     writer_doc.settings = (

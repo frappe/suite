@@ -1,6 +1,6 @@
 services:
   stalwart:
-    image: stalwartlabs/stalwart:${STALWART_VERSION:-v0.16.16}
+    image: stalwartlabs/stalwart:${STALWART_VERSION:-v0.16.17}
     container_name: stalwart-test
     ports:
       - "${STALWART_HTTP_PORT:-8080}:8080"

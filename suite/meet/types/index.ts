@@ -99,11 +99,20 @@ export interface ScreenShareData {
 
 export interface ChatMessage {
 	roomId: string;
+	messageId: string;
 	message: string;
 	fromUser: string;
 	fromName: string;
 	timestamp: string;
 	clientId?: string;
+}
+
+export interface PinnedChatMessage {
+	messageId: string;
+	message: string;
+	fromUser: string;
+	fromName: string;
+	timestamp: string;
 }
 
 export interface ReactionMessage {

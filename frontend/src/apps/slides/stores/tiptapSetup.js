@@ -9,13 +9,18 @@ import BulletList from '@tiptap/extension-bullet-list'
 import OrderedList from '@tiptap/extension-ordered-list'
 import ListItem from '@tiptap/extension-list-item'
 import Color from '@tiptap/extension-color'
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table'
 import { Selection } from '@tiptap/extensions'
 
+import { Fragment, Slice } from 'prosemirror-model'
+import { cellAround, CellSelection } from 'prosemirror-tables'
 import { Plugin, PluginKey, TextSelection } from 'prosemirror-state'
+import { Decoration, DecorationSet } from 'prosemirror-view'
 import { joinBackward } from 'prosemirror-commands'
 import { liftListItem } from 'prosemirror-schema-list'
 
 import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 
 const parseElementStyle = (attribute, value) => {
 	if (!value) return null
@@ -29,6 +34,10 @@ const parseElementStyle = (attribute, value) => {
 }
 
 const renderAttributeHTML = (attribute, value) => {
+	// every attribute renders, carried or not, and a style the span left out parses
+	// back as null. Written out it reads as opacity: 0 and takes the text with it
+	if (value == null) return {}
+
 	const suffixes = {
 		fontSize: 'px',
 		letterSpacing: 'px',
@@ -72,8 +81,72 @@ const CustomTextStyle = TextStyle.extend({
 	},
 })
 
+export const hasTableNode = (doc) => {
+	for (let i = 0; i < doc.childCount; i++) {
+		if (doc.child(i).type.name === 'table') return true
+	}
+	return false
+}
+
+export const getCells = (doc) => {
+	const cells = []
+	doc.descendants((node, pos) => {
+		if (!['tableCell', 'tableHeader'].includes(node.type.name)) return
+		cells.push({ pos, node })
+		return false
+	})
+	return cells
+}
+
+const cellsToClear = ({ selection, doc }) => {
+	if (selection instanceof CellSelection) return selection
+	if (!hasTableNode(doc) || selection.from !== 0 || selection.to !== doc.content.size) return null
+
+	const cells = getCells(doc)
+	return cells.length ? CellSelection.create(doc, cells[0].pos, cells[cells.length - 1].pos) : null
+}
+
+export const getFirstMarks = (node) => {
+	let marks = []
+	node.descendants((child) => {
+		if (!marks.length && child.isText) marks = child.marks
+	})
+	return marks
+}
+
+// marks need text to sit on, so a cleared cell keeps the placeholder and the marks
+// the panel styles through
+const emptiedCell = (cell, schema) => {
+	const marks = getFirstMarks(cell)
+	return schema.nodes.paragraph.create(cell.firstChild?.attrs, schema.text(ZWSP, marks))
+}
+
+// emptying a table clears its cells: taking the table node out would leave the
+// element holding an empty paragraph
+const clearSelectedCells = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	const selection = cellsToClear(state)
+	if (!selection) return false
+
+	const cells = []
+	selection.forEachCell((cell, pos) => cells.push({ cell, pos }))
+
+	const { tr } = state
+	tr.setSelection(selection)
+	cells.reverse().forEach(({ cell, pos }) => {
+		tr.replaceWith(pos + 1, pos + cell.nodeSize - 1, emptiedCell(cell, state.schema))
+	})
+
+	dispatch(tr)
+	return true
+}
+
 const PastePlainText = Extension.create({
 	name: 'pastePlainText',
+
+	// a copied cell block carries text/plain too, so this has to yield to
+	// tableEditing's handlePaste or pasting cells into a table flattens them
+	priority: 90,
 
 	addProseMirrorPlugins() {
 		const pasteWithInheritedStyles = (view, event) => {
@@ -87,8 +160,34 @@ const PastePlainText = Extension.create({
 			return true
 		}
 
+		// only table elements hold tables, and a text element left holding nothing but a
+		// table reads as empty and gets deleted on blur. The cells hold the user's own
+		// text though, so they come out as the lines they are rather than going with it
+		const unwrapTables = (slice, view) => {
+			if (hasTableNode(view.state.doc)) return slice
+
+			const nodes = []
+			let unwrapped = false
+
+			slice.content.forEach((node) => {
+				if (node.type.name !== 'table') {
+					nodes.push(node)
+					return
+				}
+
+				unwrapped = true
+				node.descendants((child) => {
+					if (!child.isTextblock) return true
+					nodes.push(child)
+					return false
+				})
+			})
+
+			return unwrapped ? Slice.maxOpen(Fragment.fromArray(nodes)) : slice
+		}
+
 		const pastePlugin = new Plugin({
-			props: { handlePaste: pasteWithInheritedStyles },
+			props: { handlePaste: pasteWithInheritedStyles, transformPasted: unwrapTables },
 		})
 
 		return [pastePlugin]
@@ -110,8 +209,9 @@ const getItemAttributes = (node) => {
 	if (textNode?.marks) {
 		for (const mark of textNode.marks) {
 			if (mark.type.name == 'textStyle') {
-				const styleAttrs = mark.attrs
-				styleAttrs.fontSize = parseInt(styleAttrs.fontSize)
+				// a copy: attrs belong to the live doc, and rewriting 28px to 28 there
+				// leaves it unequal to its own parsed HTML
+				const styleAttrs = { ...mark.attrs, fontSize: parseInt(mark.attrs.fontSize) }
 				Object.assign(attrs, styleAttrs)
 				return attrs
 			}
@@ -155,7 +255,7 @@ const CustomListItem = ListItem.extend({
 	},
 })
 
-const ZWSP = '\u200B'
+export const ZWSP = '\u200B'
 
 const isInList = ($pos) => {
 	// intentional since <li> is not direct parent of text node
@@ -218,17 +318,10 @@ const handleListItemEnterKey = (editor, pos, marks) => {
 }
 
 const addEmptyLineBefore = (state, view, pos, marks) => {
-	const startOfCurrentPos = pos.start()
-	const $before = state.doc.resolve(startOfCurrentPos - 1)
-	const prevNode = $before.nodeBefore
-
-	if (prevNode && !prevNode.isTextblock) return false
-
 	let tr = view.state.tr
-	const prevEnd = startOfCurrentPos - 1
-	// insert ZWSP inside previous node as placeholder so
-	// <br class="ProseMirror-trailingBreak"> is not added
-	tr.insert(prevEnd + 1, state.schema.text(ZWSP, marks))
+	// the split moved the text down, so this lands in the blank line it left behind.
+	// a ZWSP placeholder keeps <br class="ProseMirror-trailingBreak"> out of it
+	tr.insert(pos.start(), state.schema.text(ZWSP, marks))
 	tr = tr.setStoredMarks(marks)
 	view.dispatch(tr)
 	return true
@@ -302,14 +395,26 @@ const getMarksForPlaceholder = (state) => {
 	return marks
 }
 
+const getFirstTextblockAttrs = (doc) => {
+	let attrs = null
+	doc.descendants((node) => {
+		if (!attrs && node.isTextblock) attrs = node.attrs
+		return !attrs
+	})
+	return attrs
+}
+
 const addPlaceholderAndRetainMarks = (event, view, start, end) => {
 	event.preventDefault()
 
 	const state = view.state
 	const marks = getMarksForPlaceholder(state)
+	// a doc-wide replace rebuilds the paragraph bare, dropping alignment and line height
+	const blockAttrs = state.doc.resolve(start).depth ? null : getFirstTextblockAttrs(state.doc)
 
 	let tr = state.tr
 	tr = tr.replaceWith(start, end, state.schema.text(ZWSP, marks))
+	if (blockAttrs) tr = tr.setNodeMarkup(start, undefined, blockAttrs)
 	tr = tr.setStoredMarks(marks)
 	tr = tr.setSelection(TextSelection.create(tr.doc, start + 1))
 	view.dispatch(tr)
@@ -395,19 +500,13 @@ const createListItemWithMarks = (event, view, listType) => {
 	const listItemPara = schema.nodes.paragraph.create($from.parent.attrs, zwsp)
 	const listItem = schema.nodes.listItem.create(null, listItemPara)
 
-	let listNode, selectionPos
-
-	if (listType === 'unordered') {
-		listNode = schema.nodes.bulletList.create(null, listItem)
-		selectionPos = start + listNode.nodeSize - 3
-	} else {
-		listNode = schema.nodes.orderedList.create(null, listItem)
-		selectionPos = start + listNode.nodeSize - 4
-	}
+	const nodeType = listType === 'unordered' ? schema.nodes.bulletList : schema.nodes.orderedList
+	const listNode = nodeType.create(null, listItem)
 
 	const tr = view.state.tr.replaceWith(start - 1, end, listNode)
 
-	const resolvedPos = tr.doc.resolve(selectionPos)
+	// end of the placeholder; off by one and near() walks forward out of the cell
+	const resolvedPos = tr.doc.resolve(start + listNode.nodeSize - 4)
 	tr.setSelection(TextSelection.near(resolvedPos))
 
 	view.dispatch(tr)
@@ -439,7 +538,7 @@ const handleBackspaceInListItem = (event, view, $from) => {
 	const text = getTextForSelection($from)
 
 	const lastCharOnLine = text.length === 1 && text !== ZWSP
-	const isEntireParagraphSelected = from === start && to === end
+	const isEntireParagraphSelected = start !== end && from === start && to === end
 
 	// last real character or full selection - replace with ZWSP placeholder
 	if (lastCharOnLine || isEntireParagraphSelected) {
@@ -461,8 +560,12 @@ const handleKeyDown = (view, event) => {
 
 	if (event.key !== 'Backspace') return false
 
-	const { selection } = view.state
+	const { selection, doc } = view.state
 	const $from = selection.$from
+
+	// the table keymap empties cells instead of swapping the table for a placeholder
+	const spansWholeDoc = selection.from === 0 && selection.to === doc.content.size
+	if (selection instanceof CellSelection || (hasTableNode(doc) && spansWholeDoc)) return false
 
 	if (isInList($from)) return handleBackspaceInListItem(event, view, $from)
 
@@ -471,8 +574,10 @@ const handleKeyDown = (view, event) => {
 
 	const { from, to, start, end } = getSelectionRange(selection)
 
+	// an empty paragraph has start === end, so the equality alone reads as a full
+	// selection and swaps a placeholder in instead of joining backward
 	const lastCharOnLine = text.length === 1 && text !== ZWSP
-	const isEntireParagraphSelected = from === start && to === end
+	const isEntireParagraphSelected = start !== end && from === start && to === end
 	const isFullDocSelected = from === 0 && to === view.state.doc.content.size
 
 	if (lastCharOnLine || isEntireParagraphSelected || isFullDocSelected) {
@@ -539,6 +644,72 @@ const handleTextInput = (view, from, to, text) => {
 	return true
 }
 
+const getNearestTextMarks = ($from) => {
+	let start = 0
+	let end = $from.doc.content.size
+
+	for (let depth = $from.depth; depth > 0; depth--) {
+		// a table cell is isolating, and its own styling context
+		if ($from.node(depth).type.spec.isolating) {
+			start = $from.start(depth)
+			end = $from.end(depth)
+			break
+		}
+	}
+
+	let before = null
+	let after = null
+
+	$from.doc.nodesBetween(start, end, (node, pos) => {
+		if (!node.isText) return
+		if (pos < $from.pos) before = node.marks
+		else after = after || node.marks
+	})
+
+	return before || after || []
+}
+
+// a blank line holds no marks of its own, so the properties panel reads null and
+// the next keystroke lands unstyled - carry the nearest text's styles over
+const inheritMarksOnBlankLine = (state) => {
+	const { selection, storedMarks } = state
+	if (storedMarks || !selection.empty || selection.$from.parent.content.size) return null
+
+	const marks = getNearestTextMarks(selection.$from)
+
+	return marks.length ? state.tr.setStoredMarks(marks) : null
+}
+
+const styleForMarks = (marks) =>
+	marks
+		.map((mark) => mark.type.spec.toDOM?.(mark, true)?.[1]?.style)
+		.filter(Boolean)
+		.join('; ')
+
+// an empty line renders as a bare <br>, so it takes the app's font size and color
+// instead of the text's and the caret shows up tiny, or invisible on a dark slide.
+// this has to paint exactly what patchEmptyParagraphs writes on save, or the line
+// changes height the moment the element is deselected
+const blankLineDecorations = (state) => {
+	const decorations = []
+	let prevStyle = null
+
+	state.doc.descendants((node, pos) => {
+		if (node.type.spec.isolating) return false
+		if (node.type.name !== 'paragraph') return
+
+		if (node.content.size) {
+			prevStyle = styleForMarks(node.firstChild?.marks ?? []) || prevStyle
+		} else if (prevStyle) {
+			decorations.push(Decoration.node(pos, pos + node.nodeSize, { style: prevStyle }))
+		}
+
+		return false
+	})
+
+	return DecorationSet.create(state.doc, decorations)
+}
+
 const styledEmptyLinePlugin = new Plugin({
 	key: new PluginKey('styledEmptyLinePlugin'),
 	props: {
@@ -548,7 +719,9 @@ const styledEmptyLinePlugin = new Plugin({
 		// before typing new text to styled empty line
 		// remove the placeholder ZWSP
 		handleTextInput,
+		decorations: blankLineDecorations,
 	},
+	appendTransaction: (transactions, oldState, newState) => inheritMarksOnBlankLine(newState),
 })
 
 const StyledEmptyLine = Extension.create({
@@ -564,6 +737,90 @@ const StyledEmptyLine = Extension.create({
 
 	addProseMirrorPlugins() {
 		return [styledEmptyLinePlugin]
+	},
+})
+
+const INDENT = '\t'
+
+// nodesBetween reaches a block the selection only touches the edge of, which is
+// one the user never selected any of
+const getSelectedTextblocks = (state) => {
+	const { from, to, empty } = state.selection
+	const blocks = []
+
+	state.doc.nodesBetween(from, to, (node, pos) => {
+		if (!node.isTextblock) return
+
+		const start = pos + 1
+		if (empty || (start < to && start + node.content.size > from)) blocks.push({ node, pos })
+	})
+
+	return blocks
+}
+
+// the indent goes after a blank line's placeholder, which holds its styles
+const readLineStart = (node, pos) => {
+	const heldByPlaceholder = node.textContent.startsWith(ZWSP)
+
+	return {
+		pos: pos + 1 + (heldByPlaceholder ? 1 : 0),
+		text: heldByPlaceholder ? node.textContent.slice(1) : node.textContent,
+	}
+}
+
+const addIndent = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	// a list item nests instead, and the one that cannot nest keeps its place
+	if (isInList(state.selection.$from)) return true
+
+	const { tr, selection, schema } = state
+	const blocks = getSelectedTextblocks(state)
+
+	if (blocks.length < 2) {
+		tr.replaceWith(selection.from, selection.to, schema.text(INDENT, getMarksForPlaceholder(state)))
+	} else {
+		blocks.reverse().forEach(({ node, pos }) => {
+			tr.insert(readLineStart(node, pos).pos, schema.text(INDENT, getFirstMarks(node)))
+		})
+	}
+
+	dispatch(tr)
+	return true
+}
+
+const removeIndent = ({ editor }) => {
+	const { state, dispatch } = editor.view
+	if (isInList(state.selection.$from)) return true
+
+	const { tr } = state
+	let outdented = false
+
+	getSelectedTextblocks(state)
+		.reverse()
+		.forEach(({ node, pos }) => {
+			const line = readLineStart(node, pos)
+			if (!line.text.startsWith(INDENT)) return
+
+			tr.delete(line.pos, line.pos + 1)
+			outdented = true
+		})
+
+	if (outdented) dispatch(tr)
+
+	// swallow the key even when there was nothing to outdent, else focus leaves the element
+	return true
+}
+
+// runs last of the tab bindings, so tables and lists keep theirs
+const LineIndent = Extension.create({
+	name: 'lineIndent',
+	priority: 50,
+
+	addKeyboardShortcuts() {
+		return {
+			Tab: addIndent,
+			'Shift-Tab': removeIndent,
+		}
 	},
 })
 
@@ -588,6 +845,9 @@ export const patchEmptyParagraphs = (htmlString) => {
 	let prevSpanStyles = null
 
 	allParagraphs.forEach((p) => {
+		// each table cell is its own styling context, styles must not carry across cells
+		if (p.closest('td, th')) return
+
 		const isEmpty = p.textContent.trim() === ''
 		const firstSpan = p.querySelector('span')
 
@@ -664,6 +924,156 @@ const LineHeight = Extension.create({
 	},
 })
 
+// any CSS color, not the palette names frappe-ui's cell extensions gate on, so a theme
+// token can be stored through the same attribute later
+const cellAttributes = {
+	backgroundColor: {
+		default: null,
+		parseHTML: (element) => element.style.backgroundColor || null,
+		renderHTML: ({ backgroundColor }) =>
+			backgroundColor ? { style: `background-color: ${backgroundColor}` } : {},
+	},
+}
+
+const withCellAttributes = (extension) =>
+	extension.extend({
+		addAttributes() {
+			return { ...this.parent?.(), ...cellAttributes }
+		},
+		// the static render lays a cell out by the browser's table rules, which
+		// collapse whitespace the editor would otherwise keep
+		parseHTML() {
+			return (this.parent?.() || []).map((rule) => ({ ...rule, preserveWhitespace: false }))
+		},
+	})
+
+const getCellAlign = (doc) => {
+	let align = null
+	doc.descendants((node) => {
+		if (!align && node.type.name === 'paragraph') align = node.attrs.textAlign
+	})
+	return align
+}
+
+// prosemirror builds a new cell bare: no width of its own, which would leave the table
+// unable to state how wide it is, no text for the panel's marks to sit on, and no
+// alignment, which a header cell then reads as the browser's centred default
+export const seedNewCells = ({ tr }) => {
+	const cells = getCells(tr.doc)
+	const width = cells[0]?.node.attrs.colwidth?.[0]
+	const marks = getFirstMarks(tr.doc)
+	const align = getCellAlign(tr.doc)
+
+	cells.reverse().forEach(({ pos, node }) => {
+		if (!node.textContent) tr.insert(pos + 2, tr.doc.type.schema.text(ZWSP, marks))
+		if (width && !node.attrs.colwidth) tr.setNodeAttribute(pos, 'colwidth', [width])
+		if (align && !node.firstChild?.attrs.textAlign) tr.setNodeAttribute(pos + 1, 'textAlign', align)
+	})
+	return true
+}
+
+const getWidthPerColumn = (table) => {
+	const widths = []
+	table.forEach((row) =>
+		row.forEach((cell, _offset, index) => {
+			if (!widths[index] && cell.attrs.colwidth) widths[index] = cell.attrs.colwidth[0]
+		}),
+	)
+	return widths
+}
+
+const hasBareCell = (doc) => {
+	let bare = false
+	doc.descendants((node) => {
+		if (['tableCell', 'tableHeader'].includes(node.type.name) && !node.attrs.colwidth) bare = true
+	})
+	return bare
+}
+
+// a paste grows the table with bare cells, and one width-less column stops the table
+// stating how wide it is, which is what the element frame follows
+const ColumnWidths = Extension.create({
+	name: 'columnWidths',
+
+	addProseMirrorPlugins() {
+		return [
+			new Plugin({
+				appendTransaction: (transactions, oldState, state) => {
+					if (!transactions.some((transaction) => transaction.docChanged)) return null
+					// a table that stated no widths lays itself out inside its frame, and a
+					// drag on one of its columns must not hand that width to all the others
+					if (hasBareCell(oldState.doc)) return null
+
+					const { tr } = state
+					let seeded = false
+
+					state.doc.descendants((table, tablePos) => {
+						if (table.type.name !== 'table') return
+						const widths = getWidthPerColumn(table)
+						const fallback = widths.find(Boolean)
+						if (!fallback) return false
+
+						table.forEach((row, rowOffset) => {
+							row.forEach((cell, cellOffset, index) => {
+								if (cell.attrs.colwidth) return
+
+								tr.setNodeAttribute(
+									tablePos + 2 + rowOffset + cellOffset,
+									'colwidth',
+									Array(cell.attrs.colspan).fill(widths[index] || fallback),
+								)
+								seeded = true
+							})
+						})
+
+						return false
+					})
+
+					return seeded ? tr : null
+				},
+			}),
+		]
+	},
+})
+
+// Tab selects the content of the cell it lands in, and an untouched cell holds only
+// the placeholder: a selection one zero-width character wide shows nothing at all
+const EmptyCellCaret = Extension.create({
+	name: 'emptyCellCaret',
+
+	addProseMirrorPlugins() {
+		return [
+			new Plugin({
+				appendTransaction: (_transactions, _oldState, state) => {
+					const { selection, doc } = state
+					if (selection.empty || !(selection instanceof TextSelection)) return null
+					if (!cellAround(selection.$from)) return null
+					// a range the user drew across lines is theirs, however little text it holds
+					if (!selection.$from.sameParent(selection.$to)) return null
+					if (doc.textBetween(selection.from, selection.to) !== ZWSP) return null
+
+					return state.tr.setSelection(TextSelection.create(doc, selection.to))
+				},
+			}),
+		]
+	},
+})
+
+const ScaledColumnResizing = Extension.create({
+	name: 'scaledColumnResizing',
+
+	// resize drags have to be seen before tableEditing turns them into cell
+	// selections. Array position decides that today only by way of tiptap
+	// reversing the list, which a reorder would silently undo
+	priority: 200,
+
+	addProseMirrorPlugins() {
+		// mirrors what tiptap's own resizable wiring passes, so a column with no
+		// width of its own can shrink as far in the editor as it does once saved
+		return [scaleAwareColumnResizing({ cellMinWidth: 25, defaultCellMinWidth: 25 })]
+	},
+})
+
 export const extensions = [
 	StarterKit.configure({
 		// the app's command history owns undo now
@@ -691,6 +1101,39 @@ export const extensions = [
 		keepMarks: true,
 	}),
 	StyledEmptyLine,
+	LineIndent,
 	LineHeight,
 	Selection.configure({ className: 'persisted-selection' }),
+	// resizing is app-level: prosemirror's column resizing math ignores canvas scale
+	Table.extend({
+		// stock deletes the table once every cell is selected, leaving the element
+		// holding an empty paragraph
+		addKeyboardShortcuts() {
+			return {
+				...this.parent?.(),
+				Backspace: clearSelectedCells,
+				'Mod-Backspace': clearSelectedCells,
+				Delete: clearSelectedCells,
+				'Mod-Delete': clearSelectedCells,
+				// stock adds the row bare, so a row tabbed into existence has none of
+				// what the panel and the context menu seed theirs with
+				Tab: () => {
+					if (this.editor.commands.goToNextCell()) return true
+					if (!this.editor.can().addRowAfter()) return false
+					return this.editor
+						.chain()
+						.addRowAfter()
+						.command(seedNewCells)
+						.goToNextCell()
+						.run()
+				},
+			}
+		},
+	}).configure({ resizable: false, View: null }),
+	TableRow,
+	withCellAttributes(TableCell),
+	withCellAttributes(TableHeader),
+	ScaledColumnResizing,
+	EmptyCellCaret,
+	ColumnWidths,
 ]

@@ -8,12 +8,13 @@ import {
 	getElementPosition,
 	isWithinOverlappingBounds,
 	normalizeZIndices,
-	updatePosition,
 	cropSelectionToFitContent,
 } from './element'
 import { editElementCommand, batchCommand } from './commands'
 import { commandHistory } from './historyMeta'
+import { interactionOffset, commitInteraction, getFollowerCommands } from './interaction'
 import { cloneObj } from '../utils/helpers'
+import { getBoundTargetIds } from '../utils/connectors'
 
 const isHorizontalDirection = (direction) =>
 	['left', 'horizontalCenter', 'right'].includes(direction)
@@ -39,7 +40,12 @@ const alignElementsToEachOther = (direction) => {
 	const start = isHorizontal ? selectionBounds.left : selectionBounds.top
 	const extent = isHorizontal ? selectionBounds.width : selectionBounds.height
 
-	const commands = activeElements.value.map((element) => {
+	// bound connectors sit out and follow their targets
+	const aligned = activeElements.value.filter(
+		(element) => !getBoundTargetIds(element.connector).length,
+	)
+	const moved = {}
+	const commands = aligned.map((element) => {
 		const position = getElementPosition(element.id)
 		const current = isHorizontal ? position.left : position.top
 		const size = isHorizontal ? position.right - position.left : position.bottom - position.top
@@ -49,14 +55,17 @@ const alignElementsToEachOther = (direction) => {
 		else if (['right', 'bottom'].includes(direction)) target = start + extent - size
 		else target = start + (extent - size) / 2
 
+		const newValue = Math.round(element[property] + (target - current))
+		moved[element.id] = { [property]: newValue }
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
 			elementIds: [element.id],
 			property,
 			oldValue: element[property],
-			newValue: Math.round(element[property] + (target - current)),
+			newValue,
 		})
 	})
+	commands.push(...getFollowerCommands(moved))
 
 	commandHistory.execute(
 		batchCommand({
@@ -69,12 +78,26 @@ const alignElementsToEachOther = (direction) => {
 	nextTick(() => cropSelectionToFitContent(activeElementIds.value))
 }
 
+// bounds mix fractional and integer measurements, so exact comparison flickers
+const getAlignedDirections = () => {
+	const positions = getAlignmentPositions()
+
+	return Object.keys(positions).filter((direction) => {
+		const current = isHorizontalDirection(direction) ? selectionBounds.left : selectionBounds.top
+		return Math.abs(positions[direction] - current) < 1
+	})
+}
+
 const alignElement = (direction) => {
 	if (isSelectionLocked.value) return
 	if (activeElementIds.value.length > 1) return alignElementsToEachOther(direction)
+	if (getAlignedDirections().includes(direction)) return
 
-	const axis = isHorizontalDirection(direction) ? 'X' : 'Y'
-	updatePosition(axis, Math.round(getAlignmentPositions()[direction]))
+	const property = isHorizontalDirection(direction) ? 'left' : 'top'
+	const value = Math.round(getAlignmentPositions()[direction])
+	interactionOffset[property] = value - selectionBounds[property]
+	commitInteraction()
+	selectionBounds[property] = value
 }
 
 const moveElement = (elements, elementId, moveToIndex, action) => {
@@ -167,12 +190,10 @@ const getElementsWithUpdatedZIndices = (action) => {
 	return normalizeZIndices(elements)
 }
 
-const getPlacementUpdateCommands = (action) => {
+const getZIndexCommands = (updatedElements) => {
 	const commands = []
 
-	const elementsWithUpdatedZIndices = getElementsWithUpdatedZIndices(action)
-
-	elementsWithUpdatedZIndices.forEach((updatedElement) => {
+	updatedElements.forEach((updatedElement) => {
 		const originalElement = currentSlide.value.elements.find((el) => el.id == updatedElement.id)
 
 		if (originalElement.zIndex == updatedElement.zIndex) return
@@ -191,6 +212,20 @@ const getPlacementUpdateCommands = (action) => {
 	return commands
 }
 
+const getPlacementUpdateCommands = (action) =>
+	getZIndexCommands(getElementsWithUpdatedZIndices(action))
+
+// lifts `elementId` just above the topmost of `aboveIds`, nothing if already higher
+const getRaiseAboveCommands = (elementId, aboveIds) => {
+	const elements = cloneObj(currentSlide.value.elements)
+	const find = (id) => elements.find((el) => el.id == id)
+	const ceiling = Math.max(...aboveIds.map((id) => find(id)?.zIndex || 1))
+	if ((find(elementId).zIndex || 1) > ceiling) return []
+
+	moveElement(elements, elementId, ceiling, 'forward')
+	return getZIndexCommands(normalizeZIndices(elements))
+}
+
 const arrangeElements = (action) => {
 	if (isSelectionLocked.value) return
 
@@ -205,4 +240,10 @@ const arrangeElements = (action) => {
 	)
 }
 
-export { alignElement, arrangeElements, getAlignmentPositions, isHorizontalDirection }
+export {
+	alignElement,
+	arrangeElements,
+	getAlignedDirections,
+	getAlignmentPositions,
+	getRaiseAboveCommands,
+}

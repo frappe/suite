@@ -4,6 +4,7 @@ import {
 	ParticipantConnection,
 	type ParticipantConnectionStartOptions,
 } from "../ParticipantConnection";
+import { SFUMediaManager } from "../SFUMediaManager";
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -64,6 +65,7 @@ function createConnection({ e2eeRequired = false } = {}) {
 		mediaManager: mediaManager as never,
 		recoveryManager: recoveryManager as never,
 	});
+	vi.spyOn(connection.expectedMedia, "waitForHealthy").mockResolvedValue();
 	connection.initialize("meeting-1", { user_id: "me" });
 	return {
 		connection,
@@ -162,8 +164,8 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(participantManager.hasParticipant("alice")).toBe(true);
 	});
 
-	it("reports publication failure without failing startup", async () => {
-		const { connection } = createConnection();
+	it("escalates an exhausted initial publication after degraded startup", async () => {
+		const { connection, sfuClient } = createConnection();
 		const publicationError = new Error("camera failed");
 		const report = vi.fn();
 		connection.eventHandlers.onInitialPublicationError = report;
@@ -174,8 +176,10 @@ describe("ParticipantConnection lifecycle", () => {
 					publishLocalMedia: vi.fn().mockRejectedValue(publicationError),
 				}),
 			),
-		).resolves.toBe("ready");
+		).resolves.toBe("degraded");
 		expect(report).toHaveBeenCalledWith(publicationError);
+		await vi.waitFor(() => expect(connection.state).toBe("ready"));
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
 	});
 
 	it("resolves degraded then retries snapshots only after returning online", async () => {
@@ -242,7 +246,13 @@ describe("ParticipantConnection lifecycle", () => {
 		const { connection, participantManager, sfuClient } = createConnection();
 		const snapshot =
 			deferred<Array<{ participantId: string; user_id: string }>>();
-		sfuClient.getRoomParticipants.mockReturnValueOnce(snapshot.promise);
+		const snapshotResolutionObserved = deferred<void>();
+		sfuClient.getRoomParticipants.mockReturnValueOnce(
+			snapshot.promise.then((participants) => {
+				snapshotResolutionObserved.resolve();
+				return participants;
+			}),
+		);
 		const start = connection.start(startOptions());
 		await vi.waitFor(() =>
 			expect(sfuClient.getRoomParticipants).toHaveBeenCalled(),
@@ -251,12 +261,12 @@ describe("ParticipantConnection lifecycle", () => {
 		await connection.disconnect();
 		await expect(start).rejects.toMatchObject({ name: "AbortError" });
 		snapshot.resolve([{ participantId: "late", user_id: "late" }]);
-		await Promise.resolve();
+		await snapshotResolutionObserved.promise;
 		expect(participantManager.hasParticipant("late")).toBe(false);
 		expect(connection.state).toBe("stopped");
 	});
 
-	it("retries a failed full rebuild with increasing delay", async () => {
+	it("retries a failed fresh rebuild with bounded jitter", async () => {
 		vi.useFakeTimers();
 		const { connection, sfuClient } = createConnection();
 		await connection.joinRoom(
@@ -269,14 +279,14 @@ describe("ParticipantConnection lifecycle", () => {
 
 		const rebuild = connection.rejoinAfterSignalingReconnect();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(connection.state).toBe("degraded");
+		expect(connection.state).toBe("recovering");
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
-		await vi.advanceTimersByTimeAsync(999);
-		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
-		await vi.advanceTimersByTimeAsync(1);
+		await vi.advanceTimersByTimeAsync(1000);
 		await rebuild;
 
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(3);
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(2);
+		expect(sfuClient.connect).toHaveBeenCalledTimes(2);
 		expect(connection.state).toBe("ready");
 	});
 
@@ -291,13 +301,82 @@ describe("ParticipantConnection lifecycle", () => {
 
 		const rebuild = connection.rejoinAfterSignalingReconnect();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(connection.state).toBe("degraded");
+		expect(connection.state).toBe("recovering");
 		await connection.disconnect();
 		await expect(rebuild).rejects.toMatchObject({ name: "AbortError" });
 		await vi.advanceTimersByTimeAsync(60000);
 
 		expect(sfuClient.joinRoom).toHaveBeenCalledTimes(2);
 		expect(connection.state).toBe("stopped");
+	});
+
+	it("disconnects a fresh reconnect that completes after cleanup", async () => {
+		const { connection, sfuClient } = createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		const reconnect = deferred<void>();
+		sfuClient.connect.mockReturnValueOnce(reconnect.promise);
+
+		const rebuild = connection.rejoinAfterSignalingReconnect();
+		await vi.waitFor(() => expect(sfuClient.connect).toHaveBeenCalledOnce());
+		await connection.disconnect();
+		reconnect.resolve();
+
+		await expect(rebuild).rejects.toMatchObject({ name: "AbortError" });
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(3);
+		expect(connection.isConnected).toBe(false);
+		expect(connection.state).toBe("stopped");
+	});
+
+	it("waits for a hidden tab to become visible before verifying recovery", async () => {
+		let hidden = true;
+		vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+		const { connection } = createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+
+		const recovery = connection.rejoinAfterSignalingReconnect();
+		await vi.waitFor(() => expect(connection.state).toBe("recovering"));
+		expect(connection.expectedMedia.waitForHealthy).not.toHaveBeenCalled();
+
+		hidden = false;
+		document.dispatchEvent(new Event("visibilitychange"));
+		await recovery;
+
+		expect(connection.expectedMedia.waitForHealthy).toHaveBeenCalledOnce();
+		expect(connection.state).toBe("ready");
+	});
+
+	it("enters terminal failure after three fresh rebuild attempts", async () => {
+		vi.spyOn(Math, "random").mockReturnValue(0);
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		await connection.joinRoom(
+			{ name: "Me", userId: "me" },
+			{ audio_enabled: true, video_enabled: true },
+		);
+		const exhausted = vi.fn();
+		connection.eventHandlers.onRecoveryExhausted = exhausted;
+		sfuClient.joinRoom.mockRejectedValue(new Error("rebuild failed"));
+		const trigger = {
+			scope: "publication" as const,
+			direction: "send" as const,
+			reason: "retry_limit",
+		};
+
+		await expect(connection.escalateRecovery(trigger)).resolves.toBe(false);
+
+		expect(sfuClient.disconnect).toHaveBeenCalledTimes(4);
+		expect(sfuClient.connect).toHaveBeenCalledTimes(3);
+		expect(mediaManager.cleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(connection.isConnected).toBe(false);
+		expect(connection.state).toBe("failed");
+		expect(exhausted).toHaveBeenCalledWith(trigger);
 	});
 
 	it("serializes concurrent lifecycle starts", async () => {
@@ -332,5 +411,100 @@ describe("ParticipantConnection lifecycle", () => {
 		await expect(queued).rejects.toMatchObject({ name: "AbortError" });
 		expect(sfuClient.connect).toHaveBeenCalledOnce();
 		expect(connection.state).toBe("stopped");
+	});
+
+	it("waits for media cleanup before disconnecting transports and signaling", async () => {
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		const mediaCleanup = deferred<void>();
+		const mediaCleanupEntered = deferred<void>();
+		mediaManager.cleanup.mockImplementation(() => {
+			mediaCleanupEntered.resolve();
+			return mediaCleanup.promise;
+		});
+
+		const disconnect = connection.disconnect();
+		await mediaCleanupEntered.promise;
+
+		expect(mediaManager.cleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).not.toHaveBeenCalled();
+		expect(sfuClient.disconnect).not.toHaveBeenCalled();
+
+		mediaCleanup.resolve();
+		await disconnect;
+
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		expect(mediaManager.cleanup.mock.invocationCallOrder[0]).toBeLessThan(
+			transportManager.cleanup.mock.invocationCallOrder[0],
+		);
+	});
+
+	it("disconnects transports and signaling when media cleanup rejects", async () => {
+		const { connection, mediaManager, sfuClient, transportManager } =
+			createConnection();
+		const cleanupError = new Error("media cleanup failed");
+		mediaManager.cleanup.mockRejectedValue(cleanupError);
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		await expect(connection.disconnect()).resolves.toBeUndefined();
+
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		expect(consoleError).toHaveBeenCalledWith(
+			"Error disconnecting from SFU:",
+			cleanupError,
+		);
+		expect(connection.state).toBe("stopped");
+	});
+
+	it("disconnects transports while a cancelled consumer request is still pending", async () => {
+		const { connection, sfuClient, transportManager } = createConnection();
+		const consumerRequest = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const createConsumer = vi.fn(() => consumerRequest.promise);
+		Object.assign(transportManager, { createConsumer });
+		const addConsumer = vi.fn();
+		const mediaManager = new SFUMediaManager(
+			{
+				transportManager: transportManager as never,
+				videoManager: {} as never,
+				consumerManager: {
+					addConsumer,
+					getConsumersByParticipant: vi.fn(() => []),
+				} as never,
+				participantManager: {} as never,
+			},
+			() => "me",
+		);
+		Reflect.set(connection, "mediaManager", mediaManager);
+		const handlerCleanup = vi.spyOn(mediaManager.mediaHandler, "cleanup");
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const observedSubscription = subscription.catch((error: unknown) => error);
+		await vi.waitFor(() => expect(createConsumer).toHaveBeenCalledOnce());
+
+		await connection.disconnect();
+
+		expect(handlerCleanup).toHaveBeenCalledOnce();
+		expect(transportManager.cleanup).toHaveBeenCalledOnce();
+		expect(sfuClient.disconnect).toHaveBeenCalledOnce();
+		consumerRequest.resolve({
+			id: "late-consumer",
+			producerId: "producer-1",
+			kind: "video",
+			close: vi.fn(),
+		});
+		await expect(observedSubscription).resolves.toMatchObject({
+			message: "Consumer subscription was cancelled",
+		});
+		expect(addConsumer).not.toHaveBeenCalled();
 	});
 });

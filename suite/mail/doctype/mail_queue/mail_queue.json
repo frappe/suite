@@ -79,14 +79,14 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Delivery lifecycle status, set by the system: Pending/Queued are awaiting processing, Drafted is stored on the server, Submitted is handed over for delivery, Scheduled is held for later delivery, Cancelled had its scheduled delivery cancelled, and the Failed states are eligible for retry.",
+   "description": "Delivery lifecycle status, set by the system: Pending/Queued are awaiting processing, Drafted is stored on the server, Submitted is handed over for delivery (the server may still hold it until Send At; Cancelled At records a cancelled hold), and the Failed states are eligible for retry.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
    "no_copy": 1,
-   "options": "\nPending\nQueued\nFailed\nDrafted\nFailed to Draft\nSubmitted\nFailed to Submit\nScheduled\nCancelled",
+   "options": "\nPending\nQueued\nFailed\nDrafted\nFailed to Draft\nSubmitted\nFailed to Submit",
    "read_only": 1,
    "search_index": 1
   },
@@ -372,8 +372,8 @@
    "read_only": 1
   },
   {
-   "depends_on": "eval: doc.status == 'Cancelled'",
-   "description": "When the scheduled delivery was cancelled.",
+   "depends_on": "eval: doc.cancelled_at",
+   "description": "When the held (scheduled or undo-send) delivery was cancelled \u2014 the submission itself is the source of truth.",
    "fieldname": "cancelled_at",
    "fieldtype": "Datetime",
    "label": "Cancelled At",
@@ -590,7 +590,7 @@
    "search_index": 1
   },
   {
-   "description": "JMAP EmailSubmission id of the latest submission. While Scheduled, it is used to reconcile, reschedule, or cancel the held delivery.",
+   "description": "JMAP EmailSubmission id of the latest submission \u2014 the source of truth for a held (scheduled) delivery's state.",
    "fieldname": "submission_id",
    "fieldtype": "Data",
    "in_standard_filter": 1,

@@ -26,7 +26,7 @@
 					<div class="flex flex-col gap-3">
 						<!-- Presentation Card -->
 						<div
-							class="aspect-[16/9] cursor-pointer overflow-hidden rounded-lg shadow-sm dark:border"
+							class="aspect-[16/9] cursor-pointer overflow-hidden rounded-md border border-outline-gray-1 shadow-sm"
 							@click="$emit('navigate', presentation.name)"
 						>
 							<div
@@ -44,8 +44,8 @@
 
 						<!-- Presentation Title -->
 						<div class="flex items-start justify-between">
-							<div class="flex min-w-0 flex-col gap-0.5 me-2">
-								<div class="cursor-default truncate text-base-medium text-ink-gray-7">
+							<div class="me-2 flex min-w-0 flex-col gap-0.5">
+								<div class="cursor-default truncate text-base text-ink-gray-7">
 									{{ presentation.title }}
 								</div>
 								<div class="cursor-default truncate text-sm text-ink-gray-5">
@@ -53,14 +53,10 @@
 								</div>
 							</div>
 							<Dropdown
-								v-if="presentation"
 								:options="getContextMenuOptions(presentation)"
+								:button="{ icon: 'lucide-ellipsis', variant: 'ghost' }"
 								placement="right"
-							>
-								<template #default>
-									<LucideEllipsis class="size-3.5 cursor-pointer text-ink-gray-5" />
-								</template>
-							</Dropdown>
+							/>
 						</div>
 					</div>
 				</div>

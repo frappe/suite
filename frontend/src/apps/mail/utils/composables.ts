@@ -164,7 +164,14 @@ export const useMobileSelection = () => {
 	return { isMobileSelectionActive, setMobileSelectionActive }
 }
 
-export const useTextEditorButtons = () => {
+/**
+ * `dropAlignment` is the mail composer, which does without the alignment group: it was the widest
+ * thing in a toolbar that has to fit a narrow docked panel, alignment in an email body is rare,
+ * and mobile had already dropped it — so the composer's toolbar no longer changes shape with the
+ * window it is in. The signature and vacation editors keep it, where centring a logo or a footer
+ * is the point. A getter, so a caller can make it conditional.
+ */
+export const useTextEditorButtons = (dropAlignment: () => boolean = () => false) => {
 	const { isMobile } = useScreenSize()
 
 	const alignButtons = ['Separator', 'Align Left', 'Align Center', 'Align Right']
@@ -176,7 +183,7 @@ export const useTextEditorButtons = () => {
 		'Bold',
 		'Italic',
 		'FontColor',
-		...(isMobile.value ? [] : alignButtons),
+		...(isMobile.value || dropAlignment() ? [] : alignButtons),
 		'Separator',
 		'Bullet List',
 		'Numbered List',
@@ -338,6 +345,18 @@ export const useComposeMail = () => ({
 	composeRequest,
 	requestCompose: (details: ComposeMailData) => (composeRequest.value = details),
 	clearComposeRequest: () => (composeRequest.value = undefined),
+})
+
+// That composer outlives the route it was started on, which is the point of it — a draft begun in
+// the inbox is still there in the screener. It also means the list it affects is no longer an
+// ancestor it can hand an event to: a mail sent or a draft saved is announced here instead, and
+// whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
+// Inboxes refreshes in place, the screener reloads its senders.
+const listReloadRequest = ref(0)
+
+export const useListReload = () => ({
+	listReloadRequest,
+	requestListReload: () => listReloadRequest.value++,
 })
 
 // Shared state for the "Block sender?" prompt shown after marking/moving mail to Junk. A single
@@ -559,6 +578,11 @@ mediaQuery.addEventListener('change', () => (systemIsDark.value = mediaQuery.mat
 
 const COLOR_SCHEME_CYCLE = ['System Default', 'Light Mode', 'Dark Mode'] as const
 
+// The write behind the theme toggle, in flight and waiting. Module-level, so every
+// useTheme() shares the one queue — the setting is one row, whoever writes it.
+let writingColorScheme = false
+let queuedColorScheme: COLOR_SCHEME | null = null
+
 export const useTheme = () => {
 	const { userResource } = userStore()
 
@@ -575,11 +599,36 @@ export const useTheme = () => {
 			name: userResource.data?.user_settings,
 			fieldname: { color_scheme },
 		}),
-		onSuccess: () => {
-			// Reconcile the optimistic value against server truth (sets the same value; harmless).
-			userResource.reload()
-		},
 	})
+
+	// The theme flips before the server answers, so the shortcut can be pressed faster than
+	// the round-trip: two set_value calls in flight against the same User Settings row have
+	// both read the same `modified` timestamp, and the server rejects the second as stale —
+	// a failure toast for a toggle that was working. So one write at a time, and only ever
+	// the newest scheme: the schemes a fast cycle passes through are on their way somewhere
+	// else, and none of them is worth a round-trip of its own.
+	const persistColorScheme = async (scheme: COLOR_SCHEME) => {
+		queuedColorScheme = scheme
+		if (writingColorScheme) return
+
+		writingColorScheme = true
+		try {
+			while (queuedColorScheme) {
+				const next = queuedColorScheme
+				queuedColorScheme = null
+				await updateColorScheme.submit(next)
+			}
+		} catch {
+			// The optimistic value now describes a write that did not land, and unwinding to
+			// the scheme before it would land on one the user may have already cycled past.
+			// Take the server's word for where the cycle actually stands.
+			queuedColorScheme = null
+			userResource.reload()
+			raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
+		} finally {
+			writingColorScheme = false
+		}
+	}
 
 	// Cycle System Default → Light → Dark. Bound to Cmd/Ctrl+Shift+L app-wide (see App.vue).
 	const cycleTheme = () => {
@@ -588,16 +637,10 @@ export const useTheme = () => {
 		const next = COLOR_SCHEME_CYCLE[(idx + 1) % COLOR_SCHEME_CYCLE.length]
 
 		// Optimistic: flip the theme and confirm at once, before the server round-trip resolves.
-		const prev = current
 		if (userResource.data) userResource.data.color_scheme = next
 		raiseToast(__('Color scheme updated to {0}.', [next]))
 
-		updateColorScheme.submit(next, {
-			onError: () => {
-				if (userResource.data) userResource.data.color_scheme = prev
-				raiseToast(__('Failed to update color scheme. Please try again later.'), 'error')
-			},
-		})
+		persistColorScheme(next)
 	}
 
 	return { dataTheme, cycleTheme }

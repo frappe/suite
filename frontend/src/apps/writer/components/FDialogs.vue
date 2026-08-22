@@ -4,9 +4,7 @@
       v-for="dialog in dialogs"
       :key="dialog.key"
       v-model:open="dialog.modelValue"
-      :title="dialog.options.title"
-      :size="dialog.options.size"
-      :actions="dialog.options.actions"
+      :options="dialog.options"
       @close="dialog.remove"
     >
       <component v-if="dialog.options.component" :is="dialog.options.component" />

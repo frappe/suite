@@ -25,11 +25,29 @@ import {
 	SFURecoveryManager,
 	type RecoveryResult,
 } from "./sfu/SFURecoveryManager";
+import { ExpectedMediaReconciler } from "./sfu/ExpectedMediaReconciler";
+import { getClientTelemetry } from "./telemetry/ClientTelemetry";
+
+const isAbortError = (error: unknown) =>
+	(error as { name?: unknown } | null)?.name === "AbortError";
+
+function throwIfAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) {
+		throw (
+			signal.reason ?? new DOMException("E2EE lifecycle ended", "AbortError")
+		);
+	}
+}
 
 interface SFUMeetingManagerOptions {
 	meetingId: string;
 	currentUser: User | null;
 	eventHandlers?: SFUEventHandlers;
+}
+
+export interface E2EEPublicationResult {
+	videoPublished: boolean;
+	audioPublished: boolean;
 }
 
 export class SFUMeetingManager {
@@ -43,6 +61,7 @@ export class SFUMeetingManager {
 	private connectionManager: ParticipantConnection;
 	mediaManager: SFUMediaManager;
 	private recoveryManager: SFURecoveryManager;
+	private consumerPreferenceGenerations = new Map<string, number>();
 
 	constructor(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
@@ -72,6 +91,20 @@ export class SFUMeetingManager {
 					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
 					this.connectionManager?.reportRecoveryState("failed", _reason);
+					void this.connectionManager
+						.escalateRecovery({
+							scope: "transport",
+							direction:
+								result.send === "failed" && result.recv === "failed"
+									? "both"
+									: result.send === "failed"
+										? "send"
+										: "recv",
+							reason: "rebuild_failed",
+						})
+						.catch((recoveryError) =>
+							console.warn("Transport recovery escalation failed:", recoveryError),
+						);
 					throw error;
 				}
 			},
@@ -94,6 +127,19 @@ export class SFUMeetingManager {
 			transportManager: this.transportManager,
 			mediaManager: this.mediaManager,
 			recoveryManager: this.recoveryManager,
+			expectedMedia: new ExpectedMediaReconciler((event) => {
+				getClientTelemetry(sfuClient).reportMediaRepair(event);
+				if (event.outcome !== "exhausted") return;
+				void this.connectionManager
+					?.escalateRecovery({
+						scope: event.source === "remote" ? "subscription" : "publication",
+						direction: event.source === "remote" ? "recv" : "send",
+						reason: "retry_limit",
+					})
+					.catch((error) =>
+						console.warn("Expected media recovery escalation failed:", error),
+					);
+			}),
 		});
 	}
 
@@ -111,6 +157,30 @@ export class SFUMeetingManager {
 		return this.connectionManager.start(options);
 	}
 
+	reconcileExpectedMedia(): Promise<void> {
+		return this.connectionManager.reconcileExpectedMedia();
+	}
+
+	/** Restarts playback, then reconciles expected media after browser resume. */
+	async recoverBrowserLifecycle(): Promise<void> {
+		await this.videoManager.retryPlayback();
+		await this.reconcileExpectedMedia();
+	}
+
+	observeRemoteMediaProgress(
+		producerId: string,
+		media: "audio" | "video",
+		flowing: boolean,
+		decoding: boolean,
+	): void {
+		this.connectionManager.observeRemoteMediaProgress(
+			producerId,
+			media,
+			flowing,
+			decoding,
+		);
+	}
+
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
@@ -118,74 +188,199 @@ export class SFUMeetingManager {
 		return this.mediaManager.publishMedia(localStream, options);
 	}
 
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+		finalize?: (publication: PublishedMedia) => void | Promise<void>,
+	): Promise<PublishedMedia> {
+		return this.mediaManager.publishInitialMedia(
+			localStream,
+			options,
+			signal,
+			finalize,
+		);
+	}
+
+	setLocalMediaTrack(
+		kind: "audio" | "video",
+		track: MediaStreamTrack | null,
+	): void {
+		this.mediaManager.setLocalTrack(kind, track);
+	}
+
+	serializeSendMediaMutation<T>(operation: () => Promise<T>): Promise<T> {
+		return this.mediaManager.serializeSendMediaMutation(operation);
+	}
+
 	async reconfigureForE2EE(
 		videoStream: MediaStream | null = null,
 		audioStream: MediaStream | null = null,
-	): Promise<void> {
+		signal?: AbortSignal,
+	): Promise<E2EEPublicationResult> {
+		return this.mediaManager.serializeSendMediaMutation(() => {
+			throwIfAborted(signal);
+			return this.reconfigureForE2EENow(videoStream, audioStream, signal);
+		});
+	}
+
+	private async reconfigureForE2EENow(
+		videoStream: MediaStream | null,
+		audioStream: MediaStream | null,
+		signal?: AbortSignal,
+	): Promise<E2EEPublicationResult> {
+		throwIfAborted(signal);
 		console.log("Reconfiguring media for E2EE");
 		this.connectionManager.initialSyncInProgress = true;
+		const publicationResult: E2EEPublicationResult = {
+			videoPublished: false,
+			audioPublished: false,
+		};
 
 		try {
 			const mediaHandler = this.mediaManager.mediaHandler;
+			const closeUnusableProducer = (
+				producer: NonNullable<typeof mediaHandler.videoProducer>,
+			) => {
+				producer.close();
+				if (producer.id && this.sfuClient.isConnected()) {
+					void this.sfuClient.closeProducer?.(producer.id).catch(() => {});
+				}
+			};
 			const hadVideo = !!mediaHandler.videoProducer;
 			const hadAudio = !!mediaHandler.audioProducer;
+			const videoTrack = hadVideo
+				? (videoStream
+						?.getVideoTracks()
+						.find((track) => track.readyState === "live") ?? null)
+				: null;
+			const audioTrack = hadAudio
+				? (audioStream
+						?.getAudioTracks()
+						.find((track) => track.readyState === "live") ?? null)
+				: null;
 
 			await this.mediaManager.cancelPendingSubscriptions();
+			throwIfAborted(signal);
 			mediaHandler.cleanup();
+			this.mediaManager.setLocalTrack("video", videoTrack);
+			this.mediaManager.setLocalTrack("audio", audioTrack);
 			this.consumerManager.clear();
 			this.mediaManager.processedConsumers.clear();
 			this.connectionManager.clearBufferedReconciliationEvents();
 			this.transportManager.cleanup();
 
 			await this.transportManager.initializeDevice();
+			throwIfAborted(signal);
 			await this.transportManager.createReceiveTransport();
+			throwIfAborted(signal);
 
 			if (hadVideo || hadAudio) {
 				await this.transportManager.createSendTransport();
+				throwIfAborted(signal);
 
-				if (hadVideo && videoStream) {
-					const videoTrack = videoStream.getVideoTracks()[0];
-					if (videoTrack) {
-						try {
+				if (videoTrack) {
+					try {
+						if (videoTrack.readyState !== "live") {
+							this.mediaManager.setLocalTrack("video", null);
+						} else {
 							const videoProducer = await this.transportManager.createProducer(
 								videoTrack,
-								{ type: "camera" },
+								{
+									type: "camera",
+								},
 							);
-							mediaHandler.setProducers({ videoProducer });
-						} catch (error) {
-							console.warn(
-								"Failed to re-publish video after E2EE conversion:",
-								error,
-							);
+							if (signal?.aborted) {
+								closeUnusableProducer(videoProducer);
+								throwIfAborted(signal);
+							}
+							if (
+								videoTrack.readyState !== "live" ||
+								videoProducer.track?.readyState === "ended"
+							) {
+								closeUnusableProducer(videoProducer);
+								this.mediaManager.setLocalTrack("video", null);
+							} else {
+								mediaHandler.setProducers({ videoProducer });
+								publicationResult.videoPublished = true;
+							}
 						}
+					} catch (error) {
+						if (isAbortError(error)) throw error;
+						console.warn(
+							"Failed to re-publish video after E2EE conversion:",
+							error,
+						);
 					}
 				}
 
-				if (hadAudio && audioStream) {
-					const audioTrack = audioStream.getAudioTracks()[0];
-					if (audioTrack) {
-						try {
+				if (audioTrack) {
+					try {
+						if (audioTrack.readyState !== "live") {
+							this.mediaManager.setLocalTrack("audio", null);
+						} else {
 							const audioProducer = await this.transportManager.createProducer(
 								audioTrack,
-								{ type: "microphone" },
+								{
+									type: "microphone",
+								},
 							);
-							if (audioProducer) {
-								mediaHandler.setProducers({ audioProducer });
+							if (signal?.aborted) {
+								closeUnusableProducer(audioProducer);
+								throwIfAborted(signal);
 							}
-						} catch (error) {
-							console.warn(
-								"Failed to re-publish audio after E2EE conversion:",
-								error,
-							);
+							if (
+								audioTrack.readyState !== "live" ||
+								audioProducer.track?.readyState === "ended"
+							) {
+								closeUnusableProducer(audioProducer);
+								this.mediaManager.setLocalTrack("audio", null);
+							} else {
+								mediaHandler.setProducers({ audioProducer });
+								publicationResult.audioPublished = true;
+							}
 						}
+					} catch (error) {
+						if (isAbortError(error)) throw error;
+						console.warn(
+							"Failed to re-publish audio after E2EE conversion:",
+							error,
+						);
 					}
 				}
 			}
-
 			await this.connectionManager.setupExistingParticipants();
+			throwIfAborted(signal);
+			if (
+				publicationResult.videoPublished &&
+				(videoTrack?.readyState !== "live" ||
+					mediaHandler.videoProducer?.track?.readyState === "ended")
+			) {
+				if (mediaHandler.videoProducer) {
+					closeUnusableProducer(mediaHandler.videoProducer);
+				}
+				mediaHandler.setProducers({ videoProducer: null });
+				this.mediaManager.setLocalTrack("video", null);
+				publicationResult.videoPublished = false;
+			}
+			if (
+				publicationResult.audioPublished &&
+				(audioTrack?.readyState !== "live" ||
+					mediaHandler.audioProducer?.track?.readyState === "ended")
+			) {
+				if (mediaHandler.audioProducer) {
+					closeUnusableProducer(mediaHandler.audioProducer);
+				}
+				mediaHandler.setProducers({ audioProducer: null });
+				this.mediaManager.setLocalTrack("audio", null);
+				publicationResult.audioPublished = false;
+			}
 			console.log("E2EE reconfiguration completed");
+			return publicationResult;
 		} catch (error) {
-			console.error("E2EE reconfiguration failed:", error);
+			if (!(signal?.aborted && isAbortError(error))) {
+				console.error("E2EE reconfiguration failed:", error);
+			}
 			throw error;
 		} finally {
 			this.connectionManager.initialSyncInProgress = false;
@@ -236,24 +431,45 @@ export class SFUMeetingManager {
 			height: number;
 		},
 	): Promise<unknown | null> {
+		const generation =
+			(this.consumerPreferenceGenerations.get(consumerId) ?? 0) + 1;
+		this.consumerPreferenceGenerations.set(consumerId, generation);
+		if (!preferences.visible) {
+			this.consumerManager.updateConsumer(consumerId, {
+				adaptivelyPaused: true,
+			});
+		}
 		if (!this.sfuClient?.isConnected()) {
-			return null;
+			throw new Error("Cannot update consumer preferences while disconnected");
 		}
 
 		try {
-			return await this.sfuClient.updateConsumerPreferences({
+			const result = await this.sfuClient.updateConsumerPreferences({
 				consumerId,
 				visible: preferences.visible,
 				width: preferences.width,
 				height: preferences.height,
 			});
+			if (
+				preferences.visible &&
+				this.consumerPreferenceGenerations.get(consumerId) === generation
+			) {
+				this.consumerManager.updateConsumer(consumerId, {
+					adaptivelyPaused: false,
+				});
+			}
+			return result;
 		} catch (error) {
 			console.warn(
 				"Failed to update consumer preferences",
 				consumerId,
 				(error as Error)?.message || error,
 			);
-			return null;
+			throw error;
+		} finally {
+			if (this.consumerPreferenceGenerations.get(consumerId) === generation) {
+				this.consumerPreferenceGenerations.delete(consumerId);
+			}
 		}
 	}
 
@@ -301,5 +517,4 @@ export class SFUMeetingManager {
 	get currentUser(): { value: unknown } {
 		return this.connectionManager.currentUser;
 	}
-
 }

@@ -1,5 +1,5 @@
 <template>
-	<div class="flex flex-col gap-3 py-3" :class="{ 'cursor-not-allowed': sectionInert }">
+	<div class="flex flex-col gap-4 py-4" :class="{ 'cursor-not-allowed': sectionInert }">
 		<div class="flex cursor-pointer items-center justify-between" @click="toggleContent">
 			<span :class="labelClasses">{{ label }}</span>
 			<lucide-chevron-down
@@ -10,7 +10,7 @@
 
 		<div
 			v-if="showContent"
-			class="flex flex-col gap-2"
+			class="flex flex-col gap-3"
 			:inert="sectionInert"
 			:class="{ '[&_*]:text-ink-gray-5': sectionInert }"
 		>

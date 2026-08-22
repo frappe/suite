@@ -171,8 +171,14 @@ function createMockServer(): MockServer {
 }
 
 function createMockMediasoupManager(): MediasoupManager {
+	let producerClosedListener:
+		| Parameters<MediasoupManager['onProducerClosed']>[0]
+		| undefined;
 	return {
 		onNetworkQualityUpdate: vi.fn().mockReturnValue(() => {}),
+		onProducerClosed: vi.fn((listener) => {
+			producerClosedListener = listener;
+		}),
 		createRoom: vi.fn().mockResolvedValue({
 			peers: new Map(),
 			activeSpeakerObserver: null,
@@ -181,6 +187,7 @@ function createMockMediasoupManager(): MediasoupManager {
 		addPeer: vi.fn(),
 		removePeer: vi.fn().mockResolvedValue(undefined),
 		peerExistsInRoom: vi.fn().mockReturnValue(true),
+		participantExistsInRoom: vi.fn().mockReturnValue(true),
 		createWebRtcTransport: vi.fn().mockResolvedValue({
 			id: 'transport-1',
 			iceParameters: {},
@@ -191,6 +198,19 @@ function createMockMediasoupManager(): MediasoupManager {
 		connectWebRtcTransport: vi.fn().mockResolvedValue(undefined),
 		restartWebRtcTransportIce: vi.fn().mockResolvedValue({}),
 		assertProducerAccess: vi.fn(),
+		closeProducer: vi.fn((producerId, metadata = {}) => {
+			const result = { isScreen: false, removedConsumers: [] };
+			producerClosedListener?.({
+				roomId: 'room-1',
+				peerId: 'peer-1',
+				participantId: 'user-1',
+				producerId,
+				kind: 'video',
+				...result,
+				...metadata,
+			});
+			return result;
+		}),
 		assertConsumerAccess: vi.fn(),
 		closeConsumer: vi.fn().mockResolvedValue(undefined),
 		requestConsumerKeyFrame: vi.fn().mockResolvedValue(true),
@@ -199,6 +219,18 @@ function createMockMediasoupManager(): MediasoupManager {
 			id: 'producer-1',
 			kind: 'video',
 			appData: { type: 'screen' },
+		}),
+		getProducer: vi.fn().mockReturnValue({
+			id: 'producer-1',
+			kind: 'video',
+			appData: { type: 'camera' },
+		}),
+		createConsumer: vi.fn().mockResolvedValue({
+			id: 'consumer-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			rtpParameters: {},
+			paused: false,
 		}),
 		applyMediaControl: vi.fn(),
 	} as unknown as MediasoupManager;

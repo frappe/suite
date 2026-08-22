@@ -48,60 +48,57 @@
 			@change-start="borderRadius.begin"
 			@change-end="borderRadius.commit"
 		/>
-		<PropertyRow v-if="activeElement.shapeType == 'line'" label="Arrows">
-			<Select
-				:modelValue="arrowDirection"
-				variant="ghost"
-				:options="arrowOptions"
-				class="-me-1"
-				@update:modelValue="setArrowDirection"
-			>
-				<template #trigger="{ selectedOption }">
-					<span :class="valueClasses">{{ selectedOption?.label }}</span>
-					<span :class="chevronClasses" />
-				</template>
-			</Select>
-		</PropertyRow>
+		<template v-if="activeElement.shapeType == 'line'">
+			<PropertyRow v-if="activeElement.connector" label="Line Type">
+				<TabButtons
+					:modelValue="activeElement.connector.route"
+					:options="lineTypes"
+					@update:modelValue="setLineType"
+				/>
+			</PropertyRow>
+			<PropertyRow label="Line Start">
+				<ArrowheadSelect
+					:modelValue="normalizeMarker(activeElement.markerStart) ?? 'none'"
+					mirrored
+					@update:modelValue="(value) => setMarker('markerStart', value)"
+				/>
+			</PropertyRow>
+			<PropertyRow label="Line End">
+				<ArrowheadSelect
+					:modelValue="normalizeMarker(activeElement.markerEnd) ?? 'none'"
+					@update:modelValue="(value) => setMarker('markerEnd', value)"
+				/>
+			</PropertyRow>
+		</template>
 	</Section>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-
-import { Select } from 'frappe-ui'
+import { TabButtons } from 'frappe-ui'
 
 import ColorPicker from '@/apps/slides/components/controls/ColorPicker.vue'
 import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
 import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 import LineStyleSelect from '@/apps/slides/components/controls/LineStyleSelect.vue'
-import { chevronClasses, MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
+import ArrowheadSelect from '@/apps/slides/components/controls/ArrowheadSelect.vue'
+import LineStraight from '@/apps/slides/icons/LineStraight.vue'
+import LineElbow from '@/apps/slides/icons/LineElbow.vue'
+import { MAX_BORDER_RADIUS } from '@/apps/slides/utils/constants'
+import { normalizeMarker } from '@/apps/slides/utils/lineMarkers'
+import { routeConnector } from '@/apps/slides/utils/connectors'
 
-import { activeElement } from '@/apps/slides/stores/element'
+import { activeElement, rememberMarkers } from '@/apps/slides/stores/element'
+import { currentSlide } from '@/apps/slides/stores/slide'
+import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
+import { getTargetBox } from '@/apps/slides/stores/interaction'
 import {
+	setElementProperties,
 	setElementProperty,
 	useElementProperty,
 } from '@/apps/slides/composables/editProperty'
-
-const arrowOptions = [
-	{ label: 'None', value: 'none' },
-	{ label: 'Left', value: 'left' },
-	{ label: 'Right', value: 'right' },
-	{ label: 'Both', value: 'both' },
-]
-
-const arrowDirection = computed(() => {
-	const el = activeElement.value
-	if (el.markerStart && el.markerEnd) return 'both'
-	if (el.markerStart) return 'left'
-	if (el.markerEnd) return 'right'
-	return 'none'
-})
-
-const setArrowDirection = (value) => {
-	setElementProperty('markerStart', value === 'left' || value === 'both')
-	setElementProperty('markerEnd', value === 'right' || value === 'both')
-}
 
 const strokeStyleOptions = [
 	{ label: 'Solid', value: 'solid' },
@@ -113,12 +110,81 @@ const displayStrokeStyle = computed(() => activeElement.value.strokeStyle || 'so
 
 const setStrokeStyle = (value) => setElementProperty('strokeStyle', value)
 
+const lineTypes = [
+	{ value: 'straight', tooltip: 'Straight', icon: LineStraight },
+	{ value: 'elbow', tooltip: 'Elbow', icon: LineElbow },
+]
+
+// bound ends re-route for the new type, free ends stay put
+const setLineType = (route) => {
+	const line = activeElement.value
+	const connector = { ...line.connector, route }
+	const boxFor = (end) => end && getTargetBox(end.elementId)
+	const geometry = routeConnector(
+		{ ...line, connector },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+	setElementProperties([
+		{ property: 'connector', oldValue: line.connector, newValue: connector },
+		...['left', 'top', 'width', 'height', 'rotation', 'points'].map((property) => ({
+			property,
+			oldValue: line[property],
+			newValue: geometry[property],
+		})),
+	])
+}
+
+const setMarker = (property, value) => {
+	setElementProperty(property, value)
+	rememberMarkers(activeElement.value)
+}
+
 const strokeMin = computed(() => (activeElement.value.shapeType === 'line' ? 0.5 : 0))
 
 const borderRadius = useElementProperty('borderRadius')
-const strokeWidth = useElementProperty('strokeWidth')
+const shapeStrokeWidth = useElementProperty('strokeWidth')
+
+// the top shifts with the stroke so the visible line stays put
+let lineStart = null
+const lineStrokeWidth = {
+	begin: () => {
+		const { strokeWidth, top, height } = activeElement.value
+		lineStart = { strokeWidth, top, height }
+	},
+	set: (value) => {
+		const element = activeElement.value
+		element.strokeWidth = value
+		if (element.points) return
+		element.top = lineStart.top + (lineStart.strokeWidth - value) / 2
+		element.height = value
+	},
+	commit: () => {
+		if (!lineStart) return
+		const element = activeElement.value
+		const commands = ['strokeWidth', 'top', 'height']
+			.filter((property) => element[property] !== lineStart[property])
+			.map((property) =>
+				editElementCommand({
+					slideId: currentSlide.value.clientId,
+					elementIds: [element.id],
+					property,
+					oldValue: lineStart[property],
+					newValue: element[property],
+				}),
+			)
+		lineStart = null
+		if (!commands.length) return
+		commandHistory.execute(
+			batchCommand({ slideId: currentSlide.value.clientId, elementIds: [element.id], commands }),
+		)
+	},
+}
+
+const strokeWidth = computed(() =>
+	activeElement.value.shapeType === 'line' ? lineStrokeWidth : shapeStrokeWidth,
+)
 const fillColor = useElementProperty('fillColor')
 const strokeColor = useElementProperty('strokeColor')
 
-const valueClasses = 'block w-16 font-text text-base text-ink-gray-8'
 </script>

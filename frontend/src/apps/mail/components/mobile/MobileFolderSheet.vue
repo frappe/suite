@@ -105,15 +105,15 @@ const groups = computed(() => {
 		} as RouteLocationRaw,
 	}
 
-	const scheduledRow = {
-		id: 'scheduled',
-		label: __('Scheduled'),
+	const outboxRow = {
+		id: 'outbox',
+		label: __('Outbox'),
 		icon: 'calendar-clock',
 		iconColor: '',
 		count: 0,
-		active: route.name === 'mail-scheduled',
+		active: route.name === 'mail-outbox' || route.name === 'mail-submission',
 		to: {
-			name: 'mail-scheduled',
+			name: 'mail-outbox',
 			params: { accountId: store.accountId },
 		} as RouteLocationRaw,
 	}
@@ -127,7 +127,7 @@ const groups = computed(() => {
 			rows: [
 				...items.filter((m: MailboxData) => m.role && !isSecondary(m)).map(toRow),
 				starredRow,
-				scheduledRow,
+				outboxRow,
 			],
 		},
 		{

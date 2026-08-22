@@ -18,8 +18,10 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 		const startedAt = performance.now();
 		const scope = socket.scope ?? 'unknown';
 		let participantClaimed = false;
+		if (socket.scope === 'full' && !socket.peerId) socket.peerId = socket.id;
+		const peerId = socket.peerId ?? participantId;
 		const rejoin = Boolean(
-			deps.mediasoup.getRoomPeers?.(getRoomId(socket))?.get(participantId),
+			deps.mediasoup.getRoomPeers?.(getRoomId(socket))?.get(peerId),
 		);
 
 		try {
@@ -38,8 +40,11 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			if (socket.scope === 'full') {
 				await deps.mediasoup.createRoom(
 					scopedRoomId,
-					(roomIdInner, participantIds) => {
-						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
+					(roomIdInner, peerIds) => {
+						deps.registry.emitActiveSpeaker(
+							roomIdInner,
+							participantIdsForPeers(deps, roomIdInner, peerIds),
+						);
 					},
 				);
 			}
@@ -51,16 +56,17 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			if (socket.scope === 'full') {
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
-				deps.registry.claimParticipant(socket, scopedRoomId, participantId);
-				participantClaimed = true;
-				const senderId = deps.registry.assignSenderId(
+				const isFirstConnection = deps.registry.claimParticipant(
+					socket,
 					scopedRoomId,
 					participantId,
 				);
+				participantClaimed = true;
+				const senderId = deps.registry.assignSenderId(scopedRoomId, peerId);
 				socket.senderId = senderId;
 				if (!socket.e2eeRequired) {
 					await deps.e2eeRoster.add(scopedRoomId, {
-						participantId,
+						participantId: peerId,
 						senderId,
 						isHost: Boolean(socket.isHost),
 						joinedAt: Date.now(),
@@ -70,22 +76,22 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 				const existingPeer = deps.mediasoup
 					.getRoomPeers?.(scopedRoomId)
-					?.get(participantId);
+					?.get(peerId);
 				if (existingPeer) {
 					loggers.socketHandler.info(
 						'Peer %s already in room %s — clearing stale transports/producers before rejoin',
-						participantId,
+						peerId,
 						scopedRoomId,
 					);
-					await deps.mediasoup.removePeer(scopedRoomId, participantId);
+					await deps.mediasoup.removePeer(scopedRoomId, peerId);
 				}
-				deps.mediasoup.addPeer(scopedRoomId, participantId, {
+				deps.mediasoup.addPeer(scopedRoomId, peerId, {
 					...userData,
 					senderId: socket.senderId,
 					isHost: Boolean(socket.isHost),
 				});
 
-				if (isRealParticipant(userData.userId)) {
+				if (isFirstConnection && isRealParticipant(userData.userId)) {
 					deps.registry.emitParticipantEvent(
 						scopedRoomId,
 						'participant_joined',
@@ -114,6 +120,13 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			socket.emit('existing_raised_hands', {
 				hands: deps.registry.getRaisedHands(scopedRoomId),
 			});
+
+			if (socket.scope === 'full') {
+				const pinned = deps.registry.getPinnedChatMessage(scopedRoomId);
+				if (pinned) {
+					socket.emit('existing_pinned_message', { pinned });
+				}
+			}
 
 			if (socket.scope === 'full' && !socket.e2eeRequired) {
 				const roomPolls = deps.registry.getActivePolls(scopedRoomId);
@@ -175,12 +188,12 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					throw new Error('Room ID mismatch');
 				const roomId = getRoomId(socket);
 				const peerId = socket.userId;
-				await deps.mediasoup.createRoom(
-					roomId,
-					(roomIdInner, participantIds) => {
-						deps.registry.emitActiveSpeaker(roomIdInner, participantIds);
-					},
-				);
+				await deps.mediasoup.createRoom(roomId, (roomIdInner, peerIds) => {
+					deps.registry.emitActiveSpeaker(
+						roomIdInner,
+						participantIdsForPeers(deps, roomIdInner, peerIds),
+					);
+				});
 				socket.join(roomId);
 				socket.roomId = roomId;
 				socket.participantId = peerId;
@@ -229,7 +242,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					socket,
 					deps,
 					getRoomId(socket),
-					socket.userId,
+					socket.peerId ?? socket.userId,
 				).catch((error: unknown) => {
 					deps.telemetry.recordE2EEEvent('join-status', 'failure');
 					loggers.socketHandler.error(
@@ -273,19 +286,22 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 							await deps.mediasoup.removePeer(roomId, participantId);
 						}
 					}
-					const shouldCleanupPeer = deps.registry.releaseParticipant(
+					const participantDeparted = deps.registry.releaseParticipant(
 						socket,
 						roomId,
 						participantId,
 					);
-					if (shouldCleanupPeer) {
+					const peerId = socket.peerId ?? participantId;
+					if (socket.scope === 'full') {
 						if (socket.senderId !== undefined) {
 							await deps.e2eeRoster.remove(roomId, socket.senderId);
 							deps.e2eeEpochRelay.removePendingJoiner(roomId, socket.senderId);
 						}
-						deps.registry.removeSender(roomId, participantId);
-						await deps.mediasoup.removePeer(roomId, participantId);
+						deps.registry.removeSender(roomId, peerId);
+						await deps.mediasoup.removePeer(roomId, peerId);
+					}
 
+					if (participantDeparted) {
 						if (isRealParticipant(participantId)) {
 							deps.registry.emitParticipantEvent(
 								roomId,
@@ -311,6 +327,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					deps.registry.leaveScope(socket, roomId, 'full');
 					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 					socket.roomId = undefined;
+					socket.peerId = undefined;
 					loggers.socketHandler.info('%s left room %s', participantId, roomId);
 				} catch (e) {
 					loggers.socketHandler.warn(
@@ -321,6 +338,23 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			}
 		});
 	};
+}
+
+function participantIdsForPeers(
+	deps: HandlerDeps,
+	roomId: string,
+	peerIds: string[],
+): string[] {
+	const peers = deps.mediasoup.getRoomPeers?.(roomId);
+	return Array.from(
+		new Set(
+			peerIds
+				.map((peerId) => peers?.get(peerId)?.info.userId)
+				.filter((participantId): participantId is string =>
+					Boolean(participantId),
+				),
+		),
+	);
 }
 
 function enforceE2EEJoinPolicy(

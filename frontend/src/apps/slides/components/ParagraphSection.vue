@@ -7,13 +7,32 @@
 				@update:modelValue="(value) => updateProperty('textAlign', value)"
 			/>
 		</PropertyRow>
-		<PropertyRow label="List Style">
+		<PropertyRow v-if="showListStyle" label="List Style">
 			<TabButtons
 				:modelValue="listStyle"
 				:options="listStyleOptions"
 				@update:modelValue="(value) => updateProperty('list', value)"
 			/>
 		</PropertyRow>
+		<NumberControl
+			:modelValue="parseFloat(editorStyles.lineHeight) || 1.5"
+			label="Line Height"
+			:min="1"
+			:max="5"
+			:max-digits="3"
+			:step="0.1"
+			@update:modelValue="(value) => updateProperty('lineHeight', parseFloat(value))"
+		/>
+		<NumberControl
+			:modelValue="editorStyles.letterSpacing || 0"
+			label="Letter Spacing"
+			suffix="px"
+			:min="-10"
+			:max="50"
+			:max-digits="3"
+			:step="1"
+			@update:modelValue="(value) => updateProperty('letterSpacing', parseFloat(value))"
+		/>
 	</Section>
 </template>
 
@@ -23,9 +42,11 @@ import { computed } from 'vue'
 import { TabButtons } from 'frappe-ui'
 
 import PropertyRow from '@/apps/slides/components/controls/PropertyRow.vue'
+import NumberControl from '@/apps/slides/components/controls/NumberControl.vue'
 import Section from '@/apps/slides/components/controls/Section.vue'
 
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
+import { activeElement, focusElementId } from '@/apps/slides/stores/element'
 
 const { editorStyles, updateProperty } = useTextEditor()
 
@@ -44,5 +65,10 @@ const listStyleOptions = [
 
 const listStyle = computed(() =>
 	editorStyles.orderedList ? 'ordered' : editorStyles.bulletList ? 'bullet' : 'none',
+)
+
+// a list wraps the block the caret is in, and a table selected as a whole has no caret
+const showListStyle = computed(
+	() => activeElement.value?.type !== 'table' || focusElementId.value === activeElement.value.id,
 )
 </script>

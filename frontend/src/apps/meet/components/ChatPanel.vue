@@ -28,6 +28,37 @@
 					</div>
 				</div>
 
+				<div
+					v-if="pinnedMessage"
+					class="group mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-[18px] bg-surface-gray-2 px-3 py-2.5"
+					role="button"
+					tabindex="0"
+					data-testid="pinned-message-banner"
+					@click="scrollToMessage(pinnedMessage.messageId)"
+					@keydown.enter.prevent="scrollToMessage(pinnedMessage.messageId)"
+					@keydown.space.prevent="scrollToMessage(pinnedMessage.messageId)"
+				>
+					<span class="lucide-pin size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
+					<div class="min-w-0 flex-1">
+						<div class="truncate text-[11px] tracking-[0.11px] text-ink-gray-5">
+							{{ pinnedMessage.user_name }}
+						</div>
+						<div class="mt-0.5 truncate text-sm tracking-[0.21px] text-ink-gray-8">
+							{{ pinnedMessage.message }}
+						</div>
+					</div>
+					<Button
+						v-if="canPin"
+						variant="ghost"
+						size="xs"
+						icon="lucide-pin-off"
+						class="!bg-surface-gray-1 !text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:!bg-surface-gray-3 hover:!text-ink-gray-8"
+						label="Unpin"
+						tooltip="Unpin message"
+						@click.stop="emit('unpin')"
+					/>
+				</div>
+
 				<div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7">
 					<div class="flex flex-col gap-5">
 						<template v-for="item in chatItems" :key="item.key">
@@ -83,9 +114,24 @@
 									<div
 										v-for="message in item.group.messages"
 										:key="message.id"
-										class="max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-left text-p-sm tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
+										class="group relative max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-left text-p-sm tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
+										:data-message-id="message.messageId"
 										:class="item.group.isOwn ? 'bg-surface-gray-3' : 'bg-surface-gray-2'"
 									>
+										<Button
+											v-if="canPin"
+											type="button"
+											variant="ghost"
+											size="xs"
+											:icon="isPinned(message) ? 'lucide-pin-off' : 'lucide-pin'"
+											:class="[
+												'absolute -top-2.5 -right-2.5 !rounded-full border border-outline-gray-2 !bg-surface-gray-1 !p-0 !text-ink-gray-5 shadow-sm hover:!bg-surface-gray-2 hover:!text-ink-gray-8',
+												isPinned(message) ? '!opacity-100' : 'opacity-0 group-hover:opacity-100',
+											]"
+											:label="isPinned(message) ? 'Unpin message' : 'Pin message'"
+											:tooltip="isPinned(message) ? 'Unpin message' : 'Pin message'"
+											@click="togglePin(message)"
+										/>
 										<template
 											v-for="(token, i) in tokenizeChatMessage(message.message)"
 											:key="i"
@@ -95,7 +141,7 @@
 												:href="token.url"
 												target="_blank"
 												rel="noopener noreferrer"
-												class="text-ink-blue-5 underline"
+												class="break-all text-ink-blue-5 underline"
 											>{{ token.text }}</a>
 											<span v-else>{{ token.text }}</span>
 										</template>
@@ -119,7 +165,7 @@
 						>
 							<div
 								v-if="emojiMenuActive"
-								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-modal p-1 shadow-lg"
+								class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-lg border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
 								role="listbox"
 								aria-label="Emoji suggestions"
 								data-testid="chat-emoji-suggestions"
@@ -214,6 +260,7 @@ import LucideChartColumn from "~icons/lucide/chart-column";
 
 interface ChatMessage {
 	id: string | number;
+	messageId?: string;
 	user_id: string;
 	user_name: string;
 	message: string;
@@ -229,6 +276,7 @@ const props = defineProps<{
 	isCohost?: boolean;
 	isGuest?: boolean;
 	hostOnlyChat?: boolean;
+	pinnedMessage?: ChatMessage | null;
 }>();
 
 const pollStore = usePollStore();
@@ -261,6 +309,8 @@ const handlePollSubmit = async (payload: {
 const emit = defineEmits<{
 	close: [];
 	send: [text: string];
+	pin: [messageId: string];
+	unpin: [];
 }>();
 const listEl = ref<HTMLElement | null>(null);
 const inputEl = ref<HTMLTextAreaElement | null>(null);
@@ -276,6 +326,28 @@ const canSendMessages = computed(() => {
 	if (!props.hostOnlyChat) return true;
 	return props.isHost || props.isCohost;
 });
+
+const canPin = computed(() => props.isHost || props.isCohost);
+
+function isPinned(message: ChatMessage): boolean {
+	return Boolean(
+		props.pinnedMessage && props.pinnedMessage.messageId === message.messageId,
+	);
+}
+
+function togglePin(message: ChatMessage) {
+	if (!message.messageId) return;
+	if (isPinned(message)) emit("unpin");
+	else emit("pin", message.messageId);
+}
+
+function scrollToMessage(messageId?: string) {
+	if (!messageId) return;
+	const messageEl = listEl.value?.querySelector<HTMLElement>(
+		`[data-message-id="${messageId}"]`,
+	);
+	messageEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
 
 onMounted(async () => {
 	await scrollToBottom();

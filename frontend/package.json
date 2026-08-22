@@ -7,8 +7,9 @@
     "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
     "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.sw.config.ts",
     "build:recorder": "vite build --config vite.recorder.config.ts",
+    "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
     "test": "vitest run",
@@ -22,6 +23,7 @@
     "@hocuspocus/provider": "^4.1.0",
     "@iframe-resizer/child": "5.5.9",
     "@iframe-resizer/vue": "5.5.9",
+    "@mediapipe/face_detection": "0.4.1646425229",
     "@mediapipe/selfie_segmentation": "0.1.1671057942",
     "@noble/ciphers": "2.1.1",
     "@noble/hashes": "^2.2.0",
@@ -40,6 +42,7 @@
     "@tiptap/extension-list-item": "^3.26.0",
     "@tiptap/extension-mathematics": "^3.26.0",
     "@tiptap/extension-paragraph": "^3.26.0",
+    "@tiptap/extension-table": "^3.26.0",
     "@tiptap/extension-table-of-contents": "^3.26.0",
     "@tiptap/extension-text-align": "^3.26.0",
     "@tiptap/extension-text-style": "^3.26.0",
@@ -78,6 +81,7 @@
     "lodash": "^4.17.21",
     "lowlight": "^3.3.0",
     "lucide-vue-next": "^1.0.0",
+    "mammoth": "^1.12.0",
     "mediasoup-client": "^3.18.8",
     "mitt": "^3.0.1",
     "modern-screenshot": "^4.7.0",
@@ -115,6 +119,7 @@
     "tailwindcss": "^3.4.19",
     "vite": "^8.0.16",
     "vite-plugin-pwa": "^1.0.1",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "workbox-range-requests": "7.4.1"
   }
 }

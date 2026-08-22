@@ -8,10 +8,11 @@
 </template>
 
 <script setup>
-import { ref, inject } from 'vue'
+import { ref, computed, inject } from 'vue'
 import { ContextMenu } from 'frappe-ui'
 
 import {
+	activeElement,
 	activeElements,
 	focusElementId,
 	setActiveElements,
@@ -20,6 +21,8 @@ import {
 	duplicateElements,
 	deleteElements,
 	flipElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,
@@ -32,6 +35,7 @@ import { alignElement, arrangeElements } from '@/apps/slides/stores/placement'
 import { inCropMode, startCrop } from '@/apps/slides/stores/imageCrop'
 import { currentSlide, slideIndex } from '@/apps/slides/stores/slide'
 import { buildSlideContextOptions } from '@/apps/slides/utils/slideMenu'
+import { buildTableContextOptions } from '@/apps/slides/utils/tableMenu'
 
 import BringToFront from '@/apps/slides/icons/BringToFront.vue'
 import SendToBack from '@/apps/slides/icons/SendToBack.vue'
@@ -51,9 +55,18 @@ const openLayoutDialog = inject('openLayoutDialog', () => {})
 
 const contextMenuOptions = ref([])
 
+const isEditingTable = computed(
+	() => activeElement.value?.type === 'table' && focusElementId.value == activeElement.value.id,
+)
+
 // the underlying trigger opens the menu unless the event is defaultPrevented
 const handleContextMenu = (e) => {
-	if (e.target?.isContentEditable) return e.stopPropagation()
+	if (e.target?.isContentEditable) {
+		// a table trades the native menu for the ops that need a caret to mean anything
+		if (!isEditingTable.value) return e.stopPropagation()
+		contextMenuOptions.value = buildTableContextOptions()
+		return
+	}
 
 	if (inReadonlyMode.value || inCropMode.value) return e.preventDefault()
 
@@ -129,6 +142,13 @@ const buildElementContextOptions = () => {
 
 	const transformOptions = []
 	if (!isSelectionLocked.value) {
+		if (hasBoundConnector.value) {
+			transformOptions.push({
+				label: 'Disconnect',
+				icon: 'lucide-unlink',
+				onClick: () => disconnectConnectors(),
+			})
+		}
 		if (canCrop) {
 			transformOptions.push({
 				label: 'Crop',
@@ -137,9 +157,19 @@ const buildElementContextOptions = () => {
 			})
 		}
 
+		// mirroring a line only swaps its heads around; nothing else is visible
+		const isOnlyLines = activeElements.value.every((el) => el.shapeType === 'line')
+		if (!isOnlyLines) {
+			transformOptions.push(
+				{
+					label: 'Flip horizontal',
+					icon: FlipHorizontal,
+					onClick: () => flipElements('horizontal'),
+				},
+				{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
+			)
+		}
 		transformOptions.push(
-			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
-			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
 			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
 			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
 		)

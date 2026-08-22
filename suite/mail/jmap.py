@@ -3,6 +3,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import urljoin
 from uuid import uuid7
@@ -905,7 +906,8 @@ def build_submission_envelope(
     }
 
     if hold_until:
-        parameters["HOLDUNTIL"] = str(hold_until)
+        # RFC 4865 requires an RFC 3339 date-time; Stalwart >= 0.16.17 rejects epoch seconds.
+        parameters["HOLDUNTIL"] = datetime.fromtimestamp(hold_until, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     return {
         "mailFrom": {"email": from_email, "parameters": parameters},

@@ -1,6 +1,11 @@
 import { slides, slideIndex, currentSlide } from '@/apps/slides/stores/slide'
 import { generateUniqueId } from '@/apps/slides/utils/helpers'
+import { ZWSP } from '@/apps/slides/stores/tiptapSetup'
 import { editElementCommand, editSlideCommand } from './commands'
+
+// a blank line carries a ZWSP placeholder only once something has edited it, so
+// comparing it would stop two identical lines from pairing
+const blockText = (block) => block.textContent.replaceAll(ZWSP, '')
 
 const canCreateTextConnection = (currentContent, nextContent) => {
 	const parser = new DOMParser()
@@ -15,7 +20,7 @@ const canCreateTextConnection = (currentContent, nextContent) => {
 
 	for (let i = 0; i < currentBlocks.length; i++) {
 		// within each block, compare text content only (ignore styles and tags)
-		if (currentBlocks[i].textContent != nextBlocks[i].textContent) {
+		if (blockText(currentBlocks[i]) != blockText(nextBlocks[i])) {
 			return false
 		}
 	}
@@ -46,14 +51,14 @@ const getReferenceElementOnSlide = (slide, currElement) => {
 	}
 }
 
-const getReferenceElement = (element) => {
-	const prevSlide = slides.value[slideIndex.value - 1]
-	const nextSlide = slides.value[slideIndex.value + 1]
+const getReferenceElement = (element, index) => {
+	const prevSlide = slides.value[index - 1]
+	const nextSlide = slides.value[index + 1]
 
 	let el = getReferenceElementOnSlide(prevSlide, element)
 	let onPrev = true
 
-	if (!el && currentSlide.value?.transition === 'Magic Move') {
+	if (!el && slides.value[index]?.transition === 'Magic Move') {
 		el = getReferenceElementOnSlide(nextSlide, element)
 		onPrev = false
 	}
@@ -149,15 +154,15 @@ const isAffectedByMagicMove = (slideIndex) => {
 	return prevSlide?.transition === 'Magic Move' || currentSlide?.transition === 'Magic Move'
 }
 
-const getCommandsToUpdateElementRefId = (element) => {
+const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
 	// TODO: add refId handling for shape elements
 	if (element.type == 'shape') return []
-	const index = slideIndex.value
+	if (element.type == 'table') return []
 	const commands = []
 	const needsUpdate = isAffectedByMagicMove(index)
 	if (!needsUpdate) return commands
 
-	const { el, onPrev } = getReferenceElement(element)
+	const { el, onPrev } = getReferenceElement(element, index)
 	if (el) {
 		const refId = generateUniqueId()
 
@@ -215,8 +220,12 @@ const isSrcSlideInMagicMove = (srcSlide) => {
 		: currentSlide.value?.transition === 'Magic Move'
 }
 
+// a table's columns are pinned in pixels, so it cannot follow a frame that tweens.
+// Without a refId it cuts with the slide instead of half-morphing
 const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
 	const commands = []
+	if (newElement.type == 'table') return commands
+
 	const index = slideIndex.value
 
 	// only init refs when src is adjacent (prev or next)
@@ -327,7 +336,13 @@ const getCommandsToSetTransition = (slide, index, settings) => {
 	return commands
 }
 
+// elements sharing a key across slides get one reused node, which is what magic move
+// tweens. A table keeps its own id so it cuts with the slide, refId or not
+const getTransitionKey = (element) =>
+	element.type == 'table' ? element.id : element.refId || element.id
+
 export {
+	getTransitionKey,
 	isAffectedByMagicMove,
 	getCommandsToAddMagicMove,
 	getCommandsToRemoveMagicMove,

@@ -150,19 +150,22 @@ onBeforeMount(() => normalizeContent())
 }
 
 .tiptap ul,
-.textElement > ul {
+.textElement ul,
+.tableElement ul {
 	list-style: none;
 	padding-left: 0;
 }
 
-.tiptap > ul li,
-.textElement > ul li {
+.tiptap ul li,
+.textElement ul li,
+.tableElement ul li {
 	position: relative;
 	padding-left: 0.8em;
 }
 
-.tiptap > ul li::before,
-.textElement > ul li::before {
+.tiptap ul li::before,
+.textElement ul li::before,
+.tableElement ul li::before {
 	content: '\2022';
 	position: absolute;
 	left: 0;
@@ -171,7 +174,8 @@ onBeforeMount(() => normalizeContent())
 }
 
 .tiptap ol,
-.textElement ol {
+.textElement ol,
+.tableElement ol {
 	list-style: none;
 	margin: 0;
 	padding: 0;
@@ -179,14 +183,16 @@ onBeforeMount(() => normalizeContent())
 }
 
 .tiptap ol li,
-.textElement ol li {
+.textElement ol li,
+.tableElement ol li {
 	counter-increment: step;
 	position: relative;
 	padding-left: calc(2ch + 0.2em);
 }
 
 .tiptap ol li::before,
-.textElement ol li::before {
+.textElement ol li::before,
+.tableElement ol li::before {
 	content: counter(step) '.';
 	position: absolute;
 	left: 0;
@@ -205,6 +211,11 @@ onBeforeMount(() => normalizeContent())
 	width: 100%;
 	white-space: pre-wrap;
 	overflow-wrap: break-word;
+}
+
+/* the browser's own stop is 8 characters, which on a slide reads as a gap */
+.textElement {
+	tab-size: 4;
 }
 
 /* use CSS variable set on container to apply legacy element line-height without

@@ -2,28 +2,37 @@ import { FileUploadHandler, toast, call } from 'frappe-ui'
 
 import { presentationId, presentationDoc } from '../stores/presentation'
 import { addMediaElement, replaceMediaElement } from '../stores/element'
+import { currentSlide } from '../stores/slide'
 
 import { session } from '@/boot/session'
+import { SLIDES_MEDIA_PARAM, MEDIA_PROXY_PATH } from './slidesRequests'
 
 const fileUploadHandler = new FileUploadHandler()
 
-export const SLIDES_MEDIA_PARAM = 'slides_media=1'
+// these users read a file straight from /private/files; everyone else goes through the proxy
+export const isMediaOwner = (owner, user) => !!user && (owner === user || user === 'Administrator')
 
-const performPostUploadActions = async (fileDoc, fileType, targetElement) => {
+// Images are converted to WebP, so the returned doc replaces the uploaded one.
+// Pass targetElement to swap that element's media instead of adding a new element.
+const performPostUploadActions = async (
+	fileDoc,
+	fileType,
+	{ targetElement, targetSlide, localFile },
+) => {
 	if (fileType === 'image') {
 		fileDoc = await getWebPDoc(fileDoc)
 	}
 
 	if (targetElement) {
-		await replaceMediaElement(targetElement, fileDoc, fileType)
+		await replaceMediaElement(targetElement, fileDoc, localFile)
 		return fileDoc
 	}
 
-	await addMediaElement(fileDoc, fileType)
+	await addMediaElement(fileDoc, fileType, targetSlide, localFile)
 	return fileDoc
 }
 
-const uploadMedia = (file, fileType, targetElement) => {
+const uploadMedia = (file, fileType, target) => {
 	return new Promise((resolve, reject) => {
 		fileUploadHandler
 			.upload(file, {
@@ -31,7 +40,7 @@ const uploadMedia = (file, fileType, targetElement) => {
 				docname: presentationId.value,
 				private: true,
 			})
-			.then((fileDoc) => performPostUploadActions(fileDoc, fileType, targetElement))
+			.then((fileDoc) => performPostUploadActions(fileDoc, fileType, target))
 			.then(resolve)
 			.catch((error) => {
 				reject(error)
@@ -71,7 +80,9 @@ const handleFile = (file, toastProps, targetElement) => {
 
 	if (targetElement && targetElement.type != fileType) targetElement = null
 
-	toast.promise(uploadMedia(file, fileType, targetElement), toastProps)
+	const target = { targetElement, targetSlide: currentSlide.value, localFile: file }
+
+	toast.promise(uploadMedia(file, fileType, target), toastProps)
 }
 
 const getToastProps = (file, index, length) => {
@@ -112,18 +123,17 @@ export const getAttachmentUrl = (fileUrl, sourcePresentation) => {
 		const owner = sourcePresentation ? sourcePresentation.owner : presentationDoc.value?.owner
 		const user = session.user?.sessionUser
 
-		// if owner is trying to access just send static path
-		if (owner === user || user === 'Administrator') {
+		if (isMediaOwner(owner, user)) {
 			// a duplicate borrows its source's thumbnail url, so the proxy can't serve it
 			if (sourcePresentation) return fileUrl
 			// Tag the request so the slides service worker can cache it without
 			// touching other apps' /private/files/ traffic (Drive, Mail, ...).
 			// Non-owner media already goes through the slides-namespaced proxy below.
-			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}`
+			return `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}${SLIDES_MEDIA_PARAM}=1`
 		}
 		if (!name) return fileUrl
-		return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(
-			fileUrl,
-		)}&presentation=${encodeURIComponent(name)}`
+		return `${MEDIA_PROXY_PATH}?src=${encodeURIComponent(fileUrl)}&presentation=${encodeURIComponent(name)}`
 	}
+
+	return fileUrl
 }

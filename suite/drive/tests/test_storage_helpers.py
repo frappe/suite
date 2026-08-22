@@ -154,3 +154,17 @@ class TestStorageHelpers(unittest.TestCase):
 
             with manager.open_file("/private/files/video.mp4") as file:
                 self.assertEqual(file.read(), b"video")
+
+    def test_open_file_reads_framework_blob_from_disk_even_with_s3(self):
+        with TemporaryDirectory() as site_folder:
+            manager = object.__new__(FileManager)
+            manager.s3_enabled = True
+            manager.conn = Mock()
+            manager.site_folder = Path(site_folder)
+            file_path = manager.site_folder / "private/files/video.mp4"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_bytes(b"video")
+
+            with manager.open_file("private/files/video.mp4") as file:
+                self.assertEqual(file.read(), b"video")
+            manager.conn.get_object.assert_not_called()

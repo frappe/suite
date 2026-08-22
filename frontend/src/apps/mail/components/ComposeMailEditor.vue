@@ -4,14 +4,21 @@
 	     off by the editor's own scroll container (it starts at x=0 — the body carries no
 	     horizontal padding on desktop). Both lists move together so a document mixing them
 	     keeps one indent. -->
+	<!-- 75vh is a modal's height — it has the screen to itself. Docked, the composer sits beside
+	     the mail it is being written about, so it takes a fixed 30rem and leaves the rest of the
+	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
+	     height is the thread's. -->
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
 		:content="editorContent"
-		:upload-function="uploadFunction"
+		:upload-function="uploadInlineImage"
 		class="flex flex-col"
-		:class="{ 'pointer-events-none opacity-50': !show, 'sm:h-[75vh]': !isInThread }"
+		:class="[
+			{ 'pointer-events-none opacity-50': !show },
+			isInThread ? '' : docked ? 'sm:h-[30rem]' : 'sm:h-[75vh]',
+		]"
 		@change="onEditorChange"
 		@dragenter.prevent="handleDragEnter"
 		@dragover.prevent="handleDragOver"
@@ -21,11 +28,30 @@
 		<template #top>
 			<div
 				class="flex flex-col gap-2.5 border-b pb-2.5 max-sm:px-3 max-sm:pt-2.5"
-				:class="{ 'border-transparent': isDragging }"
+				:class="[
+					isDragging ? 'border-transparent' : '',
+					// Bleed the rule to its container's edges while the fields stay on the content
+					// axis: every host pads this block, so without cancelling that the separator
+					// stops short of both sides and reads as underlining the fields rather than
+					// dividing the composer. The amount is whichever host it is — the message card
+					// in a thread pads by 5, the Dialog's body wrapper and ComposeDock by 6.
+					isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
+				]"
 			>
-				<div v-if="!mailDetails?.type || isMobile" class="flex justify-between gap-2">
+				<!-- A reply inside a thread leaves From and Subject out: the conversation around it
+				     says both. Detached into a window there is no conversation around it, so a
+				     popped-out reply shows them like any other composer. -->
+				<div
+					v-if="!isInThread || !mailDetails?.type || isMobile"
+					class="flex justify-between gap-2"
+				>
 					<div class="flex items-center gap-2">
 						<span class="text-ink-gray-4 text-sm">{{ __('From') }}</span>
+						<!-- Button mode, like the phone composer's: the trigger takes the width of the
+						     identity it is showing. As an input it was a box of a fixed 16rem with the
+						     name and address inside it, and anything longer than that — which is most
+						     addresses once the display name is in front of them — was cut off mid-domain.
+						     The list is filtered from the popover's own search box instead. -->
 						<Combobox
 							v-model="mail.from_email"
 							:options="
@@ -34,15 +60,18 @@
 									value: i.email,
 								})) || []
 							"
-							:open-on-click="true"
-							class="min-w-64"
+							trigger="button"
+							class="min-w-0 max-w-full"
 						/>
 					</div>
+					<!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
+					     it stands, in memory, rather than fetched back from the server. Only a save
+					     actually in flight holds it up — see popOut. -->
 					<Button
 						v-if="isInThread"
 						variant="ghost"
-						:disabled="isLoading || isDraftUpdated"
-						@click="emit('popOut', mail)"
+						:disabled="isLoading"
+						@click="popOut()"
 					>
 						<template #icon>
 							<component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
@@ -110,7 +139,7 @@
 					</div>
 				</div>
 				<label
-					v-if="!mailDetails?.type || isMobile"
+					v-if="!isInThread || !mailDetails?.type || isMobile"
 					class="flex cursor-text items-center gap-2"
 				>
 					<span class="text-ink-gray-4 text-sm">{{ __('Subject') }}</span>
@@ -200,8 +229,13 @@
 		<template #bottom>
 			<ComposeMailToolbar
 				:is-recipients-empty
+				:is-uploading
 				class="border-t"
-				:class="{ 'border-transparent': isDragging }"
+				:class="[
+					isDragging ? 'border-transparent' : '',
+					// Same bleed as the field block above, so both rules span the same width.
+					isInThread ? 'sm:-mx-5 sm:px-5' : 'sm:-mx-6 sm:px-6',
+				]"
 				@select-files="(files: File[]) => uploadFiles(files)"
 				@append-emoji="(emoji: string) => appendEmoji(emoji)"
 				@discard-mail="discardMail"
@@ -263,13 +297,16 @@ const {
 	reloadMails,
 	mailDetails,
 	isInThread = false,
+	docked = false,
 } = defineProps<{
 	reloadMails: () => void
 	mailDetails?: ComposeMailData
 	isInThread?: boolean
+	// Docked composer: shorter than a modal, which has the screen to itself.
+	docked?: boolean
 }>()
 
-const emit = defineEmits(['discardMail', 'reply', 'replyAll', 'forward', 'popOut'])
+const emit = defineEmits(['discardMail', 'discardStarted', 'reply', 'replyAll', 'forward', 'popOut'])
 
 const { isMobile } = useScreenSize()
 
@@ -277,6 +314,22 @@ const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
+
+const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
+const pendingInlineUploads = ref(0)
+const isUploading = computed(
+	() => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
+)
+
+const uploadInlineImage = async (file: File) => {
+	pendingInlineUploads.value++
+	try {
+		return await uploadFunction(file)
+	} finally {
+		pendingInlineUploads.value--
+	}
+}
+const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
 
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
@@ -289,6 +342,7 @@ const {
 	isRecipientsEmpty,
 	updateOriginalMail,
 	saveDraft,
+	payListDebt,
 	sendMail,
 	discardMail,
 	onClosed,
@@ -308,7 +362,9 @@ const {
 	close: () => (show.value = false),
 	isOpen: () => !!show.value,
 	onDiscardUnsaved: () => emit('discardMail'),
+	onDiscardStarted: () => emit('discardStarted'),
 	host: () => textEditor.value,
+	isUploading: () => isUploading.value,
 	// The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
 	// rather than at <body>, where it would be unreachable.
 	mentionContainer: () =>
@@ -349,9 +405,38 @@ onMounted(() => {
 	}, 50)
 })
 
-onUnmounted(() => saveDraft())
+// Popping out is a hand-off, not a close: the window is given this very draft and takes over saving
+// it, so this editor leaves without a word. Saving anyway would race the window into writing the
+// same reply twice — one draft from each — which is the duplicate the debounced save is held back
+// from making, arriving by the other door.
+//
+// A save in flight is the one thing that has to finish first, and is why both entry points are
+// withheld while `isLoading`: the id the server is about to hand back lands on this composable, and
+// the window — which copies the draft as it is at the moment of the hand-off — would never hear of
+// it. Its first save would then create a second draft rather than update this one.
+let handedOff = false
+const popOut = () => {
+	handedOff = true
+	emit('popOut', mail)
+}
 
-defineExpose({ sendMail, discardMail, openScheduleModal })
+// Otherwise this is the last chance to keep what was typed since the autosave last ran. Closing a
+// composer now unmounts this editor outright — the dialog drops it, the phone leaves the compose
+// route — so the debounced save that would have caught up in a second's time never gets to.
+//
+// And then the list is told, if a draft in a thread has been going to the server without it (see
+// payListDebt). After the save, so the reload finds the draft as it was left rather than as it was
+// a keystroke before that. Not on a hand-off: the window this draft has gone to is saving it now,
+// and it tells the list itself.
+onUnmounted(async () => {
+	if (handedOff) return
+	await saveDraft()
+	payListDebt()
+})
+
+// `mail` is exposed so the window around this one can read the draft — the minimised bar names
+// itself after the subject, which only exists in here.
+defineExpose({ mail, sendMail, discardMail, openScheduleModal })
 
 // Local draft actions
 
@@ -370,7 +455,7 @@ const localDraftActions = computed(() => [
 			{
 				label: __('Pop Out'),
 				icon: ExternalLink,
-				onClick: () => emit('popOut', mail),
+				onClick: () => popOut(),
 				condition: () => !isLoading.value,
 			},
 		],
@@ -385,8 +470,19 @@ const TYPE_ICON_MAP = {
 
 // Shortcuts
 
+// Every mounted composer listens on the window, and a thread can hold more than one — a draft
+// being replied to below another, or one open here and another in the composer window. Without
+// this the shortcuts went to all of them at once: ⌘D discarded every open draft, ⌘Enter sent them.
+// The one the keystroke belongs to is the one it was typed into.
+const ownsEvent = (e: KeyboardEvent) => {
+	const root = textEditor.value?.$el as HTMLElement | undefined
+	const target = e.target as Node | null
+	return !!root && !!target && root.contains(target)
+}
+
 const handleKeydown = (e: KeyboardEvent) => {
 	if (!show.value || (isInThread && isOverlayPresent())) return
+	if (!ownsEvent(e)) return
 
 	handleSendShortcut(e)
 	handleDiscardShortcut(e)
@@ -439,8 +535,6 @@ const handleDrop = (e: DragEvent) => {
 	const files = Array.from(e.dataTransfer?.files ?? [])
 	uploadFiles(files)
 }
-
-const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
 
 const uploadFiles = async (files: File[]) => {
 	if (!files.length) return

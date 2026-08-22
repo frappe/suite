@@ -74,6 +74,38 @@ describe('leaving a slide while a text element is focused', () => {
 		expect(recorded.map((c) => c.jumpToSlideId)).toEqual(['A'])
 	})
 
+	// the editor keeps the spaces a line was indented by, and a box holding only
+	// those still looks empty to the person who left it behind
+	it('deletes a text box left holding nothing but whitespace', async () => {
+		editorState.text = '    '
+		editorState.html = '<p><span style="font-size: 16px">    </span></p>'
+
+		activeElementIds.value = ['t1']
+		focusElementId.value = 't1'
+		for (let i = 0; i < 4; i++) await nextTick()
+
+		changeEditorSlide(1)
+		for (let i = 0; i < 6; i++) await nextTick()
+
+		expect(slides.value[0].elements).toEqual([])
+	})
+
+	// a box of blank lines is a spacer someone placed on purpose, and getText
+	// joins its lines, so reading whitespace loosely would delete it
+	it('keeps a text box holding blank lines', async () => {
+		editorState.text = '​\n\n​\n\n​'
+		editorState.html = '<p><span style="font-size: 16px">​</span></p>'.repeat(3)
+
+		activeElementIds.value = ['t1']
+		focusElementId.value = 't1'
+		for (let i = 0; i < 4; i++) await nextTick()
+
+		changeEditorSlide(1)
+		for (let i = 0; i < 6; i++) await nextTick()
+
+		expect(slides.value[0].elements.map((e: any) => e.id)).toEqual(['t1'])
+	})
+
 	// legacy content keeps patchEmptyParagraphs reporting an update forever, so
 	// the save must become a no-op by comparison against the stored content, or
 	// the watch's second blur-save pairs magic-move refIds against the new slide

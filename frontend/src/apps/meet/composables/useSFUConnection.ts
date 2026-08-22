@@ -44,7 +44,10 @@ import type {
 	Participant,
 	ParticipantUpdate,
 } from "../utils/media/ParticipantManager";
-import type { ParticipantConnectionState } from "../utils/sfu/ParticipantConnection";
+import type {
+	ParticipantConnectionState,
+	SFUEventHandlers,
+} from "../utils/sfu/ParticipantConnection";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -294,13 +297,18 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const createSFUEventHandlers = () => {
+	const createSFUEventHandlers = (): SFUEventHandlers => {
 		return {
-			onRecoveryExhausted: () => {
+			onRecoveryExhausted: (trigger) => {
 				clientTelemetry.reportRecoveryExhausted({
-					subsystem: "consumer",
-					direction: "recv",
-					reason: "retry_limit",
+					subsystem:
+						trigger?.scope === "subscription"
+							? "consumer"
+							: trigger?.scope === "transport" || trigger?.scope === "publication"
+								? "transport"
+								: "signaling",
+					direction: trigger?.direction ?? "both",
+					reason: "rebuild_failed",
 				});
 			},
 			onRecoveryStateChange: (
@@ -310,7 +318,13 @@ export function useSFUConnection(deps: {
 				participantConnectionState.recordRecovery(state, detail);
 				clientTelemetry.recordRecoveryState(state, detail);
 			},
-			onLifecycleStateChange: participantConnectionState.setLifecycleState,
+			onLifecycleStateChange: (state) => {
+				participantConnectionState.setLifecycleState(state);
+				if (state === "failed") {
+					connectionState.connectionError =
+						"We couldn't restore your meeting connection. Try joining again.";
+				}
+			},
 			onParticipantJoined: handleParticipantJoined,
 			onParticipantLeft: handleParticipantLeft,
 			onParticipantUpdated: handleParticipantUpdated,
@@ -478,7 +492,7 @@ export function useSFUConnection(deps: {
 						userData,
 						mediaState: {
 							audio_enabled: false,
-							video_enabled: mediaState.isCameraOn,
+							video_enabled: false,
 						},
 					};
 				},
@@ -506,30 +520,55 @@ export function useSFUConnection(deps: {
 							for (const track of mediaState.localStream?.getAudioTracks() || []) {
 								track.enabled = false;
 							}
-						} else {
-							sfuClient.sendMediaControl("unmute");
 						}
 					}
-					if (!mediaState.localStream) return;
+					const publishVideo = mediaState.isCameraOn;
+					const publishAudio = mediaState.isMicOn;
+					const localStream = mediaState.localStream;
+					if (!localStream) {
+						mediaState.isCameraOn = false;
+						mediaState.isMicOn = false;
+						return;
+					}
 					const videoTracks = mediaState.processedStream
 						? mediaState.processedStream.getVideoTracks()
-						: mediaState.localStream.getVideoTracks();
+						: localStream.getVideoTracks();
 					const streamToPublish = new MediaStream([
 						...videoTracks,
-						...mediaState.localStream.getAudioTracks(),
+						...localStream.getAudioTracks(),
 					]);
-					try {
-						await manager!.publishMedia(streamToPublish, {
-							publishVideo: mediaState.isCameraOn,
-							publishAudio: mediaState.isMicOn,
-						});
-					} catch (error) {
-						if (signal.aborted) throw error;
-						console.warn(
-							"Media publishing failed, continuing without media:",
-							getErrorMessage(error),
-						);
-					}
+					await manager!.publishInitialMedia(
+						streamToPublish,
+						{ publishVideo, publishAudio },
+						signal,
+						(publication) => {
+							const videoStillRequested = publishVideo && mediaState.isCameraOn;
+							const audioStillRequested = publishAudio && mediaState.isMicOn;
+							if (videoStillRequested && publication.videoProducer) {
+								sfuClient.sendMediaControl("video_on");
+							}
+							if (audioStillRequested && publication.audioProducer) {
+								sfuClient.sendMediaControl("unmute");
+							}
+							if (
+								(videoStillRequested && !publication.videoProducer) ||
+								(audioStillRequested && !publication.audioProducer)
+							) {
+								console.warn("Initial media publication did not fully recover", {
+									video: publication.videoError
+										? getErrorMessage(publication.videoError)
+										: undefined,
+									audio: publication.audioError
+										? getErrorMessage(publication.audioError)
+										: undefined,
+								});
+								toast.error(
+									"Some media could not be started. Trying to restore your connection.",
+								);
+								throw new Error("Initial media publication recovery exhausted");
+							}
+						}
+					);
 				},
 			});
 			if (wasAutomaticallyMuted) {

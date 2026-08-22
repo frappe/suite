@@ -56,6 +56,9 @@ export class ProducerManager extends EventEmitter {
 		producer.on('score', (scores) => {
 			this.emit('score', roomId, peerId, kind, scores);
 		});
+		producer.on('transportclose', () => {
+			this.emit('producer_transport_closed', producer.id);
+		});
 
 		return {
 			id: producer.id,
@@ -70,18 +73,19 @@ export class ProducerManager extends EventEmitter {
 
 		const { producer } = producerData;
 		const isScreen = producer?.appData?.type === 'screen';
-
-		try {
-			producer.close();
-		} catch (error) {
-			loggers.producerManager.warn(
-				'Error closing producer %s: %s',
-				producerId,
-				(error as Error).message,
-			);
-		}
-
 		this.producers.delete(producerId);
+
+		if (!producer.closed) {
+			try {
+				producer.close();
+			} catch (error) {
+				loggers.producerManager.warn(
+					'Error closing producer %s: %s',
+					producerId,
+					(error as Error).message,
+				);
+			}
+		}
 
 		loggers.producerManager.info(
 			'Producer closed: %s%s',

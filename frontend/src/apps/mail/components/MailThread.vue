@@ -36,9 +36,17 @@
 		</div>
 		<div ref="threadContainer" class="flex-1 overflow-y-auto">
 
+			<!-- The composer window floats over the app, so while one is up the thread keeps a
+			     little room under its last message — enough to scroll clear of a minimised bar
+			     rather than ending beneath it. Not reserved otherwise, or every thread would
+			     end in a gap explaining nothing. -->
 			<div
-				class="sm:space-y-4 sm:px-5 sm:py-6"
-				:class="{ 'pb-16': isMobile && !thread?.at(-1)?.draft }"
+				class="sm:space-y-4 sm:px-5 sm:pt-6"
+				:class="{
+					'pb-16': isMobile && !thread?.at(-1)?.draft,
+					'sm:pb-24': isComposeWindowOpen(),
+					'sm:pb-6': !isComposeWindowOpen(),
+				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
 					<ThreadDivider
@@ -64,8 +72,13 @@
 								class="hover:text-ink-gray-8"
 							/>
 						</button>
+						<!-- A draft that is popped out drops out of the thread entirely: it is being
+						     written in the composer window, and it must be the card that goes, not
+						     just the editor inside it — the wrapper carries the draft's own border,
+						     padding and shadow, so hiding only its contents left an empty white
+						     card sitting in the thread. -->
 						<div
-							v-if="!collapsedMailNames.has(mail.name)"
+							v-if="!collapsedMailNames.has(mail.name) && !isPoppedOut(mail)"
 							:data-mail-name="mail.name"
 							:class="{
 								'px-3.5 py-5': isMobile,
@@ -141,7 +154,7 @@
 								<div
 									class="flex items-center space-x-3"
 									:class="{
-										'cursor-pointer': mail !== thread[thread.length - 1],
+										'cursor-pointer': mail !== lastMessage,
 										'pb-6': mail.preview || !isCollapsed(mail),
 									}"
 									@click.stop="mail.collapsed = !mail.collapsed"
@@ -366,6 +379,24 @@
 								</div>
 							</template>
 						</div>
+
+						<!-- Stands in for the card while the reply is being written in the composer
+						     window, so the conversation still shows there is a draft in it — and offers
+						     the way back. Same border, radius and horizontal padding as the card it
+						     replaces, so it keeps the thread's rhythm and its text lines up with the
+						     messages above; only the vertical padding is slimmer, because it is a line
+						     about a message rather than a message. v-else-if, so it appears only where
+						     the card was withheld; the collapsed test tells that reason from this one. -->
+						<div
+							v-else-if="!collapsedMailNames.has(mail.name)"
+							class="text-ink-gray-8 rounded-xl border px-5 py-3 text-sm"
+						>
+							{{ __('This draft is open in another window.') }}
+							<button
+								class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
+								@click="showDraftInThread()"
+							>{{ __('Edit here instead') }}</button>.
+						</div>
 					</template>
 				</template>
 
@@ -396,10 +427,12 @@
 		</div>
 		<SendMail
 			v-if="focusedDraft"
+			ref="composeWindow"
 			v-model="showSendModal"
 			:mail-details="draftMails[focusedDraft]"
 			@reload-mails="reload"
 			@discard-mail="discardLocalDraft(focusedDraft)"
+			@discard-started="dropPoppedOutDraft()"
 		/>
 		<AttachmentViewer
 			v-model="showAttachmentViewer"
@@ -465,11 +498,16 @@ import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vu
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
-import { setPendingCompose } from '@/apps/mail/composables/composeHandoff'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import {
+	closeComposeWindow,
+	composeWindowDraft,
+	isComposeWindowOpen,
+} from '@/apps/mail/composables/useComposeWindow'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
@@ -710,6 +748,17 @@ const loadThread = () => {
 	thread.value = data
 	setCollapsedGroup(data)
 
+	// Opening a draft from the list puts it in the thread, so a composer window still holding that
+	// same draft would be a second editor on it — two copies saving over each other, which is how
+	// the pair in the screenshot came to disagree. The window gives it up; the thread has it now.
+	// Skipped while the window is this thread's own pop-out, or reloading would shut the window the
+	// reader is typing in. Asked of the rows being loaded rather than of `showSendModal` alone, which
+	// says only that a window was opened from this pane at some point and stays true across a move to
+	// another conversation.
+	const held = composeWindowDraft()
+	if (held && data.some((mail: Mail) => mail.id === held) && !data.some(isPoppedOut))
+		closeComposeWindow()
+
 	data.forEach((mail) => {
 		if (mail.draft) {
 			mail.groupedRecipients = getGroupedRecipients(mail.recipients, false)
@@ -815,7 +864,17 @@ const filterRelevantMails = (mail: Mail) => {
 let forceReload = false
 
 const reload = () => {
-	if (!threadID) return
+	// The thread can be gone by the time this is called: a draft's editor squares up with the list
+	// as it unmounts, and what unmounted it was usually the reader leaving. There is no pane left to
+	// refresh — the list is the whole of what is being asked for.
+	//
+	// Still flagged for a re-derive, because the reader can be back inside the thread before the rows
+	// arrive: the pane would then have been built from the very copy this reload is replacing, and a
+	// background sync leaves drafts alone by design.
+	if (!threadID) {
+		forceReload = true
+		return emit('reloadMails')
+	}
 	// A directly-fetched thread isn't in the list, so refresh it in place.
 	if (!messages?.length) return threadFallback.reload()
 	forceReload = true
@@ -828,6 +887,16 @@ watch(
 		resetCollapsedGroup()
 		removedMailIds.clear()
 		thread.value = []
+		// Going back to the list takes the composer window with it: everything in this pane hangs off
+		// `threadID`, the popped-out composer included, so it is unmounted along with the thread it
+		// came from. What is left behind is only the memory of it, and the next thread opened mounted
+		// a composer on that — the draft from the last conversation, over a thread that had nothing to
+		// do with it, in a window that had forgotten it was ever folded away.
+		if (!threadID) {
+			showSendModal.value = false
+			focusedDraft.value = undefined
+			poppedOutDraftId.value = undefined
+		}
 		loadThread()
 	},
 )
@@ -960,8 +1029,17 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 	}
 }
 
-const isCollapsed = (mail: Mail) =>
-	!!(mail.collapsed && mail !== thread.value[thread.value.length - 1])
+// The message at the end of the conversation stays open — it is the one being read. Drafts do not
+// count towards which that is: a reply written at the bottom of the thread is not a newer message,
+// it is a thing being written about the last one, and the reader wants both on screen. Read as the
+// last row outright, the message being replied to folded itself away the moment the draft under it
+// was saved and the thread reloaded around it — every mail already seen comes back collapsed, and
+// the exemption had moved on to the draft.
+const lastMessage = computed(
+	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
+)
+
+const isCollapsed = (mail: Mail) => !!(mail.collapsed && mail !== lastMessage.value)
 
 const showReplyAll = (mail: Mail) =>
 	!mail.draft &&
@@ -1109,6 +1187,80 @@ defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
 
 const focusedDraft = ref<string>()
 const showSendModal = ref(false)
+const composeWindow = useTemplateRef('composeWindow')
+
+// The id of the draft that went to the window, kept here rather than asked of the window itself.
+//
+// It has to be a ref, and the reason is the whole of this: a draft popped out is written to on the
+// way — the reply learns its own id on the first save — and the thread has to notice. The window
+// knows, but it knows in a plain variable inside `useComposeWindow`, which no render is watching;
+// a card checking it as it drew got the answer from before the window opened and never asked
+// again, so the editor stayed in the thread underneath the very window that had taken it.
+const poppedOutDraftId = ref<string>()
+watch(
+	() => composeWindow.value?.mail?.id,
+	(id) => id && (poppedOutDraftId.value = id),
+)
+
+// The one draft the composer window is holding, whichever row it has become.
+//
+// Either name answers, because the row is one thing and then the other. A reply started in the pane
+// is a local `draft:<source>` entry with no id at all — a save from in here does not reload the
+// thread, so the row keeps that name and never learns one. Popped out, the same save does reload:
+// the local row goes, and the server's draft takes its place under a name and an id of its own.
+// Matching on the id alone missed the first, and on the name alone missed the second — either way
+// the editor sat in the thread underneath the window that had taken it.
+//
+// Asked of a row rather than assumed of every draft, because "a draft is in the window" is not the
+// same question. This pane is reused as the reader moves between threads, so a draft popped out of
+// one conversation is still in the window while another is on screen — and that one's own draft is
+// not the one being written elsewhere.
+const isDraftInWindow = (mail: Mail) => {
+	if (!mail.draft) return false
+	if (mail.name === focusedDraft.value) return true
+	return !!poppedOutDraftId.value && mail.id === poppedOutDraftId.value
+}
+
+// A draft being written in the composer window rather than in the thread. The thread stands the
+// notice in its place, or the same reply sits in two editors that do not share their state.
+//
+// Keyed on the window still being open rather than on clearing `focusedDraft`: the card returns the
+// moment it closes, and discarding — which reads `focusedDraft` as it fires — still knows which
+// draft it meant.
+const isPoppedOut = (mail: Mail) =>
+	showSendModal.value && !!focusedDraft.value && isDraftInWindow(mail)
+
+// Bring the reply back into the conversation, carrying whatever it has become.
+//
+// Closing the window is not by itself enough. The window's composer built a draft of its own out of
+// the details it was handed, so nothing typed into it has ever reached `draftMails` — the card came
+// back reading as it did at the moment of pop-out, and its own autosave then wrote that stale text
+// over the server's copy. So the live draft is taken from the composer while it is still there.
+// Reading it back from the server instead would mean waiting on the two-second autosave, and a
+// reader who clicks this a second after typing is exactly the case that goes wrong.
+//
+// Copied rather than adopted, and layered over the entry already there: the composer models the
+// message and not the thread's bookkeeping, so the reply type — which is what draws the card's
+// icon and decides whether From and Subject are shown — survives from underneath.
+const showDraftInThread = () => {
+	const live = composeWindow.value?.mail
+	const name = focusedDraft.value
+	if (live && name) draftMails[name] = { ...draftMails[name], ...JSON.parse(JSON.stringify(live)) }
+	showSendModal.value = false
+}
+
+// Discard, heard as it starts rather than once the delete lands. The card is withheld only while
+// the window is open, and `discardMail` closes before it deletes — so without this the thread took
+// the draft back and showed it for the length of the request, on its way to being destroyed.
+//
+// Only the row being discarded: a thread can hold a second draft — a server one and a reply just
+// started in the pane — and that one is not going anywhere. The row is going anyway; a delete that
+// fails is put back by the reload behind it.
+const dropPoppedOutDraft = () => {
+	if (!focusedDraft.value) return
+	delete draftMails[focusedDraft.value]
+	thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m))
+}
 
 const popOutDraft = (mail: ComposeMailData) => {
 	draftMails[mail.name as string] = mail
@@ -1118,11 +1270,13 @@ const popOutDraft = (mail: ComposeMailData) => {
 	// that was just sent is there in the refetch, and a local draft that was discarded is gone with
 	// the component that was holding it.
 	if (isMobile.value) {
-		setPendingCompose(mail)
-		router.push({ name: 'mail-compose', params: { accountId: scopeAccountId.value } })
+		openComposePage(router, scopeAccountId.value, mail)
 		return
 	}
 
+	// Taken here as well as from the window, so the card goes the moment the window opens rather than
+	// a frame later, once the composer inside it has mounted and can be asked.
+	poppedOutDraftId.value = mail.id
 	focusedDraft.value = mail.name
 	showSendModal.value = true
 }
@@ -1131,6 +1285,7 @@ const getSourceMail = (mail: string) =>
 	thread.value.find((m: Mail) => m.name === mail.split(':')[1])
 
 const getReplyDetails = (mail: Mail) => ({
+	from_email: getReplyIdentityEmail(mail),
 	subject: mail.subject?.startsWith('Re: ') ? mail.subject : `Re: ${mail.subject}`,
 	quoted_content: getQuotedContent(mail),
 	attachments: mail.attachments?.filter((a: Attachment) => a.disposition === 'inline') || [],
@@ -1158,8 +1313,23 @@ const getReplyAllRecipients = (mail: Mail) => {
 		}
 }
 
-const isUserEmail = (email: string) =>
-	identities.value.data?.map((i: Identity) => i.email).includes(email)
+// Addresses arrive in whatever casing the other side used: match case-insensitively, and hand
+// back the identity's own spelling, since the composer looks the address up by that.
+const getIdentityEmail = (email?: string) =>
+	identities.value.data?.find((i: Identity) => i.email.toLowerCase() === email?.toLowerCase())
+		?.email
+
+const isUserEmail = (email: string) => !!getIdentityEmail(email)
+
+// The identity a reply should go out as: the one the message was addressed to (the sender,
+// when the message is our own). Undefined when no identity took part, and the composer falls
+// back to the account's default outgoing address, then its first identity.
+const getReplyIdentityEmail = (mail: Mail) => {
+	const { to = [], cc = [], bcc = [] } = mail.groupedRecipients ?? {}
+	return getIdentityEmail(
+		[mail.from_email, ...[...to, ...cc, ...bcc].map((r) => r.email)].find(isUserEmail),
+	)
+}
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing

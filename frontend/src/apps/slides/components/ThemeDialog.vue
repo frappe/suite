@@ -1,22 +1,21 @@
 <template>
 	<Dialog
 		v-model:open="showThemeDialog"
-		class="pb-0"
 		size="2xl"
 		:title="dialogTitle"
 		:dismissible="update"
 		:showCloseButton="update"
 	>
-		<template #default>
-			<div class="mb-6 select-none text-base text-ink-gray-6">{{ dialogDescription }}</div>
-			<div class="grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto">
+		<div class="flex flex-col gap-5">
+			<p class="text-p-base text-ink-gray-7">{{ dialogDescription }}</p>
+			<div class="-m-1 no-scrollbar grid max-h-[32rem] grid-cols-2 gap-6 overflow-y-auto p-1">
 				<div
 					v-for="(theme, idx) in templateList"
 					:key="theme.name"
 					class="flex flex-col gap-3"
 				>
 					<div
-						class="m-1 aspect-video cursor-pointer overflow-hidden rounded-lg border border-outline-gray-1 hover:border-outline-gray-2"
+						class="aspect-video cursor-pointer overflow-hidden rounded-md border border-outline-gray-1 hover:border-outline-gray-2"
 						:class="getThemeThumbnailClasses(theme.name)"
 						:style="getThemeThumbnailStyles(theme)"
 						@click="performAction(theme.name)"
@@ -27,31 +26,31 @@
 							:scale="THEME_PREVIEW_SCALE"
 						/>
 					</div>
-					<div class="flex">
+					<div class="flex items-center justify-between">
+						<div class="select-none text-base text-ink-gray-7">
+							{{ theme.title }}
+						</div>
 						<LucideCheck
 							v-if="props.update && theme.name == presentationTheme"
 							class="size-4 stroke-[1.5] text-ink-gray-8"
 						/>
-						<div class="select-none px-2 text-base text-ink-gray-6">
-							{{ theme.title }}
-						</div>
 					</div>
 				</div>
 			</div>
-		</template>
+		</div>
 	</Dialog>
 </template>
 
 <script setup>
-import { watch, nextTick, computed } from 'vue'
+import { computed } from 'vue'
 import { Dialog } from 'frappe-ui'
 
 import SlidePreview from '@/apps/slides/components/SlidePreview.vue'
 import { getThumbnailCardStyles } from '@/apps/slides/utils/helpers'
 import { presentationTheme, templateList } from '@/apps/slides/stores/presentation'
 
-// card width: 2xl dialog (672) - px-6 (48) - gap-6 (24), halved, - m-1 (8)
-const THEME_PREVIEW_SCALE = 292 / 960
+// card width: 2xl dialog (672) - px-6 (48) - gap-6 (24), halved
+const THEME_PREVIEW_SCALE = 300 / 960
 
 const props = defineProps({
 	update: {
@@ -60,14 +59,11 @@ const props = defineProps({
 	},
 })
 
-const showThemeDialog = defineModel({
-	name: 'showThemeDialog',
-	required: true,
-})
+const showThemeDialog = defineModel('open', { required: true })
 
 const emit = defineEmits(['create'])
 
-const dialogTitle = computed(() => (props.update ? 'Set Theme' : 'Select Theme'))
+const dialogTitle = computed(() => (props.update ? 'Set theme' : 'Select theme'))
 const dialogDescription = computed(() =>
 	props.update
 		? 'Update the theme for this presentation. All newly added slides will use this theme.'
@@ -81,16 +77,6 @@ const performAction = (theme) => {
 		emit('create', theme)
 	}
 }
-
-watch(
-	() => showThemeDialog.value,
-	(visibility) => {
-		if (!visibility) return
-		nextTick(() => {
-			document.activeElement?.blur()
-		})
-	},
-)
 
 const getThemeThumbnailClasses = (theme) => {
 	return props.update && theme == presentationTheme.value

@@ -453,7 +453,7 @@ describe('SocketHandlerManager characterization', () => {
 		);
 		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-A',
 			expect.objectContaining({
 				userId: 'user-1',
 				name: 'Alice',
@@ -480,6 +480,48 @@ describe('SocketHandlerManager characterization', () => {
 				userData: expect.objectContaining({ userId: 'user-1', name: 'Alice' }),
 			}),
 		);
+	});
+
+	it('keeps same-user participant connections and E2EE sender identities independent', async () => {
+		const harness = createManager();
+		const first = connectFullSocket(harness, {
+			id: 'connection-1',
+			userId: 'user-1',
+		});
+		emitJoin(first);
+		await new Promise((resolve) => setImmediate(resolve));
+		first.emitCalls.length = 0;
+
+		const second = connectFullSocket(harness, {
+			id: 'connection-2',
+			userId: 'user-1',
+		});
+		emitJoin(second);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
+			'room-1',
+			'connection-1',
+			expect.objectContaining({ userId: 'user-1' }),
+		);
+		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
+			'room-1',
+			'connection-2',
+			expect.objectContaining({ userId: 'user-1' }),
+		);
+		expect(first.senderId).not.toBe(second.senderId);
+		expect(
+			await harness.roster.get('room-1', first.senderId ?? -1),
+		).toMatchObject({ participantId: 'connection-1' });
+		expect(
+			await harness.roster.get('room-1', second.senderId ?? -1),
+		).toMatchObject({ participantId: 'connection-2' });
+		expect(
+			first.emitCalls.some((call) => call.event === 'participant_joined'),
+		).toBe(false);
+		expect(
+			second.emitCalls.some((call) => call.event === 'participant_joined'),
+		).toBe(false);
 	});
 
 	it('join_room with scope:presence-preview tracks the socket in previewSockets, skips mediasoup.addPeer, and still emits existing_raised_hands', async () => {
@@ -804,7 +846,7 @@ describe('SocketHandlerManager characterization', () => {
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-X',
 		);
 		expect(stay.emitCalls.some((c) => c.event === 'participant_left')).toBe(
 			true,
@@ -816,7 +858,7 @@ describe('SocketHandlerManager characterization', () => {
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'stay-1',
+			'sock-stay',
 		);
 		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(1);
@@ -825,7 +867,7 @@ describe('SocketHandlerManager characterization', () => {
 		vi.useRealTimers();
 	});
 
-	it('disconnect of an older duplicate full-access socket does not remove the current peer', async () => {
+	it('disconnecting one participant connection preserves the other connection', async () => {
 		const harness = createManager();
 
 		const older = connectFullSocket(harness, {
@@ -846,14 +888,21 @@ describe('SocketHandlerManager characterization', () => {
 		older.fire('disconnect');
 		await new Promise((r) => setImmediate(r));
 
-		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-old',
+		);
+		expect(
+			current.emitCalls.some((call) => call.event === 'participant_left'),
+		).toBe(false);
 
+		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
 		current.fire('disconnect');
 		await new Promise((r) => setImmediate(r));
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-current',
 		);
 	});
 
@@ -881,8 +930,14 @@ describe('SocketHandlerManager characterization', () => {
 		older.fire('leave_room');
 		await new Promise((r) => setImmediate(r));
 
-		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'sock-old',
+		);
 		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
+		expect(
+			current.emitCalls.some((call) => call.event === 'participant_left'),
+		).toBe(false);
 	});
 
 	it('keeps previews connected while grace cleanup evicts recorders and closes media', async () => {
@@ -962,6 +1017,10 @@ describe('SocketHandlerManager characterization', () => {
 			action: 'mute_participant',
 			targetParticipantId: 'target-1',
 		});
+		expect(harness.mediasoup.participantExistsInRoom).toHaveBeenCalledWith(
+			'room-1',
+			'target-1',
+		);
 
 		const targetUpdate = target.emitCalls.find(
 			(c) => c.event === 'host_control_update',
@@ -1016,6 +1075,45 @@ describe('SocketHandlerManager characterization', () => {
 		).toBe(false);
 	});
 
+	it('host control targets every Participant Connection for a participant', async () => {
+		const harness = createManager();
+		const host = connectFullSocket(harness, {
+			id: 'sock-host',
+			userId: 'host-1',
+			isHost: true,
+		});
+		const first = connectFullSocket(harness, {
+			id: 'sock-target-1',
+			userId: 'target-1',
+		});
+		const second = connectFullSocket(harness, {
+			id: 'sock-target-2',
+			userId: 'target-1',
+		});
+		emitJoin(host, { userId: 'host-1', name: 'Host' });
+		emitJoin(first, { userId: 'target-1', name: 'Target' });
+		emitJoin(second, { userId: 'target-1', name: 'Target' });
+		await new Promise((resolve) => setImmediate(resolve));
+		harness.io.socketsAdapterRooms.set(
+			'room-1',
+			new Set([host.id, first.id, second.id]),
+		);
+		first.emitCalls.length = 0;
+		second.emitCalls.length = 0;
+
+		host.fire('host_control', {
+			action: 'mute_participant',
+			targetParticipantId: 'target-1',
+		});
+
+		expect(
+			first.emitCalls.some((call) => call.event === 'host_control_update'),
+		).toBe(true);
+		expect(
+			second.emitCalls.some((call) => call.event === 'host_control_update'),
+		).toBe(true);
+	});
+
 	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
 		const harness = createManager();
 
@@ -1059,6 +1157,209 @@ describe('SocketHandlerManager characterization', () => {
 				kind: 'video',
 				isScreen: true,
 			}),
+		});
+	});
+
+	it('reports a producer creation fault without broadcasting and allows retry', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		viewer.emitCalls.length = 0;
+		vi.mocked(harness.mediasoup.createProducer).mockRejectedValueOnce(
+			new Error('injected producer fault'),
+		);
+		const data = {
+			transportId: 'send-1',
+			rtpParameters: {},
+			kind: 'video',
+			appData: { type: 'camera' },
+		};
+		const failed = vi.fn();
+
+		publisher.fire('create_producer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected producer fault',
+		});
+		expect(viewer.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'producer_created' }),
+		);
+
+		const recovered = vi.fn();
+		publisher.fire('create_producer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'producer-1' }),
+		);
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_created',
+			data: expect.objectContaining({ producerId: 'producer-1' }),
+		});
+	});
+
+	it('reports a consumer creation fault and allows the same request to retry', async () => {
+		const harness = createManager();
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.mocked(harness.mediasoup.createConsumer).mockRejectedValueOnce(
+			new Error('injected consumer fault'),
+		);
+		const data = {
+			transportId: 'recv-1',
+			producerId: 'producer-1',
+			rtpCapabilities: {},
+		};
+		const failed = vi.fn();
+
+		viewer.fire('create_consumer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected consumer fault',
+		});
+
+		const recovered = vi.fn();
+		viewer.fire('create_consumer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'consumer-1' }),
+		);
+		expect(harness.mediasoup.createConsumer).toHaveBeenCalledTimes(2);
+	});
+
+	it('propagates producer lifecycle closure and targets dependent consumers', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		publisher.emitCalls.length = 0;
+		viewer.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'viewer-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_closed',
+			data: expect.objectContaining({
+				participantId: 'publisher-1',
+				producerId: 'producer-1',
+			}),
+		});
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1' },
+		});
+		expect(
+			publisher.emitCalls.some((call) => call.event === 'consumer_closed'),
+		).toBe(false);
+	});
+
+	it('broadcasts consumer closure when its owning peer socket is absent', async () => {
+		const harness = createManager();
+		const participant = connectFullSocket(harness, {
+			id: 'connected-peer',
+			userId: 'user-1',
+		});
+		emitJoin(participant);
+		await new Promise((resolve) => setImmediate(resolve));
+		participant.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'missing-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(participant.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1', peerId: 'missing-peer' },
+		});
+	});
+
+	it('passes explicit producer close metadata through the lifecycle finalizer', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'user-1',
+		});
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+		const callback = vi.fn();
+
+		socket.fire(
+			'close_producer',
+			{
+				producerId: 'producer-1',
+				reason: 'track-ended',
+				source: 'screen-share',
+				details: { message: 'display ended' },
+			},
+			callback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.closeProducer).toHaveBeenCalledWith('producer-1', {
+			reason: 'track-ended',
+			source: 'screen-share',
+			details: { message: 'display ended' },
+		});
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			isScreen: false,
+			removedConsumers: [],
 		});
 	});
 
@@ -1165,6 +1466,31 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
 	});
 
+	it('treats a keyframe request for an already-closed consumer as a no-op', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			userId: 'viewer-1',
+			roomId: 'room-1',
+		});
+		harness.mediasoup.assertConsumerAccess.mockImplementation(() => {
+			throw new Error('Consumer stale-consumer not found');
+		});
+		const callback = vi.fn();
+
+		socket.fire(
+			'request_consumer_keyframe',
+			{ consumerId: 'stale-consumer' },
+			callback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			requested: false,
+		});
+		expect(harness.mediasoup.requestConsumerKeyFrame).not.toHaveBeenCalled();
+	});
+
 	it('rejects an untracked WebRTC transport connect when E2EE is required', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {
@@ -1230,6 +1556,7 @@ describe('SocketHandlerManager characterization', () => {
 		expect(callback).toHaveBeenCalledWith({
 			success: true,
 			timestamp: receiverMsg?.data.timestamp,
+			messageId: expect.any(String),
 		});
 
 		const senderChatMessages = sender.emitCalls.filter(
@@ -1288,6 +1615,186 @@ describe('SocketHandlerManager characterization', () => {
 		expect(nonHost.emitCalls.some((c) => c.event === 'chat:message')).toBe(
 			false,
 		);
+	});
+
+	it('chat:pin broadcasts pin and explicit unpin actions', async () => {
+		const harness = createManager();
+
+		const host = connectFullSocket(harness, {
+			id: 'sock-pin-host',
+			userId: 'pin-host-1',
+			userName: 'PinHost',
+			isHost: true,
+			isCohost: false,
+		});
+		emitJoin(host, { userId: 'pin-host-1', name: 'PinHost' });
+		await new Promise((r) => setImmediate(r));
+
+		const participant = connectFullSocket(harness, {
+			id: 'sock-pin-user',
+			userId: 'pin-user-1',
+			userName: 'PinUser',
+		});
+		emitJoin(participant, { userId: 'pin-user-1', name: 'PinUser' });
+		await new Promise((r) => setImmediate(r));
+
+		const sendCallback = vi.fn();
+		host.fire('chat:send', { message: 'pin me' }, sendCallback);
+		const messageId = sendCallback.mock.calls[0]?.[0].messageId as string;
+		expect(messageId).toBeTruthy();
+
+		host.emitCalls.length = 0;
+		participant.emitCalls.length = 0;
+
+		const pinCallback = vi.fn();
+		host.fire('chat:pin', { messageId, action: 'pin' }, pinCallback);
+
+		expect(pinCallback).toHaveBeenCalledWith({ success: true });
+		const pinnedUpdate = participant.emitCalls.find(
+			(c) => c.event === 'chat:pin_updated',
+		);
+		expect(pinnedUpdate).toBeDefined();
+		expect(pinnedUpdate?.data).toEqual({
+			pinned: {
+				messageId,
+				message: 'pin me',
+				fromUser: 'pin-host-1',
+				fromName: 'PinHost',
+				timestamp: expect.any(String),
+			},
+		});
+
+		participant.emitCalls.length = 0;
+		host.fire(
+			'chat:pin',
+			{ messageId, action: 'pin', encryptedMessage: 'e2ee:refreshed' },
+			pinCallback,
+		);
+		expect(participant.emitCalls.at(-1)?.data).toEqual({
+			pinned: expect.objectContaining({
+				messageId,
+				message: 'e2ee:refreshed',
+			}),
+		});
+		participant.emitCalls.length = 0;
+		const secondSendCallback = vi.fn();
+		host.fire('chat:send', { message: 'pin me too' }, secondSendCallback);
+		const secondMessageId = secondSendCallback.mock.calls[0]?.[0]
+			.messageId as string;
+		host.fire(
+			'chat:pin',
+			{ messageId: secondMessageId, action: 'pin' },
+			pinCallback,
+		);
+		const secondPinnedUpdate = participant.emitCalls.filter(
+			(c) => c.event === 'chat:pin_updated',
+		);
+		host.fire('chat:pin', { messageId, action: 'unpin' }, pinCallback);
+		expect(
+			participant.emitCalls.filter((c) => c.event === 'chat:pin_updated'),
+		).toEqual(secondPinnedUpdate);
+		host.fire(
+			'chat:pin',
+			{ messageId: secondMessageId, action: 'unpin' },
+			pinCallback,
+		);
+		expect(
+			participant.emitCalls.filter((c) => c.event === 'chat:pin_updated').at(-1)
+				?.data,
+		).toEqual({ pinned: null });
+	});
+
+	it('chat:pin rejects non-host participants and unknown message ids', async () => {
+		const harness = createManager();
+
+		const host = connectFullSocket(harness, {
+			id: 'sock-pin-host2',
+			userId: 'pin-host-2',
+			userName: 'PinHost2',
+			isHost: true,
+			isCohost: false,
+		});
+		emitJoin(host, { userId: 'pin-host-2', name: 'PinHost2' });
+		await new Promise((r) => setImmediate(r));
+
+		const participant = connectFullSocket(harness, {
+			id: 'sock-pin-user2',
+			userId: 'pin-user-2',
+			userName: 'PinUser2',
+		});
+		emitJoin(participant, { userId: 'pin-user-2', name: 'PinUser2' });
+		await new Promise((r) => setImmediate(r));
+
+		participant.emitCalls.length = 0;
+		const deniedCallback = vi.fn();
+		participant.fire(
+			'chat:pin',
+			{ messageId: 'any-id', action: 'pin' },
+			deniedCallback,
+		);
+		expect(deniedCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Only hosts and co-hosts can pin messages',
+		});
+		expect(
+			participant.emitCalls.some((c) => c.event === 'chat:pin_updated'),
+		).toBe(false);
+
+		host.emitCalls.length = 0;
+		const unknownCallback = vi.fn();
+		host.fire(
+			'chat:pin',
+			{ messageId: 'missing-id', action: 'pin' },
+			unknownCallback,
+		);
+		expect(unknownCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Message is no longer available to pin',
+		});
+		expect(host.emitCalls.some((c) => c.event === 'chat:pin_updated')).toBe(
+			false,
+		);
+	});
+
+	it('late joiners receive existing_pinned_message for a currently pinned chat message', async () => {
+		const harness = createManager();
+
+		const host = connectFullSocket(harness, {
+			id: 'sock-pin-host3',
+			userId: 'pin-host-3',
+			userName: 'PinHost3',
+			isHost: true,
+			isCohost: false,
+		});
+		emitJoin(host, { userId: 'pin-host-3', name: 'PinHost3' });
+		await new Promise((r) => setImmediate(r));
+
+		const sendCallback = vi.fn();
+		host.fire('chat:send', { message: 'pinned greeting' }, sendCallback);
+		const messageId = sendCallback.mock.calls[0]?.[0].messageId as string;
+		host.fire('chat:pin', { messageId, action: 'pin' }, () => {});
+
+		const lateJoiner = connectFullSocket(harness, {
+			id: 'sock-pin-late',
+			userId: 'pin-late-1',
+			userName: 'Late',
+		});
+		emitJoin(lateJoiner, { userId: 'pin-late-1', name: 'Late' });
+		await new Promise((r) => setImmediate(r));
+
+		const existing = lateJoiner.emitCalls.find(
+			(c) => c.event === 'existing_pinned_message',
+		);
+		expect(existing).toBeDefined();
+		expect(existing?.data).toEqual({
+			pinned: {
+				messageId,
+				message: 'pinned greeting',
+				fromUser: 'pin-host-3',
+				fromName: 'PinHost3',
+				timestamp: expect.any(String),
+			},
+		});
 	});
 
 	it('raise_hand round-trip: raised:true stores timestamp and broadcasts, raised:false clears the entry and broadcasts with raised:false', async () => {

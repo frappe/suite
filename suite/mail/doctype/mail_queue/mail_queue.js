@@ -31,16 +31,6 @@ frappe.ui.form.on('Mail Queue', {
 			frm.add_custom_button(__('Retry'), () => frm.trigger('retry'), __('Actions'))
 		}
 
-		if (frm.doc.status === 'Scheduled') {
-			frm.add_custom_button(__('Send Now'), () => frm.trigger('send_now'), __('Actions'))
-			frm.add_custom_button(__('Reschedule'), () => frm.trigger('reschedule'), __('Actions'))
-			frm.add_custom_button(
-				__('Cancel Schedule'),
-				() => frm.trigger('cancel_schedule'),
-				__('Actions'),
-			)
-		}
-
 		if (
 			frm.doc.blob_id &&
 			!frm.doc.message &&
@@ -52,68 +42,6 @@ frappe.ui.form.on('Mail Queue', {
 				__('Actions'),
 			)
 		}
-	},
-
-	send_now(frm) {
-		frappe.confirm(__('Deliver this scheduled email immediately?'), () => {
-			frappe.call({
-				doc: frm.doc,
-				method: 'send_now',
-				freeze: true,
-				freeze_message: __('Sending...'),
-				callback: (r) => {
-					if (!r.exc) {
-						frm.reload_doc()
-					}
-				},
-			})
-		})
-	},
-
-	reschedule(frm) {
-		frappe.prompt(
-			{
-				label: __('Send At'),
-				fieldname: 'send_at',
-				fieldtype: 'Datetime',
-				reqd: 1,
-				default: frm.doc.send_at,
-			},
-			(values) => {
-				frappe.call({
-					doc: frm.doc,
-					method: 'reschedule',
-					args: { send_at: values.send_at },
-					freeze: true,
-					freeze_message: __('Rescheduling...'),
-					callback: (r) => {
-						if (!r.exc) {
-							frm.reload_doc()
-						}
-					},
-				})
-			},
-			__('Reschedule Delivery'),
-		)
-	},
-
-	cancel_schedule(frm) {
-		frappe.confirm(
-			__('Cancel delivery and move the message back to Drafts? This cannot be undone.'),
-			() => {
-				frappe.call({
-					doc: frm.doc,
-					method: 'cancel_schedule',
-					freeze: true,
-					freeze_message: __('Cancelling...'),
-					callback: (r) => {
-						if (!r.exc) {
-							frm.reload_doc()
-						}
-					},
-				})
-			},
-		)
 	},
 
 	retry(frm) {

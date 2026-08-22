@@ -1,7 +1,9 @@
 <template>
-	<div class="absolute left-0 top-0 h-full w-full bg-black">
+	<div
+		class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
+		:class="{ 'slideshow-hide-cursor': cursorHidden }"
+	>
 		<div
-			ref="slideContainer"
 			class="flex h-screen w-full items-center justify-center"
 			:style="slideContainerStyles"
 		>
@@ -62,8 +64,8 @@
 </template>
 
 <script setup>
-import { computed, onActivated, onDeactivated, ref, useTemplateRef, watch, provide } from 'vue'
-import { toast, useShortcut } from 'frappe-ui'
+import { computed, onActivated, onDeactivated, ref, watch, provide } from 'vue'
+import { toast, useShortcut, usePageMeta } from 'frappe-ui'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
@@ -74,6 +76,9 @@ import {
 	showSlideshowEndScreen,
 	requestFullscreen,
 	exitFullscreen,
+	requestWakeLock,
+	releaseWakeLock,
+	releaseVideoWarmers,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -81,11 +86,15 @@ import {
 	performPreviousStep,
 } from '@/apps/slides/stores/slideshow'
 
-import { applyReverseTransition, initPresentationDoc, inReadonlyMode } from '@/apps/slides/stores/presentation'
+import {
+	applyReverseTransition,
+	initPresentationDoc,
+	inReadonlyMode,
+	pageTitle,
+} from '@/apps/slides/stores/presentation'
 import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
 import { resetFocus } from '@/apps/slides/stores/element'
-
-const slideContainerRef = useTemplateRef('slideContainer')
+import { getTransitionKey } from '@/apps/slides/stores/transition'
 
 const props = defineProps({
 	presentationId: {
@@ -111,11 +120,9 @@ const clipPath = computed(() => {
 	return `inset(${inset}px 0px ${inset}px 0px)`
 })
 
-const getElementKey = (element) => {
-	return element.refId || element.id
-}
+const getElementKey = (element) => getTransitionKey(element)
 
-const slideCursor = ref('none')
+const cursorHidden = ref(true)
 
 const prevSlide = computed(() => {
 	if (slideIndex.value == 0) return null
@@ -138,8 +145,8 @@ const slideStyles = computed(() => {
 	const baseStyles = {
 		width: '960px',
 		height: '540px',
+		overflow: 'hidden',
 		backgroundColor: currentSlide.value?.background || '#ffffff',
-		cursor: slideCursor.value,
 	}
 
 	if (prevSlide.value?.transition == 'Magic Move') {
@@ -258,24 +265,36 @@ const slideLeave = (el, done) => {
 	done()
 }
 
+const CURSOR_IDLE_DELAY = 3000
 let cursorTimer = null
 
 const resetCursorVisibility = () => {
-	slideCursor.value = 'auto'
+	cursorHidden.value = false
 	clearTimeout(cursorTimer)
 	cursorTimer = setTimeout(() => {
-		slideCursor.value = 'none'
-	}, 4000)
+		cursorHidden.value = true
+	}, CURSOR_IDLE_DELAY)
+}
+
+const stopCursorTracking = () => {
+	clearTimeout(cursorTimer)
+	document.removeEventListener('mousemove', resetCursorVisibility)
+	cursorHidden.value = true
 }
 
 const handleFullScreenChange = () => {
 	if (document.fullscreenElement) {
-		slideContainerRef.value?.addEventListener('mousemove', resetCursorVisibility)
 		inSlideShowMode.value = true
+		requestWakeLock()
 	} else {
-		slideContainerRef.value?.removeEventListener('mousemove', resetCursorVisibility)
+		stopCursorTracking()
 		if (inSlideShowMode.value) endSlideShow()
 	}
+}
+
+// the lock is dropped when the tab is hidden
+const handleVisibilityChange = () => {
+	if (document.visibilityState === 'visible' && inSlideShowMode.value) requestWakeLock()
 }
 
 const slideContainerStyles = computed(() => {
@@ -307,11 +326,16 @@ const updateWindowSize = () => {
 	windowHeight.value = window.innerHeight
 }
 
+usePageMeta(() => ({ title: pageTitle() }))
+
 onActivated(() => {
+	document.title = pageTitle()
 	resetFocus()
 	loadPresentation()
 	initFullscreenMode()
 	document.addEventListener('fullscreenchange', handleFullScreenChange)
+	document.addEventListener('visibilitychange', handleVisibilityChange)
+	document.addEventListener('mousemove', resetCursorVisibility)
 	window.addEventListener('resize', updateWindowSize)
 
 	// Initial prefetch of next slide
@@ -322,7 +346,11 @@ onActivated(() => {
 
 onDeactivated(() => {
 	document.removeEventListener('fullscreenchange', handleFullScreenChange)
+	document.removeEventListener('visibilitychange', handleVisibilityChange)
 	window.removeEventListener('resize', updateWindowSize)
+	stopCursorTracking()
+	releaseWakeLock()
+	releaseVideoWarmers()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
 	if (inSlideShowMode.value) {
@@ -359,6 +387,12 @@ useShortcut([
 </script>
 
 <style>
+/* has to beat the cursor elements set on themselves */
+.slideshow-hide-cursor,
+.slideshow-hide-cursor * {
+	cursor: none !important;
+}
+
 .forward-transition .textElement span {
 	transition-property: all;
 	transition-duration: var(--transition-duration);

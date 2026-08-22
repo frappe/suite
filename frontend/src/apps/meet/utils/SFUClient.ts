@@ -705,6 +705,8 @@ export class SFUClient {
 			webrtc_answer: () => {},
 			ice_candidate: () => {},
 			"chat:message": () => {},
+			"chat:pin_updated": () => {},
+			"existing_pinned_message": () => {},
 			active_speaker: () => {},
 			hand_raised: () => {},
 			existing_raised_hands: () => {},
@@ -991,7 +993,7 @@ export class SFUClient {
 	async sendChatMessage(
 		message: string,
 		options: { clientId?: unknown } = {},
-	): Promise<{ success: boolean; timestamp: string }> {
+	): Promise<{ success: boolean; timestamp: string; messageId?: string }> {
 		if (!this.connected) {
 			throw new Error("Not connected to SFU");
 		}
@@ -1004,7 +1006,25 @@ export class SFUClient {
 		return (await this.sendRequest("chat:send", payload)) as {
 			success: boolean;
 			timestamp: string;
+			messageId?: string;
 		};
+	}
+
+	/** Pin or explicitly unpin a room chat message. */
+	async sendChatPin(
+		messageId: string,
+		action: "pin" | "unpin" = "pin",
+		encryptedMessage?: string,
+	): Promise<unknown> {
+		if (!this.connected) {
+			throw new SFURequestError("DISCONNECTED", "Not connected to SFU");
+		}
+		const payload: Record<string, string> = {
+			messageId: String(messageId),
+			action,
+		};
+		if (encryptedMessage) payload.encryptedMessage = encryptedMessage;
+		return this.sendRequest("chat:pin", payload);
 	}
 
 	// ==================== REACTION OPERATIONS ====================

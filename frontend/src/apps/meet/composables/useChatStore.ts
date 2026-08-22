@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 export interface ChatMessage {
 	id: number;
+	messageId?: string;
 	user_id: string;
 	user_name: string;
 	message: string;
@@ -17,6 +18,8 @@ export interface ChatStore {
 	hostOnlyChat: boolean;
 	markAsRead: () => void;
 	addMessage: (message: ChatMessage) => void;
+	pinnedMessage: ChatMessage | null;
+	setPinnedMessage: (message: ChatMessage | null) => void;
 	$reset: () => void;
 }
 
@@ -25,6 +28,7 @@ export const useChatStore = defineStore("meet-chat", () => {
 	const chatMessages = ref<ChatMessage[]>([]);
 	const hasUnreadMessages = ref(false);
 	const hostOnlyChat = ref(false);
+	const pinnedMessage = ref<ChatMessage | null>(null);
 
 	function toggleChat() {
 		isChatOpen.value = !isChatOpen.value;
@@ -44,11 +48,16 @@ export const useChatStore = defineStore("meet-chat", () => {
 		chatMessages.value.push(message);
 	}
 
+	function setPinnedMessage(message: ChatMessage | null) {
+		pinnedMessage.value = message;
+	}
+
 	function $reset() {
 		isChatOpen.value = false;
 		chatMessages.value = [];
 		hasUnreadMessages.value = false;
 		hostOnlyChat.value = false;
+		pinnedMessage.value = null;
 	}
 
 	return {
@@ -59,6 +68,8 @@ export const useChatStore = defineStore("meet-chat", () => {
 		hostOnlyChat,
 		markAsRead,
 		addMessage,
+		pinnedMessage,
+		setPinnedMessage,
 		$reset,
 	};
 });

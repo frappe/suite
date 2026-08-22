@@ -5,6 +5,7 @@ import { createResource } from 'frappe-ui'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, raiseOptimisticToast, raisePromiseToast, raiseToast } from '@/apps/mail/utils'
 import { useBlockSender, useUndo } from '@/apps/mail/utils/composables'
+import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { userStore } from '@/apps/mail/stores/user'
 
@@ -82,6 +83,10 @@ export function useThreadActions(deps: {
 	const isSentMail = (m: Mail) => m.mailboxes.some((mb) => mb.mailbox_id === mailboxIds.sent)
 
 	const allMailIds = (threadIds: string[]): string[] => threadMails(threadIds).map((m) => m.id)
+
+	/** The composer window gives up a draft whose thread is being trashed, junked or deleted. */
+	const closeComposeWindowHolding = (threadIds: string[]) =>
+		closeComposeWindowFor(allMailIds(threadIds))
 
 	// Mails of the threads that live in the current view's mailbox(es) — mirrors the old
 	// get_filtered_message_ids (starred → all non-trash, search → all).
@@ -623,6 +628,8 @@ export function useThreadActions(deps: {
 		)
 		if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
 
+		closeComposeWindowHolding(selectedThreads)
+
 		const movesAll = (t: string) => [mailboxIds.junk, mailboxIds.trash].includes(t)
 
 		// Snapshot each affected mail's exact state now (while the threads are still loaded), so undo
@@ -799,6 +806,8 @@ export function useThreadActions(deps: {
 		const originalState = getOriginalState(selectedThreads, 'junk')
 		if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
 
+		closeComposeWindowHolding(selectedThreads)
+
 		const spam = Object.keys(threadIDs)[0] === '1'
 		const mails = threadMails(selectedThreads)
 		// Snapshot exact state now (threads leave the list on success) so undo restores the original
@@ -908,6 +917,8 @@ export function useThreadActions(deps: {
 
 	const handleDeleteThreads = (thread_ids: string[]) => {
 		if (!thread_ids?.length) return
+
+		closeComposeWindowHolding(thread_ids)
 
 		// Resolve mail names before the optimistic removal empties currentMailboxMails.
 		const names = currentMailboxMails(thread_ids).map((m) => m.name)

@@ -18,8 +18,6 @@ frappe.listview_settings['Mail Queue'] = {
 			'Failed to Draft': 'red',
 			Submitted: 'green',
 			'Failed to Submit': 'red',
-			Scheduled: 'blue',
-			Cancelled: 'grey',
 		}
 		return [__(doc.status), status_colors[doc.status] || 'darkgrey', 'status,=,' + doc.status]
 	},

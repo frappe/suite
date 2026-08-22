@@ -149,9 +149,15 @@ export const routes: RouteRecordRaw[] = [
 				props: true,
 			},
 			{
-				path: 'account/:accountId/scheduled',
-				name: 'mail-scheduled',
-				component: () => import('@/apps/mail/pages/ScheduledMailsView.vue'),
+				path: 'account/:accountId/outbox',
+				name: 'mail-outbox',
+				component: () => import('@/apps/mail/pages/OutboxView.vue'),
+				props: true,
+			},
+			{
+				path: 'account/:accountId/outbox/:submissionId',
+				name: 'mail-submission',
+				component: () => import('@/apps/mail/pages/SubmissionDetailsView.vue'),
 				props: true,
 			},
 			{

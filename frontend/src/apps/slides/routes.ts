@@ -4,7 +4,9 @@ import { createResource } from 'frappe-ui'
 
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
-import { useSessionStore } from '@/boot/session'
+import { getSessionUser, useSessionStore } from '@/boot/session'
+import { claimSlidesCachesFor, postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
+import { removeOfflineCopy } from '@/apps/slides/stores/offlineCopy'
 
 /**
  * Slides route module — mounted by the suite router under the '/slides' prefix.
@@ -31,6 +33,8 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '',
     component: SlidesShell,
+    // before the route components resolve, so the whole graph loads as slides
+    beforeEnter: () => postToServiceWorker('slides-entered'),
     children: [
       {
         path: '',
@@ -110,6 +114,11 @@ function installSlidesGuards(r: Router) {
 
     setPreviousRoute(from)
 
+    // before the first slides request of this visit is cached; a guest may be
+    // this user with an expired session, so their copy stays
+    const user = getSessionUser()
+    if (user) await claimSlidesCachesFor(user).catch(() => {})
+
     if (!SLIDES_GUARDED.has(to.name)) {
       return next()
     }
@@ -129,6 +138,10 @@ function installSlidesGuards(r: Router) {
       if (!useSessionStore().isLoggedIn) {
         window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
         return next(false)
+      }
+      // the server has withdrawn this presentation, so the offline copy goes with it
+      if (currentEditorAccess === 'none') {
+        removeOfflineCopy(to.params.presentationId as string).catch(() => {})
       }
       return next({ name: 'slides-not-permitted' })
     }

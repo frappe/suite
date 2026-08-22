@@ -1,27 +1,51 @@
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, nextTick } from 'vue'
 import { Editor } from '@tiptap/vue-3'
+import { createDocument } from '@tiptap/core'
 import { extensions, patchEmptyParagraphs } from '@/apps/slides/stores/tiptapSetup'
-import { TextSelection } from 'prosemirror-state'
+import { Selection, TextSelection } from 'prosemirror-state'
+import { cellAround } from 'prosemirror-tables'
 import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { markDirty } from '@/apps/slides/stores/saving'
 import {
 	activeElement,
-	clampWidthToSlide,
 	findSlideElement,
 	getInitialShapeTextContent,
 } from '@/apps/slides/stores/element'
 import { batchCommand, editElementCommand } from '@/apps/slides/stores/commands'
+import { getElementDiv } from '@/apps/slides/stores/elementRegistry'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
 export const activeEditor = ref(null)
+
+// the default parse drops a line's leading spaces, so indentation lasts only until the
+// content is read back. 'full' would turn the gaps in pretty-printed HTML into lines
+const parseOptions = { preserveWhitespace: true }
 
 // the element this editor was built for: activeElement flips a tick earlier
 let editorElement = null
 let editorSlideId = null
 let lastCompositionId = null
+let lastRenderedWidth = null
 let stopContentWatch = null
 
 let suppressRecording = false
+
+// only auto-width text is worth the forced layout of an offsetWidth read;
+// until EditorContent adopts the view the div is an empty shell, not a width
+const measuredAutoWidth = (editor) => {
+	if (editorElement?.type !== 'text' || editorElement.width) return null
+	const div = getElementDiv(editorElement.id)
+	if (!div || !editor?.view || !div.contains(editor.view.dom)) return null
+	return div.offsetWidth
+}
+
+// a width the panel changed makes the stored baseline a lie, and the next transaction can
+// only measure after the keystroke it should have anchored, so reseed off the settled DOM
+export const resetGrowthBaseline = async () => {
+	lastRenderedWidth = null
+	await nextTick()
+	lastRenderedWidth = measuredAutoWidth(activeEditor.value)
+}
 
 const withRecordingSuppressed = (fn) => {
 	suppressRecording = true
@@ -45,13 +69,40 @@ const reconcileEditorContent = (html) => {
 	if (html == null) {
 		if (activeElement.value?.type !== 'shape') return
 		const seed = getInitialShapeTextContent(activeElement.value)
-		withRecordingSuppressed(() => editor.commands.setContent(seed, { emitUpdate: false }))
+		withRecordingSuppressed(() =>
+			editor.commands.setContent(seed, { emitUpdate: false, parseOptions }),
+		)
 		return
 	}
 
 	if (patchedHTML(editor.getHTML()) === html) return
 
-	withRecordingSuppressed(() => editor.commands.setContent(html, { emitUpdate: false }))
+	// setContent replaces the whole doc, mapping the selection to its end. the two
+	// documents differ over one range, so a caret past it moves by the size change
+	const incoming = createDocument(html, editor.schema, parseOptions)
+	const { content } = editor.state.doc
+	const start = content.findDiffStart(incoming.content)
+	const { a: endHere, b: endThere } = start == null ? {} : content.findDiffEnd(incoming.content)
+
+	const { from, to } = editor.state.selection
+	const [carriedFrom, carriedTo] = [from, to].map((pos) => {
+		if (start == null) return pos
+		// the tail first: text inserted at the caret ends up behind it, the way
+		// it does when you type it
+		if (pos >= endHere) return pos + endThere - endHere
+		return pos <= start ? pos : start
+	})
+
+	withRecordingSuppressed(() => {
+		editor.commands.setContent(html, { emitUpdate: false, parseOptions })
+		// between, so that endpoints a cell selection left on cell boundaries come back
+		// as the nearest position that can hold a caret
+		editor.commands.command(({ tr }) => {
+			const { doc } = tr
+			tr.setSelection(TextSelection.between(doc.resolve(carriedFrom), doc.resolve(carriedTo)))
+			return true
+		})
+	})
 }
 
 const editorStyles = reactive({
@@ -69,6 +120,7 @@ const editorStyles = reactive({
 	opacity: null,
 	bulletList: false,
 	orderedList: false,
+	cellFill: null,
 })
 
 export const useTextEditor = () => {
@@ -92,6 +144,10 @@ export const useTextEditor = () => {
 			color: activeStyles.color || null,
 			letterSpacing: parseInt(activeStyles.letterSpacing, 10),
 			opacity: activeStyles.opacity,
+			cellFill:
+				editor.getAttributes('tableCell').backgroundColor ||
+				editor.getAttributes('tableHeader').backgroundColor ||
+				null,
 		})
 	}
 
@@ -101,7 +157,32 @@ export const useTextEditor = () => {
 		markDirty()
 	}
 
-	const recordContentEdit = (oldValue, transaction, clampedWidth) => {
+	const growthAnchor = (editor) => {
+		const aligns = new Set()
+		editor.state.doc.descendants((node) => {
+			if (node.isTextblock) aligns.add(node.attrs.textAlign || 'left')
+		})
+		return aligns.size === 1 ? aligns.values().next().value : 'left'
+	}
+
+	// centered and right-aligned text holds its anchor by paying growth out of left
+	const applyGrowthShift = (editor) => {
+		const width = measuredAutoWidth(editor)
+		const previousWidth = lastRenderedWidth
+		lastRenderedWidth = width
+
+		if (width == null || previousWidth == null || width === previousWidth) return null
+
+		const anchor = growthAnchor(editor)
+		if (anchor !== 'center' && anchor !== 'right') return null
+
+		const delta = width - previousWidth
+		const oldValue = editorElement.left
+		editorElement.left = oldValue - (anchor === 'center' ? delta / 2 : delta)
+		return { oldValue, newValue: editorElement.left }
+	}
+
+	const recordContentEdit = (oldValue, transaction, leftShift) => {
 		const compositionId = transaction.getMeta('composition')
 		// an IME candidate pause routinely outlasts the coalesce window
 		const forceCoalesce = compositionId != null && compositionId === lastCompositionId
@@ -119,43 +200,51 @@ export const useTextEditor = () => {
 			coalesceKey: `content:${editorSlideId}:${editorElement.id}`,
 		})
 
-		if (!clampedWidth) return commandHistory.record(contentCommand, { forceCoalesce })
+		if (editorElement.type !== 'text' || editorElement.width)
+			return commandHistory.record(contentCommand, { forceCoalesce })
 
-		// the clamp has to undo with the edit that triggered it
-		const widthCommand = editElementCommand({
+		// always the batch shape, so shifted and unshifted keystrokes coalesce
+		const leftCommand = editElementCommand({
 			slideId: editorSlideId,
 			elementIds: [editorElement.id],
-			property: 'width',
-			oldValue: null,
-			newValue: clampedWidth,
+			property: 'left',
+			oldValue: leftShift?.oldValue ?? editorElement.left,
+			newValue: leftShift?.newValue ?? editorElement.left,
 		})
 
-		commandHistory.record(
-			batchCommand({
-				slideId: editorSlideId,
-				elementIds: [editorElement.id],
-				commands: [contentCommand, widthCommand],
-			}),
-		)
+		const command = batchCommand({
+			slideId: editorSlideId,
+			elementIds: [editorElement.id],
+			commands: [contentCommand, leftCommand],
+			// a side-handle drag can fix the width mid-burst, so the shapes must not coalesce
+			coalesceKey: `content+left:${editorSlideId}:${editorElement.id}`,
+		})
+
+		commandHistory.record(command, { forceCoalesce })
 	}
 
 	const handleOnTransaction = (editor, transaction) => {
+		// a caret placed in the mounted editor is the first sure chance to seed
+		if (lastRenderedWidth == null) lastRenderedWidth = measuredAutoWidth(editor)
 		if (!transaction.docChanged) return
 
 		// purposefully using onTransaction + docChanged instead of onUpdate
 		// since onUpdate also triggers when activeEditor changes from one text box to another
 		// leading to overwriting content for second one with first one's content
 
-		// history and init pushes must leave no trace at all
-		if (suppressRecording || !editorElement) return setEditorStyles(editor)
+		// history and init pushes still change the width, so the baseline follows
+		if (suppressRecording || !editorElement) {
+			lastRenderedWidth = measuredAutoWidth(editor)
+			return setEditorStyles(editor)
+		}
 
 		const oldValue = patchedHTML(editorElement.content)
 
 		updateElementContent(editor)
-		const clampedWidth = clampWidthToSlide(editorElement)
+		const leftShift = applyGrowthShift(editor)
 		setEditorStyles(editor)
 
-		recordContentEdit(oldValue, transaction, clampedWidth)
+		recordContentEdit(oldValue, transaction, leftShift)
 	}
 
 	const markCommands = {
@@ -165,13 +254,28 @@ export const useTextEditor = () => {
 		underline: 'toggleUnderline',
 	}
 
+	// a cursor in a cell styles that cell, the whole element otherwise
+	const selectStyleTarget = (chain) => {
+		const editor = activeEditor.value
+		const $cell = editor.isEditable ? cellAround(editor.state.selection.$head) : null
+		if (!$cell) return chain.selectAll()
+
+		// the cell's own boundaries can't hold a caret, and endpoints left on them
+		// get normalised outwards into the next cell
+		const { doc } = editor.state
+		return chain.setTextSelection({
+			from: Selection.near(doc.resolve($cell.pos + 1), 1).from,
+			to: Selection.near(doc.resolve($cell.pos + $cell.nodeAfter.nodeSize - 1), -1).to,
+		})
+	}
+
 	const toggleMark = (property) => {
 		const currentEditor = activeEditor.value
 
 		const chain = currentEditor.chain()
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		chain[markCommands[property]](property).run()
 	}
@@ -245,7 +349,7 @@ export const useTextEditor = () => {
 		if (property == 'list') return setListProperty(value)
 
 		const { empty } = currentEditor.state.selection
-		if (empty) chain.selectAll()
+		if (empty) selectStyleTarget(chain)
 
 		switch (property) {
 			case 'textAlign':
@@ -271,6 +375,11 @@ export const useTextEditor = () => {
 		editorElement = findSlideElement(id)
 		editorSlideId = currentSlide.value?.clientId
 		lastCompositionId = null
+		// two ticks: EditorContent reacts to the new editor, then adopts its view
+		lastRenderedWidth = null
+		nextTick(() =>
+			nextTick(() => (lastRenderedWidth ??= measuredAutoWidth(activeEditor.value))),
+		)
 
 		stopContentWatch?.()
 		stopContentWatch = watch(() => activeElement.value?.content, reconcileEditorContent)
@@ -280,9 +389,11 @@ export const useTextEditor = () => {
 				extensions: extensions,
 				editable: isEditable,
 				content: content,
+				parseOptions,
 				// focus only lands once EditorContent has adopted the view, so tiptap
-				// has to do it itself after mounting
-				autofocus: isEditable ? 'all' : false,
+				// has to do it itself after mounting. 'all' inside a table would
+				// select every cell, so tables start with a cursor in the first one
+				autofocus: isEditable ? (editorElement?.type === 'table' ? 'start' : 'all') : false,
 				// to update styles in sidebar based on cursor position
 				onSelectionUpdate: ({ editor }) => setEditorStyles(editor),
 				// to update element content on every change

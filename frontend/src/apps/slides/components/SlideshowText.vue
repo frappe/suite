@@ -15,10 +15,10 @@ const props = defineProps({
 
 const textRef = ref(null)
 
+// spaces stay real: &nbsp; forbids soft wraps, so a fixed-width element
+// would overflow its box on one line instead of wrapping like its editor render
 const encodeCharForHtml = (c) => {
 	switch (c) {
-		case ' ':
-			return '&nbsp;'
 		case '&':
 			return '&amp;'
 		case '<':
@@ -81,15 +81,29 @@ const createSpansForTextNode = (blockNode, textNode) => {
 const getNewChildrenHTML = (blockNode) => {
 	let childrenHTML = ''
 
-	const walker = document.createTreeWalker(blockNode, NodeFilter.SHOW_TEXT)
+	const walker = document.createTreeWalker(
+		blockNode,
+		NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+	)
 	while (walker.nextNode()) {
-		// for every text node, apply span styling to chars
-		const splitSpansHTML = createSpansForTextNode(blockNode, walker.currentNode)
-		childrenHTML += splitSpansHTML
+		const node = walker.currentNode
+
+		if (node.nodeType === Node.TEXT_NODE) {
+			// for every text node, apply span styling to chars
+			childrenHTML += createSpansForTextNode(blockNode, node)
+		} else if (node.tagName === 'BR') {
+			// a hard break carries no text, so a text-only walk drops it and the line merges
+			childrenHTML += '<br>'
+		}
 	}
 
 	return childrenHTML
 }
+
+// an <li> holding a nested list has blocks of its own inside it: splitting that
+// one would flatten the nesting away, and the walker reaches its inner blocks anyway
+const isTextBlock = (node) =>
+	['P', 'LI'].includes(node.tagName) && !node.querySelector('p, ul, ol')
 
 const getHTMLForContent = (content = props.content) => {
 	const doc = getDocFromHTML(content)
@@ -103,7 +117,7 @@ const getHTMLForContent = (content = props.content) => {
 
 	while (walker.nextNode()) {
 		const node = walker.currentNode
-		if (['P', 'LI'].includes(node.tagName)) {
+		if (isTextBlock(node)) {
 			const nodeCopy = node.cloneNode(true)
 			// replace current html with new html having split spans
 			node.innerHTML = getNewChildrenHTML(nodeCopy)
@@ -122,8 +136,10 @@ const getCurrentAndNewBlocks = (html) => {
 	const container = textRef.value
 	const selector = 'p, li'
 
-	const currentBlocks = container ? Array.from(container.querySelectorAll(selector)) : []
-	const newBlocks = Array.from(newDoc.body.querySelectorAll(selector))
+	const currentBlocks = container
+		? Array.from(container.querySelectorAll(selector)).filter(isTextBlock)
+		: []
+	const newBlocks = Array.from(newDoc.body.querySelectorAll(selector)).filter(isTextBlock)
 
 	return { currentBlocks, newBlocks }
 }
@@ -134,6 +150,13 @@ const getSpansFromBlocks = (currentBlocks, newBlocks, i) => {
 
 	return { currSpans, newSpans }
 }
+
+// only spans get updated in place, so a block whose breaks moved needs the full
+// replace even when its span count is unchanged
+const getBlockStructure = (block) =>
+	Array.from(block.children)
+		.map((node) => node.tagName)
+		.join(',')
 
 const updateSpanStyles = (span, newSpan) => {
 	const style = newSpan.getAttribute('style') || ''
@@ -152,7 +175,10 @@ const updateStylesForExistingContent = (newHTML) => {
 	for (let i = 0; i < currentBlocks.length; i++) {
 		const { currSpans, newSpans } = getSpansFromBlocks(currentBlocks, newBlocks, i)
 
-		if (currSpans.length !== newSpans.length) {
+		if (
+			currSpans.length !== newSpans.length ||
+			getBlockStructure(currentBlocks[i]) !== getBlockStructure(newBlocks[i])
+		) {
 			textHTML.value = newHTML
 			return
 		}

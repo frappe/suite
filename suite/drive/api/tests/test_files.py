@@ -11,7 +11,9 @@ from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
     create_auth_token,
+    does_entity_exist,
     get_file_content,
+    get_new_title,
     move,
     remove_or_restore,
     rename,
@@ -39,7 +41,7 @@ from suite.drive.utils import (
     create_drive_file,
     get_user_folder,
 )
-from suite.drive.utils.files import FileManager
+from suite.drive.utils.files import FileManager, get_s3_url
 from suite.tests.utils import ensure_user
 
 OWNER = "drive-files-owner@example.com"
@@ -551,11 +553,25 @@ class TestDriveFilesAPI(IntegrationTestCase):
         manager.s3_enabled = True
         manager.conn = Mock()
         manager.conn.get_object.return_value = {"Body": BytesIO(b"storage boundary")}
-        self.assertEqual(manager.get_file(uploaded).read(), b"storage boundary")
+        remote = frappe._dict(file_url=get_s3_url(f"team/{uploaded.name}"))
+        self.assertEqual(manager.get_file(remote).read(), b"storage boundary")
         manager.conn.get_object.assert_called_once_with(
             Bucket=manager.bucket,
-            Key=uploaded.file_url.lstrip("/"),
+            Key=f"team/{uploaded.name}",
         )
+
+    def test_framework_attachment_blob_reads_from_disk_even_with_s3(self):
+        # Adopted framework uploads keep their /private/files url and their blob
+        # on the site's disk; enabling S3 must not send their reads to the bucket.
+        with self.set_user(OWNER):
+            uploaded = self.upload(b"disk blob")
+
+        manager = FileManager()
+        manager.s3_enabled = True
+        manager.conn = Mock()
+        with manager.get_file(uploaded) as stored:
+            self.assertEqual(stored.read(), b"disk blob")
+        manager.conn.get_object.assert_not_called()
 
     def test_private_video_range_stream_uses_storage_relative_path(self):
         self.file.file_type = "Video"
@@ -705,3 +721,49 @@ class TestDriveFilesAPI(IntegrationTestCase):
                 rename(self.file.name, "forbidden.txt")
             with self.assertRaises(frappe.PermissionError):
                 move([self.file.name], new_parent=destination.name)
+
+    def test_unrelated_user_cannot_probe_folder_for_filenames(self):
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_revoked_user_cannot_probe_folder_for_filenames(self):
+        """The realistic caller: access was granted, the folder ID was learned,
+        then access was taken away. The ID outlives the grant."""
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True)
+
+        with self.set_user(OTHER_USER):
+            # Read alone is not enough - only the upload flow needs these.
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "unshare", cmd="unshare", user=OTHER_USER)
+
+        with self.set_user(OTHER_USER):
+            with self.assertRaises(frappe.PermissionError):
+                does_entity_exist(name=self.file.file_name, folder=self.folder.name)
+            with self.assertRaises(frappe.PermissionError):
+                get_new_title(self.file.file_name, self.folder.name)
+
+    def test_upload_access_still_answers_both_helpers(self):
+        with self.set_user(OWNER):
+            update_access(self.folder.name, "share", cmd="share", user=OTHER_USER, read=True, upload=True)
+
+        with self.set_user(OTHER_USER):
+            # Answered, not refused. What `get_new_title` answers for a user whose
+            # access is inherited is a separate matter - `get_new_file_name` lists
+            # siblings with `get_list`, whose criterion does not follow inheritance -
+            # so this asserts it returns rather than what it returns.
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertIsInstance(get_new_title(self.file.file_name, self.folder.name), str)
+
+    def test_owner_can_still_probe_own_folder_and_default_home(self):
+        with self.set_user(OWNER):
+            self.assertTrue(does_entity_exist(name=self.file.file_name, folder=self.folder.name))
+            self.assertFalse(does_entity_exist(name=f"{frappe.generate_hash(8)}.txt"))
+            self.assertNotEqual(get_new_title(self.file.file_name, self.folder.name), self.file.file_name)
+            self.assertEqual(get_new_title("unclaimed.txt", self.folder.name), "unclaimed.txt")

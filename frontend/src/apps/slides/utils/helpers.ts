@@ -85,8 +85,29 @@ const getDocFromHTML = (html: string) => {
 
 const sanitizeSlideHTML = (html: string) => {
 	return DOMPurify.sanitize(html, {
-		ALLOWED_TAGS: ['p', 'span', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'br'],
-		ALLOWED_ATTR: ['style', 'class'],
+		ALLOWED_TAGS: [
+			'p',
+			'span',
+			'strong',
+			'b',
+			'em',
+			'i',
+			'u',
+			's',
+			'ul',
+			'ol',
+			'li',
+			'br',
+			'table',
+			'colgroup',
+			'col',
+			'thead',
+			'tbody',
+			'tr',
+			'th',
+			'td',
+		],
+		ALLOWED_ATTR: ['style', 'class', 'colspan', 'rowspan', 'colwidth'],
 	})
 }
 

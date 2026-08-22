@@ -1,6 +1,5 @@
 import hashlib
 import io
-import json
 import os
 import zipfile
 
@@ -35,7 +34,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_seen_status,
     set_spam_status,
 )
-from suite.mail.doctype.mail_queue.mail_queue import MailQueue, apply_reconciled_submissions
+from suite.mail.doctype.mail_queue.mail_queue import MailQueue
 from suite.mail.doctype.mailbox.mailbox import add_mailbox, delete_mailboxes
 from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
@@ -70,7 +69,6 @@ from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
 from suite.utils import convert_html_to_text
 from suite.utils.rate_limiter import dynamic_rate_limit
-from suite.utils.user import is_system_manager
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
 SCREENING_FETCH_LIMIT = 500
@@ -668,7 +666,7 @@ def create_mail(
         send_at=send_at,
     )
 
-    if not save_as_draft and doc.status in ("Submitted", "Scheduled"):
+    if not save_as_draft and doc.status == "Submitted":
         create_contacts_if_not_exists(account, doc.recipients)
         auto_accept_recipients(account, doc.recipients)
 
@@ -678,6 +676,8 @@ def create_mail(
         "status": doc.status,
         "error": doc.error_message,
         "thread_id": doc.thread_id,
+        "submission_id": doc.submission_id,
+        "send_at": to_utc_z(doc.send_at),
     }
 
 
@@ -756,7 +756,7 @@ def update_draft_mail(
 
     queue = message.submit(send_at=send_at) if submit else message.save_draft()
 
-    if submit and queue.status in ("Submitted", "Scheduled"):
+    if submit and queue.status == "Submitted":
         create_contacts_if_not_exists(account, message.recipients)
         auto_accept_recipients(account, message.recipients)
 
@@ -766,109 +766,9 @@ def update_draft_mail(
         "status": queue.status,
         "error": queue.error_message,
         "thread_id": queue.thread_id,
+        "submission_id": queue.submission_id,
+        "send_at": to_utc_z(queue.send_at),
     }
-
-
-@frappe.whitelist()
-def get_scheduled_mails(account: str) -> list[dict]:
-    """Returns the account's scheduled (held) emails, reconciling any whose submission went final."""
-
-    user = get_user_for_jmap_account(account, raise_exception=True)
-    if user != frappe.session.user and not is_system_manager(frappe.session.user):
-        frappe.throw(_("You are not permitted to access this account."), frappe.PermissionError)
-
-    rows = frappe.db.get_all(
-        "Mail Queue",
-        filters={"account": account, "user": user, "status": "Scheduled"},
-        fields=[
-            "name",
-            "id",
-            "thread_id",
-            "subject",
-            "from_email",
-            "recipients",
-            "send_at",
-            "submission_id",
-            "creation",
-        ],
-        order_by="send_at asc",
-    )
-    if not rows:
-        return []
-
-    # Lazy reconcile via EmailSubmission/get — EmailSubmission/query returns empty on Stalwart
-    # even for pending submissions, so the queue rows are the source of truth for listing.
-    submission_ids = [row.submission_id for row in rows if row.submission_id]
-    undo_by_id = {}
-    if submission_ids:
-        client = get_account_client(account)
-        with client.batch() as b:
-            h = b.submission.email_submission.get(
-                ids=submission_ids, properties=["id", "emailId", "undoStatus", "sendAt"]
-            )
-        undo_by_id = {s.id: s.to_wire().get("undoStatus") for s in h.result.items}
-
-    result, submitted, cancelled = [], [], []
-    for row in rows:
-        undo_status = undo_by_id.get(row.submission_id)
-        if row.submission_id and undo_status == "final":
-            submitted.append(row.name)
-            continue
-        if row.submission_id and undo_status == "canceled":
-            # Canceled out-of-band (e.g. from the desk or the admin MTA queue).
-            cancelled.append(row.name)
-            continue
-
-        row.recipients = json.loads(row.recipients or "[]")
-        row.send_at = to_utc_z(row.send_at)
-        row.creation = to_utc_z(row.creation)
-        result.append(row)
-
-    # Two writes at most, however many rows finalized since the last visit.
-    apply_reconciled_submissions(submitted, cancelled)
-
-    return result
-
-
-def _get_scheduled_queue_doc(account: str, name: str) -> MailQueue:
-    """Fetches a Mail Queue row for a scheduled-send action, enforcing account and owner checks."""
-
-    doc: MailQueue = frappe.get_doc("Mail Queue", name)
-    if doc.account != account:
-        frappe.throw(_("Mail Queue {0} does not belong to account {1}.").format(name, account))
-
-    doc.check_permission("write")
-    return doc
-
-
-@frappe.whitelist()
-def reschedule_mail(account: str, name: str, send_at: str) -> dict:
-    """Updates the delivery time of a scheduled email. `send_at` is UTC `...Z`."""
-
-    doc = _get_scheduled_queue_doc(account, name)
-    doc.reschedule(from_utc_z(send_at))
-
-    return {"status": doc.status, "send_at": to_utc_z(doc.send_at)}
-
-
-@frappe.whitelist()
-def send_scheduled_mail_now(account: str, name: str) -> dict:
-    """Delivers a scheduled email immediately."""
-
-    doc = _get_scheduled_queue_doc(account, name)
-    doc.send_now()
-
-    return {"status": doc.status, "thread_id": doc.thread_id}
-
-
-@frappe.whitelist()
-def cancel_scheduled_mail(account: str, name: str) -> dict:
-    """Cancels a scheduled email's delivery and moves the message back to Drafts."""
-
-    doc = _get_scheduled_queue_doc(account, name)
-    doc.cancel_schedule()
-
-    return {"status": doc.status, "id": doc.id}
 
 
 @frappe.whitelist()

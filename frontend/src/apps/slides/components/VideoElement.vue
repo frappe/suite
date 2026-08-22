@@ -10,9 +10,11 @@
 	<div
 		v-else
 		class="h-full"
+		:class="{ 'cursor-pointer': inViewerMode }"
 		@click="handleVideoClick"
-		@mouseenter="handleHoverChange"
-		@mouseleave="handleHoverChange"
+		@mouseenter="handleMouseEnter"
+		@mousemove="revealControls"
+		@mouseleave="handleMouseLeave"
 	>
 		<video
 			ref="videoElement"
@@ -22,29 +24,47 @@
 			:playbackRate="element.playbackRate"
 			@timeupdate="updateProgress"
 			@loadedmetadata="updateDuration"
-			@ended="resetProgress"
+			@play="handlePlay"
+			@pause="handlePause"
+			@ended="handleEnded"
 			preload="auto"
 			:poster="getAttachmentUrl(element.poster)"
 		>
 			<source :src="getAttachmentUrl(element.src)" />
 		</video>
 		<div
+			v-if="!inViewerMode"
 			ref="overlay"
-			v-show="showOverlay"
 			class="overlay absolute left-0 top-0 size-full cursor-default overflow-hidden transition-opacity duration-500 ease-in-out"
-			:style="gradientOverlayStyles"
+			:style="editorOverlayStyles"
 		>
-			<div v-if="showProgressBar" :class="toggleButtonClasses">
-				<component
-					size="16"
-					:is="isPlaying ? Pause : Play"
-					class="stroke-[1.5] ps-[0.5px] text-white"
-				/>
+			<template v-if="isActive">
+				<div :class="toggleButtonClasses">
+					<component
+						size="16"
+						:is="isPlaying ? Pause : Play"
+						class="stroke-[1.5] ps-[0.5px] text-white"
+					/>
+				</div>
+				<div ref="progressBar" :class="progressBarClasses" @click.stop="seekTimestamp">
+					<div :class="getBarClasses('duration')"></div>
+					<div :class="getBarClasses('current')" :style="{ width: `${progress}%` }"></div>
+				</div>
+			</template>
+		</div>
+		<div
+			v-else
+			class="pointer-events-none absolute left-0 top-0 size-full overflow-hidden"
+			:style="{ borderRadius: `${element.borderRadius || 0}px` }"
+		>
+			<div v-if="persistControls && !isPlaying" :class="toggleButtonClasses">
+				<Play size="16" class="stroke-[1.5] ps-[0.5px] text-white" />
 			</div>
 			<div
-				v-if="showProgressBar"
 				ref="progressBar"
-				:class="progressBarClasses"
+				:class="`${progressBarClasses} bg-black-overlay-300 transition-opacity duration-200 ease-in-out`"
+				:style="progressBarStyles"
+				@mouseenter="cancelHide"
 				@click.stop="seekTimestamp"
 			>
 				<div :class="getBarClasses('duration')"></div>
@@ -55,7 +75,7 @@
 </template>
 
 <script setup>
-import { ref, computed, useTemplateRef, inject } from 'vue'
+import { ref, computed, useTemplateRef, inject, onBeforeUnmount } from 'vue'
 
 import { Play, Pause } from 'lucide-vue-next'
 
@@ -98,11 +118,25 @@ const getBarClasses = (type) => {
 }
 
 const progressBarClasses = computed(() => {
-	const baseClasses = 'absolute w-full bottom-0 left-0 cursor-pointer h-2'
-	return `${baseClasses} ${inSlideShowMode.value ? 'bottom-0' : 'bottom-[10px]'}`
+	const baseClasses = 'absolute w-full left-0 cursor-pointer h-2'
+	return `${baseClasses} ${inViewerMode.value ? 'bottom-0' : 'bottom-[10px]'}`
 })
 
+const progressBarStyles = computed(() => ({
+	opacity: controlsVisible.value ? 1 : 0,
+	pointerEvents: controlsVisible.value ? 'auto' : 'none',
+}))
+
+const editorOverlayStyles = computed(() => ({
+	background: `radial-gradient(circle at center, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 5%, rgba(0, 0, 0, 0) 100%),
+        linear-gradient(to top, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 15%, rgba(0, 0, 0, 0) 100%)`,
+	opacity: isActive.value ? 1 : 0,
+	borderRadius: `${element.value.borderRadius}px`,
+}))
+
 const isPlaying = ref(false)
+const hoverOver = ref(false)
+const hoverRevealed = ref(false)
 
 const boxShadow = useBoxShadow(element)
 
@@ -128,27 +162,56 @@ const thumbnailSrc = computed(() => {
 	return element.value.poster || ''
 })
 
+const isActive = computed(() => activeElementIds.value.includes(element.value.id))
+
+const inViewerMode = computed(() => inReadonlyMode.value || inSlideShowMode.value)
+
+const isPlayable = computed(() => inViewerMode.value || isActive.value)
+
+// the shared view has no other play affordance
+const persistControls = computed(() => inReadonlyMode.value && !inSlideShowMode.value)
+
+const controlsVisible = computed(() => {
+	if (!inViewerMode.value) return false
+	if (!persistControls.value) return !isPlaying.value && hoverRevealed.value
+	return !isPlaying.value || hoverRevealed.value
+})
+
+const controlsHideDelay = 1000
+let hideTimeout = null
+
+const revealControls = () => {
+	clearTimeout(hideTimeout)
+	if (!inViewerMode.value) return
+	if (isPlaying.value && !persistControls.value) return
+	hoverRevealed.value = true
+	hideTimeout = setTimeout(() => (hoverRevealed.value = false), controlsHideDelay)
+}
+
+const cancelHide = () => clearTimeout(hideTimeout)
+
+const hideControls = () => {
+	clearTimeout(hideTimeout)
+	hoverRevealed.value = false
+}
+
+onBeforeUnmount(() => clearTimeout(hideTimeout))
+
 const togglePlaying = () => {
 	const video = el.value
 	if (video.paused) {
-		isPlaying.value = true
 		video.play()
 	} else {
-		isPlaying.value = false
 		video.pause()
 	}
 }
 
 const handleVideoClick = (e) => {
-	const isActive = activeElementIds.value.includes(element.value.id)
-
-	// in slideshow, always toggle playing on click anywhere
-	// in editor, toggle playing only when center play button is clicked
-
-	if (inReadonlyMode.value || inSlideShowMode.value || (isActive && e.target !== overlay.value)) {
-		e.stopPropagation()
-		togglePlaying()
-	}
+	if (!isPlayable.value) return
+	// in the editor only the play button toggles, the backdrop selects
+	if (!inViewerMode.value && e.target === overlay.value) return
+	e.stopPropagation()
+	togglePlaying()
 }
 
 const duration = ref(0)
@@ -166,18 +229,6 @@ const updateDuration = () => {
 	duration.value = video.duration
 }
 
-const hoverOver = ref(false)
-
-const showProgressBar = computed(() => {
-	// In editor, show it when video is active
-	const isActive = activeElementIds.value.includes(element.value.id)
-
-	// During slideshow, show it only if user is hovering over video
-	const slideshowHovering = inSlideShowMode.value && hoverOver.value
-
-	return isActive || slideshowHovering || (inReadonlyMode.value && !inSlideShowMode.value)
-})
-
 const progressBarRef = useTemplateRef('progressBar')
 
 const seekTimestamp = (e) => {
@@ -188,28 +239,28 @@ const seekTimestamp = (e) => {
 	video.currentTime = seekTo
 }
 
-const gradientOverlayStyles = computed(() => ({
-	background: `radial-gradient(circle at center, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 5%, rgba(0, 0, 0, 0) 100%),
-        linear-gradient(to top, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.1) 15%, rgba(0, 0, 0, 0) 100%)`,
-	opacity: showProgressBar.value ? 1 : 0,
-	borderRadius: `${element.value.borderRadius}px`,
-}))
+const handlePlay = () => {
+	isPlaying.value = true
+	hideControls()
+}
 
-const resetProgress = () => {
-	progress.value = 0
+const handlePause = () => {
 	isPlaying.value = false
+	if (hoverOver.value) revealControls()
 }
 
-const handleHoverChange = (e) => {
-	if (e.type === 'mouseenter') {
-		hoverOver.value = true
-	} else if (e.type === 'mouseleave') {
-		hoverOver.value = false
-	}
+const handleEnded = () => {
+	progress.value = 0
+	handlePause()
 }
 
-const showOverlay = computed(() => {
-	if (inSlideShowMode.value) return hoverOver.value || !isPlaying.value
-	return true
-})
+const handleMouseEnter = () => {
+	hoverOver.value = true
+	revealControls()
+}
+
+const handleMouseLeave = () => {
+	hoverOver.value = false
+	hideControls()
+}
 </script>

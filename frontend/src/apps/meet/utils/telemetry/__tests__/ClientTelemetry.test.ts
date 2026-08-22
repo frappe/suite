@@ -92,6 +92,32 @@ describe("ClientTelemetry", () => {
 		});
 	});
 
+	it("reports expected-media repair outcomes", () => {
+		const sendClientTelemetry = vi.fn();
+		const telemetry = new ClientTelemetry({ sendClientTelemetry }, true);
+
+		telemetry.reportMediaRepair({
+			media: "video",
+			source: "remote",
+			stage: "subscription",
+			action: "subscribe",
+			attempt: 1,
+			outcome: "success",
+			durationMs: 500,
+		});
+
+		expect(sendClientTelemetry).toHaveBeenCalledWith({
+			event: "media_repair",
+			media: "video",
+			source: "remote",
+			stage: "subscription",
+			action: "subscribe",
+			attempt: 1,
+			outcome: "success",
+			durationMs: 500,
+		});
+	});
+
 	it("throttles and bounds sampled network quality", () => {
 		const sendClientTelemetry = vi.fn();
 		let now = 0;

@@ -2,7 +2,7 @@ name: Suite CI
 
 on:
   schedule:
-    - cron: "17 1 * * *"
+    - cron: "17 22 * * *"
   push:
     branches:
       - develop
@@ -26,6 +26,11 @@ on:
       - ".github/scripts/**"
       - ".github/workflows/suite-ci.yml"
   workflow_dispatch:
+    inputs:
+      run_recorder_integration:
+        description: Run the recorder integration scenarios
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -55,7 +60,7 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -90,12 +95,12 @@ jobs:
           echo "Run meet recorder server tests: $run_recorder"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           check-latest: true
@@ -109,7 +114,7 @@ jobs:
             'realtime/*.test.js'
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
@@ -122,7 +127,7 @@ jobs:
         run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
 
       - name: Cache yarn
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
           key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
@@ -220,7 +225,7 @@ jobs:
           RECORDER_CHROMIUM_NO_SANDBOX: "1"
 
       - name: Run Meet Recorder Integration Tests
-        if: always() && github.event_name == 'schedule' && steps.node-server-changes.outputs.run_recorder == '1'
+        if: always() && (github.event_name == 'schedule' || inputs.run_recorder_integration) && steps.node-server-changes.outputs.run_recorder == '1'
         working-directory: suite/meet/recorder-server
         run: yarn test:integration
 
@@ -233,7 +238,7 @@ jobs:
 
       - name: Upload Backend Evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: suite-backend-evidence
           path: |
@@ -278,7 +283,7 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -310,27 +315,27 @@ jobs:
           echo "127.0.0.1 mail.example.test" | sudo tee -a /etc/hosts
           bash $GITHUB_WORKSPACE/suite/mail/tests/docker/start-stalwart.sh
         env:
-          STALWART_VERSION: v0.16.16
+          STALWART_VERSION: v0.16.17
           STALWART_CLI_VERSION: v1.0.12
           STALWART_ADMIN_USER: admin
           STALWART_ADMIN_PASSWORD: admin
 
       - name: Setup Python
         if: steps.mail-calendar-changes.outputs.run == '1'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
       - name: Setup Node
         if: steps.mail-calendar-changes.outputs.run == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           check-latest: true
 
       - name: Cache pip
         if: steps.mail-calendar-changes.outputs.run == '1'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
@@ -399,7 +404,7 @@ jobs:
 
       - name: Upload ${{ matrix.name }} Evidence
         if: always() && steps.mail-calendar-changes.outputs.run == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: suite-${{ matrix.module }}-evidence
           path: test-results/${{ matrix.module }}/
@@ -412,7 +417,7 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -438,7 +443,7 @@ jobs:
 
       - name: Setup Node
         if: steps.frontend-changes.outputs.run == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: "yarn"
@@ -471,7 +476,7 @@ jobs:
 
       - name: Upload Frontend Evidence
         if: always() && steps.frontend-changes.outputs.run == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: suite-frontend-evidence
           path: frontend/test-results/
