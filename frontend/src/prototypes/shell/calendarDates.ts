@@ -4,6 +4,14 @@ import dayjs, { type Dayjs } from 'dayjs'
 
 export const ISO = 'YYYY-MM-DD'
 
+/**
+ * PROTOTYPE — the demo clock, 'HH:mm'. Pinned so a screenshot is reproducible:
+ * the now line sits in the same place every time, and so does the split between
+ * events that have finished and events still to come. Set to null to follow the
+ * real clock.
+ */
+export const DEMO_NOW: string | null = '11:25'
+
 export function today(): string {
   return dayjs().format(ISO)
 }

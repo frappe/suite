@@ -1,6 +1,6 @@
 <!--
   PROTOTYPE — remove. Month grid in the same ink-first language as the week:
-  a dot carries the calendar, the title is ink, nothing is filled.
+  a colour badge carries the calendar, the title is ink, nothing is filled.
 
   Rows share the height evenly and each cell caps its list, so a busy week
   cannot stretch the grid past the viewport.
@@ -43,18 +43,13 @@
             {{ day.date }}
           </button>
 
-          <Popover
-            v-for="event in day.shown"
-            :key="event.id"
-            side="right"
-            align="start"
-            arrow
-          >
-            <template #trigger>
+          <Popover v-for="event in day.shown" :key="event.id" side="right" align="start">
+            <template #trigger="{ isOpen }">
               <button
-                class="flex h-5 w-full min-w-0 shrink-0 items-center gap-1.5 rounded-1 px-1 text-left hover:bg-surface-gray-2"
+                class="flex h-5 w-full min-w-0 shrink-0 items-center gap-1.5 rounded-1 px-1 text-left"
+                :class="isOpen ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'"
               >
-                <span class="size-1.5 shrink-0 rounded-full" :class="event.dot" />
+                <span class="size-2 shrink-0 rounded-1" :class="event.dot" />
                 <span class="truncate text-xs text-ink-gray-8">{{ event.title }}</span>
               </button>
             </template>

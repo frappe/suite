@@ -41,16 +41,11 @@
       <div class="grid flex-1 auto-rows-[1.375rem] grid-cols-7 gap-y-0.5 pb-1.5">
         <!-- The placement style goes on the button, not on Popover: Popover
              renders no element of its own, so the button is the grid child. -->
-        <Popover
-          v-for="bar in allDayBars"
-          :key="bar.event.id"
-          side="bottom"
-          align="start"
-          arrow
-        >
-          <template #trigger>
+        <Popover v-for="bar in allDayBars" :key="bar.event.id" side="bottom" align="start">
+          <template #trigger="{ isOpen }">
             <button
-              class="relative mx-0.5 flex min-w-0 items-center overflow-hidden rounded-1 bg-surface-gray-2 pl-2 pr-1.5 text-left hover:bg-surface-gray-3"
+              class="relative mx-0.5 flex min-w-0 items-center overflow-hidden rounded-1 pl-2 pr-1.5 text-left"
+              :class="isOpen ? 'bg-surface-gray-4' : 'bg-surface-gray-2 hover:bg-surface-gray-3'"
               :style="{ gridColumn: `${bar.column} / span ${bar.span}`, gridRow: bar.lane + 1 }"
             >
               <span
@@ -102,24 +97,23 @@
                 :key="block.event.id"
                 side="right"
                 align="start"
-                arrow
               >
-                <template #trigger>
+                <template #trigger="{ isOpen }">
                   <!--
                     Three layouts, chosen by how much room the block actually
-                    has. The hairline outline (see the style block) is what
-                    keeps overlapping cards legible: they would otherwise merge
-                    into one grey mass.
+                    has. Cards carry no border: the 2px gap the placement leaves
+                    between them is what keeps a stack legible.
                   -->
                   <button
                     class="event-card absolute flex flex-col overflow-hidden rounded-1 pl-2 pr-1.5 text-left"
                     :class="[
-                      block.past ? 'opacity-60' : '',
                       // A quarter-hour block is shorter than one line plus its
                       // padding, so the one-line layouts centre instead of
                       // padding and let the box crop the leading, not the text.
                       layoutFor(block) === 'stacked' ? 'justify-start py-0.5' : 'justify-center',
                     ]"
+                    :data-past="block.past ? '' : undefined"
+                    :data-active="isOpen ? '' : undefined"
                     :data-lifted="lifted === block.event.id ? '' : undefined"
                     :style="styleFor(block)"
                     @mouseenter="lift($event.currentTarget as HTMLElement, block.event.id)"
@@ -189,7 +183,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef, wa
 import { Popover, ScrollArea } from 'frappe-ui'
 import dayjs from 'dayjs'
 
-import { ISO, formatTime, hourLabel, weekOf } from '../calendarDates'
+import { DEMO_NOW, ISO, formatTime, hourLabel, toMinutes, weekOf } from '../calendarDates'
 import { eventsBetween, isAllDay, type CalEvent } from '../calendarFixtures'
 import EventDetails from './EventDetails.vue'
 
@@ -250,14 +244,18 @@ const weekEnd = computed(() => week.value[6].format(ISO))
 const events = computed(() => eventsBetween(weekStart.value, weekEnd.value))
 
 // ── Now line ────────────────────────────────────────────────────────────────
+// The clock is pinned for the demo (see DEMO_NOW), so the ticker only runs when
+// the prototype is following the real time.
 const now = ref(dayjs())
-let ticker: ReturnType<typeof setInterval>
+let ticker: ReturnType<typeof setInterval> | undefined
 onMounted(() => {
-  ticker = setInterval(() => (now.value = dayjs()), 60_000)
+  if (!DEMO_NOW) ticker = setInterval(() => (now.value = dayjs()), 60_000)
 })
 onBeforeUnmount(() => clearInterval(ticker))
 
-const nowMinutes = computed(() => now.value.hour() * 60 + now.value.minute())
+const nowMinutes = computed(() =>
+  DEMO_NOW ? toMinutes(DEMO_NOW) : now.value.hour() * 60 + now.value.minute(),
+)
 
 // ── Lifting a card ──────────────────────────────────────────────────────────
 const grid = useTemplateRef<HTMLElement>('grid')
@@ -513,16 +511,12 @@ watch(() => props.date, () => requestAnimationFrame(scrollToOpeningHour))
 <style scoped>
 /*
   PROTOTYPE — the card's own colour is raw OKLCH, not the semantic tokens the
-  rest of the shell uses. Two reasons to try it here:
+  rest of the shell uses. The stack needs steps finer than the surface scale
+  has: `surface-gray-2/3/4` are three different greys, and what a stack wants is
+  one grey with lightness walked in even amounts, which is what `--stack` does
+  below.
 
-  - The stack needs steps finer than the surface scale has. `surface-gray-2/3/4`
-    are three different greys; what a stack wants is one grey with lightness
-    walked in even amounts, which is what `--stack` does below.
-  - The hairline wants a translucent black, not an opaque grey. Over a card that
-    is itself getting lighter, an opaque outline drifts in contrast as the stack
-    deepens; an alpha one holds.
-
-  The cost is that nothing here follows the theme on its own — every value is
+  The cost is that nothing here follows the theme on its own: every value is
   written twice, once per theme. If this survives, it belongs in the token
   scale, not in a component.
 */
@@ -530,39 +524,77 @@ watch(() => props.date, () => requestAnimationFrame(scrollToOpeningHour))
   --stack: 0;
   --fill: calc(0.968 - var(--stack) * 0.026);
   background-color: oklch(var(--fill) 0 0);
-  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.1);
 }
 
 .event-card:hover {
   background-color: oklch(calc(var(--fill) - 0.03) 0 0);
 }
 
+/*
+  A finished event is dimmed, not greyed: the whole card drops to 60% so it
+  reads as behind the day. Pointing at one brings it back to full strength:
+  a card you are reading should never be the faded one.
+*/
+.event-card[data-past] {
+  opacity: 0.6;
+}
+
+.event-card[data-past]:hover,
+.event-card[data-past]:focus-visible,
+.event-card[data-past][data-lifted],
+.event-card[data-past][data-active] {
+  opacity: 1;
+}
+
+/*
+  The open card is the one whose preview is on screen, so it holds a deeper fill
+  than hover: hover follows the pointer and is gone the moment it leaves, while
+  this has to survive the pointer travelling to the panel.
+*/
+.event-card[data-active],
+.event-card[data-active]:hover {
+  background-color: oklch(calc(var(--fill) - 0.07) 0 0);
+}
+
+/*
+  The lift is four shadows, not one: each layer doubles the blur of the one
+  before it and fades as it grows. A single shadow gives one hard edge of dark;
+  a ramp gives a tight contact shadow at the card and a wide soft one under it,
+  which is what reads as height. It is also the only edge a card gets, now that
+  the hairline is gone.
+*/
 .event-card[data-lifted] {
   box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.1),
-    0 1px 2px oklch(0 0 0 / 0.06),
-    0 2px 6px oklch(0 0 0 / 0.08);
+    0 1px 1px oklch(0 0 0 / 0.05),
+    0 2px 4px oklch(0 0 0 / 0.06),
+    0 6px 10px -2px oklch(0 0 0 / 0.08),
+    0 12px 20px -6px oklch(0 0 0 / 0.1);
 }
 
 /*
   Dark mode walks the other way: lighter as the stack deepens, because further
-  up the stack is further from the page. The hairline flips to white — black on
-  a dark card is invisible — and the elevation gets heavier, since a shadow has
-  less room to read against a dark ground.
+  up the stack is further from the page. The lift keeps the same four layers but
+  each carries more black, since a shadow has less room to read against a dark
+  ground.
 */
 [data-theme='dark'] .event-card {
   --fill: calc(0.281 + var(--stack) * 0.032);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08);
 }
 
 [data-theme='dark'] .event-card:hover {
   background-color: oklch(calc(var(--fill) + 0.035) 0 0);
 }
 
+[data-theme='dark'] .event-card[data-active],
+[data-theme='dark'] .event-card[data-active]:hover {
+  background-color: oklch(calc(var(--fill) + 0.08) 0 0);
+}
+
 [data-theme='dark'] .event-card[data-lifted] {
   box-shadow:
-    0 0 0 1px oklch(1 0 0 / 0.12),
-    0 1px 2px oklch(0 0 0 / 0.3),
-    0 2px 8px oklch(0 0 0 / 0.4);
+    0 1px 2px oklch(0 0 0 / 0.35),
+    0 3px 6px oklch(0 0 0 / 0.4),
+    0 8px 14px -2px oklch(0 0 0 / 0.45),
+    0 16px 26px -8px oklch(0 0 0 / 0.5);
 }
 </style>
