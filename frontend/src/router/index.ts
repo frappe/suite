@@ -137,7 +137,7 @@ function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
  * inside an AppContainer group, and drop the placeholder so future navigations
  * resolve straight to the real routes.
  */
-async function ensureAppRoutesLoaded(appId: string): Promise<void> {
+export async function ensureAppRoutesLoaded(appId: string): Promise<void> {
   if (registeredApps.has(appId)) return
 
   const loader = appRouteLoaders[appId]

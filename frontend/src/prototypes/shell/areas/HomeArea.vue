@@ -13,9 +13,13 @@
         <Button label="View all" variant="ghost" :route="areaTo('files')" />
       </div>
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <button
+        <!-- Rows that open something are links, so the whole card is a real
+             navigation target; the rest stay inert buttons. -->
+        <component
+          :is="recentTo(doc) ? RouterLink : 'button'"
           v-for="doc in RECENT_DOCS"
           :key="doc.id"
+          :to="recentTo(doc)"
           class="flex flex-col items-start gap-3 rounded-5 border border-outline-gray-1 bg-surface-base p-3 text-left hover:bg-surface-gray-1"
         >
           <!-- No tile behind the icon: the kind already reads from its colour,
@@ -25,13 +29,15 @@
             :class="[DOC_KIND_META[doc.kind].icon, DOC_KIND_META[doc.kind].tint]"
             aria-hidden="true"
           />
-          <span class="flex min-w-0 flex-col gap-0.5">
+          <!-- The card aligns its children to the start, so this block has to
+               claim the full width itself before truncate has an edge to cut at. -->
+          <span class="flex w-full min-w-0 flex-col gap-0.5">
             <span class="w-full truncate text-base font-medium text-ink-gray-8">
               {{ doc.name }}
             </span>
             <span class="text-xs text-ink-gray-5">{{ doc.opened }}</span>
           </span>
-        </button>
+        </component>
       </div>
     </section>
 
@@ -40,6 +46,11 @@
       <div class="flex items-center justify-between pb-3">
         <h2 class="text-lg font-medium text-ink-gray-9">Upcoming</h2>
         <div class="flex items-center gap-1">
+          <!-- Rooms are standing links, not scheduled items, so they hang off
+               this header instead of holding a section of their own. -->
+          <Dropdown :options="ROOM_MENU_ITEMS" align="end">
+            <Button label="Rooms" icon-right="lucide-chevron-down" variant="ghost" />
+          </Dropdown>
           <Dropdown :options="SCHEDULE_MENU_ITEMS" align="end">
             <Button label="Schedule" icon-right="lucide-chevron-down" variant="ghost" />
           </Dropdown>
@@ -75,43 +86,12 @@
                 label="Join"
                 icon-left="lucide-video"
                 variant="outline"
+                :route="meetTo(event.meet)"
+                @click.stop
               />
             </ListCell>
           </ListRow>
         </ListGroup>
-      </List>
-    </section>
-
-    <!-- Rooms -->
-    <section>
-      <div class="flex items-center justify-between pb-3">
-        <h2 class="text-lg font-medium text-ink-gray-9">Rooms</h2>
-        <Button label="New" icon-left="lucide-plus" variant="ghost" />
-      </div>
-      <!-- The handle is the point, so it gets its own column rather than
-           hiding under the name: these are URLs the workspace has taken. -->
-      <List
-        class="-mx-3 list-row-px-3"
-        :columns="['minmax(0,1fr)', '12rem', '10rem', '7rem']"
-        :row-height="40"
-      >
-        <ListRow v-for="room in MEETING_ROOMS" :key="room.id" :value="room.id" @click="() => {}">
-          <ListCell>
-            <span class="truncate text-base text-ink-gray-8">{{ room.name }}</span>
-          </ListCell>
-          <ListCell>
-            <span class="truncate font-mono text-sm text-ink-gray-5">
-              {{ room.handle }}
-            </span>
-          </ListCell>
-          <ListCell>
-            <span class="truncate text-base text-ink-gray-5">{{ room.cadence }}</span>
-          </ListCell>
-          <ListCell class="justify-end gap-1">
-            <Button icon="lucide-link" variant="ghost" label="Copy link" />
-            <Button label="Join" icon-left="lucide-video" variant="outline" />
-          </ListCell>
-        </ListRow>
       </List>
     </section>
   </div>
@@ -120,13 +100,50 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Button, Dropdown, PageHeader } from 'frappe-ui'
+import { RouterLink, useRouter } from 'vue-router'
 import { List, ListCell, ListGroup, ListRow } from 'frappe-ui/list'
 
-import { DOC_KIND_META, MEETING_ROOMS, RECENT_DOCS, UPCOMING_EVENTS } from '../fixtures'
+import {
+  DOC_KIND_META,
+  MEETING_ROOMS,
+  meetTo,
+  pdfRef,
+  RECENT_DOCS,
+  UPCOMING_EVENTS,
+  type RecentDoc,
+} from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
 import { useShellNav } from '../useShellNav'
 
-const { areaTo } = useShellNav()
+const router = useRouter()
+const { areaTo, docTo } = useShellNav()
+
+// A PDF has no editor behind it, so it opens the shell's own preview. Cards
+// with neither stay inert.
+function recentTo(doc: RecentDoc) {
+  if (doc.kind === 'pdf') return docTo(pdfRef(doc.name))
+  return doc.doc ? docTo(doc.doc) : undefined
+}
+
+// One click joins. The handle rides along as the description because the URL
+// is the part worth remembering; the cadence says when the room is busy.
+const ROOM_MENU_ITEMS = [
+  {
+    group: 'Rooms',
+    hideLabel: true,
+    options: MEETING_ROOMS.map((room) => ({
+      label: room.name,
+      description: [room.handle, room.cadence].filter(Boolean).join(' · '),
+      icon: 'lucide-video',
+      onClick: () => router.push(meetTo(room.code)),
+    })),
+  },
+  {
+    group: 'New',
+    hideLabel: true,
+    options: [{ label: 'New room', icon: 'lucide-plus', onClick: () => {} }],
+  },
+]
 
 const SCHEDULE_MENU_ITEMS = [
   { label: 'Event', icon: 'lucide-calendar-plus', onClick: () => {} },

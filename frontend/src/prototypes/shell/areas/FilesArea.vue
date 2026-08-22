@@ -163,7 +163,7 @@
               v-for="file in section.files"
               :key="file.id"
               :value="file.id"
-              :to="file.kind === 'folder' ? folderTo(pathIds(file)) : undefined"
+              :to="rowTo(file)"
               @click="() => {}"
             >
               <ListCell>
@@ -235,10 +235,10 @@
                    real <button> — `:is="'button'"` would resolve through the app's
                    component registry and land on frappe-ui's Button. -->
               <component
-                :is="file.kind === 'folder' ? RouterLink : NativeButton"
+                :is="rowTo(file) ? RouterLink : NativeButton"
                 v-for="file in section.files"
                 :key="file.id"
-                :to="file.kind === 'folder' ? folderTo(pathIds(file)) : undefined"
+                :to="rowTo(file)"
                 :data-file-id="file.id"
                 class="relative flex select-none flex-col items-start gap-3 rounded-5 border p-3 text-start transition-colors"
                 :class="tileClass(file)"
@@ -292,7 +292,7 @@
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import {
   Avatar,
   Breadcrumbs,
@@ -321,13 +321,26 @@ import {
   childrenOf,
   filesInView,
   pathTo,
+  pdfRef,
   type FileRow,
 } from '../fixtures'
 import NewMenu from '../parts/NewMenu.vue'
 import { useShellNav } from '../useShellNav'
 import { workspaceId } from '../workspaceState'
 
-const { folder, folderPath, areaTo, folderTo, go } = useShellNav()
+const { folder, folderPath, areaTo, docTo, folderTo, go } = useShellNav()
+
+/**
+ * Where a row goes when it is clicked. Folders descend the tree; rows carrying
+ * a real document open it in the shell; a PDF opens the shell's own preview;
+ * the rest of the fixture tree is inert, which is what `undefined` leaves them
+ * as.
+ */
+function rowTo(file: FileRow): RouteLocationRaw | undefined {
+  if (file.kind === 'folder') return folderTo(pathIds(file))
+  if (file.kind === 'pdf') return docTo(pdfRef(file.name))
+  return file.doc ? docTo(file.doc) : undefined
+}
 
 type GroupKey = 'none' | 'type' | 'owner' | 'modified'
 type ColumnKey = 'type' | 'owner' | 'location' | 'shared' | 'size' | 'modified'
@@ -606,7 +619,7 @@ function locationOf(file: FileRow) {
 // A folder's size is the sum of what is under it, which this prototype has no
 // reason to walk — it reads as a dash instead of a wrong number.
 function sizeLabel(file: FileRow) {
-  if (file.bytes === undefined) return '—'
+  if (file.bytes === undefined) return '–'
   if (file.bytes < 1000) return `${file.bytes} B`
   if (file.bytes < 1000_000) return `${Math.round(file.bytes / 1000)} KB`
   return `${(file.bytes / 1000_000).toFixed(1)} MB`

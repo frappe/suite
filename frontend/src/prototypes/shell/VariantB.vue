@@ -10,14 +10,22 @@
   only scoped CSS can reach.
 -->
 <template>
-  <DesktopShell :scroll="isOverview" class="prototype-shell h-full">
+  <DesktopShell :scroll="scrollContent" class="prototype-shell h-full">
     <template #rail>
       <Rail class="border-r">
         <!-- Cancel Rail's own top padding and stand exactly one PageHeader tall
              (min-h-12), so the divider below the logo continues the header's
              bottom border across the rail. -->
+        <!-- The workspace's own mark, not the suite's: the rail is the only
+             place it appears now, so it has to follow the switcher. -->
         <div class="-mt-2.5 flex h-12 shrink-0 items-center justify-center">
-          <img :src="suiteLogo" alt="Frappe Suite" class="size-7" />
+          <Avatar
+            v-if="isPersonalWorkspace"
+            :image="USER.avatar"
+            :label="USER.name"
+            class="size-7"
+          />
+          <FrappeTile v-else class="size-7" :title="currentWorkspace.name" />
         </div>
 
         <div class="flex w-full shrink-0 flex-col items-center gap-0.5 border-t pt-3">
@@ -30,8 +38,8 @@
             :label="item.label"
             variant="ghost"
             :to="areaTo(item.id)"
-            :active="area === item.id"
-            :badge="item.id === 'mail' && !modifierHeld ? 12 : undefined"
+            :active="activeNavId === item.id"
+            :badge="item.id === 'mail' && !modifierHeld ? inboxUnread : undefined"
           >
             <span :class="[item.icon, 'size-4']" aria-hidden="true" />
             <ShortcutHint :label="shortcutFor(item.id)" />
@@ -59,7 +67,9 @@
       </Rail>
     </template>
 
-    <template #sidebar>
+    <!-- An open document gets the whole pane. The rail is enough to leave the
+         editor, and a sidebar beside it would only be a list of somewhere else. -->
+    <template v-if="area !== 'doc'" #sidebar>
       <Sidebar disable-collapse width="14rem">
         <div class="flex shrink-0 items-center p-1.5">
           <WorkspaceSwitcher />
@@ -88,10 +98,18 @@
           </template>
 
           <template v-else-if="area === 'mail'">
-            <div class="flex h-7 items-center justify-between">
+            <!-- The Screener stands above the labelled sections: it is a
+                 decision queue, not a place mail is filed. -->
+            <ScreenerLink />
+            <div class="mt-2 flex h-7 items-center justify-between">
               <SidebarLabel>Mailboxes</SidebarLabel>
             </div>
             <MailboxList class="mt-0.5" />
+            <div class="mt-3 flex h-7 items-center justify-between">
+              <SidebarLabel>Folders</SidebarLabel>
+              <Button variant="ghost" icon="lucide-plus" aria-label="New folder" />
+            </div>
+            <MailboxList :items="MAIL_FOLDERS" class="mt-0.5" />
           </template>
 
           <template v-else>
@@ -101,11 +119,11 @@
             </div>
             <nav class="mt-0.5 space-y-0.5">
               <SidebarItem v-for="cal in CALENDARS" :key="cal.id" :label="cal.label">
-                <!-- The dot sits in the same 16px box an icon would, so the
-                     labels line up with every other row in the panel. -->
+                <!-- The badge sits in the same 16px box an icon would, so
+                     the labels line up with every other row in the panel. -->
                 <template #prefix>
                   <span class="grid size-4 place-items-center">
-                    <span class="size-2.5 rounded-full" :class="cal.dot" />
+                    <span class="size-2.5 rounded-1" :class="cal.dot" />
                   </span>
                 </template>
               </SidebarItem>
@@ -123,6 +141,7 @@
 import { computed } from 'vue'
 import {
   Avatar,
+  Button,
   DesktopShell,
   Rail,
   RailItem,
@@ -133,21 +152,24 @@ import {
   useTheme,
 } from 'frappe-ui'
 
-import suiteLogo from '@/assets/app-logos/suite.svg'
-
 import CalendarArea from './areas/CalendarArea.vue'
+import DocArea from './areas/DocArea.vue'
 import FilesArea from './areas/FilesArea.vue'
 import HomeArea from './areas/HomeArea.vue'
 import MailArea from './areas/MailArea.vue'
 import { CALENDARS } from './calendarFixtures'
 import { FOLDERS, NAV_ITEMS, USER } from './fixtures'
+import { MAIL_FOLDERS, unreadIn } from './mailFixtures'
 import MailboxList from './parts/MailboxList.vue'
+import ScreenerLink from './parts/ScreenerLink.vue'
+import FrappeTile from './parts/FrappeTile.vue'
 import MiniMonth from './parts/MiniMonth.vue'
 import SearchTrigger from './parts/SearchTrigger.vue'
 import ShortcutHint from './parts/ShortcutHint.vue'
 import WorkspaceSwitcher from './parts/WorkspaceSwitcher.vue'
 import { useShellNav } from './useShellNav'
 import { modifierHeld, shortcutFor, useShellShortcuts } from './useShellShortcuts'
+import { currentWorkspace, isPersonalWorkspace } from './workspaceState'
 
 const { area, folder, areaTo, go } = useShellNav()
 
@@ -168,11 +190,22 @@ function toggleTheme() {
 
 const isOverview = computed(() => area.value === 'home' || area.value === 'files')
 
+// The doc area is the exception: its editor owns its own scrolling.
+const scrollContent = computed(() => isOverview.value)
+
+// The rail has no doc item, so an open document keeps Files lit.
+const activeNavId = computed(() => (area.value === 'doc' ? 'files' : area.value))
+
+// Derived from the same fixture rows the Mail list renders, so the badge and
+// the mailbox counts can never disagree.
+const inboxUnread = computed(() => unreadIn('inbox'))
+
 const AREA_COMPONENTS = {
   home: HomeArea,
   files: FilesArea,
   mail: MailArea,
   calendar: CalendarArea,
+  doc: DocArea,
 }
 const areaComponent = computed(() => AREA_COMPONENTS[area.value])
 </script>

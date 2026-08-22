@@ -32,6 +32,11 @@
           >
             <span class="size-4 shrink-0 text-ink-gray-5" :class="item.icon" aria-hidden="true" />
             <span class="truncate">{{ item.label }}</span>
+            <!-- The time sits at the end of the row, so the titles stay in one
+                 column with every other item in the palette. -->
+            <span v-if="item.meta" class="ml-auto shrink-0 pl-2 text-sm text-ink-gray-5">
+              {{ item.meta }}
+            </span>
           </button>
         </div>
       </div>
@@ -41,13 +46,21 @@
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Dialog, TextInput } from 'frappe-ui'
 
-import { DOC_KIND_META, RECENT_DOCS, type AreaId } from './fixtures'
+import {
+  DOC_KIND_META,
+  meetTo,
+  RECENT_DOCS,
+  UPCOMING_EVENTS,
+  type AreaId,
+} from './fixtures'
 import { commandPaletteOpen as open } from './useCommandPalette'
 import { useShellNav } from './useShellNav'
 
 const { go } = useShellNav()
+const router = useRouter()
 const query = ref('')
 // TextInput exposes its native element as `el`.
 const inputEl = ref<{ el: HTMLInputElement | null } | null>(null)
@@ -55,10 +68,26 @@ const inputEl = ref<{ el: HTMLInputElement | null } | null>(null)
 interface PaletteItem {
   label: string
   icon: string
+  /** Trailing text, right-aligned: a time, not a second label. */
+  meta?: string
   area?: AreaId
+  /** Path this item opens when it leads somewhere outside the shell. */
+  path?: string
 }
 
 const GROUPS: { label: string; items: PaletteItem[] }[] = [
+  {
+    // The next few meetings come first: the palette is the fastest way to a
+    // call that has already started, and one keystroke should reach it.
+    label: 'Upcoming',
+    items: UPCOMING_EVENTS.slice(0, 3).map((event) => ({
+      label: event.title,
+      icon: event.meet ? 'lucide-video' : 'lucide-calendar',
+      meta: `${event.day}, ${event.time.split(' – ')[0]}`,
+      path: event.meet ? meetTo(event.meet) : undefined,
+      area: event.meet ? undefined : ('calendar' as AreaId),
+    })),
+  },
   {
     label: 'Jump to',
     items: [
@@ -87,7 +116,8 @@ const GROUPS: { label: string; items: PaletteItem[] }[] = [
 ]
 
 function onItemClick(item: PaletteItem) {
-  if (item.area) go(item.area)
+  if (item.path) router.push(item.path)
+  else if (item.area) go(item.area)
   open.value = false
 }
 

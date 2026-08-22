@@ -3,26 +3,24 @@
   Trigger geometry is copied from Gameplan's CommunityDropdown so the two
   sidebars line up pixel for pixel: rounded-4, px-2 py-1, a text-lg-medium
   title, and a size-7 cell holding the chevron. Two deliberate departures from
-  Gameplan: the trigger carries the workspace's own mark, and the chevron is
-  the up-down pair, which reads as "switch" rather than "open a menu".
+  Gameplan: the trigger carries no mark, since the rail already shows the
+  workspace's, and the chevron is the up-down pair, which reads as "switch"
+  rather than "open a menu".
 -->
 <template>
   <Dropdown :options="menuItems" match-trigger-width>
     <template #default="{ open }">
       <button
         type="button"
-        class="flex h-10 w-full min-w-0 items-center gap-2 rounded-4 px-1.5 text-ink-gray-7 transition"
+        class="flex h-10 w-full min-w-0 items-center gap-2 rounded-4 pl-2.5 pr-1.5 text-ink-gray-7 transition"
         :class="open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-2'"
         :title="current.name"
       >
-        <Avatar
-          v-if="isPersonal(current)"
-          :image="USER.avatar"
-          :label="USER.name"
-          class="size-6 shrink-0"
-        />
-        <FrappeTile v-else class="size-6 shrink-0" />
-        <!-- Both lines run tight so the 2px gap fits inside the 40px row. -->
+        <!-- No mark here: the rail carries the workspace's, and repeating it
+             two columns away said the same thing twice. The left padding takes
+             over the mark's job of putting the title on the same 66px inset as
+             the section labels and row icons below.
+             Both lines run tight so the 2px gap fits inside the 40px row. -->
         <span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
           <span class="truncate text-base font-medium leading-tight text-ink-gray-8">
             {{ current.name }}
@@ -44,12 +42,8 @@ import { computed, h } from 'vue'
 import { Avatar, Dropdown } from 'frappe-ui'
 
 import { USER, WORKSPACES } from '../fixtures'
-import { workspaceId as currentId } from '../workspaceState'
+import { currentWorkspace as current, workspaceId as currentId } from '../workspaceState'
 import FrappeTile from './FrappeTile.vue'
-
-const current = computed(
-  () => WORKSPACES.find((w) => w.id === currentId.value) ?? WORKSPACES[0],
-)
 
 const isPersonal = (workspace: { id: string }) => workspace.id === 'personal'
 

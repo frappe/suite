@@ -18,7 +18,9 @@ export const USER = {
   avatar: 'https://avatars.githubusercontent.com/u/9355208?v=4',
 }
 
-export type AreaId = 'home' | 'files' | 'mail' | 'calendar'
+// 'doc' is not in the rail: it is where the shell puts an open document, so
+// it is reached by clicking a file, never by clicking a nav item.
+export type AreaId = 'home' | 'files' | 'mail' | 'calendar' | 'doc'
 
 export const NAV_ITEMS: { id: AreaId; label: string; icon: string }[] = [
   { id: 'home', label: 'Home', icon: 'lucide-home' },
@@ -39,22 +41,88 @@ export const DOC_KIND_META: Record<
   pdf: { icon: 'lucide-file', tint: 'text-ink-red-6', label: 'PDF' },
 }
 
+/**
+ * A row that opens a REAL document on this site instead of doing nothing.
+ *
+ * The prototype keeps its fixture list — the names and the folder tree are the
+ * demo, not the site's own contents — but a row carrying `doc` routes into the
+ * shell's doc area, which mounts the app's real editor.
+ *
+ * `id` is what each app's route wants, and the three apps do not agree:
+ *   writer -> the Drive File name          (suite.drive.api.list.files -> name)
+ *   slides -> the Presentation docname     (File.content_docname)
+ *   sheets -> the Sheet docname            (File.content_docname)
+ */
+export type DocApp = 'writer' | 'slides' | 'sheets' | 'pdf'
+
+export interface DocRef {
+  app: DocApp
+  id: string
+}
+
+/**
+ * A PDF opens in the shell's own preview instead of an app, so it carries no
+ * real document id. The file's name is the id: it is unique across the
+ * fixtures, it reads in the URL, and a mail attachment that is in no folder
+ * still resolves to something the preview can title itself with.
+ */
+export function pdfRef(name: string): DocRef {
+  return { app: 'pdf', id: name }
+}
+
+/** The real documents on suite.localhost the demo opens. */
+export const REAL_DOCS = {
+  requirements: { app: 'writer', id: '8b85dbc749' },
+  onboarding: { app: 'writer', id: 'a2fef4407c' },
+  meetingNotes: { app: 'writer', id: '26235c6ce0' },
+  longDoc: { app: 'writer', id: '9dcc5a5022' },
+  frappeverse: { app: 'slides', id: 'u501ukp0pc' },
+  hiring: { app: 'sheets', id: '9kd6k71f47' },
+} satisfies Record<string, DocRef>
+
+/**
+ * The real Meet rooms on suite.localhost. Meet's own room codes, so Join opens
+ * a live meeting instead of a dead link. A room is a claimed name: the same
+ * code is reused every week, which is why it can be baked into a fixture.
+ */
+export const REAL_MEETS = {
+  standup: 'cwvn-cnpt-hmmu',
+  timeless: 'ndpf-kgxy-scuy',
+  designReview: 'xrfo-ejjf-qfce',
+  faris: 'gtmv-jdtm-amxo',
+  oneOnOne: 'swsd-hogk-sxpm',
+} as const
+
+/** Where a Meet room code lives in the URL. */
+export function meetTo(code: string): string {
+  return `/meet/${code}`
+}
+
 export interface RecentDoc {
   id: string
   name: string
   kind: DocKind
   opened: string
+  /** Set when the row opens a real document; unset rows stay inert. */
+  doc?: DocRef
 }
 
+// The first three rows open real documents, so the demo can click straight
+// from Home into an editor. Their names are the real files' names — renaming
+// the fixture is cheaper than renaming a document whose own first heading
+// would then disagree with it on camera.
 export const RECENT_DOCS: RecentDoc[] = [
-  { id: 'd1', name: 'Q3 planning notes', kind: 'writer', opened: 'opened 12m ago' },
-  { id: 'd2', name: 'Hiring pipeline', kind: 'sheet', opened: 'opened 1h ago' },
-  { id: 'd3', name: 'Suite launch deck', kind: 'slides', opened: 'opened 2h ago' },
+  { id: 'd1', name: 'Product Requirements', kind: 'writer', opened: 'opened 12m ago', doc: REAL_DOCS.requirements },
+  { id: 'd2', name: 'Hiring pipeline', kind: 'sheet', opened: 'opened 1h ago', doc: REAL_DOCS.hiring },
+  { id: 'd3', name: 'Frappe UI Frappeverse 2026', kind: 'slides', opened: 'opened 2h ago', doc: REAL_DOCS.frappeverse },
   { id: 'd4', name: 'Vendor contract.pdf', kind: 'pdf', opened: 'opened 3h ago' },
-  { id: 'd5', name: 'Meeting minutes — 14 Aug', kind: 'writer', opened: 'opened yesterday' },
+  { id: 'd5', name: 'Meeting Notes, 14 Aug 2026', kind: 'writer', opened: 'opened yesterday', doc: REAL_DOCS.meetingNotes },
   { id: 'd6', name: 'Expense tracker', kind: 'sheet', opened: 'opened yesterday' },
   { id: 'd7', name: 'Design review deck', kind: 'slides', opened: 'opened 2d ago' },
-  { id: 'd8', name: 'Onboarding checklist', kind: 'writer', opened: 'opened 3d ago' },
+  { id: 'd8', name: 'Engineering Onboarding', kind: 'writer', opened: 'opened 3d ago', doc: REAL_DOCS.onboarding },
+  { id: 'd9', name: 'Shell mockups', kind: 'slides', opened: 'opened 4d ago' },
+  { id: 'd10', name: 'Pricing model', kind: 'sheet', opened: 'opened 5d ago' },
+  { id: 'd11', name: 'Icon set.pdf', kind: 'pdf', opened: 'opened last week' },
 ]
 
 export interface UpcomingEvent {
@@ -62,7 +130,8 @@ export interface UpcomingEvent {
   title: string
   day: 'Today' | 'Tomorrow'
   time: string
-  meet: boolean
+  /** Room code when the event has a Meet link; unset when it has none. */
+  meet?: string
   /** Column in the week grid, Monday = 0. */
   dayIndex: number
   /** Decimal hours, grid runs 8:00–18:00. */
@@ -71,48 +140,10 @@ export interface UpcomingEvent {
 }
 
 export const UPCOMING_EVENTS: UpcomingEvent[] = [
-  { id: 'e1', title: 'Design review', day: 'Today', time: '10:00 – 11:00', meet: true, dayIndex: 5, startHour: 10, endHour: 11 },
-  { id: 'e2', title: '1:1 Faris / Rushabh', day: 'Today', time: '14:00 – 14:30', meet: true, dayIndex: 5, startHour: 14, endHour: 14.5 },
-  { id: 'e3', title: 'Sprint planning', day: 'Tomorrow', time: '09:30 – 10:30', meet: false, dayIndex: 6, startHour: 9.5, endHour: 10.5 },
-  { id: 'e4', title: 'Dentist', day: 'Tomorrow', time: '16:00 – 17:00', meet: false, dayIndex: 6, startHour: 16, endHour: 17 },
-]
-
-export interface Mailbox {
-  id: string
-  label: string
-  icon: string
-  unread?: number
-}
-
-export const MAILBOXES: Mailbox[] = [
-  { id: 'inbox', label: 'Inbox', icon: 'lucide-inbox', unread: 12 },
-  { id: 'sent', label: 'Sent', icon: 'lucide-send' },
-  { id: 'drafts', label: 'Drafts', icon: 'lucide-pencil-line' },
-  { id: 'archive', label: 'Archive', icon: 'lucide-archive' },
-  { id: 'spam', label: 'Spam', icon: 'lucide-octagon-alert' },
-  { id: 'trash', label: 'Trash', icon: 'lucide-trash-2' },
-]
-
-export interface MailThread {
-  id: string
-  from: string
-  subject: string
-  snippet: string
-  time: string
-  unread: boolean
-}
-
-export const MAIL_THREADS: MailThread[] = [
-  { id: 't1', from: 'Rushabh Mehta', subject: 'Suite shell direction', snippet: 'I think the contextual swap feels closer to what we discussed…', time: '09:41', unread: true },
-  { id: 't2', from: 'GitHub', subject: '[frappe/suite] PR #482 merged', snippet: 'feat(shell): unified workspace sidebar — merged by faris…', time: '09:12', unread: true },
-  { id: 't3', from: 'Priya Nair', subject: 'Calendar sync bug', snippet: 'The recurring events duplicate when the timezone changes…', time: '08:55', unread: true },
-  { id: 't4', from: 'Frappe Cloud', subject: 'Your invoice for August', snippet: 'Invoice INV-2026-0812 for suite.frappe.cloud is ready…', time: 'Yesterday', unread: false },
-  { id: 't5', from: 'Aditya Verma', subject: 'Re: Design tokens audit', snippet: 'All seven frontends now use the semantic ramps, except…', time: 'Yesterday', unread: false },
-  { id: 't6', from: 'Stalwart', subject: 'Weekly mail report', snippet: '312 messages delivered, 4 greylisted, 0 bounced…', time: 'Yesterday', unread: false },
-  { id: 't7', from: 'Neha Kulkarni', subject: 'Slides templates', snippet: 'Uploaded the new pitch templates to the shared folder…', time: 'Wed', unread: false },
-  { id: 't8', from: 'Crowdin', subject: 'New translations ready', snippet: '48 strings translated into German and French await review…', time: 'Wed', unread: false },
-  { id: 't9', from: 'Rushabh Mehta', subject: 'Offsite agenda', snippet: 'Draft agenda for the September offsite, comments welcome…', time: 'Tue', unread: false },
-  { id: 't10', from: 'Sentry', subject: 'New issue in suite-frontend', snippet: "TypeError: Cannot read properties of undefined (reading 'id')…", time: 'Mon', unread: false },
+  { id: 'e1', title: 'Design review', day: 'Today', time: '10:00 – 11:00', meet: REAL_MEETS.designReview, dayIndex: 5, startHour: 10, endHour: 11 },
+  { id: 'e2', title: '1:1 Faris / Rushabh', day: 'Today', time: '14:00 – 14:30', meet: REAL_MEETS.oneOnOne, dayIndex: 5, startHour: 14, endHour: 14.5 },
+  { id: 'e3', title: 'Sprint planning', day: 'Tomorrow', time: '09:30 – 10:30', dayIndex: 6, startHour: 9.5, endHour: 10.5 },
+  { id: 'e4', title: 'Dentist', day: 'Tomorrow', time: '16:00 – 17:00', dayIndex: 6, startHour: 16, endHour: 17 },
 ]
 
 export interface FileRow {
@@ -130,6 +161,8 @@ export interface FileRow {
   shared?: boolean
   starred?: boolean
   trashed?: boolean
+  /** Set when the row opens a real document; unset rows stay inert. */
+  doc?: DocRef
 }
 
 // A real tree, not a flat list: `parent` is the only structure, so the Files
@@ -139,19 +172,19 @@ const FRAPPE_FILES: FileRow[] = [
   { id: 'f1', name: 'Product', kind: 'folder', parent: null, owner: 'Faris', modified: '2d ago', minutesAgo: 2880 },
   { id: 'f2', name: 'Design', kind: 'folder', parent: null, owner: 'Neha Kulkarni', modified: '5d ago', minutesAgo: 7200, shared: true },
   { id: 'f13', name: 'Operations', kind: 'folder', parent: null, owner: 'Priya Nair', modified: '4d ago', minutesAgo: 5760, shared: true },
-  { id: 'f3', name: 'Q3 planning notes', kind: 'writer', parent: null, owner: 'Faris', modified: '12m ago', minutesAgo: 12, bytes: 48_200, starred: true },
-  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', parent: null, owner: 'Priya Nair', modified: '1h ago', minutesAgo: 60, bytes: 312_000, shared: true },
-  { id: 'f5', name: 'Suite launch deck', kind: 'slides', parent: null, owner: 'Faris', modified: '2h ago', minutesAgo: 120, bytes: 8_400_000, starred: true },
+  { id: 'f3', name: 'Product Requirements', kind: 'writer', parent: null, owner: 'Faris', modified: '12m ago', minutesAgo: 12, bytes: 48_200, starred: true, doc: REAL_DOCS.requirements },
+  { id: 'f4', name: 'Hiring pipeline', kind: 'sheet', parent: null, owner: 'Priya Nair', modified: '1h ago', minutesAgo: 60, bytes: 312_000, shared: true, doc: REAL_DOCS.hiring },
+  { id: 'f5', name: 'Frappe UI Frappeverse 2026', kind: 'slides', parent: null, owner: 'Faris', modified: '2h ago', minutesAgo: 120, bytes: 8_400_000, starred: true, doc: REAL_DOCS.frappeverse },
   { id: 'f6', name: 'Vendor contract.pdf', kind: 'pdf', parent: null, owner: 'Rushabh Mehta', modified: '3h ago', minutesAgo: 180, bytes: 1_260_000, shared: true },
-  { id: 'f7', name: 'Meeting minutes — 14 Aug', kind: 'writer', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1440, bytes: 22_800, shared: true },
+  { id: 'f7', name: 'Meeting Notes, 14 Aug 2026', kind: 'writer', parent: null, owner: 'Aditya Verma', modified: 'yesterday', minutesAgo: 1440, bytes: 22_800, shared: true, doc: REAL_DOCS.meetingNotes },
   { id: 'f8', name: 'Expense tracker', kind: 'sheet', parent: null, owner: 'Faris', modified: 'yesterday', minutesAgo: 1500, bytes: 486_000 },
   { id: 'f9', name: 'Design review deck', kind: 'slides', parent: null, owner: 'Neha Kulkarni', modified: '2d ago', minutesAgo: 2940, bytes: 12_700_000, shared: true, starred: true },
-  { id: 'f10', name: 'Onboarding checklist', kind: 'writer', parent: null, owner: 'Faris', modified: '3d ago', minutesAgo: 4320, bytes: 64_500, starred: true },
+  { id: 'f10', name: 'Engineering Onboarding', kind: 'writer', parent: null, owner: 'Faris', modified: '3d ago', minutesAgo: 4320, bytes: 64_500, starred: true, doc: REAL_DOCS.onboarding },
 
   // Product
   { id: 'p1', name: 'Roadmap', kind: 'folder', parent: 'f1', owner: 'Faris', modified: '6h ago', minutesAgo: 360 },
   { id: 'p2', name: 'Specs', kind: 'folder', parent: 'f1', owner: 'Aditya Verma', modified: '1d ago', minutesAgo: 1380, shared: true },
-  { id: 'p3', name: 'Product brief', kind: 'writer', parent: 'f1', owner: 'Faris', modified: '4h ago', minutesAgo: 240, bytes: 91_300, starred: true },
+  { id: 'p3', name: 'Long Document: Formatting Stress Test', kind: 'writer', parent: 'f1', owner: 'Faris', modified: '4h ago', minutesAgo: 240, bytes: 91_300, starred: true, doc: REAL_DOCS.longDoc },
   { id: 'p4', name: 'Pricing model', kind: 'sheet', parent: 'f1', owner: 'Rushabh Mehta', modified: '2d ago', minutesAgo: 3000, bytes: 738_000, shared: true },
 
   // Product / Roadmap
@@ -301,6 +334,26 @@ export function pathTo(id: string, workspace: WorkspaceId): FileRow[] {
   return chain
 }
 
+/**
+ * The fixture row a real document belongs to, searched across both workspaces
+ * so a doc URL still resolves its name after a workspace switch. Falls back to
+ * the Recent list, whose rows are not part of any tree.
+ */
+export function rowForDoc(ref: DocRef): FileRow | RecentDoc | undefined {
+  // A PDF row carries no `doc`, so it is matched on the name `pdfRef` put in
+  // the URL. Every other app matches on the real document id.
+  const matches = (row: FileRow | RecentDoc) =>
+    ref.app === 'pdf'
+      ? row.kind === 'pdf' && row.name === ref.id
+      : row.doc?.id === ref.id && row.doc.app === ref.app
+
+  for (const files of Object.values(WORKSPACE_FILES)) {
+    const hit = files.find(matches)
+    if (hit) return hit
+  }
+  return RECENT_DOCS.find(matches)
+}
+
 export interface MeetingRoom {
   id: string
   name: string
@@ -308,16 +361,18 @@ export interface MeetingRoom {
   handle: string
   /** When the room is normally used. Prose, not a schedule. */
   cadence: string
+  /** The room's real Meet code. */
+  code: string
 }
 
 // Rooms are claimed names, not events: the workspace owns the handle, and the
 // same URL is reused every week. That is why they live beside Recent rather
 // than inside the Calendar.
 export const MEETING_ROOMS: MeetingRoom[] = [
-  { id: 'm1', name: 'Frappe Suite standup', handle: 'frappe-suite', cadence: 'Weekdays, 09:30' },
-  { id: 'm2', name: 'Timeless weekly', handle: 'timeless', cadence: 'Thursdays, 16:00' },
-  { id: 'm3', name: 'Design review', handle: 'design', cadence: 'Tuesdays, 15:00' },
-  { id: 'm4', name: 'Faris', handle: 'faris', cadence: '' },
+  { id: 'm1', name: 'Frappe Suite standup', handle: 'frappe-suite', cadence: 'Weekdays, 09:30', code: REAL_MEETS.standup },
+  { id: 'm2', name: 'Timeless weekly', handle: 'timeless', cadence: 'Thursdays, 16:00', code: REAL_MEETS.timeless },
+  { id: 'm3', name: 'Design review', handle: 'design', cadence: 'Tuesdays, 15:00', code: REAL_MEETS.designReview },
+  { id: 'm4', name: 'Faris', handle: 'faris', cadence: '', code: REAL_MEETS.faris },
 ]
 
 export const CALENDARS = [

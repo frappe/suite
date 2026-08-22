@@ -3,9 +3,9 @@
 import { computed } from 'vue'
 import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 
-import type { AreaId } from './fixtures'
+import type { AreaId, DocApp, DocRef } from './fixtures'
 
-const AREAS: AreaId[] = ['home', 'files', 'mail', 'calendar']
+const AREAS: AreaId[] = ['home', 'files', 'mail', 'calendar', 'doc']
 
 export function useShellNav() {
   const route = useRoute()
@@ -47,6 +47,22 @@ export function useShellNav() {
     }
   }
 
+  /** `doc/<app>/<id>` — the app and document the doc area should mount. */
+  const openDoc = computed<DocRef | null>(() => {
+    if (area.value !== 'doc') return null
+    const [app, id] = segments.value
+    if (!app || !id) return null
+    return { app: app as DocApp, id }
+  })
+
+  /** Route that opens a real document inside the shell. */
+  function docTo(ref: DocRef): RouteLocationRaw {
+    return {
+      name: 'prototype-shell',
+      params: { area: 'doc', sub: [ref.app, ref.id] },
+    }
+  }
+
   /** Route for a folder in the Files tree; an empty path is the tree root. */
   function folderTo(path: string[]): RouteLocationRaw {
     return {
@@ -59,5 +75,5 @@ export function useShellNav() {
     router.push(areaTo(target, targetSub))
   }
 
-  return { area, sub, folder, folderPath, areaTo, folderTo, go }
+  return { area, sub, folder, folderPath, openDoc, areaTo, docTo, folderTo, go }
 }
