@@ -1,15 +1,18 @@
 <template>
 	<!-- clip, not just hidden: a hidden root still scrolls when a caret lands past its edge -->
 	<div
-		class="isolate flex h-screen w-screen select-none flex-col overflow-hidden overflow-clip"
+		class="isolate flex select-none flex-col overflow-hidden overflow-clip"
+		:class="embedded ? 'h-full w-full min-h-0' : 'h-screen w-screen'"
 		@click="focusedSlide = null"
 	>
+		<!-- the host shell draws its own header, so we must not stack a second one -->
 		<EditorNavbar
+			v-if="!embedded"
 			@startSlideShow="startSlideShow"
 			@performDropdownAction="performNavbarDropdownAction"
 		/>
 
-		<div class="relative flex h-screen bg-surface-gray-1">
+		<div class="relative flex min-h-0 flex-1 bg-surface-gray-1">
 			<SlideContainer
 				ref="slideContainer"
 				v-if="presentationDoc"
@@ -109,6 +112,7 @@ import {
 	templateList,
 	templateListResource,
 	inReadonlyMode,
+	inEmbeddedMode,
 	createPresentationResource,
 	duplicatePresentation,
 	deletePresentation,
@@ -139,6 +143,7 @@ import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/savin
 import { inSlideShowMode, startSlideShow } from '@/apps/slides/stores/slideshow'
 import { Layout, Trash } from 'lucide-vue-next'
 import { useCommandHistory } from '@/apps/slides/composables/useCommandHistory'
+import { getEditorAccess } from '@/apps/slides/utils/editorAccess'
 
 
 const route = useRoute()
@@ -158,7 +163,15 @@ const props = defineProps({
 		type: String,
 		default: 'none',
 	},
+	// mounted by a host shell instead of the /slides routes
+	embedded: {
+		type: Boolean,
+		default: false,
+	},
 })
+
+// stores read this to keep off a URL that is not ours; set before anything runs
+inEmbeddedMode.value = props.embedded
 
 const showThemeDialog = ref(false)
 const themeDialogAction = ref('update')
@@ -184,7 +197,11 @@ usePageMeta(() => {
 	}
 })
 
-onActivated(() => (document.title = pageTitle()))
+onActivated(() => {
+	// a kept-alive editor elsewhere may have flipped this while we were inactive
+	inEmbeddedMode.value = props.embedded
+	document.title = pageTitle()
+})
 
 const handleAutoSave = () => {
 	if (isSlideInteractionActive.value || focusElementId.value != null) return
@@ -192,7 +209,7 @@ const handleAutoSave = () => {
 }
 
 const updateRoute = async (slug) => {
-	if (props.slug == slug) return
+	if (props.embedded || props.slug == slug) return
 	router.replace({
 		name: 'slides-editor',
 		params: { presentationId: presentationId.value, slug: slug },
@@ -281,9 +298,24 @@ watch(
 	{ immediate: true },
 )
 
+// no route guard resolves access outside /slides, so ask for it directly and
+// stay read-only until the answer lands
+const startEmbeddedEditor = async () => {
+	inReadonlyMode.value = true
+	if (['edit', 'view'].includes(props.editorAccess)) {
+		inReadonlyMode.value = props.editorAccess == 'view'
+	} else {
+		inReadonlyMode.value = (await getEditorAccess(props.presentationId)) !== 'edit'
+	}
+	loadEditorState()
+}
+
+if (props.embedded) startEmbeddedEditor()
+
 watch(
 	() => route.name,
 	(name) => {
+		if (props.embedded) return
 		if (!['slides-editor-new', 'slides-editor'].includes(name)) return
 		inReadonlyMode.value = props.editorAccess == 'view'
 		if (name === 'slides-editor-new') {
@@ -304,6 +336,7 @@ watch(
 		inReadonlyMode.value = props.editorAccess == 'view'
 		thumbnailCaptureRef.value?.reset()
 		commandHistory.clearHistory()
+		if (props.embedded) return startEmbeddedEditor()
 		loadEditorState()
 	},
 )
@@ -329,6 +362,8 @@ provide('inReadonlyMode', inReadonlyMode)
 provide('inSlideShowMode', inSlideShowMode)
 
 const navigateToPresentation = async (name) => {
+	// the host shell decides what to open next; we must not move its URL
+	if (props.embedded) return
 	if (route.name === 'slides-editor-new') {
 		await router.replace({
 			name: 'slides-editor',
@@ -390,6 +425,7 @@ const updatePresentationTheme = async (theme) => {
 
 const performNavbarDropdownAction = async (action) => {
 	if (action == 'create') {
+		if (props.embedded) return
 		await router.push({ name: 'slides-editor-new' })
 	} else if (action == 'duplicate') {
 		const newPresentation = await duplicatePresentation(presentationId.value)
@@ -408,6 +444,7 @@ const confirmDelete = async () => {
 	showDeleteDialog.value = false
 	await deletePresentation(presentationId.value)
 	thumbnailCaptureRef.value?.reset()
+	if (props.embedded) return
 	router.push({ name: 'slides-home' })
 }
 

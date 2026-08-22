@@ -1,9 +1,8 @@
 import type { RouteLocationNormalized, RouteRecordRaw, Router } from 'vue-router'
 
-import { createResource } from 'frappe-ui'
-
 import { router, setEditorAccess, setPreviousRoute } from '@/apps/slides/router'
 import SlidesShell from '@/apps/slides/SlidesShell.vue'
+import { getEditorAccess } from '@/apps/slides/utils/editorAccess'
 import { useSessionStore } from '@/boot/session'
 
 /**
@@ -82,22 +81,6 @@ export default routes
 /* route on the per-presentation access level. Installed once, the first time  */
 /* this module is loaded (see bottom of file).                                 */
 /* -------------------------------------------------------------------------- */
-
-const getEditorAccess = async (presentationId: string) => {
-  try {
-    const response = await createResource({
-      url: 'suite.slides.doctype.presentation.presentation.get_editor_access',
-      method: 'GET',
-    }).submit({
-      doctype: 'Presentation',
-      presentation_id: presentationId,
-    })
-    return response
-  } catch (error) {
-    console.error('Failed to fetch presentation access level:', error)
-    return false
-  }
-}
 
 const SLIDES_GUARDED = new Set(['slides-slideshow', 'slides-editor', 'slides-home'])
 

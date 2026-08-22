@@ -3,6 +3,7 @@ import {
 	applyReverseTransition,
 	presentationDoc,
 	presentationId,
+	inEmbeddedMode,
 } from '@/apps/slides/stores/presentation'
 import { focusedSlide, slideIndex, slides, setSlideIndex } from '@/apps/slides/stores/slide'
 
@@ -36,6 +37,8 @@ const exitFullscreen = () => {
 }
 
 const startSlideShow = () => {
+	// the slideshow needs the /slides URL; embedded there is none to go to
+	if (inEmbeddedMode.value) return
 	requestFullscreen()
 	router.replace({
 		name: 'slides-slideshow',

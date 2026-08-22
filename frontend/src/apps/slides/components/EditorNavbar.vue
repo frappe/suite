@@ -58,7 +58,8 @@ import { presentationDoc } from '@/apps/slides/stores/presentation'
 import { saveFailed } from '@/apps/slides/stores/saving'
 import { useRoute } from 'vue-router'
 
-const isOnline = inject('isOnline', ref(false))
+// no provider outside SlidesShell; assume online rather than flag a false outage
+const isOnline = inject('isOnline', ref(true))
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 
 const emit = defineEmits(['startSlideShow', 'performDropdownAction'])

@@ -345,6 +345,10 @@ const presentationTheme = computed(() => {
 
 const inReadonlyMode = ref(false)
 
+// true when the editor is mounted outside its own /slides route. The URL then
+// belongs to the host shell, so nothing here may write to it.
+const inEmbeddedMode = ref(false)
+
 const deletePresentation = async (presentation) => {
 	await call('suite.slides.doctype.presentation.presentation.delete_presentation', {
 		name: presentation,
@@ -385,6 +389,7 @@ export {
 	templateListResource,
 	presentationTheme,
 	inReadonlyMode,
+	inEmbeddedMode,
 	updatePresentationTitle,
 	savePresentationDoc,
 	initPresentationDoc,

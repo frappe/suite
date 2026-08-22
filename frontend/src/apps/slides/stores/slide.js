@@ -5,6 +5,7 @@ import {
 	presentationId,
 	templateList,
 	inReadonlyMode,
+	inEmbeddedMode,
 	presentationTheme,
 	transformElements,
 } from '@/apps/slides/stores/presentation'
@@ -108,6 +109,8 @@ const changeSlide = (index, focus = true) => {
 	} else {
 		focusedSlide.value = null
 	}
+
+	if (inEmbeddedMode.value) return
 
 	// the query only mirrors the slide we already landed on, so nothing waits on it
 	router.replace({
