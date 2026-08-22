@@ -278,28 +278,44 @@ const getReadonlyPresentationResource = (name, url) => {
 	})
 }
 
+// rows are matched by client_id on the server, so name, parent and idx stay out
+const toSlideRow = (slide) => ({
+	client_id: slide.clientId,
+	background: slide.background,
+	elements: slide.corruptElements ?? JSON.stringify(slide.elements, null, 2),
+	transition: slide.transition,
+	transition_duration: slide.transitionDuration,
+	fade_unmatched_elements: slide.fadeUnmatchedElements,
+})
+
+const isSaveConflict = (error) => error?.exc_type === 'TimestampMismatchError'
+
 const savePresentationDoc = async (updatedSlides) => {
-	const newSlides = updatedSlides.map((slide) => {
-		const { thumbnail, corruptElements, ...slideData } = slide
-		return {
-			...slideData,
-			client_id: slide.clientId,
-			elements: corruptElements ?? JSON.stringify(slide.elements, null, 2),
-			transition_duration: slide.transitionDuration,
-			fade_unmatched_elements: slide.fadeUnmatchedElements,
-		}
+	const doc = presentationDoc.value
+	// the server refuses a snapshot built on an older version than it holds, which
+	// is what keeps a stale tab from wiping rows another editor saved since
+	const { modified } = await call('suite.slides.api.slides.save_slides', {
+		name: doc.name,
+		slides: updatedSlides.map(toSlideRow),
+		base_modified: doc.modified,
 	})
 
+	// the editor can move on mid-save; stamping then would mark another
+	// presentation with this save's version
+	if (presentationDoc.value === doc) doc.modified = modified
+
+	return modified
+}
+
+// another editor saved first: their version is the truth now, so take it in
+// place of the local snapshot rather than fight over whose rows survive
+const reloadAfterConflict = async (id) => {
+	if (presentationId.value !== id) return
+	toast.warning('This presentation was changed elsewhere. Showing the latest version.')
 	const resource = presentationResource.value
-	const doc = await resource.setValue.submit({
-		slides: newSlides,
-	})
-
-	// the editor can move on mid-save, and repointing presentationDoc at whatever
-	// the resource ref holds now would stamp this save onto another presentation
+	await resource.get.fetch()
+	// the fetch replaces resource.doc, and the next save reads its version from here
 	if (presentationResource.value === resource) presentationDoc.value = resource.doc
-
-	return doc?.modified
 }
 
 const presentationResource = ref(null)
@@ -409,6 +425,8 @@ export {
 	inReadonlyMode,
 	updatePresentationTitle,
 	savePresentationDoc,
+	isSaveConflict,
+	reloadAfterConflict,
 	initPresentationDoc,
 	deletePresentation,
 	confirmDeletePresentation,

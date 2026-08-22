@@ -2,6 +2,8 @@ import { ref } from 'vue'
 import {
 	presentationId,
 	savePresentationDoc,
+	isSaveConflict,
+	reloadAfterConflict,
 	presentationDoc,
 	inReadonlyMode,
 } from '@/apps/slides/stores/presentation'
@@ -156,8 +158,19 @@ const syncPresentationToServer = async (id, generation) => {
 	const snapshot = await getPresentationFromLocalDB(id)
 	if (!snapshot || !snapshot.dirty) return
 
-	// throws on failure so the caller keeps the state dirty and retries
-	await syncSnapshotToServer(snapshot, id, generation)
+	try {
+		// throws on failure so the caller keeps the state dirty and retries
+		await syncSnapshotToServer(snapshot, id, generation)
+	} catch (error) {
+		if (!isSaveConflict(error)) throw error
+		await discardSnapshot(snapshot, id)
+	}
+}
+
+// a refused snapshot can never be retried: the server's version replaces it
+const discardSnapshot = async (snapshot, id) => {
+	await savePresentationToLocalDB({ ...snapshot, dirty: false, updatedAt: Date.now() })
+	await reloadAfterConflict(id)
 }
 
 const getLatestSlideContent = () => {

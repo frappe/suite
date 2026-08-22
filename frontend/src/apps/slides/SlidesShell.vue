@@ -13,7 +13,7 @@ import { h, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { toast, FrappeUIProvider } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
-import { saveCurrentState } from '@/apps/slides/stores/saving'
+import { saveChanges } from '@/apps/slides/stores/saving'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { setupTheme } from '@/utils/setupTheme'
 import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
@@ -32,7 +32,7 @@ const handleOffline = () => {
 
 const handleOnline = () => {
   isOnline.value = true
-  saveCurrentState()
+  saveChanges()
   if (inSlideShowMode.value) return
   toast('You are back online.', {
     icon: () => h(Wifi, { class: 'size-4' }),
