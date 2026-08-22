@@ -56,7 +56,7 @@
 					<AvatarGroup
 						v-if="!isGuest"
 						:participants="[...participants]"
-						:error="presenceError"
+						:error="visiblePresenceError"
 						:loading="!hasFetchedParticipants"
 						:maxDisplayed="2"
 						:showText="true"
@@ -76,7 +76,7 @@
 						/>
 
 						<Button
-							v-if="!presenceError"
+							v-if="!visiblePresenceError"
 							type="submit"
 							variant="solid"
 							size="lg"
@@ -184,6 +184,17 @@ const {
 	error: presenceError,
 	hasFetchedParticipants,
 } = useMeetingPreviewPresence(props.meetingId);
+
+// TEMPORARY — demo recording. This site runs no SFU, so presence always fails
+// with "SFU secret not configured" and the lobby shows a red strip in place of
+// the participant row, with no Join button. Swallow that one error so the
+// lobby reads clean on camera. Access errors (banned, denied) still show.
+// `handleJoin` still guards on the real error, so the button is inert.
+// To revert: use `presenceError` again in the two template bindings and drop
+// this block.
+const visiblePresenceError = computed(() =>
+	/sfu/i.test(presenceError.value || "") ? null : presenceError.value,
+);
 
 watch(guestNameInputRef, (inputRef) => {
 	if (inputRef) {
