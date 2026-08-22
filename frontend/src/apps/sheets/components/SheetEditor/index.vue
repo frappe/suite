@@ -30,7 +30,7 @@
 
     <template v-else>
     <!-- Bar 1 · Identity -->
-    <div class="sn-topbar">
+    <div v-if="!embedded" class="sn-topbar">
       <div class="sn-topbar-left">
         <!-- Brand mark doubles as the "back to home" action. Clicking it runs
              flushAndClose so any pending edits are saved before navigation. -->
@@ -107,8 +107,6 @@
             <Button :variant="open ? 'subtle' : 'ghost'" size="sm" iconLeft="file-text" iconRight="chevron-down" label="File" tooltip="Import / export" />
           </template>
         </Dropdown>
-        <input ref="csvInputRef"  name="csv-import"  type="file" accept=".csv"                   style="display:none" @change="importCSV" />
-        <input ref="xlsxInputRef" name="xlsx-import" type="file" accept=".xlsx,.xls,.xlsm,.ods"  style="display:none" @change="importXLSX" />
         <span class="sn-topbar-divider" aria-hidden="true" />
         <!-- Notes: button toggles the side panel listing all notes across sheets.
              Shift+F2 still opens the per-cell inline editor for quick capture. -->
@@ -168,6 +166,11 @@
         />
       </div>
     </div>
+
+    <!-- Import pickers live outside bar 1: the command palette clicks these
+         refs, and bar 1 is not rendered when embedded. -->
+    <input ref="csvInputRef"  name="csv-import"  type="file" accept=".csv"                   style="display:none" @change="importCSV" />
+    <input ref="xlsxInputRef" name="xlsx-import" type="file" accept=".xlsx,.xls,.xlsm,.ods"  style="display:none" @change="importXLSX" />
 
     <!-- Bar 2 · Formatting toolbar -->
     <!-- Read-only viewers: dim the whole bar and swallow pointer events so no
@@ -1336,7 +1339,12 @@ import {
   Tooltip,
 } from 'frappe-ui'
 
-const props = defineProps({ id: { type: String, default: 'new' } })
+const props = defineProps({
+  id: { type: String, default: 'new' },
+  // A host shell (Suite) draws its own document header. Hide bar 1 so the
+  // title and the app mark are not shown twice.
+  embedded: { type: Boolean, default: false },
+})
 const emit  = defineEmits(['close', 'saved'])
 
 // ── Engine instances ──────────────────────────────────────────────────────────
