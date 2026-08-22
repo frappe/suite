@@ -1,5 +1,5 @@
 <template>
-  <div v-if="inIframe && file.doc"
+  <div v-if="!hideChrome && inIframe && file.doc"
     class="p-1.5 border-b text-base text-ink-gray-7 flex justify-between items-center relative">
     <div class="font-semibold">
       {{ file.doc.file_name }}
@@ -8,7 +8,7 @@
       Edited {{ file.doc.relativeModified }}
     </div>
   </div>
-  <Navbar v-if="!inIframe && !showVersions && file.doc" v-model:showVersions="showVersions"
+  <Navbar v-if="!hideChrome && !inIframe && !showVersions && file.doc" v-model:showVersions="showVersions"
     v-model:showTemplates="showTemplates" :file :document
     :breadcrumbs="file.doc.breadcrumbs?.map((k) => ({ ...k, label: k.file_name }))">
     <template #content v-if="document.doc?.settings && file.doc.write">
@@ -127,6 +127,8 @@ const isOldSchema = computed(() => {
 })
 
 const inIframe = inject('inIframe')
+// A host shell can draw its own title bar, so let it suppress both of ours.
+const hideChrome = inject('hideChrome', false)
 const { file, document } = useDocument(() => props.id)
 provide('file', file)
 
