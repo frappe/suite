@@ -26,4 +26,3 @@ describe('removeSlideCommand', () => {
 		expect(state.map((s) => s.idx)).toEqual([1, 2, 3])
 	})
 })
-})
