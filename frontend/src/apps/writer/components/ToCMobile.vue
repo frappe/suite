@@ -59,17 +59,23 @@ const selectTab = (id) => {
   if (id && id !== activeTabId.value) props.editor.commands.changeTab(id)
 }
 
+// Hold the node we listened on: the editor drops its view before this
+// component unmounts, so reading it again at teardown throws.
+let editorDom = null
+
 onMounted(() => {
   updateTabs()
   activeTabId.value = props.editor.storage.tab?.activeTabId ?? activeTabId.value
   props.editor.on('update', updateTabs)
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  editorDom = props.editor.view?.dom ?? null
+  editorDom?.addEventListener('tab-changed', handleTabChange)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   setBarHeight(0)
   props.editor.off('update', updateTabs)
-  props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+  editorDom?.removeEventListener('tab-changed', handleTabChange)
+  editorDom = null
 })
 </script>

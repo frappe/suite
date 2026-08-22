@@ -17,9 +17,12 @@ onMounted(() => {
     isActive.value = e.detail.tabId === props.node.attrs.id
   }
 
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  // Hold the node we listened on: the editor drops its view before this
+  // component unmounts, so reading it again at teardown throws.
+  const editorDom = props.editor.view?.dom ?? null
+  editorDom?.addEventListener('tab-changed', handleTabChange)
   onBeforeUnmount(() => {
-    props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+    editorDom?.removeEventListener('tab-changed', handleTabChange)
   })
 })
 </script>
