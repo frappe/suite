@@ -260,7 +260,11 @@ export function useNetworkQuality(
 				entry.kind === "video" && stallDetector.getRecoveryAttempts(entry.id) > 2,
 		);
 		if (hasAudioStall || hasExhaustedVideoRecovery) {
-			void sfuManager.resetReceiveMedia();
+			try {
+				await sfuManager.resetReceiveMedia();
+			} catch (error) {
+				console.warn("Failed to reset stalled receive media", error);
+			}
 			stallDetector.suspend();
 			return;
 		}

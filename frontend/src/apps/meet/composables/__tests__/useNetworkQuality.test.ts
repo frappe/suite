@@ -373,7 +373,8 @@ describe("useNetworkQuality", () => {
 	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 
-		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const resetReceiveSide = vi.fn().mockRejectedValue(new Error("snapshot failed"));
 		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
@@ -458,6 +459,10 @@ describe("useNetworkQuality", () => {
 
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(resetReceiveSide).toHaveBeenCalledOnce();
+		expect(warn).toHaveBeenCalledWith(
+			"Failed to reset stalled receive media",
+			expect.any(Error),
+		);
 
 		await vi.advanceTimersByTimeAsync(21_000);
 		expect(resetReceiveSide).toHaveBeenCalledOnce();
