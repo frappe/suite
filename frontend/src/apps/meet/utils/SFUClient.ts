@@ -144,6 +144,12 @@ interface ConnectionStatus {
 interface SFUResponse {
 	success: boolean;
 	error?: string;
+	code?: string;
+	details?: ParticipantConnectionConflictDetails;
+}
+
+interface ParticipantConnectionConflictDetails {
+	conflictId: string;
 }
 
 export interface SFUWebRtcTransportResponse {
@@ -203,6 +209,31 @@ export class SFURequestError extends Error {
 		this.name = "SFURequestError";
 		this.code = code;
 	}
+}
+
+export class SFUResponseError extends Error {
+	readonly code?: string;
+	readonly details?: ParticipantConnectionConflictDetails;
+
+	constructor(
+		message: string,
+		code?: string,
+		details?: ParticipantConnectionConflictDetails,
+	) {
+		super(message);
+		this.name = "SFUResponseError";
+		this.code = code;
+		this.details = details;
+	}
+}
+
+function normalizeSFUResponseDetails(
+	value: unknown,
+): ParticipantConnectionConflictDetails | undefined {
+	if (!isUnknownRecord(value) || typeof value.conflictId !== "string") {
+		return undefined;
+	}
+	return { conflictId: value.conflictId };
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
@@ -909,11 +940,14 @@ export class SFUClient {
 		roomId: string,
 		userData: JoinUserData,
 		mediaState: JoinRoomMediaState,
+		options: { connectionId?: string; conflictId?: string } = {},
 	): Promise<{ success: boolean; senderId?: number }> {
 		const e2eeMode = this.getE2EEMode();
 		const e2eeShouldBeActive = this.isE2EERequired();
 		const result = (await this.sendRequest("join_room", {
 			roomId,
+			...(options.connectionId ? { connectionId: options.connectionId } : {}),
+			...(options.conflictId ? { conflictId: options.conflictId } : {}),
 			userData,
 			mediaState,
 			e2ee: {
@@ -1095,12 +1129,17 @@ export class SFUClient {
 								typeof rawResponse.error === "string"
 									? rawResponse.error
 									: undefined,
+							code:
+								typeof rawResponse.code === "string" ? rawResponse.code : undefined,
+							details: normalizeSFUResponseDetails(rawResponse.details),
 						};
 						if (response.success) {
 							resolve(response);
 						} else {
-							const error = new Error(
+							const error = new SFUResponseError(
 								response.error || `Request failed: ${event}`,
+								response.code,
+								response.details,
 							);
 							console.error(`SFU request failed (${event}):`, response.error);
 							reject(error);

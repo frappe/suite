@@ -125,6 +125,7 @@ export interface SFUEventHandlers {
 	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
 	onHostKickedYou?: (data: { hostId?: string }) => void;
+	onParticipantConnectionReplaced?: (data: { reason: "takeover" }) => void | Promise<void>;
 	onRecoveryStateChange?: (
 		state:
 			| "reconnecting"
@@ -153,6 +154,7 @@ export type ParticipantConnectionState =
 export interface ParticipantConnectionStartOptions {
 	authToken?: string | null;
 	prefetchedDetails?: ConnectionDetails | null;
+	conflictId?: string;
 	prepareJoin: (signal: AbortSignal) => Promise<{
 		userData: JoinUserData;
 		mediaState: JoinRoomMediaState;
@@ -210,6 +212,7 @@ export class ParticipantConnection {
 	private e2eeReadyForLifecycle = false;
 	private lastAuthToken: string | null = null;
 	private activeEscalation: Promise<boolean> | null = null;
+	private readonly connectionId = crypto.randomUUID();
 	private localProducerBytes = new Map<string, number>();
 	private _state: ParticipantConnectionState = "stopped";
 	private static readonly INITIAL_RETRY_DELAY_MS = 1000;
@@ -272,7 +275,7 @@ export class ParticipantConnection {
 					options.prepareJoin(signal),
 					signal,
 				);
-				await this.joinRoom(userData, mediaState);
+				await this.joinRoom(userData, mediaState, options.conflictId);
 				this.throwIfAborted(signal);
 				if (this.sfuClient.isE2EERequired?.()) {
 					await this.awaitAbortable(options.waitForE2EEReady(signal), signal);
@@ -507,10 +510,14 @@ export class ParticipantConnection {
 	async joinRoom(
 		userData: JoinUserData,
 		mediaState: JoinRoomMediaState,
+		conflictId?: string,
 	): Promise<boolean> {
 		const generation = this.lifecycleGeneration;
 		try {
-			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState);
+			await this.sfuClient.joinRoom(this.meetingId ?? "", userData, mediaState, {
+				connectionId: this.connectionId,
+				...(conflictId ? { conflictId } : {}),
+			});
 			if (generation !== this.lifecycleGeneration) {
 				await this.sfuClient.disconnect();
 				return false;
@@ -1308,6 +1315,17 @@ export class ParticipantConnection {
 	}
 
 	private setupSFUEventHandlers(): void {
+		this.sfuClient.on("participant_connection_replaced", (value: unknown) => {
+			if (!isUnknownRecord(value) || value.reason !== "takeover") return;
+			void Promise.resolve(
+				this.eventHandlers.onParticipantConnectionReplaced?.({ reason: "takeover" }),
+			)
+				.catch((error) =>
+					console.warn("Participant Connection replacement cleanup failed:", error),
+				)
+				.finally(() => void this.disconnect());
+		});
+
 		this.sfuClient.on("reconnect_attempt", () => {
 			this.recoveryManager.reset();
 			this.reportRecoveryState("reconnecting", "signaling reconnect attempt");

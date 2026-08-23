@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 export interface ConnectionState {
 	connectionError: string | null;
+	connectionMoved: boolean;
 	isInPreview: boolean;
 	codecStrategy: string;
 	networkQuality: string;
@@ -18,6 +19,7 @@ export interface ConnectionState {
 
 export const useConnectionState = defineStore("meet-connection", () => {
 	const connectionError = ref<string | null>(null);
+	const connectionMoved = ref(false);
 	const isInPreview = ref(true);
 	const codecStrategy = ref("svc");
 	const networkQuality = ref("good");
@@ -31,6 +33,7 @@ export const useConnectionState = defineStore("meet-connection", () => {
 
 	function $reset() {
 		connectionError.value = null;
+		connectionMoved.value = false;
 		isInPreview.value = true;
 		codecStrategy.value = "svc";
 		networkQuality.value = "good";
@@ -45,6 +48,7 @@ export const useConnectionState = defineStore("meet-connection", () => {
 
 	return {
 		connectionError,
+		connectionMoved,
 		isInPreview,
 		codecStrategy,
 		networkQuality,

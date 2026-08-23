@@ -476,6 +476,31 @@ describe("ParticipantConnection", () => {
 		expect(rejoin).toHaveBeenCalledTimes(1);
 	});
 
+	it("cleans up when the meeting moves to another device", async () => {
+		const { handlers, manager, sfuClient } = createManager();
+		const replaced = vi.fn().mockResolvedValue(undefined);
+		manager.eventHandlers.onParticipantConnectionReplaced = replaced;
+		await manager.connect("token");
+
+		handlers.get("participant_connection_replaced")?.({ reason: "takeover" });
+
+		await vi.waitFor(() => expect(sfuClient.disconnect).toHaveBeenCalledOnce());
+		expect(replaced).toHaveBeenCalledWith({ reason: "takeover" });
+		expect(manager.state).toBe("stopped");
+	});
+
+	it("ignores replacement events from its own signaling reconnect", async () => {
+		const { handlers, manager, sfuClient } = createManager();
+		const replaced = vi.fn();
+		manager.eventHandlers.onParticipantConnectionReplaced = replaced;
+		await manager.connect("token");
+
+		handlers.get("participant_connection_replaced")?.({ reason: "reconnect" });
+
+		expect(replaced).not.toHaveBeenCalled();
+		expect(sfuClient.disconnect).not.toHaveBeenCalled();
+	});
+
 	it("escalates signaling reconnect exhaustion through the same coordinator", async () => {
 		const { handlers, manager } = createManager();
 		const escalate = vi.spyOn(manager, "escalateRecovery").mockResolvedValue(true);

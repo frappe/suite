@@ -135,6 +135,7 @@ describe("ParticipantConnection lifecycle", () => {
 			"meeting-1",
 			expect.objectContaining({ isHost: true }),
 			{ audio_enabled: false, video_enabled: true },
+			expect.objectContaining({ connectionId: expect.any(String) }),
 		);
 	});
 

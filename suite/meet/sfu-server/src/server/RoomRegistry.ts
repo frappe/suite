@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import type {
 	ActivePoll,
@@ -35,7 +36,17 @@ export class RoomRegistry {
 	private hostOnlyChat: Record<string, boolean> = {};
 	private recentChatMessages: Record<string, ChatMessage[]> = {};
 	private pinnedChatMessage: Record<string, PinnedChatMessage> = {};
-	private participantConnections = new Map<string, Map<string, Set<string>>>();
+	private participantConnections = new Map<
+		string,
+		Map<
+			string,
+			{
+				socket: Socket;
+				connectionId: string;
+				ownershipId: string;
+			}
+		>
+	>();
 	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 	private fullAccessSockets: Map<string, Set<string>> = new Map();
 	private previewSockets: Map<string, Set<string>> = new Map();
@@ -150,40 +161,93 @@ export class RoomRegistry {
 		this.participantToSender.get(roomId)?.delete(participantId);
 	}
 
-	claimParticipant(
+	acquireParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
-	): boolean {
+		connectionId: string,
+		conflictId?: string,
+	):
+		| {
+				status: 'acquired' | 'idempotent' | 'reconnect' | 'takeover';
+				ownershipId: string;
+				replacedSocket?: Socket;
+		  }
+		| { status: 'conflict'; conflictId: string } {
 		let participants = this.participantConnections.get(roomId);
 		if (!participants) {
 			participants = new Map();
 			this.participantConnections.set(roomId, participants);
 		}
-		let connections = participants.get(participantId);
-		const isFirstConnection = !connections || connections.size === 0;
-		if (!connections) {
-			connections = new Set();
-			participants.set(participantId, connections);
+		const incumbent = participants.get(participantId);
+		if (!incumbent) {
+			const ownershipId = randomUUID();
+			participants.set(participantId, { socket, connectionId, ownershipId });
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = ownershipId;
+			return { status: 'acquired', ownershipId };
 		}
-		connections.add(socket.id);
-		return isFirstConnection;
+
+		if (
+			incumbent.socket.id === socket.id &&
+			incumbent.connectionId === connectionId
+		) {
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = incumbent.ownershipId;
+			return { status: 'idempotent', ownershipId: incumbent.ownershipId };
+		}
+
+		const reconnect = incumbent.connectionId === connectionId;
+		if (!reconnect && conflictId !== incumbent.ownershipId) {
+			return { status: 'conflict', conflictId: incumbent.ownershipId };
+		}
+
+		const ownershipId = randomUUID();
+		participants.set(participantId, { socket, connectionId, ownershipId });
+		socket.participantConnectionId = connectionId;
+		socket.participantOwnershipId = ownershipId;
+		return {
+			status: reconnect ? 'reconnect' : 'takeover',
+			ownershipId,
+			replacedSocket: incumbent.socket,
+		};
 	}
 
 	releaseParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
+		ownershipId = socket.participantOwnershipId,
 	): boolean {
 		const participants = this.participantConnections.get(roomId);
-		const connections = participants?.get(participantId);
-		if (!connections?.delete(socket.id)) return false;
-		if (connections?.size === 0) {
-			participants?.delete(participantId);
-			if (participants?.size === 0) this.participantConnections.delete(roomId);
-			return true;
-		}
-		return false;
+		const owner = participants?.get(participantId);
+		if (
+			!owner ||
+			owner.socket.id !== socket.id ||
+			!ownershipId ||
+			owner.ownershipId !== ownershipId
+		)
+			return false;
+		participants?.delete(participantId);
+		if (participants?.size === 0) this.participantConnections.delete(roomId);
+		return true;
+	}
+
+	getParticipantSocketIds(roomId: string, participantId: string): string[] {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return owner ? [owner.socket.id] : [];
+	}
+
+	isParticipantOwner(
+		socket: Socket,
+		roomId: string,
+		participantId: string,
+	): boolean {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return (
+			owner?.socket.id === socket.id &&
+			owner.ownershipId === socket.participantOwnershipId
+		);
 	}
 
 	hasHumanParticipants(roomId: string): boolean {

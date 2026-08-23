@@ -128,6 +128,9 @@ export interface ServerToClientEvents {
 	) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
+	participant_connection_replaced: (data: {
+		reason: 'takeover' | 'reconnect';
+	}) => void;
 	producer_created: (data: ProducerCreatedEvent) => void;
 	producer_closed: (data: ProducerClosedEvent) => void;
 	consumer_closed: (data: ConsumerClosedEvent) => void;
@@ -338,12 +341,16 @@ export interface SocketData {
 	isGuest?: boolean;
 	roomId?: string;
 	participantId?: string;
+	participantConnectionId?: string;
+	participantOwnershipId?: string;
 	scope?: SFUScope;
 }
 
 export interface SFUResponse {
 	success: boolean;
 	error?: string;
+	code?: string;
+	details?: { conflictId?: string };
 }
 
 export interface RouterRtpCapabilitiesResponse extends SFUResponse {
@@ -678,6 +685,8 @@ declare module 'socket.io' {
 		isGuest?: boolean;
 		roomId?: string;
 		participantId?: string;
+		participantConnectionId?: string;
+		participantOwnershipId?: string;
 		senderId?: number;
 		currentToken?: string;
 		tokenExpiresAt?: number;

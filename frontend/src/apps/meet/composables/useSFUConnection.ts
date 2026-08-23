@@ -1,4 +1,4 @@
-import { createResource, frappeRequest, toast } from "frappe-ui";
+import { createResource, dialog, frappeRequest, toast } from "frappe-ui";
 import {
 	defineAsyncComponent,
 	computed,
@@ -17,6 +17,7 @@ import {
 	type ConnectionDetails,
 	connectionDetailsFromJoinPayload,
 	SFUClient,
+	SFUResponseError,
 } from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
@@ -112,6 +113,18 @@ function normalizeWaitingRoomResponse(value: unknown): WaitingRoomResponse | nul
 	return { waiting_users: waitingUsers };
 }
 
+function getParticipantConnectionConflictId(error: unknown): string | null {
+	if (
+		!(error instanceof SFUResponseError) ||
+		error.code !== "PARTICIPANT_CONNECTION_CONFLICT"
+	) {
+		return null;
+	}
+	return typeof error.details?.conflictId === "string"
+		? error.details.conflictId
+		: null;
+}
+
 export interface SFUScreenShareData {
 	participantId?: string;
 	consumer?: { id: string };
@@ -148,6 +161,7 @@ export function useSFUConnection(deps: {
 	notifiedLobbyUsers: Ref<Set<string>>;
 	onHostMutedYou: () => void;
 	onHostKickedYou: () => void;
+	onParticipantConnectionReplaced: () => void | Promise<void>;
 	onScreenShareStarted: (data: SFUScreenShareData) => void;
 	onScreenShareStopped: (data: SFUScreenShareData) => void;
 	onActiveSpeakerChanged: (participantIds: string[]) => void;
@@ -164,6 +178,7 @@ export function useSFUConnection(deps: {
 		notifiedLobbyUsers,
 		onHostMutedYou,
 		onHostKickedYou,
+		onParticipantConnectionReplaced,
 		onScreenShareStarted,
 		onScreenShareStopped,
 		onActiveSpeakerChanged,
@@ -187,6 +202,18 @@ export function useSFUConnection(deps: {
 	const joiningInProgress = shallowRef(false);
 	const hasShownE2EEKeyMismatchToast = shallowRef(false);
 	const isCurrentTabHost = shallowRef(false);
+	const confirmParticipantConnectionSwitch = () =>
+		new Promise<boolean>((resolve) => {
+			dialog.confirm({
+				title: "Switch to this device?",
+				message:
+					"You're already in this meeting on another device. Continuing will move the meeting here.",
+				confirmLabel: "Switch to this device",
+				cancelLabel: "Cancel",
+				onConfirm: () => resolve(true),
+				onCancel: () => resolve(false),
+			});
+		});
 
 	const e2eeHandshake: E2EEConnectionHandshake = useE2EEConnectionHandshake({
 		meetingId,
@@ -417,6 +444,10 @@ export function useSFUConnection(deps: {
 				toast.error("You have been removed from the meeting by the host");
 				onHostKickedYou();
 			},
+			onParticipantConnectionReplaced: async () => {
+				connectionState.connectionMoved = true;
+				await onParticipantConnectionReplaced();
+			},
 		};
 	};
 
@@ -425,6 +456,7 @@ export function useSFUConnection(deps: {
 		initialIsHost = false,
 		initialIsCohost = false,
 		prefetchedDetails: ConnectionDetails | null = null,
+		conflictId?: string,
 	) => {
 		clientTelemetry.startSession();
 		let isHost = initialIsHost;
@@ -454,6 +486,7 @@ export function useSFUConnection(deps: {
 			await manager.startParticipantConnection({
 				authToken: connectionState.guestAuthToken,
 				prefetchedDetails,
+				conflictId,
 				prepareJoin: async (signal) => {
 					if (signal.aborted) throw signal.reason;
 					connectionState.codecStrategy = sfuClient.getCodecStrategy() || "svc";
@@ -589,6 +622,23 @@ export function useSFUConnection(deps: {
 				if (sfuManager.value === manager) sfuManager.value = null;
 				return;
 			}
+			const nextConflictId = getParticipantConnectionConflictId(error);
+			if (nextConflictId) {
+				connectionState.connectionError = null;
+				await manager?.cleanup();
+				if (sfuManager.value === manager) sfuManager.value = null;
+				if (!(await confirmParticipantConnectionSwitch())) {
+					connectionState.isInPreview = true;
+					return;
+				}
+				return setupSFUConnection(
+					guestName,
+					initialIsHost,
+					initialIsCohost,
+					prefetchedDetails,
+					nextConflictId,
+				);
+			}
 			console.error("SFU setup failed:", error);
 			await manager?.cleanup();
 			if (sfuManager.value === manager) {
@@ -690,8 +740,6 @@ export function useSFUConnection(deps: {
 						false,
 						prefetched,
 					);
-
-					connectionState.isInPreview = false;
 				} else {
 					console.error(
 						"Failed to get connection details after approval:",
@@ -782,7 +830,6 @@ export function useSFUConnection(deps: {
 						!!sfuResult.is_cohost,
 						prefetched,
 					);
-					connectionState.isInPreview = false;
 				} else {
 					console.error("Failed to get SFU connection:", sfuResult);
 					lobbyStore.isJoinRequestRejected = true;
