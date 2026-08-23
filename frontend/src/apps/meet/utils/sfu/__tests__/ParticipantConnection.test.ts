@@ -222,6 +222,42 @@ describe("ParticipantConnection lifecycle", () => {
 		expect(participantManager.hasParticipant("alice")).toBe(false);
 	});
 
+	it("escalates after three failed snapshot retries", async () => {
+		vi.useFakeTimers();
+		const { connection, sfuClient } = createConnection();
+		const escalate = vi.spyOn(connection, "escalateRecovery").mockResolvedValue(true);
+		sfuClient.getRoomParticipants.mockRejectedValue(
+			new Error("snapshot unavailable"),
+		);
+
+		await expect(connection.start(startOptions())).resolves.toBe("degraded");
+		await vi.advanceTimersByTimeAsync(7000);
+
+		expect(sfuClient.getRoomParticipants).toHaveBeenCalledTimes(4);
+		expect(escalate).toHaveBeenCalledOnce();
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "subscription",
+			direction: "recv",
+			reason: "snapshot_retry_limit",
+		});
+	});
+
+	it("does not escalate snapshot retries after disconnect", async () => {
+		vi.useFakeTimers();
+		const { connection, sfuClient } = createConnection();
+		const escalate = vi.spyOn(connection, "escalateRecovery").mockResolvedValue(true);
+		sfuClient.getRoomParticipants.mockRejectedValue(
+			new Error("snapshot unavailable"),
+		);
+
+		await expect(connection.start(startOptions())).resolves.toBe("degraded");
+		await connection.disconnect();
+		await vi.advanceTimersByTimeAsync(60000);
+
+		expect(sfuClient.getRoomParticipants).toHaveBeenCalledOnce();
+		expect(escalate).not.toHaveBeenCalled();
+	});
+
 	it("aborts E2EE readiness and prevents startup from mutating after cleanup", async () => {
 		const { connection } = createConnection({ e2eeRequired: true });
 		let readinessSignal: AbortSignal | undefined;

@@ -214,6 +214,7 @@ export class ParticipantConnection {
 	private _state: ParticipantConnectionState = "stopped";
 	private static readonly INITIAL_RETRY_DELAY_MS = 1000;
 	private static readonly MAX_RETRY_DELAY_MS = 30000;
+	private static readonly MAX_SNAPSHOT_RETRY_ATTEMPTS = 3;
 
 	constructor(options: ParticipantConnectionOptions) {
 		this.sfuClient = options.sfuClient;
@@ -418,6 +419,7 @@ export class ParticipantConnection {
 		if (this.snapshotRetry) return;
 		this.snapshotRetry = (async () => {
 			let delay = ParticipantConnection.INITIAL_RETRY_DELAY_MS;
+			let attempts = 0;
 			while (!signal.aborted && this.isSignalingConnected()) {
 				try {
 					await this.waitUntilOnline(signal);
@@ -433,6 +435,19 @@ export class ParticipantConnection {
 					if (signal.aborted || !this.isSignalingConnected()) return;
 					this.initialSyncInProgress = true;
 					console.warn("Participant snapshot retry failed:", error);
+					attempts += 1;
+					if (
+						attempts >= ParticipantConnection.MAX_SNAPSHOT_RETRY_ATTEMPTS
+					) {
+						void this.escalateRecovery({
+							scope: "subscription",
+							direction: "recv",
+							reason: "snapshot_retry_limit",
+						}).catch((recoveryError) =>
+							console.warn("Snapshot recovery escalation failed:", recoveryError),
+						);
+						return;
+					}
 					delay = Math.min(delay * 2, ParticipantConnection.MAX_RETRY_DELAY_MS);
 				}
 			}
