@@ -526,6 +526,13 @@ describe("ParticipantConnection", () => {
 		expect(sfuClient.getExistingProducers).toHaveBeenCalledTimes(1);
 	});
 
+	it("fails receive recovery when the producer snapshot fails", async () => {
+		const { manager, sfuClient } = createManager();
+		sfuClient.getExistingProducers.mockRejectedValue(new Error("snapshot failed"));
+
+		await expect(manager.resetReceiveSide()).rejects.toThrow("snapshot failed");
+	});
+
 	it("does not resume receive recovery after disconnect", async () => {
 		const { manager, mediaManager, transportManager } = createManager();
 		let finishCancellation: () => void = () => {};

@@ -644,7 +644,7 @@ export class ParticipantConnection {
 		} catch (error) {
 			this.initialSyncInProgress = false;
 			console.warn("Failed to request existing producers:", error);
-			return null;
+			throw error;
 		}
 	}
 
