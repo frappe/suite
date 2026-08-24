@@ -942,16 +942,6 @@ def track_visit(
     )
 
 
-@frappe.whitelist()
-def get_docs_attached_to(file_name: str):
-    file = frappe.get_doc("File", file_name)
-    return frappe.get_list(
-        "File",
-        filters={"attached_to_doctype": ["is", "set"], "file_url": file.file_url},
-        fields=["attached_to_doctype", "attached_to_name"],
-    )
-
-
 def get_upload_path(file_name):
     root_folder = frappe.get_single("Drive Disk Settings").root_folder or ""
     uploads_path = Path(frappe.get_site_path("private/files"), root_folder, ".uploads")
