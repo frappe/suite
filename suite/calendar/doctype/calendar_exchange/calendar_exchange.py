@@ -27,14 +27,19 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 
+from suite.calendar import jmap_events
 from suite.mail.doctype.push_subscription.push_subscription import (
     freeze_jmap_push_notifications,
     unfreeze_jmap_push_notifications,
 )
 from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
-from suite.mail.jmap import get_jmap_connection
-from suite.mail.jmap.services.calendars.calendar import CalendarService
-from suite.mail.jmap.services.calendars.calendar_event import CalendarEventService
+from suite.mail.jmap import (
+    EXCHANGE_TIMEOUT,
+    SuiteJMAPClient,
+    account_view,
+    get_default_calendar_id,
+    get_jmap_client,
+)
 from suite.mail.utils import (
     get_calendar_export_directory,
     get_calendar_import_directory,
@@ -399,7 +404,7 @@ class CalendarExchange(OwnerFromUser, Document):
         os.makedirs(base_dir, exist_ok=True)
 
         kwargs = {}
-        service = None
+        client = None
         staging_calendar_id = None
         try:
             if self.import_format == "ics" and self.import_file.endswith(".ics"):
@@ -409,10 +414,10 @@ class CalendarExchange(OwnerFromUser, Document):
             logger.debug("import-source-prepared", base_dir=base_dir)
             self._log_output(_("Prepared the source files for import."))
 
-            service = get_calendar_event_service(self.user, self.account)
+            client = get_exchange_client(self.user, self.account)
 
             if self.import_format == "ics":
-                events = self._load_ics_events(service, base_dir, logger)
+                events = self._load_ics_events(client, base_dir, logger)
             else:
                 events = self._load_jmap_events(base_dir)
 
@@ -427,16 +432,16 @@ class CalendarExchange(OwnerFromUser, Document):
             # Stage everything into one throwaway calendar first, then move it to the destination
             # calendar(s). A failure before the move leaves nothing scattered across the account: the
             # staging calendar and every event in it are deleted on rollback.
-            staging_calendar_id = self._create_staging_calendar(service, logger)
-            targets, skipped, failed = self._create_events(service, events, staging_calendar_id, logger)
+            staging_calendar_id = self._create_staging_calendar(client, logger)
+            targets, skipped, failed = self._create_events(client, events, staging_calendar_id, logger)
 
             # The server rejecting every event is a failure, not a successful zero-import, and must
             # trigger a rollback.
             if not targets and failed > 0:
                 frappe.throw(_("Import failed: the server rejected all {0} event(s).").format(failed))
 
-            self._move_to_target_calendars(service, targets, logger)
-            self._discard_staging_calendar(service, staging_calendar_id, logger)
+            self._move_to_target_calendars(client, targets, logger)
+            self._discard_staging_calendar(client, staging_calendar_id, logger)
             staging_calendar_id = None
 
             created = len(targets)
@@ -450,8 +455,8 @@ class CalendarExchange(OwnerFromUser, Document):
         except Exception:
             logger.exception("import-failed")
             self._log_output(_("Import failed. See the error details below."))
-            if staging_calendar_id and service:
-                self._rollback_staging_calendar(service, staging_calendar_id, logger)
+            if staging_calendar_id and client:
+                self._rollback_staging_calendar(client, staging_calendar_id, logger)
             kwargs.update(
                 {"status": "Failed", "output": f"{self.output}\n\n{frappe.get_traceback(with_context=False)}"}
             )
@@ -479,10 +484,12 @@ class CalendarExchange(OwnerFromUser, Document):
 
         kwargs = {}
         try:
-            service = get_calendar_event_service(self.user, self.account)
+            client = get_exchange_client(self.user, self.account)
 
             limit = min(self.max_export, cint(self.export_limit or self.max_export))
-            data = service.query(self.export_filter_dict, limit=limit, sort=self.export_sort_clause)
+            data = jmap_events.query_events(
+                client, self.export_filter_dict, limit=limit, sort=self.export_sort_clause
+            )
             ids = data.get("ids", [])
             total = data.get("total")
             logger.info("export-query-resolved", total=total, fetched=len(ids), max_export=self.max_export)
@@ -495,7 +502,7 @@ class CalendarExchange(OwnerFromUser, Document):
             if not ids:
                 frappe.throw(_("No calendar events found for export."))
 
-            events = service.get(ids)
+            events = jmap_events.get_events(client, ids)
 
             if self.deduplicate_export:
                 fetched = len(events)
@@ -512,7 +519,7 @@ class CalendarExchange(OwnerFromUser, Document):
                     )
                 )
 
-            calendar_map = {c["id"]: c["name"] for c in service.calendars}
+            calendar_map = {c["id"]: c["name"] for c in jmap_events.get_calendars(client)}
             CalendarExportWriter.write(self.export_format, events, out_dir, calendar_map)
             self._log_output(_("Wrote {0} event(s) to the export directory.").format(len(events)))
 
@@ -536,9 +543,7 @@ class CalendarExchange(OwnerFromUser, Document):
         self._mark_completed(**kwargs)
         self._notify_user(success=kwargs.get("status") == "Completed", action="Export")
 
-    def _load_ics_events(
-        self, service: CalendarEventService, base_dir: str, logger: ExchangeLogger
-    ) -> list[dict]:
+    def _load_ics_events(self, client: SuiteJMAPClient, base_dir: str, logger: ExchangeLogger) -> list[dict]:
         """Uploads every .ics file and parses it into JSCalendar events via the JMAP server."""
 
         ics_files = [
@@ -554,11 +559,11 @@ class CalendarExchange(OwnerFromUser, Document):
         for path in ics_files:
             with open(path, "rb") as f:
                 data = f.read()
-            blob_id = service.upload_blob(data, content_type="text/calendar; charset=utf-8").get("blobId")
+            blob_id = client.upload(data, content_type="text/calendar; charset=utf-8").blob_id
             if blob_id:
                 blob_to_file[blob_id] = path
 
-        response = service.parse(list(blob_to_file.keys()))
+        response = jmap_events.parse_event_blobs(client, list(blob_to_file.keys()))
 
         events: list[dict] = []
         for parsed in (response.get("parsed") or {}).values():
@@ -586,24 +591,26 @@ class CalendarExchange(OwnerFromUser, Document):
 
         return events
 
-    def _create_staging_calendar(self, service: CalendarEventService, logger: ExchangeLogger) -> str:
+    def _create_staging_calendar(self, client: SuiteJMAPClient, logger: ExchangeLogger) -> str:
         """Creates a temporary calendar (named after this exchange) to stage the import into."""
 
         self._log_output(_("Creating a temporary calendar to stage the import."))
-        response = CalendarService(service.account, service.connection).create(
-            [{"creation_id": str(uuid7()), "name": self.name, "is_subscribed": False, "is_visible": False}]
-        )
-        created = response.get("created") or {}
-        if not created:
-            frappe.throw(_("Failed to create the staging calendar: {0}").format(response.get("notCreated")))
+        creation_id = str(uuid7())
+        with client.batch() as b:
+            h = b.calendars.calendar.set(
+                create={creation_id: {"name": self.name, "isSubscribed": False, "isVisible": False}}
+            )
+        response = h.result
+        if not response.created:
+            frappe.throw(_("Failed to create the staging calendar: {0}").format(response.not_created))
 
-        staging_calendar_id = next(iter(created.values()))["id"]
+        staging_calendar_id = response.created_id(creation_id)
         logger.info("import-staging-calendar-created", calendar=staging_calendar_id)
         return staging_calendar_id
 
     def _create_events(
         self,
-        service: CalendarEventService,
+        client: SuiteJMAPClient,
         events: list[dict],
         staging_calendar_id: str,
         logger: ExchangeLogger,
@@ -620,8 +627,10 @@ class CalendarExchange(OwnerFromUser, Document):
         uids = [e["uid"] for e in events if e.get("uid")]
         existing_uids: set[str] = set()
         if uids:
-            if existing_ids := service.get_master_ids(uids):
-                existing_uids = {e["uid"] for e in service.get(existing_ids) if e.get("uid")}
+            if existing_ids := jmap_events.get_master_ids(client, uids):
+                existing_uids = {
+                    e["uid"] for e in jmap_events.get_events(client, existing_ids) if e.get("uid")
+                }
 
         default_calendar_id: str | None = None
 
@@ -633,9 +642,7 @@ class CalendarExchange(OwnerFromUser, Document):
             if event.get("calendarIds"):
                 return event["calendarIds"]
             if default_calendar_id is None:
-                default_calendar_id = CalendarService(service.account, service.connection).get_default(
-                    raise_exception=True
-                )
+                default_calendar_id = get_default_calendar_id(self.account, raise_exception=True)
             return {default_calendar_id: True}
 
         pending: list[dict] = []
@@ -649,7 +656,7 @@ class CalendarExchange(OwnerFromUser, Document):
         targets: dict[str, dict[str, bool]] = {}
         failed = 0
         total = len(pending)
-        for batch in create_batch(pending, service.max_objects_in_set):
+        for batch in create_batch(pending, client.capabilities.limits.max_objects_in_set):
             payload: dict[str, dict] = {}
             creation_meta: dict[str, tuple[str, dict]] = {}
             for event in batch:
@@ -663,17 +670,16 @@ class CalendarExchange(OwnerFromUser, Document):
                 payload[creation_id] = event
                 creation_meta[creation_id] = (event.get("uid", creation_id), destination)
 
-            response = service._create(payload, sendSchedulingMessages=False)
-            method_responses = response.get("methodResponses") or []
-            result = method_responses[0][1] if method_responses else {}
+            with client.batch() as b:
+                h = b.calendars.calendar_event.set(create=payload, sendSchedulingMessages=False)
+            result = h.result
 
-            batch_failed = result.get("notCreated") or {}
-            failed += len(batch_failed)
+            failed += len(result.not_created)
 
-            for creation_id, info in (result.get("created") or {}).items():
-                targets[info["id"]] = creation_meta[creation_id][1]
+            for creation_id, created in result.created.items():
+                targets[str(created.id)] = creation_meta[creation_id][1]
 
-            for creation_id, error in batch_failed.items():
+            for creation_id, error in result.not_created.items():
                 logger.warning(
                     "import-event-not-created",
                     uid=creation_meta.get(creation_id, (None,))[0],
@@ -685,7 +691,7 @@ class CalendarExchange(OwnerFromUser, Document):
         return targets, skipped, failed
 
     def _move_to_target_calendars(
-        self, service: CalendarEventService, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
+        self, client: SuiteJMAPClient, targets: dict[str, dict[str, bool]], logger: ExchangeLogger
     ) -> None:
         """Moves the staged events into their destination calendars, replacing the staging calendar.
 
@@ -696,38 +702,38 @@ class CalendarExchange(OwnerFromUser, Document):
             return
 
         self._log_output(_("Moving {0} event(s) into the destination calendar(s).").format(len(targets)))
-        result = service.set_calendar_ids(targets)
+        result = jmap_events.set_calendar_ids(client, targets)
 
-        if not_updated := result.get("notUpdated"):
+        if not_updated := result.not_updated:
             logger.warning("import-event-not-moved", count=len(not_updated))
             frappe.throw(
                 _("Failed to move {0} event(s) into the destination calendar(s).").format(len(not_updated))
             )
 
-        logger.info("import-events-moved", events=len(result.get("updated", [])))
+        logger.info("import-events-moved", events=len(result.updated))
 
     def _discard_staging_calendar(
-        self, service: CalendarEventService, staging_calendar_id: str, logger: ExchangeLogger
+        self, client: SuiteJMAPClient, staging_calendar_id: str, logger: ExchangeLogger
     ) -> None:
         """Deletes the now-empty staging calendar after a successful import. A failure here is logged
         but not fatal: the events are already safely in their destination calendars."""
 
         try:
-            CalendarService(service.account, service.connection).delete([staging_calendar_id])
+            with client.batch() as b:
+                b.calendars.calendar.set(destroy=[staging_calendar_id], onDestroyRemoveEvents=False)
             logger.info("import-staging-calendar-removed", calendar=staging_calendar_id)
         except Exception:
             logger.warning("import-staging-calendar-remove-failed", calendar=staging_calendar_id)
 
     def _rollback_staging_calendar(
-        self, service: CalendarEventService, staging_calendar_id: str, logger: ExchangeLogger
+        self, client: SuiteJMAPClient, staging_calendar_id: str, logger: ExchangeLogger
     ) -> None:
         """Deletes the staging calendar and every event still staged in it, undoing a failed import."""
 
         self._log_output(_("Rolling back: removing the staging calendar and any staged events."))
         try:
-            CalendarService(service.account, service.connection).delete(
-                [staging_calendar_id], remove_events=True
-            )
+            with client.batch() as b:
+                b.calendars.calendar.set(destroy=[staging_calendar_id], onDestroyRemoveEvents=True)
             logger.info("import-rolled-back", calendar=staging_calendar_id)
         except Exception:
             logger.exception("import-rollback-failed", calendar=staging_calendar_id)
@@ -897,15 +903,16 @@ class CalendarExportWriter:
                 f.write(cal.to_ical())
 
 
-def get_calendar_event_service(
+def get_exchange_client(
     user: str,
     account: str,
     ignore_permissions: bool = False,
-) -> CalendarEventService:
-    """Returns a CalendarEventService configured with the longer exchange timeouts."""
+) -> SuiteJMAPClient:
+    """Returns an account-scoped JMAP client configured with the longer exchange timeouts."""
 
-    connection = get_jmap_connection(user, ignore_permissions=ignore_permissions, timeout=(60.0, 180.0))
-    return CalendarEventService(account, connection)
+    return account_view(
+        get_jmap_client(user, ignore_permissions=ignore_permissions, timeout=EXCHANGE_TIMEOUT), account
+    )
 
 
 def _parse_local_datetime(value: str | None, time_zone: str | None) -> datetime | None:

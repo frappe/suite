@@ -96,6 +96,6 @@ class TestAdminOAuthDkim(StalwartIntegrationTestCase):
 
 
 def _delete_oauth(oauth_id: str) -> None:
-    from suite.mail.stalwart import get_oauth_client_service
+    from suite.mail.stalwart import manage_delete
 
-    get_oauth_client_service().delete(oauth_id)
+    manage_delete("OAuthClient", oauth_id)

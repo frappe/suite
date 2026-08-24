@@ -30,6 +30,7 @@ dependencies = [
     "pydenticon~=0.3.1",
     "dns-lexicon~=3.20.1",
     "ansible-runner~=2.4.1",
+    "jmaplib~=1.1.0",
     # sheets — AI Assist (Claude)
     "anthropic>=0.40",
 ]

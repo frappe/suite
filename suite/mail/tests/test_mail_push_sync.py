@@ -1,72 +1,88 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
-"""How the push-sync path reacts when the JMAP server cannot answer an ``Email/changes`` call:
+"""How the push-sync path reacts to real ``Email/changes`` responses from a fake JMAP server:
 method-level errors surface as exceptions instead of flowing downstream as fake changes results,
-and the stored sync state is never advanced on failure."""
+and the stored sync state only advances after a successful response."""
 
 import unittest
 from unittest import mock
 
+import httpx
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
+
 from suite.mail.doctype.mail_message import mail_message
-from suite.mail.jmap.services.mail.email import EmailService
+from suite.mail.jmap import SuiteJMAPClient
 
-FORBIDDEN = {"type": "forbidden", "description": "You are not authorized to perform this action"}
-
-
-class EmailServiceChanges(unittest.TestCase):
-    """``EmailService.changes`` — unwrap real results, raise on method-level errors."""
-
-    def _service(self, response: dict) -> EmailService:
-        service = EmailService("f7", mock.MagicMock())
-        service._exec = mock.MagicMock(return_value=response)
-        return service
-
-    def test_returns_first_method_response_body(self):
-        body = {"created": [], "updated": ["e1"], "destroyed": [], "newState": "s2", "hasMoreChanges": False}
-        service = self._service({"methodResponses": [["Email/changes", body, "0"]]})
-
-        self.assertEqual(service.changes("s1"), body)
-
-    def test_raises_on_method_level_error(self):
-        service = self._service({"methodResponses": [["error", FORBIDDEN, "0"]]})
-
-        with self.assertRaises(RuntimeError) as ctx:
-            service.changes("s1")
-
-        self.assertIn("Email/changes failed", str(ctx.exception))
-        self.assertIn("forbidden", str(ctx.exception))
-
-    def test_returns_empty_dict_without_method_responses(self):
-        self.assertEqual(self._service({}).changes("s1"), {})
+CORE = "urn:ietf:params:jmap:core"
+MAIL = "urn:ietf:params:jmap:mail"
+ACCOUNT = "f7"
 
 
 class FetchChanges(unittest.TestCase):
     """``fetch_changes`` — server failures are logged and leave the sync state untouched."""
 
-    def _run(self, changes: mock.Mock) -> tuple[mock.Mock, mock.Mock]:
+    def _client(self, server: FakeJMAPServer) -> SuiteJMAPClient:
+        http = httpx.Client(auth=BasicAuth("user@example.test", "pw"), **server.client_kwargs())
+        return SuiteJMAPClient.connect(
+            "https://jmap.example.com/.well-known/jmap",
+            auth=BasicAuth("user@example.test", "pw"),
+            http=http,
+            experimental=True,
+            retry_policy=RetryPolicy(max_attempts=1),
+        )
+
+    def _run(self, server: FakeJMAPServer) -> tuple[mock.Mock, mock.Mock]:
+        client = self._client(server)
         with (
             mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
             mock.patch.object(mail_message, "update_sync_state") as update_sync_state,
-            mock.patch.object(mail_message, "get_jmap_connection"),
-            mock.patch.object(mail_message, "MailboxService"),
-            mock.patch.object(mail_message, "EmailService") as email_service,
+            mock.patch.object(mail_message, "get_jmap_client", return_value=client),
             mock.patch.object(mail_message, "log_mail_error") as log_mail_error,
         ):
-            email_service.return_value.changes = changes
-            mail_message.fetch_changes("user@example.test", "f7", email_state="s2")
+            mail_message.fetch_changes("user@example.test", ACCOUNT, email_state="s2")
 
         return update_sync_state, log_mail_error
 
-    def test_method_level_error_is_logged_and_preserves_state(self):
-        changes = mock.MagicMock(side_effect=RuntimeError(f"Email/changes failed: {FORBIDDEN}"))
+    def _server(self) -> FakeJMAPServer:
+        return FakeJMAPServer(
+            capabilities={CORE: {}, MAIL: {}},
+            accounts={
+                ACCOUNT: {
+                    "name": "user@example.test",
+                    "isPersonal": True,
+                    "accountCapabilities": {MAIL: {}},
+                }
+            },
+            primary_accounts={CORE: ACCOUNT, MAIL: ACCOUNT},
+        )
 
-        update_sync_state, log_mail_error = self._run(changes)
+    def test_method_level_error_is_logged_and_preserves_state(self):
+        server = self._server()
+        server.fail("Email/changes", "forbidden")
+
+        update_sync_state, log_mail_error = self._run(server)
 
         log_mail_error.assert_called_once()
         update_sync_state.assert_not_called()
 
-    def test_empty_response_is_not_an_error_and_preserves_state(self):
-        update_sync_state, log_mail_error = self._run(mock.MagicMock(return_value={}))
+    def test_no_changes_response_advances_state(self):
+        server = self._server()
+        server.respond(
+            "Email/changes",
+            {
+                "accountId": ACCOUNT,
+                "oldState": "s1",
+                "newState": "s2",
+                "hasMoreChanges": False,
+                "created": [],
+                "updated": [],
+                "destroyed": [],
+            },
+        )
+
+        update_sync_state, log_mail_error = self._run(server)
 
         log_mail_error.assert_not_called()
-        update_sync_state.assert_not_called()
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s2")

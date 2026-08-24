@@ -10,34 +10,17 @@ from frappe.query_builder.functions import Max
 from frappe.utils import cint, flt, validate_email_address
 from pypika import Case, Order
 
+from suite.mail import stalwart
 from suite.mail.api.utils import get_avatar_url
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.stalwart import (
     get_account_metadata,
-    get_account_service,
-    get_action_service,
     get_action_types,
-    get_dkim_signature_service,
-    get_domain_service,
-    get_group_service,
     get_log_labels,
-    get_log_service,
-    get_mailing_list_service,
-    get_management_connection,
-    get_oauth_client_service,
     get_queue_metadata,
-    get_queued_message_service,
-    get_report_service,
-    get_role_service,
 )
 from suite.mail.stalwart import get_domains as get_stalwart_domains
 from suite.mail.stalwart import get_permissions as get_stalwart_permissions
-from suite.mail.stalwart.account import CustomRoles, EmailAlias, RoleType, UserRoles
-from suite.mail.stalwart.domain import Domain
-from suite.mail.stalwart.group import Group
-from suite.mail.stalwart.mailing_list import MailingList
-from suite.mail.stalwart.oauth import OAuthClient
-from suite.mail.stalwart.role import Role
 from suite.mail.utils import get_config
 from suite.mail.utils.dns import parse_dns_zone_file
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
@@ -124,7 +107,9 @@ def add_domain(name: str, description: str | None = None) -> str:
             frappe.throw(_("Domain {0} already exists.").format(name))
 
     domain_id = execute_with_logging(
-        func=lambda: get_domain_service().create(Domain(name=name, description=description)),
+        func=lambda: stalwart.manage_create("Domain", stalwart.domain_payload(name, description=description))[
+            "id"
+        ],
         title=_("Failed to add domain {0}").format(name),
         user_message=_("An error occurred while adding the domain, check error logs for more details."),
         with_context=False,
@@ -254,7 +239,7 @@ def delete_domain(domain_id: str) -> None:
     check_admin_permission("delete domains", domain_id)
 
     execute_with_logging(
-        func=lambda: get_domain_service().delete([domain_id]),
+        func=lambda: stalwart.delete_domains([domain_id]),
         title=_("Failed to delete domain with ID {0}").format(domain_id),
         user_message=_("An error occurred while deleting the domain, check error logs for more details."),
         with_context=False,
@@ -471,7 +456,7 @@ def _attach_quota_usage(users: list[dict]) -> None:
     with suppress(Exception):
         accounts = {
             account["id"]: account
-            for account in get_account_service().get_all(properties=["id", "quotas", "usedDiskQuota"])
+            for account in stalwart.manage_get_all("Account", properties=["id", "quotas", "usedDiskQuota"])
         }
         for user in users:
             if account := accounts.get(account_by_user.get(user["name"])):
@@ -559,7 +544,8 @@ def get_member(member_id: str) -> dict:
         return result
 
     with suppress(Exception):
-        account = get_account_service().get(
+        account = stalwart.manage_get(
+            "Account",
             account_id,
             properties=[
                 "emailAddress",
@@ -618,8 +604,7 @@ def get_member(member_id: str) -> dict:
         group_ids = _keys(account.get("memberGroupIds"))
         if group_ids:
             group_map = {
-                g["id"]: g
-                for g in get_group_service().get_all_groups(properties=["id", "name", "emailAddress"])
+                g["id"]: g for g in stalwart.get_all_groups(properties=["id", "name", "emailAddress"])
             }
             result["groups"] = [
                 {"id": gid, "name": group_map[gid].get("name"), "email": group_map[gid].get("emailAddress")}
@@ -632,8 +617,8 @@ def get_member(member_id: str) -> dict:
         member_emails = {email.lower() for email in emails}
         result["mailing_lists"] = [
             {"id": ml["id"], "name": ml.get("name"), "email": ml.get("emailAddress")}
-            for ml in get_mailing_list_service().get_all(
-                properties=["id", "name", "emailAddress", "recipients"]
+            for ml in stalwart.manage_get_all(
+                "MailingList", properties=["id", "name", "emailAddress", "recipients"]
             )
             if member_emails & {recipient.lower() for recipient in _keys(ml.get("recipients"))}
         ]
@@ -791,7 +776,7 @@ def _alias_emails(account: dict, domain_names: dict) -> list[str]:
     return emails
 
 
-def _rebuild_aliases(account: dict, *, keep: callable) -> list[EmailAlias]:
+def _rebuild_aliases(account: dict, *, keep: callable) -> list[dict]:
     """Rebuilds the account's alias objects, keeping those for which ``keep(email)`` is True."""
 
     domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
@@ -803,9 +788,9 @@ def _rebuild_aliases(account: dict, *, keep: callable) -> list[EmailAlias]:
             continue
 
         aliases.append(
-            EmailAlias(
-                name=alias["name"],
-                domain_id=alias["domainId"],
+            stalwart.email_alias(
+                alias["name"],
+                alias["domainId"],
                 enabled=alias.get("enabled", True),
                 description=alias.get("description"),
             )
@@ -872,14 +857,12 @@ def update_member(
     member.save(ignore_permissions=True)
 
     account_id = _member_account(member_id)
-    account_service = get_account_service()
-
     if not account_id:
         return
 
     if description:
         execute_with_logging(
-            func=lambda: account_service.update(account_id, {"description": description}),
+            func=lambda: stalwart.manage_update("Account", account_id, {"description": description}),
             title=_("Failed to update description for {0}").format(member_id),
             user_message=_(
                 "An error occurred while updating the description, check error logs for more details."
@@ -891,7 +874,7 @@ def update_member(
     if quota_gb is not None:
         quota_bytes = cint(float(quota_gb) * _GB)
         execute_with_logging(
-            func=lambda: account_service.update(account_id, {"quotas/maxDiskQuota": quota_bytes}),
+            func=lambda: stalwart.manage_update("Account", account_id, {"quotas/maxDiskQuota": quota_bytes}),
             title=_("Failed to update quota for {0}").format(member_id),
             user_message=_("An error occurred while updating the quota, check error logs for more details."),
             with_context=False,
@@ -900,7 +883,7 @@ def update_member(
 
     if patch := _locale_patch(locale, time_zone):
         execute_with_logging(
-            func=lambda: account_service.update(account_id, patch),
+            func=lambda: stalwart.manage_update("Account", account_id, patch),
             title=_("Failed to update locale for {0}").format(member_id),
             user_message=_("An error occurred while updating the locale, check error logs for more details."),
             with_context=False,
@@ -908,7 +891,7 @@ def update_member(
         )
 
 
-def _add_alias(service, resource_id: str, email: str, description: str | None = None) -> None:
+def _add_alias(type_: str, resource_id: str, email: str, description: str | None = None) -> None:
     """Adds ``email`` as an alias (with optional description) to the given account or mailing list."""
 
     email = (email or "").strip().lower()
@@ -916,9 +899,9 @@ def _add_alias(service, resource_id: str, email: str, description: str | None = 
     is_subaddressed_email(email, raise_exception=True)
 
     local, _sep, domain = email.partition("@")
-    domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
+    domain_id = stalwart.get_domain_by_name(domain, raise_exception=True)["id"]
 
-    obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+    obj = stalwart.manage_get(type_, resource_id, properties=["emailAddress", "aliases"])
     if email == (obj.get("emailAddress") or "").lower():
         frappe.throw(_("{0} is already the primary address.").format(email))
 
@@ -927,12 +910,10 @@ def _add_alias(service, resource_id: str, email: str, description: str | None = 
         return
 
     aliases = _rebuild_aliases(obj, keep=lambda _e: True)
-    aliases.append(
-        EmailAlias(name=local, domain_id=domain_id, description=(description or "").strip() or None)
-    )
+    aliases.append(stalwart.email_alias(local, domain_id, description=(description or "").strip() or None))
 
     execute_with_logging(
-        func=lambda: service.set_aliases(resource_id, aliases),
+        func=lambda: stalwart.set_aliases(type_, resource_id, aliases),
         title=_("Failed to add email {0}").format(email),
         user_message=_("An error occurred while adding the email, check error logs for more details."),
         with_context=False,
@@ -940,18 +921,18 @@ def _add_alias(service, resource_id: str, email: str, description: str | None = 
     )
 
 
-def _remove_alias(service, resource_id: str, email: str) -> None:
+def _remove_alias(type_: str, resource_id: str, email: str) -> None:
     """Removes the alias ``email`` from the given account or mailing list (the primary cannot be removed)."""
 
     email = (email or "").strip().lower()
-    obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+    obj = stalwart.manage_get(type_, resource_id, properties=["emailAddress", "aliases"])
     if email == (obj.get("emailAddress") or "").lower():
         frappe.throw(_("The primary address cannot be removed."))
 
     aliases = _rebuild_aliases(obj, keep=lambda e: e != email)
 
     execute_with_logging(
-        func=lambda: service.set_aliases(resource_id, aliases),
+        func=lambda: stalwart.set_aliases(type_, resource_id, aliases),
         title=_("Failed to remove email {0}").format(email),
         user_message=_("An error occurred while removing the email, check error logs for more details."),
         with_context=False,
@@ -959,11 +940,11 @@ def _remove_alias(service, resource_id: str, email: str) -> None:
     )
 
 
-def _set_alias_enabled(service, resource_id: str, email: str, enabled: bool) -> None:
+def _set_alias_enabled(type_: str, resource_id: str, email: str, enabled: bool) -> None:
     """Enables or disables the alias ``email`` (the primary address is always enabled)."""
 
     email = (email or "").strip().lower()
-    obj = service.get(resource_id, properties=["emailAddress", "aliases"])
+    obj = stalwart.manage_get(type_, resource_id, properties=["emailAddress", "aliases"])
     if not obj or email == (obj.get("emailAddress") or "").lower():
         return
 
@@ -974,16 +955,16 @@ def _set_alias_enabled(service, resource_id: str, email: str, enabled: bool) -> 
         alias_email = f"{alias.get('name')}@{domain}" if domain else None
         is_target = bool(alias_email) and alias_email.lower() == email
         aliases.append(
-            EmailAlias(
-                name=alias["name"],
-                domain_id=alias["domainId"],
+            stalwart.email_alias(
+                alias["name"],
+                alias["domainId"],
                 enabled=enabled if is_target else alias.get("enabled", True),
                 description=alias.get("description"),
             )
         )
 
     execute_with_logging(
-        func=lambda: service.set_aliases(resource_id, aliases),
+        func=lambda: stalwart.set_aliases(type_, resource_id, aliases),
         title=_("Failed to update email {0}").format(email),
         user_message=_("An error occurred while updating the email, check error logs for more details."),
         with_context=False,
@@ -996,7 +977,7 @@ def add_member_email(member_id: str, email: str, description: str | None = None)
     """Adds an email address to the member's account as an alias with an optional description."""
 
     check_admin_permission("update members", f"{member_id} ({email})")
-    _add_alias(get_account_service(), _require_member_account(member_id), email, description)
+    _add_alias("Account", _require_member_account(member_id), email, description)
 
 
 @frappe.whitelist()
@@ -1004,7 +985,7 @@ def remove_member_email(member_id: str, email: str) -> None:
     """Removes an alias email address from the member's account (the primary cannot be removed)."""
 
     check_admin_permission("update members", f"{member_id} ({email})")
-    _remove_alias(get_account_service(), _require_member_account(member_id), email)
+    _remove_alias("Account", _require_member_account(member_id), email)
 
 
 @frappe.whitelist()
@@ -1012,7 +993,7 @@ def set_member_email_enabled(member_id: str, email: str, enabled: int) -> None:
     """Enables or disables one of the member's alias email addresses."""
 
     check_admin_permission("update members", f"{member_id} ({email})")
-    _set_alias_enabled(get_account_service(), _require_member_account(member_id), email, bool(cint(enabled)))
+    _set_alias_enabled("Account", _require_member_account(member_id), email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -1022,9 +1003,8 @@ def add_member_to_groups(member_id: str, group_ids: list) -> None:
     check_admin_permission("update members", member_id)
     account_id = _require_member_account(member_id)
 
-    service = get_group_service()
     for group_id in _listify(group_ids):
-        service.add_members(group_id, [account_id])
+        stalwart.add_group_members(group_id, [account_id])
 
 
 @frappe.whitelist()
@@ -1033,7 +1013,7 @@ def remove_member_from_group(member_id: str, group_id: str) -> None:
 
     check_admin_permission("update members", f"{member_id} ({group_id})")
     account_id = _require_member_account(member_id)
-    get_group_service().remove_members(group_id, [account_id])
+    stalwart.remove_group_members(group_id, [account_id])
 
 
 @frappe.whitelist()
@@ -1043,16 +1023,13 @@ def add_member_to_mailing_lists(member_id: str, list_ids: list) -> None:
     check_admin_permission("update members", member_id)
     account_id = _require_member_account(member_id)
 
-    account_service = get_account_service()
-    email = (account_service.get(account_id, properties=["emailAddress"]) or {}).get("emailAddress")
+    account = stalwart.manage_get("Account", account_id, properties=["emailAddress"]) or {}
+    email = account.get("emailAddress")
     if not email:
         return
 
-    service = get_mailing_list_service()
     for list_id in _listify(list_ids):
-        recipients = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
-        recipients[email] = True
-        service.update(list_id, {"recipients": recipients})
+        stalwart.add_list_recipients(list_id, [email])
 
 
 @frappe.whitelist()
@@ -1062,18 +1039,14 @@ def remove_member_from_mailing_list(member_id: str, list_id: str) -> None:
     check_admin_permission("update members", f"{member_id} ({list_id})")
     account_id = _require_member_account(member_id)
 
-    account_service = get_account_service()
-    account = account_service.get(account_id, properties=["emailAddress", "aliases"])
+    account = stalwart.manage_get("Account", account_id, properties=["emailAddress", "aliases"])
     domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
     member_emails = {
         (account.get("emailAddress") or "").lower(),
         *[e.lower() for e in _alias_emails(account, domain_names)],
     }
 
-    service = get_mailing_list_service()
-    recipients = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
-    remaining = {r: v for r, v in recipients.items() if r.lower() not in member_emails}
-    service.update(list_id, {"recipients": remaining})
+    stalwart.remove_list_recipients(list_id, list(member_emails))
 
 
 # ---------------------------------------------------------------------------
@@ -1113,8 +1086,8 @@ def get_accounts(search: str | None = None) -> list[dict]:
 
     check_admin_permission("view accounts")
 
-    accounts = get_account_service().get_all(
-        filter={"@type": "User"}, properties=["id", "name", "emailAddress"]
+    accounts = stalwart.manage_get_all(
+        "Account", filter={"@type": "User"}, properties=["id", "name", "emailAddress"]
     )
     rows = [{"id": a["id"], "name": a.get("name"), "email": a.get("emailAddress")} for a in accounts]
     return _search(rows, search, ("name", "email"))
@@ -1131,9 +1104,7 @@ def get_groups(search: str | None = None) -> list[dict]:
 
     check_admin_permission("view groups")
 
-    groups = get_group_service().get_all_groups(
-        properties=["id", "name", "emailAddress", "description", "createdAt"]
-    )
+    groups = stalwart.get_all_groups(properties=["id", "name", "emailAddress", "description", "createdAt"])
     rows = [
         {
             "id": g["id"],
@@ -1153,8 +1124,8 @@ def get_group(group_id: str) -> dict:
 
     check_admin_permission("view groups")
 
-    service = get_group_service()
-    group = service.get(
+    group = stalwart.manage_get(
+        "Account",
         group_id,
         properties=[
             "id",
@@ -1196,7 +1167,7 @@ def get_group(group_id: str) -> dict:
                     }
                 )
 
-    members = service.get_members(group_id, properties=["id", "name", "emailAddress"])
+    members = stalwart.get_group_members(group_id, properties=["id", "name", "emailAddress"])
 
     return {
         "id": group["id"],
@@ -1233,13 +1204,13 @@ def add_group(
     role_ids = _listify(roles)
 
     def _create() -> str:
-        domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
-        service = get_group_service()
-        group_id = service.create(
-            Group(name=name, domain_id=domain_id, description=description, role_ids=role_ids or None)
-        )
+        domain_id = stalwart.get_domain_by_name(domain, raise_exception=True)["id"]
+        group_id = stalwart.manage_create(
+            "Account",
+            stalwart.group_payload(name, domain_id, description=description, role_ids=role_ids or None),
+        )["id"]
         if member_ids:
-            service.add_members(group_id, member_ids)
+            stalwart.add_group_members(group_id, member_ids)
         return group_id
 
     return execute_with_logging(
@@ -1268,17 +1239,12 @@ def update_group(
     if description is not None:
         patch["description"] = description
     if roles is not None:
-        role_ids = _listify(roles)
-        patch["roles"] = (
-            UserRoles(type=RoleType.CUSTOM, roles=CustomRoles(role_ids=role_ids)).to_dict()
-            if role_ids
-            else {"@type": "Default"}
-        )
+        patch["roles"] = stalwart.roles_union(_listify(roles), empty_type="Default")
     if quota_gb is not None:
         patch["quotas/maxDiskQuota"] = cint(float(quota_gb) * _GB)
 
     if patch:
-        get_group_service().update(group_id, patch)
+        stalwart.manage_update("Account", group_id, patch)
 
 
 @frappe.whitelist()
@@ -1286,7 +1252,7 @@ def add_group_email(group_id: str, email: str, description: str | None = None) -
     """Adds an alias email address to the group with an optional description."""
 
     check_admin_permission("update groups", f"{group_id} ({email})")
-    _add_alias(get_account_service(), group_id, email, description)
+    _add_alias("Account", group_id, email, description)
 
 
 @frappe.whitelist()
@@ -1294,7 +1260,7 @@ def remove_group_email(group_id: str, email: str) -> None:
     """Removes an alias email address from the group (the primary cannot be removed)."""
 
     check_admin_permission("update groups", f"{group_id} ({email})")
-    _remove_alias(get_account_service(), group_id, email)
+    _remove_alias("Account", group_id, email)
 
 
 @frappe.whitelist()
@@ -1302,7 +1268,7 @@ def set_group_email_enabled(group_id: str, email: str, enabled: int) -> None:
     """Enables or disables one of the group's alias email addresses."""
 
     check_admin_permission("update groups", f"{group_id} ({email})")
-    _set_alias_enabled(get_account_service(), group_id, email, bool(cint(enabled)))
+    _set_alias_enabled("Account", group_id, email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -1310,7 +1276,7 @@ def add_group_members(group_id: str, account_ids: list) -> None:
     """Adds the given accounts to the group."""
 
     check_admin_permission("update groups", group_id)
-    get_group_service().add_members(group_id, _listify(account_ids))
+    stalwart.add_group_members(group_id, _listify(account_ids))
 
 
 @frappe.whitelist()
@@ -1318,7 +1284,7 @@ def remove_group_member(group_id: str, account_id: str) -> None:
     """Removes the given account from the group."""
 
     check_admin_permission("update groups", f"{group_id} ({account_id})")
-    get_group_service().remove_members(group_id, [account_id])
+    stalwart.remove_group_members(group_id, [account_id])
 
 
 @frappe.whitelist()
@@ -1326,7 +1292,7 @@ def delete_groups(ids: list) -> None:
     """Deletes the given groups."""
 
     check_admin_permission("delete groups", ids)
-    get_group_service().delete(_listify(ids))
+    stalwart.delete_groups(_listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -1340,8 +1306,8 @@ def get_mailing_lists(search: str | None = None) -> list[dict]:
 
     check_admin_permission("view mailing lists")
 
-    lists = get_mailing_list_service().get_all(
-        properties=["id", "name", "emailAddress", "description", "recipients"]
+    lists = stalwart.manage_get_all(
+        "MailingList", properties=["id", "name", "emailAddress", "description", "recipients"]
     )
     rows = [
         {
@@ -1362,7 +1328,8 @@ def get_mailing_list(list_id: str) -> dict:
 
     check_admin_permission("view mailing lists")
 
-    ml = get_mailing_list_service().get(
+    ml = stalwart.manage_get(
+        "MailingList",
         list_id,
         properties=["id", "name", "emailAddress", "description", "aliases", "recipients"],
     )
@@ -1414,12 +1381,13 @@ def add_mailing_list(
     recipient_list = _listify(recipients)
 
     def _create() -> str:
-        domain_id = get_domain_service().get_by_name(domain, raise_exception=True)["id"]
-        return get_mailing_list_service().create(
-            MailingList(
-                name=name, domain_id=domain_id, recipients=recipient_list or None, description=description
-            )
-        )
+        domain_id = stalwart.get_domain_by_name(domain, raise_exception=True)["id"]
+        return stalwart.manage_create(
+            "MailingList",
+            stalwart.mailing_list_payload(
+                name, domain_id, recipients=recipient_list or None, description=description
+            ),
+        )["id"]
 
     return execute_with_logging(
         func=_create,
@@ -1437,7 +1405,7 @@ def update_mailing_list(list_id: str, description: str | None = None) -> None:
     check_admin_permission("update mailing lists", list_id)
 
     if description is not None:
-        get_mailing_list_service().update(list_id, {"description": description})
+        stalwart.manage_update("MailingList", list_id, {"description": description})
 
 
 @frappe.whitelist()
@@ -1445,7 +1413,7 @@ def add_mailing_list_email(list_id: str, email: str, description: str | None = N
     """Adds an alias email address to the mailing list."""
 
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
-    _add_alias(get_mailing_list_service(), list_id, email, description)
+    _add_alias("MailingList", list_id, email, description)
 
 
 @frappe.whitelist()
@@ -1453,7 +1421,7 @@ def remove_mailing_list_email(list_id: str, email: str) -> None:
     """Removes an alias email address from the mailing list (the primary cannot be removed)."""
 
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
-    _remove_alias(get_mailing_list_service(), list_id, email)
+    _remove_alias("MailingList", list_id, email)
 
 
 @frappe.whitelist()
@@ -1461,7 +1429,7 @@ def set_mailing_list_email_enabled(list_id: str, email: str, enabled: int) -> No
     """Enables or disables one of the mailing list's alias email addresses."""
 
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
-    _set_alias_enabled(get_mailing_list_service(), list_id, email, bool(cint(enabled)))
+    _set_alias_enabled("MailingList", list_id, email, bool(cint(enabled)))
 
 
 @frappe.whitelist()
@@ -1470,14 +1438,9 @@ def add_mailing_list_recipients(list_id: str, recipients: list) -> None:
 
     check_admin_permission("update mailing lists", list_id)
 
-    service = get_mailing_list_service()
-    current = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
-    for email in _listify(recipients):
-        email = (email or "").strip()
-        if email:
-            current[email] = True
-
-    service.update(list_id, {"recipients": current})
+    emails = [e for e in ((email or "").strip() for email in _listify(recipients)) if e]
+    if emails:
+        stalwart.add_list_recipients(list_id, emails)
 
 
 @frappe.whitelist()
@@ -1486,10 +1449,7 @@ def remove_mailing_list_recipient(list_id: str, email: str) -> None:
 
     check_admin_permission("update mailing lists", f"{list_id} ({email})")
 
-    service = get_mailing_list_service()
-    current = (service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {}
-    remaining = {r: v for r, v in current.items() if r.lower() != (email or "").strip().lower()}
-    service.update(list_id, {"recipients": remaining})
+    stalwart.remove_list_recipients(list_id, [(email or "").strip()])
 
 
 @frappe.whitelist()
@@ -1497,7 +1457,7 @@ def delete_mailing_lists(ids: list) -> None:
     """Deletes the given mailing lists."""
 
     check_admin_permission("delete mailing lists", ids)
-    get_mailing_list_service().delete(_listify(ids))
+    stalwart.manage_delete("MailingList", _listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -1511,7 +1471,7 @@ def get_roles_list(search: str | None = None) -> list[dict]:
 
     check_admin_permission("view roles")
 
-    roles = get_role_service().get_all()
+    roles = stalwart.manage_get_all("Role")
     rows = [
         {
             "id": r["id"],
@@ -1530,7 +1490,7 @@ def get_role(role_id: str) -> dict:
 
     check_admin_permission("view roles")
 
-    role = get_role_service().get(role_id)
+    role = stalwart.manage_get("Role", role_id)
     if not role:
         frappe.throw(_("Role not found"), frappe.DoesNotExistError)
 
@@ -1564,14 +1524,15 @@ def add_role(
     check_admin_permission("add roles", description)
 
     def _create() -> str:
-        return get_role_service().create(
-            Role(
-                description=description,
+        return stalwart.manage_create(
+            "Role",
+            stalwart.role_payload(
+                description,
+                role_ids=_listify(role_ids),
                 enabled_permissions=_listify(enabled_permissions),
                 disabled_permissions=_listify(disabled_permissions),
-                role_ids=_listify(role_ids),
-            )
-        )
+            ),
+        )["id"]
 
     return execute_with_logging(
         func=_create,
@@ -1605,7 +1566,7 @@ def update_role(
         patch["roleIds"] = {rid: True for rid in _listify(role_ids)}
 
     if patch:
-        get_role_service().update(role_id, patch)
+        stalwart.manage_update("Role", role_id, patch)
 
 
 @frappe.whitelist()
@@ -1613,7 +1574,7 @@ def delete_roles(ids: list) -> None:
     """Deletes the given roles."""
 
     check_admin_permission("delete roles", ids)
-    get_role_service().delete(_listify(ids))
+    stalwart.manage_delete("Role", _listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -1627,7 +1588,9 @@ def get_oauth_clients(search: str | None = None) -> list[dict]:
 
     check_admin_permission("view oauth clients")
 
-    clients = get_oauth_client_service().get_all(properties=["id", "clientId", "description", "createdAt"])
+    clients = stalwart.manage_get_all(
+        "OAuthClient", properties=["id", "clientId", "description", "createdAt"]
+    )
     rows = [
         {
             "id": c["id"],
@@ -1646,7 +1609,8 @@ def get_oauth_client(client_id: str) -> dict:
 
     check_admin_permission("view oauth clients")
 
-    client = get_oauth_client_service().get(
+    client = stalwart.manage_get(
+        "OAuthClient",
         client_id,
         properties=[
             "id",
@@ -1694,17 +1658,18 @@ def add_oauth_client(
     expires = normalize_utc_z(expires_at)
 
     def _create() -> str:
-        return get_oauth_client_service().create(
-            OAuthClient(
-                client_id=client_id,
+        return stalwart.manage_create(
+            "OAuthClient",
+            stalwart.oauth_client_payload(
+                client_id,
                 description=description,
                 contacts=contact_list or None,
                 redirect_uris=uris or None,
                 secret=(secret or "").strip() or None,
                 logo=(logo or "").strip() or None,
                 expires_at=expires,
-            )
-        )
+            ),
+        )["id"]
 
     return execute_with_logging(
         func=_create,
@@ -1749,7 +1714,7 @@ def update_oauth_client(
         patch["expiresAt"] = normalize_utc_z(expires_at)
 
     if patch:
-        get_oauth_client_service().update(oauth_client_id, patch)
+        stalwart.manage_update("OAuthClient", oauth_client_id, patch)
 
 
 @frappe.whitelist()
@@ -1758,14 +1723,15 @@ def add_oauth_client_contacts(client_id: str, contacts: list) -> None:
 
     check_admin_permission("update oauth clients", client_id)
 
-    service = get_oauth_client_service()
-    current = dict((service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {})
+    current = dict(
+        (stalwart.manage_get("OAuthClient", client_id, properties=["contacts"]) or {}).get("contacts") or {}
+    )
     for contact in _listify(contacts):
         contact = (contact or "").strip()
         if contact:
             current[contact] = True
 
-    service.update(client_id, {"contacts": current})
+    stalwart.manage_update("OAuthClient", client_id, {"contacts": current})
 
 
 @frappe.whitelist()
@@ -1774,10 +1740,11 @@ def remove_oauth_client_contact(client_id: str, contact: str) -> None:
 
     check_admin_permission("update oauth clients", f"{client_id} ({contact})")
 
-    service = get_oauth_client_service()
-    current = (service.get(client_id, properties=["contacts"]) or {}).get("contacts") or {}
+    current = (stalwart.manage_get("OAuthClient", client_id, properties=["contacts"]) or {}).get(
+        "contacts"
+    ) or {}
     remaining = {c: v for c, v in current.items() if c.lower() != (contact or "").strip().lower()}
-    service.update(client_id, {"contacts": remaining})
+    stalwart.manage_update("OAuthClient", client_id, {"contacts": remaining})
 
 
 @frappe.whitelist()
@@ -1786,14 +1753,16 @@ def add_oauth_client_redirect_uris(client_id: str, redirect_uris: list) -> None:
 
     check_admin_permission("update oauth clients", client_id)
 
-    service = get_oauth_client_service()
-    current = dict((service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {})
+    current = dict(
+        (stalwart.manage_get("OAuthClient", client_id, properties=["redirectUris"]) or {}).get("redirectUris")
+        or {}
+    )
     for uri in _listify(redirect_uris):
         uri = (uri or "").strip()
         if uri:
             current[uri] = True
 
-    service.update(client_id, {"redirectUris": current})
+    stalwart.manage_update("OAuthClient", client_id, {"redirectUris": current})
 
 
 @frappe.whitelist()
@@ -1802,10 +1771,11 @@ def remove_oauth_client_redirect_uri(client_id: str, uri: str) -> None:
 
     check_admin_permission("update oauth clients", f"{client_id} ({uri})")
 
-    service = get_oauth_client_service()
-    current = (service.get(client_id, properties=["redirectUris"]) or {}).get("redirectUris") or {}
+    current = (stalwart.manage_get("OAuthClient", client_id, properties=["redirectUris"]) or {}).get(
+        "redirectUris"
+    ) or {}
     remaining = {u: v for u, v in current.items() if u != (uri or "").strip()}
-    service.update(client_id, {"redirectUris": remaining})
+    stalwart.manage_update("OAuthClient", client_id, {"redirectUris": remaining})
 
 
 @frappe.whitelist()
@@ -1813,7 +1783,7 @@ def delete_oauth_clients(ids: list) -> None:
     """Deletes the given OAuth clients."""
 
     check_admin_permission("delete oauth clients", ids)
-    get_oauth_client_service().delete(_listify(ids))
+    stalwart.manage_delete("OAuthClient", _listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -1833,12 +1803,11 @@ def get_dkim_signatures(domain_id: str | None = None) -> list[dict]:
 
     check_admin_permission("view dkim signatures")
 
-    service = get_dkim_signature_service()
     properties = ["id", "@type", "selector", "domainId", "createdAt"]
     signatures = (
-        service.get_all_by_domain(domain_id, properties=properties)
+        stalwart.get_dkim_signatures_by_domain(domain_id, properties=properties)
         if domain_id
-        else service.get_all(properties=properties)
+        else stalwart.manage_get_all("DkimSignature", properties=properties)
     )
 
     domain_names = {d["id"]: d["name"] for d in get_stalwart_domains()}
@@ -1860,7 +1829,8 @@ def get_dkim_signature(signature_id: str) -> dict:
 
     check_admin_permission("view dkim signatures")
 
-    sig = get_dkim_signature_service().get(
+    sig = stalwart.manage_get(
+        "DkimSignature",
         signature_id,
         properties=[
             "id",
@@ -1904,7 +1874,7 @@ def delete_dkim_signatures(ids: list) -> None:
     """Deletes the given DKIM signatures."""
 
     check_admin_permission("delete dkim signatures", ids)
-    get_dkim_signature_service().delete(_listify(ids))
+    stalwart.manage_delete("DkimSignature", _listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -1961,7 +1931,8 @@ def get_queued_messages(
     check_admin_permission("view queued messages")
 
     page, page_length = cint(page) or 1, cint(page_length) or 50
-    result = get_queued_message_service().list_page(
+    result = stalwart.manage_list_page(
+        "QueuedMessage",
         filter=_queue_filter(search, to, sender),
         position=(page - 1) * page_length,
         limit=page_length,
@@ -2009,7 +1980,7 @@ def get_queued_message(message_id: str) -> dict:
 
     check_admin_permission("view queued messages")
 
-    message = get_queued_message_service().get(message_id)
+    message = stalwart.manage_get("QueuedMessage", message_id)
     if not message:
         frappe.throw(_("Queued message not found"), frappe.DoesNotExistError)
 
@@ -2101,7 +2072,7 @@ def update_queued_message(message_id: str, next_retry: str | None = None) -> Non
     check_admin_permission("update queued messages", message_id)
 
     if next_retry is not None:
-        get_queued_message_service().update(message_id, {"nextRetry": _utc_datetime(next_retry)})
+        stalwart.manage_update("QueuedMessage", message_id, {"nextRetry": _utc_datetime(next_retry)})
 
 
 @frappe.whitelist()
@@ -2129,7 +2100,6 @@ def update_queued_recipient(
     """Updates a single recipient of a queued message (renames the address if ``new_email`` differs)."""
 
     check_admin_permission("update queued messages", f"{message_id} ({email})")
-    service = get_queued_message_service()
 
     # Scalar edits keyed by their JMAP property; a ``None`` argument means "leave unchanged".
     changed = {}
@@ -2162,9 +2132,12 @@ def update_queued_recipient(
     new_email = (new_email or "").strip()
     if new_email and new_email != email:
         # Rename: rebuild the recipient (minus server-set fields) under the new key.
-        current = ((service.get(message_id, properties=["recipients"]) or {}).get("recipients") or {}).get(
-            email
-        )
+        current = (
+            (stalwart.manage_get("QueuedMessage", message_id, properties=["recipients"]) or {}).get(
+                "recipients"
+            )
+            or {}
+        ).get(email)
         if current is None:
             frappe.throw(_("Recipient not found"), frappe.DoesNotExistError)
         obj = {k: v for k, v in current.items() if k not in ("flags", "queueName")}
@@ -2173,7 +2146,9 @@ def update_queued_recipient(
             obj["status"] = status
         if expires is not None:
             obj["expires"] = expires
-        service.update(message_id, {f"recipients/{email}": None, f"recipients/{new_email}": obj})
+        stalwart.manage_update(
+            "QueuedMessage", message_id, {f"recipients/{email}": None, f"recipients/{new_email}": obj}
+        )
         return
 
     patch = {f"recipients/{email}/{prop}": value for prop, value in changed.items()}
@@ -2182,7 +2157,7 @@ def update_queued_recipient(
     if expires is not None:
         patch[f"recipients/{email}/expires"] = expires
     if patch:
-        service.update(message_id, patch)
+        stalwart.manage_update("QueuedMessage", message_id, patch)
 
 
 @frappe.whitelist()
@@ -2195,30 +2170,22 @@ def remove_queued_recipient(message_id: str, email: str) -> None:
     """
 
     check_admin_permission("update queued messages", f"{message_id} ({email})")
-    get_queued_message_service().update(message_id, {f"recipients/{email}": None})
+    stalwart.manage_update("QueuedMessage", message_id, {f"recipients/{email}": None})
 
 
 @frappe.whitelist()
 def get_queued_message_source(message_id: str) -> dict:
     """Returns the raw RFC822 source of a queued message."""
 
-    from urllib.parse import urljoin
-
     check_admin_permission("view queued messages")
 
-    connection = get_queued_message_service().connection
-    message = get_queued_message_service().get(message_id, properties=["id", "blobId"])
+    message = stalwart.manage_get("QueuedMessage", message_id, properties=["id", "blobId"])
     blob_id = (message or {}).get("blobId")
     if not blob_id:
         frappe.throw(_("Queued message content is not available"), frappe.DoesNotExistError)
 
-    account_id = connection.primary_accounts["urn:stalwart:jmap"]
-    url = urljoin(
-        get_config("server_url"),
-        f"/jmap/download/{account_id}/{blob_id}/message.eml?accept=message/rfc822",
-    )
-    content = connection.request(method="GET", url=url, return_json=False)
-    return {"source": content.decode(errors="replace") if isinstance(content, bytes) else content}
+    content = stalwart.download_message_blob(blob_id)
+    return {"source": content.decode(errors="replace")}
 
 
 @frappe.whitelist()
@@ -2226,7 +2193,7 @@ def retry_queued_messages(ids: list) -> None:
     """Schedules the given queued messages for immediate delivery."""
 
     check_admin_permission("retry queued messages", ids)
-    get_queued_message_service().retry(_listify(ids))
+    stalwart.queue_retry(_listify(ids))
 
 
 @frappe.whitelist()
@@ -2234,7 +2201,7 @@ def cancel_queued_messages(ids: list) -> None:
     """Cancels (deletes) the given queued messages."""
 
     check_admin_permission("cancel queued messages", ids)
-    get_queued_message_service().delete(_listify(ids))
+    stalwart.manage_delete("QueuedMessage", _listify(ids))
 
 
 @frappe.whitelist()
@@ -2244,8 +2211,8 @@ def retry_all_queued_messages(
     """Schedules every message matching the current filter for immediate delivery."""
 
     check_admin_permission("retry queued messages", "all")
-    service = get_queued_message_service()
-    service.retry(service.query(filter=_queue_filter(search, to, sender))["ids"])
+    ids = stalwart.manage_query("QueuedMessage", filter=_queue_filter(search, to, sender))["ids"]
+    stalwart.queue_retry(ids)
 
 
 @frappe.whitelist()
@@ -2255,8 +2222,8 @@ def cancel_all_queued_messages(
     """Cancels (deletes) every message matching the current filter."""
 
     check_admin_permission("cancel queued messages", "all")
-    service = get_queued_message_service()
-    service.delete(service.query(filter=_queue_filter(search, to, sender))["ids"])
+    ids = stalwart.manage_query("QueuedMessage", filter=_queue_filter(search, to, sender))["ids"]
+    stalwart.manage_delete("QueuedMessage", ids)
 
 
 # ---------------------------------------------------------------------------
@@ -2274,33 +2241,12 @@ def stream_delivery_test(target: str):
     over the same origin instead.
     """
 
-    from urllib.parse import quote, urljoin
-
-    import requests
     from werkzeug.wrappers import Response
 
     check_admin_permission("run delivery test", target)
 
-    connection = get_management_connection()
-    server_url, verify_ssl = get_config(("server_url", "verify_ssl"))
-    token = connection.request(
-        method="GET", url=urljoin(server_url, "/api/token/delivery"), return_json=False
-    )
-    token = token.decode() if isinstance(token, bytes) else token
-
-    url = urljoin(server_url, f"/api/live/delivery/{quote(target)}?token={quote(token)}")
-    upstream = requests.get(url, stream=True, verify=bool(verify_ssl), timeout=(10, 300))
-
-    def relay():
-        try:
-            for chunk in upstream.iter_content(chunk_size=None):
-                if chunk:
-                    yield chunk
-        finally:
-            upstream.close()
-
     return Response(
-        relay(),
+        stalwart.iter_delivery_trace(target),
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -2357,8 +2303,11 @@ def get_reports(
     check_admin_permission("view reports")
 
     page, page_length = cint(page) or 1, cint(page_length) or 50
-    result = get_report_service(kind, direction).list_page(
-        filter=_report_filter(kind, direction, search), position=(page - 1) * page_length, limit=page_length
+    result = stalwart.manage_list_page(
+        stalwart.report_type_name(kind, direction),
+        filter=_report_filter(kind, direction, search),
+        position=(page - 1) * page_length,
+        limit=page_length,
     )
     return {"reports": [_report_row(direction, r) for r in result["items"]], "total": result["total"]}
 
@@ -2369,7 +2318,7 @@ def get_report(kind: str, direction: str, report_id: str) -> dict:
 
     check_admin_permission("view reports")
 
-    report = get_report_service(kind, direction).get(report_id)
+    report = stalwart.manage_get(stalwart.report_type_name(kind, direction), report_id)
     if not report:
         frappe.throw(_("Report not found"), frappe.DoesNotExistError)
 
@@ -2410,7 +2359,7 @@ def delete_reports(kind: str, direction: str, ids: list) -> None:
     """Deletes the given reports."""
 
     check_admin_permission("delete reports", ids)
-    get_report_service(kind, direction).delete(_listify(ids))
+    stalwart.manage_delete(stalwart.report_type_name(kind, direction), _listify(ids))
 
 
 # ---------------------------------------------------------------------------
@@ -2451,17 +2400,23 @@ def get_logs(search: str | None = None, anchor: str | None = None, page_length: 
     check_admin_permission("view logs")
 
     page_length = cint(page_length) or 100
-    result = get_log_service().list_page(
+    result = stalwart.manage_list_page(
+        "Log",
         filter={"text": search} if search else None,
         anchor=anchor,
         limit=page_length,
     )
     labels = get_log_labels()
-    logs = [_log_row(e, labels) for e in result["items"]]
+    items = result["items"]
+    logs = [_log_row(e, labels) for e in items]
+    # The log store orders by id, which is not reliably newest-first (a server upgrade that
+    # changes the id format interleaves the epochs) and rejects a timestamp sort — so sort
+    # the page for display. The anchor must stay in server order, or paging would loop.
+    logs.sort(key=lambda row: row["timestamp"] or "", reverse=True)
     return {
         "logs": logs,
         "total": result["total"],
-        "next_anchor": logs[-1]["id"] if len(logs) == page_length else None,
+        "next_anchor": items[-1]["id"] if len(items) == page_length else None,
     }
 
 
@@ -2471,7 +2426,7 @@ def get_log(log_id: str) -> dict:
 
     check_admin_permission("view logs")
 
-    entry = get_log_service().get(log_id)
+    entry = stalwart.manage_get("Log", log_id)
     if not entry:
         frappe.throw(_("Log entry not found"), frappe.DoesNotExistError)
 
@@ -2515,7 +2470,7 @@ def run_action(action_type: str, params: dict | None = None) -> dict:
         )
 
     params = {k: dict.fromkeys(v, True) if isinstance(v, list) else v for k, v in (params or {}).items()}
-    return get_action_service().run(action_type, params=params or None)
+    return stalwart.run_action(action_type, params=params or None)
 
 
 @frappe.whitelist()
@@ -2567,18 +2522,22 @@ def get_overview() -> dict:
         }
 
     with suppress(Exception):
-        overview["groups"] = len(get_group_service().get_all_groups(properties=["id"]))
+        overview["groups"] = len(stalwart.get_all_groups(properties=["id"]))
 
     with suppress(Exception):
-        overview["mailing_lists"] = len(get_mailing_list_service().get_all(properties=["id"]))
+        overview["mailing_lists"] = len(stalwart.manage_get_all("MailingList", properties=["id"]))
 
     with suppress(Exception):
-        result = get_queued_message_service().list_page(filter=None, position=0, limit=1)
+        result = stalwart.manage_list_page("QueuedMessage", filter=None, position=0, limit=1)
         overview["queued_messages"] = result["total"]
 
     with suppress(Exception):
-        result = get_log_service().list_page(filter=None, anchor=None, limit=6)
+        # A wider page, reduced to the 6 newest by timestamp: the store's id order is not
+        # reliably newest-first (see get_logs), so the head alone may hold stale entries.
+        result = stalwart.manage_list_page("Log", filter=None, anchor=None, limit=100)
         labels = get_log_labels()
-        overview["recent_logs"] = [_log_row(entry, labels) for entry in result["items"]]
+        rows = [_log_row(entry, labels) for entry in result["items"]]
+        rows.sort(key=lambda row: row["timestamp"] or "", reverse=True)
+        overview["recent_logs"] = rows[:6]
 
     return overview

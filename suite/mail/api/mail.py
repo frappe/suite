@@ -9,6 +9,7 @@ import requests
 from frappe import _
 from frappe.model.document import bulk_insert
 from frappe.utils import add_to_date, cint, now, random_string
+from jmap import MethodError
 
 from suite.mail.api.contacts import (
     create_contacts_if_not_exists,
@@ -55,10 +56,10 @@ from suite.mail.doctype.user_account.user_account import (
     is_jmap_account_belongs_to_user,
 )
 from suite.mail.jmap import (
-    get_email_service,
+    get_account_client,
+    get_cached_mailboxes,
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
-    get_mailbox_service,
 )
 from suite.mail.store import get_email_address_index
 from suite.mail.utils import get_config, log_mail_error
@@ -245,8 +246,8 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
     conversations = fetch_threads(account, filter, start, limit)
 
     # Four roles are needed below, so they come off one cached mailbox list rather than a lookup each:
-    # every `get_mailbox_id_by_role` resolves the account's user and connection again on the way in.
-    ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_mailbox_service(account).mailboxes}
+    # every `get_mailbox_id_by_role` resolves the account's user and client again on the way in.
+    ids_by_role = {(m.get("role") or "").lower(): m["id"] for m in get_cached_mailboxes(account)}
     trash_mailbox = ids_by_role.get("trash")
     junk_mailbox = ids_by_role.get("junk")
     # Sent and Drafts are about the message you wrote, so their rows follow the latest message in the
@@ -377,16 +378,25 @@ def get_all_inbox_unread_count() -> int:
     """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge).
 
     Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
-    filter. Each account's Inbox unread count is fetched live via the mailbox service (a fresh
-    Mailbox/get, bypassing the 1-hour `.mailboxes` cache) — the same source the per-account inbox
-    badge uses — and summed.
+    filter. Each account's Inbox unread count is fetched live (a fresh Mailbox/get, bypassing the
+    1-hour mailboxes cache) — the same source the per-account inbox badge uses — and summed.
     """
 
     total = 0
     for account in get_user_jmap_accounts():
-        for mailbox in get_mailbox_service(account["name"]).get():
-            if (mailbox.get("role") or "").lower() == "inbox":
-                total += cint(mailbox.get("unreadThreads"))
+        client = get_account_client(account["name"])
+        try:
+            with client.batch() as b:
+                h = b.mail.mailbox.get()
+            mailboxes = h.result.items
+        except MethodError:
+            # A stale/revoked account answers with a method-level error; the old client
+            # treated that as "no mailboxes" — keep the badge working for the rest.
+            continue
+        for mailbox in mailboxes:
+            wire = mailbox.to_wire()
+            if (wire.get("role") or "").lower() == "inbox":
+                total += cint(wire.get("unreadThreads"))
                 break
 
     return total
@@ -1122,13 +1132,51 @@ def get_email_suggestions(account: str, text: str, limit: int = 10) -> list[dict
 
     if not suggestions:
         suggestions = [
-            {"name": None, "email": email}
-            for email in get_email_service(account).get_email_suggestions(text, limit=limit)
+            {"name": None, "email": email} for email in _email_address_suggestions(account, text, limit)
         ]
 
     suggestions = suggestions[:limit]
     enrich_contacts_with_user_images(suggestions)
     return suggestions
+
+
+def _email_address_suggestions(account: str, text: str, limit: int = 5) -> list[str]:
+    """Returns email addresses matching ``text`` in from/to/cc/bcc of recent mails.
+
+    One request carries all four queries; the matching mails are then read once and their
+    address fields scanned for the text.
+    """
+
+    client = get_account_client(account)
+    sort = [{"property": "receivedAt", "isAscending": False}]
+
+    with client.batch() as b:
+        handles = [
+            b.mail.email.query(filter=f, position=0, limit=limit, sort=sort, calculate_total=False)
+            for f in ({"from": text}, {"to": text}, {"cc": text}, {"bcc": text})
+        ]
+
+    ids: list[str] = []
+    for handle in handles:
+        for id in handle.result.ids:
+            if id not in ids:
+                ids.append(id)
+
+    if not ids:
+        return []
+
+    with client.batch() as b:
+        h = b.mail.email.get(ids=ids, properties=["from", "to", "cc", "bcc"])
+
+    addresses: list[str] = []
+    for email in (e.to_wire() for e in h.result.items):
+        for field in ("from", "to", "cc", "bcc"):
+            for addr in email.get(field) or []:
+                email_address = addr.get("email")
+                if email_address and text.lower() in email_address.lower() and email_address not in addresses:
+                    addresses.append(email_address)
+
+    return addresses[:limit]
 
 
 @frappe.whitelist()
@@ -1396,9 +1444,51 @@ def _screening_message_ids(account: str, from_email: str | None = None) -> list[
         conditions.append({"from": from_email})
     filter = conditions[0] if len(conditions) == 1 else {"operator": "AND", "conditions": conditions}
 
-    service = get_email_service(account)
+    client = get_account_client(account)
 
-    return service.query(filter, limit=service.max_objects_in_get).get("ids", [])
+    return _query_email_ids(account, filter, limit=client.capabilities.limits.max_objects_in_get)["ids"]
+
+
+def _query_email_ids(
+    account: str,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int = 50,
+    sort: list[dict] | None = None,
+) -> dict:
+    """Pages Email/query until ``limit`` ids are collected; the total rides on the first page."""
+
+    client = get_account_client(account)
+
+    ids: list[str] = []
+    total = None
+    batch_size = min(limit, client.capabilities.limits.max_objects_in_get)
+    sort = sort or [{"property": "receivedAt", "isAscending": False}]
+
+    while len(ids) < limit:
+        current_batch_size = min(batch_size, limit - len(ids))
+
+        with client.batch() as b:
+            h = b.mail.email.query(
+                filter=filter or {},
+                position=position,
+                limit=current_batch_size,
+                sort=sort,
+                calculate_total=total is None,
+            )
+
+        result = h.result
+        ids.extend(result.ids)
+
+        if total is None:
+            total = result.total
+
+        if len(result.ids) < current_batch_size or (total is not None and len(ids) >= total):
+            break
+
+        position += len(result.ids)
+
+    return {"ids": ids[:limit], "total": total}
 
 
 @frappe.whitelist()

@@ -22,7 +22,6 @@ and retry/dismiss against delivered (final) submissions.
 """
 
 from datetime import datetime
-from types import SimpleNamespace
 from unittest import mock
 
 import frappe
@@ -31,6 +30,8 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, get_datetime, get_datetime_str, now, time_diff_in_seconds
 
 from suite.mail.api.scheduled import (
+    SUBMISSION_PROPERTIES,
+    _query_submissions,
     cancel_scheduled_mail,
     dismiss_failed_mail,
     get_scheduled_mail,
@@ -40,8 +41,7 @@ from suite.mail.api.scheduled import (
     retry_failed_mail,
     send_scheduled_mail_now,
 )
-from suite.mail.jmap import get_email_service, get_email_submission_service
-from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
+from suite.mail.jmap import get_account_client, get_cached_identities
 from suite.mail.tests.base import StalwartIntegrationTestCase, unique_name
 from suite.mail.utils.dt import to_utc_z
 from suite.utils.dt import convert_to_utc
@@ -86,8 +86,17 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
     def _get_submission(self, account: str, submission_id: str) -> dict | None:
         with self.set_user(self.sender.email):
-            submissions = get_email_submission_service(account).get([submission_id])
+            client = get_account_client(account)
+            with client.batch() as b:
+                h = b.submission.email_submission.get(ids=[submission_id], properties=SUBMISSION_PROPERTIES)
+            submissions = [s.to_wire() for s in h.result.items]
         return submissions[0] if submissions else None
+
+    def _get_emails(self, account: str, ids: list[str], properties: list[str]) -> list[dict]:
+        client = get_account_client(account)
+        with client.batch() as b:
+            h = b.mail.email.get(ids=ids, properties=properties)
+        return [e.to_wire() for e in h.result.items]
 
     def _outbox_rows(self, account: str, **filters) -> list[dict]:
         with self.set_user(self.sender.email):
@@ -124,7 +133,7 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         # The message sits in Sent while held (moved there at submission time).
         with self.set_user(self.sender.email):
             sent_id = frappe.get_doc("Mail Queue", scheduled.name).mailbox_id
-            emails = get_email_service(account).get([scheduled.id], properties=["mailboxIds"])
+            emails = self._get_emails(account, [scheduled.id], properties=["mailboxIds"])
         self.assertTrue(emails and emails[0]["mailboxIds"].get(sent_id))
 
         # Held, so nothing has reached the recipient.
@@ -217,7 +226,7 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
 
         # The identity filter keys on the JMAP Identity id.
         with self.set_user(self.sender.email):
-            identities = get_email_submission_service(account).identities
+            identities = get_cached_identities(account)
         identity_id = next(i["id"] for i in identities if i["email"] == self.sender.email)
         ids = [r["id"] for r in self._outbox_rows(account, identity_id=identity_id)]
         self.assertIn(scheduled.submission_id, ids)
@@ -284,7 +293,7 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
             from suite.mail.jmap import get_mailbox_id_by_role
 
             drafts_id = get_mailbox_id_by_role(account, "drafts", raise_exception=True)
-            emails = get_email_service(account).get([scheduled.id], properties=["mailboxIds", "keywords"])
+            emails = self._get_emails(account, [scheduled.id], properties=["mailboxIds", "keywords"])
 
         self.assertEqual(list(emails[0]["mailboxIds"].keys()), [drafts_id])
         self.assertTrue(emails[0]["keywords"].get("$draft"))
@@ -367,7 +376,10 @@ class TestMailScheduledSend(StalwartIntegrationTestCase):
         account = self.personal_account(self.sender)
 
         with self.set_user(self.sender.email):
-            get_email_service(account).delete([scheduled.id])
+            client = get_account_client(account)
+            with client.batch() as b:
+                h = b.mail.email.set(destroy=[scheduled.id])
+            self.assertIn(scheduled.id, h.result.destroyed)
 
         rows = self._outbox_rows(account)
         row = next((r for r in rows if r["id"] == scheduled.submission_id), None)
@@ -657,30 +669,20 @@ class TestSubmissionQueryTotal(IntegrationTestCase):
         `server_limit` ids (echoing the limit it used, per RFC 8620 §5.5) and reports
         `server_total` as total when given. Returns (ids, total, request_count)."""
 
-        def respond(filter=None, position=0, limit=50, sort=None):
+        def respond(client, filter, position, limit, sort):
             served = limit if server_limit is None else min(server_limit, limit)
             body = {"ids": all_ids[position : position + served]}
             if server_total is not None:
                 body["total"] = server_total
             if served < limit:
                 body["limit"] = served
-            return {"methodResponses": [["EmailSubmission/query", body, "0"]]}
+            return body
 
-        service = EmailSubmissionService(
-            "acc",
-            SimpleNamespace(
-                capabilities=[
-                    "urn:ietf:params:jmap:core",
-                    "urn:ietf:params:jmap:mail",
-                    "urn:ietf:params:jmap:submission",
-                ]
-            ),
-        )
-        with mock.patch.object(service, "_query", side_effect=respond) as query:
-            ids, total = service.query(position=position, limit=limit)
+        with mock.patch("suite.mail.api.scheduled._query_page", side_effect=respond) as query:
+            ids, total = _query_submissions(mock.Mock(), position=position, limit=limit)
 
         # The look-ahead: one id past the page is requested, never returned.
-        self.assertEqual(query.call_args_list[0].kwargs["limit"], limit + 1)
+        self.assertEqual(query.call_args_list[0].args[3], limit + 1)
         return ids, total, query.call_count
 
     def test_omitted_total_keeps_the_pager_advancing(self):

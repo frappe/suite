@@ -8,12 +8,12 @@ Stalwart >= 0.16.17 rejects epoch seconds for the RFC 4865 HOLDUNTIL parameter
 
 import unittest
 
-from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
+from suite.mail.jmap import build_submission_envelope
 
 
 class TestBuildEnvelope(unittest.TestCase):
     def _envelope(self, hold_until: int | None = None) -> dict:
-        return EmailSubmissionService._build_envelope(
+        return build_submission_envelope(
             from_email="sender@example.com",
             rcpt_emails=["rcpt@example.com"],
             envelope_id="env-1",

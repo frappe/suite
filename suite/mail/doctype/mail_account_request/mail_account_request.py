@@ -244,10 +244,10 @@ class MailAccountRequest(Document):
         if not self.groups:
             return
 
-        from suite.mail.stalwart import get_group_service
+        from suite.mail.stalwart import get_all_groups
 
         group_ids = self._groups
-        server_group_ids = {str(g["id"]) for g in get_group_service().get_all_groups(properties=["id"])}
+        server_group_ids = {str(g["id"]) for g in get_all_groups(properties=["id"])}
 
         for group_id in group_ids:
             if group_id not in server_group_ids:
@@ -261,10 +261,10 @@ class MailAccountRequest(Document):
         if not self.mailing_lists:
             return
 
-        from suite.mail.stalwart import get_mailing_list_service
+        from suite.mail.stalwart import manage_get_all
 
         list_ids = self._mailing_lists
-        server_list_ids = {str(ml["id"]) for ml in get_mailing_list_service().get_all(properties=["id"])}
+        server_list_ids = {str(ml["id"]) for ml in manage_get_all("MailingList", properties=["id"])}
 
         for list_id in list_ids:
             if list_id not in server_list_ids:
@@ -468,22 +468,18 @@ class MailAccountRequest(Document):
     def _join_groups(self, account_id: str) -> None:
         """Adds the created account to each of the requested groups."""
 
-        from suite.mail.stalwart import get_group_service
+        from suite.mail.stalwart import add_group_members
 
-        service = get_group_service()
         for group_id in self._groups:
-            service.add_members(group_id, [account_id])
+            add_group_members(group_id, [account_id])
 
     def _join_mailing_lists(self) -> None:
         """Adds the account's primary address as a recipient of each requested mailing list."""
 
-        from suite.mail.stalwart import get_mailing_list_service
+        from suite.mail.stalwart import add_list_recipients
 
-        service = get_mailing_list_service()
         for list_id in self._mailing_lists:
-            recipients = dict((service.get(list_id, properties=["recipients"]) or {}).get("recipients") or {})
-            recipients[self.account] = True
-            service.update(list_id, {"recipients": recipients})
+            add_list_recipients(list_id, [self.account])
 
     def _update_user_settings(self, user: str, app_password: str) -> None:
         """Updates the user settings with the app password and backup email."""

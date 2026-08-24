@@ -44,13 +44,17 @@ from frappe.utils import (
     time_diff_in_seconds,
 )
 
+from suite.mail import stalwart
 from suite.mail.jmap import (
-    get_email_service,
-    get_email_submission_service,
-    get_jmap_set_error_message,
+    SuiteJMAPClient,
+    build_submission_envelope,
+    get_account_client,
+    get_cached_identities,
+    get_identity_id_by_email,
     get_mailbox_id_by_role,
+    get_max_delayed_send,
+    get_set_error_message,
 )
-from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.utils import log_mail_error
 from suite.mail.utils.dt import UTC_DATETIME_FORMAT, from_utc_z, normalize_utc_z, to_utc_z
 
@@ -108,8 +112,9 @@ def get_submissions(
     }
     filter = {key: value for key, value in filter.items() if value}
 
-    service = get_email_submission_service(account)
-    ids, total = service.query(
+    client = get_account_client(account)
+    ids, total = _query_submissions(
+        client,
         filter or None,
         position=(page - 1) * page_length,
         limit=page_length,
@@ -118,7 +123,7 @@ def get_submissions(
     if not ids:
         return {"rows": [], "total": total}
 
-    fetched = service.get(ids, properties=[*SUBMISSION_PROPERTIES, "deliveryStatus"])
+    fetched = _get_submissions(client, ids, [*SUBMISSION_PROPERTIES, "deliveryStatus"])
     queue_by_envid = _queue_messages_by_envid(fetched)
 
     # The query's order (sentAt desc) is the listing's order; get() does not guarantee it.
@@ -130,14 +135,7 @@ def get_submissions(
     ]
 
     email_ids = list(dict.fromkeys(row["email_id"] for row in rows if row["email_id"]))
-    emails_by_id = {
-        e["id"]: e
-        for e in (
-            get_email_service(account).get(email_ids, properties=EMAIL_SUMMARY_PROPERTIES)
-            if email_ids
-            else []
-        )
-    }
+    emails_by_id = {e["id"]: e for e in _get_emails(client, email_ids, EMAIL_SUMMARY_PROPERTIES)}
     for row in rows:
         _add_email_fields(row, emails_by_id.get(row["email_id"]))
 
@@ -152,8 +150,8 @@ def get_scheduled_mail(account: str, id: str) -> dict:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submissions = service.get([id], properties=DETAIL_PROPERTIES)
+    client = get_account_client(account)
+    submissions = _get_submissions(client, [id], DETAIL_PROPERTIES)
     if not submissions:
         frappe.throw(_("This submission no longer exists."))
 
@@ -161,17 +159,14 @@ def get_scheduled_mail(account: str, id: str) -> dict:
     queue_message = _queue_messages_by_envid([submission]).get(_envid(submission))
 
     row = _serialize_submission(submission, None, queue_message)
-    email_id = submission.get("emailId")
-    emails = (
-        get_email_service(account).get([email_id], properties=EMAIL_SUMMARY_PROPERTIES) if email_id else []
-    )
+    emails = _get_emails(client, [submission.get("emailId")], EMAIL_SUMMARY_PROPERTIES)
     _add_email_fields(row, emails[0] if emails else None)
 
     envelope = submission.get("envelope") or {}
     mail_from = envelope.get("mailFrom") or {}
     row.update(
         {
-            "identity_email": _identity_email(service, submission.get("identityId")),
+            "identity_email": _identity_email(account, submission.get("identityId")),
             "envelope_from": mail_from.get("email"),
             "envelope_recipients": [r.get("email") for r in envelope.get("rcptTo") or []],
             "priority": cint((mail_from.get("parameters") or {}).get("MT-PRIORITY")),
@@ -190,11 +185,11 @@ def reschedule_mail(account: str, id: str, send_at: str) -> dict:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submission = _get_pending_submission(service, id)
-    send_at = _validate_send_at(service, from_utc_z(send_at))
+    client = get_account_client(account)
+    submission = _get_pending_submission(client, id)
+    send_at = _validate_send_at(client, account, from_utc_z(send_at))
 
-    created = _replace_submission(account, service, submission, hold_until=_hold_until(send_at))
+    created = _replace_submission(client, account, submission, hold_until=_hold_until(send_at))
     _sync_queue_log(id, submission_id=created["id"], send_at=send_at)
 
     return {"id": created["id"], "send_at": to_utc_z(send_at)}
@@ -207,10 +202,10 @@ def send_scheduled_mail_now(account: str, id: str) -> dict:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submission = _get_pending_submission(service, id)
+    client = get_account_client(account)
+    submission = _get_pending_submission(client, id)
 
-    created = _replace_submission(account, service, submission, hold_until=None)
+    created = _replace_submission(client, account, submission, hold_until=None)
     _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
 
     return {"id": created["id"], "thread_id": submission.get("threadId")}
@@ -223,17 +218,17 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submission = _get_submission(service, id)
+    client = get_account_client(account)
+    submission = _get_submission(client, id)
 
     undo_status = submission.get("undoStatus")
     if undo_status == "pending":
-        service.cancel(id)
+        _cancel_submission(client, id)
     elif undo_status != "canceled":
         frappe.throw(_("This email has already been delivered and can no longer be changed."))
     # Already canceled (e.g. a retried undo whose move below failed): skip straight to the move.
 
-    email_id = _move_email_to_drafts(account, submission.get("emailId"))
+    email_id = _move_email_to_drafts(client, account, submission.get("emailId"))
     # The row stays Submitted — it did get submitted; cancelled_at records the undone hold.
     _sync_queue_log(id, cancelled_at=now())
 
@@ -251,8 +246,8 @@ def retry_delivery_now(account: str, id: str) -> None:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submission = _get_submission(service, id)
+    client = get_account_client(account)
+    submission = _get_submission(client, id)
 
     if submission.get("undoStatus") == "canceled":
         frappe.throw(_("This scheduled delivery has been cancelled."))
@@ -263,9 +258,7 @@ def retry_delivery_now(account: str, id: str) -> None:
     if not queue_message:
         frappe.throw(_("This delivery is no longer waiting in the outbound queue."))
 
-    from suite.mail.stalwart import get_queued_message_service
-
-    get_queued_message_service().retry([queue_message["id"]])
+    stalwart.queue_retry([queue_message["id"]])
 
 
 @frappe.whitelist()
@@ -276,13 +269,13 @@ def retry_failed_mail(account: str, id: str) -> dict:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    submission = _get_final_submission(service, id)
+    client = get_account_client(account)
+    submission = _get_final_submission(client, id)
 
-    created = service.resubmit(
-        **_resubmit_args(account, submission), envelope_id=str(uuid7()), hold_until=None
+    created = _resubmit(
+        client, account, **_resubmit_args(client, submission), envelope_id=str(uuid7()), hold_until=None
     )
-    service.destroy(id)
+    _destroy_submission(client, id)
     _sync_queue_log(id, submission_id=created["id"], submitted_at=now(), send_at=None)
 
     return {"id": created["id"]}
@@ -295,9 +288,9 @@ def dismiss_failed_mail(account: str, id: str) -> None:
     _validate_jmap_id(account, "account")
     _validate_jmap_id(id, "id")
 
-    service = get_email_submission_service(account)
-    _get_final_submission(service, id)
-    service.destroy(id)
+    client = get_account_client(account)
+    _get_final_submission(client, id)
+    _destroy_submission(client, id)
 
 
 # --- delivery state ------------------------------------------------------------------------------
@@ -480,13 +473,11 @@ def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
         return {}
 
     try:
-        from suite.mail.stalwart import get_queued_message_service
-
-        service = get_queued_message_service()
         messages = []
         for sender in senders:
             messages.extend(
-                service.get_all(
+                stalwart.manage_get_all(
+                    "QueuedMessage",
                     filter={"returnPath": sender},
                     properties=["id", "envId", "recipients", "nextRetry"],
                 )
@@ -500,28 +491,173 @@ def _queue_messages_by_envid(submissions: list[dict]) -> dict[str, dict]:
     return {m["envId"]: m for m in messages if m.get("envId") in envids}
 
 
-def _identity_email(service: EmailSubmissionService, identity_id: str | None) -> str | None:
+def _identity_email(account: str, identity_id: str | None) -> str | None:
     """The sending identity's email address, when the id still resolves."""
 
     if not identity_id:
         return None
 
-    return next((i.get("email") for i in service.identities if i.get("id") == identity_id), None)
+    return next((i.get("email") for i in get_cached_identities(account) if i.get("id") == identity_id), None)
 
 
 # --- submission plumbing -------------------------------------------------------------------------
 
 
-def _get_submission(service: EmailSubmissionService, id: str) -> dict:
-    submissions = service.get([id], properties=SUBMISSION_PROPERTIES)
+def _query_page(
+    client: SuiteJMAPClient, filter: dict | None, position: int, limit: int, sort: list[dict] | None
+) -> dict:
+    """One raw EmailSubmission/query response body (ids, total, limit) — the single wire
+    call behind `_query_submissions`, kept separate so the paging logic can be exercised
+    against a fake server."""
+
+    with client.batch() as b:
+        h = b.submission.email_submission.query(
+            filter=filter, position=position, limit=limit, sort=sort, calculate_total=True
+        )
+
+    return h.result.to_wire()
+
+
+def _query_submissions(
+    client: SuiteJMAPClient,
+    filter: dict | None = None,
+    position: int = 0,
+    limit: int | None = None,
+    sort: list[dict] | None = None,
+) -> tuple[list[str], int]:
+    """Returns one page of ids of submissions matching `filter` (e.g. {"undoStatus":
+    "pending"}), in `sort` order (e.g. [{"property": "sentAt", "isAscending": False}]),
+    plus the server's total match count.
+
+    The page is filled across follow-up queries when the server enforces a lower limit
+    than requested (it then echoes the limit it used, RFC 8620 §5.5) — otherwise a clamp
+    below the page length would silently shrink the page and strand the rows behind it,
+    since the pager advances in strides of the full page."""
+
+    limit = limit or client.capabilities.limits.max_objects_in_get
+    # One id past the page is a look-ahead: whether more matches exist is then known even
+    # when the server's total is missing or zero-valued.
+    target = limit + 1
+
+    ids: list[str] = []
+    total = None
+    while len(ids) < target:
+        remaining = target - len(ids)
+        body = _query_page(client, filter, position + len(ids), remaining, sort)
+
+        batch = (body.get("ids") or [])[:remaining]
+        served_limit = min(int(body.get("limit") or remaining), remaining)
+        if total is None and body.get("total") is not None:
+            total = int(body["total"])
+
+        ids.extend(batch)
+        # A batch below the enforced limit is the end of the results; one that merely
+        # filled a clamp is not — loop on for the rest of the page.
+        if not batch or len(batch) < served_limit:
+            break
+        if total is not None and position + len(ids) >= total:
+            break
+
+    has_more = len(ids) > limit
+    ids = ids[:limit]
+
+    if total is None:
+        # calculateTotal is requested, but RFC 8620 §5.5 lets a server omit total; the
+        # floor then sits one past a full page, so the pager can still advance.
+        total = position + len(ids) + (1 if has_more else 0)
+
+    return ids, int(total)
+
+
+def _get_submissions(client: SuiteJMAPClient, ids: list[str], properties: list[str]) -> list[dict]:
+    with client.batch() as b:
+        h = b.submission.email_submission.get(ids=ids, properties=properties)
+
+    return [s.to_wire() for s in h.result.items]
+
+
+def _get_emails(client: SuiteJMAPClient, ids: list[str | None], properties: list[str]) -> list[dict]:
+    if not (ids := [id for id in ids if id]):
+        return []
+
+    with client.batch() as b:
+        h = b.mail.email.get(ids=ids, properties=properties)
+
+    return [e.to_wire() for e in h.result.items]
+
+
+def _cancel_submission(client: SuiteJMAPClient, submission_id: str) -> None:
+    """Cancels a held (FUTURERELEASE) submission by setting its undoStatus to 'canceled' —
+    the only mutable property per RFC 8621 §7.5."""
+
+    with client.batch() as b:
+        h = b.submission.email_submission.set(update={submission_id: {"undoStatus": "canceled"}})
+
+    if submission_id not in h.result.updated:
+        raise ValueError(get_set_error_message(h.result, "update", submission_id))
+
+
+def _destroy_submission(client: SuiteJMAPClient, submission_id: str) -> None:
+    """Destroys a submission object (its record, not the message) — used to drop a finalized
+    delivery from the Outbox listing."""
+
+    with client.batch() as b:
+        h = b.submission.email_submission.set(destroy=[submission_id])
+
+    if submission_id not in h.result.destroyed:
+        raise ValueError(get_set_error_message(h.result, "destroy", submission_id))
+
+
+def _resubmit(
+    client: SuiteJMAPClient,
+    account: str,
+    email_id: str,
+    from_email: str,
+    rcpt_emails: list[str],
+    envelope_id: str,
+    priority: int = 0,
+    hold_until: int | None = None,
+) -> dict:
+    """Creates a new submission for an already-stored email (reschedule / send-now: the old
+    submission must be canceled first, since undoStatus is the only mutable property).
+
+    Returns the created object; its echoed undoStatus is unreliable (Stalwart echoes "final"
+    for held submissions) — use a get for the real state.
+    """
+
+    identity_id = get_identity_id_by_email(account, from_email, raise_exception=True)
+    submit_ref = f"submit-{envelope_id}"
+
+    with client.batch() as b:
+        h = b.submission.email_submission.set(
+            create={
+                submit_ref: {
+                    "identityId": identity_id,
+                    "emailId": email_id,
+                    "envelope": build_submission_envelope(
+                        from_email, rcpt_emails, envelope_id, priority, hold_until
+                    ),
+                }
+            }
+        )
+
+    created = h.result.created.get(submit_ref)
+    if not created:
+        raise ValueError(get_set_error_message(h.result, "create", submit_ref))
+
+    return created.to_wire()
+
+
+def _get_submission(client: SuiteJMAPClient, id: str) -> dict:
+    submissions = _get_submissions(client, [id], SUBMISSION_PROPERTIES)
     if not submissions:
         frappe.throw(_("This scheduled email no longer exists."))
 
     return submissions[0]
 
 
-def _get_pending_submission(service: EmailSubmissionService, id: str) -> dict:
-    submission = _get_submission(service, id)
+def _get_pending_submission(client: SuiteJMAPClient, id: str) -> dict:
+    submission = _get_submission(client, id)
 
     undo_status = submission.get("undoStatus")
     if undo_status == "canceled":
@@ -532,10 +668,10 @@ def _get_pending_submission(service: EmailSubmissionService, id: str) -> dict:
     return submission
 
 
-def _get_final_submission(service: EmailSubmissionService, id: str) -> dict:
+def _get_final_submission(client: SuiteJMAPClient, id: str) -> dict:
     """A submission the server is done with — what the retry and dismiss actions operate on."""
 
-    submission = _get_submission(service, id)
+    submission = _get_submission(client, id)
     if submission.get("undoStatus") == "pending":
         frappe.throw(_("This delivery is still pending — cancel or reschedule it instead."))
 
@@ -575,14 +711,14 @@ def _validate_utc_z(value: str | None, label: str) -> str | None:
     return dt.astimezone(UTC).strftime(UTC_DATETIME_FORMAT)
 
 
-def _validate_send_at(service: EmailSubmissionService, send_at: str) -> str:
+def _validate_send_at(client: SuiteJMAPClient, account: str, send_at: str) -> str:
     """Validates a new delivery time (system-time string) against the FUTURERELEASE window."""
 
     send_at = get_datetime_str(get_datetime(send_at))
     if get_datetime(send_at) <= now_datetime():
         frappe.throw(_("Send At must be in the future."))
 
-    max_delay = service.max_delayed_send
+    max_delay = get_max_delayed_send(client, account)
     if time_diff_in_seconds(send_at, now()) > max_delay:
         frappe.throw(_("Send At cannot be more than {0} days in the future.").format(max_delay // 86400))
 
@@ -597,14 +733,12 @@ def _hold_until(send_at: str) -> int:
     return int(convert_to_utc(get_datetime(send_at)).timestamp())
 
 
-def _resubmit_args(account: str, submission: dict) -> dict:
-    """The resubmit() arguments recoverable from a submission; throws when its Email is gone
+def _resubmit_args(client: SuiteJMAPClient, submission: dict) -> dict:
+    """The _resubmit() arguments recoverable from a submission; throws when its Email is gone
     (a message that no longer exists cannot be resubmitted)."""
 
     email_id = submission.get("emailId")
-    emails = (
-        get_email_service(account).get([email_id], properties=["from", "to", "cc", "bcc"]) if email_id else []
-    )
+    emails = _get_emails(client, [email_id], ["from", "to", "cc", "bcc"])
     if not emails:
         frappe.throw(_("The original message no longer exists, so it cannot be resubmitted."))
 
@@ -618,20 +752,20 @@ def _resubmit_args(account: str, submission: dict) -> dict:
 
 
 def _replace_submission(
-    account: str, service: EmailSubmissionService, submission: dict, hold_until: int | None
+    client: SuiteJMAPClient, account: str, submission: dict, hold_until: int | None
 ) -> dict:
     """Cancels the held submission and creates its replacement (reschedule / send-now)."""
 
-    args = _resubmit_args(account, submission)
+    args = _resubmit_args(client, submission)
 
-    service.cancel(submission["id"])
+    _cancel_submission(client, submission["id"])
     try:
-        return service.resubmit(**args, envelope_id=str(uuid7()), hold_until=hold_until)
+        return _resubmit(client, account, **args, envelope_id=str(uuid7()), hold_until=hold_until)
     except Exception:
         # The old submission is already canceled: fail closed as a cancellation, so the
         # message lands back in Drafts instead of sitting in Sent never sending.
         log_mail_error(_("Failed to resubmit scheduled email"), frappe.get_traceback(with_context=True))
-        _move_email_to_drafts(account, args["email_id"])
+        _move_email_to_drafts(client, account, args["email_id"])
         _sync_queue_log(submission["id"], cancelled_at=now())
         frappe.throw(
             _(
@@ -659,17 +793,13 @@ def _envelope_args(submission: dict, email: dict) -> tuple[str, list[str], int]:
     return email["from"][0]["email"], rcpt_emails, 0
 
 
-def _move_email_to_drafts(account: str, email_id: str | None) -> str | None:
+def _move_email_to_drafts(client: SuiteJMAPClient, account: str, email_id: str | None) -> str | None:
     """Returns a cancelled delivery's message to Drafts; a message deleted after scheduling
     (or a submission with no emailId) has nothing to move."""
 
     from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
 
-    if not email_id:
-        return None
-
-    email_service = get_email_service(account)
-    emails = email_service.get([email_id], properties=["mailboxIds"])
+    emails = _get_emails(client, [email_id], ["mailboxIds"])
     if not emails:
         return None
 
@@ -678,14 +808,14 @@ def _move_email_to_drafts(account: str, email_id: str | None) -> str | None:
     )
 
     # Replace (not patch) mailboxIds so the message leaves Sent; restore $draft.
-    result = email_service.update(
-        [{"id": email_id, "mailbox_ids": {drafts_mailbox_id: True}, "keywords": {"$draft": True}}],
-        replace_mailboxes=True,
-    )
-    if email_id not in result["updated"]:
+    with client.batch() as b:
+        h = b.mail.email.set(
+            update={email_id: {"mailboxIds": {drafts_mailbox_id: True}, "keywords": {"$draft": True}}}
+        )
+    if email_id not in h.result.updated:
         # The submission is already canceled; retrying this action skips the cancel
         # step (undoStatus is "canceled") and reattempts the move.
-        frappe.throw(get_jmap_set_error_message(result, "notUpdated", email_id))
+        frappe.throw(get_set_error_message(h.result, "update", email_id))
 
     # Evict the cached copy — it still carries the Sent mailbox and would show a
     # stale folder label in Drafts until the next sync.

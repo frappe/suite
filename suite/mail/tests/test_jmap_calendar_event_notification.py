@@ -3,122 +3,105 @@
 """``CalendarEventNotification/get`` must always name the properties it wants.
 
 Stalwart returns a reduced default property set when a ``get`` omits ``properties``, which
-silently drops ``event``/``eventPatch`` from every notification. The service therefore sends
-``EVENT_NOTIFICATION_PROPERTIES`` unless the caller names its own set - on every request, batched
-or not. These tests pin that forwarding, since a regression is invisible in the response shape:
-the call still succeeds, the fields just stop arriving.
+silently drops ``event``/``eventPatch`` from every notification. ``fetch_notifications``
+therefore sends ``EVENT_NOTIFICATION_PROPERTIES`` unless the caller names its own set - on
+every request, chunked or not. These tests pin that at the wire (the fake server records the
+actual request bodies), since a regression is invisible in the response shape: the call still
+succeeds, the fields just stop arriving.
 """
 
 import unittest
-from unittest import mock
 
-from suite.mail.jmap.services.calendars.calendar_event_notification import (
-    CalendarEventNotificationService,
+import httpx
+from jmap.auth import BasicAuth
+from jmap.core.retry import RetryPolicy
+from jmap.testing.fake import FakeJMAPServer
+
+from suite.calendar.doctype.event_notification.event_notification import (
+    EVENT_NOTIFICATION_PROPERTIES,
+    fetch_notifications,
 )
+from suite.mail.jmap import SuiteJMAPClient
 
-
-class _StubConnection:
-    """The slice of ``JMAPConnection`` the service reads: server limits, via capabilities."""
-
-    def __init__(self, max_objects_in_get: int = 500) -> None:
-        self.capabilities = {
-            "urn:ietf:params:jmap:core": {"maxObjectsInGet": max_objects_in_get},
-            "urn:ietf:params:jmap:calendars": {},
-        }
-
-
-def _response(*ids: str) -> dict:
-    """A ``CalendarEventNotification/get`` response carrying the given notification ids."""
-
-    return {"methodResponses": [["CalendarEventNotification/get", {"list": [{"id": i} for i in ids]}, "0"]]}
+CORE = "urn:ietf:params:jmap:core"
+CALENDARS = "urn:ietf:params:jmap:calendars"
 
 
 class CalendarEventNotificationGetProperties(unittest.TestCase):
-    """``get`` - what lands in the ``properties`` argument of each underlying ``_get``."""
+    """What lands in the ``properties`` argument of each ``CalendarEventNotification/get``."""
 
-    def _service(self, max_objects_in_get: int = 500) -> CalendarEventNotificationService:
-        return CalendarEventNotificationService("account-1", _StubConnection(max_objects_in_get))
-
-    def test_unbatched_get_sends_the_default_properties(self):
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value=_response("n1")) as _get:
-            service.get()
-
-        _get.assert_called_once_with(properties=service.EVENT_NOTIFICATION_PROPERTIES)
-
-    def test_unbatched_get_sends_caller_supplied_properties(self):
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value=_response("n1")) as _get:
-            service.get(properties=["id", "created"])
-
-        _get.assert_called_once_with(properties=["id", "created"])
-
-    def test_batched_get_sends_the_default_properties(self):
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value=_response("n1")) as _get:
-            service.get(["n1"])
-
-        _get.assert_called_once_with(["n1"], properties=service.EVENT_NOTIFICATION_PROPERTIES)
-
-    def test_batched_get_sends_caller_supplied_properties(self):
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value=_response("n1")) as _get:
-            service.get(["n1"], properties=["id", "type"])
-
-        _get.assert_called_once_with(["n1"], properties=["id", "type"])
-
-    def test_every_batch_carries_the_properties(self):
-        """Not just the first one: forwarding inside the loop is the part that can rot."""
-
-        service = self._service(max_objects_in_get=2)
-        with mock.patch.object(service, "_get", return_value=_response()) as _get:
-            service.get(["n1", "n2", "n3", "n4", "n5"], properties=["id", "event"])
-
-        self.assertEqual(
-            _get.call_args_list,
-            [
-                mock.call(["n1", "n2"], properties=["id", "event"]),
-                mock.call(["n3", "n4"], properties=["id", "event"]),
-                mock.call(["n5"], properties=["id", "event"]),
-            ],
+    def _client(self, max_objects_in_get: int = 500) -> tuple[SuiteJMAPClient, FakeJMAPServer]:
+        server = FakeJMAPServer(
+            capabilities={CORE: {"maxObjectsInGet": max_objects_in_get}, CALENDARS: {}},
+            accounts={
+                "acc1": {
+                    "name": "alice@example.com",
+                    "isPersonal": True,
+                    "accountCapabilities": {CALENDARS: {}},
+                }
+            },
+            primary_accounts={CORE: "acc1", CALENDARS: "acc1"},
         )
-
-    def test_every_batch_carries_the_defaults(self):
-        service = self._service(max_objects_in_get=2)
-        with mock.patch.object(service, "_get", return_value=_response()) as _get:
-            service.get(["n1", "n2", "n3"])
-
-        self.assertEqual(
-            [call.kwargs["properties"] for call in _get.call_args_list],
-            [service.EVENT_NOTIFICATION_PROPERTIES] * 2,
+        server.handle("CalendarEventNotification/get", _get_handler)
+        http = httpx.Client(auth=BasicAuth("alice", "pw"), **server.client_kwargs())
+        client = SuiteJMAPClient.connect(
+            "https://jmap.example.com/.well-known/jmap",
+            auth=BasicAuth("alice", "pw"),
+            http=http,
+            experimental=True,
+            retry_policy=RetryPolicy(max_attempts=1),
         )
+        return client, server
+
+    def _properties_sent(self, server: FakeJMAPServer) -> list[list[str] | None]:
+        return [
+            call[1].get("properties")
+            for request in server.requests
+            for call in request["methodCalls"]
+            if call[0] == "CalendarEventNotification/get"
+        ]
+
+    def test_unchunked_get_sends_the_default_properties(self):
+        client, server = self._client()
+        fetch_notifications(client)
+
+        self.assertEqual(self._properties_sent(server), [EVENT_NOTIFICATION_PROPERTIES])
+
+    def test_unchunked_get_sends_caller_supplied_properties(self):
+        client, server = self._client()
+        fetch_notifications(client, properties=["id", "created"])
+
+        self.assertEqual(self._properties_sent(server), [["id", "created"]])
+
+    def test_every_chunk_carries_the_properties(self):
+        """Not just the first one: jmaplib splits an oversized ids list into several calls,
+        and each must carry the requested properties."""
+
+        client, server = self._client(max_objects_in_get=2)
+        fetch_notifications(client, ["n1", "n2", "n3", "n4", "n5"], properties=["id", "event"])
+
+        self.assertEqual(self._properties_sent(server), [["id", "event"]] * 3)
+
+    def test_every_chunk_carries_the_defaults(self):
+        client, server = self._client(max_objects_in_get=2)
+        fetch_notifications(client, ["n1", "n2", "n3"])
+
+        self.assertEqual(self._properties_sent(server), [EVENT_NOTIFICATION_PROPERTIES] * 2)
 
     def test_empty_properties_falls_back_to_the_defaults(self):
         """``[]`` means "no preference", not "no properties" - an empty set would fetch nothing usable."""
 
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value=_response("n1")) as _get:
-            service.get(["n1"], properties=[])
-            service.get(properties=[])
+        client, server = self._client()
+        fetch_notifications(client, ["n1"], properties=[])
+        fetch_notifications(client, properties=[])
 
-        self.assertEqual(
-            [call.kwargs["properties"] for call in _get.call_args_list],
-            [service.EVENT_NOTIFICATION_PROPERTIES] * 2,
-        )
+        self.assertEqual(self._properties_sent(server), [EVENT_NOTIFICATION_PROPERTIES] * 2)
 
-    def test_results_are_collected_across_batches(self):
-        service = self._service(max_objects_in_get=2)
-        responses = [_response("n1", "n2"), _response("n3")]
-        with mock.patch.object(service, "_get", side_effect=responses):
-            results = service.get(["n1", "n2", "n3"])
+    def test_results_are_collected_across_chunks(self):
+        client, server = self._client(max_objects_in_get=2)
+        results = fetch_notifications(client, ["n1", "n2", "n3"])
 
         self.assertEqual([r["id"] for r in results], ["n1", "n2", "n3"])
-
-    def test_missing_method_responses_yields_no_results(self):
-        service = self._service()
-        with mock.patch.object(service, "_get", return_value={}):
-            self.assertEqual(service.get(["n1"]), [])
-            self.assertEqual(service.get(), [])
 
 
 class CalendarEventNotificationDefaultProperties(unittest.TestCase):
@@ -145,12 +128,19 @@ class CalendarEventNotificationDefaultProperties(unittest.TestCase):
             "event": {"title": "Standup"},
             "eventPatch": {"start": "2026-08-12T09:00:00"},
         }
-        self.assertEqual(
-            sorted(notification), sorted(CalendarEventNotificationService.EVENT_NOTIFICATION_PROPERTIES)
-        )
+        self.assertEqual(sorted(notification), sorted(EVENT_NOTIFICATION_PROPERTIES))
 
         formatted = format_event_notification("account-1", notification)
         self.assertEqual(formatted["changed_by_name"], "Jamie")
         self.assertEqual(formatted["calendar_event"], "account-1|e1")
         self.assertIn("Standup", formatted["event"])
         self.assertIn("2026-08-12T09:00:00", formatted["event_patch"])
+
+
+def _get_handler(args: dict, _server: FakeJMAPServer) -> dict:
+    """Answers a get with one stub row per asked id (or a fixed row for an id-less get),
+    with a constant state so jmaplib's chunk merge never reads it as torn."""
+
+    ids = args.get("ids")
+    rows = [{"id": i} for i in ids] if ids else [{"id": "n1"}]
+    return {"accountId": args.get("accountId"), "state": "s0", "list": rows, "notFound": []}
