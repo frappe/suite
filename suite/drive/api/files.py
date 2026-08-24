@@ -101,7 +101,11 @@ def upload_file(
     # Validate that file size is matching
     file_size = temp_path.stat().st_size
     acquire_owner_storage_lock(frappe.session.user)
-    validate_quota(incoming_size=file_size)
+    try:
+        validate_quota(incoming_size=file_size)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
     mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
     file_type = get_file_type(mime_type)
