@@ -8,6 +8,7 @@ import type {
 	SocketData,
 } from '../../types';
 import type { RateLimiter } from '../../utils/rateLimiter';
+import type { AnnotationOverlayGrantManager } from '../AnnotationOverlayGrantManager';
 import type { AuthManager } from '../AuthManager';
 import type { E2EEEpochRelay } from '../E2EEEpochRelay';
 import type { E2eeRosterStore } from '../E2eeRosterStore';
@@ -27,6 +28,7 @@ export interface HandlerDeps {
 	roomLifecycle: RoomLifecycleCoordinator;
 	mediasoup: MediasoupManager;
 	authManager: AuthManager;
+	annotationOverlayGrantManager: AnnotationOverlayGrantManager;
 	rateLimiter: RateLimiter;
 	e2eeEpochRelay: E2EEEpochRelay;
 	e2eeRoster: E2eeRosterStore;

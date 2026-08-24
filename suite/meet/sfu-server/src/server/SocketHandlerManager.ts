@@ -1,14 +1,16 @@
-import type { Server } from 'socket.io';
+import type { Server, Socket } from 'socket.io';
 import type { SFUConfig } from '../config';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
 import type { Telemetry } from '../telemetry/Telemetry';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types';
 import { loggers } from '../utils/logger';
 import { RateLimiter } from '../utils/rateLimiter';
+import type { AnnotationOverlayGrantManager } from './AnnotationOverlayGrantManager';
 import type { AuthManager } from './AuthManager';
 import { E2EEEpochRelay } from './E2EEEpochRelay';
 import type { E2eeCoordinatorPersistence } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
+import { registerAnnotationHandlers } from './handlers/AnnotationHandlers';
 import { registerAuthHandlers } from './handlers/AuthHandlers';
 import { registerChatHandlers } from './handlers/ChatHandlers';
 import { registerClientTelemetryHandlers } from './handlers/ClientTelemetryHandlers';
@@ -25,6 +27,7 @@ import { registerReactionHandlers } from './handlers/ReactionHandlers';
 import { registerRoomJoinHandlers } from './handlers/RoomJoinHandlers';
 import { registerRoomQueryHandlers } from './handlers/RoomQueryHandlers';
 import { registerScreenShareHandlers } from './handlers/ScreenShareHandlers';
+import { getRoomId } from './handlers/utils';
 import { registerWebRtcTransportHandlers } from './handlers/WebRtcTransportHandlers';
 import type { RecordingGrantManager } from './RecordingGrantManager';
 import { RoomLifecycleCoordinator } from './RoomLifecycleCoordinator';
@@ -53,6 +56,7 @@ export class SocketHandlerManager {
 		private readonly runtime: SFUConfig['runtime'],
 		coordinatorPersistence?: E2eeCoordinatorPersistence,
 		private readonly recordingGrantManager?: RecordingGrantManager,
+		private readonly annotationOverlayGrantManager?: AnnotationOverlayGrantManager,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
@@ -83,6 +87,8 @@ export class SocketHandlerManager {
 			roomLifecycle: this.roomLifecycle,
 			mediasoup,
 			authManager,
+			annotationOverlayGrantManager:
+				this.requireAnnotationOverlayGrantManager(),
 			rateLimiter: this.rateLimiter,
 			e2eeEpochRelay: this.e2eeEpochRelay,
 			e2eeRoster: roster,
@@ -101,6 +107,7 @@ export class SocketHandlerManager {
 			registerMediaControlHandlers(deps),
 			registerHostControlHandlers(deps),
 			registerScreenShareHandlers(deps),
+			registerAnnotationHandlers(deps),
 			registerPollHandlers(deps),
 			registerChatHandlers(deps),
 			registerReactionHandlers(deps),
@@ -110,6 +117,20 @@ export class SocketHandlerManager {
 		];
 
 		this.mediasoup.onProducerClosed((event) => {
+			if (
+				event.isScreen &&
+				this.registry.annotationBoards.closeBoard(
+					event.roomId,
+					event.producerId,
+				)
+			) {
+				this.registry.emitAnnotation(
+					event.roomId,
+					event.producerId,
+					'annotation:board_closed',
+					{ producerId: event.producerId },
+				);
+			}
 			this.registry.emitProducerClosed(event.roomId, {
 				participantId: event.participantId,
 				producerId: event.producerId,
@@ -153,6 +174,13 @@ export class SocketHandlerManager {
 		});
 	}
 
+	private requireAnnotationOverlayGrantManager(): AnnotationOverlayGrantManager {
+		if (!this.annotationOverlayGrantManager) {
+			throw new Error('Annotation overlay grant manager is required');
+		}
+		return this.annotationOverlayGrantManager;
+	}
+
 	setupSocketHandlers(): void {
 		this.io.use((socket, next) => {
 			if (!this.authManager.authenticateSocket(socket)) {
@@ -176,6 +204,10 @@ export class SocketHandlerManager {
 		});
 
 		this.io.on('connection', (socket) => {
+			if (socket.scope === 'annotation-overlay') {
+				this.setupAnnotationOverlay(socket);
+				return;
+			}
 			let challenge =
 				socket.scope === 'recording' &&
 				socket.recordingClaims &&
@@ -259,6 +291,36 @@ export class SocketHandlerManager {
 			() => this.sweepExpiredSockets(),
 			30_000,
 		);
+	}
+
+	private setupAnnotationOverlay(socket: Socket): void {
+		const claims = socket.annotationOverlayClaims;
+		if (!claims) {
+			socket.disconnect(true);
+			return;
+		}
+		const roomId = getRoomId(socket);
+		const snapshot = this.registry.annotationBoards.getSnapshot(
+			roomId,
+			claims.producer_id,
+		);
+		if (!snapshot || snapshot.presenterId !== claims.presenter_id) {
+			loggers.socketHandler.warn(
+				'Annotation overlay rejected for inactive producer %s',
+				claims.producer_id,
+			);
+			socket.disconnect(true);
+			return;
+		}
+
+		socket.roomId = roomId;
+		socket.participantId = claims.presenter_id;
+		this.registry.joinAnnotationOverlay(socket, roomId, claims.producer_id);
+		socket.emit('annotation:snapshot', snapshot);
+		socket.once('disconnect', () => {
+			this.registry.leaveAnnotationOverlay(socket, roomId, claims.producer_id);
+			this.authManager.cleanupSocket(socket);
+		});
 	}
 
 	private sweepExpiredSockets(): void {

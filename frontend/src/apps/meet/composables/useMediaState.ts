@@ -4,6 +4,7 @@ import { ref } from "vue";
 export interface ScreenShareConsumer {
 	participantId: string;
 	consumerId: string;
+	producerId?: string;
 	startedAt: number;
 	local?: boolean;
 }
@@ -18,6 +19,7 @@ export interface MediaState {
 	microphonePermissionGranted: boolean;
 	screenShareStream: MediaStream | null;
 	localScreenShareStartedAt: number;
+	localScreenShareProducerId: string | null;
 	activeScreenShareConsumers: ScreenShareConsumer[];
 	screenShareStreams: Record<string, MediaStream>;
 	localVideo: HTMLElement | null;
@@ -35,6 +37,7 @@ export const useMediaState = defineStore("meet-media", () => {
 	const microphonePermissionGranted = ref(false);
 	const screenShareStream = ref<MediaStream | null>(null);
 	const localScreenShareStartedAt = ref(0);
+	const localScreenShareProducerId = ref<string | null>(null);
 	const activeScreenShareConsumers = ref<ScreenShareConsumer[]>([]);
 	const screenShareStreams = ref<Record<string, MediaStream>>({});
 	const localVideo = ref<HTMLElement | null>(null);
@@ -54,6 +57,7 @@ export const useMediaState = defineStore("meet-media", () => {
 		microphonePermissionGranted.value = false;
 		screenShareStream.value = null;
 		localScreenShareStartedAt.value = 0;
+		localScreenShareProducerId.value = null;
 		activeScreenShareConsumers.value = [];
 		screenShareStreams.value = {};
 		localVideo.value = null;
@@ -69,6 +73,7 @@ export const useMediaState = defineStore("meet-media", () => {
 		microphonePermissionGranted,
 		screenShareStream,
 		localScreenShareStartedAt,
+		localScreenShareProducerId,
 		activeScreenShareConsumers,
 		screenShareStreams,
 		localVideo,

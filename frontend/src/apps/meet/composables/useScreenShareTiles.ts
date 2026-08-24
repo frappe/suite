@@ -5,6 +5,7 @@ import type { GridLayout, PinnedTile } from "./useGridLayout";
 interface ScreenShare {
 	consumerId: string;
 	participantId: string;
+	producerId?: string;
 }
 
 interface CurrentUser {
@@ -24,6 +25,7 @@ export interface ScreenShareTileParticipant {
 export interface ScreenShareTile {
 	pinId: string;
 	consumerId: string;
+	producerId?: string;
 	participant: ScreenShareTileParticipant;
 }
 
@@ -90,6 +92,7 @@ export function useScreenShareTiles({
 			return {
 				pinId: share.participantId,
 				consumerId: share.consumerId,
+				producerId: share.producerId,
 				participant: {
 					user_id: share.participantId,
 					user_name: displayName,

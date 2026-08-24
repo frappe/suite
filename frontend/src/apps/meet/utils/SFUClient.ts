@@ -27,6 +27,7 @@ import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
 import { getE2EETransformCapability } from "./media/e2ee";
 import type { SignalChannel } from "./media/SignalChannel";
 import type { ClientTelemetryEvent } from "./telemetry/ClientTelemetry";
+import type { AnnotationPoint, AnnotationStrokeChunk } from "./annotations/types";
 
 export interface ConnectionDetails {
 	authToken: string | null;
@@ -184,6 +185,11 @@ export interface ProducerCloseMetadata {
 		trackSettings?: MediaTrackSettings;
 		message?: string;
 	};
+}
+
+export interface AnnotationOverlayGrant {
+	grant: string;
+	expiresAt: number;
 }
 
 export interface ScreenShareSignalData extends ProducerCloseMetadata {
@@ -986,6 +992,56 @@ export class SFUClient {
 		shareData: ScreenShareSignalData = {},
 	): void {
 		this.sendEvent("screen_share", { action, shareData });
+	}
+
+	sendAnnotationStroke(chunk: AnnotationStrokeChunk): void {
+		this.sendEvent("annotation:stroke", chunk);
+	}
+
+	sendAnnotationLaser(data: {
+		producerId: string;
+		points: AnnotationPoint[];
+		active: boolean;
+	}): void {
+		this.sendEvent("annotation:laser", data);
+	}
+
+	sendAnnotationPermission(
+		producerId: string,
+		participantsCanAnnotate: boolean,
+	): void {
+		this.sendEvent("annotation:permission", {
+			producerId,
+			participantsCanAnnotate,
+		});
+	}
+
+	sendAnnotationAction(
+		producerId: string,
+		action: "undo" | "clear",
+	): void {
+		this.sendEvent("annotation:action", { producerId, action });
+	}
+
+	getAnnotationSnapshot(producerId: string): Promise<unknown> {
+		return this.sendRequest("annotation:get_snapshot", { producerId });
+	}
+
+	async createAnnotationOverlayGrant(
+		producerId: string,
+	): Promise<AnnotationOverlayGrant> {
+		const response = requireObject(
+			await this.sendRequest("annotation:create_overlay_grant", { producerId }),
+			"annotation overlay grant",
+		);
+		return {
+			grant: requireString(response.grant, "grant", "annotation overlay grant"),
+			expiresAt:
+				typeof response.expiresAt === "number" &&
+				Number.isFinite(response.expiresAt)
+					? response.expiresAt
+					: 0,
+		};
 	}
 
 	// ==================== CHAT OPERATIONS ====================

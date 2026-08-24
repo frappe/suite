@@ -2151,6 +2151,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		const sp = mediaHandler?.screenProducer;
 
 		mediaState.isScreenSharing = false;
+		mediaState.localScreenShareProducerId = null;
 
 		if (sp?.id) {
 			sp.close?.();
@@ -2240,6 +2241,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 							screenTrack,
 							{ type: "screen" },
 						);
+					mediaState.localScreenShareProducerId = producer.id;
 					const mh = getMediaHandler(sfuManager.value);
 					if (mh) {
 						mh.setProducers({
@@ -2289,6 +2291,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 				if (sfuClient.isConnected()) {
 					sfuClient.sendScreenShare("start_share", {
+						producerId: mediaState.localScreenShareProducerId || undefined,
 						startedAt: mediaState.localScreenShareStartedAt,
 					});
 				}

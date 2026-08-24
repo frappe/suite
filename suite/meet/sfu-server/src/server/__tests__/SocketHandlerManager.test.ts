@@ -1825,6 +1825,256 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('allows viewer annotations by default while keeping the presenter read-only', async () => {
+		const harness = createManager();
+		const presenter = connectFullSocket(harness, {
+			id: 'annotation-presenter-socket',
+			userId: 'annotation-presenter',
+			userName: 'Presenter',
+		});
+		const participant = connectFullSocket(harness, {
+			id: 'annotation-participant-socket',
+			userId: 'annotation-participant',
+			userName: 'Participant',
+		});
+		emitJoin(presenter, {
+			userId: 'annotation-presenter',
+			name: 'Presenter',
+		});
+		emitJoin(participant, {
+			userId: 'annotation-participant',
+			name: 'Participant',
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		presenter.emitCalls.length = 0;
+		participant.emitCalls.length = 0;
+		presenter.fire('screen_share', {
+			action: 'start_share',
+			shareData: { producerId: 'annotation-producer' },
+		});
+
+		expect(participant.emitCalls).toContainEqual({
+			event: 'annotation:permission',
+			data: {
+				producerId: 'annotation-producer',
+				presenterId: 'annotation-presenter',
+				participantsCanAnnotate: true,
+			},
+		});
+
+		presenter.emitCalls.length = 0;
+		presenter.fire('annotation:stroke', {
+			producerId: 'annotation-producer',
+			strokeId: 'presenter-stroke',
+			phase: 'start',
+			tool: 'pen',
+			color: '#ef4444',
+			width: 4,
+			points: [{ x: 0.25, y: 0.5 }],
+		});
+		expect(
+			presenter.emitCalls.some((call) => call.event === 'annotation:stroke'),
+		).toBe(false);
+		presenter.fire('annotation:laser', {
+			producerId: 'annotation-producer',
+			active: true,
+			points: [{ x: 0.25, y: 0.5 }],
+		});
+		expect(
+			presenter.emitCalls.some((call) => call.event === 'annotation:laser'),
+		).toBe(false);
+
+		presenter.fire('annotation:permission', {
+			producerId: 'annotation-producer',
+			participantsCanAnnotate: false,
+		});
+		participant.emitCalls.length = 0;
+		participant.fire('annotation:stroke', {
+			producerId: 'annotation-producer',
+			strokeId: 'blocked-viewer-stroke',
+			phase: 'start',
+			tool: 'pen',
+			color: '#3b82f6',
+			width: 4,
+			points: [{ x: 0.2, y: 0.4 }],
+		});
+		expect(
+			participant.emitCalls.some((call) => call.event === 'annotation:stroke'),
+		).toBe(false);
+
+		presenter.fire('annotation:permission', {
+			producerId: 'annotation-producer',
+			participantsCanAnnotate: true,
+		});
+		participant.emitCalls.length = 0;
+		participant.fire('annotation:stroke', {
+			producerId: 'annotation-producer',
+			strokeId: 'participant-stroke',
+			phase: 'start',
+			tool: 'pen',
+			color: '#3b82f6',
+			width: 4,
+			points: [{ x: 0.25, y: 0.5 }],
+		});
+
+		expect(participant.emitCalls).toContainEqual({
+			event: 'annotation:stroke',
+			data: expect.objectContaining({
+				producerId: 'annotation-producer',
+				strokeId: 'participant-stroke',
+				authorId: 'annotation-participant',
+			}),
+		});
+
+		const snapshotCallback = vi.fn();
+		participant.fire(
+			'annotation:get_snapshot',
+			{ producerId: 'annotation-producer' },
+			snapshotCallback,
+		);
+		expect(snapshotCallback).toHaveBeenCalledWith({
+			success: true,
+			snapshot: expect.objectContaining({
+				producerId: 'annotation-producer',
+				presenterId: 'annotation-presenter',
+				participantsCanAnnotate: true,
+				strokes: [expect.objectContaining({ id: 'participant-stroke' })],
+			}),
+		});
+
+		presenter.fire('screen_share', {
+			action: 'stop_share',
+			shareData: { producerId: 'annotation-producer' },
+		});
+		expect(participant.emitCalls).toContainEqual({
+			event: 'annotation:board_closed',
+			data: { producerId: 'annotation-producer' },
+		});
+	});
+
+	it('creates the annotation board from the authoritative screen producer event', async () => {
+		const harness = createManager();
+		const presenter = connectFullSocket(harness, {
+			id: 'producer-board-socket',
+			userId: 'producer-board-presenter',
+		});
+		emitJoin(presenter, { userId: 'producer-board-presenter' });
+		await new Promise((resolve) => setImmediate(resolve));
+		presenter.emitCalls.length = 0;
+
+		const producerCallback = vi.fn();
+		presenter.fire(
+			'create_producer',
+			{
+				transportId: 'send-1',
+				kind: 'video',
+				rtpParameters: {},
+				appData: { type: 'screen' },
+			},
+			producerCallback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(producerCallback).toHaveBeenCalledWith(
+			expect.objectContaining({
+				success: true,
+				id: 'producer-1',
+				isScreen: true,
+			}),
+		);
+		expect(presenter.emitCalls).toContainEqual({
+			event: 'annotation:permission',
+			data: {
+				producerId: 'producer-1',
+				presenterId: 'producer-board-presenter',
+				participantsCanAnnotate: true,
+			},
+		});
+	});
+
+	it('grants the presenter a non-participant desktop overlay subscription', async () => {
+		const harness = createManager();
+		const presenter = connectFullSocket(harness, {
+			id: 'overlay-presenter-socket',
+			userId: 'overlay-presenter',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'overlay-viewer-socket',
+			userId: 'overlay-viewer',
+		});
+		emitJoin(presenter, { userId: 'overlay-presenter' });
+		emitJoin(viewer, { userId: 'overlay-viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		presenter.fire('screen_share', {
+			action: 'start_share',
+			shareData: { producerId: 'overlay-producer' },
+		});
+
+		const grantCallback = vi.fn();
+		presenter.fire(
+			'annotation:create_overlay_grant',
+			{ producerId: 'overlay-producer' },
+			grantCallback,
+		);
+		expect(grantCallback).toHaveBeenCalledWith({
+			success: true,
+			grant: expect.any(String),
+			expiresAt: expect.any(Number),
+		});
+		const viewerGrantCallback = vi.fn();
+		viewer.fire(
+			'annotation:create_overlay_grant',
+			{ producerId: 'overlay-producer' },
+			viewerGrantCallback,
+		);
+		expect(viewerGrantCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Only the screen presenter can launch an overlay',
+		});
+
+		const overlay = harness.createSocket({
+			id: 'desktop-overlay-socket',
+			userId: 'annotation-overlay:overlay-presenter',
+			meetingId: 'room-1',
+			scope: 'annotation-overlay',
+			annotationOverlayClaims: {
+				iss: 'meet-sfu',
+				aud: 'meet-annotation-overlay',
+				scope: 'annotation-overlay',
+				jti: 'overlay-grant',
+				meeting_id: 'room-1',
+				presenter_id: 'overlay-presenter',
+				producer_id: 'overlay-producer',
+				iat: 1,
+				exp: 2,
+			},
+		});
+		harness.connect(overlay);
+		expect(overlay.joinCalls).toContain(
+			'room-1:annotation-overlay:overlay-producer',
+		);
+		expect(overlay.emitCalls).toContainEqual({
+			event: 'annotation:snapshot',
+			data: expect.objectContaining({ producerId: 'overlay-producer' }),
+		});
+
+		overlay.emitCalls.length = 0;
+		viewer.fire('annotation:stroke', {
+			producerId: 'overlay-producer',
+			strokeId: 'overlay-stroke',
+			phase: 'start',
+			tool: 'pen',
+			color: '#ef4444',
+			width: 4,
+			points: [{ x: 0.2, y: 0.3 }],
+		});
+		expect(overlay.emitCalls).toContainEqual({
+			event: 'annotation:stroke',
+			data: expect.objectContaining({ strokeId: 'overlay-stroke' }),
+		});
+	});
+
 	describe('idle expiry sweep', () => {
 		it('disconnects sockets whose token has expired, leaves non-expired ones alone', () => {
 			const harness = createManager();

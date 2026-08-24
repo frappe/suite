@@ -27,6 +27,7 @@ export function checkSocketRateLimits(
 	ipLimit: number,
 	windowMs: number,
 	bypass = false,
+	keyPrefix = '',
 ): boolean {
 	if (bypass) {
 		return true;
@@ -42,8 +43,8 @@ export function checkSocketRateLimits(
 		getFirstIp(forwarded) ||
 		socket.handshake.address;
 
-	const userKey = `user:${socket.userId}`;
-	const ipKey = `ip:${clientIp}`;
+	const userKey = `${keyPrefix}user:${socket.userId}`;
+	const ipKey = `${keyPrefix}ip:${clientIp}`;
 
 	const userAllowed = rateLimiter.checkRateLimit(userKey, userLimit, windowMs);
 	const ipAllowed = rateLimiter.checkRateLimit(ipKey, ipLimit, windowMs);

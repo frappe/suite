@@ -5,6 +5,7 @@ import express, { type Application } from 'express';
 import { Server } from 'socket.io';
 import { loadConfig, type SFUConfig } from './config';
 import { MediasoupManager } from './mediasoup/MediasoupManager';
+import { AnnotationOverlayGrantManager } from './server/AnnotationOverlayGrantManager';
 import { AuthManager } from './server/AuthManager';
 import { InMemoryE2eeCoordinatorPersistence } from './server/E2eeCoordinatorPersistence';
 import { InMemoryRosterPersistence } from './server/E2eeRosterPersistence';
@@ -26,6 +27,7 @@ export class SFUServer {
 	private io: Server;
 	private mediasoup: MediasoupManager;
 	private authManager: AuthManager;
+	private annotationOverlayGrantManager: AnnotationOverlayGrantManager;
 	private routeManager: RouteManager;
 	private socketHandlerManager: SocketHandlerManager;
 	private config: SFUConfig['server'];
@@ -75,9 +77,13 @@ export class SFUServer {
 					this.recordingGrantPersistence!,
 				)
 			: undefined;
+		this.annotationOverlayGrantManager = new AnnotationOverlayGrantManager(
+			this.config.jwtSecret,
+		);
 		this.authManager = new AuthManager(
 			this.config.jwtSecret,
 			recordingGrantManager,
+			this.annotationOverlayGrantManager,
 		);
 		this.routeManager = new RouteManager(
 			this.app,
@@ -103,6 +109,7 @@ export class SFUServer {
 			config.runtime,
 			e2eeCoordinatorPersistence,
 			recordingGrantManager,
+			this.annotationOverlayGrantManager,
 		);
 
 		this.setupMiddleware();

@@ -9,6 +9,7 @@ import type {
 	SFUScope,
 	SocketData,
 } from '../../types';
+import { AnnotationOverlayGrantManager } from '../AnnotationOverlayGrantManager';
 import type { AuthManager } from '../AuthManager';
 import { InMemoryRosterPersistence } from '../E2eeRosterPersistence';
 import { E2eeRosterStore } from '../E2eeRosterStore';
@@ -197,7 +198,9 @@ function createMockMediasoupManager(): MediasoupManager {
 		createPlainTransport: vi.fn().mockResolvedValue({ id: 'plain-1' }),
 		connectWebRtcTransport: vi.fn().mockResolvedValue(undefined),
 		restartWebRtcTransportIce: vi.fn().mockResolvedValue({}),
-		assertProducerAccess: vi.fn(),
+		assertProducerAccess: vi.fn().mockReturnValue({
+			producer: { appData: { type: 'screen' } },
+		}),
 		closeProducer: vi.fn((producerId, metadata = {}) => {
 			const result = { isScreen: false, removedConsumers: [] };
 			producerClosedListener?.({
@@ -285,6 +288,7 @@ export function createManager(
 		runtime,
 		undefined,
 		recordingGrantManager,
+		new AnnotationOverlayGrantManager('test-overlay-secret'),
 	);
 	manager.setupSocketHandlers();
 

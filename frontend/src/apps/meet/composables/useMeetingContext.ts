@@ -1,6 +1,8 @@
 import type { InjectionKey, Ref } from "vue";
 import { inject, provide } from "vue";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
+import type { AnnotationController } from "./useAnnotations";
+import type { AnnotationStore } from "./useAnnotationStore";
 import type { ChatStore } from "./useChatStore";
 import type { CurrentUser } from "./useCurrentUser";
 import type { GridLayout } from "./useGridLayout";
@@ -12,6 +14,8 @@ import type { ReactionStore } from "./useReactionStore";
 import type { NetworkQuality } from "./useNetworkQuality";
 
 interface MeetingContext {
+	annotationStore: AnnotationStore;
+	annotations: AnnotationController;
 	mediaState: MediaState;
 	participantStore: ParticipantStore;
 	currentUser: CurrentUser;

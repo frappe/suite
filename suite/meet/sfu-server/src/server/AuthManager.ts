@@ -2,6 +2,10 @@ import * as jwt from 'jsonwebtoken';
 import type { Socket } from 'socket.io';
 import type { JWTPayload } from '../types';
 import { loggers } from '../utils/logger';
+import type {
+	AnnotationOverlayGrantClaims,
+	AnnotationOverlayGrantManager,
+} from './AnnotationOverlayGrantManager';
 import type { RecordingGrantManager } from './RecordingGrantManager';
 
 export class AuthManager {
@@ -10,6 +14,7 @@ export class AuthManager {
 	constructor(
 		jwtSecret: string,
 		private readonly recordingGrantManager?: RecordingGrantManager,
+		private readonly annotationOverlayGrantManager?: AnnotationOverlayGrantManager,
 	) {
 		this.jwtSecret = jwtSecret;
 	}
@@ -26,6 +31,9 @@ export class AuthManager {
 			const token = candidate;
 
 			const header = jwt.decode(token, { complete: true })?.header;
+			if (header?.typ === 'meet-annotation-overlay-grant+jwt') {
+				return this.authenticateAnnotationOverlay(socket, token);
+			}
 			if (header?.typ === 'meet-recording-grant+jwt') {
 				if (!this.recordingGrantManager) return false;
 				const claims = this.recordingGrantManager.verifyGrant(token);
@@ -81,6 +89,9 @@ export class AuthManager {
 	updateSocketToken(socket: Socket, token: string): void {
 		if (socket.scope === 'recording') {
 			throw new Error('Recording authorization cannot be refreshed');
+		}
+		if (socket.scope === 'annotation-overlay') {
+			throw new Error('Overlay authorization cannot be refreshed');
 		}
 		const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 		const wasE2EERequired = socket.e2eeRequired === true;
@@ -167,6 +178,7 @@ export class AuthManager {
 		socket.tokenExpiresAt = undefined;
 		socket.e2eeReady = undefined;
 		socket.e2eeRequired = undefined;
+		socket.annotationOverlayClaims = undefined;
 	}
 
 	ensurePresenceAccess(socket: Socket): void {
@@ -227,6 +239,35 @@ export class AuthManager {
 		if (socket.isGuest) {
 			throw new Error('Guests are not permitted to perform this action.');
 		}
+	}
+
+	private authenticateAnnotationOverlay(
+		socket: Socket,
+		token: string,
+	): boolean {
+		if (!this.annotationOverlayGrantManager) return false;
+		const claims = this.annotationOverlayGrantManager.verifyAndConsume(token);
+		this.attachAnnotationOverlayClaims(socket, claims);
+		return true;
+	}
+
+	private attachAnnotationOverlayClaims(
+		socket: Socket,
+		claims: AnnotationOverlayGrantClaims,
+	): void {
+		socket.userId = `annotation-overlay:${claims.presenter_id}`;
+		socket.userName = 'Annotation Overlay';
+		socket.meetingId = claims.meeting_id;
+		socket.site = claims.site;
+		socket.isHost = false;
+		socket.isCohost = false;
+		socket.isGuest = false;
+		socket.scope = 'annotation-overlay';
+		socket.e2eeRequired = false;
+		socket.e2eeReady = false;
+		socket.currentToken = undefined;
+		socket.tokenExpiresAt = undefined;
+		socket.annotationOverlayClaims = claims;
 	}
 }
 

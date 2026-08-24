@@ -114,7 +114,7 @@ function normalizeWaitingRoomResponse(value: unknown): WaitingRoomResponse | nul
 
 export interface SFUScreenShareData {
 	participantId?: string;
-	consumer?: { id: string };
+	consumer?: { id: string; producerId?: string };
 	startedAt?: number;
 	stream?: MediaStream;
 }

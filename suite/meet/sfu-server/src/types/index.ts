@@ -19,6 +19,22 @@ import type {
 } from 'mediasoup/types';
 import type {
 	ActiveSpeakerEvent,
+	AnnotationActionEvent,
+	AnnotationActionRequest,
+	AnnotationBoardClosedEvent,
+	AnnotationLaserEvent,
+	AnnotationLaserRequest,
+	AnnotationOverlayGrantRequest,
+	AnnotationOverlayGrantResponse,
+	AnnotationPermissionEvent,
+	AnnotationPermissionRequest,
+	AnnotationPoint,
+	AnnotationSnapshot,
+	AnnotationSnapshotRequest,
+	AnnotationStroke,
+	AnnotationStrokeChunkEvent,
+	AnnotationStrokeChunkRequest,
+	AnnotationTool,
 	AuthExpiredEvent,
 	ChatMessage,
 	ChatSendRequest,
@@ -63,6 +79,22 @@ import type {
 // Re-export mediasoup types
 export type {
 	ActiveSpeakerEvent,
+	AnnotationActionEvent,
+	AnnotationActionRequest,
+	AnnotationBoardClosedEvent,
+	AnnotationLaserEvent,
+	AnnotationLaserRequest,
+	AnnotationOverlayGrantRequest,
+	AnnotationOverlayGrantResponse,
+	AnnotationPermissionEvent,
+	AnnotationPermissionRequest,
+	AnnotationPoint,
+	AnnotationSnapshot,
+	AnnotationSnapshotRequest,
+	AnnotationStroke,
+	AnnotationStrokeChunkEvent,
+	AnnotationStrokeChunkRequest,
+	AnnotationTool,
 	AppData,
 	AudioLevelObserver,
 	AuthExpiredEvent,
@@ -150,6 +182,12 @@ export interface ServerToClientEvents {
 	existing_raised_hands: (data: ExistingRaisedHandsEvent) => void;
 	network_quality_update: (data: NetworkQualityUpdateEvent) => void;
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
+	'annotation:stroke': (data: AnnotationStrokeChunkEvent) => void;
+	'annotation:laser': (data: AnnotationLaserEvent) => void;
+	'annotation:permission': (data: AnnotationPermissionEvent) => void;
+	'annotation:action': (data: AnnotationActionEvent) => void;
+	'annotation:board_closed': (data: AnnotationBoardClosedEvent) => void;
+	'annotation:snapshot': (data: AnnotationSnapshot) => void;
 }
 
 export interface ClientToServerEvents {
@@ -285,6 +323,20 @@ export interface ClientToServerEvents {
 	) => void;
 	leave_room: (data?: LeaveRoomRequest) => void;
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
+	'annotation:stroke': (data: AnnotationStrokeChunkRequest) => void;
+	'annotation:laser': (data: AnnotationLaserRequest) => void;
+	'annotation:permission': (data: AnnotationPermissionRequest) => void;
+	'annotation:action': (data: AnnotationActionRequest) => void;
+	'annotation:get_snapshot': (
+		data: AnnotationSnapshotRequest,
+		callback: (
+			response: SFUResponse & { snapshot?: AnnotationSnapshot },
+		) => void,
+	) => void;
+	'annotation:create_overlay_grant': (
+		data: AnnotationOverlayGrantRequest,
+		callback: (response: AnnotationOverlayGrantResponse) => void,
+	) => void;
 }
 
 export type ClientTelemetryEvent =
@@ -686,5 +738,6 @@ declare module 'socket.io' {
 		e2eeReady?: boolean;
 		recordingProofComplete?: boolean;
 		recordingClaims?: import('../server/RecordingGrantManager').RecordingGrantClaims;
+		annotationOverlayClaims?: import('../server/AnnotationOverlayGrantManager').AnnotationOverlayGrantClaims;
 	}
 }

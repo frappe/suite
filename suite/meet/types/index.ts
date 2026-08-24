@@ -1,4 +1,8 @@
-export type SFUScope = 'presence-preview' | 'full' | 'recording';
+export type SFUScope =
+	| 'presence-preview'
+	| 'full'
+	| 'recording'
+	| 'annotation-overlay';
 
 export interface RecordingJoinRequest {
 	roomId: string;
@@ -181,8 +185,101 @@ export interface ScreenShareStartedEvent {
 
 export interface ScreenShareStoppedEvent {
 	participantId: string;
+	producerId?: string;
 	timestamp: string;
 	reason?: string;
+}
+
+export type AnnotationTool = 'pen' | 'highlighter' | 'eraser';
+export type AnnotationStrokePhase = 'start' | 'append' | 'end';
+
+export interface AnnotationPoint {
+	x: number;
+	y: number;
+}
+
+export interface AnnotationStroke {
+	id: string;
+	producerId: string;
+	authorId: string;
+	tool: AnnotationTool;
+	color: string;
+	width: number;
+	points: AnnotationPoint[];
+	createdAt: string;
+}
+
+export interface AnnotationStrokeChunkRequest {
+	producerId: string;
+	strokeId: string;
+	phase: AnnotationStrokePhase;
+	tool?: AnnotationTool;
+	color?: string;
+	width?: number;
+	points: AnnotationPoint[];
+}
+
+export interface AnnotationStrokeChunkEvent
+	extends AnnotationStrokeChunkRequest {
+	authorId: string;
+	timestamp: string;
+}
+
+export interface AnnotationLaserRequest {
+	producerId: string;
+	points: AnnotationPoint[];
+	active: boolean;
+}
+
+export interface AnnotationLaserEvent extends AnnotationLaserRequest {
+	participantId: string;
+	timestamp: string;
+}
+
+export interface AnnotationPermissionRequest {
+	producerId: string;
+	participantsCanAnnotate: boolean;
+}
+
+export interface AnnotationPermissionEvent extends AnnotationPermissionRequest {
+	presenterId: string;
+}
+
+export type AnnotationAction = 'undo' | 'clear';
+
+export interface AnnotationActionRequest {
+	producerId: string;
+	action: AnnotationAction;
+}
+
+export interface AnnotationActionEvent extends AnnotationActionRequest {
+	strokeId?: string;
+}
+
+export interface AnnotationSnapshotRequest {
+	producerId: string;
+}
+
+export interface AnnotationSnapshot {
+	producerId: string;
+	presenterId: string;
+	participantsCanAnnotate: boolean;
+	strokes: AnnotationStroke[];
+}
+
+export interface AnnotationBoardClosedEvent {
+	producerId: string;
+}
+
+export interface AnnotationOverlayGrantRequest {
+	producerId: string;
+}
+
+export interface AnnotationOverlayGrantResponse {
+	success: boolean;
+	error?: string;
+	grant?: string;
+	expiresAt?: number;
 }
 
 export interface ActiveSpeakerEvent {

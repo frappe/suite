@@ -1,6 +1,7 @@
 import * as jwt from 'jsonwebtoken';
 import { describe, expect, it, vi } from 'vitest';
 import type { JWTPayload } from '../../types';
+import { AnnotationOverlayGrantManager } from '../AnnotationOverlayGrantManager';
 import { AuthManager } from '../AuthManager';
 import { createMockSocket } from './test-helpers';
 
@@ -53,6 +54,40 @@ describe('AuthManager', () => {
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(true);
+	});
+
+	it('authenticates an annotation overlay without participant access', () => {
+		const overlayGrants = new AnnotationOverlayGrantManager(SECRET);
+		const manager = new AuthManager(SECRET, undefined, overlayGrants);
+		const { grant } = overlayGrants.issue({
+			meetingId: 'room-1',
+			site: 'site-a',
+			presenterId: 'user-1',
+			producerId: 'producer-1',
+		});
+		const socket = createMockSocket({
+			handshake: {
+				auth: { token: grant },
+				query: {},
+				headers: {},
+				address: '127.0.0.1',
+			} as never,
+		});
+
+		expect(manager.authenticateSocket(socket)).toBe(true);
+		expect(socket).toMatchObject({
+			userId: 'annotation-overlay:user-1',
+			meetingId: 'room-1',
+			site: 'site-a',
+			scope: 'annotation-overlay',
+		});
+		expect(socket.annotationOverlayClaims).toMatchObject({
+			presenter_id: 'user-1',
+			producer_id: 'producer-1',
+		});
+		expect(() => manager.ensureFullAccess(socket)).toThrow(
+			'Insufficient scope',
+		);
 	});
 
 	it('rejects token refreshes that change site', () => {

@@ -16,6 +16,7 @@ import type {
 	SocketData,
 	UserData,
 } from '../types';
+import { AnnotationBoardStore } from './AnnotationBoardStore';
 
 type ServerSocket = Socket<
 	ClientToServerEvents,
@@ -28,8 +29,18 @@ type ServerEventName = keyof ServerToClientEvents;
 const fullRoom = (roomId: string) => `${roomId}:full`;
 const previewRoom = (roomId: string) => `${roomId}:preview`;
 const recorderRoom = (roomId: string) => `${roomId}:recorders`;
+const annotationOverlayRoom = (roomId: string, producerId: string) =>
+	`${roomId}:annotation-overlay:${producerId}`;
+
+type AnnotationEventName =
+	| 'annotation:stroke'
+	| 'annotation:laser'
+	| 'annotation:permission'
+	| 'annotation:action'
+	| 'annotation:board_closed';
 
 export class RoomRegistry {
+	readonly annotationBoards = new AnnotationBoardStore();
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
@@ -128,6 +139,22 @@ export class RoomRegistry {
 		}
 		this.deactivateRecorder(socket);
 		return ownsPeer;
+	}
+
+	joinAnnotationOverlay(
+		socket: Socket,
+		roomId: string,
+		producerId: string,
+	): void {
+		socket.join(annotationOverlayRoom(roomId, producerId));
+	}
+
+	leaveAnnotationOverlay(
+		socket: Socket,
+		roomId: string,
+		producerId: string,
+	): void {
+		socket.leave(annotationOverlayRoom(roomId, producerId));
 	}
 
 	isRecorderPeer(roomId: string, peerId: string): boolean {
@@ -272,6 +299,7 @@ export class RoomRegistry {
 	}
 
 	cleanupMediaRoom(roomId: string): void {
+		this.annotationBoards.cleanupRoom(roomId);
 		const recorderSocketIds = this.recorderSockets.get(roomId) ?? new Set();
 		for (const [recordingId, active] of this.activeRecordings) {
 			if (recorderSocketIds.has(active.socket.id))
@@ -314,6 +342,23 @@ export class RoomRegistry {
 		...args: Parameters<ServerToClientEvents[Event]>
 	): void {
 		this.emitToScope(roomId, 'full', event, ...args);
+	}
+
+	emitAnnotation<Event extends AnnotationEventName>(
+		roomId: string,
+		producerId: string,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
+	): void {
+		this.emitToFullAccessParticipants(roomId, event, ...args);
+		const ids = this.io.sockets.adapter.rooms.get(
+			annotationOverlayRoom(roomId, producerId),
+		);
+		if (!ids) return;
+		for (const id of ids) {
+			const socket: ServerSocket | undefined = this.io.sockets.sockets.get(id);
+			if (socket) socket.emit(event, ...args);
+		}
 	}
 
 	emitToPreviewParticipants<Event extends ServerEventName>(

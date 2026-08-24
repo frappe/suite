@@ -39,6 +39,25 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				const isScreen =
 					(producer.appData && producer.appData.type === 'screen') ||
 					appData.type === 'screen';
+				if (
+					isScreen &&
+					deps.registry.annotationBoards.startBoard(
+						roomId,
+						producer.id,
+						socket.participantId ?? socket.userId,
+					)
+				) {
+					deps.registry.emitAnnotation(
+						roomId,
+						producer.id,
+						'annotation:permission',
+						{
+							producerId: producer.id,
+							presenterId: socket.participantId ?? socket.userId,
+							participantsCanAnnotate: true,
+						},
+					);
+				}
 
 				callback({ success: true, ...producer, isScreen });
 				outcome = 'success';

@@ -1,0 +1,17 @@
+cask "suite-meet-overlay" do
+  version "__VERSION__"
+  sha256 "__SHA256__"
+
+  url "https://github.com/frappe/suite/releases/download/suite-meet-overlay-v#{version}/SuiteMeetOverlay-#{version}-macos.zip"
+  name "Suite Meet Overlay"
+  desc "Headless desktop annotation overlay for Suite Meet presenters"
+  homepage "https://github.com/frappe/suite"
+
+  depends_on macos: ">= :ventura"
+
+  app "Suite Meet Overlay.app"
+
+  zap trash: [
+    "~/Library/Saved Application State/io.frappe.suite-meet-overlay.savedState",
+  ]
+end

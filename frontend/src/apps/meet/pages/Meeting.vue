@@ -275,11 +275,14 @@ import PeoplePanel from "../components/PeoplePanel.vue";
 import RejectionOverlay from "../components/RejectionOverlay.vue";
 import StatsForNerdsOverlay from "../components/StatsForNerdsOverlay.vue";
 import { useBackgroundEffects } from "../composables/useBackgroundEffects";
+import { useAnnotations } from "../composables/useAnnotations";
+import { useAnnotationStore } from "../composables/useAnnotationStore";
 import { useChat } from "../composables/useChat";
 import { useChatStore } from "../composables/useChatStore";
 import { useConnectionState } from "../composables/useConnectionState";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { useE2EEState } from "../composables/useE2EEState";
+import { useDesktopAnnotationOverlay } from "../composables/useDesktopAnnotationOverlay";
 import { useGridLayout } from "../composables/useGridLayout";
 import { useLobby } from "../composables/useLobby";
 import { useLobbyStore } from "../composables/useLobbyStore";
@@ -348,6 +351,7 @@ async function copyMeetingLink() {
 const connectionState = useConnectionState();
 const currentUser = useCurrentUser();
 const mediaState = useMediaState();
+const annotationStore = useAnnotationStore();
 const participantStore = useParticipantStore();
 const chatStore = useChatStore();
 const pollStore = usePollStore();
@@ -520,6 +524,7 @@ const sfuConnection = useSFUConnection({
 			{
 				participantId: pid,
 				consumerId: data.consumer?.id || "remote-screen",
+				producerId: data.consumer?.producerId,
 				startedAt: data.startedAt || Date.now(),
 			},
 		];
@@ -557,6 +562,14 @@ const sfuConnection = useSFUConnection({
 	},
 	onRecordingState: recording.syncState,
 	onRecordingEnabled: recording.setGlobalEnabled,
+});
+const annotations = useAnnotations({
+	annotationStore,
+	sfuClient: sfuConnection.sfuClient,
+});
+useDesktopAnnotationOverlay({
+	mediaState,
+	sfuClient: sfuConnection.sfuClient,
 });
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,
@@ -666,6 +679,8 @@ type AccessData = { allow_guest?: boolean; host_only_chat?: boolean };
 
 // --- Provide meeting context for child components ---
 provideMeetingContext({
+	annotationStore,
+	annotations,
 	mediaState,
 	participantStore,
 	currentUser,
@@ -1008,6 +1023,7 @@ onMounted(async () => {
 	// Reset all stores
 	connectionState.$reset();
 	mediaState.$reset();
+	annotationStore.$reset();
 	participantStore.$reset();
 	chatStore.$reset();
 	pollStore.$reset();
@@ -1051,6 +1067,7 @@ onMounted(async () => {
 	}
 
 	// Setup event handlers
+	annotations.setupEvents();
 	chat.setupChatEvents(showMeetingNotification);
 	reactions.setupReactionEvents();
 	raiseHand.setupRaiseHandEvents();
@@ -1090,6 +1107,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+	annotations.cleanupEvents();
 	clearConnectingToast();
 	clearMeetingNotifications();
 	document.removeEventListener("fullscreenchange", syncFullscreenState);

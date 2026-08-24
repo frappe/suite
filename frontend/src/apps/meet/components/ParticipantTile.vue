@@ -9,7 +9,7 @@
 		:data-tile-id="`${pinType}-${tileId}`"
 	>
 		<video
-			:ref="videoRef"
+			:ref="setVideoRef"
 			:data-participant-id="participant.user_id"
 			class="block w-full h-full remote-video"
 			:class="[videoObjectFitClass, videoBackgroundClass]"
@@ -17,6 +17,13 @@
 			autoplay
 			muted
 			playsinline
+		/>
+
+		<ScreenAnnotationOverlay
+			v-if="annotationProducerId"
+			:producer-id="annotationProducerId"
+			:video-element="videoElement"
+			:show-controls="showAnnotationControls"
 		/>
 
 		<!-- Infinity mirror cover for local screen share presenter -->
@@ -164,6 +171,7 @@ import AudioIndicator from "./AudioIndicator.vue";
 import KickParticipantDialog from "./KickParticipantDialog.vue";
 import MeetAvatar from "./MeetAvatar.vue";
 import NamePill from "./NamePill.vue";
+import ScreenAnnotationOverlay from "./ScreenAnnotationOverlay.vue";
 
 type TileSize = "xs" | "sm" | "md";
 type TilePosition = "bottom-left" | "top-left" | "top-right" | "bottom-right";
@@ -190,6 +198,8 @@ interface Props {
 	videoObjectFitClass?: string;
 	videoBackgroundClass?: string;
 	displayName?: string;
+	annotationProducerId?: string;
+	showAnnotationControls?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -212,7 +222,15 @@ const props = withDefaults(defineProps<Props>(), {
 	videoObjectFitClass: "object-cover",
 	videoBackgroundClass: "",
 	displayName: "",
+	annotationProducerId: undefined,
+	showAnnotationControls: false,
 });
+
+const videoElement = ref<HTMLVideoElement | null>(null);
+const setVideoRef = (element: unknown) => {
+	videoElement.value = element instanceof HTMLVideoElement ? element : null;
+	props.videoRef(element);
+};
 
 const meetingCtx = useMeetingContext();
 const isCurrentUserHost = inject<Ref<boolean> | ComputedRef<boolean>>(

@@ -1,6 +1,7 @@
 import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
+import { getPeerId, getRoomId } from './utils';
 
 export function registerScreenShareHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -19,12 +20,42 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						socket.participantId || socket.userId,
 						shareData?.producerId || 'unspecified',
 					);
+					const producerId =
+						typeof shareData?.producerId === 'string'
+							? shareData.producerId
+							: undefined;
+					if (producerId) {
+						const producerData = deps.mediasoup.assertProducerAccess(
+							producerId,
+							getRoomId(socket),
+							getPeerId(socket),
+						);
+						if (producerData.producer.appData.type !== 'screen') {
+							throw new Error('Annotation board requires a screen producer');
+						}
+						if (
+							deps.registry.annotationBoards.startBoard(
+								roomId,
+								producerId,
+								participantId,
+							)
+						) {
+							deps.registry.emitAnnotation(
+								roomId,
+								producerId,
+								'annotation:permission',
+								{
+									producerId,
+									presenterId: participantId,
+									participantsCanAnnotate: true,
+								},
+							);
+						}
+					}
 					deps.registry.emitScreenShare(roomId, 'screen_share_started', {
 						participantId,
 						shareData: {
-							...(typeof shareData?.producerId === 'string'
-								? { producerId: shareData.producerId }
-								: {}),
+							...(producerId ? { producerId } : {}),
 							...(typeof shareData?.streamId === 'string'
 								? { streamId: shareData.streamId }
 								: {}),
@@ -47,8 +78,24 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						shareData?.reason || 'unspecified',
 						shareData?.source || 'unspecified',
 					);
+					const producerId =
+						typeof shareData?.producerId === 'string'
+							? shareData.producerId
+							: undefined;
+					if (
+						producerId &&
+						deps.registry.annotationBoards.closeBoard(roomId, producerId)
+					) {
+						deps.registry.emitAnnotation(
+							roomId,
+							producerId,
+							'annotation:board_closed',
+							{ producerId },
+						);
+					}
 					deps.registry.emitScreenShare(roomId, 'screen_share_stopped', {
 						participantId,
+						...(producerId ? { producerId } : {}),
 						reason: shareData?.reason,
 						timestamp: new Date().toISOString(),
 					});
