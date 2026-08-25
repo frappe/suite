@@ -5,7 +5,7 @@
 		data-theme="dark"
 	>
 		<div
-			v-if="!hasConnectionError"
+			v-if="!hasConnectionError && !connectionState.connectionMoved"
 			class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
 			:class="headerVisible ? 'h-11' : 'h-0'"
 		>
@@ -39,8 +39,33 @@
 			</MeetingHeader>
 		</div>
 
+		<div
+			v-if="connectionState.connectionMoved"
+			class="grid flex-1 place-items-center px-5 py-16"
+		>
+			<div class="flex w-full max-w-sm flex-col items-center text-center">
+				<div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
+					<span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
+				</div>
+				<h1 class="mt-4 text-2xl-semibold text-ink-gray-9">
+					Meeting moved to another device
+				</h1>
+				<p class="mt-2 text-p-base text-ink-gray-6">
+					Your audio and video have stopped here because you joined from another device.
+				</p>
+				<Button
+					class="mt-6"
+					variant="solid"
+					theme="gray"
+					icon-left="lucide-arrow-left"
+					label="Back to Meet"
+					@click="router.push('/meet')"
+				/>
+			</div>
+		</div>
+
 		<!-- Error state -->
-		<div v-if="hasConnectionError" class="flex-1 flex items-center justify-center">
+		<div v-else-if="hasConnectionError" class="flex-1 flex items-center justify-center">
 			<div class="text-center text-white">
 				<div class="text-red-500 mb-4">
 					<lucide-alert-circle class="w-12 h-12 mx-auto" />
@@ -510,6 +535,7 @@ const sfuConnection = useSFUConnection({
 		}
 	},
 	onHostKickedYou: () => sfuConnection.endCall(),
+	onParticipantConnectionReplaced: () => mediaControls.cleanupLocalMedia(),
 	onScreenShareStarted: (data: SFUScreenShareData) => {
 		const pid = data.participantId;
 		if (!pid) return;

@@ -73,7 +73,7 @@ import {
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
@@ -120,7 +120,6 @@ const updateVacationResponse = createResource({
 		from_date: fromLocalInput(vacationResponse.data.from_date),
 		to_date: fromLocalInput(vacationResponse.data.to_date),
 		subject: vacationResponse.data.subject,
-		text_body: convertHtmlToText(vacationResponse.data.html_body),
 		html_body: vacationResponse.data.html_body,
 	}),
 	onSuccess: () => {

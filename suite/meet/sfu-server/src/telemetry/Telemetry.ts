@@ -137,6 +137,19 @@ export class Telemetry {
 		labelNames: ['subsystem', 'direction', 'reason'] as const,
 		registers: [this.registry],
 	});
+	readonly clientMediaRepairs = new Counter({
+		name: 'meet_sfu_client_media_repairs_total',
+		help: 'Sampled browser expected-media repair outcomes',
+		labelNames: ['media', 'source', 'stage', 'action', 'outcome'] as const,
+		registers: [this.registry],
+	});
+	readonly clientMediaRepairDuration = new Histogram({
+		name: 'meet_sfu_client_media_repair_duration_seconds',
+		help: 'Sampled browser expected-media repair duration',
+		labelNames: ['media', 'source', 'stage', 'action', 'outcome'] as const,
+		buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
+		registers: [this.registry],
+	});
 	readonly clientRtt = new Histogram({
 		name: 'meet_sfu_client_rtt_seconds',
 		help: 'Sampled browser WebRTC round-trip time',

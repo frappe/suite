@@ -168,7 +168,7 @@ const rowClasses = computed(() => [
 ])
 
 const fieldClasses = computed(() => [
-	'inline-flex items-center gap-0.5 rounded-sm p-1',
+	'inline-flex items-center gap-0.5 rounded-3 p-1',
 	'focus-within:ring-1 focus-within:ring-outline-gray-3',
 	props.disabled ? 'cursor-not-allowed' : 'cursor-text',
 ])

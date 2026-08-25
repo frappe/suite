@@ -91,21 +91,193 @@ function addRecorderSocket(
 }
 
 describe('RoomRegistry', () => {
-	it('counts a participant as human until all of their sockets leave', () => {
+	it('acquires the first participant connection', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);
 		const first = makeSocket('first');
-		const second = makeSocket('second');
 
-		registry.claimParticipant(first, 'r1', 'p1');
-		registry.claimParticipant(second, 'r1', 'p1');
+		const result = registry.acquireParticipant(first, 'r1', 'p1', 'device-1');
+
+		expect(result).toMatchObject({ status: 'acquired' });
+		expect(first.participantConnectionId).toBe('device-1');
+		expect(first.participantOwnershipId).toBe(
+			result.status === 'conflict' ? undefined : result.ownershipId,
+		);
 		expect(registry.hasHumanParticipants('r1')).toBe(true);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual(['first']);
+	});
 
-		registry.releaseParticipant(first, 'r1', 'p1');
+	it('is idempotent for the same socket and connection ID', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const socket = makeSocket('first');
+		const first = registry.acquireParticipant(socket, 'r1', 'p1', 'device-1');
+		const repeated = registry.acquireParticipant(
+			socket,
+			'r1',
+			'p1',
+			'device-1',
+		);
+
+		expect(repeated).toEqual({
+			status: 'idempotent',
+			ownershipId: first.status === 'conflict' ? '' : first.ownershipId,
+		});
+	});
+
+	it('reconnects a stable connection ID on a new socket', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const oldSocket = makeSocket('old');
+		const replacement = makeSocket('replacement');
+		const old = registry.acquireParticipant(oldSocket, 'r1', 'p1', 'device-1');
+		const result = registry.acquireParticipant(
+			replacement,
+			'r1',
+			'p1',
+			'device-1',
+		);
+
+		expect(result).toMatchObject({
+			status: 'reconnect',
+			replacedSocket: oldSocket,
+		});
+		expect(result.status === 'conflict' ? '' : result.ownershipId).not.toBe(
+			old.status === 'conflict' ? '' : old.ownershipId,
+		);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'replacement',
+		]);
+	});
+
+	it('returns a conflict for another connection without mutating ownership', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const challenger = makeSocket('challenger');
+		const first = registry.acquireParticipant(
+			incumbent,
+			'r1',
+			'p1',
+			'device-1',
+		);
+		const result = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+		);
+
+		expect(result).toEqual({
+			status: 'conflict',
+			conflictId: first.status === 'conflict' ? '' : first.ownershipId,
+		});
+		expect(challenger.participantOwnershipId).toBeUndefined();
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual(['incumbent']);
+	});
+
+	it('takes over with the current conflict ID', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const challenger = makeSocket('challenger');
+		registry.acquireParticipant(incumbent, 'r1', 'p1', 'device-1');
+		const conflict = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+		);
+		const result = registry.acquireParticipant(
+			challenger,
+			'r1',
+			'p1',
+			'device-2',
+			conflict.status === 'conflict' ? conflict.conflictId : '',
+		);
+
+		expect(result).toMatchObject({
+			status: 'takeover',
+			replacedSocket: incumbent,
+		});
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'challenger',
+		]);
+	});
+
+	it('rejects a stale conflict ID after another takeover', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const incumbent = makeSocket('incumbent');
+		const firstChallenger = makeSocket('challenger-1');
+		const secondChallenger = makeSocket('challenger-2');
+		const initial = registry.acquireParticipant(
+			incumbent,
+			'r1',
+			'p1',
+			'device-1',
+		);
+		const staleConflictId =
+			initial.status === 'conflict' ? '' : initial.ownershipId;
+		registry.acquireParticipant(
+			firstChallenger,
+			'r1',
+			'p1',
+			'device-2',
+			staleConflictId,
+		);
+		const result = registry.acquireParticipant(
+			secondChallenger,
+			'r1',
+			'p1',
+			'device-3',
+			staleConflictId,
+		);
+
+		expect(result).toMatchObject({ status: 'conflict' });
+		expect(result.status === 'conflict' && result.conflictId).not.toBe(
+			staleConflictId,
+		);
+		expect(registry.getParticipantSocketIds('r1', 'p1')).toEqual([
+			'challenger-1',
+		]);
+	});
+
+	it('does not let an old ownership generation release its replacement', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const oldSocket = makeSocket('old');
+		const replacement = makeSocket('replacement');
+		registry.acquireParticipant(oldSocket, 'r1', 'p1', 'device-1');
+		registry.acquireParticipant(replacement, 'r1', 'p1', 'device-1');
+
+		expect(registry.releaseParticipant(oldSocket, 'r1', 'p1')).toBe(false);
 		expect(registry.hasHumanParticipants('r1')).toBe(true);
+	});
 
-		registry.releaseParticipant(second, 'r1', 'p1');
+	it('releases the current ownership generation', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+		const socket = makeSocket('current');
+		registry.acquireParticipant(socket, 'r1', 'p1', 'device-1');
+
+		expect(registry.releaseParticipant(socket, 'r1', 'p1')).toBe(true);
 		expect(registry.hasHumanParticipants('r1')).toBe(false);
+	});
+
+	it('assigns independent E2EE sender IDs to participant connections', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		const first = registry.assignSenderId('r1', 'peer-1');
+		const second = registry.assignSenderId('r1', 'peer-2');
+
+		expect(first).not.toBe(second);
+		expect(registry.assignSenderId('r1', 'peer-1')).toBe(first);
+		registry.removeSender('r1', 'peer-1');
+		expect(registry.getParticipantToSender().get('r1')?.get('peer-2')).toBe(
+			second,
+		);
 	});
 
 	it('does not count preview or recorder sockets as humans', () => {

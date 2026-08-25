@@ -128,6 +128,9 @@ export interface ServerToClientEvents {
 	) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
+	participant_connection_replaced: (data: {
+		reason: 'takeover' | 'reconnect';
+	}) => void;
 	producer_created: (data: ProducerCreatedEvent) => void;
 	producer_closed: (data: ProducerClosedEvent) => void;
 	consumer_closed: (data: ConsumerClosedEvent) => void;
@@ -312,22 +315,42 @@ export type ClientTelemetryEvent =
 			rttMs: number;
 			packetLossPercent: number;
 			availableOutgoingBitrate: number;
+	  }
+	| {
+			event: 'media_repair';
+			media: 'audio' | 'video';
+			source: 'camera' | 'microphone' | 'screen' | 'remote';
+			stage: 'capture' | 'publication' | 'subscription' | 'rtp' | 'decode';
+			action:
+				| 'reacquire'
+				| 'recreate_producer'
+				| 'subscribe'
+				| 'recreate_consumer'
+				| 'request_keyframe';
+			attempt: number;
+			outcome: 'success' | 'failure' | 'exhausted' | 'cancelled';
+			durationMs: number;
 	  };
 
 export interface SocketData {
 	userId: string;
+	peerId?: string;
 	userName: string;
 	meetingId: string;
 	isHost: boolean;
 	isGuest?: boolean;
 	roomId?: string;
 	participantId?: string;
+	participantConnectionId?: string;
+	participantOwnershipId?: string;
 	scope?: SFUScope;
 }
 
 export interface SFUResponse {
 	success: boolean;
 	error?: string;
+	code?: string;
+	details?: { conflictId?: string };
 }
 
 export interface RouterRtpCapabilitiesResponse extends SFUResponse {
@@ -370,6 +393,7 @@ export interface ExistingProducersResponse extends SFUResponse {
 
 export interface RoomParticipantsResponse extends SFUResponse {
 	participants: ParticipantInfo[] | PreviewParticipantInfo[];
+	isCurrentUserPresent?: boolean;
 }
 
 export interface ProducerInfo {
@@ -653,6 +677,7 @@ export type E2eeEpochJoinStatus = {
 declare module 'socket.io' {
 	interface Socket {
 		userId: string;
+		peerId?: string;
 		userName: string;
 		meetingId: string;
 		site?: string;
@@ -661,6 +686,8 @@ declare module 'socket.io' {
 		isGuest?: boolean;
 		roomId?: string;
 		participantId?: string;
+		participantConnectionId?: string;
+		participantOwnershipId?: string;
 		senderId?: number;
 		currentToken?: string;
 		tokenExpiresAt?: number;

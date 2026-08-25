@@ -41,7 +41,7 @@
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
 			     end in a gap explaining nothing. -->
 			<div
-				class="sm:space-y-4 sm:px-5 sm:pt-6"
+				class="sm:space-y-3 sm:px-5 sm:pt-6"
 				:class="{
 					'pb-16': isMobile && !thread?.at(-1)?.draft,
 					'sm:pb-24': isComposeWindowOpen(),
@@ -49,9 +49,12 @@
 				}"
 			>
 				<template v-for="group in mailsByDay" :key="group.date">
+					<!-- Borderless: the date is a label, not a control — only the
+					     more-messages toggle keeps the pill outline. -->
 					<ThreadDivider
 						v-if="shouldShowDateDivider(group.mails)"
 						:message="getFormattedDate(group.date)"
+						class="[&_span:not(.border-t)]:text-ink-gray-4 [&_span:not(.border-t)]:border-0 [&_span:not(.border-t)]:text-xs"
 					/>
 					<template v-for="mail in group.mails" :key="mail.name">
 						<ThreadDivider
@@ -80,13 +83,24 @@
 						<div
 							v-if="!collapsedMailNames.has(mail.name) && !isPoppedOut(mail)"
 							:data-mail-name="mail.name"
+							class="group/card"
 							:class="{
-								'px-3.5 py-5': isMobile,
+								'px-3.5': isMobile,
+								// Same tightening the desktop rows got: reading padding for
+								// open mail, slimmer rows for collapsed ones.
+								'py-5': isMobile && !isCollapsed(mail),
+								'py-3.5': isMobile && isCollapsed(mail),
 								'max-sm:border-b':
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&
 									mail.name !== mailBeforeUnseenMarker,
-								'sm:rounded-xl sm:p-5': thread.length > 1 || mail.draft,
+								'sm:rounded-xl': thread.length > 1 || mail.draft,
+								// A collapsed row only holds one line — reading-card padding
+								// around it is what made the thread feel loose.
+								'sm:px-4 sm:py-5': (thread.length > 1 || mail.draft) && !isCollapsed(mail),
+								// The list rows' hover, so a clickable row answers the cursor.
+								'sm:hover:bg-surface-gray-1 sm:px-4 sm:py-3':
+									thread.length > 1 && isCollapsed(mail),
 								'sm:border':
 									(thread.length > 1 && !mail.draft) ||
 									(mail.draft && dataTheme === 'dark'),
@@ -155,17 +169,36 @@
 									class="flex items-center space-x-3"
 									:class="{
 										'cursor-pointer': mail !== lastMessage,
-										'pb-6': mail.preview || !isCollapsed(mail),
+										'pb-6': !isCollapsed(mail),
+										// Mobile collapsed rows: a step, not a chasm, between the
+										// name row and its preview line.
+										'pb-2': isCollapsed(mail) && isMobile && !!mail.preview,
 									}"
 									@click.stop="mail.collapsed = !mail.collapsed"
 								>
 									<Avatar
 										:label="getSenderInitial(mail)"
 										:image="mail.user_image"
-										size="xl"
+										:size="isCollapsed(mail) ? (isMobile ? 'lg' : 'md') : 'xl'"
 									/>
-									<div class="flex flex-1 justify-between truncate text-sm">
-										<div class="mr-3 flex flex-col space-y-1 truncate">
+									<!-- Collapsed rows align everything on one text baseline —
+									     name, preview and timestamp are three sizes with three
+									     line boxes, and centered boxes leave baselines adrift. -->
+									<!-- min-w-0, not truncate: the flex item still shrinks so the
+									     nested spans can ellipsize, but overflow stays visible — the
+									     hover actions overhang this box and were clipped by it. -->
+									<div
+										class="flex min-w-0 flex-1 justify-between text-sm"
+										:class="{ 'items-baseline': isCollapsed(mail) && !isMobile }"
+									>
+										<div
+											class="mr-3 flex truncate"
+											:class="
+												isCollapsed(mail) && !isMobile
+													? 'flex-1 items-baseline space-x-3'
+													: 'flex-col space-y-1'
+											"
+										>
 											<div class="flex items-center space-x-1.5">
 												<span
 													class="truncate text-[15px] !font-semibold sm:text-base"
@@ -177,7 +210,7 @@
 												     descenders of a g or a p were shaved off. 16px still sits under the
 												     sender name beside it, so the row does not grow. -->
 												<span
-													v-if="!isMobile"
+													v-if="!isMobile && !isCollapsed(mail)"
 													class="text-ink-gray-5 truncate leading-4"
 												>
 													<span>&lt;</span>
@@ -189,12 +222,23 @@
 													</Tooltip>
 													<span>&gt;</span>
 												</span>
-												<template
-													v-if="!(isCollapsed(mail) || mail.draft)"
-												>
+											</div>
+											<!-- Same 13px truncate, same shaved descenders. Collapsed
+											     mails keep just sender + preview — recipients belong to
+											     the expanded reading view. A compact summary, not the
+											     roster: two names carry the line, the rest fold into
+											     "and x others" behind the chevron beside it. -->
+											<div
+												v-if="!isCollapsed(mail)"
+												class="flex items-center space-x-1.5 truncate leading-4"
+											>
+												<span class="truncate">
+													{{ recipientsSummary(mail) }}
+												</span>
+												<template v-if="!mail.draft">
 													<ChevronDown
 														v-if="isMobile"
-														class="text-ink-gray-6 h-3.5 w-3.5 rounded-sm transition-transform duration-200"
+														class="text-ink-gray-6 mt-px h-3.5 w-3.5 shrink-0 rounded-sm transition-transform duration-200"
 														:class="{
 															'rotate-180':
 																showMailDetails === mail.name,
@@ -209,21 +253,68 @@
 													<MailDetailsPopover v-else :mail />
 												</template>
 											</div>
-											<!-- Same 13px truncate, same shaved descenders. -->
-											<div class="truncate leading-4">
-												{{ getFormattedRecipients(mail.recipients) }}
-											</div>
+											<!-- Desktop collapsed rows are one line: the preview rides
+											     beside the name instead of on a row of its own.
+											     leading-5: truncate is overflow-hidden and the preset's
+											     1.15 puts 14px text in a ~16.1px box while Inter's glyph
+											     box wants ~16.4 — descenders were shaved. The row is
+											     avatar-tall, so the stated 20px adds no height. -->
+											<span
+												v-if="isCollapsed(mail) && !isMobile"
+												class="text-ink-gray-7 min-w-0 flex-1 truncate leading-5"
+											>
+												{{ mail.preview }}
+											</span>
 										</div>
-										<div class="flex items-center space-x-1 self-start">
-											<MailDate
+										<!-- self-start suits the expanded card's two-line header; on
+										     a collapsed row the block inherits the parent's baseline
+										     alignment (its own baseline is the timestamp's). -->
+										<div
+											class="flex items-center space-x-1"
+											:class="{
+												'self-start': !isCollapsed(mail),
+												'self-center': isCollapsed(mail) && isMobile,
+												/* Hovered collapsed rows swap text for icon buttons —
+												   no baseline to join, so center the block instead.
+												   group-has [data-state=open]: the ⋯ menu is portaled,
+												   so opening it ends the hover — without this the
+												   trigger unmounts and the menu loses its anchor. */
+												'sm:group-hover/card:self-center sm:group-has-[[data-state=open]]/card:self-center':
+													isCollapsed(mail) && !isMobile,
+											}"
+										>
+											<!-- The timestamp yields to the actions on hover (fixed
+											     right edge), so the row never moves. -->
+											<!-- flex, not a bare span: MailDate's own mr-1 doesn't
+											     count inside an inline wrapper, and the gap between
+											     time and actions went with it. -->
+											<span
 												v-if="!isMobile || isCollapsed(mail)"
-												:datetime="mail.received_at"
-											/>
-											<MailActions
+												class="flex"
+												:class="{
+													'sm:group-hover/card:hidden sm:group-has-[[data-state=open]]/card:hidden':
+														isCollapsed(mail),
+												}"
+											>
+												<MailDate
+													:datetime="mail.received_at"
+													:clock="showsClockTime"
+												/>
+											</span>
+											<!-- h-5: the 28px ghost buttons overhang the padding
+											     instead of growing the one-line row on hover. -->
+											<div
 												v-if="!isMobile && !readonly"
+												:class="
+													isCollapsed(mail)
+														? 'hidden h-5 items-center gap-1 sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
+														: 'flex gap-1'
+												"
+											>
+											<MailActions
 												:mailbox
 												:mail
-												:is-collapsed="isCollapsed(mail)"
+												:is-collapsed="false"
 												:show-reply-all="showReplyAll(mail)"
 												:pop-out-draft
 												:reply
@@ -240,6 +331,7 @@
 												@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
 												@delete-mail="(m: Mail) => emit('deleteMail', m)"
 											/>
+											</div>
 										</div>
 									</div>
 								</div>
@@ -250,9 +342,14 @@
 									class="mb-4"
 								/>
 
-								<div v-show="isCollapsed(mail)" class="truncate text-base">
+								<div
+									v-show="isCollapsed(mail) && isMobile"
+									class="truncate text-base"
+								>
 									{{ mail.preview }}
 								</div>
+
+
 
 								<div v-show="!isCollapsed(mail)">
 									<Alert
@@ -321,7 +418,7 @@
 										     face to land on, which CSS resolves upward to the system Medium,
 										     rendering the body bolder than everything around it. font-normal pins
 										     it to Regular. -->
-										<LinkifiedText
+										<PlainTextBody
 											v-else
 											:text="getPlainTextBody(mail)"
 											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
@@ -476,16 +573,16 @@ import { getAttachmentsZipUrl } from '@/apps/mail/resources'
 import {
 	decodeHtmlEntities,
 	downloadUrlAsFile,
-	escapeHtml,
 	extractQuotedContent,
 	getFormattedDate,
-	getFormattedRecipients,
 	getGroupedRecipients,
 	hasHtmlContent,
 	matchesScreenedValue,
+	plainTextToHtml,
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
+import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
@@ -497,7 +594,7 @@ import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LinkifiedText from '@/components/LinkifiedText.vue'
+import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
@@ -519,6 +616,7 @@ import type {
 	Mail,
 	Mailbox,
 	MailboxData,
+	Recipient,
 	ScreenedAddress,
 } from '@/apps/mail/types'
 
@@ -577,8 +675,8 @@ const emit = defineEmits([
 ])
 
 const { isMobile } = useScreenSize()
-const { openSettings } = useSettings()
 const { filterBySender } = useFilterBySender()
+const { openSettings } = useSettings()
 const dayjs = inject('$dayjs')
 const user = inject('$user')
 // The pane acts as the thread's owning account (the active one unless the `account`
@@ -637,6 +735,28 @@ const mailsByDay = computed(() => {
 	}
 	return groups
 })
+
+// The expanded header's second line: "to Pushkar", "to Pushkar and Neha", "to Pushkar,
+// Rushabh and Neha", "to Pushkar, Rushabh and 2 others". First names only — the full
+// roster with addresses is behind the chevron beside it.
+const recipientsSummary = (mail: Mail) => {
+	const ordered = [...mail.recipients].sort(
+		(a, b) => Number(b.type === 'To') - Number(a.type === 'To'),
+	)
+	const names = ordered.map((r: Recipient) => (r.display_name || r.email).split(' ')[0])
+	if (!names.length) return ''
+	if (names.length === 1) return __('to {0}', [names[0]])
+	if (names.length === 2) return __('to {0} and {1}', [names[0], names[1]])
+	if (names.length === 3) return __('to {0}, {1} and {2}', names)
+	return __('to {0}, {1} and {2} others', [names[0], names[1], String(names.length - 2)])
+}
+
+// Rows state clock time only while day dividers state the date (multi-day thread, grouping
+// on, desktop). Otherwise the row's timestamp is the only date there is, and stays relative.
+const showsClockTime = computed(
+	() =>
+		!isMobile.value && mailsByDay.value.length > 1 && user.data.group_messages_by === 'Day',
+)
 
 const shouldShowDateDivider = (mails: Mail[]) =>
 	!isMobile.value &&
@@ -1079,7 +1199,12 @@ const replyAll = (mail: Mail) =>
 const forward = (mail: Mail) =>
 	createLocalDraft(mail, {
 		subject: `Fwd: ${mail.subject || ''}`,
-		html_body: getForwardedContent(mail),
+		html_body: getForwardHeader(mail),
+		// quoted_content, NOT html_body: content placed in the editor is re-serialized
+		// through its schema, which strips the original mail's tables/styles/attributes.
+		// Like a reply's quote, the forwarded original stays out of the editor and is
+		// concatenated back verbatim at send time.
+		quoted_content: getForwardedBody(mail),
 		attachments: mail.attachments || [],
 		forwarded_from_id: mail.id,
 		type: 'forward',
@@ -1285,6 +1410,7 @@ const getSourceMail = (mail: string) =>
 	thread.value.find((m: Mail) => m.name === mail.split(':')[1])
 
 const getReplyDetails = (mail: Mail) => ({
+	from_email: getReplyIdentityEmail(mail),
 	subject: mail.subject?.startsWith('Re: ') ? mail.subject : `Re: ${mail.subject}`,
 	quoted_content: getQuotedContent(mail),
 	attachments: mail.attachments?.filter((a: Attachment) => a.disposition === 'inline') || [],
@@ -1312,8 +1438,23 @@ const getReplyAllRecipients = (mail: Mail) => {
 		}
 }
 
-const isUserEmail = (email: string) =>
-	identities.value.data?.map((i: Identity) => i.email).includes(email)
+// Addresses arrive in whatever casing the other side used: match case-insensitively, and hand
+// back the identity's own spelling, since the composer looks the address up by that.
+const getIdentityEmail = (email?: string) =>
+	identities.value.data?.find((i: Identity) => i.email.toLowerCase() === email?.toLowerCase())
+		?.email
+
+const isUserEmail = (email: string) => !!getIdentityEmail(email)
+
+// The identity a reply should go out as: the one the message was addressed to (the sender,
+// when the message is our own). Undefined when no identity took part, and the composer falls
+// back to the account's default outgoing address, then its first identity.
+const getReplyIdentityEmail = (mail: Mail) => {
+	const { to = [], cc = [], bcc = [] } = mail.groupedRecipients ?? {}
+	return getIdentityEmail(
+		[mail.from_email, ...[...to, ...cc, ...bcc].map((r) => r.email)].find(isUserEmail),
+	)
+}
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing
@@ -1321,14 +1462,20 @@ const isUserEmail = (email: string) =>
 // the address it stands for. Both consumers below start from here.
 const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || mail.text_body || '')
 
-// A body with no markup is plain text, so it has to be escaped before going into the
-// <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
-// their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
-// silently deleting the very addresses the notice is about.
+// A body with no markup is plain text, so it has to be escaped before going in here: the
+// reader parses this as HTML. Bounce notices are the case that bites, since their
+// `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops, silently
+// deleting the very addresses the notice is about.
+// Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
+// a plain-text mail used to hand the recipient the sender's prose in monospace that never
+// wrapped. plainTextToHtml keeps the line breaks without asking for that.
 const getBodyContent = (mail: Mail) => {
-	if (hasHtmlContent(mail.html_body)) return mail.html_body
+	// Contained, not verbatim: the original's body/html style rules would otherwise
+	// repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+	// bleeding over the sender's own text).
+	if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body)
 	const text = getPlainTextBody(mail)
-	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
+	return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
 
 const getQuotedContent = (mail: Mail) =>
@@ -1341,21 +1488,26 @@ const getQuotedContent = (mail: Mail) =>
 		</div>
 	`
 
-const getForwardedContent = (mail: Mail) => {
+// The header is our own plain text, which the editor round-trips unharmed — so it
+// lives in html_body, visible and editable in the composer, with the signature
+// inserted above it (see useComposeMail's prefilledBody). Only the original's
+// body needs to stay out of the editor (see getForwardedBody).
+const getForwardHeader = (mail: Mail) => {
 	const recipients = getGroupedRecipients(mail.recipients, true, true)
 	return `
-		<div class="frappe_mail_fwd">
+		<div>
 			<br><br>
 			---------- Forwarded message ---------<br>
-			From: ${mail.from_name} < ${mail.from_email} ><br>
+			From: ${mail.from_name} &lt;${mail.from_email}&gt;<br>
 			Date: ${dayjs(mail.received_at).format('ddd, MMM D, YYYY [at] h:mm A')}<br>
 			Subject: ${mail.subject || ''}<br>
 			To: ${recipients.to}<br>
 			${recipients.cc ? `Cc: ${recipients.cc}<br>` : ''}
-			<br><br>
-			${getBodyContent(mail)}
 		</div>
 	`
 }
+
+const getForwardedBody = (mail: Mail) =>
+	`<div class="frappe_mail_fwd"><br><br>${getBodyContent(mail)}</div>`
 </script>
 

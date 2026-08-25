@@ -1,19 +1,18 @@
 <template>
-	<div class="flex h-full w-72 flex-col border-l bg-surface-base" @mousedown="keepEditorFocus">
+	<div class="flex h-full w-72 flex-col border-l border-outline-elevation-1 bg-surface-elevation-1" @mousedown="keepEditorFocus">
 		<!-- outside every Section, so locking can never disable the way back out -->
 		<template v-if="activeElementIds.length">
-			<div class="shrink-0 px-4 py-3">
-				<PropertyRow :label="selectionLabel">
-					<button
-						type="button"
-						:title="isSelectionLocked ? 'Unlock' : 'Lock'"
-						:class="lockClasses"
-						@click="toggleLock()"
-					>
-						<lucide-lock v-if="isSelectionLocked" class="size-3.5" />
-						<lucide-lock-open v-else class="size-3.5" />
-					</button>
-				</PropertyRow>
+			<div class="flex shrink-0 items-center justify-between px-4 py-3">
+				<span :class="labelClasses">{{ selectionLabel }}</span>
+				<button
+					type="button"
+					:title="isSelectionLocked ? 'Unlock' : 'Lock'"
+					:class="lockClasses"
+					@click="toggleLock()"
+				>
+					<lucide-lock v-if="isSelectionLocked" class="size-3.5" />
+					<lucide-lock-open v-else class="size-3.5" />
+				</button>
 			</div>
 			<hr class="border-t" />
 		</template>
@@ -82,7 +81,7 @@ import {
 } from '@/apps/slides/stores/element'
 import { currentSlide } from '@/apps/slides/stores/slide'
 
-import PropertyRow from './controls/PropertyRow.vue'
+import { labelClasses } from '@/apps/slides/utils/constants'
 
 import FrameSection from './FrameSection.vue'
 import ArrangeSection from './ArrangeSection.vue'

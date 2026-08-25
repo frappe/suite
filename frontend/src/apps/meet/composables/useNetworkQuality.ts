@@ -1,7 +1,8 @@
 import { inject, onMounted, onUnmounted, type Ref, ref } from "vue";
 import {
 	type ConsumerSample,
-	extractInboundBytesReceived,
+	DecodeStallDetector,
+	extractInboundRtpCounters,
 	StallDetector,
 } from "../utils/media/stallDetector";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
@@ -33,8 +34,22 @@ export function useNetworkQuality(
 	const isPolling = ref(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	const stallDetector = new StallDetector();
+	const decodeStallDetector = new DecodeStallDetector();
+	const expectedMediaCounters = new Map<
+		string,
+		{ bytesReceived: number | null; framesDecoded: number | null }
+	>();
+	let active = true;
+	let lifecycleGeneration = 0;
 
 	const pollIntervalMs = 3000;
+	const isLifecycleSuspended = () =>
+		!active || document.hidden || navigator.onLine === false;
+	const resetHealthBaselines = () => {
+		stallDetector.suspend();
+		decodeStallDetector.suspend();
+		expectedMediaCounters.clear();
+	};
 	const updateQuality = (stats: NetworkStats) => {
 		if (!stats.isValid) {
 			// If we can't get valid stats, assume network is good
@@ -83,35 +98,46 @@ export function useNetworkQuality(
 			downlinkQuality.value = "good";
 			return;
 		}
+		if (isLifecycleSuspended()) {
+			resetHealthBaselines();
+			return;
+		}
 
 		const statsResults = await Promise.all(
 			consumers.map(async (entry) => {
-				let bytes: number | null = null;
+				let bytesReceived: number | null = null;
+				let framesDecoded: number | null = null;
 				try {
 					const stats = await entry.consumer.getStats();
-					bytes = extractInboundBytesReceived(stats);
+					const counters = extractInboundRtpCounters(stats, entry.kind);
+					bytesReceived = counters.bytesReceived;
+					framesDecoded = counters.framesDecoded;
 				} catch {
-					bytes = null;
+					bytesReceived = null;
 				}
-				return { entry, bytes };
+				return { entry, bytes: bytesReceived, framesDecoded };
 			}),
 		);
+		if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) return;
+		const isPaused = (entry: (typeof statsResults)[number]["entry"]) => {
+			const participant = sfuManager.participantManager.getParticipant(
+				entry.participantId,
+			);
+			return (
+				entry.consumer.paused ||
+				entry.consumer.producerPaused ||
+				entry.adaptivelyPaused ||
+				(entry.kind === "audio" && participant?.audio_enabled === false) ||
+				(entry.kind === "video" &&
+					!entry.isScreen &&
+					participant?.video_enabled === false)
+			);
+		};
 
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
 			kind: entry.kind,
-			isPaused: () => {
-				const participant = sfuManager.participantManager.getParticipant(
-					entry.participantId,
-				);
-				return (
-					entry.consumer.paused ||
-					(entry.kind === "audio" && participant?.audio_enabled === false) ||
-					(entry.kind === "video" &&
-						!entry.isScreen &&
-						participant?.video_enabled === false)
-				);
-			},
+			isPaused: () => isPaused(entry),
 			isMuted: () => entry.track?.muted ?? false,
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,
@@ -119,16 +145,88 @@ export function useNetworkQuality(
 		const clientTelemetry = sfuManager.sfuClient
 			? getClientTelemetry(sfuManager.sfuClient)
 			: null;
-		for (const { entry, bytes } of statsResults) {
+		for (const { entry, bytes, framesDecoded } of statsResults) {
+			const previous = expectedMediaCounters.get(entry.id);
+			sfuManager.observeRemoteMediaProgress?.(
+				entry.producerId,
+				entry.kind === "audio" ? "audio" : "video",
+				bytes !== null && bytes > (previous?.bytesReceived ?? 0),
+				entry.kind !== "video" ||
+					(framesDecoded !== null &&
+						framesDecoded > (previous?.framesDecoded ?? 0)),
+			);
+			expectedMediaCounters.set(entry.id, {
+				bytesReceived: bytes,
+				framesDecoded,
+			});
 			if (bytes !== null && bytes > 0 && (entry.kind === "audio" || entry.kind === "video")) {
 				clientTelemetry?.markFirstRemoteMedia(entry.kind);
 			}
 		}
 
 		const stalledIds = stallDetector.check(samples, allowRecovery);
-		downlinkQuality.value = stallDetector.hasActiveStall()
+		const decodeActions = decodeStallDetector.check(
+			statsResults
+				.filter(({ entry }) => entry.kind === "video")
+				.map(({ entry, bytes, framesDecoded }) => ({
+					id: entry.id,
+					isPaused: () => isPaused(entry),
+					bytesReceived: bytes,
+					framesDecoded,
+				})),
+			allowRecovery,
+		);
+		downlinkQuality.value =
+			stallDetector.hasActiveStall() || decodeStallDetector.hasActiveStall()
 			? "critical"
 			: "good";
+		for (const recovery of decodeActions) {
+			if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) {
+				return;
+			}
+			const result = statsResults.find(
+				({ entry }) => entry.id === recovery.consumerId,
+			);
+			if (!result) continue;
+			const current =
+				consumerManager.getConsumer?.(result.entry.id) ??
+				consumerManager
+					.getAllConsumers()
+					.find((entry) => entry.id === result.entry.id);
+			if (
+				!current ||
+				current.consumer !== result.entry.consumer ||
+				isPaused(current)
+			) {
+				decodeStallDetector.dispose(result.entry.id);
+				continue;
+			}
+			if (recovery.action === "request-keyframe") {
+				try {
+					await sfuManager.sfuClient?.requestConsumerKeyFrame(result.entry.id);
+				} catch (error) {
+					console.warn(
+						"Failed to request a keyframe for decode-stalled consumer",
+						result.entry.id,
+						error,
+					);
+				}
+			} else {
+				decodeStallDetector.dispose(result.entry.id);
+				try {
+					await sfuManager.mediaManager.recoverConsumer(current);
+				} catch (error) {
+					console.warn(
+						"Failed to recreate decode-stalled consumer",
+						result.entry.id,
+						error,
+					);
+				}
+			}
+			if (isLifecycleSuspended() || sfuManagerRef?.value !== sfuManager) {
+				return;
+			}
+		}
 		if (stalledIds.length === 0) return;
 		const stalledSet = new Set(stalledIds);
 		clientTelemetry?.reportMediaStalls(
@@ -143,18 +241,35 @@ export function useNetworkQuality(
 		const stalledEntries = statsResults
 			.map(({ entry }) => entry)
 			.filter((entry) => stalledSet.has(entry.id));
-		const hasAudioStall = stalledEntries.some((entry) => entry.kind === "audio");
-		const hasExhaustedVideoRecovery = stalledEntries.some(
+		const neverStartedEntries = stalledEntries.filter(
+			(entry) => !stallDetector.hasReceivedMedia(entry.id),
+		);
+		for (const entry of neverStartedEntries) {
+			stallDetector.dispose(entry.id);
+			void sfuManager.mediaManager.recoverConsumer(entry);
+		}
+		const establishedStalls = stalledEntries.filter(
+			(entry) => stallDetector.hasReceivedMedia(entry.id),
+		);
+		if (establishedStalls.length === 0) return;
+		const hasAudioStall = establishedStalls.some(
+			(entry) => entry.kind === "audio",
+		);
+		const hasExhaustedVideoRecovery = establishedStalls.some(
 			(entry) =>
 				entry.kind === "video" && stallDetector.getRecoveryAttempts(entry.id) > 2,
 		);
 		if (hasAudioStall || hasExhaustedVideoRecovery) {
-			void sfuManager.resetReceiveMedia();
+			try {
+				await sfuManager.resetReceiveMedia();
+			} catch (error) {
+				console.warn("Failed to reset stalled receive media", error);
+			}
 			stallDetector.suspend();
 			return;
 		}
 
-		for (const entry of stalledEntries) {
+		for (const entry of establishedStalls) {
 			if (entry.kind === "video") {
 				void sfuManager.sfuClient
 					?.requestConsumerKeyFrame(entry.id)
@@ -167,8 +282,13 @@ export function useNetworkQuality(
 
 	const pollStats = async () => {
 		if (isPolling.value) return;
+		if (isLifecycleSuspended()) {
+			resetHealthBaselines();
+			return;
+		}
 
 		isPolling.value = true;
+		const generation = lifecycleGeneration;
 		try {
 			const transportManager = sfuManagerRef?.value?.transportManager;
 
@@ -190,33 +310,81 @@ export function useNetworkQuality(
 			if (isFailed) {
 				networkQuality.value = "critical";
 				stallDetector.suspend();
+				decodeStallDetector.suspend();
 				return;
 			}
 
 			if (transportManager.getNetworkStats) {
 				const stats = await transportManager.getNetworkStats();
+				if (
+					generation !== lifecycleGeneration ||
+					isLifecycleSuspended()
+				) {
+					return;
+				}
 				updateQuality(stats);
 				const sfuClient = sfuManagerRef?.value?.sfuClient;
 				if (sfuClient && stats.isValid) {
 					getClientTelemetry(sfuClient).reportNetworkQuality(stats);
 				}
 			}
+			await sfuManagerRef.value?.reconcileExpectedMedia?.();
 			await checkConsumerStalls(networkQuality.value === "good");
 		} finally {
 			isPolling.value = false;
 		}
 	};
 
+	const suspendBrowserLifecycle = () => {
+		lifecycleGeneration += 1;
+		resetHealthBaselines();
+	};
+
+	const recoverBrowserLifecycle = async () => {
+		const generation = ++lifecycleGeneration;
+		resetHealthBaselines();
+		if (isLifecycleSuspended()) return;
+		const sfuManager = sfuManagerRef?.value;
+		await sfuManager?.recoverBrowserLifecycle?.();
+		if (
+			generation !== lifecycleGeneration ||
+			isLifecycleSuspended() ||
+			sfuManagerRef?.value !== sfuManager
+		) {
+			return;
+		}
+	};
+
+	const handleVisibilityChange = () => {
+		if (document.hidden) {
+			suspendBrowserLifecycle();
+		} else {
+			void recoverBrowserLifecycle();
+		}
+	};
+
 	onMounted(() => {
+		active = true;
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		window.addEventListener("offline", suspendBrowserLifecycle);
+		window.addEventListener("online", recoverBrowserLifecycle);
+		window.addEventListener("pageshow", recoverBrowserLifecycle);
 		pollInterval = setInterval(pollStats, pollIntervalMs);
 	});
 
 	onUnmounted(() => {
+		active = false;
+		document.removeEventListener("visibilitychange", handleVisibilityChange);
+		window.removeEventListener("offline", suspendBrowserLifecycle);
+		window.removeEventListener("online", recoverBrowserLifecycle);
+		window.removeEventListener("pageshow", recoverBrowserLifecycle);
 		if (pollInterval) {
 			clearInterval(pollInterval);
 			pollInterval = null;
 		}
 		stallDetector.reset();
+		decodeStallDetector.reset();
+		expectedMediaCounters.clear();
 	});
 
 	return {

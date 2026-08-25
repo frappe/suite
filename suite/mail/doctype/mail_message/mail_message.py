@@ -623,7 +623,7 @@ class MailMessage(Document):
             recipients=recipients,
             attachments=attachments,
             html_body=self.html_body,
-            text_body=self.text_body,
+            text_body=None if self.html_body else self.text_body,
             message_id=self.message_id,
             id=self.id,
             in_reply_to=self.in_reply_to,
@@ -1137,8 +1137,8 @@ def preview_from_html(html_body: str) -> str:
     soup = BeautifulSoup(html_body, "html.parser")
     # Strip the same quote containers the client collapses (see EmailContent.vue) so the
     # preview surfaces the new content instead of "On ... wrote:" and everything below it.
-    for quote in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
-        quote.decompose()
+    for q in soup.find_all(class_=["gmail_quote", "frappe_mail_quote"]):
+        q.decompose()
 
     # A message that is nothing but a quote would otherwise get a blank preview.
     return convert_html_to_text(str(soup)) or convert_html_to_text(html_body)
@@ -1206,13 +1206,16 @@ def format_message(account: str, mailbox_map: dict, message: dict) -> dict:
                     {"type": titled_key, "display_name": rcpt["name"], "email": rcpt["email"]}
                 )
 
-    for key, field in {"htmlBody": "html_body", "textBody": "text_body"}.items():
-        value = (
-            message.get("bodyValues", {}).get(message[key][0]["partId"], {}).get("value")
-            if message.get(key)
-            else None
-        )
-        formatted_message[field] = value
+    # RFC 8621: htmlBody falls back to the text parts when a message carries no HTML, and
+    # textBody to the HTML parts when it carries no plain text. Taken without checking the
+    # part's type, a plain-text mail lands in html_body and the reader treats prose as markup.
+    for key, field, wanted in (
+        ("htmlBody", "html_body", "text/html"),
+        ("textBody", "text_body", "text/plain"),
+    ):
+        part = next((p for p in message.get(key) or [] if p.get("type") == wanted), None)
+        body_values = message.get("bodyValues") or {}
+        formatted_message[field] = body_values.get(part["partId"], {}).get("value") if part else None
 
     if html_body := formatted_message["html_body"]:
         preview = preview_from_html(html_body)

@@ -150,6 +150,18 @@ def search(query: str, filters: str | None = None):
         k.update(meta)
         cleaned_results.append(k)
     search["results"] = cleaned_results
+
+    # The index is unscoped, so summary stats and spelling corrections are
+    # computed against every document on the site, not just what the caller
+    # can read. Recompute counts from the filtered set and drop corrections
+    # outright, since validating them against readable content isn't worth
+    # the cost the UI doesn't use them.
+    match_count = len(cleaned_results)
+    search["summary"]["total_matches"] = match_count
+    search["summary"]["returned_matches"] = match_count
+    search["summary"]["filtered_matches"] = match_count
+    search["summary"]["corrected_words"] = None
+    search["summary"]["corrected_query"] = None
     return search
 
 
@@ -163,7 +175,7 @@ def get_drive_file_meta(names, ttl=3600):
     cache = frappe.cache()
 
     keys = {name: f"search:drive_file:{name}" for name in names}
-    cached = {"name": cache.get_value(k) for k in keys.values()}
+    cached = {k: cache.get_value(k) for k in keys.values()}
 
     result = {}
     missing = []
@@ -186,7 +198,7 @@ def get_drive_file_meta(names, ttl=3600):
                 "title": r["file_name"],
                 "name": r["name"],
             }
-            key = f"search:drive_file:{r['name']}"
+            key = f"search:drive_file:{r['content_docname']}"
             cache.set_value(key, meta, expires_in_sec=ttl)
             result[r["content_docname"]] = meta
 

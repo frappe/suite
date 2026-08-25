@@ -51,14 +51,14 @@ const getReferenceElementOnSlide = (slide, currElement) => {
 	}
 }
 
-const getReferenceElement = (element) => {
-	const prevSlide = slides.value[slideIndex.value - 1]
-	const nextSlide = slides.value[slideIndex.value + 1]
+const getReferenceElement = (element, index) => {
+	const prevSlide = slides.value[index - 1]
+	const nextSlide = slides.value[index + 1]
 
 	let el = getReferenceElementOnSlide(prevSlide, element)
 	let onPrev = true
 
-	if (!el && currentSlide.value?.transition === 'Magic Move') {
+	if (!el && slides.value[index]?.transition === 'Magic Move') {
 		el = getReferenceElementOnSlide(nextSlide, element)
 		onPrev = false
 	}
@@ -154,16 +154,15 @@ const isAffectedByMagicMove = (slideIndex) => {
 	return prevSlide?.transition === 'Magic Move' || currentSlide?.transition === 'Magic Move'
 }
 
-const getCommandsToUpdateElementRefId = (element) => {
+const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
 	// TODO: add refId handling for shape elements
 	if (element.type == 'shape') return []
 	if (element.type == 'table') return []
-	const index = slideIndex.value
 	const commands = []
 	const needsUpdate = isAffectedByMagicMove(index)
 	if (!needsUpdate) return commands
 
-	const { el, onPrev } = getReferenceElement(element)
+	const { el, onPrev } = getReferenceElement(element, index)
 	if (el) {
 		const refId = generateUniqueId()
 

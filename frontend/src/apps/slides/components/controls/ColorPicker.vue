@@ -8,7 +8,7 @@
 			></div>
 		</template>
 		<template #body>
-			<div class="m-2 rounded-lg border bg-surface-elevation-2 p-3 shadow-xl">
+			<div class="m-2 rounded-lg border border-outline-elevation-2 bg-surface-elevation-2 p-3 shadow-xl">
 				<div class="flex flex-col gap-3">
 					<div
 						ref="shadeSlider"

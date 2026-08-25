@@ -2,7 +2,7 @@ import type { Socket } from 'socket.io';
 import { direction } from '../../telemetry/Telemetry';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { getRoomId } from './utils';
+import { getPeerId, getRoomId } from './utils';
 
 export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -19,11 +19,11 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					throw new Error('Recorder send transports are not permitted');
 				enforceE2EETransportPolicy(socket, encryptionEnabled);
 				const roomId = getRoomId(socket);
-				const userId = socket.userId;
+				const peerId = getPeerId(socket);
 
 				const transportParams = await deps.mediasoup.createWebRtcTransport(
 					roomId,
-					userId,
+					peerId,
 					direction,
 				);
 				if (socket.e2eeRequired && encryptionEnabled) {
@@ -79,7 +79,7 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 					transportId,
 					dtlsParameters,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 					socket.scope === 'recording' ? 'recv' : undefined,
 				);
 
@@ -122,7 +122,7 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				const iceParameters = await deps.mediasoup.restartWebRtcTransportIce(
 					transportId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 					socket.scope === 'recording' ? 'recv' : undefined,
 				);
 
@@ -163,11 +163,11 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				deps.authManager.ensureFullAccess(socket);
 
 				const roomId = getRoomId(socket);
-				const userId = socket.userId;
+				const peerId = getPeerId(socket);
 
 				const transportParams = await deps.mediasoup.createPlainTransport(
 					roomId,
-					userId,
+					peerId,
 				);
 
 				callback({ success: true, ...transportParams });

@@ -1,6 +1,9 @@
 // Shared shapes and display helpers for EmailSubmission rows — the Outbox list and the
 // submission details page render the same server-derived state.
 
+import type { Component } from 'vue'
+import { CalendarClock, Mail, RefreshCw, SendHorizontal, X } from 'lucide-vue-next'
+
 // The submission's merged delivery state, worst recipient wins: 'queued' is a released
 // delivery the MTA hasn't concluded yet, 'retrying' one that failed temporarily and waits
 // for its next attempt, 'sent' relayed with no delivery confirmation, 'displayed' one whose
@@ -128,3 +131,70 @@ export const deliveryErrorTitle = (row: Submission) =>
 
 export const subjectLabel = (row: Submission) =>
 	row.email_deleted ? __('(Message deleted)') : row.subject || __('(No subject)')
+
+export type SubmissionAction = {
+	label: string
+	icon: Component
+	theme?: string
+	onClick: () => void
+}
+
+export type SubmissionActionHandlers = {
+	/** When provided, "Open email" leads the menu (for submissions whose message still exists). */
+	openEmail?: () => void
+	sendNow: () => void
+	reschedule: () => void
+	cancelDelivery: () => void
+	sendAgain: () => void
+	tryAgainNow: () => void
+	remove: () => void
+}
+
+/**
+ * The actions a submission's state offers, as dropdown options — shared by the Outbox
+ * list rows and the details page header so the two menus never drift apart.
+ */
+export const submissionActions = (
+	row: Submission,
+	on: SubmissionActionHandlers,
+): SubmissionAction[] => {
+	const openEmail =
+		on.openEmail && !row.email_deleted && row.thread_id
+			? [{ label: __('Open email'), icon: Mail, onClick: on.openEmail }]
+			: []
+	const sendAgain = { label: __('Send again'), icon: RefreshCw, onClick: on.sendAgain }
+	const remove = { label: __('Remove'), icon: X, onClick: on.remove }
+	const cancel = {
+		label: __('Cancel delivery'),
+		icon: X,
+		theme: 'red',
+		onClick: on.cancelDelivery,
+	}
+
+	// A deleted message can't be resubmitted — dropping the failed record is all that's left.
+	if (row.status === 'failed')
+		return [...openEmail, ...(row.email_deleted ? [] : [sendAgain]), remove]
+
+	if (row.status === 'retrying' || row.status === 'queued') {
+		const retry = { label: __('Try again now'), icon: RefreshCw, onClick: on.tryAgainNow }
+		// A released delivery stays cancellable for as long as its submission is pending.
+		return [...openEmail, retry, ...(row.undo_status === 'pending' ? [cancel] : [])]
+	}
+
+	if (row.status === 'scheduled') {
+		// A deleted message can't be resubmitted (send now / reschedule recreate the
+		// submission from it) — cancelling the pending delivery is all that's left.
+		if (row.email_deleted) return [cancel]
+
+		return [
+			...openEmail,
+			{ label: __('Send now'), icon: SendHorizontal, onClick: on.sendNow },
+			{ label: __('Reschedule'), icon: CalendarClock, onClick: on.reschedule },
+			cancel,
+		]
+	}
+
+	// Concluded (sent/delivered/read) or cancelled rows: resubmit and/or drop the record.
+	if (row.status === 'cancelled' || row.email_deleted) return [...openEmail, remove]
+	return [...openEmail, sendAgain, remove]
+}

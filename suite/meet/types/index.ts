@@ -238,6 +238,8 @@ export interface E2EESessionMetadata {
 
 export interface JoinRoomRequest {
 	roomId: string;
+	connectionId?: string;
+	conflictId?: string;
 	userData: UserData;
 	mediaState: MediaState;
 	e2ee?: E2EESessionMetadata;

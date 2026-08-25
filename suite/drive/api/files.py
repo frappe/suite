@@ -101,7 +101,11 @@ def upload_file(
     # Validate that file size is matching
     file_size = temp_path.stat().st_size
     acquire_owner_storage_lock(frappe.session.user)
-    validate_quota(incoming_size=file_size)
+    try:
+        validate_quota(incoming_size=file_size)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
     mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
     file_type = get_file_type(mime_type)
@@ -457,10 +461,10 @@ def _collect_download_files(entity_names):
         entity = frappe.get_value(
             "File",
             name,
-            ["name", "file_name", "is_folder", "file_type", "file_url"],
+            ["name", "file_name", "is_folder", "file_type", "file_url", "status"],
             as_dict=True,
         )
-        if not entity:
+        if not entity or entity.status != STATUS_ACTIVE:
             continue
         if entity.is_folder:
             yield from _iter_folder_files(entity.name, prefix=f"{entity.file_name}/")
@@ -870,7 +874,14 @@ def search(query: str):
 
 @frappe.whitelist(allow_guest=True)
 def translate_old_name(old_name: str):
-    return frappe.get_value("File", {"old_name": old_name}, "name")
+    # The pre-team-restructure id mapping (Drive File's `old_name` field) was
+    # dropped when Drive File merged into the framework File doctype, so ids
+    # can only be passed through when they survived migration as File names.
+    # Missing and inaccessible ids both return None so guests can't probe
+    # which private files exist.
+    if not frappe.db.exists("File", old_name):
+        return None
+    return old_name if user_has_permission(old_name, "read") else None
 
 
 @frappe.whitelist(allow_guest=True)
@@ -935,16 +946,6 @@ def track_visit(
         },
         "read",
         True,
-    )
-
-
-@frappe.whitelist()
-def get_docs_attached_to(file_name: str):
-    file = frappe.get_doc("File", file_name)
-    return frappe.get_list(
-        "File",
-        filters={"attached_to_doctype": ["is", "set"], "file_url": file.file_url},
-        fields=["attached_to_doctype", "attached_to_name"],
     )
 
 

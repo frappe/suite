@@ -28,7 +28,7 @@
           <LucideArrowBigLeft class="size-4" />Go Back
         </div>
       </Button>
-      <template v-if="$route.name != 'Home'">
+      <template v-if="$route.name != 'writer-home'">
         <Button
           v-if="isLoggedIn"
           variant="solid"

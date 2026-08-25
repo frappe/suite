@@ -21,6 +21,8 @@ import {
 	duplicateElements,
 	deleteElements,
 	flipElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	isSelectionLocked,
 	hasLockedElements,
 	hasUnlockedElements,
@@ -140,6 +142,13 @@ const buildElementContextOptions = () => {
 
 	const transformOptions = []
 	if (!isSelectionLocked.value) {
+		if (hasBoundConnector.value) {
+			transformOptions.push({
+				label: 'Disconnect',
+				icon: 'lucide-unlink',
+				onClick: () => disconnectConnectors(),
+			})
+		}
 		if (canCrop) {
 			transformOptions.push({
 				label: 'Crop',
@@ -148,9 +157,19 @@ const buildElementContextOptions = () => {
 			})
 		}
 
+		// mirroring a line only swaps its heads around; nothing else is visible
+		const isOnlyLines = activeElements.value.every((el) => el.shapeType === 'line')
+		if (!isOnlyLines) {
+			transformOptions.push(
+				{
+					label: 'Flip horizontal',
+					icon: FlipHorizontal,
+					onClick: () => flipElements('horizontal'),
+				},
+				{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
+			)
+		}
 		transformOptions.push(
-			{ label: 'Flip horizontal', icon: FlipHorizontal, onClick: () => flipElements('horizontal') },
-			{ label: 'Flip vertical', icon: FlipVertical, onClick: () => flipElements('vertical') },
 			{ label: 'Order', icon: BringToFront, submenu: orderOptions },
 			{ label: 'Align', icon: AlignLeft, submenu: alignOptions },
 		)

@@ -1,11 +1,10 @@
 import { computed, h } from 'vue'
-import { SunMoon, Sun, Moon, Monitor } from 'lucide-vue-next'
 import { themeMode, switchTheme } from '@/utils/setupTheme'
 
 const themeModes = [
-	{ mode: 'light', icon: Sun, label: 'Light' },
-	{ mode: 'dark', icon: Moon, label: 'Dark' },
-	{ mode: 'automatic', icon: Monitor, label: 'Auto' },
+	{ mode: 'light', icon: 'lucide-sun', label: 'Light' },
+	{ mode: 'dark', icon: 'lucide-moon', label: 'Dark' },
+	{ mode: 'automatic', icon: 'lucide-monitor', label: 'Auto' },
 ]
 
 const activeTheme = computed(
@@ -21,7 +20,7 @@ function cycleTheme(event) {
 export function useThemeMenuOption() {
 	return {
 		label: 'Theme',
-		icon: h(SunMoon),
+		icon: 'lucide-sun-moon',
 		onClick: cycleTheme,
 		slots: {
 			label: () => h('div', { class: 'min-w-20 truncate' }, 'Theme'),
@@ -31,7 +30,7 @@ export function useThemeMenuOption() {
 					{ class: 'flex w-16 items-center justify-end gap-2 text-ink-gray-5' },
 					[
 						h('span', activeTheme.value.label),
-						h(activeTheme.value.icon),
+						h('span', { class: [activeTheme.value.icon, 'size-4'] }),
 					],
 				),
 		},

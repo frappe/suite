@@ -66,7 +66,6 @@ from suite.mail.utils.delivery_status import parse_delivery_status
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
 from suite.mail.utils.user import get_account_emails, is_jmap_configured
 from suite.mail.utils.validation import normalize_screened_value, validate_screened_value
-from suite.utils import convert_html_to_text
 from suite.utils.rate_limiter import dynamic_rate_limit
 
 AVATAR_CACHE_TTL = 60 * 60 * 24
@@ -730,7 +729,6 @@ def update_draft_mail(
             )
 
     message.html_body = html_body
-    message.text_body = convert_html_to_text(message.html_body)
 
     message.recipients = []
     for type, emails in [("To", to), ("Cc", cc), ("Bcc", bcc)]:

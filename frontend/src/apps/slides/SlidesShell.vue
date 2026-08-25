@@ -10,31 +10,17 @@
 
 <script setup>
 import { h, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { toast, FrappeUIProvider } from 'frappe-ui'
 import { Wifi, WifiOff } from 'lucide-vue-next'
 import { saveCurrentState } from '@/apps/slides/stores/saving'
 import { inSlideShowMode } from '@/apps/slides/stores/slideshow'
 import { setupTheme } from '@/utils/setupTheme'
+import { postToServiceWorker } from '@/apps/slides/utils/serviceWorker'
+import { loadBundledFonts } from '@/apps/slides/utils/bundledFonts'
 import '@/apps/slides/styles/fonts.css'
 
 const isOnline = ref(navigator?.onLine ?? true)
-
-// Inter is in the app bundle, these aren't. Load every face so the picker never swaps.
-const bundledFontFaces = [
-  '400 16px Anton',
-  '400 16px "Courier Prime"',
-  'italic 400 16px "Courier Prime"',
-  '700 16px "Courier Prime"',
-  'italic 700 16px "Courier Prime"',
-]
-
-// One char per unicode-range subset; load() samples basic Latin otherwise.
-const subsetSample = 'AĀẠ'
-
-const preloadBundledFonts = () => {
-  if (!document.fonts?.load) return
-  bundledFontFaces.forEach((face) => document.fonts.load(face, subsetSample))
-}
 
 const handleOffline = () => {
   isOnline.value = false
@@ -53,8 +39,19 @@ const handleOnline = () => {
   })
 }
 
+onBeforeRouteLeave(() => postToServiceWorker('slides-left'))
+
 const registerServiceWorker = () => {
-  if (!('serviceWorker' in navigator) || !import.meta.env.PROD) return
+  // opt-in on the dev server: this worker claims the root scope
+  const enabled = import.meta.env.PROD || import.meta.env.VITE_SLIDES_SW === '1'
+  if (!('serviceWorker' in navigator) || !enabled) return
+  if (window.disable_slides_service_worker) {
+    navigator.serviceWorker
+      .getRegistration('/')
+      .then((registration) => registration?.unregister())
+      .catch(() => {})
+    return
+  }
   navigator.serviceWorker.register('/service-worker.js').catch((err) => {
     console.warn('Slides Service Worker registration failed:', err)
   })
@@ -69,7 +66,7 @@ onMounted(() => {
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   registerServiceWorker()
-  preloadBundledFonts()
+  loadBundledFonts()
   setupTheme()
   document.documentElement.style.overscrollBehavior = 'none'
 })

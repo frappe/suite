@@ -8,7 +8,7 @@ import type {
 } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { getRoomId } from './utils';
+import { getPeerId, getRoomId } from './utils';
 
 export function registerProducerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -28,7 +28,7 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				const producer = await deps.mediasoup.createProducer(
 					transportId,
 					roomId,
-					socket.userId,
+					getPeerId(socket),
 					rtpParameters,
 					kind,
 					appData,
@@ -80,9 +80,13 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertProducerAccess(
 					producerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
-				const result = deps.mediasoup.closeProducer(producerId);
+				const result = deps.mediasoup.closeProducer(producerId, {
+					reason,
+					source,
+					details,
+				});
 
 				loggers.socketHandler.info(
 					'close_producer peer=%s producer=%s isScreen=%s reason=%s source=%s details=%o',
@@ -95,40 +99,6 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				);
 
 				callback({ success: true, ...result });
-
-				const roomId = getRoomId(socket);
-				deps.registry.emitProducerClosed(roomId, {
-					participantId: socket.userId,
-					producerId,
-					isScreen: !!result.isScreen,
-					reason,
-					source,
-					details,
-				});
-
-				try {
-					for (const rc of result.removedConsumers) {
-						const targetPeerSocket = Array.from(
-							deps.io.sockets.sockets.values(),
-						).find((s) => s.userId === rc.peerId && s.roomId === rc.roomId);
-						if (targetPeerSocket) {
-							targetPeerSocket.emit('consumer_closed', {
-								consumerId: rc.consumerId,
-							});
-						} else {
-							deps.registry.emitToFullAccessParticipants(
-								roomId,
-								'consumer_closed',
-								{ consumerId: rc.consumerId, peerId: rc.peerId },
-							);
-						}
-					}
-				} catch (e) {
-					loggers.socketHandler.warn(
-						'Failed to emit consumer_closed notifications: %s',
-						(e as Error).message,
-					);
-				}
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error closing producer: %s',
@@ -145,7 +115,7 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertProducerAccess(
 					producerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
 				const paused = await deps.mediasoup.pauseProducer(producerId);
 
@@ -166,7 +136,7 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertProducerAccess(
 					producerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
 				const resumed = await deps.mediasoup.resumeProducer(producerId);
 

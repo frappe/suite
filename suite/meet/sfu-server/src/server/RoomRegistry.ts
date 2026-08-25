@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import type {
 	ActivePoll,
@@ -35,8 +36,17 @@ export class RoomRegistry {
 	private hostOnlyChat: Record<string, boolean> = {};
 	private recentChatMessages: Record<string, ChatMessage[]> = {};
 	private pinnedChatMessage: Record<string, PinnedChatMessage> = {};
-	private participantSockets: Record<string, Record<string, string>> = {};
-	private participantConnections = new Map<string, Map<string, Set<string>>>();
+	private participantConnections = new Map<
+		string,
+		Map<
+			string,
+			{
+				socket: Socket;
+				connectionId: string;
+				ownershipId: string;
+			}
+		>
+	>();
 	private activePolls: Record<string, Map<string, ActivePoll>> = {};
 	private fullAccessSockets: Map<string, Set<string>> = new Map();
 	private previewSockets: Map<string, Set<string>> = new Map();
@@ -151,44 +161,100 @@ export class RoomRegistry {
 		this.participantToSender.get(roomId)?.delete(participantId);
 	}
 
-	claimParticipant(
+	/**
+	 * Claims the participant's active connection. A matching connectionId reconnects;
+	 * a different connection requires the incumbent generation as conflictId.
+	 */
+	acquireParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
-	): void {
-		if (!this.participantSockets[roomId]) this.participantSockets[roomId] = {};
+		connectionId: string,
+		conflictId?: string,
+	):
+		| {
+				status: 'acquired' | 'idempotent' | 'reconnect' | 'takeover';
+				ownershipId: string;
+				replacedSocket?: Socket;
+		  }
+		| { status: 'conflict'; conflictId: string } {
 		let participants = this.participantConnections.get(roomId);
 		if (!participants) {
 			participants = new Map();
 			this.participantConnections.set(roomId, participants);
 		}
-		let connections = participants.get(participantId);
-		if (!connections) {
-			connections = new Set();
-			participants.set(participantId, connections);
+		const incumbent = participants.get(participantId);
+		if (!incumbent) {
+			const ownershipId = randomUUID();
+			participants.set(participantId, { socket, connectionId, ownershipId });
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = ownershipId;
+			return { status: 'acquired', ownershipId };
 		}
-		connections.add(socket.id);
-		this.participantSockets[roomId][participantId] = socket.id;
+
+		if (
+			incumbent.socket.id === socket.id &&
+			incumbent.connectionId === connectionId
+		) {
+			socket.participantConnectionId = connectionId;
+			socket.participantOwnershipId = incumbent.ownershipId;
+			return { status: 'idempotent', ownershipId: incumbent.ownershipId };
+		}
+
+		const reconnect = incumbent.connectionId === connectionId;
+		if (!reconnect && conflictId !== incumbent.ownershipId) {
+			return { status: 'conflict', conflictId: incumbent.ownershipId };
+		}
+
+		const ownershipId = randomUUID();
+		participants.set(participantId, { socket, connectionId, ownershipId });
+		socket.participantConnectionId = connectionId;
+		socket.participantOwnershipId = ownershipId;
+		return {
+			status: reconnect ? 'reconnect' : 'takeover',
+			ownershipId,
+			replacedSocket: incumbent.socket,
+		};
 	}
 
+	/** Releases ownership only when the socket still holds the current generation. */
 	releaseParticipant(
 		socket: Socket,
 		roomId: string,
 		participantId: string,
+		ownershipId = socket.participantOwnershipId,
 	): boolean {
 		const participants = this.participantConnections.get(roomId);
-		const connections = participants?.get(participantId);
-		connections?.delete(socket.id);
-		if (connections?.size === 0) {
-			participants?.delete(participantId);
-			if (participants?.size === 0) this.participantConnections.delete(roomId);
-		}
-		if (this.participantSockets[roomId]?.[participantId] !== socket.id) {
+		const owner = participants?.get(participantId);
+		if (
+			!owner ||
+			owner.socket.id !== socket.id ||
+			!ownershipId ||
+			owner.ownershipId !== ownershipId
+		)
 			return false;
-		}
-
-		delete this.participantSockets[roomId][participantId];
+		participants?.delete(participantId);
+		if (participants?.size === 0) this.participantConnections.delete(roomId);
 		return true;
+	}
+
+	/** Returns the single active participant socket, if ownership is currently held. */
+	getParticipantSocketIds(roomId: string, participantId: string): string[] {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return owner ? [owner.socket.id] : [];
+	}
+
+	/** Checks both socket identity and ownership generation to reject stale sockets. */
+	isParticipantOwner(
+		socket: Socket,
+		roomId: string,
+		participantId: string,
+	): boolean {
+		const owner = this.participantConnections.get(roomId)?.get(participantId);
+		return (
+			owner?.socket.id === socket.id &&
+			owner.ownershipId === socket.participantOwnershipId
+		);
 	}
 
 	hasHumanParticipants(roomId: string): boolean {
@@ -286,7 +352,6 @@ export class RoomRegistry {
 		delete this.hostOnlyChat[roomId];
 		delete this.recentChatMessages[roomId];
 		delete this.pinnedChatMessage[roomId];
-		delete this.participantSockets[roomId];
 		this.participantConnections.delete(roomId);
 		delete this.activePolls[roomId];
 		this.fullAccessSockets.delete(roomId);

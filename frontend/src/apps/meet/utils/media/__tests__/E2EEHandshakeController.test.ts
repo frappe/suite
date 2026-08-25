@@ -58,7 +58,10 @@ function createMediaReconfigurationController({
 			refreshToken,
 			joinRoom,
 		} as never,
-		sfuManager: shallowRef({ reconfigureForE2EE } as never),
+		sfuManager: shallowRef({
+			reconfigureForE2EE,
+			rejoinParticipantConnection: joinRoom,
+		} as never),
 		currentUser: {
 			currentUser: shallowRef({ user_id: "user-1", full_name: "User One" }),
 		} as never,
@@ -431,6 +434,7 @@ describe("E2EEHandshakeController", () => {
 			sendE2EEEpochEnvelope: vi.fn(),
 		} as never;
 		const sfuManager = shallowRef({
+			rejoinParticipantConnection: vi.fn(async () => true),
 			reconfigureForE2EE: vi.fn(async () => ({
 				videoPublished: true,
 				audioPublished: true,
@@ -486,7 +490,8 @@ describe("E2EEHandshakeController", () => {
 
 		expect(sfuClient.setE2EERequired).toHaveBeenCalledWith(true);
 		expect(sfuClient.refreshToken).toHaveBeenCalled();
-		expect(sfuClient.joinRoom).toHaveBeenCalled();
+		expect(sfuClient.joinRoom).not.toHaveBeenCalled();
+		expect(sfuManager.value.rejoinParticipantConnection).toHaveBeenCalled();
 		expect(sfuManager.value.reconfigureForE2EE).toHaveBeenCalled();
 	});
 

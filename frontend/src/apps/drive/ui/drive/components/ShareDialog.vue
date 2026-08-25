@@ -145,7 +145,7 @@ const levelOptions = [
     icon: 'lucide-lock',
   },
   {
-    label: 'Accessible to all site users',
+    label: 'Accessible to organization',
     value: 'site',
     icon: 'lucide-building-2',
   },

@@ -2,6 +2,7 @@ import { reactive, computed, watch } from 'vue'
 import { selectionBounds, currentSlide, slideBounds } from '../stores/slide'
 import { activeElementIds, pairElementId } from '../stores/element'
 import { getElementDiv } from '../stores/elementRegistry'
+import { getBoundTargetIds } from '../utils/connectors'
 
 export const useSnapping = (selectionRef, currentResizer, hasOngoingInteraction) => {
 	const RELEASE_FACTOR = 1.25
@@ -37,6 +38,9 @@ export const useSnapping = (selectionRef, currentResizer, hasOngoingInteraction)
 
 		currentSlide.value?.elements.forEach((element) => {
 			if (activeElementIds.value.includes(element.id)) return
+			// a connector following the gesture is moving too
+			if (getBoundTargetIds(element.connector).some((id) => activeElementIds.value.includes(id)))
+				return
 
 			const div = getElementDiv(element.id)
 			if (!div) return

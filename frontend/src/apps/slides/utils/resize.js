@@ -83,8 +83,15 @@ const getCenterShift = (fixedSign, startBox, width, height) => ({
 	y: (-fixedSign.y * (height - startBox.height)) / 2,
 })
 
+// scale of the axis the cursor moved most, so corner and side drags stretch uniformly
+const getDominantScale = (start, width, height) => {
+	const scaleX = width / start.width
+	const scaleY = height / start.height
+	return Math.abs(scaleX - 1) >= Math.abs(scaleY - 1) ? scaleX : scaleY
+}
+
 export const getResizedBox = (start, handle, cursorMovement, options = {}) => {
-	const { lockAspect = true, clampMinSize = true } = options
+	const { lockAspect = true, clampMinSize = true, keepAspect = false, fromCenter = false } = options
 
 	const fixedSign = FIXED_SIGN[handle]
 	if (!fixedSign) return null
@@ -92,18 +99,36 @@ export const getResizedBox = (start, handle, cursorMovement, options = {}) => {
 	const minSize = clampMinSize ? getMinSizeForElement(start.type) : { width: 0, height: 0 }
 	// rotate the cursor onto the element's local axes
 	const movementInLocalAxes = getRotatedVector(cursorMovement, -start.rotation)
+	// resizing about the centre moves both edges, so the grabbed edge counts twice
+	const movementScale = fromCenter ? 2 : 1
 
 	// resize as if unrotated, keeping the opposite edge fixed
-	const width = getResizedSide(start.width, fixedSign.x, movementInLocalAxes.x, minSize.width)
-	let height = getResizedSide(start.height, fixedSign.y, movementInLocalAxes.y, minSize.height)
+	let width = getResizedSide(
+		start.width,
+		fixedSign.x,
+		movementInLocalAxes.x * movementScale,
+		minSize.width,
+	)
+	let height = getResizedSide(
+		start.height,
+		fixedSign.y,
+		movementInLocalAxes.y * movementScale,
+		minSize.height,
+	)
 
 	const isCornerHandle = fixedSign.x !== 0 && fixedSign.y !== 0
-	if (lockAspect && isAspectLocked(start.type) && isCornerHandle) {
+	if (keepAspect) {
+		const scale = getDominantScale(start, width, height)
+		width = Math.max(minSize.width, start.width * scale)
+		height = Math.max(minSize.height, start.height * scale)
+	} else if (lockAspect && isAspectLocked(start.type) && isCornerHandle) {
 		height = width * (start.height / start.width)
 	}
 
 	// then move the centre so the fixed point stays put
-	const centerShiftInLocalAxes = getCenterShift(fixedSign, start, width, height)
+	const centerShiftInLocalAxes = fromCenter
+		? { x: 0, y: 0 }
+		: getCenterShift(fixedSign, start, width, height)
 	const centerShiftInScreenAxes = getRotatedVector(centerShiftInLocalAxes, start.rotation)
 
 	const newCenter = addVectors(getCenter(start), centerShiftInScreenAxes)
@@ -148,7 +173,16 @@ const getClampedEnd = (fixedEnd, cursorTarget, minLength) => {
 	return addVectors(fixedEnd, scaleVector(direction, minLength))
 }
 
-export const getResizedLine = (start, handle, cursorMovement) => {
+// project `point` onto the nearest 45° ray from `origin`, keeping its distance
+export const snapToNearest45 = (origin, point) => {
+	const span = subtractVectors(point, origin)
+	const length = getLength(span)
+	const step = Math.PI / 4
+	const angle = Math.round(Math.atan2(span.y, span.x) / step) * step
+	return { x: origin.x + length * Math.cos(angle), y: origin.y + length * Math.sin(angle) }
+}
+
+export const getResizedLine = (start, handle, cursorMovement, { snapAngle = false } = {}) => {
 	const minLength = getMinSizeForElement(start.type).width
 
 	// for line resize + rotate happens through endpoints
@@ -159,7 +193,8 @@ export const getResizedLine = (start, handle, cursorMovement) => {
 	const grabbedEnd = grabbingRightEnd ? rightEnd : leftEnd
 
 	// add cursorMovement to the grabbed end and get new position of that endpoint
-	const cursorTarget = addVectors(grabbedEnd, cursorMovement)
+	const rawTarget = addVectors(grabbedEnd, cursorMovement)
+	const cursorTarget = snapAngle ? snapToNearest45(fixedEnd, rawTarget) : rawTarget
 	const newEnd = getClampedEnd(fixedEnd, cursorTarget, minLength)
 
 	// where the two ends sit now: the one we didn't grab stayed put

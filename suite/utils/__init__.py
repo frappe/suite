@@ -13,7 +13,9 @@ from frappe.types.filter import FilterTuple
 from MySQLdb import OperationalError
 
 INVISIBLE_CHARS = (
-    r"[\u0000-\u001F\u007F-\u009F"  # ASCII control chars
+    # Control chars, but not the whitespace ones (\u0009-\u000D): deleting a newline runs
+    # the words either side of it together, where collapsing leaves the space it stood for.
+    r"[\u0000-\u0008\u000E-\u001F\u007F-\u009F"
     r"\u200B-\u200F\u202A-\u202E"  # zero-width & directional
     r"\u2060-\u206F"  # word joiners etc
     r"\uFEFF"  # byte order mark
@@ -145,7 +147,6 @@ def clean_text(text: str) -> str:
 
     text = unicodedata.normalize("NFKC", text)
     text = re.sub(INVISIBLE_CHARS, "", text)
-    text = re.sub(r"([,.!?])(?=\w)", r"\1 ", text)
 
     return re.sub(r"\s+", " ", text).strip()
 

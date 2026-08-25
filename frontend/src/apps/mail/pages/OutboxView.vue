@@ -6,23 +6,23 @@
 			<MobileTitleHeader v-if="isMobile" class="min-w-0 flex-1" :title="__('Outbox')" />
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs v-else :items="[{ label: __('Outbox') }]" class="-ml-0.5" />
-			<HeaderActions @reload-mails="submissions.reload()" />
+			<HeaderActions @reload-mails="refresh()" />
 		</header>
 
 		<OutboxFilters :filters="filters" />
 
-		<div class="flex-1 overflow-y-auto px-3 py-2.5 sm:px-5">
-			<ListView
-				v-if="submissions.data && !refetching"
-				class="flex-1"
-				:columns="LIST_COLUMNS"
-				:rows="rows"
-				:options="listOptions"
-				row-key="id"
-			>
-				<ListHeader />
-				<ListRows>
-					<template v-if="rows.length">
+		<div class="flex-1 overflow-y-auto px-3 py-2.5 sm:px-5" @scroll.passive="onScroll">
+			<template v-if="!refetching">
+				<ListView
+					v-if="rows.length"
+					class="flex-1"
+					:columns="LIST_COLUMNS"
+					:rows="rows"
+					:options="listOptions"
+					row-key="id"
+				>
+					<ListHeader />
+					<ListRows>
 						<ListRow
 							v-for="row in rows"
 							:key="row.id"
@@ -78,21 +78,20 @@
 								</div>
 							</ListRowItem>
 						</ListRow>
-					</template>
-					<ListEmptyState v-else />
-				</ListRows>
-			</ListView>
+					</ListRows>
+				</ListView>
+				<!-- Outside the ListView: its horizontally scrolling body would center this
+				within the full (off-screen) table width on narrow viewports. -->
+				<div v-else class="flex h-full flex-col items-center justify-center px-4 text-center">
+					<div class="text-2xl-medium text-ink-gray-8">{{ emptyState.title }}</div>
+					<div class="text-ink-gray-5 mt-1 text-base">{{ emptyState.description }}</div>
+				</div>
+				<div v-if="loadingMore" class="flex justify-center py-3">
+					<LoadingIndicator class="text-ink-gray-5 h-4 w-4" />
+				</div>
+			</template>
 			<DashboardListSkeleton v-else :columns="4" />
 		</div>
-
-		<DashboardPager
-			v-if="submissions.data && !refetching"
-			class="border-t px-3 sm:px-5"
-			:page="page"
-			:page-length="PAGE_LENGTH"
-			:total="total"
-			@update:page="(p: number) => (page = p)"
-		/>
 
 		<ScheduleSendModal
 			v-model="showReschedule"
@@ -109,26 +108,20 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { watchDebounced } from '@vueuse/core'
-import {
-	CalendarClock,
-	EllipsisVertical,
-	Mail,
-	RefreshCw,
-	SendHorizontal,
-	X,
-} from 'lucide-vue-next'
+import { useDebounceFn, watchDebounced } from '@vueuse/core'
+import { EllipsisVertical, Mail } from 'lucide-vue-next'
 import {
 	Badge,
 	Breadcrumbs,
 	Button,
 	Dialog,
-	ListEmptyState,
 	ListHeader,
 	ListRow,
 	ListRowItem,
 	ListRows,
 	ListView,
+	LoadingIndicator,
+	call,
 	createResource,
 	usePageMeta,
 } from 'frappe-ui'
@@ -140,6 +133,7 @@ import {
 	deliveryErrorTitle,
 	emptySubmissionFilters,
 	subjectLabel,
+	submissionActions,
 	undoStatusLabel,
 	undoStatusTheme,
 	type Submission,
@@ -149,7 +143,6 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
 import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
-import DashboardPager from '@/apps/mail/components/DashboardPager.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import OutboxFilters from '@/apps/mail/components/OutboxFilters.vue'
@@ -180,15 +173,24 @@ const hasActiveFilters = computed(() => activeSubmissionFilterCount(filters) > 0
 // waits on the skeleton until the server responds — unlike the background refreshes below,
 // which keep the rows in place. Without this, switching tabs while the previous result was
 // empty flashes the (wrong) empty state before the response arrives.
-const refetching = ref(false)
+const refetching = ref(true)
 
+// The rest of the user-facing Mail UI scrolls instead of paging, so the Outbox does too:
+// scrolling near the bottom appends the next page; background refreshes refetch every
+// loaded page and swap the rows in place.
 const PAGE_LENGTH = 50
-const page = ref(1)
+const rows = ref<Submission[]>([])
+const total = ref(0)
+const loadedPages = ref(0)
+const loadingMore = ref(false)
+const hasMore = computed(() => rows.value.length < total.value)
 
-const submissions = createResource({
-	url: 'suite.mail.api.scheduled.get_submissions',
-	auto: true,
-	makeParams: () => ({
+// Bumped by restart(); an in-flight response from an older cycle must not land on the
+// newer query's rows.
+let fetchToken = 0
+
+const fetchPage = (page: number) =>
+	call('suite.mail.api.scheduled.get_submissions', {
 		account: store.accountId,
 		undo_status: filters.undoStatus,
 		identity_id: filters.identityId || undefined,
@@ -198,47 +200,103 @@ const submissions = createResource({
 		// instants that day spans.
 		after: filters.after ? utcDayStart(filters.after) : undefined,
 		before: filters.before ? utcDayEnd(filters.before) : undefined,
-		page: page.value,
+		page,
 		page_length: PAGE_LENGTH,
-	}),
-	onSuccess: () => (refetching.value = false),
-	onError: (error: { message?: string }) => {
-		refetching.value = false
-		raiseToast(error.message || __('Request failed.'), 'error')
-	},
-})
+	}) as Promise<{ rows: Submission[]; total: number }>
 
-const applyFilters = () => {
+const onFetchError = (error: { messages?: string[]; message?: string }) =>
+	raiseToast(error.messages?.[0] || error.message || __('Request failed.'), 'error')
+
+// Rows can shift between pages while loading (another client schedules or cancels), so
+// every merge drops ids already present.
+const dedupeById = (merged: Submission[]) => {
+	const seen = new Set<string>()
+	return merged.filter((row) => !seen.has(row.id) && (seen.add(row.id), true))
+}
+
+const restart = async () => {
+	const token = ++fetchToken
 	refetching.value = true
-	submissions.reload()
+	try {
+		const data = await fetchPage(1)
+		if (token !== fetchToken) return
+		rows.value = data.rows
+		total.value = data.total
+		loadedPages.value = 1
+	} catch (error) {
+		onFetchError(error as { message?: string })
+	} finally {
+		if (token === fetchToken) refetching.value = false
+	}
 }
 
-// A filter change restarts from the first page; when the page actually moves, its own
-// watcher does the refetch (avoiding a double request).
-const applyFiltersFromStart = () => {
-	if (page.value !== 1) page.value = 1
-	else applyFilters()
+const loadMore = async () => {
+	if (loadingMore.value || refetching.value || !hasMore.value) return
+	const token = fetchToken
+	loadingMore.value = true
+	try {
+		const data = await fetchPage(loadedPages.value + 1)
+		if (token !== fetchToken) return
+		rows.value = dedupeById([...rows.value, ...data.rows])
+		total.value = data.total
+		loadedPages.value += 1
+	} catch (error) {
+		onFetchError(error as { message?: string })
+	} finally {
+		loadingMore.value = false
+	}
 }
 
-watch(page, applyFilters)
+/** Background refresh: refetches every loaded page and swaps the rows in place, so the
+ * periodic poll, socket events, and post-action reloads never flash the skeleton. */
+let refreshSeq = 0
+let appliedRefreshSeq = 0
+const refresh = async () => {
+	const token = fetchToken
+	// Refreshes can overlap (poll + socket + post-action); a response may only apply if
+	// it's newer than the last one applied — comparing against the latest *started*
+	// instead would let a newer refresh that failed suppress an older success.
+	// seq is taken in the same synchronous block that starts the fetches (the depth
+	// retry below re-enters and takes a fresh one), so seq order is fetch-start order:
+	// an applied snapshot is only ever replaced by one whose fetches began later.
+	const seq = ++refreshSeq
+	const pages = Math.max(loadedPages.value, 1)
+	try {
+		const results = await Promise.all(Array.from({ length: pages }, (_, i) => fetchPage(i + 1)))
+		if (token !== fetchToken || seq <= appliedRefreshSeq) return
+		// loadMore appended a page while this refetch was in flight — applying the
+		// shallower snapshot would drop it, so refetch at the new depth instead.
+		if (Math.max(loadedPages.value, 1) !== pages) return refresh()
+		appliedRefreshSeq = seq
+		rows.value = dedupeById(results.flatMap((data) => data.rows))
+		total.value = results[results.length - 1].total
+		loadedPages.value = pages
+	} catch (error) {
+		onFetchError(error as { message?: string })
+	}
+}
+
+const onScroll = useDebounceFn((e: Event) => {
+	const { scrollTop, scrollHeight, clientHeight } = e.target as HTMLElement
+	if (scrollTop + clientHeight >= scrollHeight - 100) loadMore()
+}, 200)
+
+restart()
+
 watch(
 	() => store.accountId,
-	() => store.accountId && applyFiltersFromStart(),
+	() => store.accountId && restart(),
 )
 
 // The id filters are typed; the rest change atomically.
-watchDebounced(() => [filters.emailId, filters.threadId], applyFiltersFromStart, { debounce: 300 })
-watch(
-	() => [filters.undoStatus, filters.identityId, filters.after, filters.before],
-	applyFiltersFromStart,
-)
+watchDebounced(() => [filters.emailId, filters.threadId], restart, { debounce: 300 })
+watch(() => [filters.undoStatus, filters.identityId, filters.after, filters.before], restart)
 
 // Kept current the way mailboxes are — a periodic poll (holds release, retries advance, and
 // other clients schedule/cancel without any local signal) plus the new-mail socket (an undo
-// or schedule cancel publishes it). reload() keeps the previous rows while fetching, so the
-// list never flickers back to the skeleton.
+// or schedule cancel publishes it).
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
-const onNewMail = () => submissions.reload()
+const onNewMail = () => refresh()
 
 onMounted(() => {
 	reloadInterval.value = setInterval(onNewMail, 30000)
@@ -249,9 +307,6 @@ onUnmounted(() => {
 	if (reloadInterval.value) clearInterval(reloadInterval.value)
 	socket.off('new_mail_created', onNewMail)
 })
-
-const rows = computed<Submission[]>(() => submissions.data?.rows || [])
-const total = computed<number>(() => submissions.data?.total || 0)
 
 const recipientLabel = (row: Submission) => {
 	const emails = [
@@ -288,7 +343,7 @@ const EMPTY_STATES: Record<SubmissionFilters['undoStatus'], { title: string; des
 		},
 	}
 
-const listOptions = computed(() => ({
+const listOptions = {
 	showTooltip: false,
 	selectable: false,
 	rowHeight: 50,
@@ -298,13 +353,13 @@ const listOptions = computed(() => ({
 		name: 'mail-submission',
 		params: { accountId: store.accountId, submissionId: row.id },
 	}),
-	emptyState: hasActiveFilters.value
-		? {
-				title: __('No matching submissions'),
-				description: __('Try adjusting the filters.'),
-			}
+}
+
+const emptyState = computed(() =>
+	hasActiveFilters.value
+		? { title: __('No matching submissions'), description: __('Try adjusting the filters.') }
 		: EMPTY_STATES[filters.undoStatus],
-}))
+)
 
 // A held message sits in Sent until delivery, so its thread opens there.
 const openEmail = (row: Submission) => {
@@ -320,44 +375,22 @@ const openEmail = (row: Submission) => {
 }
 
 const rowOptions = (row: Submission) => {
-	const open = (dialog?: { value: boolean }, submit?: { submit: () => void }) => () => {
+	// Every handler targets this row: `selected` must be set before dialogs read it
+	// and before the resources build their params.
+	const act = (fn: () => void) => () => {
 		selected.value = row
-		if (dialog) dialog.value = true
-		submit?.submit()
+		fn()
 	}
 
-	if (row.status === 'failed') {
-		const retry = { label: __('Send again'), icon: RefreshCw, onClick: open(showRetry) }
-		const dismiss = { label: __('Remove'), icon: X, onClick: open(undefined, dismissMail) }
-		// A deleted message can't be resubmitted — dropping the failed record is all that's left.
-		return row.email_deleted ? [dismiss] : [retry, dismiss]
-	}
-
-	const cancel = { label: __('Cancel delivery'), icon: X, theme: 'red', onClick: open(showCancel) }
-
-	if (row.status === 'retrying' || row.status === 'queued') {
-		const retry = { label: __('Try again now'), icon: RefreshCw, onClick: open(undefined, retryNow) }
-		// A released delivery stays cancellable for as long as its submission is pending.
-		return row.undo_status === 'pending' ? [retry, cancel] : [retry]
-	}
-
-	if (row.status === 'scheduled') {
-		// A deleted message can't be resubmitted (send now / reschedule recreate the
-		// submission from it) — cancelling the pending delivery is all that's left.
-		if (row.email_deleted) return [cancel]
-
-		return [
-			{ label: __('Send now'), icon: SendHorizontal, onClick: open(showSendNow) },
-			{ label: __('Reschedule'), icon: CalendarClock, onClick: open(showReschedule) },
-			cancel,
-		]
-	}
-
-	// Concluded (sent/delivered/read) or cancelled rows: resubmit and/or drop the record.
-	const remove = { label: __('Remove'), icon: X, onClick: open(undefined, dismissMail) }
-	if (row.status === 'cancelled' || row.email_deleted) return [remove]
-
-	return [{ label: __('Send again'), icon: RefreshCw, onClick: open(showRetry) }, remove]
+	// No openEmail here — the list row keeps its explicit Open-email button.
+	return submissionActions(row, {
+		sendNow: act(() => (showSendNow.value = true)),
+		reschedule: act(() => (showReschedule.value = true)),
+		cancelDelivery: act(() => (showCancel.value = true)),
+		sendAgain: act(() => (showRetry.value = true)),
+		tryAgainNow: act(() => retryNow.submit()),
+		remove: act(() => dismissMail.submit()),
+	})
 }
 
 const openDrafts = () => {
@@ -375,7 +408,7 @@ const onActionError = (error: { messages?: string[]; message?: string }) => {
 	raiseToast(error.messages?.[0] || error.message || __('Request failed.'), 'error')
 	// The action may have failed because the email already went out; reflect the
 	// reconciled state either way.
-	submissions.reload()
+	refresh()
 }
 
 const rescheduleMail = createResource({
@@ -386,7 +419,7 @@ const rescheduleMail = createResource({
 		send_at,
 	}),
 	onSuccess: (data: { send_at: string }) => {
-		submissions.reload()
+		refresh()
 		raiseToast(__('Delivery rescheduled to {0}.', [formatDateTime(data.send_at)]))
 	},
 	onError: onActionError,
@@ -397,7 +430,7 @@ const sendNow = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
 		showSendNow.value = false
-		submissions.reload()
+		refresh()
 		raiseToast(__('Message sent.'))
 	},
 	onError: onActionError,
@@ -408,7 +441,7 @@ const retryMail = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
 		showRetry.value = false
-		submissions.reload()
+		refresh()
 		raiseToast(__('Message sent.'))
 	},
 	onError: onActionError,
@@ -418,7 +451,7 @@ const retryNow = createResource({
 	url: 'suite.mail.api.scheduled.retry_delivery_now',
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: () => {
-		submissions.reload()
+		refresh()
 		raiseToast(__('Delivery attempt scheduled.'))
 	},
 	onError: onActionError,
@@ -427,7 +460,7 @@ const retryNow = createResource({
 const dismissMail = createResource({
 	url: 'suite.mail.api.scheduled.dismiss_failed_mail',
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
-	onSuccess: () => submissions.reload(),
+	onSuccess: () => refresh(),
 	onError: onActionError,
 })
 
@@ -436,7 +469,7 @@ const cancelSchedule = createResource({
 	makeParams: () => ({ account: store.accountId, id: selected.value?.id }),
 	onSuccess: (data: { id?: string }) => {
 		showCancel.value = false
-		submissions.reload()
+		refresh()
 		// No message was moved when the email had been deleted — don't point at Drafts.
 		if (!data.id) return raiseToast(__('Delivery cancelled.'), 'success')
 		raiseToast(

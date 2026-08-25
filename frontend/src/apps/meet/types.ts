@@ -15,6 +15,7 @@ export interface ParticipantPreview {
 }
 
 export interface PresenceTokenResponse {
+	restricted_preview?: boolean;
 	auth_token?: string;
 	sfu_url?: string;
 	sfu_port?: number;
@@ -38,6 +39,7 @@ export interface PresenceParticipant {
 export interface PresenceParticipantsResponse {
 	success: boolean;
 	participants?: PresenceParticipant[];
+	isCurrentUserPresent?: boolean;
 	error?: string;
 }
 

@@ -1,7 +1,5 @@
 import { computed, h } from 'vue'
 import { RouterLink } from 'vue-router'
-import { LayoutGrid } from 'lucide-vue-next'
-
 import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
 import { translate as __ } from '@/boot/translation'
 
@@ -22,7 +20,7 @@ function renderAppLink(app: SuiteAppSwitcherItem) {
 export function useAppSwitcher(currentAppId: string) {
 	return computed(() => ({
 		label: __('Apps'),
-		icon: LayoutGrid,
+		icon: 'lucide-layout-grid',
 		submenu: getAppSwitcherItems(currentAppId).map((app) => ({
 			label: app.title,
 			icon: h('img', { src: app.logo, class: '!size-6' }),

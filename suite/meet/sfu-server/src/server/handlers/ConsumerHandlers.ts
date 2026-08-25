@@ -1,7 +1,7 @@
 import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { getRoomId } from './utils';
+import { getPeerId, getRoomId } from './utils';
 
 export function registerConsumerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -23,7 +23,7 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 					transportId,
 					producerId,
 					roomId,
-					socket.userId,
+					getPeerId(socket),
 					rtpCapabilities,
 				);
 				media =
@@ -60,7 +60,7 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertConsumerAccess(
 					consumerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
 				await deps.mediasoup.closeConsumer(consumerId);
 
@@ -85,7 +85,7 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertConsumerAccess(
 					consumerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
 
 				const visible = Boolean(data.visible);
@@ -116,7 +116,7 @@ export function registerConsumerHandlers(deps: HandlerDeps) {
 				deps.mediasoup.assertConsumerAccess(
 					consumerId,
 					getRoomId(socket),
-					socket.userId,
+					getPeerId(socket),
 				);
 				const requested =
 					await deps.mediasoup.requestConsumerKeyFrame(consumerId);

@@ -109,7 +109,25 @@ const isRotatedElementWithinMarquee = (element, marqueeBounds) => {
 	return rectsOverlap(elementCorners, marqueeCorners, axes)
 }
 
+// an elbow's box is mostly empty space too, so test its segments instead
+const isElbowWithinMarquee = (element, marqueeBounds) => {
+	const points = element.points.map((point) => ({
+		x: element.left + point.x,
+		y: element.top + point.y,
+	}))
+	return points.slice(1).some((point, i) => {
+		const previous = points[i]
+		return isWithinOverlappingBounds(marqueeBounds, {
+			left: Math.min(previous.x, point.x),
+			right: Math.max(previous.x, point.x),
+			top: Math.min(previous.y, point.y),
+			bottom: Math.max(previous.y, point.y),
+		})
+	})
+}
+
 const isElementWithinMarquee = (element, marqueeBounds) => {
+	if (element.points) return isElbowWithinMarquee(element, marqueeBounds)
 	if (element.rotation) return isRotatedElementWithinMarquee(element, marqueeBounds)
 	return isWithinOverlappingBounds(marqueeBounds, getElementPosition(element.id))
 }

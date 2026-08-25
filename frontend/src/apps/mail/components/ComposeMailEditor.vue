@@ -11,9 +11,9 @@
 	<TextEditor
 		ref="textEditor"
 		editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-		:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+		:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
 		:content="editorContent"
-		:upload-function="uploadFunction"
+		:upload-function="uploadInlineImage"
 		class="flex flex-col"
 		:class="[
 			{ 'pointer-events-none opacity-50': !show },
@@ -229,6 +229,7 @@
 		<template #bottom>
 			<ComposeMailToolbar
 				:is-recipients-empty
+				:is-uploading
 				class="border-t"
 				:class="[
 					isDragging ? 'border-transparent' : '',
@@ -314,6 +315,22 @@ const toInput = useTemplateRef('toInput')
 const ccInput = useTemplateRef('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 
+const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
+const pendingInlineUploads = ref(0)
+const isUploading = computed(
+	() => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
+)
+
+const uploadInlineImage = async (file: File) => {
+	pendingInlineUploads.value++
+	try {
+		return await uploadFunction(file)
+	} finally {
+		pendingInlineUploads.value--
+	}
+}
+const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
+
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
 // to this dialog stays here: the contact picker, drag-and-drop, and the in-thread draft actions.
@@ -347,6 +364,7 @@ const {
 	onDiscardUnsaved: () => emit('discardMail'),
 	onDiscardStarted: () => emit('discardStarted'),
 	host: () => textEditor.value,
+	isUploading: () => isUploading.value,
 	// The dialog holds the rest of the page inert, so the mention dropdown has to render inside it
 	// rather than at <body>, where it would be unreachable.
 	mentionContainer: () =>
@@ -517,8 +535,6 @@ const handleDrop = (e: DragEvent) => {
 	const files = Array.from(e.dataTransfer?.files ?? [])
 	uploadFiles(files)
 }
-
-const fileUploads = ref<ReturnType<typeof useFileUpload>[]>([])
 
 const uploadFiles = async (files: File[]) => {
 	if (!files.length) return

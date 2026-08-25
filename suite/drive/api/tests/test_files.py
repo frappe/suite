@@ -222,6 +222,30 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertEqual(len(staged_files), 1)
             self.assertEqual(staged_files[0].parent, storage_root / ".uploads")
 
+    def test_upload_removes_temp_file_on_quota_rejection(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                patch(
+                    "suite.drive.api.files.validate_quota",
+                    side_effect=ValueError("You're out of storage!"),
+                ),
+                self.upload_request(b"contents", "upload.txt", session=None),
+                self.assertRaises(ValueError),
+            ):
+                upload_file(total_file_size=8, parent=self.folder.name)
+
+            staged_files = list((storage_root / ".uploads").iterdir())
+            self.assertEqual(staged_files, [])
+
     def test_chunked_upload_without_session_is_rejected_before_writing(self):
         with TemporaryDirectory() as temp_dir:
             storage_root = Path(temp_dir) / "private" / "files"

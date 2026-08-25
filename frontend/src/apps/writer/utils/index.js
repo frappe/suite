@@ -265,8 +265,8 @@ export function printDoc(html, settings = {}) {
               <style>${editorStyle}</style>
               <style>
               @page {
-                margin: 1.25cm 0.5cm;
-                
+                margin: 1.25cm 2.5cm;
+
                 @top-left {
                   content: "${settings?.print_header_left || ''}";  
                   font-family: ${fontFamily};
@@ -307,12 +307,12 @@ export function printDoc(html, settings = {}) {
                 }
                 div[data-page-break='true'] {
                   border: none;
-                  margin: none;
+                  margin: 0;
                 }
               </style>
               </head>
               <body>
-                <div class="ProseMirror prose prose-sm prose-v3" style='padding-left: 40px; padding-right: 40px; padding-top: 20px; padding-bottom: 20px; margin: 0; ${editorVars}'>
+                <div class="ProseMirror prose prose-sm prose-v3" style='max-width: ${settings?.wide ? '100ch' : '48rem'}; margin: 0 auto; padding-top: 20px; padding-bottom: 20px; ${editorVars}'>
                   ${highlightedHtml}
                 </div>
               </body>

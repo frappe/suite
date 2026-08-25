@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useShortcut } from 'frappe-ui'
 
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
@@ -19,9 +19,11 @@ import {
 import {
 	resetFocus,
 	exitTextEditing,
+	startTextEditing,
 	focusElementId,
 	addTextElement,
 	pendingShapeType,
+	pendingShapePreset,
 	selectAllElements,
 	activeElementIds,
 	activeElements,
@@ -37,7 +39,7 @@ import {
 	performPreviousStep,
 } from '@/apps/slides/stores/slideshow'
 
-import { markDirty } from '@/apps/slides/stores/saving'
+import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
 import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 
 const { toggleNavigationPanel } = useNavigationPanel()
@@ -52,28 +54,25 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	const hasElements = () => activeElementIds.value.length > 0
 	const hasActiveTextEditor = () => hasElements() && !!activeEditor.value
 
-	const nudge = (key) => {
+	const nudge = (key, step = 1) => {
 		if (isSelectionLocked.value) return
 
 		let dx = 0
 		let dy = 0
 
-		if (key == 'ArrowLeft') dx = -1
-		else if (key == 'ArrowRight') dx = 1
-		else if (key == 'ArrowUp') dy = -1
-		else if (key == 'ArrowDown') dy = 1
+		if (key == 'ArrowLeft') dx = -step
+		else if (key == 'ArrowRight') dx = step
+		else if (key == 'ArrowUp') dy = -step
+		else if (key == 'ArrowDown') dy = step
+
+		interactionOffset.left = dx
+		interactionOffset.top = dy
+		commitInteraction()
 
 		updateSelectionBounds({
 			left: selectionBounds.left + dx,
 			top: selectionBounds.top + dy,
 		})
-
-		activeElements.value.forEach((element) => {
-			element.left += dx
-			element.top += dy
-		})
-
-		markDirty()
 	}
 
 	const isPlainInput = (e) => {
@@ -114,30 +113,32 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
 	}
 
-	const handleArrowUp = () => {
+	const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
+
+	const handleArrowUp = (e) => {
 		if (inSlideShow()) return performPreviousStep()
 		if (inReadonly()) return changeSlide(slideIndex.value - 1)
 		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowUp')
+		if (hasElements()) nudge('ArrowUp', nudgeStep(e))
 		else changeEditorSlide(slideIndex.value - 1)
 	}
 
-	const handleArrowDown = () => {
+	const handleArrowDown = (e) => {
 		if (inSlideShow()) return performNextStep()
 		if (inReadonly()) return changeSlide(slideIndex.value + 1)
 		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowDown')
+		if (hasElements()) nudge('ArrowDown', nudgeStep(e))
 		else changeEditorSlide(slideIndex.value + 1)
 	}
 
-	const handleArrowLeft = () => {
+	const handleArrowLeft = (e) => {
 		if (inSlideShow()) return performPreviousStep()
-		if (inEditMode() && hasElements()) nudge('ArrowLeft')
+		if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
 	}
 
-	const handleArrowRight = () => {
+	const handleArrowRight = (e) => {
 		if (inSlideShow()) return performNextStep()
-		if (inEditMode() && hasElements()) nudge('ArrowRight')
+		if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
 	}
 
 	const deleteElementOrSlide = (e) => {
@@ -146,6 +147,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	}
 
 	const addShape = (shapeType) => {
+		pendingShapePreset.value = {}
 		pendingShapeType.value = shapeType
 	}
 
@@ -153,6 +155,33 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 	// and matching a shortcut always prevents — so don't match while one is open
 	const hasOpenOverlay = () =>
 		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
+
+	const hasTextCapableSelection = () => {
+		if (activeElements.value.length !== 1) return false
+		const [element] = activeElements.value
+		return element.type === 'text' || (element.type === 'shape' && element.shapeType !== 'line')
+	}
+
+	const canStartTextEditing = () =>
+		inEditMode() &&
+		hasTextCapableSelection() &&
+		!focusElementId.value &&
+		!isSelectionLocked.value &&
+		!hasOpenOverlay()
+
+	// capture phase, so single-letter tool shortcuts don't fire over an editable selection
+	const handleTypeToEdit = (e) => {
+		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+		if (e.key === '?') return
+		if (isPlainInput(e) || e.target?.isContentEditable) return
+		if (!canStartTextEditing()) return
+		e.preventDefault()
+		e.stopPropagation()
+		startTextEditing(e.key)
+	}
+
+	onMounted(() => window.addEventListener('keydown', handleTypeToEdit, true))
+	onUnmounted(() => window.removeEventListener('keydown', handleTypeToEdit, true))
 
 	const handleEscape = (e) => {
 		if (isPlainInput(e)) return e.target.blur()
@@ -215,6 +244,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 
 		{
 			key: 'Enter',
+			description: 'Edit text of selected element',
+			group: 'Edit',
+			condition: canStartTextEditing,
+			handler: () => startTextEditing(),
+		},
+		{
+			key: 'Enter',
 			description: 'Add slide below',
 			group: 'Insert',
 			condition: inEditMode,
@@ -247,6 +283,13 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			group: 'Insert',
 			condition: inEditMode,
 			handler: () => addShape('line'),
+		},
+		{
+			key: 'c',
+			description: 'Add connector',
+			group: 'Insert',
+			condition: inEditMode,
+			handler: () => addShape('connector'),
 		},
 		{
 			key: 'a',
@@ -342,6 +385,38 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 		{
 			key: 'ArrowRight',
 			description: 'Move element',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowRight,
+		},
+		{
+			key: 'ArrowUp',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowUp,
+		},
+		{
+			key: 'ArrowDown',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowDown,
+		},
+		{
+			key: 'ArrowLeft',
+			shift: true,
+			description: 'Move element by 10px',
+			group: 'Edit',
+			condition: inEditMode,
+			handler: handleArrowLeft,
+		},
+		{
+			key: 'ArrowRight',
+			shift: true,
+			description: 'Move element by 10px',
 			group: 'Edit',
 			condition: inEditMode,
 			handler: handleArrowRight,

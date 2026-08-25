@@ -45,13 +45,16 @@ const showControls = computed(() => {
 	)
 })
 
+const isLine = computed(() => activeElement.value?.shapeType == 'line')
+
 const outline = computed(() => {
 	if (activeElementIds.value.length != 1) return 'none'
 
 	// a locked line keeps its outline; without handles it would have no affordance left
 	if (isSelectionLocked.value) return `${lockColor} dashed ${1.5 / slideBounds.scale}px`
 
-	if (activeElement.value?.shapeType == 'line') return 'none'
+	// a line's endpoints are all the affordance it needs
+	if (isLine.value) return 'none'
 	return `${selectionColor} solid ${1.5 / slideBounds.scale}px`
 })
 

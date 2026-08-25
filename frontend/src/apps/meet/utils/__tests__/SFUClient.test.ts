@@ -3,6 +3,7 @@ import {
 	connectionDetailsFromJoinPayload,
 	SFUClient,
 	SFURequestError,
+	SFUResponseError,
 } from "../SFUClient";
 
 const mockSignalChannel = () => ({
@@ -190,6 +191,25 @@ describe("sendRequest", () => {
 			cb({ success: false, error: "nope" }),
 		);
 		await expect(client.sendRequest("test", {})).rejects.toThrow("nope");
+	});
+
+	it("preserves structured response errors", async () => {
+		const client = createClient();
+		client.connected = true;
+		client.signalChannel.emit = vi.fn((_event, _data, cb) =>
+			cb({
+				success: false,
+				error: "already connected",
+				code: "PARTICIPANT_CONNECTION_CONFLICT",
+				details: { conflictId: "owner-1" },
+			}),
+		);
+
+		await expect(client.sendRequest("join_room", {})).rejects.toMatchObject<SFUResponseError>({
+			code: "PARTICIPANT_CONNECTION_CONFLICT",
+			details: { conflictId: "owner-1" },
+			message: "already connected",
+		});
 	});
 
 	it("rejects with TIMEOUT when an acknowledgement does not arrive", async () => {
@@ -759,6 +779,29 @@ describe("E2EE signaling payloads", () => {
 				}
 			).RTCRtpReceiver = originalReceiver;
 		}
+	});
+
+	it("includes Participant Connection ownership in join requests", async () => {
+		const client = createClient();
+		client.connected = true;
+		const sendRequest = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		await client.joinRoom(
+			"room-1",
+			{ name: "Alice" },
+			{ audio_enabled: false },
+			{ connectionId: "connection-1", conflictId: "owner-1" },
+		);
+
+		expect(sendRequest).toHaveBeenCalledWith(
+			"join_room",
+			expect.objectContaining({
+				connectionId: "connection-1",
+				conflictId: "owner-1",
+			}),
+		);
 	});
 
 	it("reports RTCRtpScriptTransform capability in join request", async () => {

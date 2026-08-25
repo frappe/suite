@@ -123,11 +123,6 @@
     text-decoration: none;
   }
 
-  .prose-sm {
-    caret-color: currentColor;
-    padding: 1rem 2.5rem;
-  }
-
   .ProseMirror pre {
     background: #0d0d0d;
     color: #fff;

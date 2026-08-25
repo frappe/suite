@@ -6,6 +6,7 @@ import { useNetworkQuality } from "../useNetworkQuality";
 describe("useNetworkQuality", () => {
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.restoreAllMocks();
 	});
 
 	const mountWithStats = (stats: unknown, transportState = "connected") => {
@@ -204,10 +205,176 @@ describe("useNetworkQuality", () => {
 		app.unmount();
 	});
 
+	it("recreates only a consumer that misses its first RTP deadline", async () => {
+		vi.useFakeTimers();
+		const recoverConsumer = vi.fn().mockResolvedValue(undefined);
+		const resetReceiveMedia = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
+		const zeroStats = new Map<string, { type: string; bytesReceived: number }>([
+			["in", { type: "inbound-rtp", bytesReceived: 0 }],
+		]);
+		const consumer = (id: string, adaptivelyPaused = false) => ({
+			id,
+			participantId: `participant-${id}`,
+			producerId: `producer-${id}`,
+			kind: "video",
+			isScreen: false,
+			adaptivelyPaused,
+			track: { muted: false } as MediaStreamTrack,
+			createdAt: Date.now() - 20_000,
+			consumer: {
+				paused: false,
+				producerPaused: false,
+				getStats: vi.fn().mockResolvedValue(zeroStats),
+			},
+		});
+		const expected = consumer("expected");
+		const hidden = consumer("hidden", true);
+		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
+			participantManager: {
+				getParticipant: () => ({ audio_enabled: true, video_enabled: true }),
+			},
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockResolvedValue({
+					rtt: 50,
+					packetLoss: 0,
+					availableOutgoingBitrate: 800_000,
+					timestamp: Date.now(),
+					isValid: true,
+				}),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [expected, hidden],
+				},
+				recoverConsumer,
+			},
+			resetReceiveMedia,
+		});
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(3000);
+
+		expect(recoverConsumer).toHaveBeenCalledOnce();
+		expect(recoverConsumer).toHaveBeenCalledWith(expected);
+		expect(requestConsumerKeyFrame).not.toHaveBeenCalled();
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		app.unmount();
+	});
+
+	it("requests a keyframe before recreating only a decode-stalled consumer", async () => {
+		vi.useFakeTimers();
+		const recoverConsumer = vi.fn().mockResolvedValue(undefined);
+		const resetReceiveMedia = vi.fn().mockResolvedValue(undefined);
+		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
+		const observeRemoteMediaProgress = vi.fn();
+		let bytesReceived = 1000;
+		const stats = () =>
+			new Map<
+				string,
+				{
+					type: string;
+					kind: string;
+					bytesReceived: number;
+					framesDecoded: number;
+				}
+			>([
+				[
+					"in",
+					{
+						type: "inbound-rtp",
+						kind: "video",
+						bytesReceived: (bytesReceived += 1000),
+						framesDecoded: 10,
+					},
+				],
+			]);
+		const entry = {
+			id: "decode-stalled",
+			participantId: "remote-participant",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+			adaptivelyPaused: false,
+			track: { muted: false } as MediaStreamTrack,
+			createdAt: Date.now() - 60_000,
+			consumer: {
+				paused: false,
+				producerPaused: false,
+				getStats: vi.fn().mockImplementation(async () => stats()),
+			},
+		};
+		const sfuManager = ref({
+			sfuClient: { requestConsumerKeyFrame },
+			observeRemoteMediaProgress,
+			participantManager: {
+				getParticipant: () => ({ video_enabled: true }),
+			},
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats: vi.fn().mockResolvedValue({
+					rtt: 50,
+					packetLoss: 0,
+					availableOutgoingBitrate: 800_000,
+					timestamp: Date.now(),
+					isValid: true,
+				}),
+			},
+			mediaManager: {
+				consumerManager: {
+					getAllConsumers: () => [entry],
+					getConsumer: (id: string) => (id === entry.id ? entry : undefined),
+				},
+				recoverConsumer,
+			},
+			resetReceiveMedia,
+		});
+		const app = createApp({
+			setup: () => {
+				useNetworkQuality();
+				return () => null;
+			},
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(18_000);
+		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
+		expect(recoverConsumer).not.toHaveBeenCalled();
+		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
+			"producer-1",
+			"video",
+			true,
+			false,
+		);
+
+		await vi.advanceTimersByTimeAsync(15_000);
+		expect(recoverConsumer).toHaveBeenCalledOnce();
+		expect(recoverConsumer).toHaveBeenCalledWith(entry);
+		expect(resetReceiveMedia).not.toHaveBeenCalled();
+		app.unmount();
+	});
+
 	it("restarts only a stalled remote video consumer", async () => {
 		vi.useFakeTimers();
 
-		const resetReceiveSide = vi.fn().mockResolvedValue(undefined);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const resetReceiveSide = vi.fn().mockRejectedValue(new Error("snapshot failed"));
 		const requestConsumerKeyFrame = vi.fn().mockResolvedValue(undefined);
 
 		const track = { muted: false } as MediaStreamTrack;
@@ -292,6 +459,10 @@ describe("useNetworkQuality", () => {
 
 		await vi.advanceTimersByTimeAsync(30_000);
 		expect(resetReceiveSide).toHaveBeenCalledOnce();
+		expect(warn).toHaveBeenCalledWith(
+			"Failed to reset stalled receive media",
+			expect.any(Error),
+		);
 
 		await vi.advanceTimersByTimeAsync(21_000);
 		expect(resetReceiveSide).toHaveBeenCalledOnce();
@@ -365,6 +536,144 @@ describe("useNetworkQuality", () => {
 		expect(requestConsumerKeyFrame).toHaveBeenCalledTimes(1);
 		expect(resetReceiveSide).not.toHaveBeenCalled();
 
+		app.unmount();
+	});
+
+	it("suspends reconciliation while hidden or offline and recovers on resume", async () => {
+		vi.useFakeTimers();
+		let hidden = false;
+		let online = true;
+		vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+		vi.spyOn(navigator, "onLine", "get").mockImplementation(() => online);
+		const getNetworkStats = vi.fn().mockResolvedValue({
+			rtt: 50,
+			packetLoss: 0,
+			availableOutgoingBitrate: 800_000,
+			isValid: true,
+		});
+		const reconcileExpectedMedia = vi.fn().mockResolvedValue(undefined);
+		const recoverBrowserLifecycle = vi.fn().mockResolvedValue(undefined);
+		const sfuManager = ref({
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+				getNetworkStats,
+			},
+			mediaManager: {
+				consumerManager: { getAllConsumers: () => [] },
+			},
+			reconcileExpectedMedia,
+			recoverBrowserLifecycle,
+		});
+		const app = createApp({
+			setup: () => (useNetworkQuality(), () => null),
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		hidden = true;
+		document.dispatchEvent(new Event("visibilitychange"));
+		await vi.advanceTimersByTimeAsync(6000);
+		expect(getNetworkStats).not.toHaveBeenCalled();
+		expect(reconcileExpectedMedia).not.toHaveBeenCalled();
+
+		hidden = false;
+		document.dispatchEvent(new Event("visibilitychange"));
+		await vi.waitFor(() => expect(recoverBrowserLifecycle).toHaveBeenCalledOnce());
+		online = false;
+		window.dispatchEvent(new Event("offline"));
+		await vi.advanceTimersByTimeAsync(6000);
+		expect(getNetworkStats).not.toHaveBeenCalled();
+
+		online = true;
+		window.dispatchEvent(new Event("online"));
+		await vi.waitFor(() =>
+			expect(recoverBrowserLifecycle).toHaveBeenCalledTimes(2),
+		);
+		app.unmount();
+	});
+
+	it("uses fresh media progress baselines after visibility resumes", async () => {
+		vi.useFakeTimers();
+		let hidden = false;
+		vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+		vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+		const observeRemoteMediaProgress = vi.fn();
+		const stats = new Map([
+			[
+				"inbound",
+				{
+					type: "inbound-rtp",
+					kind: "video",
+					bytesReceived: 1000,
+					framesDecoded: 10,
+				},
+			],
+		]);
+		const entry = {
+			id: "consumer-1",
+			producerId: "producer-1",
+			participantId: "remote-1",
+			kind: "video",
+			isScreen: false,
+			adaptivelyPaused: false,
+			track: { muted: false },
+			createdAt: Date.now(),
+			consumer: {
+				paused: false,
+				producerPaused: false,
+				getStats: vi.fn().mockResolvedValue(stats),
+			},
+		};
+		const sfuManager = ref({
+			participantManager: { getParticipant: () => ({ video_enabled: true }) },
+			transportManager: {
+				getTransportStats: () => ({
+					sendTransport: { state: "connected" },
+					recvTransport: { state: "connected" },
+				}),
+			},
+			mediaManager: {
+				consumerManager: { getAllConsumers: () => [entry] },
+			},
+			observeRemoteMediaProgress,
+			reconcileExpectedMedia: vi.fn().mockResolvedValue(undefined),
+			recoverBrowserLifecycle: vi.fn().mockResolvedValue(undefined),
+		});
+		const app = createApp({
+			setup: () => (useNetworkQuality(), () => null),
+		});
+		app.provide("sfuManager", sfuManager);
+		app.mount(document.createElement("div"));
+
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
+			"producer-1",
+			"video",
+			true,
+			true,
+		);
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
+			"producer-1",
+			"video",
+			false,
+			false,
+		);
+
+		hidden = true;
+		document.dispatchEvent(new Event("visibilitychange"));
+		hidden = false;
+		document.dispatchEvent(new Event("visibilitychange"));
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
+			"producer-1",
+			"video",
+			true,
+			true,
+		);
 		app.unmount();
 	});
 });
