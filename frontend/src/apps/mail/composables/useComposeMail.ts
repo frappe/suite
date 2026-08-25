@@ -190,15 +190,23 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// empty, and is where a signature belongs.
 	const isSavedDraft = !!mailDetails?.id
 
+	// A fresh composition can open with prefilled content — a forward's header block. It rides
+	// along untouched: the signature is inserted above it, and the pristine-body comparison
+	// below includes it.
+	const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
+
 	// Swap the signature when the From identity changes — but only while the body is still the
-	// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
-	// Compared by text so the editor's HTML normalization doesn't defeat the match.
+	// auto-inserted signature (or empty/prefilled), so a message the user has written isn't
+	// overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
 	watch(
 		() => mail.from_email,
 		(val, oldVal) => {
 			if (isBodyEmpty.value && isSavedDraft) return
-			if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal)))
-				mail.html_body = buildSignature(val)
+			if (
+				isBodyEmpty.value ||
+				bodyText(mail.html_body) === bodyText(buildSignature(oldVal) + prefilledBody)
+			)
+				mail.html_body = buildSignature(val) + prefilledBody
 		},
 		{ immediate: true },
 	)

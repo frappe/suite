@@ -1199,11 +1199,12 @@ const replyAll = (mail: Mail) =>
 const forward = (mail: Mail) =>
 	createLocalDraft(mail, {
 		subject: `Fwd: ${mail.subject || ''}`,
+		html_body: getForwardHeader(mail),
 		// quoted_content, NOT html_body: content placed in the editor is re-serialized
 		// through its schema, which strips the original mail's tables/styles/attributes.
 		// Like a reply's quote, the forwarded original stays out of the editor and is
 		// concatenated back verbatim at send time.
-		quoted_content: getForwardedContent(mail),
+		quoted_content: getForwardedBody(mail),
 		attachments: mail.attachments || [],
 		forwarded_from_id: mail.id,
 		type: 'forward',
@@ -1487,10 +1488,14 @@ const getQuotedContent = (mail: Mail) =>
 		</div>
 	`
 
-const getForwardedContent = (mail: Mail) => {
+// The header is our own plain text, which the editor round-trips unharmed — so it
+// lives in html_body, visible and editable in the composer, with the signature
+// inserted above it (see useComposeMail's prefilledBody). Only the original's
+// body needs to stay out of the editor (see getForwardedBody).
+const getForwardHeader = (mail: Mail) => {
 	const recipients = getGroupedRecipients(mail.recipients, true, true)
 	return `
-		<div class="frappe_mail_fwd">
+		<div>
 			<br><br>
 			---------- Forwarded message ---------<br>
 			From: ${mail.from_name} &lt;${mail.from_email}&gt;<br>
@@ -1498,10 +1503,10 @@ const getForwardedContent = (mail: Mail) => {
 			Subject: ${mail.subject || ''}<br>
 			To: ${recipients.to}<br>
 			${recipients.cc ? `Cc: ${recipients.cc}<br>` : ''}
-			<br><br>
-			${getBodyContent(mail)}
 		</div>
 	`
 }
+
+const getForwardedBody = (mail: Mail) => `<div class="frappe_mail_fwd">${getBodyContent(mail)}</div>`
 </script>
 
