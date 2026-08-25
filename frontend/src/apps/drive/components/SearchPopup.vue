@@ -127,12 +127,16 @@ watch(search, (val) => {
     // Drop anything still pending, or it lands after the reset and repopulates
     // the list for a query the user has already backspaced away.
     searchResults.submit.cancel()
+    searchResults.abort()
     searchResults.reset()
   }
 })
 
-// A trailing call left in flight fires against a closed dialog.
-onScopeDispose(() => searchResults.submit.cancel())
+// Do not leave queued or in-flight work behind when the dialog closes.
+onScopeDispose(() => {
+  searchResults.submit.cancel()
+  searchResults.abort()
+})
 </script>
 
 <style scoped>
