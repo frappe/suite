@@ -1507,6 +1507,7 @@ const getForwardHeader = (mail: Mail) => {
 	`
 }
 
-const getForwardedBody = (mail: Mail) => `<div class="frappe_mail_fwd">${getBodyContent(mail)}</div>`
+const getForwardedBody = (mail: Mail) =>
+	`<div class="frappe_mail_fwd"><br><br>${getBodyContent(mail)}</div>`
 </script>
 
