@@ -211,6 +211,7 @@ export class SFURequestError extends Error {
 	}
 }
 
+/** Preserves structured server rejection details, including takeover generations. */
 export class SFUResponseError extends Error {
 	readonly code?: string;
 	readonly details?: ParticipantConnectionConflictDetails;

@@ -161,6 +161,10 @@ export class RoomRegistry {
 		this.participantToSender.get(roomId)?.delete(participantId);
 	}
 
+	/**
+	 * Claims the participant's active connection. A matching connectionId reconnects;
+	 * a different connection requires the incumbent generation as conflictId.
+	 */
 	acquireParticipant(
 		socket: Socket,
 		roomId: string,
@@ -213,6 +217,7 @@ export class RoomRegistry {
 		};
 	}
 
+	/** Releases ownership only when the socket still holds the current generation. */
 	releaseParticipant(
 		socket: Socket,
 		roomId: string,
@@ -233,11 +238,13 @@ export class RoomRegistry {
 		return true;
 	}
 
+	/** Returns the single active participant socket, if ownership is currently held. */
 	getParticipantSocketIds(roomId: string, participantId: string): string[] {
 		const owner = this.participantConnections.get(roomId)?.get(participantId);
 		return owner ? [owner.socket.id] : [];
 	}
 
+	/** Checks both socket identity and ownership generation to reject stale sockets. */
 	isParticipantOwner(
 		socket: Socket,
 		roomId: string,

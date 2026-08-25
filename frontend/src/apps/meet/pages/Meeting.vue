@@ -41,15 +41,26 @@
 
 		<div
 			v-if="connectionState.connectionMoved"
-			class="flex-1 flex items-center justify-center p-6"
+			class="grid flex-1 place-items-center px-5 py-16"
 		>
-			<div class="max-w-md text-center text-white">
-				<span class="lucide-monitor-smartphone mx-auto mb-4 block size-12" aria-hidden="true" />
-				<h1 class="mb-2 text-xl font-semibold">Meeting moved to another device</h1>
-				<p class="mb-6 text-ink-gray-4">
-					You joined this meeting from another device, so audio and video have stopped here.
+			<div class="flex w-full max-w-sm flex-col items-center text-center">
+				<div class="rounded-full bg-surface-gray-2 p-3 text-ink-gray-5">
+					<span class="lucide-monitor-smartphone block size-6" aria-hidden="true" />
+				</div>
+				<h1 class="mt-4 text-2xl-semibold text-ink-gray-9">
+					Meeting moved to another device
+				</h1>
+				<p class="mt-2 text-p-base text-ink-gray-6">
+					Your audio and video have stopped here because you joined from another device.
 				</p>
-				<Button variant="outline" @click="router.push('/meet')">Go home</Button>
+				<Button
+					class="mt-6"
+					variant="solid"
+					theme="gray"
+					icon-left="lucide-arrow-left"
+					label="Back to Meet"
+					@click="router.push('/meet')"
+				/>
 			</div>
 		</div>
 
