@@ -230,8 +230,8 @@ def files(
     folders. When `search` is set, results span the whole tree (not just the
     current folder).
     """
-    is_home = not entity_name
-    if is_home:
+    is_home_request = not entity_name
+    if is_home_request:
         entity_name = get_user_folder().name
 
     entity = frappe.get_doc("File", entity_name)
@@ -243,7 +243,7 @@ def files(
         )
 
     query = _get_basic_query(search)
-    if is_home:
+    if is_home_request:
         query = query.where(DriveFile.attached_to_doctype.isnull())
     if not search:
         # Folder browsing; search is tree-wide so it skips the folder filter.
