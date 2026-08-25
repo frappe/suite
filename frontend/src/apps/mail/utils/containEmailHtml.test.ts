@@ -38,6 +38,40 @@ describe('containEmailHtml', () => {
 		expect(out).toContain('<p>x</p>')
 	})
 
+	it('collapses root chains like `html > body` to the container', () => {
+		const out = containEmailHtml(
+			'<style>html > body { background-color: rgb(1, 2, 3); } html p { color: rgb(4, 5, 6); }</style><p>x</p>',
+		)
+
+		expect(out).toContain(`.${EMBED_CLASS} { background-color: rgb(1, 2, 3); }`)
+		expect(out).toMatch(new RegExp(`\\.${EMBED_CLASS}\\s+p { color: rgb\\(4, 5, 6\\); }`))
+	})
+
+	it('attaches body qualifiers directly to the container', () => {
+		const out = containEmailHtml('<style>body.dark { color: rgb(7, 8, 9); }</style><p>x</p>')
+
+		expect(out).toContain(`.${EMBED_CLASS}.dark { color: rgb(7, 8, 9); }`)
+	})
+
+	it('does not split selectors on commas inside functional pseudo-classes', () => {
+		const out = containEmailHtml(
+			'<style>:not(.a, .b) { color: rgb(1, 1, 1); } .x, .y { color: rgb(2, 2, 2); }</style><p>x</p>',
+		)
+
+		expect(out).toContain(`.${EMBED_CLASS} :not(.a, .b) { color: rgb(1, 1, 1); }`)
+		expect(out).toContain(`.${EMBED_CLASS} .x, .${EMBED_CLASS} .y { color: rgb(2, 2, 2); }`)
+	})
+
+	it('drops @import rules', () => {
+		const out = containEmailHtml(
+			'<style>@import url("https://attacker.test/track.css"); p { color: rgb(3, 3, 3); }</style><p>x</p>',
+		)
+
+		expect(out).not.toContain('@import')
+		expect(out).not.toContain('attacker.test')
+		expect(out).toContain(`.${EMBED_CLASS} p { color: rgb(3, 3, 3); }`)
+	})
+
 	it('keeps content markup untouched', () => {
 		const out = containEmailHtml(
 			'<table bgcolor="#ffffff"><tbody><tr><td style="padding: 8px">cell</td></tr></tbody></table>',

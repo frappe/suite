@@ -17,31 +17,72 @@
 export const EMBED_CLASS = 'frappe_mail_embed'
 const SCOPE = `.${EMBED_CLASS}`
 
-// A selector's leading document-root token, to be replaced by the scope itself:
-// `body`, `html`, `html body`, `:root`, including forms like `body.dark` or `body > table`.
-const ROOT_TOKEN = /^(?::root|html(?:\s+body)?|body)(?![\w-])/i
+// A leading chain of document-root tokens — `html`, `:root`, optionally ending in
+// `body` — with optional child combinators: `body`, `html body`, `html > body`,
+// `:root body`. The chain collapses into the scope itself; anything attached to
+// the last token (`body.dark`, `body > table`) stays.
+const ROOT_CHAIN = /^(?:(?::root|html)(?![\w-])\s*>?\s*)*body(?![\w-])|^(?:(?::root|html)(?![\w-])\s*>?\s*)+/i
 
 const scopeSelector = (selector: string): string => {
 	const trimmed = selector.trim()
 	if (!trimmed) return trimmed
-	const replaced = trimmed.replace(ROOT_TOKEN, SCOPE)
-	return replaced === trimmed ? `${SCOPE} ${trimmed}` : replaced
+	const replaced = trimmed.replace(ROOT_CHAIN, `${SCOPE} `).trim()
+	if (replaced === trimmed) return `${SCOPE} ${trimmed}`
+	// The chain was the whole selector, or its remainder attaches directly (`.dark`
+	// from `body.dark`): no descendant space.
+	return replaced.replace(new RegExp(`^${SCOPE} (?=[.:#[]|$)`), SCOPE)
 }
+
+// selectorText cannot be split on every comma: `:is(.a, .b)` and friends carry
+// commas of their own. Split only at parenthesis depth zero.
+const splitSelectors = (text: string): string[] => {
+	const parts: string[] = []
+	let depth = 0
+	let current = ''
+	for (const char of text) {
+		if (char === '(') depth++
+		else if (char === ')') depth--
+		if (char === ',' && depth === 0) {
+			parts.push(current)
+			current = ''
+		} else current += char
+	}
+	parts.push(current)
+	return parts
+}
+
+// Matched by the numeric type constants, not `instanceof CSS*Rule`: not every
+// environment defines all those globals, and a ReferenceError here would trip the
+// fallback and silently disable containment.
+const STYLE_RULE = 1
+const IMPORT_RULE = 3
+const MEDIA_RULE = 4
+const SUPPORTS_RULE = 12
 
 const rewriteRules = (rules: CSSRuleList): string =>
 	Array.from(rules)
 		.map((rule) => {
-			if (rule instanceof CSSStyleRule) {
-				const scoped = rule.selectorText.split(',').map(scopeSelector).join(', ')
-				return `${scoped} { ${rule.style.cssText} }`
+			if (rule.type === STYLE_RULE) {
+				const styleRule = rule as CSSStyleRule
+				const scoped = splitSelectors(styleRule.selectorText).map(scopeSelector).join(', ')
+				return `${scoped} { ${styleRule.style.cssText} }`
 			}
-			if (rule instanceof CSSMediaRule)
-				return `@media ${rule.media.mediaText} { ${rewriteRules(rule.cssRules)} }`
-			if (rule instanceof CSSSupportsRule)
-				return `@supports ${rule.conditionText} { ${rewriteRules(rule.cssRules)} }`
-			// @font-face, @keyframes, @import …: nothing selector-scoped to rewrite
+			if (rule.type === MEDIA_RULE) {
+				const mediaRule = rule as CSSMediaRule
+				return `@media ${mediaRule.media.mediaText} { ${rewriteRules(mediaRule.cssRules)} }`
+			}
+			if (rule.type === SUPPORTS_RULE) {
+				const supportsRule = rule as CSSSupportsRule
+				return `@supports ${supportsRule.conditionText} { ${rewriteRules(supportsRule.cssRules)} }`
+			}
+			// An @import is an external sheet by another door: unscopable, and a remote
+			// request the recipient's client would make on the sender's behalf. Dropped
+			// like <link rel="stylesheet">.
+			if (rule.type === IMPORT_RULE) return ''
+			// @font-face, @keyframes …: nothing selector-scoped to rewrite
 			return rule.cssText
 		})
+		.filter(Boolean)
 		.join('\n')
 
 // CSS parsing goes through the browser's CSSOM: the block is attached to the live
