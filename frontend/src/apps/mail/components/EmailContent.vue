@@ -65,7 +65,7 @@ import { Button } from 'frappe-ui'
 
 import { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
-import { useComposeMail, useTheme } from '@/apps/mail/utils/composables'
+import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import {
 	declaresFixedPalette,
@@ -82,6 +82,7 @@ const {
 const emit = defineEmits<{ trust: [] }>()
 
 const { dataTheme } = useTheme()
+const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
 const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
 
@@ -172,7 +173,7 @@ const collapseQuotes = (doc: Document) => {
 		button.dataset.hide = __('Hide trimmed content')
 		button.appendChild(label)
 		// Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
-		// inline styles, so the mobile media query can size the touch target up.
+		// inline styles, so the mobile variant can size the touch target up.
 		button.className = 'quote-toggle'
 		button.setAttribute(
 			'onclick',
@@ -290,9 +291,12 @@ const srcdoc = computed(() => {
 				}
 
 				/* A finger target on mobile — matches the app's 40px mobile buttons,
-				   with the lg radius that size takes. */
-				@media (max-width: 640px) {
-					.quote-toggle {
+				   with the lg radius that size takes. Keyed on the app's own isMobile,
+				   not an iframe media query: the iframe only knows the reading pane's
+				   width, and a desktop pane narrowed by the sidebar is not a phone. */
+				${
+					isMobile.value
+						? `.quote-toggle {
 						padding: 10px 14px;
 						gap: 8px;
 						border-radius: 10px;
@@ -300,7 +304,8 @@ const srcdoc = computed(() => {
 					.quote-toggle svg {
 						width: 14px;
 						height: 14px;
-					}
+					}`
+						: ''
 				}
 
 				.email-pixel {
@@ -397,6 +402,10 @@ const srcdoc = computed(() => {
 				// load): if the box the image got is narrower than the width its height
 				// was drawn for, shed that height. Percentage widths are left alone —
 				// fluid width against a fixed height is the author's own design.
+				// A height-only image scales its width from that height, so the width
+				// it was drawn for is the height at the bitmap's aspect — not the
+				// bitmap's own width, which a 24px logo cut from a large PNG never
+				// reaches and must not be inflated to.
 				const unsquashImages = () => {
 					document.querySelectorAll('img').forEach((img) => {
 						const authored = img.dataset.authorWidth ?? img.getAttribute('width') ?? '';
@@ -405,7 +414,7 @@ const srcdoc = computed(() => {
 						const drawn =
 							(authoredStyle.endsWith('px') && parseFloat(authoredStyle)) ||
 							parseFloat(authored) ||
-							img.naturalWidth;
+							(img.naturalHeight ? img.clientHeight * (img.naturalWidth / img.naturalHeight) : 0);
 						if (!img.clientWidth) return;
 						if (drawn > img.clientWidth + 1) {
 							// Stash before overwriting, so widening the pane can undo this too.
