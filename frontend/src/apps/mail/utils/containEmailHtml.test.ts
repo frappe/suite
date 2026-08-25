@@ -53,6 +53,16 @@ describe('containEmailHtml', () => {
 		expect(out).toContain(`.${EMBED_CLASS}.dark { color: rgb(7, 8, 9); }`)
 	})
 
+	it('keeps root descendants as descendants of the container', () => {
+		const out = containEmailHtml(
+			'<style>html .container { color: rgb(1, 0, 0); } :root #content { color: rgb(2, 0, 0); } html > .message { color: rgb(3, 0, 0); }</style><p>x</p>',
+		)
+
+		expect(out).toMatch(new RegExp(`\\.${EMBED_CLASS}\\s+\\.container { color: rgb\\(1, 0, 0\\); }`))
+		expect(out).toMatch(new RegExp(`\\.${EMBED_CLASS}\\s+#content { color: rgb\\(2, 0, 0\\); }`))
+		expect(out).toMatch(new RegExp(`\\.${EMBED_CLASS}\\s+> \\.message { color: rgb\\(3, 0, 0\\); }`))
+	})
+
 	it('does not split selectors on commas inside functional pseudo-classes', () => {
 		const out = containEmailHtml(
 			'<style>:not(.a, .b) { color: rgb(1, 1, 1); } .x, .y { color: rgb(2, 2, 2); }</style><p>x</p>',

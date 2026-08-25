@@ -19,9 +19,11 @@ const SCOPE = `.${EMBED_CLASS}`
 
 // A leading chain of document-root tokens — `html`, `:root`, optionally ending in
 // `body` — with optional child combinators: `body`, `html body`, `html > body`,
-// `:root body`. The chain collapses into the scope itself; anything attached to
-// the last token (`body.dark`, `body > table`) stays.
-const ROOT_CHAIN = /^(?:(?::root|html)(?![\w-])\s*>?\s*)*body(?![\w-])|^(?:(?::root|html)(?![\w-])\s*>?\s*)+/i
+// `:root body`. The chain collapses into the scope itself. The match ends AT the
+// last root token, never consuming what follows it: an attached qualifier
+// (`body.dark`) glues onto the scope, while a descendant or child combinator
+// (`html .container`, `html > .message`) keeps its separator.
+const ROOT_CHAIN = /^(?:(?::root|html)(?![\w-])\s*>?\s*)*body(?![\w-])|^(?::root|html)(?![\w-])(?:\s*>?\s*(?::root|html)(?![\w-]))*/i
 
 const scopeSelector = (selector: string): string => {
 	const trimmed = selector.trim()
