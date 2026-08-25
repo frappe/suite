@@ -582,6 +582,7 @@ import {
 	raiseToast,
 	shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
+import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
@@ -1198,7 +1199,11 @@ const replyAll = (mail: Mail) =>
 const forward = (mail: Mail) =>
 	createLocalDraft(mail, {
 		subject: `Fwd: ${mail.subject || ''}`,
-		html_body: getForwardedContent(mail),
+		// quoted_content, NOT html_body: content placed in the editor is re-serialized
+		// through its schema, which strips the original mail's tables/styles/attributes.
+		// Like a reply's quote, the forwarded original stays out of the editor and is
+		// concatenated back verbatim at send time.
+		quoted_content: getForwardedContent(mail),
 		attachments: mail.attachments || [],
 		forwarded_from_id: mail.id,
 		type: 'forward',
@@ -1464,7 +1469,10 @@ const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || ma
 // a plain-text mail used to hand the recipient the sender's prose in monospace that never
 // wrapped. plainTextToHtml keeps the line breaks without asking for that.
 const getBodyContent = (mail: Mail) => {
-	if (hasHtmlContent(mail.html_body)) return mail.html_body
+	// Contained, not verbatim: the original's body/html style rules would otherwise
+	// repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+	// bleeding over the sender's own text).
+	if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body)
 	const text = getPlainTextBody(mail)
 	return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
@@ -1485,7 +1493,7 @@ const getForwardedContent = (mail: Mail) => {
 		<div class="frappe_mail_fwd">
 			<br><br>
 			---------- Forwarded message ---------<br>
-			From: ${mail.from_name} < ${mail.from_email} ><br>
+			From: ${mail.from_name} &lt;${mail.from_email}&gt;<br>
 			Date: ${dayjs(mail.received_at).format('ddd, MMM D, YYYY [at] h:mm A')}<br>
 			Subject: ${mail.subject || ''}<br>
 			To: ${recipients.to}<br>

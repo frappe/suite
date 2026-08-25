@@ -210,7 +210,9 @@ export const extractQuotedContent = (htmlBody?: string) => {
 	const doc = parser.parseFromString(htmlBody, 'text/html')
 
 	const topLevelDiv = Array.from(doc.body.children).find(
-		(el) => el.tagName.toLowerCase() === 'div' && el.classList.contains('frappe_mail_quote'),
+		(el) =>
+			el.tagName.toLowerCase() === 'div' &&
+			(el.classList.contains('frappe_mail_quote') || el.classList.contains('frappe_mail_fwd')),
 	)
 
 	let quoted_content = ''
