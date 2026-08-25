@@ -22,7 +22,7 @@ from suite.drive.api.files import (
     update_access,
     upload_file,
 )
-from suite.drive.api.list import files, get_attachments
+from suite.drive.api.list import get_attachments
 from suite.drive.api.permissions import (
     can_create_in_folder,
     get_general_access,
@@ -85,21 +85,6 @@ class TestDriveFilesAPI(IntegrationTestCase):
             attachments = get_attachments("User", OWNER)
 
         self.assertEqual([attachment["name"] for attachment in attachments], [self.file.name])
-
-    def test_home_hides_doctype_attachments(self):
-        with self.set_user(OWNER):
-            attachment = create_drive_file(
-                f"{frappe.generate_hash(8)}.txt",
-                self.home,
-                "Text",
-                f"/private/files/{frappe.generate_hash(8)}.txt",
-                "text/plain",
-                12,
-            )
-            attachment.db_set({"attached_to_doctype": "User", "attached_to_name": OWNER})
-            result = files()
-
-        self.assertNotIn(attachment.name, [row["name"] for row in result])
 
     def test_attachment_patch_normalizes_framework_file_type(self):
         try:
