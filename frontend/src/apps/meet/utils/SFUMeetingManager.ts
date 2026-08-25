@@ -14,6 +14,7 @@ import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
 import type { SFUClient } from "./SFUClient";
 import type { User } from "../composables/useCurrentUser";
+import type { JoinRoomMediaState, JoinUserData } from "../types";
 import {
 	ParticipantConnection,
 	type ParticipantConnectionStartOptions,
@@ -155,6 +156,13 @@ export class SFUMeetingManager {
 		options: ParticipantConnectionStartOptions,
 	): Promise<ParticipantConnectionState> {
 		return this.connectionManager.start(options);
+	}
+
+	rejoinParticipantConnection(
+		userData: JoinUserData,
+		mediaState: JoinRoomMediaState,
+	): Promise<boolean> {
+		return this.connectionManager.joinRoom(userData, mediaState);
 	}
 
 	reconcileExpectedMedia(): Promise<void> {
