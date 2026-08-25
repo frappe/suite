@@ -358,11 +358,13 @@ async function loadMore() {
 // survives both orders, and the layout swap the registry exists for.
 const NEAR_BOTTOM_PX = 200
 
-const onHostScroll = () => {
+const onHostScroll = async () => {
   const el = scrollHost.value
   if (!el) return
   if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) return
-  loadMore()
+  await loadMore()
+  await nextTick()
+  fillViewport()
 }
 
 // A page can also arrive too short to scroll — 50 rows in a tall window, or a
@@ -374,7 +376,7 @@ const fillViewport = async () => {
     const el = scrollHost.value
     if (epoch !== queryEpoch) return
     if (!el || !hasNextPage.value || loadingMore.value) return
-    if (el.scrollHeight > el.clientHeight + NEAR_BOTTOM_PX) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) return
     const before = pageStart.value
     await loadMore()
     if (pageStart.value === before) return
@@ -389,9 +391,10 @@ watch(
   },
   { immediate: true }
 )
-onBeforeUnmount(() =>
+onBeforeUnmount(() => {
+  queryEpoch++
   scrollHost.value?.removeEventListener('scroll', onHostScroll)
-)
+})
 
 watch(
   [verifyAccess, () => props.getEntities],

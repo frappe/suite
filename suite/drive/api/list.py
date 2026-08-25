@@ -4,6 +4,7 @@ from collections import Counter
 import frappe
 from pypika import Criterion, CustomFunction, Order
 from pypika import functions as fn
+from pypika.terms import ExistsCriterion
 
 from suite.drive.utils import (
     FILE_FIELDS,
@@ -76,7 +77,8 @@ def _apply_shared_filter(query, shared_type):
     cond = (DrivePermission.entity == DriveFile.name) & match & (DrivePermission.deny == 0)
     # Structural folders are scaffolding, not something anyone shared.
     cond = cond & DriveFile.name.notin([ROOT_FOLDER, USERS_FOLDER])
-    return query.right_join(DrivePermission).on(cond)
+    shared_file = frappe.qb.from_(DrivePermission).select(1).where(cond)
+    return query.where(ExistsCriterion(shared_file))
 
 
 def _apply_file_kinds_filter(query, file_kinds):
@@ -375,12 +377,6 @@ def trash(
     )
 
 
-# Ceiling on the raw windows one paginated call will walk looking for visible
-# rows. Without it a folder whose rows are nearly all denied would scan the whole
-# table, running the per-row access check on every one. On hitting the cap we
-# report has_next=True, which is the safe direction: it costs at most one extra
-# request rather than hiding rows.
-MAX_SCAN_WINDOWS = 20
 # Window used when a paginated caller passes no explicit limit.
 MAX_PAGE_SIZE = 100
 
@@ -448,12 +444,21 @@ def get_query_data(
             query.right_join(Recents)
             .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
             .orderby(Recents.last_interaction, order=Order.desc)
+            .orderby(DriveFile.name, order=Order.asc)
         )
     else:
+        sort_field = (
+            fn.Coalesce(DriveFile.file_modified, DriveFile.modified)
+            if order_by == "modified"
+            else DriveFile[order_by]
+        )
+        sort_order = Order.asc if ascending else Order.desc
         query = (
             query.left_join(Recents)
             .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
-            .orderby(DriveFile[order_by], order=Order.asc if ascending else Order.desc)
+            .orderby(sort_field, order=sort_order)
+            .orderby(DriveFile.file_name, order=sort_order)
+            .orderby(DriveFile.name, order=Order.asc)
         )
 
     query = query.select(Recents.last_interaction.as_("accessed"))
@@ -464,7 +469,7 @@ def get_query_data(
     if not paginated:
         if limit:
             query = query.limit(int(limit)).offset(int(start or 0))
-        return _visible_rows(query.run(as_dict=True), entity_name, shared_type, set())
+        return _visible_rows(query.run(as_dict=True), entity_name)
 
     # Paginated: walk raw SQL windows until we have a full page of rows the caller
     # can actually see, or the query is exhausted. `has_next` must never be derived
@@ -473,11 +478,10 @@ def get_query_data(
     # an empty page into proof that something is there. See test_list.py.
     window = int(limit) if limit else MAX_PAGE_SIZE
     cursor = int(start or 0)
-    seen: set[str] = set()
     rows: list = []
     exhausted = False
 
-    for _ in range(MAX_SCAN_WINDOWS):
+    while not exhausted and len(rows) < window:
         # Only ask for what the page still needs, so a page never overshoots
         # `limit` and `next_start` stays exact.
         need = window - len(rows)
@@ -485,30 +489,14 @@ def get_query_data(
         cursor += len(batch)
         if len(batch) < need:
             exhausted = True
-        rows.extend(_visible_rows(batch, entity_name, shared_type, seen))
-        if exhausted or len(rows) >= window:
-            break
+        rows.extend(_visible_rows(batch, entity_name))
 
     return {"rows": rows, "has_next": not exhausted, "next_start": cursor}
 
 
-def _visible_rows(res, entity_name, shared_type, seen):
-    """
-    Enrich a batch of raw rows and drop the ones the caller cannot read.
-
-    `seen` carries dedupe state across batches, so a file reachable by two share
-    paths is dropped even when the duplicates straddle a window boundary.
-    """
+def _visible_rows(res, entity_name):
+    """Enrich raw rows and drop the ones the caller cannot read."""
     default = get_default_access(entity_name) if entity_name else 0
-
-    # Deduplicate results
-    if shared_type:
-        filtered_list = []
-        for r in res:
-            if r["name"] not in seen:
-                filtered_list.append(r)
-            seen.add(r["name"])
-        res = filtered_list
 
     # Get aggregated data, scoped to the files we're returning
     names = [r["name"] for r in res]

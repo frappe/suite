@@ -348,6 +348,7 @@ describe('GenericPage pagination', () => {
     expect(frappeUI.request).toHaveBeenCalledTimes(1)
 
     getEntities.setData.mockClear()
+    ;(el as unknown as { scrollTop: number }).scrollTop = 0
     emitter.emit('refresh') // a new query starts under the in-flight page
 
     release({ message: { rows: [{ name: 'stale' }], has_next: true, next_start: 999 } })
@@ -355,6 +356,53 @@ describe('GenericPage pagination', () => {
     await nextTick()
 
     expect(getEntities.setData).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('discards a page that lands after unmount', async () => {
+    const el = makeHost()
+    host.el = ref(el)
+    const { app, getEntities } = mountPaginated({
+      rows: [{ name: 'a', file_name: 'A' }],
+      has_next: true,
+      next_start: 50,
+    })
+    await nextTick()
+
+    let release: (v: unknown) => void = () => {}
+    frappeUI.request.mockReturnValue(new Promise((r) => (release = r)))
+    await scrollTo(el, 2300)
+    app.unmount()
+
+    release({ message: { rows: [{ name: 'stale' }], has_next: false, next_start: 51 } })
+    await nextTick()
+
+    expect(getEntities.setData).not.toHaveBeenCalled()
+  })
+
+  it('keeps paging after a loaded page still leaves the viewport near the bottom', async () => {
+    const el = makeHost({ scrollHeight: 3000, clientHeight: 800 })
+    host.el = ref(el)
+    const { app } = mountPaginated({
+      rows: [{ name: 'a', file_name: 'A' }],
+      has_next: true,
+      next_start: 50,
+    })
+    await nextTick()
+
+    frappeUI.request
+      .mockResolvedValueOnce({
+        message: { rows: [{ name: 'b', file_name: 'B' }], has_next: true, next_start: 51 },
+      })
+      .mockResolvedValueOnce({
+        message: { rows: [{ name: 'c', file_name: 'C' }], has_next: false, next_start: 52 },
+      })
+
+    await scrollTo(el, 2100)
+    await nextTick()
+    await nextTick()
+
+    expect(frappeUI.request).toHaveBeenCalledTimes(2)
     app.unmount()
   })
 

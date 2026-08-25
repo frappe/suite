@@ -83,6 +83,15 @@ class TestDriveListPagination(IntegrationTestCase):
         self.assertEqual(len(page["rows"]), 4)
         self.assertTrue(page["has_next"])
 
+    def test_pages_use_the_modified_value_returned_to_the_client(self):
+        with self.set_user(OWNER):
+            frappe.db.set_value("File", self.files[0].name, "file_modified", "2020-01-01 00:00:00")
+            frappe.db.set_value("File", self.files[1].name, "file_modified", "2030-01-01 00:00:00")
+            page = self._list(limit=10, order_by="modified", ascending=False)
+
+        modified = [row["modified"] for row in page["rows"]]
+        self.assertEqual(modified, sorted(modified, reverse=True))
+
     def test_exhausted_query_reports_end(self):
         with self.set_user(OWNER):
             page = self._list(limit=50)
@@ -98,6 +107,8 @@ class TestDriveListPagination(IntegrationTestCase):
         page into proof that files are there — an existence oracle over content
         the caller is explicitly denied.
         """
+        with self.set_user(OWNER):
+            self.files.extend(self._make_file(i) for i in range(10, 25))
         self._share_folder_denying(self.files)
 
         with self.set_user(VIEWER):
