@@ -43,7 +43,12 @@ export function useMeetingPreviewPresence(meetingId: string) {
 		params: { meeting_id: meetingId },
 		auto: false,
 		onSuccess(data: PresenceTokenResponse) {
-			if (data && (data.auth_token || data.sfu_url)) {
+			if (data.restricted_preview) {
+				hasFetchedParticipants.value = true;
+				return;
+			}
+
+			if (data.auth_token || data.sfu_url) {
 				connectToSFU(data);
 			} else {
 				error.value = data.error || "Failed to get presence token";

@@ -11,7 +11,7 @@
     },
     {
       "path": "frontend/src/apps/meet/types.ts",
-      "line": 116,
+      "line": 117,
       "column": 13,
       "rule": "MTP001",
       "lineText": "): value is Record<string, unknown> {",
