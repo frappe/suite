@@ -63,14 +63,10 @@ const splitSelectors = (text: string): string[] => {
 	return parts
 }
 
-// Matched by the numeric type constants, not `instanceof CSS*Rule`: not every
-// environment defines all those globals, and a ReferenceError here would trip the
+// Matched by the numeric type constant, not `instanceof CSSStyleRule`: not every
+// environment defines that global, and a ReferenceError here would trip the
 // fallback and silently disable containment.
 const STYLE_RULE = 1
-const IMPORT_RULE = 3
-const MEDIA_RULE = 4
-const FONT_FACE_RULE = 5
-const SUPPORTS_RULE = 12
 
 const rewriteRules = (rules: CSSRuleList): string =>
 	Array.from(rules)
@@ -80,21 +76,20 @@ const rewriteRules = (rules: CSSRuleList): string =>
 				const scoped = splitSelectors(styleRule.selectorText).map(scopeSelector).join(', ')
 				return `${scoped} { ${styleRule.style.cssText} }`
 			}
-			if (rule.type === MEDIA_RULE) {
-				const mediaRule = rule as CSSMediaRule
-				return `@media ${mediaRule.media.mediaText} { ${rewriteRules(mediaRule.cssRules)} }`
+			// Any grouping rule — @media, @supports, @layer, @container, … — keeps its
+			// prelude and has its contents passed back through this rewrite, so nothing
+			// nested escapes scoping or filtering.
+			const inner = (rule as { cssRules?: CSSRuleList }).cssRules
+			if (inner) {
+				const brace = rule.cssText.indexOf('{')
+				if (brace === -1) return ''
+				const body = rewriteRules(inner)
+				return body ? `${rule.cssText.slice(0, brace).trim()} { ${body} }` : ''
 			}
-			if (rule.type === SUPPORTS_RULE) {
-				const supportsRule = rule as CSSSupportsRule
-				return `@supports ${supportsRule.conditionText} { ${rewriteRules(supportsRule.cssRules)} }`
-			}
-			// @import and @font-face both reach for remote resources — a request the
-			// recipient's client would make on the sender's behalf — and carry almost no
-			// display value in mail (major clients ignore remote fonts; text falls back).
-			// Dropped like <link rel="stylesheet">.
-			if (rule.type === IMPORT_RULE || rule.type === FONT_FACE_RULE) return ''
-			// @keyframes …: nothing selector-scoped to rewrite
-			return rule.cssText
+			// Everything else is dropped, not emitted verbatim — the catch-all is how
+			// unknown constructs smuggle unscoped selectors or remote loads (@import,
+			// @font-face src) past containment. Deny by default.
+			return ''
 		})
 		.filter(Boolean)
 		.join('\n')

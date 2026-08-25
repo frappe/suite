@@ -100,6 +100,25 @@ describe('containEmailHtml', () => {
 		expect(out).toContain(`.${EMBED_CLASS} p { color: rgb(4, 4, 4); }`)
 	})
 
+	it('scopes and filters inside grouping rules', () => {
+		const out = containEmailHtml(
+			'<style>@media screen { body { color: rgb(5, 5, 5); } @font-face { font-family: "T"; src: url("https://attacker.test/m.woff2"); } }</style><p>x</p>',
+		)
+
+		expect(out).toContain('@media screen')
+		expect(out).toContain(`.${EMBED_CLASS} { color: rgb(5, 5, 5); }`)
+		expect(out).not.toContain('attacker.test')
+	})
+
+	it('drops unrecognized at-rules instead of emitting them verbatim', () => {
+		const out = containEmailHtml(
+			'<style>@keyframes spin { from { transform: rotate(0deg); } } p { color: rgb(6, 6, 6); }</style><p>x</p>',
+		)
+
+		expect(out).not.toContain('@keyframes')
+		expect(out).toContain(`.${EMBED_CLASS} p { color: rgb(6, 6, 6); }`)
+	})
+
 	it('keeps content markup untouched', () => {
 		const out = containEmailHtml(
 			'<table bgcolor="#ffffff"><tbody><tr><td style="padding: 8px">cell</td></tr></tbody></table>',
