@@ -1,7 +1,7 @@
 <template>
 	<Popover v-model:open="show" side="top" align="start" arrow>
 		<template #trigger>
-			<ToolbarButton :title="title">
+			<ToolbarButton :title="title" :show-tooltip="showTooltip">
 				<MeetInfoIcon :encrypted="isE2EEActive" />
 			</ToolbarButton>
 		</template>
@@ -39,10 +39,14 @@ import MeetInfoIcon from "../icons/MeetInfoIcon.vue";
 import ClickToCopyField from "./ClickToCopyField.vue";
 import ToolbarButton from "./ToolbarButton.vue";
 
-const props = defineProps<{
-	open?: boolean;
-	meetingId?: string;
-}>();
+const props = withDefaults(
+	defineProps<{
+		open?: boolean;
+		meetingId?: string;
+		showTooltip?: boolean;
+	}>(),
+	{ showTooltip: true },
+);
 
 const emit = defineEmits<{
 	"update:open": [value: boolean];

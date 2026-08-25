@@ -114,6 +114,7 @@
 				<MeetingInfoPopover
 					v-model:open="showMeetingInfo"
 					:meeting-id="meetingId"
+					:show-tooltip="isVisible"
 				/>
 
 				<!-- People -->
