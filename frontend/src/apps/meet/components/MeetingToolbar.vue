@@ -17,6 +17,7 @@
 				<!-- Microphone -->
 				<ToolbarButton
 					:variant="isMicOn ? 'default' : 'muted'"
+					:show-tooltip="isVisible"
 					:title="`Toggle Audio (${$platform === 'mac' ? '⌘+D' : 'Ctrl+D'})`"
 					@click="$emit('toggle-microphone')"
 				>
@@ -27,6 +28,7 @@
 				<!-- Camera -->
 				<ToolbarButton
 					:variant="isCameraOn ? 'default' : 'muted'"
+					:show-tooltip="isVisible"
 					:title="`Toggle Video (${$platform === 'mac' ? '⌘+E' : 'Ctrl+E'})`"
 					@click="$emit('toggle-camera')"
 				>
@@ -38,6 +40,7 @@
 				<ToolbarButton
 					v-if="canScreenShare()"
 					:variant="isScreenSharing ? 'muted' : 'default'"
+					:show-tooltip="isVisible"
 					title="Toggle Screen Share"
 					@click="$emit('toggle-screen-share')"
 				>
@@ -48,6 +51,7 @@
 				<!-- Raise Hand -->
 				<ToolbarButton
 					:variant="isHandRaised ? 'muted' : 'default'"
+					:show-tooltip="isVisible"
 					title="Raise Hand"
 					@click="$emit('toggle-raise-hand')"
 				>
@@ -62,6 +66,7 @@
 				>
 					<template #trigger>
 						<ToolbarButton
+							:show-tooltip="isVisible"
 							title="Reactions"
 							@click="() => {}"
 						>
@@ -78,7 +83,7 @@
 								size="lg"
 								variant="ghost"
 								label="More options"
-								tooltip="More options"
+								:tooltip="isVisible ? 'More options' : undefined"
 							>
 								<template #icon>
 									<MeetSettingsIcon />
@@ -91,6 +96,7 @@
 				<!-- End Call -->
 				<ToolbarButton
 					variant="active"
+					:show-tooltip="isVisible"
 					title="End Call"
 					@click="$emit('end-call')"
 				>
@@ -114,6 +120,7 @@
 				<ToolbarButton
 					v-if="!isMobile"
 					:active="isPeopleOpen"
+					:show-tooltip="isVisible"
 					variant="default"
 					title="Show Participants"
 					@click="$emit('toggle-people')"
@@ -129,6 +136,7 @@
 				<ToolbarButton
 					v-if="!isMobile"
 					:active="isChatOpen"
+					:show-tooltip="isVisible"
 					variant="default"
 					title="Show Chat"
 					@click="$emit('toggle-chat')"
