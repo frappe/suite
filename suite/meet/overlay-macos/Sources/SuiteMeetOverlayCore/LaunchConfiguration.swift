@@ -16,11 +16,7 @@ public struct LaunchConfiguration: Equatable, Sendable {
 		guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
 			throw LaunchConfigurationError.invalidURL
 		}
-		let values = Dictionary(
-			uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
-				item.value.map { (item.name, $0) }
-			}
-		)
+		let values = try Self.queryValues(components.queryItems ?? [])
 		guard
 			let originValue = values["origin"],
 			let origin = URL(string: originValue),
@@ -70,6 +66,20 @@ public struct LaunchConfiguration: Equatable, Sendable {
 		return leading.hasSuffix("/") ? leading : "\(leading)/"
 	}
 
+	private static func queryValues(_ items: [URLQueryItem]) throws -> [String: String] {
+		var names = Set<String>()
+		var values: [String: String] = [:]
+		for item in items {
+			guard names.insert(item.name).inserted else {
+				throw LaunchConfigurationError.duplicateParameter(item.name)
+			}
+			if let value = item.value {
+				values[item.name] = value
+			}
+		}
+		return values
+	}
+
 	private static func dimension(_ value: String?) -> Double? {
 		guard let value, let number = Double(value), number > 0, number <= 32_768 else {
 			return nil
@@ -84,4 +94,5 @@ public enum LaunchConfigurationError: Error, Equatable {
 	case invalidOrigin
 	case invalidGrant
 	case invalidProducer
+	case duplicateParameter(String)
 }

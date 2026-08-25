@@ -1993,6 +1993,65 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it("does not close a presenter's annotation board for another participant", async () => {
+		const harness = createManager();
+		const presenter = connectFullSocket(harness, {
+			id: 'owned-board-presenter-socket',
+			userId: 'owned-board-presenter',
+		});
+		const participant = connectFullSocket(harness, {
+			id: 'owned-board-participant-socket',
+			userId: 'owned-board-participant',
+		});
+		emitJoin(presenter, { userId: 'owned-board-presenter' });
+		emitJoin(participant, { userId: 'owned-board-participant' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		presenter.fire('screen_share', {
+			action: 'start_share',
+			shareData: { producerId: 'owned-board-producer' },
+		});
+		presenter.emitCalls.length = 0;
+		participant.emitCalls.length = 0;
+		vi.mocked(harness.mediasoup.assertProducerAccess).mockImplementationOnce(
+			() => {
+				throw new Error('Producer ownership mismatch');
+			},
+		);
+
+		participant.fire('screen_share', {
+			action: 'stop_share',
+			shareData: { producerId: 'owned-board-producer' },
+		});
+
+		expect(harness.mediasoup.assertProducerAccess).toHaveBeenLastCalledWith(
+			'owned-board-producer',
+			'room-1',
+			'owned-board-participant-socket',
+		);
+		expect(
+			[...presenter.emitCalls, ...participant.emitCalls].some(
+				(call) =>
+					call.event === 'annotation:board_closed' ||
+					call.event === 'screen_share_stopped',
+			),
+		).toBe(false);
+
+		const snapshotCallback = vi.fn();
+		participant.fire(
+			'annotation:get_snapshot',
+			{ producerId: 'owned-board-producer' },
+			snapshotCallback,
+		);
+		expect(snapshotCallback).toHaveBeenCalledWith({
+			success: true,
+			snapshot: expect.objectContaining({
+				producerId: 'owned-board-producer',
+				presenterId: 'owned-board-presenter',
+			}),
+		});
+	});
+
 	it('grants the presenter a non-participant desktop overlay subscription', async () => {
 		const harness = createManager();
 		const presenter = connectFullSocket(harness, {

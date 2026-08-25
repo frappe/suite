@@ -82,16 +82,20 @@ export function registerScreenShareHandlers(deps: HandlerDeps) {
 						typeof shareData?.producerId === 'string'
 							? shareData.producerId
 							: undefined;
-					if (
-						producerId &&
-						deps.registry.annotationBoards.closeBoard(roomId, producerId)
-					) {
-						deps.registry.emitAnnotation(
-							roomId,
+					if (producerId) {
+						deps.mediasoup.assertProducerAccess(
 							producerId,
-							'annotation:board_closed',
-							{ producerId },
+							getRoomId(socket),
+							getPeerId(socket),
 						);
+						if (deps.registry.annotationBoards.closeBoard(roomId, producerId)) {
+							deps.registry.emitAnnotation(
+								roomId,
+								producerId,
+								'annotation:board_closed',
+								{ producerId },
+							);
+						}
 					}
 					deps.registry.emitScreenShare(roomId, 'screen_share_stopped', {
 						participantId,

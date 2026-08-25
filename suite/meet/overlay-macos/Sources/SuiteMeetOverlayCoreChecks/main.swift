@@ -16,6 +16,20 @@ do {
 			"wss://meet.example.test/sfu/socket.io/?EIO=4&transport=websocket",
 		"WebSocket URL"
 	)
+	let duplicateURL = try require(
+		URL(
+			string: "frappe-meet-overlay://start?origin=https%3A%2F%2Fmeet.example.test&grant=first&grant=second&producerId=producer-1"
+		)
+	)
+	do {
+		_ = try LaunchConfiguration(url: duplicateURL)
+		throw CheckError.failed("duplicate query parameter")
+	} catch let error as LaunchConfigurationError {
+		try check(
+			error == .duplicateParameter("grant"),
+			"duplicate query parameter"
+		)
+	}
 
 	let event = try require(
 		SocketIOFrame.event(
