@@ -72,11 +72,13 @@ def after_install():
     from suite.drive.install import after_install as drive_after_install
     from suite.drive.install import ensure_custom_fields
     from suite.mail.install import after_install as mail_after_install
+    from suite.meet.install import after_install as meet_after_install
 
     _run("drive.ensure_custom_fields", ensure_custom_fields)
     _run("drive.after_install", drive_after_install)
     _run("mail.after_install", mail_after_install)
     _run("calendar.after_install", calendar_after_install)
+    _run("meet.after_install", meet_after_install)
 
 
 def after_migrate():

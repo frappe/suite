@@ -9,7 +9,7 @@ import time
 import frappe
 import jwt
 from frappe import _
-from frappe.rate_limiter import rate_limit
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 from suite.meet import guest_access
 from suite.meet.api.recording import get_active_recording_state
@@ -202,7 +202,7 @@ def _publish_waiting_room_updated(meeting: MeetRoom) -> None:
 
 
 @frappe.whitelist()
-@rate_limit(limit=10, seconds=60 * 60)
+@dynamic_rate_limit()
 def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
     """Create a new meeting with specified type"""
     global_settings = frappe.get_cached_doc("Meet Settings")
@@ -222,7 +222,7 @@ def create(meeting_type: str = "open", allow_guest: bool = True, title: str | No
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=10, seconds=60)
+@dynamic_rate_limit()
 def get_public_meeting_preview(meeting_id: str) -> dict:
     """Return title-only data for the meeting preview."""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
@@ -256,6 +256,7 @@ def get_sfu_connection_details(meeting_id: str) -> dict:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def join_meeting(meeting_id: str) -> dict:
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
 
@@ -313,6 +314,7 @@ def join_meeting(meeting_id: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@dynamic_rate_limit()
 def approve_join_request(meeting_id: str, user_id: str) -> dict:
     """Approve a user's join request from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
@@ -339,6 +341,7 @@ def approve_join_request(meeting_id: str, user_id: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@dynamic_rate_limit()
 def approve_all_join_requests(meeting_id: str) -> dict:
     """Approve all users' join requests from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
@@ -352,6 +355,7 @@ def approve_all_join_requests(meeting_id: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@dynamic_rate_limit()
 def reject_join_request(meeting_id: str, user_id: str) -> dict:
     """Reject a user's join request from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
@@ -410,6 +414,7 @@ def get_waiting_room(meeting_id: str) -> dict:
 
 
 @frappe.whitelist()
+@dynamic_rate_limit()
 def refresh_sfu_token(meeting_id: str) -> dict:
     """
     Refresh SFU authentication token for ongoing meetings
@@ -496,6 +501,7 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@dynamic_rate_limit()
 def join_meeting_as_guest(
     meeting_id: str,
     guest_name: str,
@@ -557,6 +563,7 @@ def join_meeting_as_guest(
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@dynamic_rate_limit()
 def get_approved_guest_connection_details(
     meeting_id: str,
     guest_id: str,
@@ -612,6 +619,7 @@ def ban_guest(meeting_id: str, guest_id: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@dynamic_rate_limit()
 def validate_guest_session(
     meeting_id: str,
     guest_id: str,
@@ -636,7 +644,7 @@ def promote_to_cohost(meeting_id: str, user_id: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=10, seconds=5 * 60)
+@dynamic_rate_limit()
 def check_meeting_access(meeting_id: str) -> dict:
     """
     Check if a meeting allows guest access without authentication
