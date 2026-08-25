@@ -95,27 +95,40 @@ const rewriteRules = (rules: CSSRuleList): string =>
 		.filter(Boolean)
 		.join('\n')
 
-// @import statements, dropped from the raw text. The rule-level filter below is
-// not enough on its own: the parsing probe attaches the sheet to the live
-// document, and browsers fetch a sheet's imports regardless of its media — the
-// remote request would fire at compose time, from the composer's own browser.
+// @import statements, dropped from the raw text before the fallback probe: the
+// probe attaches the sheet to the live document, and browsers fetch a sheet's
+// imports regardless of its media — the remote request would fire at compose
+// time, from the composer's own browser.
 const IMPORT_STATEMENT = /@import\b[^;]*;?/gi
 
-// CSS parsing goes through the browser's CSSOM: the block is attached to the live
-// document under media="not all" (parsed but never applied) just long enough to
-// read its object model back out.
-const scopeCss = (css: string): string => {
+// CSS parsing goes through the browser's CSS parser, never a hand-rolled one.
+// Preferred door: a constructable stylesheet — parsed entirely off-document, and
+// the platform itself rejects @import there, so nothing can ever be fetched.
+// Fallback (environments without replaceSync, e.g. jsdom): a <style> probe
+// attached under media="not all", with @import stripped from the text first.
+const parseCss = (css: string): CSSRuleList | null => {
+	try {
+		const sheet = new CSSStyleSheet()
+		sheet.replaceSync(css)
+		return sheet.cssRules
+	} catch {
+		// Constructable sheets unsupported (or the CSS made replaceSync throw)
+	}
+
 	const probe = document.createElement('style')
 	probe.media = 'not all'
 	probe.textContent = css.replace(IMPORT_STATEMENT, '')
 	document.head.appendChild(probe)
 	try {
-		const sheet = probe.sheet
-		if (!sheet) return ''
-		return rewriteRules(sheet.cssRules)
+		return probe.sheet?.cssRules ?? null
 	} finally {
 		probe.remove()
 	}
+}
+
+const scopeCss = (css: string): string => {
+	const rules = parseCss(css)
+	return rules ? rewriteRules(rules) : ''
 }
 
 export const containEmailHtml = (html: string): string => {
