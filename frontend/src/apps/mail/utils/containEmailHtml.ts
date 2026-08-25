@@ -33,19 +33,29 @@ const scopeSelector = (selector: string): string => {
 	return replaced.replace(new RegExp(`^${SCOPE} (?=[.:#[]|$)`), SCOPE)
 }
 
-// selectorText cannot be split on every comma: `:is(.a, .b)` and friends carry
-// commas of their own. Split only at parenthesis depth zero.
+// selectorText cannot be split on every comma: `:is(.a, .b)` carries commas of its
+// own, and so can a quoted attribute value (`[data-x="1,2"]`). Split only at
+// top level — outside parentheses, brackets and strings.
 const splitSelectors = (text: string): string[] => {
 	const parts: string[] = []
 	let depth = 0
+	let quote = ''
+	let escaped = false
 	let current = ''
 	for (const char of text) {
-		if (char === '(') depth++
-		else if (char === ')') depth--
-		if (char === ',' && depth === 0) {
+		if (escaped) escaped = false
+		else if (char === '\\') escaped = true
+		else if (quote) {
+			if (char === quote) quote = ''
+		} else if (char === '"' || char === "'") quote = char
+		else if (char === '(' || char === '[') depth++
+		else if (char === ')' || char === ']') depth--
+		else if (char === ',' && depth === 0) {
 			parts.push(current)
 			current = ''
-		} else current += char
+			continue
+		}
+		current += char
 	}
 	parts.push(current)
 	return parts
@@ -85,13 +95,19 @@ const rewriteRules = (rules: CSSRuleList): string =>
 		.filter(Boolean)
 		.join('\n')
 
+// @import statements, dropped from the raw text. The rule-level filter below is
+// not enough on its own: the parsing probe attaches the sheet to the live
+// document, and browsers fetch a sheet's imports regardless of its media — the
+// remote request would fire at compose time, from the composer's own browser.
+const IMPORT_STATEMENT = /@import\b[^;]*;?/gi
+
 // CSS parsing goes through the browser's CSSOM: the block is attached to the live
 // document under media="not all" (parsed but never applied) just long enough to
 // read its object model back out.
 const scopeCss = (css: string): string => {
 	const probe = document.createElement('style')
 	probe.media = 'not all'
-	probe.textContent = css
+	probe.textContent = css.replace(IMPORT_STATEMENT, '')
 	document.head.appendChild(probe)
 	try {
 		const sheet = probe.sheet

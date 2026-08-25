@@ -62,6 +62,14 @@ describe('containEmailHtml', () => {
 		expect(out).toContain(`.${EMBED_CLASS} .x, .${EMBED_CLASS} .y { color: rgb(2, 2, 2); }`)
 	})
 
+	it('does not split selectors on commas inside quoted attribute values', () => {
+		const out = containEmailHtml(
+			'<style>[data-x="1,2"] { color: rgb(9, 9, 9); }</style><p>x</p>',
+		)
+
+		expect(out).toContain(`.${EMBED_CLASS} [data-x="1,2"] { color: rgb(9, 9, 9); }`)
+	})
+
 	it('drops @import rules', () => {
 		const out = containEmailHtml(
 			'<style>@import url("https://attacker.test/track.css"); p { color: rgb(3, 3, 3); }</style><p>x</p>',
