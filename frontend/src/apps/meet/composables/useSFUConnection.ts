@@ -135,7 +135,7 @@ export interface SFUScreenShareData {
 interface SFUConnectionAPI {
 	sfuClient: SFUClient;
 	sfuManager: Ref<SFUMeetingManager | null>;
-	joinMeetingRoom: () => Promise<void>;
+	joinMeetingRoom: (options?: { switchHere?: boolean }) => Promise<void>;
 	handleGuestJoinResult: (
 		joinResult: JoinPayload,
 		guestName: string,
@@ -457,6 +457,7 @@ export function useSFUConnection(deps: {
 		initialIsCohost = false,
 		prefetchedDetails: ConnectionDetails | null = null,
 		conflictId?: string,
+		switchHere = false,
 	) => {
 		clientTelemetry.startSession();
 		let isHost = initialIsHost;
@@ -627,7 +628,7 @@ export function useSFUConnection(deps: {
 				connectionState.connectionError = null;
 				await manager?.cleanup();
 				if (sfuManager.value === manager) sfuManager.value = null;
-				if (!(await confirmParticipantConnectionSwitch())) {
+				if (!switchHere && !(await confirmParticipantConnectionSwitch())) {
 					connectionState.isInPreview = true;
 					return;
 				}
@@ -637,6 +638,7 @@ export function useSFUConnection(deps: {
 					initialIsCohost,
 					prefetchedDetails,
 					nextConflictId,
+					false,
 				);
 			}
 			console.error("SFU setup failed:", error);
@@ -966,7 +968,7 @@ export function useSFUConnection(deps: {
 		}
 	};
 
-	const joinMeetingRoom = async () => {
+	const joinMeetingRoom = async (options: { switchHere?: boolean } = {}) => {
 		if (joiningInProgress.value) {
 			return;
 		}
@@ -1003,6 +1005,8 @@ export function useSFUConnection(deps: {
 				!!joinResult.is_host,
 				!!joinResult.is_cohost,
 				prefetched,
+				undefined,
+				!!options.switchHere,
 			);
 
 			setupFrappeRealtimeEventListeners();

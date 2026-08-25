@@ -545,6 +545,36 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('tells a preview socket when its user already has a participant connection', async () => {
+		const harness = createManager();
+		harness.mediasoup.getRoomParticipants = vi.fn(() => []);
+		const participant = connectFullSocket(harness, {
+			id: 'participant-socket',
+			userId: 'user-1',
+		});
+		emitJoin(participant, { connectionId: 'device-1' });
+		await new Promise((r) => setImmediate(r));
+
+		const preview = connectFullSocket(harness, {
+			id: 'preview-socket',
+			scope: 'presence-preview',
+			userId: 'user-1',
+		});
+		emitJoin(preview, { userId: 'preview-1' });
+		await new Promise((r) => setImmediate(r));
+
+		const callback = vi.fn();
+		preview.fire('get_room_participants', {}, callback);
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith(
+			expect.objectContaining({
+				success: true,
+				isCurrentUserPresent: true,
+			}),
+		);
+	});
+
 	it('join_room does not add pending encrypted non-host joiners to the e2ee roster', async () => {
 		const harness = createManager();
 		const socket = connectFullSocket(harness, {

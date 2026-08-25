@@ -393,6 +393,7 @@ export interface ExistingProducersResponse extends SFUResponse {
 
 export interface RoomParticipantsResponse extends SFUResponse {
 	participants: ParticipantInfo[] | PreviewParticipantInfo[];
+	isCurrentUserPresent?: boolean;
 }
 
 export interface ProducerInfo {

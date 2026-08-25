@@ -14,6 +14,7 @@ import type {
 
 export function useMeetingPreviewPresence(meetingId: string) {
 	const participants = ref<ParticipantPreview[]>([]);
+	const isCurrentUserPresent = ref(false);
 	const error = ref<string | null>(null);
 	const hasFetchedParticipants = ref(false);
 	let socket: Socket | null = null;
@@ -136,6 +137,7 @@ export function useMeetingPreviewPresence(meetingId: string) {
 				(response: PresenceParticipantsResponse) => {
 					hasFetchedParticipants.value = true;
 					if (response.success && response.participants) {
+						isCurrentUserPresent.value = !!response.isCurrentUserPresent;
 						participants.value = response.participants.map((p) => ({
 							user_id: p.info.userId || p.user_id || p.id,
 							full_name: p.info.name || p.user_id || p.id,
@@ -210,6 +212,7 @@ export function useMeetingPreviewPresence(meetingId: string) {
 
 	return {
 		participants: readonly(participants),
+		isCurrentUserPresent: readonly(isCurrentUserPresent),
 		error: readonly(error),
 		hasFetchedParticipants: readonly(hasFetchedParticipants),
 		refresh,

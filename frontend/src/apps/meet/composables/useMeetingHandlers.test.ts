@@ -22,4 +22,15 @@ describe("useMeetingHandlers", () => {
 		expect(connectionState.connectionError).toBeNull();
 		expect(connectionState.isInPreview).toBe(true);
 	});
+
+	it("carries preview switch intent into the join", async () => {
+		const joinMeetingRoom = vi.fn().mockResolvedValue(undefined);
+		const handlers = useMeetingHandlers({
+			sfuConnection: { joinMeetingRoom },
+		} as never);
+
+		await handlers.joinMeetingFromPreview(true);
+
+		expect(joinMeetingRoom).toHaveBeenCalledWith({ switchHere: true });
+	});
 });

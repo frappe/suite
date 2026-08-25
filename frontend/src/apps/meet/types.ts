@@ -39,6 +39,7 @@ export interface PresenceParticipant {
 export interface PresenceParticipantsResponse {
 	success: boolean;
 	participants?: PresenceParticipant[];
+	isCurrentUserPresent?: boolean;
 	error?: string;
 }
 

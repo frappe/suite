@@ -71,7 +71,7 @@ export type MeetingDocLike = DocumentResource;
 interface SFUConnectionActions {
 	sfuManager: Ref<SFUMeetingManager | null>;
 	sfuClient: SFUClient;
-	joinMeetingRoom: () => Promise<void>;
+	joinMeetingRoom: (options?: { switchHere?: boolean }) => Promise<void>;
 	handleGuestJoinResult: (
 		joinResult: JoinPayload,
 		guestName: string,
@@ -112,8 +112,8 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		}
 	};
 
-	const joinMeetingFromPreview = async () => {
-		await deps.sfuConnection.joinMeetingRoom();
+	const joinMeetingFromPreview = async (switchHere = false) => {
+		await deps.sfuConnection.joinMeetingRoom({ switchHere });
 	};
 
 	const handleGuestJoinComplete = async ({

@@ -71,7 +71,9 @@ async function waitForMeetingReady(page: Page): Promise<void> {
 async function joinFromPreview(page: Page): Promise<void> {
 	const preview = page.getByRole("heading", { name: "Ready to join?" });
 	const meetingLayout = page.getByTestId("meeting-layout");
-	const joinButton = page.getByRole("button", { name: "Join Meeting" });
+	const joinButton = page.getByRole("button", {
+		name: /^(Join Meeting|Switch here)$/,
+	});
 
 	await expect(preview.or(meetingLayout)).toBeVisible({ timeout: previewTimeout });
 

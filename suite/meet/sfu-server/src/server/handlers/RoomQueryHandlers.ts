@@ -128,7 +128,15 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 					responseParticipants.length,
 					roomId,
 				);
-				callback({ success: true, participants: responseParticipants });
+				callback({
+					success: true,
+					participants: responseParticipants,
+					...(socket.scope === 'presence-preview' && {
+						isCurrentUserPresent:
+							deps.registry.getParticipantSocketIds(roomId, socket.userId)
+								.length > 0,
+					}),
+				});
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error getting room participants: %s',

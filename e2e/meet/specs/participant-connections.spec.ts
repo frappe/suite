@@ -8,7 +8,7 @@ import { expectRemoteVideoReceiving } from "../helpers/media";
 
 test.describe("Participant Connection switching", () => {
 	test(
-		"keeps the incumbent active until a device switch is confirmed",
+		"switches from the preview without a second confirmation",
 		{ tag: "@meet-group-3" },
 		async ({ hostPage, createMeeting, createParticipant }) => {
 			const meetingId = await createMeeting();
@@ -33,23 +33,7 @@ test.describe("Participant Connection switching", () => {
 				meetHostName,
 			);
 
-			const secondHostJoin = secondHostEndpoint.joinAsHost(meetingId);
-			await expect(
-				secondHostEndpoint.page.getByText("Switch to this device?", {
-					exact: true,
-				}).last(),
-			).toBeVisible();
-			await Promise.all([
-				expect(hostPage.getByTestId("meeting-layout")).toBeVisible(),
-				expectRemoteVideoReceiving(guest.page, meetHostName),
-			]);
-
-			await secondHostEndpoint.page
-				.locator("button")
-				.filter({ hasText: "Switch to this device" })
-				.last()
-				.click();
-			await secondHostJoin;
+			await secondHostEndpoint.joinAsHost(meetingId);
 			await expectRemoteTrackReplaced(
 				guest.page,
 				meetHostName,
