@@ -69,6 +69,7 @@ const splitSelectors = (text: string): string[] => {
 const STYLE_RULE = 1
 const IMPORT_RULE = 3
 const MEDIA_RULE = 4
+const FONT_FACE_RULE = 5
 const SUPPORTS_RULE = 12
 
 const rewriteRules = (rules: CSSRuleList): string =>
@@ -87,11 +88,12 @@ const rewriteRules = (rules: CSSRuleList): string =>
 				const supportsRule = rule as CSSSupportsRule
 				return `@supports ${supportsRule.conditionText} { ${rewriteRules(supportsRule.cssRules)} }`
 			}
-			// An @import is an external sheet by another door: unscopable, and a remote
-			// request the recipient's client would make on the sender's behalf. Dropped
-			// like <link rel="stylesheet">.
-			if (rule.type === IMPORT_RULE) return ''
-			// @font-face, @keyframes …: nothing selector-scoped to rewrite
+			// @import and @font-face both reach for remote resources — a request the
+			// recipient's client would make on the sender's behalf — and carry almost no
+			// display value in mail (major clients ignore remote fonts; text falls back).
+			// Dropped like <link rel="stylesheet">.
+			if (rule.type === IMPORT_RULE || rule.type === FONT_FACE_RULE) return ''
+			// @keyframes …: nothing selector-scoped to rewrite
 			return rule.cssText
 		})
 		.filter(Boolean)

@@ -90,6 +90,16 @@ describe('containEmailHtml', () => {
 		expect(out).toContain(`.${EMBED_CLASS} p { color: rgb(3, 3, 3); }`)
 	})
 
+	it('drops @font-face rules', () => {
+		const out = containEmailHtml(
+			'<style>@font-face { font-family: "T"; src: url("https://attacker.test/t.woff2"); } p { color: rgb(4, 4, 4); }</style><p>x</p>',
+		)
+
+		expect(out).not.toContain('@font-face')
+		expect(out).not.toContain('attacker.test')
+		expect(out).toContain(`.${EMBED_CLASS} p { color: rgb(4, 4, 4); }`)
+	})
+
 	it('keeps content markup untouched', () => {
 		const out = containEmailHtml(
 			'<table bgcolor="#ffffff"><tbody><tr><td style="padding: 8px">cell</td></tr></tbody></table>',
