@@ -335,6 +335,7 @@ export class SFUClient {
 	eventHandlers: Map<string, SFUEventHandler>;
 	private eventListeners: Map<string, Set<SFUEventHandler>>;
 	private tokenRefreshPromise: Promise<string> | null;
+	private tokenRefreshGeneration: number;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
 	ownSenderId: number | null;
 	private pendingRequestRejectors: Set<(error: SFURequestError) => void>;
@@ -357,6 +358,7 @@ export class SFUClient {
 		this.eventHandlers = new Map();
 		this.eventListeners = new Map();
 		this.tokenRefreshPromise = null;
+		this.tokenRefreshGeneration = 0;
 		this.tokenRefreshTimer = null;
 		this.ownSenderId = null;
 		this.pendingRequestRejectors = new Set();
@@ -563,6 +565,7 @@ export class SFUClient {
 			isHost: false,
 			isCohost: false,
 		};
+		this.tokenRefreshGeneration += 1;
 		this.tokenRefreshPromise = null;
 	}
 
@@ -621,6 +624,7 @@ export class SFUClient {
 
 		let refreshPromise = this.tokenRefreshPromise;
 		if (!refreshPromise) {
+			const refreshGeneration = this.tokenRefreshGeneration;
 			refreshPromise = (async () => {
 				try {
 					const response = requireJoinPayload(
@@ -635,6 +639,9 @@ export class SFUClient {
 						"auth_token",
 						"SFU token refresh",
 					);
+					if (refreshGeneration !== this.tokenRefreshGeneration) {
+						throw new Error("Token refresh superseded by disconnect");
+					}
 
 					const expiresInSeconds =
 						typeof response.expires_in === "number" ? response.expires_in : 3600;

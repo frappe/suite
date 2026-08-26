@@ -948,6 +948,25 @@ describe("E2EE signaling payloads", () => {
 		});
 	});
 
+	it("discards a token refresh from before disconnect", async () => {
+		let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void;
+		vi.mocked(frappeRequest).mockImplementation(
+			() => new Promise((resolve) => (resolveRefresh = resolve)),
+		);
+		const client = createClient();
+		const refresh = client.refreshToken();
+
+		client.disconnect();
+		client.connectionDetails.authToken = "current-token";
+		resolveRefresh({ auth_token: "stale-token", expires_in: 3600 });
+
+		await expect(refresh).rejects.toThrow(
+			"Token refresh superseded by disconnect",
+		);
+		expect(client.connectionDetails.authToken).toBe("current-token");
+		expect(client.signalChannel.updateAuth).not.toHaveBeenCalled();
+	});
+
 	it("setE2EERequired updates connectionDetails for the realtime-event flow", () => {
 		const client = createClient();
 		client.connectionDetails.e2eeRequired = false;
