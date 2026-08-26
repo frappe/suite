@@ -185,6 +185,7 @@
     <div v-else class="home-body">
       <div class="flex min-h-full flex-col gap-2">
       <ListView
+        class="!w-full"
         :columns="listColumns"
         :rows="listRows"
         row-key="name"
@@ -233,6 +234,7 @@
           </div>
           <ListRowItem
             v-else
+            class="min-w-0"
             :column="column"
             :row="row"
             :item="item"
