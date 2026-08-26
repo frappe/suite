@@ -180,45 +180,40 @@
       </template>
     </div>
 
-    <!-- Sheet list — Frappe UI ListView with its own internal scroll (its
-         rows region is h-full overflow-y-auto), so topbar, toolbar, column
-         header and footer stay put while rows scroll. Rows are grouped by
-         recency under the default sort; empty / no-match states go through
-         the options.emptyState contract. -->
-    <div v-else class="home-listshell">
-      <div class="home-listcol">
-      <!-- Custom flat column header — replaces ListView's built-in gray-pill
-           header (suppressed via the `:deep` rule below) with a borderless row
-           whose labels double as sort controls, matching the frappe-ui Files
-           desktop pattern. The grid template mirrors ListRow's exactly
-           (`3fr 1fr 1fr 60px`, gap-4, px-2) so labels align with row cells. -->
-      <div class="home-listhead" role="row">
-        <button
-          v-for="col in sortHeaders"
-          :key="col.key"
-          type="button"
-          class="home-listhead-cell"
-          :class="{ 'is-active': sortBy === col.key }"
-          :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
-          @click="setSort(col.key)"
-        >
-          <span class="truncate">{{ col.label }}</span>
-          <FeatherIcon
-            v-if="sortBy === col.key"
-            :name="sortDir === 'asc' ? 'arrow-up' : 'arrow-down'"
-            class="home-sort-caret"
-          />
-        </button>
-        <!-- Spacer keeps the header grid aligned with the row's 60px actions column. -->
-        <span aria-hidden="true" />
-      </div>
+    <!-- Sheet list — composed from Frappe UI's native list primitives so the
+         header, groups, rows, and empty state share one layout contract. -->
+    <div v-else class="home-body">
+      <div class="flex min-h-full flex-col gap-2">
       <ListView
-        class="h-full"
         :columns="listColumns"
         :rows="listRows"
         row-key="name"
         :options="listOptions"
       >
+        <template #default="{ showGroupedRows }">
+          <ListHeader>
+            <button
+              v-for="col in listColumns"
+              :key="col.key"
+              type="button"
+              class="flex min-w-0 items-center gap-1 text-left text-base text-ink-gray-5"
+              :class="{ 'font-medium text-ink-gray-8': sortBy === col.key }"
+              :disabled="col.key === '_actions'"
+              :aria-sort="sortBy === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined"
+              @click="col.key !== '_actions' && setSort(col.key)"
+            >
+              <span class="truncate">{{ col.label }}</span>
+              <FeatherIcon
+                v-if="sortBy === col.key"
+                :name="sortDir === 'asc' ? 'arrow-up' : 'arrow-down'"
+                class="size-3.5 shrink-0"
+              />
+            </button>
+          </ListHeader>
+          <ListGroups v-if="listRows.length && showGroupedRows" />
+          <ListRows v-else-if="listRows.length" />
+          <ListEmptyState v-else />
+        </template>
         <template #cell="{ item, row, column }">
           <div
             v-if="column.key === '_actions'"
@@ -245,7 +240,7 @@
           />
         </template>
       </ListView>
-      <div v-if="sheets.length" class="home-listfooter flex items-center justify-end gap-3">
+      <div v-if="sheets.length" class="flex items-center justify-end gap-3 border-t border-outline-gray-2 pt-2">
         <Button v-if="sheets.length < total" label="Load More" :loading="loadingMore" @click="loadMore" />
         <div class="flex items-center gap-1 text-base text-ink-gray-5">
           <span>{{ sheets.length }}</span><span>of</span><span>{{ total }}</span>
@@ -298,7 +293,15 @@
 import { ref, computed, h, onMounted, watch } from 'vue'
 import {
   Avatar, Badge, Button, Dialog, Spinner, FormControl, Dropdown, TabButtons, debounce } from 'frappe-ui'
-import { Icon as FeatherIcon, ListView, ListRowItem } from 'frappe-ui/experimental'
+import {
+  Icon as FeatherIcon,
+  ListEmptyState,
+  ListGroups,
+  ListHeader,
+  ListRows,
+  ListRowItem,
+  ListView,
+} from 'frappe-ui/experimental'
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'
@@ -426,15 +429,6 @@ const ownerTabs = [
   { label: 'All', value: 'all' },
   { label: 'My sheets', value: 'mine' },
   { label: 'Shared with me', value: 'shared' },
-]
-
-// Sort lives in the column header (not a separate dropdown): each entry is a
-// clickable header cell whose `key` is the server `order_by` keyword. Order
-// and widths mirror `listColumns`' data columns so the header aligns with rows.
-const sortHeaders = [
-  { key: 'title',    label: 'Name' },
-  { key: 'owner',    label: 'Owner' },
-  { key: 'modified', label: 'Last Modified' },
 ]
 
 // The direction a column sorts by when it first becomes active: dates read
@@ -861,120 +855,4 @@ async function duplicate(sheet) {
   color: var(--ink-gray-5);
 }
 
-/* ── List view ─────────────────────────────────────────────────────────────
-   Frappe UI's ListView owns its own header/row styling — header background,
-   gridTemplateColumns, dividers, hover. The shell bounds its height so the
-   rows region (h-full overflow-y-auto inside ListView) scrolls internally,
-   keeping the column header and ListFooter fixed.
-
-   The scroll region spans the FULL width — not a centered 1200px column — so
-   the mouse wheel scrolls the list from anywhere across the viewport and the
-   scrollbar sits at the viewport's right edge (a narrow centered scroller left
-   dead zones on wide screens where the wheel hit a non-scrollable ancestor).
-   Content is re-centered to a 1200px band by insetting the header, the rows
-   region and the footer with the shared `--list-inset` below, rather than by
-   capping the container. */
-.home-listshell {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  padding: 0 0 12px;
-}
-.home-listcol {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  /* Horizontal inset that centers content on a 1200px band, with a 32px floor
-     so narrow viewports keep a gutter. `100%` resolves against each consumer
-     (header / scroller / footer are all full-width), so they line up. */
-  --list-inset: max(32px, (100% - 1200px) / 2);
-}
-
-/* Custom flat column header — replaces ListView's built-in gray-pill header
-   (suppressed just below). The grid mirrors ListRow exactly so labels sit over
-   their columns: same `3fr 1fr 1fr 60px` template, gap-4 (1rem), px-2 (8px). */
-.home-listhead {
-  position: relative;
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 3fr 1fr 1fr 60px;
-  gap: 1rem;
-  align-items: center;
-  /* +8px matches the rows' px-2, so the header labels sit over the row cells. */
-  padding: 6px calc(var(--list-inset) + 8px);
-  margin-bottom: 4px;
-}
-/* Hairline under the header, inset to the same 1200px band as the rows (a
-   border on the full-width element would overshoot the row dividers). */
-.home-listhead::after {
-  content: '';
-  position: absolute;
-  left: var(--list-inset);
-  right: var(--list-inset);
-  bottom: 0;
-  height: 1px;
-  background: var(--outline-gray-2);
-}
-
-/* A header label doubles as a sort control: quiet by default, darker on hover,
-   and darkest with a direction caret when it's the active sort. Native button
-   chrome is reset so it reads as plain header text. */
-.home-listhead-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  letter-spacing: .01em;
-  color: var(--ink-gray-5);
-  text-align: left;
-  transition: color .12s;
-}
-.home-listhead-cell:hover      { color: var(--ink-gray-7); }
-.home-listhead-cell.is-active  { color: var(--ink-gray-8); font-weight: 500; }
-.home-sort-caret { width: 13px; height: 13px; flex-shrink: 0; }
-
-/* Suppress ListView's built-in header so only our flat sortable header shows.
-   frappe-ui's ListView exposes no per-column header slot or sort hook and
-   always renders <ListHeader>, so hiding it via its own utility classes is the
-   only seam available. The `.grid.rounded-4.bg-surface-gray-2` trio is unique to
-   ListHeader (data rows are `flex flex-col`, never all three), so this can't
-   hide a row.
-   ⚠ COUPLING: pinned to frappe-ui's ListHeader class names. If a frappe-ui
-   upgrade renames them the built-in header reappears (a duplicate header) —
-   degraded, not a crash; re-point this selector to match. */
-.home-listcol :deep(.grid.rounded-4.bg-surface-gray-2) { display: none; }
-
-/* Inset the scroll region's content (rows + group headers) to the same 1200px
-   band as the header. The padding lives on the scroller ITSELF so the scrollbar
-   stays pinned to the viewport edge while the content is centered.
-   ⚠ COUPLING: targets ListRows/ListGroups' internal `.h-full.overflow-y-auto`
-   scroll div — frappe-ui hard-codes the scroll there with no prop to hook. If
-   that changes, rows lose the centering inset (full-bleed), not the scroll. */
-.home-listcol :deep(.h-full.overflow-y-auto) {
-  padding-inline: var(--list-inset);
-}
-
-.home-listfooter {
-  position: relative;
-  flex-shrink: 0;
-  padding: 8px calc(var(--list-inset) + 4px);
-}
-/* Footer divider inset to the content band, mirroring the header hairline. */
-.home-listfooter::before {
-  content: '';
-  position: absolute;
-  left: var(--list-inset);
-  right: var(--list-inset);
-  top: 0;
-  height: 1px;
-  background: var(--outline-gray-2);
-}
 </style>
