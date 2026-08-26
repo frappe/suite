@@ -5,8 +5,13 @@
          our own — same as DropdownMenuGroup.vue. It has to stay the direct child
          of #trigger: PopoverTrigger wires the click onto it via as-child. -->
     <template #trigger="{ isOpen }">
-      <Button size="xs" variant="ghost" :icon="icon" label="Custom Spacing" tooltip="Custom Spacing"
-        class="aria-pressed:bg-surface-gray-3" :aria-pressed="isOpen" />
+      <Button size="xs" variant="ghost" aria-label="Custom Spacing" tooltip="Custom Spacing"
+        class="aria-pressed:bg-surface-gray-3" :aria-pressed="isOpen">
+        <span class="flex items-center gap-1">
+          <component :is="icon" class="size-4" />
+          <LucideChevronDown class="size-3 text-ink-gray-5" />
+        </span>
+      </Button>
     </template>
     <template #default>
       <div class="p-4 flex flex-col gap-4 w-64">
@@ -51,6 +56,7 @@
 import { reactive, computed, watch } from 'vue'
 import { Popover, Button } from 'frappe-ui'
 import { FormControl, FormLabel } from 'frappe-ui'
+import LucideChevronDown from '~icons/lucide/chevron-down'
 import {
   DEFAULT_LINE_HEIGHT,
   toCssLineHeight,

@@ -78,26 +78,48 @@ const IndentList = {
 const headingItems = [Paragraph, H1, H2, H3, H4]
 const alignItems = [AlignLeft, AlignCenter, AlignRight]
 
+// Clusters follow the reference toolbar: type & font, then character format,
+// then block format, then lists & flow, then inserts, then document tools.
 export function buildMenuButtons({ editor, settings, isPainting, openSettings }) {
   return [
-    // Heading type selector — dropdown group
+    // Block type selector — named in the trigger, like the reference's "Text".
     {
       label: 'Heading',
       icon: LucideHeading,
       component: h(DropdownMenuGroup, {
         items: headingItems,
         defaultIcon: LucideHeading,
-        defaultLabel: 'Heading',
+        defaultLabel: 'Paragraph',
+        showLabel: true,
       }),
       action: () => {},
     },
-    Separator,
+    {
+      label: 'FontOptions',
+      component: h(ManageFont, {
+        editor,
+        font_size: +settings.font_size || 15,
+        font_family: settings.font_family || 'inter',
+      }),
+      action: () => {},
+    },
     Bold,
     Italic,
     Underline,
     Strike,
-    InsertLink,
     FontColor,
+    Separator,
+    InlineCode,
+    Blockquote,
+    {
+      label: 'Page Break',
+      icon: LucideForm,
+      action: (e) => e.commands.setPageBreak(),
+    },
+    Separator,
+    BulletList,
+    OrderedList,
+    TaskListItem,
     // Alignment — dropdown group
     {
       label: 'Align',
@@ -109,6 +131,27 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
       }),
       action: () => {},
     },
+    {
+      label: 'Custom Spacing',
+      icon: LucideAlignVerticalSpacingAround,
+      component: h(SpacingDialogAsync, {
+        settings,
+        editor,
+        icon: LucideAlignVerticalSpacingAround,
+      }),
+      action: () => {},
+    },
+    DedentList,
+    IndentList,
+    Separator,
+    InsertLink,
+    InsertTable,
+    TableOfContentsItem,
+    Separator,
+    InsertImage,
+    InsertVideo,
+    InsertIframe,
+    Separator,
     {
       label: 'Paint Styles',
       icon: LucidePaintRoller,
@@ -128,52 +171,10 @@ export function buildMenuButtons({ editor, settings, isPainting, openSettings })
         e.commands.cleanStyles()
       },
     },
-    Separator,
-    {
-      label: 'FontOptions',
-      component: h(ManageFont, {
-        editor,
-        font_size: +settings.font_size || 15,
-        font_family: settings.font_family || 'inter',
-      }),
-      action: () => {},
-    },
-    Separator,
-    BulletList,
-    OrderedList,
-    TaskListItem,
-    Blockquote,
-    InlineCode,
-    Separator,
-    InsertImage,
-    InsertVideo,
-    InsertIframe,
-    Separator,
-    InsertTable,
-    TableOfContentsItem,
-    Separator,
-    {
-      label: 'Page Break',
-      icon: LucideForm,
-      action: (e) => e.commands.setPageBreak(),
-    },
-    {
-      label: 'Custom Spacing',
-      icon: LucideAlignVerticalSpacingAround,
-      component: h(SpacingDialogAsync, {
-        settings,
-        editor,
-        icon: LucideAlignVerticalSpacingAround,
-      }),
-      action: () => {},
-    },
     {
       icon: LucideSettings,
       label: 'Settings',
       action: openSettings,
     },
-    Separator,
-    DedentList,
-    IndentList,
   ]
 }
