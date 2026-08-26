@@ -879,7 +879,10 @@ export function useSFUConnection(deps: {
 		if (data?.meeting !== meetingId || data.user !== currentUserId) return;
 
 		try {
-			await Promise.all([sfuClient.refreshToken(), onCohostPromoted?.()]);
+			await Promise.all([
+				sfuClient.refreshToken({ forceNewRequest: true }),
+				onCohostPromoted?.(),
+			]);
 			toast.success("You are now a co-host");
 		} catch (error) {
 			console.error("Failed to activate co-host permissions:", error);

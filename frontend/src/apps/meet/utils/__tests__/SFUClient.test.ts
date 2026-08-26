@@ -920,13 +920,12 @@ describe("E2EE signaling payloads", () => {
 		expect(client.connectionDetails.e2eeRequired).toBe(true);
 	});
 
-	it("shares concurrent token refreshes and preserves server sync", async () => {
-		let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void;
+	it("forces a post-authorization refresh after an in-flight request", async () => {
+		const refreshResolvers: Array<
+			(value: { auth_token: string; expires_in: number }) => void
+		> = [];
 		vi.mocked(frappeRequest).mockImplementation(
-			() =>
-				new Promise((resolve) => {
-					resolveRefresh = resolve;
-				}),
+			() => new Promise((resolve) => refreshResolvers.push(resolve)),
 		);
 		const client = createClient();
 		client.connected = true;
@@ -935,15 +934,17 @@ describe("E2EE signaling payloads", () => {
 			.mockResolvedValue({ success: true });
 
 		const scheduledRefresh = client.refreshToken({ skipServerUpdate: true });
-		const promotionRefresh = client.refreshToken();
-		resolveRefresh({ auth_token: "tok-2", expires_in: 3600 });
+		const promotionRefresh = client.refreshToken({ forceNewRequest: true });
+		refreshResolvers[0]({ auth_token: "pre-promotion", expires_in: 3600 });
+		await scheduledRefresh;
+		await vi.waitFor(() => expect(frappeRequest).toHaveBeenCalledTimes(2));
+		refreshResolvers[1]({ auth_token: "post-promotion", expires_in: 3600 });
 
 		await expect(
 			Promise.all([scheduledRefresh, promotionRefresh]),
-		).resolves.toEqual(["tok-2", "tok-2"]);
-		expect(frappeRequest).toHaveBeenCalledTimes(1);
+		).resolves.toEqual(["pre-promotion", "post-promotion"]);
 		expect(sendRequestSpy).toHaveBeenCalledWith("auth:update_token", {
-			token: "tok-2",
+			token: "post-promotion",
 		});
 	});
 

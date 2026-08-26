@@ -604,9 +604,20 @@ export class SFUClient {
 	}
 
 	async refreshToken(
-		options: { skipServerUpdate?: boolean } = {},
+		options: { skipServerUpdate?: boolean; forceNewRequest?: boolean } = {},
 	): Promise<string> {
-		const { skipServerUpdate = false } = options;
+		const { skipServerUpdate = false, forceNewRequest = false } = options;
+		if (forceNewRequest && this.tokenRefreshPromise) {
+			const pendingRefresh = this.tokenRefreshPromise;
+			try {
+				await pendingRefresh;
+			} catch {
+				// A fresh request can still recover from the in-flight refresh failure.
+			}
+			if (this.tokenRefreshPromise === pendingRefresh) {
+				this.tokenRefreshPromise = null;
+			}
+		}
 
 		let refreshPromise = this.tokenRefreshPromise;
 		if (!refreshPromise) {
