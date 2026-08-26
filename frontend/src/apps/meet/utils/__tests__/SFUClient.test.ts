@@ -967,6 +967,24 @@ describe("E2EE signaling payloads", () => {
 		expect(client.signalChannel.updateAuth).not.toHaveBeenCalled();
 	});
 
+	it("does not sync a refreshed token after the connection is rebuilt", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "old-connection-token",
+			expires_in: 3600,
+		});
+		const client = createClient();
+		client.connected = true;
+		vi.mocked(client.signalChannel.updateAuth).mockImplementation(() => {
+			client.disconnect();
+		});
+		const sendRequestSpy = vi.spyOn(client, "sendRequest");
+
+		await expect(client.refreshToken()).rejects.toThrow(
+			"Token refresh superseded by disconnect",
+		);
+		expect(sendRequestSpy).not.toHaveBeenCalled();
+	});
+
 	it("setE2EERequired updates connectionDetails for the realtime-event flow", () => {
 		const client = createClient();
 		client.connectionDetails.e2eeRequired = false;

@@ -673,7 +673,11 @@ export class SFUClient {
 			void refreshPromise.then(clearRefreshPromise, clearRefreshPromise);
 		}
 
+		const serverSyncGeneration = this.tokenRefreshGeneration;
 		const authToken = await refreshPromise;
+		if (serverSyncGeneration !== this.tokenRefreshGeneration) {
+			throw new Error("Token refresh superseded by disconnect");
+		}
 		if (!skipServerUpdate && this.connected) {
 			await this.sendRequest("auth:update_token", { token: authToken });
 		} else if (!this.connected) {
