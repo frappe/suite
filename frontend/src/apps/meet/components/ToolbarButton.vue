@@ -32,7 +32,13 @@ defineEmits<{
 		theme="gray"
 		:label="title"
 		:tooltip="showTooltip ? title : undefined"
-		:class="['relative', { '!bg-surface-gray-3': active }]"
+		:class="[
+			'relative',
+			{
+				'!bg-surface-gray-3': active,
+				'!bg-surface-red-2 hover:!bg-surface-red-3': variant === 'muted',
+			},
+		]"
 		@click="$emit('click')"
 	>
 		<template #icon>
