@@ -54,7 +54,7 @@
 <script setup lang="ts">
 import { inject, ref } from 'vue'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { Button, toast, useList } from 'frappe-ui'
+import { Button, useList } from 'frappe-ui'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
@@ -107,13 +107,7 @@ const signatureOptions = (signature: MailSignature) => [
 		label: __('Delete'),
 		icon: Trash2,
 		theme: 'red',
-		onClick: async () => {
-			try {
-				await signatures.delete.submit({ name: signature.name })
-			} catch (e) {
-				toast.error(e instanceof Error ? e.message : __('Could not delete signature'))
-			}
-		},
+		onClick: () => signatures.delete.submit({ name: signature.name }),
 	},
 ]
 </script>

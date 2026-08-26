@@ -1,5 +1,5 @@
 <template>
-	<Popover @update:open="(open) => open && syncCurrentColor()">
+	<Popover bare @update:open="(open) => open && syncCurrentColor()">
 		<template #trigger>
 			<div
 				class="me-0.5 size-4 cursor-pointer rounded-1 ring-[1.5px] ring-outline-gray-2 ring-offset-1"

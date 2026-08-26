@@ -246,7 +246,7 @@
         </template>
       </ListView>
       <div v-if="sheets.length" class="home-listfooter flex items-center justify-end gap-3">
-        <Button v-if="sheets.length < total" label="Load More" @click="loadMore" />
+        <Button v-if="sheets.length < total" label="Load More" :loading="loadingMore" @click="loadMore" />
         <div class="flex items-center gap-1 text-base text-ink-gray-5">
           <span>{{ sheets.length }}</span><span>of</span><span>{{ total }}</span>
         </div>

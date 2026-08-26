@@ -253,7 +253,7 @@ export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
 			key: 'Enter',
 			description: 'Add slide below',
 			group: 'Insert',
-			condition: inEditMode,
+			condition: () => inEditMode() && !canStartTextEditing(),
 			handler: (e) => addEmptySlide(e),
 		},
 		{

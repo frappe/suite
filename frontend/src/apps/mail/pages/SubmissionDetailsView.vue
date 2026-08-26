@@ -25,7 +25,7 @@
 				v-if="actions.length"
 				:options="actions"
 				:title="__('Actions')"
-				placement="bottom-end"
+				align="end"
 			>
 				<Button variant="ghost" :title="__('Actions')" class="shrink-0 max-sm:mr-2">
 					<template #icon>
