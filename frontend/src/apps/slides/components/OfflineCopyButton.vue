@@ -130,7 +130,7 @@ const dialog = computed(() => {
 	if (status.value === 'outdated') {
 		return {
 			title: 'Update offline copy',
-			icon: { name: 'lucide-cloud-alert', theme: 'yellow' },
+			icon: { name: 'lucide-cloud-alert', theme: 'amber' },
 			message: 'New images are not saved offline yet.',
 			actions: [removeAction, { label: 'Update copy', variant: 'solid', onClick: save }],
 		}

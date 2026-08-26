@@ -160,7 +160,7 @@ async function doPurge() {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--surface-white);
+  background: var(--surface-base);
   font-family: InterVar, ui-sans-serif, system-ui, sans-serif;
   color: var(--ink-gray-9);
 }
@@ -170,7 +170,7 @@ async function doPurge() {
   gap: 16px;
   padding: 0 32px;
   height: 48px;
-  background: var(--surface-white);
+  background: var(--surface-base);
   border-bottom: 1px solid var(--outline-gray-2);
   flex-shrink: 0;
 }

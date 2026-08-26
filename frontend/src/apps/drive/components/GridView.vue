@@ -238,7 +238,7 @@ const onDragStart = (e, file) => {
   const ghost = document.createElement('div')
   ghost.textContent = `${count} items`
   ghost.className =
-    'fixed -top-full left-0 rounded-4 bg-surface-gray-7 px-2.5 py-1.5 text-sm font-medium text-ink-white shadow-lg'
+    'fixed -top-full left-0 rounded-4 bg-surface-gray-7 px-2.5 py-1.5 text-sm font-medium text-ink-base shadow-lg'
   document.body.appendChild(ghost)
   e.dataTransfer.setDragImage(ghost, -8, -8)
   requestAnimationFrame(() => ghost.remove())
