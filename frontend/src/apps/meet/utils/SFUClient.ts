@@ -334,7 +334,7 @@ export class SFUClient {
 	connectionDetails: ConnectionDetails;
 	eventHandlers: Map<string, SFUEventHandler>;
 	private eventListeners: Map<string, Set<SFUEventHandler>>;
-	isRefreshingToken: boolean;
+	private tokenRefreshPromise: Promise<string> | null;
 	tokenRefreshTimer: ReturnType<typeof setTimeout> | null;
 	ownSenderId: number | null;
 	private pendingRequestRejectors: Set<(error: SFURequestError) => void>;
@@ -356,7 +356,7 @@ export class SFUClient {
 		};
 		this.eventHandlers = new Map();
 		this.eventListeners = new Map();
-		this.isRefreshingToken = false;
+		this.tokenRefreshPromise = null;
 		this.tokenRefreshTimer = null;
 		this.ownSenderId = null;
 		this.pendingRequestRejectors = new Set();
@@ -563,7 +563,7 @@ export class SFUClient {
 			isHost: false,
 			isCohost: false,
 		};
-		this.isRefreshingToken = false;
+		this.tokenRefreshPromise = null;
 	}
 
 	// ==================== TOKEN MANAGEMENT ====================
@@ -607,56 +607,62 @@ export class SFUClient {
 		options: { skipServerUpdate?: boolean } = {},
 	): Promise<string> {
 		const { skipServerUpdate = false } = options;
-		if (this.isRefreshingToken) {
-			return "";
+
+		let refreshPromise = this.tokenRefreshPromise;
+		if (!refreshPromise) {
+			refreshPromise = (async () => {
+				try {
+					const response = requireJoinPayload(
+						await frappeRequest({
+							url: "suite.meet.api.meeting.refresh_sfu_token",
+							params: { meeting_id: this.connectionDetails.meetingId },
+						}),
+						"SFU token refresh",
+					);
+					const authToken = requireString(
+						response.auth_token,
+						"auth_token",
+						"SFU token refresh",
+					);
+
+					const expiresInSeconds =
+						typeof response.expires_in === "number" ? response.expires_in : 3600;
+
+					this.connectionDetails.authToken = authToken;
+					this.connectionDetails.tokenExpiresAt =
+						Date.now() + expiresInSeconds * 1000;
+					this.connectionDetails.codecStrategy = normalizeCodecStrategy(
+						response.codec_strategy || this.connectionDetails.codecStrategy,
+					);
+					this.connectionDetails.e2eeRequired =
+						this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
+
+					this.signalChannel.updateAuth(authToken);
+					this.scheduleTokenRefresh();
+
+					return authToken;
+				} catch (error) {
+					console.warn("Token refresh failed:", error);
+					throw error;
+				}
+			})();
+			this.tokenRefreshPromise = refreshPromise;
+			const clearRefreshPromise = () => {
+				if (this.tokenRefreshPromise === refreshPromise) {
+					this.tokenRefreshPromise = null;
+				}
+			};
+			void refreshPromise.then(clearRefreshPromise, clearRefreshPromise);
 		}
 
-		try {
-			this.isRefreshingToken = true;
-
-		const response = requireJoinPayload(await frappeRequest({
-				url: "suite.meet.api.meeting.refresh_sfu_token",
-				params: { meeting_id: this.connectionDetails.meetingId },
-			}), "SFU token refresh");
-			const authToken = requireString(
-				response.auth_token,
-				"auth_token",
-				"SFU token refresh",
-			);
-
-			const expiresInSeconds =
-				typeof response.expires_in === "number" ? response.expires_in : 3600;
-
-			this.connectionDetails.authToken = authToken;
-			this.connectionDetails.tokenExpiresAt =
-				Date.now() + expiresInSeconds * 1000;
-			this.connectionDetails.codecStrategy = normalizeCodecStrategy(
-				response.codec_strategy || this.connectionDetails.codecStrategy,
-			);
-			this.connectionDetails.e2eeRequired =
-				this.connectionDetails.e2eeRequired || Boolean(response.e2ee_required);
-
-			this.signalChannel.updateAuth(authToken);
-
-			if (!skipServerUpdate && this.connected) {
-				await this.sendRequest("auth:update_token", {
-					token: authToken,
-				});
-			} else if (!this.connected) {
-				console.log(
-					"Skipping server token sync because socket is disconnected",
-				);
-			}
-
-			this.scheduleTokenRefresh();
-
-			return authToken;
-		} catch (error) {
-			console.warn("Token refresh failed:", error);
-			throw error;
-		} finally {
-			this.isRefreshingToken = false;
+		const authToken = await refreshPromise;
+		if (!skipServerUpdate && this.connected) {
+			await this.sendRequest("auth:update_token", { token: authToken });
+		} else if (!this.connected) {
+			console.log("Skipping server token sync because socket is disconnected");
 		}
+
+		return authToken;
 	}
 
 	isTokenExpiringSoon(): boolean {

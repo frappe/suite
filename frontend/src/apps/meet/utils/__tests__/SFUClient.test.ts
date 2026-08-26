@@ -920,6 +920,33 @@ describe("E2EE signaling payloads", () => {
 		expect(client.connectionDetails.e2eeRequired).toBe(true);
 	});
 
+	it("shares concurrent token refreshes and preserves server sync", async () => {
+		let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void;
+		vi.mocked(frappeRequest).mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					resolveRefresh = resolve;
+				}),
+		);
+		const client = createClient();
+		client.connected = true;
+		const sendRequestSpy = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		const scheduledRefresh = client.refreshToken({ skipServerUpdate: true });
+		const promotionRefresh = client.refreshToken();
+		resolveRefresh({ auth_token: "tok-2", expires_in: 3600 });
+
+		await expect(
+			Promise.all([scheduledRefresh, promotionRefresh]),
+		).resolves.toEqual(["tok-2", "tok-2"]);
+		expect(frappeRequest).toHaveBeenCalledTimes(1);
+		expect(sendRequestSpy).toHaveBeenCalledWith("auth:update_token", {
+			token: "tok-2",
+		});
+	});
+
 	it("setE2EERequired updates connectionDetails for the realtime-event flow", () => {
 		const client = createClient();
 		client.connectionDetails.e2eeRequired = false;
