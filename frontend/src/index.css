@@ -26,6 +26,48 @@ html.theme-switching * {
   color-scheme: dark;
 }
 
+/* ——— Mobile sizing ————————————————————————————————————————————————————————
+   The steps below 640px, so each component stops picking its own. Taken from the
+   surfaces that already read well on a phone (the list row and the tab bar), not
+   invented:
+
+     row / control height   40px      icon button target   44px (HIG minimum)
+     glyph                  20px      chip height          36px
+     input & body text      16px      secondary text       14px
+
+   Type is the frappe-ui scale — text-lg is 16px and text-base is 14px, not the
+   16/14 those names imply elsewhere. There is no 15px step; reach for one and
+   you have found a case this table doesn't cover, which is worth saying out loud
+   rather than spelling as text-[15px].
+
+   Write these with `max-sm:`, not `isMobile`. Both key on 640px, but `isMobile`
+   is captured once at load and never updated (see utils/composables.ts for why),
+   so a component that styles with it disagrees with its neighbours the moment a
+   window is resized. `isMobile` is for choosing which tree to mount; `max-sm:`
+   is for what that tree looks like. */
+
+/* iOS Safari zooms the whole page whenever a focused text control is under 16px
+   — and does not zoom back out when the field is left, so the reader is stranded
+   at 1.3x until they pinch out. Nothing typed into may sit below it on a phone.
+
+   Global, and with !important, because the sizes come from component classes we
+   don't own: frappe-ui's TextInput hardcodes `text-base` (14px) for both its sm
+   and md sizes, so every FormControl in settings, every Combobox and the
+   recipient input inherit the problem. A per-component override would have to be
+   repeated in each of them and re-applied to whatever gets written next.
+
+   Form controls only. Contenteditable is deliberately left out: in slides and
+   writer the editable surface IS the document, where font-size is content rather
+   than chrome, and forcing 16px there would rewrite the user's own formatting.
+   Editors that need this (mail's composer) set it on their own wrapper. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not([type='file']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 * {
   scrollbar-width: thin;
 }

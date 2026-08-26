@@ -201,7 +201,7 @@
 										>
 											<div class="flex items-center space-x-1.5">
 												<span
-													class="truncate text-[15px] !font-semibold sm:text-base"
+													class="truncate text-lg !font-semibold sm:text-base"
 												>
 													{{ mail.from_name || mail.from_email }}
 												</span>

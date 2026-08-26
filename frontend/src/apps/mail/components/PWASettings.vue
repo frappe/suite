@@ -6,7 +6,7 @@
 		<div class="bg-surface-base flex h-14 shrink-0 items-center border-b px-3">
 			<Button variant="ghost" class="-ml-2 mr-2 !h-8 !w-8 shrink-0" @click="emit('close')">
 				<template #icon>
-					<ChevronLeft class="icon !h-[18px] !w-[18px]" />
+					<ChevronLeft class="icon !size-4.5" />
 				</template>
 			</Button>
 
