@@ -533,18 +533,20 @@ const renaming         = ref(false)
 
 onMounted(fetchSheets)
 
-// Tab/sort changes reset to page 1 immediately; search debounces on top.
-watch([ownerTab, sortBy, sortDir], () => fetchSheets())
+// Filters reset the page visibly; sorting keeps the current rows on screen
+// while the reordered first page loads.
+watch(ownerTab, () => fetchSheets())
+watch([sortBy, sortDir], () => fetchSheets({ background: true }))
 watch(searchQuery, debounce(() => fetchSheets(), 300))
 
 // Monotonic token invalidates in-flight responses, so a slow page-1 fetch
 // can't clobber the rows of a newer tab/sort/search request.
 let reqToken = 0
 
-async function fetchSheets({ append = false } = {}) {
+async function fetchSheets({ append = false, background = false } = {}) {
   const token = ++reqToken
   if (append) loadingMore.value = true
-  else loading.value = true
+  else if (!background) loading.value = true
   try {
     const res = await call('suite.sheets.api.list_sheets', {
       start: append ? sheets.value.length : 0,
@@ -562,9 +564,9 @@ async function fetchSheets({ append = false } = {}) {
   } catch (err) {
     if (token !== reqToken) return
     console.error('list_sheets failed:', err)
-    if (append) {
+    if (append || background) {
       // Keep what's already on screen; surface the failure via the badge.
-      _flashError(err?.message || 'Load more failed')
+      _flashError(err?.message || (append ? 'Load more failed' : 'Could not sort sheets'))
     } else {
       // A failed reset must not leave the previous filter's rows rendered
       // under the new tab/sort/search — clear and show the error surface.
