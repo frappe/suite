@@ -101,6 +101,7 @@ export const loggers = {
 	authManager: new Logger('AuthManager'),
 	server: new Logger('Server'),
 	config: new Logger('Config'),
+	stt: new Logger('STT'),
 	telemetry: new Logger('Telemetry'),
 } as const;
 

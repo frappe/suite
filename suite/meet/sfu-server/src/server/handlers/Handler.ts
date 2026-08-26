@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { SFUConfig } from '../../config';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
+import type { SttManager } from '../../stt/SttManager';
 import type { Telemetry } from '../../telemetry/Telemetry';
 import type {
 	ClientToServerEvents,
@@ -28,6 +29,7 @@ export interface HandlerDeps {
 	mediasoup: MediasoupManager;
 	authManager: AuthManager;
 	rateLimiter: RateLimiter;
+	sttManager?: SttManager;
 	e2eeEpochRelay: E2EEEpochRelay;
 	e2eeRoster: E2eeRosterStore;
 	telemetry: Telemetry;

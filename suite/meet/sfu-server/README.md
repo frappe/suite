@@ -2,6 +2,37 @@
 
 Mediasoup-based Selective Forwarding Unit (SFU) for Frappe Meet.
 
+## Speech-to-Text (Captions)
+
+Real-time captions are powered by an on-premise NVIDIA Nemotron ASR backend.
+
+### Local Development
+
+Set `STT_SERVER_URL` to a running STT service that implements `/health` and the OpenAI Realtime transcription endpoint at `/v1/realtime`.
+
+### Docker Compose
+
+Set `STT_SERVER_URL` to an externally managed STT backend. The SFU deployment does not start an STT sidecar.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `STT_SERVER_URL` | SFU URL for the STT service | — |
+| `STT_API_KEY` | Bearer token sent to the STT service when it requires authentication | — |
+| `STT_CAPTURE_DIR` | Optional local directory for diagnostic utterance WAV/JSON captures | — |
+| `NEMOTRON_MODEL` | Hugging Face model ID | `nvidia/nemotron-3.5-asr-streaming-0.6b` |
+| `NEMOTRON_LANGUAGE` | Locale prompt such as `en-US`, or `auto` for multilingual rooms | `en-US` |
+| `NEMOTRON_ATT_CONTEXT_SIZE` | NeMo streaming attention context, `left,right` | `56,3` |
+| `NEMOTRON_FINAL_SILENCE_MS` | Silence padding appended before final decode | `600` |
+| `STT_SILENCE_MS` | Silence duration before finalizing an utterance | `500` |
+| `STT_MIN_SPEECH_MS` | Minimum speech duration before normal silence final | `600` |
+| `STT_MIN_TAIL_MS` | Minimum speech duration for short utterance final | `200` |
+| `STT_SHORT_UTTERANCE_SILENCE_MS` | Silence duration before finalizing short utterances | `700` |
+| `STT_VAD_THRESHOLD` | Speech detection sensitivity (0.0–1.0) | `0.012` |
+| `STT_PRE_ROLL_MS` | Audio retained before speech detection to avoid clipped words | `300` |
+| `HF_TOKEN` | Hugging Face token (optional, avoids rate limits) | — |
+
 ## Development Setup
 
 From the Suite app directory, install the SFU dependencies and create a local environment file:

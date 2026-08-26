@@ -387,6 +387,22 @@ export class RoomRegistry {
 		this.emitToScope(roomId, 'full', event, ...args);
 	}
 
+	emitToFullAccessSockets<Event extends ServerEventName>(
+		roomId: string,
+		socketIds: ReadonlySet<string>,
+		event: Event,
+		...args: Parameters<ServerToClientEvents[Event]>
+	): void {
+		const fullSocketIds = this.io.sockets.adapter.rooms.get(fullRoom(roomId));
+		if (!fullSocketIds) return;
+		for (const socketId of socketIds) {
+			if (!fullSocketIds.has(socketId)) continue;
+			const socket: ServerSocket | undefined =
+				this.io.sockets.sockets.get(socketId);
+			socket?.emit(event, ...args);
+		}
+	}
+
 	emitToPreviewParticipants<Event extends ServerEventName>(
 		roomId: string,
 		event: Event,

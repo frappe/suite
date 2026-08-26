@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 import type { SFUConfig } from '../config';
 import type { MediasoupManager } from '../mediasoup/MediasoupManager';
+import type { SttManager } from '../stt/SttManager';
 import type { Telemetry } from '../telemetry/Telemetry';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types';
 import { loggers } from '../utils/logger';
@@ -25,6 +26,7 @@ import { registerReactionHandlers } from './handlers/ReactionHandlers';
 import { registerRoomJoinHandlers } from './handlers/RoomJoinHandlers';
 import { registerRoomQueryHandlers } from './handlers/RoomQueryHandlers';
 import { registerScreenShareHandlers } from './handlers/ScreenShareHandlers';
+import { registerSttHandlers } from './handlers/SttHandlers';
 import { registerWebRtcTransportHandlers } from './handlers/WebRtcTransportHandlers';
 import type { RecordingGrantManager } from './RecordingGrantManager';
 import { RoomLifecycleCoordinator } from './RoomLifecycleCoordinator';
@@ -53,6 +55,7 @@ export class SocketHandlerManager {
 		private readonly runtime: SFUConfig['runtime'],
 		coordinatorPersistence?: E2eeCoordinatorPersistence,
 		private readonly recordingGrantManager?: RecordingGrantManager,
+		sttManager?: SttManager,
 	) {
 		this.io = io;
 		this.mediasoup = mediasoup;
@@ -70,6 +73,9 @@ export class SocketHandlerManager {
 			this.runtime.bypassRateLimits,
 		);
 		this.e2eeEpochRelay.setRoster(roster);
+		sttManager?.setEmitToSubscribers((roomId, socketIds, event, data) => {
+			this.registry.emitToFullAccessSockets(roomId, socketIds, event, data);
+		});
 		this.roomLifecycle = new RoomLifecycleCoordinator(
 			this.registry,
 			this.e2eeEpochRelay,
@@ -84,6 +90,7 @@ export class SocketHandlerManager {
 			mediasoup,
 			authManager,
 			rateLimiter: this.rateLimiter,
+			sttManager,
 			e2eeEpochRelay: this.e2eeEpochRelay,
 			e2eeRoster: roster,
 			telemetry,
@@ -102,6 +109,7 @@ export class SocketHandlerManager {
 			registerHostControlHandlers(deps),
 			registerScreenShareHandlers(deps),
 			registerPollHandlers(deps),
+			registerSttHandlers(deps),
 			registerChatHandlers(deps),
 			registerReactionHandlers(deps),
 			registerRaiseHandHandlers(deps),

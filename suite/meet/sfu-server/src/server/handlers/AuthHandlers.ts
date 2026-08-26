@@ -25,6 +25,15 @@ export function registerAuthHandlers(deps: HandlerDeps) {
 				}
 
 				deps.authManager.updateSocketToken(socket, token);
+				if (socket.e2eeRequired && socket.roomId) {
+					const wasLastSubscriber = deps.sttManager?.removeSubscriber(
+						socket.roomId,
+						socket.id,
+					);
+					if (wasLastSubscriber) {
+						void deps.sttManager?.stopRoom(socket.roomId, true);
+					}
+				}
 				deps.telemetry.authEvents.inc({
 					stage: 'refresh',
 					reason: 'valid',

@@ -81,6 +81,13 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 								roomId,
 							);
 						}
+						const wasLastSubscriber = deps.sttManager?.removeSubscriber(
+							roomId,
+							socket.id,
+						);
+						if (wasLastSubscriber) {
+							await deps.sttManager?.stopRoom(roomId, true);
+						}
 						deps.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);
 					}
 				} catch (error) {

@@ -1,0 +1,11 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+setuptools<82
+torch>=2.4.0
+numpy>=1.24.0
+librosa>=0.10.0
+soundfile>=0.12.1
+soxr>=0.3.2
+# Nemotron 3.5 ASR requires prompt-aware RNNT classes that may not be in PyPI NeMo yet.
+nemo_toolkit[asr] @ git+https://github.com/NVIDIA/NeMo.git@fc6a475f3d8b8fc0c8743d3107c5e933ecd5b99d

@@ -56,6 +56,9 @@ import type {
 	ScreenShareStoppedEvent,
 	SFUErrorEvent,
 	SFUScope,
+	SttSegmentEvent,
+	SttToggleRequest,
+	TranscriptSegment,
 	UpdateTokenRequest,
 	UserData,
 } from '../../../types';
@@ -113,6 +116,9 @@ export type {
 	ScreenShareStoppedEvent,
 	SFUErrorEvent,
 	SFUScope,
+	SttSegmentEvent,
+	SttToggleRequest,
+	TranscriptSegment,
 	UpdateTokenRequest,
 	UserData,
 	WebRtcServer,
@@ -152,6 +158,7 @@ export interface ServerToClientEvents {
 	hand_raised: (data: HandRaisedEvent) => void;
 	existing_raised_hands: (data: ExistingRaisedHandsEvent) => void;
 	network_quality_update: (data: NetworkQualityUpdateEvent) => void;
+	'stt:segment': (data: SttSegmentEvent) => void;
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
 }
 
@@ -287,6 +294,10 @@ export interface ClientToServerEvents {
 		callback: (response: SFUResponse) => void,
 	) => void;
 	leave_room: (data?: LeaveRoomRequest) => void;
+	'stt:toggle': (
+		data: SttToggleRequest,
+		callback: (response: SFUResponse & { enabled?: boolean }) => void,
+	) => void;
 	'e2ee:epoch': (data: E2eeEpochEnvelope) => void;
 }
 

@@ -424,6 +424,34 @@ describe('RoomRegistry', () => {
 			);
 		});
 
+		it('emitToFullAccessSockets reaches only selected full sockets', () => {
+			const setup = makeIo();
+			const registry = new RoomRegistry(setup.io);
+			const subscribed = makeSocket('subscribed');
+			const other = makeSocket('other');
+			const preview = makeSocket('preview');
+			addFullSocket(setup, 'r1', subscribed);
+			addFullSocket(setup, 'r1', other);
+			addPreviewSocket(setup, 'r1', preview);
+
+			registry.emitToFullAccessSockets(
+				'r1',
+				new Set(['subscribed', 'preview']),
+				'hello',
+				{ x: 1 },
+			);
+
+			expect(
+				(subscribed as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([{ event: 'hello', data: { x: 1 } }]);
+			expect(
+				(other as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+			expect(
+				(preview as unknown as { _emitCalls: unknown[] })._emitCalls,
+			).toEqual([]);
+		});
+
 		it('emitToScope is a no-op when the room has no sockets', () => {
 			const { io } = makeIo();
 			const registry = new RoomRegistry(io);

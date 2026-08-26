@@ -172,6 +172,8 @@ import {
 	watch,
 } from "vue";
 import LucideBug from "~icons/lucide/bug";
+import LucideCaptions from "~icons/lucide/captions";
+import LucideCaptionsOff from "~icons/lucide/captions-off";
 import { useE2EEState } from "../composables/useE2EEState";
 import { usePlatform } from "../composables/usePlatform";
 import { useResponsiveGrid } from "../composables/useResponsiveGrid";
@@ -219,6 +221,7 @@ const props = defineProps<{
 	statsVisible?: boolean;
 	cameraPermissionGranted?: boolean;
 	microphonePermissionGranted?: boolean;
+	isCaptionsEnabled?: boolean;
 	canManageRecording?: boolean;
 	recordingStatus?: string;
 	recordingLoading?: boolean;
@@ -233,6 +236,7 @@ const emit = defineEmits<{
 	"toggle-screen-share": [];
 	"toggle-fullscreen": [];
 	"toggle-raise-hand": [];
+	"toggle-captions": [];
 	"report-problem": [];
 	"toggle-stats": [];
 	"end-call": [];
@@ -266,6 +270,20 @@ const moreOptions = computed(() => [
 						["Pending", "Stopping"].includes(props.recordingStatus || ""),
 					onClick: () => {
 						emit("manage-recording");
+						resetHideTimer();
+					},
+				},
+			]
+		: []),
+	...(!isE2EEContextReady.value
+		? [
+				{
+					icon: props.isCaptionsEnabled ? LucideCaptionsOff : LucideCaptions,
+					label: props.isCaptionsEnabled
+						? "Disable captions"
+						: "Enable captions",
+					onClick: () => {
+						emit("toggle-captions");
 						resetHideTimer();
 					},
 				},

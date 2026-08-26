@@ -34,6 +34,11 @@ describe('loadConfig', () => {
 			allowPlainTransport: false,
 			bypassRateLimits: false,
 		});
+		expect(config.stt).toEqual({
+			serverUrl: undefined,
+			allowMockFallback: false,
+			captureDirectory: undefined,
+		});
 		expect(Object.isFrozen(config)).toBe(true);
 		expect(Object.isFrozen(config.mediasoup.worker)).toBe(true);
 	});
@@ -59,6 +64,21 @@ describe('loadConfig', () => {
 	it('derives CI rate-limit policy from validated booleans', () => {
 		const config = loadConfig(validEnv({ CI: 'true' }), system);
 		expect(config.runtime.bypassRateLimits).toBe(true);
+	});
+
+	it('loads optional STT diagnostics configuration', () => {
+		const config = loadConfig(
+			validEnv({
+				STT_SERVER_URL: 'https://stt.example.test',
+				STT_CAPTURE_DIR: './data/stt-captures',
+			}),
+			system,
+		);
+		expect(config.stt).toEqual({
+			serverUrl: 'https://stt.example.test',
+			allowMockFallback: false,
+			captureDirectory: './data/stt-captures',
+		});
 	});
 
 	it('rejects partial numbers and invalid enum values', () => {

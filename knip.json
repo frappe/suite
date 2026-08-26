@@ -27,10 +27,10 @@
       ]
     },
     "suite/meet/sfu-server": {
-      "entry": ["src/server.ts", "src/**/*.test.ts"],
+      "entry": ["src/**/*.test.ts"],
       "project": ["src/**/*.ts", "!src/server.ts", "!src/**/*.test.ts"],
       "vitest": false,
-      "ignoreBinaries": ["vitest"],
+      "ignoreBinaries": ["ffmpeg"],
       "ignoreIssues": {
         "src/types/index.ts": ["types"]
       }

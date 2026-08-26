@@ -95,6 +95,10 @@ export class RoomManager {
 		return this.rooms.get(roomId);
 	}
 
+	getAllRooms(): Room[] {
+		return Array.from(this.rooms.values());
+	}
+
 	getRouter(roomId: string): mediasoup.types.Router | undefined {
 		return this.routers.get(roomId);
 	}
