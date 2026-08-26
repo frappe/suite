@@ -83,7 +83,7 @@
                     "
                   >
                     <Badge
-                      :theme="pending.status === 'Pending' ? 'gray' : 'orange'"
+                      :theme="pending.status === 'Pending' ? 'gray' : 'amber'"
                       variant="subtle"
                       class="my-auto mr-2"
                       size="sm"
@@ -108,7 +108,7 @@
 
     <Dialog v-model:open="showInvite" :title="__('Invite people to Drive')" size="lg">
       <div class="flex items-start justify-start gap-4">
-        <div class="flex flex-wrap gap-1 rounded w-full bg-surface-gray-2 p-2">
+        <div class="flex flex-wrap gap-1 rounded-4 w-full bg-surface-gray-2 p-2">
           <Button
             v-for="(email, idx) in invited"
             :key="email"
@@ -126,7 +126,7 @@
               type="text"
               autocomplete="off"
               placeholder="Enter email address"
-              class="h-7 w-full rounded border-none bg-surface-gray-2 py-1.5 pl-2 pr-2 text-base text-ink-gray-8 placeholder-ink-gray-4 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              class="h-7 w-full rounded-4 border-none bg-surface-gray-2 py-1.5 pl-2 pr-2 text-base text-ink-gray-8 placeholder-ink-gray-4 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               @keydown="isValidEmail"
               @keydown.enter.capture.stop="extractEmails"
               @keydown.space.prevent.stop="extractEmails"

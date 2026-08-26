@@ -10,7 +10,7 @@
             class="mx-auto w-full bg-surface-base p-5 sm:mt-6 sm:w-96 sm:rounded-7 sm:p-6 sm:shadow-md"
           >
             <h1
-              class="mb-5 text-center text-3xl-semibold text-ink-gray-9"
+              class="mb-5 text-center text-2xl-semibold text-ink-gray-9"
             >
               {{
                 params.get("t")

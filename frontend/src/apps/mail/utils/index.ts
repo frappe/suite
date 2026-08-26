@@ -69,7 +69,7 @@ export const raiseToast = (
 							? {
 									classes: {
 										cancelButton:
-											'!ml-auto mr-1 h-7 shrink-0 rounded bg-transparent !transition-colors',
+											'!ml-auto mr-1 h-7 shrink-0 rounded-4 bg-transparent !transition-colors',
 										actionButton: '!ml-0',
 									},
 								}

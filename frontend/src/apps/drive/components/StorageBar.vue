@@ -1,7 +1,7 @@
 <template>
   <div
     v-if="!storageBar.loading"
-    class="flex flex-col hover:bg-surface-gray-2 rounded cursor-pointer mb-0.5"
+    class="flex flex-col hover:bg-surface-gray-2 rounded-4 cursor-pointer mb-0.5"
     @click="emitter.emit('showSettings', 'statistics')"
   >
     <SidebarItem :label="__('Storage')" :is-collapsed="!props.isExpanded">

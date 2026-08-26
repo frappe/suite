@@ -1,5 +1,5 @@
 <template>
-	<div v-if="report" class="text-ink-gray-6 mb-3 rounded border p-2.5 px-4">
+	<div v-if="report" class="text-ink-gray-6 mb-3 rounded-4 border p-2.5 px-4">
 		<div class="flex items-start gap-3">
 			<component
 				:is="statusIcon"
@@ -17,7 +17,7 @@
 					<template v-if="serverResponse(recipient)">
 						<p class="mt-1.5">{{ __('The response from the remote server was:') }}</p>
 						<pre
-							class="bg-surface-gray-1 text-ink-gray-7 mt-1.5 overflow-x-auto whitespace-pre-wrap rounded p-2 font-mono text-xs"
+							class="bg-surface-gray-1 text-ink-gray-7 mt-1.5 overflow-x-auto whitespace-pre-wrap rounded-4 p-2 font-mono text-xs"
 							>{{ serverResponse(recipient) }}</pre
 						>
 					</template>

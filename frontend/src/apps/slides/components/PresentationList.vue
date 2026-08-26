@@ -4,7 +4,7 @@
 			class="mx-auto flex w-full max-w-[1088px] flex-col gap-4 px-8 pb-8 sm:flex-row sm:items-center sm:justify-between"
 		>
 			<!-- Header -->
-			<div class="cursor-default text-2xl-semibold text-ink-gray-9">Presentations</div>
+			<div class="cursor-default text-xl-semibold text-ink-gray-9">Presentations</div>
 
 			<div class="flex items-center gap-2">
 				<SearchInput
@@ -67,13 +67,13 @@
 			</div>
 			<LoadingIndicator v-else-if="loading" class="m-auto w-3" />
 			<div v-else-if="search" class="m-auto flex flex-col items-center gap-2">
-				<div class="text-xl-medium text-ink-gray-7">No presentations found</div>
+				<div class="text-lg-medium text-ink-gray-7">No presentations found</div>
 				<div class="text-base text-ink-gray-5">No matches for "{{ search }}"</div>
 			</div>
 			<div v-else class="m-auto flex flex-col items-center gap-6">
 				<LucidePanelsTopLeft class="size-8 text-ink-gray-4" />
 				<div class="flex flex-col items-center gap-2">
-					<div class="text-xl-medium text-ink-gray-7">No presentations yet.</div>
+					<div class="text-lg-medium text-ink-gray-7">No presentations yet.</div>
 					<div class="text-base text-ink-gray-5">Add a new presentation to get started!</div>
 				</div>
 				<Button

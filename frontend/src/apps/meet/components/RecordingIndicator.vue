@@ -37,7 +37,7 @@ onUnmounted(() => timer && clearInterval(timer));
 
 <template>
 	<Button
-		:theme="recording.status === 'Interrupted' ? 'orange' : 'red'"
+		:theme="recording.status === 'Interrupted' ? 'amber' : 'red'"
 		variant="subtle"
 		size="sm"
 		:icon-left="recording.status === 'Interrupted' ? 'lucide-triangle-alert' : 'lucide-circle-stop'"

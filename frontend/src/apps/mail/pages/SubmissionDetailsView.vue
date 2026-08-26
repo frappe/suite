@@ -160,12 +160,12 @@
 				<div v-for="stack in 2" :key="stack" class="flex min-w-0 flex-1 flex-col gap-5">
 					<div v-for="card in 2" :key="card" class="rounded-4 border">
 						<div class="flex h-13 items-center border-b px-4">
-							<Skeleton class="h-3.5 w-24 rounded" />
+							<Skeleton class="h-3.5 w-24 rounded-4" />
 						</div>
 						<div v-for="row in 5" :key="row" class="flex items-center px-5 py-4">
-							<Skeleton class="h-3 w-1/4 rounded" />
+							<Skeleton class="h-3 w-1/4 rounded-4" />
 							<Skeleton
-								class="ml-12 h-3 rounded"
+								class="ml-12 h-3 rounded-4"
 								:style="{ width: `${20 + ((stack * 5 + card * 7 + row * 13) % 25)}%` }"
 							/>
 						</div>

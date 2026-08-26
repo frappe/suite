@@ -2,7 +2,7 @@
 	<div
 		ref="container"
 		data-recipient-input
-		class="relative flex min-h-7 w-full flex-1 cursor-text flex-wrap items-center gap-2 rounded transition-colors"
+		class="relative flex min-h-7 w-full flex-1 cursor-text flex-wrap items-center gap-2 rounded-4 transition-colors"
 		:class="{ 'ring-outline-gray-3 ring-2': isDragOver && !isDragging }"
 		@keydown.capture="handleContainerKeydown"
 		@dragover.prevent="isDragOver = true"
@@ -18,7 +18,7 @@
 			v-for="(v, i) in displayedRecipients"
 			ref="tags"
 			:key="v.email"
-			class="bg-surface-gray-2 flex min-h-7 items-center space-x-1.5 rounded px-2 text-base focus:outline-none"
+			class="bg-surface-gray-2 flex min-h-7 items-center space-x-1.5 rounded-4 px-2 text-base focus:outline-none"
 			:class="{
 				'ring-outline-gray-3 ring-2': focusedTagIndex === i,
 			}"

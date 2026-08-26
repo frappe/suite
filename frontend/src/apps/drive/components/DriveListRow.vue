@@ -5,15 +5,15 @@
       <ListCell>
         <div class="flex items-center" :style="indent(item.depth)">
           <Skeleton class="h-[16px] w-[16px] shrink-0 mr-2 rounded-1" />
-          <Skeleton class="h-3.5 w-40 rounded" />
+          <Skeleton class="h-3.5 w-40 rounded-4" />
         </div>
       </ListCell>
       <ListCell>
         <Skeleton class="size-5 shrink-0 mr-2 rounded-full" />
-        <Skeleton class="h-3 w-16 rounded" />
+        <Skeleton class="h-3 w-16 rounded-4" />
       </ListCell>
-      <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
-      <ListCell><Skeleton class="h-3 w-12 rounded" /></ListCell>
+      <ListCell><Skeleton class="h-3 w-20 rounded-4" /></ListCell>
+      <ListCell><Skeleton class="h-3 w-12 rounded-4" /></ListCell>
       <ListCell />
     </ListRow>
     <ListRow v-else-if="item.placeholder" class="pointer-events-none">

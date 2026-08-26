@@ -75,14 +75,14 @@
             <div class="h-[16px] w-[16px] shrink-0 mr-2">
               <Skeleton class="h-[16px] w-[16px] rounded-1" />
             </div>
-            <Skeleton class="h-3.5 w-40 rounded" />
+            <Skeleton class="h-3.5 w-40 rounded-4" />
           </ListCell>
           <ListCell class="hidden sm:flex">
             <Skeleton class="size-5 shrink-0 mr-2 rounded-full" />
-            <Skeleton class="h-3 w-16 rounded" />
+            <Skeleton class="h-3 w-16 rounded-4" />
           </ListCell>
-          <ListCell><Skeleton class="h-3 w-20 rounded" /></ListCell>
-          <ListCell class="hidden sm:flex"><Skeleton class="h-3 w-12 rounded" /></ListCell>
+          <ListCell><Skeleton class="h-3 w-20 rounded-4" /></ListCell>
+          <ListCell class="hidden sm:flex"><Skeleton class="h-3 w-12 rounded-4" /></ListCell>
           <ListCell />
         </ListRow>
       </template>

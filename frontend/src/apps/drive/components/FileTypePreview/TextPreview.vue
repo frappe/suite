@@ -2,7 +2,7 @@
   <FilePreviewSkeleton v-if="loading" />
   <pre
     v-else
-    class="overflow-y-auto h-[80vh] font-[InterVar] text-p-base text-ink-gray-8 sm:w-full border p-3 rounded overflow-x-auto"
+    class="overflow-y-auto h-[80vh] font-[InterVar] text-p-base text-ink-gray-8 sm:w-full border p-3 rounded-4 overflow-x-auto"
     >{{ blob }}</pre
   >
 </template>

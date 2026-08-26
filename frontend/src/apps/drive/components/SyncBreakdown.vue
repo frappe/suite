@@ -6,19 +6,12 @@
         You're adding {{ preview.data.length }} {{ preview.data.length == 1 ? 'item' : 'items' }}:
       </div>
       <div class="h-64 overflow-auto">
-        <Tree v-for="item in tree" :key="item.label" :node="item" :node-key="item.label">
-          <template #icon="{ hasChildren, isCollapsed }">
-            <template v-if="hasChildren">
-              <LucideChevronDown v-if="!isCollapsed" class="size-3.5" />
-              <LucideChevronRight v-else class="size-3.5" />
-            </template>
-            <div v-else class="ps-3.5" />
-          </template>
-          <template #label="{ node, hasChildren, isCollapsed }">
+        <Tree :nodes="tree" node-key="label">
+          <template #item-label="{ node, hasChildren, expanded }">
             <div class="text-base truncate pl-3.5 flex gap-2">
               <template v-if="hasChildren">
-                <LucideFolderClosed v-if="isCollapsed" class="mr-1 size-4" />
-                <LucideFolder v-else class="mr-1 size-4" />
+                <LucideFolder v-if="expanded" class="mr-1 size-4" />
+                <LucideFolderClosed v-else class="mr-1 size-4" />
               </template>
               <LucideFile v-else class="mr-1 size-4" />
               <div class="flex gap-1 select-none">
@@ -50,7 +43,7 @@
   </div>
 </template>
 <script setup>
-import { createResource, Tree, Button} from 'frappe-ui'
+import { Button, Tree, createResource } from 'frappe-ui'
 import Alert from '@/apps/drive/components/Alert.vue'
 import { computed } from 'vue'
 import { toast } from '@/apps/drive/utils/toasts'

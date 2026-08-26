@@ -187,12 +187,12 @@ defineExpose({ reload })
 <template>
 	<div v-if="meetings.length" class="mt-10">
 		<h2 class="mb-3 text-base-medium text-ink-gray-8">Upcoming meetings</h2>
-		<div class="overflow-hidden rounded-xl border border-outline-gray-1 bg-surface-gray-1">
+		<div class="overflow-hidden rounded-7 border border-outline-gray-1 bg-surface-gray-1">
 			<button
 				v-for="(event, index) in meetings"
 				:key="event.id"
 				type="button"
-				class="flex min-h-[66px] w-full items-center gap-8 border-outline-gray-1 px-2.5 py-2.5 text-left transition-colors first:rounded-t-xl last:rounded-b-xl hover:bg-surface-gray-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-gray-4"
+				class="flex min-h-[66px] w-full items-center gap-8 border-outline-gray-1 px-2.5 py-2.5 text-left transition-colors first:rounded-t-7 last:rounded-b-7 hover:bg-surface-gray-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink-gray-4"
 				:class="index !== meetings.length - 1 ? 'border-b' : ''"
 				@click="joinMeeting(event)"
 			>
@@ -209,7 +209,7 @@ defineExpose({ reload })
 								{{ formatMeetingMonth(event) }}
 							</div>
 							<div
-								class="w-full text-lg font-medium leading-[1.15] tracking-[0.18px] text-ink-gray-7"
+								class="w-full text-md font-medium leading-[1.15] tracking-[0.18px] text-ink-gray-7"
 							>
 								{{ formatMeetingDay(event) }}
 							</div>

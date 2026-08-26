@@ -294,6 +294,7 @@ const editorStyle = computed(() => ({
 const uploadFunction = (file) => {
   const fileUpload = useFileUpload()
   return fileUpload.upload(file, {
+    private: false,
     params: { file_id: props.file.doc.name },
     upload_endpoint: `/api/method/suite.writer.api.embed.add`,
   })

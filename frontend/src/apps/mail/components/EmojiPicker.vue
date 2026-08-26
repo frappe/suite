@@ -13,7 +13,7 @@
 				<div
 					v-for="r in reactionEmojis"
 					:key="r"
-					class="bg-surface-base size-5 cursor-pointer rounded-full text-3xl"
+					class="bg-surface-base size-5 cursor-pointer rounded-full text-2xl"
 					@click="() => (emoji = r) && toggle()"
 				>
 					<button>
@@ -47,7 +47,7 @@
 							<button
 								v-for="_emoji in emojis"
 								:key="_emoji.description"
-								class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-4xl focus:outline-none focus:ring focus:ring-blue-200"
+								class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-3xl focus:outline-none focus:ring focus:ring-blue-200"
 								:title="_emoji.description"
 								@click="() => (emoji = _emoji.emoji) && toggle()"
 							>

@@ -18,7 +18,7 @@
 			<Menu :size="18" />
 		</button>
 		<div class="flex min-w-0 flex-1 items-baseline gap-2" :class="{ 'pl-4': !withMenu }">
-			<span class="truncate text-2xl !font-semibold tracking-[-0.01em]">{{ title }}</span>
+			<span class="truncate text-xl !font-semibold tracking-[-0.01em]">{{ title }}</span>
 			<span v-if="count" class="text-ink-gray-5 shrink-0 text-xs !font-medium">{{ count }}</span>
 		</div>
 		<slot name="actions" />

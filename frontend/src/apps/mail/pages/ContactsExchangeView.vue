@@ -8,9 +8,9 @@
 				:button="{ icon: 'lucide-more-horizontal' }"
 			/>
 		</header>
-		<div class="mx-auto my-5 rounded border p-12 sm:w-[60rem]">
+		<div class="mx-auto my-5 rounded-4 border p-12 sm:w-[60rem]">
 			<div class="flex items-center space-x-2">
-				<h1 class="text-xl !font-semibold">
+				<h1 class="text-lg !font-semibold">
 					{{ __('Contacts {0}', [__(contactsExchange.data?.operation)]) }}
 				</h1>
 				<Badge

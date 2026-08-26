@@ -10,7 +10,7 @@
         class="flex flex-col items-start gap-0.5"
         :class="[
           index === selectedIndex ? 'bg-surface-gray-2' : '',
-          'w-full whitespace-nowrap rounded px-2 py-2 text-sm text-ink-gray-8',
+          'w-full whitespace-nowrap rounded-4 px-2 py-2 text-sm text-ink-gray-8',
         ]"
         @click="selectItem(index)"
         @mouseover="selectedIndex = index"

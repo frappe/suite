@@ -5,7 +5,7 @@
 		<div class="max-w-2xl mx-auto">
 			<div class="bg-white rounded-6 shadow-lg p-8">
 				<div class="text-center mb-8">
-					<h1 class="text-5xl-bold text-gray-900 mb-2">Audio Notification Test</h1>
+					<h1 class="text-4xl-bold text-gray-900 mb-2">Audio Notification Test</h1>
 					<p class="text-gray-600">Test and tune the meeting notification sounds</p>
 				</div>
 
@@ -178,7 +178,7 @@
 					<ul class="text-sm text-gray-600 space-y-1">
 						<li>• Click individual buttons to test each notification</li>
 						<li>• Use "Play All" to compare sounds in sequence</li>
-						<li>• Edit frequencies/timing in <code class="bg-gray-200 px-1 rounded">audioNotifications.ts</code></li>
+						<li>• Edit frequencies/timing in <code class="bg-gray-200 px-1 rounded-4">audioNotifications.ts</code></li>
 						<li>• Refresh page after code changes to test updates</li>
 						<li>• Check browser console for any AudioContext errors</li>
 					</ul>

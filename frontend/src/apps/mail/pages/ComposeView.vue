@@ -186,7 +186,7 @@
 							<a
 								v-for="(file, index) in attachments"
 								:key="index"
-								class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded p-2.5"
+								class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
 								:href="file.file_url"
 								target="_blank"
 								@click="openAttachment(file.blob_id, file.type)"

@@ -295,7 +295,7 @@ const menuItems = computed(() => [
 							h(
 								'div',
 								{
-									class: 'flex items-center gap-2 p-1.5 rounded hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
+									class: 'flex items-center gap-2 p-1.5 rounded-4 hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
 									onClick: () => switchAccount(a.id),
 								},
 								[

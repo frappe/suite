@@ -156,16 +156,16 @@
 				class="relative flex flex-1 cursor-text flex-col border-2 border-transparent py-2.5 text-sm max-sm:px-3 sm:overflow-y-auto"
 				:class="{
 					'max-h-96 min-h-32': isInThread,
-					'!border-outline-gray-3 rounded border-dashed': isDragging,
+					'!border-outline-gray-3 rounded-4 border-dashed': isDragging,
 				}"
 				@click="editor.commands.focus('end')"
 			>
 				<div
 					v-if="isDragging"
-					class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded"
+					class="bg-surface-gray-1/90 text-ink-gray-3 absolute inset-0 z-50 flex flex-col items-center justify-center space-y-1 rounded-4"
 				>
 					<UploadCloud class="stroke-1.5 h-12 w-12" />
-					<p class="text-xl-semibold">{{ __('Drop files to upload') }}</p>
+					<p class="text-lg-semibold">{{ __('Drop files to upload') }}</p>
 				</div>
 
 				<EditorContent :editor :class="{ 'opacity-30': isDragging }" @click.stop />
@@ -189,7 +189,7 @@
 							(file: Attachment) => file.disposition === 'attachment',
 						)"
 						:key="index"
-						class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded p-2.5"
+						class="bg-surface-gray-2 text-ink-gray-6 flex cursor-pointer items-center rounded-4 p-2.5"
 						:href="file.file_url"
 						target="_blank"
 						@click="openAttachment(file.blob_id, file.type)"
@@ -210,7 +210,7 @@
 					<div
 						v-for="(fileUpload, id) in fileUploads.filter((fu) => fu.isUploading)"
 						:key="id"
-						class="bg-surface-gray-2 text-ink-gray-6 mb-2 rounded p-2.5 text-sm"
+						class="bg-surface-gray-2 text-ink-gray-6 mb-2 rounded-4 p-2.5 text-sm"
 					>
 						<div class="mb-1.5 flex items-center">
 							<span class="mr-1 font-medium"> {{ fileUpload.name }} </span>

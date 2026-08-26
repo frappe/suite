@@ -1,5 +1,5 @@
 <template>
-	<Popover @open="syncCurrentColor">
+	<Popover @update:open="(open) => open && syncCurrentColor()">
 		<template #trigger>
 			<div
 				class="me-0.5 size-4 cursor-pointer rounded-1 ring-[1.5px] ring-outline-gray-2 ring-offset-1"
@@ -11,12 +11,12 @@
 				<div class="flex flex-col gap-3">
 					<div
 						ref="shadeSlider"
-						class="cursor-pointer rounded-t shadow-xl"
+						class="cursor-pointer rounded-t-4 shadow-xl"
 						:style="shadeStyles"
 						@mousedown="handleUpdateShade"
 					>
 						<div
-							class="relative size-3 rounded border shadow-md transition-transform duration-200 ease-in-out hover:scale-[1.2]"
+							class="relative size-3 rounded-4 border shadow-md transition-transform duration-200 ease-in-out hover:scale-[1.2]"
 							:style="shadeRectStyles"
 						></div>
 					</div>
@@ -70,7 +70,7 @@
 						<div class="flex justify-center">
 							<Button
 								@click="handleClipboardCopy"
-								class="flex items-center justify-center rounded text-ink-gray-6 transition-colors hover:bg-surface-gray-3"
+								class="flex items-center justify-center rounded-4 text-ink-gray-6 transition-colors hover:bg-surface-gray-3"
 								title="Copy Color"
 							>
 								<LucideClipboard class="size-3.5 text-ink-gray-7" />
@@ -81,7 +81,7 @@
 							<Button
 								v-if="isSupported"
 								@click="openEyeDropper"
-								class="flex items-center justify-center rounded transition-colors hover:bg-surface-gray-3"
+								class="flex items-center justify-center rounded-4 transition-colors hover:bg-surface-gray-3"
 								title="Pick color from screen"
 							>
 								<EyeDropper class="size-3.5 text-ink-gray-7" />
@@ -119,9 +119,9 @@ const SLIDER_WIDTH = 125
 const SHADE_RECT_WIDTH = 170
 const SHADE_RECT_HEIGHT = 130
 
-const sliderClasses = 'h-1/5 rounded cursor-pointer'
+const sliderClasses = 'h-1/5 rounded-4 cursor-pointer'
 const sliderCursorClasses =
-	'relative size-[0.8rem] rounded shadow border bg-white hover:scale-[1.1] transition-transform duration-200 ease-in-out'
+	'relative size-[0.8rem] rounded-4 shadow border bg-white hover:scale-[1.1] transition-transform duration-200 ease-in-out'
 
 const currentColor = defineModel()
 

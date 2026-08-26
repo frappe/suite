@@ -7,8 +7,8 @@
   <AppSettingsBody>
     <div v-if="getDiskSettings.loading" class="flex flex-col gap-4">
       <div v-for="i in 4" :key="i" class="flex flex-col gap-1.5">
-        <Skeleton class="h-3 rounded w-24" />
-        <Skeleton class="h-7 rounded w-full" />
+        <Skeleton class="h-3 rounded-4 w-24" />
+        <Skeleton class="h-7 rounded-4 w-full" />
       </div>
     </div>
     <div v-else class="flex flex-col gap-4">

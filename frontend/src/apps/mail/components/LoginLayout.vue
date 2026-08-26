@@ -5,7 +5,7 @@
 				<slot name="logo">
 					<div class="mx-auto flex items-center space-x-2">
 						<MailLogo class="inline-block h-7 w-7" />
-						<span class="select-none text-3xl-semibold tracking-tight">
+						<span class="select-none text-2xl-semibold tracking-tight">
 							Frappe Mail
 						</span>
 					</div>
@@ -15,7 +15,7 @@
 				class="bg-surface-base mx-auto w-full px-4 py-8 sm:mt-6 sm:w-[26rem] sm:rounded-6 sm:px-8 sm:shadow-xl"
 			>
 				<div class="mb-6 text-center">
-					<span class="text-center text-xl-medium leading-5 tracking-tight">
+					<span class="text-center text-lg-medium leading-5 tracking-tight">
 						{{ title }}
 					</span>
 				</div>

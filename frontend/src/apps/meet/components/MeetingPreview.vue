@@ -49,7 +49,7 @@
 						{{ props.meetingTitle }}
 					</p>
 
-					<h2 class="mb-7 text-4xl-semibold text-ink-gray-9">
+					<h2 class="mb-7 text-3xl-semibold text-ink-gray-9">
 						Ready to join?
 					</h2>
 

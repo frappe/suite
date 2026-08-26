@@ -37,7 +37,7 @@
               v-model="name"
               type="text"
               maxlength="20"
-              class="w-full rounded border border-transparent bg-transparent hover:border-outline-gray-2 ps-1.5 pe-6 py-1 text-2xl-semibold text-ink-gray-8 placeholder-ink-gray-4 focus:border-outline-gray-4 focus:shadow-sm focus:outline-none focus:ring-0"
+              class="w-full rounded-4 border border-transparent bg-transparent hover:border-outline-gray-2 ps-1.5 pe-6 py-1 text-xl-semibold text-ink-gray-8 placeholder-ink-gray-4 focus:border-outline-gray-4 focus:shadow-sm focus:outline-none focus:ring-0"
               :placeholder="__('Acme Inc.')"
               :disabled="saveWorkspace.loading"
               @blur="saveName"

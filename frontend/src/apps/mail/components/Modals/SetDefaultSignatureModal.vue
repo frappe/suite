@@ -18,7 +18,7 @@
 			<div class="mt-4 space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs"> {{ __('Signature') }} </label>
 				<TextEditor
-					editor-class="prose-sm min-h-[8rem] border rounded p-2 max-w-none border-outline-gray-2"
+					editor-class="prose-sm min-h-[8rem] border rounded-4 p-2 max-w-none border-outline-gray-2"
 					:extensions="[CustomParagraphExtension]"
 					:placeholder="__('Write your signature here')"
 					:content="signature"

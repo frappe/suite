@@ -4,6 +4,7 @@
 			<FileUploader
 				class="mb-2 w-full"
 				:file-types="['image/*']"
+				:private="false"
 				@success="(file) => setProfilePhoto.submit({ image: file.file_url })"
 			>
 				<template #default="{ error, uploading, openFileSelector }">

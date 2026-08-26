@@ -10,7 +10,7 @@
 				</template>
 			</Button>
 
-			<h2 class="min-w-0 flex-1 truncate text-2xl !font-semibold tracking-[-0.01em]">
+			<h2 class="min-w-0 flex-1 truncate text-xl !font-semibold tracking-[-0.01em]">
 				{{ __('Settings') }}
 			</h2>
 		</div>

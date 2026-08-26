@@ -1,5 +1,5 @@
 <template>
-  <UiSettingsDialog v-model="open" v-model:tab="activeTab" size="5xl">
+  <UiSettingsDialog v-model:open="open" v-model:tab="activeTab" size="5xl">
     <template #title>{{ __('Settings') }}</template>
     <SettingsSidebar>
       <SettingsNavGroup

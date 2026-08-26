@@ -40,7 +40,7 @@
               </div>
               <div v-for="doc in searchResults" :key="doc.name">
                 <div
-                  class="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 transition-colors hover:bg-surface-gray-3"
+                  class="flex cursor-pointer items-center gap-3 rounded-4 px-3 py-2.5 transition-colors hover:bg-surface-gray-3"
                 >
                   <div class="min-w-0 flex-1 flex flex-col gap-2">
                     <div class="truncate text-base-medium text-ink-gray-7">

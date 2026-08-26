@@ -1,13 +1,13 @@
 <template>
 	<div class="flex flex-col" :aria-label="__('Loading')" role="status">
 		<div class="flex items-center gap-4 border-b py-2">
-			<Skeleton v-for="column in columns" :key="column" class="h-3 flex-1 rounded" />
+			<Skeleton v-for="column in columns" :key="column" class="h-3 flex-1 rounded-4" />
 		</div>
 		<div v-for="row in rows" :key="row" class="flex items-center gap-4 py-3.5">
 			<Skeleton
 				v-for="column in columns"
 				:key="column"
-				class="h-3.5 flex-1 rounded"
+				class="h-3.5 flex-1 rounded-4"
 				:style="{ maxWidth: `${widthFor(row, column)}%` }"
 			/>
 		</div>

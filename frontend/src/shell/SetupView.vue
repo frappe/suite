@@ -30,7 +30,7 @@
         <div :key="step">
           <div class="flex flex-col gap-8">
             <div class="flex flex-col gap-2">
-              <h1 class="text-4xl-semibold text-ink-gray-9">{{ current.title }}</h1>
+              <h1 class="text-3xl-semibold text-ink-gray-9">{{ current.title }}</h1>
               <p class="text-base text-ink-gray-6">{{ current.subtitle }}</p>
             </div>
 

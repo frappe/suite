@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="grid grid-cols-5 gap-2 overflow-y-auto rounded border p-3 text-sm sm:max-h-96 sm:max-w-md sm:border-0"
+		class="grid grid-cols-5 gap-2 overflow-y-auto rounded-4 border p-3 text-sm sm:max-h-96 sm:max-w-md sm:border-0"
 	>
 		<span class="text-ink-gray-5 col-span-1">{{ __('From:') }}</span>
 		<span class="col-span-4">

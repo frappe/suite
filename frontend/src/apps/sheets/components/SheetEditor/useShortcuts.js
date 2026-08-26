@@ -62,7 +62,7 @@ export function useShortcuts(actions) {
     runSmartFill,
     insertRowsCols, deleteRowsCols, applyNumberFormat, pasteValues,
     // Optional getter — true for a view-only viewer (guest / read-only share).
-    // Mutating shortcuts carry `condition: notReadOnly` so they're both inert
+    // Mutating shortcuts carry `enabled: notReadOnly` so they're both inert
     // AND hidden from the modal while read-only; pure view shortcuts stay live.
     readOnly = () => false,
   } = actions
@@ -150,8 +150,8 @@ export function useShortcuts(actions) {
     { combo: 'Mod+C', description: 'Copy',                 group: 'Editing', preventDefault: false },
     { combo: 'Mod+X', description: 'Cut',                  group: 'Editing', enabled: notReadOnly, preventDefault: false },
     { combo: 'Mod+V', description: 'Paste',                group: 'Editing', enabled: notReadOnly, preventDefault: false },
-    { combo: 'Mod+Alt+Equal', description: 'Insert rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
-    { combo: 'Mod+Alt+Minus', description: 'Delete rows / columns', group: 'Editing', condition: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Alt+Equal', description: 'Insert rows / columns', group: 'Editing', enabled: notReadOnly, preventDefault: false },
+    { combo: 'Mod+Alt+Minus', description: 'Delete rows / columns', group: 'Editing', enabled: notReadOnly, preventDefault: false },
 
     // Number formats (Ctrl+Shift+1..5) — handled via e.code below; here for display.
     { combo: 'Mod+Shift+Digit1', description: 'Format as number',   group: 'Formatting', enabled: notReadOnly, preventDefault: false },

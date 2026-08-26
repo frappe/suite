@@ -10,7 +10,7 @@
 						:class="cellBorders(index, group.items.length)"
 					>
 						<div class="flex min-w-0 items-center gap-3">
-							<div class="bg-surface-gray-2 text-ink-gray-7 flex size-7 shrink-0 items-center justify-center rounded">
+							<div class="bg-surface-gray-2 text-ink-gray-7 flex size-7 shrink-0 items-center justify-center rounded-4">
 								<FeatherIcon :name="actionIcon(action, group.label)" class="size-4" />
 							</div>
 							<div class="min-w-0">

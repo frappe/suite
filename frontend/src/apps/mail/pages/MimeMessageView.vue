@@ -5,7 +5,7 @@
 		>
 			<template v-if="mime.data">
 				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-					<h1 class="text-xl !font-medium">{{ __('MIME Message') }}</h1>
+					<h1 class="text-lg !font-medium">{{ __('MIME Message') }}</h1>
 					<Button
 						:label="__('Copy to Clipboard')"
 						size="md"
@@ -19,7 +19,7 @@
 					<div
 						v-for="[key, value] of Object.entries(mime.data)"
 						:key="key"
-						class="even:bg-surface-gray-1 flex flex-col gap-1 px-4 py-4 text-base last:rounded-b sm:flex-row sm:items-center sm:px-6"
+						class="even:bg-surface-gray-1 flex flex-col gap-1 px-4 py-4 text-base last:rounded-b-4 sm:flex-row sm:items-center sm:px-6"
 					>
 						<div class="text-ink-gray-5 w-full sm:w-1/4">{{ value.label }}</div>
 						<div class="flex w-full items-center break-words sm:w-3/4">
@@ -38,7 +38,7 @@
 			</template>
 
 			<div v-else-if="mime.error" class="space-y-4 text-center">
-				<h1 class="text-3xl !font-medium text-red-500">{{ __('Error') }}</h1>
+				<h1 class="text-2xl !font-medium text-red-500">{{ __('Error') }}</h1>
 				<div class="text-ink-gray-5" v-html="mime.error.messages[0]" />
 				<Button :label="__('Return to Home')" size="md" @click="$router.push({ name: 'mail-root-shortcut' })" />
 			</div>

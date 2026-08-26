@@ -4,7 +4,7 @@
     " @keydown.meta.enter.capture.stop="
       !disabled && !isEmpty && $emit('submit', editor)
       " @keydown.esc.stop="$emit('cancel', editor)">
-    <div class="flex" :class="editable && 'border rounded'">
+    <div class="flex" :class="editable && 'border rounded-4'">
       <Editor ref="textEditor" v-model="editorContent" :editable="editable" :extensions
         @change="(val) => { modelValue = val; $emit('change') }">
         <template #default="{ editor }">

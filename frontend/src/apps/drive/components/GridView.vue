@@ -77,7 +77,7 @@
   </div>
   <NoFilesSection v-else description="Nothing found - try something else?" />
   <div v-if="loadingMore" class="pointer-events-none px-3 pb-5 sm:px-5">
-    <Skeleton class="h-3 w-24 rounded" />
+    <Skeleton class="h-3 w-24 rounded-4" />
   </div>
   <ContextMenu
     v-if="rowEvent && selectedRow"

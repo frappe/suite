@@ -77,7 +77,7 @@
 		<template>
 			<pre
 				v-if="source.data"
-				class="bg-surface-gray-2 max-h-[70vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
+				class="bg-surface-gray-2 max-h-[70vh] overflow-auto rounded-4 p-4 text-xs whitespace-pre-wrap"
 				>{{ source.data.source }}</pre
 			>
 			<div v-else class="flex justify-center py-6">

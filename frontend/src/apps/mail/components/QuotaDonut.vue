@@ -23,7 +23,7 @@
 				/>
 			</svg>
 			<div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-				<span class="text-lg font-semibold">{{ totalQuotaLabel }}</span>
+				<span class="text-md font-semibold">{{ totalQuotaLabel }}</span>
 				<span class="text-ink-gray-5 text-xs">
 					{{ quota.unlimited ? __('Unlimited') : __('Total Quota') }}
 				</span>
@@ -31,14 +31,14 @@
 		</div>
 		<div class="space-y-4">
 			<div class="flex items-start gap-2">
-				<span class="bg-surface-gray-10 mt-1 h-3 w-3 shrink-0 rounded-sm" />
+				<span class="bg-surface-gray-10 mt-1 h-3 w-3 shrink-0 rounded-1" />
 				<div>
 					<p class="text-sm font-medium">{{ usedLabel }}</p>
 					<p class="text-ink-gray-5 text-xs">{{ __('Used') }}</p>
 				</div>
 			</div>
 			<div v-if="!quota.unlimited" class="flex items-start gap-2">
-				<span class="bg-surface-gray-4 mt-1 h-3 w-3 shrink-0 rounded-sm" />
+				<span class="bg-surface-gray-4 mt-1 h-3 w-3 shrink-0 rounded-1" />
 				<div>
 					<p class="text-sm font-medium">{{ availableLabel }}</p>
 					<p class="text-ink-gray-5 text-xs">{{ __('Available') }}</p>

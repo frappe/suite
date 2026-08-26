@@ -39,7 +39,7 @@
 				@action="showAddEmail = true"
 			>
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded px-5 py-2.5 text-sm">
+					<div class="bg-surface-gray-2 text-ink-gray-5 flex items-center rounded-4 px-5 py-2.5 text-sm">
 						<span class="flex-1">{{ __('Email Address') }}</span>
 						<span class="flex-1">{{ __('Full Name') }}</span>
 						<span class="w-20 shrink-0 text-center">{{ __('Enabled') }}</span>
@@ -92,7 +92,7 @@
 			<!-- Groups -->
 			<DashboardCard :title="__('Groups')" :button-label="__('Add')" @action="showAddGroups = true">
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
+					<div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
 						{{ __('Group') }}
 					</div>
 					<template v-if="member.data.groups.length">
@@ -122,7 +122,7 @@
 			<!-- Mailing Lists -->
 			<DashboardCard :title="__('Mailing Lists')" :button-label="__('Add')" @action="showAddLists = true">
 				<div class="flex flex-col">
-					<div class="bg-surface-gray-2 text-ink-gray-5 rounded px-5 py-2.5 text-sm">
+					<div class="bg-surface-gray-2 text-ink-gray-5 rounded-4 px-5 py-2.5 text-sm">
 						{{ __('Mailing List') }}
 					</div>
 					<template v-if="member.data.mailing_lists.length">

@@ -11,7 +11,7 @@
 				<div class="space-y-1.5">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Signature Body') }}</label>
 					<TextEditor
-						editor-class="prose-sm min-h-[8rem] border rounded-b-lg border-t-0 p-2 max-w-none border-outline-gray-2"
+						editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
 						:extensions="[CustomParagraphExtension]"
 						:fixed-menu="buttons"
 						:placeholder="__('Write your signature here')"

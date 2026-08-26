@@ -1,6 +1,6 @@
 <template>
   <button
-    class="flex h-7 w-full cursor-pointer items-center rounded text-ink-gray-7 active:bg-surface-elevation-3 hover:bg-surface-gray-2"
+    class="flex h-7 w-full cursor-pointer items-center rounded-4 text-ink-gray-7 active:bg-surface-elevation-3 hover:bg-surface-gray-2"
     @click="handleClick"
   >
     <div class="flex w-full items-center justify-between duration-300 ease-in-out p-2">

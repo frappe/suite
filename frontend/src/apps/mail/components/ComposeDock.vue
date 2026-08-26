@@ -30,7 +30,7 @@
 	<Teleport to="body">
 		<div
 			v-if="show"
-			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-lg border border-b-0 shadow-2xl"
+			class="bg-surface-elevation-1 border-outline-gray-2 fixed bottom-0 right-5 z-30 flex max-h-[calc(100vh-3rem)] max-w-[calc(100vw-2.5rem)] flex-col rounded-t-6 border border-b-0 shadow-2xl"
 			:class="minimised ? 'w-[28rem]' : 'w-[40rem]'"
 		>
 			<!-- The whole bar toggles: a bar carrying one small target invites the miss that
@@ -41,7 +41,7 @@
 			     row and thread divider in mail uses. Only the panel's outer edge is gray-2, which
 			     is a different job: holding the window off the page behind it. -->
 			<div
-				class="flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-lg px-6 py-2.5"
+				class="flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-t-6 px-6 py-2.5"
 				:class="minimised ? '' : 'border-b'"
 				:role="minimised ? 'button' : undefined"
 				:tabindex="minimised ? 0 : undefined"

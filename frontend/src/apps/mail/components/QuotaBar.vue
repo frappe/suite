@@ -1,5 +1,5 @@
 <template>
-	<div class="flex flex-col space-y-2 rounded p-2">
+	<div class="flex flex-col space-y-2 rounded-4 p-2">
 		<div class="flex w-full">
 			<div class="flex items-center space-x-2">
 				<Cloud class="icon" />

@@ -1,5 +1,5 @@
 <template>
-  <Popover side="left" class="!block w-full" @open="setSelectorPosition(modelColor)">
+  <Popover side="left" @update:open="(open) => open && setSelectorPosition(modelColor)">
     <template #trigger="{ open }">
       <slot
         name="target"

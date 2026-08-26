@@ -115,7 +115,7 @@ const selectionLabel = computed(() => {
 
 // size-6 keeps the hit area equal to the p-1 icon buttons in ButtonGroup
 const lockClasses = computed(() => [
-	'flex size-6 cursor-pointer items-center justify-center rounded hover:bg-surface-gray-3',
+	'flex size-6 cursor-pointer items-center justify-center rounded-4 hover:bg-surface-gray-3',
 	isSelectionLocked.value ? 'bg-surface-gray-3 text-ink-gray-7' : 'text-ink-gray-6',
 ])
 

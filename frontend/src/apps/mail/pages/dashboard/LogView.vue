@@ -20,7 +20,7 @@
 						<Button variant="ghost" :label="__('Copy')" @click="copyToClipBoard(data.details || '')" />
 					</template>
 					<pre
-						class="bg-surface-gray-2 max-h-[60vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
+						class="bg-surface-gray-2 max-h-[60vh] overflow-auto rounded-4 p-4 text-xs whitespace-pre-wrap"
 						>{{ data.details || '—' }}</pre
 					>
 				</DashboardCard>

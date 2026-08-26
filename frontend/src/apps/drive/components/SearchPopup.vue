@@ -20,7 +20,7 @@
         <div
           v-for="entity in searchResults.data"
           :key="entity.name"
-          class="grid grid-flow-col grid-cols-8 gap-2 w-full items-center rounded px-2 py-2 text-base cursor-pointer hover:bg-surface-gray-2"
+          class="grid grid-flow-col grid-cols-8 gap-2 w-full items-center rounded-4 px-2 py-2 text-base cursor-pointer hover:bg-surface-gray-2"
           @click="openEntity(entity), (open = false)"
         >
           <div class="flex items-center gap-2 w-full col-span-6">
@@ -52,21 +52,21 @@
         <span class="mb-1 px-4.5 text-base text-ink-gray-5">Jump to</span>
         <div class="px-2.5">
           <div
-            class="flex w-full min-w-0 items-center rounded px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
+            class="flex w-full min-w-0 items-center rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
             @click="$router.push({ name: 'drive-Home' }), emitter.emit('showSearchPopup', false)"
           >
             <LucideHome class="mr-2 size-4 text-ink-gray-7" />
             Home
           </div>
           <div
-            class="flex w-full min-w-0 items-center rounded px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
+            class="flex w-full min-w-0 items-center rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
             @click="$router.push({ name: 'drive-Recents' }), emitter.emit('showSearchPopup', false)"
           >
             <LucideClock class="mr-2 size-4 text-ink-gray-7" />
             Recents
           </div>
           <div
-            class="flex w-full min-w-0 items-center rounded px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
+            class="flex w-full min-w-0 items-center rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
             @click="$router.push({ name: 'drive-Favourites' }), emitter.emit('showSearchPopup', false)"
           >
             <LucideStar class="mr-2 size-4 text-ink-gray-7" />
@@ -76,14 +76,14 @@
         <span class="mt-3 mb-1 px-4.5 text-base text-ink-gray-5">Actions</span>
         <div class="px-2.5">
           <div
-            class="flex w-full min-w-0 items-center rounded px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
+            class="flex w-full min-w-0 items-center rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
             @click="emitter.emit('uploadFile'), emitter.emit('showSearchPopup', false)"
           >
             <LucideFilePlus2 class="stroke-[1.35] mr-2 size-4 text-ink-gray-7" />
             Upload File
           </div>
           <div
-            class="flex w-full min-w-0 items-center rounded px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
+            class="flex w-full min-w-0 items-center rounded-4 px-2 py-2 text-base-medium text-ink-gray-7 hover:bg-surface-gray-2"
             @click="emitter.emit('uploadFolder'), emitter.emit('showSearchPopup', false)"
           >
             <LucideFolderPlus class="stroke-[1.35] mr-2 size-4 text-ink-gray-7" />

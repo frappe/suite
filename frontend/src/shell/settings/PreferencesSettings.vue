@@ -1,6 +1,6 @@
 <template>
   <SettingsHeader>
-    <h2 class="text-lg-semibold text-ink-gray-8">{{ __('Preferences') }}</h2>
+    <h2 class="text-md-semibold text-ink-gray-8">{{ __('Preferences') }}</h2>
   </SettingsHeader>
   <SettingsBody>
     <!-- pt-2.5 + first row's py-3.5 = 24px, level with the profile tab's pt-6 -->

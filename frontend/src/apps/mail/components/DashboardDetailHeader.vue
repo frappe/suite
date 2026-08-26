@@ -4,12 +4,12 @@
 			class="bg-surface-gray-2 text-ink-gray-6 flex h-11 w-11 shrink-0 items-center justify-center rounded-6"
 		>
 			<slot name="icon">
-				<span class="text-lg font-semibold uppercase">{{ initial }}</span>
+				<span class="text-md font-semibold uppercase">{{ initial }}</span>
 			</slot>
 		</div>
 		<div class="min-w-0 flex-1">
 			<div class="flex min-w-0 items-center gap-2">
-				<h1 class="text-ink-gray-9 truncate text-xl font-semibold leading-6">{{ title }}</h1>
+				<h1 class="text-ink-gray-9 truncate text-lg font-semibold leading-6">{{ title }}</h1>
 				<Badge v-if="badgeLabel" :label="badgeLabel" :theme="badgeTheme" />
 			</div>
 			<div

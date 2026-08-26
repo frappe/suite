@@ -40,7 +40,7 @@
                 <div
                   @click="onSelection(template)"
                   @mouseover="setActiveIndex(index)"
-                  class="flex cursor-pointer items-center gap-3 rounded px-3 py-2.5 transition-colors"
+                  class="flex cursor-pointer items-center gap-3 rounded-4 px-3 py-2.5 transition-colors"
                   :class="[activeIndex === index ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2']"
                   :ref="
                     (el) => {

@@ -4,7 +4,7 @@
 			<div class="grid max-h-[75vh] w-full grid-cols-2 gap-10 overflow-y-auto py-1">
 				<div v-for="(column, index) in shortcutGroups" :key="index">
 					<div v-for="group in column" :key="group.title" class="pb-8">
-						<h2 class="text-ink-gray-8 mb-4 text-xl-semibold">
+						<h2 class="text-ink-gray-8 mb-4 text-lg-semibold">
 							{{ group.title }}
 						</h2>
 						<ul class="space-y-2">
@@ -20,7 +20,7 @@
 										:key="kIndex"
 										class="text-ink-gray-8 my-auto text-xs"
 										:class="{
-											'bg-surface-gray-2 border-outline-gray-2 rounded-sm border px-2 py-0.5 font-mono shadow-sm':
+											'bg-surface-gray-2 border-outline-gray-2 rounded-1 border px-2 py-0.5 font-mono shadow-sm':
 												![__('or'), __('then')].includes(key),
 										}"
 									>

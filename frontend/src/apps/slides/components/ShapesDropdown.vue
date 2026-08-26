@@ -15,7 +15,7 @@ import { Dropdown } from 'frappe-ui'
 import { pendingShapeType } from '@/apps/slides/stores/element'
 
 const triggerClass = (open) => [
-	'cursor-pointer rounded p-2 hover:bg-surface-gray-3',
+	'cursor-pointer rounded-4 p-2 hover:bg-surface-gray-3',
 	{ 'bg-surface-gray-3': open },
 ]
 

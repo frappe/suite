@@ -39,7 +39,7 @@
           class="min-w-0 flex-1 overflow-x-auto sm:ml-3 sm:flex sm:flex-initial sm:flex-wrap sm:items-start sm:justify-end sm:gap-1 sm:overflow-visible">
           <div class="flex min-w-full w-max justify-end gap-1 sm:contents">
             <div v-for="({ icon, name }, index) in activeFilters" :key="index" class="shrink-0">
-              <div class="flex items-center border rounded pl-2 py-1 h-7 text-base select-none">
+              <div class="flex items-center border rounded-4 pl-2 py-1 h-7 text-base select-none">
                 <img class="w-4" :src="icon" />
                 <span class="text-sm ml-2">{{ name }}</span>
                 <Button variant="minimal" :icon="h(LucideX, { class: 'size-3' })"

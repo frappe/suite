@@ -2,7 +2,7 @@
   <div class="flex min-w-0 items-center" data-testid="breadcrumbs">
     <div v-if="loading" class="flex items-center gap-1.5" data-testid="breadcrumbs-loading">
       <Skeleton class="h-4 w-16 rounded-1" />
-      <span class="text-lg-medium text-ink-gray-4" aria-hidden="true">/</span>
+      <span class="text-md-medium text-ink-gray-4" aria-hidden="true">/</span>
       <Skeleton class="h-4 w-32 rounded-1" />
     </div>
     <template v-else-if="isEditing">
@@ -10,7 +10,7 @@
         <Breadcrumbs :items="parentItems" />
         <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
       </template>
-      <InlineRenameInput :entity="entity" class="text-lg-medium" />
+      <InlineRenameInput :entity="entity" class="text-md-medium" />
     </template>
     <Breadcrumbs v-else :items="displayItems" />
   </div>

@@ -1,6 +1,6 @@
 <template>
   <SettingsHeader>
-    <h2 class="text-lg-semibold text-ink-gray-8">{{ __('Workspace') }}</h2>
+    <h2 class="text-md-semibold text-ink-gray-8">{{ __('Workspace') }}</h2>
   </SettingsHeader>
   <SettingsBody>
     <div class="space-y-11 pt-6">

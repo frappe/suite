@@ -1,7 +1,7 @@
 <template>
 	<div
 		v-if="showImagesBanner"
-		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded border p-2.5 px-4 sm:flex-row sm:items-center"
+		class="text-ink-gray-6 mb-3 flex flex-col gap-3 rounded-4 border p-2.5 px-4 sm:flex-row sm:items-center"
 	>
 		<div class="flex min-w-0 flex-1 items-start gap-3">
 			<!-- Centered on the FIRST line, not on the block: the label wraps to two lines

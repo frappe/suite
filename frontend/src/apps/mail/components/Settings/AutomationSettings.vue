@@ -18,7 +18,7 @@
 		<div
 			v-for="script in filteredScripts"
 			:key="script.name"
-			class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded px-3 py-1"
+			class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1"
 			@click="editScript(script)"
 		>
 			<div class="flex items-center gap-2">

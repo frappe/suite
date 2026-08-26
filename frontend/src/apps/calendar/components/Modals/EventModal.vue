@@ -532,7 +532,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 			<div class="flex max-h-[85vh] flex-col text-ink-gray-8">
 				<!-- header -->
 				<div class="flex items-center border-b px-6 py-4">
-					<span class="text-lg font-semibold">{{ dialogTitle }}</span>
+					<span class="text-md font-semibold">{{ dialogTitle }}</span>
 					<Button variant="ghost" class="ml-auto" @click="close">
 						<template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
 					</Button>
@@ -546,7 +546,7 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 							v-model="event.title"
 							:autofocus="isNew"
 							:placeholder="__('Add title')"
-							class="w-full border-none bg-transparent p-0 pb-4 text-2xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
+							class="w-full border-none bg-transparent p-0 pb-4 text-xl font-semibold tracking-tight text-ink-gray-8 outline-none placeholder:text-ink-gray-4 focus:ring-0"
 						/>
 
 						<!-- date & time — one grouped card -->

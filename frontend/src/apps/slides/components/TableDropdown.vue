@@ -48,7 +48,7 @@ const label = computed(() =>
 )
 
 const triggerClass = (isOpen) => [
-	'cursor-pointer rounded p-2 hover:bg-surface-gray-3',
+	'cursor-pointer rounded-4 p-2 hover:bg-surface-gray-3',
 	{ 'bg-surface-gray-3': isOpen },
 ]
 

@@ -12,7 +12,7 @@
 					<component :is="stat.icon" class="h-4 w-4" />
 					{{ stat.label }}
 				</span>
-				<span class="text-ink-gray-9 text-2xl font-semibold">{{ stat.value }}</span>
+				<span class="text-ink-gray-9 text-xl font-semibold">{{ stat.value }}</span>
 				<span class="text-xs" :class="stat.subTone === 'warning' && stat.sub ? 'text-ink-amber-6' : 'text-ink-gray-5'">
 					{{ stat.sub || ' ' }}
 				</span>

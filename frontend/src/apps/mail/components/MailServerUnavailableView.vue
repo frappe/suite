@@ -5,7 +5,7 @@
 	>
 		<CloudOff class="h-10 w-10 text-ink-gray-5" />
 		<div class="flex flex-col gap-1.5">
-			<h1 class="text-2xl font-semibold text-ink-gray-9">{{ __('Mail server unavailable') }}</h1>
+			<h1 class="text-xl font-semibold text-ink-gray-9">{{ __('Mail server unavailable') }}</h1>
 			<p class="text-base text-ink-gray-6">
 				{{ __('The mail server is temporarily unavailable. Please try again in a few minutes.') }}
 			</p>

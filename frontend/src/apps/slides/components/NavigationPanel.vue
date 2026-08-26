@@ -35,7 +35,7 @@
 						/>
 						<div
 							v-if="isSlideActive(orderedSlides[virtualRow.index])"
-							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-lg bg-surface-gray-9"
+							class="pointer-events-none absolute -left-4 top-0 z-10 w-1 rounded-r-6 bg-surface-gray-9"
 							:style="{ height: `${thumbnailHeight}px` }"
 						/>
 					</div>
@@ -148,7 +148,7 @@ const toggleButtonClasses = computed(() => {
 	if (isNavigationPanelOpen.value) {
 		return `${baseClasses} border border-outline-gray-1 fixed -left-0.4 bottom-0 h-10 w-48 justify-between p-4`
 	}
-	return `${baseClasses} absolute top-1/2 transform -transform-y-1/2 h-12 w-4 justify-center rounded-r-lg shadow-xl`
+	return `${baseClasses} absolute top-1/2 transform -transform-y-1/2 h-12 w-4 justify-center rounded-r-6 shadow-xl`
 })
 
 const orderedSlides = computed(() => {

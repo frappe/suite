@@ -22,7 +22,7 @@
 	>
 		<template #title="{ close }">
 			<div class="flex items-center gap-2">
-				<h3 class="text-ink-gray-8 text-2xl-semibold min-w-0 flex-1 truncate leading-6">
+				<h3 class="text-ink-gray-8 text-xl-semibold min-w-0 flex-1 truncate leading-6">
 					{{ __('Compose Mail') }}
 				</h3>
 				<Button

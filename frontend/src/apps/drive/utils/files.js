@@ -534,6 +534,7 @@ export const setTitle = (file_name) =>
 async function uploadImage(file, params) {
   const uploader = useFileUpload()
   const upload = uploader.upload(file, {
+    private: false,
     params,
     upload_endpoint: '/api/method/suite.drive.api.files.upload_file',
   })

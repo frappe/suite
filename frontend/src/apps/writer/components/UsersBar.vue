@@ -32,7 +32,7 @@
     </template>
     <template #item="{ item }">
       <div
-        class="flex items-center justify-between py-1.5 px-2 rounded cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
+        class="flex items-center justify-between py-1.5 px-2 rounded-4 cursor-pointer hover:bg-surface-gray-1 focus:outline-none"
       >
         <div class="flex gap-2 items-center">
           <Avatar

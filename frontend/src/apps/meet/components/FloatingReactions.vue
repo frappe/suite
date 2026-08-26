@@ -13,7 +13,7 @@
 				top: `${reaction.position.y}px`,
 			}"
 		>
-			<div class="text-5xl mb-1 animate-bounce-in">
+			<div class="text-4xl mb-1 animate-bounce-in">
 				{{ reaction.emoji }}
 			</div>
 

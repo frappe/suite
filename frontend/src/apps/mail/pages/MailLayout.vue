@@ -260,7 +260,7 @@ onUnmounted(() => {
    variables (NOT @apply, which would break the build for these plugin-registered
    token classes); plain Tailwind utilities below still use @apply. */
 .mail-app-root {
-	@apply text-xl sm:text-lg text-ink-gray-8 bg-surface-base;
+	@apply text-lg sm:text-md text-ink-gray-8 bg-surface-base;
 }
 
 .mail-app-root h1 {
@@ -268,7 +268,7 @@ onUnmounted(() => {
 }
 
 .mail-app-root h2 {
-	@apply text-xl !font-medium sm:text-lg;
+	@apply text-lg !font-medium sm:text-md;
 }
 
 /* frappe-ui Dialogs/Dropdowns teleport to <body>, escaping .mail-app-root, so the base text color
@@ -284,7 +284,7 @@ body.mail-app h1 {
 }
 
 body.mail-app h2 {
-	@apply text-xl !font-medium sm:text-lg;
+	@apply text-lg !font-medium sm:text-md;
 }
 
 /* The page behind the app follows the theme: the translucent tab bar blurs over it

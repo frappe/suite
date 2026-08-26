@@ -14,7 +14,7 @@
 			<div
 				v-for="signature in signatures?.data"
 				:key="signature.name"
-				class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
+				class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
 				@click="editSignature(signature.name)"
 			>
 				<span class="text-base">{{ signature.signature_name }}</span>

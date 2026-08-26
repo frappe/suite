@@ -89,7 +89,7 @@
 								:text="attachment.filename"
 							>
 								<div
-									class="group/capsule hover:bg-surface-gray-1 flex max-w-60 cursor-pointer space-x-2 truncate rounded px-2 py-1.5"
+									class="group/capsule hover:bg-surface-gray-1 flex max-w-60 cursor-pointer space-x-2 truncate rounded-4 px-2 py-1.5"
 									@click.stop.prevent="openAttachment(idx + 2)"
 								>
 									<div class="text-ink-gray-4">
@@ -120,7 +120,7 @@
 					<div
 						v-for="m in mailboxesToShow"
 						:key="m.mailbox_id"
-						class="bg-surface-gray-3 inline-flex rounded p-1.5 text-xs"
+						class="bg-surface-gray-3 inline-flex rounded-4 p-1.5 text-xs"
 					>
 						{{ m.mailbox_name }}
 					</div>
@@ -130,7 +130,7 @@
 				<div
 					v-for="m in mailboxesToShow"
 					:key="m.mailbox_id"
-					class="bg-surface-gray-3 mr-1.5 inline-flex rounded p-1.5 text-xs"
+					class="bg-surface-gray-3 mr-1.5 inline-flex rounded-4 p-1.5 text-xs"
 				>
 					{{ m.mailbox_name }}
 				</div>

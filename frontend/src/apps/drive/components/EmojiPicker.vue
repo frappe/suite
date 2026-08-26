@@ -6,8 +6,8 @@
       </slot>
     </template>
     <template #default="{ toggle }">
-      <div class="bg-surface-base my-3 transform rounded px-4 sm:px-0">
-        <div class="relative rounded shadow-2xl ring-1 ring-black ring-opacity-5">
+      <div class="bg-surface-base my-3 transform rounded-4 px-4 sm:px-0">
+        <div class="relative rounded-4 shadow-2xl ring-1 ring-black ring-opacity-5">
           <div class="flex gap-2 px-3 pb-1 pt-3">
             <div class="flex-1">
               <FormControl v-model="search" :placeholder="__('Search')" />
@@ -43,7 +43,7 @@
                   v-for="_emoji in emojis"
                   :key="_emoji.value"
                   variant="ghost"
-                  class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-4xl"
+                  class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-3xl"
                   :title="_emoji.value"
                   :icon="_emoji.icon"
                   @click="() => (emojiValue = _emoji.value) && toggle()"

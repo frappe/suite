@@ -10,7 +10,7 @@
   </div>
   <div
     v-if="usedSpace > 0"
-    class="w-full flex justify-start items-start bg-surface-sidebar border rounded overflow-clip h-7 pl-0 mb-4"
+    class="w-full flex justify-start items-start bg-surface-sidebar border rounded-4 overflow-clip h-7 pl-0 mb-4"
   >
     <Tooltip v-for="[file_kind, i] in storageBreakdown.data?.total" :key="file_kind">
       <template #content>
@@ -37,7 +37,7 @@
   >
     Large Files:
   </div>
-  <div class="flex flex-col items-start justify-start w-full rounded full px-1.5 overflow-y-auto">
+  <div class="flex flex-col items-start justify-start w-full rounded-4 full px-1.5 overflow-y-auto">
     <div
       v-for="(i, index) in storageBreakdown.data?.entities"
       :key="i.name"

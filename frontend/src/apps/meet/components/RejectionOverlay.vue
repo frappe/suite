@@ -1,11 +1,11 @@
 <template>
 	<div class="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-		<div class="bg-surface-base rounded-xl shadow-2xl p-8 max-w-md mx-4 text-center space-y-4">
+		<div class="bg-surface-base rounded-7 shadow-2xl p-8 max-w-md mx-4 text-center space-y-4">
 			<div class="w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 bg-gradient-to-br from-red-100 to-red-200">
 				<lucide-x-circle class="w-6 h-6 text-red-600" />
 			</div>
 
-			<h2 class="text-3xl-semibold text-ink-gray-9">
+			<h2 class="text-2xl-semibold text-ink-gray-9">
 				Entry denied
 			</h2>
 

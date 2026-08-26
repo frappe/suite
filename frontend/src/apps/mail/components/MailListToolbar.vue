@@ -26,7 +26,7 @@
 
 		<Dropdown v-if="showFilter" :options="filterOptions">
 			<button
-				class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded px-2 py-1"
+				class="text-ink-gray-8 hover:bg-surface-gray-2 -ml-2 flex min-w-0 items-center gap-1 rounded-4 px-2 py-1"
 			>
 				<span class="truncate">{{ title }}</span>
 				<ChevronDown class="text-ink-gray-5 icon shrink-0" />

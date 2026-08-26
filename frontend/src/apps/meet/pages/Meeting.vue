@@ -45,7 +45,7 @@
 				<div class="text-red-500 mb-4">
 					<lucide-alert-circle class="w-12 h-12 mx-auto" />
 				</div>
-				<p class="text-xl mb-4">{{ connectionState.connectionError }}</p>
+				<p class="text-lg mb-4">{{ connectionState.connectionError }}</p>
 				<Button @click="resetToPreview" variant="outline" theme="red">Try Again</Button>
 			</div>
 		</div>
@@ -100,7 +100,7 @@
 								aria-live="polite"
 								data-testid="e2ee-join-pending-state"
 							>
-								<h1 class="text-lg-medium text-ink-gray-8">
+								<h1 class="text-md-medium text-ink-gray-8">
 									{{ e2eeJoinTitle }}
 								</h1>
 								<p class="mt-1 max-w-sm text-p-base text-ink-gray-7">

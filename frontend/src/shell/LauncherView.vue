@@ -4,7 +4,7 @@
     <header class="flex h-12 shrink-0 items-center justify-between border-b p-2">
       <div v-if="workspaceName" class="flex items-center gap-2">
         <Avatar :image="workspaceLogo" :label="workspaceName" shape="square" size="lg" />
-        <div class="text-lg-medium">{{ workspaceName }}</div>
+        <div class="text-md-medium">{{ workspaceName }}</div>
       </div>
       <div v-else />
 

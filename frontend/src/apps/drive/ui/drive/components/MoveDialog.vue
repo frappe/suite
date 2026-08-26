@@ -2,7 +2,7 @@
   <Dialog v-model:open="open" size="lg" @close="dialogType = ''">
     <template #default>
       <div>
-        <div class="text-2xl-semibold flex text-nowrap overflow-hidden pr-8 mb-4">
+        <div class="text-xl-semibold flex text-nowrap overflow-hidden pr-8 mb-4">
           <template v-if="props.entities.length > 1">
             Moving {{ props.entities.length }} items
           </template>
@@ -14,7 +14,7 @@
             "
           </template>
         </div>
-        <Tabs v-model="tabIndex" as="div" :tabs="tabs">
+        <Tabs v-model="activeTab" :tabs="tabs">
           <template #tab-panel>
             <div class="px-1 py-1 h-64 overflow-auto flex flex-col">
               <Tree v-if="tree.children.length" :nodes="tree.children" node-key="value" guides="none">
@@ -66,9 +66,9 @@
               </Tree>
               <div v-if="tree.loading" class="space-y-1 py-1">
                 <div v-for="i in 4" :key="i" class="flex items-center gap-1.5 h-7 px-1">
-                  <Skeleton class="size-3.5 rounded shrink-0" />
-                  <Skeleton class="size-4 rounded shrink-0" />
-                  <Skeleton class="h-3 rounded" :style="{ width: folderWidths[(i - 1) % folderWidths.length] }" />
+                  <Skeleton class="size-3.5 rounded-4 shrink-0" />
+                  <Skeleton class="size-4 rounded-4 shrink-0" />
+                  <Skeleton class="h-3 rounded-4" :style="{ width: folderWidths[(i - 1) % folderWidths.length] }" />
                 </div>
               </div>
               <div v-else-if="!tree.children.length" class="flex justify-center flex-1">
@@ -164,7 +164,7 @@ const emit = defineEmits(['success', 'complete'])
 const dialogType = defineModel()
 const open = ref(true)
 
-const tabIndex = ref(0)
+const activeTab = ref('home')
 rootInfo.fetch()
 
 // Reopen at the folder the user last moved into this session, so repeated moves
@@ -193,8 +193,8 @@ const selected = ref('')
 const breadcrumbs = ref([{ name: '', file_name: 'Home' }])
 
 const tabs = computed(() => [
-  { label: 'Home', icon: h(LucideHome, { class: 'size-4' }) },
-  { label: 'Site', icon: h(LucideBuilding2, { class: 'size-4' }) },
+  { label: 'Home', value: 'home', icon: h(LucideHome, { class: 'size-4' }) },
+  { label: 'Site', value: 'site', icon: h(LucideBuilding2, { class: 'size-4' }) },
 ])
 
 const folderContents = createResource({
@@ -249,12 +249,12 @@ const selectedPerms = createResource({
 })
 
 watch(
-  tabIndex,
+  activeTab,
   (newValue) => {
     selected.value = ''
     tree.loading = true
     tree.children = []
-    if (newValue === 0) {
+    if (newValue === 'home') {
       breadcrumbs.value = [{ name: '', file_name: 'Home' }]
       fetchFolderContents(tree)
     } else {

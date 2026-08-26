@@ -7,7 +7,7 @@
         else delete commentRefs[comment.id]
       }
         " v-on-outside-click="(e) => onOutsideCardClick(e, comment)"
-          class="absolute rounded shadow w-56 comment-group scroll-m-24 bg-surface-base dark:border max-md:fixed max-md:inset-x-4 max-md:bottom-[calc(1rem+var(--writer-tab-bar-height,0px))] max-md:top-auto max-md:z-20 max-md:w-auto max-md:max-w-sm max-md:mx-auto max-md:max-h-[65vh] max-md:overflow-y-auto max-md:shadow-xl"
+          class="absolute rounded-4 shadow w-56 comment-group scroll-m-24 bg-surface-base dark:border max-md:fixed max-md:inset-x-4 max-md:bottom-[calc(1rem+var(--writer-tab-bar-height,0px))] max-md:top-auto max-md:z-20 max-md:w-auto max-md:max-w-sm max-md:mx-auto max-md:max-h-[65vh] max-md:overflow-y-auto max-md:shadow-xl"
           :class="[
             activeComment === comment.id && 'shadow-xl ',
             isMobile || comment.top

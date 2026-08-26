@@ -42,7 +42,7 @@ const emit = defineEmits(['select', 'hover'])
 
 const rowClasses = 'flex h-7 w-full items-center justify-between'
 const buttonClasses =
-	'flex cursor-pointer items-center justify-center rounded p-1 text-ink-gray-6 hover:bg-surface-gray-3'
+	'flex cursor-pointer items-center justify-center rounded-4 p-1 text-ink-gray-6 hover:bg-surface-gray-3'
 const activeClasses = 'bg-surface-gray-3 text-ink-gray-7'
 const disabledClasses = 'pointer-events-none'
 

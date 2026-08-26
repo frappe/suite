@@ -8,7 +8,7 @@
 			<span class="scrollbar-none text-ink-gray-7 mr-1.5 overflow-x-scroll text-nowrap">
 				{{ value }}
 			</span>
-			<span class="bg-surface-base text-ink-gray-5 ml-auto rounded border p-1 text-xs">
+			<span class="bg-surface-base text-ink-gray-5 ml-auto rounded-4 border p-1 text-xs">
 				{{ message }}
 			</span>
 		</button>

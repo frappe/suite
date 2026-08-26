@@ -1,7 +1,7 @@
 <template>
   <Dialog v-model:open="open" @close="dialogType = ''">
     <template #title>
-      <h3 class="text-2xl-semibold leading-6 text-ink-gray-9 cursor-pointer pr-2" @click="emitter.emit('rename')">
+      <h3 class="text-xl-semibold leading-6 text-ink-gray-9 cursor-pointer pr-2" @click="emitter.emit('rename')">
         {{ entity.file_name }}
       </h3>
     </template>
@@ -62,7 +62,7 @@
       <div class="flex justify-between items-center">
         <span class="text-base-semibold text-ink-gray-8">Access</span>
         <Button v-if="entity.share" :variant="'subtle'" size="sm"
-          class="rounded flex justify-center items-center scale-[90%]" @click="emitter.emit('share')">
+          class="rounded-4 flex justify-center items-center scale-[90%]" @click="emitter.emit('share')">
           {{ __('Manage') }}
         </Button>
       </div>

@@ -10,7 +10,7 @@
 	>
 		<div class="flex items-center gap-2.5 p-2.5 pl-3">
 			<span
-				class="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-surface-gray-2 text-ink-gray-5"
+				class="flex h-7 w-7 shrink-0 items-center justify-center rounded-4 bg-surface-gray-2 text-ink-gray-5"
 			>
 				<img
 					v-if="preview.favicon && !faviconFailed"

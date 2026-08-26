@@ -19,7 +19,7 @@ class FloatingQuoteButtonView {
       'h-7 text-ink-base bg-surface-gray-10 hover:bg-surface-gray-9 active:bg-surface-gray-8',
       'text-ink-gray-8 bg-surface-gray-2 hover:bg-surface-gray-3 active:bg-surface-gray-4',
       'focus-visible:ring focus-visible:ring-outline-gray-3',
-      'h-7 text-base px-2 rounded inline-flex items-center justify-center gap-2 transition-colors focus:outline-none',
+      'h-7 text-base px-2 rounded-4 inline-flex items-center justify-center gap-2 transition-colors focus:outline-none',
     ]
       .map((c) => c.split(' '))
       .flat()

@@ -6,7 +6,7 @@
 			<div class="flex flex-1 items-start justify-center pt-[100px]">
 				<div class="w-[760px] max-w-full px-6">
 					<div class="mb-2 flex flex-col gap-0.5">
-						<h1 class="text-xl-semibold text-ink-gray-8 tracking-[0.2px]">
+						<h1 class="text-lg-semibold text-ink-gray-8 tracking-[0.2px]">
 							Hey {{ firstName }},
 						</h1>
 						<p class="text-sm text-ink-gray-6 tracking-[0.28px] leading-[1.5]">

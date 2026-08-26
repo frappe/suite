@@ -461,7 +461,7 @@ const openUrl = (location: string) => {
 				     date keeps text-sm's default 1.15 line-height (14.95px), so
 				     -8 + 24 + 6 + 14.95 + 12 sums to 49 within a subpixel. -->
 				<div class="min-w-0 space-y-1.5">
-					<h3 class="text-ink-gray-8 break-words text-lg font-semibold leading-6">
+					<h3 class="text-ink-gray-8 break-words text-md font-semibold leading-6">
 						{{ calendarEvent.title || __('Untitled event') }}
 					</h3>
 					<div class="text-ink-gray-6 break-words text-sm">

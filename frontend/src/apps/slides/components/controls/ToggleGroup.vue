@@ -1,7 +1,7 @@
 <template>
 	<div :class="rowClasses">
 		<span v-if="label" :class="labelClasses">{{ label }}</span>
-		<div class="inline-flex items-center gap-1 rounded bg-surface-base p-px">
+		<div class="inline-flex items-center gap-1 rounded-4 bg-surface-base p-px">
 			<button
 				v-for="option in options"
 				:key="option.value"

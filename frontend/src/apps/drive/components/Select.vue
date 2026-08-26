@@ -119,7 +119,7 @@ const labelFunction = (val: Value, selected = false) => {
     <SelectRoot v-model="selected" :multiple>
       <SelectTrigger
         :disabled="disabled"
-        class="flex h-7 w-full overflow-hidden focus:ring-0 rounded bg-surface-gray-2 px-2 py-1 transition-colors hover:bg-surface-gray-3 focus:outline-0 focus:ring-0"
+        class="flex h-7 w-full overflow-hidden focus:ring-0 rounded-4 bg-surface-gray-2 px-2 py-1 transition-colors hover:bg-surface-gray-3 focus:outline-0 focus:ring-0"
         :class="{ 'opacity-50 pointer-events-none': disabled }"
       >
         <!-- Using SelectValue alone renders the icon too -->
@@ -163,7 +163,7 @@ const labelFunction = (val: Value, selected = false) => {
                   :key="idx"
                   :value="getValue(option)"
                   :disabled="isDisabled(option)"
-                  class="text-base leading-none text-ink-gray-7 rounded flex items-center h-7 px-2.5 py-1.5 relative select-none data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:outline-none data-[highlighted]:bg-surface-gray-3"
+                  class="text-base leading-none text-ink-gray-7 rounded-4 flex items-center h-7 px-2.5 py-1.5 relative select-none data-[disabled]:opacity-50 data-[disabled]:pointer-events-none data-[highlighted]:outline-none data-[highlighted]:bg-surface-gray-3"
                 >
                   <SelectItemText>
                     <span class="flex items-center gap-2 pr-6 flex-1">

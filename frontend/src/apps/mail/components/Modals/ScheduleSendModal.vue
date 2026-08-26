@@ -6,7 +6,7 @@
 					<button
 						v-for="preset in presets"
 						:key="preset.label"
-						class="hover:bg-surface-gray-2 flex items-center justify-between rounded px-2.5 py-2 text-left"
+						class="hover:bg-surface-gray-2 flex items-center justify-between rounded-4 px-2.5 py-2 text-left"
 						@click="confirm(preset.value)"
 					>
 						<span class="text-ink-gray-7 text-base">{{ preset.label }}</span>

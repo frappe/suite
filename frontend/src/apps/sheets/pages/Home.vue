@@ -944,13 +944,13 @@ async function duplicate(sheet) {
 /* Suppress ListView's built-in header so only our flat sortable header shows.
    frappe-ui's ListView exposes no per-column header slot or sort hook and
    always renders <ListHeader>, so hiding it via its own utility classes is the
-   only seam available. The `.grid.rounded.bg-surface-gray-2` trio is unique to
+   only seam available. The `.grid.rounded-4.bg-surface-gray-2` trio is unique to
    ListHeader (data rows are `flex flex-col`, never all three), so this can't
    hide a row.
    ⚠ COUPLING: pinned to frappe-ui's ListHeader class names. If a frappe-ui
    upgrade renames them the built-in header reappears (a duplicate header) —
    degraded, not a crash; re-point this selector to match. */
-.home-listcol :deep(.grid.rounded.bg-surface-gray-2) { display: none; }
+.home-listcol :deep(.grid.rounded-4.bg-surface-gray-2) { display: none; }
 
 /* Inset the scroll region's content (rows + group headers) to the same 1200px
    band as the header. The padding lives on the scroller ITSELF so the scrollbar

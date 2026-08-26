@@ -24,7 +24,7 @@
 						<button
 							v-if="!hasVideoPermission"
 							type="button"
-							class="absolute inset-0 cursor-pointer rounded bg-transparent focus-visible:focus-ring disabled:cursor-wait"
+							class="absolute inset-0 cursor-pointer rounded-4 bg-transparent focus-visible:focus-ring disabled:cursor-wait"
 							aria-label="Allow camera access"
 							:disabled="isRequestingVideoPermission"
 							@click="requestPermission('video')"
@@ -61,7 +61,7 @@
 						<button
 							v-if="!hasAudioPermission"
 							type="button"
-							class="absolute inset-0 cursor-pointer rounded bg-transparent focus-visible:focus-ring disabled:cursor-wait"
+							class="absolute inset-0 cursor-pointer rounded-4 bg-transparent focus-visible:focus-ring disabled:cursor-wait"
 							aria-label="Allow microphone access"
 							:disabled="isRequestingAudioPermission"
 							@click="requestPermission('audio')"

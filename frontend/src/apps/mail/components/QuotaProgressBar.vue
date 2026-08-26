@@ -29,7 +29,7 @@
 
 			<!-- Center text -->
 			<div class="absolute inset-0 flex flex-col items-center justify-center space-y-1">
-				<div class="text-3xl-semibold">
+				<div class="text-2xl-semibold">
 					{{ quota ? `${quota.toFixed(2)} GB` : __('Unlimited') }}
 				</div>
 				<div class="text-ink-gray-4 text-xs">{{ __('Total Quota') }}</div>
@@ -40,7 +40,7 @@
 		<div class="flex flex-col gap-4">
 			<!-- Used Storage -->
 			<div class="flex items-start gap-3">
-				<span class="bg-surface-gray-9 mt-1 h-3 w-3 flex-shrink-0 rounded-sm" />
+				<span class="bg-surface-gray-9 mt-1 h-3 w-3 flex-shrink-0 rounded-1" />
 				<div class="space-y-1">
 					<div class="text-sm-medium">
 						{{ usedQuota.toFixed(2) }} GB
@@ -52,7 +52,7 @@
 
 			<!-- Available Storage -->
 			<div v-if="quota" class="flex items-start gap-3">
-				<span class="bg-surface-gray-2 mt-1 h-3 w-3 flex-shrink-0 rounded-sm" />
+				<span class="bg-surface-gray-2 mt-1 h-3 w-3 flex-shrink-0 rounded-1" />
 				<div class="space-y-1">
 					<div class="text-sm-medium">
 						{{ availableQuota.toFixed(2) }} GB ({{ availablePercentage.toFixed(1) }}%)

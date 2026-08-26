@@ -13,7 +13,7 @@
         <FileRender v-else-if="file.data" :preview-entity="file.data" />
       </div>
       <div
-        class="hidden sm:flex absolute bottom-4 left-1/2 transform -translate-x-1/2 w-fit items-center justify-center p-1 gap-1 rounded shadow-xl l bg-surface-base"
+        class="hidden sm:flex absolute bottom-4 left-1/2 transform -translate-x-1/2 w-fit items-center justify-center p-1 gap-1 rounded-4 shadow-xl l bg-surface-base"
       >
         <Button
           :disabled="!prevEntity?.name"

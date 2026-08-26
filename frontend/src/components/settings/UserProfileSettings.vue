@@ -4,6 +4,7 @@
 		<div v-if="user?.doc" class="flex flex-col gap-6">
 			<FileUploader
 				file-types="image/png,image/jpeg,image/jpg"
+				:private="false"
 				:validate-file="validateAvatarFile"
 				@success="onAvatarUploaded"
 			>
@@ -46,7 +47,7 @@
 							</button>
 						</div>
 						<div class="flex min-w-0 flex-col gap-1">
-							<div class="text-2xl-semibold text-ink-gray-8 truncate">
+							<div class="text-xl-semibold text-ink-gray-8 truncate">
 								{{ displayName }}
 							</div>
 							<p class="text-base text-ink-gray-6 truncate">

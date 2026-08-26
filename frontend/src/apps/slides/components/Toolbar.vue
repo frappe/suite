@@ -4,7 +4,7 @@
 		@wheel="handleScrollBarWheelEvent"
 	>
 		<Tooltip text="Text" :hover-delay="0.7">
-			<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="addTextElement(null)">
+			<div class="cursor-pointer rounded-4 p-2 hover:bg-surface-gray-3" @click="addTextElement(null)">
 				<Type class="size-4.5 stroke-[1.5] text-ink-gray-7" />
 			</div>
 		</Tooltip>
@@ -18,7 +18,7 @@
 				@success="(file) => handleUploadSuccess(file)"
 			>
 				<template #default="{ openFileSelector }">
-					<div class="cursor-pointer rounded p-2 hover:bg-surface-gray-3" @click="openFileSelector">
+					<div class="cursor-pointer rounded-4 p-2 hover:bg-surface-gray-3" @click="openFileSelector">
 						<ImagePlus class="size-4.5 stroke-[1.5] text-ink-gray-7" />
 					</div>
 				</template>

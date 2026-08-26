@@ -1,7 +1,7 @@
 <template>
   <section>
     <div class="flex flex-col gap-4">
-      <h2 class="text-lg-semibold text-ink-gray-8">{{ __('Users') }}</h2>
+      <h2 class="text-md-semibold text-ink-gray-8">{{ __('Users') }}</h2>
       <div class="flex items-center justify-between gap-3">
         <TextInput
           v-model="search"

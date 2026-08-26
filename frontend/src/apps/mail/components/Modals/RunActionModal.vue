@@ -50,7 +50,7 @@
 				<div v-if="result">
 					<label class="text-ink-gray-5 mb-1 block text-xs">{{ __('Result') }}</label>
 					<pre
-						class="bg-surface-gray-2 max-h-[45vh] overflow-auto rounded p-4 text-xs whitespace-pre-wrap"
+						class="bg-surface-gray-2 max-h-[45vh] overflow-auto rounded-4 p-4 text-xs whitespace-pre-wrap"
 						>{{ result }}</pre
 					>
 				</div>

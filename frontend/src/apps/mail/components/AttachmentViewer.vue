@@ -15,7 +15,7 @@
 				@click.self="closeViewer"
 			>
 				<div class="flex w-full justify-between">
-					<div class="flex max-w-2xl items-center space-x-2 truncate rounded">
+					<div class="flex max-w-2xl items-center space-x-2 truncate rounded-4">
 						<component
 							:is="getFileIcon(currentAttachment?.type)"
 							class="h-4 w-4 shrink-0"
@@ -27,7 +27,7 @@
 					<div class="shrink-0 space-x-2 sm:space-x-4">
 						<button
 							v-if="previewUrl && !fetchAttachment.loading && canPrint"
-							class="rounded p-1.5 hover:bg-white/20"
+							class="rounded-4 p-1.5 hover:bg-white/20"
 							@click="printAttachment"
 						>
 							<Printer class="h-4 w-4" />
@@ -35,12 +35,12 @@
 						<button
 							v-if="previewUrl && !fetchAttachment.loading"
 							:disabled="isDownloading"
-							class="rounded p-1.5 hover:bg-white/20 disabled:opacity-50"
+							class="rounded-4 p-1.5 hover:bg-white/20 disabled:opacity-50"
 							@click="downloadAttachment"
 						>
 							<Download class="h-4 w-4" />
 						</button>
-						<button class="rounded p-1.5 hover:bg-white/20" @click="closeViewer">
+						<button class="rounded-4 p-1.5 hover:bg-white/20" @click="closeViewer">
 							<X class="h-4 w-4" />
 						</button>
 					</div>
@@ -123,7 +123,7 @@
 				>
 					<button
 						:disabled="currentIndex === 0"
-						class="rounded p-1.5 disabled:opacity-50"
+						class="rounded-4 p-1.5 disabled:opacity-50"
 						:class="{ 'hover:bg-white/20': currentIndex !== 0 }"
 						@click="previousAttachment"
 					>
@@ -139,7 +139,7 @@
 					</span>
 					<button
 						:disabled="currentIndex === attachments.length - 1"
-						class="rounded p-1.5 disabled:opacity-50"
+						class="rounded-4 p-1.5 disabled:opacity-50"
 						:class="{ 'hover:bg-white/20': currentIndex !== attachments.length - 1 }"
 						@click="nextAttachment"
 					>

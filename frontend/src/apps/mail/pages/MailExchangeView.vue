@@ -8,9 +8,9 @@
 				:button="{ icon: 'lucide-more-horizontal' }"
 			/>
 		</header>
-		<div class="mx-auto my-5 rounded border p-12 sm:w-[60rem]">
+		<div class="mx-auto my-5 rounded-4 border p-12 sm:w-[60rem]">
 			<div class="flex items-center space-x-2">
-				<h1 class="text-3xl !font-semibold">
+				<h1 class="text-2xl !font-semibold">
 					{{ __('Mail {0}', [__(mailExchange.data?.operation)]) }}
 				</h1>
 				<Badge

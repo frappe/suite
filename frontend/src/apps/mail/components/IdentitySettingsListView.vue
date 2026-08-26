@@ -1,6 +1,6 @@
 <template>
 	<ListView
-		class="flex-1 rounded border"
+		class="flex-1 rounded-4 border"
 		:class="{ 'min-h-28': !data.length }"
 		:columns="REPLY_TO_COLUMNS"
 		:rows="data"

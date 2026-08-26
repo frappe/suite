@@ -11,11 +11,11 @@
 		     against 40px of width — near enough square, and close to the two-line title/subtitle
 		     block it stands beside rather than overhanging it at both ends. -->
 		<div
-			class="border-outline-gray-1 bg-surface-gray-2 text-ink-gray-5 border-b py-px text-tiny uppercase leading-4"
+			class="border-outline-gray-1 bg-surface-gray-2 text-ink-gray-5 border-b py-px text-[11px] uppercase leading-4"
 		>
 			{{ month }}
 		</div>
-		<div class="text-ink-gray-8 text-lg-semibold py-px leading-5 tabular-nums">{{ day }}</div>
+		<div class="text-ink-gray-8 text-md-semibold py-px leading-5 tabular-nums">{{ day }}</div>
 	</div>
 </template>
 

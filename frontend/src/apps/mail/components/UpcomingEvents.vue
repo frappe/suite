@@ -31,7 +31,7 @@
 				v-for="event in upcoming"
 				:key="event.id + (event.recurrence_id ?? '')"
 				type="button"
-				class="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left transition-shadow"
+				class="flex w-full items-center gap-2.5 rounded-4 px-2 py-1.5 text-left transition-shadow"
 				:class="
 					isOpen(event)
 						? 'bg-surface-elevation-3 shadow-sm ring-1 ring-outline-gray-2'

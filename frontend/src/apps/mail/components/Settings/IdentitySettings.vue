@@ -98,7 +98,7 @@
 							{{ __('Default Signature') }}
 						</label>
 						<TextEditor
-							editor-class="prose-sm min-h-[8rem] border rounded-b-lg border-t-0 p-2 max-w-none border-outline-gray-2"
+							editor-class="prose-sm min-h-[8rem] border rounded-b-6 border-t-0 p-2 max-w-none border-outline-gray-2"
 							:extensions="[CustomParagraphExtension]"
 							:fixed-menu="buttons"
 							:placeholder="__('Write your signature here')"

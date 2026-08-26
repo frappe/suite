@@ -27,10 +27,10 @@
 		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
 		     and its border is the separator content passes under. -->
 		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-			<!-- !leading-7: subjects wrap, and both text-xl-semibold (line-height 1.15
+			<!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
 			     baked in) and the global body.mail-app h2 rule outrank a plain leading-*
 			     utility — wrapped lines sat nearly touching. -->
-			<h2 class="text-xl-semibold !leading-7">
+			<h2 class="text-lg-semibold !leading-7">
 				{{ thread[0].subject || __('[No subject]') }}
 			</h2>
 		</div>
@@ -86,7 +86,7 @@
 									(thread.length > 1 || mail.draft) &&
 									mail.name !== mailBeforeCollapsedGroup &&
 									mail.name !== mailBeforeUnseenMarker,
-								'sm:rounded-xl sm:p-5': thread.length > 1 || mail.draft,
+								'sm:rounded-7 sm:p-5': thread.length > 1 || mail.draft,
 								'sm:border':
 									(thread.length > 1 && !mail.draft) ||
 									(mail.draft && dataTheme === 'dark'),
@@ -192,9 +192,9 @@
 												<template
 													v-if="!(isCollapsed(mail) || mail.draft)"
 												>
-													<ChevronDown
-														v-if="isMobile"
-														class="text-ink-gray-6 h-3.5 w-3.5 rounded-sm transition-transform duration-200"
+												<ChevronDown
+													v-if="isMobile"
+													class="text-ink-gray-6 h-3.5 w-3.5 rounded-1 transition-transform duration-200"
 														:class="{
 															'rotate-180':
 																showMailDetails === mail.name,
@@ -389,7 +389,7 @@
 						     the card was withheld; the collapsed test tells that reason from this one. -->
 						<div
 							v-else-if="!collapsedMailNames.has(mail.name)"
-							class="text-ink-gray-8 rounded-xl border px-5 py-3 text-sm"
+							class="text-ink-gray-8 rounded-7 border px-5 py-3 text-sm"
 						>
 							{{ __('This draft is open in another window.') }}
 							<button
@@ -1358,4 +1358,3 @@ const getForwardedContent = (mail: Mail) => {
 	`
 }
 </script>
-

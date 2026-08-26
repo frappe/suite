@@ -184,7 +184,7 @@ const StatsSection = defineComponent({
 	setup: (props, { slots }) => () => h("section", { class: "mt-4 border-t border-outline-gray-2 pt-3" }, [
 		h("div", { class: "mb-1 flex items-center gap-2" }, [
 			h("h3", { class: "font-semibold text-ink-gray-7" }, props.title),
-			props.badge ? h("span", { class: "rounded bg-surface-gray-3 px-1.5 py-0.5 text-[10px] text-ink-gray-5" }, props.badge) : null,
+			props.badge ? h("span", { class: "rounded-4 bg-surface-gray-3 px-1.5 py-0.5 text-[10px] text-ink-gray-5" }, props.badge) : null,
 		]),
 		slots.default?.(),
 	]),

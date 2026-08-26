@@ -24,7 +24,7 @@
       </div>
       <button
         v-else
-        class="group flex h-7 w-full items-center rounded px-2 text-base hover:bg-surface-gray-3 text-ink-gray-6"
+        class="group flex h-7 w-full items-center rounded-4 px-2 text-base hover:bg-surface-gray-3 text-ink-gray-6"
       >
         <component
           :is="item.icon"
