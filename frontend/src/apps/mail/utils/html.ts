@@ -51,6 +51,19 @@ const BRACKETED_ADDRESS = /<([^<>\s]+@[^<>\s]+)>/g
 export const escapeBracketedAddresses = (html: string) =>
 	html.replace(BRACKETED_ADDRESS, '<b>&lt;$1&gt;</b>')
 
+// Plain text as HTML that keeps its shape.
+//
+// The breaks are <br> rather than a white-space style on the wrapper, because a quote the
+// user opens in the composer goes through the editor, which keeps no style it has no
+// attribute for and would run the whole body into one line. Leading indentation is nbsp for
+// the same reason. A wrapper still carries pre-wrap, which is what preserves the runs of
+// spaces inside a line for everyone who reads the message rather than edits it.
+export const plainTextToHtml = (text: string) =>
+	escapeHtml(text.replace(/\r\n?/g, '\n'))
+		.split('\n')
+		.map((line) => line.replace(/^ +/, (run) => '&nbsp;'.repeat(run.length)))
+		.join('<br>')
+
 export const hasHtmlContent = (content: string | null | undefined): boolean => {
 	if (!content) return false
 	return /<(html|head|body|div|p|span|table|td|tr|a|img|br|hr|h[1-6]|ul|ol|li|strong|em|b|i|font|style)[^>]*>/i.test(

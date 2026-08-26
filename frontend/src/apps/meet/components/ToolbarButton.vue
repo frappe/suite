@@ -10,10 +10,12 @@ withDefaults(
 		variant?: "default" | "active" | "muted";
 		active?: boolean;
 		title?: string;
+		showTooltip?: boolean;
 	}>(),
 	{
 		variant: "default",
 		active: false,
+		showTooltip: true,
 	},
 );
 
@@ -29,7 +31,7 @@ defineEmits<{
 		variant="ghost"
 		theme="gray"
 		:label="title"
-		:tooltip="title"
+		:tooltip="showTooltip ? title : undefined"
 		:class="['relative', { '!bg-surface-gray-3': active }]"
 		@click="$emit('click')"
 	>

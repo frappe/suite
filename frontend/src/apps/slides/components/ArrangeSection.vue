@@ -15,7 +15,12 @@
 			@select="alignElement"
 			@hover="onAlignHover"
 		/>
-		<ButtonGroup label="Flip" :options="flipOptions" @select="flipElements" />
+		<ButtonGroup
+			v-if="!isOnlyLines"
+			label="Flip"
+			:options="flipOptions"
+			@select="flipElements"
+		/>
 	</Section>
 </template>
 
@@ -41,7 +46,7 @@ import FlipHorizontal from '@/apps/slides/icons/FlipHorizontal.vue'
 import FlipVertical from '@/apps/slides/icons/FlipVertical.vue'
 
 import { guideVisibilityMap } from '@/apps/slides/stores/slide'
-import { activeElementIds, flipElements } from '@/apps/slides/stores/element'
+import { activeElementIds, activeElements, flipElements } from '@/apps/slides/stores/element'
 import {
 	alignElement,
 	arrangeElements,
@@ -66,6 +71,9 @@ const alignVerticalOptions = [
 	{ value: 'verticalCenter', label: 'Align middle', icon: AlignCenterVertical },
 	{ value: 'bottom', label: 'Align bottom', icon: AlignBottom },
 ]
+
+// mirroring a line only swaps its heads around; nothing else is visible
+const isOnlyLines = computed(() => activeElements.value.every((el) => el.shapeType === 'line'))
 
 const flipOptions = [
 	{ value: 'horizontal', label: 'Flip horizontal', icon: FlipHorizontal },

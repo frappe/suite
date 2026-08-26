@@ -3,7 +3,13 @@
 		<header
 			class="flex items-center justify-between gap-2 border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
 		>
-			<MobileTitleHeader v-if="isMobile" class="min-w-0 flex-1" :title="title" />
+			<MobileTitleHeader
+				v-if="isMobile"
+				class="min-w-0 flex-1"
+				:title="title"
+				with-back
+				@back="backToList"
+			/>
 			<!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
 			<Breadcrumbs
 				v-else
@@ -13,52 +19,20 @@
 				]"
 				class="-ml-0.5 min-w-0"
 			/>
-			<div v-if="data" class="flex shrink-0 items-center gap-2 max-sm:px-3 max-sm:py-2">
-				<Button v-if="canOpenEmail" :label="__('Open email')" @click="openEmail">
-					<template #prefix><Mail class="h-4 w-4" /></template>
+			<!-- All actions live in one menu (sheet on mobile) so the long subject keeps
+			the header's width instead of a row of buttons. -->
+			<AdaptiveDropdown
+				v-if="actions.length"
+				:options="actions"
+				:title="__('Actions')"
+				placement="bottom-end"
+			>
+				<Button variant="ghost" :title="__('Actions')" class="shrink-0 max-sm:mr-2">
+					<template #icon>
+						<EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+					</template>
 				</Button>
-				<template v-if="data.status === 'scheduled'">
-					<Button
-						v-if="!data.email_deleted"
-						:label="__('Send now')"
-						@click="showSendNow = true"
-					/>
-					<Button
-						v-if="!data.email_deleted"
-						:label="__('Reschedule')"
-						@click="showReschedule = true"
-					/>
-					<Button theme="red" :label="__('Cancel delivery')" @click="showCancel = true" />
-				</template>
-				<template v-else-if="data.status === 'retrying' || data.status === 'queued'">
-					<Button
-						:label="__('Try again now')"
-						:loading="retryNow.loading"
-						@click="retryNow.submit()"
-					/>
-					<!-- A released delivery stays cancellable while its submission is pending. -->
-					<Button
-						v-if="data.undo_status === 'pending'"
-						theme="red"
-						:label="__('Cancel delivery')"
-						@click="showCancel = true"
-					/>
-				</template>
-				<!-- Failed, concluded (sent/delivered/read), or cancelled: the submission is done —
-				it can be resubmitted (when its message still exists) and its record dropped. -->
-				<template v-else>
-					<Button
-						v-if="!data.email_deleted && data.status !== 'cancelled'"
-						:label="__('Send again')"
-						@click="showRetry = true"
-					/>
-					<Button
-						:label="__('Remove')"
-						:loading="dismissMail.loading"
-						@click="dismissMail.submit()"
-					/>
-				</template>
-			</div>
+			</AdaptiveDropdown>
 		</header>
 
 		<div v-if="data" class="flex-1 overflow-y-auto px-3 py-4 sm:px-5">
@@ -189,7 +163,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Mail } from 'lucide-vue-next'
+import { EllipsisVertical } from 'lucide-vue-next'
 import {
 	Badge,
 	Breadcrumbs,
@@ -204,6 +178,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import {
 	subjectLabel,
+	submissionActions,
 	undoStatusLabel,
 	undoStatusTheme,
 	type RecipientState,
@@ -211,6 +186,7 @@ import {
 } from '@/apps/mail/utils/submission'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { userStore } from '@/apps/mail/stores/user'
+import AdaptiveDropdown from '@/apps/mail/components/AdaptiveDropdown.vue'
 import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 import InformationField from '@/apps/mail/components/InformationField.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -265,9 +241,18 @@ const title = computed(() => (data.value ? subjectLabel(data.value) : ''))
 
 usePageMeta(() => ({ title: title.value || __('Outbox') }))
 
-const canOpenEmail = computed(
-	() => !!data.value && !data.value.email_deleted && !!data.value.thread_id,
-)
+const actions = computed(() => {
+	if (!data.value) return []
+	return submissionActions(data.value, {
+		openEmail,
+		sendNow: () => (showSendNow.value = true),
+		reschedule: () => (showReschedule.value = true),
+		cancelDelivery: () => (showCancel.value = true),
+		sendAgain: () => (showRetry.value = true),
+		tryAgainNow: () => retryNow.submit(),
+		remove: () => dismissMail.submit(),
+	})
+})
 
 const sendAtLabel = computed(() =>
 	data.value?.send_at

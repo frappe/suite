@@ -19,6 +19,10 @@ def get_context(context):
     csrf_token = frappe.sessions.get_csrf_token()
     frappe.db.commit()
 
+    # the slides service worker must not keep this shell as the offline app
+    if frappe.session.user == "Guest":
+        frappe.local.response_headers["X-Suite-Guest"] = "1"
+
     context.boot = get_boot()
     context.boot.csrf_token = csrf_token
     context.csrf_token = csrf_token
@@ -65,5 +69,8 @@ def get_boot():
             # Workspace branding for the launcher navbar.
             "suite_workspace_name": workspace["workspace_name"],
             "suite_workspace_logo": workspace["workspace_logo"],
+            # `bench set-config disable_slides_service_worker 1` unregisters the worker
+            # on every slides visit, no deploy needed
+            "disable_slides_service_worker": bool(frappe.conf.get("disable_slides_service_worker")),
         }
     )

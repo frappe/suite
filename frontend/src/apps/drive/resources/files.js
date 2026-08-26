@@ -7,6 +7,7 @@ import { getSortOrder } from '@/apps/drive/data/prefs'
 import {
   prettyData,
   setCache,
+  unwrapRows,
   PRESENTATION_CONTENT_DOCTYPE,
 } from '@/apps/drive/utils/files'
 import { updateURLSlug } from '@/apps/drive/utils/files'
@@ -14,12 +15,21 @@ import { updateURLSlug } from '@/apps/drive/utils/files'
 // GETTERS
 export const PAGE_SIZE = 50
 
+/**
+ * Rows -> display rows. Dotfiles are hidden, matching the convention on disk.
+ * Exported because GenericPage's load-more path fetches pages itself and must
+ * format them identically — it previously called prettyData directly and skipped
+ * the dotfile filter, so dotfiles were hidden on page 1 and visible from page 2.
+ */
+export const formatRows = (data) =>
+  prettyData(unwrapRows(data).filter((k) => !k.file_name?.startsWith('.')))
+
 export const COMMON_OPTIONS = {
   method: 'GET',
   debounce: 500,
-  transform(data) {
-    return prettyData(data.filter((k) => !k.file_name?.startsWith('.')))
-  },
+  // Paginated calls (`paginated: 1`) answer with {rows, has_next}; every other
+  // caller still gets a bare list. formatRows accepts either.
+  transform: formatRows,
 }
 
 export const getFiles = createResource({

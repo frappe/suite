@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b border-outline-gray-1 bg-surface-base px-3"
+		class="relative z-10 grid h-12 shrink-0 items-center justify-between border-b border-outline-elevation-1 bg-surface-elevation-1 px-3"
 		:class="$slots.default ? 'grid-cols-3' : 'grid-cols-2'"
 		@wheel.prevent
 	>
@@ -49,7 +49,6 @@
 import { ref, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { Dropdown, Button } from 'frappe-ui'
-import { ArrowLeft, Plus, Copy, Trash, LogOut, Command } from 'lucide-vue-next'
 import slidesLogo from '@/apps/slides/assets/slides-logo.svg'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
@@ -78,7 +77,7 @@ const themeMenuOption = useThemeMenuOption()
 
 const getLogoutMenuOption = () => ({
 	label: 'Log out',
-	icon: LogOut,
+	icon: 'lucide-log-out',
 	onClick: () => sessionStore.logout.submit(),
 })
 
@@ -88,9 +87,10 @@ const getHomeMenuOptions = () => [
 ]
 
 const presentationActions = [
-	{ label: 'New', icon: Plus, action: 'create' },
-	{ label: 'Duplicate', icon: Copy, action: 'duplicate' },
-	{ label: 'Delete', icon: Trash, action: 'delete' },
+	{ label: 'New', icon: 'lucide-plus', action: 'create' },
+	{ label: 'Duplicate', icon: 'lucide-copy', action: 'duplicate' },
+	{ label: 'Delete', icon: 'lucide-trash', action: 'delete' },
+	{ label: 'Change Theme', icon: 'lucide-swatch-book', action: 'updateTheme' },
 ]
 
 const getContextMenuOptions = () => {
@@ -102,7 +102,7 @@ const getContextMenuOptions = () => {
 			options: [
 				{
 					label: 'Back to Home',
-					icon: ArrowLeft,
+					icon: 'lucide-arrow-left',
 					onClick: () => router.replace({ name: 'slides-home' }),
 				},
 				appsMenuOption.value,
@@ -126,7 +126,7 @@ const getContextMenuOptions = () => {
 		options: [
 			{
 				label: 'Shortcuts',
-				icon: Command,
+				icon: 'lucide-command',
 				onClick: () => (showShortcutsModal.value = true),
 			},
 			themeMenuOption,

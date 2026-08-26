@@ -22,6 +22,8 @@
 
 				<CropOverlay v-if="!inReadonlyMode" />
 
+				<ConnectorPorts v-if="!inReadonlyMode" />
+
 				<SnapGuides :ongoingInteraction="hasOngoingInteraction" :activeGuides="activeGuides" />
 
 				<SlideElement
@@ -65,6 +67,7 @@ import SelectionBox from '@/apps/slides/components/SelectionBox.vue'
 import MarqueeOverlay from '@/apps/slides/components/MarqueeOverlay.vue'
 import ShapeDrawOverlay from '@/apps/slides/components/ShapeDrawOverlay.vue'
 import CropOverlay from '@/apps/slides/components/CropOverlay.vue'
+import ConnectorPorts from '@/apps/slides/components/ConnectorPorts.vue'
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import DropTargetOverlay from '@/apps/slides/components/DropTargetOverlay.vue'
 import OverflowContentOverlay from '@/apps/slides/components/OverflowContentOverlay.vue'
@@ -98,6 +101,11 @@ import {
 	interactionOffset,
 	commitInteraction,
 	resetInteractionOffset,
+	bindPreview,
+	pendingConnector,
+	pendingPoints,
+	getTargetBox,
+	getBindableAt,
 } from '@/apps/slides/stores/interaction'
 
 import { handleCopy, handlePaste } from '@/apps/slides/stores/copyPaste'
@@ -121,6 +129,13 @@ import {
 	isAspectLocked,
 } from '@/apps/slides/utils/resize'
 import { getMinTableWidth } from '@/apps/slides/utils/tableWidths'
+import {
+	getBoundTargetIds,
+	getConnectorEndpoints,
+	getLineEndpoints,
+	routeConnector,
+	snapToPort,
+} from '@/apps/slides/utils/connectors'
 
 const emit = defineEmits(['update:hasOngoingInteraction'])
 
@@ -133,7 +148,16 @@ const elementContextMenuRef = useTemplateRef('elementContextMenu')
 
 const { isDragging, positionDelta, startDragging } = useDragAndDrop()
 
-const { isResizing, pointerDelta, currentResizer, resizeCursor, startResize } = useResizer()
+const {
+	isResizing,
+	isShiftHeld,
+	isAltHeld,
+	isMetaHeld,
+	pointerDelta,
+	currentResizer,
+	resizeCursor,
+	startResize,
+} = useResizer()
 
 const { isRotating, rotationDelta, startRotate } = useRotator()
 
@@ -172,7 +196,7 @@ const slideClasses = computed(() => {
 		'w-[960px]',
 		'rounded-4',
 		'border',
-		'border-outline-gray-2',
+		'border-outline-gray-1',
 		'shadow-sm',
 	]
 
@@ -200,7 +224,9 @@ const getSlideCursor = () => {
 const highlightElement = (element) => {
 	const toHighlight =
 		activeElementIds.value.length > 1 && activeElementIds.value.includes(element.id)
-	return toHighlight || pairElementId.value == element.id
+	const isAutoBindTarget =
+		bindPreview.value?.anchor === 'auto' && bindPreview.value.elementId === element.id
+	return toHighlight || pairElementId.value == element.id || isAutoBindTarget
 }
 
 const slideStyles = computed(() => ({
@@ -452,18 +478,90 @@ const setOffsetFromBox = (box) => {
 }
 
 const resizeBox = (cursorMovement) => {
-	const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement)
+	const keepAspect = isShiftHeld.value
+	const fromCenter = isAltHeld.value
+	const box = getResizedBox(resizeStartBounds, currentResizer.value, cursorMovement, {
+		keepAspect,
+		fromCenter,
+	})
 	if (!box) return
 
 	const axes = isAspectLocked(resizeStartBounds.type) ? ['x'] : ['x', 'y']
 	// resize runs in the element's rotated local frame; the snap engine works on
-	// screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet
-	const snappedBox = resizeStartBounds.rotation ? box : snapForResize(box, { axes })
+	// screen-axis-aligned boxes, so snapping a rotated resize isn't supported yet.
+	// snapping moves one edge, which would break a modifier-constrained resize
+	const skipSnap = resizeStartBounds.rotation || keepAspect || fromCenter
+	const snappedBox = skipSnap ? box : snapForResize(box, { axes })
 	setOffsetFromBox(snappedBox)
 }
 
+const PORT_SNAP_RADIUS = 14
+
+const boxFor = (bound) => bound && getTargetBox(bound.elementId)
+
+// ⌘ keeps the end free; the other end's target is out, both ends on it would collapse the line
+const bindDraggedEnd = (line, end, cursor) => {
+	const other = line.connector[end === 'start' ? 'end' : 'start']
+	const target = isMetaHeld.value ? null : getBindableAt(cursor, [line.id, other?.elementId])
+	const anchor =
+		target && (snapToPort(target.box, cursor, PORT_SNAP_RADIUS / slideBounds.scale) || 'auto')
+	bindPreview.value = target ? { elementId: target.elementId, anchor } : null
+
+	const connector = {
+		...line.connector,
+		[end]: target ? { elementId: target.elementId, anchor } : null,
+	}
+	pendingConnector.value = connector
+	return connector
+}
+
+const draggedEnd = () => (currentResizer.value === 'line-left' ? 'start' : 'end')
+
+const routeDraggedEnd = (box, cursorMovement) => {
+	const line = activeElement.value
+	const end = draggedEnd()
+	const grabbed = getLineEndpoints(line)[end]
+	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+
+	const connector = bindDraggedEnd(line, end, cursor)
+	if (!getBoundTargetIds(connector).length) return box
+
+	return routeConnector(
+		{ ...line, ...box, connector },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+}
+
+// an elbow end moves as a point and the path re-routes around it
+const resizeElbowEnd = (cursorMovement) => {
+	const line = activeElement.value
+	const end = draggedEnd()
+	const grabbed = getConnectorEndpoints(line)[end]
+	const cursor = { x: grabbed.x + cursorMovement.x, y: grabbed.y + cursorMovement.y }
+
+	const connector = bindDraggedEnd(line, end, cursor)
+	const points = [...line.points]
+	points[end === 'start' ? 0 : points.length - 1] = {
+		x: cursor.x - line.left,
+		y: cursor.y - line.top,
+	}
+	const box = routeConnector(
+		{ ...line, connector, points },
+		boxFor(connector.start),
+		boxFor(connector.end),
+	)
+	setOffsetFromBox(box)
+	pendingPoints.value = box.points
+}
+
 const resizeLine = (cursorMovement) => {
-	const box = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement)
+	if (activeElement.value.points) return resizeElbowEnd(cursorMovement)
+
+	const resized = getResizedLine(resizeStartBounds, currentResizer.value, cursorMovement, {
+		snapAngle: isShiftHeld.value,
+	})
+	const box = activeElement.value.connector ? routeDraggedEnd(resized, cursorMovement) : resized
 
 	setOffsetFromBox(box)
 	rotationDelta.value = box.rotation - resizeStartBounds.rotation

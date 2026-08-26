@@ -6,6 +6,7 @@ export interface ReconciledProducer {
   producerId: string;
   participantId: string;
   isScreen: boolean;
+  kind?: "audio" | "video";
 }
 
 export type MeetingReconciliationEvent<

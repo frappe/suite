@@ -1,5 +1,5 @@
 import { ref, computed, nextTick, watch } from 'vue'
-import { createResource } from 'frappe-ui'
+import { call } from 'frappe-ui'
 
 import {
 	selectionBounds,
@@ -13,9 +13,10 @@ import { useTextEditor, resetGrowthBaseline } from '@/apps/slides/composables/us
 
 import { getElementDiv } from './elementRegistry'
 import { markDirty } from './saving'
-import { generateUniqueId, cloneObj, normalizeRotation } from '../utils/helpers'
+import { generateUniqueId, cloneObj } from '../utils/helpers'
 import { getBorderInset, getCoverCrop, isFullRect } from '../utils/cropGeometry'
 import { getMinSizeForElement } from '../utils/resize'
+import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { presentationId } from './presentation'
@@ -38,6 +39,8 @@ const activeElementIds = ref([])
 const focusElementId = ref(null)
 const pairElementId = ref(null)
 const pendingShapeType = ref(null)
+// markers / route picked from the toolbar, applied to the next drawn shape
+const pendingShapePreset = ref({})
 
 // true once a gesture crosses the drag threshold
 const dragOccurred = ref(false)
@@ -193,10 +196,20 @@ const getInitialShapeTextContent = (shapeElement) => {
 	})
 }
 
+// arrows chosen on the last line / connector become the next one's default
+const lastMarkers = {
+	line: { markerStart: 'none', markerEnd: 'none' },
+	connector: { markerStart: 'none', markerEnd: 'arrow' },
+}
+
+const rememberMarkers = (element) => {
+	const tool = element.connector ? 'connector' : 'line'
+	lastMarkers[tool] = { markerStart: element.markerStart, markerEnd: element.markerEnd }
+}
+
 const getShapeDefaults = (shapeType) => {
 	let width, height, strokeColor, strokeWidth, borderRadius, elementShapeType
-	let markerStart = false
-	let markerEnd = false
+	const { markerStart, markerEnd } = lastMarkers[shapeType] ?? lastMarkers.line
 
 	const { fillColor, strokeColor: defaultStrokeColor } = guessShapeColorsFromBackground(
 		currentSlide.value?.background,
@@ -231,6 +244,7 @@ const getShapeDefaults = (shapeType) => {
 			elementShapeType = shapeType
 			break
 		case 'line':
+		case 'connector':
 			width = 300
 			height = 1
 			strokeColor = defaultStrokeColor
@@ -253,20 +267,7 @@ const getShapeDefaults = (shapeType) => {
 	}
 }
 
-const lineBoundsFromEndpoints = ({ x1, y1, x2, y2 }, height) => {
-	const dx = x2 - x1
-	const dy = y2 - y1
-	const length = Math.sqrt(dx ** 2 + dy ** 2)
-	return {
-		width: length,
-		height,
-		left: (x1 + x2) / 2 - length / 2,
-		top: (y1 + y2) / 2 - height / 2,
-		rotation: normalizeRotation(Math.atan2(dy, dx) * (180 / Math.PI)),
-	}
-}
-
-const addShapeElement = async (shapeType, bounds = null) => {
+const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	if (!shapeType) return
 
 	const {
@@ -287,11 +288,12 @@ const addShapeElement = async (shapeType, bounds = null) => {
 	const slideHeight = slideBounds.height / slideBounds.scale
 
 	if (elementShapeType === 'line' && bounds?.x1 !== undefined) {
-		bounds = lineBoundsFromEndpoints(bounds, defaultHeight)
+		const { x1, y1, x2, y2 } = bounds
+		bounds = getLineBox({ x: x1, y: y1 }, { x: x2, y: y2 }, strokeWidth)
 	}
 
 	const width = bounds?.width ?? defaultWidth
-	const height = elementShapeType === 'line' ? defaultHeight : (bounds?.height ?? defaultHeight)
+	const height = elementShapeType === 'line' ? strokeWidth : (bounds?.height ?? defaultHeight)
 	const left = bounds?.left ?? (slideWidth - width) / 2
 	const top = bounds?.top ?? (slideHeight - height) / 2
 
@@ -318,6 +320,7 @@ const addShapeElement = async (shapeType, bounds = null) => {
 		shadowBlur: 0,
 		shadowOffset: 0,
 		shadowAngle: 45,
+		...overrides,
 	}
 
 	const refCommands = getCommandsToUpdateElementRefId(element) || []
@@ -458,28 +461,38 @@ const addTableElement = async (rows = 3, cols = 3) => {
 	)
 }
 
-const savePoster = createResource({
-	url: 'suite.slides.doctype.presentation.presentation.save_base64_image',
-	makeParams: (posterDataUrl) => ({
-		presentation_name: presentationId.value,
-		base64_data: posterDataUrl,
-		prefix: 'poster',
-	}),
-})
+// createResource hands back the last poster it saved when a request fails, which
+// silently pins the wrong one on a slow network
+const savePoster = async (posterDataUrl) => {
+	try {
+		return await call('suite.slides.doctype.presentation.presentation.save_base64_image', {
+			presentation_name: presentationId.value,
+			base64_data: posterDataUrl,
+			prefix: 'poster',
+		})
+	} catch (error) {
+		// the media is worth keeping without a poster
+		console.error('Could not save poster', error)
+		return null
+	}
+}
 
-const saveMediaFrameAsPoster = async (media, width, height) => {
+// a full bleed poster needs twice the 960px slide to stay sharp, and no more, so
+// encoding the frame at the media's own resolution only makes the upload slower
+const POSTER_MAX_EDGE = 1920
+const POSTER_QUALITY = 0.8
+
+const captureMediaFrame = (media, width, height) => {
+	const scale = Math.min(1, POSTER_MAX_EDGE / Math.max(width, height))
+
 	const canvas = document.createElement('canvas')
-	canvas.width = width
-	canvas.height = height
+	canvas.width = Math.round(width * scale)
+	canvas.height = Math.round(height * scale)
 
 	const context = canvas.getContext('2d')
 	context.drawImage(media, 0, 0, canvas.width, canvas.height)
 
-	return await savePoster.submit(canvas.toDataURL('image/webp'))
-}
-
-const generatePoster = async (video) => {
-	return await saveMediaFrameAsPoster(video, video.videoWidth, video.videoHeight)
+	return canvas.toDataURL('image/webp', POSTER_QUALITY)
 }
 
 const isGifFile = (file) => {
@@ -495,7 +508,7 @@ const generateImagePoster = async (imageUrl) => {
 	img.src = imageUrl
 	await img.decode()
 
-	return await saveMediaFrameAsPoster(img, img.naturalWidth, img.naturalHeight)
+	return await savePoster(captureMediaFrame(img, img.naturalWidth, img.naturalHeight))
 }
 
 const getVideoElementClone = (videoUrl) => {
@@ -513,29 +526,44 @@ const getVideoElementClone = (videoUrl) => {
 	return videoElement
 }
 
-const handleVideoCloneDataLoad = async (videoClone, resolve, reject) => {
+// the frame is read locally, so how the element is sized never waits on the network
+const handleVideoCloneDataLoad = (videoClone, resolve, reject) => {
 	try {
-		const poster = await generatePoster(videoClone)
-		const aspectRatio = videoClone.videoWidth / videoClone.videoHeight
-		resolve({ posterURL: poster, aspectRatio: aspectRatio })
+		resolve({
+			frame: captureMediaFrame(videoClone, videoClone.videoWidth, videoClone.videoHeight),
+			aspectRatio: videoClone.videoWidth / videoClone.videoHeight,
+		})
 	} catch (err) {
 		reject(err)
 	} finally {
-		// remove the video element from the DOM after poster is generated
-		document.body.removeChild(videoClone)
+		videoClone.remove()
 	}
 }
 
-const getVideoPoster = async (videoUrl) => {
+// reading the frame back off the server re-downloads the whole upload, so the
+// file still in hand is what gets probed
+const getProbeUrl = (src, localFile) =>
+	localFile ? URL.createObjectURL(localFile) : getAttachmentUrl(src)
+
+const revokeProbeUrl = (url) => {
+	if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+}
+
+const captureVideoFrame = async (videoUrl) => {
 	return new Promise((resolve, reject) => {
 		// create a clone of the video element to generate a poster
 		// without making the original video visible so there's no flicker
 		const videoClone = getVideoElementClone(videoUrl)
 		document.body.appendChild(videoClone)
 
-		// we cannot directly capture the poster without data load event
+		// loadeddata fires before the first frame is decoded on a slow link, which
+		// captures an empty canvas; a completed seek guarantees the frame is there
+		videoClone.addEventListener('loadeddata', () => (videoClone.currentTime = 0.05), {
+			once: true,
+		})
+
 		videoClone.addEventListener(
-			'loadeddata',
+			'seeked',
 			() => handleVideoCloneDataLoad(videoClone, resolve, reject),
 			{ once: true },
 		)
@@ -543,9 +571,8 @@ const getVideoPoster = async (videoUrl) => {
 		videoClone.addEventListener(
 			'error',
 			() => {
-				// if video fails to load, don't leave cloned element in the DOM
-				document.body.removeChild(videoClone)
-				reject(new Error('Failed to load video for poster generation'))
+				videoClone.remove()
+				reject(new Error('Failed to load video for frame capture'))
 			},
 			{ once: true },
 		)
@@ -584,7 +611,7 @@ const getLeftTopForCenteredElement = (elementWidth, elementHeight) => {
 	return { left: elementLeft, top: elementTop }
 }
 
-const addMediaElement = async (file, type) => {
+const addMediaElement = async (file, type, targetSlide, localFile) => {
 	const src = file.file_url
 
 	let elementWidth = 0
@@ -608,15 +635,28 @@ const addMediaElement = async (file, type) => {
 		}
 	} else {
 		elementWidth = 400
-		const { posterURL, aspectRatio } = await getVideoPoster(getAttachmentUrl(src))
-		elementHeight = elementWidth / aspectRatio
+		const videoUrl = getProbeUrl(src, localFile)
+		try {
+			const { frame, aspectRatio } = await captureVideoFrame(videoUrl)
+			elementHeight = elementWidth / aspectRatio
+			videoPoster = await savePoster(frame)
+		} catch {
+			// the video is worth keeping without a poster; it plays either way
+			elementHeight = elementWidth * (9 / 16)
+		} finally {
+			revokeProbeUrl(videoUrl)
+		}
 		position = getLeftTopForCenteredElement(elementWidth, elementHeight)
-		videoPoster = posterURL
 	}
+
+	// a slow upload can outlive a slide switch, so the element goes back to the
+	// slide it was started from, not to whatever is on screen now
+	const slideIdx = slides.value.indexOf(targetSlide)
+	if (slideIdx === -1) return
 
 	let element = {
 		id: generateUniqueId(),
-		zIndex: currentSlide.value.elements.length + 1,
+		zIndex: targetSlide.elements.length + 1,
 		width: elementWidth,
 		height: elementHeight,
 		left: position.left,
@@ -648,11 +688,11 @@ const addMediaElement = async (file, type) => {
 		}
 	}
 
-	const refCommands = getCommandsToUpdateElementRefId(element) || []
+	const refCommands = getCommandsToUpdateElementRefId(element, slideIdx) || []
 
 	const commands = [
 		addElementCommand({
-			slideId: currentSlide.value.clientId,
+			slideId: targetSlide.clientId,
 			element: element,
 		}),
 		...refCommands,
@@ -660,19 +700,28 @@ const addMediaElement = async (file, type) => {
 
 	commandHistory.execute(
 		batchCommand({
-			slideId: currentSlide.value.clientId,
+			slideId: targetSlide.clientId,
 			elementIds: [element.id],
 			commands,
+			skipJumpOnExecute: targetSlide !== currentSlide.value,
 		}),
 	)
 }
 
-const probeReplacementMedia = async (element, fileDoc) => {
+const probeReplacementMedia = async (element, fileDoc, localFile) => {
 	const newUrl = getAttachmentUrl(fileDoc.file_url)
 
 	if (element.type === 'video') {
-		const { posterURL, aspectRatio } = await getVideoPoster(newUrl)
-		return { poster: posterURL, aspect: aspectRatio }
+		const videoUrl = getProbeUrl(fileDoc.file_url, localFile)
+		try {
+			const { frame, aspectRatio } = await captureVideoFrame(videoUrl)
+			return { poster: await savePoster(frame), aspect: aspectRatio }
+		} catch {
+			// the old poster belongs to the video being replaced, so it goes either way
+			return { poster: null }
+		} finally {
+			revokeProbeUrl(videoUrl)
+		}
 	}
 
 	return {
@@ -709,17 +758,19 @@ const pushImageReplaceEdits = (element, { frameHeight, newAspect, poster }, push
 	if ((element.poster ?? undefined) !== newPoster) pushEdit('poster', element.poster, newPoster)
 }
 
-const replaceMediaElement = async (element, fileDoc) => {
+const replaceMediaElement = async (element, fileDoc, localFile) => {
 	// measure while the old media is still rendered, before any await
 	const frameHeight = element.height || getElementDiv(element.id)?.offsetHeight
 
 	const srcChanged = element.src !== fileDoc.file_url
-	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc) : null
+	const probes = srcChanged ? await probeReplacementMedia(element, fileDoc, localFile) : null
 
-	// a slow upload can outlive a slide switch or the element itself
-	const slide = slides.value.find((s) => s.elements.some((el) => el.id === element.id))
-	if (!slide) return
-	const slideId = slide.clientId
+	// a slow upload can outlive a slide switch or the element itself, and older
+	// presentations repeat one layout's element ids across slides, so only the
+	// element object itself names the slide to edit
+	const slideIdx = slides.value.findIndex((s) => s.elements.includes(element))
+	if (slideIdx === -1) return
+	const slideId = slides.value[slideIdx].clientId
 
 	let commands = []
 	const pushEdit = (property, oldValue, newValue) => {
@@ -739,7 +790,7 @@ const replaceMediaElement = async (element, fileDoc) => {
 	}
 
 	// include any ref-id update commands produced by transition logic
-	commands = commands.concat(getCommandsToUpdateElementRefId(element) || [])
+	commands = commands.concat(getCommandsToUpdateElementRefId(element, slideIdx) || [])
 
 	if (commands.length) {
 		commandHistory.execute(
@@ -767,10 +818,12 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 
 	const baseZIndex = currentSlide.value.elements.length
 	const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
+	const copies = remapElementIds(
+		sortedElements.map((element) => JSON.parse(JSON.stringify(element))),
+	)
 
 	sortedElements.forEach((element, index) => {
-		let newElement = JSON.parse(JSON.stringify(element))
-		newElement.id = generateUniqueId()
+		const newElement = copies[index]
 		delete newElement.locked
 		newElement.zIndex = baseZIndex + index + 1
 		newElement.top += displaceByPx
@@ -797,11 +850,70 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
 	)
 }
 
+// a connector lets go of a deleted target, and goes along when all of them go
+const getDetachCommands = (idsToDelete) => {
+	const commands = []
+	const orphaned = []
+	currentSlide.value.elements.forEach((element) => {
+		if (idsToDelete.includes(element.id)) return
+		const boundIds = getBoundTargetIds(element.connector)
+		if (!boundIds.some((id) => idsToDelete.includes(id))) return
+		const bothDeleted =
+			element.connector.start &&
+			element.connector.end &&
+			boundIds.every((id) => idsToDelete.includes(id))
+		if (bothDeleted && !element.locked) return orphaned.push(element.id)
+		const connector = { ...element.connector }
+		;['start', 'end'].forEach((end) => {
+			if (idsToDelete.includes(connector[end]?.elementId)) connector[end] = null
+		})
+		commands.push(
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: connector,
+				bypassLock: true,
+			}),
+		)
+	})
+	return { commands, orphaned }
+}
+
+const hasBoundConnector = computed(() =>
+	activeElements.value.some((element) => getBoundTargetIds(element.connector).length),
+)
+
+const disconnectConnectors = () => {
+	const commands = activeElements.value
+		.filter((element) => !element.locked && getBoundTargetIds(element.connector).length)
+		.map((element) =>
+			editElementCommand({
+				slideId: currentSlide.value.clientId,
+				elementIds: [element.id],
+				property: 'connector',
+				oldValue: element.connector,
+				newValue: { ...element.connector, start: null, end: null },
+			}),
+		)
+	if (!commands.length) return
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: activeElementIds.value,
+			commands,
+		}),
+	)
+}
+
 const deleteElements = (e, ids) => {
-	const idsToDelete = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
-	if (!idsToDelete.length) return
+	const targetIds = (ids || activeElementIds.value).filter((id) => !findSlideElement(id)?.locked)
+	if (!targetIds.length) return
 	resetFocus()
-	let commands = []
+	const detach = getDetachCommands(targetIds)
+	const idsToDelete = [...targetIds, ...detach.orphaned]
+	let commands = [...detach.commands]
 
 	idsToDelete.forEach((id) => {
 		// re-entrant: the focusElementId and activeElement watches both blur an empty text element
@@ -1108,6 +1220,27 @@ const setEditableState = () => {
 	})
 }
 
+// `text` replaces the content, like typing over a full selection
+const startTextEditing = (text = '') => {
+	const element = activeElement.value
+	focusElementId.value = element.id
+
+	if (element.type === 'text') {
+		if (!activeEditor.value) return
+		setEditableState()
+		if (text) activeEditor.value.commands.insertContent(text)
+		return
+	}
+	if (!text) return
+
+	// a shape's editor is created on the next tick and selects all once mounted
+	const stop = watch(activeEditor, (editor) => {
+		if (!editor) return
+		stop()
+		editor.on('create', () => editor.commands.insertContent(text))
+	})
+}
+
 const initEditorForElement = (element) => {
 	if (['text', 'table'].includes(element?.type)) {
 		initTextEditor(
@@ -1204,11 +1337,18 @@ const cropSelectionToFitContent = (elementIds) => {
 		r = 0,
 		b = 0
 
+	// a connector whose ends both sit on selected targets adds nothing to the box
+	const isRoutedWithin = (element) => {
+		const boundIds = getBoundTargetIds(element.connector)
+		return boundIds.length == 2 && boundIds.every((id) => elementIds.includes(id))
+	}
+	const boundedIds = elementIds.filter((id) => !isRoutedWithin(findSlideElement(id)))
+
 	// crop selection to selected element edges
-	elementIds.forEach((id) => {
+	boundedIds.forEach((id) => {
 		const element = currentSlide.value.elements.find((el) => el.id === id)
 		// same source the resize observer writes from, so the two never disagree by a sub-pixel
-		const useLayoutBounds = elementIds.length == 1
+		const useLayoutBounds = boundedIds.length == 1
 
 		const {
 			left: elementLeft,
@@ -1231,37 +1371,15 @@ const cropSelectionToFitContent = (elementIds) => {
 	})
 }
 
-const updatePosition = (axis, value) => {
-	const property = axis == 'X' ? 'left' : 'top'
-	const delta = value - selectionBounds[property]
-
-	const commands = activeElements.value.map((element) =>
-		editElementCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: [element.id],
-			property,
-			oldValue: element[property],
-			newValue: element[property] + delta,
-		}),
-	)
-
-	commandHistory.execute(
-		batchCommand({
-			slideId: currentSlide.value.clientId,
-			elementIds: activeElementIds.value,
-			commands,
-		}),
-	)
-
-	selectionBounds[property] = value
-}
-
 const flipElements = (direction) => {
 	if (isSelectionLocked.value) return
 
 	const property = direction == 'horizontal' ? 'invertX' : 'invertY'
 
-	const commands = activeElements.value.map((element) => {
+	const flippable = activeElements.value.filter(
+		(element) => !getBoundTargetIds(element.connector).length && !element.points,
+	)
+	const commands = flippable.map((element) => {
 		const current = element[property]
 		return editElementCommand({
 			slideId: currentSlide.value.clientId,
@@ -1271,6 +1389,7 @@ const flipElements = (direction) => {
 			newValue: !current || current == 1 ? -1 : 1,
 		})
 	})
+	if (!commands.length) return
 
 	commandHistory.execute(
 		batchCommand({
@@ -1305,6 +1424,7 @@ export {
 	focusElementId,
 	pairElementId,
 	pendingShapeType,
+	pendingShapePreset,
 	dragOccurred,
 	activeElements,
 	activeElement,
@@ -1324,6 +1444,8 @@ export {
 	addTableElement,
 	duplicateElements,
 	deleteElements,
+	hasBoundConnector,
+	disconnectConnectors,
 	selectAllElements,
 	selectableIds,
 	getElementPosition,
@@ -1333,14 +1455,16 @@ export {
 	ensureExplicitHeight,
 	getNaturalAspectRatio,
 	setEditableState,
+	startTextEditing,
 	replaceMediaElement,
 	normalizeZIndices,
 	isWithinOverlappingBounds,
-	updatePosition,
 	flipElements,
 	findSlideElement,
 	getInitialShapeTextContent,
 	getInitialTableContent,
 	cropSelectionToFitContent,
 	getElementCenter,
+	getShapeDefaults,
+	rememberMarkers,
 }

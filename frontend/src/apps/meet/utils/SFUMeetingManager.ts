@@ -14,6 +14,7 @@ import { TransportManager } from "./media/TransportManager";
 import { VideoElementManager } from "./media/VideoElementManager";
 import type { SFUClient } from "./SFUClient";
 import type { User } from "../composables/useCurrentUser";
+import type { JoinRoomMediaState, JoinUserData } from "../types";
 import {
 	ParticipantConnection,
 	type ParticipantConnectionStartOptions,
@@ -25,6 +26,8 @@ import {
 	SFURecoveryManager,
 	type RecoveryResult,
 } from "./sfu/SFURecoveryManager";
+import { ExpectedMediaReconciler } from "./sfu/ExpectedMediaReconciler";
+import { getClientTelemetry } from "./telemetry/ClientTelemetry";
 
 const isAbortError = (error: unknown) =>
 	(error as { name?: unknown } | null)?.name === "AbortError";
@@ -59,6 +62,7 @@ export class SFUMeetingManager {
 	private connectionManager: ParticipantConnection;
 	mediaManager: SFUMediaManager;
 	private recoveryManager: SFURecoveryManager;
+	private consumerPreferenceGenerations = new Map<string, number>();
 
 	constructor(sfuClient: SFUClient) {
 		this.sfuClient = sfuClient;
@@ -88,6 +92,20 @@ export class SFUMeetingManager {
 					this.connectionManager?.reportRecoveryState("healthy", _reason);
 				} catch (error) {
 					this.connectionManager?.reportRecoveryState("failed", _reason);
+					void this.connectionManager
+						.escalateRecovery({
+							scope: "transport",
+							direction:
+								result.send === "failed" && result.recv === "failed"
+									? "both"
+									: result.send === "failed"
+										? "send"
+										: "recv",
+							reason: "rebuild_failed",
+						})
+						.catch((recoveryError) =>
+							console.warn("Transport recovery escalation failed:", recoveryError),
+						);
 					throw error;
 				}
 			},
@@ -110,6 +128,19 @@ export class SFUMeetingManager {
 			transportManager: this.transportManager,
 			mediaManager: this.mediaManager,
 			recoveryManager: this.recoveryManager,
+			expectedMedia: new ExpectedMediaReconciler((event) => {
+				getClientTelemetry(sfuClient).reportMediaRepair(event);
+				if (event.outcome !== "exhausted") return;
+				void this.connectionManager
+					?.escalateRecovery({
+						scope: event.source === "remote" ? "subscription" : "publication",
+						direction: event.source === "remote" ? "recv" : "send",
+						reason: "retry_limit",
+					})
+					.catch((error) =>
+						console.warn("Expected media recovery escalation failed:", error),
+					);
+			}),
 		});
 	}
 
@@ -127,11 +158,56 @@ export class SFUMeetingManager {
 		return this.connectionManager.start(options);
 	}
 
+	rejoinParticipantConnection(
+		userData: JoinUserData,
+		mediaState: JoinRoomMediaState,
+	): Promise<boolean> {
+		return this.connectionManager.joinRoom(userData, mediaState);
+	}
+
+	reconcileExpectedMedia(): Promise<void> {
+		return this.connectionManager.reconcileExpectedMedia();
+	}
+
+	/** Restarts playback, then reconciles expected media after browser resume. */
+	async recoverBrowserLifecycle(): Promise<void> {
+		await this.videoManager.retryPlayback();
+		await this.reconcileExpectedMedia();
+	}
+
+	observeRemoteMediaProgress(
+		producerId: string,
+		media: "audio" | "video",
+		flowing: boolean,
+		decoding: boolean,
+	): void {
+		this.connectionManager.observeRemoteMediaProgress(
+			producerId,
+			media,
+			flowing,
+			decoding,
+		);
+	}
+
 	async publishMedia(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
 	): Promise<PublishedMedia> {
 		return this.mediaManager.publishMedia(localStream, options);
+	}
+
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+		finalize?: (publication: PublishedMedia) => void | Promise<void>,
+	): Promise<PublishedMedia> {
+		return this.mediaManager.publishInitialMedia(
+			localStream,
+			options,
+			signal,
+			finalize,
+		);
 	}
 
 	setLocalMediaTrack(
@@ -363,24 +439,45 @@ export class SFUMeetingManager {
 			height: number;
 		},
 	): Promise<unknown | null> {
+		const generation =
+			(this.consumerPreferenceGenerations.get(consumerId) ?? 0) + 1;
+		this.consumerPreferenceGenerations.set(consumerId, generation);
+		if (!preferences.visible) {
+			this.consumerManager.updateConsumer(consumerId, {
+				adaptivelyPaused: true,
+			});
+		}
 		if (!this.sfuClient?.isConnected()) {
-			return null;
+			throw new Error("Cannot update consumer preferences while disconnected");
 		}
 
 		try {
-			return await this.sfuClient.updateConsumerPreferences({
+			const result = await this.sfuClient.updateConsumerPreferences({
 				consumerId,
 				visible: preferences.visible,
 				width: preferences.width,
 				height: preferences.height,
 			});
+			if (
+				preferences.visible &&
+				this.consumerPreferenceGenerations.get(consumerId) === generation
+			) {
+				this.consumerManager.updateConsumer(consumerId, {
+					adaptivelyPaused: false,
+				});
+			}
+			return result;
 		} catch (error) {
 			console.warn(
 				"Failed to update consumer preferences",
 				consumerId,
 				(error as Error)?.message || error,
 			);
-			return null;
+			throw error;
+		} finally {
+			if (this.consumerPreferenceGenerations.get(consumerId) === generation) {
+				this.consumerPreferenceGenerations.delete(consumerId);
+			}
 		}
 	}
 

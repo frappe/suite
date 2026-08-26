@@ -66,7 +66,7 @@
 						:label="__('Send')"
 						:tooltip="__('Send ({0}+Enter)', [modifier])"
 						:icon-left="SendHorizontal"
-						:disabled="isRecipientsEmpty"
+						:disabled="isRecipientsEmpty || isUploading"
 						class="!rounded-r-none"
 						@click="emit('sendMail')"
 					/>
@@ -74,7 +74,7 @@
 						<Button
 							variant="solid"
 							:tooltip="__('Schedule send')"
-							:disabled="isRecipientsEmpty"
+							:disabled="isRecipientsEmpty || isUploading"
 							class="!rounded-l-none"
 						>
 							<template #icon>
@@ -97,8 +97,9 @@ import { isMac } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 
-const { isRecipientsEmpty } = defineProps<{
+const { isRecipientsEmpty, isUploading } = defineProps<{
 	isRecipientsEmpty: boolean
+	isUploading?: boolean
 }>()
 
 const emit = defineEmits(['appendEmoji', 'selectFiles', 'discardMail', 'sendMail', 'scheduleSend'])

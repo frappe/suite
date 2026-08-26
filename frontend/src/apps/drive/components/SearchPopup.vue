@@ -97,7 +97,7 @@
 <script setup>
 import { Dialog, Avatar, createResource } from 'frappe-ui'
 import { getIconUrl, openEntity } from '@/apps/drive/utils/files'
-import { ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 
 import LucideFilePlus2 from '~icons/lucide/file-plus-2'
 import LucideFolderPlus from '~icons/lucide/folder-plus'
@@ -111,6 +111,11 @@ const searchResults = createResource({
   auto: false,
   method: 'POST',
   url: 'suite.drive.api.files.search',
+  // Typing fires this on every keystroke, and the endpoint resolves access one
+  // row at a time - a wide query is the most expensive call in Drive. Wait for
+  // a pause first, as the list resources do. Short enough to still feel
+  // immediate; long enough to coalesce a normal typing burst.
+  debounce: 180,
 })
 
 watch(search, (val) => {
@@ -119,8 +124,18 @@ watch(search, (val) => {
       query: val,
     })
   } else {
+    // Drop anything still pending, or it lands after the reset and repopulates
+    // the list for a query the user has already backspaced away.
+    searchResults.submit.cancel()
+    searchResults.abort()
     searchResults.reset()
   }
+})
+
+// Do not leave queued or in-flight work behind when the dialog closes.
+onScopeDispose(() => {
+  searchResults.submit.cancel()
+  searchResults.abort()
 })
 </script>
 

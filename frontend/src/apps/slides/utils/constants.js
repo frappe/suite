@@ -5,6 +5,7 @@ const fieldLabelClasses = 'text-sm text-gray-600'
 const selectionColor = '#3B82F6'
 const lockColor = `${selectionColor}99`
 const guideColor = '#C026D3'
+const portColor = '#D946EF'
 const handleIconColor = '#4b5563'
 
 const MAX_BORDER_RADIUS = 50
@@ -77,6 +78,7 @@ export {
 	selectionColor,
 	lockColor,
 	guideColor,
+	portColor,
 	MAX_BORDER_RADIUS,
 	defaultBorderColor,
 	defaultShadowColor,

@@ -93,6 +93,13 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertFalse(decoded["is_cohost"])
         self.assertFalse(decoded["is_guest"])
 
+    def test_unapproved_user_gets_restricted_preview_without_sfu_token(self):
+        frappe.set_user(self.outsider_email)
+
+        result = get_sfu_presence_preview_token(self.meeting.name)
+
+        self.assertEqual(result, {"restricted_preview": True})
+
     def test_sfu_connection_details_include_disabled_global_recording_setting(self):
         self.meeting.add_user_to_table("members", self.host_email, save=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)

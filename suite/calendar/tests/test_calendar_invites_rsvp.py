@@ -141,6 +141,19 @@ class TestCalendarInvitesRsvp(StalwartIntegrationTestCase):
         for name in frappe.get_all("Mail Queue", {"account": account, "status": "Queued"}, pluck="name"):
             frappe.get_doc("Mail Queue", name)._process()
 
+    def _assert_sender_copy_destroyed(self, account: str) -> None:
+        """Every pending queue row for the account must drop the sender's copy after submission.
+
+        Invite and RSVP-reply mails are mechanical iTIP messages, not correspondence; without
+        this flag the server would file a copy in the sender's Sent mailbox.
+        """
+
+        rows = frappe.get_all(
+            "Mail Queue", filters={"account": account, "status": "Queued"}, fields=["destroy_after_submit"]
+        )
+        self.assertTrue(rows, "No queued mail was created.")
+        self.assertTrue(all(r.destroy_after_submit for r in rows), "Sender copy would be kept in Sent.")
+
     def test_custom_invite_email_flow(self):
         """The app-sent invite path: templated email with ICS + signed links, and the reply mail."""
 
@@ -161,6 +174,7 @@ class TestCalendarInvitesRsvp(StalwartIntegrationTestCase):
             # then push the generated mail through the queue.
             with self.set_user(self.organizer.email):
                 notify_participants(self.organizer_account, "invite", event_id=event_id)
+                self._assert_sender_copy_destroyed(self.organizer_account)
                 self._process_pending_queue(self.organizer_account)
 
             invite_thread = self.wait_until(
@@ -187,6 +201,7 @@ class TestCalendarInvitesRsvp(StalwartIntegrationTestCase):
             with self.set_user(self.attendee.email):
                 copy = add_invite_to_calendar(self.attendee_account, ics_attachments[0]["blob_id"])
                 notify_organizer_of_reply(self.attendee_account, copy["id"], self.attendee.email, "accepted")
+                self._assert_sender_copy_destroyed(self.attendee_account)
                 self._process_pending_queue(self.attendee_account)
 
             self.wait_until(

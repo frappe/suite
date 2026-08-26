@@ -15,7 +15,7 @@ const LOCK_EXEMPT_PROPERTIES = ['locked', 'zIndex', 'refId']
 
 const isBlockedByLock = (command, state) => {
 	if (command.key === 'batch') return command.commands.some((c) => isBlockedByLock(c, state))
-	if (!command.elementIds) return false
+	if (!command.elementIds || command.bypassLock) return false
 	if (LOCK_EXEMPT_PROPERTIES.includes(command.property)) return false
 
 	return command.elementIds.some((id) => findElement(state, command.slideId, id)?.locked)
@@ -79,6 +79,7 @@ const editElementCommand = ({
 	newValue,
 	skipJumpOnExecute,
 	coalesceKey,
+	bypassLock,
 }) => {
 	return {
 		key: 'editElement',
@@ -88,6 +89,7 @@ const editElementCommand = ({
 		oldValue: cloneValue(oldValue),
 		newValue: cloneValue(newValue),
 		coalesceKey,
+		bypassLock,
 		jumpToSlideId: slideId,
 		jumpToElementIds: elementIds,
 		skipJumpOnExecute,

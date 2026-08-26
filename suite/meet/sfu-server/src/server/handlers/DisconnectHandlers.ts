@@ -24,11 +24,12 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 
 			const roomId = socket.roomId;
 			const participantId = socket.participantId;
+			const peerId = socket.peerId ?? participantId;
 			if (socket.scope === 'recording') {
 				deps.registry.deactivateRecorder(socket);
 			}
 
-			if (roomId && participantId) {
+			if (roomId && participantId && peerId) {
 				try {
 					if (socket.scope === 'recording') {
 						const ownsPeer = deps.registry.leaveRecorder(
@@ -44,22 +45,19 @@ export function registerDisconnectHandlers(deps: HandlerDeps) {
 					deps.registry.leaveScope(socket, roomId, 'presence-preview');
 
 					if (socket.scope === 'full') {
-						const shouldCleanupPeer = deps.registry.releaseParticipant(
+						const participantDeparted = deps.registry.releaseParticipant(
 							socket,
 							roomId,
 							participantId,
 						);
-						if (shouldCleanupPeer) {
-							if (socket.senderId !== undefined) {
-								await deps.e2eeRoster.remove(roomId, socket.senderId);
-								deps.e2eeEpochRelay.removePendingJoiner(
-									roomId,
-									socket.senderId,
-								);
-							}
-							deps.registry.removeSender(roomId, participantId);
-							await deps.mediasoup.removePeer(roomId, participantId);
+						if (socket.senderId !== undefined) {
+							await deps.e2eeRoster.remove(roomId, socket.senderId);
+							deps.e2eeEpochRelay.removePendingJoiner(roomId, socket.senderId);
+						}
+						deps.registry.removeSender(roomId, peerId);
+						await deps.mediasoup.removePeer(roomId, peerId);
 
+						if (participantDeparted) {
 							if (isRealParticipant(participantId)) {
 								deps.registry.emitParticipantEvent(
 									roomId,

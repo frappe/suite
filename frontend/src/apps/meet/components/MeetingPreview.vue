@@ -87,7 +87,7 @@
 							<template #prefix>
 								<lucide-video class="h-5 w-5" />
 							</template>
-							Join Meeting
+							{{ isCurrentUserPresent ? "Switch here" : "Join Meeting" }}
 						</Button>
 					</form>
 				</div>
@@ -132,7 +132,7 @@ const props = defineProps<{
 const emit = defineEmits<{
 	"toggle-microphone": [];
 	"toggle-camera": [];
-	"join-from-preview": [];
+	"join-from-preview": [switchHere: boolean];
 	"device-changed": [event: unknown];
 	"guest-join-complete": [data: { guestName: string; joinResult: unknown }];
 }>();
@@ -181,6 +181,7 @@ const previewVideoRef = (el: unknown) => {
 
 const {
 	participants,
+	isCurrentUserPresent,
 	error: presenceError,
 	hasFetchedParticipants,
 } = useMeetingPreviewPresence(props.meetingId);
@@ -224,7 +225,7 @@ const handleJoin = async () => {
 			toast.error(errorMessage);
 		}
 	} else {
-		emit("join-from-preview");
+		emit("join-from-preview", isCurrentUserPresent.value);
 	}
 };
 </script>

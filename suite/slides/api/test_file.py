@@ -1,12 +1,16 @@
 # Copyright (c) 2024, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+from contextlib import contextmanager
+
 import frappe
 from frappe.tests import IntegrationTestCase
-from werkzeug.exceptions import Forbidden, NotFound
+from werkzeug.exceptions import Forbidden, NotFound, RequestedRangeNotSatisfiable
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite.drive.overrides.file import File as DriveFile
-from suite.slides.api.file import get_reference_presentations, validate_media_file
+from suite.slides.api.file import get_media_response, get_reference_presentations, validate_media_file
 from suite.slides.tests.utils import (
     PNG_1PX,
     make_presentation,
@@ -200,3 +204,71 @@ class TestMediaFileAccess(IntegrationTestCase):
         ]
         self.assertEqual(files[0].file_url, files[1].file_url)
         return files
+
+
+@contextmanager
+def media_request(headers=None):
+    had_request = hasattr(frappe.local, "request")
+    previous = getattr(frappe.local, "request", None)
+    frappe.local.request = Request(EnvironBuilder(headers=headers or {}).get_environ())
+    try:
+        yield
+    finally:
+        if had_request:
+            frappe.local.request = previous
+        else:
+            del frappe.local.request
+
+
+def read_body(response):
+    response.direct_passthrough = False
+    return response.get_data()
+
+
+class TestMediaRanges(IntegrationTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+        cls.content = unique_bytes(PNG_1PX) + bytes(range(256)) * 4
+        with cls.set_user(OWNER):
+            presentation = make_presentation("Media Range Test")
+            cls.file = make_private_image(presentation.name, content=cls.content)
+
+    def respond(self, range_header=None):
+        headers = {"Range": range_header} if range_header else {}
+        with media_request(headers):
+            return get_media_response(self.file.file_url)
+
+    def test_full_file(self):
+        response = self.respond()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Accept-Ranges"], "bytes")
+        self.assertEqual(int(response.headers["Content-Length"]), len(self.content))
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertEqual(read_body(response), self.content)
+
+    def assert_range(self, header, start, end):
+        response = self.respond(header)
+        size = len(self.content)
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(response.headers["Content-Range"], f"bytes {start}-{end}/{size}")
+        self.assertEqual(int(response.headers["Content-Length"]), end - start + 1)
+        self.assertEqual(read_body(response), self.content[start : end + 1])
+
+    def test_leading_range(self):
+        self.assert_range("bytes=0-99", 0, 99)
+
+    def test_open_ended_range(self):
+        self.assert_range("bytes=100-", 100, len(self.content) - 1)
+
+    def test_suffix_range(self):
+        size = len(self.content)
+        self.assert_range("bytes=-100", size - 100, size - 1)
+
+    def test_single_byte_range(self):
+        self.assert_range("bytes=0-0", 0, 0)
+
+    def test_range_past_the_end_is_unsatisfiable(self):
+        with self.assertRaises(RequestedRangeNotSatisfiable):
+            self.respond(f"bytes={len(self.content)}-")

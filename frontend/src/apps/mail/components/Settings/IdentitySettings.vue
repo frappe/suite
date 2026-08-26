@@ -186,7 +186,7 @@ import { TextEditor } from 'frappe-ui/experimental'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
-import { convertHtmlToText, raiseToast } from '@/apps/mail/utils'
+import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize, useTextEditorButtons } from '@/apps/mail/utils/composables'
 import { CustomParagraphExtension } from '@/apps/mail/utils/text-editor'
 import { userStore } from '@/apps/mail/stores/user'
@@ -223,10 +223,9 @@ const getIdentity = () =>
 		},
 	})
 
-const save = () => {
-	identity.value.doc.text_signature = convertHtmlToText(identity.value.doc.html_signature)
-	identity.value.save.submit()
-}
+// text_signature is derived server-side on save (Identity.validate), so the two forms of the
+// signature stay the same signature rather than one being a flattened trace of the other.
+const save = () => identity.value.save.submit()
 
 const identity = ref(getIdentity())
 const savedSignature = ref('')

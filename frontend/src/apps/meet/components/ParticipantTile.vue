@@ -7,6 +7,8 @@
 		:data-audio-enabled="String(isAudioEnabled)"
 		:data-video-enabled="String(isVideoEnabled)"
 		:data-tile-id="`${pinType}-${tileId}`"
+		@mouseenter="isTileHovered = true"
+		@mouseleave="isTileHovered = false"
 	>
 		<video
 			:ref="videoRef"
@@ -109,7 +111,7 @@
 				size="xs"
 				class="!rounded-full !text-white hover:!bg-gray-600"
 				:class="{ '!bg-gray-600': isPinned }"
-				:tooltip="isPinned ? 'Unpin participant' : 'Pin participant'"
+				:tooltip="isTileHovered ? (isPinned ? 'Unpin participant' : 'Pin participant') : undefined"
 				@click="togglePin"
 			>
 				<template #icon>
@@ -122,7 +124,7 @@
 				variant="ghost"
 				size="xs"
 				class="!rounded-full !text-white hover:!bg-gray-600"
-				tooltip="Mute participant"
+				:tooltip="isTileHovered ? 'Mute participant' : undefined"
 				@click="handleMute"
 			>
 				<template #icon>
@@ -134,7 +136,7 @@
 				variant="ghost"
 				size="xs"
 				class="!rounded-full !text-white hover:!bg-gray-600"
-				tooltip="Remove participant"
+				:tooltip="isTileHovered ? 'Remove participant' : undefined"
 				@click="showKickDialog = true"
 			>
 				<template #icon>
@@ -227,6 +229,7 @@ const hostControls = inject<{
 const tileId = computed(() => props.pinId || props.participant.user_id);
 
 const showBlur = ref(props.participant.isLocalScreenShare);
+const isTileHovered = ref(false);
 
 const showScreenShareCopy = computed(() => {
 	return !meetingCtx?.gridLayout.pinnedTiles.value.length || isPinned.value;

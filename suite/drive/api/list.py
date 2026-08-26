@@ -4,6 +4,7 @@ from collections import Counter
 import frappe
 from pypika import Criterion, CustomFunction, Order
 from pypika import functions as fn
+from pypika.terms import ExistsCriterion
 
 from suite.drive.utils import (
     FILE_FIELDS,
@@ -76,7 +77,8 @@ def _apply_shared_filter(query, shared_type):
     cond = (DrivePermission.entity == DriveFile.name) & match & (DrivePermission.deny == 0)
     # Structural folders are scaffolding, not something anyone shared.
     cond = cond & DriveFile.name.notin([ROOT_FOLDER, USERS_FOLDER])
-    return query.right_join(DrivePermission).on(cond)
+    shared_file = frappe.qb.from_(DrivePermission).select(1).where(cond)
+    return query.where(ExistsCriterion(shared_file))
 
 
 def _apply_file_kinds_filter(query, file_kinds):
@@ -224,13 +226,15 @@ def files(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns active files in a folder. Pass `start`/`limit` to page through large
     folders. When `search` is set, results span the whole tree (not just the
     current folder).
     """
-    if not entity_name:
+    is_home_request = not entity_name
+    if is_home_request:
         entity_name = get_user_folder().name
 
     entity = frappe.get_doc("File", entity_name)
@@ -242,6 +246,8 @@ def files(
         )
 
     query = _get_basic_query(search)
+    if is_home_request:
+        query = query.where(DriveFile.attached_to_doctype.isnull())
     if not search:
         # Folder browsing; search is tree-wide so it skips the folder filter.
         query = query.where(DriveFile.folder == entity_name)
@@ -254,6 +260,7 @@ def files(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -266,6 +273,7 @@ def shared(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns shared files based on shared_type parameter.
@@ -282,6 +290,7 @@ def shared(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -293,6 +302,7 @@ def favourites(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all files marked as favourite by the current user.
@@ -307,6 +317,7 @@ def favourites(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -318,6 +329,7 @@ def recents(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all files marked recently by the current user.
@@ -332,6 +344,7 @@ def recents(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
 
@@ -343,6 +356,7 @@ def trash(
     search: str | None = None,
     start: int = 0,
     limit: int | None = None,
+    paginated: bool = False,
 ):
     """
     Returns all deleted files (trash) for the current user.
@@ -362,8 +376,12 @@ def trash(
         ascending=ascending,
         start=start,
         limit=limit,
+        paginated=paginated,
     )
 
+
+# Window used when a paginated caller passes no explicit limit.
+MAX_PAGE_SIZE = 100
 
 ALLOWED_SORT_FIELDS = {
     "name",
@@ -387,9 +405,17 @@ def get_query_data(
     ascending=True,
     start=0,
     limit=None,
+    paginated=False,
 ):
     """
     Runs all the necessary commands to obtain files in the structure expected by Drive frontend.
+
+    With `paginated`, returns `{"rows": [...], "has_next": bool, "next_start": int}`
+    instead of a bare list. Callers that page MUST use it: the dedupe and permission
+    filter run *after* LIMIT/OFFSET, so a raw SQL window can yield fewer visible rows
+    than `limit` while more still remain, and the row count is an unsound end-of-list
+    signal. `next_start` is the raw offset to resume from — it is not
+    `start + limit`, because filling a page can consume several windows.
     """
     if order_by not in ALLOWED_SORT_FIELDS:
         order_by = "modified"
@@ -421,12 +447,21 @@ def get_query_data(
             query.right_join(Recents)
             .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
             .orderby(Recents.last_interaction, order=Order.desc)
+            .orderby(DriveFile.name, order=Order.asc)
         )
     else:
+        sort_field = (
+            fn.Coalesce(DriveFile.file_modified, DriveFile.modified)
+            if order_by == "modified"
+            else DriveFile[order_by]
+        )
+        sort_order = Order.asc if ascending else Order.desc
         query = (
             query.left_join(Recents)
             .on((Recents.entity_name == DriveFile.name) & (Recents.user == frappe.session.user))
-            .orderby(DriveFile[order_by], order=Order.asc if ascending else Order.desc)
+            .orderby(sort_field, order=sort_order)
+            .orderby(DriveFile.file_name, order=sort_order)
+            .orderby(DriveFile.name, order=Order.asc)
         )
 
     query = query.select(Recents.last_interaction.as_("accessed"))
@@ -434,23 +469,37 @@ def get_query_data(
     # Apply file kind filter
     query = _apply_file_kinds_filter(query, file_kinds)
 
-    # Page through large result sets (aggregation below is scoped to the page).
-    if limit:
-        query = query.limit(int(limit)).offset(int(start or 0))
+    if not paginated:
+        if limit:
+            query = query.limit(int(limit)).offset(int(start or 0))
+        return _visible_rows(query.run(as_dict=True), entity_name)
 
-    res = query.run(as_dict=True)
+    # Paginated: walk raw SQL windows until we have a full page of rows the caller
+    # can actually see, or the query is exhausted. `has_next` must never be derived
+    # from the raw row count — the permission filter runs per row *after* the query,
+    # so a window full of denied rows would otherwise report "more exist" and turn
+    # an empty page into proof that something is there. See test_list.py.
+    window = int(limit) if limit else MAX_PAGE_SIZE
+    cursor = int(start or 0)
+    rows: list = []
+    exhausted = False
 
+    while not exhausted and len(rows) < window:
+        # Only ask for what the page still needs, so a page never overshoots
+        # `limit` and `next_start` stays exact.
+        need = window - len(rows)
+        batch = query.limit(need).offset(cursor).run(as_dict=True)
+        cursor += len(batch)
+        if len(batch) < need:
+            exhausted = True
+        rows.extend(_visible_rows(batch, entity_name))
+
+    return {"rows": rows, "has_next": not exhausted, "next_start": cursor}
+
+
+def _visible_rows(res, entity_name):
+    """Enrich raw rows and drop the ones the caller cannot read."""
     default = get_default_access(entity_name) if entity_name else 0
-
-    # Deduplicate results
-    if shared_type:
-        added = set()
-        filtered_list = []
-        for r in res:
-            if r["name"] not in added:
-                filtered_list.append(r)
-            added.add(r["name"])
-        res = filtered_list
 
     # Get aggregated data, scoped to the files we're returning
     names = [r["name"] for r in res]

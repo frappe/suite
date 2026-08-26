@@ -523,8 +523,7 @@ export class E2EEHandshakeController {
 				error,
 			);
 		}
-		await this.sfuClient.joinRoom(
-			this.meetingId,
+		await this.sfuManager.value?.rejoinParticipantConnection(
 			{
 				userId: this.currentUser.currentUser.value?.user_id || "",
 				name:

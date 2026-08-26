@@ -9,6 +9,8 @@ type MockTransportManager = {
 };
 type MockParticipantManager = {
 	hasParticipant: ReturnType<typeof vi.fn>;
+	getParticipant: ReturnType<typeof vi.fn>;
+	updateParticipant: ReturnType<typeof vi.fn>;
 };
 
 class FakeMediaStream {
@@ -61,6 +63,7 @@ function createManager(
 	consumerManager: {
 		addConsumer: ReturnType<typeof vi.fn>;
 		getConsumersByParticipant: ReturnType<typeof vi.fn>;
+		removeConsumer: ReturnType<typeof vi.fn>;
 	};
 	participantManager: MockParticipantManager;
 } {
@@ -84,6 +87,7 @@ function createManager(
 
 	const consumerManager = {
 		getConsumersByParticipant: vi.fn(() => []),
+		removeConsumer: vi.fn(),
 		addConsumer: vi.fn((c) => ({
 			id: c.id,
 			producerId: c.producerId,
@@ -94,6 +98,8 @@ function createManager(
 
 	const participantManager: MockParticipantManager = {
 		hasParticipant: vi.fn().mockReturnValue(opts.hasParticipant ?? true),
+		getParticipant: vi.fn().mockReturnValue({ video_enabled: true }),
+		updateParticipant: vi.fn(),
 	};
 
 	const getCurrentUserId = vi.fn().mockReturnValue(opts.currentUserId ?? "me");
@@ -118,6 +124,14 @@ function createManager(
 }
 
 describe("SFUMediaManager.subscribeToRemoteProducer", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("shares one subscription across concurrent callers", async () => {
 		const { mediaManager, transportManager } = createManager();
 		const request = {
@@ -132,6 +146,83 @@ describe("SFUMediaManager.subscribeToRemoteProducer", () => {
 		]);
 
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(1);
+	});
+
+	it("retries an initial subscription until it succeeds", async () => {
+		const { mediaManager, transportManager } = createManager();
+		transportManager.createConsumer
+			.mockRejectedValueOnce(new Error("not ready"))
+			.mockResolvedValueOnce({
+				id: "new-c1",
+				producerId: "producer-1",
+				kind: "video",
+				track: { kind: "video" },
+				appData: { type: "camera" },
+				close: vi.fn(),
+			});
+
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		await vi.advanceTimersByTimeAsync(250);
+
+		await expect(subscription).resolves.toMatchObject({ id: "new-c1" });
+		expect(transportManager.createConsumer).toHaveBeenCalledTimes(2);
+	});
+
+	it("exhausts one automatic retry chain", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const onRecoveryExhausted = vi.fn();
+		mediaManager.setEventHandlers({ onRecoveryExhausted });
+		transportManager.createConsumer.mockRejectedValue(new Error("server down"));
+
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		void subscription.catch(() => {});
+		await vi.advanceTimersByTimeAsync(1000);
+
+		await expect(subscription).rejects.toThrow("server down");
+		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
+		expect(onRecoveryExhausted).toHaveBeenCalledOnce();
+	});
+
+	it("discards an in-flight subscription when its producer closes", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		const request = deferred<{
+			id: string;
+			producerId: string;
+			kind: string;
+			track: { kind: string };
+			appData: { type: string };
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		transportManager.createConsumer.mockReturnValue(request.promise);
+		const subscription = mediaManager.subscribeToRemoteProducer({
+			producerId: "producer-1",
+			participantId: "remote-1",
+			isScreen: false,
+		});
+		const rejected = expect(subscription).rejects.toMatchObject({
+			name: "AbortError",
+		});
+
+		mediaManager.cancelProducerSubscription("remote-1", "producer-1");
+		request.resolve({
+			id: "stale-c1",
+			producerId: "producer-1",
+			kind: "video",
+			track: { kind: "video" },
+			appData: { type: "camera" },
+			close: vi.fn(),
+		});
+
+		await rejected;
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stale-c1");
 	});
 
 	it("discards a subscription that finishes after receive teardown", async () => {
@@ -218,6 +309,134 @@ describe("SFUMediaManager.attachAudioConsumer", () => {
 		await expect(mediaManager.attachAudioConsumer("remote-1", {
 			track: { kind: "audio" },
 		} as never)).rejects.toThrow("audio blocked");
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("SFUMediaManager endpoint media handoff", () => {
+	it("reattaches the surviving consumer even when the closed consumer is already gone", async () => {
+		const { mediaManager, consumerManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const closed = {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never;
+		const survivor = {
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("track-2", "video"),
+			consumer: { closed: false },
+		} as never;
+		await mediaManager.attachVideoConsumer("remote-1", closed);
+		const attach = vi.spyOn(mediaManager, "attachVideoConsumer");
+		consumerManager.getConsumersByParticipant.mockReturnValue([survivor]);
+
+		await mediaManager.reattachAfterProducerClosed("remote-1", "producer-1");
+
+		expect(attach).toHaveBeenCalledWith("remote-1", survivor);
+		vi.unstubAllGlobals();
+	});
+
+	it("does not replace media when a non-attached endpoint closes", async () => {
+		const { mediaManager, consumerManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		await mediaManager.attachVideoConsumer("remote-1", {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never);
+		const attach = vi.spyOn(mediaManager, "attachVideoConsumer");
+		consumerManager.getConsumersByParticipant.mockReturnValue([]);
+
+		await mediaManager.reattachAfterProducerClosed("remote-1", "producer-2");
+
+		expect(attach).not.toHaveBeenCalled();
+		vi.unstubAllGlobals();
+	});
+
+	it("lets a newer endpoint attachment win over an in-flight handoff", async () => {
+		const { mediaManager, consumerManager, videoManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const firstAttachment = deferred<void>();
+		const closed = {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never;
+		const survivor = {
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("track-2", "video"),
+			consumer: { closed: false },
+		} as never;
+		const newest = {
+			producerId: "producer-3",
+			kind: "video",
+			track: mediaTrack("track-3", "video"),
+		} as never;
+		await mediaManager.attachVideoConsumer("remote-1", closed);
+		videoManager.attachStream.mockClear();
+		consumerManager.getConsumersByParticipant.mockReturnValue([survivor]);
+		videoManager.attachStream
+			.mockImplementationOnce(() => firstAttachment.promise)
+			.mockResolvedValueOnce(undefined);
+
+		const handoff = mediaManager.reattachAfterProducerClosed(
+			"remote-1",
+			"producer-1",
+		);
+		await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledOnce());
+		const newerAttachment = mediaManager.attachVideoConsumer("remote-1", newest);
+		firstAttachment.resolve();
+		await Promise.all([handoff, newerAttachment]);
+
+		expect(videoManager.attachStream).toHaveBeenCalledTimes(2);
+		expect(
+			(videoManager.attachStream.mock.calls[1][1] as FakeMediaStream)
+				.getVideoTracks()[0]?.id,
+		).toBe("track-3");
+		vi.unstubAllGlobals();
+	});
+
+	it("retries handoff when a newer endpoint attachment fails", async () => {
+		const { mediaManager, consumerManager, videoManager } = createManager();
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const closed = {
+			producerId: "producer-1",
+			kind: "video",
+			track: mediaTrack("track-1", "video"),
+		} as never;
+		const survivor = {
+			producerId: "producer-2",
+			kind: "video",
+			isScreen: false,
+			track: mediaTrack("track-2", "video"),
+			consumer: { closed: false },
+		} as never;
+		const failed = {
+			producerId: "producer-3",
+			kind: "video",
+			track: mediaTrack("track-3", "video"),
+		} as never;
+		await mediaManager.attachVideoConsumer("remote-1", closed);
+		videoManager.attachStream.mockClear();
+		consumerManager.getConsumersByParticipant.mockReturnValue([survivor]);
+		videoManager.attachStream
+			.mockRejectedValueOnce(new Error("attachment failed"))
+			.mockResolvedValueOnce(undefined);
+
+		const failedAttachment = mediaManager.attachVideoConsumer("remote-1", failed);
+		await mediaManager.reattachAfterProducerClosed("remote-1", "producer-1");
+		await expect(failedAttachment).rejects.toThrow("attachment failed");
+		await vi.waitFor(() => expect(videoManager.attachStream).toHaveBeenCalledTimes(2));
+
+		expect(
+			(videoManager.attachStream.mock.calls[1][1] as FakeMediaStream)
+				.getVideoTracks()[0]?.id,
+		).toBe("track-2");
 		vi.unstubAllGlobals();
 	});
 });
@@ -400,7 +619,7 @@ describe("SFUMediaManager local recovery tracks", () => {
 			new Error("producer failed"),
 		);
 
-		await mediaManager.publishMedia(input as never, {
+		const result = await mediaManager.publishMedia(input as never, {
 			publishVideo: true,
 			publishAudio: false,
 		});
@@ -414,6 +633,8 @@ describe("SFUMediaManager local recovery tracks", () => {
 		expect(synchronize.mock.invocationCallOrder[0]).toBeLessThan(
 			transportManager.createProducer.mock.invocationCallOrder[0],
 		);
+		expect(result.videoError).toEqual(new Error("producer failed"));
+		expect(result.audioError).toBeUndefined();
 
 		transportManager.createProducer.mockResolvedValueOnce({});
 		await mediaManager.rebuildSendSide();
@@ -423,6 +644,63 @@ describe("SFUMediaManager local recovery tracks", () => {
 			type: "camera",
 		});
 		expect(mediaManager.mediaHandler.localStream?.getAudioTracks()).toEqual([]);
+	});
+
+	it("reports audio and video producer outcomes independently", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const video = mediaTrack("video", "video");
+		const audio = mediaTrack("audio", "audio");
+		const videoProducer = { id: "video-producer", track: video };
+		transportManager.createProducer
+			.mockResolvedValueOnce(videoProducer)
+			.mockRejectedValueOnce(new Error("audio failed"));
+
+		const result = await mediaManager.publishMedia(
+			new FakeMediaStream([video, audio]) as never,
+			{ publishVideo: true, publishAudio: true },
+		);
+
+		expect(result.videoProducer).toBe(videoProducer);
+		expect(result.videoError).toBeUndefined();
+		expect(result.audioProducer).toBeUndefined();
+		expect(result.audioError).toEqual(new Error("audio failed"));
+	});
+
+	it("serializes controls behind all initial publication retries", async () => {
+		vi.useFakeTimers();
+		const { mediaManager, transportManager } = createManager();
+		const video = mediaTrack("video", "video");
+		const videoProducer = { id: "video-producer", track: video };
+		transportManager.createProducer
+			.mockRejectedValueOnce(new Error("temporary failure"))
+			.mockResolvedValueOnce(videoProducer);
+		const ordering: string[] = [];
+
+		const publication = mediaManager.publishInitialMedia(
+			new FakeMediaStream([video]) as never,
+			{ publishVideo: true, publishAudio: false },
+			undefined,
+			() => {
+				ordering.push("reconciled");
+			},
+		);
+		await vi.waitFor(() =>
+			expect(transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		let controlRan = false;
+		const control = mediaManager.serializeSendMediaMutation(async () => {
+			controlRan = true;
+			ordering.push("control");
+		});
+
+		expect(controlRan).toBe(false);
+		await vi.runAllTimersAsync();
+		await Promise.all([publication, control]);
+
+		expect(transportManager.createProducer).toHaveBeenCalledTimes(2);
+		expect(controlRan).toBe(true);
+		expect(ordering).toEqual(["reconciled", "control"]);
+		vi.useRealTimers();
 	});
 
 	it("finishes initial publication before a later send-media mutation", async () => {
@@ -723,6 +1001,21 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 		);
 	});
 
+	it("removes and recreates only the consumer that never started", async () => {
+		const { mediaManager, transportManager, consumerManager } = createManager();
+		await mediaManager.recoverConsumer({
+			id: "stalled-c1",
+			participantId: "remote-1",
+			producerId: "producer-1",
+			kind: "video",
+			isScreen: false,
+		} as never);
+
+		expect(consumerManager.removeConsumer).toHaveBeenCalledWith("stalled-c1");
+		await vi.advanceTimersByTimeAsync(250);
+		expect(transportManager.createConsumer).toHaveBeenCalledOnce();
+	});
+
 	it("does not re-subscribe if the participant has left", async () => {
 		const { mediaManager, transportManager } = createManager({
 			hasParticipant: false,
@@ -764,29 +1057,16 @@ describe("SFUMediaManager.handleConsumerLost", () => {
 		expect(transportManager.createConsumer).not.toHaveBeenCalled();
 	});
 
-	it("caps retries at 3, then resets and tries again on the next lost event", async () => {
+	it("automatically caps lost-consumer recovery at 3 attempts", async () => {
 		const { mediaManager, transportManager } = createManager();
+		const onRecoveryExhausted = vi.fn();
+		mediaManager.setEventHandlers({ onRecoveryExhausted });
 		transportManager.createConsumer.mockRejectedValue(new Error("server down"));
 
-		for (let i = 0; i < 3; i++) {
-			await mediaManager.handleConsumerLost(baseInfo);
-			await vi.advanceTimersByTimeAsync(250);
-		}
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
-
 		await mediaManager.handleConsumerLost(baseInfo);
-		await vi.advanceTimersByTimeAsync(250);
+		await vi.advanceTimersByTimeAsync(1000);
 		expect(transportManager.createConsumer).toHaveBeenCalledTimes(3);
-
-		await mediaManager.handleConsumerLost(baseInfo);
-		await vi.advanceTimersByTimeAsync(250);
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(4);
-
-		for (let i = 0; i < 2; i++) {
-			await mediaManager.handleConsumerLost(baseInfo);
-			await vi.advanceTimersByTimeAsync(250);
-		}
-		expect(transportManager.createConsumer).toHaveBeenCalledTimes(6);
+		expect(onRecoveryExhausted).toHaveBeenCalledOnce();
 	});
 
 	it("treats a successful re-subscribe as a fresh retry budget", async () => {

@@ -101,7 +101,11 @@ def upload_file(
     # Validate that file size is matching
     file_size = temp_path.stat().st_size
     acquire_owner_storage_lock(frappe.session.user)
-    validate_quota(incoming_size=file_size)
+    try:
+        validate_quota(incoming_size=file_size)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
     mime_type = mimemapper.get_mime_type(str(temp_path), native_first=False)
     file_type = get_file_type(mime_type)
@@ -457,10 +461,10 @@ def _collect_download_files(entity_names):
         entity = frappe.get_value(
             "File",
             name,
-            ["name", "file_name", "is_folder", "file_type", "file_url"],
+            ["name", "file_name", "is_folder", "file_type", "file_url", "status"],
             as_dict=True,
         )
-        if not entity:
+        if not entity or entity.status != STATUS_ACTIVE:
             continue
         if entity.is_folder:
             yield from _iter_folder_files(entity.name, prefix=f"{entity.file_name}/")
@@ -834,18 +838,21 @@ def move(entity_names: list[str], new_parent: str | None = None):
     return res
 
 
-@frappe.whitelist()
-def search(query: str):
-    """
-    Basic search implementation
-    """
-    text = " ".join(k + "*" for k in query.split())
-    try:
-        result = frappe.db.sql(
-            """
+# `search` resolves access one row at a time, so the rows it scans are not the
+# rows it can return. Walk the match set in windows and keep only what the
+# caller may read, until the page is full or the scan budget is spent.
+SEARCH_PAGE_LENGTH = 50
+SEARCH_SCAN_WINDOW = 100
+MAX_SEARCH_SCAN_WINDOWS = 10
+
+SEARCH_QUERY = """
         SELECT  `tabFile`.name,
                 `tabFile`.file_name,
                 `tabFile`.file_type,
+                `tabFile`.is_folder,
+                `tabFile`.owner,
+                `tabFile`.attached_to_doctype,
+                `tabFile`.attached_to_name,
                 `tabFile`.content_doctype,
                 `tabFile`.content_docname,
                 `tabUser`.name AS user_name,
@@ -857,12 +864,57 @@ def search(query: str):
             AND COALESCE(`tabFile`.`folder`, '') <> ''
             AND MATCH(`tabFile`.file_name) AGAINST (%(text)s IN BOOLEAN MODE)
         GROUP BY `tabFile`.`name`
-        LIMIT 500
-        """,
-            values={"text": text, "status": STATUS_ACTIVE},
-            as_dict=1,
-        )
-        return [r for r in result if user_has_permission(r.name, "read")][:50]
+        ORDER BY MATCH(`tabFile`.file_name) AGAINST (%(text)s IN BOOLEAN MODE) DESC,
+                 `tabFile`.`name` ASC
+        LIMIT %(limit)s OFFSET %(offset)s
+        """
+
+
+@frappe.whitelist()
+def search(query: str):
+    """Search active files by name, returning only rows the caller may read.
+
+    Access cannot be resolved in the query - `file_permission_criterion` does
+    not model inheritance - so it is filtered per row in Python. Filtering a
+    single fixed window that way makes the reply depend on how many *unreadable*
+    rows happen to sort first: a caller shared on few files gets a short page,
+    or an empty one, while matches they can read sit just past the window. Walk
+    successive windows instead, stopping once the page is full.
+    """
+    text = " ".join(k + "*" for k in query.split())
+    if not text:
+        return []
+    try:
+        rows = []
+        seen = set()
+        for window in range(MAX_SEARCH_SCAN_WINDOWS):
+            batch = frappe.db.sql(
+                SEARCH_QUERY,
+                values={
+                    "text": text,
+                    "status": STATUS_ACTIVE,
+                    "limit": SEARCH_SCAN_WINDOW,
+                    "offset": window * SEARCH_SCAN_WINDOW,
+                },
+                as_dict=1,
+            )
+            for row in batch:
+                # A window can overlap the one before it if rows are written
+                # mid-scan; never pay for the same row - or return it - twice.
+                if row.name in seen:
+                    continue
+                seen.add(row.name)
+                # Pass the row, not its name: `user_has_permission` reloads the
+                # whole document when given a string, and the access check only
+                # reads fields this query already selects.
+                if not user_has_permission(row, "read"):
+                    continue
+                rows.append(row)
+                if len(rows) == SEARCH_PAGE_LENGTH:
+                    return rows
+            if len(batch) < SEARCH_SCAN_WINDOW:
+                break
+        return rows
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Frappe Drive Search Error")
         return {"error": str(e)}
@@ -870,7 +922,14 @@ def search(query: str):
 
 @frappe.whitelist(allow_guest=True)
 def translate_old_name(old_name: str):
-    return frappe.get_value("File", {"old_name": old_name}, "name")
+    # The pre-team-restructure id mapping (Drive File's `old_name` field) was
+    # dropped when Drive File merged into the framework File doctype, so ids
+    # can only be passed through when they survived migration as File names.
+    # Missing and inaccessible ids both return None so guests can't probe
+    # which private files exist.
+    if not frappe.db.exists("File", old_name):
+        return None
+    return old_name if user_has_permission(old_name, "read") else None
 
 
 @frappe.whitelist(allow_guest=True)
@@ -935,16 +994,6 @@ def track_visit(
         },
         "read",
         True,
-    )
-
-
-@frappe.whitelist()
-def get_docs_attached_to(file_name: str):
-    file = frappe.get_doc("File", file_name)
-    return frappe.get_list(
-        "File",
-        filters={"attached_to_doctype": ["is", "set"], "file_url": file.file_url},
-        fields=["attached_to_doctype", "attached_to_name"],
     )
 
 

@@ -1,1033 +1,1255 @@
 <template>
-	<div v-if="threadID" class="relative flex h-full flex-col overflow-hidden">
-		<ThreadHeader
-			v-if="!readonly"
-			:threads
-			:thread
-			:can-go-next="canGoNext"
-			@set-flagged="(ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)"
-			@set-seen="setThreadSeen"
-			@move-thread="(moveToMailbox: string) => emit('moveThread', moveToMailbox)"
-			@add-thread-to-mailbox="(mailboxId: string) => emit('addThreadToMailbox', mailboxId)"
-			@remove-thread-from-mailbox="
-				(mailboxId: string) => emit('removeThreadFromMailbox', mailboxId)
-			"
-			@set-spam-status="(spam: boolean) => emit('setSpamStatus', spam)"
-			@delete-thread="emit('deleteThread')"
-			@prev-thread="emit('prevThread')"
-			@next-thread="emit('nextThread')"
-		/>
-		<!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
+  <div v-if="threadID" class="relative flex h-full flex-col overflow-hidden">
+    <ThreadHeader
+      v-if="!readonly"
+      :threads
+      :thread
+      :can-go-next="canGoNext"
+      @set-flagged="
+        (ids: string[], flagged: boolean) => emit('setFlagged', ids, flagged)
+      "
+      @set-seen="setThreadSeen"
+      @move-thread="
+        (moveToMailbox: string) => emit('moveThread', moveToMailbox)
+      "
+      @add-thread-to-mailbox="
+        (mailboxId: string) => emit('addThreadToMailbox', mailboxId)
+      "
+      @remove-thread-from-mailbox="
+        (mailboxId: string) => emit('removeThreadFromMailbox', mailboxId)
+      "
+      @set-spam-status="(spam: boolean) => emit('setSpamStatus', spam)"
+      @delete-thread="emit('deleteThread')"
+      @prev-thread="emit('prevThread')"
+      @next-thread="emit('nextThread')"
+    />
+    <!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
 		     messages, reply bar — while the toolbar above stays put. Keyed per thread on
 		     mobile: the outgoing thread's frozen DOM slides away as the incoming one
 		     slides in. Desktop keys statically, so switching threads never remounts. -->
-		<div class="relative min-h-0 flex-1 overflow-hidden">
-		<Transition :name="slide || ''" @after-enter="emit('slideDone')">
-		<div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
-		<!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
+    <div class="relative min-h-0 flex-1 overflow-hidden">
+      <Transition :name="slide || ''" @after-enter="emit('slideDone')">
+        <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
+          <!-- Mobile: the subject is part of the fixed chrome — scrolling starts below it,
 		     and its border is the separator content passes under. -->
-		<div v-if="isMobile && thread?.length" class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5">
-			<!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
+          <div
+            v-if="isMobile && thread?.length"
+            class="shrink-0 border-b px-3.5 pb-3.5 pt-1.5"
+          >
+            <!-- !leading-7: subjects wrap, and both text-lg-semibold (line-height 1.15
 			     baked in) and the global body.mail-app h2 rule outrank a plain leading-*
 			     utility — wrapped lines sat nearly touching. -->
-			<h2 class="text-lg-semibold !leading-7">
-				{{ thread[0].subject || __('[No subject]') }}
-			</h2>
-		</div>
-		<div ref="threadContainer" class="flex-1 overflow-y-auto">
-
-			<!-- The composer window floats over the app, so while one is up the thread keeps a
+            <h2 class="text-lg-semibold !leading-7">
+              {{ thread[0].subject || __("[No subject]") }}
+            </h2>
+          </div>
+          <div ref="threadContainer" class="flex-1 overflow-y-auto">
+            <!-- The composer window floats over the app, so while one is up the thread keeps a
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
 			     end in a gap explaining nothing. -->
-			<div
-				class="sm:space-y-4 sm:px-5 sm:pt-6"
-				:class="{
-					'pb-16': isMobile && !thread?.at(-1)?.draft,
-					'sm:pb-24': isComposeWindowOpen(),
-					'sm:pb-6': !isComposeWindowOpen(),
-				}"
-			>
-				<template v-for="group in mailsByDay" :key="group.date">
-					<ThreadDivider
-						v-if="shouldShowDateDivider(group.mails)"
-						:message="getFormattedDate(group.date)"
-					/>
-					<template v-for="mail in group.mails" :key="mail.name">
-						<ThreadDivider
-							v-if="shouldShowUnseenMarker(mail.id)"
-							class="!text-ink-blue-6 [&_.border-t]:border-[var(--outline-blue-3)] [&_span:not(.border-t)]:border-[var(--outline-blue-3)]"
-							:message="unseenMessage"
-						/>
+            <div
+              class="sm:space-y-3 sm:px-5 sm:pt-6"
+              :class="{
+                'pb-16': isMobile && !thread?.at(-1)?.draft,
+                'sm:pb-24': isComposeWindowOpen(),
+                'sm:pb-6': !isComposeWindowOpen(),
+              }"
+            >
+              <template v-for="group in mailsByDay" :key="group.date">
+                <!-- Borderless: the date is a label, not a control — only the
+					     more-messages toggle keeps the pill outline. -->
+                <ThreadDivider
+                  v-if="shouldShowDateDivider(group.mails)"
+                  :message="getFormattedDate(group.date)"
+                  class="[&_span:not(.border-t)]:text-ink-gray-4 [&_span:not(.border-t)]:border-0 [&_span:not(.border-t)]:text-xs"
+                />
+                <template v-for="mail in group.mails" :key="mail.name">
+                  <ThreadDivider
+                    v-if="shouldShowUnseenMarker(mail.id)"
+                    class="!text-ink-blue-6 [&_.border-t]:border-[var(--outline-blue-3)] [&_span:not(.border-t)]:border-[var(--outline-blue-3)]"
+                    :message="unseenMessage"
+                  />
 
-						<button
-							v-if="mail.name === firstMailOfCollapsedGroup"
-							class="w-full cursor-pointer transition-colors"
-							@click="resetCollapsedGroup"
-						>
-							<ThreadDivider
-								:message="
-									__('{0} more messages', [String(collapsedMailNames.size)])
-								"
-								class="hover:text-ink-gray-8"
-							/>
-						</button>
-						<!-- A draft that is popped out drops out of the thread entirely: it is being
+                  <button
+                    v-if="mail.name === firstMailOfCollapsedGroup"
+                    class="w-full cursor-pointer transition-colors"
+                    @click="resetCollapsedGroup"
+                  >
+                    <ThreadDivider
+                      :message="
+                        __('{0} more messages', [
+                          String(collapsedMailNames.size),
+                        ])
+                      "
+                      class="hover:text-ink-gray-8"
+                    />
+                  </button>
+                  <!-- A draft that is popped out drops out of the thread entirely: it is being
 						     written in the composer window, and it must be the card that goes, not
 						     just the editor inside it — the wrapper carries the draft's own border,
 						     padding and shadow, so hiding only its contents left an empty white
 						     card sitting in the thread. -->
-						<div
-							v-if="!collapsedMailNames.has(mail.name) && !isPoppedOut(mail)"
-							:data-mail-name="mail.name"
-							:class="{
-								'px-3.5 py-5': isMobile,
-								'max-sm:border-b':
-									(thread.length > 1 || mail.draft) &&
-									mail.name !== mailBeforeCollapsedGroup &&
-									mail.name !== mailBeforeUnseenMarker,
-								'sm:rounded-7 sm:p-5': thread.length > 1 || mail.draft,
-								'sm:border':
-									(thread.length > 1 && !mail.draft) ||
-									(mail.draft && dataTheme === 'dark'),
-								'cursor-pointer': isCollapsed(mail),
-								'sm:shadow-md': mail.draft && dataTheme === 'light',
-							}"
-							@click="mail.collapsed = false"
-						>
-							<ComposeMailEditor
-								v-if="mail.draft && !isMobile"
-								v-model="mail.show"
-								:reload-mails="reload"
-								:mail-details="draftMails[mail.name]"
-								:is-in-thread="true"
-								@discard-mail="discardLocalDraft(mail.name)"
-								@reply="reply(getSourceMail(mail.name))"
-								@reply-all="replyAll(getSourceMail(mail.name))"
-								@forward="forward(getSourceMail(mail.name))"
-								@pop-out="
-									(mailDetails: ComposeMailData) => popOutDraft(mailDetails)
-								"
-							/>
+                  <div
+                    v-if="
+                      !collapsedMailNames.has(mail.name) && !isPoppedOut(mail)
+                    "
+                    :data-mail-name="mail.name"
+                    class="group/card"
+                    :class="{
+                      'px-3.5': isMobile,
+                      // Same tightening the desktop rows got: reading padding for
+                      // open mail, slimmer rows for collapsed ones.
+                      'py-5': isMobile && !isCollapsed(mail),
+                      'py-3.5': isMobile && isCollapsed(mail),
+                      'max-sm:border-b':
+                        (thread.length > 1 || mail.draft) &&
+                        mail.name !== mailBeforeCollapsedGroup &&
+                        mail.name !== mailBeforeUnseenMarker,
+                      'sm:rounded-7': thread.length > 1 || mail.draft,
+                      // A collapsed row only holds one line — reading-card padding
+                      // around it is what made the thread feel loose.
+                      'sm:px-4 sm:py-5':
+                        (thread.length > 1 || mail.draft) && !isCollapsed(mail),
+                      // The list rows' hover, so a clickable row answers the cursor.
+                      'sm:hover:bg-surface-gray-1 sm:px-4 sm:py-3':
+                        thread.length > 1 && isCollapsed(mail),
+                      'sm:border':
+                        (thread.length > 1 && !mail.draft) ||
+                        (mail.draft && dataTheme === 'dark'),
+                      'cursor-pointer': isCollapsed(mail),
+                      'sm:shadow-md': mail.draft && dataTheme === 'light',
+                    }"
+                    @click="mail.collapsed = false"
+                  >
+                    <ComposeMailEditor
+                      v-if="mail.draft && !isMobile"
+                      v-model="mail.show"
+                      :reload-mails="reload"
+                      :mail-details="draftMails[mail.name]"
+                      :is-in-thread="true"
+                      @discard-mail="discardLocalDraft(mail.name)"
+                      @reply="reply(getSourceMail(mail.name))"
+                      @reply-all="replyAll(getSourceMail(mail.name))"
+                      @forward="forward(getSourceMail(mail.name))"
+                      @pop-out="
+                        (mailDetails: ComposeMailData) =>
+                          popOutDraft(mailDetails)
+                      "
+                    />
 
-							<template v-else-if="!mail.name.startsWith('draft')">
-								<div
-									v-if="isMobile && !isCollapsed(mail)"
-									class="flex items-center justify-between pb-2"
-									@click.stop="mail.collapsed = !mail.collapsed"
-								>
-									<div class="flex items-center space-x-2">
-										<Badge
-											v-if="mail.draft"
-											:label="__('Draft')"
-											theme="red"
-											class="w-fit"
-										/>
-										<MailDate :datetime="mail.received_at" />
-									</div>
-									<MailActions
-										v-if="!readonly"
-										:mailbox
-										:mail
-										:draft-mail="draftMails[mail.name]"
-										:is-collapsed="isCollapsed(mail)"
-										:show-reply-all="showReplyAll(mail)"
-										:pop-out-draft
-										:reply
-										:reply-all
-										:forward
-										:reload-mails="handleReload"
-										:thread="thread"
-										@set-flagged="
-											(id: string, flagged: boolean) =>
-												emit('setFlagged', [id], flagged)
-										"
-										@sync-unseen="handleSyncUnseen"
-										@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
-										@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
-										@delete-mail="(m: Mail) => emit('deleteMail', m)"
-									/>
-								</div>
-								<!-- An expanded mail always needs the gap between header and body —
+                    <template v-else-if="!mail.name.startsWith('draft')">
+                      <div
+                        v-if="isMobile && !isCollapsed(mail)"
+                        class="flex items-center justify-between pb-2"
+                        @click.stop="mail.collapsed = !mail.collapsed"
+                      >
+                        <div class="flex items-center space-x-2">
+                          <Badge
+                            v-if="mail.draft"
+                            :label="__('Draft')"
+                            theme="red"
+                            class="w-fit"
+                          />
+                          <MailDate :datetime="mail.received_at" />
+                        </div>
+                        <MailActions
+                          v-if="!readonly"
+                          :mailbox
+                          :mail
+                          :draft-mail="draftMails[mail.name]"
+                          :is-collapsed="isCollapsed(mail)"
+                          :show-reply-all="showReplyAll(mail)"
+                          :pop-out-draft
+                          :reply
+                          :reply-all
+                          :forward
+                          :reload-mails="handleReload"
+                          :thread="thread"
+                          @set-flagged="
+                            (id: string, flagged: boolean) =>
+                              emit('setFlagged', [id], flagged)
+                          "
+                          @sync-unseen="handleSyncUnseen"
+                          @move-mail="
+                            (m: Mail, target: string) =>
+                              emit('moveMail', m, target)
+                          "
+                          @mark-mail-spam="
+                            (m: Mail, spam: boolean) =>
+                              emit('markMailSpam', m, spam)
+                          "
+                          @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                        />
+                      </div>
+                      <!-- An expanded mail always needs the gap between header and body —
 								     keying it on the preview alone left image-only mails (empty text
 								     preview) flush. Collapsed rows keep the preview-keyed padding. -->
-								<div
-									class="flex items-center space-x-3"
-									:class="{
-										'cursor-pointer': mail !== lastMessage,
-										'pb-6': mail.preview || !isCollapsed(mail),
-									}"
-									@click.stop="mail.collapsed = !mail.collapsed"
-								>
-									<Avatar
-										:label="getSenderInitial(mail)"
-										:image="mail.user_image"
-										size="xl"
-									/>
-									<div class="flex flex-1 justify-between truncate text-sm">
-										<div class="mr-3 flex flex-col space-y-1 truncate">
-											<div class="flex items-center space-x-1.5">
-												<span
-													class="truncate text-[15px] !font-semibold sm:text-base"
-												>
-													{{ mail.from_name || mail.from_email }}
-												</span>
-												<!-- leading-4: truncate is overflow-hidden, and the preset's 1.15 puts 13px
+                      <div
+                        class="flex items-center space-x-3"
+                        :class="{
+                          'cursor-pointer': mail !== lastMessage,
+                          'pb-6': !isCollapsed(mail),
+                          // Mobile collapsed rows: a step, not a chasm, between the
+                          // name row and its preview line.
+                          'pb-2':
+                            isCollapsed(mail) && isMobile && !!mail.preview,
+                        }"
+                        @click.stop="mail.collapsed = !mail.collapsed"
+                      >
+                        <Avatar
+                          :label="getSenderInitial(mail)"
+                          :image="mail.user_image"
+                          :size="
+                            isCollapsed(mail) ? (isMobile ? 'lg' : 'md') : 'xl'
+                          "
+                        />
+                        <!-- Collapsed rows align everything on one text baseline —
+									     name, preview and timestamp are three sizes with three
+									     line boxes, and centered boxes leave baselines adrift. -->
+                        <!-- min-w-0, not truncate: the flex item still shrinks so the
+									     nested spans can ellipsize, but overflow stays visible — the
+									     hover actions overhang this box and were clipped by it. -->
+                        <div
+                          class="flex min-w-0 flex-1 justify-between text-sm"
+                          :class="{
+                            'items-baseline': isCollapsed(mail) && !isMobile,
+                          }"
+                        >
+                          <div
+                            class="mr-3 flex truncate"
+                            :class="
+                              isCollapsed(mail) && !isMobile
+                                ? 'flex-1 items-baseline space-x-3'
+                                : 'flex-col space-y-1'
+                            "
+                          >
+                            <div class="flex items-center space-x-1.5">
+                              <span
+                                class="truncate text-[15px] !font-semibold sm:text-base"
+                              >
+                                {{ mail.from_name || mail.from_email }}
+                              </span>
+                              <!-- leading-4: truncate is overflow-hidden, and the preset's 1.15 puts 13px
 												     text in a 14.95px box while Inter's glyph box wants ~15.7 — so the
 												     descenders of a g or a p were shaved off. 16px still sits under the
 												     sender name beside it, so the row does not grow. -->
-												<span
-													v-if="!isMobile"
-													class="text-ink-gray-5 truncate leading-4"
-												>
-													<span>&lt;</span>
-													<Tooltip :text="__('Filter messages from this sender')">
-														<span
-															class="cursor-pointer hover:underline"
-															@click.stop="filterBySender(mail.from_email)"
-														>{{ mail.from_email }}</span>
-													</Tooltip>
-													<span>&gt;</span>
-												</span>
-												<template
-													v-if="!(isCollapsed(mail) || mail.draft)"
-												>
-												<ChevronDown
-													v-if="isMobile"
-													class="text-ink-gray-6 h-3.5 w-3.5 rounded-1 transition-transform duration-200"
-														:class="{
-															'rotate-180':
-																showMailDetails === mail.name,
-														}"
-														@click.stop="
-															showMailDetails =
-																showMailDetails === mail.name
-																	? undefined
-																	: mail.name
-														"
-													/>
-													<MailDetailsPopover v-else :mail />
-												</template>
-											</div>
-											<!-- Same 13px truncate, same shaved descenders. -->
-											<div class="truncate leading-4">
-												{{ getFormattedRecipients(mail.recipients) }}
-											</div>
-										</div>
-										<div class="flex items-center space-x-1 self-start">
-											<MailDate
-												v-if="!isMobile || isCollapsed(mail)"
-												:datetime="mail.received_at"
-											/>
-											<MailActions
-												v-if="!isMobile && !readonly"
-												:mailbox
-												:mail
-												:is-collapsed="isCollapsed(mail)"
-												:show-reply-all="showReplyAll(mail)"
-												:pop-out-draft
-												:reply
-												:reply-all
-												:forward
-												:reload-mails="handleReload"
-												:thread="thread"
-												@set-flagged="
-													(id: string, flagged: boolean) =>
-														emit('setFlagged', [id], flagged)
-												"
-												@sync-unseen="handleSyncUnseen"
-												@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
-												@mark-mail-spam="(m: Mail, spam: boolean) => emit('markMailSpam', m, spam)"
-												@delete-mail="(m: Mail) => emit('deleteMail', m)"
-											/>
-										</div>
-									</div>
-								</div>
+                              <span
+                                v-if="!isMobile && !isCollapsed(mail)"
+                                class="text-ink-gray-5 truncate leading-4"
+                              >
+                                <span>&lt;</span>
+                                <Tooltip
+                                  :text="__('Filter messages from this sender')"
+                                >
+                                  <span
+                                    class="cursor-pointer hover:underline"
+                                    @click.stop="
+                                      filterBySender(mail.from_email)
+                                    "
+                                    >{{ mail.from_email }}</span
+                                  >
+                                </Tooltip>
+                                <span>&gt;</span>
+                              </span>
+                            </div>
+                            <!-- Same 13px truncate, same shaved descenders. Collapsed
+											     mails keep just sender + preview — recipients belong to
+											     the expanded reading view. A compact summary, not the
+											     roster: two names carry the line, the rest fold into
+											     "and x others" behind the chevron beside it. -->
+                            <div
+                              v-if="!isCollapsed(mail)"
+                              class="flex items-center space-x-1.5 truncate leading-4"
+                            >
+                              <span class="truncate">
+                                {{ recipientsSummary(mail) }}
+                              </span>
+                              <template v-if="!mail.draft">
+                                <ChevronDown
+                                  v-if="isMobile"
+                                  class="text-ink-gray-6 mt-px h-3.5 w-3.5 shrink-0 rounded-1 transition-transform duration-200"
+                                  :class="{
+                                    'rotate-180': showMailDetails === mail.name,
+                                  }"
+                                  @click.stop="
+                                    showMailDetails =
+                                      showMailDetails === mail.name
+                                        ? undefined
+                                        : mail.name
+                                  "
+                                />
+                                <MailDetailsPopover v-else :mail />
+                              </template>
+                            </div>
+                            <!-- Desktop collapsed rows are one line: the preview rides
+											     beside the name instead of on a row of its own.
+											     leading-5: truncate is overflow-hidden and the preset's
+											     1.15 puts 14px text in a ~16.1px box while Inter's glyph
+											     box wants ~16.4 — descenders were shaved. The row is
+											     avatar-tall, so the stated 20px adds no height. -->
+                            <span
+                              v-if="isCollapsed(mail) && !isMobile"
+                              class="text-ink-gray-7 min-w-0 flex-1 truncate leading-5"
+                            >
+                              {{ mail.preview }}
+                            </span>
+                          </div>
+                          <!-- self-start suits the expanded card's two-line header; on
+										     a collapsed row the block inherits the parent's baseline
+										     alignment (its own baseline is the timestamp's). -->
+                          <div
+                            class="flex items-center space-x-1"
+                            :class="{
+                              'self-start': !isCollapsed(mail),
+                              'self-center': isCollapsed(mail) && isMobile,
+                              /* Hovered collapsed rows swap text for icon buttons —
+												   no baseline to join, so center the block instead.
+												   group-has [data-state=open]: the ⋯ menu is portaled,
+												   so opening it ends the hover — without this the
+												   trigger unmounts and the menu loses its anchor. */
+                              'sm:group-hover/card:self-center sm:group-has-[[data-state=open]]/card:self-center':
+                                isCollapsed(mail) && !isMobile,
+                            }"
+                          >
+                            <!-- The timestamp yields to the actions on hover (fixed
+											     right edge), so the row never moves. -->
+                            <!-- flex, not a bare span: MailDate's own mr-1 doesn't
+											     count inside an inline wrapper, and the gap between
+											     time and actions went with it. -->
+                            <span
+                              v-if="!isMobile || isCollapsed(mail)"
+                              class="flex"
+                              :class="{
+                                'sm:group-hover/card:hidden sm:group-has-[[data-state=open]]/card:hidden':
+                                  isCollapsed(mail),
+                              }"
+                            >
+                              <MailDate
+                                :datetime="mail.received_at"
+                                :clock="showsClockTime"
+                              />
+                            </span>
+                            <!-- h-5: the 28px ghost buttons overhang the padding
+											     instead of growing the one-line row on hover. -->
+                            <div
+                              v-if="!isMobile && !readonly"
+                              :class="
+                                isCollapsed(mail)
+                                  ? 'hidden h-5 items-center gap-1 sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
+                                  : 'flex gap-1'
+                              "
+                            >
+                              <MailActions
+                                :mailbox
+                                :mail
+                                :is-collapsed="false"
+                                :show-reply-all="showReplyAll(mail)"
+                                :pop-out-draft
+                                :reply
+                                :reply-all
+                                :forward
+                                :reload-mails="handleReload"
+                                :thread="thread"
+                                @set-flagged="
+                                  (id: string, flagged: boolean) =>
+                                    emit('setFlagged', [id], flagged)
+                                "
+                                @sync-unseen="handleSyncUnseen"
+                                @move-mail="
+                                  (m: Mail, target: string) =>
+                                    emit('moveMail', m, target)
+                                "
+                                @mark-mail-spam="
+                                  (m: Mail, spam: boolean) =>
+                                    emit('markMailSpam', m, spam)
+                                "
+                                @delete-mail="
+                                  (m: Mail) => emit('deleteMail', m)
+                                "
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-								<MailDetails
-									v-if="!isCollapsed(mail) && showMailDetails === mail.name"
-									:mail
-									class="mb-4"
-								/>
+                      <MailDetails
+                        v-if="
+                          !isCollapsed(mail) && showMailDetails === mail.name
+                        "
+                        :mail
+                        class="mb-4"
+                      />
 
-								<div v-show="isCollapsed(mail)" class="truncate text-base">
-									{{ mail.preview }}
-								</div>
+                      <div
+                        v-show="isCollapsed(mail) && isMobile"
+                        class="truncate text-base"
+                      >
+                        {{ mail.preview }}
+                      </div>
 
-								<div v-show="!isCollapsed(mail)">
-									<Alert
-										v-if="!readonly && isSenderBlocked(mail.from_email)"
-										:title="__('This sender is blocked')"
-										class="mb-4"
-										:dismissable="false"
-									>
-										<template #description>
-											<p class="text-ink-gray-6 prose-sm">
-												{{
-													__('{0} is currently on your', [
-														mail.from_name || mail.from_email,
-													])
-												}}
-												<button
-													type="button"
-													class="hover:text-ink-gray-8 underline"
-													@click="openSettings(__('Block List'))"
-												>
-													{{ __('block list') }}</button
-												>{{
-													__(
-														". You won't receive new messages from this source until you unblock them.",
-													)
-												}}
-											</p>
-										</template>
-										<template #footer>
-											<div class="col-span-full">
-												<Button
-													:label="__('Unblock')"
-													variant="outline"
-													@click="
-														unblockEmailAddress.submit(mail.from_email)
-													"
-												/>
-											</div>
-										</template>
-									</Alert>
-									<CalendarInviteBanner
-										v-if="!readonly && !isCollapsed(mail) && icsAttachment(mail)"
-										:key="`invite-${mail.name}`"
-										:attachment="icsAttachment(mail)"
-										:account="scopeAccountId"
-									/>
-									<DeliveryStatusBanner
-										v-if="showsDsnCard(mail)"
-										:key="`dsn-${mail.name}`"
-										:blob-id="mail.dsn_blob_id!"
-										:account="scopeAccountId"
-										@loaded="dsnCardRendered[mail.name] = $event"
-									/>
-									<template v-if="!dsnReplacesBody(mail)">
-										<EmailContent
-											v-if="hasHtmlContent(mail.html_body)"
-											:content="mail.html_body"
-											:block-images="shouldBlockImages(mail)"
-											:can-trust="!readonly"
-											@trust="trustSender.submit(mail.from_email)"
-										/>
+                      <div v-show="!isCollapsed(mail)">
+                        <Alert
+                          v-if="!readonly && isSenderBlocked(mail.from_email)"
+                          :title="__('This sender is blocked')"
+                          class="mb-4"
+                          :dismissable="false"
+                        >
+                          <template #description>
+                            <p class="text-ink-gray-6 prose-sm">
+                              {{
+                                __("{0} is currently on your", [
+                                  mail.from_name || mail.from_email,
+                                ])
+                              }}
+                              <button
+                                type="button"
+                                class="hover:text-ink-gray-8 underline"
+                                @click="openSettings(__('Block List'))"
+                              >
+                                {{ __("block list") }}</button
+                              >{{
+                                __(
+                                  ". You won't receive new messages from this source until you unblock them.",
+                                )
+                              }}
+                            </p>
+                          </template>
+                          <template #footer>
+                            <div class="col-span-full">
+                              <Button
+                                :label="__('Unblock')"
+                                variant="outline"
+                                @click="
+                                  unblockEmailAddress.submit(mail.from_email)
+                                "
+                              />
+                            </div>
+                          </template>
+                        </Alert>
+                        <CalendarInviteBanner
+                          v-if="
+                            !readonly &&
+                            !isCollapsed(mail) &&
+                            icsAttachment(mail)
+                          "
+                          :key="`invite-${mail.name}`"
+                          :attachment="icsAttachment(mail)"
+                          :account="scopeAccountId"
+                        />
+                        <DeliveryStatusBanner
+                          v-if="showsDsnCard(mail)"
+                          :key="`dsn-${mail.name}`"
+                          :blob-id="mail.dsn_blob_id!"
+                          :account="scopeAccountId"
+                          @loaded="dsnCardRendered[mail.name] = $event"
+                        />
+                        <template v-if="!dsnReplacesBody(mail)">
+                          <EmailContent
+                            v-if="hasHtmlContent(mail.html_body)"
+                            :content="mail.html_body"
+                            :block-images="shouldBlockImages(mail)"
+                            :can-trust="!readonly"
+                            @trust="trustSender.submit(mail.from_email)"
+                          />
 
-										<!-- font-sans is the system stack, not Inter: the preset leaves
+                          <!-- font-sans is the system stack, not Inter: the preset leaves
 										     fontFamily.sans alone and puts InterVar on <html> instead. So this is
 										     deliberately off the variable font — and text-base's 420 then has no
 										     face to land on, which CSS resolves upward to the system Medium,
 										     rendering the body bolder than everything around it. font-normal pins
 										     it to Regular. -->
-										<LinkifiedText
-											v-else
-											:text="getPlainTextBody(mail)"
-											class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
-										/>
-									</template>
+                          <PlainTextBody
+                            v-else
+                            :text="getPlainTextBody(mail)"
+                            class="pt-4 font-sans !font-normal text-base !leading-5 sm:text-sm"
+                          />
+                        </template>
 
-									<div v-if="filteredAttachments(mail).length" class="mt-8">
-										<div
-											v-if="zippableAttachments(mail).length > 1"
-											class="text-ink-gray-5 mb-3 flex items-center gap-1.5 text-sm"
-										>
-											<span>
-												{{
-													__('{0} attachments', [
-														String(filteredAttachments(mail).length),
-													])
-												}}
-											</span>
-											<span aria-hidden="true">·</span>
-											<button
-												class="hover:text-ink-gray-8 disabled:opacity-70"
-												:disabled="downloadingZipMail === mail.name"
-												:title="__('Download all')"
-												@click.stop.prevent="
-													downloadAttachmentsAsZip(mail)
-												"
-											>
-												<LoaderCircle
-													v-if="downloadingZipMail === mail.name"
-													class="h-3.5 w-3.5 animate-spin"
-												/>
-												<Download v-else class="h-3.5 w-3.5" />
-											</button>
-										</div>
-										<div class="flex flex-wrap">
-											<AttachmentCapsule
-												v-for="(attachment, idx) in filteredAttachments(
-													mail,
-												)"
-												:key="idx"
-												:file-name="attachment.filename"
-												:blob-i-d="attachment.blob_id"
-												:type="attachment.type"
-												:account="scopeAccountId"
-												class="mb-2 mr-2"
-												@click.stop.prevent="
-													openAttachment(
-														filteredAttachments(mail),
-														Number(idx),
-													)
-												"
-											/>
-										</div>
-									</div>
-								</div>
-							</template>
-						</div>
+                        <div
+                          v-if="filteredAttachments(mail).length"
+                          class="mt-8"
+                        >
+                          <div
+                            v-if="zippableAttachments(mail).length > 1"
+                            class="text-ink-gray-5 mb-3 flex items-center gap-1.5 text-sm"
+                          >
+                            <span>
+                              {{
+                                __("{0} attachments", [
+                                  String(filteredAttachments(mail).length),
+                                ])
+                              }}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <button
+                              class="hover:text-ink-gray-8 disabled:opacity-70"
+                              :disabled="downloadingZipMail === mail.name"
+                              :title="__('Download all')"
+                              @click.stop.prevent="
+                                downloadAttachmentsAsZip(mail)
+                              "
+                            >
+                              <LoaderCircle
+                                v-if="downloadingZipMail === mail.name"
+                                class="h-3.5 w-3.5 animate-spin"
+                              />
+                              <Download v-else class="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div class="flex flex-wrap">
+                            <AttachmentCapsule
+                              v-for="(attachment, idx) in filteredAttachments(
+                                mail,
+                              )"
+                              :key="idx"
+                              :file-name="attachment.filename"
+                              :blob-i-d="attachment.blob_id"
+                              :type="attachment.type"
+                              :account="scopeAccountId"
+                              class="mb-2 mr-2"
+                              @click.stop.prevent="
+                                openAttachment(
+                                  filteredAttachments(mail),
+                                  Number(idx),
+                                )
+                              "
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
 
-						<!-- Stands in for the card while the reply is being written in the composer
+                  <!-- Stands in for the card while the reply is being written in the composer
 						     window, so the conversation still shows there is a draft in it — and offers
 						     the way back. Same border, radius and horizontal padding as the card it
 						     replaces, so it keeps the thread's rhythm and its text lines up with the
 						     messages above; only the vertical padding is slimmer, because it is a line
 						     about a message rather than a message. v-else-if, so it appears only where
 						     the card was withheld; the collapsed test tells that reason from this one. -->
-						<div
-							v-else-if="!collapsedMailNames.has(mail.name)"
-							class="text-ink-gray-8 rounded-7 border px-5 py-3 text-sm"
-						>
-							{{ __('This draft is open in another window.') }}
-							<button
-								class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
-								@click="showDraftInThread()"
-							>{{ __('Edit here instead') }}</button>.
-						</div>
-					</template>
-				</template>
+                  <div
+                    v-else-if="!collapsedMailNames.has(mail.name)"
+                    class="text-ink-gray-8 rounded-7 border px-5 py-3 text-sm"
+                  >
+                    {{ __("This draft is open in another window.") }}
+                    <button
+                      class="text-ink-blue-6 cursor-pointer font-medium hover:underline"
+                      @click="showDraftInThread()"
+                    >
+                      {{ __("Edit here instead") }}</button
+                    >.
+                  </div>
+                </template>
+              </template>
 
-				<div
-					v-if="!readonly && thread.length && !thread?.at(-1)?.draft"
-					class="flex"
-					:class="
-						isMobile
-							? 'bg-surface-base absolute bottom-0 left-0 right-0 z-20 items-stretch border-t'
-							: 'items-center space-x-2'
-					"
-				>
-					<Button
-						v-for="action in replyForwardActions"
-						:key="action.label"
-						:icon-left="action.icon"
-						:label="action.label"
-						:tooltip="action.tooltip"
-						:variant="isMobile ? 'ghost' : 'outline'"
-						:class="{ '!h-16 flex-1 rounded-none': isMobile }"
-						@click="action.onClick"
-					/>
-				</div>
-			</div>
-		</div>
-		</div>
-		</Transition>
-		</div>
-		<SendMail
-			v-if="focusedDraft"
-			ref="composeWindow"
-			v-model="showSendModal"
-			:mail-details="draftMails[focusedDraft]"
-			@reload-mails="reload"
-			@discard-mail="discardLocalDraft(focusedDraft)"
-			@discard-started="dropPoppedOutDraft()"
-		/>
-		<AttachmentViewer
-			v-model="showAttachmentViewer"
-			:attachments="attachments"
-			:initial-index="attachmentIndex"
-			:account="scopeAccountId"
-		/>
-	</div>
+              <div
+                v-if="!readonly && thread.length && !thread?.at(-1)?.draft"
+                class="flex"
+                :class="
+                  isMobile
+                    ? 'bg-surface-base absolute bottom-0 left-0 right-0 z-20 items-stretch border-t'
+                    : 'items-center space-x-2'
+                "
+              >
+                <Button
+                  v-for="action in replyForwardActions"
+                  :key="action.label"
+                  :icon-left="action.icon"
+                  :label="action.label"
+                  :tooltip="action.tooltip"
+                  :variant="isMobile ? 'ghost' : 'outline'"
+                  :class="{ '!h-16 flex-1 rounded-none': isMobile }"
+                  @click="action.onClick"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </div>
+    <SendMail
+      v-if="focusedDraft"
+      ref="composeWindow"
+      v-model="showSendModal"
+      :mail-details="draftMails[focusedDraft]"
+      @reload-mails="reload"
+      @discard-mail="discardLocalDraft(focusedDraft)"
+      @discard-started="dropPoppedOutDraft()"
+    />
+    <AttachmentViewer
+      v-model="showAttachmentViewer"
+      :attachments="attachments"
+      :initial-index="attachmentIndex"
+      :account="scopeAccountId"
+    />
+  </div>
 
-	<div v-else class="h-full overflow-hidden p-5">
-		<div
-			class="bg-surface-gray-1 flex h-full items-center justify-center rounded-4"
-		>
-			<div class="flex flex-col items-center space-y-3">
-				<NoMails class="text-ink-gray-2 h-16 w-16" />
-				<p class="text-ink-gray-4">
-					{{ __('Select an email to view the thread.') }}
-				</p>
-			</div>
-		</div>
-	</div>
+  <div v-else class="h-full overflow-hidden p-5">
+    <div
+      class="bg-surface-gray-1 flex h-full items-center justify-center rounded-4"
+    >
+      <div class="flex flex-col items-center space-y-3">
+        <NoMails class="text-ink-gray-2 h-16 w-16" />
+        <p class="text-ink-gray-4">
+          {{ __("Select an email to view the thread.") }}
+        </p>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import {
-	computed,
-	inject,
-	nextTick,
-	onMounted,
-	onUnmounted,
-	reactive,
-	ref,
-	useTemplateRef,
-	watch,
-} from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ChevronDown, Download, Forward, LoaderCircle, Reply, ReplyAll } from 'lucide-vue-next'
-import { Alert, Avatar, Badge, Button, Tooltip, createResource } from 'frappe-ui'
+  computed,
+  inject,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  useTemplateRef,
+  watch,
+} from "vue";
+import { useRoute, useRouter } from "vue-router";
+import {
+  ChevronDown,
+  Download,
+  Forward,
+  LoaderCircle,
+  Reply,
+  ReplyAll,
+} from "lucide-vue-next";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Tooltip,
+  createResource,
+} from "frappe-ui";
 
-import { getAttachmentsZipUrl } from '@/apps/mail/resources'
+import { getAttachmentsZipUrl } from "@/apps/mail/resources";
 import {
-	decodeHtmlEntities,
-	downloadUrlAsFile,
-	escapeHtml,
-	extractQuotedContent,
-	getFormattedDate,
-	getFormattedRecipients,
-	getGroupedRecipients,
-	hasHtmlContent,
-	matchesScreenedValue,
-	raiseToast,
-	shouldIgnoreKeypress,
-} from '@/apps/mail/utils'
-import { getSenderInitial } from '@/apps/mail/utils/participants'
-import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
-import { provideAccountScope } from '@/apps/mail/utils/accountScope'
-import { userStore } from '@/apps/mail/stores/user'
-import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
-import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
-import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
-import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
-import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
-import EmailContent from '@/apps/mail/components/EmailContent.vue'
-import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
-import LinkifiedText from '@/components/LinkifiedText.vue'
-import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import MailActions from '@/apps/mail/components/MailActions.vue'
-import MailDate from '@/apps/mail/components/MailDate.vue'
-import MailDetails from '@/apps/mail/components/MailDetails.vue'
-import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+  decodeHtmlEntities,
+  downloadUrlAsFile,
+  extractQuotedContent,
+  getFormattedDate,
+  getGroupedRecipients,
+  hasHtmlContent,
+  matchesScreenedValue,
+  plainTextToHtml,
+  raiseToast,
+  shouldIgnoreKeypress,
+} from "@/apps/mail/utils";
+import { containEmailHtml } from "@/apps/mail/utils/containEmailHtml";
+import { getSenderInitial } from "@/apps/mail/utils/participants";
 import {
-	closeComposeWindow,
-	composeWindowDraft,
-	isComposeWindowOpen,
-} from '@/apps/mail/composables/useComposeWindow'
-import SendMail from '@/apps/mail/components/SendMail.vue'
-import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
-import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
+  useFilterBySender,
+  useScreenSize,
+  useSettings,
+  useTheme,
+} from "@/apps/mail/utils/composables";
+import { provideAccountScope } from "@/apps/mail/utils/accountScope";
+import { userStore } from "@/apps/mail/stores/user";
+import AttachmentCapsule from "@/apps/mail/components/AttachmentCapsule.vue";
+import AttachmentViewer from "@/apps/mail/components/AttachmentViewer.vue";
+import CalendarInviteBanner from "@/apps/mail/components/CalendarInviteBanner.vue";
+import ComposeMailEditor from "@/apps/mail/components/ComposeMailEditor.vue";
+import DeliveryStatusBanner from "@/apps/mail/components/DeliveryStatusBanner.vue";
+import EmailContent from "@/apps/mail/components/EmailContent.vue";
+import NoMails from "@/apps/mail/components/Icons/NoMails.vue";
+import PlainTextBody from "@/apps/mail/components/PlainTextBody.vue";
+import { openComposePage } from "@/apps/mail/composables/composeHandoff";
+import MailActions from "@/apps/mail/components/MailActions.vue";
+import MailDate from "@/apps/mail/components/MailDate.vue";
+import MailDetails from "@/apps/mail/components/MailDetails.vue";
+import MailDetailsPopover from "@/apps/mail/components/MailDetailsPopover.vue";
+import {
+  closeComposeWindow,
+  composeWindowDraft,
+  isComposeWindowOpen,
+} from "@/apps/mail/composables/useComposeWindow";
+import SendMail from "@/apps/mail/components/SendMail.vue";
+import ThreadDivider from "@/apps/mail/components/ThreadDivider.vue";
+import ThreadHeader from "@/apps/mail/components/ThreadHeader.vue";
 
 import type {
-	Attachment,
-	ComposeMailData,
-	Identity,
-	Mail,
-	Mailbox,
-	MailboxData,
-	ScreenedAddress,
-} from '@/apps/mail/types'
+  Attachment,
+  ComposeMailData,
+  Identity,
+  Mail,
+  Mailbox,
+  MailboxData,
+  Recipient,
+  ScreenedAddress,
+} from "@/apps/mail/types";
 
 const {
-	mailbox,
-	threadID,
-	threads,
-	messages,
-	canGoNext,
-	readonly,
-	// Explicit default: Vue casts an absent Boolean prop to `false`, so this cannot be left to a
-	// `?? !readonly` fallback — every caller that didn't pass it would silently stop marking read.
-	marksSeen = true,
-	slide,
-	account,
-} =
-	defineProps<{
-		mailbox: string
-		threadID?: string
-		threads: string[]
-		messages?: Mail[]
-		canGoNext?: boolean
-		// The thread's owning account, when it isn't the active one (All Inboxes opens
-		// cross-account threads without switching): the pane and everything inside it —
-		// folder menus, reply identities, screened-sender banners — act as this account
-		// via the provided scope (see utils/accountScope).
-		account?: string
-		// Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
-		// toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
-		readonly?: boolean
-		/** Marks the conversation seen on open. On by default; a view that only previews can opt out. */
-		marksSeen?: boolean
-		// Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
-		// MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
-		// changes swap instantly.
-		slide?: string
-	}>()
+  mailbox,
+  threadID,
+  threads,
+  messages,
+  canGoNext,
+  readonly,
+  // Explicit default: Vue casts an absent Boolean prop to `false`, so this cannot be left to a
+  // `?? !readonly` fallback — every caller that didn't pass it would silently stop marking read.
+  marksSeen = true,
+  slide,
+  account,
+} = defineProps<{
+  mailbox: string;
+  threadID?: string;
+  threads: string[];
+  messages?: Mail[];
+  canGoNext?: boolean;
+  // The thread's owning account, when it isn't the active one (All Inboxes opens
+  // cross-account threads without switching): the pane and everything inside it —
+  // folder menus, reply identities, screened-sender banners — act as this account
+  // via the provided scope (see utils/accountScope).
+  account?: string;
+  // Read-only thread (e.g. the Screener): renders the messages but hides every action — the thread
+  // toolbar, per-message actions, the block banner and the reply/forward bar — and never marks read.
+  readonly?: boolean;
+  /** Marks the conversation seen on open. On by default; a view that only previews can opt out. */
+  marksSeen?: boolean;
+  // Transition name for the mobile swipe paging ('page-next' / 'page-prev', styled in
+  // MailLayout); the owner arms it per swipe and clears it on slideDone, so other thread
+  // changes swap instantly.
+  slide?: string;
+}>();
 
 const emit = defineEmits([
-	'reloadMails',
-	'setSpamStatus',
-	'archiveThread',
-	'deleteThread',
-	'setSeen',
-	'setFlagged',
-	'moveThread',
-	'addThreadToMailbox',
-	'removeThreadFromMailbox',
-	'prevThread',
-	'nextThread',
-	'syncUnseen',
-	'moveMail',
-	'markMailSpam',
-	'deleteMail',
-	'slideDone',
-])
+  "reloadMails",
+  "setSpamStatus",
+  "archiveThread",
+  "deleteThread",
+  "setSeen",
+  "setFlagged",
+  "moveThread",
+  "addThreadToMailbox",
+  "removeThreadFromMailbox",
+  "prevThread",
+  "nextThread",
+  "syncUnseen",
+  "moveMail",
+  "markMailSpam",
+  "deleteMail",
+  "slideDone",
+]);
 
-const { isMobile } = useScreenSize()
-const { openSettings } = useSettings()
-const { filterBySender } = useFilterBySender()
-const dayjs = inject('$dayjs')
-const user = inject('$user')
+const { isMobile } = useScreenSize();
+const { filterBySender } = useFilterBySender();
+const { openSettings } = useSettings();
+const dayjs = inject("$dayjs");
+const user = inject("$user");
 // The pane acts as the thread's owning account (the active one unless the `account`
 // prop says otherwise) — provided so ThreadHeader's folder menus and the reply
 // editors below resolve the same account.
-const scope = provideAccountScope(() => account)
-const { accountId: scopeAccountId, identities, screenedAddresses, mailboxIds } = scope
+const scope = provideAccountScope(() => account);
+const {
+  accountId: scopeAccountId,
+  identities,
+  screenedAddresses,
+  mailboxIds,
+} = scope;
 // Global screening rules are admin-managed and the same whichever account you are reading, so
 // they come from the store rather than the pane's scope.
-const { globalScreenedAddresses } = userStore()
+const { globalScreenedAddresses } = userStore();
 
 // A sender is "blocked" when screened with the Reject action (their mail is discarded) — either by their
 // exact address or by an accepted/blocked '@domain' entry covering them.
 const isSenderBlocked = (email: string) =>
-	!!screenedAddresses.value.data?.some(
-		(a: ScreenedAddress) => a.action === 'Reject' && matchesScreenedValue(email, a.email),
-	)
+  !!screenedAddresses.value.data?.some(
+    (a: ScreenedAddress) =>
+      a.action === "Reject" && matchesScreenedValue(email, a.email),
+  );
 
 // Trusted senders — you, or anyone you've accepted — load images normally. For everyone else, the
 // account's "Block Remote Images" setting withholds remote images (read-tracking pixels) until you opt in.
-const blockRemoteImagesEnabled = computed(() => scope.account.value?.block_remote_images ?? true)
+const blockRemoteImagesEnabled = computed(
+  () => scope.account.value?.block_remote_images ?? true,
+);
 // The screening rules in effect for the account: the admin-managed global rules overlaid with the
 // account's own, the account's rule winning when both screen the same address or domain — mirroring
 // the backend's `get_effective_screened_email_addresses`, which the automation sieve is built from.
 // Read through the pane's scope, so a thread from another account is judged by that account's rules.
 const effectiveScreenedAddresses = computed(() => {
-	const merged = new Map<string, ScreenedAddress>()
-	for (const a of globalScreenedAddresses.data ?? []) merged.set(a.email.toLowerCase(), a)
-	for (const a of screenedAddresses.value.data ?? []) merged.set(a.email.toLowerCase(), a)
-	return [...merged.values()]
-})
+  const merged = new Map<string, ScreenedAddress>();
+  for (const a of globalScreenedAddresses.data ?? [])
+    merged.set(a.email.toLowerCase(), a);
+  for (const a of screenedAddresses.value.data ?? [])
+    merged.set(a.email.toLowerCase(), a);
+  return [...merged.values()];
+});
 const isScreenedIn = (email: string) =>
-	!!identities.value.data?.some((i: Identity) => i.email === email) ||
-	effectiveScreenedAddresses.value.some(
-		(a: ScreenedAddress) => a.action === 'Accepted' && matchesScreenedValue(email, a.email),
-	)
+  !!identities.value.data?.some((i: Identity) => i.email === email) ||
+  effectiveScreenedAddresses.value.some(
+    (a: ScreenedAddress) =>
+      a.action === "Accepted" && matchesScreenedValue(email, a.email),
+  );
 const shouldBlockImages = (mail: { from_email: string }) =>
-	blockRemoteImagesEnabled.value && !isScreenedIn(mail.from_email)
+  blockRemoteImagesEnabled.value && !isScreenedIn(mail.from_email);
 
-const { dataTheme } = useTheme()
+const { dataTheme } = useTheme();
 
-const route = useRoute()
-const router = useRouter()
+const route = useRoute();
+const router = useRouter();
 
-const threadContainerRef = useTemplateRef('threadContainer')
+const threadContainerRef = useTemplateRef("threadContainer");
 
-const draftMails = reactive<{ [key: string]: ComposeMailData }>({})
+const draftMails = reactive<{ [key: string]: ComposeMailData }>({});
 
 const mailsByDay = computed(() => {
-	const groups: { date: string; mails: Mail[] }[] = []
-	for (const mail of thread.value || []) {
-		const day = dayjs(mail.received_at).format('YYYY-MM-DD')
-		const last = groups.at(-1)
-		if (last && last.date === day) last.mails.push(mail)
-		else groups.push({ date: day, mails: [mail] })
-	}
-	return groups
-})
+  const groups: { date: string; mails: Mail[] }[] = [];
+  for (const mail of thread.value || []) {
+    const day = dayjs(mail.received_at).format("YYYY-MM-DD");
+    const last = groups.at(-1);
+    if (last && last.date === day) last.mails.push(mail);
+    else groups.push({ date: day, mails: [mail] });
+  }
+  return groups;
+});
+
+// The expanded header's second line: "to Pushkar", "to Pushkar and Neha", "to Pushkar,
+// Rushabh and Neha", "to Pushkar, Rushabh and 2 others". First names only — the full
+// roster with addresses is behind the chevron beside it.
+const recipientsSummary = (mail: Mail) => {
+  const ordered = [...mail.recipients].sort(
+    (a, b) => Number(b.type === "To") - Number(a.type === "To"),
+  );
+  const names = ordered.map(
+    (r: Recipient) => (r.display_name || r.email).split(" ")[0],
+  );
+  if (!names.length) return "";
+  if (names.length === 1) return __("to {0}", [names[0]]);
+  if (names.length === 2) return __("to {0} and {1}", [names[0], names[1]]);
+  if (names.length === 3) return __("to {0}, {1} and {2}", names);
+  return __("to {0}, {1} and {2} others", [
+    names[0],
+    names[1],
+    String(names.length - 2),
+  ]);
+};
+
+// Rows state clock time only while day dividers state the date (multi-day thread, grouping
+// on, desktop). Otherwise the row's timestamp is the only date there is, and stays relative.
+const showsClockTime = computed(
+  () =>
+    !isMobile.value &&
+    mailsByDay.value.length > 1 &&
+    user.data.group_messages_by === "Day",
+);
 
 const shouldShowDateDivider = (mails: Mail[]) =>
-	!isMobile.value &&
-	mailsByDay.value.length > 1 &&
-	user.data.group_messages_by === 'Day' &&
-	!mails.every((m) => collapsedMailNames.value.has(m.name))
+  !isMobile.value &&
+  mailsByDay.value.length > 1 &&
+  user.data.group_messages_by === "Day" &&
+  !mails.every((m) => collapsedMailNames.value.has(m.name));
 
 const collapsedMailNames = computed(() => {
-	if (!firstMailOfCollapsedGroup.value) return new Set<string>()
-	const lastMailName = thread.value?.at(-1)?.name
-	const seenMails = (thread.value || []).filter(
-		(m) => m.seen && !m.name.startsWith('draft') && m.name !== lastMailName,
-	)
-	if (seenMails.length < 4) return new Set<string>()
-	return new Set(seenMails.slice(1, -1).map((m) => m.name))
-})
+  if (!firstMailOfCollapsedGroup.value) return new Set<string>();
+  const lastMailName = thread.value?.at(-1)?.name;
+  const seenMails = (thread.value || []).filter(
+    (m) => m.seen && !m.name.startsWith("draft") && m.name !== lastMailName,
+  );
+  if (seenMails.length < 4) return new Set<string>();
+  return new Set(seenMails.slice(1, -1).map((m) => m.name));
+});
 
 const mailBeforeUnseenMarker = computed(() => {
-	if (!firstUnseenMail.value) return null
-	const data = thread.value || []
-	const idx = data.findIndex((m) => m.id === firstUnseenMail.value)
-	return idx > 0 ? data[idx - 1].name : null
-})
+  if (!firstUnseenMail.value) return null;
+  const data = thread.value || [];
+  const idx = data.findIndex((m) => m.id === firstUnseenMail.value);
+  return idx > 0 ? data[idx - 1].name : null;
+});
 
-const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen))
-const unseenCount = computed(() => (thread.value || []).filter((m) => !m.seen && !m.draft).length)
-const firstUnseenMail = computed(() => thread.value?.find((m) => !m.seen && !m.draft)?.id)
+const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen));
+const unseenCount = computed(
+  () => (thread.value || []).filter((m) => !m.seen && !m.draft).length,
+);
+const firstUnseenMail = computed(
+  () => thread.value?.find((m) => !m.seen && !m.draft)?.id,
+);
 
 const unseenMessage = computed(() =>
-	unseenCount.value === 1
-		? __('1 new message')
-		: __('{0} new messages', [String(unseenCount.value)]),
-)
+  unseenCount.value === 1
+    ? __("1 new message")
+    : __("{0} new messages", [String(unseenCount.value)]),
+);
 
 const shouldShowUnseenMarker = (id: string) =>
-	isSomeSeen.value && firstUnseenMail.value && id == firstUnseenMail.value
+  isSomeSeen.value && firstUnseenMail.value && id == firstUnseenMail.value;
 
 // Bail to the list the thread was opened from — the merged All Inboxes list on
 // its thread route, the mailbox list otherwise.
 const goToMailbox = () =>
-	router.push(
-		route.name === 'mail-all-inboxes-mail'
-			? { name: 'mail-all-inboxes', query: route.query }
-			: { name: 'mail-mailbox', params: { mailbox }, query: route.query },
-	)
+  router.push(
+    route.name === "mail-all-inboxes-mail"
+      ? { name: "mail-all-inboxes", query: route.query }
+      : { name: "mail-mailbox", params: { mailbox }, query: route.query },
+  );
 
 // The thread's messages normally arrive from the parent (loaded via `get_threads`). When the open
 // thread isn't in that list (e.g. a search result, or one on another page), fall back to fetching it
 // directly via `get_thread`.
-const thread = ref<Mail[]>([])
+const thread = ref<Mail[]>([]);
 
 const threadFallback = createResource({
-	url: 'suite.mail.api.mail.get_thread',
-	makeParams: () => ({ account: scopeAccountId.value, thread_id: threadID }),
-	onSuccess: (mails: Mail[]) => {
-		// Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
-		if (!mails?.length) {
-			goToMailbox()
-			emit('reloadMails')
-			return
-		}
-		loadThread()
-	},
-	onError: () => goToMailbox(),
-})
+  url: "suite.mail.api.mail.get_thread",
+  makeParams: () => ({ account: scopeAccountId.value, thread_id: threadID }),
+  onSuccess: (mails: Mail[]) => {
+    // Thread no longer exists (e.g. deleted) — bail to the mailbox instead of a blank page.
+    if (!mails?.length) {
+      goToMailbox();
+      emit("reloadMails");
+      return;
+    }
+    loadThread();
+  },
+  onError: () => goToMailbox(),
+});
 
 // Mails optimistically removed from the pane (per-message trash/junk/delete) whose request is still in
 // flight. The server still returns them for a moment, so any re-derive — our own reload, the 30s poll,
 // or the new-mail socket — would otherwise re-add them here. Cleared when the open thread changes.
-const removedMailIds = new Set<string>()
+const removedMailIds = new Set<string>();
 
 const transformThreadMails = (mails: Mail[]) =>
-	mails
-		// Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
-		.filter((mail) => readonly || (!removedMailIds.has(mail.id) && filterRelevantMails(mail)))
-		.map((mail) => ({
-			...mail,
-			groupedRecipients: getGroupedRecipients(mail.recipients, false),
-			collapsed: !!mail.seen,
-			show: true,
-		}))
+  mails
+    // Read-only views (the Screener) pass an explicit message list that isn't scoped to a mailbox.
+    .filter(
+      (mail) =>
+        readonly || (!removedMailIds.has(mail.id) && filterRelevantMails(mail)),
+    )
+    .map((mail) => ({
+      ...mail,
+      groupedRecipients: getGroupedRecipients(mail.recipients, false),
+      collapsed: !!mail.seen,
+      show: true,
+    }));
 
 // Messages from the list when present, otherwise the directly-fetched fallback (matched to the
 // current thread so a stale fetch from a previously opened thread is ignored).
 const sourceMessages = (): Mail[] | undefined => {
-	if (messages?.length) return messages
-	const fetched = threadFallback.data as Mail[] | undefined
-	return fetched?.[0]?.thread_id === threadID ? fetched : undefined
-}
+  if (messages?.length) return messages;
+  const fetched = threadFallback.data as Mail[] | undefined;
+  return fetched?.[0]?.thread_id === threadID ? fetched : undefined;
+};
 
 const loadThread = () => {
-	if (!threadID) return
+  if (!threadID) return;
 
-	const source = sourceMessages()
-	if (!source?.length) {
-		// Not in the list — fetch the thread directly.
-		if (!messages?.length && !threadFallback.loading) threadFallback.reload()
-		return
-	}
+  const source = sourceMessages();
+  if (!source?.length) {
+    // Not in the list — fetch the thread directly.
+    if (!messages?.length && !threadFallback.loading) threadFallback.reload();
+    return;
+  }
 
-	const data = transformThreadMails(source)
+  const data = transformThreadMails(source);
 
-	if (!data.length) {
-		goToMailbox()
-		emit('reloadMails')
-		return
-	}
+  if (!data.length) {
+    goToMailbox();
+    emit("reloadMails");
+    return;
+  }
 
-	thread.value = data
-	setCollapsedGroup(data)
+  thread.value = data;
+  setCollapsedGroup(data);
 
-	// Opening a draft from the list puts it in the thread, so a composer window still holding that
-	// same draft would be a second editor on it — two copies saving over each other, which is how
-	// the pair in the screenshot came to disagree. The window gives it up; the thread has it now.
-	// Skipped while the window is this thread's own pop-out, or reloading would shut the window the
-	// reader is typing in. Asked of the rows being loaded rather than of `showSendModal` alone, which
-	// says only that a window was opened from this pane at some point and stays true across a move to
-	// another conversation.
-	const held = composeWindowDraft()
-	if (held && data.some((mail: Mail) => mail.id === held) && !data.some(isPoppedOut))
-		closeComposeWindow()
+  // Opening a draft from the list puts it in the thread, so a composer window still holding that
+  // same draft would be a second editor on it — two copies saving over each other, which is how
+  // the pair in the screenshot came to disagree. The window gives it up; the thread has it now.
+  // Skipped while the window is this thread's own pop-out, or reloading would shut the window the
+  // reader is typing in. Asked of the rows being loaded rather than of `showSendModal` alone, which
+  // says only that a window was opened from this pane at some point and stays true across a move to
+  // another conversation.
+  const held = composeWindowDraft();
+  if (
+    held &&
+    data.some((mail: Mail) => mail.id === held) &&
+    !data.some(isPoppedOut)
+  )
+    closeComposeWindow();
 
-	data.forEach((mail) => {
-		if (mail.draft) {
-			mail.groupedRecipients = getGroupedRecipients(mail.recipients, false)
-			populateDraftMails(mail)
-		}
-	})
+  data.forEach((mail) => {
+    if (mail.draft) {
+      mail.groupedRecipients = getGroupedRecipients(mail.recipients, false);
+      populateDraftMails(mail);
+    }
+  });
 
-	// Opening a thread marks every message in the whole conversation read — including copies in other
-	// mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
-	// still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
-	// looked and simply not decided yet.
-	if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true)
-}
+  // Opening a thread marks every message in the whole conversation read — including copies in other
+  // mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
+  // still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
+  // looked and simply not decided yet.
+  if (marksSeen && source.some((mail) => !mail.seen)) setThreadSeen(true);
+};
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
 // shown in this view — so the seen state stays consistent (opening reads all; Mark as Unread unreads
 // all). Persisted via the parent (list + server) WITHOUT mutating the displayed messages, so the
 // "unread from here" marker survives reopening. Works for list and get_thread-fallback threads alike.
 const setThreadSeen = (seen: boolean) => {
-	const ids = (sourceMessages() ?? thread.value).map((mail) => mail.id)
-	emit('setSeen', seen, ids)
-}
+  const ids = (sourceMessages() ?? thread.value).map((mail) => mail.id);
+  emit("setSeen", seen, ids);
+};
 
 // "Mark Unread from Here": mark the given messages unseen in the displayed list and the fallback
 // cache, so the unread-from-here marker appears immediately and survives reopening a fallback thread
 // (whose source is the cache, not the parent's list data).
 const handleSyncUnseen = (ids: string[]) => {
-	const markUnseen = (mail: Mail) => {
-		if (ids.includes(mail.id)) mail.seen = 0
-	}
-	thread.value.forEach(markUnseen)
-	;(threadFallback.data as Mail[] | undefined)?.forEach(markUnseen)
-	emit('syncUnseen', ids)
-}
+  const markUnseen = (mail: Mail) => {
+    if (ids.includes(mail.id)) mail.seen = 0;
+  };
+  thread.value.forEach(markUnseen);
+  (threadFallback.data as Mail[] | undefined)?.forEach(markUnseen);
+  emit("syncUnseen", ids);
+};
 
 // A reply that arrives while the thread is open (picked up by a background list reload) is appended
 // in place. Re-deriving would clobber unsaved inline drafts, so only the genuinely new messages are
 // added — before any trailing draft so the in-progress reply stays at the bottom.
 const syncWithSource = () => {
-	const source = sourceMessages()
-	if (!source?.length) return
+  const source = sourceMessages();
+  if (!source?.length) return;
 
-	// Refresh existing mails' mailbox membership from the list (e.g. after a move/undo), in place so
-	// unsaved inline drafts and collapse state survive.
-	const sourceById = new Map(source.map((mail) => [mail.id, mail]))
-	thread.value.forEach((mail) => {
-		const fresh = sourceById.get(mail.id)
-		if (fresh) mail.mailboxes = fresh.mailboxes
-	})
+  // Refresh existing mails' mailbox membership from the list (e.g. after a move/undo), in place so
+  // unsaved inline drafts and collapse state survive.
+  const sourceById = new Map(source.map((mail) => [mail.id, mail]));
+  thread.value.forEach((mail) => {
+    const fresh = sourceById.get(mail.id);
+    if (fresh) mail.mailboxes = fresh.mailboxes;
+  });
 
-	// Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
-	// that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
-	// saved id isn't known here), so a draft returning from a background reload would otherwise be
-	// mistaken for a new message and spawn a duplicate, blank compose editor.
-	const existing = new Set(thread.value.map((mail) => mail.id))
-	const additions = transformThreadMails(source).filter(
-		(mail) => !existing.has(mail.id) && !mail.draft,
-	)
-	if (!additions.length) return
+  // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
+  // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
+  // saved id isn't known here), so a draft returning from a background reload would otherwise be
+  // mistaken for a new message and spawn a duplicate, blank compose editor.
+  const existing = new Set(thread.value.map((mail) => mail.id));
+  const additions = transformThreadMails(source).filter(
+    (mail) => !existing.has(mail.id) && !mail.draft,
+  );
+  if (!additions.length) return;
 
-	const draftIndex = thread.value.findIndex((mail) => mail.draft)
-	if (draftIndex === -1) thread.value.push(...additions)
-	else thread.value.splice(draftIndex, 0, ...additions)
-	setCollapsedGroup(thread.value)
-}
+  const draftIndex = thread.value.findIndex((mail) => mail.draft);
+  if (draftIndex === -1) thread.value.push(...additions);
+  else thread.value.splice(draftIndex, 0, ...additions);
+  setCollapsedGroup(thread.value);
+};
 
-const firstMailOfCollapsedGroup = ref<string | null>(null)
-const mailBeforeCollapsedGroup = ref<string | null>(null)
+const firstMailOfCollapsedGroup = ref<string | null>(null);
+const mailBeforeCollapsedGroup = ref<string | null>(null);
 
 const resetCollapsedGroup = () => {
-	firstMailOfCollapsedGroup.value = null
-	mailBeforeCollapsedGroup.value = null
-}
+  firstMailOfCollapsedGroup.value = null;
+  mailBeforeCollapsedGroup.value = null;
+};
 
 const setCollapsedGroup = (data: Mail[]) => {
-	const lastMailName = data.at(-1)?.name
-	const seenMails = data.filter((m) => m.seen && m.name !== lastMailName)
-	if (seenMails.length < 4) {
-		resetCollapsedGroup()
-		return
-	}
+  const lastMailName = data.at(-1)?.name;
+  const seenMails = data.filter((m) => m.seen && m.name !== lastMailName);
+  if (seenMails.length < 4) {
+    resetCollapsedGroup();
+    return;
+  }
 
-	firstMailOfCollapsedGroup.value = seenMails[1]?.name ?? null
-	const triggerIdx = data.findIndex((m) => m.name === firstMailOfCollapsedGroup.value)
-	mailBeforeCollapsedGroup.value = triggerIdx > 0 ? data[triggerIdx - 1].name : null
-}
+  firstMailOfCollapsedGroup.value = seenMails[1]?.name ?? null;
+  const triggerIdx = data.findIndex(
+    (m) => m.name === firstMailOfCollapsedGroup.value,
+  );
+  mailBeforeCollapsedGroup.value =
+    triggerIdx > 0 ? data[triggerIdx - 1].name : null;
+};
 
 const filterRelevantMails = (mail: Mail) => {
-	if (mailbox === 'search') return true
+  if (mailbox === "search") return true;
 
-	const mailboxes = mail.mailboxes.map((m) => m.mailbox_id)
-	const trash = mailboxIds.value.trash
-	if (mailbox === trash) return mailboxes.includes(trash)
+  const mailboxes = mail.mailboxes.map((m) => m.mailbox_id);
+  const trash = mailboxIds.value.trash;
+  if (mailbox === trash) return mailboxes.includes(trash);
 
-	if (mailbox === mailboxIds.value.junk) return !!mail.junk
+  if (mailbox === mailboxIds.value.junk) return !!mail.junk;
 
-	return !mailboxes.includes(trash) && !mail.junk
-}
+  return !mailboxes.includes(trash) && !mail.junk;
+};
 
 // Explicit refresh: ask the parent to reload `get_threads`, then re-derive once the `messages` prop
 // updates (tracked by `forceReload`). Background list reloads must NOT re-derive so that unsaved
 // inline drafts survive — they only re-derive when the open thread has no data yet.
-let forceReload = false
+let forceReload = false;
 
 const reload = () => {
-	// The thread can be gone by the time this is called: a draft's editor squares up with the list
-	// as it unmounts, and what unmounted it was usually the reader leaving. There is no pane left to
-	// refresh — the list is the whole of what is being asked for.
-	//
-	// Still flagged for a re-derive, because the reader can be back inside the thread before the rows
-	// arrive: the pane would then have been built from the very copy this reload is replacing, and a
-	// background sync leaves drafts alone by design.
-	if (!threadID) {
-		forceReload = true
-		return emit('reloadMails')
-	}
-	// A directly-fetched thread isn't in the list, so refresh it in place.
-	if (!messages?.length) return threadFallback.reload()
-	forceReload = true
-	emit('reloadMails')
-}
+  // The thread can be gone by the time this is called: a draft's editor squares up with the list
+  // as it unmounts, and what unmounted it was usually the reader leaving. There is no pane left to
+  // refresh — the list is the whole of what is being asked for.
+  //
+  // Still flagged for a re-derive, because the reader can be back inside the thread before the rows
+  // arrive: the pane would then have been built from the very copy this reload is replacing, and a
+  // background sync leaves drafts alone by design.
+  if (!threadID) {
+    forceReload = true;
+    return emit("reloadMails");
+  }
+  // A directly-fetched thread isn't in the list, so refresh it in place.
+  if (!messages?.length) return threadFallback.reload();
+  forceReload = true;
+  emit("reloadMails");
+};
 
 watch(
-	() => threadID,
-	() => {
-		resetCollapsedGroup()
-		removedMailIds.clear()
-		thread.value = []
-		// Going back to the list takes the composer window with it: everything in this pane hangs off
-		// `threadID`, the popped-out composer included, so it is unmounted along with the thread it
-		// came from. What is left behind is only the memory of it, and the next thread opened mounted
-		// a composer on that — the draft from the last conversation, over a thread that had nothing to
-		// do with it, in a window that had forgotten it was ever folded away.
-		if (!threadID) {
-			showSendModal.value = false
-			focusedDraft.value = undefined
-			poppedOutDraftId.value = undefined
-		}
-		loadThread()
-	},
-)
+  () => threadID,
+  () => {
+    resetCollapsedGroup();
+    removedMailIds.clear();
+    thread.value = [];
+    // Going back to the list takes the composer window with it: everything in this pane hangs off
+    // `threadID`, the popped-out composer included, so it is unmounted along with the thread it
+    // came from. What is left behind is only the memory of it, and the next thread opened mounted
+    // a composer on that — the draft from the last conversation, over a thread that had nothing to
+    // do with it, in a window that had forgotten it was ever folded away.
+    if (!threadID) {
+      showSendModal.value = false;
+      focusedDraft.value = undefined;
+      poppedOutDraftId.value = undefined;
+    }
+    loadThread();
+  },
+);
 
 watch(
-	() => messages,
-	() => {
-		if (forceReload || !thread.value.length) {
-			forceReload = false
-			loadThread()
-			return
-		}
-		// Otherwise keep unsaved drafts but sync existing mails and pull in any newly-arrived ones.
-		syncWithSource()
-	},
-)
+  () => messages,
+  () => {
+    if (forceReload || !thread.value.length) {
+      forceReload = false;
+      loadThread();
+      return;
+    }
+    // Otherwise keep unsaved drafts but sync existing mails and pull in any newly-arrived ones.
+    syncWithSource();
+  },
+);
 
-onMounted(() => loadThread())
+onMounted(() => loadThread());
 
 const unblockEmailAddress = createResource({
-	url: 'suite.mail.api.mail.unscreen_email_addresses',
-	makeParams: (email) => ({ account: scopeAccountId.value, emails: [email] }),
-	onSuccess: () => {
-		raiseToast(__('Sender unblocked.'))
-		screenedAddresses.value.reload()
-	},
-})
+  url: "suite.mail.api.mail.unscreen_email_addresses",
+  makeParams: (email) => ({ account: scopeAccountId.value, emails: [email] }),
+  onSuccess: () => {
+    raiseToast(__("Sender unblocked."));
+    screenedAddresses.value.reload();
+  },
+});
 
 // Trusting a sender accepts them (screened in), so their remote images load now and going forward.
 const trustSender = createResource({
-	url: 'suite.mail.api.mail.screen_email_addresses',
-	makeParams: (email: string) => ({
-		account: scopeAccountId.value,
-		emails: [email],
-		action: 'Accepted',
-	}),
-	onSuccess: () => {
-		raiseToast(__('Sender marked as trusted.'))
-		screenedAddresses.value.reload()
-	},
-})
+  url: "suite.mail.api.mail.screen_email_addresses",
+  makeParams: (email: string) => ({
+    account: scopeAccountId.value,
+    emails: [email],
+    action: "Accepted",
+  }),
+  onSuccess: () => {
+    raiseToast(__("Sender marked as trusted."));
+    screenedAddresses.value.reload();
+  },
+});
 
 const handleReload = (isUndo = false) => {
-	if (thread.value.length == 1) {
-		emit('reloadMails')
-		if (!isUndo) return goToMailbox()
-	}
-	reload()
-}
+  if (thread.value.length == 1) {
+    emit("reloadMails");
+    if (!isUndo) return goToMailbox();
+  }
+  reload();
+};
 
 const replyForwardActions = computed(() =>
-	[
-		{
-			label: __('Reply'),
-			tooltip: __('Reply (R)'),
-			onClick: () => reply(thread.value.at(-1)),
-			icon: Reply,
-		},
-		{
-			label: __('Reply All'),
-			tooltip: __('Reply All (Shift+R)'),
-			onClick: () => replyAll(thread.value.at(-1)),
-			icon: ReplyAll,
-			condition: showReplyAll(thread.value.at(-1)),
-		},
-		{
-			label: __('Forward'),
-			tooltip: __('Forward (F)'),
-			onClick: () => forward(thread.value.at(-1)),
-			icon: Forward,
-		},
-	].filter((action) => action.condition !== false),
-)
+  [
+    {
+      label: __("Reply"),
+      tooltip: __("Reply (R)"),
+      onClick: () => reply(thread.value.at(-1)),
+      icon: Reply,
+    },
+    {
+      label: __("Reply All"),
+      tooltip: __("Reply All (Shift+R)"),
+      onClick: () => replyAll(thread.value.at(-1)),
+      icon: ReplyAll,
+      condition: showReplyAll(thread.value.at(-1)),
+    },
+    {
+      label: __("Forward"),
+      tooltip: __("Forward (F)"),
+      onClick: () => forward(thread.value.at(-1)),
+      icon: Forward,
+    },
+  ].filter((action) => action.condition !== false),
+);
 
-const showMailDetails = ref<string>()
+const showMailDetails = ref<string>();
 
 const filteredAttachments = (mail: Mail) =>
-	mail.attachments.filter(
-		(a: Attachment) => a.disposition === 'attachment' || !a.type.startsWith('image/'),
-	)
+  mail.attachments.filter(
+    (a: Attachment) =>
+      a.disposition === "attachment" || !a.type.startsWith("image/"),
+  );
 
 // A bounce (DSN) message renders as a friendly card built from its message/delivery-status
 // part instead of the raw MAILER-DAEMON text. The body only comes back as fallback if the
 // banner reports there was nothing to render (part unreadable or without recipients).
-const dsnCardRendered = ref<Record<string, boolean>>({})
+const dsnCardRendered = ref<Record<string, boolean>>({});
 
-const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id
+const showsDsnCard = (mail: Mail) =>
+  !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id;
 
 const dsnReplacesBody = (mail: Mail) =>
-	showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false
+  showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false;
 
 // The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
 // part or a file merely named *.ics.
 const icsAttachment = (mail: Mail) =>
-	mail.attachments?.find(
-		(a: Attachment) =>
-			a.blob_id &&
-			(a.type?.toLowerCase().startsWith('text/calendar') ||
-				a.type?.toLowerCase() === 'application/ics' ||
-				a.filename?.toLowerCase().endsWith('.ics')),
-	)
+  mail.attachments?.find(
+    (a: Attachment) =>
+      a.blob_id &&
+      (a.type?.toLowerCase().startsWith("text/calendar") ||
+        a.type?.toLowerCase() === "application/ics" ||
+        a.filename?.toLowerCase().endsWith(".ics")),
+  );
 
-const showAttachmentViewer = ref(false)
-const attachments = ref<Attachment[]>([])
-const attachmentIndex = ref(0)
+const showAttachmentViewer = ref(false);
+const attachments = ref<Attachment[]>([]);
+const attachmentIndex = ref(0);
 
 const openAttachment = (mailAttachments: Attachment[], idx: number) => {
-	attachments.value = mailAttachments
-	attachmentIndex.value = idx
-	showAttachmentViewer.value = true
-}
+  attachments.value = mailAttachments;
+  attachmentIndex.value = idx;
+  showAttachmentViewer.value = true;
+};
 
 const zippableAttachments = (mail: Mail) =>
-	filteredAttachments(mail).filter((a: Attachment) => a.blob_id)
+  filteredAttachments(mail).filter((a: Attachment) => a.blob_id);
 
-const downloadingZipMail = ref<string | null>(null)
+const downloadingZipMail = ref<string | null>(null);
 
 const downloadAttachmentsAsZip = async (mail: Mail) => {
-	const mailAttachments = zippableAttachments(mail)
-	if (mailAttachments.length < 2) return
+  const mailAttachments = zippableAttachments(mail);
+  if (mailAttachments.length < 2) return;
 
-	downloadingZipMail.value = mail.name
-	try {
-		const url = await getAttachmentsZipUrl(mailAttachments, scopeAccountId.value)
-		downloadUrlAsFile(url, `${mail.subject || 'attachments'}.zip`)
-	} catch {
-		// the resource's onError already raised a toast; just stop spinning
-	} finally {
-		downloadingZipMail.value = null
-	}
-}
+  downloadingZipMail.value = mail.name;
+  try {
+    const url = await getAttachmentsZipUrl(
+      mailAttachments,
+      scopeAccountId.value,
+    );
+    downloadUrlAsFile(url, `${mail.subject || "attachments"}.zip`);
+  } catch {
+    // the resource's onError already raised a toast; just stop spinning
+  } finally {
+    downloadingZipMail.value = null;
+  }
+};
 
 // The message at the end of the conversation stays open — it is the one being read. Drafts do not
 // count towards which that is: a reply written at the bottom of the thread is not a newer message,
@@ -1036,158 +1258,181 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 // was saved and the thread reloaded around it — every mail already seen comes back collapsed, and
 // the exemption had moved on to the draft.
 const lastMessage = computed(
-	() => [...thread.value].reverse().find((mail: Mail) => !mail.draft) ?? thread.value.at(-1),
-)
+  () =>
+    [...thread.value].reverse().find((mail: Mail) => !mail.draft) ??
+    thread.value.at(-1),
+);
 
-const isCollapsed = (mail: Mail) => !!(mail.collapsed && mail !== lastMessage.value)
+const isCollapsed = (mail: Mail) =>
+  !!(mail.collapsed && mail !== lastMessage.value);
 
 const showReplyAll = (mail: Mail) =>
-	!mail.draft &&
-	mail.groupedRecipients.to
-		?.concat(mail.groupedRecipients.cc)
-		.filter((m) => !isUserEmail(m.email)).length > 0
+  !mail.draft &&
+  mail.groupedRecipients.to
+    ?.concat(mail.groupedRecipients.cc)
+    .filter((m) => !isUserEmail(m.email)).length > 0;
 
 const populateDraftMails = (mail: Mail) =>
-	(draftMails[mail.name] = {
-		name: mail.name,
-		id: mail.id,
-		from_email: mail.from_email,
-		to: mail.groupedRecipients.to,
-		cc: mail.groupedRecipients.cc,
-		bcc: mail.groupedRecipients.bcc,
-		subject: mail.subject || '',
-		in_reply_to: mail.message_id,
-		in_reply_to_id: mail.id,
-		attachments: mail.attachments || [],
-		...extractQuotedContent(mail.html_body),
-	})
+  (draftMails[mail.name] = {
+    name: mail.name,
+    id: mail.id,
+    from_email: mail.from_email,
+    to: mail.groupedRecipients.to,
+    cc: mail.groupedRecipients.cc,
+    bcc: mail.groupedRecipients.bcc,
+    subject: mail.subject || "",
+    in_reply_to: mail.message_id,
+    in_reply_to_id: mail.id,
+    attachments: mail.attachments || [],
+    ...extractQuotedContent(mail.html_body),
+  });
 
 const reply = (mail: Mail) =>
-	createLocalDraft(mail, {
-		...getReplyDetails(mail),
-		...getReplyRecipients(mail),
-		type: 'reply',
-	})
+  createLocalDraft(mail, {
+    ...getReplyDetails(mail),
+    ...getReplyRecipients(mail),
+    type: "reply",
+  });
 
 const replyAll = (mail: Mail) =>
-	createLocalDraft(mail, {
-		...getReplyDetails(mail),
-		...getReplyAllRecipients(mail),
-		type: 'replyAll',
-	})
+  createLocalDraft(mail, {
+    ...getReplyDetails(mail),
+    ...getReplyAllRecipients(mail),
+    type: "replyAll",
+  });
 
 const forward = (mail: Mail) =>
-	createLocalDraft(mail, {
-		subject: `Fwd: ${mail.subject || ''}`,
-		html_body: getForwardedContent(mail),
-		attachments: mail.attachments || [],
-		forwarded_from_id: mail.id,
-		type: 'forward',
-	})
+  createLocalDraft(mail, {
+    subject: `Fwd: ${mail.subject || ""}`,
+    html_body: getForwardHeader(mail),
+    // quoted_content, NOT html_body: content placed in the editor is re-serialized
+    // through its schema, which strips the original mail's tables/styles/attributes.
+    // Like a reply's quote, the forwarded original stays out of the editor and is
+    // concatenated back verbatim at send time.
+    quoted_content: getForwardedBody(mail),
+    attachments: mail.attachments || [],
+    forwarded_from_id: mail.id,
+    type: "forward",
+  });
 
 const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
-	mail.collapsed = false
-	const name = `draft:${mail.name}`
-	if (name in draftMails) discardLocalDraft(name)
+  mail.collapsed = false;
+  const name = `draft:${mail.name}`;
+  if (name in draftMails) discardLocalDraft(name);
 
-	nextTick(() => {
-		draftMails[name] = { name, ...draftDetails }
-		// The thread entry only hosts the inline desktop editor. On mobile the draft
-		// lives in the slide-up sheet instead — splicing it in anyway would hide the
-		// reply bar (it's suppressed while the thread ends in a draft) until a reload
-		// cleans the entry up, well after the sheet has slid out.
-		if (isMobile.value) return popOutDraft(draftMails[name])
-		const index = thread.value.indexOf(mail)
-		const draft = thread.value.find((m: Mail) => m.name === name)
-		if (index !== -1 && !draft)
-			thread.value.splice(index + 1, 0, { ...draftMails[name], draft: 1, show: true })
-		setTimeout(() =>
-			threadContainerRef.value
-				?.querySelector(`[data-mail-name="${name}"]`)
-				?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-		)
-	})
-}
+  nextTick(() => {
+    draftMails[name] = { name, ...draftDetails };
+    // The thread entry only hosts the inline desktop editor. On mobile the draft
+    // lives in the slide-up sheet instead — splicing it in anyway would hide the
+    // reply bar (it's suppressed while the thread ends in a draft) until a reload
+    // cleans the entry up, well after the sheet has slid out.
+    if (isMobile.value) return popOutDraft(draftMails[name]);
+    const index = thread.value.indexOf(mail);
+    const draft = thread.value.find((m: Mail) => m.name === name);
+    if (index !== -1 && !draft)
+      thread.value.splice(index + 1, 0, {
+        ...draftMails[name],
+        draft: 1,
+        show: true,
+      });
+    setTimeout(() =>
+      threadContainerRef.value
+        ?.querySelector(`[data-mail-name="${name}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  });
+};
 
 const discardLocalDraft = (mail: string) => {
-	delete draftMails[mail]
-	thread.value = thread.value.filter((m: Mail) => m.name !== mail)
-}
+  delete draftMails[mail];
+  thread.value = thread.value.filter((m: Mail) => m.name !== mail);
+};
 
 // Shortcuts
 
 const handleKeydown = (e: KeyboardEvent) => {
-	// Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
-	if (readonly || shouldIgnoreKeypress(e)) return
+  // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
+  if (readonly || shouldIgnoreKeypress(e)) return;
 
-	const key = e.key.toLowerCase()
-	const lastMail = thread.value?.at(-1)
-	if (!lastMail || lastMail.draft) return
+  const key = e.key.toLowerCase();
+  const lastMail = thread.value?.at(-1);
+  if (!lastMail || lastMail.draft) return;
 
-	// Reply/Reply All shortcut
-	if (key === 'r') {
-		e.preventDefault()
-		if (e.shiftKey) replyAll(lastMail)
-		else reply(lastMail)
-		return
-	}
+  // Reply/Reply All shortcut
+  if (key === "r") {
+    e.preventDefault();
+    if (e.shiftKey) replyAll(lastMail);
+    else reply(lastMail);
+    return;
+  }
 
-	// Forward shortcut
-	if (key === 'f') {
-		e.preventDefault()
-		forward(lastMail)
-	}
-}
+  // Forward shortcut
+  if (key === "f") {
+    e.preventDefault();
+    forward(lastMail);
+  }
+};
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+onMounted(() => window.addEventListener("keydown", handleKeydown));
+onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
 
 const syncFlagged = (ids: string[], flagged: boolean) =>
-	thread.value?.forEach((mail: Mail) => {
-		if (ids.includes(mail.id)) mail.flagged = flagged ? 1 : 0
-	})
+  thread.value?.forEach((mail: Mail) => {
+    if (ids.includes(mail.id)) mail.flagged = flagged ? 1 : 0;
+  });
 
 const syncMailboxMembership = (mailboxId: string, add: boolean) => {
-	if (add) {
-		const mb = scope.mailboxes.value.data?.find((m: MailboxData) => m.id === mailboxId)
-		if (!mb) return
-		const entry: Mailbox = { mailbox: mb.name, mailbox_id: mb.id, mailbox_name: mb._name }
-		thread.value?.forEach((mail: Mail) => {
-			if (!mail.mailboxes.some((m) => m.mailbox_id === mailboxId)) mail.mailboxes.push(entry)
-		})
-	} else if (thread.value?.every((mail: Mail) => mail.mailboxes.length > 1))
-		thread.value?.forEach(
-			(mail: Mail) =>
-				(mail.mailboxes = mail.mailboxes.filter((m) => m.mailbox_id !== mailboxId)),
-		)
-}
+  if (add) {
+    const mb = scope.mailboxes.value.data?.find(
+      (m: MailboxData) => m.id === mailboxId,
+    );
+    if (!mb) return;
+    const entry: Mailbox = {
+      mailbox: mb.name,
+      mailbox_id: mb.id,
+      mailbox_name: mb._name,
+    };
+    thread.value?.forEach((mail: Mail) => {
+      if (!mail.mailboxes.some((m) => m.mailbox_id === mailboxId))
+        mail.mailboxes.push(entry);
+    });
+  } else if (thread.value?.every((mail: Mail) => mail.mailboxes.length > 1))
+    thread.value?.forEach(
+      (mail: Mail) =>
+        (mail.mailboxes = mail.mailboxes.filter(
+          (m) => m.mailbox_id !== mailboxId,
+        )),
+    );
+};
 
 // Optimistically drop a message from the pane (per-message trash/junk/delete) before its request
 // fires. Returns whether that emptied the visible thread (so the caller can close the pane + drop the
 // row from the list) and a rollback that restores the message in place. Action-agnostic.
-const removeMailFromView = (mailId: string): { emptied: boolean; rollback: () => void } => {
-	const idx = thread.value.findIndex((m: Mail) => m.id === mailId)
-	if (idx === -1) return { emptied: false, rollback: () => {} }
-	const [removed] = thread.value.splice(idx, 1)
-	removedMailIds.add(mailId)
-	return {
-		emptied: thread.value.length === 0,
-		rollback: () => {
-			removedMailIds.delete(mailId)
-			// Only re-insert into the pane if it's STILL showing this mail's thread. If the removal
-			// emptied the thread, the pane navigated to a different thread by now — splicing the mail in
-			// there would append it to an unrelated conversation. The undo restores the thread to the
-			// list instead; re-opening it reloads its messages fresh.
-			if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed)
-		},
-	}
-}
+const removeMailFromView = (
+  mailId: string,
+): { emptied: boolean; rollback: () => void } => {
+  const idx = thread.value.findIndex((m: Mail) => m.id === mailId);
+  if (idx === -1) return { emptied: false, rollback: () => {} };
+  const [removed] = thread.value.splice(idx, 1);
+  removedMailIds.add(mailId);
+  return {
+    emptied: thread.value.length === 0,
+    rollback: () => {
+      removedMailIds.delete(mailId);
+      // Only re-insert into the pane if it's STILL showing this mail's thread. If the removal
+      // emptied the thread, the pane navigated to a different thread by now — splicing the mail in
+      // there would append it to an unrelated conversation. The undo restores the thread to the
+      // list instead; re-opening it reloads its messages fresh.
+      if (removed.thread_id === threadID) thread.value.splice(idx, 0, removed);
+    },
+  };
+};
 
-defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView })
+defineExpose({ syncFlagged, syncMailboxMembership, removeMailFromView });
 
-const focusedDraft = ref<string>()
-const showSendModal = ref(false)
-const composeWindow = useTemplateRef('composeWindow')
+const focusedDraft = ref<string>();
+const showSendModal = ref(false);
+const composeWindow = useTemplateRef("composeWindow");
 
 // The id of the draft that went to the window, kept here rather than asked of the window itself.
 //
@@ -1196,11 +1441,11 @@ const composeWindow = useTemplateRef('composeWindow')
 // knows, but it knows in a plain variable inside `useComposeWindow`, which no render is watching;
 // a card checking it as it drew got the answer from before the window opened and never asked
 // again, so the editor stayed in the thread underneath the very window that had taken it.
-const poppedOutDraftId = ref<string>()
+const poppedOutDraftId = ref<string>();
 watch(
-	() => composeWindow.value?.mail?.id,
-	(id) => id && (poppedOutDraftId.value = id),
-)
+  () => composeWindow.value?.mail?.id,
+  (id) => id && (poppedOutDraftId.value = id),
+);
 
 // The one draft the composer window is holding, whichever row it has become.
 //
@@ -1216,10 +1461,10 @@ watch(
 // one conversation is still in the window while another is on screen — and that one's own draft is
 // not the one being written elsewhere.
 const isDraftInWindow = (mail: Mail) => {
-	if (!mail.draft) return false
-	if (mail.name === focusedDraft.value) return true
-	return !!poppedOutDraftId.value && mail.id === poppedOutDraftId.value
-}
+  if (!mail.draft) return false;
+  if (mail.name === focusedDraft.value) return true;
+  return !!poppedOutDraftId.value && mail.id === poppedOutDraftId.value;
+};
 
 // A draft being written in the composer window rather than in the thread. The thread stands the
 // notice in its place, or the same reply sits in two editors that do not share their state.
@@ -1228,7 +1473,7 @@ const isDraftInWindow = (mail: Mail) => {
 // moment it closes, and discarding — which reads `focusedDraft` as it fires — still knows which
 // draft it meant.
 const isPoppedOut = (mail: Mail) =>
-	showSendModal.value && !!focusedDraft.value && isDraftInWindow(mail)
+  showSendModal.value && !!focusedDraft.value && isDraftInWindow(mail);
 
 // Bring the reply back into the conversation, carrying whatever it has become.
 //
@@ -1243,11 +1488,15 @@ const isPoppedOut = (mail: Mail) =>
 // message and not the thread's bookkeeping, so the reply type — which is what draws the card's
 // icon and decides whether From and Subject are shown — survives from underneath.
 const showDraftInThread = () => {
-	const live = composeWindow.value?.mail
-	const name = focusedDraft.value
-	if (live && name) draftMails[name] = { ...draftMails[name], ...JSON.parse(JSON.stringify(live)) }
-	showSendModal.value = false
-}
+  const live = composeWindow.value?.mail;
+  const name = focusedDraft.value;
+  if (live && name)
+    draftMails[name] = {
+      ...draftMails[name],
+      ...JSON.parse(JSON.stringify(live)),
+    };
+  showSendModal.value = false;
+};
 
 // Discard, heard as it starts rather than once the delete lands. The card is withheld only while
 // the window is open, and `discardMail` closes before it deletes — so without this the thread took
@@ -1257,104 +1506,139 @@ const showDraftInThread = () => {
 // started in the pane — and that one is not going anywhere. The row is going anyway; a delete that
 // fails is put back by the reload behind it.
 const dropPoppedOutDraft = () => {
-	if (!focusedDraft.value) return
-	delete draftMails[focusedDraft.value]
-	thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m))
-}
+  if (!focusedDraft.value) return;
+  delete draftMails[focusedDraft.value];
+  thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m));
+};
 
 const popOutDraft = (mail: ComposeMailData) => {
-	draftMails[mail.name as string] = mail
+  draftMails[mail.name as string] = mail;
 
-	// Mobile composes on a page of its own rather than in an overlay — see ComposeView. Nothing has
-	// to be handed back on the way out: leaving the compose route remounts this thread, so the reply
-	// that was just sent is there in the refetch, and a local draft that was discarded is gone with
-	// the component that was holding it.
-	if (isMobile.value) {
-		openComposePage(router, scopeAccountId.value, mail)
-		return
-	}
+  // Mobile composes on a page of its own rather than in an overlay — see ComposeView. Nothing has
+  // to be handed back on the way out: leaving the compose route remounts this thread, so the reply
+  // that was just sent is there in the refetch, and a local draft that was discarded is gone with
+  // the component that was holding it.
+  if (isMobile.value) {
+    openComposePage(router, scopeAccountId.value, mail);
+    return;
+  }
 
-	// Taken here as well as from the window, so the card goes the moment the window opens rather than
-	// a frame later, once the composer inside it has mounted and can be asked.
-	poppedOutDraftId.value = mail.id
-	focusedDraft.value = mail.name
-	showSendModal.value = true
-}
+  // Taken here as well as from the window, so the card goes the moment the window opens rather than
+  // a frame later, once the composer inside it has mounted and can be asked.
+  poppedOutDraftId.value = mail.id;
+  focusedDraft.value = mail.name;
+  showSendModal.value = true;
+};
 
 const getSourceMail = (mail: string) =>
-	thread.value.find((m: Mail) => m.name === mail.split(':')[1])
+  thread.value.find((m: Mail) => m.name === mail.split(":")[1]);
 
 const getReplyDetails = (mail: Mail) => ({
-	subject: mail.subject?.startsWith('Re: ') ? mail.subject : `Re: ${mail.subject}`,
-	quoted_content: getQuotedContent(mail),
-	attachments: mail.attachments?.filter((a: Attachment) => a.disposition === 'inline') || [],
-	in_reply_to: mail.message_id,
-	in_reply_to_id: mail.id,
-})
+  from_email: getReplyIdentityEmail(mail),
+  subject: mail.subject?.startsWith("Re: ")
+    ? mail.subject
+    : `Re: ${mail.subject}`,
+  quoted_content: getQuotedContent(mail),
+  attachments:
+    mail.attachments?.filter((a: Attachment) => a.disposition === "inline") ||
+    [],
+  in_reply_to: mail.message_id,
+  in_reply_to_id: mail.id,
+});
 
 const getReplyRecipients = (mail: Mail) => ({
-	to: isUserEmail(mail.from_email)
-		? mail.groupedRecipients.to
-		: mail.reply_to.length
-			? mail.reply_to
-			: [{ email: mail.from_email }],
-})
+  to: isUserEmail(mail.from_email)
+    ? mail.groupedRecipients.to
+    : mail.reply_to.length
+      ? mail.reply_to
+      : [{ email: mail.from_email }],
+});
 
 const getReplyAllRecipients = (mail: Mail) => {
-	if (isUserEmail(mail.from_email))
-		return { to: mail.groupedRecipients.to, cc: mail.groupedRecipients.cc }
-	else
-		return {
-			to: mail.reply_to.length ? mail.reply_to : [{ email: mail.from_email }],
-			cc: [...mail.groupedRecipients.to, ...mail.groupedRecipients.cc].filter(
-				(r) => !isUserEmail(r.email),
-			),
-		}
-}
+  if (isUserEmail(mail.from_email))
+    return { to: mail.groupedRecipients.to, cc: mail.groupedRecipients.cc };
+  else
+    return {
+      to: mail.reply_to.length ? mail.reply_to : [{ email: mail.from_email }],
+      cc: [...mail.groupedRecipients.to, ...mail.groupedRecipients.cc].filter(
+        (r) => !isUserEmail(r.email),
+      ),
+    };
+};
 
-const isUserEmail = (email: string) =>
-	identities.value.data?.map((i: Identity) => i.email).includes(email)
+// Addresses arrive in whatever casing the other side used: match case-insensitively, and hand
+// back the identity's own spelling, since the composer looks the address up by that.
+const getIdentityEmail = (email?: string) =>
+  identities.value.data?.find(
+    (i: Identity) => i.email.toLowerCase() === email?.toLowerCase(),
+  )?.email;
+
+const isUserEmail = (email: string) => !!getIdentityEmail(email);
+
+// The identity a reply should go out as: the one the message was addressed to (the sender,
+// when the message is our own). Undefined when no identity took part, and the composer falls
+// back to the account's default outgoing address, then its first identity.
+const getReplyIdentityEmail = (mail: Mail) => {
+  const { to = [], cc = [], bcc = [] } = mail.groupedRecipients ?? {};
+  return getIdentityEmail(
+    [mail.from_email, ...[...to, ...cc, ...bcc].map((r) => r.email)].find(
+      isUserEmail,
+    ),
+  );
+};
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing
 // them verbatim (or escaping them again) puts `&lt;` in front of the reader instead of
 // the address it stands for. Both consumers below start from here.
-const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || mail.text_body || '')
+const getPlainTextBody = (mail: Mail) =>
+  decodeHtmlEntities(mail.html_body || mail.text_body || "");
 
-// A body with no markup is plain text, so it has to be escaped before going into the
-// <pre> — the reader parses this as HTML. Bounce notices are the case that bites:
-// their `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops,
-// silently deleting the very addresses the notice is about.
+// A body with no markup is plain text, so it has to be escaped before going in here: the
+// reader parses this as HTML. Bounce notices are the case that bites, since their
+// `RCPT TO:<user@host>` reads as an unknown tag, which the sanitizer then drops, silently
+// deleting the very addresses the notice is about.
+// Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
+// a plain-text mail used to hand the recipient the sender's prose in monospace that never
+// wrapped. plainTextToHtml keeps the line breaks without asking for that.
 const getBodyContent = (mail: Mail) => {
-	if (hasHtmlContent(mail.html_body)) return mail.html_body
-	const text = getPlainTextBody(mail)
-	return `<pre style="white-space: pre-wrap; word-break: break-word">${text ? escapeHtml(text) : '&nbsp;'}</pre>`
-}
+  // Contained, not verbatim: the original's body/html style rules would otherwise
+  // repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+  // bleeding over the sender's own text).
+  if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body);
+  const text = getPlainTextBody(mail);
+  return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : "&nbsp;"}</div>`;
+};
 
 const getQuotedContent = (mail: Mail) =>
-	`
+  `
 		<div class="frappe_mail_quote">
-			On ${dayjs(mail.received_at).format('DD MMM YYYY [at] h:mm A')}, ${mail.from_email} wrote:
+			On ${dayjs(mail.received_at).format("DD MMM YYYY [at] h:mm A")}, ${mail.from_email} wrote:
 			<blockquote style="margin-left: 8px">
 				${getBodyContent(mail)}
 			</blockquote>
 		</div>
-	`
+	`;
 
-const getForwardedContent = (mail: Mail) => {
-	const recipients = getGroupedRecipients(mail.recipients, true, true)
-	return `
-		<div class="frappe_mail_fwd">
+// The header is our own plain text, which the editor round-trips unharmed — so it
+// lives in html_body, visible and editable in the composer, with the signature
+// inserted above it (see useComposeMail's prefilledBody). Only the original's
+// body needs to stay out of the editor (see getForwardedBody).
+const getForwardHeader = (mail: Mail) => {
+  const recipients = getGroupedRecipients(mail.recipients, true, true);
+  return `
+		<div>
 			<br><br>
 			---------- Forwarded message ---------<br>
-			From: ${mail.from_name} < ${mail.from_email} ><br>
-			Date: ${dayjs(mail.received_at).format('ddd, MMM D, YYYY [at] h:mm A')}<br>
-			Subject: ${mail.subject || ''}<br>
+			From: ${mail.from_name} &lt;${mail.from_email}&gt;<br>
+			Date: ${dayjs(mail.received_at).format("ddd, MMM D, YYYY [at] h:mm A")}<br>
+			Subject: ${mail.subject || ""}<br>
 			To: ${recipients.to}<br>
-			${recipients.cc ? `Cc: ${recipients.cc}<br>` : ''}
-			<br><br>
-			${getBodyContent(mail)}
+			${recipients.cc ? `Cc: ${recipients.cc}<br>` : ""}
 		</div>
-	`
-}
+	`;
+};
+
+const getForwardedBody = (mail: Mail) =>
+  `<div class="frappe_mail_fwd"><br><br>${getBodyContent(mail)}</div>`;
 </script>

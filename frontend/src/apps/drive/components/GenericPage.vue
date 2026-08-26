@@ -51,12 +51,17 @@ import {
   isManaged,
   isAttachmentRef,
 } from '@/apps/drive/utils/files'
-import { toggleFav, clearRecent, PAGE_SIZE } from '@/apps/drive/resources/files'
+import {
+  toggleFav,
+  clearRecent,
+  PAGE_SIZE,
+  formatRows,
+} from '@/apps/drive/resources/files'
 import { confirmRestore, confirmRemove, confirmDeleteForever } from '@/apps/drive/utils/confirmActions'
 import { entitiesDownload } from '@/apps/drive/utils/download'
-import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, watchEffect, provide, inject, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { onKeyDown, useEventListener, useInfiniteScroll } from '@vueuse/core'
+import { onKeyDown, useEventListener } from '@vueuse/core'
 import { frappeRequest, shellScrollContainer as scrollHost } from 'frappe-ui'
 import { useSessionStore, useCurrentUser } from '@/boot/session'
 import { activeEntity, startRename } from '@/apps/drive/data/selection'
@@ -247,6 +252,12 @@ watchEffect(() => {
 const pageStart = ref(0)
 const hasNextPage = ref(false)
 const loadingMore = ref(false)
+// Bumped by every refresh (search, sort, the refresh event). A page request in
+// flight when the query changes belongs to the old query: its rows would be
+// appended onto the new result set and its cursor would overwrite the reset
+// pagination state, mixing two queries together and skipping a page of the
+// current one. Responses that come back against a stale epoch are dropped.
+let queryEpoch = 0
 
 const queryParams = () => {
   const params = {}
@@ -261,18 +272,32 @@ const queryParams = () => {
 const refreshData = () => {
   const res = props.getEntities
   const params = queryParams()
+  const epoch = ++queryEpoch
   pageStart.value = 0
   hasNextPage.value = false
+  // The new epoch owns the in-flight flag: a stale loadMore deliberately leaves
+  // it alone on the way out, so it has to be cleared here or the first stale
+  // response would wedge pagination shut.
+  loadingMore.value = false
   if (res.paginated) {
     params.start = 0
     params.limit = PAGE_SIZE
+    params.paginated = 1
   }
   res.fetch(
     { ...res.params, ...params },
     res.paginated
       ? {
+          // onSuccess receives the untransformed payload, so this reads the
+          // server's own signal rather than counting rows. A page can be short
+          // while more rows remain: the server dedupes and permission-filters
+          // *after* LIMIT/OFFSET, so any dropped row would otherwise look like
+          // the end of the list and freeze infinite scroll for good.
           onSuccess: (data) => {
-            hasNextPage.value = (data?.length || 0) >= PAGE_SIZE
+            if (epoch !== queryEpoch) return
+            hasNextPage.value = !!data?.has_next
+            pageStart.value = data?.next_start ?? PAGE_SIZE
+            nextTick(fillViewport)
           },
         }
       : {}
@@ -284,7 +309,10 @@ async function loadMore() {
   if (!res?.paginated || res.loading || loadingMore.value || !hasNextPage.value)
     return
   loadingMore.value = true
-  const next = pageStart.value + PAGE_SIZE
+  const epoch = queryEpoch
+  // Resume from the offset the server stopped at, not start + PAGE_SIZE: filling
+  // a page can consume several raw windows when rows are filtered out.
+  const next = pageStart.value
   try {
     const path = res.url.startsWith('/') ? res.url : `/api/method/${res.url}`
     const resp = await frappeRequest({
@@ -295,28 +323,76 @@ async function loadMore() {
         ...queryParams(),
         start: next,
         limit: PAGE_SIZE,
+        paginated: 1,
       },
       credentials: 'include',
     })
-    // The paginated endpoint returns raw file rows, so format them before appending.
-    const page = prettyData(Array.isArray(resp) ? resp : resp?.message ?? [])
-    pageStart.value = next
-    hasNextPage.value = page.length >= PAGE_SIZE
+    // frappeRequest() skips the resource's transform, so the page
+    // rows arrive unformatted — run them through the same formatter the resource
+    // uses, or this page would keep the dotfiles page 1 hides.
+    // The query moved on while this was in flight — these rows belong to the
+    // previous search/sort. Appending them would mix two result sets.
+    if (epoch !== queryEpoch) return
+    const payload = resp?.message ?? resp
+    const page = formatRows(payload?.rows ?? [])
+    pageStart.value = payload?.next_start ?? next + PAGE_SIZE
+    // The server's signal, not the row count — see the note in refreshData.
+    hasNextPage.value = !!payload?.has_next
     if (page.length) res.setData([...(res.data || []), ...page])
   } catch {
-    hasNextPage.value = false
+    if (epoch === queryEpoch) hasNextPage.value = false
   } finally {
-    loadingMore.value = false
+    if (epoch === queryEpoch) loadingMore.value = false
   }
 }
 
-useInfiniteScroll(scrollHost, () => loadMore(), {
-  distance: 200,
-  canLoadMore: () =>
-    !!props.getEntities?.paginated &&
-    hasNextPage.value &&
-    !loadingMore.value &&
-    !props.getEntities.loading,
+// Infinite scroll is driven off the shell's scroll container directly rather
+// than through `useInfiniteScroll`. That composable resolves its target once, at
+// setup — but `shellScrollContainer` is a module-level ref the *shell* fills
+// in, and on a cold mount the shell registers a tick after this component sets
+// up. So it bound to `null`, its internal `arrivedState` never updated again,
+// and the list loaded page 1 and then never paginated no matter how far you
+// scrolled. It only appeared to work on a revisit, where the cached rows let the
+// container register before setup ran. Binding on the ref's transitions instead
+// survives both orders, and the layout swap the registry exists for.
+const NEAR_BOTTOM_PX = 200
+
+const onHostScroll = async () => {
+  const el = scrollHost.value
+  if (!el) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) return
+  await loadMore()
+  await nextTick()
+  fillViewport()
+}
+
+// A page can also arrive too short to scroll — 50 rows in a tall window, or a
+// page thinned by the server's post-LIMIT permission filter. No scroll event can
+// ever follow, so top up until the container overflows or the list runs out.
+const fillViewport = async () => {
+  const epoch = queryEpoch
+  for (let i = 0; i < 20; i++) {
+    const el = scrollHost.value
+    if (epoch !== queryEpoch) return
+    if (!el || !hasNextPage.value || loadingMore.value) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX) return
+    const before = pageStart.value
+    await loadMore()
+    if (pageStart.value === before) return
+  }
+}
+
+watch(
+  scrollHost,
+  (el, prev) => {
+    prev?.removeEventListener('scroll', onHostScroll)
+    el?.addEventListener('scroll', onHostScroll, { passive: true })
+  },
+  { immediate: true }
+)
+onBeforeUnmount(() => {
+  queryEpoch++
+  scrollHost.value?.removeEventListener('scroll', onHostScroll)
 })
 
 watch(

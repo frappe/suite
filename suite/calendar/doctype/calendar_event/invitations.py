@@ -239,6 +239,9 @@ def notify_organizer_of_reply(account: str, event_id: str, responder_email: str,
             raw_message=message,
             via_api=True,
             delivery_mode="Enqueue",
+            # The reply is a mechanical iTIP message, not correspondence — don't leave a copy
+            # in the attendee's Sent folder.
+            destroy_after_submit=True,
         )
     except Exception:
         log_error("Calendar", title=_("Failed to send RSVP reply for event {0}").format(event_id))
@@ -305,6 +308,9 @@ def _send(
         raw_message=message,
         via_api=True,
         delivery_mode="Enqueue",
+        # Recipients get the email; the organizer's copy is destroyed after submission so
+        # invite blasts don't pile up in their Sent folder (the event itself is the record).
+        destroy_after_submit=True,
     )
 
 

@@ -349,6 +349,9 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
     if not meeting.can_join(frappe.session.user):
         frappe.throw(_("Access denied"), frappe.PermissionError)
 
+    if meeting.meeting_type == "restricted" and not meeting.is_user_approved(frappe.session.user):
+        return {"restricted_preview": True}
+
     sfu_config = get_sfu_config()
 
     expiry_seconds = 300

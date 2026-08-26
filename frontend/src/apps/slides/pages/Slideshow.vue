@@ -1,6 +1,6 @@
 <template>
 	<div
-		class="absolute left-0 top-0 h-full w-full bg-black"
+		class="absolute left-0 top-0 h-full w-full overflow-clip bg-black"
 		:class="{ 'slideshow-hide-cursor': cursorHidden }"
 	>
 		<div
@@ -78,6 +78,7 @@ import {
 	exitFullscreen,
 	requestWakeLock,
 	releaseWakeLock,
+	releaseVideoWarmers,
 	endSlideShow,
 	prefetchNextSlide,
 	changeSlideInSlideshow,
@@ -144,6 +145,7 @@ const slideStyles = computed(() => {
 	const baseStyles = {
 		width: '960px',
 		height: '540px',
+		overflow: 'hidden',
 		backgroundColor: currentSlide.value?.background || '#ffffff',
 	}
 
@@ -348,6 +350,7 @@ onDeactivated(() => {
 	window.removeEventListener('resize', updateWindowSize)
 	stopCursorTracking()
 	releaseWakeLock()
+	releaseVideoWarmers()
 
 	// leaving by any route other than endSlideShow would strand the editor in fullscreen
 	if (inSlideShowMode.value) {

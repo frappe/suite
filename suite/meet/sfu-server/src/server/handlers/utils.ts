@@ -16,6 +16,10 @@ export function getRoomId(socket: Socket): string {
 	return `${site}::${meetingId}`;
 }
 
+export function getPeerId(socket: Socket): string {
+	return socket.peerId ?? socket.userId;
+}
+
 export function checkSocketRateLimits(
 	socket: Socket,
 	rateLimiter: RateLimiter,
@@ -57,20 +61,21 @@ export function checkSocketRateLimits(
 	return userAllowed && ipAllowed;
 }
 
-export function findSocketByParticipantId(
+export function findSocketsByParticipantId(
 	io: Server,
 	roomId: string,
 	participantId: string,
-): TypedSocket | null {
+): TypedSocket[] {
 	const socketsInRoom = io.sockets.adapter.rooms.get(roomId);
-	if (!socketsInRoom) return null;
+	if (!socketsInRoom) return [];
 
+	const matches: TypedSocket[] = [];
 	for (const socketId of socketsInRoom) {
 		const socket = io.sockets.sockets.get(socketId) as TypedSocket | undefined;
 		if (socket && socket.participantId === participantId) {
-			return socket;
+			matches.push(socket);
 		}
 	}
 
-	return null;
+	return matches;
 }

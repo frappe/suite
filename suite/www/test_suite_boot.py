@@ -34,6 +34,13 @@ class SuiteBoot(unittest.TestCase):
         self.assertEqual(boot["site_name"], "test.localhost")
         self.assertEqual(boot["socketio_port"], 9000)
         self.assertEqual(boot["push_relay_server_url"], "")
+        self.assertIs(boot["disable_slides_service_worker"], False)
+
+    def test_kill_switch_reaches_the_boot(self):
+        self.frappe.conf.get.side_effect = lambda key, default=None: (
+            1 if key == "disable_slides_service_worker" else default
+        )
+        self.assertIs(www.get_boot()["disable_slides_service_worker"], True)
 
     def test_guest_boot_is_redacted(self):
         self.frappe.session.user = "Guest"

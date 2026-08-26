@@ -10,6 +10,7 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite.drive.api.files import (
+    SEARCH_PAGE_LENGTH,
     create_auth_token,
     does_entity_exist,
     get_file_content,
@@ -17,6 +18,7 @@ from suite.drive.api.files import (
     move,
     remove_or_restore,
     rename,
+    search,
     stream_file_content,
     track_visit,
     update_access,
@@ -221,6 +223,30 @@ class TestDriveFilesAPI(IntegrationTestCase):
             staged_files = list((storage_root / ".uploads").iterdir())
             self.assertEqual(len(staged_files), 1)
             self.assertEqual(staged_files[0].parent, storage_root / ".uploads")
+
+    def test_upload_removes_temp_file_on_quota_rejection(self):
+        with TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "private" / "files"
+            storage_root.mkdir(parents=True)
+
+            with (
+                self.set_user(OWNER),
+                patch("suite.drive.api.files.frappe.get_site_path", return_value=str(storage_root)),
+                patch(
+                    "suite.drive.api.files.frappe.get_single",
+                    return_value=frappe._dict(root_folder=""),
+                ),
+                patch(
+                    "suite.drive.api.files.validate_quota",
+                    side_effect=ValueError("You're out of storage!"),
+                ),
+                self.upload_request(b"contents", "upload.txt", session=None),
+                self.assertRaises(ValueError),
+            ):
+                upload_file(total_file_size=8, parent=self.folder.name)
+
+            staged_files = list((storage_root / ".uploads").iterdir())
+            self.assertEqual(staged_files, [])
 
     def test_chunked_upload_without_session_is_rejected_before_writing(self):
         with TemporaryDirectory() as temp_dir:
@@ -767,3 +793,144 @@ class TestDriveFilesAPI(IntegrationTestCase):
             self.assertFalse(does_entity_exist(name=f"{frappe.generate_hash(8)}.txt"))
             self.assertNotEqual(get_new_title(self.file.file_name, self.folder.name), self.file.file_name)
             self.assertEqual(get_new_title("unclaimed.txt", self.folder.name), "unclaimed.txt")
+
+
+class TestDriveSearch(IntegrationTestCase):
+    """`search` resolves access per row, so what it scans and what it returns
+    are different counts. These cover the gap between them."""
+
+    # Enough files to sit past a shrunken scan window several times over.
+    FILE_COUNT = 7
+    # Small enough that the tests can force a multi-window scan without seeding
+    # the hundreds of rows the real window would need.
+    WINDOW = 2
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        ensure_user(OWNER)
+        ensure_user(OTHER_USER)
+        with cls.set_user(OWNER):
+            cls.home = get_user_folder(OWNER).name
+
+    def setUp(self):
+        frappe.flags.mute_drive_activity_log = True
+        # A token no other file on the site can match, so the result set is
+        # exactly what this test seeded.
+        self.token = f"zqx{frappe.generate_hash(10)}"
+        with self.set_user(OWNER):
+            manager = FileManager()
+            self.folder = create_drive_file(
+                frappe.generate_hash(8), self.home, "Folder", lambda file: manager.create_folder(file)
+            )
+            self.files = [
+                create_drive_file(
+                    f"{self.token}{i}.txt",
+                    self.folder.name,
+                    "Text",
+                    f"{self.folder.file_url}{frappe.generate_hash(8)}.txt",
+                    "text/plain",
+                    12,
+                )
+                for i in range(self.FILE_COUNT)
+            ]
+        # InnoDB publishes fulltext rows to the index at commit, so an
+        # uncommitted seed is invisible to MATCH ... AGAINST.
+        frappe.db.commit()
+
+    def tearDown(self):
+        frappe.flags.mute_drive_activity_log = False
+        for file in self.files:
+            frappe.delete_doc("File", file.name, force=True, ignore_permissions=True)
+        frappe.delete_doc("File", self.folder.name, force=True, ignore_permissions=True)
+        frappe.db.commit()
+        super().tearDown()
+
+    def share(self, entity, user):
+        frappe.get_doc({"doctype": "Drive Permission", "entity": entity, "user": user, "read": 1}).insert(
+            ignore_permissions=True
+        )
+        frappe.db.commit()
+
+    def search_names(self, query):
+        return [row["name"] for row in search(query)]
+
+    def test_reaches_readable_rows_past_the_first_window(self):
+        """The regression: filtering one fixed window makes the reply depend on
+        how many *unreadable* rows sort first."""
+        with self.set_user(OWNER):
+            ordered = self.search_names(self.token)
+        self.assertEqual(len(ordered), self.FILE_COUNT)
+
+        # Share only the last row in scan order - several windows deep.
+        last = ordered[-1]
+        self.share(last, OTHER_USER)
+
+        with (
+            self.set_user(OTHER_USER),
+            patch("suite.drive.api.files.SEARCH_SCAN_WINDOW", self.WINDOW),
+        ):
+            self.assertEqual(self.search_names(self.token), [last])
+
+    def test_returns_only_readable_rows(self):
+        self.share(self.files[0].name, OTHER_USER)
+
+        with self.set_user(OTHER_USER):
+            self.assertEqual(self.search_names(self.token), [self.files[0].name])
+
+    def test_unshared_user_gets_nothing(self):
+        with self.set_user(OTHER_USER):
+            self.assertEqual(search(self.token), [])
+
+    def test_scan_stops_at_the_budget(self):
+        """A caller who can read nothing must not walk the whole match set."""
+        with (
+            self.set_user(OTHER_USER),
+            patch("suite.drive.api.files.SEARCH_SCAN_WINDOW", self.WINDOW),
+            patch("suite.drive.api.files.MAX_SEARCH_SCAN_WINDOWS", 2),
+            patch("suite.drive.api.files.user_has_permission", return_value=False) as has_permission,
+        ):
+            self.assertEqual(search(self.token), [])
+
+        self.assertEqual(has_permission.call_count, self.WINDOW * 2)
+
+    def test_stops_once_the_page_is_full(self):
+        with (
+            self.set_user(OWNER),
+            patch("suite.drive.api.files.SEARCH_PAGE_LENGTH", 3),
+            patch("suite.drive.api.files.SEARCH_SCAN_WINDOW", self.WINDOW),
+        ):
+            self.assertEqual(len(self.search_names(self.token)), 3)
+
+    def test_page_is_capped(self):
+        with self.set_user(OWNER):
+            self.assertLessEqual(len(search(self.token)), SEARCH_PAGE_LENGTH)
+
+    def test_access_is_resolved_without_reloading_each_row(self):
+        """`user_has_permission` reloads the whole document when handed a name;
+        the row the query already selected carries every field it reads."""
+        with (
+            self.set_user(OWNER),
+            patch("suite.drive.api.files.user_has_permission", return_value=True) as has_permission,
+        ):
+            search(self.token)
+
+        self.assertTrue(has_permission.call_args_list)
+        for call in has_permission.call_args_list:
+            row = call.args[0]
+            self.assertNotIsInstance(row, str)
+            self.assertIn("owner", row)
+            self.assertIn("attached_to_doctype", row)
+
+    def test_blank_query_short_circuits(self):
+        with self.set_user(OWNER), patch("suite.drive.api.files.frappe.db.sql") as sql:
+            for query in ("", "   ", "\t\n"):
+                self.assertEqual(search(query), [])
+        sql.assert_not_called()
+
+    def test_trashed_rows_are_excluded(self):
+        self.files[0].db_set("status", STATUS_TRASHED)
+        frappe.db.commit()
+
+        with self.set_user(OWNER):
+            self.assertNotIn(self.files[0].name, self.search_names(self.token))

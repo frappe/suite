@@ -20,7 +20,7 @@ from suite.mail.utils.user import (
     has_user_settings,
     is_jmap_configured,
 )
-from suite.utils import convert_html_to_text, user_context
+from suite.utils import user_context
 from suite.utils.rate_limiter import dynamic_rate_limit
 from suite.utils.user import is_suite_admin, is_system_manager
 
@@ -666,5 +666,5 @@ def set_signature(identity: str, signature: str) -> None:
 
     doc = frappe.get_doc("Identity", identity)
     doc.html_signature = signature
-    doc.text_signature = convert_html_to_text(signature)
+    doc.set_text_signature()
     doc.db_update()

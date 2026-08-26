@@ -8,6 +8,7 @@ import type { ConsumerEntry, ConsumerManager } from "../media/ConsumerManager";
 import type { ParticipantManager } from "../media/ParticipantManager";
 import type { TransportManager } from "../media/TransportManager";
 import type { VideoElementManager } from "../media/VideoElementManager";
+import { publishInitialMediaWithRetry } from "./initialMediaPublication";
 
 interface MediaHandler {
 	localStream: MediaStream | null;
@@ -63,6 +64,8 @@ export interface PublishedMedia {
 	videoProducer?: Producer;
 	audioProducer?: Producer;
 	screenProducer?: Producer;
+	videoError?: unknown;
+	audioError?: unknown;
 }
 
 export interface ConsumerMetadata {
@@ -94,10 +97,16 @@ export class SFUMediaManager {
 
 	private eventHandlers: MediaEventHandlers = {};
 	private getCurrentUserId: () => string | null;
-	private resubscribeAttempts: Map<string, number> = new Map();
+	private selectedProducerIds = new Map<string, string>();
+	private attachmentTails = new Map<string, Promise<void>>();
+	private closedProducerIds = new Set<string>();
 	private pendingSubscriptions: Map<string, Promise<unknown | null>> = new Map();
-	private resubscribeTimers = new Set<ReturnType<typeof setTimeout>>();
+	private resubscribeTimers = new Map<
+		ReturnType<typeof setTimeout>,
+		() => void
+	>();
 	private subscriptionGeneration = 0;
+	private producerSubscriptionGenerations = new Map<string, number>();
 	private receiveSubscriptionsClosed = false;
 	private sendMediaMutationQueue: Promise<unknown> = Promise.resolve();
 	private sendMediaMutationGeneration = 0;
@@ -179,6 +188,45 @@ export class SFUMediaManager {
 		);
 	}
 
+	repairLocalPublication(
+		kind: "audio" | "video",
+		localStream: MediaStream,
+	): Promise<void> {
+		return this.serializeSendMediaMutation(async () => {
+			const producer =
+				kind === "audio"
+					? this.mediaHandler.audioProducer
+					: this.mediaHandler.videoProducer;
+			if (producer && !producer.closed) return;
+			this.mediaHandler.setProducers(
+				kind === "audio" ? { audioProducer: null } : { videoProducer: null },
+			);
+			await this.publishMediaNow(localStream, {
+				publishAudio: kind === "audio",
+				publishVideo: kind === "video",
+			});
+		});
+	}
+
+	async publishInitialMedia(
+		localStream: MediaStream,
+		options: { publishVideo: boolean; publishAudio: boolean },
+		signal?: AbortSignal,
+		finalize?: (publication: PublishedMedia) => void | Promise<void>,
+	): Promise<PublishedMedia> {
+		return this.serializeSendMediaMutation(async () => {
+			const publication = await publishInitialMediaWithRetry(
+				(stream, retryOptions) =>
+					this.publishMediaNow(stream, retryOptions),
+				localStream,
+				options,
+				signal,
+			);
+			await finalize?.(publication);
+			return publication;
+		});
+	}
+
 	private async publishMediaNow(
 		localStream: MediaStream,
 		options: { publishVideo?: boolean; publishAudio?: boolean } = {},
@@ -232,6 +280,7 @@ export class SFUMediaManager {
 						console.log("Video published successfully");
 					}
 				} catch (error: unknown) {
+					results.videoError = error;
 					console.warn(
 						"Failed to publish video, continuing without video:",
 						(error as Error).message,
@@ -258,6 +307,7 @@ export class SFUMediaManager {
 						console.log("Audio published successfully");
 					}
 				} catch (error: unknown) {
+					results.audioError = error;
 					console.warn(
 						"Failed to publish audio, continuing without audio:",
 						(error as Error).message,
@@ -386,14 +436,11 @@ export class SFUMediaManager {
 		if (pending) return pending;
 
 		let subscription: Promise<unknown | null>;
-		subscription = this.subscribeToProducer(producerId, participantId, {
-			isScreen: !!isScreen,
-		})
-			.then((result) => {
-				this.resubscribeAttempts.delete(key);
-				return result;
-			})
-			.finally(() => {
+		subscription = this.subscribeWithRetry(
+			{ producerId, participantId, isScreen },
+			this.subscriptionGeneration,
+			this.producerSubscriptionGenerations.get(key) ?? 0,
+		).finally(() => {
 				if (this.pendingSubscriptions.get(key) === subscription) {
 					this.pendingSubscriptions.delete(key);
 				}
@@ -421,36 +468,153 @@ export class SFUMediaManager {
 			return;
 		}
 
-		const key = this.resubscribeKey(info.participantId, info.producerId);
-		const attempts = this.resubscribeAttempts.get(key) ?? 0;
-		if (attempts >= SFUMediaManager.MAX_RESUBSCRIBE_ATTEMPTS) {
-			console.warn("Giving up on re-subscribing to lost consumer", {
-				participantId: info.participantId,
-				producerId: info.producerId,
-				kind: info.kind,
-				attempts,
-			});
-			this.resubscribeAttempts.delete(key);
-			this.eventHandlers.onRecoveryExhausted?.();
-			return;
-		}
-		this.resubscribeAttempts.set(key, attempts + 1);
-
-		const timer = setTimeout(() => {
-			this.resubscribeTimers.delete(timer);
-			void this.subscribeToRemoteProducer({
+		void this.startSubscription(
+			{
 				producerId: info.producerId,
 				participantId: info.participantId,
 				isScreen: info.isScreen,
-			}).catch((error: unknown) => {
+			},
+			true,
+		).catch((error: unknown) => {
 				console.warn("Failed to re-subscribe to lost consumer", {
 					participantId: info.participantId,
 					producerId: info.producerId,
 					error: (error as Error).message,
 				});
 			});
-		}, SFUMediaManager.RESUBSCRIBE_DELAY_MS);
-		this.resubscribeTimers.add(timer);
+	}
+
+	async recoverConsumer(entry: ConsumerEntry): Promise<void> {
+		this.consumerManager.removeConsumer(entry.id);
+		await this.handleConsumerLost({
+			consumerId: entry.id,
+			participantId: entry.participantId,
+			producerId: entry.producerId,
+			kind: entry.kind,
+			isScreen: entry.isScreen,
+		});
+	}
+
+	private startSubscription(
+		request: { producerId: string; participantId: string; isScreen: boolean },
+		delayFirstAttempt = false,
+	): Promise<unknown | null> {
+		const key = this.resubscribeKey(request.participantId, request.producerId);
+		const pending = this.pendingSubscriptions.get(key);
+		if (pending) return pending;
+
+		let subscription: Promise<unknown | null>;
+		subscription = this.subscribeWithRetry(
+			request,
+			this.subscriptionGeneration,
+			this.producerSubscriptionGenerations.get(key) ?? 0,
+			delayFirstAttempt,
+		).finally(() => {
+			if (this.pendingSubscriptions.get(key) === subscription) {
+				this.pendingSubscriptions.delete(key);
+			}
+		});
+		this.pendingSubscriptions.set(key, subscription);
+		return subscription;
+	}
+
+	private async subscribeWithRetry(
+		request: { producerId: string; participantId: string; isScreen: boolean },
+		generation: number,
+		producerGeneration: number,
+		delayFirstAttempt = false,
+	): Promise<unknown | null> {
+		const key = this.resubscribeKey(request.participantId, request.producerId);
+		let lastError: unknown;
+		for (
+			let attempt = 1;
+			attempt <= SFUMediaManager.MAX_RESUBSCRIBE_ATTEMPTS;
+			attempt++
+		) {
+			if (delayFirstAttempt || attempt > 1) {
+				await this.waitForResubscribeDelay(
+					generation,
+					key,
+					producerGeneration,
+				);
+			}
+			delayFirstAttempt = false;
+			if (
+				this.receiveSubscriptionsClosed ||
+				generation !== this.subscriptionGeneration ||
+				producerGeneration !==
+					(this.producerSubscriptionGenerations.get(key) ?? 0)
+			) {
+				throw new DOMException("Receive media lifecycle has ended", "AbortError");
+			}
+
+			try {
+				const consumer = await this.subscribeToProducer(
+					request.producerId,
+					request.participantId,
+					{ isScreen: request.isScreen },
+				);
+				if (
+					producerGeneration !==
+					(this.producerSubscriptionGenerations.get(key) ?? 0)
+				) {
+					if (consumer) this.consumerManager.removeConsumer(consumer.id);
+					throw new DOMException("Producer subscription was cancelled", "AbortError");
+				}
+				return consumer;
+			} catch (error) {
+				lastError = error;
+				if (
+					generation !== this.subscriptionGeneration ||
+					producerGeneration !==
+						(this.producerSubscriptionGenerations.get(key) ?? 0)
+				)
+					throw error;
+			}
+		}
+
+		console.warn("Giving up on remote consumer subscription", {
+			participantId: request.participantId,
+			producerId: request.producerId,
+			attempts: SFUMediaManager.MAX_RESUBSCRIBE_ATTEMPTS,
+		});
+		this.eventHandlers.onRecoveryExhausted?.();
+		throw lastError;
+	}
+
+	private waitForResubscribeDelay(
+		generation: number,
+		key: string,
+		producerGeneration: number,
+	): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const finish = () => {
+				this.resubscribeTimers.delete(timer);
+				if (
+					this.receiveSubscriptionsClosed ||
+					generation !== this.subscriptionGeneration ||
+					producerGeneration !==
+						(this.producerSubscriptionGenerations.get(key) ?? 0)
+				) {
+					reject(
+						new DOMException("Receive media lifecycle has ended", "AbortError"),
+					);
+					return;
+				}
+				resolve();
+			};
+			const timer = setTimeout(finish, SFUMediaManager.RESUBSCRIBE_DELAY_MS);
+			this.resubscribeTimers.set(timer, finish);
+		});
+	}
+
+	cancelProducerSubscription(participantId: string, producerId: string): void {
+		const key = this.resubscribeKey(participantId, producerId);
+		this.producerSubscriptionGenerations.set(
+			key,
+			(this.producerSubscriptionGenerations.get(key) ?? 0) + 1,
+		);
+		this.pendingSubscriptions.delete(key);
 	}
 
 	private resubscribeKey(participantId: string, producerId: string): string {
@@ -459,9 +623,12 @@ export class SFUMediaManager {
 
 	cancelPendingSubscriptions(): Promise<void> {
 		this.subscriptionGeneration++;
-		for (const timer of this.resubscribeTimers) clearTimeout(timer);
+		for (const [timer, finish] of this.resubscribeTimers) {
+			clearTimeout(timer);
+			finish();
+		}
 		this.resubscribeTimers.clear();
-		this.resubscribeAttempts.clear();
+		this.producerSubscriptionGenerations.clear();
 		const pending = Array.from(this.pendingSubscriptions.values());
 		this.pendingSubscriptions.clear();
 		void Promise.allSettled(pending);
@@ -509,42 +676,132 @@ export class SFUMediaManager {
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
-		try {
+		const key = `video:${participantId}`;
+		const previousProducerId = this.selectedProducerIds.get(key);
+		this.selectedProducerIds.set(key, consumer.producerId);
+		return this.serializeAttachment(key, async () => {
+			if (this.selectedProducerIds.get(key) !== consumer.producerId) return;
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
-			await this.videoManager.attachStream(participantId, stream, false);
+			try {
+				await this.videoManager.attachStream(participantId, stream, false);
 
-			const participant = this.participantManager.getParticipant(participantId);
-			if (participant && !participant.video_enabled) {
-				this.participantManager.updateParticipant(participantId, {
-					video_enabled: true,
-				});
+				const participant = this.participantManager.getParticipant(participantId);
+				if (participant && !participant.video_enabled) {
+					this.participantManager.updateParticipant(participantId, {
+						video_enabled: true,
+					});
+				}
+			} catch (error) {
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
+				console.error(
+					`Failed to attach video consumer for ${participantId}:`,
+					error,
+				);
+				throw error;
 			}
-		} catch (error) {
-			console.error(
-				`Failed to attach video consumer for ${participantId}:`,
-				error,
-			);
-			throw error;
-		}
+		});
 	}
 
 	async attachAudioConsumer(
 		participantId: string,
 		consumer: ConsumerEntry,
 	): Promise<void> {
-		try {
+		const key = `audio:${participantId}`;
+		const previousProducerId = this.selectedProducerIds.get(key);
+		this.selectedProducerIds.set(key, consumer.producerId);
+		return this.serializeAttachment(key, async () => {
+			if (this.selectedProducerIds.get(key) !== consumer.producerId) return;
 			const track = consumer.track as MediaStreamTrack;
 			const stream = new MediaStream([track]);
 
-			await this.videoManager.attachStream(participantId, stream, false);
-		} catch (error) {
-			console.error(
-				`Failed to attach audio consumer for ${participantId}:`,
-				error,
+			try {
+				await this.videoManager.attachStream(participantId, stream, false);
+			} catch (error) {
+				this.restoreSelectionAfterAttachmentFailure(
+					key,
+					participantId,
+					consumer.producerId,
+					previousProducerId,
+				);
+				console.error(
+					`Failed to attach audio consumer for ${participantId}:`,
+					error,
+				);
+				throw error;
+			}
+		});
+	}
+
+	private serializeAttachment(
+		key: string,
+		operation: () => Promise<void>,
+	): Promise<void> {
+		const attachment = (this.attachmentTails.get(key) ?? Promise.resolve())
+			.catch(() => undefined)
+			.then(operation)
+			.finally(() => {
+				if (this.attachmentTails.get(key) === attachment) {
+					this.attachmentTails.delete(key);
+				}
+			});
+		this.attachmentTails.set(key, attachment);
+		return attachment;
+	}
+
+	private restoreSelectionAfterAttachmentFailure(
+		key: string,
+		participantId: string,
+		failedProducerId: string,
+		previousProducerId: string | undefined,
+	): void {
+		if (this.selectedProducerIds.get(key) !== failedProducerId) return;
+		if (previousProducerId && !this.closedProducerIds.has(previousProducerId)) {
+			this.selectedProducerIds.set(key, previousProducerId);
+			return;
+		}
+		this.selectedProducerIds.delete(key);
+		if (!previousProducerId) return;
+		this.selectedProducerIds.set(key, previousProducerId);
+		queueMicrotask(() => {
+			void this.reattachAfterProducerClosed(participantId, previousProducerId).catch(
+				(error) =>
+					console.warn("Failed to recover endpoint media after attachment error:", error),
 			);
-			throw error;
+		});
+	}
+
+	async reattachAfterProducerClosed(
+		participantId: string,
+		producerId: string,
+	): Promise<void> {
+		this.closedProducerIds.add(producerId);
+		const consumers = this.consumerManager.getConsumersByParticipant(participantId);
+		for (const kind of ["audio", "video"] as const) {
+			const key = `${kind}:${participantId}`;
+			if (this.selectedProducerIds.get(key) !== producerId) continue;
+			const replacement = consumers.find(
+				(consumer) =>
+					consumer.producerId !== producerId &&
+					consumer.kind === kind &&
+					!consumer.isScreen &&
+					!consumer.consumer.closed,
+			);
+			if (!replacement) {
+				this.selectedProducerIds.delete(key);
+				continue;
+			}
+			if (kind === "video") {
+				await this.attachVideoConsumer(participantId, replacement);
+			} else {
+				await this.attachAudioConsumer(participantId, replacement);
+			}
 		}
 	}
 
@@ -601,6 +858,9 @@ export class SFUMediaManager {
 		const terminalCleanup = this.sendMediaMutationQueue.then(() => {
 			this.mediaHandler.cleanup();
 			this.processedConsumers.clear();
+			this.selectedProducerIds.clear();
+			this.attachmentTails.clear();
+			this.closedProducerIds.clear();
 			this.isScreenShareActive = false;
 		});
 		this.cleanupPromise = terminalCleanup;

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { extractInboundBytesReceived, StallDetector } from "../stallDetector";
+import {
+	DecodeStallDetector,
+	extractInboundBytesReceived,
+	extractInboundRtpCounters,
+	StallDetector,
+} from "../stallDetector";
 
 interface MutableSample {
 	id: string;
@@ -7,6 +12,15 @@ interface MutableSample {
 	muted: boolean;
 	bytes: number | null;
 	createdAt: number;
+}
+
+interface TestRtpStat {
+	type: string;
+	kind?: string;
+	codecId?: string;
+	mimeType?: string;
+	bytesReceived?: number;
+	framesDecoded?: number;
 }
 
 function makeSample(overrides: Partial<MutableSample> = {}): MutableSample {
@@ -179,11 +193,37 @@ describe("StallDetector", () => {
 		expect(det.check([toSample(sample)])).toEqual([]);
 	});
 
+	it("gives a resumed consumer a fresh first-media deadline", () => {
+		const det = detector();
+		const sample = makeSample({ createdAt: now, paused: true, bytes: 0 });
+		det.check([toSample(sample)]);
+
+		now += 30_000;
+		sample.paused = false;
+		expect(det.check([toSample(sample)])).toEqual([]);
+
+		now += 14_000;
+		expect(det.check([toSample(sample)])).toEqual([]);
+		now += 1_000;
+		expect(det.check([toSample(sample)])).toEqual(["c1"]);
+	});
+
 	it("ignores consumers with no bytesReceived (stats unavailable)", () => {
 		const det = detector();
 		const sample = makeSample({ createdAt: now - 10_000, bytes: null });
 		now += 10_000;
 		expect(det.check([toSample(sample)])).toEqual([]);
+	});
+
+	it("reports an expected consumer that receives no RTP before its deadline", () => {
+		const det = detector();
+		const sample = makeSample({ createdAt: now, bytes: 0 });
+
+		now += 14_000;
+		expect(det.check([toSample(sample)])).toEqual([]);
+
+		now += 1_000;
+		expect(det.check([toSample(sample)])).toEqual(["c1"]);
 	});
 
 	it("disposes state for a removed consumer", () => {
@@ -211,7 +251,7 @@ describe("StallDetector", () => {
 			expect(det.check([audioSample])).toEqual(["c1"]);
 		});
 
-		it("uses the longer startup window for audio before RTP arrives", () => {
+		it("uses the longer startup window for audio before reporting no RTP", () => {
 			const det = detector();
 			const sample = makeSample({ createdAt: now - 10_000, bytes: 0 });
 			const audioSample = { ...toSample(sample), kind: "audio" };
@@ -227,10 +267,10 @@ describe("StallDetector", () => {
 
 			now += 5_000;
 			sample.bytes = 0;
-			expect(det.check([audioSample])).toEqual([]);
+			expect(det.check([audioSample])).toEqual(["c1"]);
 		});
 
-		it("does not report a startup video stall before RTP arrives", () => {
+		it("reports startup video that misses the first RTP deadline", () => {
 			const det = detector();
 			const sample = makeSample({ createdAt: now - 10_000, bytes: 0 });
 			const videoSample = { ...toSample(sample), kind: "video" };
@@ -242,7 +282,7 @@ describe("StallDetector", () => {
 
 			now += 6_000;
 			sample.bytes = 0;
-			expect(det.check([videoSample])).toEqual([]);
+			expect(det.check([videoSample])).toEqual(["c1"]);
 		});
 
 		it("uses the longer default window for video", () => {
@@ -291,5 +331,123 @@ describe("extractInboundBytesReceived", () => {
 			["a", { type: "outbound-rtp", bytesReceived: 999 }],
 		]);
 		expect(extractInboundBytesReceived(stats)).toBeNull();
+	});
+});
+
+describe("DecodeStallDetector", () => {
+	it("requests a keyframe before recreating video with RTP but no decode progress", () => {
+		let now = 100_000;
+		const detector = new DecodeStallDetector({ now: () => now });
+		let bytes = 1000;
+		const sample = () => ({
+			id: "video-1",
+			isPaused: () => false,
+			bytesReceived: bytes,
+			framesDecoded: 10,
+		});
+
+		expect(detector.check([sample()])).toEqual([]);
+		for (let i = 0; i < 5; i++) {
+			now += 3000;
+			bytes += 1000;
+		}
+		expect(detector.check([sample()])).toEqual([
+			{ consumerId: "video-1", action: "request-keyframe" },
+		]);
+
+		for (let i = 0; i < 5; i++) {
+			now += 3000;
+			bytes += 1000;
+		}
+		expect(detector.check([sample()])).toEqual([
+			{ consumerId: "video-1", action: "recreate" },
+		]);
+	});
+
+	it("clears decode recovery when frames progress or video is paused", () => {
+		let now = 100_000;
+		const detector = new DecodeStallDetector({ now: () => now });
+		let bytes = 1000;
+		let framesDecoded = 10;
+		let paused = false;
+		const sample = () => ({
+			id: "video-1",
+			isPaused: () => paused,
+			bytesReceived: bytes,
+			framesDecoded,
+		});
+
+		detector.check([sample()]);
+		now += 15_000;
+		bytes += 1000;
+		expect(detector.check([sample()])).toHaveLength(1);
+		framesDecoded += 1;
+		bytes += 1000;
+		expect(detector.check([sample()])).toEqual([]);
+
+		paused = true;
+		now += 30_000;
+		bytes += 1000;
+		expect(detector.check([sample()])).toEqual([]);
+	});
+});
+
+describe("extractInboundRtpCounters", () => {
+	it("extracts primary inbound video counters and ignores RTX", () => {
+		const stats = new Map<string, TestRtpStat>([
+			["rtx-codec", { type: "codec", mimeType: "video/rtx" }],
+			[
+				"rtx",
+				{
+					type: "inbound-rtp",
+					kind: "video",
+					codecId: "rtx-codec",
+					bytesReceived: 999,
+					framesDecoded: 0,
+				},
+			],
+			[
+				"primary",
+				{
+					type: "inbound-rtp",
+					kind: "video",
+					bytesReceived: 12_000,
+					framesDecoded: 42,
+				},
+			],
+		]);
+
+		expect(extractInboundRtpCounters(stats, "video")).toEqual({
+			bytesReceived: 12_000,
+			framesDecoded: 42,
+		});
+	});
+
+	it("aggregates multiple primary inbound video reports", () => {
+		const stats = new Map<string, TestRtpStat>([
+			[
+				"first",
+				{
+					type: "inbound-rtp",
+					kind: "video",
+					bytesReceived: 4000,
+					framesDecoded: 20,
+				},
+			],
+			[
+				"second",
+				{
+					type: "inbound-rtp",
+					kind: "video",
+					bytesReceived: 6000,
+					framesDecoded: 30,
+				},
+			],
+		]);
+
+		expect(extractInboundRtpCounters(stats, "video")).toEqual({
+			bytesReceived: 10_000,
+			framesDecoded: 50,
+		});
 	});
 });

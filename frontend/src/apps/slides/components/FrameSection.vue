@@ -22,7 +22,7 @@
 				:min="1"
 				:max-digits="4"
 				:step="1"
-				:disabled="field.property == 'height' && !canEditHeight"
+				:disabled="isElbow || (field.property == 'height' && !canEditHeight)"
 				:derived="field.property == 'width' && widthMode == 'auto'"
 				@update:modelValue="(value) => sizeScrub.preview(field.property, value)"
 				@change-start="sizeScrub.begin"
@@ -43,6 +43,7 @@
 			suffix="°"
 			:max-digits="3"
 			:step="1"
+			:disabled="isElbow"
 			@update:modelValue="previewRotate"
 			@change-start="beginRotateChange"
 			@change-end="commitRotateChange"
@@ -78,6 +79,9 @@ const positionScrub = useInteractionScrub(['left', 'top'])
 
 const previewPosition = (axis, value) =>
 	positionScrub.preview(axis == 'X' ? 'left' : 'top', value)
+
+// an elbow's box and angle come from its route
+const isElbow = computed(() => !!activeElement.value?.points)
 
 const canEditHeight = computed(() => {
 	if (isMultiSelect.value) return false

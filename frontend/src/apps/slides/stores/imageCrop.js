@@ -105,8 +105,9 @@ const resetImageCrop = async (element) => {
 	const naturalAspect = await probeNaturalAspect(element)
 	if (naturalAspect == null) return
 
-	// the load may outlive a slide switch or the element itself
-	const slide = slides.value.find((s) => s.elements.some((el) => el.id == element.id))
+	// the load may outlive a slide switch or the element itself, and older
+	// presentations repeat one layout's element ids across slides
+	const slide = slides.value.find((s) => s.elements.includes(element))
 	if (!slide) return
 
 	const inset = getBorderInset(element)

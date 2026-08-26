@@ -10,6 +10,10 @@ from suite.mail.jmap.services.mail.mailbox import MailboxService
 from suite.mail.jmap.services.mail.submission.email_submission import EmailSubmissionService
 from suite.mail.utils.dt import to_utc_z
 
+# RFC 3676. MailQueue guarantees the text body is encoded this way, generated or supplied.
+# delsp=no keeps the space at a soft break, which is the word separator the reader rejoins on.
+TEXT_PLAIN_FLOWED = "text/plain; format=flowed; delsp=no"
+
 
 class EmailService(MailService):
     """Service for handling email-related functionality based on the JMAP server capabilities."""
@@ -486,7 +490,12 @@ class EmailService(MailService):
         text_part = html_part = None
 
         if email.text_body:
-            text_part = {"partId": "text", "type": "text/plain"}
+            # The parameters ride in `type` because that string is written to the header
+            # verbatim. They are only legal inside `bodyStructure`: reached through the
+            # `textBody` convenience property the server demands `type` be exactly
+            # "text/plain", and setting `header:Content-Type` on a part gets it a second
+            # Content-Type rather than replacing the one the server builds.
+            text_part = {"partId": "text", "type": TEXT_PLAIN_FLOWED}
             draft["bodyValues"]["text"] = {
                 "value": email.text_body,
                 "charset": "utf-8",
@@ -507,44 +516,37 @@ class EmailService(MailService):
         regular_attachments = [a for a in attachments if a.disposition != "inline"]
         body_parts = [p for p in (text_part, html_part) if p]
 
-        if inline_attachments and body_parts:
-            # Inline images are referenced from the HTML body via `cid:` URLs. Build an
-            # explicit MIME structure that nests them inside a `multipart/related` container
-            # (next to the body) instead of letting them become plain siblings of the body in
-            # `multipart/mixed`. Some providers (e.g. AWS) treat every `multipart/mixed` part
-            # as a regular attachment and reject inline images by extension, whereas clients
-            # like Gmail wrap them in `multipart/related` so they are recognized as inline.
-            body_root = (
-                {"type": "multipart/alternative", "subParts": body_parts}
-                if len(body_parts) > 1
-                else body_parts[0]
-            )
+        if not body_parts:
+            if attachments:
+                draft["attachments"] = [EmailService._get_body_part(a) for a in attachments]
+            return draft
 
-            body_structure = {
+        # The structure is always spelled out rather than left to the convenience properties,
+        # because the text part's Content-Type parameters only survive this way.
+        body_root = (
+            {"type": "multipart/alternative", "subParts": body_parts}
+            if len(body_parts) > 1
+            else body_parts[0]
+        )
+
+        if inline_attachments:
+            # Inline images are referenced from the HTML body via `cid:` URLs. Nesting them in
+            # a `multipart/related` container beside the body, rather than leaving them as
+            # siblings in `multipart/mixed`, is what marks them inline: some providers (e.g.
+            # AWS) treat every `multipart/mixed` part as a regular attachment and reject
+            # inline images by extension.
+            body_root = {
                 "type": "multipart/related",
                 "subParts": [body_root, *(EmailService._get_body_part(a) for a in inline_attachments)],
             }
 
-            if regular_attachments:
-                body_structure = {
-                    "type": "multipart/mixed",
-                    "subParts": [
-                        body_structure,
-                        *(EmailService._get_body_part(a) for a in regular_attachments),
-                    ],
-                }
+        if regular_attachments:
+            body_root = {
+                "type": "multipart/mixed",
+                "subParts": [body_root, *(EmailService._get_body_part(a) for a in regular_attachments)],
+            }
 
-            draft["bodyStructure"] = body_structure
-        else:
-            # No inline images: let the server assemble the structure from the convenience
-            # properties (`multipart/alternative` for the body, `multipart/mixed` for attachments).
-            if text_part:
-                draft["textBody"] = [text_part]
-            if html_part:
-                draft["htmlBody"] = [html_part]
-            if attachments:
-                draft["attachments"] = [EmailService._get_body_part(a) for a in attachments]
-
+        draft["bodyStructure"] = body_root
         return draft
 
     @staticmethod

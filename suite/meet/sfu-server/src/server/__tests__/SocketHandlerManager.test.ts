@@ -25,6 +25,8 @@ function emitJoin(
 		audioEnabled?: boolean;
 		videoEnabled?: boolean;
 		e2ee?: { enabled?: boolean; capability?: { supported?: boolean } };
+		connectionId?: string;
+		conflictId?: string;
 	} = {},
 	callback: (result: unknown) => void = () => {},
 ): void {
@@ -32,6 +34,8 @@ function emitJoin(
 		'join_room',
 		{
 			roomId: opts.roomId ?? 'room-1',
+			connectionId: opts.connectionId,
+			conflictId: opts.conflictId,
 			userData: {
 				name: opts.name ?? 'Alice',
 				userId: opts.userId ?? 'user-1',
@@ -453,7 +457,7 @@ describe('SocketHandlerManager characterization', () => {
 		);
 		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-A',
 			expect.objectContaining({
 				userId: 'user-1',
 				name: 'Alice',
@@ -482,6 +486,39 @@ describe('SocketHandlerManager characterization', () => {
 		);
 	});
 
+	it('returns a structured conflict without disrupting the incumbent connection', async () => {
+		const harness = createManager();
+		const incumbent = connectFullSocket(harness, {
+			id: 'incumbent-socket',
+			userId: 'user-1',
+		});
+		emitJoin(incumbent, { connectionId: 'device-1' });
+		await new Promise((resolve) => setImmediate(resolve));
+		incumbent.emitCalls.length = 0;
+		const disconnect = vi.spyOn(incumbent, 'disconnect');
+
+		const challenger = connectFullSocket(harness, {
+			id: 'challenger-socket',
+			userId: 'user-1',
+		});
+		const callback = vi.fn();
+		emitJoin(challenger, { connectionId: 'device-2' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Another device is already connected',
+			code: 'PARTICIPANT_CONNECTION_CONFLICT',
+			details: { conflictId: expect.any(String) },
+		});
+		expect(disconnect).not.toHaveBeenCalled();
+		expect(incumbent.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'participant_connection_replaced' }),
+		);
+		expect(harness.mediasoup.addPeer).toHaveBeenCalledTimes(1);
+		expect(challenger.roomId).toBeUndefined();
+	});
+
 	it('join_room with scope:presence-preview tracks the socket in previewSockets, skips mediasoup.addPeer, and still emits existing_raised_hands', async () => {
 		const harness = createManager();
 		const socket = createMockSocket({
@@ -505,6 +542,36 @@ describe('SocketHandlerManager characterization', () => {
 		).toBe(true);
 		expect(socket.emitCalls.some((c) => c.event === 'participant_joined')).toBe(
 			false,
+		);
+	});
+
+	it('tells a preview socket when its user already has a participant connection', async () => {
+		const harness = createManager();
+		harness.mediasoup.getRoomParticipants = vi.fn(() => []);
+		const participant = connectFullSocket(harness, {
+			id: 'participant-socket',
+			userId: 'user-1',
+		});
+		emitJoin(participant, { connectionId: 'device-1' });
+		await new Promise((r) => setImmediate(r));
+
+		const preview = connectFullSocket(harness, {
+			id: 'preview-socket',
+			scope: 'presence-preview',
+			userId: 'user-1',
+		});
+		emitJoin(preview, { userId: 'preview-1' });
+		await new Promise((r) => setImmediate(r));
+
+		const callback = vi.fn();
+		preview.fire('get_room_participants', {}, callback);
+		await new Promise((r) => setImmediate(r));
+
+		expect(callback).toHaveBeenCalledWith(
+			expect.objectContaining({
+				success: true,
+				isCurrentUserPresent: true,
+			}),
 		);
 	});
 
@@ -804,7 +871,7 @@ describe('SocketHandlerManager characterization', () => {
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-X',
 		);
 		expect(stay.emitCalls.some((c) => c.event === 'participant_left')).toBe(
 			true,
@@ -816,7 +883,7 @@ describe('SocketHandlerManager characterization', () => {
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'stay-1',
+			'sock-stay',
 		);
 		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(1);
@@ -825,64 +892,96 @@ describe('SocketHandlerManager characterization', () => {
 		vi.useRealTimers();
 	});
 
-	it('disconnect of an older duplicate full-access socket does not remove the current peer', async () => {
+	it('confirmed takeover replaces the incumbent without participant churn and ignores its stale disconnect', async () => {
 		const harness = createManager();
 
-		const older = connectFullSocket(harness, {
+		const incumbent = connectFullSocket(harness, {
 			id: 'sock-old',
 			userId: 'user-1',
 		});
-		emitJoin(older);
+		emitJoin(incumbent, { connectionId: 'device-old' });
 		await new Promise((r) => setImmediate(r));
+		incumbent.emitCalls.length = 0;
+		const disconnect = vi.spyOn(incumbent, 'disconnect');
 
-		const current = connectFullSocket(harness, {
+		const challenger = connectFullSocket(harness, {
 			id: 'sock-current',
 			userId: 'user-1',
 		});
-		emitJoin(current);
+		const conflictCallback = vi.fn();
+		emitJoin(challenger, { connectionId: 'device-new' }, conflictCallback);
+		await new Promise((r) => setImmediate(r));
+		const conflictId = conflictCallback.mock.calls[0]?.[0].details
+			.conflictId as string;
+		const takeoverCallback = vi.fn();
+		emitJoin(
+			challenger,
+			{ connectionId: 'device-new', conflictId },
+			takeoverCallback,
+		);
 		await new Promise((r) => setImmediate(r));
 
-		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
-		older.fire('disconnect');
-		await new Promise((r) => setImmediate(r));
+		expect(takeoverCallback).toHaveBeenCalledWith({
+			success: true,
+			senderId: challenger.senderId,
+		});
+		expect(incumbent.emitCalls).toContainEqual({
+			event: 'participant_connection_replaced',
+			data: { reason: 'takeover' },
+		});
+		expect(disconnect).toHaveBeenCalledWith(true);
+		expect(
+			challenger.emitCalls.some((call) => call.event === 'participant_joined'),
+		).toBe(false);
 
-		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
-
-		current.fire('disconnect');
+		challenger.emitCalls.length = 0;
+		incumbent.fire('disconnect', 'server namespace disconnect');
 		await new Promise((r) => setImmediate(r));
 
 		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
 			'room-1',
-			'user-1',
+			'sock-old',
 		);
+		expect(
+			challenger.emitCalls.some((call) => call.event === 'participant_left'),
+		).toBe(false);
+		expect(challenger.roomId).toBe('room-1');
 	});
 
-	it('leave_room from one duplicate socket retains the room while another connection remains', async () => {
+	it('same-connection signaling reconnect replaces the stale socket automatically', async () => {
 		const harness = createManager();
-
-		const older = connectFullSocket(harness, {
+		const stale = connectFullSocket(harness, {
 			id: 'sock-old',
 			userId: 'user-1',
 		});
-		emitJoin(older);
+		emitJoin(stale, { connectionId: 'stable-device' });
 		await new Promise((r) => setImmediate(r));
+		stale.emitCalls.length = 0;
+		const disconnect = vi.spyOn(stale, 'disconnect');
 
-		const current = connectFullSocket(harness, {
+		const reconnected = connectFullSocket(harness, {
 			id: 'sock-current',
 			userId: 'user-1',
 		});
-		emitJoin(current);
+		const callback = vi.fn();
+		emitJoin(reconnected, { connectionId: 'stable-device' }, callback);
 		await new Promise((r) => setImmediate(r));
 
-		current.leave('room-1:full');
-		(harness.mediasoup.removePeer as ReturnType<typeof vi.fn>).mockClear();
-		(harness.mediasoup.closeRoom as ReturnType<typeof vi.fn>).mockClear();
-
-		older.fire('leave_room');
-		await new Promise((r) => setImmediate(r));
-
-		expect(harness.mediasoup.removePeer).not.toHaveBeenCalled();
-		expect(harness.mediasoup.closeRoom).not.toHaveBeenCalled();
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			senderId: reconnected.senderId,
+		});
+		expect(stale.emitCalls).toContainEqual({
+			event: 'participant_connection_replaced',
+			data: { reason: 'reconnect' },
+		});
+		expect(disconnect).toHaveBeenCalledWith(true);
+		expect(reconnected.participantOwnershipId).not.toBe(
+			stale.participantOwnershipId,
+		);
+		expect(
+			reconnected.emitCalls.some((call) => call.event === 'participant_joined'),
+		).toBe(false);
 	});
 
 	it('keeps previews connected while grace cleanup evicts recorders and closes media', async () => {
@@ -962,6 +1061,10 @@ describe('SocketHandlerManager characterization', () => {
 			action: 'mute_participant',
 			targetParticipantId: 'target-1',
 		});
+		expect(harness.mediasoup.participantExistsInRoom).toHaveBeenCalledWith(
+			'room-1',
+			'target-1',
+		);
 
 		const targetUpdate = target.emitCalls.find(
 			(c) => c.event === 'host_control_update',
@@ -1059,6 +1162,209 @@ describe('SocketHandlerManager characterization', () => {
 				kind: 'video',
 				isScreen: true,
 			}),
+		});
+	});
+
+	it('reports a producer creation fault without broadcasting and allows retry', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		viewer.emitCalls.length = 0;
+		vi.mocked(harness.mediasoup.createProducer).mockRejectedValueOnce(
+			new Error('injected producer fault'),
+		);
+		const data = {
+			transportId: 'send-1',
+			rtpParameters: {},
+			kind: 'video',
+			appData: { type: 'camera' },
+		};
+		const failed = vi.fn();
+
+		publisher.fire('create_producer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected producer fault',
+		});
+		expect(viewer.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'producer_created' }),
+		);
+
+		const recovered = vi.fn();
+		publisher.fire('create_producer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'producer-1' }),
+		);
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_created',
+			data: expect.objectContaining({ producerId: 'producer-1' }),
+		});
+	});
+
+	it('reports a consumer creation fault and allows the same request to retry', async () => {
+		const harness = createManager();
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.mocked(harness.mediasoup.createConsumer).mockRejectedValueOnce(
+			new Error('injected consumer fault'),
+		);
+		const data = {
+			transportId: 'recv-1',
+			producerId: 'producer-1',
+			rtpCapabilities: {},
+		};
+		const failed = vi.fn();
+
+		viewer.fire('create_consumer', data, failed);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(failed).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected consumer fault',
+		});
+
+		const recovered = vi.fn();
+		viewer.fire('create_consumer', data, recovered);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(recovered).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true, id: 'consumer-1' }),
+		);
+		expect(harness.mediasoup.createConsumer).toHaveBeenCalledTimes(2);
+	});
+
+	it('propagates producer lifecycle closure and targets dependent consumers', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'publisher-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'viewer-peer',
+			userId: 'viewer-1',
+		});
+		emitJoin(publisher, { userId: 'publisher-1', name: 'Publisher' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		publisher.emitCalls.length = 0;
+		viewer.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'viewer-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'producer_closed',
+			data: expect.objectContaining({
+				participantId: 'publisher-1',
+				producerId: 'producer-1',
+			}),
+		});
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1' },
+		});
+		expect(
+			publisher.emitCalls.some((call) => call.event === 'consumer_closed'),
+		).toBe(false);
+	});
+
+	it('broadcasts consumer closure when its owning peer socket is absent', async () => {
+		const harness = createManager();
+		const participant = connectFullSocket(harness, {
+			id: 'connected-peer',
+			userId: 'user-1',
+		});
+		emitJoin(participant);
+		await new Promise((resolve) => setImmediate(resolve));
+		participant.emitCalls.length = 0;
+		const onProducerClosed = vi.mocked(harness.mediasoup.onProducerClosed).mock
+			.calls[0][0];
+
+		onProducerClosed({
+			roomId: 'room-1',
+			peerId: 'publisher-peer',
+			participantId: 'publisher-1',
+			producerId: 'producer-1',
+			kind: 'video',
+			isScreen: false,
+			removedConsumers: [
+				{
+					consumerId: 'consumer-1',
+					peerId: 'missing-peer',
+					roomId: 'room-1',
+				},
+			],
+		});
+
+		expect(participant.emitCalls).toContainEqual({
+			event: 'consumer_closed',
+			data: { consumerId: 'consumer-1', peerId: 'missing-peer' },
+		});
+	});
+
+	it('passes explicit producer close metadata through the lifecycle finalizer', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'publisher-peer',
+			userId: 'user-1',
+		});
+		emitJoin(socket);
+		await new Promise((resolve) => setImmediate(resolve));
+		const callback = vi.fn();
+
+		socket.fire(
+			'close_producer',
+			{
+				producerId: 'producer-1',
+				reason: 'track-ended',
+				source: 'screen-share',
+				details: { message: 'display ended' },
+			},
+			callback,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.closeProducer).toHaveBeenCalledWith('producer-1', {
+			reason: 'track-ended',
+			source: 'screen-share',
+			details: { message: 'display ended' },
+		});
+		expect(callback).toHaveBeenCalledWith({
+			success: true,
+			isScreen: false,
+			removedConsumers: [],
 		});
 	});
 

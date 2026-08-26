@@ -7,8 +7,8 @@ import {
 } from '@/apps/slides/stores/presentation'
 import { slides } from '@/apps/slides/stores/slide'
 import { cloneObj } from '@/apps/slides/utils/helpers'
+import { DRAFTS_DB_NAME } from '@/apps/slides/utils/slidesCaches'
 
-const DB_NAME = 'slides-db'
 const DB_VERSION = 1
 const STORE = 'presentations'
 
@@ -20,7 +20,7 @@ const openDB = () => {
 	}
 
 	return new Promise((resolve, reject) => {
-		const req = indexedDB.open(DB_NAME, DB_VERSION)
+		const req = indexedDB.open(DRAFTS_DB_NAME, DB_VERSION)
 
 		req.onupgradeneeded = () => {
 			const db = req.result
@@ -32,6 +32,11 @@ const openDB = () => {
 
 		req.onsuccess = () => {
 			db = req.result
+			// another user taking over deletes the database, which waits on this connection
+			db.onversionchange = () => {
+				db.close()
+				db = null
+			}
 			resolve(db)
 		}
 

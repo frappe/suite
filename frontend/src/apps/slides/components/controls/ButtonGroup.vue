@@ -2,28 +2,29 @@
 	<div :class="rowClasses">
 		<span v-if="label" :class="labelClasses">{{ label }}</span>
 		<div class="flex items-center gap-1">
-			<button
-				v-for="option in options"
-				:key="option.value"
-				type="button"
-				:title="option.label"
-				:class="getButtonClasses(option)"
-				:disabled="option.disabled"
-				@click="emit('select', option.value)"
-				@mouseenter="emit('hover', option.value)"
-				@mouseleave="emit('hover', null)"
-			>
-				<component
-					:is="option.icon"
-					class="size-4"
-					:class="{ 'text-ink-gray-4': option.disabled }"
-				/>
-			</button>
+			<Tooltip v-for="option in options" :key="option.value" :text="option.label" :hover-delay="0">
+				<button
+					type="button"
+					:class="getButtonClasses(option)"
+					:disabled="option.disabled"
+					@click="emit('select', option.value)"
+					@mouseenter="emit('hover', option.value)"
+					@mouseleave="emit('hover', null)"
+				>
+					<component
+						:is="option.icon"
+						class="size-4"
+						:class="{ 'text-ink-gray-4': option.disabled }"
+					/>
+				</button>
+			</Tooltip>
 		</div>
 	</div>
 </template>
 
 <script setup>
+import { Tooltip } from 'frappe-ui'
+
 import { labelClasses } from '@/apps/slides/utils/constants'
 
 const props = defineProps({

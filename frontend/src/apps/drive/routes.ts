@@ -154,7 +154,8 @@ export const routes: RouteRecordRaw[] = [
           return {
             name: 'drive-Folder',
             params: {
-              entityName: translate.data,
+              // Untranslatable ids fall through so the page shows its error state
+              entityName: translate.data || to.params.entityName,
             },
           }
         },
@@ -168,7 +169,7 @@ export const routes: RouteRecordRaw[] = [
           return {
             name: 'drive-Document',
             params: {
-              entityName: translate.data,
+              entityName: translate.data || to.params.entityName,
             },
           }
         },
@@ -182,7 +183,7 @@ export const routes: RouteRecordRaw[] = [
           return {
             name: 'drive-File',
             params: {
-              entityName: translate.data,
+              entityName: translate.data || to.params.entityName,
             },
           }
         },

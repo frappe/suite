@@ -10,8 +10,9 @@
     "dev": "node scripts/copy-noise-suppression-assets.mjs && node scripts/unlink-frappe-ui.mjs && vite --host",
     "dev:frappe-ui": "node scripts/copy-noise-suppression-assets.mjs && node scripts/link-frappe-ui.mjs && vite --host",
     "prebuild": "node scripts/copy-noise-suppression-assets.mjs",
-    "build": "vite build",
+    "build": "vite build && vite build --config vite.sw.config.ts",
     "build:recorder": "vite build --config vite.recorder.config.ts",
+    "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
     "test": "vitest run",
@@ -83,6 +84,7 @@
     "lodash": "^4.17.21",
     "lowlight": "^3.3.0",
     "lucide-vue-next": "^1.0.0",
+    "mammoth": "^1.12.0",
     "mediasoup-client": "^3.18.8",
     "mitt": "^3.0.1",
     "modern-screenshot": "^4.7.0",
@@ -120,6 +122,7 @@
     "tailwindcss": "^3.4.19",
     "vite": "^8.0.16",
     "vite-plugin-pwa": "^1.0.1",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "workbox-range-requests": "7.4.1"
   }
 }

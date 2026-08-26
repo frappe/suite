@@ -16,7 +16,7 @@ from suite.mail.doctype.sieve_script.sieve_script import (
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_vacation_response_service
 from suite.mail.utils.dt import normalize_utc_z
-from suite.utils import convert_html_to_text
+from suite.mail.utils.html_to_text import html_to_text
 
 
 class VacationResponse(Document):
@@ -110,7 +110,12 @@ def update_vacation_response(
     if enabled and (from_date and to_date) and (from_date >= to_date):
         frappe.throw(_("To Date must be after From Date."))
 
-    if not convert_html_to_text(html_body):
+    # Where there is an HTML body it is authoritative, so both parts say the same thing rather
+    # than the text being a flattened trace of it. Plain rather than flowed: Stalwart composes
+    # the auto-reply itself, and nothing on that path declares what a soft break needs.
+    if derived := html_to_text(html_body):
+        text_body = derived
+    else:
         html_body = None
 
     current_active_sieve_script_id = get_active_sieve_script_id(account)

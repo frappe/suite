@@ -76,6 +76,135 @@ function prepareE2EEManager() {
 	return manager;
 }
 
+describe("SFUMeetingManager adaptive streaming", () => {
+	it("escalates exhausted expected publication repair", async () => {
+		const manager = new SFUMeetingManager({} as never);
+		const connection = (
+			manager as unknown as {
+				connectionManager: {
+					expectedMedia: {
+						observe: (entry: unknown) => void;
+						repair: (
+							key: string,
+							stage: "publication",
+							action: "recreate_producer",
+							operation: () => Promise<void>,
+						) => Promise<boolean>;
+					};
+					escalateRecovery: (trigger: unknown) => Promise<boolean>;
+				};
+			}
+		).connectionManager;
+		const escalate = vi
+			.spyOn(connection, "escalateRecovery")
+			.mockResolvedValue(true);
+		connection.expectedMedia.observe({
+			key: "local:microphone",
+			direction: "local",
+			media: "audio",
+			source: "microphone",
+			desired: true,
+		});
+		for (let attempt = 0; attempt < 4; attempt += 1) {
+			await connection.expectedMedia.repair(
+				"local:microphone",
+				"publication",
+				"recreate_producer",
+				vi.fn().mockResolvedValue(undefined),
+			);
+		}
+
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "publication",
+			direction: "send",
+			reason: "retry_limit",
+		});
+	});
+
+	it("retries playback before reconciling media after browser resume", async () => {
+		const manager = new SFUMeetingManager({} as never);
+		const retryPlayback = vi
+			.spyOn(manager.videoManager, "retryPlayback")
+			.mockResolvedValue();
+		const reconcile = vi
+			.spyOn(manager, "reconcileExpectedMedia")
+			.mockResolvedValue();
+
+		await manager.recoverBrowserLifecycle();
+
+		expect(retryPlayback).toHaveBeenCalledOnce();
+		expect(reconcile).toHaveBeenCalledOnce();
+		expect(retryPlayback.mock.invocationCallOrder[0]).toBeLessThan(
+			reconcile.mock.invocationCallOrder[0],
+		);
+	});
+
+	it("rejects visible preferences while disconnected", async () => {
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => false),
+		} as never);
+
+		await expect(
+			manager.updateConsumerStreamPreferences("consumer-1", {
+				visible: true,
+				width: 640,
+				height: 360,
+			}),
+		).rejects.toThrow("disconnected");
+	});
+
+	it("rejects a failed visible preference without clearing adaptive pause", async () => {
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => true),
+			updateConsumerPreferences: vi.fn().mockRejectedValue(new Error("offline")),
+		} as never);
+		const updateConsumer = vi.spyOn(manager.consumerManager, "updateConsumer");
+
+		await expect(
+			manager.updateConsumerStreamPreferences("consumer-1", {
+				visible: true,
+				width: 640,
+				height: 360,
+			}),
+		).rejects.toThrow("offline");
+		expect(updateConsumer).not.toHaveBeenCalled();
+	});
+
+	it("keeps the latest hidden preference when an older resume resolves late", async () => {
+		const visibleRequest = deferred<unknown>();
+		const hiddenRequest = deferred<unknown>();
+		const updateConsumerPreferences = vi
+			.fn()
+			.mockReturnValueOnce(visibleRequest.promise)
+			.mockReturnValueOnce(hiddenRequest.promise);
+		const manager = new SFUMeetingManager({
+			isConnected: vi.fn(() => true),
+			updateConsumerPreferences,
+		} as never);
+		const updateConsumer = vi.spyOn(manager.consumerManager, "updateConsumer");
+
+		const visible = manager.updateConsumerStreamPreferences("consumer-1", {
+			visible: true,
+			width: 640,
+			height: 360,
+		});
+		const hidden = manager.updateConsumerStreamPreferences("consumer-1", {
+			visible: false,
+			width: 0,
+			height: 0,
+		});
+		hiddenRequest.resolve(null);
+		await hidden;
+		visibleRequest.resolve(null);
+		await visible;
+
+		expect(updateConsumer).toHaveBeenCalledOnce();
+		expect(updateConsumer).toHaveBeenCalledWith("consumer-1", {
+			adaptivelyPaused: true,
+		});
+	});
+});
+
 describe("SFUMeetingManager recovery fallback", () => {
 	it("keeps existing consumers after a successful ICE restart", async () => {
 		const manager = new SFUMeetingManager({
@@ -114,6 +243,14 @@ describe("SFUMeetingManager recovery fallback", () => {
 		vi.spyOn(manager.mediaManager, "rebuildSendSide").mockRejectedValue(
 			new Error("send rebuild failed"),
 		);
+		const connection = (
+			manager as unknown as {
+				connectionManager: { escalateRecovery: (trigger: unknown) => Promise<boolean> };
+			}
+		).connectionManager;
+		const escalate = vi
+			.spyOn(connection, "escalateRecovery")
+			.mockResolvedValue(true);
 		const closeReceiveTransport = vi.spyOn(
 			manager.transportManager,
 			"closeReceiveTransport",
@@ -124,6 +261,11 @@ describe("SFUMeetingManager recovery fallback", () => {
 		).resolves.toBe("failed");
 
 		expect(closeReceiveTransport).toHaveBeenCalledOnce();
+		expect(escalate).toHaveBeenCalledWith({
+			scope: "transport",
+			direction: "both",
+			reason: "rebuild_failed",
+		});
 	});
 });
 

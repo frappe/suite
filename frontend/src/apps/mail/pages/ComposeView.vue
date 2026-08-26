@@ -41,7 +41,7 @@
 				variant="ghost"
 				class="ml-2"
 				:label="__('Send')"
-				:disabled="isRecipientsEmpty"
+				:disabled="isRecipientsEmpty || isUploading"
 				@click="sendMail()"
 			>
 				<template #icon>
@@ -55,9 +55,9 @@
 		<TextEditor
 			ref="textEditor"
 			editor-class="prose-sm max-w-none [&_ol]:ps-7 [&_ul]:ps-7"
-			:extensions="[CustomImageExtension, CustomParagraphExtension, ...mentionExtensions]"
+			:extensions="[imageExtension, CustomParagraphExtension, ...mentionExtensions]"
 			:content="editorContent"
-			:upload-function="uploadFunction"
+			:upload-function="uploadInlineImage"
 			class="flex min-h-0 flex-1 flex-col"
 			@change="onEditorChange"
 		>
@@ -283,6 +283,18 @@ const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
+const pendingUploads = ref(0)
+const isUploading = computed(() => pendingUploads.value > 0)
+
+const uploadInlineImage = async (file: File) => {
+	pendingUploads.value++
+	try {
+		return await uploadFunction(file)
+	} finally {
+		pendingUploads.value--
+	}
+}
+const imageExtension = CustomImageExtension.configure({ uploadFunction: uploadInlineImage })
 
 // Where each recipient input teleports its suggestion list, so the list spans the page rather than
 // the field's own column.
@@ -324,6 +336,7 @@ const {
 	// The page is the composer, so it is open right up until the route leaves.
 	isOpen: () => !leaving,
 	host: () => textEditor.value,
+	isUploading: () => isUploading.value,
 })
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
@@ -468,11 +481,14 @@ const onFilesSelected = async (e: Event) => {
 	input.value = ''
 
 	for (const file of files) {
+		pendingUploads.value++
 		try {
 			const doc = await uploadFunction(file)
 			mail.attachments.push({ ...doc, disposition: 'attachment' } as Attachment)
 		} catch (error) {
 			raiseToast((error as Error)?.message ?? __('Could not attach {0}.', [file.name]), 'error')
+		} finally {
+			pendingUploads.value--
 		}
 	}
 }

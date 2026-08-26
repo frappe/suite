@@ -11,6 +11,7 @@ from frappe.utils import cint, today
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_identity_service
+from suite.mail.utils.html_to_text import html_to_text
 from suite.utils import parse_filters
 
 
@@ -53,6 +54,19 @@ class Identity(Document):
         for r in self.reply_to:
             reply_to.append({"name": r.display_name, "email": r.email})
         return reply_to
+
+    def validate(self) -> None:
+        self.set_text_signature()
+
+    def set_text_signature(self) -> None:
+        """Derive the plain-text signature from the HTML one.
+
+        JMAP carries both and a client picks whichever part it renders, so the text form has
+        to be the same signature rather than a flattened trace of it. Kept a method because
+        set_signature writes through db_update and never runs validate.
+        """
+
+        self.text_signature = html_to_text(self.html_signature) or None
 
     def db_insert(self, *args, **kwargs) -> None:
         self.id = add_identity(

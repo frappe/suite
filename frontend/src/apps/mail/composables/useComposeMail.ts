@@ -42,6 +42,8 @@ export interface ComposeMailOptions {
 	onDiscardStarted?: () => void
 	/** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
 	host: () => EditorHost | null | undefined
+	/** Whether a file is still being attached. Sending must wait until it is part of the draft. */
+	isUploading?: () => boolean
 	/**
 	 * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
 	 * page inert; null anywhere `<body>` will do.
@@ -99,10 +101,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	const getDefaultFromEmail = () => {
 		const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
 		const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
+		// Matched case-insensitively; the identity's own spelling is what goes out.
+		const identityMatching = (email?: string) =>
+			identityEmails.find((e) => e.toLowerCase() === email?.toLowerCase())
 
 		return (
-			identityEmails.find((e) => e === mailDetails?.from_email) ??
-			identityEmails.find((e) => e === defaultOutgoingEmail) ??
+			identityMatching(mailDetails?.from_email) ??
+			identityMatching(defaultOutgoingEmail) ??
 			identityEmails[0] ??
 			// An account with no identities at all still has to send as somebody.
 			user.data.name
@@ -158,10 +163,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	// ── Signature ───────────────────────────────────────────────────────────────────────────────
 
+	// The wrapper is what lets the text/plain alternative introduce the block with RFC 3676's
+	// "-- " separator; by the time a body reaches the server the signature is ordinary markup.
+	// Gated on the HTML form, which is the one actually inserted.
 	const buildSignature = (email?: string) => {
 		const identity = getIdentity(email!)
-		return identity?.text_signature
-			? `<div><br></div><div><br></div>${identity.html_signature}`
+		return identity?.html_signature
+			? '<div><br></div><div><br></div><div class="frappe_mail_signature">' +
+					identity.html_signature +
+					'</div>'
 			: ''
 	}
 
@@ -180,15 +190,23 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 	// empty, and is where a signature belongs.
 	const isSavedDraft = !!mailDetails?.id
 
+	// A fresh composition can open with prefilled content — a forward's header block. It rides
+	// along untouched: the signature is inserted above it, and the pristine-body comparison
+	// below includes it.
+	const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
+
 	// Swap the signature when the From identity changes — but only while the body is still the
-	// auto-inserted signature (or empty), so a message the user has written isn't overwritten.
-	// Compared by text so the editor's HTML normalization doesn't defeat the match.
+	// auto-inserted signature (or empty/prefilled), so a message the user has written isn't
+	// overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
 	watch(
 		() => mail.from_email,
 		(val, oldVal) => {
 			if (isBodyEmpty.value && isSavedDraft) return
-			if (isBodyEmpty.value || bodyText(mail.html_body) === bodyText(buildSignature(oldVal)))
-				mail.html_body = buildSignature(val)
+			if (
+				isBodyEmpty.value ||
+				bodyText(mail.html_body) === bodyText(buildSignature(oldVal) + prefilledBody)
+			)
+				mail.html_body = buildSignature(val) + prefilledBody
 		},
 		{ immediate: true },
 	)
@@ -250,6 +268,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
 	const sendMail = async (sendAt?: string) => {
 		if (deleteMail.loading) return
+
+		if (options.isUploading?.())
+			return raiseToast(__('Please wait for attachments to finish uploading.'), 'error')
 
 		if (isRecipientsEmpty.value)
 			return raiseToast(__('Please add at least one recipient.'), 'error')

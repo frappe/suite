@@ -210,7 +210,9 @@ export const extractQuotedContent = (htmlBody?: string) => {
 	const doc = parser.parseFromString(htmlBody, 'text/html')
 
 	const topLevelDiv = Array.from(doc.body.children).find(
-		(el) => el.tagName.toLowerCase() === 'div' && el.classList.contains('frappe_mail_quote'),
+		(el) =>
+			el.tagName.toLowerCase() === 'div' &&
+			(el.classList.contains('frappe_mail_quote') || el.classList.contains('frappe_mail_fwd')),
 	)
 
 	let quoted_content = ''
@@ -244,35 +246,6 @@ export const shouldIgnoreKeypress = (
 		target.isContentEditable ||
 		e.altKey
 	)
-}
-
-export const convertHtmlToText = (html: string) => {
-	if (!html) return ''
-
-	const parser = new DOMParser()
-	const doc = parser.parseFromString(html, 'text/html')
-	const body = doc.body || doc.documentElement
-
-	const anchors = body.querySelectorAll('a')
-	const buttons = body.querySelectorAll('button')
-	const inputs = body.querySelectorAll('input')
-
-	anchors.forEach((anchor) => {
-		const text = document.createTextNode(anchor.textContent)
-		anchor.parentNode?.replaceChild(text, anchor)
-	})
-
-	buttons.forEach((button) => button.remove())
-
-	inputs.forEach((input) => {
-		const type = input.getAttribute('type') || 'text'
-		if (['button', 'submit', 'reset'].includes(type)) {
-			input.remove()
-		}
-	})
-
-	const text = body.textContent || body.innerText || ''
-	return text.replace(/\s+/g, ' ').trim()
 }
 
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
@@ -442,7 +415,7 @@ export const getScriptName = (scriptName: string) => {
 export const isSystemScript = (scriptName: string) =>
 	['vacation', 'frappe_mail_automation'].includes(scriptName)
 
-export { decodeHtmlEntities, escapeHtml, hasHtmlContent } from '@/apps/mail/utils/html'
+export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
 
 export const getIcon = (mailbox: MailboxData) => {
 	// The Screener is a system folder: its 'eye' icon is authoritative and can't be overridden by a

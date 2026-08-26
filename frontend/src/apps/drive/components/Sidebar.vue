@@ -21,7 +21,7 @@ import StorageBar from './StorageBar.vue'
 import { Sidebar, SidebarCollapseToggle, SidebarHeader, SidebarItem, SidebarSection } from 'frappe-ui'
 import { notifCount, apps } from '@/apps/drive/resources/permissions'
 import { rootInfo } from '@/apps/drive/resources/files'
-import { dynamicList } from '@/apps/drive/utils/files'
+import { dynamicList, isApple } from '@/apps/drive/utils/files'
 
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 const { fullName: currentUserFullName } = useCurrentUser()
@@ -150,6 +150,7 @@ const sidebarItems = computed(() => {
           label: __('Search'),
           icon: LucideSearch,
           onClick: () => emitter.emit('showSearchPopup', true),
+          suffix: isApple() ? '⌘ + K' : 'Ctrl + K',
         },
         {
           label: __('Notifications'),

@@ -1,7 +1,7 @@
 import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { findSocketByParticipantId } from './utils';
+import { findSocketsByParticipantId } from './utils';
 
 export function registerHostControlHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -32,7 +32,9 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				if (!deps.mediasoup.peerExistsInRoom(roomId, targetParticipantId)) {
+				if (
+					!deps.mediasoup.participantExistsInRoom(roomId, targetParticipantId)
+				) {
 					socket.emit('sfu_error', {
 						error: 'Target participant not found',
 						timestamp: new Date().toISOString(),
@@ -40,13 +42,13 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				const targetSocket = findSocketByParticipantId(
+				const targetSockets = findSocketsByParticipantId(
 					deps.io,
 					roomId,
 					targetParticipantId,
 				);
 
-				if (!targetSocket) {
+				if (targetSockets.length === 0) {
 					socket.emit('sfu_error', {
 						error: 'Target participant socket not found',
 						timestamp: new Date().toISOString(),
@@ -56,12 +58,14 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 
 				switch (action) {
 					case 'mute_participant':
-						targetSocket.emit('host_control_update', {
-							action,
-							targetParticipantId,
-							hostId: socket.participantId,
-							timestamp: new Date().toISOString(),
-						});
+						for (const targetSocket of targetSockets) {
+							targetSocket.emit('host_control_update', {
+								action,
+								targetParticipantId,
+								hostId: socket.participantId,
+								timestamp: new Date().toISOString(),
+							});
+						}
 						loggers.socketHandler.info(
 							'Host %s sent mute command to participant %s in room %s',
 							socket.participantId,
@@ -70,37 +74,44 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 						);
 						break;
 					case 'kick_participant': {
-						const targetSenderId = targetSocket.senderId;
-						targetSocket.emit('host_control_update', {
-							action,
-							targetParticipantId,
-							hostId: socket.participantId,
-							timestamp: new Date().toISOString(),
-						});
+						const targetSenderIds = targetSockets
+							.map((targetSocket) => targetSocket.senderId)
+							.filter((senderId): senderId is number => senderId !== undefined);
+						for (const targetSocket of targetSockets) {
+							targetSocket.emit('host_control_update', {
+								action,
+								targetParticipantId,
+								hostId: socket.participantId,
+								timestamp: new Date().toISOString(),
+							});
+						}
 
 						loggers.socketHandler.info(
-							'Host %s kicked participant %s (senderId=%s) from room %s',
+							'Host %s kicked participant %s (senderIds=%s) from room %s',
 							socket.participantId,
 							targetParticipantId,
-							targetSenderId,
+							targetSenderIds.join(','),
 							roomId,
 						);
-						if (targetSocket.e2eeRequired && targetSenderId !== undefined) {
+						if (
+							targetSockets.some((targetSocket) => targetSocket.e2eeRequired) &&
+							targetSenderIds.length > 0
+						) {
 							await deps.e2eeEpochRelay.requestCommitForRemoval(
 								roomId,
-								[targetSenderId],
+								targetSenderIds,
 								deps.e2eeEpochRelay.getCurrentEpochNumber(roomId),
 							);
 						}
 
 						setTimeout(() => {
-							if (targetSocket.connected) {
-								targetSocket.disconnect(true);
-								loggers.socketHandler.info(
-									'Forcefully disconnected kicked participant %s',
-									targetParticipantId,
-								);
+							for (const targetSocket of targetSockets) {
+								if (targetSocket.connected) targetSocket.disconnect(true);
 							}
+							loggers.socketHandler.info(
+								'Forcefully disconnected kicked participant %s',
+								targetParticipantId,
+							);
 						}, 1000);
 						break;
 					}
