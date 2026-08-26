@@ -74,6 +74,28 @@ describe('AuthManager', () => {
 		).toThrow('Token site mismatch');
 	});
 
+	it('updates live socket roles from a refreshed token', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket({
+			userId: 'user-1',
+			meetingId: 'room-1',
+			site: 'site-a',
+			isHost: false,
+			isCohost: false,
+			handshake: {
+				auth: {},
+				query: {},
+				headers: {},
+				address: '127.0.0.1',
+			} as never,
+		});
+
+		manager.updateSocketToken(socket, token({ is_cohost: true }));
+
+		expect(socket.isHost).toBe(false);
+		expect(socket.isCohost).toBe(true);
+	});
+
 	it('rejects recording scope on the participant JWT path', () => {
 		const manager = new AuthManager(SECRET);
 		const socket = createMockSocket({

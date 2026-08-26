@@ -100,6 +100,8 @@ export class AuthManager {
 
 		socket.currentToken = token;
 		socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
+		socket.isHost = decoded.is_host || false;
+		socket.isCohost = decoded.is_cohost || false;
 		socket.e2eeRequired = Boolean(decoded.e2ee_required);
 		socket.e2eeReady = socket.e2eeRequired
 			? wasE2EERequired && wasE2EEReady
