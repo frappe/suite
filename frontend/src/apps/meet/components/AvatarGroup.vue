@@ -18,32 +18,28 @@
 			"
 		>
 			<div
-				class="relative isolate flex"
-				:class="[spacingClass, alignment === 'center' ? 'mx-auto' : '']"
+				class="relative isolate flex -space-x-2"
+				:class="alignment === 'center' ? 'mx-auto' : ''"
 			>
 				<div
 					v-for="(participant, index) in displayedParticipants"
 					:key="participant.user_id"
 					:style="{ zIndex: avatarZIndex(index) }"
 				>
-					<div
-						class="ring-2 ring-outline-gray-1 rounded-full overflow-hidden flex items-center justify-center"
-						:class="avatarWrapperClasses"
-					>
-						<MeetAvatar
-							:image="participant.avatar_url"
-							:label="participant.full_name"
-							:size="size"
-							shape="circle"
-						/>
-					</div>
+					<MeetAvatar
+						class="border-2 border-[var(--surface-base)] ring-0 rounded-full"
+						:image="participant.avatar_url"
+						:label="participant.full_name"
+						:size="size"
+						shape="circle"
+					/>
 				</div>
 				<div
 					v-if="extraCount > 0"
 					:style="{ zIndex: extraAvatarZIndex }"
 				>
 					<div
-						class="ring-2 ring-outline-gray-1 rounded-full bg-surface-gray-1 flex items-center justify-center text-ink-gray-7 text-base-semibold"
+						class="border-2 border-[var(--surface-base)] ring-0 rounded-full bg-surface-gray-2 flex items-center justify-center text-ink-gray-5 text-base-semibold"
 						:class="extraAvatarWrapperClasses"
 					>
 						+{{ extraCount }}
@@ -110,33 +106,15 @@ const props = withDefaults(defineProps<Props>(), {
 	showText: false,
 });
 
-const sizeClasses: Record<AvatarGroupSize, string> = {
-	sm: "h-4 w-4 text-[9px]",
-	md: "h-5 w-5 text-xs",
-	lg: "h-6 w-6 text-xs",
-	xl: "h-8 w-8 text-sm",
-	"2xl": "h-10 w-10",
-};
-
 const extraSizeClasses: Record<AvatarGroupSize, string> = {
-	sm: "h-4 w-4 text-[10px]",
-	md: "h-5 w-5 text-xs",
-	lg: "h-6 w-6 text-xs",
+	sm: "h-5 w-5 text-[10px]",
+	md: "h-6 w-6 text-xs",
+	lg: "h-7 w-7 text-xs",
 	xl: "h-8 w-8 text-sm",
 	"2xl": "h-10 w-10",
 };
 
-const spacingClasses: Record<AvatarGroupSize, string> = {
-	sm: "-space-x-0.5",
-	md: "-space-x-1",
-	lg: "-space-x-1.5",
-	xl: "-space-x-2",
-	"2xl": "-space-x-2",
-};
-
-const avatarWrapperClasses = computed(() => sizeClasses[props.size]);
 const extraAvatarWrapperClasses = computed(() => extraSizeClasses[props.size]);
-const spacingClass = computed(() => spacingClasses[props.size]);
 
 const displayedParticipants = computed(() =>
 	props.participants.slice(0, props.maxDisplayed),

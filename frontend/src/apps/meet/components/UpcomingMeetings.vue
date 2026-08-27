@@ -204,12 +204,12 @@ defineExpose({ reload })
 							class="flex h-[38px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-center"
 						>
 							<div
-								class="w-full text-[11px] font-medium uppercase leading-[1.15] tracking-[0.99px] text-ink-red-5"
+								class="w-full text-xs font-medium uppercase text-ink-red-5"
 							>
 								{{ formatMeetingMonth(event) }}
 							</div>
 							<div
-								class="w-full text-md font-medium leading-[1.15] tracking-[0.18px] text-ink-gray-7"
+								class="w-full text-md font-medium text-ink-gray-7"
 							>
 								{{ formatMeetingDay(event) }}
 							</div>
@@ -218,12 +218,12 @@ defineExpose({ reload })
 
 					<div class="min-w-0 flex-1">
 						<div
-							class="truncate text-sm-medium leading-[1.15] tracking-[0.21px] text-ink-gray-8"
+							class="truncate text-sm-medium text-ink-gray-8"
 						>
-							{{ event.title || 'Frappe Meet' }}
+							{{ event.title || 'Scheduled Meeting' }}
 						</div>
 						<div
-							class="mt-1.5 flex min-w-0 items-center gap-0.5 text-sm leading-[1.15] tracking-[0.28px] text-ink-gray-6"
+							class="mt-1.5 flex min-w-0 items-center gap-0.5 text-sm text-ink-gray-6"
 						>
 							<span class="shrink-0">{{ formatMeetingTime(event) }}</span>
 							<span v-if="eventParticipants(event).length" class="shrink-0">・</span>
