@@ -36,7 +36,6 @@ defineEmits<{
 			'relative',
 			{
 				'!bg-surface-gray-3': active,
-				'!bg-surface-red-2 hover:!bg-surface-red-3': variant === 'muted',
 			},
 		]"
 		@click="$emit('click')"
@@ -44,7 +43,7 @@ defineEmits<{
 		<template #icon>
 			<span
 				:class="{
-					'text-ink-red-8': variant === 'active' || variant === 'muted',
+					'text-ink-red-7': variant === 'active' || variant === 'muted',
 				}"
 			>
 				<slot />
