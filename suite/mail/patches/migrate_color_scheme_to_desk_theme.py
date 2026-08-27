@@ -17,4 +17,6 @@ def execute():
         filters={"color_scheme": ["in", list(THEME_MAP)]},
         as_list=True,
     ):
+        if frappe.db.get_value("User", user, "desk_theme"):
+            continue
         frappe.db.set_value("User", user, "desk_theme", THEME_MAP[color_scheme], update_modified=False)
