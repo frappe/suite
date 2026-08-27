@@ -105,14 +105,16 @@
 						<FormControl
 							v-model="scheduleStartTime"
 							label="Start"
-							type="select"
-							:options="sameDayStartTimeOptions"
+							type="time"
+							:interval="15"
+							format="h:mm A"
 						/>
 						<FormControl
 							v-model="scheduleEndTime"
 							label="End"
-							type="select"
-							:options="sameDayEndTimeOptions"
+							type="time"
+							:interval="15"
+							format="h:mm A"
 						/>
 					</div>
 					<ParticipantSelector
@@ -156,8 +158,6 @@ import ParticipantSelector from "@/apps/calendar/components/ParticipantSelector.
 import {
 	adjustScheduleEndTime,
 	adjustScheduleStartTime,
-	sameDayEndTimeOptions,
-	sameDayStartTimeOptions,
 } from "@/apps/calendar/utils/scheduleTime";
 import { useConnectionState } from "../composables/useConnectionState";
 import MeetSidebar from "../components/MeetSidebar.vue";

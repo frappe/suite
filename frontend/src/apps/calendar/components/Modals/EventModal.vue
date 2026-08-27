@@ -7,7 +7,6 @@ import meetLogo from '@/assets/app-logos/meet.png'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
-import { getScheduleTimeOptions } from '@/apps/calendar/utils/scheduleTime'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -118,9 +117,6 @@ const startsAt = computed(() =>
 	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
 )
 const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
-const startTimeOptions = computed(() => getScheduleTimeOptions(event.startTime))
-const endTimeOptions = computed(() => getScheduleTimeOptions(event.endTime))
-
 const isDateTimeValid = computed(() => {
 	if (!event.startDate || !event.endDate) return false
 	if (!event.isAllDay && (!event.startTime || !event.endTime)) return false
@@ -588,8 +584,9 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.startTime"
-											type="select"
-											:options="startTimeOptions"
+											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
@@ -603,8 +600,9 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.endTime"
-											type="select"
-											:options="endTimeOptions"
+											type="time"
+											:interval="15"
+											format="h:mm A"
 											class="w-full"
 										/>
 									</div>
