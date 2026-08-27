@@ -3,6 +3,10 @@
 
 frappe.ui.form.on("Presentation", {
 	refresh: function (frm) {
+		if (!frm.doc.__islocal) {
+			const slug = frm.doc.slug ? `/${frm.doc.slug}` : ""
+			frm.add_web_link(`/slides/presentation/${frm.doc.name}${slug}`, __("Open Presentation"))
+		}
 		frm.add_custom_button("Optimize Images", function () {
 			frappe.call({
 				method: "suite.slides.doctype.presentation.presentation.optimize_images",
