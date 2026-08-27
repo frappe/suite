@@ -2,8 +2,6 @@ import type { UserAccount } from './doctypes'
 
 export * from './doctypes'
 
-export type COLOR_SCHEME = 'System Default' | 'Light Mode' | 'Dark Mode'
-
 // What happens to a sender when one of their messages is marked as Junk (JMAP Account).
 export type OnMarkAsJunk = "Junk Sender's Mail" | 'Ask to Block Sender'
 
@@ -58,7 +56,6 @@ export interface User {
 	// The site's zone — what plain DB datetime fields are stored in; see formatSystemDateTime.
 	system_time_zone: string
 	user_settings?: string
-	color_scheme?: COLOR_SCHEME
 	group_messages_by?: 'None' | 'Day' | 'Month'
 	show_reading_pane?: 0 | 1
 

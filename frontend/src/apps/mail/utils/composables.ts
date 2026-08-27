@@ -573,6 +573,4 @@ export const useSettings = () => {
 	return { showSettings, settingsTab, openSettings }
 }
 
-// Re-exported like useScreenSize: the colour scheme is one User Settings row shared with the
-// calendar, so both apps go through the one composable — and its one write queue.
-export const useTheme = () => useSuiteTheme(userStore().userResource)
+export const useTheme = () => useSuiteTheme()

@@ -23,7 +23,6 @@
   "jmap_session",
   "ui_tab",
   "appearance_section",
-  "color_scheme",
   "mail_list_section",
   "group_messages_by",
   "column_break_cxak",
@@ -166,15 +165,6 @@
    "fieldname": "appearance_section",
    "fieldtype": "Section Break",
    "label": "Appearance"
-  },
-  {
-   "default": "System Default",
-   "description": "Preferred interface theme.",
-   "fieldname": "color_scheme",
-   "fieldtype": "Select",
-   "label": "Color Scheme",
-   "options": "System Default\nLight Mode\nDark Mode",
-   "reqd": 1
   },
   {
    "depends_on": "eval: doc.username",

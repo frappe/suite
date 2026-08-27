@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, provide, watchEffect } from 'vue'
+import { onMounted, onUnmounted, provide } from 'vue'
 import { FrappeUIProvider } from 'frappe-ui'
 
 import { shouldIgnoreKeypress } from '@/apps/calendar/utils'
@@ -14,18 +14,15 @@ import { initSocket } from '@/apps/calendar/socket'
  * The suite shell already provides the top-level chrome, so this layout only:
  *   - provides the calendar-local `$user` (mail/calendar userResource), `$dayjs`
  *     and `$socket` injections that calendar components depend on,
- *   - applies the user's color scheme to <html data-theme>,
  *   - ports the Cmd/Ctrl+Shift+L theme-cycle shortcut,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
  */
 const { userResource } = userStore()
-const { dataTheme, cycleTheme } = useTheme()
+const { cycleTheme } = useTheme()
 
 provide('$user', userResource)
 provide('$dayjs', dayjs)
 provide('$socket', initSocket())
-
-watchEffect(() => document.documentElement.setAttribute('data-theme', dataTheme.value))
 
 // Mark <body> while calendar is mounted so the `.icon` helper below (see <style>) can
 // reach frappe-ui Dropdowns/Dialogs, which teleport to <body> — outside the calendar tree.

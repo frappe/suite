@@ -29,7 +29,6 @@ class UserSettings(OwnerFromUser, Document):
 
         app_password: DF.Password | None
         backup_email: DF.Data | None
-        color_scheme: DF.Literal["System Default", "Light Mode", "Dark Mode"]
         disable_push_subscriptions: DF.Check
         group_messages_by: DF.Literal["None", "Day", "Month"]
         show_reading_pane: DF.Check

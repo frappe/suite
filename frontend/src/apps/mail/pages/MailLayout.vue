@@ -13,7 +13,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, provide, ref, watchEffect } from 'vue'
+import { computed, onMounted, onUnmounted, provide, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { FrappeUIProvider } from 'frappe-ui'
 
@@ -38,9 +38,8 @@ import type { NotificationPayload } from '@/apps/mail/types'
  *
  * The suite shell already provides the top-level chrome and main.ts provides Pinia/router/frappe-ui/translation, but
  * does NOT provide mail's `$user` / `$dayjs` / `$socket` injects, register
- * mail's push-notification SW, or set up mail's theme. So this layout:
+ * mail's push-notification SW. So this layout:
  *   - provides the mail-local `$user` / `$dayjs` / `$socket` injections,
- *   - applies the user's color scheme to <html data-theme>,
  *   - picks the inner layout (DefaultLayout / bare div for noLayout routes),
  *   - wires push-notification onMessage and registers the (fail-safe) SW,
  *   - wraps children in FrappeUIProvider and renders the nested <router-view>.
@@ -102,7 +101,7 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
 
 	if (key === 'g') gPrefix.press(e.shiftKey)
 }
-const { dataTheme, cycleTheme } = useTheme()
+const { cycleTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const route = useRoute()
 
@@ -113,49 +112,6 @@ provide('$socket', initSocket())
 const Layout = computed(() => {
 	if (route.meta.noLayout) return 'div'
 	return DefaultLayout
-})
-
-// Alongside the html attribute, sync the theme-color meta — it drives the OS
-// status bar / browser chrome in the installed PWA, which otherwise stays white
-// over the dark app. Values mirror surface-base per theme (dark hex matches
-// EmailContent's THEME_CONFIG).
-const THEME_COLOR: Record<string, string> = { light: '#ffffff', dark: '#171717' }
-
-// All three live on the shared shell, not inside mail: data-theme flips every
-// frappe-ui design token (see colorPalette.js, keyed on [data-theme="dark"]),
-// color-scheme flips the browser-drawn surfaces, and theme-color is a single
-// document-wide meta. Drive/sheets/writer/slides set none of them, so whatever
-// mail leaves behind is what they render with. Snapshot the server-rendered
-// state and restore it on unmount, the same contract as the `mail-app` body
-// class below.
-const root = document.documentElement
-const initialDataTheme = root.getAttribute('data-theme')
-const initialColorScheme = root.style.colorScheme
-let themeColorMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-const initialThemeColor = themeColorMeta?.content ?? null
-
-watchEffect(() => {
-	root.setAttribute('data-theme', dataTheme.value)
-	// color-scheme drives the browser-drawn surfaces the page can't paint — on
-	// Android standalone that's the system navigation bar (white over a dark app
-	// otherwise) and the status-bar seam, plus native controls/scrollbars.
-	root.style.colorScheme = dataTheme.value
-	if (!themeColorMeta) {
-		themeColorMeta = document.createElement('meta')
-		themeColorMeta.name = 'theme-color'
-		document.head.appendChild(themeColorMeta)
-	}
-	themeColorMeta.content = THEME_COLOR[dataTheme.value]
-})
-
-onUnmounted(() => {
-	if (initialDataTheme === null) root.removeAttribute('data-theme')
-	else root.setAttribute('data-theme', initialDataTheme)
-	root.style.colorScheme = initialColorScheme
-	// null means the meta was ours, so take it with us rather than leaving an
-	// empty one on the shell.
-	if (initialThemeColor === null) themeColorMeta?.remove()
-	else if (themeColorMeta) themeColorMeta.content = initialThemeColor
 })
 
 // Mark <body> while mail is mounted so the base styles below (see <style>) can reach frappe-ui

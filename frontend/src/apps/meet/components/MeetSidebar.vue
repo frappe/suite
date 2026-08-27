@@ -6,13 +6,13 @@ import {
 	SidebarItem,
 	SidebarSection,
 	createResource,
-	frappeRequest,
 } from "frappe-ui";
 import { computed, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
 import { useRoute } from "vue-router";
 
 import { useAppSwitcher } from "@/composables/useAppSwitcher";
+import { setupTheme, switchTheme, themeMode } from "@/utils/setupTheme";
 import { useSessionStore } from "../../../boot/session";
 import FrappeMeetingLogo from "../icons/FrappeMeetingLogo.vue";
 
@@ -27,6 +27,7 @@ import LucideCheck from "~icons/lucide/check";
 
 const route = useRoute();
 const sessionStore = useSessionStore();
+setupTheme();
 
 const isCollapsed = useStorage("isSidebarCollapsed", false);
 
@@ -36,39 +37,8 @@ const userResource = createResource({
 	auto: true,
 });
 
-function getThemeMode() {
-	return document.documentElement.getAttribute("data-theme-mode") || "light";
-}
-
-function applyTheme(mode: string) {
-	const root = document.documentElement;
-	const preference = mode.toLowerCase();
-	const resolved =
-		preference === "automatic"
-			? window.matchMedia("(prefers-color-scheme: dark)").matches
-				? "dark"
-				: "light"
-			: preference;
-	root.style.colorScheme = resolved;
-	root.setAttribute("data-theme", resolved);
-	root.setAttribute("data-theme-mode", preference);
-}
-
-function switchTheme(theme: string) {
-	applyTheme(theme);
-	if (sessionStore.isLoggedIn) {
-		frappeRequest({
-			url: "frappe.core.doctype.user.user.switch_theme",
-			params: { theme },
-		});
-	}
-}
-
-const themeMode = ref(getThemeMode());
-
 function selectTheme(theme: string) {
 	switchTheme(theme);
-	themeMode.value = theme.toLowerCase();
 }
 
 const appsMenuOption = useAppSwitcher("meet");

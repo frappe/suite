@@ -1,6 +1,7 @@
-import { ref } from 'vue'
-import { frappeRequest } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { frappeRequest, toast } from 'frappe-ui'
 import { useSessionStore } from '@/boot/session'
+import { normalizeTheme } from '@/utils/themeValues'
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 
@@ -12,14 +13,22 @@ export function getThemeMode() {
 }
 
 export const themeMode = ref(getThemeMode())
+export const resolvedTheme = computed(() =>
+	themeMode.value === 'automatic' ? (systemDark.value ? 'dark' : 'light') : themeMode.value,
+)
 
 let initialized = false
+let saving = false
+let queuedTheme = null
+let persistedTheme = themeMode.value
 
 export async function setupTheme() {
 	if (initialized) return
 	initialized = true
 
-	applyTheme(import.meta.env.DEV ? await getSavedTheme() : getThemeMode())
+	const savedTheme = import.meta.env.DEV ? await getSavedTheme() : getThemeMode()
+	applyTheme(savedTheme)
+	persistedTheme = normalizeTheme(savedTheme)
 
 	systemTheme.addEventListener('change', () => {
 		if (getThemeMode() === 'automatic') applyTheme('automatic')
@@ -27,12 +36,13 @@ export async function setupTheme() {
 }
 
 export function switchTheme(theme) {
-	applyTheme(theme)
-	saveTheme(theme)
+	const mode = normalizeTheme(theme)
+	applyTheme(mode)
+	return saveTheme(mode)
 }
 
 function applyTheme(mode) {
-	mode = mode.toLowerCase()
+	mode = normalizeTheme(mode)
 	const resolved = mode === 'automatic' ? systemPreference() : mode
 
 	const root = document.documentElement
@@ -40,6 +50,8 @@ function applyTheme(mode) {
 	root.style.colorScheme = resolved
 	root.setAttribute('data-theme', resolved)
 	root.setAttribute('data-theme-mode', mode)
+	const themeColor = document.querySelector('meta[name="theme-color"]')
+	if (themeColor) themeColor.content = resolved === 'dark' ? '#171717' : '#ffffff'
 	themeMode.value = mode
 
 	requestAnimationFrame(() => root.classList.remove('theme-switching'))
@@ -64,13 +76,32 @@ async function getSavedTheme() {
 	}
 }
 
-function saveTheme(theme) {
-	if (!useSessionStore().isLoggedIn) return
+async function saveTheme(theme) {
+	if (!useSessionStore().isLoggedIn) return true
 
-	frappeRequest({
-		url: 'frappe.core.doctype.user.user.switch_theme',
-		params: { theme: capitalize(theme) },
-	})
+	queuedTheme = theme
+	if (saving) return true
+
+	saving = true
+	try {
+		while (queuedTheme) {
+			const next = queuedTheme
+			queuedTheme = null
+			await frappeRequest({
+				url: 'frappe.core.doctype.user.user.switch_theme',
+				params: { theme: capitalize(next) },
+			})
+			persistedTheme = next
+		}
+		return true
+	} catch {
+		queuedTheme = null
+		applyTheme(persistedTheme)
+		toast.error(__('Failed to update appearance. Please try again.'))
+		return false
+	} finally {
+		saving = false
+	}
 }
 
 function capitalize(word) {

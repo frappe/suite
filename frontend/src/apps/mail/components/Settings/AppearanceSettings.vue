@@ -5,9 +5,9 @@
 				:label="__('Save')"
 				variant="solid"
 				:size="isMobile ? 'md' : 'sm'"
-				:loading="saveSettings.loading"
+				:loading="saving"
 				:disabled="isNotDirty"
-				@click="() => saveSettings.submit()"
+				@click="saveAppearance"
 			/>
 		</template>
 	</AppSettingsHeader>
@@ -60,17 +60,19 @@ import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { switchTheme, themeMode } from '@/utils/setupTheme'
 
 const user = inject('$user')
 const { isMobile } = useScreenSize()
 
-const colorScheme = ref(user.data.color_scheme)
+const colorScheme = ref(themeMode.value)
 const showReadingPane = ref(!!user.data.show_reading_pane)
 const groupMessagesBy = ref(user.data.group_messages_by)
+const saving = ref(false)
 
 const isNotDirty = computed(
 	() =>
-		colorScheme.value === user.data.color_scheme &&
+		colorScheme.value === themeMode.value &&
 		showReadingPane.value === !!user.data.show_reading_pane &&
 		groupMessagesBy.value === user.data.group_messages_by,
 )
@@ -81,22 +83,30 @@ const saveSettings = createResource({
 		doctype: 'User Settings',
 		name: user.data.user_settings,
 		fieldname: {
-			color_scheme: colorScheme.value,
 			show_reading_pane: showReadingPane.value ? 1 : 0,
 			group_messages_by: groupMessagesBy.value,
 		},
 	}),
-	onSuccess: () => {
-		raiseToast(__('Appearance updated.'))
-		user.reload()
-	},
-	onError: () => raiseToast(__('Unable to save appearance settings.'), 'error'),
 })
 
+const saveAppearance = async () => {
+	saving.value = true
+	try {
+		const [, themeSaved] = await Promise.all([saveSettings.submit(), switchTheme(colorScheme.value)])
+		if (!themeSaved) return
+		raiseToast(__('Appearance updated.'))
+		user.reload()
+	} catch {
+		raiseToast(__('Unable to save appearance settings.'), 'error')
+	} finally {
+		saving.value = false
+	}
+}
+
 const COLOR_SCHEMES = [
-	{ label: __('System Default'), value: 'System Default' },
-	{ label: __('Light Mode'), value: 'Light Mode' },
-	{ label: __('Dark Mode'), value: 'Dark Mode' },
+	{ label: __('Automatic'), value: 'automatic' },
+	{ label: __('Light'), value: 'light' },
+	{ label: __('Dark'), value: 'dark' },
 ]
 
 const GROUP_MESSAGES_OPTIONS = [

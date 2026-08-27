@@ -5,6 +5,11 @@
   data-theme="{{ desk_theme.lower() if desk_theme else 'light' }}"
 >
   <head>
+    <script>
+      if (document.documentElement.dataset.theme === 'automatic') {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      }
+    </script>
     <meta charset="UTF-8" />
     <title>Frappe Suite</title>
     <link rel="icon" type="image/svg+xml" href="/src/assets/app-logos/suite.svg" />
