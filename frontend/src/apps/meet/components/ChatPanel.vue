@@ -487,7 +487,7 @@ function autosize() {
 	const el = inputEl.value;
 	if (!el) return;
 	el.style.height = "auto";
-	el.style.height = `${Math.min(el.scrollHeight, 44)}px`;
+	el.style.height = `${Math.min(el.scrollHeight, 88)}px`;
 }
 
 async function scrollToBottom() {
@@ -503,7 +503,7 @@ watch([chatItems], scrollToBottom, { deep: true });
 <style scoped>
 .chat-composer-input {
 	min-height: 1.375rem;
-	max-height: 44px;
+	max-height: 88px;
 	padding: 0;
 	margin: 0;
 	overflow-y: auto;
