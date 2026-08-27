@@ -16,6 +16,7 @@ import {
 } from "../data/mediaPreferences";
 import type { DeviceType, deviceManager } from "../utils/media/DeviceManager";
 import notificationContextManager from "../utils/notificationContext";
+import { isMobileDevice } from "../utils/device";
 import type { SFUClient } from "../utils/SFUClient";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import type { ConnectionState } from "./useConnectionState";
@@ -31,6 +32,22 @@ const isBluetoothMicLabel = (label: string | undefined): boolean => {
 	if (!label) return false;
 	return BLUETOOTH_DEVICE_LABEL_REGEX.test(label.toLowerCase());
 };
+
+function getCameraVideoConstraints(): MediaTrackConstraints {
+	if (isMobileDevice()) {
+		return {
+			width: { ideal: 640 },
+			height: { ideal: 360 },
+			frameRate: { ideal: 24, max: 24 },
+		};
+	}
+
+	return {
+		width: { ideal: 1280, min: 960 },
+		height: { ideal: 720, min: 540 },
+		frameRate: { ideal: 30, max: 30 },
+	};
+}
 
 function getBackgroundEffectsFromStorage() {
 	const blurEnabled = localStorage.getItem("backgroundEffects.blur") === "1";
@@ -1246,11 +1263,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		};
 
 		if (videoEnabled) {
-			const videoConstraints: MediaTrackConstraints = {
-				width: { ideal: 1280, min: 960 },
-				height: { ideal: 720, min: 540 },
-				frameRate: { ideal: 30, max: 30 },
-			};
+			const videoConstraints = getCameraVideoConstraints();
 
 			const validCameraId = await getValidDeviceId(
 				selectedCameraId.value,

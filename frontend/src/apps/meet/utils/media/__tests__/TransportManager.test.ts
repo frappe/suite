@@ -124,6 +124,11 @@ describe("getVideoEncodingConfig", () => {
 		expect(config.decision.strategy).toBe("simulcast");
 		expect(config.decision.scalabilityMode).toBeNull();
 		expect(config.encodings).toHaveLength(3);
+		expect(config.encodings.map((encoding) => encoding.scaleResolutionDownBy)).toEqual([
+			4,
+			2,
+			undefined,
+		]);
 	});
 
 	it("returns screenEncodings for screen source regardless of strategy", () => {

@@ -16,8 +16,8 @@ interface SVCEncodingLayer {
 }
 
 export const videoEncodings: VideoEncodingLayer[] = [
-	{ maxBitrate: 300000, scaleResolutionDownBy: 2 },
-	{ maxBitrate: 700000, scaleResolutionDownBy: 1 },
+	{ maxBitrate: 300000, scaleResolutionDownBy: 4 },
+	{ maxBitrate: 700000, scaleResolutionDownBy: 2 },
 	{ maxBitrate: 1800000 },
 ];
 
