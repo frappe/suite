@@ -7,6 +7,7 @@ import meetLogo from '@/assets/app-logos/meet.png'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { getScheduleTimeOptions } from '@/apps/calendar/utils/scheduleTime'
 import { userStore } from '@/apps/calendar/stores/user'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -117,6 +118,8 @@ const startsAt = computed(() =>
 	dayjs(`${event.startDate}T${event.isAllDay ? '00:00' : event.startTime}`),
 )
 const endsAt = computed(() => dayjs(`${event.endDate}T${event.isAllDay ? '00:00' : event.endTime}`))
+const startTimeOptions = computed(() => getScheduleTimeOptions(event.startTime))
+const endTimeOptions = computed(() => getScheduleTimeOptions(event.endTime))
 
 const isDateTimeValid = computed(() => {
 	if (!event.startDate || !event.endDate) return false
@@ -301,6 +304,18 @@ watch(
 		const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
 		event.endDate = end.format('YYYY-MM-DD')
 		event.endTime = end.format('HH:mm')
+	},
+)
+
+watch(
+	() => [event.endDate, event.endTime],
+	([endDate, endTime]) => {
+		if (event.isAllDay || !endDate || !endTime) return
+		const end = dayjs(`${endDate}T${endTime}`)
+		if (!end.isValid() || end.isAfter(startsAt.value)) return
+		const start = end.subtract(DEFAULT_DURATION_MINUTES, 'minute')
+		event.startDate = start.format('YYYY-MM-DD')
+		event.startTime = start.format('HH:mm')
 	},
 )
 
@@ -573,7 +588,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.startTime"
-											type="time"
+											type="select"
+											:options="startTimeOptions"
 											class="w-full"
 										/>
 									</div>
@@ -587,7 +603,8 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 										<FormControl
 											v-if="!event.isAllDay"
 											v-model="event.endTime"
-											type="time"
+											type="select"
+											:options="endTimeOptions"
 											class="w-full"
 										/>
 									</div>

@@ -106,13 +106,13 @@
 							v-model="scheduleStartTime"
 							label="Start"
 							type="select"
-							:options="scheduleStartTimeOptions"
+							:options="sameDayStartTimeOptions"
 						/>
 						<FormControl
 							v-model="scheduleEndTime"
 							label="End"
 							type="select"
-							:options="scheduleEndTimeOptions"
+							:options="sameDayEndTimeOptions"
 						/>
 					</div>
 					<ParticipantSelector
@@ -153,15 +153,15 @@ import { useRouter } from "vue-router";
 import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
 import dayjs from "@/apps/calendar/utils/dayjs";
 import ParticipantSelector from "@/apps/calendar/components/ParticipantSelector.vue";
-import { useConnectionState } from "../composables/useConnectionState";
-import MeetSidebar from "../components/MeetSidebar.vue";
-import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import {
 	adjustScheduleEndTime,
 	adjustScheduleStartTime,
-	scheduleEndTimeOptions,
-	scheduleStartTimeOptions,
-} from "../utils/scheduleTime";
+	sameDayEndTimeOptions,
+	sameDayStartTimeOptions,
+} from "@/apps/calendar/utils/scheduleTime";
+import { useConnectionState } from "../composables/useConnectionState";
+import MeetSidebar from "../components/MeetSidebar.vue";
+import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import LucideCalendarPlus from "~icons/lucide/calendar-plus";
 import LucideZap from "~icons/lucide/zap";
 import LucideLink from "~icons/lucide/link";
