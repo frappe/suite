@@ -70,6 +70,7 @@
 								<MeetAvatar
 									v-if="item.poll.createdBy !== userId"
 									size="lg"
+									:image="avatarByUser[item.poll.createdBy]"
 									:label="item.poll.createdByName || item.poll.createdBy"
 									class="mt-6 shrink-0"
 								/>
@@ -96,6 +97,7 @@
 							<MeetAvatar
 								v-if="!item.group.isOwn"
 								size="lg"
+								:image="avatarByUser[item.group.user_id]"
 								:label="item.group.user_name"
 								class="mt-6 shrink-0"
 							/>
@@ -271,6 +273,7 @@ const props = defineProps<{
 	open?: boolean;
 	userId?: string;
 	userName?: string;
+	avatarByUser?: Record<string, string | null | undefined>;
 	messages?: ChatMessage[];
 	isHost?: boolean;
 	isCohost?: boolean;
@@ -278,6 +281,8 @@ const props = defineProps<{
 	hostOnlyChat?: boolean;
 	pinnedMessage?: ChatMessage | null;
 }>();
+
+const avatarByUser = computed(() => props.avatarByUser || {});
 
 const pollStore = usePollStore();
 const pollService = inject(pollKey);

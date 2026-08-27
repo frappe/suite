@@ -166,6 +166,7 @@
 								v-if="activePanel === 'chat'"
 								:open="true"
 								:messages="chatStore.chatMessages"
+								:avatar-by-user="participantAvatars"
 								:user-id="(currentUser.currentUser.value?.user_id as string) || ''"
 								:user-name="
 									(currentUser.currentUser.value?.full_name as string) ||
@@ -831,6 +832,15 @@ const activePanel = computed(() => {
 
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
 	() => participantStore.participants as Record<string, Participant>,
+);
+
+const participantAvatars = computed(() =>
+	Object.fromEntries(
+		Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
+			userId,
+			participant.avatar,
+		]),
+	),
 );
 
 const { isMobile } = useResponsiveGrid();
