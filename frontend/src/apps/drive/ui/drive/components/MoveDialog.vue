@@ -192,9 +192,10 @@ const tree = reactive({
 const selected = ref('')
 const breadcrumbs = ref([{ name: '', file_name: 'Home' }])
 
+// iconLeft, not icon: `icon` makes an icon-only trigger and drops the label.
 const tabs = computed(() => [
-  { label: 'Home', value: 'home', icon: h(LucideHome, { class: 'size-4' }) },
-  { label: 'Site', value: 'site', icon: h(LucideBuilding2, { class: 'size-4' }) },
+  { label: 'Home', value: 'home', iconLeft: h(LucideHome, { class: 'size-4' }) },
+  { label: 'Site', value: 'site', iconLeft: h(LucideBuilding2, { class: 'size-4' }) },
 ])
 
 const folderContents = createResource({

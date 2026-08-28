@@ -5,18 +5,20 @@
 		:button-action="() => (showAddMember = true)"
 		:remove-spacing="true"
 	>
+		<!-- iconLeft, not icon: `icon` makes an icon-only trigger and drops the label. -->
 		<Tabs
-			v-model="tabIndex"
+			v-model="tab"
+			class="[&>[data-slot=tab-list]]:px-3 [&>[data-slot=tab-list]]:py-1.5 sm:[&>[data-slot=tab-list]]:px-5"
 			:tabs="[
-				{ label: __('Users'), icon: Users },
-				{ label: __('Invites'), icon: Mails },
+				{ value: 'users', label: __('Users'), iconLeft: Users },
+				{ value: 'invites', label: __('Invites'), iconLeft: Mails },
 			]"
 		>
-			<template #tab-panel>
+			<template #tab-panel="{ tab: panel }">
 				<!-- Match DashboardLayout's body spacing so the tabbed page doesn't sit
 				     at a different offset than its sibling pages. -->
 				<div class="flex flex-1 flex-col space-y-5 overflow-y-auto px-3 py-5 sm:px-5">
-					<UsersView v-if="tabIndex === 0" ref="usersView" />
+					<UsersView v-if="panel.value === 'users'" ref="usersView" />
 					<InvitesView v-else ref="invitesView" />
 				</div>
 			</template>
@@ -43,11 +45,11 @@ const router = useRouter()
 // Derive the active tab from the route (correct from the first render, so frappe-ui's Tabs has a
 // valid model immediately and its reka-ui indicator doesn't observe an undefined element). The
 // setter only navigates on an actual tab change, avoiding the redundant same-route push that the
-// previous tabIndex<->route watch pair triggered.
-const tabIndex = computed({
-	get: () => (route.name === 'mail-invites' ? 1 : 0),
+// previous tab<->route watch pair triggered.
+const tab = computed({
+	get: () => (route.name === 'mail-invites' ? 'invites' : 'users'),
 	set: (val) => {
-		const name = val ? 'mail-invites' : 'mail-members'
+		const name = val === 'invites' ? 'mail-invites' : 'mail-members'
 		if (route.name !== name) router.push({ name })
 	},
 })
@@ -60,7 +62,7 @@ const usersView = useTemplateRef('usersView')
 const invitesView = useTemplateRef('invitesView')
 
 const reload = () => {
-	if (tabIndex.value === 0) usersView?.value?.reloadMembers()
+	if (tab.value === 'users') usersView?.value?.reloadMembers()
 	else invitesView?.value?.reloadInvites()
 }
 </script>

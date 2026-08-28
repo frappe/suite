@@ -36,9 +36,9 @@
         <div>You have an invite to join this Drive.</div>
       </div>
     </Alert>
-    <Tabs v-model="tabIndex" :tabs>
+    <Tabs v-model="tab" :tabs>
       <template #tab-panel="{ tab }">
-        <template v-if="tab.label === 'Members'">
+        <template v-if="tab.value === 'members'">
           <div class="flex flex-col overflow-y-auto divide-y divide-outline-elevation-2">
             <div
               v-for="user in siteUsers?.data"
@@ -183,7 +183,7 @@ import Alert from '@/apps/drive/components/Alert.vue'
 import UserTooltip from '@/apps/drive/components/UserTooltip.vue'
 
 const currentUserId = computed(() => useSessionStore().user)
-const tabIndex = ref(0)
+const tab = ref('members')
 
 siteUsers.fetch()
 const invites = createResource({
@@ -200,17 +200,20 @@ const invited = ref([])
 const emailInput = ref('')
 const showInvite = ref(false)
 
+// iconLeft, not icon: `icon` makes an icon-only trigger and drops the label.
 const tabs = computed(() => [
   {
+    value: 'members',
     label: 'Members',
-    icon: h(LucideUsers, { class: 'size-4' }),
+    iconLeft: h(LucideUsers, { class: 'size-4' }),
   },
   // Invite management is admin-only.
   ...(isAdmin.data?.is_admin
     ? [
         {
+          value: 'invites',
           label: 'Invites',
-          icon: h(LucideMail, { class: 'size-4' }),
+          iconLeft: h(LucideMail, { class: 'size-4' }),
         },
       ]
     : []),

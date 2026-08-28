@@ -38,7 +38,10 @@
           v-model="tab"
           class="w-full"
           as="div"
-          :tabs="[{ label: 'Automatic' }, { label: 'Manual' }]"
+          :tabs="[
+            { value: 'automatic', label: 'Automatic' },
+            { value: 'manual', label: 'Manual' },
+          ]"
         />
         <Button
           :icon="LucideX"
@@ -49,7 +52,7 @@
       </div>
       <div class="p-3.5 gap-4 flex flex-col flex-1 min-h-0 overflow-y-auto">
         <Button
-          v-if="tab === 1"
+          v-if="tab === 'manual'"
           :icon="LucidePlus"
           class="absolute right-3 bottom-3"
           variant="outline"
@@ -250,7 +253,7 @@ function formatDateDDMMYY(dateStr) {
 }
 
 const groupedVersions = computed(() => {
-  if (tab.value === 0) {
+  if (tab.value === 'automatic') {
     const sortedAutoVersions = [...autoVersions.value].sort((a, b) => {
       return new Date(b.title) - new Date(a.title)
     })
@@ -274,7 +277,7 @@ const groupedVersions = computed(() => {
   }
 })
 
-const tab = ref(versions.data.filter((v) => v.manual).length ? 1 : 0)
+const tab = ref(versions.data.filter((v) => v.manual).length ? 'manual' : 'automatic')
 watch(tab, () => (versionPreview.value = null))
 
 const getPrevious = (version) => {

@@ -3,12 +3,15 @@
 		<header class="flex items-center border-b px-5 py-2.5">
 			<Breadcrumbs :items="[{ label: __('Mail Exchanges') }]" />
 		</header>
+		<!-- The tab list carries no padding of its own: inset it to the header's,
+		     and pad it evenly so the 28px triggers sit in a 40px band like the header
+		     above. The underline indicator rides on the list's bottom border, so it
+		     stays on the rail rather than tracking the label. -->
 		<Tabs
-			v-model="tabIndex"
+			v-model="operation"
 			:tabs="TABS"
-			@update:model-value="
-				$router.replace({ query: { operation: tabIndex ? 'Export' : 'Import' } })
-			"
+			class="[&>[data-slot=tab-list]]:px-5 [&>[data-slot=tab-list]]:py-1.5"
+			@update:model-value="$router.replace({ query: { operation } })"
 		>
 			<template #tab-panel>
 				<div class="m-5 flex flex-1 flex-col space-y-5 overflow-y-auto">
@@ -71,7 +74,9 @@ import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 const user = inject('$user')
 const route = useRoute()
 
-const tabIndex = ref(route.query.operation === 'Export' ? 1 : 0)
+// The tab value is the operation itself, so it doubles as the query param.
+const operation = ref(route.query.operation === 'Export' ? 'Export' : 'Import')
+const isExport = computed(() => operation.value === 'Export')
 const status = ref(' ')
 
 const STATUS_OPTIONS = [
@@ -97,7 +102,7 @@ const mailExchanges = useList({
 	filters: () => {
 		const filters: Record<string, string> = {
 			user: user.data.name,
-			operation: tabIndex.value ? 'Export' : 'Import',
+			operation: operation.value,
 		}
 		if (status.value !== ' ') filters.status = status.value
 		return filters
@@ -116,10 +121,10 @@ const listColumns = computed(() => {
 		{ label: __('Status'), key: 'status' },
 		{
 			label: __('Format'),
-			key: tabIndex.value ? 'export_format' : 'import_format',
+			key: isExport.value ? 'export_format' : 'import_format',
 		},
 	]
-	if (tabIndex.value) columns.push({ label: __('Archive Type'), key: 'export_archive_type' })
+	if (isExport.value) columns.push({ label: __('Archive Type'), key: 'export_archive_type' })
 	return columns
 })
 
@@ -129,8 +134,9 @@ const LIST_OPTIONS = {
 	emptyState: { description: __('No mail exchanges found.') },
 }
 
+// iconLeft, not icon: `icon` makes an icon-only trigger and drops the label.
 const TABS = [
-	{ label: __('Import'), icon: HardDriveDownload },
-	{ label: __('Export'), icon: HardDriveUpload },
+	{ value: 'Import', label: __('Import'), iconLeft: HardDriveDownload },
+	{ value: 'Export', label: __('Export'), iconLeft: HardDriveUpload },
 ]
 </script>

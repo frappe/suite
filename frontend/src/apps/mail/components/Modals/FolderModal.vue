@@ -16,15 +16,17 @@
 		}"
 	>
 		<template #default>
-			<Tabs v-model="tab" :tabs="TABS" class="[&>[role=tablist]]:px-0">
-				<template #tab-panel>
+			<Tabs v-model="tab" :tabs="TABS">
+				<!-- Tabs renders a panel per tab and shows the selected one, so the body
+				     keys off the panel's own tab rather than the model. -->
+				<template #tab-panel="{ tab: panel }">
 					<!-- px-0.5: the tab panel is an `overflow-auto` scroll container, and a focus ring
 					     is a box-shadow — which is clipped by an overflowing ancestor rather than
 					     scrolled to. A full-width control therefore had its ring shaved off both sides.
 					     Two pixels of inset gives it somewhere to draw. -->
 					<div class="space-y-4 px-0.5 pt-4 sm:pt-6">
 						<!-- General -->
-						<template v-if="tab === 0">
+						<template v-if="panel.value === 'general'">
 							<FormControl v-model="folder.name" :label="__('Name')" required />
 							<div class="space-y-1.5">
 								<label class="text-ink-gray-5 block text-xs">
@@ -185,11 +187,12 @@ const automationScript = computed(() =>
 	sieveScripts.data?.find((s) => s._name === 'frappe_mail_automation'),
 )
 
-const tab = ref(0)
+const tab = ref('general')
 
+// iconLeft, not icon: `icon` is Tabs' icon-only trigger — it drops the label.
 const TABS = [
-	{ label: __('General'), icon: Settings },
-	{ label: __('Automation'), icon: Zap },
+	{ value: 'general', label: __('General'), iconLeft: Settings },
+	{ value: 'automation', label: __('Automation'), iconLeft: Zap },
 ]
 
 const DEFAULT_FOLDER = {
@@ -278,7 +281,7 @@ const createAutomationScript = createResource({
 watch(show, (val) => {
 	if (!val) return
 
-	tab.value = 0
+	tab.value = 'general'
 	Object.assign(automationRules, DEFAULT_AUTOMATION_RULES)
 	Object.assign(originalAutomationRules, DEFAULT_AUTOMATION_RULES)
 

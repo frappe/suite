@@ -4,7 +4,7 @@
     title="Settings"
     @close="model = false"
   >
-    <Tabs v-model="tabIndex" :tabs>
+    <Tabs v-model="tab" :tabs>
         <template #tab-panel>
           <Form>
             <template #default="{ dirty, setDirty, error }">
@@ -16,7 +16,7 @@
                     :options="fontOptions"
                     label="Font family"
                     :description="`Choose the default font family for ${
-                      tabIndex === 1 ? 'this document' : 'new documents'
+                      tab === 'doc' ? 'this document' : 'new documents'
                     }.`"
                   />
                   <FormControl
@@ -66,7 +66,7 @@
                 </div>
 
                 <!-- Print Settings Section -->
-                <div v-if="tabIndex === 1" class="flex flex-col gap-3 pb-5 pr-5">
+                <div v-if="tab === 'doc'" class="flex flex-col gap-3 pb-5 pr-5">
                     <h3 class="text-base font-medium text-ink-gray-7">Print settings</h3>
                     <div class="space-y-2">
                       <FormLabel label="Header & footer" size="md" />
@@ -176,11 +176,12 @@ const props = defineProps({
   globalSettings: { required: true, type: Object },
   editable: Boolean,
 })
+// iconLeft, not icon: `icon` makes an icon-only trigger and drops the label.
 const tabs = dynamicList([
-  { label: 'Everywhere', icon: LucideGlobe2 },
-  { label: 'This document', icon: LucideFileText },
+  { value: 'global', label: 'Everywhere', iconLeft: LucideGlobe2 },
+  { value: 'doc', label: 'This document', iconLeft: LucideFileText },
 ])
-const tabIndex = ref(props.editable ? 1 : 0)
+const tab = ref(props.editable ? 'doc' : 'global')
 
 const fontOptions = computed(() =>
   dynamicList([
@@ -188,14 +189,14 @@ const fontOptions = computed(() =>
       label: 'Automatic',
       value: 'global',
       key: 'global',
-      cond: tabIndex.value === 1,
+      cond: tab.value === 'doc',
     },
     ...FONT_FAMILIES,
   ]),
 )
 
-const resource = computed(() => (tabIndex.value === 1 ? props.docSettings : props.globalSettings))
-const key = computed(() => (tabIndex.value === 1 ? 'settings' : 'writer_settings'))
+const resource = computed(() => (tab.value === 'doc' ? props.docSettings : props.globalSettings))
+const key = computed(() => (tab.value === 'doc' ? 'settings' : 'writer_settings'))
 
 const KEYS = computed(() => [
   'font_family',
