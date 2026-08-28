@@ -16,7 +16,7 @@
 				keyboardOpen ? 'bottom-0' : 'bottom-[calc(3.75rem+1px+env(safe-area-inset-bottom))]'
 			"
 		>
-			<slot name="body" />
+			<slot />
 		</div>
 	</Teleport>
 </template>
