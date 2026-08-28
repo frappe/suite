@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl v-model="quotaGb" type="number" :min="0" :label="__('Quota (GB, 0 = unlimited)')" />
 				<ErrorMessage

@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<div class="space-y-3">
 					<div v-for="(email, index) in emails" :key="index" class="space-y-1.5">

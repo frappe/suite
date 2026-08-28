@@ -3,7 +3,7 @@
 		<template #title>
 			<h2 class="text-lg-bold">{{ __('Install Frappe Mail') }}</h2>
 		</template>
-		<template>
+		<template #default>
 			<p>{{ __('Get the app on your device for easy access & a better experience!') }}</p>
 		</template>
 		<template #actions>

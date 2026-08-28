@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-model:open="show" v-bind="addSignatureOptions">
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl
 					v-model="signature.doc.signature_name"

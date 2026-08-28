@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-bind="{ title: __('Shortcuts'), size: '5xl' }">
-		<template>
+		<template #default>
 			<div class="grid max-h-[75vh] w-full grid-cols-2 gap-10 overflow-y-auto py-1">
 				<div v-for="(column, index) in shortcutGroups" :key="index">
 					<div v-for="group in column" :key="group.title" class="pb-8">

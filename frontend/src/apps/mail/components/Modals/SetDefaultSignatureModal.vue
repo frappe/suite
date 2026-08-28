@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-model:open="show" v-bind="addSignatureOptions">
-		<template>
+		<template #default>
 			<FormControl
 				v-model="identity"
 				type="combobox"

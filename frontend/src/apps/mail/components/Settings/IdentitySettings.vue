@@ -123,7 +123,7 @@
 					],
 				}"
 			>
-				<template>
+				<template #default>
 					<FormControl
 						v-model="email"
 						:label="__('Email')"
@@ -158,7 +158,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<FormControl
 				v-model="newEmail"
 				:label="__('Email')"

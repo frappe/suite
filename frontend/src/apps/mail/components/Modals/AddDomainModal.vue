@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<p class="text-p-base">
 					{{

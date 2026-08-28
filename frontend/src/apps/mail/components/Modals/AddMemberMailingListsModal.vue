@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Mailing Lists') }}</label>
 				<MultiSelect v-model="listIds" :options="options" />

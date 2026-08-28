@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl v-model="role" type="select" :label="__('Role')" :options="ROLE_OPTIONS" />
 				<FormControl v-model="description" :label="__('Full Name')" />

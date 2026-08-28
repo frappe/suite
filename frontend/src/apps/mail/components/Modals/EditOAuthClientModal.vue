@@ -13,7 +13,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl v-model="clientId" :label="__('Client ID')" autocomplete="off" />
 				<FormControl v-model="description" :label="__('Description')" type="textarea" />

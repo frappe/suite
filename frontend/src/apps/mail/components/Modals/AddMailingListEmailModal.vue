@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<div class="flex items-center justify-between">
 					<FormControl v-model="username" :label="__('Username')" placeholder="announce" class="w-full" />

@@ -15,7 +15,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<Tabs v-model="tab" :tabs="TABS" class="[&>[role=tablist]]:px-0">
 				<template #tab-panel>
 					<!-- px-0.5: the tab panel is an `overflow-auto` scroll container, and a focus ring

@@ -6,7 +6,7 @@
 		v-bind="{ size: '2xl', paddingTop: '2%' }"
 		:bare="!isMobile"
 	>
-		<template>
+		<template #default>
 			<div class="bg-surface-base">
 				<div class="flex items-center border-b px-4 py-2">
 					<!-- Mobile trades the decorative magnifier for the way out: search is a

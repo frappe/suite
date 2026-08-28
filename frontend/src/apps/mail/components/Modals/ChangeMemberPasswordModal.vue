@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-model:open="show" v-bind="dialogOptions">
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl
 					v-model="newPassword"

@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl
 					v-model="email"

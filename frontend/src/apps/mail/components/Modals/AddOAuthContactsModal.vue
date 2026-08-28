@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<div class="space-y-2">
 					<label class="text-ink-gray-5 block text-xs">{{ __('Contacts') }}</label>

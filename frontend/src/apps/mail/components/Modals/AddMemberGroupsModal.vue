@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-1.5">
 				<label class="text-ink-gray-5 block text-xs">{{ __('Groups') }}</label>
 				<MultiSelect v-model="groupIds" :options="options" />

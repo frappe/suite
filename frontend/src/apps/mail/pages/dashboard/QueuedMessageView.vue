@@ -74,7 +74,7 @@
 	/>
 	<Dialog v-model:open="showCancel" v-bind="cancelDialogOptions" />
 	<Dialog v-model:open="showSource" v-bind="{ title: __('Message Source'), size: '4xl' }">
-		<template>
+		<template #default>
 			<pre
 				v-if="source.data"
 				class="bg-surface-gray-2 max-h-[70vh] overflow-auto rounded-4 p-4 text-xs whitespace-pre-wrap"

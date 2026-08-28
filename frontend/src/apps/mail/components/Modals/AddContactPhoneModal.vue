@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-model:open="show" v-bind="options">
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl v-model="email.number" type="tel" :label="__('Number')" required />
 				<FormControl

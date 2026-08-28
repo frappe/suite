@@ -14,7 +14,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-6">
 				<!-- Recipient -->
 				<section class="space-y-3">

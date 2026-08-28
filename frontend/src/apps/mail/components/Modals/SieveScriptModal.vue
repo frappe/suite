@@ -15,7 +15,7 @@
 			],
 		}"
 	>
-		<template>
+		<template #default>
 			<div class="space-y-4">
 				<FormControl v-model="script._name" :label="__('Script Name')" required />
 				<div class="space-y-1.5">

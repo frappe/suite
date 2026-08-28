@@ -1,6 +1,6 @@
 <template>
 	<Dialog v-model:open="show" v-bind="{ title: __('Edit Photo'), size: 'sm' }">
-		<template>
+		<template #default>
 			<FileUploader
 				class="mb-2 w-full"
 				:file-types="['image/*']"

@@ -18,7 +18,7 @@
 			/>
 
 			<Dialog v-model:open="showSecret" v-bind="{ title: __('API Access') }">
-				<template>
+				<template #default>
 					<p class="text-base">
 						{{
 							__(`Please copy the API secret now. You won’t be able to see it again!`)
