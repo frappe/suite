@@ -1,11 +1,52 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-export interface ScreenShareConsumer {
+interface ScreenShareBase {
 	participantId: string;
 	consumerId: string;
 	startedAt: number;
-	local?: boolean;
+}
+
+export interface RemoteScreenShare extends ScreenShareBase {
+	source: "remote";
+	producerId: string;
+}
+
+export interface LocalScreenShare extends ScreenShareBase {
+	source: "local";
+}
+
+export type DisplayScreenShare = RemoteScreenShare | LocalScreenShare;
+
+export function findActiveScreenShare(
+	shares: RemoteScreenShare[],
+	participantId: string,
+	producerId: string,
+	consumerId?: string,
+): RemoteScreenShare | null {
+	const current = shares.find((share) => share.participantId === participantId);
+	return current?.producerId === producerId &&
+		(!consumerId || current.consumerId === consumerId)
+		? current
+		: null;
+}
+
+export function replaceActiveScreenShare(
+	shares: RemoteScreenShare[],
+	next: RemoteScreenShare,
+): { shares: RemoteScreenShare[]; replaced: RemoteScreenShare[] } {
+	const replaced = shares.filter(
+		(share) =>
+			share.participantId === next.participantId &&
+			share.consumerId !== next.consumerId,
+	);
+	return {
+		shares: [
+			...shares.filter((share) => share.participantId !== next.participantId),
+			next,
+		],
+		replaced,
+	};
 }
 
 export interface MediaState {
@@ -18,7 +59,7 @@ export interface MediaState {
 	microphonePermissionGranted: boolean;
 	screenShareStream: MediaStream | null;
 	localScreenShareStartedAt: number;
-	activeScreenShareConsumers: ScreenShareConsumer[];
+	activeScreenShareConsumers: RemoteScreenShare[];
 	screenShareStreams: Record<string, MediaStream>;
 	localVideo: HTMLElement | null;
 	setMedia: (mic: boolean, camera: boolean) => void;
@@ -35,7 +76,7 @@ export const useMediaState = defineStore("meet-media", () => {
 	const microphonePermissionGranted = ref(false);
 	const screenShareStream = ref<MediaStream | null>(null);
 	const localScreenShareStartedAt = ref(0);
-	const activeScreenShareConsumers = ref<ScreenShareConsumer[]>([]);
+	const activeScreenShareConsumers = ref<RemoteScreenShare[]>([]);
 	const screenShareStreams = ref<Record<string, MediaStream>>({});
 	const localVideo = ref<HTMLElement | null>(null);
 

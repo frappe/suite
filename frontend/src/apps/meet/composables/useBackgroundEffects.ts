@@ -8,6 +8,10 @@ import {
 } from "../data/backgroundEffects";
 import { CameraFramingProcessor } from "../utils/cameraFraming";
 import {
+	type MediaAttachmentFacade,
+	VideoElementManager,
+} from "../utils/media/VideoElementManager";
+import {
 	applyBlurEffect,
 	applyVirtualBackground,
 	CompositingError,
@@ -70,6 +74,12 @@ interface HaltProcessingOptions {
 
 interface UseBackgroundEffectsOptions {
 	autoCleanupOnUnmount?: boolean;
+	mediaAttachments?: Pick<
+		MediaAttachmentFacade,
+		| "attachBackgroundEffectsSource"
+		| "removeBackgroundEffectsSource"
+		| "attachLocalPreview"
+	>;
 }
 
 // MediaPipe Selfie Segmentation instance
@@ -111,7 +121,12 @@ async function getSelfieSegmentationCtor() {
 
 export function useBackgroundEffects({
 	autoCleanupOnUnmount = true,
+	mediaAttachments: providedMediaAttachments,
 }: UseBackgroundEffectsOptions = {}): UseBackgroundEffectsReturn {
+	const fallbackMediaAttachments = providedMediaAttachments
+		? null
+		: new VideoElementManager();
+	const mediaAttachments = providedMediaAttachments ?? fallbackMediaAttachments!;
 	const isProcessing = ref<boolean>(false);
 	const processedStream = ref<MediaStream | null>(null);
 	const error = ref<string | null>(null);
@@ -126,6 +141,7 @@ export function useBackgroundEffects({
 	let animationId: number | null = null;
 	let activeSessionCleanup: (() => void) | null = null;
 	let cameraFramingDisposal: Promise<void> | null = null;
+	const backgroundAttachmentId = `background-effects-${Math.random().toString(36).slice(2)}`;
 
 	let webglManager: WebGLManager | null = null;
 	const ensureWebGL = (): void => {
@@ -397,7 +413,7 @@ export function useBackgroundEffects({
 				activeSessionCleanup = null;
 			}
 			if (video) {
-				video.srcObject = null;
+				mediaAttachments.removeBackgroundEffectsSource(backgroundAttachmentId);
 				video = null;
 			}
 			if (trackProcessor) {
@@ -426,6 +442,11 @@ export function useBackgroundEffects({
 			resultStream = null;
 			trackGenerator = null;
 			stopCameraFraming();
+			if (inputStream.getVideoTracks().some((track) => track.readyState === "live")) {
+				void mediaAttachments.attachLocalPreview(inputStream).catch((error) =>
+					console.warn("Could not restore raw local preview:", error),
+				);
+			}
 		};
 		activeSessionCleanup = cleanupProvisionalResources;
 
@@ -570,11 +591,15 @@ export function useBackgroundEffects({
 			} else {
 				// Fallback to video element for browsers without MediaStreamTrackProcessor
 				video = document.createElement("video");
-				video.srcObject = new MediaStream([videoTrack]);
-				video.muted = true;
-				video.playsInline = true;
 				try {
-					await racePendingWork(video.play(), signal);
+					await racePendingWork(
+						mediaAttachments.attachBackgroundEffectsSource(
+							backgroundAttachmentId,
+							video,
+							new MediaStream([videoTrack]),
+						),
+						signal,
+					);
 					assertOwnerActive(signal);
 				} catch (err) {
 					if (isDisposed || signal?.aborted) throw err;
@@ -1241,6 +1266,7 @@ export function useBackgroundEffects({
 		activeInstanceCount = Math.max(0, activeInstanceCount - 1);
 		disposePromise = (async () => {
 			await haltProcessing({ disposeWebGL: true });
+			fallbackMediaAttachments?.cleanup();
 			if (activeInstanceCount === 0) {
 				await releaseSegmentation();
 			}

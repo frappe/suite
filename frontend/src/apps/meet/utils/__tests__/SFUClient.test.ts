@@ -352,6 +352,24 @@ describe("sendChatPin", () => {
 	});
 });
 
+describe("sendScreenShare", () => {
+	it("sends stop_share as an acknowledged request", async () => {
+		const client = createClient();
+		const sendRequest = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		await client.sendScreenShare("stop_share", {
+			producerId: "screen-producer",
+		});
+
+		expect(sendRequest).toHaveBeenCalledWith("screen_share", {
+			action: "stop_share",
+			shareData: { producerId: "screen-producer" },
+		});
+	});
+});
+
 describe("sendReaction", () => {
 	it("throws when not connected", () => {
 		const client = createClient();

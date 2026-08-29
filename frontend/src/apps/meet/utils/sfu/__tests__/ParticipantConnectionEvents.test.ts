@@ -30,6 +30,7 @@ function createManager({ e2eeRequired = false } = {}) {
 			clear: vi.fn(),
 			setEventHandlers: vi.fn(),
 			getConsumersByParticipant: vi.fn(() => []),
+			getScreenShareConsumers: vi.fn(() => []),
 			removeConsumer: vi.fn(),
 		},
 		reattachAfterProducerClosed: vi.fn().mockResolvedValue(undefined),
@@ -242,6 +243,114 @@ describe("ParticipantConnection", () => {
 			producerId: "screen-producer",
 			isScreen: true,
 		});
+	});
+
+	it("removes only the screen consumer matching a stopped producer", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		const stopped = vi.fn();
+		manager.eventHandlers.onScreenShareStopped = stopped;
+		const oldScreen = {
+			id: "consumer-old",
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+		};
+		const currentScreen = {
+			id: "consumer-current",
+			participantId: "remote-1",
+			producerId: "screen-current",
+			isScreen: true,
+		};
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([
+			oldScreen,
+			currentScreen,
+		]);
+		await manager.connect("token");
+
+		handlers.get("screen_share_stopped")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledOnce();
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledWith(
+			"consumer-old",
+		);
+		expect(stopped).toHaveBeenCalledWith(
+			expect.objectContaining({
+				participantId: "remote-1",
+				producerId: "screen-old",
+				consumerId: "consumer-old",
+			}),
+		);
+		expect(mediaManager.isScreenShareActive).toBe(true);
+	});
+
+	it("does not remove a screen consumer for another producer", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([
+			{
+				id: "consumer-current",
+				participantId: "remote-1",
+				producerId: "screen-current",
+				isScreen: true,
+			},
+		]);
+		await manager.connect("token");
+
+		handlers.get("screen_share_stopped")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).not.toHaveBeenCalled();
+		expect(mediaManager.isScreenShareActive).toBe(true);
+	});
+
+	it("preserves a replacement screen when the old producer closes late", async () => {
+		const { handlers, manager, mediaManager } = createManager();
+		const oldScreen = {
+			id: "consumer-old",
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+			consumer: { closed: false, producerId: "screen-old" },
+		};
+		const replacement = {
+			id: "consumer-current",
+			participantId: "remote-1",
+			producerId: "screen-current",
+			isScreen: true,
+			consumer: { closed: false, producerId: "screen-current" },
+		};
+		mediaManager.consumerManager.getConsumersByParticipant.mockReturnValue([
+			oldScreen,
+			replacement,
+		]);
+		await manager.connect("token");
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+			kind: "video",
+			isScreen: true,
+		});
+		await handlers.get("producer_created")?.({
+			participantId: "remote-1",
+			producerId: "screen-current",
+			kind: "video",
+			isScreen: true,
+		});
+
+		handlers.get("producer_closed")?.({
+			participantId: "remote-1",
+			producerId: "screen-old",
+			isScreen: true,
+		});
+
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledOnce();
+		expect(mediaManager.consumerManager.removeConsumer).toHaveBeenCalledWith(
+			"consumer-old",
+		);
 	});
 
 	it("ignores producer events for the current user", async () => {
@@ -549,6 +658,38 @@ describe("ParticipantConnection", () => {
 		expect(mediaManager.consumerManager.clear).toHaveBeenCalledTimes(1);
 		expect(transportManager.createReceiveTransport).toHaveBeenCalledTimes(1);
 		expect(sfuClient.getExistingProducers).toHaveBeenCalledTimes(1);
+	});
+
+	it("dispatches screen removal before clearing receive consumers", async () => {
+		const { manager, mediaManager } = createManager();
+		const stopped = vi.fn();
+		const screen = {
+			id: "screen-consumer",
+			participantId: "remote-1",
+			producerId: "screen-producer",
+			isScreen: true,
+			appData: { type: "screen" },
+		};
+		manager.eventHandlers.onScreenShareStopped = stopped;
+		mediaManager.consumerManager.getScreenShareConsumers.mockReturnValue([screen]);
+		mediaManager.consumerManager.removeConsumer.mockImplementation((id: string) => {
+			const events = mediaManager.consumerManager.setEventHandlers.mock.calls.at(-1)?.[0];
+			events?.onConsumerRemoved?.(id, screen);
+		});
+		await manager.connect("token");
+
+		await manager.resetReceiveSide();
+
+		expect(stopped).toHaveBeenCalledWith(
+			expect.objectContaining({
+				participantId: "remote-1",
+				producerId: "screen-producer",
+				consumerId: "screen-consumer",
+			}),
+		);
+		expect(
+			mediaManager.consumerManager.removeConsumer.mock.invocationCallOrder[0],
+		).toBeLessThan(mediaManager.consumerManager.clear.mock.invocationCallOrder[0]);
 	});
 
 	it("fails receive recovery when the producer snapshot fails", async () => {

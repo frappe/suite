@@ -1,9 +1,39 @@
-/**
- * Video Element Manager
- *
- * Manages video and audio elements for participants.
- */
+/** Owns MediaStream attachment and playback recovery for Meet media elements. */
 import { selectedSpeakerId } from "../../data/mediaPreferences";
+
+export type MediaAttachmentRole =
+	| "remote-video"
+	| "remote-audio"
+	| "local-preview"
+	| "screen-share"
+	| "background-effects";
+export type AttachmentTrackOwnership = "owned" | "borrowed";
+
+export interface MediaAttachmentFacade {
+	registerRemoteVideoElement: (
+		participantId: string,
+		element: HTMLVideoElement | null,
+	) => void;
+	registerLocalPreview: (element: HTMLVideoElement | null) => void;
+	attachLocalPreview: (stream: MediaStream | null) => Promise<void>;
+	registerScreenSharePreview: (
+		attachmentId: string,
+		element: HTMLVideoElement | null,
+	) => void;
+	attachScreenSharePreview: (
+		attachmentId: string,
+		stream: MediaStream,
+		trackOwnership?: AttachmentTrackOwnership,
+	) => Promise<void>;
+	removeScreenSharePreview: (attachmentId: string) => void;
+	attachBackgroundEffectsSource: (
+		attachmentId: string,
+		element: HTMLVideoElement,
+		stream: MediaStream,
+	) => Promise<void>;
+	removeBackgroundEffectsSource: (attachmentId: string) => void;
+	setAudioOutputDevice: (deviceId: string) => Promise<void>;
+}
 
 interface DeferredAttachment {
 	stream: MediaStream;
@@ -13,72 +43,116 @@ interface DeferredAttachment {
 	timer?: ReturnType<typeof setTimeout>;
 }
 
+interface Attachment {
+	role: MediaAttachmentRole;
+	id: string;
+	element: HTMLMediaElement | null;
+	stream: MediaStream | null;
+	ownsTracks: boolean;
+	createdElement: boolean;
+	lastAttachAt?: number;
+	attachedStreamId?: string;
+	attachedTrackIds?: string;
+	revision: number;
+}
+
 const STALE_REATTACH_MS = 60_000;
+const LOCAL_PREVIEW_ID = "local";
 
-export class VideoElementManager {
-	videoElements: Map<string, HTMLVideoElement>;
-	audioElements: Map<string, HTMLAudioElement>;
-	deferredAttachments: Map<string, DeferredAttachment>;
-	private lastVideoAttachAt: Map<string, number>;
-	private lastAudioAttachAt: Map<string, number>;
-	private playbackHandlers: Map<HTMLMediaElement, () => void>;
+const attachmentKey = (role: MediaAttachmentRole, id: string) => `${role}:${id}`;
 
-	constructor(private strictAttachmentTimeoutMs?: number) {
-		this.videoElements = new Map();
-		this.audioElements = new Map();
-		this.deferredAttachments = new Map();
-		this.lastVideoAttachAt = new Map();
-		this.lastAudioAttachAt = new Map();
-		this.playbackHandlers = new Map();
+export class VideoElementManager implements MediaAttachmentFacade {
+	/** Kept public for recorder compatibility and diagnostics. */
+	videoElements = new Map<string, HTMLVideoElement>();
+	/** Kept public for existing diagnostics. Sink routing belongs to this manager. */
+	audioElements = new Map<string, HTMLAudioElement>();
+	deferredAttachments = new Map<string, DeferredAttachment>();
+
+	private attachments = new Map<string, Attachment>();
+	private playbackHandlers = new Map<HTMLMediaElement, () => void>();
+	private speakerId = selectedSpeakerId.value;
+
+	constructor(private strictAttachmentTimeoutMs?: number) {}
+
+	registerRemoteVideoElement(
+		participantId: string,
+		element: HTMLVideoElement | null,
+	): void {
+		if (!participantId) return;
+		const deferred = this.deferredAttachments.get(participantId);
+		this.registerElement(
+			"remote-video",
+			participantId,
+			element,
+			true,
+			false,
+			!deferred,
+		);
+		if (element) this.videoElements.set(participantId, element);
+		else this.videoElements.delete(participantId);
+
+		if (!element || !deferred) return;
+		this.deferredAttachments.delete(participantId);
+		if (deferred.timer) clearTimeout(deferred.timer);
+		void this.attachStream(participantId, deferred.stream, deferred.isLocal).then(
+			deferred.resolve,
+			deferred.reject,
+		);
 	}
 
+	/** Legacy remote-video facade used by the recorder and existing tile callers. */
 	registerVideoElement(participantId: string, element: HTMLElement): void {
-		if (!element || !participantId) return;
+		this.registerRemoteVideoElement(participantId, element as HTMLVideoElement);
+	}
 
-		const videoEl = element as HTMLVideoElement;
-		const previousElement = this.videoElements.get(participantId);
-		const previousVideoStream =
-			previousElement?.srcObject as MediaStream | null;
+	registerLocalPreview(element: HTMLVideoElement | null): void {
+		this.registerElement("local-preview", LOCAL_PREVIEW_ID, element, false);
+	}
 
-		// Only update srcObject if element doesn't have one, or if we're re-registering with a different track
-		if (previousVideoStream && !videoEl.srcObject) {
-			console.log("Preserving stream during video element re-registration", {
-				participantId,
-				streamId: previousVideoStream.id,
-				trackCount: previousVideoStream.getTracks().length,
-			});
-
-			const videoTracks = previousVideoStream.getVideoTracks();
-			if (videoTracks.length > 0) {
-				const previousVideoTrack = videoTracks[0];
-				const existingVideoTrack = (
-					videoEl.srcObject as MediaStream
-				)?.getVideoTracks?.()?.[0];
-				const videoTrackChanged =
-					!existingVideoTrack ||
-					existingVideoTrack.id !== previousVideoTrack.id;
-
-				if (!videoEl.srcObject || videoTrackChanged) {
-					videoEl.srcObject = new MediaStream(videoTracks);
-				}
-			}
-			// we have a separate audio element for audio playback
-			videoEl.muted = true;
+	attachLocalPreview(stream: MediaStream | null): Promise<void> {
+		if (!stream) {
+			this.clearAttachmentStream("local-preview", LOCAL_PREVIEW_ID, false);
+			return Promise.resolve();
 		}
+		return this.attach("local-preview", LOCAL_PREVIEW_ID, stream, false);
+	}
 
-		this.videoElements.set(participantId, videoEl);
+	registerScreenSharePreview(
+		attachmentId: string,
+		element: HTMLVideoElement | null,
+	): void {
+		if (!attachmentId) return;
+		this.registerElement("screen-share", attachmentId, element, false);
+	}
 
-		if (this.deferredAttachments.has(participantId)) {
-			const deferred = this.deferredAttachments.get(
-				participantId,
-			) as DeferredAttachment;
-			this.deferredAttachments.delete(participantId);
-			if (deferred.timer) clearTimeout(deferred.timer);
-			void this.attachStream(participantId, deferred.stream, deferred.isLocal).then(
-				deferred.resolve,
-				deferred.reject,
-			);
-		}
+	attachScreenSharePreview(
+		attachmentId: string,
+		stream: MediaStream,
+		trackOwnership: AttachmentTrackOwnership = "borrowed",
+	): Promise<void> {
+		return this.attach(
+			"screen-share",
+			attachmentId,
+			stream,
+			trackOwnership === "owned",
+		);
+	}
+
+	removeScreenSharePreview(attachmentId: string): void {
+		this.removeAttachment("screen-share", attachmentId);
+	}
+
+	attachBackgroundEffectsSource(
+		attachmentId: string,
+		element: HTMLVideoElement,
+		stream: MediaStream,
+	): Promise<void> {
+		this.registerElement("background-effects", attachmentId, element, false);
+		return this.attach("background-effects", attachmentId, stream, false);
+	}
+
+	removeBackgroundEffectsSource(attachmentId: string): void {
+		this.removeAttachment("background-effects", attachmentId);
 	}
 
 	async attachStream(
@@ -86,188 +160,106 @@ export class VideoElementManager {
 		stream: MediaStream,
 		isLocal = false,
 	): Promise<void> {
-		const videoElement = this.videoElements.get(participantId);
+		if (isLocal) return this.attachLocalPreview(stream);
+
 		const audioTracks = stream.getAudioTracks();
+		if (audioTracks.length) await this.attachAudioStream(participantId, audioTracks);
 
-		// Always attach audio for remote participants, even if no video element exists
-		if (!isLocal && audioTracks.length > 0) {
-			await this.attachAudioStream(participantId, audioTracks);
-		}
-
-		// Only defer if we have video tracks and no video element
-		// Audio-only streams don't need video elements, so don't defer them
-		if (!videoElement && !isLocal && stream.getVideoTracks().length > 0) {
+		if (!stream.getVideoTracks().length) return;
+		const video = this.getAttachment("remote-video", participantId)?.element;
+		if (!video) {
+			this.rememberStream("remote-video", participantId, stream, true);
 			if (!this.strictAttachmentTimeoutMs) {
 				this.deferredAttachments.set(participantId, { stream, isLocal });
 				return;
 			}
+			this.cancelDeferredAttachment(participantId);
 			return new Promise<void>((resolve, reject) => {
 				const timer = setTimeout(() => {
-					this.deferredAttachments.delete(participantId);
+					if (this.deferredAttachments.get(participantId)?.timer === timer) {
+						this.deferredAttachments.delete(participantId);
+					}
 					reject(new Error(`Timed out waiting for video element for ${participantId}`));
 				}, this.strictAttachmentTimeoutMs);
-				this.deferredAttachments.set(participantId, { stream, isLocal, resolve, reject, timer });
+				this.deferredAttachments.set(participantId, {
+					stream,
+					isLocal,
+					resolve,
+					reject,
+					timer,
+				});
 			});
 		}
-
-		if (videoElement) {
-			const videoTracks = stream.getVideoTracks();
-
-			if (videoTracks.length > 0) {
-				const newVideoTrack = videoTracks[0];
-				const existingVideoTrack = (
-					videoElement.srcObject as MediaStream | null
-				)?.getVideoTracks?.()?.[0];
-				const lastAttach = this.lastVideoAttachAt.get(participantId);
-				const isStale =
-					lastAttach !== undefined &&
-					Date.now() - lastAttach > STALE_REATTACH_MS;
-				const videoTrackChanged =
-					!existingVideoTrack || existingVideoTrack.id !== newVideoTrack.id;
-
-				if (!videoElement.srcObject || videoTrackChanged || isStale) {
-					console.log(`Attaching video track for ${participantId}`, {
-						trackId: newVideoTrack.id,
-						hadExisting: !!existingVideoTrack,
-						changed: videoTrackChanged,
-						stale: isStale,
-					});
-					const videoStream = new MediaStream(videoTracks);
-					videoElement.srcObject = videoStream;
-					// we have a separate audio element for audio playback
-					videoElement.muted = true;
-					this.lastVideoAttachAt.set(participantId, Date.now());
-
-					try {
-						await videoElement.play();
-					} catch (err) {
-						console.error(`Error playing video for ${participantId}:`, err);
-						if (this.strictAttachmentTimeoutMs) throw err;
-						if ((err as DOMException).name === "NotAllowedError")
-							this.addUserInteractionHandler(videoElement, participantId);
-					}
-				} else {
-					console.log(
-						`Skipping video re-attach for ${participantId} - same track`,
-					);
-				}
-			}
-		}
+		await this.attach("remote-video", participantId, stream, true);
 	}
 
 	async attachAudioStream(
 		participantId: string,
 		audioTracks: MediaStreamTrack[],
 	): Promise<void> {
-		let audioElement = this.audioElements.get(participantId);
-
-		if (!audioElement) {
-			audioElement = document.createElement("audio");
-			audioElement.autoplay = true;
-			audioElement.setAttribute("playsinline", "");
-			audioElement.style.display = "none";
-			document.body.appendChild(audioElement);
-
-			if (selectedSpeakerId.value) {
-				(
-					audioElement as HTMLAudioElement & {
-						setSinkId?: (id: string) => Promise<void>;
-					}
-				)
-					.setSinkId?.(selectedSpeakerId.value)
-					.catch((err: Error) => {
-						console.warn(
-							`Failed to set initial speaker for ${participantId}:`,
-							err,
-						);
-					});
-			}
-
-			this.audioElements.set(participantId, audioElement);
-			console.log(`Created separate audio element for ${participantId}`);
+		if (!audioTracks.length) return;
+		let audio = this.audioElements.get(participantId);
+		if (!audio) {
+			audio = document.createElement("audio");
+			audio.style.display = "none";
+			document.body.appendChild(audio);
+			this.audioElements.set(participantId, audio);
+			this.registerElement("remote-audio", participantId, audio, true, true);
+			await this.applySink(audio, participantId);
 		}
+		await this.attach(
+			"remote-audio",
+			participantId,
+			new MediaStream(audioTracks),
+			true,
+		);
+	}
 
-		const newAudioTrack = audioTracks[0];
-		const existingAudioTrack = (
-			audioElement.srcObject as MediaStream | null
-		)?.getAudioTracks?.()?.[0];
-		const lastAttach = this.lastAudioAttachAt.get(participantId);
-		const isStale =
-			lastAttach !== undefined && Date.now() - lastAttach > STALE_REATTACH_MS;
-		const audioTrackChanged =
-			!existingAudioTrack || existingAudioTrack.id !== newAudioTrack.id;
-
-		if (!audioElement.srcObject || audioTrackChanged || isStale) {
-			const audioStream = new MediaStream(audioTracks);
-			audioElement.srcObject = audioStream;
-			this.lastAudioAttachAt.set(participantId, Date.now());
-
-			// Try to play audio
-			try {
-				await audioElement.play();
-			} catch (err) {
-				console.warn(
-					`Audio autoplay failed for ${participantId}:`,
-					(err as Error).message,
-				);
-				if (this.strictAttachmentTimeoutMs) throw err;
-				if ((err as DOMException).name === "NotAllowedError")
-					this.addUserInteractionHandler(audioElement, participantId);
-			}
-		}
+	async setAudioOutputDevice(deviceId: string): Promise<void> {
+		this.speakerId = deviceId;
+		await Promise.all(
+			Array.from(this.audioElements, ([participantId, element]) =>
+				this.applySink(element, participantId),
+			),
+		);
 	}
 
 	async playVideo(
 		element: HTMLVideoElement,
 		participantId: string,
 	): Promise<boolean> {
-		try {
-			await element.play();
-			this.clearPlaybackHandler(element);
-			return true;
-		} catch (error) {
-			if ((error as DOMException).name === "NotAllowedError") {
-				console.warn(
-					`Autoplay blocked for ${participantId}, will play on user interaction`,
-				);
-				this.addUserInteractionHandler(element, participantId);
-			} else {
-				console.warn(
-					`Video play failed for ${participantId}:`,
-					(error as Error).message,
-				);
-			}
-			return false;
-		}
+		return this.playElement(element, participantId);
 	}
 
-	/** Retries playback for every attached remote media element after resume. */
+	/** Retries every registered role after browser lifecycle resume. */
 	async retryPlayback(): Promise<void> {
-		await Promise.all([
-			...Array.from(this.videoElements, ([participantId, element]) =>
-				element.srcObject
-					? this.playVideo(element, participantId)
-					: Promise.resolve(false),
-			),
-			...Array.from(this.audioElements, async ([participantId, element]) => {
-				if (!element.srcObject) return false;
-				try {
-					await element.play();
-					this.clearPlaybackHandler(element);
-					return true;
-				} catch (error) {
-					if ((error as DOMException).name === "NotAllowedError") {
-						this.addUserInteractionHandler(element, participantId);
-					}
-					return false;
-				}
+		const registered = new Map<HTMLMediaElement, string>();
+		for (const attachment of this.attachments.values()) {
+			if (attachment.element) {
+				registered.set(
+					attachment.element,
+					`${attachment.role}:${attachment.id}`,
+				);
+			}
+		}
+		for (const [participantId, element] of this.videoElements) {
+			registered.set(element, `remote-video:${participantId}`);
+		}
+		for (const [participantId, element] of this.audioElements) {
+			registered.set(element, `remote-audio:${participantId}`);
+		}
+		await Promise.all(
+			Array.from(registered, ([element, id]) => {
+				return element?.srcObject
+					? this.playElement(element, id)
+					: Promise.resolve(false);
 			}),
-		]);
+		);
 	}
 
 	addUserInteractionHandler(
 		element: HTMLMediaElement,
-		participantId: string,
+		attachmentId: string,
 	): void {
 		if (this.playbackHandlers.has(element)) return;
 		const playOnInteraction = async () => {
@@ -276,15 +268,214 @@ export class VideoElementManager {
 				this.clearPlaybackHandler(element);
 			} catch (error) {
 				console.warn(
-					`Unable to play video for ${participantId}:`,
+					`Unable to play media for ${attachmentId}:`,
 					(error as Error).message,
 				);
 			}
 		};
-
 		this.playbackHandlers.set(element, playOnInteraction);
 		document.addEventListener("click", playOnInteraction);
 		document.addEventListener("touchstart", playOnInteraction);
+	}
+
+	removeVideoElement(participantId: string): void {
+		this.removeAttachment("remote-video", participantId);
+		this.removeAttachment("remote-audio", participantId);
+		this.videoElements.delete(participantId);
+		this.audioElements.delete(participantId);
+		this.cancelDeferredAttachment(participantId);
+	}
+
+	cancelDeferredAttachment(participantId: string): void {
+		const deferred = this.deferredAttachments.get(participantId);
+		if (!deferred) return;
+		if (deferred.timer) clearTimeout(deferred.timer);
+		this.deferredAttachments.delete(participantId);
+		deferred.resolve?.();
+	}
+
+	cleanupRemoteMedia(): void {
+		for (const attachment of [...this.attachments.values()]) {
+			if (
+				attachment.role === "remote-video" ||
+				attachment.role === "remote-audio" ||
+				(attachment.role === "screen-share" && attachment.ownsTracks)
+			) {
+				this.removeAttachment(attachment.role, attachment.id);
+			}
+		}
+		this.videoElements.clear();
+		this.audioElements.clear();
+		for (const deferred of this.deferredAttachments.values()) {
+			if (deferred.timer) clearTimeout(deferred.timer);
+			deferred.reject?.(new Error("Video element manager cleaned up"));
+		}
+		this.deferredAttachments.clear();
+	}
+
+	cleanup(): void {
+		for (const attachment of [...this.attachments.values()]) {
+			this.removeAttachment(attachment.role, attachment.id);
+		}
+		for (const element of [...this.playbackHandlers.keys()]) {
+			this.clearPlaybackHandler(element);
+		}
+		for (const deferred of this.deferredAttachments.values()) {
+			if (deferred.timer) clearTimeout(deferred.timer);
+			deferred.reject?.(new Error("Video element manager cleaned up"));
+		}
+		this.videoElements.clear();
+		this.audioElements.clear();
+		this.deferredAttachments.clear();
+	}
+
+	private registerElement(
+		role: MediaAttachmentRole,
+		id: string,
+		element: HTMLMediaElement | null,
+		ownsTracks: boolean,
+		createdElement = false,
+		attachStoredStream = true,
+	): void {
+		const attachment = this.getOrCreateAttachment(role, id, ownsTracks);
+		const previous = attachment.element;
+		if (previous !== element) attachment.revision++;
+		if (previous && previous !== element) this.detachElement(previous, false);
+		attachment.element = element;
+		attachment.createdElement = createdElement;
+		if (!element) return;
+		this.configureElement(element, role);
+		if (attachment.stream && attachStoredStream) {
+			void this.attachCurrentStream(attachment).catch((error) =>
+				console.warn(`Failed to restore ${role}:${id} playback:`, error),
+			);
+		}
+	}
+
+	private rememberStream(
+		role: MediaAttachmentRole,
+		id: string,
+		stream: MediaStream,
+		ownsTracks: boolean,
+	): Attachment {
+		const attachment = this.getOrCreateAttachment(role, id, ownsTracks);
+		if (
+			attachment.stream &&
+			attachment.stream !== stream &&
+			attachment.ownsTracks
+		) {
+			this.stopReplacedTracks(attachment.stream, stream);
+		}
+		attachment.stream = stream;
+		attachment.ownsTracks = ownsTracks;
+		return attachment;
+	}
+
+	private async attach(
+		role: MediaAttachmentRole,
+		id: string,
+		stream: MediaStream,
+		ownsTracks: boolean,
+	): Promise<void> {
+		const attachment = this.rememberStream(role, id, stream, ownsTracks);
+		if (attachment.element) await this.attachCurrentStream(attachment);
+	}
+
+	private async attachCurrentStream(attachment: Attachment): Promise<void> {
+		const { element, role, stream } = attachment;
+		if (!element || !stream) return;
+		const tracks =
+			role === "remote-audio" ? stream.getAudioTracks() : stream.getVideoTracks();
+		if (!tracks.length) return;
+		const trackIds = tracks.map((track) => track.id).join(",");
+		const currentTracks = (element.srcObject as MediaStream | null)
+			?.getTracks()
+			.map((track) => track.id)
+			.join(",");
+		const stale =
+			attachment.lastAttachAt !== undefined &&
+			Date.now() - attachment.lastAttachAt > STALE_REATTACH_MS;
+		const sourceStreamChanged =
+			role !== "remote-video" &&
+			role !== "remote-audio" &&
+			attachment.attachedStreamId !== stream.id;
+		const changed =
+			!element.srcObject ||
+			sourceStreamChanged ||
+			attachment.attachedTrackIds !== trackIds ||
+			currentTracks !== trackIds;
+		if (!changed && !stale) return;
+
+		this.configureElement(element, role);
+		this.clearPlaybackHandler(element);
+		element.srcObject = new MediaStream(tracks);
+		attachment.attachedStreamId = stream.id;
+		attachment.attachedTrackIds = trackIds;
+		attachment.lastAttachAt = Date.now();
+		const revision = ++attachment.revision;
+		const played = await this.playElement(
+			element,
+			`${role}:${attachment.id}`,
+			() =>
+				this.getAttachment(role, attachment.id) === attachment &&
+				attachment.element === element &&
+				attachment.revision === revision,
+		);
+		if (!played && this.strictAttachmentTimeoutMs) {
+			throw new Error(`Media playback failed for ${attachment.id}`);
+		}
+	}
+
+	private configureElement(
+		element: HTMLMediaElement,
+		role: MediaAttachmentRole,
+	): void {
+		element.autoplay = true;
+		element.setAttribute("playsinline", "");
+		if (element instanceof HTMLVideoElement) {
+			element.playsInline = true;
+			element.muted = true;
+		}
+		if (role === "remote-audio") element.muted = false;
+	}
+
+	private async playElement(
+		element: HTMLMediaElement,
+		attachmentId: string,
+		isCurrent: () => boolean = () => true,
+	): Promise<boolean> {
+		try {
+			await element.play();
+			if (!isCurrent()) return true;
+			this.clearPlaybackHandler(element);
+			return true;
+		} catch (error) {
+			if (!isCurrent()) return true;
+			if ((error as DOMException).name === "NotAllowedError") {
+				if (!this.strictAttachmentTimeoutMs) {
+					this.addUserInteractionHandler(element, attachmentId);
+				}
+			} else {
+				console.warn(
+					`Media play failed for ${attachmentId}:`,
+					(error as Error).message,
+				);
+			}
+			if (this.strictAttachmentTimeoutMs) throw error;
+			return false;
+		}
+	}
+
+	private async applySink(
+		element: HTMLAudioElement,
+		participantId: string,
+	): Promise<void> {
+		if (!this.speakerId || typeof element.setSinkId !== "function") return;
+		try {
+			await element.setSinkId(this.speakerId);
+		} catch (error) {
+			console.warn(`Failed to set speaker for ${participantId}:`, error);
+		}
 	}
 
 	private clearPlaybackHandler(element: HTMLMediaElement): void {
@@ -295,80 +486,81 @@ export class VideoElementManager {
 		this.playbackHandlers.delete(element);
 	}
 
-	removeVideoElement(participantId: string): void {
-		const element = this.videoElements.get(participantId);
-		let hadStream = false;
-		if (element?.srcObject) {
-			hadStream = true;
-			for (const track of (element.srcObject as MediaStream).getTracks()) {
-				track.stop();
-			}
-			element.srcObject = null;
-		}
-
-		const audioElement = this.audioElements.get(participantId);
-		if (audioElement) {
-			if (audioElement.srcObject) {
-				for (const track of (
-					audioElement.srcObject as MediaStream
-				).getTracks()) {
-					track.stop();
-				}
-				audioElement.srcObject = null;
-			}
-			audioElement.remove();
-			this.audioElements.delete(participantId);
-		}
-		if (element) this.clearPlaybackHandler(element);
-		if (audioElement) this.clearPlaybackHandler(audioElement);
-
-		this.videoElements.delete(participantId);
-		const deferred = this.deferredAttachments.get(participantId);
-		if (deferred?.timer) clearTimeout(deferred.timer);
-		this.deferredAttachments.delete(participantId);
-		this.lastVideoAttachAt.delete(participantId);
-		this.lastAudioAttachAt.delete(participantId);
-
-		console.log(`Video/Audio elements removed for ${participantId}`, {
-			hadStream,
-			elementExists: !!element,
-			hadAudioElement: !!audioElement,
-		});
+	private clearAttachmentStream(
+		role: MediaAttachmentRole,
+		id: string,
+		stopOwnedTracks: boolean,
+	): void {
+		const attachment = this.getAttachment(role, id);
+		if (!attachment) return;
+		if (stopOwnedTracks && attachment.ownsTracks) this.stopTracks(attachment.stream);
+		attachment.stream = null;
+		attachment.attachedStreamId = undefined;
+		attachment.attachedTrackIds = undefined;
+		attachment.lastAttachAt = undefined;
+		if (attachment.element) this.detachElement(attachment.element, false);
 	}
 
-	cleanup(): void {
-		for (const element of this.playbackHandlers.keys()) {
-			this.clearPlaybackHandler(element);
+	private removeAttachment(role: MediaAttachmentRole, id: string): void {
+		const key = attachmentKey(role, id);
+		const attachment = this.attachments.get(key);
+		if (!attachment) return;
+		if (attachment.ownsTracks) this.stopTracks(attachment.stream);
+		if (attachment.element) {
+			const element = attachment.element;
+			this.detachElement(element, attachment.createdElement);
 		}
-		for (const deferred of this.deferredAttachments.values()) {
-			if (deferred.timer) clearTimeout(deferred.timer);
-			deferred.reject?.(new Error("Video element manager cleaned up"));
-		}
-		for (const [_participantId, element] of this.videoElements.entries()) {
-			if (element?.srcObject) {
-				for (const track of (element.srcObject as MediaStream).getTracks()) {
-					track.stop();
-				}
-				element.srcObject = null;
-			}
-		}
+		this.attachments.delete(key);
+	}
 
-		for (const [_participantId, audioElement] of this.audioElements.entries()) {
-			if (audioElement?.srcObject) {
-				for (const track of (
-					audioElement.srcObject as MediaStream
-				).getTracks()) {
-					track.stop();
-				}
-				audioElement.srcObject = null;
-			}
-			audioElement.remove();
-		}
+	private detachElement(element: HTMLMediaElement, remove: boolean): void {
+		this.clearPlaybackHandler(element);
+		element.srcObject = null;
+		if (remove) element.remove();
+	}
 
-		this.videoElements.clear();
-		this.audioElements.clear();
-		this.deferredAttachments.clear();
-		this.lastVideoAttachAt.clear();
-		this.lastAudioAttachAt.clear();
+	private stopTracks(stream: MediaStream | null): void {
+		for (const track of stream?.getTracks() ?? []) track.stop();
+	}
+
+	private stopReplacedTracks(previous: MediaStream, replacement: MediaStream): void {
+		const replacementTracks = replacement.getTracks();
+		for (const track of previous.getTracks()) {
+			const retained = replacementTracks.some(
+				(candidate) =>
+					candidate === track ||
+					(!!track.id && candidate.kind === track.kind && candidate.id === track.id),
+			);
+			if (!retained) track.stop();
+		}
+	}
+
+	private getAttachment(
+		role: MediaAttachmentRole,
+		id: string,
+	): Attachment | undefined {
+		return this.attachments.get(attachmentKey(role, id));
+	}
+
+	private getOrCreateAttachment(
+		role: MediaAttachmentRole,
+		id: string,
+		ownsTracks: boolean,
+	): Attachment {
+		const key = attachmentKey(role, id);
+		let attachment = this.attachments.get(key);
+		if (!attachment) {
+			attachment = {
+				role,
+				id,
+				element: null,
+				stream: null,
+				ownsTracks,
+				createdElement: false,
+				revision: 0,
+			};
+			this.attachments.set(key, attachment);
+		}
+		return attachment;
 	}
 }

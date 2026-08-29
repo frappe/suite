@@ -1056,7 +1056,10 @@ export class SFUClient {
 	sendScreenShare(
 		action: "start_share" | "stop_share",
 		shareData: ScreenShareSignalData = {},
-	): void {
+	): Promise<unknown> | void {
+		if (action === "stop_share") {
+			return this.sendRequest("screen_share", { action, shareData });
+		}
 		this.sendEvent("screen_share", { action, shareData });
 	}
 

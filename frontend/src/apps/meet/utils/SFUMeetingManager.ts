@@ -12,7 +12,11 @@ import { ConsumerManager } from "./media/ConsumerManager";
 import type { ConsumerEntry } from "./media/ConsumerManager";
 import { ParticipantManager } from "./media/ParticipantManager";
 import { TransportManager } from "./media/TransportManager";
-import { VideoElementManager } from "./media/VideoElementManager";
+import {
+	type AttachmentTrackOwnership,
+	type MediaAttachmentFacade,
+	VideoElementManager,
+} from "./media/VideoElementManager";
 import type { ProducerCloseMetadata, SFUClient } from "./SFUClient";
 import type { User } from "../composables/useCurrentUser";
 import type { JoinRoomMediaState, JoinUserData } from "../types";
@@ -203,9 +207,10 @@ function snapshotRTCStatsReports(stats: unknown): readonly RTCStatsReport[] {
 	);
 }
 
-export class SFUMeetingManager {
+export class SFUMeetingManager implements MediaAttachmentFacade {
 	private readonly sfuClient: SFUClient;
 	private readonly videoManager: VideoElementManager;
+	private readonly ownsVideoManager: boolean;
 	private readonly participantManager: ParticipantManager;
 	private readonly consumerManager: ConsumerManager;
 	private readonly transportManager: TransportManager;
@@ -218,10 +223,14 @@ export class SFUMeetingManager {
 	private screenPublicationGeneration = 0;
 	private screenPublicationTrack: MediaStreamTrack | null = null;
 
-	constructor(sfuClient: SFUClient) {
+	constructor(
+		sfuClient: SFUClient,
+		videoManager?: VideoElementManager,
+	) {
 		this.sfuClient = sfuClient;
 
-		this.videoManager = new VideoElementManager();
+		this.videoManager = videoManager ?? new VideoElementManager();
+		this.ownsVideoManager = !videoManager;
 		this.participantManager = new ParticipantManager();
 		this.consumerManager = new ConsumerManager();
 		this.transportManager = new TransportManager();
@@ -479,8 +488,7 @@ export class SFUMeetingManager {
 			mediaHandler.cleanup();
 			this.mediaManager.setLocalTrack("video", videoTrack);
 			this.mediaManager.setLocalTrack("audio", audioTrack);
-			this.consumerManager.clear();
-			this.mediaManager.processedConsumers.clear();
+			this.connectionManager.clearReceiveConsumers();
 			this.connectionManager.clearBufferedReconciliationEvents();
 			this.transportManager.cleanup();
 
@@ -954,18 +962,62 @@ export class SFUMeetingManager {
 		return this.mediaManager.mediaHandler;
 	}
 
-	registerVideoElement(participantId: string, element: HTMLElement): void {
-		this.videoManager.registerVideoElement(participantId, element);
+	registerRemoteVideoElement(
+		participantId: string,
+		element: HTMLVideoElement | null,
+	): void {
+		this.videoManager.registerRemoteVideoElement(participantId, element);
+	}
+
+	registerLocalPreview(element: HTMLVideoElement | null): void {
+		this.videoManager.registerLocalPreview(element);
+	}
+
+	attachLocalPreview(stream: MediaStream | null): Promise<void> {
+		return this.videoManager.attachLocalPreview(stream);
+	}
+
+	registerScreenSharePreview(
+		attachmentId: string,
+		element: HTMLVideoElement | null,
+	): void {
+		this.videoManager.registerScreenSharePreview(attachmentId, element);
+	}
+
+	attachScreenSharePreview(
+		attachmentId: string,
+		stream: MediaStream,
+		trackOwnership: AttachmentTrackOwnership = "borrowed",
+	): Promise<void> {
+		return this.videoManager.attachScreenSharePreview(
+			attachmentId,
+			stream,
+			trackOwnership,
+		);
+	}
+
+	removeScreenSharePreview(attachmentId: string): void {
+		this.videoManager.removeScreenSharePreview(attachmentId);
+	}
+
+	attachBackgroundEffectsSource(
+		attachmentId: string,
+		element: HTMLVideoElement,
+		stream: MediaStream,
+	): Promise<void> {
+		return this.videoManager.attachBackgroundEffectsSource(
+			attachmentId,
+			element,
+			stream,
+		);
+	}
+
+	removeBackgroundEffectsSource(attachmentId: string): void {
+		this.videoManager.removeBackgroundEffectsSource(attachmentId);
 	}
 
 	async setAudioOutputDevice(deviceId: string): Promise<void> {
-		for (const audioElement of this.videoManager.audioElements.values()) {
-			try {
-				await audioElement.setSinkId(deviceId);
-			} catch (error) {
-				console.warn("Failed to set speaker for participant:", error);
-			}
-		}
+		await this.videoManager.setAudioOutputDevice(deviceId);
 	}
 
 	onRemoteConsumerReady(listener: (event: Event) => void): () => void {
@@ -1159,7 +1211,8 @@ export class SFUMeetingManager {
 		this.mediaHealthMonitor.stop();
 		await this.disconnect();
 
-		this.videoManager.cleanup();
+		if (this.ownsVideoManager) this.videoManager.cleanup();
+		else this.videoManager.cleanupRemoteMedia();
 		this.participantManager.clear();
 
 		this.connectionManager.reset();

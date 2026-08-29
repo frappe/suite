@@ -171,6 +171,8 @@ interface CameraMediaStateOverrides {
 	isCameraOn?: boolean;
 	localStream?: FakeMediaStream;
 	processedStream?: FakeMediaStream | null;
+	screenShareStream?: FakeMediaStream | null;
+	screenShareStreams?: Record<string, FakeMediaStream>;
 }
 
 function createCameraHarness({
@@ -386,17 +388,22 @@ function createCameraHarness({
 		}),
 		stopScreenShare: vi.fn(async (metadata = {}) => {
 			const producer = getProducer("screen");
+			if (!producer) return;
 			setProducer("screen", null);
-			if (producer?.id) {
+			try {
+				if (sfuClient.isConnected()) {
 				await sfuClient.sendScreenShare("stop_share", {
 					...metadata,
 					producerId: producer.id,
 					stoppedAt: Date.now(),
 				});
+				}
+			} catch {
+			} finally {
 				producer.close?.();
-				await sfuClient.closeProducer(producer.id);
+				await sfuClient.closeProducer(producer.id, metadata);
+				mediaHandler.stopScreenShare();
 			}
-			mediaHandler.stopScreenShare();
 		}),
 		pauseLocalProducer: vi.fn((kind: "audio" | "video" | "screen") => {
 			getProducer(kind)?.pause?.();
@@ -429,6 +436,17 @@ function createCameraHarness({
 	});
 
 	const managerRef = ref(manager);
+	const mediaAttachments = {
+		registerRemoteVideoElement: vi.fn(),
+		registerLocalPreview: vi.fn(),
+		attachLocalPreview: vi.fn().mockResolvedValue(undefined),
+		registerScreenSharePreview: vi.fn(),
+		attachScreenSharePreview: vi.fn().mockResolvedValue(undefined),
+		removeScreenSharePreview: vi.fn(),
+		attachBackgroundEffectsSource: vi.fn().mockResolvedValue(undefined),
+		removeBackgroundEffectsSource: vi.fn(),
+		setAudioOutputDevice: vi.fn().mockResolvedValue(undefined),
+	};
 	const controls = useMediaControls({
 		mediaState: state,
 		connectionState: { connectionError: null },
@@ -436,6 +454,7 @@ function createCameraHarness({
 		currentUser: { currentUser: ref(null) },
 		sfuClient,
 		sfuManager: managerRef,
+		mediaAttachments,
 		deviceManager,
 		backgroundEffects: effectsApi,
 		noiseCancellation: noiseCancellationOverride ?? { error: ref(null) },
@@ -451,6 +470,7 @@ function createCameraHarness({
 		mediaHandler,
 		manager,
 		managerRef,
+		mediaAttachments,
 		publishMedia,
 		setLocalMediaTrack,
 		sfuClient,
@@ -470,6 +490,78 @@ describe("useMediaControls", () => {
 		selectedCameraId.value = "";
 		selectedMicId.value = "";
 		setAutoFramingPaused(false);
+	});
+
+	it("delegates local preview attachment and unmount to the media owner", async () => {
+		const camera = videoTrack("camera");
+		const { controls, mediaAttachments, state } = createCameraHarness({
+			mediaState: { localStream: new FakeMediaStream([camera]) },
+		});
+		const element = document.createElement("video");
+
+		controls.setLocalVideoRef(element);
+		await vi.waitFor(() =>
+			expect(mediaAttachments.attachLocalPreview).toHaveBeenCalledWith(
+				state.localStream,
+			),
+		);
+		controls.setLocalVideoRef(null);
+
+		expect(mediaAttachments.registerLocalPreview).toHaveBeenNthCalledWith(
+			1,
+			element,
+		);
+		expect(mediaAttachments.registerLocalPreview).toHaveBeenLastCalledWith(null);
+		expect(camera.stop).not.toHaveBeenCalled();
+	});
+
+	it("delegates remote video replacement and unmount to the media owner", () => {
+		const { controls, mediaAttachments } = createCameraHarness();
+		const first = document.createElement("video");
+		const replacement = document.createElement("video");
+
+		controls.setRemoteVideoRef("p1", first);
+		controls.setRemoteVideoRef("p1", replacement);
+		controls.setRemoteVideoRef("p1", null);
+
+		expect(mediaAttachments.registerRemoteVideoElement.mock.calls).toEqual([
+			["p1", first],
+			["p1", replacement],
+			["p1", null],
+		]);
+	});
+
+	it("registers local and remote screen-share previews with explicit ownership", async () => {
+		const localScreen = new FakeMediaStream([videoTrack("local-screen")]);
+		const remoteScreen = new FakeMediaStream([videoTrack("remote-screen")]);
+		const { controls, mediaAttachments, state } = createCameraHarness({
+			mediaState: {
+				screenShareStream: localScreen,
+				screenShareStreams: { local: localScreen, remote: remoteScreen },
+			},
+		});
+		const localElement = document.createElement("video");
+		localElement.dataset.participantId = "local";
+		const remoteElement = document.createElement("video");
+		remoteElement.dataset.participantId = "remote";
+		state.screenShareStream = localScreen;
+
+		controls.setScreenShareVideoRef("local-screen", localElement);
+		controls.setScreenShareVideoRef("consumer-1", remoteElement);
+		await vi.waitFor(() =>
+			expect(mediaAttachments.attachScreenSharePreview).toHaveBeenCalledTimes(2),
+		);
+
+		expect(mediaAttachments.attachScreenSharePreview).toHaveBeenCalledWith(
+			"local-screen",
+			localScreen,
+			"borrowed",
+		);
+		expect(mediaAttachments.attachScreenSharePreview).toHaveBeenCalledWith(
+			"consumer-1",
+			remoteScreen,
+			"owned",
+		);
 	});
 
 	it("does not signal screen-share start when publication resolves after stop", async () => {
@@ -493,6 +585,70 @@ describe("useMediaControls", () => {
 			expect.anything(),
 		);
 		expect(harness.state.isScreenSharing).toBe(false);
+	});
+
+	it("does not stop a replacement screen share when an old publication rejects", async () => {
+		const firstTrack = videoTrack("first-screen");
+		const secondTrack = videoTrack("second-screen");
+		const firstStream = new FakeMediaStream([firstTrack]);
+		const secondStream = new FakeMediaStream([secondTrack]);
+		const firstPublication = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			paused: boolean;
+		}>();
+		const secondPublication = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			paused: boolean;
+		}>();
+		const secondProducer: TestVideoProducer = {
+			id: "second-screen-producer",
+			track: secondTrack,
+			close: vi.fn(),
+		};
+		let harness!: ReturnType<typeof createCameraHarness>;
+		const publishScreenTrack = vi.fn((track: MediaStreamTrack) => {
+			if (track === firstTrack) return firstPublication.promise;
+			harness.mediaHandler.screenProducer = secondProducer as never;
+			return secondPublication.promise;
+		});
+		harness = createCameraHarness({
+			getDisplayMedia: vi
+				.fn()
+				.mockResolvedValueOnce(firstStream)
+				.mockResolvedValueOnce(secondStream),
+			publishScreenTrack,
+		});
+
+		const firstStarting = harness.controls.toggleScreenShare();
+		await vi.waitFor(() =>
+			expect(publishScreenTrack).toHaveBeenCalledWith(firstTrack),
+		);
+		await harness.controls.toggleScreenShare();
+		void harness.controls.toggleScreenShare();
+		await vi.waitFor(() =>
+			expect(publishScreenTrack).toHaveBeenCalledWith(secondTrack),
+		);
+		expect(harness.state.screenShareStream).toBe(secondStream);
+
+		firstPublication.reject(new Error("first publication failed"));
+		await firstStarting;
+
+		expect(harness.state.screenShareStream).toBe(secondStream);
+		expect(harness.state.isScreenSharing).toBe(true);
+		expect(harness.manager.getLocalProducerState("screen")).toEqual({
+			id: secondProducer.id,
+			track: secondTrack,
+			paused: false,
+		});
+		expect(firstTrack.stop).toHaveBeenCalledOnce();
+		expect(secondTrack.stop).not.toHaveBeenCalled();
+		expect(secondProducer.close).not.toHaveBeenCalled();
+		expect(harness.sfuClient.sendScreenShare).not.toHaveBeenCalledWith(
+			"stop_share",
+			expect.anything(),
+		);
 	});
 
 	it("does not signal screen-share start through a replaced manager", async () => {
@@ -1514,25 +1670,50 @@ describe("useMediaControls", () => {
 		const raw = videoTrack("raw");
 		const endedProcessed = videoTrack("ended-processed", "ended");
 		const replaceTrack = vi.fn().mockResolvedValue(undefined);
-		const { controls, setLocalMediaTrack } = createCameraHarness({
-			getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
-			videoProducer: {
-				id: "camera-producer",
-				track: videoTrack("old"),
-				replaceTrack,
-			},
-			applyBackgroundEffects: vi.fn().mockResolvedValue({
-				stream: new FakeMediaStream([endedProcessed]),
-				cleanup: vi.fn(),
-				updateOptions: vi.fn(),
-			}),
-		});
+		const { controls, mediaAttachments, setLocalMediaTrack, state } =
+			createCameraHarness({
+				getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
+				videoProducer: {
+					id: "camera-producer",
+					track: videoTrack("old"),
+					replaceTrack,
+				},
+				applyBackgroundEffects: vi.fn().mockResolvedValue({
+					stream: new FakeMediaStream([endedProcessed]),
+					cleanup: vi.fn(),
+					updateOptions: vi.fn(),
+				}),
+			});
 
 		await controls.toggleCamera();
 
 		expect(replaceTrack).toHaveBeenCalledOnce();
 		expect(replaceTrack).toHaveBeenCalledWith({ track: raw });
 		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", raw);
+		expect(mediaAttachments.attachLocalPreview).toHaveBeenLastCalledWith(
+			state.localStream,
+		);
+	});
+
+	it("restores the raw preview after an effects transformation error", async () => {
+		localStorage.setItem("backgroundEffects.blur", "1");
+		const raw = videoTrack("raw");
+		const { controls, mediaAttachments, state } = createCameraHarness({
+			mediaState: {
+				isCameraOn: true,
+				localStream: new FakeMediaStream([raw]),
+			},
+			applyBackgroundEffects: vi
+				.fn()
+				.mockRejectedValue(new Error("transformation failed")),
+		});
+
+		await controls.applyBackgroundEffectsToLocalStream();
+
+		expect(state.processedStream).toBeNull();
+		expect(mediaAttachments.attachLocalPreview).toHaveBeenLastCalledWith(
+			state.localStream,
+		);
 	});
 
 	it("publishes raw video once when effects return the input stream", async () => {
@@ -1805,18 +1986,19 @@ describe("useMediaControls", () => {
 					producer.track = track;
 				}),
 		};
-		const { controls, mediaHandler, state } = createCameraHarness({
-			mediaState: {
-				isCameraOn: true,
-				localStream: new FakeMediaStream([raw]),
-			},
-			videoProducer: producer,
-			applyBackgroundEffects: vi.fn().mockResolvedValue({
-				stream: candidateStream,
-				cleanup,
-				updateOptions: vi.fn(),
-			}),
-		});
+		const { controls, mediaAttachments, mediaHandler, state } =
+			createCameraHarness({
+				mediaState: {
+					isCameraOn: true,
+					localStream: new FakeMediaStream([raw]),
+				},
+				videoProducer: producer,
+				applyBackgroundEffects: vi.fn().mockResolvedValue({
+					stream: candidateStream,
+					cleanup,
+					updateOptions: vi.fn(),
+				}),
+			});
 
 		await controls.applyBackgroundEffectsToLocalStream();
 
@@ -1828,6 +2010,10 @@ describe("useMediaControls", () => {
 		expect(mediaHandler.videoProducer).toBe(producer);
 		expect(producer.track).toBe(raw);
 		expect(mediaHandler.localStream.getVideoTracks()).toEqual([raw]);
+		expect(mediaAttachments.attachLocalPreview.mock.calls).toEqual([
+			[candidateStream],
+			[state.localStream],
+		]);
 		expect(producer.replaceTrack.mock.invocationCallOrder[1]).toBeLessThan(
 			cleanup.mock.invocationCallOrder[0],
 		);

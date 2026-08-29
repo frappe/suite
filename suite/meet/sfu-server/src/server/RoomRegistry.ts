@@ -469,18 +469,27 @@ export class RoomRegistry {
 		event: 'screen_share_started' | 'screen_share_stopped',
 		data: ScreenShareStartedEvent | ScreenShareStoppedEvent,
 	): void {
-		this.emitToFullAccessParticipants(roomId, event, data);
-		const producerId =
-			'shareData' in data && typeof data.shareData.producerId === 'string'
-				? data.shareData.producerId
-				: undefined;
-		this.emitToRecorders(roomId, event, {
-			participantId: data.participantId,
-			...(event === 'screen_share_started' && producerId
-				? { shareData: { producerId } }
-				: {}),
-			timestamp: data.timestamp,
-		});
+		if (event === 'screen_share_started' && 'shareData' in data) {
+			this.emitToFullAccessParticipants(roomId, event, data);
+			const producerId =
+				typeof data.shareData.producerId === 'string'
+					? data.shareData.producerId
+					: undefined;
+			this.emitToRecorders(roomId, event, {
+				participantId: data.participantId,
+				shareData: producerId ? { producerId } : {},
+				timestamp: data.timestamp,
+			});
+			return;
+		}
+		if (event === 'screen_share_stopped' && 'producerId' in data) {
+			this.emitToFullAccessParticipants(roomId, event, data);
+			this.emitToRecorders(roomId, event, {
+				participantId: data.participantId,
+				producerId: data.producerId,
+				timestamp: data.timestamp,
+			});
+		}
 	}
 
 	emitReaction(roomId: string, data: ReactionMessage): void {

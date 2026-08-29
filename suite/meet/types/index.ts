@@ -181,6 +181,7 @@ export interface ScreenShareStartedEvent {
 
 export interface ScreenShareStoppedEvent {
 	participantId: string;
+	producerId: string;
 	timestamp: string;
 	reason?: string;
 }

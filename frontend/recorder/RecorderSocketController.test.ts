@@ -32,6 +32,7 @@ interface ParticipantHandlers {
 
 interface ConsumerHandlers {
 	onConsumerAdded?: (consumer: ConsumerFixture) => void;
+	onConsumerRemoved?: (consumerId: string, consumer: ConsumerFixture) => void;
 }
 
 interface MediaHandlers {
@@ -54,7 +55,7 @@ function harness(existing: ProducerFixture[] = [], subscription?: ConsumerFixtur
 	const calls: string[] = [];
 	const socketHandlers = new Map<string, (...args: unknown[]) => void>();
 	const sfuHandlers = new Map<string, (...args: unknown[]) => void>();
-	let consumerAdded: ConsumerHandlers["onConsumerAdded"];
+	let consumerHandlers: ConsumerHandlers = {};
 	let participantHandlers: ParticipantHandlers = {};
 	let mediaHandlers: MediaHandlers = {};
 	const channel = {
@@ -65,16 +66,24 @@ function harness(existing: ProducerFixture[] = [], subscription?: ConsumerFixtur
 	};
 	const bridge = { sign: vi.fn(async () => "signature"), reportCaptureReady: vi.fn(), reportInterruption: vi.fn(), reportProofComplete: vi.fn(), reportJoinComplete: vi.fn(), reportFailure: vi.fn() };
 	const participants = new Map<string, Participant>();
+	const consumers = new Map<string, ConsumerFixture>();
+	const removeConsumer = vi.fn((id: string) => {
+		const consumer = consumers.get(id);
+		if (!consumer) return undefined;
+		consumers.delete(id);
+		consumerHandlers.onConsumerRemoved?.(id, consumer);
+		return consumer;
+	});
 	const dependencies = {
 		sfuClient: { connected: false, connectionDetails: {}, on: vi.fn((event: string, handler: (...args: unknown[]) => void) => sfuHandlers.set(event, handler)), registerEventHandlers: vi.fn(), getRoomParticipants: vi.fn(async (): Promise<ParticipantData[]> => { calls.push("participants"); return []; }), getExistingProducers: vi.fn(async () => { calls.push("producers"); return existing; }), disconnect: vi.fn() },
 		transportManager: { initializeDevice: vi.fn(async () => calls.push("device")), createReceiveTransport: vi.fn(async () => calls.push("recv")), setEventHandlers: vi.fn(), cleanup: vi.fn() },
-		consumerManager: { setEventHandlers: vi.fn((handlers: ConsumerHandlers) => { consumerAdded = handlers.onConsumerAdded; }), getConsumersByParticipant: vi.fn(() => []), getScreenShareConsumers: vi.fn(() => []), cleanupParticipantConsumers: vi.fn(), clear: vi.fn(), removeConsumer: vi.fn() },
-		participantManager: { setEventHandlers: vi.fn((handlers: ParticipantHandlers) => { participantHandlers = handlers; }), syncParticipants: vi.fn((values: RecorderParticipantData[]) => values.forEach((value) => { const participant = participantFixture(value); participants.set(participant.user_id, participant); })), addParticipant: vi.fn((value: RecorderParticipantData) => { const participant = participantFixture(value); participants.set(participant.user_id, participant); return participant; }), removeParticipant: vi.fn((id: string) => participants.delete(id)), updateMediaState: vi.fn(), getAllParticipants: vi.fn(() => [...participants.values()]), hasParticipant: vi.fn((id: string) => participants.has(id)) },
-		videoManager: { removeVideoElement: vi.fn(), cleanup: vi.fn() },
-		mediaManager: { setEventHandlers: vi.fn((handlers: MediaHandlers) => { mediaHandlers = handlers; }), handleNewConsumer: vi.fn(async (consumer: ConsumerFixture) => { if (consumer.isScreen) mediaHandlers.onScreenShareStarted?.({ participantId: consumer.participantId, stream: new MediaStream(), consumer }); }), handleConsumerLost: vi.fn(), subscribeToRemoteProducer: vi.fn(async (event: { producerId: string; participantId: string; isScreen: boolean }) => { if (subscription === null) return null; const consumer: ConsumerFixture = subscription || { id: `c-${event.producerId}`, producerId: event.producerId, participantId: event.participantId, kind: "audio", isScreen: false }; consumerAdded?.(consumer); return consumer; }), cancelPendingSubscriptions: vi.fn(async () => undefined), cleanup: vi.fn() },
+		consumerManager: { setEventHandlers: vi.fn((handlers: ConsumerHandlers) => { consumerHandlers = { ...consumerHandlers, ...handlers }; }), getConsumersByParticipant: vi.fn((id: string) => [...consumers.values()].filter((consumer) => consumer.participantId === id)), getScreenShareConsumers: vi.fn(() => [...consumers.values()].filter((consumer) => consumer.isScreen)), cleanupParticipantConsumers: vi.fn((id: string) => { for (const consumer of [...consumers.values()]) if (consumer.participantId === id) removeConsumer(consumer.id); }), clear: vi.fn(() => { for (const consumer of [...consumers.values()]) removeConsumer(consumer.id); }), removeConsumer },
+		participantManager: { setEventHandlers: vi.fn((handlers: ParticipantHandlers) => { participantHandlers = handlers; }), syncParticipants: vi.fn((values: RecorderParticipantData[]) => values.forEach((value) => { const participant = participantFixture(value); participants.set(participant.user_id, participant); })), addParticipant: vi.fn((value: RecorderParticipantData) => { const participant = participantFixture(value); participants.set(participant.user_id, participant); participantHandlers.onParticipantAdded?.(participant); return participant; }), removeParticipant: vi.fn((id: string) => { const removed = participants.delete(id); if (removed) participantHandlers.onParticipantRemoved?.(id); return removed; }), updateMediaState: vi.fn(), getAllParticipants: vi.fn(() => [...participants.values()]), hasParticipant: vi.fn((id: string) => participants.has(id)) },
+		videoManager: { removeVideoElement: vi.fn(), cancelDeferredAttachment: vi.fn(), cleanup: vi.fn() },
+		mediaManager: { setEventHandlers: vi.fn((handlers: MediaHandlers) => { mediaHandlers = handlers; }), handleNewConsumer: vi.fn(async (consumer: ConsumerFixture) => { if (consumer.isScreen) mediaHandlers.onScreenShareStarted?.({ participantId: consumer.participantId, stream: new MediaStream(), consumer }); }), handleConsumerLost: vi.fn(), subscribeToRemoteProducer: vi.fn(async (event: { producerId: string; participantId: string; isScreen: boolean }) => { if (subscription === null) return null; const consumer: ConsumerFixture = subscription || { id: `c-${event.producerId}`, producerId: event.producerId, participantId: event.participantId, kind: event.isScreen ? "video" : "audio", isScreen: event.isScreen }; consumers.set(consumer.id, consumer); consumerHandlers.onConsumerAdded?.(consumer); return consumer; }), cancelPendingSubscriptions: vi.fn(async () => undefined), cleanup: vi.fn() },
 	};
 	const controller = new RecorderSocketController(bridge as never, channel, state, dependencies as never);
-	return { calls, channel, bridge, dependencies, sfuHandlers, getParticipantHandlers: () => participantHandlers, participants, controller };
+	return { calls, channel, bridge, consumers, dependencies, sfuHandlers, getConsumerHandlers: () => consumerHandlers, getParticipantHandlers: () => participantHandlers, participants, controller };
 }
 
 describe("RecorderSocketController", () => {
@@ -211,6 +220,193 @@ describe("RecorderSocketController", () => {
 		acknowledge();
 		await connected;
 		expect(h.controller.ready.value).toBe(true);
+	});
+
+	it("cancels an initial screen attachment removed before mount", async () => {
+		vi.useFakeTimers();
+		let acknowledge!: () => void;
+		const screenStarted = vi.fn(() => new Promise<void>((resolve) => { acknowledge = resolve; }));
+		const consumer = { id: "screen-c1", producerId: "p1", participantId: "alice", kind: "video", isScreen: true } as const;
+		const h = harness([{ id: "p1", participantId: "alice", isScreen: true }], consumer, { screenStarted });
+		const connected = h.controller.connect(config);
+		await vi.waitFor(() => expect(screenStarted).toHaveBeenCalledOnce());
+
+		h.sfuHandlers.get("producer_closed")?.({
+			producerId: "p1",
+			participantId: "alice",
+			isScreen: true,
+		});
+
+		await connected;
+		expect(h.controller.ready.value).toBe(true);
+		expect(h.bridge.reportFailure).not.toHaveBeenCalled();
+		expect(
+			Reflect.get(h.controller, "attachmentPromises").size,
+		).toBe(0);
+		expect(
+			Reflect.get(h.controller, "screenAttachmentPromises").size,
+		).toBe(0);
+		await vi.advanceTimersByTimeAsync(
+			RecorderSocketController.ATTACHMENT_TIMEOUT_MS,
+		);
+		acknowledge();
+		await Promise.resolve();
+		expect(h.bridge.reportFailure).not.toHaveBeenCalled();
+		expect(h.bridge.reportInterruption).not.toHaveBeenCalled();
+		vi.useRealTimers();
+	});
+
+	it("cancels a participant attachment removed before its tile mounts", async () => {
+		let rejectAttachment!: (error: Error) => void;
+		const h = harness();
+		await h.controller.connect(config);
+		h.dependencies.mediaManager.handleNewConsumer.mockReturnValueOnce(
+			new Promise<void>((_resolve, reject) => {
+				rejectAttachment = reject;
+			}),
+		);
+		h.sfuHandlers.get("participant_joined")?.({
+			participantId: "alice",
+			userData: { name: "Alice" },
+		});
+		h.sfuHandlers.get("producer_created")?.({
+			producerId: "camera-1",
+			participantId: "alice",
+			isScreen: false,
+		});
+		await vi.waitFor(() =>
+			expect(h.dependencies.mediaManager.handleNewConsumer).toHaveBeenCalled(),
+		);
+
+		h.sfuHandlers.get("participant_left")?.({ participantId: "alice" });
+		await vi.waitFor(() =>
+			expect(Reflect.get(h.controller, "attachmentPromises").size).toBe(0),
+		);
+		expect(
+			h.dependencies.videoManager.cancelDeferredAttachment,
+		).toHaveBeenCalledWith("alice");
+		rejectAttachment(new Error("obsolete attachment failed"));
+		await Promise.resolve();
+		expect(h.bridge.reportInterruption).not.toHaveBeenCalled();
+	});
+
+	it("replaces a participant screen and ignores the old producer's late close", async () => {
+		const screenStarted = vi.fn();
+		const screenStopped = vi.fn();
+		const h = harness([], undefined, { screenStarted, screenStopped });
+		await h.controller.connect(config);
+
+		h.sfuHandlers.get("producer_created")?.({
+			producerId: "screen-old",
+			participantId: "alice",
+			isScreen: true,
+		});
+		await vi.waitFor(() => expect(screenStarted).toHaveBeenCalledTimes(1));
+		h.sfuHandlers.get("producer_created")?.({
+			producerId: "screen-current",
+			participantId: "alice",
+			isScreen: true,
+		});
+		await vi.waitFor(() => expect(screenStarted).toHaveBeenCalledTimes(2));
+
+		expect(screenStopped).toHaveBeenCalledWith("alice", "screen-old");
+		screenStopped.mockClear();
+		h.sfuHandlers.get("producer_closed")?.({
+			producerId: "screen-old",
+			participantId: "alice",
+			isScreen: true,
+		});
+
+		expect(screenStopped).not.toHaveBeenCalled();
+		expect(Reflect.get(h.controller, "activeScreens").get("alice")).toEqual({
+			consumerId: "c-screen-current",
+			producerId: "screen-current",
+		});
+	});
+
+	it("matches recorder screen stops by participant and producer", async () => {
+		const screenStopped = vi.fn();
+		const h = harness([], undefined, { screenStopped });
+		await h.controller.connect(config);
+		h.sfuHandlers.get("producer_created")?.({
+			producerId: "screen-1",
+			participantId: "alice",
+			isScreen: true,
+		});
+		await vi.waitFor(() =>
+			expect(h.dependencies.mediaManager.subscribeToRemoteProducer).toHaveBeenCalled(),
+		);
+		h.dependencies.consumerManager.removeConsumer.mockClear();
+
+		h.sfuHandlers.get("screen_share_stopped")?.({
+			participantId: "bob",
+			producerId: "screen-1",
+		});
+
+		expect(h.dependencies.consumerManager.removeConsumer).not.toHaveBeenCalled();
+		expect(screenStopped).not.toHaveBeenCalled();
+	});
+
+	it("ignores an old consumer removal after same-producer resubscription", async () => {
+		const screenStopped = vi.fn();
+		const h = harness([], undefined, { screenStopped });
+		await h.controller.connect(config);
+		const oldConsumer = {
+			id: "screen-old-consumer",
+			producerId: "screen-1",
+			participantId: "alice",
+			kind: "video",
+			isScreen: true,
+		} as const;
+		const replacement = {
+			...oldConsumer,
+			id: "screen-new-consumer",
+		};
+		h.consumers.set(oldConsumer.id, oldConsumer);
+		h.getConsumerHandlers().onConsumerAdded?.(oldConsumer);
+		await vi.waitFor(() =>
+			expect(Reflect.get(h.controller, "activeScreens").get("alice")).toEqual({
+				consumerId: oldConsumer.id,
+				producerId: oldConsumer.producerId,
+			}),
+		);
+		h.consumers.set(replacement.id, replacement);
+		h.getConsumerHandlers().onConsumerAdded?.(replacement);
+		await vi.waitFor(() =>
+			expect(Reflect.get(h.controller, "activeScreens").get("alice")).toEqual({
+				consumerId: replacement.id,
+				producerId: replacement.producerId,
+			}),
+		);
+		screenStopped.mockClear();
+
+		h.getConsumerHandlers().onConsumerRemoved?.(oldConsumer.id, oldConsumer);
+
+		expect(screenStopped).not.toHaveBeenCalled();
+		expect(Reflect.get(h.controller, "activeScreens").get("alice")).toEqual({
+			consumerId: replacement.id,
+			producerId: replacement.producerId,
+		});
+	});
+
+	it("settles active screen state during recorder cleanup", async () => {
+		const screenStopped = vi.fn();
+		const h = harness([], undefined, { screenStopped });
+		await h.controller.connect(config);
+		h.sfuHandlers.get("producer_created")?.({
+			producerId: "screen-1",
+			participantId: "alice",
+			isScreen: true,
+		});
+		await vi.waitFor(() =>
+			expect(Reflect.get(h.controller, "activeScreens").has("alice")).toBe(true),
+		);
+
+		h.controller.disconnect();
+
+		expect(screenStopped).toHaveBeenCalledWith("alice", "screen-1");
+		expect(Reflect.get(h.controller, "activeScreens").size).toBe(0);
+		expect(Reflect.get(h.controller, "screenAttachmentPromises").size).toBe(0);
 	});
 
 	it("reports only failure when initial screen playback is rejected", async () => {

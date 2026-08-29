@@ -1,6 +1,6 @@
 import { type ComputedRef, computed, type Ref, ref } from "vue";
 import { useCurrentUser } from "./useCurrentUser";
-import type { MediaState, ScreenShareConsumer } from "./useMediaState";
+import type { DisplayScreenShare, MediaState } from "./useMediaState";
 
 export interface PinnedTile {
 	type: "screenshare" | "participant";
@@ -9,7 +9,7 @@ export interface PinnedTile {
 
 export interface GridLayout {
 	pinnedTiles: Ref<PinnedTile[]>;
-	displayScreenShares: ComputedRef<ScreenShareConsumer[]>;
+	displayScreenShares: ComputedRef<DisplayScreenShare[]>;
 	pinTile: (type: PinnedTile["type"], id: string) => void;
 	unpinTile: (type: PinnedTile["type"], id: string) => void;
 	resetGridLayout: () => void;
@@ -22,10 +22,10 @@ export function useGridLayout(mediaState?: MediaState): GridLayout {
 
 	const pinnedTiles = ref<PinnedTile[]>([]);
 
-	const displayScreenShares = computed<ScreenShareConsumer[]>(() => {
+	const displayScreenShares = computed<DisplayScreenShare[]>(() => {
 		if (!mediaState) return [];
 
-		const shares: ScreenShareConsumer[] = [];
+		const shares: DisplayScreenShare[] = [];
 
 		for (const share of mediaState.activeScreenShareConsumers) {
 			shares.push(share);
@@ -37,9 +37,9 @@ export function useGridLayout(mediaState?: MediaState): GridLayout {
 			currentUserStore.currentUser.value?.user_id
 		) {
 			shares.push({
+				source: "local",
 				participantId: currentUserStore.currentUser.value?.user_id as string,
 				consumerId: "local-screen",
-				local: true,
 				startedAt: mediaState.localScreenShareStartedAt || 0,
 			});
 		}

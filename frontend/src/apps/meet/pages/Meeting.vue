@@ -310,7 +310,11 @@ import { useGridLayout } from "../composables/useGridLayout";
 import { useLobby } from "../composables/useLobby";
 import { useLobbyStore } from "../composables/useLobbyStore";
 import { useMediaControls } from "../composables/useMediaControls";
-import { useMediaState } from "../composables/useMediaState";
+import {
+	findActiveScreenShare,
+	replaceActiveScreenShare,
+	useMediaState,
+} from "../composables/useMediaState";
 import { provideMeetingContext } from "../composables/useMeetingContext";
 import { useMeetingDoc } from "../composables/useMeetingDoc";
 import {
@@ -450,10 +454,6 @@ watch(
 	},
 );
 
-// --- Background effects & noise cancellation ---
-const backgroundEffects = useBackgroundEffects({ autoCleanupOnUnmount: false });
-const noiseCancellation = useNoiseCancellation();
-
 // --- Lobby notification conversion ---
 const lobbyUsersForNotifications = computed(() => {
 	return lobbyStore.lobbyUsers
@@ -539,22 +539,36 @@ const sfuConnection = useSFUConnection({
 	onParticipantConnectionReplaced: () => mediaControls.cleanupLocalMedia(),
 	onScreenShareStarted: (data: SFUScreenShareData) => {
 		const pid = data.participantId;
-		if (!pid) return;
-		const prev = mediaState.activeScreenShareConsumers || [];
-		const filtered = prev.filter((s) => s.participantId !== pid);
-		mediaState.activeScreenShareConsumers = [
-			...filtered,
+		const producerId = data.producerId ?? data.consumer?.producerId;
+		if (!pid || !producerId) return;
+		const replacement = replaceActiveScreenShare(
+			mediaState.activeScreenShareConsumers || [],
 			{
+				source: "remote",
 				participantId: pid,
 				consumerId: data.consumer?.id || "remote-screen",
+				producerId,
 				startedAt: data.startedAt || Date.now(),
 			},
-		];
+		);
+		for (const share of replacement.replaced) {
+			sfuConnection.removeScreenSharePreview(share.consumerId);
+		}
+		mediaState.activeScreenShareConsumers = replacement.shares;
 		if (data.stream instanceof MediaStream) {
 			try {
 				const store = mediaState.screenShareStreams || {};
 				store[pid] = data.stream;
 				mediaState.screenShareStreams = store;
+				void sfuConnection
+					.attachScreenSharePreview(
+						data.consumer?.id || "remote-screen",
+						data.stream,
+						"owned",
+					)
+					.catch((error) =>
+						console.warn("Failed to attach screen share preview:", error),
+					);
 			} catch (err) {
 				console.warn("Failed to store screen share stream:", err);
 			}
@@ -562,19 +576,22 @@ const sfuConnection = useSFUConnection({
 	},
 	onScreenShareStopped: (data: SFUScreenShareData) => {
 		const pid = data.participantId;
+		const producerId = data.producerId ?? data.consumer?.producerId;
+		if (!pid || !producerId) return;
 		const list = mediaState.activeScreenShareConsumers || [];
+		const current = findActiveScreenShare(
+			list,
+			pid,
+			producerId,
+			data.consumerId ?? data.consumer?.id,
+		);
+		if (!current) return;
+		sfuConnection.removeScreenSharePreview(current.consumerId);
 		mediaState.activeScreenShareConsumers = list.filter(
-			(share) => share.participantId !== pid,
+			(share) => share.producerId !== producerId,
 		);
 		const store = mediaState.screenShareStreams || {};
 		if (pid && store[pid]) {
-			const stream = store[pid];
-			const tracks = stream.getTracks();
-			if (tracks) {
-				for (const t of tracks) {
-					t.stop();
-				}
-			}
 			delete store[pid];
 			mediaState.screenShareStreams = store;
 		}
@@ -586,6 +603,13 @@ const sfuConnection = useSFUConnection({
 	onRecordingEnabled: recording.setGlobalEnabled,
 	onCohostPromoted: () => meetingDoc.reload(),
 });
+
+// --- Background effects & noise cancellation ---
+const backgroundEffects = useBackgroundEffects({
+	autoCleanupOnUnmount: false,
+	mediaAttachments: sfuConnection,
+});
+const noiseCancellation = useNoiseCancellation();
 const { networkQuality, downlinkQuality, isTransportFailed } = useNetworkQuality(
 	sfuConnection.sfuManager,
 );
@@ -614,6 +638,7 @@ const mediaControls = useMediaControls({
 	currentUser,
 	sfuClient: sfuConnection.sfuClient,
 	sfuManager: sfuConnection.sfuManager,
+	mediaAttachments: sfuConnection,
 	deviceManager,
 	backgroundEffects,
 	noiseCancellation,
@@ -716,7 +741,7 @@ provide("setRemoteVideoRef", mediaControls.setRemoteVideoRef);
 provide(
 	"setScreenShareVideoRef",
 	(_consumerId: string, element: HTMLVideoElement | null) => {
-		if (element) mediaControls.setScreenShareVideoRef(element);
+		mediaControls.setScreenShareVideoRef(_consumerId, element);
 	},
 );
 provide("getParticipantName", participantStore.getParticipantName);
@@ -1004,21 +1029,6 @@ const syncFullscreenState = () => {
 	isFullscreen.value = !!document.fullscreenElement;
 };
 
-const setSinkIdOnVideoElements = async (sinkId: string) => {
-	const videoElements = document.querySelectorAll("video");
-	const promises = [];
-	for (const videoEl of videoElements) {
-		promises.push(
-			(videoEl as HTMLVideoElement).setSinkId(sinkId).catch(() => {}),
-		);
-	}
-
-	const manager = sfuConnection.sfuManager.value;
-	if (manager) promises.push(manager.setAudioOutputDevice(sinkId));
-
-	await Promise.all(promises);
-};
-
 const handleE2EENeedsMediaRepublish = async (event: Event) => {
 	const detail = (event as CustomEvent).detail as
 		| { needsCamera?: boolean; needsMicrophone?: boolean }
@@ -1133,63 +1143,12 @@ onUnmounted(() => {
 	document.removeEventListener("meet:e2ee-join-status", handleE2EEJoinStatus);
 });
 
-// Watch for localVideo element and localStream connection
-watch(
-	[
-		() => mediaState.localVideo,
-		() => mediaState.localStream,
-		() => mediaState.processedStream,
-	],
-	async ([videoElement, stream, _processedStream]) => {
-		if (videoElement && stream) {
-			try {
-				// Prefer processed stream (with background effects) over raw local stream
-				const streamToUse = mediaState.processedStream || stream;
-				const currentStreamId = streamToUse.id;
-				const trackedStreamId = (videoElement as HTMLElement).dataset
-					?.sourceStreamId;
-
-				if (trackedStreamId !== currentStreamId) {
-					const videoTracks = streamToUse.getVideoTracks();
-					if (videoTracks.length > 0) {
-						(videoElement as HTMLVideoElement).srcObject = new MediaStream(
-							videoTracks,
-						);
-					} else {
-						(videoElement as HTMLVideoElement).srcObject = streamToUse;
-					}
-					(videoElement as HTMLElement).dataset.sourceStreamId =
-						currentStreamId;
-					(videoElement as HTMLVideoElement).muted = true;
-					await (videoElement as HTMLVideoElement).play();
-				}
-
-				if (
-					selectedSpeakerId.value &&
-					typeof (videoElement as HTMLVideoElement).setSinkId === "function"
-				) {
-					try {
-						await (videoElement as HTMLVideoElement).setSinkId(
-							selectedSpeakerId.value,
-						);
-					} catch (error) {
-						console.warn("Could not set speaker for local video:", error);
-					}
-				}
-			} catch (error) {
-				console.warn("Could not play local video:", error);
-			}
-		}
-	},
-	{ immediate: true },
-);
-
 watch(selectedSpeakerId, async (newSpeakerId) => {
 	if (
 		newSpeakerId &&
 		deviceManager.isDeviceAvailable(newSpeakerId, "speaker")
 	) {
-		await setSinkIdOnVideoElements(newSpeakerId);
+		await mediaControls.applySpeakerDevice();
 	}
 });
 

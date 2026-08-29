@@ -33,15 +33,29 @@ const app = createApp({
 			participantRemoved: (id) => participantStore.removeParticipant(id),
 			participantUpdated: (id, updates) => participantStore.updateParticipant(id, { ...updates }),
 			activeSpeakersChanged: (ids) => { participantStore.activeSpeakerIds = ids; participantStore.stableSpeakerIds = ids; },
-			screenStarted: ({ participantId, consumerId, stream, startedAt }) => {
+			screenStarted: ({ participantId, consumerId, producerId, stream, startedAt }) => {
+				const replaced = mediaState.activeScreenShareConsumers.filter(
+					(share) =>
+						share.participantId === participantId &&
+						share.consumerId !== consumerId,
+				);
+				for (const share of replaced) {
+					pendingScreenAttachments.get(share.consumerId)?.resolve();
+					pendingScreenAttachments.delete(share.consumerId);
+					delete mediaState.screenShareStreams[share.consumerId];
+				}
 				mediaState.screenShareStreams[consumerId] = stream;
-				mediaState.activeScreenShareConsumers = [...mediaState.activeScreenShareConsumers.filter((s) => s.consumerId !== consumerId), { participantId, consumerId, startedAt }];
+				mediaState.activeScreenShareConsumers = [...mediaState.activeScreenShareConsumers.filter((s) => s.participantId !== participantId), { source: "remote", participantId, consumerId, producerId, startedAt }];
 				return new Promise<void>((resolve, reject) => pendingScreenAttachments.set(consumerId, { resolve, reject }));
 			},
-			screenStopped: (participantId) => {
-				const removed = mediaState.activeScreenShareConsumers.filter((s) => s.participantId === participantId);
-				mediaState.activeScreenShareConsumers = mediaState.activeScreenShareConsumers.filter((s) => s.participantId !== participantId);
-				for (const share of removed) delete mediaState.screenShareStreams[share.consumerId];
+			screenStopped: (participantId, producerId) => {
+				const removed = mediaState.activeScreenShareConsumers.filter((s) => s.participantId === participantId && s.producerId === producerId);
+				mediaState.activeScreenShareConsumers = mediaState.activeScreenShareConsumers.filter((s) => s.participantId !== participantId || s.producerId !== producerId);
+				for (const share of removed) {
+					pendingScreenAttachments.get(share.consumerId)?.resolve();
+					pendingScreenAttachments.delete(share.consumerId);
+					delete mediaState.screenShareStreams[share.consumerId];
+				}
 			},
 			reactionReceived: (id, reaction) => reactionStore.showReactionForUser(id, reaction),
 			handChanged: (id, raised, timestamp) => raised ? raiseHandStore.raiseHand(id, timestamp) : raiseHandStore.lowerHand(id),
@@ -62,7 +76,7 @@ const app = createApp({
 			mediaState, participantStore, currentUser, chatStore, gridLayout, raiseHandStore, reactionStore, lobbyStore,
 			sfuManager: null, processedStream: ref<MediaStream | null>(null), isInMeeting: computed(() => true), onBackgroundEffectsChanged: () => undefined, networkQuality: ref<"good" | "poor" | "critical">("good"),
 		};
-		return () => h(RecorderRenderer, { startedAt: config.startedAt, interruption: controller.interruption.value, messages: messages.value, meetingContext, videoManager: controller.videoManager, onPlaybackFailure: (reason: string) => controller.reportPlaybackFailure(reason), onScreenAttachment: (consumerId: string, attachment: Promise<void>) => attachment.then(pendingScreenAttachments.get(consumerId)?.resolve, pendingScreenAttachments.get(consumerId)?.reject) });
+		return () => h(RecorderRenderer, { startedAt: config.startedAt, interruption: controller.interruption.value, messages: messages.value, meetingContext, videoManager: controller.videoManager, onPlaybackFailure: (reason: string) => controller.reportPlaybackFailure(reason), onScreenAttachment: (consumerId: string, attachment: Promise<void>) => { const pending = pendingScreenAttachments.get(consumerId); const settle = (error?: unknown) => { if (!pending || pendingScreenAttachments.get(consumerId) !== pending) return; pendingScreenAttachments.delete(consumerId); error ? pending.reject(error instanceof Error ? error : new Error("Screen attachment failed")) : pending.resolve(); }; void attachment.then(() => settle(), settle); } });
 	},
 });
 app.use(pinia).mount("#app");

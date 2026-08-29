@@ -14,6 +14,10 @@ import { getErrorMessage } from "../utils/error";
 import { waitForE2EEContextReady } from "../utils/media/E2EEContextReady";
 import { SocketIOSignalChannel } from "../utils/media/SignalChannel";
 import {
+	type AttachmentTrackOwnership,
+	VideoElementManager,
+} from "../utils/media/VideoElementManager";
+import {
 	type ConnectionDetails,
 	connectionDetailsFromJoinPayload,
 	SFUClient,
@@ -127,7 +131,8 @@ function getParticipantConnectionConflictId(error: unknown): string | null {
 
 export interface SFUScreenShareData {
 	participantId?: string;
-	consumer?: { id: string };
+	producerId?: string;
+	consumer?: { id: string; producerId?: string };
 	startedAt?: number;
 	stream?: MediaStream;
 }
@@ -148,6 +153,29 @@ interface SFUConnectionAPI {
 	isConnecting: Ref<boolean>;
 	isSetupComplete: Ref<boolean>;
 	recoveryTimeline: Ref<RecoveryTimelineEntry[]>;
+	registerRemoteVideoElement: (
+		participantId: string,
+		element: HTMLVideoElement | null,
+	) => void;
+	registerLocalPreview: (element: HTMLVideoElement | null) => void;
+	attachLocalPreview: (stream: MediaStream | null) => Promise<void>;
+	registerScreenSharePreview: (
+		attachmentId: string,
+		element: HTMLVideoElement | null,
+	) => void;
+	attachScreenSharePreview: (
+		attachmentId: string,
+		stream: MediaStream,
+		trackOwnership?: AttachmentTrackOwnership,
+	) => Promise<void>;
+	removeScreenSharePreview: (attachmentId: string) => void;
+	attachBackgroundEffectsSource: (
+		attachmentId: string,
+		element: HTMLVideoElement,
+		stream: MediaStream,
+	) => Promise<void>;
+	removeBackgroundEffectsSource: (attachmentId: string) => void;
+	setAudioOutputDevice: (deviceId: string) => Promise<void>;
 }
 
 export function useSFUConnection(deps: {
@@ -197,6 +225,7 @@ export function useSFUConnection(deps: {
 
 	const signalChannel = new SocketIOSignalChannel();
 	const sfuClient = new SFUClient(signalChannel);
+	const videoManager = new VideoElementManager();
 	const clientTelemetry = getClientTelemetry(sfuClient);
 	const sfuManager = shallowRef<SFUMeetingManager | null>(null);
 
@@ -474,7 +503,7 @@ export function useSFUConnection(deps: {
 		try {
 			let wasAutomaticallyMuted = false;
 			const wantsAudio = mediaState.isMicOn;
-			manager = new SFUMeetingManager(sfuClient);
+			manager = new SFUMeetingManager(sfuClient, videoManager);
 			manager.initialize({
 				meetingId,
 				currentUser: currentUser.currentUser.value,
@@ -1080,10 +1109,12 @@ export function useSFUConnection(deps: {
 		unsubscribeGuestRealtime();
 		removeFrappeRealtimeEventListeners();
 
-		if (sfuManager.value) {
-			await sfuManager.value.cleanup();
+		try {
+			if (sfuManager.value) await sfuManager.value.cleanup();
+			sfuManager.value = null;
+		} finally {
+			videoManager.cleanup();
 		}
-		sfuManager.value = null;
 
 		realtimeListenersSetup.value = false;
 	});
@@ -1100,6 +1131,27 @@ export function useSFUConnection(deps: {
 		recoveryTimeline: computed(
 			() => participantConnectionState.recoveryTimeline,
 		),
+		registerRemoteVideoElement: (participantId, element) =>
+			videoManager.registerRemoteVideoElement(participantId, element),
+		registerLocalPreview: (element) =>
+			videoManager.registerLocalPreview(element),
+		attachLocalPreview: (stream) => videoManager.attachLocalPreview(stream),
+		registerScreenSharePreview: (attachmentId, element) =>
+			videoManager.registerScreenSharePreview(attachmentId, element),
+		attachScreenSharePreview: (attachmentId, stream, trackOwnership) =>
+			videoManager.attachScreenSharePreview(
+				attachmentId,
+				stream,
+				trackOwnership,
+			),
+		removeScreenSharePreview: (attachmentId) =>
+			videoManager.removeScreenSharePreview(attachmentId),
+		attachBackgroundEffectsSource: (attachmentId, element, stream) =>
+			videoManager.attachBackgroundEffectsSource(attachmentId, element, stream),
+		removeBackgroundEffectsSource: (attachmentId) =>
+			videoManager.removeBackgroundEffectsSource(attachmentId),
+		setAudioOutputDevice: (deviceId) =>
+			videoManager.setAudioOutputDevice(deviceId),
 		joinMeetingRoom,
 		handleGuestJoinResult,
 		setupFrappeRealtimeEventListeners,

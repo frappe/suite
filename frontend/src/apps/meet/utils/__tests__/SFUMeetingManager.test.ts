@@ -360,10 +360,11 @@ describe("SFUMeetingManager facade operations", () => {
 			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
 		);
 		expect(manager.hasLocalMediaPublications()).toBe(true);
-		manager.closeLocalProducer("screen");
+		const stopping = manager.stopScreenShare();
 		creation.resolve(staleProducer);
 
 		await expect(publication).resolves.toBeNull();
+		await stopping;
 		expect(staleProducer.close).toHaveBeenCalledOnce();
 		expect(closeProducer).toHaveBeenCalledWith("stale-screen-producer", {});
 		expect(manager.getLocalProducerState("screen")).toBeNull();
@@ -410,6 +411,34 @@ describe("SFUMeetingManager facade operations", () => {
 		expect(sendScreenShare.mock.invocationCallOrder[0]).toBeLessThan(
 			closeProducer.mock.invocationCallOrder[0],
 		);
+		expect(manager.getLocalProducerState("screen")).toBeNull();
+	});
+
+	it("closes the screen producer when stop signaling rejects", async () => {
+		const stopSignal = deferred<unknown>();
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			sendScreenShare: vi.fn(() => stopSignal.promise),
+			closeProducer,
+		} as never);
+		const producer = {
+			id: "screen-producer",
+			track: mediaTrack("screen", "video"),
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		manager.mediaHandler.setProducers({ screenProducer: producer as never });
+
+		const stopping = manager.stopScreenShare({ reason: "track-ended" });
+		stopSignal.reject(new Error("stop rejected"));
+
+		await expect(stopping).resolves.toBeUndefined();
+		expect(producer.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("screen-producer", {
+			reason: "track-ended",
+		});
 		expect(manager.getLocalProducerState("screen")).toBeNull();
 	});
 
@@ -816,6 +845,30 @@ describe("SFUMeetingManager E2EE recovery tracks", () => {
 		expect(manager.mediaHandler.videoProducer).toBe(producers.get(video));
 		expect(manager.mediaHandler.audioProducer).toBe(producers.get(audio));
 		expect(manager.mediaHandler.screenProducer).toBe(producers.get(screen));
+	});
+
+	it("removes screen consumers before the E2EE receive clear", async () => {
+		const manager = prepareE2EEManager();
+		const screen = {
+			id: "screen-consumer",
+			participantId: "alice",
+			producerId: "screen-producer",
+			isScreen: true,
+		};
+		vi.spyOn(
+			manager.consumerManager,
+			"getScreenShareConsumers",
+		).mockReturnValue([screen] as never);
+		const remove = vi
+			.spyOn(manager.consumerManager, "removeConsumer")
+			.mockReturnValue(screen as never);
+
+		await manager.reconfigureForE2EE(null, null);
+
+		expect(remove).toHaveBeenCalledWith("screen-consumer");
+		expect(remove.mock.invocationCallOrder[0]).toBeLessThan(
+			vi.mocked(manager.consumerManager.clear).mock.invocationCallOrder[0],
+		);
 	});
 
 	it("does not recreate an ended screen track during E2EE transition", async () => {

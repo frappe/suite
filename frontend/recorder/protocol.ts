@@ -386,7 +386,12 @@ export const parseRequestResponse = (
 
 export const parseScreenShareStarted = (
 	value: unknown,
-): { participantId: string; consumerId: string; stream: MediaStream } | null => {
+): {
+	participantId: string;
+	consumerId: string;
+	producerId: string;
+	stream: MediaStream;
+} | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const participantId = "participantId" in value ? value.participantId : undefined;
 	const stream = "stream" in value ? value.stream : undefined;
@@ -395,7 +400,30 @@ export const parseScreenShareStarted = (
 		typeof participantId !== "string" || !participantId ||
 		(typeof MediaStream === "undefined" || !(stream instanceof MediaStream)) ||
 		typeof consumer !== "object" || consumer === null ||
-		!("id" in consumer) || typeof consumer.id !== "string" || !consumer.id
+		!("id" in consumer) || typeof consumer.id !== "string" || !consumer.id ||
+		!("producerId" in consumer) ||
+		typeof consumer.producerId !== "string" ||
+		!consumer.producerId
 	) return null;
-	return { participantId, consumerId: consumer.id, stream };
+	return {
+		participantId,
+		consumerId: consumer.id,
+		producerId: consumer.producerId,
+		stream,
+	};
+};
+
+export const parseScreenShareStopped = (
+	value: unknown,
+): { participantId: string; producerId: string } | null => {
+	if (typeof value !== "object" || value === null) return null;
+	const participantId = "participantId" in value ? value.participantId : undefined;
+	const producerId = "producerId" in value ? value.producerId : undefined;
+	if (
+		typeof participantId !== "string" ||
+		!participantId ||
+		typeof producerId !== "string" ||
+		!producerId
+	) return null;
+	return { participantId, producerId };
 };

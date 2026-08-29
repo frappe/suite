@@ -15,6 +15,7 @@ import {
 	setSelectedSpeakerId,
 } from "../data/mediaPreferences";
 import type { DeviceType, deviceManager } from "../utils/media/DeviceManager";
+import type { MediaAttachmentFacade } from "../utils/media/VideoElementManager";
 import notificationContextManager from "../utils/notificationContext";
 import { isMobileDevice } from "../utils/device";
 import type { SFUClient } from "../utils/SFUClient";
@@ -120,6 +121,7 @@ interface MediaControlsDeps {
 	currentUser: CurrentUser;
 	sfuClient: SFUClient;
 	sfuManager: Ref<SFUMeetingManager | null>;
+	mediaAttachments: MediaAttachmentFacade;
 	deviceManager: typeof deviceManager;
 	backgroundEffects: BackgroundEffectsAPI;
 	noiseCancellation: NoiseCancellationAPI;
@@ -142,8 +144,14 @@ interface MediaControlsAPI {
 	applyBackgroundEffectsToLocalStream: () => Promise<void>;
 	republishMediaAfterE2EE: (detail?: E2EEMediaRepublishDetail) => Promise<void>;
 	setLocalVideoRef: (el: HTMLVideoElement | null) => void;
-	setRemoteVideoRef: (participantId: string, el: HTMLVideoElement) => void;
-	setScreenShareVideoRef: (el: HTMLVideoElement) => void;
+	setRemoteVideoRef: (
+		participantId: string,
+		el: HTMLVideoElement | null,
+	) => void;
+	setScreenShareVideoRef: (
+		attachmentId: string,
+		el: HTMLVideoElement | null,
+	) => void;
 	processedStream: MediaStream | null;
 }
 
@@ -276,13 +284,13 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		currentUser,
 		sfuClient,
 		sfuManager,
+		mediaAttachments,
 		deviceManager,
 		backgroundEffects,
 		noiseCancellation,
 	} = deps;
 
 	const localVideo = ref<HTMLVideoElement | null>(null);
-	const screenShareVideoElements = new Map<string, HTMLVideoElement>();
 	const _unmutedByPushToTalk = ref(false);
 
 	let backgroundSession: {
@@ -427,6 +435,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		);
 	};
 
+	const updateLocalPreview = (stream: MediaStream | null) => {
+		void mediaAttachments.attachLocalPreview(stream).catch((error) =>
+			console.warn("Could not update local preview:", error),
+		);
+	};
+
 	const reconcileCameraTrack = async (
 		track: MediaStreamTrack | null,
 		reason: string,
@@ -511,6 +525,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					mediaState.processedStream = null;
 				}
 			}
+			const hasLiveRawVideo = mediaState.localStream
+				?.getVideoTracks()
+				.some((track) => track.readyState === "live");
+			updateLocalPreview(hasLiveRawVideo ? mediaState.localStream : null);
 		}
 	};
 
@@ -530,6 +548,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			mediaState.localStream?.removeTrack(track);
 			track.stop();
 		}
+		updateLocalPreview(null);
 		mediaState.isCameraOn = false;
 		setCameraEnabled(false);
 		toast.error("Failed to toggle camera");
@@ -653,6 +672,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				} else {
 					backgroundSession = result;
 					mediaState.processedStream = result.stream;
+					updateLocalPreview(result.stream);
 				}
 			}
 		} catch (error) {
@@ -1438,6 +1458,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				mediaState.localStream?.removeTrack(track);
 				stopLifecycleTrack(track);
 			}
+			updateLocalPreview(null);
 			mediaState.isCameraOn = false;
 			setCameraEnabled(false);
 			toast.error(
@@ -1608,9 +1629,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				"speaker",
 			);
 
-			if (validSpeakerId && sfuManager.value) {
-				await sfuManager.value.setAudioOutputDevice(validSpeakerId);
-			}
+			if (validSpeakerId) await mediaAttachments.setAudioOutputDevice(validSpeakerId);
 		} catch (error) {
 			console.warn("Failed to apply speaker device:", error);
 		}
@@ -1936,12 +1955,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 								mediaState.cameraPermissionGranted = true;
 								if (mediaState.localVideo) {
 									assertCurrentCameraOperation(operation);
-									const localVideoEl =
-										mediaState.localVideo as HTMLVideoElement;
-									const videoTracks = stream.getVideoTracks();
-									if (videoTracks.length > 0) {
-										localVideoEl.srcObject = new MediaStream(videoTracks);
-									}
+									setLocalVideoRef(mediaState.localVideo as HTMLVideoElement);
 								}
 							}
 						} catch (err) {
@@ -1976,11 +1990,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				assertCurrentCameraOperation(operation);
 				cleanupBackgroundSession();
 				if (stream) {
-					for (const track of stream.getVideoTracks()) {
-						track.stop();
-						stream.removeTrack(track);
-					}
+				for (const track of stream.getVideoTracks()) {
+					track.stop();
+					stream.removeTrack(track);
 				}
+			}
+			updateLocalPreview(null);
 			}
 
 			assertCurrentCameraOperation(operation);
@@ -2032,6 +2047,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					mediaState.localStream?.removeTrack(track);
 					track.stop();
 				}
+				updateLocalPreview(null);
 				assertCurrentCameraOperation(operation);
 				mediaState.isCameraOn = false;
 				setCameraEnabled(false);
@@ -2072,6 +2088,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		if (mediaState.screenShareStream === screenStream) {
 			mediaState.screenShareStream = null;
 		}
+		mediaAttachments.removeScreenSharePreview("local-screen");
 
 		await manager?.stopScreenShare(metadata);
 	};
@@ -2183,9 +2200,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					}
 				} catch (pubErr) {
 					console.error("Failed to publish screen share producer:", pubErr);
-					await stopScreenShare("publish-failed", {
-						message: (pubErr as Error)?.message,
-					});
+					if (
+						mediaState.isScreenSharing &&
+						mediaState.screenShareStream === screenStream
+					) {
+						await stopScreenShare("publish-failed", {
+							message: (pubErr as Error)?.message,
+						});
+					}
 					throw pubErr;
 				}
 			}
@@ -2201,56 +2223,42 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	function setLocalVideoRef(el: HTMLVideoElement | null) {
 		localVideo.value = el;
-		if (el && mediaState.localStream) {
-			const videoEl = el;
-			const streamToUse = mediaState.processedStream || mediaState.localStream;
-
-			const currentStreamId = streamToUse.id;
-			const trackedStreamId = el.dataset.sourceStreamId;
-
-			if (!videoEl.srcObject || trackedStreamId !== currentStreamId) {
-				const videoTracks = streamToUse.getVideoTracks();
-				if (videoTracks.length > 0) {
-					videoEl.srcObject = new MediaStream(videoTracks);
-					el.dataset.sourceStreamId = currentStreamId;
-				} else {
-					videoEl.srcObject = streamToUse;
-					el.dataset.sourceStreamId = currentStreamId;
-				}
-				videoEl.muted = true;
-			}
-		}
+		mediaAttachments.registerLocalPreview(el);
+		const stream = mediaState.processedStream || mediaState.localStream;
+		void mediaAttachments.attachLocalPreview(stream).catch((error) =>
+			console.warn("Could not play local preview:", error),
+		);
 		mediaState.localVideo = el;
 	}
 
-	const setRemoteVideoRef = (participantId: string, el: HTMLVideoElement) => {
-		sfuManager.value?.registerVideoElement(participantId, el);
+	const setRemoteVideoRef = (
+		participantId: string,
+		el: HTMLVideoElement | null,
+	) => {
+		mediaAttachments.registerRemoteVideoElement(participantId, el);
 	};
 
-	const setScreenShareVideoRef = (el: HTMLVideoElement) => {
+	const setScreenShareVideoRef = (
+		attachmentId: string,
+		el: HTMLVideoElement | null,
+	) => {
+		mediaAttachments.registerScreenSharePreview(attachmentId, el);
 		if (!el) return;
-
 		const participantId = el.dataset.participantId;
-		if (participantId) {
-			screenShareVideoElements.set(participantId, el);
-
-			const store = mediaState.screenShareStreams || {};
-			let stream: MediaStream | null = store[participantId] ?? null;
-			if (!stream && currentUser.currentUser.value?.user_id === participantId) {
-				stream = mediaState.screenShareStream;
-			}
-
-			if (stream instanceof MediaStream) {
-				const currentStreamId = stream.id;
-				const srcObject = el.srcObject;
-				const existingStreamId =
-					srcObject instanceof MediaStream ? srcObject.id : undefined;
-
-				if (!el.srcObject || existingStreamId !== currentStreamId) {
-					el.srcObject = stream;
-					el.play?.().catch(() => {});
-				}
-			}
+		if (!participantId) return;
+		const stream =
+			mediaState.screenShareStreams?.[participantId] ??
+			(currentUser.currentUser.value?.user_id === participantId
+				? mediaState.screenShareStream
+				: null);
+		if (stream) {
+			void mediaAttachments
+				.attachScreenSharePreview(
+					attachmentId,
+					stream,
+					attachmentId === "local-screen" ? "borrowed" : "owned",
+				)
+				.catch((error) => console.warn("Could not play screen share:", error));
 		}
 	};
 
@@ -2317,6 +2325,9 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const cleanupLocalMedia = async () => {
 		cameraLifecycleGeneration++;
 		cameraLifecycleAbortController.abort(cameraLifecycleAbort());
+		mediaAttachments.registerLocalPreview(null);
+		void mediaAttachments.attachLocalPreview(null);
+		mediaAttachments.removeScreenSharePreview("local-screen");
 		mediaState.isCameraOn = false;
 		mediaState.isMicOn = false;
 		mediaState.isScreenSharing = false;
@@ -2366,9 +2377,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 								stopLifecycleTrack(track);
 							} catch {}
 						}
+						updateLocalPreview(null);
 					} finally {
 						detachedCameraTracks.clear();
 						await backgroundEffects.dispose();
+						updateLocalPreview(null);
 					}
 				}
 			}

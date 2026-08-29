@@ -81,6 +81,7 @@ interface MediaEventHandlers {
 
 export interface MediaScreenShareEvent {
 	participantId: string;
+	producerId?: string;
 	stream?: MediaStream;
 	consumer?: ConsumerEntry;
 }
@@ -852,6 +853,7 @@ export class SFUMediaManager {
 			if (this.eventHandlers.onScreenShareStarted) {
 				this.eventHandlers.onScreenShareStarted({
 					participantId,
+					producerId: consumer.producerId,
 					stream: screenStream,
 					consumer,
 				});

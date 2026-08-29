@@ -19,7 +19,6 @@ import {
 	parseConsumerId,
 	parseHandChange,
 	parseMediaControlMessage,
-	parseParticipantId,
 	parseParticipantMessage,
 	parseParticipantUpdate,
 	parseProducerMessage,
@@ -29,6 +28,7 @@ import {
 	parseRecordingChallenge,
 	parseRequestResponse,
 	parseScreenShareStarted,
+	parseScreenShareStopped,
 	type MediaControlMessage,
 	type ProducerEvent,
 	type RecorderParticipantData,
@@ -43,8 +43,8 @@ export type RecorderState = {
 	participantRemoved?: (participantId: string) => void;
 	participantUpdated?: (participantId: string, updates: RecorderParticipantUpdate) => void;
 	activeSpeakersChanged?: (participantIds: string[]) => void;
-	screenStarted?: (data: { participantId: string; consumerId: string; stream: MediaStream; startedAt: number }) => Promise<void> | void;
-	screenStopped?: (participantId: string) => void;
+	screenStarted?: (data: { participantId: string; consumerId: string; producerId: string; stream: MediaStream; startedAt: number }) => Promise<void> | void;
+	screenStopped?: (participantId: string, producerId: string) => void;
 	reactionReceived?: (userId: string, reaction: string) => void;
 	handChanged?: (userId: string, raised: boolean, timestamp: string) => void;
 	handsSynced?: (hands: Record<string, string>) => void;
@@ -61,6 +61,13 @@ interface RecorderDependencies {
 	mediaManager: SFUMediaManager;
 }
 
+interface PendingAttachment {
+	consumerId: string;
+	participantId: string;
+	promise: Promise<void>;
+	cancel: () => void;
+}
+
 export class RecorderSocketController {
 	static readonly ATTACHMENT_TIMEOUT_MS = 10_000;
 	private channel: SignalChannel;
@@ -69,8 +76,16 @@ export class RecorderSocketController {
 	private reconciliation: MeetingReconciliationState<ReconciledRecorderParticipant> =
 		createMeetingReconciliationState();
 	private producerClaims = new Set<string>();
-	private attachmentPromises = new Map<string, Promise<void>>();
-	private screenAttachmentPromises = new Map<string, Promise<void>>();
+	private attachmentPromises = new Map<string, PendingAttachment>();
+	private screenAttachmentPromises = new Map<string, PendingAttachment>();
+	private currentParticipantAttachments = new Map<
+		string,
+		{ consumerId: string; producerId: string }
+	>();
+	private activeScreens = new Map<
+		string,
+		{ consumerId: string; producerId: string }
+	>();
 	private initialSync = true;
 	private captureStartedAt = 0;
 	private cleaningUp = false;
@@ -185,23 +200,77 @@ export class RecorderSocketController {
 		});
 		this.deps.consumerManager.setEventHandlers({
 			onConsumerAdded: (consumer) => {
-				const attached = this.deps.mediaManager.handleNewConsumer(consumer).then(async () => {
-					if (consumer.isScreen) await this.screenAttachmentPromises.get(consumer.id);
+				const operation = this.deps.mediaManager.handleNewConsumer(consumer).then(async () => {
+					if (consumer.isScreen) {
+						await this.screenAttachmentPromises.get(consumer.id)?.promise;
+					}
 				});
-				this.attachmentPromises.set(consumer.producerId, attached);
-				void attached.catch((error) => {
-					if (this._ready.value) this.interrupt(`Media attachment failed: ${error instanceof Error ? error.message : "unknown error"}`);
-				});
+				const pending = this.cancellableAttachment(consumer, operation);
+				this.attachmentPromises.set(consumer.producerId, pending);
+				if (!consumer.isScreen) {
+					this.currentParticipantAttachments.set(
+						consumer.participantId,
+						{ consumerId: consumer.id, producerId: consumer.producerId },
+					);
+				}
+				void pending.promise
+					.catch((error) => {
+						if (this._ready.value) this.interrupt(`Media attachment failed: ${error instanceof Error ? error.message : "unknown error"}`);
+					})
+					.finally(() => {
+						if (this.attachmentPromises.get(consumer.producerId) === pending) {
+							this.attachmentPromises.delete(consumer.producerId);
+						}
+					});
 			},
-			onConsumerRemoved: (_id, consumer) => { if (consumer.isScreen) this.stopScreen(consumer.participantId); },
+			onConsumerRemoved: (_id, consumer) => {
+				this.cancelConsumerAttachment(consumer);
+				if (consumer.isScreen) this.finishScreen(consumer.participantId, consumer.producerId, consumer.id);
+			},
 			onConsumerLost: (info) => void this.deps.mediaManager.handleConsumerLost(info),
 		});
 		this.deps.mediaManager.setEventHandlers({
 			onScreenShareStarted: (value) => {
 				const data = parseScreenShareStarted(value);
 				if (!data) return;
-				const acknowledged = Promise.resolve(this.state.screenStarted?.({ participantId: data.participantId, consumerId: data.consumerId, stream: data.stream, startedAt: Date.now() }));
-				this.screenAttachmentPromises.set(data.consumerId, this.withTimeout(acknowledged, `Timed out waiting for screen element for ${data.participantId}`));
+				const previous = this.activeScreens.get(data.participantId);
+				if (previous && previous.consumerId !== data.consumerId) {
+					this.finishScreen(
+						data.participantId,
+						previous.producerId,
+						previous.consumerId,
+					);
+					const previousConsumer = this.deps.consumerManager
+						.getScreenShareConsumers()
+						.find(
+							(consumer) =>
+								consumer.id === previous.consumerId &&
+								consumer.participantId === data.participantId &&
+								consumer.producerId === previous.producerId,
+						);
+					if (previousConsumer) {
+						this.deps.consumerManager.removeConsumer(previousConsumer.id);
+					}
+				}
+				this.activeScreens.set(data.participantId, {
+					consumerId: data.consumerId,
+					producerId: data.producerId,
+				});
+				const acknowledged = Promise.resolve().then(() =>
+					this.state.screenStarted?.({ participantId: data.participantId, consumerId: data.consumerId, producerId: data.producerId, stream: data.stream, startedAt: Date.now() }),
+				);
+				const pending = this.withTimeout(
+					data,
+					acknowledged,
+					`Timed out waiting for screen element for ${data.participantId}`,
+				);
+				this.screenAttachmentPromises.set(data.consumerId, pending);
+				const cleanupPending = () => {
+					if (this.screenAttachmentPromises.get(data.consumerId) === pending) {
+						this.screenAttachmentPromises.delete(data.consumerId);
+					}
+				};
+				void pending.promise.then(cleanupPending, cleanupPending);
 			},
 			onRecoveryExhausted: () => this.interrupt("Media subscription recovery exhausted"),
 		});
@@ -219,7 +288,10 @@ export class RecorderSocketController {
 		client.on("consumer_closed", (value) => { const id = parseConsumerId(value); if (id) this.deps.consumerManager.removeConsumer(id); });
 		client.on("media_control_update", (value) => { const message = parseMediaControlMessage(value); if (message) this.updateMedia(message); });
 		client.on("active_speaker", (value) => { const ids = parseActiveSpeakers(value); if (ids) this.state.activeSpeakersChanged?.(ids); });
-		client.on("screen_share_stopped", (value) => { const id = parseParticipantId(value); if (id) this.stopScreen(id); });
+		client.on("screen_share_stopped", (value) => {
+			const stopped = parseScreenShareStopped(value);
+			if (stopped) this.stopScreen(stopped.participantId, stopped.producerId);
+		});
 		client.on("reaction:message", (value) => { const reaction = parseReaction(value); if (reaction) this.state.reactionReceived?.(reaction.fromUser, reaction.reaction); });
 		client.on("hand_raised", (value) => { const hand = parseHandChange(value); if (hand) this.state.handChanged?.(hand.participantId, hand.raised, hand.timestamp); });
 		client.on("existing_raised_hands", (value) => { const hands = parseRaisedHands(value); if (hands) this.state.handsSynced?.(hands); });
@@ -310,7 +382,7 @@ export class RecorderSocketController {
 			const result = await this.deps.mediaManager.subscribeToRemoteProducer(event);
 			if (!this.isCurrentProducer(event)) { this.removeProducer(event); return; }
 			if (!result) throw new Error(`Initial producer ${event.producerId} did not create a consumer`);
-			const attached = this.attachmentPromises.get(event.producerId);
+			const attached = this.attachmentPromises.get(event.producerId)?.promise;
 			if (!attached) throw new Error(`Initial producer ${event.producerId} was not attached`);
 			await attached;
 			if (!this.isCurrentProducer(event)) this.removeProducer(event);
@@ -324,20 +396,163 @@ export class RecorderSocketController {
 	private isCurrentProducer(event: ProducerEvent): boolean { return this.reconciliation.producers.get(event.producerId) === event; }
 	private sanitizeParticipant(p: RecorderParticipantData): RecorderParticipantData { const avatar = trustedAvatar(p.userData?.avatar || p.avatar, this.frappeOrigin); return { ...p, avatar, userData: { ...p.userData, avatar } }; }
 	private frappeOrigin = "";
-	private removeProducer(event: ProducerEvent): void { for (const c of this.deps.consumerManager.getConsumersByParticipant(event.participantId || "")) if (c.producerId === event.producerId || (event.isScreen && c.isScreen)) this.deps.consumerManager.removeConsumer(c.id); }
-	private stopScreen(participantId: string): void { if (!participantId) return; for (const c of this.deps.consumerManager.getScreenShareConsumers().filter((c) => c.participantId === participantId)) this.deps.consumerManager.removeConsumer(c.id); this.state.screenStopped?.(participantId); }
+	private removeProducer(event: ProducerEvent): void {
+		const consumers = this.deps.consumerManager
+			.getConsumersByParticipant(event.participantId)
+			.filter((consumer) => consumer.producerId === event.producerId);
+		for (const consumer of consumers) {
+			this.deps.consumerManager.removeConsumer(consumer.id);
+		}
+		if (!consumers.length) this.cancelProducerAttachment(event);
+		if (event.isScreen) this.finishScreen(event.participantId, event.producerId);
+	}
+	private stopScreen(participantId: string, producerId: string): void {
+		const consumer = this.deps.consumerManager
+			.getScreenShareConsumers()
+			.find((candidate) =>
+				candidate.participantId === participantId &&
+				candidate.producerId === producerId,
+			);
+		if (consumer) {
+			this.deps.consumerManager.removeConsumer(consumer.id);
+			return;
+		}
+		this.finishScreen(participantId, producerId);
+	}
+	private finishScreen(
+		participantId: string,
+		producerId: string,
+		consumerId?: string,
+	): void {
+		const screen = this.activeScreens.get(participantId);
+		if (
+			screen?.producerId !== producerId ||
+			(consumerId && screen.consumerId !== consumerId)
+		) return;
+		this.activeScreens.delete(participantId);
+		this.screenAttachmentPromises.get(screen.consumerId)?.cancel();
+		this.state.screenStopped?.(participantId, producerId);
+	}
 	private updateMedia(data: MediaControlMessage): void { const action = data.action; const update: { audioEnabled?: boolean; videoEnabled?: boolean } = {}; if (typeof action === "object") action.type === "audio" ? update.audioEnabled = action.enabled : update.videoEnabled = action.enabled; else if (action === "mute" || action === "unmute") update.audioEnabled = action === "unmute"; else update.videoEnabled = action === "video_on"; this.deps.participantManager.updateMediaState(data.participantId, update); }
 	private interrupt(reason: string): void { if (!this._ready.value && this._interruption.value) return; this._ready.value = false; this._interruption.value = reason; this.bridge.reportInterruption(reason); }
-	private withTimeout(promise: Promise<void>, message: string): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error(message)), RecorderSocketController.ATTACHMENT_TIMEOUT_MS);
-			promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+	private cancellableAttachment(
+		consumer: { id: string; participantId: string },
+		operation: Promise<void>,
+	): PendingAttachment {
+		let settled = false;
+		let cancel!: () => void;
+		const promise = new Promise<void>((resolve, reject) => {
+			cancel = () => {
+				if (settled) return;
+				settled = true;
+				resolve();
+			};
+			operation.then(
+				() => {
+					if (settled) return;
+					settled = true;
+					resolve();
+				},
+				(error) => {
+					if (settled) return;
+					settled = true;
+					reject(error);
+				},
+			);
 		});
+		return {
+			consumerId: consumer.id,
+			participantId: consumer.participantId,
+			promise,
+			cancel,
+		};
+	}
+	private withTimeout(
+		consumer: { consumerId: string; participantId: string },
+		operation: Promise<void | undefined>,
+		message: string,
+	): PendingAttachment {
+		let settled = false;
+		let timer: ReturnType<typeof setTimeout>;
+		let cancel!: () => void;
+		const promise = new Promise<void>((resolve, reject) => {
+			cancel = () => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				resolve();
+			};
+			timer = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				reject(new Error(message));
+			}, RecorderSocketController.ATTACHMENT_TIMEOUT_MS);
+			operation.then(
+				() => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					resolve();
+				},
+				(error) => {
+					if (settled) return;
+					settled = true;
+					clearTimeout(timer);
+					reject(error);
+				},
+			);
+		});
+		return {
+			consumerId: consumer.consumerId,
+			participantId: consumer.participantId,
+			promise,
+			cancel,
+		};
+	}
+	private cancelConsumerAttachment(consumer: {
+		id: string;
+		participantId: string;
+		producerId: string;
+		isScreen: boolean;
+	}): void {
+		const pending = this.attachmentPromises.get(consumer.producerId);
+		if (pending?.consumerId === consumer.id) pending.cancel();
+		if (consumer.isScreen) {
+			this.screenAttachmentPromises.get(consumer.id)?.cancel();
+			return;
+		}
+		const current = this.currentParticipantAttachments.get(consumer.participantId);
+		if (
+			current?.producerId === consumer.producerId &&
+			current.consumerId === consumer.id
+		) {
+			this.currentParticipantAttachments.delete(consumer.participantId);
+			this.deps.videoManager.cancelDeferredAttachment(consumer.participantId);
+		}
+	}
+	private cancelProducerAttachment(event: ProducerEvent): void {
+		this.attachmentPromises.get(event.producerId)?.cancel();
+		if (
+			this.currentParticipantAttachments.get(event.participantId)?.producerId ===
+			event.producerId
+		) {
+			this.currentParticipantAttachments.delete(event.participantId);
+			this.deps.videoManager.cancelDeferredAttachment(event.participantId);
+		}
 	}
 	private cleanup(): void {
 		if (this.cleaningUp) return;
 		this.cleaningUp = true;
 		if (this.roomEmptyTimer) clearTimeout(this.roomEmptyTimer);
+		for (const pending of this.attachmentPromises.values()) pending.cancel();
+		for (const [participantId, screen] of [...this.activeScreens]) {
+			this.finishScreen(participantId, screen.producerId, screen.consumerId);
+		}
+		for (const pending of this.screenAttachmentPromises.values()) pending.cancel();
+		this.attachmentPromises.clear();
+		this.screenAttachmentPromises.clear();
+		this.currentParticipantAttachments.clear();
+		this.activeScreens.clear();
 		void this.deps.mediaManager.cancelPendingSubscriptions();
 		this.deps.mediaManager.cleanup();
 		this.deps.consumerManager.clear();

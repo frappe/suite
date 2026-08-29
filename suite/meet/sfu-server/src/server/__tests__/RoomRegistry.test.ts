@@ -473,6 +473,11 @@ describe('RoomRegistry', () => {
 				shareData: { producerId: 'screen-1', details: { private: true } },
 				timestamp: 'ts',
 			});
+			registry.emitScreenShare('r1', 'screen_share_stopped', {
+				participantId: 'p1',
+				producerId: 'screen-1',
+				timestamp: 'ts',
+			});
 			registry.emitReaction('r1', {
 				roomId: 'r1',
 				reaction: 'wave',
@@ -508,6 +513,7 @@ describe('RoomRegistry', () => {
 				'producer_created',
 				'producer_closed',
 				'screen_share_started',
+				'screen_share_stopped',
 				'reaction:message',
 				'hand_raised',
 				'chat:message',
@@ -534,6 +540,13 @@ describe('RoomRegistry', () => {
 			).toEqual({
 				participantId: 'p1',
 				shareData: { producerId: 'screen-1' },
+				timestamp: 'ts',
+			});
+			expect(
+				calls.find((call) => call.event === 'screen_share_stopped')?.data,
+			).toEqual({
+				participantId: 'p1',
+				producerId: 'screen-1',
 				timestamp: 'ts',
 			});
 		});

@@ -1165,6 +1165,48 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it('broadcasts an explicitly validated screen stop in normal flow', async () => {
+		const harness = createManager();
+		const sharer = connectFullSocket(harness, {
+			id: 'sock-sharer',
+			userId: 'sharer-1',
+		});
+		const viewer = connectFullSocket(harness, {
+			id: 'sock-viewer',
+			userId: 'viewer-1',
+		});
+		emitJoin(sharer, { userId: 'sharer-1', name: 'Sharer' });
+		emitJoin(viewer, { userId: 'viewer-1', name: 'Viewer' });
+		await new Promise((resolve) => setImmediate(resolve));
+		vi.mocked(harness.mediasoup.assertProducerAccess).mockReturnValue({
+			producer: { kind: 'video', appData: { type: 'screen' } },
+		} as never);
+		viewer.emitCalls.length = 0;
+		const callback = vi.fn();
+
+		sharer.fire(
+			'screen_share',
+			{
+				action: 'stop_share',
+				shareData: {
+					producerId: 'producer-1',
+					reason: 'user-click',
+				},
+			},
+			callback,
+		);
+
+		expect(callback).toHaveBeenCalledWith({ success: true });
+		expect(viewer.emitCalls).toContainEqual({
+			event: 'screen_share_stopped',
+			data: expect.objectContaining({
+				participantId: 'sharer-1',
+				producerId: 'producer-1',
+				reason: 'user-click',
+			}),
+		});
+	});
+
 	it('reports a producer creation fault without broadcasting and allows retry', async () => {
 		const harness = createManager();
 		const publisher = connectFullSocket(harness, {

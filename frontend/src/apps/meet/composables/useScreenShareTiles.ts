@@ -5,6 +5,7 @@ import type { GridLayout, PinnedTile } from "./useGridLayout";
 interface ScreenShare {
 	consumerId: string;
 	participantId: string;
+	source: "local" | "remote";
 }
 
 interface CurrentUser {
@@ -81,7 +82,7 @@ export function useScreenShareTiles({
 	const screenShareTiles = computed<ScreenShareTile[]>(() => {
 		return displayScreenShares.value.map((share) => {
 			const participantName = getParticipantName(share.participantId);
-			const isLocalSharer = currentUser.value?.user_id === share.participantId;
+			const isLocalSharer = share.source === "local";
 			const localName = currentUser.value?.full_name || currentUser.value?.name;
 			const displayName = `${
 				isLocalSharer ? localName : participantName

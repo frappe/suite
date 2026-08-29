@@ -96,11 +96,18 @@ function normalizeProducerClosedEvent(
 
 function normalizeScreenShareEvent(value: unknown): ScreenShareEvent | null {
 	if (!isUnknownRecord(value)) return null;
+	const shareData = isUnknownRecord(value.shareData) ? value.shareData : null;
 	return {
 		participantId:
 			typeof value.participantId === "string" ? value.participantId : undefined,
 		consumerId:
 			typeof value.consumerId === "string" ? value.consumerId : undefined,
+		producerId:
+			typeof value.producerId === "string"
+				? value.producerId
+				: typeof shareData?.producerId === "string"
+					? shareData.producerId
+					: undefined,
 		stream:
 			typeof MediaStream !== "undefined" && value.stream instanceof MediaStream
 				? value.stream
@@ -166,8 +173,9 @@ export interface ParticipantConnectionStartOptions {
 interface ScreenShareEvent {
 	participantId?: string;
 	consumerId?: string;
+	producerId?: string;
 	stream?: MediaStream;
-	consumer?: { id: string };
+	consumer?: { id: string; producerId?: string };
 }
 
 interface ParticipantConnectionOptions {
@@ -708,9 +716,7 @@ export class ParticipantConnection {
 	private async performReceiveReset(generation: number): Promise<void> {
 		const pendingSubscriptions = this.mediaManager.cancelPendingSubscriptions();
 		this.transportManager.closeReceiveTransport();
-		this.mediaManager.consumerManager.clear();
-		this.mediaManager.processedConsumers.clear();
-		this.mediaManager.isScreenShareActive = false;
+		this.clearReceiveConsumers();
 		await pendingSubscriptions;
 		if (generation !== this.lifecycleGeneration) return;
 		if (
@@ -832,9 +838,7 @@ export class ParticipantConnection {
 		this.localProducerBytes.clear();
 		const pendingSubscriptions = this.mediaManager.cancelPendingSubscriptions();
 		this.transportManager.closeReceiveTransport();
-		this.mediaManager.consumerManager.clear();
-		this.mediaManager.processedConsumers.clear();
-		this.mediaManager.isScreenShareActive = false;
+		this.clearReceiveConsumers();
 		await pendingSubscriptions;
 		this.throwIfAborted(signal);
 		await this.sfuClient.disconnect();
@@ -1139,14 +1143,7 @@ export class ParticipantConnection {
 				event.participantId,
 			);
 		for (const consumer of consumers) {
-			const producerMatches =
-				consumer.consumer.producerId === event.producerId ||
-				consumer.appData?.producerId === event.producerId;
-			const isScreen =
-				consumer.isScreen ||
-				consumer.appData?.type === "screen" ||
-				consumer.consumer.appData?.type === "screen";
-			if (producerMatches || (event.isScreen && isScreen)) {
+			if (consumer.producerId === event.producerId) {
 				this.mediaManager.consumerManager.removeConsumer(consumer.id);
 				this.mediaManager.processedConsumers.delete(consumer.id);
 			}
@@ -1156,6 +1153,17 @@ export class ParticipantConnection {
 			.catch((error) =>
 				console.warn("Failed to attach surviving endpoint media:", error),
 			);
+	}
+
+	clearReceiveConsumers(): void {
+		for (const screen of [
+			...this.mediaManager.consumerManager.getScreenShareConsumers(),
+		]) {
+			this.mediaManager.consumerManager.removeConsumer(screen.id);
+		}
+		this.mediaManager.consumerManager.clear();
+		this.mediaManager.processedConsumers.clear();
+		this.mediaManager.isScreenShareActive = false;
 	}
 
 	private applyReconciliationEvent(event: ReconciliationEvent): void {
@@ -1277,11 +1285,14 @@ export class ParticipantConnection {
 			},
 			onConsumerRemoved: (consumerId: string, consumer: ConsumerEntry) => {
 				if (consumer?.isScreen || consumer?.appData?.type === "screen") {
-					this.mediaManager.isScreenShareActive = false;
+					this.mediaManager.isScreenShareActive =
+						this.mediaManager.consumerManager.getScreenShareConsumers().length > 0;
 					if (this.eventHandlers.onScreenShareStopped) {
 						this.eventHandlers.onScreenShareStopped({
 							participantId: consumer.participantId,
 							consumerId,
+							producerId: consumer.producerId,
+							consumer,
 						});
 					}
 				}
@@ -1437,6 +1448,7 @@ export class ParticipantConnection {
 			if (d.isScreen) {
 				this.eventHandlers.onScreenShareStopped?.({
 					participantId: d.participantId,
+					producerId: d.producerId,
 				});
 			}
 		});
@@ -1585,45 +1597,26 @@ export class ParticipantConnection {
 
 		this.sfuClient.on("screen_share_stopped", (value: unknown) => {
 			const d = normalizeScreenShareEvent(value);
-			if (!d) return;
-			console.log("Screen share stopped - resetting sidebar mode flag");
-			this.mediaManager.isScreenShareActive = false;
-
-			if (this.eventHandlers.onScreenShareStopped) {
-				this.eventHandlers.onScreenShareStopped(d);
+			if (!d?.participantId || !d.producerId) return;
+			const screenConsumers =
+				this.mediaManager.consumerManager.getScreenShareConsumers();
+			const matchingConsumer = screenConsumers.find(
+				(consumer) =>
+					consumer.participantId === d.participantId &&
+					consumer.producerId === d.producerId,
+			);
+			this.eventHandlers.onScreenShareStopped?.({
+				...d,
+				consumerId: matchingConsumer?.id,
+				consumer: matchingConsumer,
+			});
+			if (matchingConsumer) {
+				this.mediaManager.consumerManager.removeConsumer(matchingConsumer.id);
+				this.mediaManager.processedConsumers.delete(matchingConsumer.id);
 			}
-
-			const pid = d.participantId;
-			if (pid) {
-				const screenConsumers = this.mediaManager.consumerManager
-					.getScreenShareConsumers()
-					.filter((c) => c.participantId === pid);
-				for (const sc of screenConsumers) {
-					console.log("Removing screen-share consumer on stop:", {
-						consumerId: sc.id,
-						participantId: pid,
-					});
-					this.mediaManager.consumerManager.removeConsumer(sc.id);
-					this.mediaManager.processedConsumers.delete(sc.id);
-				}
-				const allForPid =
-					this.mediaManager.consumerManager.getConsumersByParticipant(pid);
-				for (const c of allForPid) {
-					const maybeScreen =
-						c.isScreen ||
-						c.appData?.type === "screen" ||
-						(c.consumer as { appData?: { type?: string } })?.appData?.type ===
-							"screen";
-					if (maybeScreen) {
-						console.log("(safety) Removing screen-like consumer on stop:", {
-							consumerId: c.id,
-							participantId: pid,
-						});
-						this.mediaManager.consumerManager.removeConsumer(c.id);
-						this.mediaManager.processedConsumers.delete(c.id);
-					}
-				}
-			}
+			this.mediaManager.isScreenShareActive = screenConsumers.some(
+				(consumer) => consumer.producerId !== d.producerId,
+			);
 		});
 
 		this.sfuClient.on("active_speaker", (value: unknown) => {

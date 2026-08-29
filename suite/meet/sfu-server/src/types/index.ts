@@ -237,7 +237,10 @@ export interface ClientToServerEvents {
 	) => void;
 	media_control: (data: MediaControlRequest) => void;
 	host_control: (data: HostControlRequest) => void;
-	screen_share: (data: ScreenShareRequest) => void;
+	screen_share: (
+		data: ScreenShareRequest,
+		callback?: (response: SFUResponse) => void,
+	) => void;
 	'chat:send': (
 		data: ChatSendRequest,
 		callback?: (

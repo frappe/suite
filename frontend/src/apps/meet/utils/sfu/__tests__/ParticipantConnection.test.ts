@@ -42,6 +42,8 @@ function createConnection({ e2eeRequired = false } = {}) {
 			clear: vi.fn(),
 			setEventHandlers: vi.fn(),
 			getConsumersByParticipant: vi.fn(() => []),
+			getScreenShareConsumers: vi.fn(() => []),
+			removeConsumer: vi.fn(),
 		},
 		setEventHandlers: vi.fn(),
 	};
