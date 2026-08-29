@@ -1,5 +1,3 @@
-import frappe
-
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 
 
@@ -30,12 +28,12 @@ def add_rate_limits() -> None:
         },
         {"method_path": "suite.meet.api.meeting.validate_guest_session", "limit": 10, "seconds": 60 * 60},
         {"method_path": "suite.meet.api.meeting.check_meeting_access", "limit": 10, "seconds": 5 * 60},
-        {"method_path": "suite.meet.api.meeting.join_meeting", "limit": 30, "seconds": 60, "ip_based": False},
+        {"method_path": "suite.meet.api.meeting.join_meeting", "limit": 60, "seconds": 60},
         {
             "method_path": "suite.meet.api.meeting.get_guest_sfu_connection_details",
             "limit": 30,
             "seconds": 60,
-            "ip_based": False,
+            "ip_based": 0,
             "key": "guest_token",
         },
         {"method_path": "suite.meet.api.meeting.approve_join_request", "limit": 60, "seconds": 60},
