@@ -58,6 +58,7 @@ interface MediaManagerOptions {
 	videoManager: VideoElementManager;
 	consumerManager: ConsumerManager;
 	participantManager: ParticipantManager;
+	isScreenPublicationCurrent?: (track: MediaStreamTrack) => boolean;
 }
 
 export interface PublishedMedia {
@@ -97,6 +98,7 @@ export class SFUMediaManager {
 
 	private eventHandlers: MediaEventHandlers = {};
 	private getCurrentUserId: () => string | null;
+	private isScreenPublicationCurrent: (track: MediaStreamTrack) => boolean;
 	private selectedProducerIds = new Map<string, string>();
 	private attachmentTails = new Map<string, Promise<void>>();
 	private closedProducerIds = new Set<string>();
@@ -127,6 +129,8 @@ export class SFUMediaManager {
 		this.isScreenShareActive = false;
 		this.eventTarget = new EventTarget();
 		this.getCurrentUserId = getCurrentUserId;
+		this.isScreenPublicationCurrent =
+			options.isScreenPublicationCurrent ?? (() => true);
 	}
 
 	setEventHandlers(handlers: MediaEventHandlers): void {
@@ -272,7 +276,7 @@ export class SFUMediaManager {
 						videoTrackToPublish.readyState !== "live" ||
 						videoProducer.track?.readyState === "ended"
 					) {
-						videoProducer.close();
+						await this.transportManager.discardProducer(videoProducer);
 						this.setLocalTrack("video", previousVideoTrack);
 					} else {
 						results.videoProducer = videoProducer;
@@ -299,7 +303,7 @@ export class SFUMediaManager {
 						audioTrackToPublish.readyState !== "live" ||
 						audioProducer.track?.readyState === "ended"
 					) {
-						audioProducer.close();
+						await this.transportManager.discardProducer(audioProducer);
 						this.setLocalTrack("audio", previousAudioTrack);
 					} else {
 						results.audioProducer = audioProducer;
@@ -354,12 +358,24 @@ export class SFUMediaManager {
 				})
 			: (await this.transportManager.createSendTransport(), {});
 
-		if (hasLiveScreen && screenTrack) {
+		if (
+			hasLiveScreen &&
+			screenTrack &&
+			this.isScreenPublicationCurrent(screenTrack)
+		) {
 			const screenProducer = await this.transportManager.createProducer(screenTrack, {
 				type: "screen",
 			});
-			this.mediaHandler.setProducers({ screenProducer });
-			results.screenProducer = screenProducer;
+			if (
+				!this.isScreenPublicationCurrent(screenTrack) ||
+				screenTrack.readyState !== "live" ||
+				screenProducer.track?.readyState === "ended"
+			) {
+				await this.transportManager.discardProducer(screenProducer);
+			} else {
+				this.mediaHandler.setProducers({ screenProducer });
+				results.screenProducer = screenProducer;
+			}
 		}
 
 		return results;

@@ -3,6 +3,7 @@ import { SFUMediaManager } from "../SFUMediaManager";
 
 type MockTransportManager = {
 	closeSendTransport: ReturnType<typeof vi.fn>;
+	discardProducer: ReturnType<typeof vi.fn>;
 	createProducer: ReturnType<typeof vi.fn>;
 	createSendTransport: ReturnType<typeof vi.fn>;
 	createConsumer: ReturnType<typeof vi.fn>;
@@ -55,7 +56,11 @@ function deferred<T>() {
 }
 
 function createManager(
-	opts: { currentUserId?: string | null; hasParticipant?: boolean } = {},
+	opts: {
+		currentUserId?: string | null;
+		hasParticipant?: boolean;
+		isScreenPublicationCurrent?: (track: MediaStreamTrack) => boolean;
+	} = {},
 ): {
 	mediaManager: SFUMediaManager;
 	transportManager: MockTransportManager;
@@ -69,6 +74,9 @@ function createManager(
 } {
 	const transportManager: MockTransportManager = {
 		closeSendTransport: vi.fn(),
+		discardProducer: vi.fn(async (producer: { close: () => void }) => {
+			producer.close();
+		}),
 		createProducer: vi.fn().mockResolvedValue({}),
 		createSendTransport: vi.fn(),
 		createConsumer: vi.fn().mockResolvedValue({
@@ -110,6 +118,7 @@ function createManager(
 			videoManager: videoManager as never,
 			consumerManager: consumerManager as never,
 			participantManager: participantManager as never,
+			isScreenPublicationCurrent: opts.isScreenPublicationCurrent,
 		},
 		getCurrentUserId,
 	);
@@ -496,6 +505,66 @@ describe("SFUMediaManager.rebuildSendSide", () => {
 		});
 	});
 
+	it("discards a delayed screen recovery after sharing stops", async () => {
+		let currentScreen: MediaStreamTrack | null = null;
+		const screenTrack = mediaTrack("screen", "video");
+		currentScreen = screenTrack;
+		const { mediaManager, transportManager } = createManager({
+			isScreenPublicationCurrent: (track) => track === currentScreen,
+		});
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "stale-screen",
+			track: screenTrack,
+			close: vi.fn(),
+		};
+		mediaManager.mediaHandler.setProducers({
+			screenProducer: { track: screenTrack } as never,
+		});
+		transportManager.createProducer.mockReturnValue(creation.promise);
+
+		const recovery = mediaManager.rebuildSendSide();
+		await vi.waitFor(() => expect(transportManager.createProducer).toHaveBeenCalledOnce());
+		currentScreen = null;
+		creation.resolve(staleProducer);
+
+		await expect(recovery).resolves.toEqual({});
+		expect(transportManager.discardProducer).toHaveBeenCalledWith(staleProducer);
+		expect(mediaManager.mediaHandler.screenProducer).toBeNull();
+	});
+
+	it("discards a delayed screen recovery when its track ends", async () => {
+		const { mediaManager, transportManager } = createManager();
+		const screenTrack = mediaTrack("screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "ended-screen",
+			track: screenTrack,
+			close: vi.fn(),
+		};
+		mediaManager.mediaHandler.setProducers({
+			screenProducer: { track: screenTrack } as never,
+		});
+		transportManager.createProducer.mockReturnValue(creation.promise);
+
+		const recovery = mediaManager.rebuildSendSide();
+		await vi.waitFor(() => expect(transportManager.createProducer).toHaveBeenCalledOnce());
+		Reflect.set(screenTrack, "readyState", "ended");
+		creation.resolve(staleProducer);
+
+		await expect(recovery).resolves.toEqual({});
+		expect(transportManager.discardProducer).toHaveBeenCalledWith(staleProducer);
+		expect(mediaManager.mediaHandler.screenProducer).toBeNull();
+	});
+
 	it("waits for camera reconciliation before rebuilding the send side", async () => {
 		vi.stubGlobal("MediaStream", FakeMediaStream);
 		const { mediaManager, transportManager } = createManager();
@@ -808,6 +877,7 @@ describe("SFUMediaManager local recovery tracks", () => {
 
 		await expect(publication).resolves.toEqual({});
 		expect(unusableProducer.close).toHaveBeenCalledOnce();
+		expect(transportManager.discardProducer).toHaveBeenCalledWith(unusableProducer);
 		expect(mediaManager.mediaHandler.videoProducer).toBeNull();
 		expect(mediaManager.mediaHandler.localStream?.getVideoTracks()).toEqual([
 			previous,

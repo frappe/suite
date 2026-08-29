@@ -905,8 +905,17 @@ export class SFUClient {
 		return this.sendRequest("pause_producer", { producerId });
 	}
 
-	async resumeProducer(producerId: string): Promise<unknown> {
-		return this.sendRequest("resume_producer", { producerId });
+	async resumeProducer(
+		producerId: string,
+	): Promise<{ success: true; resumed: boolean }> {
+		const response = requireObject(
+			await this.sendRequest("resume_producer", { producerId }),
+			"producer resume",
+		);
+		if (response.success !== true || typeof response.resumed !== "boolean") {
+			throw new Error("Invalid producer resume response");
+		}
+		return { success: true, resumed: response.resumed };
 	}
 
 	async closeConsumer(consumerId: string): Promise<unknown> {

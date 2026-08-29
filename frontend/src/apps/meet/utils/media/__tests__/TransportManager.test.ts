@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { E2EEMeeting } from "../E2EEMeeting";
 import { DefaultE2EETransformPolicy } from "../E2EETransformPolicy";
+import type { E2EETransformPolicy } from "../E2EETransformPolicy";
 import { TransportManager } from "../TransportManager";
 
 vi.mock("../codecStrategy", () => ({
@@ -33,6 +34,8 @@ function mockSfuClient(getCodecStrategy?: () => string) {
 		connectWebRtcTransport: vi.fn(),
 		createProducer: vi.fn(),
 		createConsumer: vi.fn(),
+		closeProducer: vi.fn().mockResolvedValue(undefined),
+		resumeProducer: vi.fn().mockResolvedValue({ success: true, resumed: true }),
 		restartWebRtcTransportIce: vi.fn(),
 	};
 }
@@ -188,15 +191,18 @@ describe("E2EE transport options", () => {
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,
 		);
-		const policy = new DefaultE2EETransformPolicy({
+		const client = {
 			...mockSfuClient(),
 			isE2EERequired: vi.fn(() => true),
 			getE2EEMode: vi.fn(() => "rtp-script-transform"),
 			getOwnSenderId: vi.fn(() => 7),
-		} as never);
+		};
+		const policy = new DefaultE2EETransformPolicy(client as never);
+		vi.spyOn(policy, "setupSenderTransform").mockResolvedValue(true);
 		const manager = new TransportManager(policy);
+		manager.initialize(client as never);
 		manager.device = { canProduce: vi.fn(() => true) } as never;
-		const produce = vi.fn(async () => ({ rtpSender: {} }));
+		const produce = vi.fn(async () => ({ id: "producer-1", rtpSender: {} }));
 		manager.sendTransport = { produce } as never;
 
 		await manager.createProducer({
@@ -210,6 +216,223 @@ describe("E2EE transport options", () => {
 				onRtpSender: expect.any(Function),
 			}),
 		);
+	});
+
+	it.each([
+		{
+			type: "camera",
+			kind: "video",
+			outcome: "returns false",
+			setupSenderTransform: vi.fn().mockResolvedValue(false),
+		},
+		{
+			type: "microphone",
+			kind: "audio",
+			outcome: "rejects",
+			setupSenderTransform: vi.fn().mockRejectedValue(new Error("transform rejected")),
+		},
+		{
+			type: "screen",
+			kind: "video",
+			outcome: "returns false",
+			setupSenderTransform: vi.fn().mockResolvedValue(false),
+		},
+	] as const)(
+		"discards $type producer when sender transform $outcome",
+		async ({ type, kind, setupSenderTransform }) => {
+			const client = mockSfuClient();
+			const policy = {
+				transformsEnabled: true,
+				legacyInsertableStreamsEnabled: false,
+				ownSenderId: 7,
+				hasContext: true,
+				setSFUClient: vi.fn(),
+				assertContextReady: vi.fn(),
+				setupSenderTransform,
+				preCreateReceiverStreams: vi.fn(),
+				setupReceiverTransform: vi.fn(),
+			} satisfies E2EETransformPolicy;
+			const close = vi.fn();
+			const producer = {
+				id: `${type}-producer`,
+				rtpSender: {},
+				close,
+			};
+			const manager = new TransportManager(policy);
+			manager.initialize(client as never);
+			manager.device = {
+				canProduce: vi.fn(() => true),
+				rtpCapabilities: { codecs: [] },
+			} as never;
+			manager.sendTransport = {
+				produce: vi.fn().mockResolvedValue(producer),
+			} as never;
+			vi.mocked(resolveCodecStrategy).mockReturnValue({
+				strategy: "simulcast",
+				scalabilityMode: null,
+				didDowngrade: false,
+				requested: "simulcast",
+			});
+
+			await expect(
+				manager.createProducer(
+					{ id: `${type}-track`, kind, readyState: "live" } as MediaStreamTrack,
+					{ type },
+				),
+			).rejects.toThrow();
+
+			expect(client.resumeProducer).not.toHaveBeenCalled();
+			expect(close).toHaveBeenCalledOnce();
+			expect(client.closeProducer).toHaveBeenCalledWith(`${type}-producer`, {});
+		},
+	);
+
+	it("discards an encrypted producer when server resume rejects", async () => {
+		const client = mockSfuClient();
+		client.resumeProducer.mockRejectedValue(new Error("resume failed"));
+		const policy = {
+			transformsEnabled: true,
+			legacyInsertableStreamsEnabled: false,
+			ownSenderId: 7,
+			hasContext: true,
+			setSFUClient: vi.fn(),
+			assertContextReady: vi.fn(),
+			setupSenderTransform: vi.fn().mockResolvedValue(true),
+			preCreateReceiverStreams: vi.fn(),
+			setupReceiverTransform: vi.fn(),
+		} satisfies E2EETransformPolicy;
+		const producer = {
+			id: "resumeless-producer",
+			rtpSender: {},
+			close: vi.fn(),
+		};
+		const manager = new TransportManager(policy);
+		manager.initialize(client as never);
+		manager.device = { canProduce: vi.fn(() => true) } as never;
+		manager.sendTransport = {
+			produce: vi.fn().mockResolvedValue(producer),
+		} as never;
+
+		await expect(
+			manager.createProducer({
+				id: "microphone-track",
+				kind: "audio",
+				readyState: "live",
+			} as MediaStreamTrack),
+		).rejects.toThrow("resume failed");
+
+		expect(producer.close).toHaveBeenCalledOnce();
+		expect(client.closeProducer).toHaveBeenCalledWith("resumeless-producer", {});
+	});
+
+	it("can retry producer creation when server does not resume it", async () => {
+		const client = mockSfuClient();
+		client.resumeProducer
+			.mockResolvedValueOnce({ success: true, resumed: false })
+			.mockResolvedValueOnce({ success: true, resumed: true });
+		const policy = {
+			transformsEnabled: true,
+			legacyInsertableStreamsEnabled: false,
+			ownSenderId: 7,
+			hasContext: true,
+			setSFUClient: vi.fn(),
+			assertContextReady: vi.fn(),
+			setupSenderTransform: vi.fn().mockResolvedValue(true),
+			preCreateReceiverStreams: vi.fn(),
+			setupReceiverTransform: vi.fn(),
+		} satisfies E2EETransformPolicy;
+		const failedProducer = {
+			id: "not-resumed-producer",
+			rtpSender: {},
+			close: vi.fn(),
+		};
+		const retriedProducer = {
+			id: "resumed-producer",
+			rtpSender: {},
+			close: vi.fn(),
+		};
+		const manager = new TransportManager(policy);
+		manager.initialize(client as never);
+		manager.device = { canProduce: vi.fn(() => true) } as never;
+		manager.sendTransport = {
+			produce: vi
+				.fn()
+				.mockResolvedValueOnce(failedProducer)
+				.mockResolvedValueOnce(retriedProducer),
+		} as never;
+		const track = {
+			id: "microphone-track",
+			kind: "audio",
+			readyState: "live",
+		} as MediaStreamTrack;
+
+		await expect(manager.createProducer(track)).rejects.toThrow(
+			"Failed to resume E2EE producer",
+		);
+		await expect(manager.createProducer(track)).resolves.toBe(retriedProducer);
+
+		expect(failedProducer.close).toHaveBeenCalledOnce();
+		expect(retriedProducer.close).not.toHaveBeenCalled();
+		expect(client.closeProducer).toHaveBeenCalledOnce();
+		expect(client.closeProducer).toHaveBeenCalledWith("not-resumed-producer", {});
+		expect(client.resumeProducer).toHaveBeenNthCalledWith(
+			1,
+			"not-resumed-producer",
+		);
+		expect(client.resumeProducer).toHaveBeenNthCalledWith(2, "resumed-producer");
+	});
+
+	it("can retry producer creation after E2EE setup fails", async () => {
+		const client = mockSfuClient();
+		const setupSenderTransform = vi
+			.fn()
+			.mockResolvedValueOnce(false)
+			.mockResolvedValueOnce(true);
+		const policy = {
+			transformsEnabled: true,
+			legacyInsertableStreamsEnabled: false,
+			ownSenderId: 7,
+			hasContext: true,
+			setSFUClient: vi.fn(),
+			assertContextReady: vi.fn(),
+			setupSenderTransform,
+			preCreateReceiverStreams: vi.fn(),
+			setupReceiverTransform: vi.fn(),
+		} satisfies E2EETransformPolicy;
+		const failedProducer = {
+			id: "failed-producer",
+			rtpSender: {},
+			close: vi.fn(),
+		};
+		const retriedProducer = {
+			id: "retried-producer",
+			rtpSender: {},
+			close: vi.fn(),
+		};
+		const manager = new TransportManager(policy);
+		manager.initialize(client as never);
+		manager.device = { canProduce: vi.fn(() => true) } as never;
+		manager.sendTransport = {
+			produce: vi
+				.fn()
+				.mockResolvedValueOnce(failedProducer)
+				.mockResolvedValueOnce(retriedProducer),
+		} as never;
+		const track = {
+			id: "microphone-track",
+			kind: "audio",
+			readyState: "live",
+		} as MediaStreamTrack;
+
+		await expect(manager.createProducer(track)).rejects.toThrow(
+			"Failed to install E2EE sender transform",
+		);
+		await expect(manager.createProducer(track)).resolves.toBe(retriedProducer);
+
+		expect(failedProducer.close).toHaveBeenCalledOnce();
+		expect(retriedProducer.close).not.toHaveBeenCalled();
+		expect(client.resumeProducer).toHaveBeenCalledOnce();
+		expect(client.resumeProducer).toHaveBeenCalledWith("retried-producer");
 	});
 });
 

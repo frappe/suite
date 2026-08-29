@@ -5,11 +5,6 @@ import {
 	extractInboundRtpCounters,
 	StallDetector,
 } from "./stallDetector";
-import {
-	type ClientTelemetryEvent,
-	getClientTelemetry,
-} from "../telemetry/ClientTelemetry";
-
 export type NetworkQuality = "good" | "poor" | "critical";
 
 /** Current uplink, downlink, and transport health exposed to the UI. */
@@ -19,7 +14,7 @@ export interface MediaHealthState {
 	isTransportFailed: boolean;
 }
 
-interface NetworkStats {
+export interface MediaHealthNetworkStats {
 	rtt: number;
 	packetLoss: number;
 	availableOutgoingBitrate: number;
@@ -27,40 +22,30 @@ interface NetworkStats {
 	isValid: boolean;
 }
 
-/** Manager operations used to inspect and recover live meeting media. */
-export interface MediaHealthManager {
-	transportManager?: {
-		getTransportStats(): {
-			sendTransport?: { state?: string };
-			recvTransport?: { state?: string };
-		} | null;
-		getNetworkStats?: () => Promise<NetworkStats>;
-	};
-	mediaManager?: {
-		consumerManager?: {
-			getAllConsumers(): ConsumerEntry[];
-			getConsumer?(consumerId: string): ConsumerEntry | undefined;
-		};
-		recoverConsumer(entry: ConsumerEntry): Promise<void>;
-	};
-	participantManager: {
-		getParticipant(participantId: string):
-			| { audio_enabled?: boolean; video_enabled?: boolean }
-			| undefined;
-	};
-	sfuClient?: {
-		requestConsumerKeyFrame?(consumerId: string): Promise<unknown>;
-		sendClientTelemetry(event: ClientTelemetryEvent): void;
-	};
-	reconcileExpectedMedia?(): Promise<void>;
-	recoverBrowserLifecycle?(): Promise<void>;
-	observeRemoteMediaProgress?(
+/** Media inspection, recovery, and telemetry operations used by the monitor. */
+export interface MediaHealthPort {
+	getTransportStats(): {
+		sendTransport?: { state?: string };
+		recvTransport?: { state?: string };
+	} | null;
+	getNetworkStats(): Promise<MediaHealthNetworkStats>;
+	getConsumers(): ConsumerEntry[];
+	getConsumer(consumerId: string): ConsumerEntry | undefined;
+	isConsumerPaused(entry: ConsumerEntry): boolean;
+	recoverConsumer(entry: ConsumerEntry): Promise<void>;
+	requestConsumerKeyFrame(consumerId: string): Promise<unknown>;
+	reconcileExpectedMedia(): Promise<void>;
+	recoverBrowserLifecycle(): Promise<void>;
+	observeRemoteMediaProgress(
 		producerId: string,
 		media: "audio" | "video",
 		flowing: boolean,
 		decoding: boolean,
 	): void;
 	resetReceiveMedia(): Promise<void>;
+	reportNetworkQuality(stats: MediaHealthNetworkStats): void;
+	markFirstRemoteMedia(media: "audio" | "video"): void;
+	reportMediaStalls(media: Array<"audio" | "video">): void;
 }
 
 type LifecycleEvent = "offline" | "online" | "pageshow";
@@ -127,7 +112,7 @@ export class MediaHealthMonitor {
 	private lifecycleGeneration = 0;
 
 	constructor(
-		private readonly getManager: () => MediaHealthManager | null,
+		private readonly port: MediaHealthPort,
 		private readonly environment: MediaHealthEnvironment = browserEnvironment,
 	) {
 		const now = () => this.environment.now();
@@ -196,12 +181,10 @@ export class MediaHealthMonitor {
 		const generation = ++this.lifecycleGeneration;
 		this.resetHealthBaselines();
 		if (this.isLifecycleSuspended()) return;
-		const manager = this.getManager();
-		await manager?.recoverBrowserLifecycle?.();
+		await this.port.recoverBrowserLifecycle();
 		if (
 			generation !== this.lifecycleGeneration ||
-			this.isLifecycleSuspended() ||
-			this.getManager() !== manager
+			this.isLifecycleSuspended()
 		) {
 			return;
 		}
@@ -234,7 +217,7 @@ export class MediaHealthMonitor {
 		for (const listener of this.listeners) listener(next);
 	}
 
-	private updateQuality(stats: NetworkStats): void {
+	private updateQuality(stats: MediaHealthNetworkStats): void {
 		if (!stats.isValid) {
 			this.setState({ networkQuality: "good" });
 			return;
@@ -270,17 +253,7 @@ export class MediaHealthMonitor {
 		this.polling = true;
 		const generation = this.lifecycleGeneration;
 		try {
-			const manager = this.getManager();
-			const transportManager = manager?.transportManager;
-			if (!transportManager) {
-				this.setState({
-					networkQuality: "good",
-					isTransportFailed: false,
-				});
-				return;
-			}
-
-			const transportStats = transportManager.getTransportStats();
+			const transportStats = this.port.getTransportStats();
 			const isFailed =
 				transportStats?.sendTransport?.state === "failed" ||
 				transportStats?.recvTransport?.state === "failed";
@@ -295,21 +268,16 @@ export class MediaHealthMonitor {
 				return;
 			}
 
-			if (transportManager.getNetworkStats) {
-				const stats = await transportManager.getNetworkStats();
-				if (
-					generation !== this.lifecycleGeneration ||
-					this.isLifecycleSuspended()
-				) {
-					return;
-				}
-				this.updateQuality(stats);
-				const telemetryClient = this.getManager()?.sfuClient;
-				if (telemetryClient && stats.isValid) {
-					getClientTelemetry(telemetryClient).reportNetworkQuality(stats);
-				}
+			const stats = await this.port.getNetworkStats();
+			if (
+				generation !== this.lifecycleGeneration ||
+				this.isLifecycleSuspended()
+			) {
+				return;
 			}
-			await this.getManager()?.reconcileExpectedMedia?.();
+			this.updateQuality(stats);
+			if (stats.isValid) this.port.reportNetworkQuality(stats);
+			await this.port.reconcileExpectedMedia();
 			await this.checkConsumerStalls(this.stateValue.networkQuality === "good");
 		} finally {
 			this.polling = false;
@@ -317,15 +285,7 @@ export class MediaHealthMonitor {
 	}
 
 	private async checkConsumerStalls(allowRecovery: boolean): Promise<void> {
-		const manager = this.getManager();
-		if (!manager) return;
-		const consumerManager = manager.mediaManager?.consumerManager;
-		if (!consumerManager) {
-			this.setState({ downlinkQuality: "good" });
-			return;
-		}
-
-		const consumers = consumerManager.getAllConsumers();
+		const consumers = this.port.getConsumers();
 		if (consumers.length === 0) {
 			this.setState({ downlinkQuality: "good" });
 			return;
@@ -350,23 +310,10 @@ export class MediaHealthMonitor {
 				return { entry, bytes: bytesReceived, framesDecoded };
 			}),
 		);
-		if (this.isLifecycleSuspended() || this.getManager() !== manager) return;
+		if (this.isLifecycleSuspended()) return;
 
-		const isPaused = (entry: ConsumerEntry) => {
-			const participant = manager.participantManager.getParticipant(
-				entry.participantId,
-			);
-			return (
-				entry.consumer.paused ||
-				(entry.consumer as typeof entry.consumer & { producerPaused?: boolean })
-					.producerPaused ||
-				entry.adaptivelyPaused ||
-				(entry.kind === "audio" && participant?.audio_enabled === false) ||
-				(entry.kind === "video" &&
-					!entry.isScreen &&
-					participant?.video_enabled === false)
-			);
-		};
+		const isPaused = (entry: ConsumerEntry) =>
+			this.port.isConsumerPaused(entry);
 		const samples: ConsumerSample[] = statsResults.map(({ entry, bytes }) => ({
 			id: entry.id,
 			kind: entry.kind,
@@ -375,12 +322,9 @@ export class MediaHealthMonitor {
 			getBytesReceived: () => bytes,
 			getCreatedAt: () => entry.createdAt,
 		}));
-		const telemetry = manager.sfuClient
-			? getClientTelemetry(manager.sfuClient)
-			: null;
 		for (const { entry, bytes, framesDecoded } of statsResults) {
 			const previous = this.expectedMediaCounters.get(entry.id);
-			manager.observeRemoteMediaProgress?.(
+			this.port.observeRemoteMediaProgress(
 				entry.producerId,
 				entry.kind === "audio" ? "audio" : "video",
 				bytes !== null && bytes > (previous?.bytesReceived ?? 0),
@@ -397,7 +341,7 @@ export class MediaHealthMonitor {
 				bytes > 0 &&
 				(entry.kind === "audio" || entry.kind === "video")
 			) {
-				telemetry?.markFirstRemoteMedia(entry.kind);
+				this.port.markFirstRemoteMedia(entry.kind);
 			}
 		}
 
@@ -422,16 +366,14 @@ export class MediaHealthMonitor {
 		});
 
 		for (const recovery of decodeActions) {
-			if (this.isLifecycleSuspended() || this.getManager() !== manager) return;
+			if (this.isLifecycleSuspended()) return;
 			const result = statsResults.find(
 				({ entry }) => entry.id === recovery.consumerId,
 			);
 			if (!result) continue;
 			const current =
-				consumerManager.getConsumer?.(result.entry.id) ??
-				consumerManager
-					.getAllConsumers()
-					.find((entry) => entry.id === result.entry.id);
+				this.port.getConsumer(result.entry.id) ??
+				this.port.getConsumers().find((entry) => entry.id === result.entry.id);
 			if (
 				!current ||
 				current.consumer !== result.entry.consumer ||
@@ -442,7 +384,7 @@ export class MediaHealthMonitor {
 			}
 			if (recovery.action === "request-keyframe") {
 				try {
-					await manager.sfuClient?.requestConsumerKeyFrame?.(result.entry.id);
+					await this.port.requestConsumerKeyFrame(result.entry.id);
 				} catch (error) {
 					console.warn(
 						"Failed to request a keyframe for decode-stalled consumer",
@@ -453,7 +395,7 @@ export class MediaHealthMonitor {
 			} else {
 				this.decodeStallDetector.dispose(result.entry.id);
 				try {
-					await manager.mediaManager?.recoverConsumer(current);
+					await this.port.recoverConsumer(current);
 				} catch (error) {
 					console.warn(
 						"Failed to recreate decode-stalled consumer",
@@ -462,12 +404,12 @@ export class MediaHealthMonitor {
 					);
 				}
 			}
-			if (this.isLifecycleSuspended() || this.getManager() !== manager) return;
+			if (this.isLifecycleSuspended()) return;
 		}
 
 		if (stalledIds.length === 0) return;
 		const stalledSet = new Set(stalledIds);
-		telemetry?.reportMediaStalls(
+		this.port.reportMediaStalls(
 			samples
 				.filter((sample) => stalledSet.has(sample.id))
 				.map((sample) => sample.kind)
@@ -485,7 +427,7 @@ export class MediaHealthMonitor {
 		);
 		for (const entry of neverStartedEntries) {
 			this.stallDetector.dispose(entry.id);
-			void manager.mediaManager?.recoverConsumer(entry);
+			void this.port.recoverConsumer(entry);
 		}
 		const establishedStalls = stalledEntries.filter((entry) =>
 			this.stallDetector.hasReceivedMedia(entry.id),
@@ -501,7 +443,7 @@ export class MediaHealthMonitor {
 		);
 		if (hasAudioStall || hasExhaustedVideoRecovery) {
 			try {
-				await manager.resetReceiveMedia();
+				await this.port.resetReceiveMedia();
 			} catch (error) {
 				console.warn("Failed to reset stalled receive media", error);
 			}
@@ -511,8 +453,8 @@ export class MediaHealthMonitor {
 
 		for (const entry of establishedStalls) {
 			if (entry.kind === "video") {
-				void manager.sfuClient
-					?.requestConsumerKeyFrame?.(entry.id)
+				void this.port
+					.requestConsumerKeyFrame(entry.id)
 					.catch((error) =>
 						console.warn(
 							"Failed to recover stalled video consumer",

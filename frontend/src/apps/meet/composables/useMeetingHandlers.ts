@@ -1,8 +1,6 @@
 import { frappeRequest, toast } from "frappe-ui";
 import type { Ref } from "vue";
 import type { Router } from "vue-router";
-import type { TransportManager } from "../utils/media/TransportManager";
-import type { SFUClient } from "../utils/SFUClient";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import type { ChatStore } from "./useChatStore";
 import type { ConnectionState } from "./useConnectionState";
@@ -36,41 +34,10 @@ interface MediaControlsActions {
 	) => Promise<void>;
 }
 
-interface ProducerLike {
-	id: string;
-	track: MediaStreamTrack | null;
-	replaceTrack?: (opts: { track: MediaStreamTrack }) => Promise<void>;
-	pause?: () => void;
-	resume?: () => void;
-	close?: () => void;
-}
-
-interface MediaHandlerLike {
-	audioProducer: ProducerLike | null;
-	videoProducer: ProducerLike | null;
-	screenProducer: ProducerLike | null;
-	setProducers: (producers: Partial<Pick<MediaHandlerLike,
-		"audioProducer" | "videoProducer" | "screenProducer"
-	>>) => void;
-	stopScreenShare: () => void;
-}
-
-interface VideoManagerLike {
-	audioElements: Map<string, HTMLAudioElement>;
-}
-
-interface SFUMeetingManagerLike {
-	sfuClient: SFUClient;
-	transportManager: TransportManager | null;
-	mediaHandler: MediaHandlerLike | null;
-	videoManager: VideoManagerLike | null;
-}
-
 export type MeetingDocLike = DocumentResource;
 
 interface SFUConnectionActions {
 	sfuManager: Ref<SFUMeetingManager | null>;
-	sfuClient: SFUClient;
 	joinMeetingRoom: (options?: { switchHere?: boolean }) => Promise<void>;
 	handleGuestJoinResult: (
 		joinResult: JoinPayload,
@@ -192,15 +159,10 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
 	const handleMuteParticipant = async (participantId: string) => {
 		try {
-			if (deps.sfuConnection.sfuManager.value?.sfuClient) {
-				deps.sfuConnection.sfuManager.value.sfuClient.sendEvent(
-					"host_control",
-					{
-						action: "mute_participant",
-						targetParticipantId: participantId,
-					},
-				);
-			}
+			deps.sfuConnection.sfuManager.value?.sendHostControl(
+				"mute_participant",
+				participantId,
+			);
 		} catch (error) {
 			console.error("Failed to mute participant:", error);
 		}
@@ -217,15 +179,10 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 				});
 			}
 
-			if (deps.sfuConnection.sfuManager.value?.sfuClient) {
-				deps.sfuConnection.sfuManager.value.sfuClient.sendEvent(
-					"host_control",
-					{
-						action: "kick_participant",
-						targetParticipantId: participantId,
-					},
-				);
-			}
+			deps.sfuConnection.sfuManager.value?.sendHostControl(
+				"kick_participant",
+				participantId,
+			);
 		} catch (error) {
 			console.error("Failed to kick participant:", error);
 		}
@@ -233,15 +190,10 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
 	const handleLowerHand = async (participantId: string) => {
 		try {
-			if (deps.sfuConnection.sfuManager.value?.sfuClient) {
-				deps.sfuConnection.sfuManager.value.sfuClient.sendEvent(
-					"host_control",
-					{
-						action: "lower_hand",
-						targetParticipantId: participantId,
-					},
-				);
-			}
+			deps.sfuConnection.sfuManager.value?.sendHostControl(
+				"lower_hand",
+				participantId,
+			);
 		} catch (error) {
 			console.error("Failed to lower hand:", error);
 		}
@@ -319,9 +271,9 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 			meetingId: deps.meetingId,
 			networkQuality: deps.connectionState.networkQuality,
 			localStream: deps.mediaState.localStream,
-			transportManager:
-				deps.sfuConnection.sfuManager.value?.transportManager || null,
-			sfuClient: deps.sfuConnection.sfuClient,
+			diagnostics:
+				(await deps.sfuConnection.sfuManager.value?.getConnectionDiagnostics()) ??
+				null,
 			recoveryTimeline: deps.sfuConnection.recoveryTimeline.value,
 		});
 	};

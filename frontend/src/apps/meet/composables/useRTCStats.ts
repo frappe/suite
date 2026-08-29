@@ -1,13 +1,11 @@
-import type { AppData, Consumer, Producer } from "mediasoup-client/types";
 import { computed, inject, onUnmounted, type Ref, ref, watch } from "vue";
-import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
-import { isUnknownRecord } from "../types";
+import type {
+	RTCStatsReport,
+	RTCStatsSample,
+	SFUMeetingManager,
+} from "../utils/SFUMeetingManager";
 
-type StatsReport = Record<string, unknown> & {
-	id?: string;
-	type?: string;
-	timestamp?: number;
-};
+type StatsReport = RTCStatsReport;
 
 type CounterSample = {
 	bytes: number;
@@ -89,7 +87,8 @@ function reports(stats: unknown): StatsReport[] {
 	const values = (stats as { values?: () => IterableIterator<unknown> }).values?.();
 	return values
 		? Array.from(values).filter(
-				(report): report is StatsReport => isUnknownRecord(report),
+				(report): report is StatsReport =>
+					!!report && typeof report === "object",
 			)
 		: [];
 }
@@ -151,22 +150,6 @@ function qualityFor(snapshot: RTCStatsSnapshot): RTCStatsSnapshot["quality"] {
 	return snapshot.rtt === undefined && snapshot.streams.length === 0 ? "unknown" : "good";
 }
 
-function sourceForProducer(producer: Producer): RTCStreamStats["source"] {
-	if (producer.kind === "audio") return "microphone";
-	return producer.appData?.type === "screen" ? "screen" : "camera";
-}
-
-function sourceForConsumer(entry: {
-	kind: string;
-	isScreen?: boolean;
-	appData?: AppData;
-}): RTCStreamStats["source"] {
-	if (entry.kind === "audio") return "remote audio";
-	return entry.isScreen || entry.appData?.type === "screen"
-		? "remote screen"
-		: "remote video";
-}
-
 export function useRTCStats(active: Ref<boolean>) {
 	const managerRef = inject<Ref<SFUMeetingManager | null>>("sfuManager");
 	const snapshot = ref<RTCStatsSnapshot>({ ...EMPTY_SNAPSHOT });
@@ -183,11 +166,11 @@ export function useRTCStats(active: Ref<boolean>) {
 		participantId?: string;
 		paused: boolean;
 		muted: boolean;
-		track?: MediaStreamTrack | null;
-		getStats: () => Promise<unknown>;
+		trackSettings: Readonly<MediaTrackSettings>;
+		stats: unknown;
 	}): Promise<RTCStreamStats | null> {
 		try {
-			const allReports = reports(await options.getStats());
+			const allReports = reports(options.stats);
 			const primaryType = options.direction === "send" ? "outbound-rtp" : "inbound-rtp";
 			const primary = selectPrimaryRtpReport(allReports, primaryType);
 			if (!primary) return null;
@@ -212,7 +195,7 @@ export function useRTCStats(active: Ref<boolean>) {
 			const currentSample = { bytes, packets, lost, timestamp };
 			const previous = samples.get(key);
 			samples.set(key, currentSample);
-			const trackSettings = options.track?.getSettings?.() ?? {};
+			const trackSettings = options.trackSettings;
 			const jitterBufferEmitted = numberValue(primary.jitterBufferEmittedCount);
 			const jitterBufferTotal = numberValue(primary.jitterBufferDelay);
 
@@ -250,11 +233,10 @@ export function useRTCStats(active: Ref<boolean>) {
 		}
 	}
 
-	async function getRoute(manager: SFUMeetingManager) {
-		const transports = [manager.transportManager.sendTransport, manager.transportManager.recvTransport].filter(Boolean);
-		for (const transport of transports) {
+	function getRoute(sample: RTCStatsSample) {
+		for (const transportReports of sample.transportReports) {
 			try {
-				const allReports = reports(await transport?.getStats());
+				const allReports = reports(transportReports);
 				const candidatePairs = allReports.filter((report) => report.type === "candidate-pair");
 				const pair = candidatePairs.find((report) => report.selected === true || report.nominated === true)
 					?? candidatePairs.find((report) => report.state === "succeeded");
@@ -287,39 +269,19 @@ export function useRTCStats(active: Ref<boolean>) {
 
 		isPolling.value = true;
 		try {
-			const producers = [
-				manager.mediaHandler.audioProducer,
-				manager.mediaHandler.videoProducer,
-				manager.mediaHandler.screenProducer,
-			].filter((producer): producer is Producer => !!producer && !producer.closed);
-			const consumers = manager.consumerManager.getAllConsumers();
-			const streamPromises: Array<Promise<RTCStreamStats | null>> = [
-				...producers.map((producer) => streamStats({
-					id: producer.id,
-					direction: "send",
-					kind: producer.kind,
-					source: sourceForProducer(producer),
-					paused: producer.paused,
-					muted: producer.track?.muted ?? false,
-					track: producer.track,
-					getStats: () => producer.getStats(),
-				})),
-				...consumers.map((entry) => streamStats({
-					id: entry.id,
-					direction: "receive",
-					kind: entry.kind,
-					source: sourceForConsumer(entry),
-					participantId: entry.participantId,
-					paused: entry.consumer.paused,
-					muted: entry.track?.muted ?? false,
-					track: entry.track,
-					getStats: () => entry.consumer.getStats(),
-				})),
-			];
+			const sourceSample = await manager.sampleRTCStats();
+			if (managerRef?.value !== manager || !active.value) return;
+			const streamPromises = sourceSample.streams.map((stream) =>
+				streamStats({
+					...stream,
+					stats: stream.reports,
+				}),
+			);
 			const [route, streamResults] = await Promise.all([
-				getRoute(manager),
+				getRoute(sourceSample),
 				Promise.all(streamPromises),
 			]);
+			if (managerRef?.value !== manager || !active.value) return;
 			const streams = streamResults.filter((stream): stream is RTCStreamStats => !!stream);
 			const sending = streams.filter((stream) => stream.direction === "send");
 			const receiving = streams.filter((stream) => stream.direction === "receive");
@@ -333,9 +295,9 @@ export function useRTCStats(active: Ref<boolean>) {
 				outboundPacketLoss: mean(sending.map((stream) => stream.packetLoss)),
 				uploadBitrate: sum(sending.map((stream) => stream.bitrate)),
 				downloadBitrate: sum(receiving.map((stream) => stream.bitrate)),
-				signalingConnected: manager.sfuClient?.getConnectionStatus?.().connected ?? false,
-				sendTransportState: manager.transportManager.sendTransport?.connectionState ?? "closed",
-				receiveTransportState: manager.transportManager.recvTransport?.connectionState ?? "closed",
+				signalingConnected: sourceSample.signalingConnected,
+				sendTransportState: sourceSample.sendTransportState,
+				receiveTransportState: sourceSample.receiveTransportState,
 				streams,
 			};
 			next.quality = qualityFor(next);
@@ -360,7 +322,10 @@ export function useRTCStats(active: Ref<boolean>) {
 		pollTimer = setInterval(poll, RTC_STATS_POLL_INTERVAL_MS);
 	}, { immediate: true });
 
-	onUnmounted(stop);
+	onUnmounted(() => {
+		stop();
+		samples.clear();
+	});
 
 	return {
 		snapshot,

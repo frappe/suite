@@ -1,4 +1,4 @@
-import type { SFUClient } from "../SFUClient";
+import type { ConnectionDiagnostics } from "../SFUMeetingManager";
 import type { RecoveryTimelineEntry } from "../../composables/useParticipantConnectionState";
 import { getConsoleLogLines, getConsoleLogSummary } from "./consoleBuffer";
 
@@ -14,42 +14,15 @@ type NetworkStats = {
 	isValid?: boolean;
 } | null;
 
-type TransportManagerLike = {
-	getTransportStats?: () => TransportStats;
-	getNetworkStats?: () => Promise<NetworkStats>;
-};
-
 type BuildProblemReportMailtoOptions = {
 	meetingId: string;
 	networkQuality?: string;
 	localStream?: MediaStream | null;
-	transportManager?: TransportManagerLike | null;
-	sfuClient?: SFUClient | null;
+	diagnostics?: ConnectionDiagnostics | null;
 	consoleLogLimit?: number;
 	maxBodyChars?: number;
 	recoveryTimeline?: RecoveryTimelineEntry[];
 };
-
-function getTransportStats(
-	transportManager?: TransportManagerLike | null,
-): TransportStats {
-	return (
-		transportManager?.getTransportStats?.() || {
-			sendTransport: { id: null, state: "closed" },
-			recvTransport: { id: null, state: "closed" },
-		}
-	);
-}
-
-async function getNetworkStats(
-	transportManager?: TransportManagerLike | null,
-): Promise<NetworkStats> {
-	try {
-		return (await transportManager?.getNetworkStats?.()) || null;
-	} catch (_error) {
-		return null;
-	}
-}
 
 async function buildProblemReportMailto(
 	options: BuildProblemReportMailtoOptions,
@@ -58,20 +31,22 @@ async function buildProblemReportMailto(
 		meetingId,
 		networkQuality,
 		localStream = null,
-		transportManager = null,
-		sfuClient = null,
+		diagnostics = null,
 		consoleLogLimit = 40,
 		maxBodyChars = 7000,
 		recoveryTimeline = [],
 	} = options;
 
-	const connectionStatus = sfuClient?.getConnectionStatus?.() || {
+	const connectionStatus = diagnostics?.connectionStatus || {
 		connected: false,
 		socketId: null,
 	};
 
-	const transportStats = getTransportStats(transportManager);
-	const networkStats = await getNetworkStats(transportManager);
+	const transportStats: TransportStats = diagnostics?.transportStats || {
+		sendTransport: { id: null, state: "closed" },
+		recvTransport: { id: null, state: "closed" },
+	};
+	const networkStats: NetworkStats = diagnostics?.networkStats || null;
 	const localAudioTrack = localStream?.getAudioTracks?.()?.[0];
 	const localVideoTrack = localStream?.getVideoTracks?.()?.[0];
 	const reportTime = new Date().toISOString();

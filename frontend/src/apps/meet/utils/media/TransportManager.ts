@@ -10,7 +10,7 @@ import type {
 	Transport,
 	TransportOptions,
 } from "mediasoup-client/types";
-import type { SFUClient } from "../SFUClient";
+import type { ProducerCloseMetadata, SFUClient } from "../SFUClient";
 import { resolveCodecStrategy } from "./codecStrategy";
 import {
 	DefaultE2EETransformPolicy,
@@ -99,6 +99,7 @@ export class TransportManager {
 	private recvTransportCreation: Promise<Transport> | null = null;
 	private sendTransportGeneration = 0;
 	private recvTransportGeneration = 0;
+	private producerDiscards = new WeakMap<Producer, Promise<void>>();
 
 	constructor(e2eePolicy?: E2EETransformPolicy) {
 		this.sendTransport = null;
@@ -433,22 +434,19 @@ export class TransportManager {
 			},
 			stopTracks: false,
 		};
-		let senderTransformSetupStarted = false;
+		let senderTransformSetup: Promise<boolean> | null = null;
 		const setupProducerSenderTransform = async (
 			sender: RTCRtpSender | undefined,
 		) => {
-			if (!e2eeWantedBeforeProduce || !sender || senderTransformSetupStarted) {
+			if (!e2eeWantedBeforeProduce || !sender) {
 				return false;
 			}
-			senderTransformSetupStarted = true;
-			const senderId = this.e2eePolicy.ownSenderId;
-			const mediaType = track?.kind ?? "video";
-			return this.e2eePolicy
-				.setupSenderTransform(sender, senderId, mediaType)
-				.catch((error) => {
-					console.warn("Failed to setup E2EE sender transform:", error);
-					return false;
-				});
+			senderTransformSetup ??= this.e2eePolicy.setupSenderTransform(
+				sender,
+				this.e2eePolicy.ownSenderId,
+				track?.kind ?? "video",
+			);
+			return senderTransformSetup;
 		};
 		if (e2eeWantedBeforeProduce) {
 			produceOptions.onRtpSender = setupProducerSenderTransform;
@@ -501,11 +499,22 @@ export class TransportManager {
 			kind: track?.kind,
 			senderId: this.e2eePolicy.ownSenderId,
 		});
-		if (e2eeGate && producer.rtpSender) {
-			await setupProducerSenderTransform(producer.rtpSender);
-		}
 		if (e2eeWantedBeforeProduce) {
-			await this.sfuClient?.resumeProducer?.(producer.id);
+			try {
+				const transformInstalled = senderTransformSetup
+					? await senderTransformSetup
+					: await setupProducerSenderTransform(producer.rtpSender);
+				if (!transformInstalled) {
+					throw new Error("Failed to install E2EE sender transform");
+				}
+				const { resumed } = await this.getClient().resumeProducer(producer.id);
+				if (!resumed) {
+					throw new Error("Failed to resume E2EE producer");
+				}
+			} catch (error) {
+				await this.discardProducer(producer);
+				throw error;
+			}
 		}
 
 		if (safeAppData.type === "screen") {
@@ -517,6 +526,28 @@ export class TransportManager {
 		}
 
 		return producer;
+	}
+
+	discardProducer(
+		producer: Producer,
+		metadata: ProducerCloseMetadata = {},
+	): Promise<void> {
+		const existing = this.producerDiscards.get(producer);
+		if (existing) return existing;
+
+		try {
+			producer.close();
+		} catch {
+			// The producer may already have closed with its transport.
+		}
+		const discard = producer.id && this.sfuClient
+			? this.sfuClient
+					.closeProducer(producer.id, metadata)
+					.then(() => undefined)
+					.catch(() => undefined)
+			: Promise.resolve();
+		this.producerDiscards.set(producer, discard);
+		return discard;
 	}
 
 	async createConsumer(

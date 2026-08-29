@@ -25,11 +25,10 @@ export function useAudioStream(
 				if (audioTrack) {
 					stream.value = new MediaStream([audioTrack]);
 				}
-			} else if (sfuManager?.consumerManager) {
-				const audioConsumer =
-					sfuManager.consumerManager.getAudioConsumer(participantId);
-				if (audioConsumer?.track) {
-					stream.value = new MediaStream([audioConsumer.track]);
+			} else if (sfuManager) {
+				const audioTrack = sfuManager.getRemoteAudioTrack(participantId);
+				if (audioTrack) {
+					stream.value = new MediaStream([audioTrack]);
 				}
 			}
 		} catch (error) {

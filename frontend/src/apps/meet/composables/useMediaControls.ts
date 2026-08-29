@@ -147,30 +147,6 @@ interface MediaControlsAPI {
 	processedStream: MediaStream | null;
 }
 
-interface ProducerLike {
-	id: string;
-	track?: MediaStreamTrack | null;
-	paused?: boolean;
-	replaceTrack?: (args: { track: MediaStreamTrack }) => Promise<unknown>;
-	resume?: () => void;
-	pause?: () => void;
-	close?: () => void;
-}
-
-interface MediaHandlerLike {
-	localStream: MediaStream | null;
-	audioProducer: ProducerLike | null;
-	videoProducer: ProducerLike | null;
-	screenProducer: ProducerLike | null;
-	setProducers: (producers: {
-		audioProducer?: ProducerLike;
-		videoProducer?: ProducerLike;
-		screenProducer?: ProducerLike;
-	}) => void;
-	stopScreenShare: () => void;
-	cleanup: () => void;
-}
-
 type ScreenShareStopReason =
 	| "user-click"
 	| "track-ended"
@@ -290,12 +266,6 @@ export function mergeReacquiredMedia({
 
 interface ScreenShareStopExtra {
 	message?: string;
-}
-
-function getMediaHandler(
-	manager: SFUMeetingManager | null,
-): MediaHandlerLike | null {
-	return (manager?.mediaHandler as MediaHandlerLike | undefined) || null;
 }
 
 export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
@@ -475,20 +445,14 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			if (track && track.readyState !== "live") {
 				throw new Error(`Cannot reconcile ended camera track (${reason})`);
 			}
-			const mediaHandler = getMediaHandler(manager);
-			if (!mediaHandler) return;
-			const videoProducer = mediaHandler.videoProducer;
+			const videoProducer = manager.getLocalProducerState("video");
 
 			if (track) {
 				if (videoProducer?.track?.id !== track.id) {
 					if (videoProducer) {
 						const previousTrack = videoProducer.track;
-						const replaceTrack = videoProducer.replaceTrack;
-						if (typeof replaceTrack !== "function") {
-							throw new Error("Camera producer cannot replace its track");
-						}
 						assertCurrentCameraOperation(operation);
-						await replaceTrack.call(videoProducer, { track });
+						await manager.replaceLocalProducerTrack("video", track);
 						assertCurrentCameraOperation(operation);
 						if (track.readyState !== "live") {
 							if (
@@ -496,41 +460,28 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 								previousTrack !== track
 							) {
 								assertCurrentCameraOperation(operation);
-								await replaceTrack.call(videoProducer, {
-									track: previousTrack,
-								});
+								await manager.replaceLocalProducerTrack(
+									"video",
+									previousTrack,
+								);
 							}
 							throw new Error(
 								`Camera track ended during reconciliation (${reason})`,
 							);
 						}
-					} else if (createProducerIfMissing && manager.transportManager) {
+					} else if (createProducerIfMissing) {
 						assertCurrentCameraOperation(operation);
-						const producer = await manager.transportManager.createProducer(
-							track,
-							{
-								type: "camera",
-							},
-						);
+						await manager.createLocalProducer("video", track);
 						if (operation && !isCurrentCameraOperation(operation)) {
-							producer.close?.();
-							if (producer.id && sfuClient.isConnected()) {
-								void sfuClient.closeProducer(producer.id).catch(() => {});
-							}
+							manager.closeLocalProducer("video");
 							throw cameraLifecycleAbort();
 						}
 						if (track.readyState !== "live") {
-							producer.close?.();
-							if (producer.id && sfuClient.isConnected()) {
-								void sfuClient.closeProducer(producer.id).catch(() => {});
-							}
+							manager.closeLocalProducer("video");
 							throw new Error(
 								`Camera track ended during reconciliation (${reason})`,
 							);
 						}
-						mediaHandler.setProducers({
-							videoProducer: producer as ProducerLike,
-						});
 					}
 				}
 
@@ -540,13 +491,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				}
 			} else {
 				assertCurrentCameraOperation(operation);
-				if (videoProducer) {
-					videoProducer.close?.();
-					if (videoProducer.id && sfuClient.isConnected()) {
-						sfuClient.closeProducer(videoProducer.id).catch(() => {});
-					}
-				}
-				mediaHandler.videoProducer = null;
+				if (videoProducer) manager.closeLocalProducer("video");
 			}
 			assertCurrentCameraOperation(operation);
 			manager.setLocalMediaTrack("video", track);
@@ -916,7 +861,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			return;
 		}
 
-		const mh = getMediaHandler(sfuManager.value);
 		const { stream: audioOnlyStream } = await acquireUserMedia(false, true, {
 			micDeviceId: deviceId,
 		});
@@ -942,21 +886,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			return;
 		}
 
-		if (
-			mh?.audioProducer &&
-			typeof mh.audioProducer.replaceTrack === "function"
-		) {
-			await mh.audioProducer.replaceTrack({ track: trackToPublish });
-			return;
-		}
-
-		if (!mh?.audioProducer && sfuManager.value?.transportManager) {
-			const producer = await sfuManager.value.transportManager.createProducer(
-				trackToPublish,
-				{ type: "microphone" },
-			);
-			mh?.setProducers({ audioProducer: producer as ProducerLike });
-		}
+		await sfuManager.value?.reconcileLocalProducerTrack(
+			"audio",
+			trackToPublish,
+			{ resume: true },
+		);
 	};
 
 	const switchCam = async (deviceId: string) => {
@@ -1514,13 +1448,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			try {
 				if (manager) {
 					await manager.serializeSendMediaMutation(async () => {
-						const mediaHandler = getMediaHandler(manager);
-						const producer = mediaHandler?.audioProducer;
-						producer?.close?.();
-						if (producer?.id && sfuClient.isConnected()) {
-							void sfuClient.closeProducer(producer.id).catch(() => {});
-						}
-						if (mediaHandler) mediaHandler.audioProducer = null;
+						manager.closeLocalProducer("audio");
 						manager.setLocalMediaTrack("audio", null);
 					});
 				}
@@ -1600,40 +1528,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				throw new Error("No live microphone track available after recovery");
 			}
 
-			const manager = sfuManager.value;
-			if (manager) {
-				await manager.serializeSendMediaMutation(async () => {
-					assertCurrentCameraOperation(operation);
-					if (!mediaState.isMicOn || candidate.readyState !== "live") {
-						throw new Error("Microphone recovery became stale");
-					}
-					const mediaHandler = getMediaHandler(manager);
-					const producer = mediaHandler?.audioProducer;
-					if (producer) {
-						if (typeof producer.replaceTrack !== "function") {
-							throw new Error("Microphone producer cannot replace its track");
-						}
-						await producer.replaceTrack({ track: trackToPublish });
-						if (trackToPublish.readyState !== "live") {
-							throw new Error("Microphone track ended during recovery");
-						}
-						producer.resume?.();
-					} else if (manager.transportManager) {
-						const nextProducer = await manager.transportManager.createProducer(
-							trackToPublish,
-							{ type: "microphone" },
-						);
-						if (trackToPublish.readyState !== "live") {
-							nextProducer.close?.();
-							throw new Error("Microphone track ended during recovery");
-						}
-						mediaHandler?.setProducers({
-							audioProducer: nextProducer as ProducerLike,
-						});
-					}
-					manager.setLocalMediaTrack("audio", trackToPublish);
-				});
+			assertCurrentCameraOperation(operation);
+			if (!mediaState.isMicOn || candidate.readyState !== "live") {
+				throw new Error("Microphone recovery became stale");
 			}
+			await sfuManager.value?.reconcileLocalProducerTrack(
+				"audio",
+				trackToPublish,
+				{ resume: true },
+			);
 			for (const track of acquiredStream.getTracks()) {
 				if (track !== candidate) stopLifecycleTrack(track);
 			}
@@ -1705,16 +1608,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				"speaker",
 			);
 
-			if (validSpeakerId && sfuManager.value?.videoManager) {
-				const audioElements = sfuManager.value.videoManager.audioElements;
-
-				for (const [, audioElement] of audioElements) {
-					try {
-						await audioElement.setSinkId(validSpeakerId);
-					} catch (error) {
-						console.warn("Failed to set speaker for participant:", error);
-					}
-				}
+			if (validSpeakerId && sfuManager.value) {
+				await sfuManager.value.setAudioOutputDevice(validSpeakerId);
 			}
 		} catch (error) {
 			console.warn("Failed to apply speaker device:", error);
@@ -1810,7 +1705,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const toggleMicrophoneImplementation = async () => {
 		try {
 			const enable = !mediaState.isMicOn;
-			const mh = getMediaHandler(sfuManager.value);
 			let stream = mediaState.localStream;
 
 			if (enable) {
@@ -1894,29 +1788,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				}
 
 				const track = await getProcessedAudioTrack(stream);
-				if (mh?.audioProducer) {
-					const audioProducer = mh.audioProducer;
-					const currentTrack = audioProducer.track;
-					if (track) {
-						track.enabled = true;
-						if (
-							currentTrack !== track &&
-							typeof audioProducer.replaceTrack === "function"
-						) {
-							await audioProducer.replaceTrack({ track });
-						}
-					}
-					audioProducer.resume?.();
-
-					if (sfuClient.isConnected()) {
-						sfuClient.resumeProducer(audioProducer.id).catch(() => {});
-					}
-				} else if (track && sfuManager.value?.transportManager) {
-					const producer =
-						await sfuManager.value.transportManager.createProducer(track, {
-							type: "microphone",
-						});
-					mh?.setProducers({ audioProducer: producer as ProducerLike });
+				if (track) {
+					track.enabled = true;
+					await sfuManager.value?.reconcileLocalProducerTrack("audio", track, {
+						resume: true,
+					});
 				}
 			} else {
 				if (stream) {
@@ -1932,14 +1808,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					noiseCancellationSession = null;
 				}
 
-				if (mh?.audioProducer) {
-					const audioProducer = mh.audioProducer;
-					audioProducer.pause?.();
-
-					if (sfuClient.isConnected()) {
-						sfuClient.pauseProducer(audioProducer.id);
-					}
-				}
+				sfuManager.value?.pauseLocalProducer("audio");
 			}
 
 			mediaState.isMicOn = enable;
@@ -2114,8 +1983,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				return;
 			}
 			if (enable) {
-				const mediaHandler = getMediaHandler(sfuManager.value);
-				if (mediaHandler?.videoProducer) {
+				const manager = sfuManager.value;
+				if (manager?.getLocalProducerState("video")) {
 					try {
 						await reconcileCameraTrack(
 							null,
@@ -2160,25 +2029,17 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		extra: ScreenShareStopExtra = {},
 	) => {
 		const metadata = getScreenShareStopMetadata(reason, extra);
-		const mediaHandler = getMediaHandler(sfuManager.value);
-		const sp = mediaHandler?.screenProducer;
+		const manager = sfuManager.value;
+		const screenProducer = manager?.getLocalProducerState("screen");
 
 		mediaState.isScreenSharing = false;
 
-		if (sp?.id) {
-			sp.close?.();
-
-			if (sfuClient.isConnected()) {
-				sfuClient
-					.closeProducer(sp.id, {
-						...metadata,
-						producerId: sp.id,
-					})
-					.catch(() => {});
-			}
+		if (screenProducer?.id && manager) {
+			manager.closeLocalProducer("screen", {
+				...metadata,
+				producerId: screenProducer.id,
+			});
 		}
-
-		mediaHandler?.stopScreenShare();
 
 		const tracks = mediaState.screenShareStream?.getTracks?.();
 		if (tracks) {
@@ -2197,7 +2058,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		if (sfuClient.isConnected()) {
 			sfuClient.sendScreenShare("stop_share", {
 				...metadata,
-				producerId: sp?.id,
+				producerId: screenProducer?.id,
 				stoppedAt: Date.now(),
 			});
 		}
@@ -2244,45 +2105,53 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 				try {
 					const screenTrack = screenStream.getVideoTracks()[0];
-					if (!screenTrack || !sfuManager.value?.transportManager) {
+					const manager = sfuManager.value;
+					if (!screenTrack || !manager) {
 						throw new Error("Screen share transport is not available");
 					}
 
-					const producer =
-						await sfuManager.value.transportManager.createProducer(
-							screenTrack,
-							{ type: "screen" },
-						);
-					const mh = getMediaHandler(sfuManager.value);
-					if (mh) {
-						mh.setProducers({
-							screenProducer: producer,
-						});
+					screenTrack.addEventListener("ended", () => {
+						if (
+							mediaState.isScreenSharing &&
+							mediaState.screenShareStream === screenStream
+						) {
+							stopScreenShare("track-ended").catch((err) => {
+								console.error("track-ended screen share cleanup failed:", err);
+							});
+						}
+					});
+
+					const publication = await manager.publishScreenTrack(screenTrack);
+					if (!publication) {
+						if (
+							mediaState.isScreenSharing &&
+							mediaState.screenShareStream === screenStream
+						) {
+							await stopScreenShare(
+								screenTrack.readyState === "ended"
+									? "track-ended"
+									: "publish-failed",
+							);
+						}
+						return;
 					}
 
 					// Ensure audio producer is available
-					if (mh?.audioProducer?.paused) {
-						mh.audioProducer.resume?.();
-					} else if (!mh?.audioProducer) {
-						const localStream = mediaState.localStream;
-						const micTrack = localStream?.getAudioTracks?.()[0];
-						if (micTrack && sfuManager.value?.transportManager) {
-							try {
-								const newProducer =
-									await sfuManager.value.transportManager.createProducer(
-										micTrack,
-										{ type: "microphone" },
-									);
-								mh?.setProducers({
-									audioProducer: newProducer as ProducerLike,
-								});
-							} catch (err) {
-								console.warn(
-									"Failed to create audio producer after starting screen share",
-									err,
-								);
-							}
+					const audioProducer = manager.getLocalProducerState("audio");
+					const micTrack = mediaState.localStream?.getAudioTracks?.()[0];
+					if (micTrack) {
+						try {
+							await manager.reconcileLocalProducerTrack("audio", micTrack, {
+								resume: true,
+							});
+						} catch (err) {
+							console.warn(
+								"Failed to publish audio after starting screen share",
+								err,
+							);
 						}
+					} else if (audioProducer?.paused) {
+						manager.resumeLocalProducer("audio");
 					}
 				} catch (pubErr) {
 					console.error("Failed to publish screen share producer:", pubErr);
@@ -2292,15 +2161,17 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					throw pubErr;
 				}
 
-				screenStream.getVideoTracks()[0].addEventListener("ended", () => {
-					if (mediaState.isScreenSharing) {
-						stopScreenShare("track-ended").catch((err) => {
-							console.error("track-ended screen share cleanup failed:", err);
-						});
-					}
-				});
-
-				if (sfuClient.isConnected()) {
+				const currentScreenPublication =
+					manager.getLocalProducerState("screen");
+				if (
+					sfuManager.value === manager &&
+					mediaState.isScreenSharing &&
+					mediaState.screenShareStream === screenStream &&
+					screenStream.getVideoTracks()[0]?.readyState === "live" &&
+					currentScreenPublication?.id === publication.id &&
+					currentScreenPublication.track === screenTrack &&
+					sfuClient.isConnected()
+				) {
 					sfuClient.sendScreenShare("start_share", {
 						startedAt: mediaState.localScreenShareStartedAt,
 					});
@@ -2341,9 +2212,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	}
 
 	const setRemoteVideoRef = (participantId: string, el: HTMLVideoElement) => {
-		if (sfuManager.value?.videoManager) {
-			sfuManager.value.videoManager.registerVideoElement(participantId, el);
-		}
+		sfuManager.value?.registerVideoElement(participantId, el);
 	};
 
 	const setScreenShareVideoRef = (el: HTMLVideoElement) => {
@@ -2377,8 +2246,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	watch(prefNoiseCancellationEnabled, (enabled) => {
 		void enqueueMicrophoneTransition(async () => {
 			const operation = createCameraOperation();
-			const mh = getMediaHandler(sfuManager.value);
-			if (!mediaState.isMicOn || !mh) return;
+			if (!mediaState.isMicOn) return;
 
 			const freshTrack = await getFreshMicTrack(operation);
 			assertCurrentCameraOperation(operation);
@@ -2401,10 +2269,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				}
 			}
 			assertCurrentCameraOperation(operation);
-			if (mh?.audioProducer && trackToPublish.readyState === "live") {
-				if (typeof mh.audioProducer.replaceTrack === "function") {
-					await mh.audioProducer.replaceTrack({ track: trackToPublish });
-				}
+			if (trackToPublish.readyState === "live") {
+				await sfuManager.value?.reconcileLocalProducerTrack(
+					"audio",
+					trackToPublish,
+					{ resume: true },
+				);
 			}
 		}).catch((error) => {
 			if (isCameraLifecycleAbort(error)) return;

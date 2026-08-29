@@ -2,14 +2,6 @@
   "version": 1,
   "exceptions": [
     {
-      "path": "frontend/src/apps/meet/composables/useRTCStats.ts",
-      "line": 6,
-      "column": 20,
-      "rule": "MTP001",
-      "lineText": "type StatsReport = Record<string, unknown> & {",
-      "reason": "Browser RTC statistics are an extensible cross-browser metadata dictionary with guarded reads."
-    },
-    {
       "path": "frontend/src/apps/meet/types.ts",
 		"line": 118,
       "column": 13,

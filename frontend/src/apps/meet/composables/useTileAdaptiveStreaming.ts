@@ -1,14 +1,14 @@
 import { debounce } from "frappe-ui";
 import type { Ref } from "vue";
-import { inject, onBeforeUnmount } from "vue";
+import { inject, onBeforeUnmount, watch } from "vue";
 
 type SFUMeetingManagerLike = {
-	getVideoConsumerEntry: (participantId: string) => { id: string } | null;
+	getVideoConsumerId: (participantId: string) => string | null;
 	updateConsumerStreamPreferences: (
 		consumerId: string,
-		preferences: { visible: boolean; width?: number; height?: number },
+		preferences: { visible: boolean; width: number; height: number },
 	) => Promise<unknown> | unknown;
-	eventTarget?: EventTarget;
+	onRemoteConsumerReady: (listener: (event: Event) => void) => () => void;
 };
 
 interface TileMetrics {
@@ -18,6 +18,7 @@ interface TileMetrics {
 }
 
 interface TileController {
+	active: boolean;
 	participantId: string;
 	element: HTMLVideoElement;
 	resizeObserver: ResizeObserver | null;
@@ -29,7 +30,7 @@ interface TileController {
 	lastSent: TileMetrics | null;
 	debouncedUpdate: (() => void) | null;
 	initialPending: boolean;
-	consumerReadyListener: ((event: Event) => void) | null;
+	stopListeningForConsumer: (() => void) | null;
 }
 
 const VISIBILITY_THRESHOLD = 0.1;
@@ -48,7 +49,7 @@ function isElementInViewport(element: HTMLElement): boolean {
 }
 
 export function useTileAdaptiveStreaming() {
-	const injectedManager = inject<Ref<SFUMeetingManagerLike>>("sfuManager");
+	const injectedManager = inject<Ref<SFUMeetingManagerLike | null>>("sfuManager");
 	const controllers = new Map<string, TileController>();
 
 	function getManager(): SFUMeetingManagerLike | null {
@@ -58,13 +59,12 @@ export function useTileAdaptiveStreaming() {
 	}
 
 	async function updateConsumerPreferences(controller: TileController) {
+		if (!controller.active) return;
 		const manager = getManager();
 		if (!manager) return;
 
-		const consumerEntry = manager.getVideoConsumerEntry(
-			controller.participantId,
-		);
-		if (!consumerEntry?.id) return;
+		const consumerId = manager.getVideoConsumerId(controller.participantId);
+		if (!consumerId) return;
 
 		const visible =
 			controller.visible && controller.width > 0 && controller.height > 0;
@@ -94,11 +94,12 @@ export function useTileAdaptiveStreaming() {
 		controller.forceNext = false;
 
 		try {
-			await manager.updateConsumerStreamPreferences(consumerEntry.id, {
+			await manager.updateConsumerStreamPreferences(consumerId, {
 				visible,
 				width,
 				height,
 			});
+			if (!controller.active || getManager() !== manager) return;
 			controller.lastSent = { visible, width, height };
 			if (controller.initialPending) {
 				controller.initialPending = false;
@@ -113,6 +114,7 @@ export function useTileAdaptiveStreaming() {
 	}
 
 	function scheduleUpdate(controller: TileController, immediate = false) {
+		if (!controller.active) return;
 		if (immediate) {
 			controller.forceNext = true;
 			void updateConsumerPreferences(controller);
@@ -122,26 +124,35 @@ export function useTileAdaptiveStreaming() {
 	}
 
 	function cleanupController(controller: TileController) {
+		controller.active = false;
 		if (controller.resizeObserver) {
 			controller.resizeObserver.disconnect();
 		}
 		if (controller.intersectionObserver) {
 			controller.intersectionObserver.disconnect();
 		}
-		if (controller.consumerReadyListener) {
-			const manager = getManager();
-			if (manager?.eventTarget) {
-				manager.eventTarget.removeEventListener(
-					"consumerReady",
-					controller.consumerReadyListener,
-				);
-			}
-			controller.consumerReadyListener = null;
-		}
+		controller.stopListeningForConsumer?.();
+		controller.stopListeningForConsumer = null;
+	}
+
+	function bindControllerToManager(controller: TileController) {
+		controller.stopListeningForConsumer?.();
+		controller.stopListeningForConsumer = null;
+		const manager = getManager();
+		if (!manager) return;
+		controller.stopListeningForConsumer = manager.onRemoteConsumerReady(
+			(event: Event) => {
+				const customEvent = event as CustomEvent;
+				if (customEvent.detail?.participantId === controller.participantId) {
+					scheduleUpdate(controller, false);
+				}
+			},
+		);
 	}
 
 	function createController(participantId: string, element: HTMLVideoElement) {
 		const controller: TileController = {
+			active: true,
 			participantId,
 			element,
 			resizeObserver: null,
@@ -154,25 +165,14 @@ export function useTileAdaptiveStreaming() {
 			initialPending: true,
 			lastSent: null,
 			debouncedUpdate: null,
-			consumerReadyListener: null,
+			stopListeningForConsumer: null,
 		};
 
 		controller.debouncedUpdate = debounce(() => {
 			void updateConsumerPreferences(controller);
 		}, DEBOUNCE_MS);
 
-		// Listen for consumer ready event
-		const manager = getManager();
-		if (manager?.eventTarget) {
-			const listener = (event: Event) => {
-				const customEvent = event as CustomEvent;
-				if (customEvent.detail?.participantId === participantId) {
-					scheduleUpdate(controller, false);
-				}
-			};
-			controller.consumerReadyListener = listener;
-			manager.eventTarget.addEventListener("consumerReady", listener);
-		}
+		bindControllerToManager(controller);
 
 		// to check size of the tile
 		controller.resizeObserver = new ResizeObserver((entries) => {
@@ -254,7 +254,18 @@ export function useTileAdaptiveStreaming() {
 		controllers.set(participantId, controller);
 	}
 
+	const stopWatchingManager = injectedManager
+		? watch(injectedManager, () => {
+				for (const controller of controllers.values()) {
+					bindControllerToManager(controller);
+					controller.lastSent = null;
+					scheduleUpdate(controller, true);
+				}
+			})
+		: () => {};
+
 	onBeforeUnmount(() => {
+		stopWatchingManager();
 		for (const controller of controllers.values()) {
 			cleanupController(controller);
 		}

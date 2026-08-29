@@ -61,6 +61,7 @@ function createMediaReconfigurationController({
 		sfuManager: shallowRef({
 			reconfigureForE2EE,
 			rejoinParticipantConnection: joinRoom,
+			hasLocalMediaPublications: vi.fn(() => true),
 		} as never),
 		currentUser: {
 			currentUser: shallowRef({ user_id: "user-1", full_name: "User One" }),
@@ -439,10 +440,7 @@ describe("E2EEHandshakeController", () => {
 				videoPublished: true,
 				audioPublished: true,
 			})),
-			mediaHandler: {
-				videoProducer: {} as never,
-				audioProducer: {} as never,
-			},
+			hasLocalMediaPublications: vi.fn(() => true),
 		} as never);
 		const controller = new E2EEHandshakeController({
 			meetingId: "meeting-1",
@@ -521,10 +519,6 @@ describe("E2EEHandshakeController", () => {
 			reconfigurationEntered.resolve();
 			return releaseReconfiguration.promise;
 		});
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
-		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,
@@ -558,10 +552,6 @@ describe("E2EEHandshakeController", () => {
 				},
 			});
 		reconfigureForE2EE.mockRejectedValue(abortError);
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
-		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,
@@ -592,10 +582,6 @@ describe("E2EEHandshakeController", () => {
 				},
 			});
 		reconfigureForE2EE.mockRejectedValue(failure);
-		Reflect.set(Reflect.get(controller, "sfuManager").value, "mediaHandler", {
-			videoProducer: {},
-			audioProducer: null,
-		});
 		E2EEMeeting.instance.setMeetingContext(
 			new Uint8Array(32) as Uint8Array<ArrayBuffer>,
 			1,

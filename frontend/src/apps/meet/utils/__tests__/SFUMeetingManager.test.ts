@@ -1,5 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SFUMeetingManager } from "../SFUMeetingManager";
+import type { ConsumerManager } from "../media/ConsumerManager";
+import type { ParticipantManager } from "../media/ParticipantManager";
+import type { TransportManager } from "../media/TransportManager";
+import type { VideoElementManager } from "../media/VideoElementManager";
+import type { SFUMediaManager } from "../sfu/SFUMediaManager";
+
+type TestableSFUMeetingManager = Pick<
+	SFUMeetingManager,
+	keyof SFUMeetingManager
+> & {
+	videoManager: VideoElementManager;
+	participantManager: ParticipantManager;
+	consumerManager: ConsumerManager;
+	transportManager: TransportManager;
+	mediaManager: SFUMediaManager;
+	mediaHandler: SFUMediaManager["mediaHandler"];
+};
+
+const createManager = (client: never) =>
+	new SFUMeetingManager(client) as unknown as TestableSFUMeetingManager;
 
 class FakeMediaStream {
 	private tracks: MediaStreamTrack[];
@@ -43,8 +63,9 @@ afterEach(() => {
 
 function prepareE2EEManager() {
 	vi.stubGlobal("MediaStream", FakeMediaStream);
-	const manager = new SFUMeetingManager({
+	const manager = createManager({
 		isConnected: vi.fn(() => true),
+		closeProducer: vi.fn().mockResolvedValue(undefined),
 	} as never);
 	const connectionManager = (
 		manager as unknown as {
@@ -78,7 +99,7 @@ function prepareE2EEManager() {
 
 describe("SFUMeetingManager adaptive streaming", () => {
 	it("escalates exhausted expected publication repair", async () => {
-		const manager = new SFUMeetingManager({} as never);
+		const manager = createManager({} as never);
 		const connection = (
 			manager as unknown as {
 				connectionManager: {
@@ -122,7 +143,7 @@ describe("SFUMeetingManager adaptive streaming", () => {
 	});
 
 	it("retries playback before reconciling media after browser resume", async () => {
-		const manager = new SFUMeetingManager({} as never);
+		const manager = createManager({} as never);
 		const retryPlayback = vi
 			.spyOn(manager.videoManager, "retryPlayback")
 			.mockResolvedValue();
@@ -140,7 +161,7 @@ describe("SFUMeetingManager adaptive streaming", () => {
 	});
 
 	it("rejects visible preferences while disconnected", async () => {
-		const manager = new SFUMeetingManager({
+		const manager = createManager({
 			isConnected: vi.fn(() => false),
 		} as never);
 
@@ -154,7 +175,7 @@ describe("SFUMeetingManager adaptive streaming", () => {
 	});
 
 	it("rejects a failed visible preference without clearing adaptive pause", async () => {
-		const manager = new SFUMeetingManager({
+		const manager = createManager({
 			isConnected: vi.fn(() => true),
 			updateConsumerPreferences: vi.fn().mockRejectedValue(new Error("offline")),
 		} as never);
@@ -177,7 +198,7 @@ describe("SFUMeetingManager adaptive streaming", () => {
 			.fn()
 			.mockReturnValueOnce(visibleRequest.promise)
 			.mockReturnValueOnce(hiddenRequest.promise);
-		const manager = new SFUMeetingManager({
+		const manager = createManager({
 			isConnected: vi.fn(() => true),
 			updateConsumerPreferences,
 		} as never);
@@ -205,9 +226,412 @@ describe("SFUMeetingManager adaptive streaming", () => {
 	});
 });
 
+describe("SFUMeetingManager facade operations", () => {
+	it("owns local producer creation, replacement, signaling, and closure", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const pauseProducer = vi.fn().mockResolvedValue(undefined);
+		const resumeProducer = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			isConnected: vi.fn(() => true),
+			closeProducer,
+			pauseProducer,
+			resumeProducer,
+		} as never;
+		const manager = createManager(client);
+		const initialTrack = mediaTrack("initial", "video");
+		const replacementTrack = mediaTrack("replacement", "video");
+		const producer = {
+			id: "video-producer",
+			track: initialTrack,
+			paused: false,
+			closed: false,
+			replaceTrack: vi.fn(async ({ track }: { track: MediaStreamTrack }) => {
+				producer.track = track;
+			}),
+			pause: vi.fn(),
+			resume: vi.fn(),
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockResolvedValue(
+			producer as never,
+		);
+
+		await manager.createLocalProducer("video", initialTrack);
+		await manager.replaceLocalProducerTrack("video", replacementTrack);
+		manager.pauseLocalProducer("video");
+		manager.resumeLocalProducer("video");
+		manager.closeLocalProducer("video");
+
+		expect(producer.replaceTrack).toHaveBeenCalledWith({
+			track: replacementTrack,
+		});
+		expect(pauseProducer).toHaveBeenCalledWith("video-producer");
+		expect(resumeProducer).toHaveBeenCalledWith("video-producer");
+		expect(closeProducer).toHaveBeenCalledWith("video-producer", {});
+		expect(manager.getLocalProducerState("video")).toBeNull();
+	});
+
+	it("reconciles against a producer that appears while creation is pending", async () => {
+		vi.stubGlobal("MediaStream", FakeMediaStream);
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const resumeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+			resumeProducer,
+		} as never);
+		const track = mediaTrack("microphone", "audio");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const abandoned = {
+			id: "abandoned-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		const current = {
+			id: "recovered-producer",
+			track: mediaTrack("old-microphone", "audio"),
+			closed: false,
+			paused: true,
+			replaceTrack: vi.fn(async ({ track: replacement }) => {
+				current.track = replacement;
+			}),
+			resume: vi.fn(() => {
+				current.paused = false;
+			}),
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const reconciliation = manager.reconcileLocalProducerTrack("audio", track, {
+			resume: true,
+		});
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		manager.mediaHandler.setProducers({ audioProducer: current as never });
+		creation.resolve(abandoned);
+		await reconciliation;
+
+		expect(abandoned.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("abandoned-producer", {});
+		expect(current.replaceTrack).toHaveBeenCalledWith({ track });
+		expect(current.resume).toHaveBeenCalledOnce();
+		expect(manager.getLocalProducerState("audio")?.id).toBe("recovered-producer");
+	});
+
+	it("abandons a delayed screen producer after screen sharing stops", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+		} as never);
+		const track = mediaTrack("screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			paused: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "stale-screen-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const publication = manager.publishScreenTrack(track);
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		expect(manager.hasLocalMediaPublications()).toBe(true);
+		manager.closeLocalProducer("screen");
+		creation.resolve(staleProducer);
+
+		await expect(publication).resolves.toBeNull();
+		expect(staleProducer.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("stale-screen-producer", {});
+		expect(manager.getLocalProducerState("screen")).toBeNull();
+	});
+
+	it("abandons a delayed screen producer when its track ends", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+		} as never);
+		const track = mediaTrack("screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			paused: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "ended-screen-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const publication = manager.publishScreenTrack(track);
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		Reflect.set(track, "readyState", "ended");
+		creation.resolve(staleProducer);
+
+		await expect(publication).resolves.toBeNull();
+		expect(staleProducer.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("ended-screen-producer", {});
+		expect(manager.getLocalProducerState("screen")).toBeNull();
+	});
+
+	it("invalidates a delayed screen publication when manager cleanup starts", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+			disconnect: vi.fn().mockResolvedValue(undefined),
+		} as never);
+		const track = mediaTrack("screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			paused: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "cleanup-screen-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const publication = manager.publishScreenTrack(track);
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		const cleanup = manager.cleanup();
+		creation.resolve(staleProducer);
+
+		await expect(publication).resolves.toBeNull();
+		await cleanup;
+		expect(staleProducer.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("cleanup-screen-producer", {});
+		expect(manager.getLocalProducerState("screen")).toBeNull();
+	});
+
+	it("keeps a recovered screen producer that replaces delayed creation", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+		} as never);
+		const track = mediaTrack("screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			paused: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "stale-screen-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		const recoveredProducer = {
+			id: "recovered-screen-producer",
+			track,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const publication = manager.publishScreenTrack(track);
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		manager.mediaHandler.setProducers({
+			screenProducer: recoveredProducer as never,
+		});
+		creation.resolve(staleProducer);
+
+		await expect(publication).resolves.toMatchObject({
+			id: "recovered-screen-producer",
+			track,
+		});
+		expect(staleProducer.close).toHaveBeenCalledOnce();
+		expect(closeProducer).toHaveBeenCalledWith("stale-screen-producer", {});
+		expect(manager.getLocalProducerState("screen")?.id).toBe(
+			"recovered-screen-producer",
+		);
+	});
+
+	it("does not overwrite replacement screen state after delayed creation", async () => {
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			closeProducer,
+		} as never);
+		const requestedTrack = mediaTrack("requested-screen", "video");
+		const replacementTrack = mediaTrack("replacement-screen", "video");
+		const creation = deferred<{
+			id: string;
+			track: MediaStreamTrack;
+			closed: boolean;
+			paused: boolean;
+			close: ReturnType<typeof vi.fn>;
+		}>();
+		const staleProducer = {
+			id: "stale-screen-producer",
+			track: requestedTrack,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		const replacementProducer = {
+			id: "replacement-screen-producer",
+			track: replacementTrack,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		vi.spyOn(manager.transportManager, "createProducer").mockReturnValue(
+			creation.promise as never,
+		);
+
+		const publication = manager.publishScreenTrack(requestedTrack);
+		await vi.waitFor(() =>
+			expect(manager.transportManager.createProducer).toHaveBeenCalledOnce(),
+		);
+		manager.mediaHandler.setProducers({
+			screenProducer: replacementProducer as never,
+		});
+		creation.resolve(staleProducer);
+
+		await expect(publication).resolves.toBeNull();
+		expect(staleProducer.close).toHaveBeenCalledOnce();
+		expect(replacementProducer.close).not.toHaveBeenCalled();
+		expect(manager.getLocalProducerState("screen")?.track).toBe(
+			replacementTrack,
+		);
+	});
+
+	it("exposes only the video consumer id", () => {
+		const manager = createManager({} as never);
+		vi.spyOn(manager.consumerManager, "getVideoConsumer")
+			.mockReturnValueOnce({
+				id: "video-consumer",
+				adaptivelyPaused: false,
+			} as never)
+			.mockReturnValueOnce(undefined);
+
+		expect(manager.getVideoConsumerId("participant-1")).toBe("video-consumer");
+		expect(manager.getVideoConsumerId("missing")).toBeNull();
+	});
+
+	it("returns immutable RTC samples and drops a producer replaced during sampling", async () => {
+		const manager = createManager({
+			getConnectionStatus: vi.fn(() => ({ connected: true })),
+		} as never);
+		const stats = deferred<Map<string, unknown>>();
+		const oldProducer = {
+			id: "old-producer",
+			kind: "audio",
+			track: mediaTrack("old-track", "audio"),
+			closed: false,
+			paused: false,
+			appData: {},
+			getStats: vi.fn(() => stats.promise),
+		};
+		manager.mediaHandler.setProducers({ audioProducer: oldProducer as never });
+
+		const sampling = manager.sampleRTCStats();
+		await vi.waitFor(() => expect(oldProducer.getStats).toHaveBeenCalledOnce());
+		manager.mediaHandler.setProducers({
+			audioProducer: {
+				...oldProducer,
+				id: "replacement-producer",
+				getStats: vi.fn().mockResolvedValue(new Map()),
+			} as never,
+		});
+		stats.resolve(
+			new Map([
+				["outbound", { id: "outbound", type: "outbound-rtp" }],
+			]),
+		);
+		const sample = await sampling;
+
+		expect(sample.streams).toEqual([]);
+		expect(Object.isFrozen(sample)).toBe(true);
+		expect(Object.isFrozen(sample.streams)).toBe(true);
+		expect(sample).not.toHaveProperty("producers");
+		expect(sample).not.toHaveProperty("transports");
+		expect(sample).not.toHaveProperty("consumers");
+	});
+
+	it("routes host control through the client", () => {
+		const sendEvent = vi.fn();
+		const manager = createManager({ sendEvent } as never);
+
+		manager.sendHostControl("mute_participant", "participant-1");
+
+		expect(sendEvent).toHaveBeenCalledWith("host_control", {
+			action: "mute_participant",
+			targetParticipantId: "participant-1",
+		});
+	});
+
+	it("keeps health monitoring active until its last facade subscriber leaves", () => {
+		const manager = createManager({} as never);
+		const monitor = Reflect.get(manager, "mediaHealthMonitor");
+		const start = vi.spyOn(monitor, "start").mockImplementation(() => {});
+		const stop = vi.spyOn(monitor, "stop").mockImplementation(() => {});
+		const stopFirst = manager.startMediaHealthMonitoring(vi.fn());
+		const stopSecond = manager.startMediaHealthMonitoring(vi.fn());
+
+		stopFirst();
+		expect(stop).not.toHaveBeenCalled();
+		stopSecond();
+
+		expect(start).toHaveBeenCalledTimes(2);
+		expect(stop).toHaveBeenCalledOnce();
+	});
+});
+
 describe("SFUMeetingManager recovery fallback", () => {
 	it("keeps existing consumers after a successful ICE restart", async () => {
-		const manager = new SFUMeetingManager({
+		const manager = createManager({
 			isConnected: vi.fn(() => true),
 		} as never);
 		vi.spyOn(
@@ -230,7 +654,7 @@ describe("SFUMeetingManager recovery fallback", () => {
 	});
 
 	it("resets receive media when send rebuild fails", async () => {
-		const manager = new SFUMeetingManager({
+		const manager = createManager({
 			isConnected: vi.fn(() => true),
 		} as never);
 		vi.spyOn(
@@ -270,6 +694,109 @@ describe("SFUMeetingManager recovery fallback", () => {
 });
 
 describe("SFUMeetingManager E2EE recovery tracks", () => {
+	it("recreates a screen-only publication on the E2EE send transport", async () => {
+		const manager = prepareE2EEManager();
+		const screen = mediaTrack("screen", "video");
+		const oldScreenProducer = {
+			id: "old-screen",
+			track: screen,
+			close: vi.fn(),
+		};
+		const e2eeScreenProducer = {
+			id: "e2ee-screen",
+			track: screen,
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		manager.mediaHandler.setProducers({
+			screenProducer: oldScreenProducer as never,
+		});
+		const createProducer = vi
+			.spyOn(manager.transportManager, "createProducer")
+			.mockResolvedValue(e2eeScreenProducer as never);
+
+		expect(manager.hasLocalMediaPublications()).toBe(true);
+		await expect(manager.reconfigureForE2EE(null, null)).resolves.toEqual({
+			videoPublished: false,
+			audioPublished: false,
+		});
+
+		expect(oldScreenProducer.close).toHaveBeenCalledOnce();
+		expect(manager.transportManager.createSendTransport).toHaveBeenCalledOnce();
+		expect(createProducer).toHaveBeenCalledWith(screen, { type: "screen" });
+		expect(manager.mediaHandler.screenProducer).toBe(e2eeScreenProducer);
+		expect(screen.readyState).toBe("live");
+	});
+
+	it("recreates screen, camera, and microphone publications for E2EE", async () => {
+		const manager = prepareE2EEManager();
+		const screen = mediaTrack("screen", "video");
+		const video = mediaTrack("video", "video");
+		const audio = mediaTrack("audio", "audio");
+		manager.mediaHandler.setProducers({
+			screenProducer: { id: "old-screen", track: screen, close: vi.fn() } as never,
+			videoProducer: { id: "old-video", track: video, close: vi.fn() } as never,
+			audioProducer: { id: "old-audio", track: audio, close: vi.fn() } as never,
+		});
+		const producers = new Map(
+			[video, audio, screen].map((track) => [
+				track,
+				{
+					id: `e2ee-${track.id}`,
+					track,
+					closed: false,
+					paused: false,
+					close: vi.fn(),
+				},
+			]),
+		);
+		const createProducer = vi
+			.spyOn(manager.transportManager, "createProducer")
+			.mockImplementation(async (track) => producers.get(track) as never);
+
+		await expect(
+			manager.reconfigureForE2EE(
+				new FakeMediaStream([video]) as never,
+				new FakeMediaStream([audio]) as never,
+			),
+		).resolves.toEqual({ videoPublished: true, audioPublished: true });
+
+		expect(createProducer).toHaveBeenNthCalledWith(1, video, { type: "camera" });
+		expect(createProducer).toHaveBeenNthCalledWith(2, audio, {
+			type: "microphone",
+		});
+		expect(createProducer).toHaveBeenNthCalledWith(3, screen, { type: "screen" });
+		expect(manager.mediaHandler.videoProducer).toBe(producers.get(video));
+		expect(manager.mediaHandler.audioProducer).toBe(producers.get(audio));
+		expect(manager.mediaHandler.screenProducer).toBe(producers.get(screen));
+	});
+
+	it("does not recreate an ended screen track during E2EE transition", async () => {
+		const manager = prepareE2EEManager();
+		const screen = mediaTrack("screen", "video");
+		Reflect.set(screen, "readyState", "ended");
+		const oldScreenProducer = {
+			id: "old-screen",
+			track: screen,
+			close: vi.fn(),
+		};
+		manager.mediaHandler.setProducers({
+			screenProducer: oldScreenProducer as never,
+		});
+		const createProducer = vi.spyOn(
+			manager.transportManager,
+			"createProducer",
+		);
+
+		expect(manager.hasLocalMediaPublications()).toBe(true);
+		await manager.reconfigureForE2EE(null, null);
+
+		expect(oldScreenProducer.close).toHaveBeenCalledOnce();
+		expect(createProducer).not.toHaveBeenCalled();
+		expect(manager.mediaHandler.screenProducer).toBeNull();
+	});
+
 	it("restores active recovery tracks before recreating producers", async () => {
 		const manager = prepareE2EEManager();
 		const video = mediaTrack("video", "video");
@@ -541,7 +1068,7 @@ describe("SFUMeetingManager E2EE recovery tracks", () => {
 				},
 			]),
 		} as never;
-		const manager = new SFUMeetingManager(sfuClient);
+		const manager = createManager(sfuClient);
 		manager.initialize({
 			meetingId: "meeting-1",
 			currentUser: { user_id: "me" },

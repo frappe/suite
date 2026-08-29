@@ -1013,12 +1013,8 @@ const setSinkIdOnVideoElements = async (sinkId: string) => {
 		);
 	}
 
-	if (sfuConnection.sfuManager.value?.videoManager) {
-		for (const [, audioElement] of sfuConnection.sfuManager.value.videoManager
-			.audioElements) {
-			promises.push(audioElement.setSinkId(sinkId).catch(() => {}));
-		}
-	}
+	const manager = sfuConnection.sfuManager.value;
+	if (manager) promises.push(manager.setAudioOutputDevice(sinkId));
 
 	await Promise.all(promises);
 };

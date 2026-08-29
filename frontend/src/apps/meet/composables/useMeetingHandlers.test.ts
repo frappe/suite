@@ -33,4 +33,19 @@ describe("useMeetingHandlers", () => {
 
 		expect(joinMeetingRoom).toHaveBeenCalledWith({ switchHere: true });
 	});
+
+	it.each([
+		["handleMuteParticipant", "mute_participant"],
+		["handleKickParticipant", "kick_participant"],
+		["handleLowerHand", "lower_hand"],
+	] as const)("routes %s through the meeting facade", async (handler, action) => {
+		const sendHostControl = vi.fn();
+		const handlers = useMeetingHandlers({
+			sfuConnection: { sfuManager: ref({ sendHostControl }) },
+		} as never);
+
+		await handlers[handler]("participant-1");
+
+		expect(sendHostControl).toHaveBeenCalledWith(action, "participant-1");
+	});
 });

@@ -3,7 +3,7 @@ import type { ConsumerEntry } from "../ConsumerManager";
 import {
 	MediaHealthMonitor,
 	type MediaHealthEnvironment,
-	type MediaHealthManager,
+	type MediaHealthPort,
 } from "../MediaHealthMonitor";
 
 type LifecycleEvent = "offline" | "online" | "pageshow";
@@ -137,37 +137,45 @@ function makeManager(
 	const reconcileExpectedMedia = vi.fn().mockResolvedValue(undefined);
 	const recoverBrowserLifecycle = vi.fn().mockResolvedValue(undefined);
 	const observeRemoteMediaProgress = vi.fn();
-	const sendClientTelemetry = vi.fn();
-	const manager: MediaHealthManager = {
-		transportManager: {
-			getTransportStats: () => ({
-				sendTransport: { state: options.transportState ?? "connected" },
-				recvTransport: { state: options.transportState ?? "connected" },
-			}),
-			getNetworkStats,
+	const reportNetworkQuality = vi.fn();
+	const markFirstRemoteMedia = vi.fn();
+	const reportMediaStalls = vi.fn();
+	const port: MediaHealthPort = {
+		getTransportStats: () => ({
+			sendTransport: { state: options.transportState ?? "connected" },
+			recvTransport: { state: options.transportState ?? "connected" },
+		}),
+		getNetworkStats,
+		getConsumers: () => consumers,
+		getConsumer: (id) => consumers.find((entry) => entry.id === id),
+		isConsumerPaused: (entry) => {
+			const participant = options.participant ?? {
+				audio_enabled: true,
+				video_enabled: true,
+			};
+			return Boolean(
+				entry.consumer.paused ||
+				(entry.consumer as typeof entry.consumer & { producerPaused?: boolean })
+					.producerPaused ||
+				entry.adaptivelyPaused ||
+				(entry.kind === "audio" && participant.audio_enabled === false) ||
+				(entry.kind === "video" &&
+					!entry.isScreen &&
+					participant.video_enabled === false),
+			);
 		},
-		mediaManager: {
-			consumerManager: {
-				getAllConsumers: () => consumers,
-				getConsumer: (id) => consumers.find((entry) => entry.id === id),
-			},
-			recoverConsumer,
-		},
-		participantManager: {
-			getParticipant: () =>
-				options.participant ?? { audio_enabled: true, video_enabled: true },
-		},
-		sfuClient: {
-			requestConsumerKeyFrame,
-			sendClientTelemetry,
-		},
+		recoverConsumer,
+		requestConsumerKeyFrame,
 		resetReceiveMedia,
 		reconcileExpectedMedia,
 		recoverBrowserLifecycle,
 		observeRemoteMediaProgress,
+		reportNetworkQuality,
+		markFirstRemoteMedia,
+		reportMediaStalls,
 	};
 	return {
-		manager,
+		port,
 		getNetworkStats,
 		recoverConsumer,
 		requestConsumerKeyFrame,
@@ -175,12 +183,14 @@ function makeManager(
 		reconcileExpectedMedia,
 		recoverBrowserLifecycle,
 		observeRemoteMediaProgress,
-		sendClientTelemetry,
+		reportNetworkQuality,
+		markFirstRemoteMedia,
+		reportMediaStalls,
 	};
 }
 
-function startMonitor(manager: MediaHealthManager, environment: TestEnvironment) {
-	const monitor = new MediaHealthMonitor(() => manager, environment);
+function startMonitor(port: MediaHealthPort, environment: TestEnvironment) {
+	const monitor = new MediaHealthMonitor(port, environment);
 	monitor.start();
 	return monitor;
 }
@@ -223,10 +233,10 @@ describe("MediaHealthMonitor", () => {
 		],
 	])("classifies %s network quality", async (quality, stats) => {
 		const environment = new TestEnvironment();
-		const { manager } = makeManager({
+		const { port } = makeManager({
 			networkStats: { ...goodNetworkStats, ...stats },
 		});
-		const monitor = startMonitor(manager, environment);
+		const monitor = startMonitor(port, environment);
 
 		await environment.advance(3000);
 
@@ -237,11 +247,11 @@ describe("MediaHealthMonitor", () => {
 	it("treats only failed transports as hard failures", async () => {
 		const environment = new TestEnvironment();
 		const consumer = makeConsumer(environment);
-		const { manager, getNetworkStats } = makeManager({
+		const { port, getNetworkStats } = makeManager({
 			transportState: "failed",
 			consumers: [consumer],
 		});
-		const monitor = startMonitor(manager, environment);
+		const monitor = startMonitor(port, environment);
 
 		await environment.advance(3000);
 
@@ -256,11 +266,11 @@ describe("MediaHealthMonitor", () => {
 	it("does not recover media disabled by the remote participant", async () => {
 		const environment = new TestEnvironment();
 		const consumer = makeConsumer(environment, { kind: "audio" });
-		const { manager, recoverConsumer, resetReceiveMedia } = makeManager({
+		const { port, recoverConsumer, resetReceiveMedia } = makeManager({
 			consumers: [consumer],
 			participant: { audio_enabled: false },
 		});
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(21_000);
 
@@ -284,12 +294,12 @@ describe("MediaHealthMonitor", () => {
 			createdAt: environment.nowValue - 20_000,
 		});
 		const {
-			manager,
+			port,
 			recoverConsumer,
 			requestConsumerKeyFrame,
 			resetReceiveMedia,
 		} = makeManager({ consumers: [expected, adaptivelyPaused] });
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(3000);
 
@@ -308,13 +318,13 @@ describe("MediaHealthMonitor", () => {
 			framesDecoded: () => 10,
 		});
 		const {
-			manager,
+			port,
 			recoverConsumer,
 			requestConsumerKeyFrame,
 			resetReceiveMedia,
 			observeRemoteMediaProgress,
 		} = makeManager({ consumers: [consumer] });
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(18_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
@@ -335,10 +345,10 @@ describe("MediaHealthMonitor", () => {
 	it("escalates an established video stall after consumer recovery attempts", async () => {
 		const environment = new TestEnvironment();
 		const consumer = makeConsumer(environment);
-		const { manager, requestConsumerKeyFrame, resetReceiveMedia } = makeManager({
+		const { port, requestConsumerKeyFrame, resetReceiveMedia } = makeManager({
 			consumers: [consumer],
 		});
-		const monitor = startMonitor(manager, environment);
+		const monitor = startMonitor(port, environment);
 
 		await environment.advance(21_000);
 		expect(requestConsumerKeyFrame).toHaveBeenCalledOnce();
@@ -358,39 +368,31 @@ describe("MediaHealthMonitor", () => {
 		const environment = new TestEnvironment();
 		const consumer = makeConsumer(environment);
 		const {
-			manager,
-			sendClientTelemetry,
+			port,
+			reportNetworkQuality,
+			markFirstRemoteMedia,
+			reportMediaStalls,
 		} = makeManager({
 			consumers: [consumer],
 		});
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(21_000);
 
-		expect(sendClientTelemetry).toHaveBeenCalledWith({
-			event: "network_quality",
-			rttMs: 50,
-			packetLossPercent: 0,
-			availableOutgoingBitrate: 800_000,
-		});
-		expect(sendClientTelemetry).toHaveBeenCalledWith(
-			expect.objectContaining({ event: "first_remote_media", media: "video" }),
-		);
-		expect(sendClientTelemetry).toHaveBeenCalledWith({
-			event: "media_stall",
-			media: "video",
-		});
+		expect(reportNetworkQuality).toHaveBeenCalledWith(goodNetworkStats);
+		expect(markFirstRemoteMedia).toHaveBeenCalledWith("video");
+		expect(reportMediaStalls).toHaveBeenCalledWith(["video"]);
 	});
 
 	it("suppresses recovery on a poor network and recovers when quality clears", async () => {
 		const environment = new TestEnvironment();
 		const quality = { ...goodNetworkStats, rtt: 1300, packetLoss: 20 };
 		const consumer = makeConsumer(environment);
-		const { manager, requestConsumerKeyFrame, resetReceiveMedia } = makeManager({
+		const { port, requestConsumerKeyFrame, resetReceiveMedia } = makeManager({
 			consumers: [consumer],
 			getNetworkStats: async () => quality,
 		});
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(30_000);
 		expect(requestConsumerKeyFrame).not.toHaveBeenCalled();
@@ -405,12 +407,12 @@ describe("MediaHealthMonitor", () => {
 	it("suspends polling while hidden or offline and recovers on resume", async () => {
 		const environment = new TestEnvironment();
 		const {
-			manager,
+			port,
 			getNetworkStats,
 			reconcileExpectedMedia,
 			recoverBrowserLifecycle,
 		} = makeManager();
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.setHidden(true);
 		await environment.advance(6000);
@@ -436,8 +438,8 @@ describe("MediaHealthMonitor", () => {
 		const stats = new Promise<typeof goodNetworkStats>((resolve) => {
 			resolveStats = resolve;
 		});
-		const { manager } = makeManager({ getNetworkStats: () => stats });
-		const monitor = startMonitor(manager, environment);
+		const { port } = makeManager({ getNetworkStats: () => stats });
+		const monitor = startMonitor(port, environment);
 
 		const polling = environment.advance(3000);
 		await Promise.resolve();
@@ -451,10 +453,10 @@ describe("MediaHealthMonitor", () => {
 	it("uses fresh expected-media baselines after visibility resumes", async () => {
 		const environment = new TestEnvironment();
 		const consumer = makeConsumer(environment);
-		const { manager, observeRemoteMediaProgress } = makeManager({
+		const { port, observeRemoteMediaProgress } = makeManager({
 			consumers: [consumer],
 		});
-		startMonitor(manager, environment);
+		startMonitor(port, environment);
 
 		await environment.advance(3000);
 		expect(observeRemoteMediaProgress).toHaveBeenLastCalledWith(
@@ -484,8 +486,8 @@ describe("MediaHealthMonitor", () => {
 
 	it("removes timers and lifecycle listeners when stopped", async () => {
 		const environment = new TestEnvironment();
-		const { manager, getNetworkStats, recoverBrowserLifecycle } = makeManager();
-		const monitor = startMonitor(manager, environment);
+		const { port, getNetworkStats, recoverBrowserLifecycle } = makeManager();
+		const monitor = startMonitor(port, environment);
 		monitor.stop();
 
 		await environment.advance(6000);
