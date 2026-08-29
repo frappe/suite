@@ -849,6 +849,7 @@ SEARCH_QUERY = """
                 `tabFile`.file_name,
                 `tabFile`.file_type,
                 `tabFile`.is_folder,
+                `tabFile`.modified,
                 `tabFile`.owner,
                 `tabFile`.attached_to_doctype,
                 `tabFile`.attached_to_name,

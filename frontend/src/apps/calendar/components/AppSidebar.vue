@@ -24,6 +24,7 @@ import CalendarLogo from '@/apps/calendar/components/Icons/CalendarLogo.vue'
 import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import SettingsModal from '@/apps/calendar/components/Modals/SettingsModal.vue'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 const { calendars, visibleCalendars, events, selectedEvent } = defineProps<{
 	/** Each with a palette `color`, the one its events wear. */
@@ -159,6 +160,9 @@ const menuItems = computed(() => [
 		<div class="flex h-full flex-col">
 			<SidebarHeader :title="title" :subtitle="subtitle" :menu-items="menuItems" :logo="branding.data?.brand_html || CalendarLogo" />
 			<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+				<SidebarSection>
+					<CommandPaletteSidebarItem />
+				</SidebarSection>
 				<!-- Stays mounted through a collapse and folds in step with the
 				     sidebar's 300ms width animation, like frappe-ui's own labels
 				     (they animate w-0/opacity-0; height is our axis). A fixed width

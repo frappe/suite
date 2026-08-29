@@ -29,6 +29,9 @@
 				/>
 
 				<div class="flex-1 overflow-y-auto overflow-x-hidden px-2">
+					<SidebarSection>
+						<CommandPaletteSidebarItem />
+					</SidebarSection>
 					<SidebarSection
 						v-for="section in sidebarItems"
 						:key="section.key ?? section.label"
@@ -151,6 +154,7 @@ import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import PWASettings from '@/apps/mail/components/PWASettings.vue'
 import QuotaBar from '@/apps/mail/components/QuotaBar.vue'
 import UpcomingEvents from '@/apps/mail/components/UpcomingEvents.vue'
+import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 
 import type { MailboxData } from '@/apps/mail/types'
 

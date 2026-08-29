@@ -31,7 +31,6 @@
     <router-view v-else :key="$route.fullPath" v-slot="{ Component }">
       <component :is="Component" />
     </router-view>
-    <SearchPopup v-if="isLoggedIn && showSearchPopup" v-model="showSearchPopup" />
     <button accesskey="u" class="hidden" @click="emitter.emit('uploadFile')" />
     <FileUploader
       v-if="normalView && ['drive-Folder', 'drive-Home'].includes($route.name) && !($route.name === 'drive-Home' && shareView)" />
@@ -40,38 +39,67 @@
 </template>
 <script setup>
 import Sidebar from '@/apps/drive/components/Sidebar.vue'
-import SearchPopup from '@/apps/drive/components/SearchPopup.vue'
 import FDialogs from '@/apps/drive/components/FDialogs.vue'
 import BottomBar from '@/apps/drive/components/BottomBar.vue'
 import FileUploader from '@/apps/drive/components/FileUploader.vue'
 import { useSessionStore } from '@/boot/session'
-import { ref, computed, onMounted, provide } from 'vue'
+import { computed, onMounted, onScopeDispose, provide } from 'vue'
 import { sidebarCollapsed, shareView } from '@/apps/drive/data/prefs'
 import { onKeyDown, useMediaQuery } from '@vueuse/core'
 import emitter from '@/apps/drive/emitter'
-import { useEmitter } from '@/apps/drive/utils/useEmitter'
-import { isModKey } from '@/apps/drive/utils/files'
 import { initSocket } from '@/apps/drive/socket'
 import { DesktopShell, FrappeUIProvider, MobileShell } from 'frappe-ui'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { setupTheme } from '@/utils/setupTheme'
+import { useRootStore } from '@/stores/root'
 
 // Provided from the route-group layout since the suite main.ts is shared.
 provide('emitter', emitter)
 provide('socket', initSocket())
 
 const route = useRoute()
+const router = useRouter()
 const isDesktop = useMediaQuery('(min-width: 768px)')
 const shellScroll = computed(() => route.meta.shellScroll !== false)
 const inIframe = window.self !== window.top
 provide('inIframe', inIframe)
 
-const showSearchPopup = ref(false)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 const normalView = computed(() => !inIframe && isLoggedIn.value)
-useEmitter('showSearchPopup', (data) => {
-  showSearchPopup.value = data
+const root = useRootStore()
+
+const unregisterPaletteGroups = root.registerPaletteGroups('drive-layout', () => {
+  if (!normalView.value) return []
+
+  const commands = []
+
+  if (
+    ['drive-Folder', 'drive-Home'].includes(String(route.name)) &&
+    !(route.name === 'drive-Home' && shareView.value)
+  ) {
+    commands.push(
+      {
+        id: 'drive-new-folder',
+        label: 'New folder',
+        icon: 'lucide-folder-plus',
+        description: 'Create in the current Drive folder',
+        keywords: ['create'],
+        run: () => emitter.emit('newFolder'),
+      },
+      {
+        id: 'drive-upload-file',
+        label: 'Upload file',
+        icon: 'lucide-file-up',
+        description: 'Upload to the current Drive folder',
+        keywords: ['create', 'add'],
+        run: () => emitter.emit('uploadFile'),
+      },
+    )
+  }
+
+  return commands.length ? [{ id: 'drive-context', label: 'Drive', commands }] : []
 })
+onScopeDispose(unregisterPaletteGroups)
 
 onMounted(() => {
   setupTheme()
@@ -112,13 +140,5 @@ onKeyDown((e) => {
     }
   }
 
-  // Ctrl+K on Windows/Linux, Cmd+K on Mac - same convention as Mail's search
-  // shortcut (`HeaderActions.vue`). Not nested under the `e.metaKey` branch
-  // above: on Windows/Linux `metaKey` is the literal Windows key, which this
-  // never bound, so Ctrl+K did nothing there until now.
-  if (isModKey(e) && e.key.toLowerCase() == 'k') {
-    showSearchPopup.value = true
-    e.preventDefault()
-  }
 })
 </script>

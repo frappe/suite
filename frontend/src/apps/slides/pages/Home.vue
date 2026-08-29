@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { onActivated, onMounted, ref, watch } from 'vue'
+import { onActivated, onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { createResource, dialog } from 'frappe-ui'
@@ -51,8 +51,10 @@ import {
 	updatePresentationTitle,
 } from '@/apps/slides/stores/presentation'
 import { requestFullscreen } from '@/apps/slides/stores/slideshow'
+import { useRootStore } from '@/stores/root'
 
 const router = useRouter()
+const root = useRootStore()
 
 const previewPresentation = ref(null)
 
@@ -148,6 +150,31 @@ onMounted(() => {
 const navigateToEditor = () => {
 	router.push({ name: 'slides-editor-new' })
 }
+
+const unregisterPaletteGroups = root.registerPaletteGroups('slides-home', () => {
+	const commands = [
+		{
+			id: 'slides-new-presentation',
+			label: 'New presentation',
+			icon: 'lucide-plus',
+			keywords: ['create', 'slides'],
+			run: navigateToEditor,
+		},
+	]
+
+	if (previewPresentation.value) {
+		commands.push({
+			id: 'slides-present-selected',
+			label: 'Present selected presentation',
+			icon: 'lucide-play',
+			keywords: ['slideshow', 'preview'],
+			run: () => navigateToPresentation(undefined, true),
+		})
+	}
+
+	return [{ id: 'slides-context', label: 'Slides', commands }]
+})
+onScopeDispose(unregisterPaletteGroups)
 
 const duplicateAndNavigate = async (presentation) => {
 	const newPresentation = await duplicatePresentation(presentation)

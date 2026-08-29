@@ -149,7 +149,7 @@ import {
 	toast,
 	useCall,
 } from "frappe-ui";
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onScopeDispose, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { userStore as useCalendarUserStore } from "@/apps/calendar/stores/user";
@@ -161,6 +161,7 @@ import {
 } from "@/apps/calendar/utils/scheduleTime";
 import { useConnectionState } from "../composables/useConnectionState";
 import { submit } from "../utils/request";
+import { useRootStore } from "@/stores/root";
 import MeetSidebar from "../components/MeetSidebar.vue";
 import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import LucideCalendarPlus from "~icons/lucide/calendar-plus";
@@ -178,6 +179,7 @@ interface CalendarParticipant {
 }
 
 const router = useRouter();
+const root = useRootStore();
 const connectionState = useConnectionState();
 const calendarStore = useCalendarUserStore();
 const meetingCode = ref("");
@@ -368,6 +370,46 @@ const isMeetingCodeValid = (code: string) => {
 	const regex = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/;
 	return regex.test(code);
 };
+
+const unregisterPaletteGroups = root.registerPaletteGroups("meet-home", () => [
+	{
+		id: "meet-context",
+		label: "Meet",
+		commands: [
+			{
+				id: "meet-start-open",
+				label: "Start instant meet",
+				icon: "lucide-zap",
+				keywords: ["new", "instant", "room"],
+				disabled: createMeeting.loading,
+				run: startInstantMeeting,
+			},
+			{
+				id: "meet-start-restricted",
+				label: "Start restricted meet",
+				icon: "lucide-lock",
+				keywords: ["new", "private", "room"],
+				disabled: createMeeting.loading,
+				run: startRestrictedMeeting,
+			},
+			{
+				id: "meet-join-code",
+				label: "Join with code",
+				icon: "lucide-link",
+				keywords: ["room", "call"],
+				run: () => (showJoinDialog.value = true),
+			},
+			{
+				id: "meet-schedule",
+				label: "Schedule meet",
+				icon: "lucide-calendar-plus",
+				keywords: ["calendar", "new"],
+				run: openScheduleDialog,
+			},
+		],
+	},
+]);
+onScopeDispose(unregisterPaletteGroups);
 
 onMounted(() => {
 	document.documentElement.style.overflow = "hidden";

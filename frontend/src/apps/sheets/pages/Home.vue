@@ -296,7 +296,7 @@
 </template>
 
 <script setup>
-import { ref, computed, h, onMounted, watch } from 'vue'
+import { ref, computed, h, onMounted, onScopeDispose, watch } from 'vue'
 import {
   Avatar, Badge, Button, Dialog, Spinner, FormControl, Dropdown, TabButtons, debounce } from 'frappe-ui'
 import {
@@ -315,9 +315,11 @@ import { groupSheetsByRecency, parseFrappeDatetime } from '@/apps/sheets/utils/r
 import { useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { useRootStore } from '@/stores/root'
 import { setupTheme } from '@/utils/setupTheme'
 
 const router = useRouter()
+const root = useRootStore()
 const sessionStore = useSessionStore()
 const appsMenuOption = useAppSwitcher('sheets')
 const themeMenuOption = useThemeMenuOption()
@@ -350,6 +352,23 @@ function newSheet() {
 const overflowActions = [
   { label: 'Trash', icon: 'lucide-trash-2', onClick: () => router.push({ name: 'sheets-trash' }) },
 ]
+
+const unregisterPaletteGroups = root.registerPaletteGroups('sheets-home', [
+  {
+    id: 'sheets-context',
+    label: 'Sheets',
+    commands: [
+      {
+        id: 'sheets-new-sheet',
+        label: 'New sheet',
+        icon: 'lucide-plus',
+        keywords: ['create', 'spreadsheet'],
+        run: newSheet,
+      },
+    ],
+  },
+])
+onScopeDispose(unregisterPaletteGroups)
 
 const PAGE_SIZE = 50
 

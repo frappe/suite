@@ -38,7 +38,7 @@
 						placeholder="Search"
 						@click="showAdvancedFilters = false"
 						@input="showAdvancedFilters = false"
-						@keyup.enter="openSearchPage"
+						@keydown.enter="openSearchPage"
 					/>
 					<Button
 						variant="ghost"

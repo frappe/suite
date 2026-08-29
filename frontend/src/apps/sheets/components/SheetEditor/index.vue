@@ -888,20 +888,6 @@
       @navigate-to="onNavigateTo"
     />
 
-    <!-- Cmd+K command palette -->
-    <CommandPalette v-model:open="showCmdPalette" v-model:query="cmdQuery" @select="onCmdSelect">
-      <CommandPaletteInput placeholder="Search commands" />
-      <CommandPaletteList>
-        <CommandPaletteGroup v-for="group in cmdGroups" :key="group.title" :label="group.title">
-          <CommandPaletteItem v-for="item in group.items" :key="item.name" :value="item">
-            {{ item.title }}
-            <template v-if="item.description" #suffix>{{ item.description }}</template>
-          </CommandPaletteItem>
-        </CommandPaletteGroup>
-      </CommandPaletteList>
-      <CommandPaletteEmpty />
-    </CommandPalette>
-
     <!-- Hyperlink dialog (Ctrl+L) — stores fmt.hyperlink on the active cell -->
     <Dialog v-model:open="showHyperlinkDialog" title="Insert hyperlink" size="sm">
       <template #default>
@@ -1338,14 +1324,9 @@ import { cellHistory as fetchCellHistory } from '../../services/versions.js'
 import {
    Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip, usePageMeta } from 'frappe-ui'
 import {
-  CommandPalette,
-  CommandPaletteEmpty,
-  CommandPaletteGroup,
-  CommandPaletteInput,
-  CommandPaletteItem,
-  CommandPaletteList,
   Icon as FeatherIcon,
 } from 'frappe-ui/experimental'
+import { useRootStore } from '@/stores/root'
 
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])
@@ -5875,11 +5856,6 @@ function doUnhideAllCols() {
 }
 
 
-// ── Cmd+K command palette ─────────────────────────────────────────────────────
-// CommandPalette ships its own Cmd+K listener that flips `showCmdPalette`.
-const showCmdPalette = ref(false)
-const cmdQuery       = ref('')
-
 const cmdGroups = computed(() => buildCommandGroups({
   toggleFmt, setAlign, setValign, adjustDecimals, toggleWrap, clearFormatting,
   undo, redo, repeatLast, showFindReplace, openFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
@@ -5894,7 +5870,22 @@ const cmdGroups = computed(() => buildCommandGroups({
   onSave, exportCSV, exportXLSX, exportPDF, csvInputRef, xlsxInputRef,
 }))
 
-function onCmdSelect(item) { item?.fn?.() }
+const rootStore = useRootStore()
+const unregisterPaletteGroups = rootStore.registerPaletteGroups('sheets-editor', () =>
+  cmdGroups.value.filter((group) => !readOnly.value || group.title === 'View').map((group) => ({
+    id: `sheets-${group.title.toLowerCase()}`,
+    label: group.title,
+    commands: group.items.map((item) => ({
+      id: `sheets-${item.name}`,
+      label: item.title,
+      icon: 'lucide-table-2',
+      description: item.description,
+      keywords: ['sheets', group.title],
+      run: item.fn,
+    })),
+  })),
+)
+onBeforeUnmount(unregisterPaletteGroups)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

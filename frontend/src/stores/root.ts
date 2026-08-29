@@ -1,5 +1,21 @@
-import { ref } from 'vue'
+import { computed, ref, shallowReactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { defineStore } from 'pinia'
+
+export interface PaletteCommand {
+  id: string
+  label: string
+  description?: string
+  icon?: string
+  keywords?: string[]
+  disabled?: boolean
+  run: () => void | Promise<void>
+}
+
+export interface PaletteCommandGroup {
+  id: string
+  label: string
+  commands: PaletteCommand[]
+}
 
 /**
  * Root suite store: cross-app UI state that the shell and every app share
@@ -12,6 +28,13 @@ export const useRootStore = defineStore('suite-root', () => {
   // id of the currently active suite app (drive|slides|writer|sheets|meet|mail|calendar)
   const activeApp = ref<string | null>(null)
   const theme = ref<'light' | 'dark'>('light')
+  const paletteOpen = ref(false)
+  const paletteRegistrations = shallowReactive(
+    new Map<string, MaybeRefOrGetter<PaletteCommandGroup[]>>(),
+  )
+  const paletteGroups = computed(() =>
+    [...paletteRegistrations.values()].flatMap((groups) => toValue(groups)),
+  )
 
   function setActiveApp(id: string | null) {
     activeApp.value = id
@@ -23,5 +46,23 @@ export const useRootStore = defineStore('suite-root', () => {
     document.documentElement.setAttribute('data-theme-mode', next)
   }
 
-  return { activeApp, theme, setActiveApp, setTheme }
+  function registerPaletteGroups(
+    owner: string,
+    groups: MaybeRefOrGetter<PaletteCommandGroup[]>,
+  ) {
+    paletteRegistrations.set(owner, groups)
+    return () => {
+      if (paletteRegistrations.get(owner) === groups) paletteRegistrations.delete(owner)
+    }
+  }
+
+  return {
+    activeApp,
+    theme,
+    paletteOpen,
+    paletteGroups,
+    setActiveApp,
+    setTheme,
+    registerPaletteGroups,
+  }
 })
