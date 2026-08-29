@@ -15,6 +15,12 @@ import {
 	setSelectedSpeakerId,
 } from "../data/mediaPreferences";
 import type { DeviceType, deviceManager } from "../utils/media/DeviceManager";
+import {
+	LocalCaptureSession,
+	type LocalCaptureKindPublicationResult,
+	type LocalCaptureOperation,
+	type MediaDeviceOverrides,
+} from "../utils/media/LocalCaptureSession";
 import type { MediaAttachmentFacade } from "../utils/media/VideoElementManager";
 import notificationContextManager from "../utils/notificationContext";
 import { isMobileDevice } from "../utils/device";
@@ -25,14 +31,6 @@ import type { CurrentUser } from "./useCurrentUser";
 import type { MediaState } from "./useMediaState";
 import type { RaiseHandStore } from "./useRaiseHandStore";
 import type { BackgroundEffectOptions } from "./useBackgroundEffects";
-
-const BLUETOOTH_DEVICE_LABEL_REGEX =
-	/airpods|bluetooth|\bbt\b|wireless|jbl|bose|sony|beats|sennheiser|akg|jabra|anker|skullcandy|shure|bang\s*&\s*olufsen|b\s*&\s*o|marley|skullcandy|logitech\s*bt|plantronics|poly|razer\s*(?:bt|opus)|corsair|steelseries|hyperx|audeze|sennheiser|soundcore|tozo|earfun|earbuds|earbud/i;
-
-const isBluetoothMicLabel = (label: string | undefined): boolean => {
-	if (!label) return false;
-	return BLUETOOTH_DEVICE_LABEL_REGEX.test(label.toLowerCase());
-};
 
 function getCameraVideoConstraints(): MediaTrackConstraints {
 	if (isMobileDevice()) {
@@ -153,123 +151,15 @@ interface MediaControlsAPI {
 		el: HTMLVideoElement | null,
 	) => void;
 	processedStream: MediaStream | null;
+	cleanupLocalMedia: () => Promise<void>;
 }
 
 type ScreenShareStopReason =
-	| "user-click"
-	| "track-ended"
-	| "publish-failed"
-	| "cleanup";
-
-interface MediaDeviceOverrides {
-	cameraDeviceId?: string;
-	micDeviceId?: string;
-}
-
-interface CameraOperation {
-	generation: number;
-	signal: AbortSignal;
-	ownedStreams: Set<MediaStream>;
-}
+	"user-click" | "track-ended" | "publish-failed" | "cleanup";
 
 export interface E2EEMediaRepublishDetail {
 	needsCamera?: boolean;
 	needsMicrophone?: boolean;
-}
-
-interface ReacquiredMediaOptions {
-	acquiredStream: MediaStream;
-	currentStream: MediaStream | null;
-	requestedCamera: boolean;
-	requestedMicrophone: boolean;
-	cameraEnabled: boolean;
-	microphoneEnabled: boolean;
-	cameraTrackBeforeRequest: MediaStreamTrack | null;
-	microphoneTrackBeforeRequest: MediaStreamTrack | null;
-}
-
-export function mergeReacquiredMedia({
-	acquiredStream,
-	currentStream,
-	requestedCamera,
-	requestedMicrophone,
-	cameraEnabled,
-	microphoneEnabled,
-	cameraTrackBeforeRequest,
-	microphoneTrackBeforeRequest,
-}: ReacquiredMediaOptions): {
-	stream: MediaStream;
-	adoptedCamera: boolean;
-	adoptedMicrophone: boolean;
-} {
-	const stream = currentStream ?? new MediaStream();
-	const adoptedTracks = new Set<MediaStreamTrack>();
-	const currentLiveTracks = new Set(
-		stream.getTracks().filter((track) => track.readyState === "live"),
-	);
-	const stoppedTracks = new Set<MediaStreamTrack>();
-	const stopTrack = (track: MediaStreamTrack) => {
-		if (stoppedTracks.has(track)) return;
-		stoppedTracks.add(track);
-		track.stop();
-	};
-	const adoptKind = (
-		kind: "audio" | "video",
-		requested: boolean,
-		enabled: boolean,
-		trackBeforeRequest: MediaStreamTrack | null,
-	) => {
-		const acquiredTracks =
-			kind === "video"
-				? acquiredStream.getVideoTracks()
-				: acquiredStream.getAudioTracks();
-		const candidate = acquiredTracks.find(
-			(track) => track.readyState === "live",
-		);
-		const existingTracks =
-			kind === "video" ? stream.getVideoTracks() : stream.getAudioTracks();
-		const currentLiveTrack = existingTracks.find(
-			(track) => track.readyState === "live",
-		);
-		const newerTrackAppeared =
-			!!currentLiveTrack && currentLiveTrack !== trackBeforeRequest;
-		if (!requested || !enabled || !candidate || newerTrackAppeared) {
-			for (const track of existingTracks) {
-				if (track.readyState !== "live") {
-					stream.removeTrack(track);
-					stopTrack(track);
-				}
-			}
-			return false;
-		}
-
-		for (const track of existingTracks) {
-			stream.removeTrack(track);
-			if (track !== candidate) stopTrack(track);
-		}
-		stream.addTrack(candidate);
-		adoptedTracks.add(candidate);
-		return true;
-	};
-
-	const adoptedCamera = adoptKind(
-		"video",
-		requestedCamera,
-		cameraEnabled,
-		cameraTrackBeforeRequest,
-	);
-	const adoptedMicrophone = adoptKind(
-		"audio",
-		requestedMicrophone,
-		microphoneEnabled,
-		microphoneTrackBeforeRequest,
-	);
-	for (const track of acquiredStream.getTracks()) {
-		if (!adoptedTracks.has(track) && !currentLiveTracks.has(track))
-			stopTrack(track);
-	}
-
-	return { stream, adoptedCamera, adoptedMicrophone };
 }
 
 interface ScreenShareStopExtra {
@@ -302,98 +192,31 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		stream: MediaStream;
 		cleanup: () => void;
 	} | null = null;
-	let cameraTransitionQueue: Promise<unknown> = Promise.resolve();
-	let microphoneTransitionQueue: Promise<unknown> = Promise.resolve();
-	let cameraLifecycleGeneration = 0;
-	const cameraLifecycleAbortController = new AbortController();
-	const lifecycleStoppedTracks = new WeakSet<MediaStreamTrack>();
-	const detachedCameraTracks = new Set<MediaStreamTrack>();
-	let observedCameraTrack: MediaStreamTrack | null = null;
-	let observedMicrophoneTrack: MediaStreamTrack | null = null;
-	let cameraEndedListener: (() => void) | null = null;
-	let microphoneEndedListener: (() => void) | null = null;
-
+	let captureSession!: LocalCaptureSession;
+	type CameraOperation = LocalCaptureOperation;
 	const cameraLifecycleAbort = () =>
-		new DOMException("Camera lifecycle has ended", "AbortError");
-	const createCameraOperation = (): CameraOperation => ({
-		generation: cameraLifecycleGeneration,
-		signal: cameraLifecycleAbortController.signal,
-		ownedStreams: new Set(),
-	});
+		new DOMException("Local capture lifecycle has ended", "AbortError");
+	const createCameraOperation = () => captureSession.createOperation();
 	const isCurrentCameraOperation = (operation: CameraOperation) =>
-		!operation.signal.aborted &&
-		operation.generation === cameraLifecycleGeneration;
+		captureSession.isCurrent(operation);
 	const isCameraLifecycleAbort = (
 		error: unknown,
 		operation?: CameraOperation,
-	) => {
-		const abortError = error as { name?: unknown; message?: unknown } | null;
-		return (
-			abortError?.name === "AbortError" &&
-			((operation?.signal ?? cameraLifecycleAbortController.signal).aborted ||
-				abortError.message === "Camera lifecycle has ended")
-		);
-	};
-	const assertCurrentCameraGeneration = (generation: number) => {
-		if (generation !== cameraLifecycleGeneration) throw cameraLifecycleAbort();
-	};
-	const stopLifecycleTrack = (track: MediaStreamTrack) => {
-		if (lifecycleStoppedTracks.has(track)) return;
-		lifecycleStoppedTracks.add(track);
-		track.stop();
-	};
-	const stopLifecycleStream = (stream: MediaStream) => {
-		for (const track of stream.getTracks()) stopLifecycleTrack(track);
-	};
-	const assertCurrentCameraOperation = (operation?: CameraOperation) => {
-		if (operation && !isCurrentCameraOperation(operation)) {
-			throw cameraLifecycleAbort();
-		}
-	};
-	const ownCameraStream = (operation: CameraOperation, stream: MediaStream) => {
-		operation.ownedStreams.add(stream);
-		if (!isCurrentCameraOperation(operation)) {
-			stopLifecycleStream(stream);
-			throw cameraLifecycleAbort();
-		}
-	};
-	const discardCameraOperationStreams = (operation: CameraOperation) => {
-		for (const stream of operation.ownedStreams) {
-			const tracks = stream.getTracks();
-			for (const track of tracks) {
-				mediaState.localStream?.removeTrack(track);
-				stopLifecycleTrack(track);
-			}
-		}
-		operation.ownedStreams.clear();
-	};
-
-	const enqueueCameraTransition = <T>(
-		operation: () => Promise<T>,
-	): Promise<T> => {
-		const result = cameraTransitionQueue.then(async () => {
-			try {
-				return await operation();
-			} finally {
-				observeLocalTracks();
-			}
-		});
-		cameraTransitionQueue = result.catch(() => undefined);
-		return result;
-	};
-	const enqueueMicrophoneTransition = <T>(
-		operation: () => Promise<T>,
-	): Promise<T> => {
-		const result = microphoneTransitionQueue.then(async () => {
-			try {
-				return await operation();
-			} finally {
-				observeLocalTracks();
-			}
-		});
-		microphoneTransitionQueue = result.catch(() => undefined);
-		return result;
-	};
+	) => captureSession.isLifecycleAbort(error, operation);
+	const assertCurrentCameraOperation = (operation?: CameraOperation) =>
+		captureSession.assertCurrent(operation);
+	const stopLifecycleTrack = (track: MediaStreamTrack) =>
+		captureSession.stopTrack(track);
+	const stopLifecycleStream = (stream: MediaStream) =>
+		captureSession.stopStream(stream);
+	const ownCameraStream = (operation: CameraOperation, stream: MediaStream) =>
+		captureSession.ownStream(operation, stream);
+	const discardCameraOperationStreams = (operation: CameraOperation) =>
+		captureSession.discardOwnedStreams(operation);
+	const enqueueCameraTransition = <T>(operation: () => Promise<T>) =>
+		captureSession.runCameraTransition(operation);
+	const enqueueMicrophoneTransition = <T>(operation: () => Promise<T>) =>
+		captureSession.runMicrophoneTransition(operation);
 
 	const confirmScreenShareOverride = () =>
 		new Promise<boolean>((resolve) => {
@@ -436,12 +259,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	};
 
 	const updateLocalPreview = (stream: MediaStream | null) => {
-		void mediaAttachments.attachLocalPreview(stream).catch((error) =>
-			console.warn("Could not update local preview:", error),
-		);
+		void mediaAttachments
+			.attachLocalPreview(stream)
+			.catch((error) => console.warn("Could not update local preview:", error));
 	};
 
-	const reconcileCameraTrack = async (
+	const reconcileCameraTrackImplementation = async (
 		track: MediaStreamTrack | null,
 		reason: string,
 		createProducerIfMissing = true,
@@ -474,10 +297,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 								previousTrack !== track
 							) {
 								assertCurrentCameraOperation(operation);
-								await manager.replaceLocalProducerTrack(
-									"video",
-									previousTrack,
-								);
+								await manager.replaceLocalProducerTrack("video", previousTrack);
 							}
 							throw new Error(
 								`Camera track ended during reconciliation (${reason})`,
@@ -513,6 +333,192 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		assertCurrentCameraOperation(operation);
 	};
 
+	captureSession = new LocalCaptureSession({
+		capture: (constraints) => navigator.mediaDevices.getUserMedia(constraints),
+		devices: deviceManager,
+		publication: {
+			getOwner: () => sfuManager.value,
+			reconcileCamera: reconcileCameraTrackImplementation,
+			reconcileMicrophone: async (track, resume, operation) => {
+				assertCurrentCameraOperation(operation);
+				const manager = sfuManager.value;
+				if (!manager) return;
+				if (track) {
+					await manager.reconcileLocalProducerTrack("audio", track, { resume });
+				} else {
+					await manager.serializeSendMediaMutation(async () => {
+						assertCurrentCameraOperation(operation);
+						manager.closeLocalProducer("audio");
+						manager.setLocalMediaTrack("audio", null);
+					});
+				}
+				assertCurrentCameraOperation(operation);
+			},
+			publish: async (stream, options) => {
+				const manager = sfuManager.value;
+				if (!manager) return {};
+				const requestedVideoTrack = options.publishVideo
+					? (stream
+							.getVideoTracks()
+							.find((track) => track.readyState === "live") ?? null)
+					: null;
+				const requestedAudioTrack = options.publishAudio
+					? (stream
+							.getAudioTracks()
+							.find((track) => track.readyState === "live") ?? null)
+					: null;
+				const publication = (await manager.publishMedia(stream, options)) ?? {};
+				const producerMatches = (
+					producer: { track?: MediaStreamTrack | null } | null,
+					track: MediaStreamTrack,
+				) =>
+					producer?.track?.readyState === "live" &&
+					(producer.track === track || producer.track.id === track.id);
+				const ensurePublished = async (
+					kind: "video" | "audio",
+					track: MediaStreamTrack | null,
+				): Promise<LocalCaptureKindPublicationResult> => {
+					if (!track) {
+						return {
+							status: "failed",
+							error: new Error(
+								`No live ${kind} track was requested for publication`,
+							),
+						};
+					}
+					const producer = manager.getLocalProducerState(kind);
+					if (!producerMatches(producer, track)) {
+						try {
+							await manager.reconcileLocalProducerTrack(
+								kind,
+								track,
+								kind === "audio" ? { resume: true } : {},
+							);
+						} catch (error) {
+							return { status: "failed", error };
+						}
+					}
+					const currentProducer = manager.getLocalProducerState(kind);
+					if (!currentProducer) {
+						return {
+							status: "failed",
+							error: new Error(
+								`${kind === "video" ? "Video" : "Audio"} publication did not create a producer`,
+							),
+						};
+					}
+					return producerMatches(currentProducer, track)
+						? { status: "published" }
+						: {
+								status: "failed",
+								error: new Error(
+									`${kind === "video" ? "Video" : "Audio"} publication did not publish the requested track`,
+								),
+							};
+				};
+				return {
+					...(options.publishVideo
+						? {
+								video: Object.hasOwn(publication, "videoError")
+									? {
+											status: "failed" as const,
+											error: publication.videoError,
+										}
+									: await ensurePublished(
+											"video",
+											requestedVideoTrack,
+										),
+							}
+						: {}),
+					...(options.publishAudio
+						? {
+								audio: Object.hasOwn(publication, "audioError")
+									? {
+											status: "failed" as const,
+											error: publication.audioError,
+										}
+									: await ensurePublished(
+											"audio",
+											requestedAudioTrack,
+										),
+							}
+						: {}),
+				};
+			},
+		},
+		getLocalStream: () => mediaState.localStream,
+		setLocalStream: (stream) => {
+			mediaState.localStream = stream;
+		},
+		isCameraEnabled: () => mediaState.isCameraOn,
+		isMicrophoneEnabled: () => mediaState.isMicOn,
+		setPermissionGranted: (type) => {
+			if (type === "camera") mediaState.cameraPermissionGranted = true;
+			else mediaState.microphonePermissionGranted = true;
+		},
+		applyCameraEffects: (options) => applyBackgroundEffects(options),
+		cleanupCameraEffects: () => cleanupBackgroundSession(),
+		prepareMicrophone: (stream, operation) =>
+			prepareProcessedAudioTrack(stream, operation),
+		cleanupMicrophoneEffects: () => {
+			noiseCancellationSession?.cleanup();
+			noiseCancellationSession = null;
+		},
+		getEffectiveCameraTrack,
+		getEffectiveMicrophoneTrack: () =>
+			noiseCancellationSession?.stream
+				.getAudioTracks()
+				.find((track) => track.readyState === "live") ??
+			mediaState.localStream
+				?.getAudioTracks()
+				.find((track) => track.readyState === "live") ??
+			null,
+		onLocalStreamChanged: () => {
+			if (mediaState.localVideo) {
+				setLocalVideoRef(mediaState.localVideo as HTMLVideoElement);
+			}
+		},
+		onCameraDisabled: () => {
+			mediaState.isCameraOn = false;
+			setCameraEnabled(false);
+			toast.error("Failed to toggle camera");
+		},
+		onMicrophoneDisabled: () => {
+			mediaState.isMicOn = false;
+			setMicEnabled(false);
+			toast.error("Failed to toggle microphone");
+		},
+		getSelectedDeviceId: (type) =>
+			type === "camera" ? selectedCameraId.value : selectedMicId.value,
+		setSelectedDeviceId: (type, deviceId) => {
+			if (type === "camera") setSelectedCameraId(deviceId);
+			else setSelectedMicId(deviceId);
+		},
+		getCameraConstraints: getCameraVideoConstraints,
+		onCameraTrackEnded: (track) => recoverEndedCameraTrack(track),
+		onMicrophoneTrackEnded: (track) => recoverEndedMicrophoneTrack(track),
+		onTrackRecoveryError: (type, error) =>
+			console.error(
+				type === "camera"
+					? "Camera track recovery failed:"
+					: "Microphone track recovery failed:",
+				error,
+			),
+	});
+
+	const reconcileCameraTrack = (
+		track: MediaStreamTrack | null,
+		reason: string,
+		createProducerIfMissing = true,
+		operation?: CameraOperation,
+	) =>
+		captureSession.reconcileCamera(
+			track,
+			reason,
+			createProducerIfMissing,
+			operation,
+		);
+
 	const cleanupBackgroundSession = () => {
 		try {
 			backgroundSession?.cleanup();
@@ -546,7 +552,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		cleanupBackgroundSession();
 		for (const track of mediaState.localStream?.getVideoTracks() ?? []) {
 			mediaState.localStream?.removeTrack(track);
-			track.stop();
+			stopLifecycleTrack(track);
 		}
 		updateLocalPreview(null);
 		mediaState.isCameraOn = false;
@@ -610,6 +616,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			cleanupBackgroundSession();
 			return;
 		}
+		const assertRawTrackCurrent = () => {
+			assertCurrentCameraOperation(operation);
+			if (
+				rawTrack.readyState !== "live" ||
+				!mediaState.localStream?.getVideoTracks().includes(rawTrack)
+			) {
+				throw new Error("Camera source ended during effects startup");
+			}
+		};
 
 		shouldApplyBackgroundEffectsWhenVideoAvailable = false;
 		if (!wantsEffects) {
@@ -636,7 +651,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					autoFramingPaused: bgEffects.autoFramingPaused,
 					selectedBackgroundImage: bgEffects.selectedImage,
 				});
-				assertCurrentCameraOperation(operation);
+				assertRawTrackCurrent();
 			} else {
 				if (backgroundSession) {
 					await reconcileRawEffectsTrack(
@@ -661,6 +676,13 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					},
 					operation?.signal,
 				);
+				if (
+					rawTrack.readyState !== "live" ||
+					!mediaState.localStream?.getVideoTracks().includes(rawTrack)
+				) {
+					result.cleanup();
+					throw new Error("Camera source ended during effects startup");
+				}
 				if (operation && !isCurrentCameraOperation(operation)) {
 					result.cleanup();
 					throw cameraLifecycleAbort();
@@ -767,299 +789,26 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const republishMediaAfterE2EE = (
 		detail: E2EEMediaRepublishDetail = {},
-	): Promise<void> =>
-		enqueueCameraTransition(async () => {
-			const operation = createCameraOperation();
-			assertCurrentCameraOperation(operation);
-			const requestedCamera =
-				detail.needsCamera === true && mediaState.isCameraOn;
-			const requestedMicrophone =
-				detail.needsMicrophone === true && mediaState.isMicOn;
-			if (!requestedCamera && !requestedMicrophone) return;
-			const cameraTrackBeforeRequest =
-				mediaState.localStream
-					?.getVideoTracks()
-					.find((track) => track.readyState === "live") ?? null;
-			const microphoneTrackBeforeRequest =
-				mediaState.localStream
-					?.getAudioTracks()
-					.find((track) => track.readyState === "live") ?? null;
-
-			try {
-				const { stream: acquiredStream } = await acquireUserMedia(
-					requestedCamera,
-					requestedMicrophone,
-					{},
-					operation,
-				);
-				ownCameraStream(operation, acquiredStream);
-				assertCurrentCameraOperation(operation);
-				const { stream, adoptedCamera, adoptedMicrophone } =
-					mergeReacquiredMedia({
-						acquiredStream,
-						currentStream: mediaState.localStream,
-						requestedCamera,
-						requestedMicrophone,
-						cameraEnabled: mediaState.isCameraOn,
-						microphoneEnabled: mediaState.isMicOn,
-						cameraTrackBeforeRequest,
-						microphoneTrackBeforeRequest,
-					});
-				operation.ownedStreams.clear();
-				const adoptedOperationTracks = acquiredStream
-					.getTracks()
-					.filter((track) => stream.getTracks().includes(track));
-				if (adoptedOperationTracks.length > 0) {
-					operation.ownedStreams.add(new MediaStream(adoptedOperationTracks));
-				}
-				assertCurrentCameraOperation(operation);
-				mediaState.localStream = stream;
-				if (adoptedCamera) {
-					assertCurrentCameraOperation(operation);
-					mediaState.cameraPermissionGranted = true;
-					await applyBackgroundEffects({
-						forceRestart: true,
-						createProducerIfMissing: false,
-						recoverPublicationFailure: true,
-						operation,
-					});
-					assertCurrentCameraOperation(operation);
-				}
-				if (adoptedMicrophone) {
-					assertCurrentCameraOperation(operation);
-					mediaState.microphonePermissionGranted = true;
-				}
-				if (mediaState.localVideo) {
-					assertCurrentCameraOperation(operation);
-					setLocalVideoRef(mediaState.localVideo);
-				}
-
-				assertCurrentCameraOperation(operation);
-				const manager = sfuManager.value;
-				if (!manager || (!adoptedCamera && !adoptedMicrophone)) {
-					operation.ownedStreams.clear();
-					return;
-				}
-				const videoTrack = adoptedCamera ? getEffectiveCameraTrack() : null;
-				const audioTrack = adoptedMicrophone
-					? (mediaState.localStream
-							?.getAudioTracks()
-							.find((track) => track.readyState === "live") ?? null)
-					: null;
-				await manager.publishMedia(
-					new MediaStream([
-						...(videoTrack ? [videoTrack] : []),
-						...(audioTrack ? [audioTrack] : []),
-					]),
-					{
-						publishVideo: !!videoTrack,
-						publishAudio: !!audioTrack,
-					},
-				);
-				assertCurrentCameraOperation(operation);
-				operation.ownedStreams.clear();
-			} catch (error) {
-				if (
-					!isCurrentCameraOperation(operation) ||
-					isCameraLifecycleAbort(error, operation)
-				) {
-					discardCameraOperationStreams(operation);
-					return;
-				}
-				throw error;
-			}
-		});
+	): Promise<void> => captureSession.reacquireMediaAfterE2EE(detail);
 
 	const switchSpeaker = async (deviceId: string) => {
 		setSelectedSpeakerId(deviceId);
 		await applySpeakerDevice();
 	};
 
-	const switchMic = async (deviceId: string) => {
-		setSelectedMicId(deviceId);
-		if (!mediaState.isMicOn || !mediaState.localStream) {
-			return;
-		}
+	const switchMic = (deviceId: string) =>
+		captureSession.switchMicrophone(deviceId);
 
-		const { stream: audioOnlyStream } = await acquireUserMedia(false, true, {
-			micDeviceId: deviceId,
-		});
-		const newAudioTrack = audioOnlyStream.getAudioTracks()[0];
-		if (!newAudioTrack) {
-			return;
-		}
-
-		const currentAudioTracks = mediaState.localStream.getAudioTracks();
-		for (const track of currentAudioTracks) {
-			mediaState.localStream.removeTrack(track);
-			track.stop();
-		}
-		mediaState.localStream.addTrack(newAudioTrack);
-
-		if (noiseCancellationSession) {
-			noiseCancellationSession.cleanup();
-			noiseCancellationSession = null;
-		}
-
-		const trackToPublish = await getProcessedAudioTrack(mediaState.localStream);
-		if (!trackToPublish || trackToPublish.readyState !== "live") {
-			return;
-		}
-
-		await sfuManager.value?.reconcileLocalProducerTrack(
-			"audio",
-			trackToPublish,
-			{ resume: true },
-		);
-	};
-
-	const switchCam = async (deviceId: string) => {
-		const operation = createCameraOperation();
-		assertCurrentCameraOperation(operation);
-		if (!mediaState.isCameraOn || !mediaState.localStream) {
-			assertCurrentCameraOperation(operation);
-			setSelectedCameraId(deviceId);
-			return;
-		}
-
-		const oldVideoTracks = mediaState.localStream.getVideoTracks();
-		let videoOnlyStream: MediaStream;
-		try {
-			({ stream: videoOnlyStream } = await acquireUserMedia(
-				true,
-				false,
-				{ cameraDeviceId: deviceId },
-				operation,
-			));
-			ownCameraStream(operation, videoOnlyStream);
-		} catch (error) {
-			if (
-				!isCurrentCameraOperation(operation) ||
-				isCameraLifecycleAbort(error, operation)
-			) {
-				discardCameraOperationStreams(operation);
-				return;
-			}
-			throw error;
-		}
-		const candidateTracks = videoOnlyStream.getVideoTracks();
-		const newVideoTrack = candidateTracks.find(
-			(track) => track.readyState === "live",
-		);
-		if (!newVideoTrack) {
-			for (const track of candidateTracks) track.stop();
-			return;
-		}
-
-		assertCurrentCameraOperation(operation);
-		for (const track of oldVideoTracks) {
-			detachedCameraTracks.add(track);
-			mediaState.localStream.removeTrack(track);
-		}
-		mediaState.localStream.addTrack(newVideoTrack);
-
-		try {
-			await applyBackgroundEffects({ forceRestart: true, operation });
-			assertCurrentCameraOperation(operation);
-
-			for (const track of oldVideoTracks) {
-				track.stop();
-				detachedCameraTracks.delete(track);
-			}
-			assertCurrentCameraOperation(operation);
-			setSelectedCameraId(deviceId);
-			operation.ownedStreams.clear();
-		} catch (error) {
-			if (
-				!isCurrentCameraOperation(operation) ||
-				isCameraLifecycleAbort(error, operation)
-			) {
-				discardCameraOperationStreams(operation);
-				return;
-			}
-			for (const track of oldVideoTracks) {
-				if (track.readyState === "live") {
-					mediaState.localStream.addTrack(track);
-					detachedCameraTracks.delete(track);
-				}
-			}
-			if (!mediaState.isCameraOn) {
-				cleanupBackgroundSession();
-				for (const track of [...candidateTracks, ...oldVideoTracks]) {
-					mediaState.localStream.removeTrack(track);
-					if (track.readyState === "live") track.stop();
-				}
-				throw error;
-			}
-
-			const fallbackTrack = oldVideoTracks.find(
-				(track) => track.readyState === "live",
-			);
-			try {
-				if (!fallbackTrack) throw error;
-				await reconcileCameraTrack(
-					fallbackTrack,
-					"camera-switch-rollback",
-					true,
-					operation,
-				);
-				assertCurrentCameraOperation(operation);
-				cleanupBackgroundSession();
-				for (const track of candidateTracks) {
-					mediaState.localStream.removeTrack(track);
-					track.stop();
-				}
-				operation.ownedStreams.clear();
-			} catch (fallbackError) {
-				if (
-					!isCurrentCameraOperation(operation) ||
-					isCameraLifecycleAbort(fallbackError, operation)
-				) {
-					discardCameraOperationStreams(operation);
-					return;
-				}
-				await reconcileCameraTrack(
-					null,
-					"camera-switch-rollback-failed",
-					true,
-					operation,
-				);
-				assertCurrentCameraOperation(operation);
-				cleanupBackgroundSession();
-				for (const track of candidateTracks) {
-					mediaState.localStream.removeTrack(track);
-					track.stop();
-				}
-				for (const track of oldVideoTracks) {
-					mediaState.localStream.removeTrack(track);
-					track.stop();
-				}
-				assertCurrentCameraOperation(operation);
-				mediaState.isCameraOn = false;
-				assertCurrentCameraOperation(operation);
-				setCameraEnabled(false);
-				assertCurrentCameraOperation(operation);
-				toast.error("Failed to toggle camera");
-				throw fallbackError;
-			}
-			console.warn("Failed to switch camera, restored raw video:", error);
-		}
-
-		assertCurrentCameraOperation(operation);
-		if (localVideo.value) {
-			delete localVideo.value.dataset.sourceStreamId;
-			setLocalVideoRef(localVideo.value);
-		}
-	};
+	const switchCam = (deviceId: string) => captureSession.switchCamera(deviceId);
 
 	const switchInputDevice = async (type: DeviceType, deviceId: string) => {
 		try {
 			if (type === "speaker") {
 				await switchSpeaker(deviceId);
 			} else if (type === "microphone") {
-				await enqueueMicrophoneTransition(() => switchMic(deviceId));
+				await switchMic(deviceId);
 			} else if (type === "camera") {
-				await enqueueCameraTransition(() => switchCam(deviceId));
+				await switchCam(deviceId);
 			}
 		} catch (error) {
 			if (isCameraLifecycleAbort(error)) return;
@@ -1088,7 +837,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				const oldAudioTracks = mediaState.localStream.getAudioTracks();
 				for (const track of oldAudioTracks) {
 					mediaState.localStream.removeTrack(track);
-					track.stop();
+					stopLifecycleTrack(track);
 				}
 				mediaState.localStream.addTrack(freshTrack);
 			}
@@ -1101,26 +850,35 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	};
 
-	const getProcessedAudioTrack = async (
+	const prepareProcessedAudioTrack = async (
 		stream: MediaStream,
 		operation?: CameraOperation,
 	) => {
 		const originalTrack = stream.getAudioTracks()[0];
-		if (!originalTrack) {
-			return null;
-		}
+		if (!originalTrack) return null;
 
 		if (!prefNoiseCancellationEnabled.value) {
-			if (noiseCancellationSession) {
-				noiseCancellationSession.cleanup();
-				noiseCancellationSession = null;
-			}
-
 			if (originalTrack.readyState === "ended") {
-				return await getFreshMicTrack(operation);
+				const freshTrack = await getFreshMicTrack(operation);
+				if (!freshTrack) return null;
+				return {
+					track: freshTrack,
+					commit: () => {
+						noiseCancellationSession?.cleanup();
+						noiseCancellationSession = null;
+					},
+					discard: () => {},
+				};
 			}
 
-			return originalTrack;
+			return {
+				track: originalTrack,
+				commit: () => {
+					noiseCancellationSession?.cleanup();
+					noiseCancellationSession = null;
+				},
+				discard: () => {},
+			};
 		}
 
 		try {
@@ -1132,309 +890,64 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				stopLifecycleStream(result.stream);
 				throw cameraLifecycleAbort();
 			}
-			noiseCancellationSession = result;
-
 			const processedTrack = result.stream.getAudioTracks()[0];
 			if (processedTrack) {
-				return processedTrack;
+				let settled = false;
+				return {
+					track: processedTrack,
+					commit: () => {
+						if (settled) return;
+						settled = true;
+						noiseCancellationSession?.cleanup();
+						noiseCancellationSession = result;
+					},
+					discard: () => {
+						if (settled) return;
+						settled = true;
+						result.cleanup();
+					},
+				};
 			}
 
 			console.warn("[Noise Cancellation] No processed track returned");
-			return originalTrack;
+			result.cleanup();
+			return {
+				track: originalTrack,
+				commit: () => {},
+				discard: () => {},
+			};
 		} catch (error) {
 			if (isCameraLifecycleAbort(error, operation)) throw error;
 			console.error("[Noise Cancellation] Failed to apply:", error);
-			return originalTrack;
-		}
-	};
-
-	const getValidDeviceId = async (
-		storedDeviceId: string | null,
-		deviceType: DeviceType,
-		cameraGeneration?: number,
-		stagedSelections?: Map<DeviceType, string>,
-	) => {
-		if (!storedDeviceId) return null;
-
-		try {
-			await deviceManager.enumerateDevices();
-			if (cameraGeneration !== undefined) {
-				assertCurrentCameraGeneration(cameraGeneration);
-			}
-
-			if (deviceManager.isDeviceAvailable(storedDeviceId, deviceType)) {
-				return storedDeviceId;
-			}
-
-			const defaultDevice = deviceManager.getDefaultDevice(deviceType);
-			if (defaultDevice) {
-				if (stagedSelections) {
-					stagedSelections.set(deviceType, defaultDevice.deviceId);
-				} else if (deviceType === "camera") {
-					setSelectedCameraId(defaultDevice.deviceId);
-				} else if (deviceType === "microphone") {
-					setSelectedMicId(defaultDevice.deviceId);
-				} else if (deviceType === "speaker") {
-					setSelectedSpeakerId(defaultDevice.deviceId);
-				}
-
-				return defaultDevice.deviceId;
-			}
-
-			if (stagedSelections) {
-				stagedSelections.set(deviceType, "");
-			} else if (deviceType === "camera") {
-				setSelectedCameraId("");
-			} else if (deviceType === "microphone") {
-				setSelectedMicId("");
-			} else if (deviceType === "speaker") {
-				setSelectedSpeakerId("");
-			}
-			return null;
-		} catch (error) {
-			if (isCameraLifecycleAbort(error)) throw error;
-			console.warn(
-				`Could not validate ${deviceType} device availability:`,
-				error,
-			);
-			return storedDeviceId;
-		}
-	};
-
-	const buildMediaConstraints = async (
-		videoEnabled: boolean,
-		audioEnabled: boolean,
-		cameraGeneration: number,
-		stagedSelections: Map<DeviceType, string>,
-	) => {
-		const constraints: MediaStreamConstraints = {};
-
-		const audioConstraints = {
-			channelCount: { ideal: 2 },
-			echoCancellation: true,
-			noiseSuppression: true,
-			autoGainControl: true,
-		};
-
-		if (videoEnabled) {
-			const videoConstraints = getCameraVideoConstraints();
-
-			const validCameraId = await getValidDeviceId(
-				selectedCameraId.value,
-				"camera",
-				cameraGeneration,
-				stagedSelections,
-			);
-			if (validCameraId) {
-				videoConstraints.deviceId = {
-					exact: validCameraId,
-				};
-			}
-			constraints.video = videoConstraints;
-		}
-
-		if (audioEnabled) {
-			const validMicId = await getValidDeviceId(
-				selectedMicId.value,
-				"microphone",
-				cameraGeneration,
-				stagedSelections,
-			);
-			const selectedMic = validMicId
-				? deviceManager.findDeviceById(validMicId, "microphone")
-				: undefined;
-			if (isBluetoothMicLabel(selectedMic?.label)) {
-				audioConstraints.autoGainControl = false;
-			}
-			const mediaAudioConstraints: MediaTrackConstraints = {
-				...audioConstraints,
+			return {
+				track: originalTrack,
+				commit: () => {},
+				discard: () => {},
 			};
-
-			if (validMicId) {
-				mediaAudioConstraints.deviceId = {
-					exact: validMicId,
-				};
-			}
-			constraints.audio = mediaAudioConstraints;
 		}
-
-		return constraints;
 	};
 
-	const acquireUserMedia = async (
+	const getProcessedAudioTrack = async (
+		stream: MediaStream,
+		operation?: CameraOperation,
+	) => {
+		const prepared = await prepareProcessedAudioTrack(stream, operation);
+		prepared?.commit();
+		return prepared?.track ?? null;
+	};
+
+	const acquireUserMedia = (
 		videoEnabled: boolean,
 		audioEnabled: boolean,
 		deviceOverrides: MediaDeviceOverrides = {},
 		operation: CameraOperation = createCameraOperation(),
-	) => {
-		const operationGeneration = operation.generation;
-		const lifecycleSignal = operation.signal;
-		const stagedSelections = new Map<DeviceType, string>();
-		const constraints = await buildMediaConstraints(
+	) =>
+		captureSession.acquireUserMedia(
 			videoEnabled,
 			audioEnabled,
-			operationGeneration,
-			stagedSelections,
+			deviceOverrides,
+			operation,
 		);
-		assertCurrentCameraOperation(operation);
-
-		if (videoEnabled && Object.hasOwn(deviceOverrides, "cameraDeviceId")) {
-			const validCameraId = await getValidDeviceId(
-				deviceOverrides.cameraDeviceId ?? null,
-				"camera",
-				operationGeneration,
-				stagedSelections,
-			);
-			if (validCameraId && typeof constraints.video === "object") {
-				constraints.video.deviceId = {
-					exact: validCameraId,
-				};
-			} else if (typeof constraints.video === "object") {
-				delete constraints.video.deviceId;
-			}
-		}
-
-		if (audioEnabled && Object.hasOwn(deviceOverrides, "micDeviceId")) {
-			const validMicId = await getValidDeviceId(
-				deviceOverrides.micDeviceId ?? null,
-				"microphone",
-				operationGeneration,
-				stagedSelections,
-			);
-			if (validMicId && typeof constraints.audio === "object") {
-				constraints.audio.deviceId = {
-					exact: validMicId,
-				};
-			} else if (typeof constraints.audio === "object") {
-				delete constraints.audio.deviceId;
-			}
-		}
-
-		const requestUserMedia = () => {
-			assertCurrentCameraOperation(operation);
-			const browserRequest = navigator.mediaDevices.getUserMedia(constraints);
-			void browserRequest.then(
-				(requestedStream) => {
-					if (
-						lifecycleSignal.aborted ||
-						operationGeneration !== cameraLifecycleGeneration
-					) {
-						stopLifecycleStream(requestedStream);
-					}
-				},
-				() => {},
-			);
-
-			return new Promise<MediaStream>((resolve, reject) => {
-				const abort = () => reject(cameraLifecycleAbort());
-				lifecycleSignal.addEventListener("abort", abort, { once: true });
-				browserRequest.then(
-					(requestedStream) => {
-						lifecycleSignal.removeEventListener("abort", abort);
-						if (
-							lifecycleSignal.aborted ||
-							operationGeneration !== cameraLifecycleGeneration
-						) {
-							stopLifecycleStream(requestedStream);
-							reject(cameraLifecycleAbort());
-							return;
-						}
-						resolve(requestedStream);
-					},
-					(error) => {
-						lifecycleSignal.removeEventListener("abort", abort);
-						if (
-							lifecycleSignal.aborted ||
-							operationGeneration !== cameraLifecycleGeneration
-						) {
-							reject(cameraLifecycleAbort());
-							return;
-						}
-						reject(error);
-					},
-				);
-			});
-		};
-
-		let stream: MediaStream | null = null;
-		try {
-			stream = await requestUserMedia();
-		} catch (error) {
-			if (isCameraLifecycleAbort(error)) throw error;
-			const isMissingDeviceError = (candidate: unknown) => {
-				const mediaError = candidate as Error & { constraint?: string };
-				return (
-					mediaError.name === "NotFoundError" ||
-					(mediaError.name === "OverconstrainedError" &&
-						mediaError.constraint === "deviceId")
-				);
-			};
-			const audioConstraints =
-				typeof constraints.audio === "object" ? constraints.audio : null;
-			const videoConstraints =
-				typeof constraints.video === "object" ? constraints.video : null;
-			const audioDeviceId = audioConstraints?.deviceId;
-			const videoDeviceId = videoConstraints?.deviceId;
-
-			if (!isMissingDeviceError(error) || (!audioDeviceId && !videoDeviceId)) {
-				throw error;
-			}
-
-			if (audioDeviceId && videoDeviceId) {
-				delete audioConstraints.deviceId;
-				try {
-					stream = await requestUserMedia();
-					stagedSelections.set("microphone", "");
-				} catch (audioFallbackError) {
-					if (isCameraLifecycleAbort(audioFallbackError)) {
-						throw audioFallbackError;
-					}
-					if (!isMissingDeviceError(audioFallbackError)) {
-						throw audioFallbackError;
-					}
-					audioConstraints.deviceId = audioDeviceId;
-					delete videoConstraints.deviceId;
-				}
-
-				if (!stream) {
-					try {
-						stream = await requestUserMedia();
-						stagedSelections.set("camera", "");
-					} catch (videoFallbackError) {
-						if (isCameraLifecycleAbort(videoFallbackError)) {
-							throw videoFallbackError;
-						}
-						if (!isMissingDeviceError(videoFallbackError)) {
-							throw videoFallbackError;
-						}
-						delete audioConstraints.deviceId;
-						stagedSelections.set("microphone", "");
-						stagedSelections.set("camera", "");
-					}
-				}
-			} else if (audioDeviceId) {
-				delete audioConstraints?.deviceId;
-				stagedSelections.set("microphone", "");
-			} else {
-				delete videoConstraints?.deviceId;
-				stagedSelections.set("camera", "");
-			}
-
-			if (!stream) stream = await requestUserMedia();
-		}
-		if (!stream) throw new Error("Media request completed without a stream");
-		if (!isCurrentCameraOperation(operation)) {
-			stopLifecycleStream(stream);
-			throw cameraLifecycleAbort();
-		}
-		for (const [deviceType, deviceId] of stagedSelections) {
-			assertCurrentCameraOperation(operation);
-			if (deviceType === "camera") setSelectedCameraId(deviceId);
-			else if (deviceType === "microphone") setSelectedMicId(deviceId);
-			else if (deviceType === "speaker") setSelectedSpeakerId(deviceId);
-		}
-		return { stream, constraints };
-	};
 
 	const signalMediaDisabled = (kind: "audio" | "video") => {
 		if (!sfuClient.isConnected()) return;
@@ -1449,7 +962,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		if (kind === "video") {
 			try {
 				const operation = createCameraOperation();
-				await reconcileCameraTrack(null, "camera-track-ended", false, operation);
+				await reconcileCameraTrack(
+					null,
+					"camera-track-ended",
+					false,
+					operation,
+				);
 			} catch (error) {
 				console.error("Failed to close ended camera publication:", error);
 			}
@@ -1465,14 +983,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				"Camera stopped and could not be restarted. Check browser permissions and devices.",
 			);
 		} else {
-			const manager = sfuManager.value;
 			try {
-				if (manager) {
-					await manager.serializeSendMediaMutation(async () => {
-						manager.closeLocalProducer("audio");
-						manager.setLocalMediaTrack("audio", null);
-					});
-				}
+				await captureSession.reconcileMicrophone(
+					null,
+					false,
+					createCameraOperation(),
+				);
 			} catch (error) {
 				console.error("Failed to close ended microphone publication:", error);
 			}
@@ -1493,10 +1009,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const recoverEndedCameraTrack = async (endedTrack: MediaStreamTrack) => {
 		if (
-			cameraLifecycleAbortController.signal.aborted ||
+			captureSession.isDisposed ||
 			!mediaState.isCameraOn ||
 			!mediaState.localStream?.getVideoTracks().includes(endedTrack)
-		) return;
+		)
+			return;
 		try {
 			await switchCam(selectedCameraId.value);
 		} catch (error) {
@@ -1508,61 +1025,13 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 	const recoverEndedMicrophoneTrack = async (endedTrack: MediaStreamTrack) => {
 		if (
-			cameraLifecycleAbortController.signal.aborted ||
+			captureSession.isDisposed ||
 			!mediaState.isMicOn ||
 			!mediaState.localStream?.getAudioTracks().includes(endedTrack)
-		) return;
+		)
+			return;
 		try {
-			const currentStream = mediaState.localStream;
-			const operation = createCameraOperation();
-			const { stream: acquiredStream } = await acquireUserMedia(
-				false,
-				true,
-				{ micDeviceId: selectedMicId.value },
-				operation,
-			);
-			ownCameraStream(operation, acquiredStream);
-			assertCurrentCameraOperation(operation);
-			const candidate = acquiredStream
-				.getAudioTracks()
-				.find((track) => track.readyState === "live");
-			if (
-				!candidate ||
-				!isCurrentCameraOperation(operation) ||
-				!mediaState.isMicOn ||
-				mediaState.localStream !== currentStream ||
-				!currentStream.getAudioTracks().includes(endedTrack)
-			) {
-				stopLifecycleStream(acquiredStream);
-				return;
-			}
-
-			for (const track of currentStream.getAudioTracks()) {
-				currentStream.removeTrack(track);
-			}
-			currentStream.addTrack(candidate);
-			noiseCancellationSession?.cleanup();
-			noiseCancellationSession = null;
-			const trackToPublish = await getProcessedAudioTrack(currentStream, operation);
-			assertCurrentCameraOperation(operation);
-			if (!trackToPublish || trackToPublish.readyState !== "live") {
-				throw new Error("No live microphone track available after recovery");
-			}
-
-			assertCurrentCameraOperation(operation);
-			if (!mediaState.isMicOn || candidate.readyState !== "live") {
-				throw new Error("Microphone recovery became stale");
-			}
-			await sfuManager.value?.reconcileLocalProducerTrack(
-				"audio",
-				trackToPublish,
-				{ resume: true },
-			);
-			for (const track of acquiredStream.getTracks()) {
-				if (track !== candidate) stopLifecycleTrack(track);
-			}
-			stopLifecycleTrack(endedTrack);
-			operation.ownedStreams.clear();
+			await switchMic(selectedMicId.value);
 		} catch (error) {
 			if (isCameraLifecycleAbort(error)) return;
 			console.error("Failed to recover ended microphone track:", error);
@@ -1571,65 +1040,24 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	};
 
-	function observeLocalTracks() {
-		const cameraTrack =
-			mediaState.localStream
-				?.getVideoTracks()
-				.find((track) => track.readyState === "live") ?? null;
-		if (cameraTrack !== observedCameraTrack) {
-			if (observedCameraTrack && cameraEndedListener) {
-				observedCameraTrack.removeEventListener("ended", cameraEndedListener);
-			}
-			observedCameraTrack = cameraTrack;
-			cameraEndedListener = cameraTrack
-				? () => {
-						void enqueueCameraTransition(() =>
-							recoverEndedCameraTrack(cameraTrack),
-						).catch((error) =>
-							console.error("Camera track recovery failed:", error),
-						);
-					}
-				: null;
-			if (cameraTrack && cameraEndedListener) {
-				cameraTrack.addEventListener("ended", cameraEndedListener);
-			}
-		}
-
-		const microphoneTrack =
-			mediaState.localStream
-				?.getAudioTracks()
-				.find((track) => track.readyState === "live") ?? null;
-		if (microphoneTrack !== observedMicrophoneTrack) {
-			if (observedMicrophoneTrack && microphoneEndedListener) {
-				observedMicrophoneTrack.removeEventListener(
-					"ended",
-					microphoneEndedListener,
-				);
-			}
-			observedMicrophoneTrack = microphoneTrack;
-			microphoneEndedListener = microphoneTrack
-				? () => {
-						void enqueueMicrophoneTransition(() =>
-							recoverEndedMicrophoneTrack(microphoneTrack),
-						).catch((error) =>
-							console.error("Microphone track recovery failed:", error),
-						);
-					}
-				: null;
-			if (microphoneTrack && microphoneEndedListener) {
-				microphoneTrack.addEventListener("ended", microphoneEndedListener);
-			}
-		}
-	}
-
 	const applySpeakerDevice = async () => {
-		try {
-			const validSpeakerId = await getValidDeviceId(
-				selectedSpeakerId.value,
-				"speaker",
-			);
+		let validSpeakerId = selectedSpeakerId.value;
+		if (validSpeakerId) {
+			try {
+				await deviceManager.enumerateDevices();
+				if (!deviceManager.isDeviceAvailable(validSpeakerId, "speaker")) {
+					validSpeakerId =
+						deviceManager.getDefaultDevice("speaker")?.deviceId ?? "";
+					setSelectedSpeakerId(validSpeakerId);
+				}
+			} catch (error) {
+				console.warn("Could not validate speaker device availability:", error);
+			}
+		}
 
-			if (validSpeakerId) await mediaAttachments.setAudioOutputDevice(validSpeakerId);
+		try {
+			if (validSpeakerId)
+				await mediaAttachments.setAudioOutputDevice(validSpeakerId);
 		} catch (error) {
 			console.warn("Failed to apply speaker device:", error);
 		}
@@ -1724,123 +1152,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const toggleMicrophoneImplementation = async () => {
 		try {
 			const enable = !mediaState.isMicOn;
-			const publicationOwner = enable ? sfuManager.value : null;
-			if (enable && !publicationOwner) return;
-			let stream = mediaState.localStream;
 
 			if (enable) {
-				if (!stream) {
-					try {
-						const { stream: nextStream } = await acquireUserMedia(
-							mediaState.isCameraOn,
-							enable,
-						);
-						stream = nextStream;
-						mediaState.localStream = stream;
-						mediaState.cameraPermissionGranted = true;
-						mediaState.microphonePermissionGranted = true;
-					} catch (err) {
-						if (isCameraLifecycleAbort(err)) return;
-						console.error("Failed to get microphone stream:", err);
-						const isPermissionError =
-							(err as Error).name === "NotAllowedError" ||
-							(err as Error).name === "PermissionDeniedError";
-						toast.error(
-							isPermissionError
-								? "Microphone access denied. Enable in browser settings."
-								: "Failed to access microphone",
-						);
-						return;
-					}
-				} else {
-					const hasAudio = stream.getAudioTracks().length > 0;
-					if (!hasAudio) {
-						try {
-							const { stream: audioOnly } = await acquireUserMedia(false, true);
-							const newTrack = audioOnly.getAudioTracks()[0];
-							if (newTrack) {
-								stream.addTrack(newTrack);
-								mediaState.microphonePermissionGranted = true;
-							}
-						} catch (err) {
-							if (isCameraLifecycleAbort(err)) return;
-							console.error("Failed to add audio track:", err);
-							const isPermissionError =
-								(err as Error).name === "NotAllowedError" ||
-								(err as Error).name === "PermissionDeniedError";
-							toast.error(
-								isPermissionError
-									? "Microphone access denied. Enable in browser settings."
-									: "Could not enable microphone",
-							);
-							return;
-						}
-					} else {
-						const at = stream.getAudioTracks()[0];
-						if (at.readyState === "ended") {
-							try {
-								const { stream: audioOnly } = await acquireUserMedia(
-									false,
-									true,
-								);
-								const newTrack = audioOnly.getAudioTracks()[0];
-								if (newTrack) {
-									stream.removeTrack(at);
-									stream.addTrack(newTrack);
-									mediaState.microphonePermissionGranted = true;
-								}
-							} catch (err) {
-								if (isCameraLifecycleAbort(err)) return;
-								console.error("Failed to replace audio track:", err);
-								const isPermissionError =
-									(err as Error).name === "NotAllowedError" ||
-									(err as Error).name === "PermissionDeniedError";
-								toast.error(
-									isPermissionError
-										? "Microphone access denied. Enable in browser settings."
-										: "Could not enable microphone",
-								);
-								return;
-							}
-						} else {
-							at.enabled = true;
-						}
-					}
-				}
-
-				const track = await getProcessedAudioTrack(stream);
-				if (track) {
-					if (sfuManager.value !== publicationOwner) {
-						track.enabled = false;
-						return;
-					}
-					track.enabled = true;
-					await publicationOwner.reconcileLocalProducerTrack("audio", track, {
-						resume: true,
-					});
-					if (sfuManager.value !== publicationOwner) {
-						publicationOwner.closeLocalProducer("audio", {
-							reason: "manager-replaced",
-						});
-						track.enabled = false;
-						const rawAudioTracks = stream.getAudioTracks();
-						for (const audioTrack of rawAudioTracks) {
-							stream.removeTrack(audioTrack);
-							audioTrack.stop();
-						}
-						if (!rawAudioTracks.includes(track)) track.stop();
-						if (noiseCancellationSession) {
-							noiseCancellationSession.cleanup();
-							noiseCancellationSession = null;
-						}
-						return;
-					}
-				}
+				if (!(await captureSession.enableMicrophoneInTransition())) return;
 			} else {
+				const stream = mediaState.localStream;
 				if (stream) {
 					const at = stream.getAudioTracks()[0];
 					if (at) {
-						at.stop();
+						stopLifecycleTrack(at);
 						stream.removeTrack(at);
 					}
 				}
@@ -1899,21 +1219,27 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					try {
 						const { stream: nextStream } = await acquireUserMedia(
 							true,
-							mediaState.isMicOn,
+							false,
 							{},
 							operation,
 						);
 						ownCameraStream(operation, nextStream);
-						stream = nextStream;
-						assertCurrentCameraOperation(operation);
-						mediaState.localStream = stream;
-						acquiredVideoTracks.push(...stream.getVideoTracks());
+						const newTrack = nextStream
+							.getVideoTracks()
+							.find((track) => track.readyState === "live");
+						if (!newTrack) throw new Error("No live camera track available");
+						const committed = await captureSession.commitLocalTrack(
+							"video",
+							newTrack,
+							operation,
+						);
+						stream = committed.stream;
+						for (const oldTrack of committed.replacedTracks) {
+							stopLifecycleTrack(oldTrack);
+						}
+						acquiredVideoTracks.push(newTrack);
 						assertCurrentCameraOperation(operation);
 						mediaState.cameraPermissionGranted = true;
-						if (mediaState.isMicOn) {
-							assertCurrentCameraOperation(operation);
-							mediaState.microphonePermissionGranted = true;
-						}
 					} catch (err) {
 						if (isCameraLifecycleAbort(err, operation)) throw err;
 						console.error("Failed to get camera stream:", err);
@@ -1946,11 +1272,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 							);
 							if (newTrack) {
 								acquiredVideoTracks.push(...newTracks);
-								assertCurrentCameraOperation(operation);
-								for (const oldTrack of stream.getVideoTracks()) {
-									stream.removeTrack(oldTrack);
+								const committed = await captureSession.commitLocalTrack(
+									"video",
+									newTrack,
+									operation,
+								);
+								stream = committed.stream;
+								for (const oldTrack of committed.replacedTracks) {
+									stopLifecycleTrack(oldTrack);
 								}
-								stream.addTrack(newTrack);
 								assertCurrentCameraOperation(operation);
 								mediaState.cameraPermissionGranted = true;
 								if (mediaState.localVideo) {
@@ -1990,12 +1320,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				assertCurrentCameraOperation(operation);
 				cleanupBackgroundSession();
 				if (stream) {
-				for (const track of stream.getVideoTracks()) {
-					track.stop();
-					stream.removeTrack(track);
+					for (const track of stream.getVideoTracks()) {
+						stopLifecycleTrack(track);
+						stream.removeTrack(track);
+					}
 				}
-			}
-			updateLocalPreview(null);
+				updateLocalPreview(null);
 			}
 
 			assertCurrentCameraOperation(operation);
@@ -2045,7 +1375,7 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				cleanupBackgroundSession();
 				for (const track of acquiredVideoTracks) {
 					mediaState.localStream?.removeTrack(track);
-					track.stop();
+					stopLifecycleTrack(track);
 				}
 				updateLocalPreview(null);
 				assertCurrentCameraOperation(operation);
@@ -2225,9 +1555,9 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		localVideo.value = el;
 		mediaAttachments.registerLocalPreview(el);
 		const stream = mediaState.processedStream || mediaState.localStream;
-		void mediaAttachments.attachLocalPreview(stream).catch((error) =>
-			console.warn("Could not play local preview:", error),
-		);
+		void mediaAttachments
+			.attachLocalPreview(stream)
+			.catch((error) => console.warn("Could not play local preview:", error));
 		mediaState.localVideo = el;
 	}
 
@@ -2290,10 +1620,10 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 			assertCurrentCameraOperation(operation);
 			if (trackToPublish.readyState === "live") {
-				await sfuManager.value?.reconcileLocalProducerTrack(
-					"audio",
+				await captureSession.reconcileMicrophone(
 					trackToPublish,
-					{ resume: true },
+					true,
+					operation,
 				);
 			}
 		}).catch((error) => {
@@ -2320,36 +1650,16 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 		}
 	});
 
-	observeLocalTracks();
-
 	const cleanupLocalMedia = async () => {
-		cameraLifecycleGeneration++;
-		cameraLifecycleAbortController.abort(cameraLifecycleAbort());
 		mediaAttachments.registerLocalPreview(null);
 		void mediaAttachments.attachLocalPreview(null);
 		mediaAttachments.removeScreenSharePreview("local-screen");
 		mediaState.isCameraOn = false;
 		mediaState.isMicOn = false;
 		mediaState.isScreenSharing = false;
-		if (observedCameraTrack && cameraEndedListener) {
-			observedCameraTrack.removeEventListener("ended", cameraEndedListener);
-		}
-		if (observedMicrophoneTrack && microphoneEndedListener) {
-			observedMicrophoneTrack.removeEventListener(
-				"ended",
-				microphoneEndedListener,
-			);
-		}
-
 		if (noiseCancellationSession) {
 			noiseCancellationSession.cleanup();
 			noiseCancellationSession = null;
-		}
-
-		if (mediaState.localStream) {
-			for (const track of mediaState.localStream.getAudioTracks()) {
-				track.stop();
-			}
 		}
 
 		if (mediaState.screenShareStream) {
@@ -2358,34 +1668,23 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 			}
 		}
 
-		await enqueueCameraTransition(async () => {
-			try {
-				await reconcileCameraTrack(null, "camera-unmount", false);
-			} finally {
+		await captureSession.dispose(
+			async () => {
 				try {
-					cleanupBackgroundSession();
+					await reconcileCameraTrack(null, "camera-unmount", false);
 				} finally {
-					try {
-						for (const track of mediaState.localStream?.getVideoTracks() ??
-							[]) {
-							try {
-								stopLifecycleTrack(track);
-							} catch {}
-						}
-						for (const track of detachedCameraTracks) {
-							try {
-								stopLifecycleTrack(track);
-							} catch {}
-						}
-						updateLocalPreview(null);
-					} finally {
-						detachedCameraTracks.clear();
-						await backgroundEffects.dispose();
-						updateLocalPreview(null);
-					}
+					cleanupBackgroundSession();
 				}
-			}
-		});
+			},
+			async () => {
+				try {
+					updateLocalPreview(null);
+				} finally {
+					await backgroundEffects.dispose();
+					updateLocalPreview(null);
+				}
+			},
+		);
 	};
 
 	onUnmounted(() => {
