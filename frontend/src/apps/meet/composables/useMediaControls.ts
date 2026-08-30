@@ -1705,6 +1705,8 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	const toggleMicrophoneImplementation = async () => {
 		try {
 			const enable = !mediaState.isMicOn;
+			const publicationOwner = enable ? sfuManager.value : null;
+			if (enable && !publicationOwner) return;
 			let stream = mediaState.localStream;
 
 			if (enable) {
@@ -1789,10 +1791,15 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 
 				const track = await getProcessedAudioTrack(stream);
 				if (track) {
+					if (sfuManager.value !== publicationOwner) {
+						track.enabled = false;
+						return;
+					}
 					track.enabled = true;
-					await sfuManager.value?.reconcileLocalProducerTrack("audio", track, {
+					await publicationOwner.reconcileLocalProducerTrack("audio", track, {
 						resume: true,
 					});
+					if (sfuManager.value !== publicationOwner) return;
 				}
 			} else {
 				if (stream) {

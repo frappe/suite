@@ -1179,6 +1179,39 @@ describe("useMediaControls", () => {
 		expect(harness.state.isMicOn).toBe(true);
 	});
 
+	it("does not enable the microphone after its manager is cleared", async () => {
+		const sourceTrack = audioTrack("source");
+		const processedTrack = audioTrack("processed");
+		const processing = deferred<{
+			stream: MediaStream;
+			cleanup: () => void;
+		}>();
+		const applyNoiseCancellation = vi.fn(() => processing.promise);
+		const harness = createCameraHarness({
+			getUserMedia: vi
+				.fn()
+				.mockResolvedValue(new FakeMediaStream([sourceTrack])),
+			noiseCancellation: {
+				applyNoiseCancellation,
+				isProcessing: ref(false),
+				error: ref(null),
+			},
+		});
+
+		const enabling = harness.controls.toggleMicrophone();
+		await vi.waitFor(() => expect(applyNoiseCancellation).toHaveBeenCalledOnce());
+		harness.managerRef.value = null as never;
+		processing.resolve({
+			stream: new FakeMediaStream([processedTrack]) as never,
+			cleanup: vi.fn(),
+		});
+		await enabling;
+
+		expect(harness.manager.reconcileLocalProducerTrack).not.toHaveBeenCalled();
+		expect(harness.state.isMicOn).toBe(false);
+		expect(processedTrack.enabled).toBe(false);
+	});
+
 	it("serializes overlapping camera toggles and finishes camera-off", async () => {
 		const firstAcquisition = deferred<MediaStream>();
 		const firstTrack = videoTrack("first");
