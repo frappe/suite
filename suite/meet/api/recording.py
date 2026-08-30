@@ -661,6 +661,7 @@ def recorder_startup_progress(
     milestone: str,
     occurred_at: str,
 ) -> dict:
+    """Apply one authenticated, strictly ordered Recorder Startup milestone."""
     authenticate_callback(
         recording=recording_id,
         job=job,
@@ -922,7 +923,12 @@ def _fail_stale_recording(name: str):
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
-    _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
+    startup_failure = previous_status in ("Pending", "Starting")
+    _publish_state(
+        frappe.get_doc("Meet Room", recording.meet_room),
+        None if startup_failure else recording,
+        hosts_only=startup_failure,
+    )
 
 
 def _delete_expired_failed_recording(name: str):

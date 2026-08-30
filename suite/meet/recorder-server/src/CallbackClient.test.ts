@@ -36,6 +36,7 @@ describe('CallbackClient', () => {
 			recording: 'recording',
 			state: 'proof_complete',
 			event_sequence: 3,
+			configured_at: '2026-08-30T11:59:59.000Z',
 			proof_completed_at: '2026-08-30T12:00:00.000Z',
 		} as JobRecord;
 
@@ -49,7 +50,15 @@ describe('CallbackClient', () => {
 		expect(String(fetch.mock.calls[0]?.[0])).toContain(
 			'recorder_startup_progress',
 		);
+		expect(fetch).toHaveBeenCalledTimes(2);
 		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			event_sequence: 2,
+			milestone: 'configured',
+			occurred_at: '2026-08-30T11:59:59.000Z',
+		});
+		expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 3,
