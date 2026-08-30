@@ -2165,28 +2165,28 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					} else if (audioProducer?.paused) {
 						manager.resumeLocalProducer("audio");
 					}
+
+					const currentScreenPublication =
+						manager.getLocalProducerState("screen");
+					if (
+						sfuManager.value === manager &&
+						mediaState.isScreenSharing &&
+						mediaState.screenShareStream === screenStream &&
+						screenTrack.readyState === "live" &&
+						currentScreenPublication?.id === publication.id &&
+						currentScreenPublication.track === screenTrack &&
+						sfuClient.isConnected()
+					) {
+						sfuClient.sendScreenShare("start_share", {
+							startedAt: mediaState.localScreenShareStartedAt,
+						});
+					}
 				} catch (pubErr) {
 					console.error("Failed to publish screen share producer:", pubErr);
 					await stopScreenShare("publish-failed", {
 						message: (pubErr as Error)?.message,
 					});
 					throw pubErr;
-				}
-
-				const currentScreenPublication =
-					manager.getLocalProducerState("screen");
-				if (
-					sfuManager.value === manager &&
-					mediaState.isScreenSharing &&
-					mediaState.screenShareStream === screenStream &&
-					screenStream.getVideoTracks()[0]?.readyState === "live" &&
-					currentScreenPublication?.id === publication.id &&
-					currentScreenPublication.track === screenTrack &&
-					sfuClient.isConnected()
-				) {
-					sfuClient.sendScreenShare("start_share", {
-						startedAt: mediaState.localScreenShareStartedAt,
-					});
 				}
 			}
 		} catch (error) {
