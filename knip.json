@@ -10,7 +10,14 @@
   ],
   "workspaces": {
     "frontend": {
-      "entry": ["src/main.ts", "vite.config.ts", "src/apps/slides/service-worker.js"],
+      "entry": [
+        "src/main.ts",
+        "vite.config.ts",
+        "src/apps/mail/sw.ts",
+        "src/apps/slides/service-worker.js",
+        "src/apps/sheets/engine/difftest/compare-engines.js",
+        "src/apps/sheets/engine/difftest/run.js"
+      ],
       "project": ["src/**/*.{js,ts,tsx,vue}", "!src/main.ts"],
       "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
     },
