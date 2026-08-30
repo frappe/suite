@@ -78,10 +78,7 @@ test.describe("Restricted meeting", { tag: "@meet-group-1" }, () => {
 
 		await guest.page.goto(appUrl(`/meet/${meetingId}`));
 		await expect(guest.page.getByRole("heading", { name: "Ready to join?" })).toBeVisible();
-		await expect(
-			guest.page.getByText("Your previous join request was denied."),
-		).toBeVisible();
-		await guest.page.getByRole("button", { name: "Use a new guest identity" }).click();
+		await guest.page.getByPlaceholder("John Doe").fill(guestName);
 		await guest.page.getByRole("button", { name: "Join Meeting" }).click();
 
 		await expect(
