@@ -59,6 +59,7 @@ describe('capture lifecycle', () => {
 		roots.push(root);
 		const exits: Array<() => void> = [];
 		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		let now = Date.parse('2026-08-30T12:00:30.000Z');
 		const supervisor = {
 			start: vi.fn(
 				async (
@@ -66,15 +67,16 @@ describe('capture lifecycle', () => {
 					_args: string[],
 					processOptions: Parameters<ProcessSupervisor['start']>[2],
 				) => {
-					if (command === 'ffmpeg' && processOptions.onUnexpectedExit)
+					if (command === 'ffmpeg' && processOptions.onUnexpectedExit) {
+						if (exits.length > 0) now += 1_000;
 						exits.push(processOptions.onUnexpectedExit);
+					}
 					return command === 'pactl' ? process(0) : process();
 				},
 			),
 		};
 		const onInterrupted = vi.fn();
 		const onRecovered = vi.fn();
-		const now = Date.parse('2026-08-30T12:00:30.000Z');
 		const worker = new CaptureWorker(
 			'ffmpeg-recovery',
 			{ ...options(root), onInterrupted, onRecovered },
@@ -82,7 +84,7 @@ describe('capture lifecycle', () => {
 				supervisor: supervisor as unknown as ProcessSupervisor,
 				now: () => now,
 				sleep: async (delay) => {
-					if (delay === 60_000) await new Promise(() => undefined);
+					if (delay > 5_000) await new Promise(() => undefined);
 				},
 				watcher: (_manifest, _tools, _epoch, onAdopt) => {
 					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
@@ -127,14 +129,14 @@ describe('capture lifecycle', () => {
 		);
 		expect(onRecovered).toHaveBeenCalledWith(
 			expect.objectContaining({
-				capture_started_at: '2026-08-30T12:00:30.000Z',
-				recovered_at: '2026-08-30T12:00:30.000Z',
+				capture_started_at: '2026-08-30T12:00:32.000Z',
+				recovered_at: '2026-08-30T12:00:32.000Z',
 			}),
 		);
 		expect(worker.manifest.get().gaps).toEqual([
 			{
 				started_at: '2026-08-30T12:00:30.000Z',
-				ended_at: '2026-08-30T12:00:30.000Z',
+				ended_at: '2026-08-30T12:00:32.000Z',
 				reason: 'ffmpeg_exited',
 			},
 		]);

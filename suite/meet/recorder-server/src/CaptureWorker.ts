@@ -183,7 +183,6 @@ export class CaptureWorker {
 		}
 		const epoch = this.epoch++;
 		this.captureFailed = false;
-		this.captureLaunchedAt = new Date(this.now()).toISOString();
 		await this.manifest.update((m) => {
 			m.epochs = this.epoch;
 		});
@@ -276,6 +275,7 @@ export class CaptureWorker {
 				onUnexpectedExit: () => this.queueRecovery(),
 			},
 		);
+		this.captureLaunchedAt = new Date(this.now()).toISOString();
 		this.watcher.start();
 		this.armEndLimit();
 	}
