@@ -127,21 +127,23 @@ export class CallbackClient {
 			if (!occurredAt)
 				throw new Error('startup milestone timestamp is unavailable');
 			const sequence = index + 2;
-			await this.retryHealthCallback(() =>
-				this.json(
-					'recorder_startup_progress',
-					job,
-					'startup_progress',
-					String(sequence),
-					{
-						recording_id: job.recording,
-						job: job.job,
-						event_sequence: sequence,
-						milestone,
-						occurred_at: occurredAt,
-					},
-					parseStatusResponse,
-				),
+			await this.retryHealthCallback(
+				() =>
+					this.json(
+						'recorder_startup_progress',
+						job,
+						'startup_progress',
+						String(sequence),
+						{
+							recording_id: job.recording,
+							job: job.job,
+							event_sequence: sequence,
+							milestone,
+							occurred_at: occurredAt,
+						},
+						parseStatusResponse,
+					),
+				Number.POSITIVE_INFINITY,
 			);
 		}
 	}
@@ -295,6 +297,7 @@ export class CallbackClient {
 
 	private async retryHealthCallback(
 		callback: () => Promise<unknown>,
+		maxAttempts = 5,
 	): Promise<void> {
 		let delay = 250;
 		for (let attempt = 0; ; attempt += 1) {
@@ -302,7 +305,7 @@ export class CallbackClient {
 				await callback();
 				return;
 			} catch (error) {
-				if (attempt === 4) throw error;
+				if (attempt + 1 >= maxAttempts) throw error;
 				await this.sleep(delay);
 				delay *= 2;
 			}
