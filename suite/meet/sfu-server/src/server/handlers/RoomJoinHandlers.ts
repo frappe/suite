@@ -37,6 +37,12 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 			const scopedRoomId = getRoomId(socket);
 			if (socket.scope === 'full') {
+				if (
+					socket.isGuest &&
+					deps.registry.isParticipantRevoked(scopedRoomId, participantId)
+				) {
+					throw new Error('Guest is banned from this room');
+				}
 				enforceE2EEJoinPolicy(socket, e2ee);
 				await deps.roomLifecycle.humanJoined(scopedRoomId);
 				const acquisition = deps.registry.acquireParticipant(
@@ -286,7 +292,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 						avatar: userData.avatar,
 						audio_enabled: mediaState.audio_enabled,
 						video_enabled: mediaState.video_enabled,
-						is_guest: userData.is_guest,
+						is_guest: Boolean(socket.isGuest),
 					},
 					e2ee,
 				});

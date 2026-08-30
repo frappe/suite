@@ -15,7 +15,7 @@ import {
 	type PersistedE2eePendingCommitRequest,
 } from './E2eeCoordinatorPersistence';
 import type { E2eeRosterStore } from './E2eeRosterStore';
-import { checkSocketRateLimits } from './handlers/utils';
+import { checkSocketRateLimits, getRoomId } from './handlers/utils';
 
 type TypedSocket = Socket<
 	ClientToServerEvents,
@@ -134,6 +134,7 @@ export class E2EEEpochRelay {
 		const allowed = checkSocketRateLimits(
 			socket,
 			this.rateLimiter,
+			`e2ee-epoch:${getRoomId(socket)}`,
 			E2EE_EPOCH_USER_LIMIT,
 			E2EE_EPOCH_IP_LIMIT,
 			E2EE_EPOCH_RATE_WINDOW_MS,

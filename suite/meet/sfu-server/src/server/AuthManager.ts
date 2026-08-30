@@ -4,6 +4,8 @@ import type { JWTPayload } from '../types';
 import { loggers } from '../utils/logger';
 import type { RecordingGrantManager } from './RecordingGrantManager';
 
+const TOKEN_EXPIRY_GRACE_MS = 5000;
+
 export class AuthManager {
 	private jwtSecret: string;
 
@@ -36,6 +38,7 @@ export class AuthManager {
 				socket.isHost = false;
 				socket.isCohost = false;
 				socket.isGuest = false;
+				socket.guestGeneration = undefined;
 				socket.scope = 'recording';
 				socket.e2eeRequired = false;
 				socket.e2eeReady = false;
@@ -61,6 +64,7 @@ export class AuthManager {
 			socket.currentToken = token;
 			socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 			socket.isGuest = decoded.is_guest || false;
+			socket.guestGeneration = decoded.guest_generation;
 
 			loggers.authManager.info(
 				'Authenticated user: %s for meeting: %s (site: %s)',
@@ -98,10 +102,23 @@ export class AuthManager {
 			throw new Error('Token site mismatch');
 		}
 
+		if (
+			(decoded.scope ?? 'presence-preview') !== socket.scope ||
+			Boolean(decoded.is_guest) !== Boolean(socket.isGuest) ||
+			(socket.isGuest && decoded.guest_generation !== socket.guestGeneration)
+		) {
+			throw new Error('Token identity mismatch');
+		}
+
+		this.clearTokenExpiryTimer(socket);
 		socket.currentToken = token;
 		socket.tokenExpiresAt = decoded.exp ? decoded.exp * 1000 : undefined;
 		socket.isHost = decoded.is_host || false;
 		socket.isCohost = decoded.is_cohost || false;
+		socket.userName = decoded.user_name;
+		socket.scope = decoded.scope ?? 'presence-preview';
+		socket.isGuest = decoded.is_guest || false;
+		socket.guestGeneration = decoded.guest_generation;
 		socket.e2eeRequired = Boolean(decoded.e2ee_required);
 		socket.e2eeReady = socket.e2eeRequired
 			? wasE2EERequired && wasE2EEReady
@@ -127,14 +144,14 @@ export class AuthManager {
 	}
 
 	triggerTokenExpiry(socket: Socket, reason: string): void {
-		if (socket.disconnected) {
+		if (socket.disconnected || socket.tokenExpiryTimer) {
 			return;
 		}
 
 		const timestamp = new Date().toISOString();
 
 		loggers.authManager.warn(
-			'Disconnecting socket %s (user %s) due to expired token (%s)',
+			'Token expired for socket %s (user %s); awaiting refresh (%s)',
 			socket.id,
 			socket.userId,
 			reason,
@@ -157,18 +174,22 @@ export class AuthManager {
 			);
 		}
 
-		setImmediate(() => {
-			if (!socket.disconnected) {
+		socket.tokenExpiryTimer = setTimeout(() => {
+			socket.tokenExpiryTimer = undefined;
+			if (!socket.disconnected && this.isTokenExpired(socket)) {
 				socket.disconnect(true);
 			}
-		});
+		}, TOKEN_EXPIRY_GRACE_MS);
+		socket.tokenExpiryTimer.unref();
 	}
 
 	cleanupSocket(socket: Socket): void {
+		this.clearTokenExpiryTimer(socket);
 		socket.currentToken = undefined;
 		socket.tokenExpiresAt = undefined;
 		socket.e2eeReady = undefined;
 		socket.e2eeRequired = undefined;
+		socket.guestGeneration = undefined;
 	}
 
 	ensurePresenceAccess(socket: Socket): void {
@@ -230,6 +251,11 @@ export class AuthManager {
 			throw new Error('Guests are not permitted to perform this action.');
 		}
 	}
+
+	private clearTokenExpiryTimer(socket: Socket): void {
+		if (socket.tokenExpiryTimer) clearTimeout(socket.tokenExpiryTimer);
+		socket.tokenExpiryTimer = undefined;
+	}
 }
 
 function parseParticipantClaims(value: unknown): JWTPayload {
@@ -251,6 +277,12 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 	const sessionId = optionalString(value, 'session_id');
 	const isCohost = optionalBoolean(value, 'is_cohost');
 	const isGuest = optionalBoolean(value, 'is_guest');
+	const guestGeneration = isGuest
+		? optionalInteger(value, 'guest_generation')
+		: undefined;
+	if (isGuest && (guestGeneration === undefined || guestGeneration < 1)) {
+		throw new Error('Invalid participant claims');
+	}
 	const e2eeRequired = optionalBoolean(value, 'e2ee_required');
 	const exp = optionalInteger(value, 'exp');
 	const iat = optionalInteger(value, 'iat');
@@ -263,6 +295,9 @@ function parseParticipantClaims(value: unknown): JWTPayload {
 		...(userAvatar !== undefined ? { user_avatar: userAvatar } : {}),
 		...(isCohost !== undefined ? { is_cohost: isCohost } : {}),
 		...(isGuest !== undefined ? { is_guest: isGuest } : {}),
+		...(guestGeneration !== undefined
+			? { guest_generation: guestGeneration }
+			: {}),
 		...(scope !== undefined ? { scope } : {}),
 		...(e2eeRequired !== undefined ? { e2ee_required: e2eeRequired } : {}),
 		...(sessionId !== undefined ? { session_id: sessionId } : {}),

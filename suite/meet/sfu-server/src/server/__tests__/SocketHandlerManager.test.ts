@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	createManager,
 	createMockSocket,
@@ -51,6 +51,10 @@ function emitJoin(
 		callback,
 	);
 }
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 describe('SocketHandlerManager characterization', () => {
 	it('middleware rejects sockets when authentication fails', () => {
@@ -483,6 +487,24 @@ describe('SocketHandlerManager characterization', () => {
 				participantId: 'user-1',
 				userData: expect.objectContaining({ userId: 'user-1', name: 'Alice' }),
 			}),
+		);
+	});
+
+	it('derives guest participant metadata from the signed socket identity', async () => {
+		const harness = createManager();
+		const socket = connectFullSocket(harness, {
+			id: 'malicious-guest',
+			userId: 'guest_1',
+			isGuest: true,
+		});
+
+		emitJoin(socket, { userId: 'guest_1', isGuest: false });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.addPeer).toHaveBeenCalledWith(
+			'room-1',
+			'malicious-guest',
+			expect.objectContaining({ is_guest: true }),
 		);
 	});
 
@@ -1056,11 +1078,16 @@ describe('SocketHandlerManager characterization', () => {
 
 		target.emitCalls.length = 0;
 		host.emitCalls.length = 0;
+		const hostCallback = vi.fn();
 
-		host.fire('host_control', {
-			action: 'mute_participant',
-			targetParticipantId: 'target-1',
-		});
+		host.fire(
+			'host_control',
+			{
+				action: 'mute_participant',
+				targetParticipantId: 'target-1',
+			},
+			hostCallback,
+		);
 		expect(harness.mediasoup.participantExistsInRoom).toHaveBeenCalledWith(
 			'room-1',
 			'target-1',
@@ -1078,6 +1105,7 @@ describe('SocketHandlerManager characterization', () => {
 			}),
 		);
 		expect(host.emitCalls.some((c) => c.event === 'sfu_error')).toBe(false);
+		expect(hostCallback).toHaveBeenCalledWith({ success: true });
 
 		const nonHost = connectFullSocket(harness, {
 			id: 'sock-nonhost',
@@ -1101,11 +1129,16 @@ describe('SocketHandlerManager characterization', () => {
 
 		nonHost.emitCalls.length = 0;
 		anotherTarget.emitCalls.length = 0;
+		const nonHostCallback = vi.fn();
 
-		nonHost.fire('host_control', {
-			action: 'mute_participant',
-			targetParticipantId: 'target-2',
-		});
+		nonHost.fire(
+			'host_control',
+			{
+				action: 'mute_participant',
+				targetParticipantId: 'target-2',
+			},
+			nonHostCallback,
+		);
 
 		const nonHostErr = nonHost.emitCalls.find((c) => c.event === 'sfu_error');
 		expect(nonHostErr).toBeDefined();
@@ -1117,6 +1150,233 @@ describe('SocketHandlerManager characterization', () => {
 		expect(
 			anotherTarget.emitCalls.some((c) => c.event === 'host_control_update'),
 		).toBe(false);
+		expect(nonHostCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Only host or co-host can control participants',
+		});
+	});
+
+	it('ban disconnects a guest and rejects rejoin while remove permits rejoin', async () => {
+		vi.useFakeTimers();
+		const harness = createManager();
+		const host = connectFullSocket(harness, {
+			id: 'ban-host',
+			userId: 'host-1',
+			isHost: true,
+		});
+		emitJoin(host, { userId: 'host-1' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const banned = connectFullSocket(harness, {
+			id: 'banned-socket',
+			userId: 'guest_banned',
+			isGuest: true,
+		});
+		emitJoin(banned, { userId: 'guest_banned', isGuest: true });
+		await vi.advanceTimersByTimeAsync(0);
+		const banAcknowledgement = vi.fn();
+		host.fire(
+			'host_control',
+			{
+				action: 'ban_participant',
+				targetParticipantId: 'guest_banned',
+			},
+			banAcknowledgement,
+		);
+		expect(banAcknowledgement).toHaveBeenCalledWith({ success: true });
+		expect(banned.emitCalls).toContainEqual({
+			event: 'host_control_update',
+			data: expect.objectContaining({ action: 'ban_participant' }),
+		});
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(harness.io.socketsMap.has(banned.id)).toBe(false);
+
+		const bannedRejoin = connectFullSocket(harness, {
+			id: 'banned-rejoin',
+			userId: 'guest_banned',
+			isGuest: true,
+		});
+		const bannedCallback = vi.fn();
+		emitJoin(
+			bannedRejoin,
+			{ userId: 'guest_banned', isGuest: true },
+			bannedCallback,
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(bannedCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Guest is banned from this room',
+		});
+
+		const removed = connectFullSocket(harness, {
+			id: 'removed-socket',
+			userId: 'guest_removed',
+			isGuest: true,
+		});
+		emitJoin(removed, { userId: 'guest_removed', isGuest: true });
+		await vi.advanceTimersByTimeAsync(0);
+		const removeAcknowledgement = vi.fn();
+		host.fire(
+			'host_control',
+			{
+				action: 'kick_participant',
+				targetParticipantId: 'guest_removed',
+			},
+			removeAcknowledgement,
+		);
+		expect(removeAcknowledgement).toHaveBeenCalledWith({ success: true });
+		await vi.advanceTimersByTimeAsync(1000);
+
+		const removedRejoin = connectFullSocket(harness, {
+			id: 'removed-rejoin',
+			userId: 'guest_removed',
+			isGuest: true,
+		});
+		const removedCallback = vi.fn();
+		emitJoin(
+			removedRejoin,
+			{ userId: 'guest_removed', isGuest: true },
+			removedCallback,
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(removedCallback).toHaveBeenCalledWith(
+			expect.objectContaining({ success: true }),
+		);
+
+		harness.manager.stop();
+	});
+
+	it.each([
+		'rejects',
+		'hangs',
+	] as const)('disconnects a banned guest when E2EE removal signaling %s', async (failure) => {
+		vi.useFakeTimers();
+		const harness = createManager();
+		const relay = (
+			harness.manager as unknown as {
+				e2eeEpochRelay: {
+					requestCommitForRemoval: () => Promise<boolean>;
+				};
+			}
+		).e2eeEpochRelay;
+		vi.spyOn(relay, 'requestCommitForRemoval').mockImplementation(() =>
+			failure === 'rejects'
+				? Promise.reject(new Error('signaling failed'))
+				: new Promise<boolean>(() => {}),
+		);
+		const host = connectFullSocket(harness, {
+			id: `host-${failure}`,
+			userId: 'host-1',
+			isHost: true,
+		});
+		emitJoin(host, { userId: 'host-1' });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const guest = connectFullSocket(harness, {
+			id: `guest-${failure}`,
+			userId: 'guest_1',
+			isGuest: true,
+		});
+		emitJoin(guest, { userId: 'guest_1', isGuest: true });
+		await vi.advanceTimersByTimeAsync(0);
+		guest.e2eeRequired = true;
+
+		const acknowledgement = vi.fn();
+		host.fire(
+			'host_control',
+			{
+				action: 'ban_participant',
+				targetParticipantId: 'guest_1',
+			},
+			acknowledgement,
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(acknowledgement).toHaveBeenCalledWith({ success: true });
+
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(harness.io.socketsMap.has(guest.id)).toBe(false);
+		harness.manager.stop();
+	});
+
+	it('rejects attempts to ban authenticated participants', async () => {
+		const harness = createManager();
+		const host = connectFullSocket(harness, {
+			id: 'authenticated-ban-host',
+			userId: 'host-1',
+			isHost: true,
+		});
+		emitJoin(host, { userId: 'host-1' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const target = connectFullSocket(harness, {
+			id: 'authenticated-ban-target',
+			userId: 'user-2',
+			isGuest: false,
+		});
+		emitJoin(target, { userId: 'user-2' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const acknowledgement = vi.fn();
+		host.fire(
+			'host_control',
+			{
+				action: 'ban_participant',
+				targetParticipantId: 'user-2',
+			},
+			acknowledgement,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(host.emitCalls).toContainEqual({
+			event: 'sfu_error',
+			data: expect.objectContaining({ error: 'Only guests can be banned' }),
+		});
+		expect(harness.io.socketsMap.has(target.id)).toBe(true);
+		expect(target.emitCalls).not.toContainEqual({
+			event: 'host_control_update',
+			data: expect.anything(),
+		});
+		expect(acknowledgement).toHaveBeenCalledWith({
+			success: false,
+			error: 'Only guests can be banned',
+		});
+		harness.manager.stop();
+	});
+
+	it('acknowledges and records an absent guest ban', async () => {
+		const harness = createManager();
+		const host = connectFullSocket(harness, {
+			id: 'absent-ban-host',
+			userId: 'host-1',
+			isHost: true,
+		});
+		emitJoin(host, { userId: 'host-1' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const acknowledgement = vi.fn();
+
+		host.fire(
+			'host_control',
+			{
+				action: 'ban_participant',
+				targetParticipantId: 'guest_absent',
+			},
+			acknowledgement,
+		);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(acknowledgement).toHaveBeenCalledWith({ success: true });
+		const guest = connectFullSocket(harness, {
+			id: 'absent-banned-rejoin',
+			userId: 'guest_absent',
+			isGuest: true,
+		});
+		const joinCallback = vi.fn();
+		emitJoin(guest, { userId: 'guest_absent', isGuest: true }, joinCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(joinCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Guest is banned from this room',
+		});
+		harness.manager.stop();
 	});
 
 	it('create_producer broadcasts screen producers to existing full-access participants', async () => {
@@ -1873,6 +2133,28 @@ describe('SocketHandlerManager characterization', () => {
 	});
 
 	describe('idle expiry sweep', () => {
+		it('permits only token refresh packets while the token is expired', () => {
+			const harness = createManager();
+			const socket = connectFullSocket(harness, { id: 'expired-middleware' });
+			harness.authManager.isTokenExpired.mockReturnValue(true);
+			const refreshNext = vi.fn();
+			const joinNext = vi.fn();
+
+			socket.packetMiddleware?.(
+				['auth:update_token', { token: 'fresh' }],
+				refreshNext,
+			);
+			socket.packetMiddleware?.(['join_room', {}], joinNext);
+
+			expect(refreshNext).toHaveBeenCalledOnce();
+			expect(joinNext).not.toHaveBeenCalled();
+			expect(harness.authManager.triggerTokenExpiry).toHaveBeenCalledWith(
+				socket,
+				'middleware_guard',
+			);
+			harness.manager.stop();
+		});
+
 		it('disconnects sockets whose token has expired, leaves non-expired ones alone', () => {
 			const harness = createManager();
 			const expired = connectFullSocket(harness, { id: 'sock-exp' });

@@ -23,6 +23,7 @@ export function getPeerId(socket: Socket): string {
 export function checkSocketRateLimits(
 	socket: Socket,
 	rateLimiter: RateLimiter,
+	namespace: string,
 	userLimit: number,
 	ipLimit: number,
 	windowMs: number,
@@ -42,8 +43,8 @@ export function checkSocketRateLimits(
 		getFirstIp(forwarded) ||
 		socket.handshake.address;
 
-	const userKey = `user:${socket.userId}`;
-	const ipKey = `ip:${clientIp}`;
+	const userKey = `${namespace}:user:${socket.userId}`;
+	const ipKey = `${namespace}:ip:${clientIp}`;
 
 	const userAllowed = rateLimiter.checkRateLimit(userKey, userLimit, windowMs);
 	const ipAllowed = rateLimiter.checkRateLimit(ipKey, ipLimit, windowMs);

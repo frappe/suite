@@ -79,12 +79,14 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 					deps.authManager.ensureRecorderAccess(socket);
 				else deps.authManager.ensurePresenceAccess(socket);
 
+				const roomId = getRoomId(socket);
 				if (
 					!checkSocketRateLimits(
 						socket,
 						deps.rateLimiter,
-						10,
-						10,
+						`room-participants:${roomId}`,
+						60,
+						300,
 						60 * 1000,
 						deps.runtime.bypassRateLimits,
 					)
@@ -96,7 +98,6 @@ export function registerRoomQueryHandlers(deps: HandlerDeps) {
 					return;
 				}
 
-				const roomId = getRoomId(socket);
 				loggers.socketHandler.debug(
 					'Getting room participants for room %s, user %s, scope %s',
 					roomId,

@@ -212,7 +212,7 @@ export class SocketHandlerManager {
 						outcome: 'failure',
 					});
 					this.authManager.triggerTokenExpiry(socket, 'middleware_guard');
-					return;
+					if (packet[0] !== 'auth:update_token') return;
 				}
 				next();
 			});

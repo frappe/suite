@@ -236,7 +236,10 @@ export interface ClientToServerEvents {
 		callback: (response: RoomParticipantsResponse) => void,
 	) => void;
 	media_control: (data: MediaControlRequest) => void;
-	host_control: (data: HostControlRequest) => void;
+	host_control: (
+		data: HostControlRequest,
+		callback: (response: SFUResponse) => void,
+	) => void;
 	screen_share: (
 		data: ScreenShareRequest,
 		callback?: (response: SFUResponse) => void,
@@ -342,6 +345,7 @@ export interface SocketData {
 	meetingId: string;
 	isHost: boolean;
 	isGuest?: boolean;
+	guestGeneration?: number;
 	roomId?: string;
 	participantId?: string;
 	participantConnectionId?: string;
@@ -546,6 +550,7 @@ export interface JWTPayload {
 	is_host: boolean;
 	is_cohost?: boolean;
 	is_guest?: boolean;
+	guest_generation?: number;
 	scope?: SFUScope;
 	e2ee_required?: boolean;
 	session_id?: string;
@@ -687,6 +692,7 @@ declare module 'socket.io' {
 		isHost: boolean;
 		isCohost: boolean;
 		isGuest?: boolean;
+		guestGeneration?: number;
 		roomId?: string;
 		participantId?: string;
 		participantConnectionId?: string;
@@ -694,6 +700,7 @@ declare module 'socket.io' {
 		senderId?: number;
 		currentToken?: string;
 		tokenExpiresAt?: number;
+		tokenExpiryTimer?: NodeJS.Timeout;
 		scope?: SFUScope;
 		e2eeRequired?: boolean;
 		e2eeReady?: boolean;

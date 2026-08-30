@@ -59,6 +59,7 @@ export class RoomRegistry {
 	>();
 	private nextSenderIdByRoom: Map<string, number> = new Map();
 	private participantToSender: Map<string, Map<string, number>> = new Map();
+	private revokedParticipants = new Map<string, Set<string>>();
 
 	constructor(io: Server<ClientToServerEvents, ServerToClientEvents>) {
 		this.io = io;
@@ -261,6 +262,19 @@ export class RoomRegistry {
 		return (this.participantConnections.get(roomId)?.size ?? 0) > 0;
 	}
 
+	revokeParticipant(roomId: string, participantId: string): void {
+		let revoked = this.revokedParticipants.get(roomId);
+		if (!revoked) {
+			revoked = new Set();
+			this.revokedParticipants.set(roomId, revoked);
+		}
+		revoked.add(participantId);
+	}
+
+	isParticipantRevoked(roomId: string, participantId: string): boolean {
+		return this.revokedParticipants.get(roomId)?.has(participantId) ?? false;
+	}
+
 	getRecorderSockets(roomId: string): Socket[] {
 		return [...(this.recorderSockets.get(roomId) ?? [])]
 			.map((socketId) => this.io.sockets.sockets.get(socketId))
@@ -360,6 +374,7 @@ export class RoomRegistry {
 		this.recorderPeerSockets.delete(roomId);
 		this.nextSenderIdByRoom.delete(roomId);
 		this.participantToSender.delete(roomId);
+		this.revokedParticipants.delete(roomId);
 	}
 
 	emitToScope<Event extends ServerEventName>(

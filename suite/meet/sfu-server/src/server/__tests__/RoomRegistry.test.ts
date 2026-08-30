@@ -265,6 +265,25 @@ describe('RoomRegistry', () => {
 		expect(registry.hasHumanParticipants('r1')).toBe(false);
 	});
 
+	it('blocks a room-scoped banned participant until room cleanup', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		registry.revokeParticipant('r1', 'guest_1');
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(true);
+		expect(registry.isParticipantRevoked('r2', 'guest_1')).toBe(false);
+
+		registry.cleanupRoom('r1');
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(false);
+	});
+
+	it('does not revoke a removed participant', () => {
+		const { io } = makeIo();
+		const registry = new RoomRegistry(io);
+
+		expect(registry.isParticipantRevoked('r1', 'guest_1')).toBe(false);
+	});
+
 	it('assigns independent E2EE sender IDs to participant connections', () => {
 		const { io } = makeIo();
 		const registry = new RoomRegistry(io);

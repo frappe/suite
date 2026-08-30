@@ -46,6 +46,7 @@ export type MediaControlAction = 'mute' | 'unmute' | 'video_off' | 'video_on';
 export type HostControlAction =
 	| 'mute_participant'
 	| 'kick_participant'
+	| 'ban_participant'
 	| 'lower_hand';
 
 export type ProducerCloseReason =
