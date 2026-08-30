@@ -24,6 +24,8 @@ interface GuestRealtimeEvent {
 	meetingId: string;
 }
 
+const GUEST_STATUS_RECONCILIATION_INTERVAL = 5_000;
+
 interface GuestRealtimeLifecycleOptions {
 	socket: Socket | null;
 	meetingId: string;
@@ -96,6 +98,8 @@ export function createGuestRealtimeLifecycle({
 }: GuestRealtimeLifecycleOptions) {
 	let setup = false;
 	let subscribedSession: StoredGuestSession | null = null;
+	let reconciliationInterval: ReturnType<typeof setInterval> | null = null;
+	let reconciliationInProgress = false;
 
 	const matchesSubscribedSession = (value: unknown) => {
 		const event = normalizeGuestRealtimeEvent(value);
@@ -118,6 +122,10 @@ export function createGuestRealtimeLifecycle({
 
 	const stop = () => {
 		unsubscribe();
+		if (reconciliationInterval) {
+			clearInterval(reconciliationInterval);
+			reconciliationInterval = null;
+		}
 		if (!socket || !setup) return;
 		socket.off("meet:guest_join_approved", handleApproved);
 		socket.off("meet:guest_join_rejected", handleRejected);
@@ -172,6 +180,34 @@ export function createGuestRealtimeLifecycle({
 		);
 	};
 
+	const reconcile = async () => {
+		const session = readSession();
+		if (!isActiveSession(session) || reconciliationInProgress) return;
+		reconciliationInProgress = true;
+		try {
+			const response = await frappeRequest({
+				url: "suite.meet.api.meeting.validate_guest_session",
+				method: "POST",
+				params: {
+					meeting_id: meetingId,
+					guest_id: session.guestId,
+					guest_session_token: session.guestSessionToken,
+				},
+			});
+			if (!isUnknownRecord(response)) return;
+			const status = normalizeStatus(response.status);
+			if (response.valid === true && (status === "pending" || status === "admitted")) {
+				await onActiveStatus(status, session);
+			} else if (status === "rejected" || status === "banned" || status === "expired") {
+				handleTerminalStatus(status);
+			}
+		} catch {
+			// Realtime remains the primary path; retry transient reconciliation failures.
+		} finally {
+			reconciliationInProgress = false;
+		}
+	};
+
 	function handleApproved(value: unknown) {
 		if (matchesSubscribedSession(value) && subscribedSession) {
 			void onActiveStatus("admitted", subscribedSession);
@@ -197,6 +233,10 @@ export function createGuestRealtimeLifecycle({
 			socket.on("meet:guest_join_rejected", handleRejected);
 			socket.on("connect", handleReconnect);
 			setup = true;
+			reconciliationInterval = setInterval(
+				() => void reconcile(),
+				GUEST_STATUS_RECONCILIATION_INTERVAL,
+			);
 		}
 		subscribe();
 	};

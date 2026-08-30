@@ -166,6 +166,34 @@ describe("guest realtime lifecycle", () => {
 		},
 	);
 
+	it("reconciles a terminal status over HTTP when its realtime event is missed", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(frappeRequest).mockResolvedValue({
+				valid: false,
+				status: "rejected",
+			});
+			const { socket } = createSocket();
+			const { lifecycle, callbacks } = createLifecycle(socket);
+			lifecycle.start();
+
+			await vi.advanceTimersByTimeAsync(5_000);
+
+			expect(callbacks.onTerminalStatus).toHaveBeenCalledWith("rejected");
+			expect(frappeRequest).toHaveBeenCalledWith({
+				url: "suite.meet.api.meeting.validate_guest_session",
+				method: "POST",
+				params: {
+					meeting_id: "room-1",
+					guest_id: "guest_private",
+					guest_session_token: "private-proof",
+				},
+			});
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it.each(["invalid_request", "validation_failed"])(
 		"surfaces %s acknowledgement failures",
 		(error) => {
