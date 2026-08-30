@@ -4,13 +4,15 @@ import { useSocket } from "../socket";
 
 export type RecordingStatus =
 	| "Pending"
+	| "Starting"
 	| "Recording"
 	| "Interrupted"
 	| "Stopping"
 	| "Processing"
 	| "Ready"
 	| "Partial"
-	| "Failed";
+	| "Failed"
+	| "Cancelled";
 
 export interface RecordingState {
 	name: string;
@@ -80,7 +82,9 @@ export function useRecording(meetingId: string) {
 	const isLive = computed(() =>
 		["Recording", "Interrupted"].includes(state.value?.status || ""),
 	);
-	const isStarting = computed(() => state.value?.status === "Pending");
+	const isStarting = computed(() =>
+		["Pending", "Starting"].includes(state.value?.status || ""),
+	);
 
 	async function loadState() {
 		try {
@@ -124,8 +128,8 @@ export function useRecording(meetingId: string) {
 			state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
 		});
 		if (result.status === "Recording") await loadState();
-		if (result.status !== "Pending") requestId.value = null;
-		if (result.status === "Pending") toast.info("Recording is starting");
+		if (!["Pending", "Starting"].includes(result.status)) requestId.value = null;
+		if (["Pending", "Starting"].includes(result.status)) toast.info("Recording is starting");
 		else if (result.status === "Stopping")
 			toast.error("Recording could not start and is stopping");
 		else toast.success("Recording started");
@@ -149,7 +153,7 @@ export function useRecording(meetingId: string) {
 	function handleState(event: RecordingEvent) {
 		if (event.meeting_id !== meetingId) return;
 		if (!event.recording) {
-			const wasPending = state.value?.status === "Pending";
+			const wasPending = ["Pending", "Starting"].includes(state.value?.status || "");
 			setState(null);
 			requestId.value = null;
 			if (wasPending) toast.error("Recording could not start");

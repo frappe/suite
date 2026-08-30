@@ -71,6 +71,10 @@ function validLedger(value: unknown): value is Ledger {
 			'state',
 			'stop_operation_ids',
 			...(job.health_reason === undefined ? [] : ['health_reason']),
+			...(job.configured_at === undefined ? [] : ['configured_at']),
+			...(job.proof_completed_at === undefined ? [] : ['proof_completed_at']),
+			...(job.joined_at === undefined ? [] : ['joined_at']),
+			...(job.capture_started_at === undefined ? [] : ['capture_started_at']),
 			...(job.event_sequence === undefined ? [] : ['event_sequence']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
 			...(job.callback_completed_at === undefined
@@ -94,6 +98,13 @@ function validLedger(value: unknown): value is Ledger {
 				(Number.isSafeInteger(job.event_sequence) &&
 					job.event_sequence >= 1)) &&
 			validUtcTimestamp(job.accepted_at) &&
+			(job.configured_at === undefined ||
+				validUtcTimestamp(job.configured_at)) &&
+			(job.proof_completed_at === undefined ||
+				validUtcTimestamp(job.proof_completed_at)) &&
+			(job.joined_at === undefined || validUtcTimestamp(job.joined_at)) &&
+			(job.capture_started_at === undefined ||
+				validUtcTimestamp(job.capture_started_at)) &&
 			[
 				'reserved',
 				'configured',

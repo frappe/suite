@@ -29,6 +29,8 @@ class RecorderOutcome:
     reason: str | None = None
     state: str | None = None
     health_reason: str | None = None
+    event_sequence: int | None = None
+    milestones: dict[str, datetime] | None = None
 
 
 class RecorderClient:
@@ -113,10 +115,13 @@ class RecorderClient:
             "accepted_at",
             "public_jwk",
             "state",
+            "event_sequence",
         }
-        if response.status_code in (200, 202) and set(body) in (
-            accepted_keys,
-            accepted_keys | {"health_reason"},
+        optional_keys = {"health_reason", "milestones", "artifact"}
+        if (
+            response.status_code in (200, 202)
+            and accepted_keys.issubset(body)
+            and set(body).issubset(accepted_keys | optional_keys)
         ):
             if body["status"] != "accepted":
                 return RecorderOutcome("indeterminate")
@@ -131,14 +136,25 @@ class RecorderClient:
                 "recovery_required",
                 "stopping",
             }
-            if body["state"] not in states or (
-                "health_reason" in body
-                and (not isinstance(body["health_reason"], str) or len(body["health_reason"]) > 256)
+            if (
+                body["state"] not in states
+                or not isinstance(body["event_sequence"], int)
+                or body["event_sequence"] < 1
+                or (
+                    "health_reason" in body
+                    and (not isinstance(body["health_reason"], str) or len(body["health_reason"]) > 256)
+                )
             ):
                 return RecorderOutcome("indeterminate")
             try:
                 accepted_at = _utc_datetime(body["accepted_at"])
                 public_jwk = normalize_public_jwk(body["public_jwk"])
+                raw_milestones = body.get("milestones", {})
+                if not isinstance(raw_milestones, dict) or not set(raw_milestones).issubset(
+                    {"configured", "proof_complete", "joined", "capture_started"}
+                ):
+                    raise ValueError
+                milestones = {key: _utc_datetime(value) for key, value in raw_milestones.items()}
             except (TypeError, ValueError):
                 return RecorderOutcome("indeterminate")
             return RecorderOutcome(
@@ -147,6 +163,8 @@ class RecorderClient:
                 public_jwk=public_jwk,
                 state=body["state"],
                 health_reason=body.get("health_reason"),
+                event_sequence=body["event_sequence"],
+                milestones=milestones,
             )
         if response.status_code in (409, 422, 429, 507) and set(body) == {"status", "job", "reason"}:
             reason = body["reason"]

@@ -35,7 +35,7 @@ class TestMeetRecording(IntegrationTestCase):
         self.assertFalse(has_permission(doc, "read", "Guest"))
         self.assertEqual(get_permission_query_conditions("Guest"), "1 = 0")
 
-    def test_recording_must_start_pending_for_room_owner(self):
+    def test_recording_must_start_in_startup_state_for_room_owner(self):
         room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
         recording = frappe.get_doc(
             {
@@ -52,7 +52,7 @@ class TestMeetRecording(IntegrationTestCase):
                 "drive_home_folder": "missing",
             }
         )
-        with self.assertRaisesRegex(ValidationError, "begin in Pending"):
+        with self.assertRaisesRegex(ValidationError, "begin in Starting"):
             recording.insert(ignore_links=True)
 
     def test_recording_owner_must_match_room(self):
@@ -79,6 +79,7 @@ class TestMeetRecording(IntegrationTestCase):
         room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
         statuses = (
             "Pending",
+            "Starting",
             "Recording",
             "Interrupted",
             "Stopping",
@@ -86,6 +87,7 @@ class TestMeetRecording(IntegrationTestCase):
             "Ready",
             "Partial",
             "Failed",
+            "Cancelled",
         )
 
         for source in statuses:
@@ -131,7 +133,7 @@ class TestMeetRecording(IntegrationTestCase):
 
         recording.reload()
         recording.max_ends_at = "2026-08-03 00:00:00"
-        with self.assertRaisesRegex(ValidationError, "Recording configuration cannot change"):
+        with self.assertRaisesRegex(ValidationError, "maximum end can change only when capture starts"):
             recording.save(ignore_permissions=True)
 
         recording.reload()

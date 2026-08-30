@@ -59,12 +59,26 @@ function stopBody(value: unknown): value is StopBody {
 }
 
 function accepted(job: JobRecord) {
+	const milestoneEntries = [
+		['configured', job.configured_at],
+		['proof_complete', job.proof_completed_at],
+		['joined', job.joined_at],
+		['capture_started', job.capture_started_at],
+	] as const;
+	const milestones = Object.fromEntries(
+		milestoneEntries.filter(([, value]) => value) as readonly (readonly [
+			string,
+			string,
+		])[],
+	);
 	return {
 		status: 'accepted',
 		job: job.job,
 		accepted_at: job.accepted_at,
 		public_jwk: job.public_jwk,
 		state: job.state,
+		event_sequence: job.event_sequence ?? 1,
+		...(Object.keys(milestones).length ? { milestones } : {}),
 		...(job.artifact ? { artifact: job.artifact } : {}),
 		...(job.health_reason ? { health_reason: job.health_reason } : {}),
 	};
@@ -153,13 +167,11 @@ export function createApp(
 				const claims = res.locals.command as CommandClaims;
 				const body: unknown = req.body;
 				if (!reserveBody(body) || body.job !== claims.job)
-					return res
-						.status(422)
-						.json({
-							status: 'rejected',
-							job: claims.job,
-							reason: 'invalid_job',
-						});
+					return res.status(422).json({
+						status: 'rejected',
+						job: claims.job,
+						reason: 'invalid_job',
+					});
 				await auth.consume(claims);
 				const result = await jobs.reserve(claims);
 				if (result.status === 'accepted') {

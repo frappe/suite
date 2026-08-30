@@ -22,6 +22,7 @@ from suite.meet.api.recording import (
     reconcile_pending_recordings,
     recorder_failed,
     recorder_interrupted,
+    recorder_startup_progress,
     start,
     stop,
 )
@@ -334,14 +335,14 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue,
                 patch("suite.meet.api.recording._publish_state") as publish_state,
             ):
-                self.assertEqual(complete_upload(recording.name, event_sequence=3), {"status": "Processing"})
-                result = process_upload(recording.name, event_sequence=3)
-                self.assertEqual(process_upload(recording.name, event_sequence=3), result)
+                self.assertEqual(complete_upload(recording.name, event_sequence=7), {"status": "Processing"})
+                result = process_upload(recording.name, event_sequence=7)
+                self.assertEqual(process_upload(recording.name, event_sequence=7), result)
 
             enqueue.assert_called_once_with(
                 process_upload,
                 recording_name=recording.name,
-                event_sequence=3,
+                event_sequence=7,
                 queue="long",
                 timeout=6 * 60 * 60 + 5 * 60,
                 enqueue_after_commit=True,
@@ -410,7 +411,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = process_upload(recording.name, event_sequence=3)
+                result = process_upload(recording.name, event_sequence=7)
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)
             self.assertEqual(result["status"], "Partial")
@@ -450,8 +451,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             result = start(self.room.name, str(uuid.uuid4()))
 
         recording = frappe.get_doc("Meet Recording", result["name"])
-        self.assertEqual(result, {"name": recording.name, "status": "Recording", "grant_delivered": True})
-        self.assertEqual(recording.started_at, accepted_at.replace(tzinfo=None))
+        self.assertEqual(result, {"name": recording.name, "status": "Starting", "grant_delivered": True})
+        self.assertEqual(recording.recorder_accepted_at, accepted_at.replace(tzinfo=None))
+        self.assertIsNone(recording.started_at)
         self.assertEqual(frappe.parse_json(recording.recorder_public_jwk), PUBLIC_JWK)
         self.assertEqual(recording.recorder_key_thumbprint, "xx0BcA-wMohw8atYDJOe6peGModklG2wRHBlXHMvl0M")
         client.deliver_grant.assert_called_once()
@@ -464,27 +466,60 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             result = recorder_interrupted(
                 recording.name,
                 recording.recorder_job_id,
-                2,
+                6,
                 "connection_lost",
             )
 
         recording.reload()
         self.assertEqual(result, {"status": "Interrupted"})
         self.assertEqual(recording.status, "Interrupted")
-        self.assertEqual(recording.recorder_event_sequence, 2)
+        self.assertEqual(recording.recorder_event_sequence, 6)
+
+    def test_capture_start_milestone_begins_recording_session(self):
+        frappe.conf.recording_fixture_mode = False
+        client = Mock()
+        accepted_at = _system_datetime_as_utc(now_datetime())
+        client.reserve.return_value = RecorderOutcome("accepted", accepted_at, PUBLIC_JWK)
+        client.deliver_grant.return_value = True
+        with patch("suite.meet.api.recording._client", return_value=client):
+            result = start(self.room.name, str(uuid.uuid4()))
+
+        self.assertEqual(result["status"], "Starting")
+        timestamp = accepted_at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            for sequence, milestone in enumerate(
+                ("configured", "proof_complete", "joined", "capture_started"), 2
+            ):
+                state = recorder_startup_progress(
+                    result["name"],
+                    frappe.db.get_value("Meet Recording", result["name"], "recorder_job_id"),
+                    sequence,
+                    milestone,
+                    timestamp,
+                )
+
+        recording = frappe.get_doc("Meet Recording", result["name"])
+        self.assertEqual(state, {"status": "Recording"})
+        self.assertEqual(recording.status, "Recording")
+        self.assertEqual(
+            recording.started_at,
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00")).replace(tzinfo=None),
+        )
+        self.assertEqual(recording.capture_started_at, recording.started_at)
+        self.assertEqual(recording.recorder_event_sequence, 5)
 
     def test_duplicate_interruption_callback_does_not_advance_state(self):
         started = start(self.room.name, str(uuid.uuid4()))
         recording = frappe.get_doc("Meet Recording", started["name"])
 
         with patch("suite.meet.api.recording.authenticate_callback"):
-            first = recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost")
-            second = recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost")
+            first = recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost")
+            second = recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost")
 
         recording.reload()
         self.assertEqual(first, second)
         self.assertEqual(recording.state_revision, 2)
-        self.assertEqual(recording.recorder_event_sequence, 2)
+        self.assertEqual(recording.recorder_event_sequence, 6)
 
     def test_failed_recording_releases_storage_reservation(self):
         usage_before = get_storage_usage(self.owner)
@@ -495,7 +530,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         )
 
         with patch("suite.meet.api.recording.authenticate_callback"):
-            recorder_failed(recording.name, recording.recorder_job_id, 2, "capture_failed")
+            recorder_failed(recording.name, recording.recorder_job_id, 6, "capture_failed")
 
         self.assertEqual(get_storage_usage(self.owner)["reserved_size"], usage_before.get("reserved_size", 0))
 
@@ -554,13 +589,13 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         path = _upload_path(recording.upload_id)
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
         with patch("suite.meet.api.recording.authenticate_callback"):
-            recorder_failed(recording.name, recording.recorder_job_id, 3, "processing_failed")
+            recorder_failed(recording.name, recording.recorder_job_id, 7, "processing_failed")
         frappe.db.set_value("Meet Recording", recording.name, "modified", "2000-01-01", update_modified=False)
 
         recent = start(self.room.name, str(uuid.uuid4()))
         recent_recording = frappe.get_doc("Meet Recording", recent["name"])
         with patch("suite.meet.api.recording.authenticate_callback"):
-            recorder_failed(recent_recording.name, recent_recording.recorder_job_id, 2, "capture_failed")
+            recorder_failed(recent_recording.name, recent_recording.recorder_job_id, 6, "capture_failed")
 
         cleanup_failed_recordings()
 
@@ -569,7 +604,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertTrue(frappe.db.exists("Meet Recording", recent_recording.name))
         self.assertEqual(get_storage_usage(self.owner)["reserved_size"], usage_before.get("reserved_size", 0))
 
-    def test_explicit_rejection_deletes_pending_but_indeterminate_keeps_it(self):
+    def test_explicit_rejection_and_startup_timeout_are_retained(self):
         frappe.conf.recording_fixture_mode = False
         client = Mock()
         client.reserve.return_value = RecorderOutcome("rejected", reason="capacity")
@@ -578,7 +613,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
         ):
             self.assertEqual(start(self.room.name, str(uuid.uuid4())), {"status": "Rejected"})
-        self.assertFalse(frappe.db.exists("Meet Recording", {"meet_room": self.room.name}))
+        rejected = frappe.db.get_value(
+            "Meet Recording", {"meet_room": self.room.name}, ["status", "failure_code"], as_dict=True
+        )
+        self.assertEqual(rejected, {"status": "Failed", "failure_code": "recorder_rejected"})
         self.assertTrue(
             any(
                 (call.kwargs.get("message") or call.args[1]).get("recording") is None
@@ -586,10 +624,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             )
         )
 
+        frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         client.reserve.return_value = RecorderOutcome("indeterminate")
         with patch("suite.meet.api.recording._client", return_value=client):
             result = start(self.room.name, str(uuid.uuid4()))
-        self.assertEqual(result["status"], "Pending")
+        self.assertEqual(result["status"], "Starting")
         self.assertTrue(frappe.db.exists("Meet Recording", result["name"]))
 
     def test_ambiguous_grant_delivery_stops_the_accepted_session(self):
@@ -604,13 +643,28 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with patch("suite.meet.api.recording._client", return_value=client):
             result = start(self.room.name, request_id)
 
-        self.assertEqual(result["status"], "Stopping")
+        self.assertEqual(result["status"], "Failed")
         self.assertFalse(result["grant_delivered"])
         self.assertEqual(
             frappe.db.get_value("Meet Recording", result["name"], "status"),
-            "Stopping",
+            "Failed",
         )
         client.stop.assert_called_once()
+
+    def test_start_retry_queries_unaccepted_startup(self):
+        frappe.conf.recording_fixture_mode = False
+        client = Mock()
+        client.reserve.return_value = RecorderOutcome("indeterminate")
+        client.query.return_value = RecorderOutcome("indeterminate")
+        request_id = str(uuid.uuid4())
+
+        with patch("suite.meet.api.recording._client", return_value=client):
+            first = start(self.room.name, request_id)
+            retried = start(self.room.name, request_id)
+
+        self.assertEqual(first, retried)
+        self.assertEqual(retried["status"], "Starting")
+        client.query.assert_called_once()
 
     def test_missing_sfu_secret_makes_recorder_unavailable(self):
         secret = frappe.conf.pop("sfu_secret")
@@ -658,8 +712,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 if outcome.outcome == "accepted":
                     frappe.db.delete("Meet Recording", result["name"])
                     frappe.db.commit()
-        self.assertFalse(frappe.db.exists("Meet Recording", names[1]))
-        self.assertEqual(frappe.db.get_value("Meet Recording", names[2], "status"), "Pending")
+        self.assertEqual(frappe.db.get_value("Meet Recording", names[1], "status"), "Failed")
+        self.assertEqual(frappe.db.get_value("Meet Recording", names[2], "status"), "Failed")
 
     def test_reconciliation_without_recorder_skips_client_phases_but_fails_stale(self):
         frappe.conf.recording_fixture_mode = False
@@ -674,7 +728,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             with patch("suite.meet.api.recording._client") as client_factory:
                 # Pending past its deadline is left alone instead of erroring per recording.
                 reconcile_pending_recordings()
-                self.assertEqual(frappe.db.get_value("Meet Recording", name, "status"), "Pending")
+                self.assertEqual(frappe.db.get_value("Meet Recording", name, "status"), "Starting")
 
                 frappe.db.set_value("Meet Recording", name, "status", "Stopping")
                 reconcile_pending_recordings()
@@ -710,4 +764,4 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             client.stop.return_value = True
             reconcile_pending_recordings()
         self.assertEqual(client.stop.call_args.kwargs["operation_id"], operation_id)
-        self.assertFalse(frappe.db.exists("Meet Recording", result["name"]))
+        self.assertEqual(frappe.db.get_value("Meet Recording", result["name"], "status"), "Failed")

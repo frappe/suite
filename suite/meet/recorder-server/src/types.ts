@@ -51,6 +51,10 @@ export interface JobRecord {
 	recording: string;
 	limits: RecordingLimits;
 	accepted_at: string;
+	configured_at?: string;
+	proof_completed_at?: string;
+	joined_at?: string;
+	capture_started_at?: string;
 	public_jwk: PublicJwk;
 	state: JobState;
 	event_sequence?: number;

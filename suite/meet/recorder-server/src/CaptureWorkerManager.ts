@@ -160,7 +160,10 @@ export class CaptureWorkerManager implements RendererBridge {
 	}
 	private async lifecycle(event: RendererLifecycleEvent): Promise<void> {
 		const worker = this.workers.get(event.job);
-		if (event.type === 'capture_ready') await worker?.startCapture();
+		if (event.type === 'capture_ready') {
+			await worker?.startCapture();
+			event = { ...event, occurredAt: new Date().toISOString() };
+		}
 		if (event.type === 'room_empty') {
 			await this.stopWorker(event.job, false, 'room_empty');
 			return;

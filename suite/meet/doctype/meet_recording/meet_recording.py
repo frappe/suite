@@ -9,10 +9,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, get_datetime, get_system_timezone
 
-ACTIVE_RECORDING_STATUSES = ("Recording", "Interrupted", "Stopping")
-TERMINAL_STATUSES = ("Ready", "Partial", "Failed")
+ACTIVE_RECORDING_STATUSES = ("Starting", "Recording", "Interrupted", "Stopping")
+TERMINAL_STATUSES = ("Ready", "Partial", "Failed", "Cancelled")
 IMMUTABLE_FIELDS = ("meet_room", "room_owner", "initiated_by", "recorder_job_id", "request_id")
-IMMUTABLE_CONFIGURATION_FIELDS = ("budget_bytes", "max_ends_at", "drive_home_folder")
+IMMUTABLE_CONFIGURATION_FIELDS = ("budget_bytes", "drive_home_folder")
 WRITE_ONCE_FIELDS = (
     "recorder_key_thumbprint",
     "grant_jti",
@@ -22,6 +22,7 @@ WRITE_ONCE_FIELDS = (
 )
 ALLOWED_TRANSITIONS = {
     "Pending": {"Recording", "Failed"},
+    "Starting": {"Recording", "Stopping", "Failed", "Cancelled"},
     "Recording": {"Interrupted", "Stopping", "Failed"},
     "Interrupted": {"Recording", "Stopping", "Failed"},
     "Stopping": {"Processing", "Failed"},
@@ -51,6 +52,10 @@ class MeetRecording(Document):
             frappe.throw(_("Recording identity cannot change"))
         if any(self.has_value_changed(fieldname) for fieldname in IMMUTABLE_CONFIGURATION_FIELDS):
             frappe.throw(_("Recording configuration cannot change"))
+        if self.has_value_changed("max_ends_at") and not (
+            previous.status == "Starting" and self.status == "Recording"
+        ):
+            frappe.throw(_("Recording maximum end can change only when capture starts"))
         if previous.recorder_public_jwk and frappe.parse_json(self.recorder_public_jwk) != frappe.parse_json(
             previous.recorder_public_jwk
         ):
@@ -65,8 +70,8 @@ class MeetRecording(Document):
 
     def validate_transition(self):
         if self.is_new():
-            if self.status != "Pending" or self.state_revision != 0:
-                frappe.throw(_("A recording must begin in Pending at revision 0"))
+            if self.status not in ("Pending", "Starting") or self.state_revision != 0:
+                frappe.throw(_("A recording must begin in Starting at revision 0"))
             return
 
         previous = self.get_doc_before_save()
@@ -86,7 +91,8 @@ class MeetRecording(Document):
             if self.state_revision != previous.state_revision + 1:
                 frappe.throw(_("State revision must increase by one"))
             is_local_transition = (
-                (self.status == "Stopping" and previous.status in ("Recording", "Interrupted"))
+                (self.status == "Stopping" and previous.status in ("Starting", "Recording", "Interrupted"))
+                or getattr(self.flags, "startup_failure", False)
                 or getattr(self.flags, "reconciliation_update", False)
                 or (
                     previous.status == "Interrupted"
@@ -156,9 +162,11 @@ class MeetRecording(Document):
         if self.status in ("Recording", "Interrupted", "Stopping", "Processing", "Ready", "Partial"):
             if not self.started_at or not self.max_ends_at:
                 frappe.throw(_("An accepted recording requires start and maximum end times"))
+        if self.status == "Starting" and self.started_at:
+            frappe.throw(_("A Recording Startup cannot have a Recording Session start time"))
         if self.status in ("Processing", "Ready", "Partial") and (not self.ended_at or not self.end_reason):
             frappe.throw(_("A stopped recording requires an end time and reason"))
-        if self.status in ("Pending", "Recording", "Interrupted", "Stopping") and self.ended_at:
+        if self.status in ("Pending", "Starting", "Recording", "Interrupted", "Stopping") and self.ended_at:
             frappe.throw(_("An active recording cannot have an end time"))
 
         upload_fields = (self.upload_id, self.upload_size, self.upload_sha256, self.upload_duration_ms)

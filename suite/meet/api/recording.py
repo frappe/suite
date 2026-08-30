@@ -34,6 +34,13 @@ MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 30 + 5 * 1024 * 1024
 RECONCILIATION_GRACE_SECONDS = 5 * 60
 PROCESSING_TIMEOUT_SECONDS = 24 * 60 * 60
 FAILED_RETENTION_DAYS = 30
+STARTUP_TIMEOUT_SECONDS = 60
+STARTUP_MILESTONES = {
+    "configured": "configured_at",
+    "proof_complete": "proof_completed_at",
+    "joined": "joined_at",
+    "capture_started": "capture_started_at",
+}
 
 
 def _get_room(meeting_id: str):
@@ -138,12 +145,17 @@ def get_state(meeting_id: str) -> dict | None:
 
 
 def get_active_recording_state(meeting_id: str) -> dict | None:
-    return frappe.db.get_value(
+    state = frappe.db.get_value(
         "Meet Recording",
         {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]},
         ["name", "status", "started_at", "capture_started_at", "state_revision"],
         as_dict=True,
     )
+    if state and state.status == "Starting":
+        room = frappe.get_doc("Meet Room", meeting_id)
+        if not room.is_host_or_cohost(frappe.session.user):
+            return None
+    return state
 
 
 def _validate_request_id(request_id: str):
@@ -154,7 +166,7 @@ def _validate_request_id(request_id: str):
         frappe.throw(_("Request ID must be a UUID"))
 
 
-def _publish_state(room, recording):
+def _publish_state(room, recording, *, hosts_only: bool = False):
     payload = {
         "meeting_id": room.name,
         "recording": (
@@ -169,7 +181,12 @@ def _publish_state(room, recording):
             else None
         ),
     }
-    for user in set(room.get_members()):
+    users = (
+        {room.owner, *room.get_co_hosts()}
+        if hosts_only or (recording and recording.status == "Starting")
+        else set(room.get_members())
+    )
+    for user in users:
         if user.startswith("guest_"):
             frappe.publish_realtime(
                 "meeting:recording_state", payload, room=f"guest:{user}", after_commit=True
@@ -247,12 +264,11 @@ def _accept(room, recording, outcome: RecorderOutcome):
         frappe.throw(_("Recorder acceptance time is outside the recording interval"))
     recording.recorder_public_jwk = outcome.public_jwk
     recording.recorder_key_thumbprint = public_jwk_thumbprint(outcome.public_jwk)
-    recording.status = "Recording"
-    recording.state_revision += 1
-    recording.recorder_event_sequence += 1
-    recording.started_at = accepted_at.replace(tzinfo=None)
+    recording.status = "Starting"
+    recording.recorder_event_sequence = max(1, recording.recorder_event_sequence)
+    recording.recorder_accepted_at = accepted_at.replace(tzinfo=None)
     recording.save(ignore_permissions=True)
-    _publish_state(room, recording)
+    _publish_state(room, recording, hosts_only=True)
     frappe.db.commit()
     return recording
 
@@ -264,10 +280,20 @@ def _policy_allows_recording(room) -> bool:
 def _reject_pending(room, recording):
     room.recording_policy_lock()
     current = frappe.get_doc("Meet Recording", recording.name)
-    if current.status == "Pending":
-        frappe.delete_doc("Meet Recording", current.name, ignore_permissions=True)
-        _publish_state(room, None)
+    if current.status in ("Pending", "Starting"):
+        _fail_startup(room, current, "recorder_rejected")
         frappe.db.commit()
+
+
+def _fail_startup(room, recording, failure_code: str):
+    if recording.status not in ("Pending", "Starting"):
+        return
+    recording.status = "Failed"
+    recording.state_revision += 1
+    recording.failure_code = failure_code
+    recording.flags.startup_failure = True
+    recording.save(ignore_permissions=True)
+    _publish_state(room, None, hosts_only=True)
 
 
 def _fixture_enabled() -> bool:
@@ -289,13 +315,26 @@ def start(meeting_id: str, request_id: str) -> dict:
     )
     if existing:
         if existing.status != "Pending":
-            if existing.status == "Recording":
+            if existing.status in ("Starting", "Recording"):
                 recording = frappe.get_doc("Meet Recording", existing.name)
+                if existing.status == "Starting" and not recording.recorder_accepted_at:
+                    client = None if _fixture_enabled() else _client()
+                    outcome = (
+                        _fixture_outcome(recording)
+                        if _fixture_enabled()
+                        else client.query(
+                            room=meeting_id,
+                            recording=recording.name,
+                            job=recording.recorder_job_id,
+                            limits=_limits(recording),
+                        )
+                    )
+                    return _finish_start(room, recording, outcome, client)
                 if recording.grant_delivered:
                     return {"name": existing.name, "status": existing.status, "grant_delivered": True}
                 outcome = RecorderOutcome(
                     "accepted",
-                    accepted_at=get_datetime(recording.started_at).replace(tzinfo=UTC),
+                    accepted_at=get_datetime(recording.recorder_accepted_at).replace(tzinfo=UTC),
                     public_jwk=_stored_public_jwk(recording),
                 )
                 return _finish_start(room, recording, outcome, None if _fixture_enabled() else _client())
@@ -326,6 +365,14 @@ def start(meeting_id: str, request_id: str) -> dict:
     )
     if existing:
         return existing
+    active = frappe.db.get_value(
+        "Meet Recording",
+        {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]},
+        ["name", "status", "grant_delivered"],
+        as_dict=True,
+    )
+    if active:
+        return active
     destination = _get_drive_destination(room.owner)
     acquire_owner_storage_lock(room.owner)
     owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
@@ -356,14 +403,14 @@ def start(meeting_id: str, request_id: str) -> dict:
             "room_owner": room.owner,
             "initiated_by": frappe.session.user,
             "calendar_event": room.calendar_event,
-            "status": "Pending",
+            "status": "Starting",
             "estimated_seconds": preflight["estimated_seconds"],
             "estimated_bytes": preflight["estimated_bytes"],
             "budget_bytes": preflight["budget_bytes"],
-            "max_ends_at": add_to_date(now, seconds=MAX_SECONDS),
+            "max_ends_at": add_to_date(now, seconds=MAX_SECONDS + STARTUP_TIMEOUT_SECONDS),
             "recorder_job_id": frappe.generate_hash(length=32),
             "request_id": request_id,
-            "pending_deadline": add_to_date(now, seconds=30),
+            "pending_deadline": add_to_date(now, seconds=STARTUP_TIMEOUT_SECONDS),
             "drive_home_folder": destination,
         }
     ).insert(ignore_permissions=True)
@@ -394,13 +441,13 @@ def _finish_start(
         _reject_pending(room, recording)
         return {"status": "Rejected"}
     if outcome.outcome != "accepted":
-        return {"name": recording.name, "status": "Pending"}
+        return {"name": recording.name, "status": recording.status}
 
     room = frappe.get_doc("Meet Room", recording.meet_room)
     if not room_locked:
         room.recording_policy_lock()
     current = frappe.get_doc("Meet Recording", recording.name)
-    if current.status == "Pending":
+    if current.status in ("Pending", "Starting") and not current.recorder_accepted_at:
         room.reload()
         if not _policy_allows_recording(room):
             frappe.db.commit()
@@ -415,7 +462,7 @@ def _finish_start(
                 return {"status": "Rejected"}
             return {"name": current.name, "status": "Pending"}
         current = _accept(room, current, outcome)
-    if current.status != "Recording":
+    if current.status != "Starting":
         return {"name": current.name, "status": current.status}
     if current.grant_delivered:
         return {"name": current.name, "status": current.status, "grant_delivered": True}
@@ -457,17 +504,29 @@ def _finish_start(
     if not delivered:
         return _stop_after_grant_delivery_failure(room, current, client)
     current.grant_delivered = True
+    current.grant_delivered_at = _utc_now_naive()
     current.save(ignore_permissions=True)
     frappe.db.commit()
+    if client is None:
+        timestamp = (
+            _system_datetime_as_utc(now_datetime()).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
+        for sequence, milestone in enumerate(
+            ("configured", "proof_complete", "joined", "capture_started"), 2
+        ):
+            _apply_startup_milestone(current.name, sequence, milestone, timestamp)
+        current = frappe.get_doc("Meet Recording", current.name)
     return {"name": current.name, "status": current.status, "grant_delivered": delivered}
 
 
 def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient | None) -> dict:
-    recording.status = "Stopping"
+    recording.status = "Failed"
     recording.state_revision += 1
+    recording.failure_code = "grant_delivery_failed"
+    recording.flags.startup_failure = True
     operation_id = _stop_operation_id(recording)
     recording.save(ignore_permissions=True)
-    _publish_state(room, recording)
+    _publish_state(room, None, hosts_only=True)
     frappe.db.commit()
     if client:
         client.stop(
@@ -493,7 +552,12 @@ def stop(meeting_id: str) -> dict | None:
     if not recording_name:
         return None
     recording = frappe.get_doc("Meet Recording", recording_name)
-    if recording.status in ("Recording", "Interrupted"):
+    if recording.status == "Starting":
+        recording.status = "Cancelled"
+        recording.state_revision += 1
+        _stop_operation_id(recording)
+        recording.save(ignore_permissions=True)
+    elif recording.status in ("Recording", "Interrupted"):
         recording.status = "Stopping"
         recording.state_revision += 1
         recording.end_reason = "host_stop"
@@ -505,7 +569,7 @@ def stop(meeting_id: str) -> dict | None:
             recording.recorder_event_sequence += 1
             recording.ended_at = _bounded_end(recording)
             recording.save(ignore_permissions=True)
-    _publish_state(room, recording)
+    _publish_state(room, recording, hosts_only=recording.status == "Cancelled")
     frappe.db.commit()
     if not _fixture_enabled():
         _client().stop(
@@ -523,6 +587,87 @@ def _stop_operation_id(recording) -> str:
         recording.stop_operation_id = str(uuid.uuid4())
         recording.db_set("stop_operation_id", recording.stop_operation_id, update_modified=False)
     return recording.stop_operation_id
+
+
+def _startup_timestamp(value: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        frappe.throw(_("Recording startup timestamp must be UTC"))
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        frappe.throw(_("Recording startup timestamp is invalid"))
+    if parsed.tzinfo is None:
+        frappe.throw(_("Recording startup timestamp must include a timezone"))
+    return parsed.astimezone(UTC)
+
+
+def _apply_startup_milestone(
+    recording_id: str,
+    event_sequence: int,
+    milestone: str,
+    occurred_at: str,
+) -> dict:
+    fieldname = STARTUP_MILESTONES.get(milestone)
+    if not fieldname:
+        frappe.throw(_("Invalid Recording Startup milestone"))
+    recording = frappe.get_doc("Meet Recording", recording_id)
+    if recording.status == "Recording" and milestone == "capture_started":
+        return {"status": "Recording"}
+    if recording.status != "Starting":
+        return {"status": recording.status}
+    sequence = cint(event_sequence)
+    if sequence <= recording.recorder_event_sequence:
+        if recording.get(fieldname):
+            return {"status": recording.status}
+        frappe.throw(_("Recorder startup event is out of order"))
+    if sequence != recording.recorder_event_sequence + 1:
+        frappe.throw(_("Recorder startup event sequence has a gap"))
+
+    occurred = _startup_timestamp(occurred_at)
+    accepted = get_datetime(recording.recorder_accepted_at).replace(tzinfo=UTC)
+    if occurred + timedelta(milliseconds=1) < accepted or occurred > _system_datetime_as_utc(
+        now_datetime()
+    ) + timedelta(minutes=5):
+        frappe.throw(_("Recording startup timestamp is outside the startup interval"))
+    previous_fields = list(STARTUP_MILESTONES.values())[: list(STARTUP_MILESTONES).index(milestone)]
+    if any(not recording.get(previous) for previous in previous_fields):
+        frappe.throw(_("Recording Startup milestones must be ordered"))
+    if previous_fields and occurred.replace(tzinfo=None) < get_datetime(recording.get(previous_fields[-1])):
+        frappe.throw(_("Recording Startup milestone time is out of order"))
+
+    occurred_naive = occurred.replace(tzinfo=None)
+    recording.set(fieldname, occurred_naive)
+    recording.recorder_event_sequence = sequence
+    if milestone == "capture_started":
+        recording.started_at = occurred_naive
+        recording.max_ends_at = (
+            (occurred + timedelta(seconds=MAX_SECONDS))
+            .astimezone(ZoneInfo(frappe.utils.get_system_timezone()))
+            .replace(tzinfo=None)
+        )
+        recording.status = "Recording"
+        recording.state_revision += 1
+    recording.save(ignore_permissions=True)
+    room = frappe.get_doc("Meet Room", recording.meet_room)
+    _publish_state(room, recording, hosts_only=recording.status == "Starting")
+    return {"status": recording.status}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def recorder_startup_progress(
+    recording_id: str,
+    job: str,
+    event_sequence: int,
+    milestone: str,
+    occurred_at: str,
+) -> dict:
+    authenticate_callback(
+        recording=recording_id,
+        job=job,
+        operation="startup_progress",
+        operation_id=str(event_sequence),
+    )
+    return _apply_startup_milestone(recording_id, event_sequence, milestone, occurred_at)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -663,19 +808,29 @@ def recorder_failed(
     recording = frappe.get_doc("Meet Recording", recording_id)
     if recording.status == "Failed":
         return {"status": "Failed"}
-    if recording.status not in ("Recording", "Interrupted", "Stopping", "Processing"):
+    if recording.status == "Cancelled":
+        return {"status": "Cancelled"}
+    if recording.status not in ("Starting", "Recording", "Interrupted", "Stopping", "Processing"):
         frappe.throw(_("Recording cannot accept a failure callback"))
     if cint(event_sequence) <= recording.recorder_event_sequence:
         frappe.throw(_("Recorder event is out of order"))
     if failure_code not in ("capture_failed", "processing_failed", "storage_unavailable", "quota_exhausted"):
         frappe.throw(_("Invalid recording failure code"))
+    startup_failure = recording.status == "Starting"
     recording.status = "Failed"
     recording.state_revision += 1
     recording.recorder_event_sequence = cint(event_sequence)
     recording.failure_code = failure_code
-    recording.ended_at = recording.ended_at or _bounded_end(recording)
+    if recording.started_at:
+        recording.ended_at = recording.ended_at or _bounded_end(recording)
+    if startup_failure:
+        recording.flags.startup_failure = True
     recording.save(ignore_permissions=True)
-    _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
+    _publish_state(
+        frappe.get_doc("Meet Room", recording.meet_room),
+        None if startup_failure else recording,
+        hosts_only=startup_failure,
+    )
     return {"status": "Failed"}
 
 
@@ -686,7 +841,7 @@ def reconcile_pending_recordings():
     if _fixture_enabled() or _recorder_available():
         names = frappe.get_all(
             "Meet Recording",
-            filters={"status": "Pending", "pending_deadline": ["<=", now_datetime()]},
+            filters={"status": ["in", ("Pending", "Starting")], "pending_deadline": ["<=", now_datetime()]},
             pluck="name",
         )
         for name in names:
@@ -699,7 +854,7 @@ def reconcile_pending_recordings():
     for name in frappe.get_all(
         "Meet Recording",
         filters={
-            "status": ["in", ("Pending", "Recording", "Interrupted", "Stopping")],
+            "status": ["in", ("Pending", "Starting", "Recording", "Interrupted", "Stopping")],
             "max_ends_at": ["<=", stale_active_cutoff],
         },
         pluck="name",
@@ -717,7 +872,7 @@ def reconcile_pending_recordings():
     failed_cutoff = add_to_date(now_datetime(), days=-FAILED_RETENTION_DAYS)
     for name in frappe.get_all(
         "Meet Recording",
-        filters={"status": "Failed", "modified": ["<", failed_cutoff]},
+        filters={"status": ["in", ("Failed", "Cancelled")], "modified": ["<", failed_cutoff]},
         pluck="name",
     ):
         _run_reconciliation(name, _delete_expired_failed_recording)
@@ -727,7 +882,7 @@ def cleanup_failed_recordings():
     failed_cutoff = add_to_date(now_datetime(), days=-FAILED_RETENTION_DAYS)
     for name in frappe.get_all(
         "Meet Recording",
-        filters={"status": "Failed", "modified": ["<=", failed_cutoff]},
+        filters={"status": ["in", ("Failed", "Cancelled")], "modified": ["<=", failed_cutoff]},
         pluck="name",
     ):
         _run_reconciliation(name, _delete_expired_failed_recording)
@@ -747,7 +902,7 @@ def _run_reconciliation(name: str, operation):
 
 def _fail_stale_recording(name: str):
     recording = frappe.get_doc("Meet Recording", name)
-    if recording.status not in ("Pending", "Recording", "Interrupted", "Stopping", "Processing"):
+    if recording.status not in ("Pending", "Starting", "Recording", "Interrupted", "Stopping", "Processing"):
         return
     if recording.status == "Processing" and recording.modified > add_to_date(
         now_datetime(), seconds=-PROCESSING_TIMEOUT_SECONDS
@@ -763,7 +918,8 @@ def _fail_stale_recording(name: str):
     recording.failure_code = (
         "processing_failed" if previous_status == "Processing" else "recorder_unavailable"
     )
-    recording.ended_at = recording.ended_at or _bounded_end(recording)
+    if recording.started_at:
+        recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
@@ -808,16 +964,43 @@ def _reconcile_pending(name: str):
         _reject_pending(room, recording)
         return
     if outcome.outcome != "accepted":
+        room.recording_policy_lock()
+        current = frappe.get_doc("Meet Recording", name)
+        _fail_startup(room, current, "startup_timeout")
         return
 
     room.recording_policy_lock()
     current = frappe.get_doc("Meet Recording", name)
-    if current.status != "Pending":
+    if current.status not in ("Pending", "Starting"):
         frappe.db.commit()
         return
     room.reload()
     if _policy_allows_recording(room):
         _finish_start(room, current, outcome, client, room_locked=True)
+        for sequence, milestone in enumerate(
+            ("configured", "proof_complete", "joined", "capture_started"), 2
+        ):
+            occurred = (outcome.milestones or {}).get(milestone)
+            if occurred and (outcome.event_sequence or 0) >= sequence:
+                _apply_startup_milestone(
+                    current.name,
+                    sequence,
+                    milestone,
+                    occurred.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                )
+        current = frappe.get_doc("Meet Recording", name)
+        if current.status == "Starting":
+            operation_id = _stop_operation_id(current)
+            _fail_startup(room, current, "startup_timeout")
+            frappe.db.commit()
+            if client:
+                client.stop(
+                    room=current.meet_room,
+                    recording=current.name,
+                    job=current.recorder_job_id,
+                    limits=_limits(current),
+                    operation_id=operation_id,
+                )
         return
 
     operation_id = _stop_operation_id(current)

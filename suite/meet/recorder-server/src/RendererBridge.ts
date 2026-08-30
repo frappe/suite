@@ -47,6 +47,7 @@ export type RendererLifecycleEvent = {
 		| 'complete'
 		| 'partial';
 	reason?: string;
+	occurredAt?: string;
 	artifact?: CaptureArtifact;
 	gaps?: CaptureGap[];
 };
@@ -418,7 +419,12 @@ export class ChromiumRendererBridge implements RendererBridge {
 			'reason' in value && typeof value.reason === 'string'
 				? value.reason.slice(0, 256)
 				: undefined;
-		void this.lifecycleHandler({ job, type, ...(reason ? { reason } : {}) });
+		void this.lifecycleHandler({
+			job,
+			type,
+			occurredAt: new Date().toISOString(),
+			...(reason ? { reason } : {}),
+		});
 	}
 
 	private async workerFailed(job: string, reason: string): Promise<void> {

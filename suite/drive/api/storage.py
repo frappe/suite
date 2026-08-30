@@ -93,7 +93,9 @@ def get_storage_usage(user: str | None = None):
             .select(fn.Coalesce(fn.Sum(recording.budget_bytes), 0))
             .where(
                 (recording.room_owner == user)
-                & recording.status.isin(("Pending", "Recording", "Interrupted", "Stopping", "Processing"))
+                & recording.status.isin(
+                    ("Pending", "Starting", "Recording", "Interrupted", "Stopping", "Processing")
+                )
             )
         ).run()
         result["reserved_size"] = reserved[0][0]

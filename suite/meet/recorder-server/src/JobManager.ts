@@ -64,6 +64,7 @@ export class JobManager {
 			new Promise((resolve) => setTimeout(resolve, ms)),
 		private readonly onRecovered?: (job: JobRecord) => Promise<void>,
 		private readonly storage: StorageGuard = unrestrictedStorage,
+		private readonly onStartup?: (job: JobRecord) => Promise<void>,
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
@@ -73,6 +74,7 @@ export class JobManager {
 				event.reason,
 				event.artifact,
 				event.gaps,
+				event.occurredAt,
 			);
 		});
 	}
@@ -317,6 +319,7 @@ export class JobManager {
 			duration_ms: number;
 		},
 		gaps?: Array<{ started_at: string; ended_at?: string; reason: string }>,
+		occurredAt = new Date().toISOString(),
 	): Promise<void> {
 		let cleanup = false;
 		let healthDelivery: Promise<void> | undefined;
@@ -325,12 +328,20 @@ export class JobManager {
 			if (!current || !ACTIVE_TRANSITIONS[current.state].includes(type)) return;
 			const recovered =
 				current.state === 'interrupted' && type === 'capture_ready';
+			const startupMilestone =
+				['configured', 'proof_complete', 'joined', 'capture_ready'].includes(
+					type,
+				) && !recovered;
 			await this.store.update((jobs) => {
 				const record = jobs[job];
 				if (!record) return;
-				if (type === 'interrupted')
+				if (type === 'interrupted' || startupMilestone)
 					record.event_sequence = (record.event_sequence ?? 1) + 1;
 				record.state = type;
+				if (type === 'configured') record.configured_at = occurredAt;
+				if (type === 'proof_complete') record.proof_completed_at = occurredAt;
+				if (type === 'joined') record.joined_at = occurredAt;
+				if (type === 'capture_ready') record.capture_started_at = occurredAt;
 				if (type === 'complete' || type === 'partial')
 					record.artifact = {
 						state: type,
@@ -358,6 +369,8 @@ export class JobManager {
 				);
 			if (recovered && updated?.state === 'capture_ready' && this.onRecovered)
 				healthDelivery = this.scheduleHealth({ ...updated }, this.onRecovered);
+			if (startupMilestone && updated && this.onStartup)
+				healthDelivery = this.scheduleHealth({ ...updated }, this.onStartup);
 		});
 		await healthDelivery;
 		if (cleanup) await this.bridge.stop(job);

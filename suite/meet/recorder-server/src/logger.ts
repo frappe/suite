@@ -6,6 +6,7 @@ export type LogEvent =
 	| 'job_stop'
 	| 'interruption_callback_failed'
 	| 'recovery_callback_failed'
+	| 'startup_callback_failed'
 	| 'service_error';
 
 export interface LogEntry {

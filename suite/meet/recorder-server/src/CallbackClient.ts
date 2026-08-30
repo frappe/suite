@@ -31,6 +31,14 @@ interface RecoveredRequest {
 	event_sequence: number;
 }
 
+interface StartupProgressRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: number;
+	milestone: 'configured' | 'proof_complete' | 'joined' | 'capture_started';
+	occurred_at: string;
+}
+
 interface FailedRequest {
 	recording_id: string;
 	job: string;
@@ -57,6 +65,7 @@ interface CompleteUploadRequest {
 }
 
 type CallbackRequest =
+	| StartupProgressRequest
 	| InterruptedRequest
 	| RecoveredRequest
 	| FailedRequest
@@ -64,6 +73,7 @@ type CallbackRequest =
 	| CompleteUploadRequest;
 
 type CallbackMethod =
+	| 'recorder_startup_progress'
 	| 'recorder_interrupted'
 	| 'recorder_recovered'
 	| 'recorder_failed'
@@ -71,6 +81,7 @@ type CallbackMethod =
 	| 'recorder_complete_upload';
 
 type CallbackOperation =
+	| 'startup_progress'
 	| 'interrupted'
 	| 'recovered'
 	| 'failed'
@@ -99,6 +110,38 @@ export class CallbackClient {
 		this.sleep =
 			options.sleep ??
 			((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+	}
+
+	async startup(job: JobRecord): Promise<void> {
+		const milestones = {
+			configured: ['configured', job.configured_at],
+			proof_complete: ['proof_complete', job.proof_completed_at],
+			joined: ['joined', job.joined_at],
+			capture_ready: ['capture_started', job.capture_started_at],
+		} as const;
+		if (!(job.state in milestones))
+			throw new Error('invalid startup milestone');
+		const [milestone, occurredAt] =
+			milestones[job.state as keyof typeof milestones];
+		if (!occurredAt)
+			throw new Error('startup milestone timestamp is unavailable');
+		const sequence = job.event_sequence ?? 1;
+		await this.retryHealthCallback(() =>
+			this.json(
+				'recorder_startup_progress',
+				job,
+				'startup_progress',
+				String(sequence),
+				{
+					recording_id: job.recording,
+					job: job.job,
+					event_sequence: sequence,
+					milestone,
+					occurred_at: occurredAt,
+				},
+				parseStatusResponse,
+			),
+		);
 	}
 
 	async interrupted(job: JobRecord): Promise<void> {

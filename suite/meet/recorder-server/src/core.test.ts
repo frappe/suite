@@ -501,7 +501,7 @@ describe('JobStore and JobManager', () => {
 		);
 		await bridge.emit({ job: 'job', type: 'interrupted' });
 		await bridge.emit({ job: 'job', type: 'capture_ready' });
-		expect(store.get('job')?.event_sequence).toBe(3);
+		expect(store.get('job')?.event_sequence).toBe(7);
 		expect(recovered).toHaveBeenCalledTimes(2);
 	});
 
@@ -837,9 +837,11 @@ describe('HTTP contract', () => {
 			accepted_at: string;
 			public_jwk: typeof TEST_PUBLIC_JWK;
 			state: string;
+			event_sequence: number;
 		} = await reserve.json();
 		expect(Object.keys(reserveBody).sort()).toEqual([
 			'accepted_at',
+			'event_sequence',
 			'job',
 			'public_jwk',
 			'state',

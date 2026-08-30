@@ -48,6 +48,7 @@ class TestRecorderClient(unittest.TestCase):
                 "accepted_at": "2026-07-31T10:11:12.123Z",
                 "public_jwk": PUBLIC_JWK,
                 "state": "reserved",
+                "event_sequence": 1,
             },
         )
 
@@ -55,6 +56,7 @@ class TestRecorderClient(unittest.TestCase):
 
         self.assertEqual(outcome.outcome, "accepted")
         self.assertEqual(outcome.accepted_at.isoformat(), "2026-07-31T10:11:12.123000+00:00")
+        self.assertEqual(outcome.event_sequence, 1)
         call = self.session.request.call_args
         token = call.kwargs["headers"]["Authorization"].removeprefix("Bearer ")
         claims = jwt.decode(

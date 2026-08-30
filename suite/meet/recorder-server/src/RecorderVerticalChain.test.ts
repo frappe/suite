@@ -189,7 +189,12 @@ describe('recorder vertical chain', () => {
 					.toMatch(/capture_ready|failed/);
 				expect(lifecycle).toEqual(
 					['configured', 'proof_complete', 'joined', 'capture_ready'].map(
-						(type) => ({ job: command.job, type }),
+						(type) =>
+							expect.objectContaining({
+								job: command.job,
+								type,
+								occurredAt: expect.any(String),
+							}),
 					),
 				);
 

@@ -97,15 +97,15 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         )
         self.assertEqual(start(self.room.name, request_id), first)
 
-        with self.assertRaises(frappe.ValidationError):
-            start(self.room.name, str(uuid.uuid4()))
+        concurrent = start(self.room.name, str(uuid.uuid4()))
+        self.assertEqual(concurrent["name"], first["name"])
 
         self.assertEqual(
             frappe.db.count(
                 "Meet Recording",
                 {
                     "meet_room": self.room.name,
-                    "status": ["in", ("Pending", "Recording", "Interrupted", "Stopping")],
+                    "status": ["in", ("Pending", "Starting", "Recording", "Interrupted", "Stopping")],
                 },
             ),
             1,
@@ -172,7 +172,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = process_upload(recording.name, event_sequence=3)
+                result = process_upload(recording.name, event_sequence=7)
             artifact = frappe.get_doc("File", result["artifact"])
             self.assertEqual(artifact.owner, self.owner)
         finally:
@@ -307,36 +307,36 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
         ):
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost"),
+                recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost"),
                 {"status": "Interrupted"},
             )
             interruption_publish_count = publish.call_count
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 2, "connection_lost"),
+                recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost"),
                 {"status": "Interrupted"},
             )
             self.assertEqual(publish.call_count, interruption_publish_count)
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 2),
+                recorder_recovered(recording.name, recording.recorder_job_id, 6),
                 {"status": "Recording"},
             )
             recovery_publish_count = publish.call_count
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 2),
+                recorder_recovered(recording.name, recording.recorder_job_id, 6),
                 {"status": "Recording"},
             )
             self.assertEqual(publish.call_count, recovery_publish_count)
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 3, "connection_lost"),
+                recorder_interrupted(recording.name, recording.recorder_job_id, 7, "connection_lost"),
                 {"status": "Interrupted"},
             )
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 3),
+                recorder_recovered(recording.name, recording.recorder_job_id, 7),
                 {"status": "Recording"},
             )
             second_recovery_publish_count = publish.call_count
             self.assertEqual(
-                recorder_failed(recording.name, recording.recorder_job_id, 4, "capture_failed"),
+                recorder_failed(recording.name, recording.recorder_job_id, 8, "capture_failed"),
                 {"status": "Failed"},
             )
             self.assertGreater(publish.call_count, second_recovery_publish_count)
@@ -344,7 +344,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording.reload()
         self.assertEqual(recording.status, "Failed")
         self.assertEqual(recording.state_revision, 6)
-        self.assertEqual(recording.recorder_event_sequence, 4)
+        self.assertEqual(recording.recorder_event_sequence, 8)
         self.assertIsNotNone(recording.ended_at)
 
     def test_callback_timestamps_and_gaps_stay_within_recording(self):
@@ -367,7 +367,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             with self.subTest(ended_at=ended_at), self.assertRaises(frappe.ValidationError):
                 begin_upload(
                     recording.name,
-                    event_sequence=2,
+                    event_sequence=6,
                     size=len(content),
                     sha256=digest,
                     duration_ms=1000,
@@ -385,7 +385,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         with self.assertRaisesRegex(frappe.ValidationError, "within the recording interval"):
             begin_upload(
                 recording.name,
-                event_sequence=2,
+                event_sequence=6,
                 size=len(content),
                 sha256=digest,
                 duration_ms=1000,
@@ -490,7 +490,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording = frappe.get_doc("Meet Recording", started["name"])
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
         with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
-            result = process_upload(recording.name, event_sequence=3)
+            result = process_upload(recording.name, event_sequence=7)
         artifact = frappe.get_doc("File", result["artifact"])
         active_path = manager.get_local_path(artifact.file_url)
         trash_path = manager.get_local_path(
