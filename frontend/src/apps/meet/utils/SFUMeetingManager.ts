@@ -879,6 +879,32 @@ export class SFUMeetingManager {
 		if (producer) void this.transportManager.discardProducer(producer, metadata);
 	}
 
+	async stopScreenShare(metadata: ProducerCloseMetadata = {}): Promise<void> {
+		this.screenPublicationGeneration += 1;
+		this.screenPublicationTrack = null;
+		const producer = await this.mediaManager.serializeSendMediaMutation(async () => {
+			const producer = this.getLocalProducer("screen");
+			if (!producer) return null;
+			this.setLocalProducer("screen", null);
+			return producer;
+		});
+		if (!producer) return;
+
+		try {
+			if (producer.id && this.sfuClient.isConnected()) {
+				await this.sfuClient.sendScreenShare("stop_share", {
+					...metadata,
+					producerId: producer.id,
+					stoppedAt: Date.now(),
+				});
+			}
+		} catch {
+			// Local producer cleanup remains authoritative if signaling fails.
+		} finally {
+			await this.transportManager.discardProducer(producer, metadata);
+		}
+	}
+
 	pauseLocalProducer(kind: LocalProducerKind): void {
 		const producer = this.getLocalProducer(kind);
 		producer?.pause();

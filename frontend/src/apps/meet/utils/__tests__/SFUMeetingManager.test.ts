@@ -50,10 +50,12 @@ const mediaTrack = (id: string, kind: "audio" | "video") =>
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((resolvePromise) => {
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
 		resolve = resolvePromise;
+		reject = rejectPromise;
 	});
-	return { promise, resolve };
+	return { promise, reject, resolve };
 }
 
 afterEach(() => {
@@ -364,6 +366,50 @@ describe("SFUMeetingManager facade operations", () => {
 		await expect(publication).resolves.toBeNull();
 		expect(staleProducer.close).toHaveBeenCalledOnce();
 		expect(closeProducer).toHaveBeenCalledWith("stale-screen-producer", {});
+		expect(manager.getLocalProducerState("screen")).toBeNull();
+	});
+
+	it("acknowledges screen stop before closing its producer", async () => {
+		const stopSignal = deferred<unknown>();
+		const sendScreenShare = vi.fn(() => stopSignal.promise);
+		const closeProducer = vi.fn().mockResolvedValue(undefined);
+		const manager = createManager({
+			isConnected: vi.fn(() => true),
+			sendScreenShare,
+			closeProducer,
+		} as never);
+		const producer = {
+			id: "screen-producer",
+			track: mediaTrack("screen", "video"),
+			closed: false,
+			paused: false,
+			close: vi.fn(),
+		};
+		manager.mediaHandler.setProducers({ screenProducer: producer as never });
+
+		const stopping = manager.stopScreenShare({
+			reason: "user-click",
+			source: "screen-share",
+		});
+		await vi.waitFor(() => expect(sendScreenShare).toHaveBeenCalledOnce());
+
+		expect(producer.close).not.toHaveBeenCalled();
+		expect(closeProducer).not.toHaveBeenCalled();
+		stopSignal.resolve({ success: true });
+		await stopping;
+
+		expect(sendScreenShare).toHaveBeenCalledWith(
+			"stop_share",
+			expect.objectContaining({
+				producerId: "screen-producer",
+				reason: "user-click",
+				source: "screen-share",
+				stoppedAt: expect.any(Number),
+			}),
+		);
+		expect(sendScreenShare.mock.invocationCallOrder[0]).toBeLessThan(
+			closeProducer.mock.invocationCallOrder[0],
+		);
 		expect(manager.getLocalProducerState("screen")).toBeNull();
 	});
 

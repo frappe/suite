@@ -2042,18 +2042,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 	) => {
 		const metadata = getScreenShareStopMetadata(reason, extra);
 		const manager = sfuManager.value;
-		const screenProducer = manager?.getLocalProducerState("screen");
+		const screenStream = mediaState.screenShareStream;
 
 		mediaState.isScreenSharing = false;
 
-		if (screenProducer?.id && manager) {
-			manager.closeLocalProducer("screen", {
-				...metadata,
-				producerId: screenProducer.id,
-			});
-		}
-
-		const tracks = mediaState.screenShareStream?.getTracks?.();
+		const tracks = screenStream?.getTracks?.();
 		if (tracks) {
 			for (const t of tracks) {
 				t.stop();
@@ -2065,15 +2058,11 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 				delete mediaState.screenShareStreams[selfId];
 			}
 		}
-		mediaState.screenShareStream = null;
-
-		if (sfuClient.isConnected()) {
-			sfuClient.sendScreenShare("stop_share", {
-				...metadata,
-				producerId: screenProducer?.id,
-				stoppedAt: Date.now(),
-			});
+		if (mediaState.screenShareStream === screenStream) {
+			mediaState.screenShareStream = null;
 		}
+
+		await manager?.stopScreenShare(metadata);
 	};
 
 	const toggleScreenShare = async () => {

@@ -384,6 +384,20 @@ function createCameraHarness({
 			if (producer?.id) void sfuClient.closeProducer(producer.id);
 			if (kind === "screen") mediaHandler.stopScreenShare();
 		}),
+		stopScreenShare: vi.fn(async (metadata = {}) => {
+			const producer = getProducer("screen");
+			setProducer("screen", null);
+			if (producer?.id) {
+				await sfuClient.sendScreenShare("stop_share", {
+					...metadata,
+					producerId: producer.id,
+					stoppedAt: Date.now(),
+				});
+				producer.close?.();
+				await sfuClient.closeProducer(producer.id);
+			}
+			mediaHandler.stopScreenShare();
+		}),
 		pauseLocalProducer: vi.fn((kind: "audio" | "video" | "screen") => {
 			getProducer(kind)?.pause?.();
 		}),
@@ -474,10 +488,9 @@ describe("useMediaControls", () => {
 		publication.resolve(null);
 		await starting;
 
-		expect(harness.sfuClient.sendScreenShare).toHaveBeenCalledOnce();
-		expect(harness.sfuClient.sendScreenShare).toHaveBeenCalledWith(
-			"stop_share",
-			expect.any(Object),
+		expect(harness.sfuClient.sendScreenShare).not.toHaveBeenCalledWith(
+			"start_share",
+			expect.anything(),
 		);
 		expect(harness.state.isScreenSharing).toBe(false);
 	});
