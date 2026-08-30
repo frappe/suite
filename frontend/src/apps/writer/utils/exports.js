@@ -1,19 +1,6 @@
 import { createResource } from 'frappe-ui'
 import { toast } from '@/apps/writer/utils'
 
-export const exportMedia = async (editor) => {
-  toast('Preparing...')
-  const urls = editor.commands.getEmbedUrls()
-  const getExtension = createResource({
-    url: 'suite.writer.api.docs.get_extension',
-  })
-  for (const i in urls) {
-    const ext = await getExtension.fetch({ entity_name: urls[i].name })
-    if (ext) urls[i].title += '.' + ext
-  }
-  entitiesDownload(urls)
-}
-
 export const exportBlog = async () => {
   toast('Starting export...')
   createResource({

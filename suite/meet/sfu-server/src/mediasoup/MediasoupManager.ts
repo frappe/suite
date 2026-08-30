@@ -1,7 +1,6 @@
 import type {
 	CloseProducerResult,
 	Consumer,
-	ConsumerData,
 	DtlsParameters,
 	ExistingProducer,
 	IceCandidate,
@@ -15,7 +14,6 @@ import type {
 	ProducerCloseDetails,
 	ProducerCloseReason,
 	ProducerCloseSource,
-	ProducerData,
 	Room,
 	RtpCapabilities,
 	RtpCodecCapability,
@@ -635,10 +633,6 @@ export class MediasoupManager {
 		return this.consumerManager.requestConsumerKeyFrame(consumerId);
 	}
 
-	getConsumerData(consumerId: string): ConsumerData | undefined {
-		return this.consumerManager.getConsumerData(consumerId);
-	}
-
 	assertTransportAccess(
 		transportId: string,
 		roomId: string,
@@ -1034,15 +1028,6 @@ export class MediasoupManager {
 		return this.roomManager.getRoom(roomId)?.peers;
 	}
 
-	getProducerData(producerId: string): ProducerData | undefined {
-		return this.producerManager.getProducerData(producerId);
-	}
-
-	peerExistsInRoom(roomId: string, peerId: string): boolean {
-		const room = this.roomManager.getRoom(roomId);
-		return room?.peers.has(peerId) || false;
-	}
-
 	participantExistsInRoom(roomId: string, participantId: string): boolean {
 		const room = this.roomManager.getRoom(roomId);
 		return Array.from(room?.peers.values() ?? []).some(
@@ -1052,10 +1037,6 @@ export class MediasoupManager {
 
 	get rooms() {
 		return this.roomManager;
-	}
-
-	get peers() {
-		return this.peerManager;
 	}
 
 	getResourceCounts(): Record<string, number> {

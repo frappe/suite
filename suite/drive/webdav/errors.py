@@ -75,10 +75,6 @@ class Locked(DAVError):
         super().__init__(message, condition=condition, condition_href=lock_root)
 
 
-class FailedDependency(DAVError):
-    status = 424
-
-
 class BadGateway(DAVError):
     status = 502
 

@@ -11,7 +11,7 @@
   "workspaces": {
     "frontend": {
       "entry": ["src/main.ts", "vite.config.ts", "src/apps/slides/service-worker.js"],
-      "project": ["src/**/*.{ts,tsx,vue}", "!src/main.ts"],
+      "project": ["src/**/*.{js,ts,tsx,vue}", "!src/main.ts"],
       "ignoreUnresolved": ["~icons/lucide/*", "unplugin-icons/types/vue"]
     },
     "e2e": {

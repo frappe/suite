@@ -419,8 +419,6 @@ export type JsonValue =
 	| JsonValue[]
 	| { [key: string]: JsonValue };
 
-export type JsonObject = { [key: string]: JsonValue };
-
 export interface ConsumerInfo {
 	id: string;
 	producerId: string;

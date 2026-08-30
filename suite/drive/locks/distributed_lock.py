@@ -52,7 +52,7 @@ class DistributedLock:
         If the key does not exist, value is set to 1"""
         with frappe.cache().pipeline() as pipe:
             try:
-                res = pipe.incr(key).expire(key, ttl).execute()
+                pipe.incr(key).expire(key, ttl).execute()
                 return True
             except redis.ResponseError:
                 return False
@@ -67,21 +67,6 @@ class DistributedLock:
             return True
         except redis.ResponseError:
             return False
-
-    def _check_and_set(self, key, expected_val, new_val, ttl):
-        """Atomic transaction to set value if current value matches the expected value"""
-        with frappe.cache().pipeline() as pipe:
-            while True:
-                try:
-                    pipe.watch(key)
-                    current_val = pipe.get(key)
-                    if current_val and current_val.decode() != expected_val:
-                        return False
-                    pipe.multi()
-                    pipe.set(key, new_val, ex=ttl)
-                    return pipe.execute()[0]
-                except redis.WatchError:
-                    continue
 
     def _check_and_delete(self, key, expected_val):
         """Atomic transaction to delete the key if current value matches the expected value"""

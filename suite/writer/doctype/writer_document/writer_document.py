@@ -131,9 +131,6 @@ class WriterDocument(Document):
         except COLLISION_ERRORS:
             pass
 
-    def rename(self):
-        frappe.get_value({"doc": self.name}).rename()
-
     def as_dict(self, *args, **kwargs):
         result = super().as_dict(*args, **kwargs)
         result.pop("versions")

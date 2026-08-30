@@ -1,8 +1,4 @@
 const suite_handlers = (socket) => {
-	socket.on("ping", () => {
-		socket.emit("pong");
-	});
-
 	// guest specific rooms
 	socket.on("guest_subscribe", async (guest_id) => {
 		if (!guest_id || typeof guest_id !== "string") {

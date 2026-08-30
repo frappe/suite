@@ -322,8 +322,6 @@ scheduler_events = {
 # Lifecycle hooks — dispatched through suite.suite_core.boot so that EACH
 # former app's handler is preserved and invoked in order.
 # ============================================================================
-from suite.suite_core import boot as _suite_boot
-
 before_install = "suite.suite_core.boot.before_install"
 after_install = "suite.suite_core.boot.after_install"
 after_migrate = "suite.suite_core.boot.after_migrate"
@@ -378,7 +376,6 @@ ignore_links_on_delete = [
     "Drive DAV Lock",
     # mail
     "Mail Account Request",
-    "Mail Domain Request",
     "Server Job",
     "Server Ansible Play",
     "Server Deployment",
