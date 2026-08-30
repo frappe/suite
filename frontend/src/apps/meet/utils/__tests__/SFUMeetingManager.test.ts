@@ -393,7 +393,10 @@ describe("SFUMeetingManager facade operations", () => {
 			source: "screen-share",
 		});
 		await vi.waitFor(() => expect(sendScreenShare).toHaveBeenCalledOnce());
+		const nextMutation = vi.fn();
+		await manager.serializeSendMediaMutation(async () => nextMutation());
 
+		expect(nextMutation).toHaveBeenCalledOnce();
 		expect(producer.close).not.toHaveBeenCalled();
 		expect(closeProducer).not.toHaveBeenCalled();
 		stopSignal.resolve({ success: true });
