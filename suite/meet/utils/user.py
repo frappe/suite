@@ -7,6 +7,8 @@ import re
 import frappe
 from frappe.utils.caching import redis_cache
 
+from suite.meet import guest_access
+
 
 def unique_users(user_list: list) -> list[dict]:
     """Return unique child table rows, preserving order and metadata."""
@@ -49,12 +51,12 @@ def get_user_info(user_id: str) -> dict | None:
         return None
 
     if is_guest_user(user_id):
-        guest_session = get_guest_session(user_id)
-        if not guest_session:
+        guest_lease = guest_access.get_guest(user_id)
+        if not guest_lease:
             return None
 
         return {
-            "full_name": guest_session.get("guest_name"),
+            "full_name": guest_lease.guest_name,
             "is_guest": True,
         }
 
@@ -68,26 +70,6 @@ def get_user_info(user_id: str) -> dict | None:
         "user_image": user_info.get("user_image"),
         "is_guest": False,
     }
-
-
-def get_guest_session(guest_id: str) -> dict | None:
-    """Retrieve guest session data from cache."""
-    cache_key = f"guest_session:{guest_id}"
-    session_data = frappe.cache.get_value(cache_key)
-
-    if not session_data:
-        return None
-
-    if isinstance(session_data, dict):
-        return session_data
-
-    return None
-
-
-def set_guest_session(guest_id: str, session_data: dict, ttl: int = 86400) -> None:
-    """Store guest session data (default 24 hours)."""
-    cache_key = f"guest_session:{guest_id}"
-    frappe.cache.set_value(cache_key, session_data, expires_in_sec=ttl)
 
 
 def validate_guest_name(guest_name: str) -> tuple[bool, str | None]:

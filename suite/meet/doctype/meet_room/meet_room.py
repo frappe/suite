@@ -9,8 +9,8 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from suite.meet import guest_access
 from suite.meet.utils.user import (
-    get_guest_session,
     get_user_info,
     unique_users,
 )
@@ -119,11 +119,6 @@ class MeetRoom(Document):
         user_info = get_user_info(user)
         if user_info and user_info.get("full_name"):
             return user_info.get("full_name")
-
-        if user.startswith("guest_"):
-            guest_session = get_guest_session(user)
-            if guest_session and guest_session.get("guest_name"):
-                return guest_session.get("guest_name")
 
         return user
 
@@ -246,10 +241,6 @@ class MeetRoom(Document):
             if user:
                 self.append("members", self.build_user_row(user))
 
-    def add_guest_to_members(self, guest_id: str):
-        self.validate_guest_id(guest_id)
-        self.add_user_to_table("members", guest_id, save=True, ignore_permissions=True)
-
     def get_waiting_room(self):
         """Get list of users waiting for approval"""
         return self.get_table_users("waiting_room")
@@ -257,10 +248,6 @@ class MeetRoom(Document):
     def add_to_waiting_room(self, user):
         """Add user to waiting room"""
         self.add_waiting_room_user(user)
-
-    def add_guest_to_waiting_room(self, guest_id: str):
-        self.validate_guest_id(guest_id)
-        self.add_waiting_room_user(guest_id, save=True, ignore_permissions=True)
 
     def remove_from_waiting_room(self, user):
         """Remove user from waiting room"""
@@ -293,23 +280,6 @@ class MeetRoom(Document):
             message={"meeting": self.name, "user": user, "approved_by": frappe.session.user},
             after_commit=True,
         )
-
-        # for guests
-        if user.startswith("guest_"):
-            session_data = get_guest_session(user)
-            if session_data:
-                guest_name = session_data.get("guest_name")
-                frappe.publish_realtime(
-                    "meet:guest_join_approved",
-                    {
-                        "meeting_id": self.name,
-                        "guest_id": user,
-                        "guest_name": guest_name,
-                        "message": "Your join request has been approved",
-                    },
-                    room=f"guest:{user}",
-                    after_commit=True,
-                )
 
         updated_waiting_users = self.get_waiting_room()
 
@@ -484,20 +454,20 @@ class MeetRoom(Document):
             if not user or user in users_notified:
                 continue
             users_notified.add(user)
-            if user.startswith("guest_"):
-                frappe.publish_realtime(
-                    "meeting:e2ee_enabled",
-                    payload,
-                    room=f"guest:{user}",
-                    after_commit=True,
-                )
-            else:
-                frappe.publish_realtime(
-                    "meeting:e2ee_enabled",
-                    payload,
-                    user=user,
-                    after_commit=True,
-                )
+            frappe.publish_realtime(
+                "meeting:e2ee_enabled",
+                payload,
+                user=user,
+                after_commit=True,
+            )
+
+        for lease in guest_access.list_admitted(self.name):
+            frappe.publish_realtime(
+                "meeting:e2ee_enabled",
+                payload,
+                room=f"guest:{lease.guest_id}",
+                after_commit=True,
+            )
 
         return True
 

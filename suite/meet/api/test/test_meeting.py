@@ -8,12 +8,16 @@ import frappe
 import jwt
 from frappe.client import delete as delete_document
 from frappe.tests import IntegrationTestCase
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
+from suite.meet import guest_access
 from suite.meet.api.meeting import (
     approve_all_join_requests,
     approve_join_request,
+    ban_guest,
+    check_meeting_access,
     get_approved_guest_connection_details,
-    get_guest_sfu_connection_details,
     get_public_meeting_preview,
     get_sfu_connection_details,
     get_sfu_presence_preview_token,
@@ -21,10 +25,11 @@ from suite.meet.api.meeting import (
     join_meeting,
     join_meeting_as_guest,
     promote_to_cohost,
+    refresh_guest_sfu_token,
     refresh_sfu_token,
     reject_join_request,
+    validate_guest_session,
 )
-from suite.meet.utils.user import set_guest_session
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -32,6 +37,9 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         frappe.conf.sfu_secret = "test-sfu-secret"
         frappe.db.set_single_value("Meet Settings", "allow_guest", 1)
         frappe.clear_cache(doctype="Meet Settings")
+        frappe.cache.delete(
+            guest_access._fresh_join_rate_key(str(getattr(frappe.local, "request_ip", None) or "unknown"))
+        )
 
         self.host_email = "host-meet@example.com"
         self.member_email = "member-meet@example.com"
@@ -170,7 +178,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             frappe.set_user(user)
             frappe.get_doc("Meet Room", self.meeting.name).check_permission("read")
 
-    def test_non_member_gets_public_preview_title_without_read_access(self):
+    def test_non_member_gets_guest_enabled_preview_title_without_read_access(self):
         self.meeting.title = "Quarterly planning"
         self.meeting.save(ignore_permissions=True)
 
@@ -179,6 +187,43 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             frappe.get_doc("Meet Room", self.meeting.name).check_permission("read")
 
         self.assertEqual(get_public_meeting_preview(self.meeting.name)["title"], "Quarterly planning")
+
+    def test_private_preview_title_requires_participation(self):
+        self.meeting.title = "Confidential planning"
+        self.meeting.save(ignore_permissions=True)
+        self.meeting.db_set("allow_guest", 0)
+
+        for user in ("Guest", self.outsider_email):
+            with self.subTest(user=user):
+                frappe.set_user(user)
+                with self.assertRaises(frappe.PermissionError):
+                    get_public_meeting_preview(self.meeting.name)
+
+        self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
+        frappe.set_user(self.member_email)
+        self.assertEqual(
+            get_public_meeting_preview(self.meeting.name)["title"],
+            "Confidential planning",
+        )
+
+    def test_private_and_missing_meeting_access_are_indistinguishable(self):
+        self.meeting.db_set("allow_guest", 0)
+
+        frappe.set_user("Guest")
+        private_access = check_meeting_access(self.meeting.name)
+        missing_access = check_meeting_access("missing-meeting")
+
+        self.assertEqual(private_access, {"allow_guest": False})
+        self.assertEqual(missing_access, private_access)
+
+    def test_guest_enabled_meeting_access_returns_public_policy(self):
+        self.meeting.db_set("host_only_chat", 1)
+
+        frappe.set_user("Guest")
+        self.assertEqual(
+            check_meeting_access(self.meeting.name),
+            {"allow_guest": True, "host_only_chat": True},
+        )
 
     def test_meeting_list_only_contains_hosted_or_cohosted_meetings(self):
         self.meeting.add_user_to_table("co_hosts", self.member_email, save=True, ignore_permissions=True)
@@ -248,6 +293,10 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 
         self.assertEqual(result["status"], "joined")
         self.assertEqual(result["recording"], recording)
+        self.assertEqual(result["expires_in"], 300)
+        self.assertTrue(result["guest_session_token"])
+        raw_lease = frappe.cache.get(f"meet:guest-lease:{frappe.local.site}:{result['guest_id']}")
+        self.assertNotIn(result["guest_session_token"], raw_lease.decode())
 
     def test_restricted_waiting_join_does_not_return_full_media_token(self):
         frappe.set_user(self.outsider_email)
@@ -273,17 +322,330 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             refresh_sfu_token(self.meeting.name)
 
     def test_approved_guest_session_cannot_cross_meet_rooms(self):
-        guest_id = f"guest_{frappe.generate_hash(length=16)}"
-        set_guest_session(
-            guest_id,
-            {"guest_id": guest_id, "guest_name": "Room A Guest", "meeting_id": self.meeting.name},
-        )
+        lease, session_token = guest_access.create_lease(self.meeting.name, "Room A Guest", admitted=True)
         other_room = self._create_meeting(self.host_email, meeting_type="restricted")
-        other_room.add_user_to_table("members", guest_id, save=True, ignore_permissions=True)
         frappe.set_user("Guest")
 
         with self.assertRaises(frappe.PermissionError):
-            get_approved_guest_connection_details(other_room.name, guest_id)
+            get_approved_guest_connection_details(other_room.name, lease.guest_id, session_token)
+
+    def test_public_guest_id_cannot_resume_or_get_approved_connection_details(self):
+        frappe.set_user("Guest")
+        first = join_meeting_as_guest(self.meeting.name, "Private Guest")
+
+        public_id_join = join_meeting_as_guest(
+            self.meeting.name,
+            "Private Guest",
+            guest_id=first["guest_id"],
+        )
+
+        self.assertNotEqual(public_id_join["guest_id"], first["guest_id"])
+        with self.assertRaises(frappe.PermissionError):
+            get_approved_guest_connection_details(self.meeting.name, first["guest_id"])
+
+    def test_guest_proof_resumes_same_room_principal(self):
+        frappe.set_user("Guest")
+        first = join_meeting_as_guest(self.meeting.name, "Stable Guest")
+
+        resumed = join_meeting_as_guest(
+            self.meeting.name,
+            "Changed Name",
+            first["guest_id"],
+            first["guest_session_token"],
+        )
+
+        self.assertEqual(resumed["guest_id"], first["guest_id"])
+        self.assertEqual(resumed["guest_name"], "Stable Guest")
+
+    def test_approved_guest_connection_details_is_post_only(self):
+        self.assertEqual(
+            frappe.allowed_http_methods_for_whitelisted_func[get_approved_guest_connection_details],
+            ("POST",),
+        )
+
+    def test_wrong_guest_proof_cannot_get_admitted_token(self):
+        self.meeting.db_set("meeting_type", "open")
+        frappe.set_user("Guest")
+        joined = join_meeting_as_guest(self.meeting.name, "Proof Guest")
+
+        with self.assertRaises(frappe.PermissionError):
+            refresh_guest_sfu_token(
+                self.meeting.name,
+                joined["guest_id"],
+                "wrong-private-proof",
+            )
+
+    def test_pending_guest_expires_after_thirty_minutes_and_leaves_listing(self):
+        now = int(time.time())
+        frappe.set_user("Guest")
+        with patch("suite.meet.guest_access.time.time", return_value=now):
+            waiting = join_meeting_as_guest(self.meeting.name, "Pending Guest")
+
+        frappe.set_user(self.host_email)
+        with patch(
+            "suite.meet.guest_access.time.time",
+            return_value=now + guest_access.PENDING_TTL + 1,
+        ):
+            result = get_waiting_room(self.meeting.name)
+
+        self.assertNotIn(
+            waiting["guest_id"],
+            [user["user_id"] for user in result["waiting_users"]],
+        )
+
+    def test_expired_pending_guest_can_reconcile_status_with_proof(self):
+        now = int(time.time())
+        frappe.set_user("Guest")
+        with patch("suite.meet.guest_access.time.time", return_value=now):
+            waiting = join_meeting_as_guest(self.meeting.name, "Expired Pending Guest")
+
+        with patch(
+            "suite.meet.guest_access.time.time",
+            return_value=now + guest_access.PENDING_TTL + 1,
+        ):
+            result = validate_guest_session(
+                self.meeting.name,
+                waiting["guest_id"],
+                waiting["guest_session_token"],
+            )
+
+        self.assertEqual(result, {"valid": False, "status": "expired"})
+        self.assertGreater(frappe.cache.ttl(guest_access._guest_key(waiting["guest_id"])), 0)
+        self.assertLessEqual(
+            frappe.cache.ttl(guest_access._guest_key(waiting["guest_id"])),
+            guest_access.TERMINAL_TTL,
+        )
+
+    def test_expiry_cleanup_does_not_delete_concurrently_admitted_lease(self):
+        now = int(time.time())
+        with patch("suite.meet.guest_access.time.time", return_value=now):
+            pending, session_token = guest_access.create_lease(
+                self.meeting.name,
+                "Concurrent Guest",
+                admitted=False,
+            )
+            admitted = guest_access.admit(self.meeting.name, pending.guest_id)
+
+        with (
+            patch(
+                "suite.meet.guest_access.time.time",
+                return_value=now + guest_access.PENDING_TTL + 1,
+            ),
+            patch("suite.meet.guest_access._read", side_effect=[pending, admitted]),
+        ):
+            authorized = guest_access.authorize(
+                self.meeting.name,
+                pending.guest_id,
+                session_token,
+                statuses={"admitted"},
+            )
+
+        self.assertEqual(authorized, admitted)
+        self.assertIsNotNone(frappe.cache.get(guest_access._guest_key(pending.guest_id)))
+
+    def test_duplicate_guest_admission_preserves_authorization_generation(self):
+        pending, _session_token = guest_access.create_lease(
+            self.meeting.name,
+            "Idempotent Guest",
+            admitted=False,
+        )
+
+        admitted = guest_access.admit(self.meeting.name, pending.guest_id)
+        duplicate = guest_access.admit(self.meeting.name, pending.guest_id)
+
+        self.assertEqual(duplicate, admitted)
+        self.assertEqual(duplicate.generation, pending.generation + 1)
+
+    def test_duplicate_terminal_guest_transitions_preserve_generation(self):
+        for transition, status in (
+            (guest_access.reject, "rejected"),
+            (guest_access.ban, "banned"),
+        ):
+            with self.subTest(status=status):
+                pending, _session_token = guest_access.create_lease(
+                    self.meeting.name,
+                    f"Idempotent {status}",
+                    admitted=False,
+                )
+
+                terminal = transition(self.meeting.name, pending.guest_id)
+                duplicate = transition(self.meeting.name, pending.guest_id)
+
+                self.assertEqual(duplicate, terminal)
+                self.assertEqual(duplicate.generation, pending.generation + 1)
+
+    def test_guest_terminal_transitions_cannot_cross(self):
+        rejected, _session_token = guest_access.create_lease(
+            self.meeting.name,
+            "Rejected Guest",
+            admitted=False,
+        )
+        banned, _session_token = guest_access.create_lease(
+            self.meeting.name,
+            "Banned Guest",
+            admitted=False,
+        )
+        guest_access.reject(self.meeting.name, rejected.guest_id)
+        guest_access.ban(self.meeting.name, banned.guest_id)
+
+        with self.assertRaises(guest_access.GuestAccessDenied):
+            guest_access.ban(self.meeting.name, rejected.guest_id)
+        with self.assertRaises(guest_access.GuestAccessDenied):
+            guest_access.reject(self.meeting.name, banned.guest_id)
+
+    def test_guest_proof_is_redacted_before_downstream_endpoint_errors(self):
+        original_request = getattr(frappe.local, "request", None)
+        original_form_dict = frappe.local.form_dict
+        self.addCleanup(setattr, frappe.local, "request", original_request)
+        self.addCleanup(setattr, frappe.local, "form_dict", original_form_dict)
+        proof = "private-proof-that-must-not-reach-telemetry"
+        endpoints = (
+            (
+                join_meeting_as_guest,
+                (self.meeting.name, "Telemetry Guest", "guest_telemetry", proof),
+                "suite.meet.api.meeting.validate_guest_name",
+            ),
+            (
+                get_approved_guest_connection_details,
+                (self.meeting.name, "guest_telemetry", proof),
+                "suite.meet.api.meeting.frappe.db.exists",
+            ),
+            (
+                refresh_guest_sfu_token,
+                (self.meeting.name, "guest_telemetry", proof),
+                "suite.meet.api.meeting.frappe.db.exists",
+            ),
+            (
+                validate_guest_session,
+                (self.meeting.name, "guest_telemetry", proof),
+                "suite.meet.api.meeting.guest_access.get_status",
+            ),
+        )
+
+        for body_type in ("json", "form"):
+            for endpoint, args, downstream in endpoints:
+                with self.subTest(body_type=body_type, endpoint=endpoint.__name__):
+                    builder_args = {
+                        "json" if body_type == "json" else "data": {
+                            "meeting_id": self.meeting.name,
+                            "guest_session_token": proof,
+                        }
+                    }
+                    request = Request(EnvironBuilder(method="POST", **builder_args).get_environ())
+                    frappe.local.request = request
+                    frappe.local.form_dict = frappe._dict(guest_session_token=proof)
+
+                    def fail_after_redaction(*_args, **_kwargs):
+                        context = request.json if request.is_json else request.form
+                        self.assertEqual(
+                            context["guest_session_token"],
+                            "[REDACTED]",
+                        )
+                        self.assertNotIn(proof, str(context))
+                        self.assertEqual(
+                            frappe.form_dict.guest_session_token,
+                            "[REDACTED]",
+                        )
+                        raise RuntimeError("downstream infrastructure failed")
+
+                    with (
+                        patch(downstream, side_effect=fail_after_redaction),
+                        self.assertRaisesRegex(
+                            RuntimeError,
+                            "downstream infrastructure failed",
+                        ),
+                    ):
+                        endpoint(*args)
+
+    def test_guest_room_index_has_bounded_ttl_and_atomic_updates_reset_it(self):
+        pending, _session_token = guest_access.create_lease(
+            self.meeting.name,
+            "Indexed Guest",
+            admitted=False,
+        )
+        index_key = guest_access._room_key(self.meeting.name)
+
+        self.assertGreater(frappe.cache.ttl(index_key), guest_access.LEASE_TTL)
+        self.assertLessEqual(frappe.cache.ttl(index_key), guest_access.ROOM_INDEX_TTL)
+
+        frappe.cache.expire(index_key, 1)
+        guest_access.admit(self.meeting.name, pending.guest_id)
+
+        self.assertGreater(frappe.cache.ttl(index_key), guest_access.LEASE_TTL)
+        self.assertLessEqual(frappe.cache.ttl(index_key), guest_access.ROOM_INDEX_TTL)
+
+    def test_fresh_guest_join_rate_limit_rejects_before_room_lookup_and_expires(self):
+        previous_ip = getattr(frappe.local, "request_ip", None)
+        frappe.local.request_ip = f"guest-rate-{frappe.generate_hash(length=12)}"
+        rate_key = guest_access._fresh_join_rate_key(frappe.local.request_ip)
+        frappe.cache.delete(rate_key)
+        self.addCleanup(setattr, frappe.local, "request_ip", previous_ip)
+        self.addCleanup(frappe.cache.delete, rate_key)
+
+        lease, session_token = guest_access.create_lease(
+            self.meeting.name,
+            "Rate Limited Resume",
+            admitted=False,
+        )
+        for _ in range(guest_access.FRESH_JOIN_RATE_LIMIT):
+            guest_access.enforce_fresh_join_rate_limit(frappe.local.request_ip)
+
+        ttl = frappe.cache.ttl(rate_key)
+        self.assertGreater(ttl, 0)
+        self.assertLessEqual(ttl, guest_access.FRESH_JOIN_RATE_WINDOW)
+
+        frappe.set_user("Guest")
+        resumed = join_meeting_as_guest(
+            self.meeting.name,
+            lease.guest_name,
+            lease.guest_id,
+            session_token,
+        )
+        self.assertEqual(resumed["guest_id"], lease.guest_id)
+
+        with (
+            patch("suite.meet.api.meeting.frappe.db.exists") as room_exists,
+            self.assertRaises(frappe.RateLimitExceededError),
+        ):
+            join_meeting_as_guest(self.meeting.name, "Limited Guest")
+        room_exists.assert_not_called()
+
+        frappe.cache.expire(rate_key, 0)
+        self.assertEqual(frappe.cache.exists(rate_key, shared=True), 0)
+        guest_access.enforce_fresh_join_rate_limit(frappe.local.request_ip)
+        self.assertGreater(frappe.cache.ttl(rate_key), 0)
+
+    def test_guest_jwt_is_capped_by_five_minutes_and_remaining_lease(self):
+        now = int(time.time())
+        self.meeting.db_set("meeting_type", "open")
+        frappe.set_user("Guest")
+        with (
+            patch("suite.meet.guest_access.time.time", return_value=now),
+            patch("suite.meet.api.meeting.time.time", return_value=now),
+        ):
+            joined = join_meeting_as_guest(self.meeting.name, "Short Token Guest")
+        decoded = jwt.decode(joined["auth_token"], frappe.conf.sfu_secret, algorithms=["HS256"])
+        self.assertEqual(joined["expires_in"], 300)
+        self.assertEqual(decoded["exp"], now + 300)
+
+        near_expiry = now + guest_access.LEASE_TTL - 120
+        with (
+            patch("suite.meet.guest_access.time.time", return_value=near_expiry),
+            patch("suite.meet.api.meeting.time.time", return_value=near_expiry),
+        ):
+            refreshed = refresh_guest_sfu_token(
+                self.meeting.name,
+                joined["guest_id"],
+                joined["guest_session_token"],
+            )
+        decoded = jwt.decode(
+            refreshed["auth_token"],
+            frappe.conf.sfu_secret,
+            algorithms=["HS256"],
+            options={"verify_iat": False},
+        )
+        self.assertEqual(refreshed["expires_in"], 120)
+        self.assertEqual(decoded["exp"], now + guest_access.LEASE_TTL)
 
     def test_approved_guest_rechecks_current_guest_policy(self):
         frappe.set_user("Guest")
@@ -296,7 +658,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         frappe.clear_cache(doctype="Meet Settings")
         frappe.set_user("Guest")
         with self.assertRaises(frappe.PermissionError):
-            get_approved_guest_connection_details(self.meeting.name, guest_id)
+            get_approved_guest_connection_details(self.meeting.name, guest_id, waiting["guest_session_token"])
 
     def test_approved_guest_rechecks_room_guest_policy(self):
         frappe.set_user("Guest")
@@ -308,7 +670,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
 
         frappe.set_user("Guest")
         with self.assertRaises(frappe.PermissionError):
-            get_approved_guest_connection_details(self.meeting.name, guest_id)
+            get_approved_guest_connection_details(self.meeting.name, guest_id, waiting["guest_session_token"])
 
     def test_expired_or_deleted_guest_session_cannot_reconnect(self):
         frappe.set_user("Guest")
@@ -316,11 +678,15 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         guest_id = waiting["guest_id"]
         frappe.set_user(self.host_email)
         approve_join_request(self.meeting.name, guest_id)
-        frappe.cache.delete_value(f"guest_session:{guest_id}")
-
         frappe.set_user("Guest")
-        with self.assertRaisesRegex(frappe.ValidationError, "not found or expired"):
-            get_approved_guest_connection_details(self.meeting.name, guest_id)
+        with (
+            patch(
+                "suite.meet.guest_access.time.time",
+                return_value=int(time.time()) + guest_access.LEASE_TTL + 1,
+            ),
+            self.assertRaises(frappe.PermissionError),
+        ):
+            get_approved_guest_connection_details(self.meeting.name, guest_id, waiting["guest_session_token"])
 
     def test_rejected_guest_session_cannot_reconnect(self):
         frappe.set_user("Guest")
@@ -330,8 +696,43 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         reject_join_request(self.meeting.name, guest_id)
 
         frappe.set_user("Guest")
-        with self.assertRaises(frappe.ValidationError):
-            get_approved_guest_connection_details(self.meeting.name, guest_id)
+        self.assertEqual(
+            validate_guest_session(
+                self.meeting.name,
+                guest_id,
+                waiting["guest_session_token"],
+            ),
+            {"valid": False, "status": "rejected"},
+        )
+        self.assertGreater(frappe.cache.ttl(guest_access._guest_key(guest_id)), 0)
+        self.assertLessEqual(
+            frappe.cache.ttl(guest_access._guest_key(guest_id)),
+            guest_access.TERMINAL_TTL,
+        )
+        with self.assertRaises(frappe.PermissionError):
+            get_approved_guest_connection_details(self.meeting.name, guest_id, waiting["guest_session_token"])
+
+    def test_guest_status_validation_fails_closed_without_valid_proof_or_redis(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Status Proof Guest")
+
+        self.assertEqual(
+            validate_guest_session(
+                self.meeting.name,
+                waiting["guest_id"],
+                "wrong-private-proof",
+            ),
+            {"valid": False},
+        )
+        with (
+            patch("suite.meet.guest_access.frappe.cache.get", side_effect=ConnectionError),
+            self.assertRaises(ConnectionError),
+        ):
+            validate_guest_session(
+                self.meeting.name,
+                waiting["guest_id"],
+                waiting["guest_session_token"],
+            )
 
     def test_guest_connection_details_recheck_ban_and_session(self):
         self.meeting.db_set("meeting_type", "open")
@@ -339,12 +740,47 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         joined = join_meeting_as_guest(self.meeting.name, "Banned Guest")
 
         frappe.set_user(self.host_email)
-        room = frappe.get_doc("Meet Room", self.meeting.name)
-        room.add_user_to_table("banned_users", joined["guest_id"], save=True, ignore_permissions=True)
+        ban_guest(self.meeting.name, joined["guest_id"])
         frappe.set_user("Guest")
 
+        self.assertEqual(
+            validate_guest_session(
+                self.meeting.name,
+                joined["guest_id"],
+                joined["guest_session_token"],
+            ),
+            {"valid": False, "status": "banned"},
+        )
         with self.assertRaises(frappe.PermissionError):
-            get_guest_sfu_connection_details(self.meeting.name, joined["auth_token"])
+            refresh_guest_sfu_token(
+                self.meeting.name,
+                joined["guest_id"],
+                joined["guest_session_token"],
+            )
+
+    def test_guest_admission_never_writes_participant_child_rows(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Ephemeral Guest")
+        frappe.set_user(self.host_email)
+
+        approve_join_request(self.meeting.name, waiting["guest_id"])
+
+        self.meeting.reload()
+        self.assertNotIn(waiting["guest_id"], self.meeting.get_members())
+        self.assertNotIn(waiting["guest_id"], self.meeting.get_waiting_room())
+        self.assertNotIn(waiting["guest_id"], self.meeting.get_table_users("banned_users"))
+
+    def test_redis_failure_creates_no_guest_or_room_mutation(self):
+        frappe.set_user("Guest")
+        with (
+            patch("suite.meet.guest_access.frappe.cache.pipeline", side_effect=ConnectionError),
+            self.assertRaises(ConnectionError),
+        ):
+            join_meeting_as_guest(self.meeting.name, "Unavailable Redis")
+
+        self.meeting.reload()
+        self.assertFalse(any(user.startswith("guest_") for user in self.meeting.get_members()))
+        self.assertFalse(any(user.startswith("guest_") for user in self.meeting.get_waiting_room()))
 
     def test_waiting_room_apis_reject_member_and_outsider(self):
         self._join_waiting(self.member_email)

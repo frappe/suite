@@ -11,15 +11,38 @@ import jwt
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
+from suite.meet import guest_access
 from suite.meet.api.recording import get_active_recording_state
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.utils.sfu_config import get_sfu_config
 from suite.meet.utils.user import (
-    get_guest_session,
     get_user_info,
-    set_guest_session,
     validate_guest_name,
 )
+
+_GUEST_PROOF_FIELD = "guest_session_token"
+_REDACTED_PROOF = "[REDACTED]"
+
+
+def _redact_guest_proof_from_request() -> None:
+    request = getattr(frappe.local, "request", None)
+    if not request:
+        return
+
+    if getattr(request, "is_json", False):
+        json_body = request.json
+        if isinstance(json_body, dict) and _GUEST_PROOF_FIELD in json_body:
+            json_body[_GUEST_PROOF_FIELD] = _REDACTED_PROOF
+
+    form = getattr(request, "form", None)
+    if form and _GUEST_PROOF_FIELD in form:
+        redacted_form = form.copy()
+        redacted_form[_GUEST_PROOF_FIELD] = _REDACTED_PROOF
+        request.form = redacted_form
+
+    form_dict = getattr(frappe.local, "form_dict", None)
+    if form_dict and _GUEST_PROOF_FIELD in form_dict:
+        form_dict[_GUEST_PROOF_FIELD] = _REDACTED_PROOF
 
 
 def _generate_sfu_token(
@@ -124,6 +147,60 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
     }
 
 
+def _build_guest_connection_details(
+    meeting: MeetRoom,
+    lease: guest_access.GuestLease,
+    guest_session_token: str | None,
+) -> dict:
+    settings = frappe.get_cached_doc("Meet Settings")
+    if not settings.allow_guest or not meeting.allow_guest:
+        frappe.throw(_("Guests are not allowed in this meeting"), frappe.PermissionError)
+
+    expires_in = guest_access.remaining_authorization_ttl(lease)
+    if expires_in <= 0:
+        frappe.throw(_("Guest lease expired"), frappe.PermissionError)
+    sfu_config = get_sfu_config()
+    e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
+    auth_token = _generate_sfu_token(
+        user_id=lease.guest_id,
+        meeting_id=meeting.name,
+        expires_in=expires_in,
+        user_name=lease.guest_name,
+        is_host=False,
+        is_cohost=False,
+        is_guest=True,
+        e2ee_required=e2ee_required,
+        guest_generation=lease.generation,
+    )
+    return {
+        "status": "joined",
+        "meeting_id": meeting.name,
+        "guest_id": lease.guest_id,
+        "guest_name": lease.guest_name,
+        "guest_session_token": guest_session_token,
+        "auth_token": auth_token,
+        "expires_in": expires_in,
+        "sfu_url": sfu_config["sfu_server_url"],
+        "sfu_port": sfu_config["sfu_server_port"],
+        "codec_strategy": _get_codec_strategy(),
+        "host_only_chat": bool(meeting.host_only_chat),
+        "e2ee_required": e2ee_required,
+        "recording": get_active_recording_state(meeting.name),
+        "message": "Successfully joined meeting",
+    }
+
+
+def _publish_waiting_room_updated(meeting: MeetRoom) -> None:
+    waiting_count = len(meeting.get_waiting_room()) + len(guest_access.list_pending(meeting.name))
+    frappe.publish_realtime(
+        "meeting_waiting_room_updated",
+        doctype=meeting.doctype,
+        docname=meeting.name,
+        message={"meeting": meeting.name, "waiting_count": waiting_count},
+        after_commit=True,
+    )
+
+
 @frappe.whitelist()
 @rate_limit(limit=10, seconds=60 * 60)
 def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
@@ -148,8 +225,14 @@ def create(meeting_type: str = "open", allow_guest: bool = True, title: str | No
 @rate_limit(limit=10, seconds=60)
 def get_public_meeting_preview(meeting_id: str) -> dict:
     """Return title-only data for the meeting preview."""
-    title = frappe.db.get_value("Meet Room", meeting_id, "title")
-    return {"title": title or meeting_id}
+    meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
+    settings = frappe.get_cached_doc("Meet Settings")
+    is_public = bool(settings.allow_guest and meeting.allow_guest)
+    user = frappe.session.user
+    is_participant = user != "Guest" and (meeting.is_host_or_cohost(user) or user in meeting.get_members())
+    if not is_public and not is_participant:
+        frappe.throw(_("Access denied"), frappe.PermissionError)
+    return {"title": meeting.title or meeting_id}
 
 
 @frappe.whitelist()
@@ -229,38 +312,62 @@ def join_meeting(meeting_id: str) -> dict:
         frappe.throw(_("Access denied"))
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def approve_join_request(meeting_id: str, user_id: str) -> dict:
     """Approve a user's join request from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
-    meeting.approve_user(user_id)
+    if not meeting.is_host_or_cohost(frappe.session.user):
+        frappe.throw(_("Only hosts and co-hosts can approve join requests"))
+    if user_id.startswith("guest_"):
+        lease = guest_access.admit(meeting_id, user_id)
+        frappe.publish_realtime(
+            "meet:guest_join_approved",
+            {
+                "meeting_id": meeting_id,
+                "guest_id": user_id,
+                "guest_name": lease.guest_name,
+                "message": "Your join request has been approved",
+            },
+            room=f"guest:{user_id}",
+            after_commit=True,
+        )
+        _publish_waiting_room_updated(meeting)
+    else:
+        meeting.approve_user(user_id)
 
     return {"meeting_id": meeting_id, "user_id": user_id, "message": "User approved successfully"}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def approve_all_join_requests(meeting_id: str) -> dict:
     """Approve all users' join requests from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
+    if not meeting.is_host_or_cohost(frappe.session.user):
+        frappe.throw(_("Only hosts and co-hosts can approve join requests"))
     meeting.approve_all_users()
+    for lease in guest_access.list_pending(meeting_id):
+        approve_join_request(meeting_id, lease.guest_id)
 
     return {"meeting_id": meeting_id, "message": "All users approved successfully"}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def reject_join_request(meeting_id: str, user_id: str) -> dict:
     """Reject a user's join request from waiting room"""
     meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id, for_update=True)
-    meeting.reject_user(user_id)
-
-    # For guests, publish realtime event in a guest-specific room
     if user_id.startswith("guest_"):
+        if not meeting.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Only hosts and co-hosts can reject join requests"))
+        guest_access.reject(meeting_id, user_id)
         frappe.publish_realtime(
             "meet:guest_join_rejected",
             {"meeting_id": meeting_id, "guest_id": user_id},
             room=f"guest:{user_id}",
             after_commit=True,
         )
+        _publish_waiting_room_updated(meeting)
+    else:
+        meeting.reject_user(user_id)
 
     return {"meeting_id": meeting_id, "user_id": user_id, "message": "User rejected successfully"}
 
@@ -273,10 +380,8 @@ def get_waiting_room(meeting_id: str) -> dict:
     if not meeting.is_host_or_cohost(frappe.session.user):
         frappe.throw(_("Access denied"))
 
-    waiting_rows = meeting.waiting_room or []
-
     user_details = []
-    for row in waiting_rows:
+    for row in meeting.waiting_room or []:
         user = row.user
         user_info = get_user_info(user)
         user_name = row.user_name or (user_info.get("full_name") if user_info else None)
@@ -289,6 +394,17 @@ def get_waiting_room(meeting_id: str) -> dict:
                 "is_guest": user_info.get("is_guest", False) if user_info else user.startswith("guest_"),
             }
         )
+
+    user_details.extend(
+        {
+            "user_id": lease.guest_id,
+            "full_name": lease.guest_name,
+            "user_name": lease.guest_name,
+            "user_image": None,
+            "is_guest": True,
+        }
+        for lease in guest_access.list_pending(meeting_id)
+    )
 
     return {"meeting_id": meeting_id, "waiting_users": user_details}
 
@@ -379,252 +495,135 @@ def get_sfu_presence_preview_token(meeting_id: str) -> dict:
     }
 
 
-@frappe.whitelist(allow_guest=True)
-@rate_limit(limit=10, seconds=60 * 60)
-def join_meeting_as_guest(meeting_id: str, guest_name: str, guest_id: str | None = None) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def join_meeting_as_guest(
+    meeting_id: str,
+    guest_name: str,
+    guest_id: str | None = None,
+    guest_session_token: str | None = None,
+) -> dict:
     """
     Allow guest users to join a meeting without authentication.
     Generates a guest session and JWT token for SFU access.
     """
+    _redact_guest_proof_from_request()
     is_valid, error_message = validate_guest_name(guest_name)
     if not is_valid:
         frappe.throw(_(error_message))
 
+    rate_limited = not guest_id or not guest_session_token
+    if rate_limited:
+        guest_access.enforce_fresh_join_rate_limit(
+            str(getattr(frappe.local, "request_ip", None) or "unknown")
+        )
+
+    lease = guest_access.resume_for_join(meeting_id, guest_id, guest_session_token)
+    if lease is None and not rate_limited:
+        guest_access.enforce_fresh_join_rate_limit(
+            str(getattr(frappe.local, "request_ip", None) or "unknown")
+        )
+
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
 
-    meeting = frappe.get_doc("Meet Room", meeting_id, for_update=True)
+    meeting = frappe.get_doc("Meet Room", meeting_id)
 
     global_settings = frappe.get_cached_doc("Meet Settings")
     if not global_settings.allow_guest or not meeting.allow_guest:
         frappe.throw(_("Guests are not allowed in this meeting"))
-    # Check if reusing existing guest_id
-    if guest_id:
-        session_data = get_guest_session(guest_id)
-        if session_data and session_data.get("meeting_id") == meeting_id:
-            # Reuse existing guest_id
-            guest_name_clean = session_data.get("guest_name", guest_name.strip())
-        else:
-            # Invalid or expired, generate new
-            guest_id = None
+    created = lease is None
+    if created:
+        lease, guest_session_token = guest_access.create_lease(
+            meeting_id,
+            guest_name.strip(),
+            admitted=meeting.meeting_type != "restricted",
+        )
 
-    if not guest_id:
-        guest_id = f"guest_{secrets.token_urlsafe(16)}"
-        guest_name_clean = guest_name.strip()
-
-        session_data = {
-            "guest_id": guest_id,
-            "guest_name": guest_name_clean,
-            "meeting_id": meeting_id,
-            "ip_address": frappe.local.request_ip,
-            "joined_at": int(time.time()),
-        }
-        set_guest_session(guest_id, session_data, ttl=24 * 3600)
-
-    if meeting.is_user_banned(guest_id):
-        frappe.throw(_("You are banned from this meeting"))
-
-    sfu_config = get_sfu_config()
-    e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
-
-    if meeting.meeting_type == "restricted":
-        if meeting.is_user_approved(guest_id):
-            auth_token = _generate_sfu_token(
-                user_id=guest_id,
-                meeting_id=meeting_id,
-                expires_in=24 * 3600,
-                user_name=guest_name_clean,
-                is_host=False,
-                is_guest=True,
-                e2ee_required=e2ee_required,
-            )
-            return {
-                "status": "joined",
-                "meeting_id": meeting_id,
-                "guest_id": guest_id,
-                "guest_name": guest_name_clean,
-                "auth_token": auth_token,
-                "sfu_url": sfu_config["sfu_server_url"],
-                "sfu_port": sfu_config["sfu_server_port"],
-                "codec_strategy": _get_codec_strategy(),
-                "host_only_chat": bool(meeting.host_only_chat),
-                "e2ee_required": e2ee_required,
-                "recording": get_active_recording_state(meeting_id),
-                "message": "Successfully joined meeting",
-            }
-        elif guest_id not in meeting.get_waiting_room():
-            meeting.add_guest_to_waiting_room(guest_id)
-
+    if lease.status == "pending":
+        if created:
+            waiting_count = len(meeting.get_waiting_room()) + len(guest_access.list_pending(meeting_id))
+            meeting.publish_waiting_room_request(lease.guest_id, waiting_count)
         return {
             "status": "waiting_for_approval",
             "meeting_id": meeting_id,
-            "guest_id": guest_id,
-            "guest_name": guest_name_clean,
+            "guest_id": lease.guest_id,
+            "guest_name": lease.guest_name,
+            "guest_session_token": guest_session_token,
             "message": "Waiting for host approval",
             "host_only_chat": bool(meeting.host_only_chat),
         }
 
-    # open meeting
-    auth_token = _generate_sfu_token(
-        user_id=guest_id,
-        meeting_id=meeting_id,
-        expires_in=24 * 3600,
-        user_name=guest_name_clean,
-        is_host=False,
-        is_guest=True,
-        e2ee_required=e2ee_required,
-    )
-
-    meeting.add_guest_to_members(guest_id)
-
-    return {
-        "status": "joined",
-        "meeting_id": meeting_id,
-        "guest_id": guest_id,
-        "guest_name": guest_name_clean,
-        "auth_token": auth_token,
-        "sfu_url": sfu_config["sfu_server_url"],
-        "sfu_port": sfu_config["sfu_server_port"],
-        "codec_strategy": _get_codec_strategy(),
-        "host_only_chat": bool(meeting.host_only_chat),
-        "e2ee_required": e2ee_required,
-        "recording": get_active_recording_state(meeting_id),
-        "message": "Successfully joined meeting",
-    }
+    return _build_guest_connection_details(meeting, lease, guest_session_token)
 
 
-@frappe.whitelist(allow_guest=True)
-@rate_limit(limit=10, seconds=60 * 60)
-def get_approved_guest_connection_details(meeting_id: str, guest_id: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def get_approved_guest_connection_details(
+    meeting_id: str,
+    guest_id: str,
+    guest_session_token: str | None = None,
+) -> dict:
     """
     Get SFU connection details for an approved guest.
     This is called after a guest receives approval notification.
     """
-    session_data = get_guest_session(guest_id)
-    if not session_data:
-        frappe.throw(_("Guest session not found or expired"))
-
-    if session_data.get("meeting_id") != meeting_id:
-        frappe.throw(_("Guest session does not belong to this meeting"), frappe.PermissionError)
-
+    _redact_guest_proof_from_request()
     if not frappe.db.exists("Meet Room", meeting_id):
         frappe.throw(_("Meeting not found"))
 
     meeting = frappe.get_doc("Meet Room", meeting_id)
+    lease = guest_access.authorize(
+        meeting_id,
+        guest_id,
+        guest_session_token,
+        statuses={"admitted"},
+    )
+    return _build_guest_connection_details(meeting, lease, guest_session_token)
 
-    settings = frappe.get_cached_doc("Meet Settings")
-    if not settings.allow_guest or not meeting.allow_guest:
-        frappe.throw(_("Guests are not allowed in this meeting"), frappe.PermissionError)
 
-    if not meeting.is_user_approved(guest_id):
-        frappe.throw(_("Guest not approved"))
-
-    if meeting.is_user_banned(guest_id):
-        frappe.throw(_("You are banned from this meeting"))
-
-    sfu_config = get_sfu_config()
-
-    guest_name = session_data.get("guest_name", f"Guest-{guest_id[:8]}")
-    e2ee_required = bool(getattr(meeting, "e2ee_enabled", False))
-
-    auth_token = _generate_sfu_token(
-        user_id=guest_id,
-        meeting_id=meeting_id,
-        expires_in=24 * 3600,
-        user_name=guest_name,
-        is_host=False,
-        is_guest=True,
-        e2ee_required=e2ee_required,
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def refresh_guest_sfu_token(
+    meeting_id: str,
+    guest_id: str,
+    guest_session_token: str | None = None,
+) -> dict:
+    _redact_guest_proof_from_request()
+    if not frappe.db.exists("Meet Room", meeting_id):
+        frappe.throw(_("Meeting not found"))
+    lease = guest_access.authorize(
+        meeting_id,
+        guest_id,
+        guest_session_token,
+        statuses={"admitted"},
+    )
+    return _build_guest_connection_details(
+        frappe.get_doc("Meet Room", meeting_id),
+        lease,
+        guest_session_token,
     )
 
-    return {
-        "status": "joined",
-        "meeting_id": meeting_id,
-        "guest_id": guest_id,
-        "guest_name": guest_name,
-        "auth_token": auth_token,
-        "sfu_url": sfu_config["sfu_server_url"],
-        "sfu_port": sfu_config["sfu_server_port"],
-        "codec_strategy": _get_codec_strategy(),
-        "host_only_chat": bool(meeting.host_only_chat),
-        "e2ee_required": e2ee_required,
-        "recording": get_active_recording_state(meeting_id),
-        "message": "Successfully joined meeting",
-    }
+
+@frappe.whitelist(methods=["POST"])
+def ban_guest(meeting_id: str, guest_id: str) -> dict:
+    meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
+    if not meeting.is_host_or_cohost(frappe.session.user):
+        frappe.throw(_("Only hosts and co-hosts can ban guests"), frappe.PermissionError)
+    guest_access.ban(meeting_id, guest_id)
+    return {"meeting_id": meeting_id, "guest_id": guest_id, "status": "banned"}
 
 
-@frappe.whitelist(allow_guest=True)
-def get_guest_sfu_connection_details(meeting_id: str, guest_token: str) -> dict:
-    """
-    Get SFU connection details for guest users.
-    Validates the guest token and returns SFU URL/port.
-    """
-    sfu_config = get_sfu_config()
-    secret = sfu_config.get("sfu_secret")
-    if not secret:
-        frappe.throw(_("SFU secret not configured"))
-
-    try:
-        decoded = jwt.decode(guest_token, secret, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        frappe.throw(_("Guest token has expired"))
-    except jwt.InvalidTokenError:
-        frappe.throw(_("Invalid guest token"))
-
-    if not decoded.get("is_guest"):
-        frappe.throw(_("Not a guest token"))
-
-    if decoded.get("meeting_id") != meeting_id:
-        frappe.throw(_("Token meeting ID does not match"))
-
-    if not frappe.db.exists("Meet Room", meeting_id):
-        frappe.throw(_("Meeting not found"))
-
-    guest_id = decoded.get("user_id")
-    session_data = get_guest_session(guest_id) if isinstance(guest_id, str) else None
-    if not session_data or session_data.get("meeting_id") != meeting_id:
-        frappe.throw(_("Guest session not found or expired"), frappe.PermissionError)
-
-    meeting = frappe.get_doc("Meet Room", meeting_id)
-    settings = frappe.get_cached_doc("Meet Settings")
-    if (
-        not settings.allow_guest
-        or not meeting.allow_guest
-        or meeting.is_user_banned(guest_id)
-        or guest_id not in meeting.get_members()
-    ):
-        frappe.throw(_("Guest access denied"), frappe.PermissionError)
-
-    return {
-        "sfu_url": sfu_config["sfu_server_url"],
-        "sfu_port": sfu_config["sfu_server_port"],
-        "codec_strategy": _get_codec_strategy(),
-        "e2ee_required": _is_e2ee_enabled(meeting_id),
-    }
-
-
-@frappe.whitelist(allow_guest=True)
-@rate_limit(limit=10, seconds=60 * 60)
-def validate_guest_session(guest_id: str) -> dict:
-    """
-    Validate that a guest session exists and is active.
-
-    Args:
-            guest_id: The guest ID to validate
-
-    Returns:
-            dict: {"valid": bool}
-    """
-    if not guest_id or not guest_id.startswith("guest_"):
-        return {"valid": False, "error": "Invalid guest ID format"}
-
-    session_data = get_guest_session(guest_id)
-    if not session_data:
-        return {"valid": False, "error": "Guest session not found"}
-
-    return {
-        "valid": True,
-    }
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def validate_guest_session(
+    meeting_id: str,
+    guest_id: str,
+    guest_session_token: str | None = None,
+) -> dict:
+    """Return active validity and any proof-bound lease status."""
+    _redact_guest_proof_from_request()
+    status = guest_access.get_status(meeting_id, guest_id, guest_session_token)
+    result: dict[str, bool | str] = {"valid": status in guest_access.ACTIVE_STATUSES}
+    if status is not None:
+        result["status"] = status
+    return result
 
 
 @frappe.whitelist()
@@ -650,12 +649,14 @@ def check_meeting_access(meeting_id: str) -> dict:
     """
     try:
         meeting: MeetRoom = frappe.get_doc("Meet Room", meeting_id)
-        settings = frappe.get_cached_doc("Meet Settings")
-        allow_guest = settings.allow_guest and meeting.allow_guest
-
-        return {"allow_guest": allow_guest, "host_only_chat": bool(meeting.host_only_chat)}
     except frappe.DoesNotExistError:
-        frappe.throw(_("Meeting not found"))
+        return {"allow_guest": False}
+
+    settings = frappe.get_cached_doc("Meet Settings")
+    if not (settings.allow_guest and meeting.allow_guest):
+        return {"allow_guest": False}
+
+    return {"allow_guest": True, "host_only_chat": bool(meeting.host_only_chat)}
 
 
 @frappe.whitelist()
