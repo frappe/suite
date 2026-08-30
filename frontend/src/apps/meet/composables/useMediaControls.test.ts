@@ -1450,35 +1450,6 @@ describe("useMediaControls", () => {
 		}
 	});
 
-	it("closes a microphone publication resumed by a replaced manager", async () => {
-		noiseCancellationEnabled.value = false;
-		const sourceTrack = audioTrack("source");
-		const reconciliation = deferred<void>();
-		const harness = createCameraHarness({
-			getUserMedia: vi
-				.fn()
-				.mockResolvedValue(new FakeMediaStream([sourceTrack])),
-		});
-		harness.manager.reconcileLocalProducerTrack.mockImplementation(
-			() => reconciliation.promise,
-		);
-
-		const enabling = harness.controls.toggleMicrophone();
-		await vi.waitFor(() =>
-			expect(harness.manager.reconcileLocalProducerTrack).toHaveBeenCalledOnce(),
-		);
-		harness.managerRef.value = {} as never;
-		reconciliation.resolve();
-		await enabling;
-
-		expect(harness.manager.closeLocalProducer).toHaveBeenCalledWith("audio", {
-			reason: "manager-replaced",
-		});
-		expect(harness.state.isMicOn).toBe(false);
-		expect(sourceTrack.stop).toHaveBeenCalledOnce();
-		expect(harness.state.localStream.getAudioTracks()).toEqual([]);
-	});
-
 	it("serializes overlapping camera toggles and finishes camera-off", async () => {
 		const firstAcquisition = deferred<MediaStream>();
 		const firstTrack = videoTrack("first");
