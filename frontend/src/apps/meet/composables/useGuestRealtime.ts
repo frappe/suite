@@ -200,6 +200,8 @@ export function createGuestRealtimeLifecycle({
 				await onActiveStatus(status, session);
 			} else if (status === "rejected" || status === "banned" || status === "expired") {
 				handleTerminalStatus(status);
+			} else if (response.valid === false) {
+				handleTerminalStatus("expired");
 			}
 		} catch {
 			// Realtime remains the primary path; retry transient reconciliation failures.

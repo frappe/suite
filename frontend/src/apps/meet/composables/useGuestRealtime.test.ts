@@ -194,6 +194,22 @@ describe("guest realtime lifecycle", () => {
 		}
 	});
 
+	it("expires a stored guest when reconciliation can no longer find its lease", async () => {
+		vi.useFakeTimers();
+		try {
+			vi.mocked(frappeRequest).mockResolvedValue({ valid: false });
+			const { socket } = createSocket();
+			const { lifecycle, callbacks } = createLifecycle(socket);
+			lifecycle.start();
+
+			await vi.advanceTimersByTimeAsync(5_000);
+
+			expect(callbacks.onTerminalStatus).toHaveBeenCalledWith("expired");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it.each(["invalid_request", "validation_failed"])(
 		"surfaces %s acknowledgement failures",
 		(error) => {
