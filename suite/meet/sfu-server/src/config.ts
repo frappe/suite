@@ -228,11 +228,8 @@ export function loadConfig(
 		issues.push('WEBRTC_LISTEN_IP must be an IPv4 address');
 	}
 	const listenIp =
-		configuredListenIp && configuredListenIp !== '0.0.0.0'
-			? configuredListenIp
-			: mode === 'development'
-				? '127.0.0.1'
-				: (system.localIpv4 ?? '127.0.0.1');
+		configuredListenIp ??
+		(mode === 'development' ? '127.0.0.1' : (system.localIpv4 ?? '127.0.0.1'));
 	if (
 		mode === 'production' &&
 		(!configuredListenIp || configuredListenIp === '0.0.0.0') &&
@@ -252,7 +249,7 @@ export function loadConfig(
 	const announcedAddress =
 		configuredAnnouncedAddress ??
 		(configuredListenIp === '0.0.0.0' && mode === 'development'
-			? listenIp
+			? (system.localIpv4 ?? '127.0.0.1')
 			: (system.localIpv4 ?? listenIp));
 
 	const basePort = integer(env, 'WEBRTC_SERVER_PORT', 40_000, issues, 1, 65535);

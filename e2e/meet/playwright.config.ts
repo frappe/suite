@@ -66,6 +66,24 @@ export default defineConfig({
 				permissions: ["camera", "microphone"],
 			},
 		},
+		...(!isCI
+			? [
+					{
+						name: "firefox",
+						use: {
+							...devices["Desktop Firefox"],
+							launchOptions: {
+								firefoxUserPrefs: {
+									"media.peerconnection.ice.obfuscate_host_addresses": false,
+									"media.navigator.permission.disabled": true,
+									"media.navigator.streams.fake": true,
+									"media.autoplay.default": 0,
+								},
+							},
+						},
+					},
+				]
+			: []),
 	],
 	globalSetup: "./global-setup.ts",
 });

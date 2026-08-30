@@ -56,7 +56,9 @@ async function prepareContext(context: BrowserContext): Promise<void> {
 	await context.addInitScript({
 		content: `${STUB_MEDIA_SCRIPT}\n${MEDIA_FAULT_SCRIPT}`,
 	});
-	await context.grantPermissions(["camera", "microphone"]);
+	if (context.browser()?.browserType().name() !== "firefox") {
+		await context.grantPermissions(["camera", "microphone"]);
+	}
 }
 
 async function waitForMeetingReady(page: Page): Promise<void> {

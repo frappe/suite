@@ -49,8 +49,8 @@ describe('loadConfig', () => {
 		);
 
 		expect(config.mediasoup.webRtcServer).toMatchObject({
-			listenIp: '127.0.0.1',
-			announcedAddress: '127.0.0.1',
+			listenIp: '0.0.0.0',
+			announcedAddress: '10.0.0.8',
 		});
 		expect(config.runtime.allowPlainTransport).toBe(true);
 		expect(config.runtime.bypassRateLimits).toBe(true);
