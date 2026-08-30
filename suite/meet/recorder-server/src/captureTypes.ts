@@ -21,6 +21,20 @@ export interface CaptureGap {
 	reason: string;
 }
 
+export interface CaptureInterruption {
+	id: string;
+	detected_at: string;
+	deadline: string;
+	omission_started_at: string;
+	reason: string;
+}
+
+export interface CaptureRecovery {
+	id: string;
+	capture_started_at: string;
+	recovered_at: string;
+}
+
 export interface CaptureArtifact {
 	file: string;
 	bytes: number;

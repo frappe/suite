@@ -491,7 +491,11 @@ describe('JobStore and JobManager', () => {
 		await bridge.emit({ job: 'job', type: 'configured' });
 		await bridge.emit({ job: 'job', type: 'proof_complete' });
 		await bridge.emit({ job: 'job', type: 'joined' });
-		await bridge.emit({ job: 'job', type: 'capture_ready' });
+		await bridge.emit({
+			job: 'job',
+			type: 'capture_ready',
+			occurredAt: '2026-08-30T12:00:00.000Z',
+		});
 		await bridge.emit({ job: 'job', type: 'interrupted' });
 
 		await bridge.emit({ job: 'job', type: 'capture_ready' });
@@ -501,7 +505,10 @@ describe('JobStore and JobManager', () => {
 		);
 		await bridge.emit({ job: 'job', type: 'interrupted' });
 		await bridge.emit({ job: 'job', type: 'capture_ready' });
-		expect(store.get('job')?.event_sequence).toBe(7);
+		expect(store.get('job')?.event_sequence).toBe(9);
+		expect(store.get('job')?.capture_started_at).toBe(
+			'2026-08-30T12:00:00.000Z',
+		);
 		expect(recovered).toHaveBeenCalledTimes(2);
 	});
 

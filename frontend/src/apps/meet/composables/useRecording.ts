@@ -19,6 +19,9 @@ export interface RecordingState {
 	status: RecordingStatus;
 	started_at?: string;
 	capture_started_at?: string;
+	interruption_id?: string;
+	interrupted_at?: string;
+	interruption_deadline?: string;
 	state_revision: number;
 }
 

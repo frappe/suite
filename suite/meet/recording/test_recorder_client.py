@@ -105,6 +105,33 @@ class TestRecorderClient(unittest.TestCase):
         )
         self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
 
+    def test_interrupted_response_preserves_unrecovered_timestamps(self):
+        self.session.request.return_value = response(
+            200,
+            {
+                "status": "accepted",
+                "job": "job",
+                "accepted_at": "2026-07-31T10:11:12.123Z",
+                "public_jwk": PUBLIC_JWK,
+                "state": "interrupted",
+                "event_sequence": 6,
+                "interruption": {
+                    "id": "4cad3218-a956-4dec-a522-18f0dd3b75a2",
+                    "interrupted_at": "2026-07-31T10:12:00.000Z",
+                    "deadline": "2026-07-31T10:13:00.000Z",
+                    "omission_started_at": "2026-07-31T10:11:30.000Z",
+                    "resumed_capture_started_at": None,
+                    "recovered_at": None,
+                },
+            },
+        )
+
+        outcome = self.client.query(**self.arguments)
+
+        self.assertEqual(outcome.outcome, "accepted")
+        self.assertIsNone(outcome.interruption["resumed_capture_started_at"])
+        self.assertIsNone(outcome.interruption["recovered_at"])
+
     def test_timeout_invalid_json_wrong_job_and_5xx_are_indeterminate(self):
         cases = [
             requests.Timeout(),

@@ -75,6 +75,8 @@ export class JobManager {
 				event.artifact,
 				event.gaps,
 				event.occurredAt,
+				event.interruption,
+				event.recovery,
 			);
 		});
 	}
@@ -320,6 +322,18 @@ export class JobManager {
 		},
 		gaps?: Array<{ started_at: string; ended_at?: string; reason: string }>,
 		occurredAt = new Date().toISOString(),
+		interruption?: {
+			id: string;
+			detected_at: string;
+			deadline: string;
+			omission_started_at: string;
+			reason: string;
+		},
+		recovery?: {
+			id: string;
+			capture_started_at: string;
+			recovered_at: string;
+		},
 	): Promise<void> {
 		let cleanup = false;
 		let healthDelivery: Promise<void> | undefined;
@@ -335,13 +349,24 @@ export class JobManager {
 			await this.store.update((jobs) => {
 				const record = jobs[job];
 				if (!record) return;
-				if (type === 'interrupted' || startupMilestone)
+				if (type === 'interrupted' || recovered || startupMilestone)
 					record.event_sequence = (record.event_sequence ?? 1) + 1;
 				record.state = type;
 				if (type === 'configured') record.configured_at = occurredAt;
 				if (type === 'proof_complete') record.proof_completed_at = occurredAt;
 				if (type === 'joined') record.joined_at = occurredAt;
-				if (type === 'capture_ready') record.capture_started_at = occurredAt;
+				if (type === 'capture_ready' && !recovered)
+					record.capture_started_at = occurredAt;
+				if (type === 'interrupted' && interruption) {
+					record.interruption_id = interruption.id;
+					record.interrupted_at = interruption.detected_at;
+					record.interruption_deadline = interruption.deadline;
+					record.omission_started_at = interruption.omission_started_at;
+				}
+				if (recovered && recovery) {
+					record.resumed_capture_started_at = recovery.capture_started_at;
+					record.recovered_at = recovery.recovered_at;
+				}
 				if (type === 'complete' || type === 'partial')
 					record.artifact = {
 						state: type,

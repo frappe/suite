@@ -75,6 +75,16 @@ function validLedger(value: unknown): value is Ledger {
 			...(job.proof_completed_at === undefined ? [] : ['proof_completed_at']),
 			...(job.joined_at === undefined ? [] : ['joined_at']),
 			...(job.capture_started_at === undefined ? [] : ['capture_started_at']),
+			...(job.interruption_id === undefined ? [] : ['interruption_id']),
+			...(job.interrupted_at === undefined ? [] : ['interrupted_at']),
+			...(job.interruption_deadline === undefined
+				? []
+				: ['interruption_deadline']),
+			...(job.omission_started_at === undefined ? [] : ['omission_started_at']),
+			...(job.resumed_capture_started_at === undefined
+				? []
+				: ['resumed_capture_started_at']),
+			...(job.recovered_at === undefined ? [] : ['recovered_at']),
 			...(job.event_sequence === undefined ? [] : ['event_sequence']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
 			...(job.callback_completed_at === undefined
@@ -105,6 +115,16 @@ function validLedger(value: unknown): value is Ledger {
 			(job.joined_at === undefined || validUtcTimestamp(job.joined_at)) &&
 			(job.capture_started_at === undefined ||
 				validUtcTimestamp(job.capture_started_at)) &&
+			(job.interruption_id === undefined || nonempty(job.interruption_id)) &&
+			(job.interrupted_at === undefined ||
+				validUtcTimestamp(job.interrupted_at)) &&
+			(job.interruption_deadline === undefined ||
+				validUtcTimestamp(job.interruption_deadline)) &&
+			(job.omission_started_at === undefined ||
+				validUtcTimestamp(job.omission_started_at)) &&
+			(job.resumed_capture_started_at === undefined ||
+				validUtcTimestamp(job.resumed_capture_started_at)) &&
+			(job.recovered_at === undefined || validUtcTimestamp(job.recovered_at)) &&
 			[
 				'reserved',
 				'configured',

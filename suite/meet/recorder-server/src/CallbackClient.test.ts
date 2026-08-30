@@ -118,6 +118,10 @@ describe('CallbackClient', () => {
 			recording: 'recording',
 			state: 'interrupted',
 			health_reason: 'connection_lost',
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			interrupted_at: '2026-08-30T12:00:00.000Z',
+			interruption_deadline: '2026-08-30T12:01:00.000Z',
+			omission_started_at: '2026-08-30T11:59:30.000Z',
 		} as JobRecord;
 
 		await new CallbackClient({
@@ -133,6 +137,10 @@ describe('CallbackClient', () => {
 			job: 'job',
 			event_sequence: 2,
 			reason: 'connection_lost',
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			interrupted_at: '2026-08-30T12:00:00.000Z',
+			interruption_deadline: '2026-08-30T12:01:00.000Z',
+			omission_started_at: '2026-08-30T11:59:30.000Z',
 		});
 	});
 
@@ -152,6 +160,9 @@ describe('CallbackClient', () => {
 			room: 'room',
 			recording: 'recording',
 			state: 'capture_ready',
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			resumed_capture_started_at: '2026-08-30T12:00:10.000Z',
+			recovered_at: '2026-08-30T12:00:40.000Z',
 		} as JobRecord;
 
 		await new CallbackClient({
@@ -166,6 +177,9 @@ describe('CallbackClient', () => {
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 2,
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			resumed_capture_started_at: '2026-08-30T12:00:10.000Z',
+			recovered_at: '2026-08-30T12:00:40.000Z',
 		});
 	});
 
@@ -186,6 +200,10 @@ describe('CallbackClient', () => {
 			recording: 'recording',
 			state: 'interrupted',
 			event_sequence: 4,
+			interruption_id: '22222222-2222-4222-8222-222222222222',
+			interrupted_at: '2026-08-30T12:02:00.000Z',
+			interruption_deadline: '2026-08-30T12:03:00.000Z',
+			omission_started_at: '2026-08-30T12:01:30.000Z',
 		} as JobRecord;
 
 		await new CallbackClient({

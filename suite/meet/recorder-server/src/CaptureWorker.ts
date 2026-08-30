@@ -1,6 +1,8 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
+	CaptureInterruption,
+	CaptureRecovery,
 	CaptureSegment,
 	CaptureState,
 	MediaTools,
@@ -26,6 +28,8 @@ export interface CaptureWorkerOptions {
 	recoveryTimeoutMs: number;
 	limits?: RecordingLimits;
 	onStopRequested?: (partial: boolean, reason: string) => void;
+	onInterrupted?: (interruption: CaptureInterruption) => void;
+	onRecovered?: (recovery: CaptureRecovery) => void;
 }
 
 export interface CaptureWorkerDependencies {
@@ -58,12 +62,16 @@ export class CaptureWorker {
 	private partial = false;
 	private stopPromise?: Promise<Outcome>;
 	private recoveryPromise: Promise<void> | undefined;
+	private interruption: CaptureInterruption | undefined;
+	private rendererUnavailable = false;
+	private captureFailed = false;
+	private captureLaunchedAt?: string;
 	private limitTimer?: NodeJS.Timeout;
 	private healthyEpoch?: {
 		epoch: number;
-		resolve: () => void;
+		resolve: (adoptedAt: string) => void;
 		reject: (error: Error) => void;
-		promise: Promise<void>;
+		promise: Promise<string>;
 	};
 
 	constructor(
@@ -174,12 +182,14 @@ export class CaptureWorker {
 			return;
 		}
 		const epoch = this.epoch++;
+		this.captureFailed = false;
+		this.captureLaunchedAt = new Date(this.now()).toISOString();
 		await this.manifest.update((m) => {
 			m.epochs = this.epoch;
 		});
-		let resolveHealth!: () => void;
+		let resolveHealth!: (adoptedAt: string) => void;
 		let rejectHealth!: (error: Error) => void;
-		const health = new Promise<void>((resolve, reject) => {
+		const health = new Promise<string>((resolve, reject) => {
 			resolveHealth = resolve;
 			rejectHealth = reject;
 		});
@@ -273,9 +283,29 @@ export class CaptureWorker {
 	async rendererFailed(reason: string): Promise<Outcome> {
 		if (this.stopPromise) return this.stopPromise;
 		this.partial = true;
-		await this.openGap(`renderer:${reason}`);
+		this.rendererUnavailable = true;
+		if (this.recoveryPromise)
+			this.healthyEpoch?.reject(new Error('renderer unavailable'));
+		if (!this.interruption) {
+			const detectedAt = this.now();
+			const interruption: CaptureInterruption = {
+				id: crypto.randomUUID(),
+				detected_at: new Date(detectedAt).toISOString(),
+				deadline: new Date(
+					detectedAt + this.options.recoveryTimeoutMs,
+				).toISOString(),
+				omission_started_at: new Date(detectedAt).toISOString(),
+				reason: `renderer:${reason}`,
+			};
+			this.interruption = interruption;
+			interruption.omission_started_at = await this.openGap(
+				`renderer:${reason}`,
+			);
+			this.options.onInterrupted?.(interruption);
+		}
+		const deadline = Date.parse(this.interruption.deadline);
 		await this.stopCaptureProcess();
-		await this.sleep(this.options.recoveryTimeoutMs);
+		await this.sleep(Math.max(0, deadline - this.now()));
 		return this.stop(true, 'renderer_recovery_timeout');
 	}
 
@@ -340,6 +370,7 @@ export class CaptureWorker {
 
 	private queueRecovery(): void {
 		if (this.stopPromise) return;
+		this.captureFailed = true;
 		if (this.recoveryPromise) {
 			this.healthyEpoch?.reject(
 				new Error('ffmpeg exited before capture progressed'),
@@ -356,38 +387,67 @@ export class CaptureWorker {
 		this.ffmpeg = undefined;
 		await this.watcher?.stopAndAdoptFinal().catch(() => undefined);
 		this.watcher = undefined;
-		await this.openGap('ffmpeg_exited');
 		const deadline = this.now() + this.options.recoveryTimeoutMs;
+		const interruption: CaptureInterruption = {
+			id: crypto.randomUUID(),
+			detected_at: new Date(this.now()).toISOString(),
+			deadline: new Date(deadline).toISOString(),
+			omission_started_at: new Date(this.now()).toISOString(),
+			reason: 'ffmpeg_exited',
+		};
+		this.interruption = interruption;
+		interruption.omission_started_at = await this.openGap('ffmpeg_exited');
+		this.options.onInterrupted?.(interruption);
 		let backoff = 250;
-		while (!this.stopPromise && this.now() < deadline) {
+		while (
+			!this.stopPromise &&
+			!this.rendererUnavailable &&
+			this.now() < deadline
+		) {
 			try {
 				await this.startCapture();
 				const health = this.healthyEpoch?.promise;
 				if (!health) throw new Error('capture health unavailable');
 				const remaining = deadline - this.now();
-				await Promise.race([
+				const recoveredAt = await Promise.race([
 					health,
 					this.sleep(remaining).then(() => {
 						throw new Error('recovery timeout');
 					}),
 				]);
-				await this.closeGap();
+				if (this.rendererUnavailable || this.captureFailed)
+					throw new Error('capture unavailable');
+				const captureStartedAt = this.captureLaunchedAt;
+				if (!captureStartedAt)
+					throw new Error('capture launch time unavailable');
+				await this.closeGap(captureStartedAt);
+				if (this.rendererUnavailable || this.captureFailed)
+					throw new Error('capture unavailable');
+				this.options.onRecovered?.({
+					id: interruption.id,
+					capture_started_at: captureStartedAt,
+					recovered_at: recoveredAt,
+				});
+				this.interruption = undefined;
 				return;
 			} catch {
+				if (this.captureFailed) await this.reopenGap();
 				await this.stopCaptureProcess().catch(() => undefined);
 				const remaining = deadline - this.now();
 				if (remaining > 0) await this.sleep(Math.min(backoff, remaining));
 				backoff = Math.min(backoff * 2, 5_000);
 			}
 		}
-		if (!this.stopPromise) this.requestStop(true, 'capture_recovery_timeout');
+		if (!this.stopPromise && !this.rendererUnavailable)
+			this.requestStop(true, 'capture_recovery_timeout');
 	}
 
 	private async segmentAdopted(
 		epoch: number,
 		_segment: CaptureSegment,
 	): Promise<void> {
-		if (this.healthyEpoch?.epoch === epoch) this.healthyEpoch.resolve();
+		if (this.healthyEpoch?.epoch === epoch)
+			this.healthyEpoch.resolve(new Date(this.now()).toISOString());
 		if (this.limitReached()) this.requestStop(false, 'capture_budget_reached');
 	}
 
@@ -423,19 +483,34 @@ export class CaptureWorker {
 		void this.stop(partial, reason);
 	}
 
-	private async openGap(reason: string): Promise<void> {
+	private async openGap(reason: string): Promise<string> {
+		let startedAt = new Date(this.now()).toISOString();
 		await this.manifest.update((m) => {
 			const gap = m.gaps.at(-1);
-			if (!gap || gap.ended_at)
-				m.gaps.push({ started_at: new Date(this.now()).toISOString(), reason });
+			if (!gap || gap.ended_at) {
+				const segment = m.segments.at(-1);
+				startedAt = segment
+					? new Date(
+							Date.parse(segment.started_at) + segment.duration_ms,
+						).toISOString()
+					: startedAt;
+				m.gaps.push({ started_at: startedAt, reason });
+			} else startedAt = gap.started_at;
+		});
+		return startedAt;
+	}
+
+	private async closeGap(captureStartedAt: string): Promise<void> {
+		await this.manifest.update((m) => {
+			const gap = m.gaps.at(-1);
+			if (gap && !gap.ended_at) gap.ended_at = captureStartedAt;
 		});
 	}
 
-	private async closeGap(): Promise<void> {
+	private async reopenGap(): Promise<void> {
 		await this.manifest.update((m) => {
 			const gap = m.gaps.at(-1);
-			if (gap && !gap.ended_at)
-				gap.ended_at = new Date(this.now()).toISOString();
+			if (gap) delete gap.ended_at;
 		});
 	}
 

@@ -31,6 +31,7 @@ class RecorderOutcome:
     health_reason: str | None = None
     event_sequence: int | None = None
     milestones: dict[str, datetime] | None = None
+    interruption: dict[str, Any] | None = None
 
 
 class RecorderClient:
@@ -117,7 +118,7 @@ class RecorderClient:
             "state",
             "event_sequence",
         }
-        optional_keys = {"health_reason", "milestones", "artifact"}
+        optional_keys = {"health_reason", "milestones", "artifact", "interruption"}
         if (
             response.status_code in (200, 202)
             and accepted_keys.issubset(body)
@@ -155,6 +156,25 @@ class RecorderClient:
                 ):
                     raise ValueError
                 milestones = {key: _utc_datetime(value) for key, value in raw_milestones.items()}
+                interruption = body.get("interruption")
+                if interruption is not None:
+                    if not isinstance(interruption, dict) or set(interruption) != {
+                        "id",
+                        "interrupted_at",
+                        "deadline",
+                        "omission_started_at",
+                        "resumed_capture_started_at",
+                        "recovered_at",
+                    }:
+                        raise ValueError
+                    interruption = {
+                        "id": str(uuid.UUID(interruption["id"])),
+                        **{
+                            key: _utc_datetime(value) if value is not None else None
+                            for key, value in interruption.items()
+                            if key != "id"
+                        },
+                    }
             except (TypeError, ValueError):
                 return RecorderOutcome("indeterminate")
             return RecorderOutcome(
@@ -165,6 +185,7 @@ class RecorderClient:
                 health_reason=body.get("health_reason"),
                 event_sequence=body["event_sequence"],
                 milestones=milestones,
+                interruption=interruption,
             )
         if response.status_code in (409, 422, 429, 507) and set(body) == {"status", "job", "reason"}:
             reason = body["reason"]

@@ -55,6 +55,12 @@ export interface JobRecord {
 	proof_completed_at?: string;
 	joined_at?: string;
 	capture_started_at?: string;
+	interruption_id?: string;
+	interrupted_at?: string;
+	interruption_deadline?: string;
+	omission_started_at?: string;
+	resumed_capture_started_at?: string;
+	recovered_at?: string;
 	public_jwk: PublicJwk;
 	state: JobState;
 	event_sequence?: number;

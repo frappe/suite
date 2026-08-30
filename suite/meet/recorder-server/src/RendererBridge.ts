@@ -10,7 +10,12 @@ import puppeteer, {
 	type HTTPRequest,
 	type Page,
 } from 'puppeteer-core';
-import type { CaptureArtifact, CaptureGap } from './captureTypes.js';
+import type {
+	CaptureArtifact,
+	CaptureGap,
+	CaptureInterruption,
+	CaptureRecovery,
+} from './captureTypes.js';
 import type { CommandClaims, PublicJwk } from './types.js';
 
 declare global {
@@ -50,6 +55,8 @@ export type RendererLifecycleEvent = {
 	occurredAt?: string;
 	artifact?: CaptureArtifact;
 	gaps?: CaptureGap[];
+	interruption?: CaptureInterruption;
+	recovery?: CaptureRecovery;
 };
 
 export interface BrowserAdapter {

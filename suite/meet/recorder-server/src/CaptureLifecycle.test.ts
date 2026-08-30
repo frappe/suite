@@ -54,6 +54,93 @@ afterEach(async () => {
 });
 
 describe('capture lifecycle', () => {
+	it('recovers FFmpeg capture with a durable bounded interruption', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const exits: Array<() => void> = [];
+		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const supervisor = {
+			start: vi.fn(
+				async (
+					command: string,
+					_args: string[],
+					processOptions: Parameters<ProcessSupervisor['start']>[2],
+				) => {
+					if (command === 'ffmpeg' && processOptions.onUnexpectedExit)
+						exits.push(processOptions.onUnexpectedExit);
+					return command === 'pactl' ? process(0) : process();
+				},
+			),
+		};
+		const onInterrupted = vi.fn();
+		const onRecovered = vi.fn();
+		const now = Date.parse('2026-08-30T12:00:30.000Z');
+		const worker = new CaptureWorker(
+			'ffmpeg-recovery',
+			{ ...options(root), onInterrupted, onRecovered },
+			{
+				supervisor: supervisor as unknown as ProcessSupervisor,
+				now: () => now,
+				sleep: async (delay) => {
+					if (delay === 60_000) await new Promise(() => undefined);
+				},
+				watcher: (_manifest, _tools, _epoch, onAdopt) => {
+					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					return {
+						start: () => undefined,
+						stopAndAdoptFinal: async () => 'none' as const,
+					};
+				},
+			},
+		);
+
+		await worker.initialize();
+		await worker.startCapture();
+		await worker.manifest.update((manifest) => {
+			manifest.segments.push({
+				epoch: 0,
+				index: 0,
+				file: 'epoch-000-segment-000000.ts',
+				bytes: 1,
+				sha256: 'a'.repeat(64),
+				duration_ms: 30_000,
+				started_at: '2026-08-30T12:00:00.000Z',
+			});
+		});
+
+		exits[0]?.();
+		await vi.waitFor(() => expect(onInterrupted).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(adopted).toHaveLength(2));
+		const adoption = adopted[1]?.({} as never);
+		exits[1]?.();
+		await adoption;
+		await vi.waitFor(() => expect(adopted).toHaveLength(3));
+		expect(onRecovered).not.toHaveBeenCalled();
+		await adopted[2]?.({} as never);
+		await vi.waitFor(() => expect(onRecovered).toHaveBeenCalledOnce());
+
+		expect(onInterrupted).toHaveBeenCalledWith(
+			expect.objectContaining({
+				omission_started_at: '2026-08-30T12:00:30.000Z',
+				deadline: '2026-08-30T12:01:30.000Z',
+			}),
+		);
+		expect(onRecovered).toHaveBeenCalledWith(
+			expect.objectContaining({
+				capture_started_at: '2026-08-30T12:00:30.000Z',
+				recovered_at: '2026-08-30T12:00:30.000Z',
+			}),
+		);
+		expect(worker.manifest.get().gaps).toEqual([
+			{
+				started_at: '2026-08-30T12:00:30.000Z',
+				ended_at: '2026-08-30T12:00:30.000Z',
+				reason: 'ffmpeg_exited',
+			},
+		]);
+		await worker.stop();
+	});
+
 	it('synchronizes audio and video capture to the wall clock', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
@@ -75,7 +162,9 @@ describe('capture lifecycle', () => {
 		await worker.startCapture();
 
 		const args = supervisor.start.mock.calls.at(-1)?.[1] as string[];
-		expect(args.filter((arg) => arg === '-use_wallclock_as_timestamps')).toHaveLength(2);
+		expect(
+			args.filter((arg) => arg === '-use_wallclock_as_timestamps'),
+		).toHaveLength(2);
 		expect(args).toContain('aresample=async=1000:first_pts=0');
 		await worker.stop();
 	});
@@ -274,11 +363,21 @@ describe('capture lifecycle', () => {
 		const recovery = new Promise<'partial'>((resolve) => {
 			finishRecovery = resolve;
 		});
+		let workerOptions: CaptureWorkerOptions | undefined;
 		const worker = {
 			env: {},
 			initialize: vi.fn(async () => undefined),
 			startCapture: vi.fn(async () => undefined),
-			rendererFailed: vi.fn(() => recovery),
+			rendererFailed: vi.fn((reason: string) => {
+				workerOptions?.onInterrupted?.({
+					id: '4cad3218-a956-4dec-a522-18f0dd3b75a2',
+					detected_at: '2026-08-30T12:00:30.000Z',
+					deadline: '2026-08-30T12:01:30.000Z',
+					omission_started_at: '2026-08-30T12:00:00.000Z',
+					reason: `renderer:${reason}`,
+				});
+				return recovery;
+			}),
 			stop: vi.fn(async () => 'complete' as const),
 			recoverStopped: vi.fn(async () => 'complete' as const),
 			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
@@ -286,7 +385,10 @@ describe('capture lifecycle', () => {
 		const manager = new CaptureWorkerManager(
 			renderer,
 			{ ...options('/tmp'), maxConcurrent: 1 },
-			() => worker,
+			(_job, createdOptions) => {
+				workerOptions = createdOptions;
+				return worker;
+			},
 		);
 		const lifecycle = vi.fn(async () => undefined);
 		manager.onLifecycle(lifecycle);
@@ -301,7 +403,14 @@ describe('capture lifecycle', () => {
 			expect(lifecycle).toHaveBeenCalledWith({
 				job: 'one',
 				type: 'interrupted',
-				reason: 'connection_lost',
+				reason: 'renderer:connection_lost',
+				interruption: {
+					id: '4cad3218-a956-4dec-a522-18f0dd3b75a2',
+					detected_at: '2026-08-30T12:00:30.000Z',
+					deadline: '2026-08-30T12:01:30.000Z',
+					omission_started_at: '2026-08-30T12:00:00.000Z',
+					reason: 'renderer:connection_lost',
+				},
 			}),
 		);
 		expect(worker.rendererFailed).toHaveBeenCalledWith('connection_lost');

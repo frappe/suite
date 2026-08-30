@@ -31,6 +31,16 @@ const elapsed = computed(() => {
 		.join(":");
 });
 
+const interruptionLabel = computed(() => {
+	if (!props.recording.interruption_deadline) return "Recording interrupted";
+	const deadline = props.recording.interruption_deadline.includes("T")
+		? props.recording.interruption_deadline
+		: props.recording.interruption_deadline.replace(" ", "T");
+	const timestamp = /(?:Z|[+-]\d\d:\d\d)$/.test(deadline) ? deadline : `${deadline}Z`;
+	const seconds = Math.max(0, Math.ceil((new Date(timestamp).getTime() - now.value) / 1000));
+	return `Recording interrupted - ${seconds}s`;
+});
+
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 1000)));
 onUnmounted(() => timer && clearInterval(timer));
 </script>
@@ -41,7 +51,7 @@ onUnmounted(() => timer && clearInterval(timer));
 		variant="subtle"
 		size="sm"
 		:icon-left="recording.status === 'Interrupted' ? 'lucide-triangle-alert' : 'lucide-circle-stop'"
-		:label="recording.status === 'Interrupted' ? 'Recording interrupted' : `REC ${elapsed}`"
+		:label="recording.status === 'Interrupted' ? interruptionLabel : `REC ${elapsed}`"
 		:disabled="!canStop || recording.status === 'Stopping'"
 		role="status"
 		aria-live="polite"

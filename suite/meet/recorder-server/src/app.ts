@@ -81,6 +81,18 @@ function accepted(job: JobRecord) {
 		...(Object.keys(milestones).length ? { milestones } : {}),
 		...(job.artifact ? { artifact: job.artifact } : {}),
 		...(job.health_reason ? { health_reason: job.health_reason } : {}),
+		...(job.interruption_id
+			? {
+					interruption: {
+						id: job.interruption_id,
+						interrupted_at: job.interrupted_at,
+						deadline: job.interruption_deadline,
+						omission_started_at: job.omission_started_at,
+						resumed_capture_started_at: job.resumed_capture_started_at ?? null,
+						recovered_at: job.recovered_at ?? null,
+					},
+				}
+			: {}),
 	};
 }
 

@@ -302,41 +302,87 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
     def test_interruption_failure_and_duplicate_callbacks_are_ordered_and_published(self):
         started = start(self.room.name, str(uuid.uuid4()))
         recording = frappe.get_doc("Meet Recording", started["name"])
+        first_id = str(uuid.uuid4())
+        first_interrupted = _system_datetime_as_utc(now_datetime())
+        first_interruption = (
+            recording.name,
+            recording.recorder_job_id,
+            6,
+            "connection_lost",
+            first_id,
+            first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            (first_interrupted + timedelta(seconds=60))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            recording.started_at.replace(tzinfo=UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+        )
+        first_recovery = (
+            recording.name,
+            recording.recorder_job_id,
+            7,
+            first_id,
+            first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        )
+        second_id = str(uuid.uuid4())
+        second_interrupted = first_interrupted
+        second_interruption = (
+            recording.name,
+            recording.recorder_job_id,
+            8,
+            "connection_lost",
+            second_id,
+            second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            (second_interrupted + timedelta(seconds=60))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        )
+        second_recovery = (
+            recording.name,
+            recording.recorder_job_id,
+            9,
+            second_id,
+            second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        )
         with (
             patch("suite.meet.api.recording.authenticate_callback"),
             patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
         ):
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost"),
+                recorder_interrupted(*first_interruption),
                 {"status": "Interrupted"},
             )
             interruption_publish_count = publish.call_count
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost"),
+                recorder_interrupted(*first_interruption),
                 {"status": "Interrupted"},
             )
             self.assertEqual(publish.call_count, interruption_publish_count)
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 6),
+                recorder_recovered(*first_recovery),
                 {"status": "Recording"},
             )
             recovery_publish_count = publish.call_count
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 6),
+                recorder_recovered(*first_recovery),
                 {"status": "Recording"},
             )
             self.assertEqual(publish.call_count, recovery_publish_count)
             self.assertEqual(
-                recorder_interrupted(recording.name, recording.recorder_job_id, 7, "connection_lost"),
+                recorder_interrupted(*second_interruption),
                 {"status": "Interrupted"},
             )
             self.assertEqual(
-                recorder_recovered(recording.name, recording.recorder_job_id, 7),
+                recorder_recovered(*second_recovery),
                 {"status": "Recording"},
             )
             second_recovery_publish_count = publish.call_count
             self.assertEqual(
-                recorder_failed(recording.name, recording.recorder_job_id, 8, "capture_failed"),
+                recorder_failed(recording.name, recording.recorder_job_id, 10, "capture_failed"),
                 {"status": "Failed"},
             )
             self.assertGreater(publish.call_count, second_recovery_publish_count)
@@ -344,7 +390,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording.reload()
         self.assertEqual(recording.status, "Failed")
         self.assertEqual(recording.state_revision, 6)
-        self.assertEqual(recording.recorder_event_sequence, 8)
+        self.assertEqual(recording.recorder_event_sequence, 10)
         self.assertIsNotNone(recording.ended_at)
 
     def test_callback_timestamps_and_gaps_stay_within_recording(self):

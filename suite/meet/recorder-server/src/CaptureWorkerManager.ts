@@ -62,6 +62,21 @@ export class CaptureWorkerManager implements RendererBridge {
 			...this.options,
 			display: this.nextDisplay++,
 			limits: command.limits,
+			onInterrupted: (interruption) => {
+				void this.handler({
+					job: command.job,
+					type: 'interrupted',
+					reason: interruption.reason,
+					interruption,
+				});
+			},
+			onRecovered: (recovery) => {
+				void this.handler({
+					job: command.job,
+					type: 'capture_ready',
+					recovery,
+				});
+			},
 			onStopRequested: (partial, reason) => {
 				void this.enqueue(command.job, () =>
 					this.stopWorker(command.job, partial, reason),
@@ -169,7 +184,6 @@ export class CaptureWorkerManager implements RendererBridge {
 			return;
 		}
 		if ((event.type === 'failed' || event.type === 'interrupted') && worker) {
-			if (event.type === 'interrupted') await this.handler(event);
 			let outcome: 'complete' | 'partial' | 'failed' = 'failed';
 			try {
 				const recovery = worker.rendererFailed(event.reason ?? event.type);
@@ -183,7 +197,7 @@ export class CaptureWorkerManager implements RendererBridge {
 			await this.handler({
 				job: event.job,
 				type: outcome,
-				reason: 'operator_recovery_required',
+				reason: 'renderer_recovery_timeout',
 				...(result.artifact ? { artifact: result.artifact } : {}),
 				gaps: result.gaps,
 			});

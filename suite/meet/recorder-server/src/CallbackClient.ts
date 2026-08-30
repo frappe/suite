@@ -23,12 +23,19 @@ interface InterruptedRequest {
 	job: string;
 	event_sequence: number;
 	reason: string;
+	interruption_id: string;
+	interrupted_at: string;
+	interruption_deadline: string;
+	omission_started_at: string;
 }
 
 interface RecoveredRequest {
 	recording_id: string;
 	job: string;
 	event_sequence: number;
+	interruption_id: string;
+	resumed_capture_started_at: string;
+	recovered_at: string;
 }
 
 interface StartupProgressRequest {
@@ -150,6 +157,13 @@ export class CallbackClient {
 
 	async interrupted(job: JobRecord): Promise<void> {
 		const sequence = job.event_sequence ?? 2;
+		if (
+			!job.interruption_id ||
+			!job.interrupted_at ||
+			!job.interruption_deadline ||
+			!job.omission_started_at
+		)
+			throw new Error('interruption metadata is unavailable');
 		await this.retryHealthCallback(() =>
 			this.json(
 				'recorder_interrupted',
@@ -161,6 +175,10 @@ export class CallbackClient {
 					job: job.job,
 					event_sequence: sequence,
 					reason: job.health_reason ?? 'capture_interrupted',
+					interruption_id: job.interruption_id,
+					interrupted_at: job.interrupted_at,
+					interruption_deadline: job.interruption_deadline,
+					omission_started_at: job.omission_started_at,
 				},
 				parseStatusResponse,
 			),
@@ -169,6 +187,12 @@ export class CallbackClient {
 
 	async recovered(job: JobRecord): Promise<void> {
 		const sequence = job.event_sequence ?? 2;
+		if (
+			!job.interruption_id ||
+			!job.resumed_capture_started_at ||
+			!job.recovered_at
+		)
+			throw new Error('recovery metadata is unavailable');
 		await this.retryHealthCallback(() =>
 			this.json(
 				'recorder_recovered',
@@ -179,6 +203,9 @@ export class CallbackClient {
 					recording_id: job.recording,
 					job: job.job,
 					event_sequence: sequence,
+					interruption_id: job.interruption_id,
+					resumed_capture_started_at: job.resumed_capture_started_at,
+					recovered_at: job.recovered_at,
 				},
 				parseStatusResponse,
 			),

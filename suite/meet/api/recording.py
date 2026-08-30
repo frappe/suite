@@ -148,7 +148,16 @@ def get_active_recording_state(meeting_id: str) -> dict | None:
     state = frappe.db.get_value(
         "Meet Recording",
         {"meet_room": meeting_id, "status": ["in", ACTIVE_RECORDING_STATUSES]},
-        ["name", "status", "started_at", "capture_started_at", "state_revision"],
+        [
+            "name",
+            "status",
+            "started_at",
+            "capture_started_at",
+            "state_revision",
+            "interruption_id",
+            "interrupted_at",
+            "interruption_deadline",
+        ],
         as_dict=True,
     )
     if state and state.status == "Starting":
@@ -176,6 +185,9 @@ def _publish_state(room, recording, *, hosts_only: bool = False):
                 "started_at": recording.started_at,
                 "capture_started_at": recording.capture_started_at,
                 "state_revision": recording.state_revision,
+                "interruption_id": recording.interruption_id,
+                "interrupted_at": recording.interrupted_at,
+                "interruption_deadline": recording.interruption_deadline,
             }
             if recording
             else None
@@ -677,6 +689,10 @@ def recorder_interrupted(
     job: str,
     event_sequence: int,
     reason: str,
+    interruption_id: str,
+    interrupted_at: str,
+    interruption_deadline: str,
+    omission_started_at: str,
 ) -> dict:
     authenticate_callback(
         recording=recording_id,
@@ -684,8 +700,30 @@ def recorder_interrupted(
         operation="interrupted",
         operation_id=str(event_sequence),
     )
+    return _apply_interruption(
+        recording_id,
+        event_sequence,
+        reason,
+        interruption_id,
+        interrupted_at,
+        interruption_deadline,
+        omission_started_at,
+    )
+
+
+def _apply_interruption(
+    recording_id: str,
+    event_sequence: int,
+    reason: str,
+    interruption_id: str,
+    interrupted_at: str,
+    interruption_deadline: str,
+    omission_started_at: str,
+) -> dict:
     recording = frappe.get_doc("Meet Recording", recording_id)
     if recording.status == "Interrupted":
+        if recording.interruption_id != interruption_id:
+            frappe.throw(_("Recorder interruption does not match the active interruption"))
         return {"status": "Interrupted"}
     if recording.status != "Recording":
         return {"status": recording.status}
@@ -693,31 +731,97 @@ def recorder_interrupted(
         frappe.throw(_("Recorder event is out of order"))
     if not isinstance(reason, str) or not reason or len(reason) > 256:
         frappe.throw(_("Invalid recording interruption reason"))
+    try:
+        if str(uuid.UUID(interruption_id)) != interruption_id.lower():
+            raise ValueError
+    except (ValueError, AttributeError):
+        frappe.throw(_("Invalid recording interruption ID"))
+    interrupted = _startup_timestamp(interrupted_at)
+    deadline = _startup_timestamp(interruption_deadline)
+    omission_started = _startup_timestamp(omission_started_at)
+    if deadline != interrupted + timedelta(seconds=60):
+        frappe.throw(_("Recording interruption deadline must be fixed at 60 seconds"))
+    started = get_datetime(recording.started_at).replace(tzinfo=UTC)
+    if omission_started < started or omission_started > interrupted:
+        frappe.throw(_("Recording omission start is outside the Recording Session"))
     recording.status = "Interrupted"
     recording.state_revision += 1
     recording.recorder_event_sequence = cint(event_sequence)
+    recording.interruption_id = interruption_id
+    recording.interrupted_at = interrupted.replace(tzinfo=None)
+    recording.interruption_deadline = deadline.replace(tzinfo=None)
+    recording.interruption_reason = reason
+    recording.omission_started_at = omission_started.replace(tzinfo=None)
     recording.save(ignore_permissions=True)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
     return {"status": "Interrupted"}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def recorder_recovered(recording_id: str, job: str, event_sequence: int) -> dict:
+def recorder_recovered(
+    recording_id: str,
+    job: str,
+    event_sequence: int,
+    interruption_id: str,
+    resumed_capture_started_at: str,
+    recovered_at: str,
+) -> dict:
     authenticate_callback(
         recording=recording_id,
         job=job,
         operation="recovered",
         operation_id=str(event_sequence),
     )
+    return _apply_recovery(
+        recording_id,
+        event_sequence,
+        interruption_id,
+        resumed_capture_started_at,
+        recovered_at,
+    )
+
+
+def _apply_recovery(
+    recording_id: str,
+    event_sequence: int,
+    interruption_id: str,
+    resumed_capture_started_at: str,
+    recovered_at: str,
+) -> dict:
     recording = frappe.get_doc("Meet Recording", recording_id)
     if recording.status == "Recording":
         return {"status": "Recording"}
     if recording.status != "Interrupted":
         return {"status": recording.status}
-    if cint(event_sequence) != recording.recorder_event_sequence:
+    if interruption_id != recording.interruption_id:
         frappe.throw(_("Recorder recovery does not match the active interruption"))
+    if cint(event_sequence) <= recording.recorder_event_sequence:
+        frappe.throw(_("Recorder recovery event is out of order"))
+    resumed = _startup_timestamp(resumed_capture_started_at)
+    recovered = _startup_timestamp(recovered_at)
+    deadline = get_datetime(recording.interruption_deadline).replace(tzinfo=UTC)
+    omission_started = get_datetime(recording.omission_started_at).replace(tzinfo=UTC)
+    if resumed < omission_started or recovered < resumed or recovered > deadline:
+        frappe.throw(_("Recorder recovery is outside the active interruption interval"))
     recording.status = "Recording"
     recording.state_revision += 1
+    recording.recorder_event_sequence = cint(event_sequence)
+    recording.resumed_capture_started_at = resumed.replace(tzinfo=None)
+    recording.recovered_at = recovered.replace(tzinfo=None)
+    gaps = frappe.parse_json(recording.capture_gaps) or []
+    reason = recording.interruption_reason or "capture_interrupted"
+    if reason.startswith("renderer:"):
+        reason = "renderer_interrupted"
+    elif reason != "ffmpeg_exited":
+        reason = "capture_interrupted"
+    gaps.append(
+        {
+            "started_at": omission_started.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "ended_at": resumed.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "reason": reason,
+        }
+    )
+    recording.capture_gaps = frappe.as_json(gaps)
     recording.flags.recovery_update = True
     recording.save(ignore_permissions=True)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
@@ -839,7 +943,24 @@ def reconcile_pending_recordings():
     # Pending/Stopping reconciliation needs the recorder server. Without one configured,
     # skip those phases instead of erroring per recording; the stale sweep below fails
     # such recordings with "recorder_unavailable" once they pass max_ends_at.
-    if _fixture_enabled() or _recorder_available():
+    utc_now = _utc_now_naive()
+    fixture_enabled = _fixture_enabled()
+    recorder_available = not fixture_enabled and _recorder_available()
+    if recorder_available:
+        for name in frappe.get_all("Meet Recording", filters={"status": "Recording"}, pluck="name"):
+            _run_reconciliation(name, _reconcile_recording)
+
+        for name in frappe.get_all("Meet Recording", filters={"status": "Interrupted"}, pluck="name"):
+            _run_reconciliation(name, _reconcile_interrupted)
+
+    for name in frappe.get_all(
+        "Meet Recording",
+        filters={"status": "Interrupted", "interruption_deadline": ["<=", utc_now]},
+        pluck="name",
+    ):
+        _run_reconciliation(name, _timeout_interruption)
+
+    if fixture_enabled or recorder_available:
         names = frappe.get_all(
             "Meet Recording",
             filters={"status": ["in", ("Pending", "Starting")], "pending_deadline": ["<=", now_datetime()]},
@@ -950,6 +1071,97 @@ def _retry_stopping(name: str):
         limits=_limits(recording),
         operation_id=_stop_operation_id(recording),
     )
+
+
+def _timeout_interruption(name: str):
+    recording = frappe.get_doc("Meet Recording", name)
+    if recording.status != "Interrupted" or recording.interruption_deadline > _utc_now_naive():
+        return
+    recording.status = "Stopping"
+    recording.state_revision += 1
+    recording.end_reason = "interruption_timeout"
+    _stop_operation_id(recording)
+    recording.save(ignore_permissions=True)
+    _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
+
+
+def _reconcile_recording(name: str):
+    recording = frappe.get_doc("Meet Recording", name)
+    outcome = _client().query(
+        room=recording.meet_room,
+        recording=recording.name,
+        job=recording.recorder_job_id,
+        limits=_limits(recording),
+    )
+    interruption = outcome.interruption or {}
+    if (
+        outcome.outcome != "accepted"
+        or outcome.state not in {"interrupted", "capture_ready"}
+        or outcome.event_sequence is None
+        or not interruption.get("id")
+        or not interruption.get("interrupted_at")
+        or not interruption.get("deadline")
+        or not interruption.get("omission_started_at")
+    ):
+        return
+    interruption_sequence = (
+        outcome.event_sequence - 1 if outcome.state == "capture_ready" else outcome.event_sequence
+    )
+    if interruption_sequence <= recording.recorder_event_sequence:
+        return
+    _apply_interruption(
+        recording.name,
+        interruption_sequence,
+        outcome.health_reason or "capture_interrupted",
+        interruption["id"],
+        _callback_timestamp(interruption["interrupted_at"]),
+        _callback_timestamp(interruption["deadline"]),
+        _callback_timestamp(interruption["omission_started_at"]),
+    )
+    if (
+        outcome.state == "capture_ready"
+        and interruption.get("resumed_capture_started_at")
+        and interruption.get("recovered_at")
+    ):
+        _apply_recovery(
+            recording.name,
+            outcome.event_sequence,
+            interruption["id"],
+            _callback_timestamp(interruption["resumed_capture_started_at"]),
+            _callback_timestamp(interruption["recovered_at"]),
+        )
+
+
+def _reconcile_interrupted(name: str):
+    recording = frappe.get_doc("Meet Recording", name)
+    outcome = _client().query(
+        room=recording.meet_room,
+        recording=recording.name,
+        job=recording.recorder_job_id,
+        limits=_limits(recording),
+    )
+    interruption = outcome.interruption or {}
+    if (
+        outcome.outcome != "accepted"
+        or outcome.state != "capture_ready"
+        or outcome.event_sequence is None
+        or outcome.event_sequence <= recording.recorder_event_sequence
+        or interruption.get("id") != recording.interruption_id
+        or not interruption.get("resumed_capture_started_at")
+        or not interruption.get("recovered_at")
+    ):
+        return
+    _apply_recovery(
+        recording.name,
+        outcome.event_sequence,
+        interruption["id"],
+        _callback_timestamp(interruption["resumed_capture_started_at"]),
+        _callback_timestamp(interruption["recovered_at"]),
+    )
+
+
+def _callback_timestamp(value: datetime) -> str:
+    return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _reconcile_pending(name: str):

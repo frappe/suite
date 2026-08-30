@@ -4,7 +4,7 @@
 import hashlib
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import frappe
@@ -15,6 +15,7 @@ from frappe.utils import add_to_date, now_datetime
 from suite.drive.api.storage import get_storage_usage
 from suite.meet.api.recording import (
     _limits,
+    _reconcile_recording,
     _system_datetime_as_utc,
     cleanup_failed_recordings,
     get_preflight,
@@ -22,6 +23,7 @@ from suite.meet.api.recording import (
     reconcile_pending_recordings,
     recorder_failed,
     recorder_interrupted,
+    recorder_recovered,
     recorder_startup_progress,
     start,
     stop,
@@ -458,22 +460,189 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertEqual(recording.recorder_key_thumbprint, "xx0BcA-wMohw8atYDJOe6peGModklG2wRHBlXHMvl0M")
         client.deliver_grant.assert_called_once()
 
-    def test_interruption_callback_publishes_interrupted_state(self):
+    def test_interruption_recovers_only_after_durable_segment_adoption(self):
         started = start(self.room.name, str(uuid.uuid4()))
         recording = frappe.get_doc("Meet Recording", started["name"])
+        interrupted = _system_datetime_as_utc(now_datetime())
+        interruption_id = str(uuid.uuid4())
 
         with patch("suite.meet.api.recording.authenticate_callback"):
             result = recorder_interrupted(
                 recording.name,
                 recording.recorder_job_id,
                 6,
-                "connection_lost",
+                "ffmpeg_exited",
+                interruption_id,
+                interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                (interrupted + timedelta(seconds=60))
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+                recording.started_at.replace(tzinfo=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
             )
 
         recording.reload()
         self.assertEqual(result, {"status": "Interrupted"})
         self.assertEqual(recording.status, "Interrupted")
         self.assertEqual(recording.recorder_event_sequence, 6)
+
+        resumed = interrupted + timedelta(seconds=1)
+        recovered = interrupted + timedelta(seconds=31)
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            result = recorder_recovered(
+                recording.name,
+                recording.recorder_job_id,
+                7,
+                interruption_id,
+                resumed.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                recovered.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            )
+
+        recording.reload()
+        self.assertEqual(result, {"status": "Recording"})
+        self.assertEqual(recording.recorder_event_sequence, 7)
+        self.assertEqual(
+            frappe.parse_json(recording.capture_gaps),
+            [
+                {
+                    "started_at": recording.started_at.replace(tzinfo=UTC)
+                    .isoformat(timespec="milliseconds")
+                    .replace("+00:00", "Z"),
+                    "ended_at": resumed.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                    "reason": "ffmpeg_exited",
+                }
+            ],
+        )
+
+    def test_reconciliation_recovers_both_lost_interruption_callbacks(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        interrupted = _system_datetime_as_utc(now_datetime())
+        resumed = interrupted + timedelta(seconds=1)
+        recovered = interrupted + timedelta(seconds=30)
+        interruption_id = str(uuid.uuid4())
+        client = Mock()
+        client.query.return_value = RecorderOutcome(
+            "accepted",
+            state="capture_ready",
+            health_reason=None,
+            event_sequence=7,
+            interruption={
+                "id": interruption_id,
+                "interrupted_at": interrupted,
+                "deadline": interrupted + timedelta(seconds=60),
+                "omission_started_at": recording.started_at.replace(tzinfo=UTC),
+                "resumed_capture_started_at": resumed,
+                "recovered_at": recovered,
+            },
+        )
+
+        with patch("suite.meet.api.recording._client", return_value=client):
+            _reconcile_recording(recording.name)
+
+        recording.reload()
+        self.assertEqual(recording.status, "Recording")
+        self.assertEqual(recording.recorder_event_sequence, 7)
+        self.assertEqual(recording.interruption_id, interruption_id)
+        self.assertEqual(
+            frappe.parse_json(recording.capture_gaps)[0],
+            {
+                "started_at": recording.started_at.replace(tzinfo=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+                "ended_at": resumed.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "reason": "capture_interrupted",
+            },
+        )
+
+    def test_interruption_timeout_is_durable_when_recorder_is_unavailable(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        interrupted = _system_datetime_as_utc(now_datetime())
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            recorder_interrupted(
+                recording.name,
+                recording.recorder_job_id,
+                6,
+                "ffmpeg_exited",
+                str(uuid.uuid4()),
+                interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                (interrupted + timedelta(seconds=60))
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+                recording.started_at.replace(tzinfo=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            )
+        frappe.db.set_value(
+            "Meet Recording",
+            recording.name,
+            "interruption_deadline",
+            _system_datetime_as_utc(now_datetime()).replace(tzinfo=None) - timedelta(seconds=1),
+        )
+
+        with (
+            patch("suite.meet.api.recording._fixture_enabled", return_value=False),
+            patch("suite.meet.api.recording._recorder_available", return_value=False),
+        ):
+            reconcile_pending_recordings()
+
+        recording.reload()
+        self.assertEqual(recording.status, "Stopping")
+        self.assertEqual(recording.end_reason, "interruption_timeout")
+
+    def test_reconciliation_adopts_timely_recovery_before_late_timeout_sweep(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        interrupted = _system_datetime_as_utc(now_datetime())
+        resumed = interrupted + timedelta(seconds=1)
+        recovered = interrupted + timedelta(seconds=30)
+        interruption_id = str(uuid.uuid4())
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            recorder_interrupted(
+                recording.name,
+                recording.recorder_job_id,
+                6,
+                "ffmpeg_exited",
+                interruption_id,
+                interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                (interrupted + timedelta(seconds=60))
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+                recording.started_at.replace(tzinfo=UTC)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            )
+        client = Mock()
+        client.query.return_value = RecorderOutcome(
+            "accepted",
+            state="capture_ready",
+            event_sequence=7,
+            interruption={
+                "id": interruption_id,
+                "interrupted_at": interrupted,
+                "deadline": interrupted + timedelta(seconds=60),
+                "omission_started_at": recording.started_at.replace(tzinfo=UTC),
+                "resumed_capture_started_at": resumed,
+                "recovered_at": recovered,
+            },
+        )
+
+        with (
+            patch("suite.meet.api.recording._fixture_enabled", return_value=False),
+            patch("suite.meet.api.recording._recorder_available", return_value=True),
+            patch("suite.meet.api.recording._client", return_value=client),
+            patch(
+                "suite.meet.api.recording._utc_now_naive",
+                return_value=(interrupted + timedelta(seconds=61)).replace(tzinfo=None),
+            ),
+        ):
+            reconcile_pending_recordings()
+
+        recording.reload()
+        self.assertEqual(recording.status, "Recording")
+        self.assertEqual(recording.recorder_event_sequence, 7)
 
     def test_capture_start_milestone_begins_recording_session(self):
         frappe.conf.recording_fixture_mode = False
@@ -511,10 +680,24 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
     def test_duplicate_interruption_callback_does_not_advance_state(self):
         started = start(self.room.name, str(uuid.uuid4()))
         recording = frappe.get_doc("Meet Recording", started["name"])
+        interrupted = _system_datetime_as_utc(now_datetime())
+        interruption_id = str(uuid.uuid4())
+        arguments = (
+            recording.name,
+            recording.recorder_job_id,
+            6,
+            "connection_lost",
+            interruption_id,
+            interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            (interrupted + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            recording.started_at.replace(tzinfo=UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+        )
 
         with patch("suite.meet.api.recording.authenticate_callback"):
-            first = recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost")
-            second = recorder_interrupted(recording.name, recording.recorder_job_id, 6, "connection_lost")
+            first = recorder_interrupted(*arguments)
+            second = recorder_interrupted(*arguments)
 
         recording.reload()
         self.assertEqual(first, second)
@@ -538,7 +721,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with (
             patch(
                 "suite.meet.api.recording.frappe.get_all",
-                side_effect=[["first", "second"], [], [], [], []],
+                side_effect=[[], ["first", "second"], [], [], [], []],
             ),
             patch(
                 "suite.meet.api.recording._reconcile_pending",
@@ -557,7 +740,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with (
             patch(
                 "suite.meet.api.recording.frappe.get_all",
-                side_effect=[[], ["first", "second"], [], [], []],
+                side_effect=[[], [], ["first", "second"], [], [], []],
             ),
             patch(
                 "suite.meet.api.recording._retry_stopping",
