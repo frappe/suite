@@ -438,6 +438,45 @@ describe("ParticipantConnection", () => {
 		expect(mediaManager.subscribeToRemoteProducer).not.toHaveBeenCalled();
 	});
 
+	it("replays live camera state over the initial participant snapshot", async () => {
+		const { handlers, manager, participantManager, sfuClient } = createManager();
+		await manager.connect("token");
+		sfuClient.getRoomParticipants.mockImplementationOnce(async () => {
+			handlers.get("media_control_update")?.({
+				participantId: "remote-1",
+				action: "video_on",
+			});
+			return [
+				{
+					participantId: "remote-1",
+					user_id: "remote-1",
+					userData: { video_enabled: false },
+				},
+			];
+		});
+
+		await manager.setupExistingParticipants();
+
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(true);
+	});
+
+	it("applies camera state received before a participant joins", async () => {
+		const { handlers, manager, participantManager } = createManager();
+		await manager.connect("token");
+
+		handlers.get("media_control_update")?.({
+			participantId: "remote-1",
+			action: "video_on",
+		});
+		handlers.get("participant_joined")?.({
+			participantId: "remote-1",
+			user_id: "remote-1",
+			userData: { video_enabled: false },
+		});
+
+		expect(participantManager.getParticipant("remote-1")?.video_enabled).toBe(true);
+	});
+
 	it("reattaches a surviving endpoint consumer when one producer closes", async () => {
 		const { handlers, manager, mediaManager } = createManager();
 		await manager.connect("token");

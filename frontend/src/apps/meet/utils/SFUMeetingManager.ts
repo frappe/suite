@@ -692,10 +692,17 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
 	}
 
 	sendHostControl(
-		action: "mute_participant" | "kick_participant" | "lower_hand",
+		action:
+			| "mute_participant"
+			| "kick_participant"
+			| "ban_participant"
+			| "lower_hand",
 		targetParticipantId: string,
-	): void {
-		this.sfuClient.sendEvent("host_control", { action, targetParticipantId });
+	): Promise<unknown> {
+		return this.sfuClient.sendRequest("host_control", {
+			action,
+			targetParticipantId,
+		});
 	}
 
 	getRemoteAudioTrack(participantId: string): MediaStreamTrack | null {

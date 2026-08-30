@@ -10,6 +10,7 @@
 					Are you sure you want to remove <strong>{{ participantName }}</strong> from the meeting?
 				</p>
 				<FormControl
+					v-if="canBan"
 					label="Ban from this meeting?"
 					type="checkbox"
 					v-model="banFromMeeting"
@@ -27,11 +28,12 @@
 
 <script setup lang="ts">
 import { Button, Dialog, FormControl } from "frappe-ui";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 interface Props {
 	participantName: string;
 	modelValue?: boolean;
+	canBan?: boolean;
 }
 
 interface Emits {
@@ -41,6 +43,7 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
 	modelValue: false,
+	canBan: false,
 });
 
 const emit = defineEmits<Emits>();
@@ -49,8 +52,18 @@ const banFromMeeting = ref(false);
 
 const showDialog = computed({
 	get: () => props.modelValue,
-	set: (value: boolean) => emit("update:modelValue", value),
+	set: (value: boolean) => {
+		if (!value) banFromMeeting.value = false;
+		emit("update:modelValue", value);
+	},
 });
+
+watch(
+	() => props.modelValue,
+	(open) => {
+		if (!open) banFromMeeting.value = false;
+	},
+);
 
 const handleKickConfirm = () => {
 	emit("confirm", banFromMeeting.value);

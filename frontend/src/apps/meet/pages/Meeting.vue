@@ -517,7 +517,9 @@ function getE2EEJoinPendingMessage(detail: {
 const isGuestSession = computed(
 	() =>
 		!session.isLoggedIn &&
-		(!!connectionState.guestAuthToken || lobbyStore.isWaitingForApproval),
+		(!!connectionState.guestAuthToken ||
+			lobbyStore.isWaitingForApproval ||
+			currentUser.currentUser.value?.is_guest === true),
 );
 
 // --- SFU Connection ---
@@ -771,10 +773,6 @@ const showPreview = computed(() => {
 	const isUnauthenticatedGuest = !session.isLoggedIn && !isGuestSession.value;
 	if (isUnauthenticatedGuest) {
 		return true;
-	}
-
-	if (isGuestSession.value) {
-		return false;
 	}
 	if (lobbyStore.isInLobby) {
 		return false;

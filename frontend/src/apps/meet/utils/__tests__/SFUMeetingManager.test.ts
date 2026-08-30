@@ -678,13 +678,13 @@ describe("SFUMeetingManager facade operations", () => {
 		expect(sample).not.toHaveProperty("consumers");
 	});
 
-	it("routes host control through the client", () => {
-		const sendEvent = vi.fn();
-		const manager = createManager({ sendEvent } as never);
+	it("routes host control through an acknowledged client request", async () => {
+		const sendRequest = vi.fn().mockResolvedValue({ success: true });
+		const manager = createManager({ sendRequest } as never);
 
-		manager.sendHostControl("mute_participant", "participant-1");
+		await manager.sendHostControl("mute_participant", "participant-1");
 
-		expect(sendEvent).toHaveBeenCalledWith("host_control", {
+		expect(sendRequest).toHaveBeenCalledWith("host_control", {
 			action: "mute_participant",
 			targetParticipantId: "participant-1",
 		});

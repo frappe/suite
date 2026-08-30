@@ -82,6 +82,7 @@
 	<KickParticipantDialog
 		v-model="showKickDialog"
 		:participant-name="participant.user_name || 'this participant'"
+		:can-ban="participant.is_guest === true"
 		@confirm="handleKickConfirm"
 	/>
 </template>

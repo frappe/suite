@@ -150,6 +150,7 @@
 			v-if="canShowHostControls"
 			v-model="showKickDialog"
 			:participant-name="resolvedDisplayName || 'this participant'"
+			:can-ban="participant.is_guest === true"
 			@confirm="handleKick"
 		/>
 	</div>
@@ -337,7 +338,7 @@ const handleMute = () => {
 	hostControls?.muteParticipant(props.participant.user_id);
 };
 
-const handleKick = (ban) => {
+const handleKick = (ban: boolean) => {
 	hostControls?.kickParticipant(props.participant.user_id, ban);
 	showKickDialog.value = false;
 };

@@ -131,7 +131,7 @@ export interface SFUEventHandlers {
 	onActiveSpeakerChanged?: (participantIds: string[]) => void;
 	onNetworkQualityUpdated?: (participantId: string, quality: string) => void;
 	onHostMutedYou?: () => void;
-	onHostKickedYou?: (data: { hostId?: string }) => void;
+	onHostKickedYou?: (data: { hostId?: string; banned?: boolean }) => void;
 	onParticipantConnectionReplaced?: (data: { reason: "takeover" }) => void | Promise<void>;
 	onRecoveryStateChange?: (
 		state:
@@ -203,6 +203,10 @@ export class ParticipantConnection {
 	isConnected = false;
 	initialSyncInProgress = false;
 	private bufferedReconciliationEvents: ReconciliationEvent[] = [];
+	private bufferedMediaStateUpdates = new Map<
+		string,
+		{ audioEnabled?: boolean; videoEnabled?: boolean }
+	>();
 	private reconciliation: MeetingReconciliationState<ReconciledParticipant> =
 		createMeetingReconciliationState();
 	private producerClaims = new Set<string>();
@@ -623,6 +627,7 @@ export class ParticipantConnection {
 			]);
 
 			this.initialSyncInProgress = false;
+			this.flushBufferedMediaStateUpdates();
 			await this.flushBufferedProducers(signal);
 		} catch (error) {
 			if (!signal.aborted) {
@@ -659,6 +664,7 @@ export class ParticipantConnection {
 				}
 			}
 			this.initialSyncInProgress = false;
+			this.flushBufferedMediaStateUpdates();
 
 			if (existingProducers.length) {
 				console.log(
@@ -697,6 +703,14 @@ export class ParticipantConnection {
 			} catch (error) {
 				if (signal.aborted) throw error;
 				console.warn("Failed to process buffered producer:", error);
+			}
+		}
+	}
+
+	private flushBufferedMediaStateUpdates(): void {
+		for (const [participantId, updates] of this.bufferedMediaStateUpdates) {
+			if (this.participantManager.updateMediaState(participantId, updates)) {
+				this.bufferedMediaStateUpdates.delete(participantId);
 			}
 		}
 	}
@@ -1378,6 +1392,7 @@ export class ParticipantConnection {
 				this.reconciliation = applyMeetingReconciliationEvent(previous, event);
 				if (!previous.participants.has(data.participantId)) {
 					this.participantManager.addParticipant(data);
+					this.flushBufferedMediaStateUpdates();
 				}
 			}
 		});
@@ -1531,7 +1546,16 @@ export class ParticipantConnection {
 			}
 
 			if (Object.keys(updates).length) {
-				this.participantManager.updateMediaState(d.participantId, updates);
+				if (this.initialSyncInProgress) {
+					this.bufferedMediaStateUpdates.set(d.participantId, {
+						...this.bufferedMediaStateUpdates.get(d.participantId),
+						...updates,
+					});
+					return;
+				}
+				if (!this.participantManager.updateMediaState(d.participantId, updates)) {
+					this.bufferedMediaStateUpdates.set(d.participantId, updates);
+				}
 			}
 		});
 
@@ -1577,8 +1601,12 @@ export class ParticipantConnection {
 					}
 					break;
 				case "kick_participant":
+				case "ban_participant":
 					if (isForMe) {
-						this.eventHandlers.onHostKickedYou?.({ hostId: d.hostId });
+						this.eventHandlers.onHostKickedYou?.({
+							hostId: d.hostId,
+							banned: d.action === "ban_participant",
+						});
 					}
 					break;
 				default:
@@ -1650,6 +1678,7 @@ export class ParticipantConnection {
 	async disconnect(): Promise<void> {
 		this.setState("stopping");
 		this.initialSyncInProgress = false;
+		this.bufferedMediaStateUpdates.clear();
 		this.lifecycleAbortController.abort(
 			new DOMException("Participant connection stopped", "AbortError"),
 		);
@@ -1696,6 +1725,7 @@ export class ParticipantConnection {
 		this.isConnected = false;
 		this.initialSyncInProgress = false;
 		this.bufferedReconciliationEvents = [];
+		this.bufferedMediaStateUpdates.clear();
 		this.reconciliation = createMeetingReconciliationState();
 		this.producerClaims.clear();
 		this.lastJoinUserData = null;

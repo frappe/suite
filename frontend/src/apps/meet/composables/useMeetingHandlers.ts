@@ -3,7 +3,11 @@ import type { Ref } from "vue";
 import type { Router } from "vue-router";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import type { ChatStore } from "./useChatStore";
-import type { ConnectionState } from "./useConnectionState";
+import {
+	clearGuestSessionForExit,
+	readGuestSession,
+	type ConnectionState,
+} from "./useConnectionState";
 import type { CurrentUser } from "./useCurrentUser";
 import type { GridLayout } from "./useGridLayout";
 import type { LobbyStore } from "./useLobbyStore";
@@ -98,7 +102,8 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 		const guestId =
 			normalizedJoinResult.guest_id ||
 			(deps.connectionState.guestId as string);
-		const resolvedGuestName = guestName || localStorage.getItem("guest_name");
+		const resolvedGuestName =
+			guestName || readGuestSession(deps.meetingId)?.guestName;
 
 		if (guestId && resolvedGuestName) {
 			deps.currentUser.setCurrentUser({
@@ -117,12 +122,14 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 	};
 
 	const leaveWaitingRoom = () => {
+		clearGuestSessionForExit(deps.meetingId);
 		deps.lobbyStore.isWaitingForApproval = false;
 		deps.lobbyStore.isJoinRequestRejected = false;
 		deps.router.push({ name: "meet-home" });
 	};
 
 	const leaveLobby = async () => {
+		clearGuestSessionForExit(deps.meetingId);
 		deps.lobbyStore.isInLobby = false;
 		deps.lobbyStore.isWaitingForApproval = false;
 		deps.lobbyStore.lobbyParticipantCount = 0;
@@ -130,6 +137,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 	};
 
 	const goHome = () => {
+		clearGuestSessionForExit(deps.meetingId);
 		deps.lobbyStore.isJoinRequestRejected = false;
 		deps.lobbyStore.isInLobby = false;
 		deps.router.push({ name: "meet-home" });
@@ -159,7 +167,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
 	const handleMuteParticipant = async (participantId: string) => {
 		try {
-			deps.sfuConnection.sfuManager.value?.sendHostControl(
+			await deps.sfuConnection.sfuManager.value?.sendHostControl(
 				"mute_participant",
 				participantId,
 			);
@@ -169,28 +177,42 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 	};
 
 	const handleKickParticipant = async (participantId: string, ban = false) => {
+		let backendBanRecorded = false;
 		try {
-			if (ban) {
-				await deps.meetingDoc.setValue.submit({
-					banned_users: [
-						...(deps.meetingDoc.doc?.banned_users || []),
-						{ user: participantId },
-					],
+			const shouldBan = ban && participantId.startsWith("guest_");
+			const manager = deps.sfuConnection.sfuManager.value;
+			if (!manager) {
+				toast.error("Cannot remove this participant while disconnected. Reconnect and try again.");
+				return;
+			}
+			if (shouldBan) {
+				await frappeRequest({
+					url: "suite.meet.api.meeting.ban_guest",
+					params: {
+						meeting_id: deps.meetingId,
+						guest_id: participantId,
+					},
 				});
+				backendBanRecorded = true;
 			}
 
-			deps.sfuConnection.sfuManager.value?.sendHostControl(
-				"kick_participant",
+			await manager.sendHostControl(
+				shouldBan ? "ban_participant" : "kick_participant",
 				participantId,
 			);
 		} catch (error) {
 			console.error("Failed to kick participant:", error);
+			toast.error(
+				backendBanRecorded
+					? "Guest was banned but could not be disconnected. Use Remove to retry the live removal."
+					: "Could not remove this participant. Please try again.",
+			);
 		}
 	};
 
 	const handleLowerHand = async (participantId: string) => {
 		try {
-			deps.sfuConnection.sfuManager.value?.sendHostControl(
+			await deps.sfuConnection.sfuManager.value?.sendHostControl(
 				"lower_hand",
 				participantId,
 			);

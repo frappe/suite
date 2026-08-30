@@ -26,6 +26,7 @@ import { frappeRequest } from "frappe-ui";
 beforeEach(() => {
 	vi.clearAllMocks();
 	vi.useFakeTimers();
+	sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -128,7 +129,7 @@ describe("isTokenExpiringSoon", () => {
 		expect(client.isTokenExpiringSoon()).toBe(false);
 	});
 
-	it("returns true when tokenExpiresAt is within 5 minutes", () => {
+	it("returns true when tokenExpiresAt is within the one-minute refresh buffer", () => {
 		const client = createClient();
 		client.connectionDetails.tokenExpiresAt = Date.now() + 60_000;
 		expect(client.isTokenExpiringSoon()).toBe(true);
@@ -137,7 +138,8 @@ describe("isTokenExpiringSoon", () => {
 	it("returns false when tokenExpiresAt is past", () => {
 		const client = createClient();
 		client.connectionDetails.tokenExpiresAt = Date.now() - 60_000;
-		expect(client.isTokenExpiringSoon()).toBe(true);
+		expect(client.isTokenExpiringSoon()).toBe(false);
+		expect(client.isTokenExpired()).toBe(true);
 	});
 
 	it("parses JWT exp claim when tokenExpiresAt is null", () => {
@@ -149,10 +151,10 @@ describe("isTokenExpiringSoon", () => {
 		expect(client.isTokenExpiringSoon()).toBe(false);
 	});
 
-	it("returns true for JWT expiring within 5 min", () => {
+	it("returns true for JWT expiring within the one-minute refresh buffer", () => {
 		const client = createClient();
 		client.connectionDetails.tokenExpiresAt = null;
-		const soon = Math.floor(Date.now() / 1000) + 120;
+		const soon = Math.floor(Date.now() / 1000) + 30;
 		const payload = btoa(JSON.stringify({ exp: soon }));
 		client.connectionDetails.authToken = `header.${payload}.sig`;
 		expect(client.isTokenExpiringSoon()).toBe(true);
@@ -489,6 +491,28 @@ describe("scheduleTokenRefresh", () => {
 		expect(frappeRequest).toHaveBeenCalled();
 	});
 
+	it("does not refresh an already-expired token", () => {
+		const client = createClient();
+		client.connectionDetails.tokenExpiresAt = Date.now() - 1;
+		client.connectionDetails.meetingId = "meet-1";
+
+		client.scheduleTokenRefresh();
+
+		expect(frappeRequest).not.toHaveBeenCalled();
+		expect(client.tokenRefreshTimer).toBeNull();
+	});
+
+	it("schedules a five-minute guest token one minute before expiry", () => {
+		const client = createClient();
+		client.connectionDetails.tokenExpiresAt = Date.now() + 300_000;
+		client.connectionDetails.meetingId = "meet-1";
+		client.scheduleTokenRefresh();
+
+		expect(vi.getTimerCount()).toBe(1);
+		vi.advanceTimersByTime(239_999);
+		expect(frappeRequest).not.toHaveBeenCalled();
+	});
+
 	it("clears existing timer before scheduling", () => {
 		const client = createClient();
 		client.connectionDetails.tokenExpiresAt = Date.now() + 600_000;
@@ -615,8 +639,11 @@ describe("getConnectionDetails", () => {
 		sessionStorage.setItem("guest_id", "guest-1");
 		sessionStorage.setItem("guest_name", "Guest Alice");
 		sessionStorage.setItem("guest_meeting_id", "meet-2");
+		sessionStorage.setItem("guest_session_token", "private-proof");
 
 		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "fresh-guest-token",
+			expires_in: 300,
 			sfu_url: "https://sfu.example.com",
 			sfu_port: "443",
 			codec_strategy: "svc",
@@ -624,10 +651,18 @@ describe("getConnectionDetails", () => {
 		});
 		const client = createClient();
 		const details = await client.getConnectionDetails("meet-2", "guest-token");
-		expect(details.authToken).toBe("guest-token");
+		expect(details.authToken).toBe("fresh-guest-token");
 		expect(details.userId).toBe("guest-1");
 		expect(details.userData?.is_guest).toBe(true);
 		expect(details.e2eeRequired).toBe(true);
+		expect(frappeRequest).toHaveBeenCalledWith({
+			url: "suite.meet.api.meeting.refresh_guest_sfu_token",
+			params: {
+				meeting_id: "meet-2",
+				guest_id: "guest-1",
+				guest_session_token: "private-proof",
+			},
+		});
 	});
 });
 
@@ -676,6 +711,7 @@ describe("connect refresh", () => {
 		sessionStorage.setItem("guest_id", "guest-2");
 		sessionStorage.setItem("guest_name", "Guest Bob");
 		sessionStorage.setItem("guest_meeting_id", "meet-2");
+		sessionStorage.setItem("guest_session_token", "private-proof-2");
 
 		const client = createClient();
 		client.connected = true;
@@ -693,6 +729,8 @@ describe("connect refresh", () => {
 		};
 
 		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "fresh-guest-token-2",
+			expires_in: 300,
 			sfu_url: "https://sfu.example.com",
 			sfu_port: "443",
 			codec_strategy: "svc",
@@ -925,6 +963,42 @@ describe("E2EE signaling payloads", () => {
 		expect(client.connectionDetails.e2eeRequired).toBe(true);
 	});
 
+	it("refreshes guests only with their private session proof", async () => {
+		sessionStorage.setItem("guest_session_token", "private-proof");
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "guest-token-2",
+			expires_in: 300,
+		});
+		const client = createClient();
+		client.connectionDetails.meetingId = "meet-2";
+		client.connectionDetails.userId = "guest-2";
+		client.connectionDetails.userData = { is_guest: true };
+
+		await client.refreshToken();
+
+		expect(frappeRequest).toHaveBeenCalledWith({
+			url: "suite.meet.api.meeting.refresh_guest_sfu_token",
+			params: {
+				meeting_id: "meet-2",
+				guest_id: "guest-2",
+				guest_session_token: "private-proof",
+			},
+		});
+		expect(client.connectionDetails.tokenExpiresAt).toBe(Date.now() + 300_000);
+	});
+
+	it("fails guest refresh closed without proof", async () => {
+		const client = createClient();
+		client.connectionDetails.meetingId = "meet-2";
+		client.connectionDetails.userId = "guest-2";
+		client.connectionDetails.userData = { is_guest: true };
+
+		await expect(client.refreshToken()).rejects.toThrow(
+			"Guest session proof required",
+		);
+		expect(frappeRequest).not.toHaveBeenCalled();
+	});
+
 	it("does not downgrade local e2ee requirement during token refresh", async () => {
 		vi.mocked(frappeRequest).mockResolvedValue({
 			auth_token: "tok-2",
@@ -1044,6 +1118,7 @@ describe("setupDefaultHandlers", () => {
 			"reconnect",
 			"reconnect_error",
 			"reconnect_attempt",
+			"auth:expired",
 			"participant_joined",
 			"participant_left",
 			"producer_created",
@@ -1081,6 +1156,45 @@ describe("setupDefaultHandlers", () => {
 		const handler = client.eventHandlers.get("disconnect");
 		handler();
 		expect(client.connected).toBe(false);
+	});
+
+	it("recovers auth:expired through token refresh and server token update", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "fresh-token",
+			expires_in: 3600,
+		});
+		const client = createClient();
+		client.connected = true;
+		client.connectionDetails.meetingId = "meet-1";
+		const sendRequest = vi
+			.spyOn(client, "sendRequest")
+			.mockResolvedValue({ success: true });
+
+		client.eventHandlers.get("auth:expired")?.();
+
+		await vi.waitFor(() =>
+			expect(sendRequest).toHaveBeenCalledWith("auth:update_token", {
+				token: "fresh-token",
+			}),
+		);
+	});
+
+	it("refreshes an already-expired token before a reconnect attempt", async () => {
+		vi.mocked(frappeRequest).mockResolvedValue({
+			auth_token: "reconnect-token",
+			expires_in: 3600,
+		});
+		const client = createClient();
+		client.connectionDetails.meetingId = "meet-1";
+		client.connectionDetails.tokenExpiresAt = Date.now() - 1;
+
+		client.eventHandlers.get("reconnect_attempt")?.();
+
+		await vi.waitFor(() =>
+			expect(client.signalChannel.updateAuth).toHaveBeenCalledWith(
+				"reconnect-token",
+			),
+		);
 	});
 });
 

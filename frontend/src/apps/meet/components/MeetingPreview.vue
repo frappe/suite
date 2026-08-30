@@ -63,7 +63,22 @@
 						alignment="left"
 					/>
 
-					<form class="mt-7 space-y-3" @submit.prevent="handleJoin">
+					<div
+						v-if="terminalGuestSession"
+						class="mt-7 rounded-6 border border-outline-gray-2 bg-surface-gray-1 p-4"
+					>
+						<p class="text-sm text-ink-gray-7">{{ terminalGuestMessage }}</p>
+						<Button
+							v-if="canRetryTerminalGuest"
+							class="mt-3"
+							variant="subtle"
+							@click="clearTerminalGuestForRetry"
+						>
+							Use a new guest identity
+						</Button>
+					</div>
+
+					<form v-else class="mt-7 space-y-3" @submit.prevent="handleJoin">
 						<FormControl
 							v-if="isGuest"
 							ref="guestNameInputRef"
@@ -103,6 +118,12 @@ import AvatarGroup from "../components/AvatarGroup.vue";
 import ParticipantTile from "../components/ParticipantTile.vue";
 import PreviewToolbar from "../components/PreviewToolbar.vue";
 import { useMeetingPreviewPresence } from "../composables/useMeetingPreviewPresence";
+import {
+	clearRetryableGuestSession,
+	readActiveGuestSession,
+	readGuestSession,
+	type StoredGuestSession,
+} from "../composables/useConnectionState";
 import { session } from "@/boot/session";
 import { getErrorMessage } from "../utils/error";
 import { getInitials } from "../utils/text";
@@ -138,26 +159,63 @@ const emit = defineEmits<{
 }>();
 
 const guestName = ref("");
+const terminalGuestSession = ref<StoredGuestSession | null>(null);
 
 onMounted(() => {
-	const savedGuestName = localStorage.getItem("guest_name");
+	const guestSession = readGuestSession(props.meetingId);
+	const savedGuestName = guestSession?.guestName;
 	if (savedGuestName && !session.isLoggedIn) {
 		guestName.value = savedGuestName;
 	}
+	if (
+		guestSession?.status === "rejected" ||
+		guestSession?.status === "expired" ||
+		guestSession?.status === "banned"
+	) terminalGuestSession.value = guestSession;
 });
 const guestNameInputRef = ref<VideoElement | null>(null);
 
 const joinGuestAPI = createResource({
 	url: "suite.meet.api.meeting.join_meeting_as_guest",
 	makeParams: () => {
+		const guestSession = readActiveGuestSession(props.meetingId);
 		return {
 			meeting_id: props.meetingId,
 			guest_name: guestName.value.trim(),
+			...(guestSession
+				? {
+						guest_id: guestSession.guestId,
+						guest_session_token: guestSession.guestSessionToken,
+					}
+				: {}),
 		};
 	},
 });
 
 const isGuest = computed(() => !session.isLoggedIn && !props.guestAuthToken);
+
+const terminalGuestMessage = computed(() => {
+	switch (terminalGuestSession.value?.status) {
+		case "rejected":
+			return "Your previous join request was denied. Clear it before requesting to join again.";
+		case "expired":
+			return "Your guest session expired. Clear it before starting a new guest session.";
+		case "banned":
+			return "You are banned from joining this meeting in this browser session.";
+		default:
+			return "";
+	}
+});
+const canRetryTerminalGuest = computed(
+	() =>
+		terminalGuestSession.value?.status === "rejected" ||
+		terminalGuestSession.value?.status === "expired",
+);
+const clearTerminalGuestForRetry = () => {
+	if (!clearRetryableGuestSession(props.meetingId)) return;
+	terminalGuestSession.value = null;
+	toast.success("Guest session cleared. You can now request to join again.");
+};
 
 const previewName = computed(() => {
 	if (isGuest.value && guestName.value.trim()) {
@@ -205,14 +263,22 @@ const handleJoin = async () => {
 	}
 
 	if (isGuest.value) {
+		const storedSession = readGuestSession(props.meetingId);
+		if (
+			storedSession?.status === "rejected" ||
+			storedSession?.status === "expired" ||
+			storedSession?.status === "banned"
+		) {
+			terminalGuestSession.value = storedSession;
+			toast.error(terminalGuestMessage.value);
+			return;
+		}
 		if (!guestName.value.trim()) {
 			return;
 		}
 
 		try {
 			const result = await joinGuestAPI.submit();
-
-			localStorage.setItem("guest_name", guestName.value.trim());
 
 			emit("guest-join-complete", {
 				guestName: guestName.value.trim(),

@@ -88,14 +88,11 @@ export function connectionDetailsFromJoinPayload(
 	const expiresInSeconds =
 		typeof payload.expires_in === "number" && payload.expires_in > 0
 			? payload.expires_in
-			: 3600;
+			: isGuestPayload(payload, options)
+				? 300
+				: 3600;
 
-	const isGuest = Boolean(
-		options.guestId ||
-			options.guestAuthToken ||
-			payload.guest_id ||
-			payload.user_data?.is_guest,
-	);
+	const isGuest = isGuestPayload(payload, options);
 
 	if (options.guestId) {
 		const payloadGuestId =
@@ -134,6 +131,9 @@ export function connectionDetailsFromJoinPayload(
 	};
 }
 
+function isGuestPayload(payload: JoinPayload, options: { guestAuthToken?: string | null; guestId?: string | null }): boolean {
+	return Boolean(options.guestId || options.guestAuthToken || payload.guest_id || payload.user_data?.is_guest);
+}
 interface ConnectionStatus {
 	connected: boolean;
 	meetingId: string | null;
@@ -255,6 +255,16 @@ function requireString(value: unknown, field: string, context: string): string {
 function requireObject(value: unknown, context: string): Record<string, unknown> {
 	if (!isUnknownRecord(value)) throw new Error(`Invalid ${context} response`);
 	return value;
+}
+
+function tokenLifetimeSeconds(response: JoinPayload, isGuest: boolean): number {
+	return typeof response.expires_in === "number" &&
+		Number.isFinite(response.expires_in) &&
+		response.expires_in > 0
+		? response.expires_in
+		: isGuest
+			? 300
+			: 3600;
 }
 
 function normalizeExistingProducer(value: unknown): SFUExistingProducer | null {
@@ -439,19 +449,26 @@ export class SFUClient {
 			const guestId = sessionStorage.getItem("guest_id");
 			const guestName = sessionStorage.getItem("guest_name");
 			const guestMeetingId = sessionStorage.getItem("guest_meeting_id");
+			const guestSessionToken = sessionStorage.getItem("guest_session_token");
 
-			if (!guestId || guestMeetingId !== meetingId) {
+			if (!guestId || !guestSessionToken || guestMeetingId !== meetingId) {
 				throw new Error("Guest session incomplete or invalid for this meeting");
 			}
 
 			try {
 				const response = requireJoinPayload(await frappeRequest({
-					url: "suite.meet.api.meeting.get_guest_sfu_connection_details",
+					url: "suite.meet.api.meeting.refresh_guest_sfu_token",
 					params: {
 						meeting_id: meetingId,
-						guest_token: guestAuthToken,
+						guest_id: guestId,
+						guest_session_token: guestSessionToken,
 					},
 				}), "guest SFU connection details");
+				const authToken = requireString(
+					response.auth_token,
+					"auth_token",
+					"guest SFU connection details",
+				);
 				const sfuUrl = requireString(
 					response.sfu_url,
 					"sfu_url",
@@ -459,7 +476,7 @@ export class SFUClient {
 				);
 
 				return {
-					authToken: guestAuthToken,
+					authToken,
 					meetingId: meetingId,
 					userId: guestId,
 					sfuUrl,
@@ -468,7 +485,7 @@ export class SFUClient {
 						name: guestName ?? undefined,
 						is_guest: true,
 					},
-					tokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
+					tokenExpiresAt: Date.now() + tokenLifetimeSeconds(response, true) * 1000,
 					codecStrategy: response.codec_strategy || "svc",
 					e2eeRequired: Boolean(response.e2ee_required),
 					isHost: Boolean(response.is_host),
@@ -578,8 +595,7 @@ export class SFUClient {
 		}
 	}
 
-	scheduleTokenRefresh(bufferMs = 5 * 60 * 1000): void {
-		// 5 minutes before expiry
+	scheduleTokenRefresh(bufferMs = 60 * 1000): void {
 		this.clearTokenRefreshTimer();
 
 		const { tokenExpiresAt, meetingId } = this.connectionDetails;
@@ -589,6 +605,7 @@ export class SFUClient {
 		}
 
 		const delay = tokenExpiresAt - Date.now() - bufferMs;
+		if (tokenExpiresAt <= Date.now()) return;
 
 		if (delay <= 0) {
 			this.refreshToken().catch((error: unknown) => {
@@ -602,8 +619,23 @@ export class SFUClient {
 				await this.refreshToken();
 			} catch (error: unknown) {
 				console.error("Scheduled token refresh failed:", error);
+				this.scheduleTokenRefreshRetry();
 			}
 		}, delay);
+	}
+
+	private scheduleTokenRefreshRetry(): void {
+		const expiresAt = this.connectionDetails.tokenExpiresAt;
+		if (!expiresAt) return;
+		const remaining = expiresAt - Date.now();
+		if (remaining <= 1000) return;
+		this.clearTokenRefreshTimer();
+		this.tokenRefreshTimer = setTimeout(() => {
+			this.refreshToken().catch((error: unknown) => {
+				console.error("Token refresh retry failed:", error);
+				this.scheduleTokenRefreshRetry();
+			});
+		}, Math.min(10_000, remaining - 1000));
 	}
 
 	async refreshToken(
@@ -627,10 +659,23 @@ export class SFUClient {
 			const refreshGeneration = this.tokenRefreshGeneration;
 			refreshPromise = (async () => {
 				try {
+					const guestSessionToken = sessionStorage.getItem("guest_session_token");
+					const isGuest = this.connectionDetails.userData?.is_guest === true;
+					if (isGuest && !guestSessionToken) {
+						throw new Error("Guest session proof required for token refresh");
+					}
 					const response = requireJoinPayload(
 						await frappeRequest({
-							url: "suite.meet.api.meeting.refresh_sfu_token",
-							params: { meeting_id: this.connectionDetails.meetingId },
+							url: isGuest
+								? "suite.meet.api.meeting.refresh_guest_sfu_token"
+								: "suite.meet.api.meeting.refresh_sfu_token",
+							params: isGuest
+								? {
+										meeting_id: this.connectionDetails.meetingId,
+										guest_id: this.connectionDetails.userId,
+										guest_session_token: guestSessionToken,
+									}
+								: { meeting_id: this.connectionDetails.meetingId },
 						}),
 						"SFU token refresh",
 					);
@@ -643,8 +688,7 @@ export class SFUClient {
 						throw new Error("Token refresh superseded by disconnect");
 					}
 
-					const expiresInSeconds =
-						typeof response.expires_in === "number" ? response.expires_in : 3600;
+					const expiresInSeconds = tokenLifetimeSeconds(response, isGuest);
 
 					this.connectionDetails.authToken = authToken;
 					this.connectionDetails.tokenExpiresAt =
@@ -688,27 +732,31 @@ export class SFUClient {
 	}
 
 	isTokenExpiringSoon(): boolean {
-		const { tokenExpiresAt, authToken } = this.connectionDetails;
+		const expiryTime = this.getTokenExpiryTime();
+		if (expiryTime === null) return false;
+		const timeUntilExpiry = expiryTime - Date.now();
+		return timeUntilExpiry > 0 && timeUntilExpiry <= 60 * 1000;
+	}
 
-		if (tokenExpiresAt) {
-			return tokenExpiresAt - Date.now() < 5 * 60 * 1000; // 5 minutes
+	isTokenExpired(): boolean {
+		const expiryTime = this.getTokenExpiryTime();
+		return expiryTime !== null && expiryTime <= Date.now();
+	}
+
+	private getTokenExpiryTime(): number | null {
+		if (this.connectionDetails.tokenExpiresAt !== null) {
+			return this.connectionDetails.tokenExpiresAt;
 		}
-
-		if (!authToken) {
-			return false;
-		}
-
+		const authToken = this.connectionDetails.authToken;
+		if (!authToken) return null;
 		try {
-			const payload = JSON.parse(atob(authToken.split(".")[1])) as {
-				exp: number;
-			};
-			const expiryTime = payload.exp * 1000;
-			const timeUntilExpiry = expiryTime - Date.now();
-
-			return timeUntilExpiry < 5 * 60 * 1000;
+			const payload: unknown = JSON.parse(atob(authToken.split(".")[1]));
+			return isUnknownRecord(payload) && typeof payload.exp === "number"
+				? payload.exp * 1000
+				: null;
 		} catch (error: unknown) {
 			console.warn("Could not check token expiry:", error);
-			return false;
+			return null;
 		}
 	}
 
@@ -734,7 +782,7 @@ export class SFUClient {
 				console.error("SFU reconnection failed:", error);
 			},
 			reconnect_attempt: async () => {
-				if (this.isTokenExpiringSoon()) {
+				if (this.isTokenExpiringSoon() || this.isTokenExpired()) {
 					try {
 						const newToken = await this.refreshToken({
 							skipServerUpdate: true,
@@ -749,6 +797,13 @@ export class SFUClient {
 							error,
 						);
 					}
+				}
+			},
+			"auth:expired": async () => {
+				try {
+					await this.refreshToken({ forceNewRequest: true });
+				} catch (error: unknown) {
+					console.error("Failed to recover expired SFU authorization:", error);
 				}
 			},
 			participant_joined: () => {},
