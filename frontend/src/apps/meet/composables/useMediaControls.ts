@@ -1799,7 +1799,12 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 					await publicationOwner.reconcileLocalProducerTrack("audio", track, {
 						resume: true,
 					});
-					if (sfuManager.value !== publicationOwner) return;
+					if (sfuManager.value !== publicationOwner) {
+						publicationOwner.closeLocalProducer("audio", {
+							reason: "manager-replaced",
+						});
+						return;
+					}
 				}
 			} else {
 				if (stream) {
