@@ -1250,6 +1250,8 @@ describe("useMediaControls", () => {
 			reason: "manager-replaced",
 		});
 		expect(harness.state.isMicOn).toBe(false);
+		expect(sourceTrack.stop).toHaveBeenCalledOnce();
+		expect(harness.state.localStream.getAudioTracks()).toEqual([]);
 	});
 
 	it("serializes overlapping camera toggles and finishes camera-off", async () => {

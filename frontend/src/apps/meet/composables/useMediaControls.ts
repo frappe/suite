@@ -1803,6 +1803,17 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
 						publicationOwner.closeLocalProducer("audio", {
 							reason: "manager-replaced",
 						});
+						track.enabled = false;
+						const rawAudioTracks = stream.getAudioTracks();
+						for (const audioTrack of rawAudioTracks) {
+							stream.removeTrack(audioTrack);
+							audioTrack.stop();
+						}
+						if (!rawAudioTracks.includes(track)) track.stop();
+						if (noiseCancellationSession) {
+							noiseCancellationSession.cleanup();
+							noiseCancellationSession = null;
+						}
 						return;
 					}
 				}
