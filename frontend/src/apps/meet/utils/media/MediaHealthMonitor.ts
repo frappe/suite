@@ -12,6 +12,7 @@ import {
 
 export type NetworkQuality = "good" | "poor" | "critical";
 
+/** Current uplink, downlink, and transport health exposed to the UI. */
 export interface MediaHealthState {
 	networkQuality: NetworkQuality;
 	downlinkQuality: NetworkQuality;
@@ -26,6 +27,7 @@ interface NetworkStats {
 	isValid: boolean;
 }
 
+/** Manager operations used to inspect and recover live meeting media. */
 export interface MediaHealthManager {
 	transportManager?: {
 		getTransportStats(): {
@@ -64,6 +66,7 @@ export interface MediaHealthManager {
 type LifecycleEvent = "offline" | "online" | "pageshow";
 type ScheduledPoll = () => void | Promise<void>;
 
+/** Injectable browser lifecycle and timer boundary used by the monitor. */
 export interface MediaHealthEnvironment {
 	now(): number;
 	isHidden(): boolean;
@@ -99,6 +102,11 @@ const POOR_VIDEO_BITRATE_BPS = 350_000;
 const CRITICAL_VIDEO_BITRATE_BPS = 200_000;
 const POLL_INTERVAL_MS = 3000;
 
+/**
+ * Polls live media health and applies recovery policy independently of Vue.
+ * Call `start` once mounted, subscribe to state changes, and call `stop` during
+ * teardown. The optional environment makes lifecycle races deterministic in tests.
+ */
 export class MediaHealthMonitor {
 	private stateValue: MediaHealthState = {
 		networkQuality: "good",
@@ -131,12 +139,14 @@ export class MediaHealthMonitor {
 		return this.stateValue;
 	}
 
+	/** Subscribes to state changes and immediately emits the current state. */
 	subscribe(listener: (state: MediaHealthState) => void): () => void {
 		this.listeners.add(listener);
 		listener(this.stateValue);
 		return () => this.listeners.delete(listener);
 	}
 
+	/** Starts polling and browser lifecycle observation. */
 	start(): void {
 		if (this.active) return;
 		this.active = true;
@@ -152,6 +162,7 @@ export class MediaHealthMonitor {
 		);
 	}
 
+	/** Stops polling, removes lifecycle listeners, and clears health baselines. */
 	stop(): void {
 		if (!this.active) return;
 		this.active = false;
