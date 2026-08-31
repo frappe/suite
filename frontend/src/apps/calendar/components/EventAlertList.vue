@@ -1,7 +1,17 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { Button, FormControl } from 'frappe-ui'
 
+import { requestAlertPermission } from '@/utils/calendarAlert'
+
 const { alerts } = defineProps<{ alerts: any[] }>()
+
+// Adding a reminder is the user saying they want to be told: the one moment
+// to ask the browser for system notifications, while the click still counts.
+watch(
+	() => alerts.length,
+	(count, previous) => count > previous && requestAlertPermission(),
+)
 
 const emit = defineEmits(['update:alerts'])
 
@@ -15,10 +25,13 @@ const removeAlert = (i: number) => {
 	emit('update:alerts', updated)
 }
 
+// Display is delivered as a device push and an in-app toast; Email is sent by
+// the calendar server. `Audio` exists in the schema only so imported calendars
+// keep their alarms — it plays nothing here, so it is not offered and an
+// existing one reads as Display.
 const ALERT_ACTION_OPTIONS = [
-	{ label: __('Screen Pop-up'), value: 'Display' },
-	{ label: __('Email Notice'), value: 'Email' },
-	{ label: __('Sound Alert'), value: 'Audio' },
+	{ label: __('Notification'), value: 'Display' },
+	{ label: __('Email'), value: 'Email' },
 ]
 
 const UNIT_OPTIONS = [
@@ -42,7 +55,7 @@ const RELATIVE_TO_OPTIONS = [
 <template>
 	<div v-for="(alert, i) in alerts" :key="i" class="flex space-x-2">
 		<FormControl
-			:model-value="alert.action"
+			:model-value="alert.action === 'Audio' ? 'Display' : alert.action"
 			:label="i === 0 ? (alerts.length > 1 ? __('Alerts') : __('Alert')) : ''"
 			type="select"
 			:options="ALERT_ACTION_OPTIONS"
