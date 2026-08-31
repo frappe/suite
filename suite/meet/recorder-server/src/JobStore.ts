@@ -116,6 +116,14 @@ function validLedger(value: unknown): value is Ledger {
 				: ['replacement_ready_at']),
 			...(job.event_sequence === undefined ? [] : ['event_sequence']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
+			...(job.finalization_started_at === undefined
+				? []
+				: ['finalization_started_at']),
+			...(job.cleanup_authorized_at === undefined
+				? []
+				: ['cleanup_authorized_at']),
+			...(job.cleanup_result === undefined ? [] : ['cleanup_result']),
+			...(job.local_deleted_at === undefined ? [] : ['local_deleted_at']),
 			...(job.callback_completed_at === undefined
 				? []
 				: ['callback_completed_at']),
@@ -180,6 +188,17 @@ function validLedger(value: unknown): value is Ledger {
 				(typeof job.health_reason === 'string' &&
 					job.health_reason.length <= 256)) &&
 			(job.terminal_at === undefined || validUtcTimestamp(job.terminal_at)) &&
+			(job.finalization_started_at === undefined ||
+				validUtcTimestamp(job.finalization_started_at)) &&
+			(job.cleanup_authorized_at === undefined ||
+				validUtcTimestamp(job.cleanup_authorized_at)) &&
+			(job.cleanup_result === undefined ||
+				['Ready', 'Partial', 'Failed'].includes(job.cleanup_result)) &&
+			(job.cleanup_authorized_at === undefined
+				? job.cleanup_result === undefined && job.local_deleted_at === undefined
+				: job.cleanup_result !== undefined) &&
+			(job.local_deleted_at === undefined ||
+				validUtcTimestamp(job.local_deleted_at)) &&
 			(job.callback_completed_at === undefined ||
 				validUtcTimestamp(job.callback_completed_at)) &&
 			(job.captured_bytes === undefined ||

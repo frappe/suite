@@ -51,7 +51,32 @@ async function main(): Promise<void> {
 		store,
 		capture,
 		config.maxConcurrent,
-		(job) => callbacks.upload(job),
+		async (job) => {
+			try {
+				await callbacks.upload(job, async (phase, terminalResult) => {
+					await store.update((records) => {
+						const current = records[job.job];
+						if (!current) throw new Error('job disappeared');
+						const now = new Date().toISOString();
+						if (phase === 'started') current.finalization_started_at ??= now;
+						if (phase === 'cleanup_authorized') {
+							if (!terminalResult)
+								throw new Error('cleanup result is unavailable');
+							current.cleanup_authorized_at ??= now;
+							current.cleanup_result ??= terminalResult;
+						}
+						if (phase === 'local_deleted') current.local_deleted_at ??= now;
+					});
+				});
+			} catch (error) {
+				logger.error({
+					event: 'terminal_delivery_failed',
+					job: job.job,
+					reason: error instanceof Error ? error.message : 'callback_failed',
+				});
+				throw error;
+			}
+		},
 		async (job) => {
 			await callbacks.interrupted(job).catch((error: unknown) =>
 				logger.error({

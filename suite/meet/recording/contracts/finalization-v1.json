@@ -1,0 +1,61 @@
+{
+  "name": "meet-recording-finalization",
+  "protocol_version": 1,
+  "accepted_protocol_versions": [1],
+  "vocabularies": {
+    "actions": ["wait", "resume_upload", "delete_local"],
+    "terminal_results": ["Ready", "Partial", "Failed"]
+  },
+  "message_shapes": {
+    "status_request": {
+      "required": ["job", "protocol_version", "recording_id"],
+      "optional": []
+    },
+    "wait_response": {
+      "required": ["action", "protocol_version"],
+      "optional": []
+    },
+    "resume_upload_response": {
+      "required": ["action", "offset", "protocol_version"],
+      "optional": []
+    },
+    "delete_local_response": {
+      "required": ["action", "protocol_version", "terminal_result"],
+      "optional": []
+    }
+  },
+  "vectors": {
+    "status_requests": {
+      "accepted": [
+        {
+          "protocol_version": 1,
+          "recording_id": "recording-vector",
+          "job": "job-vector"
+        }
+      ],
+      "rejected": [
+        {"recording_id": "recording-vector", "job": "job-vector"},
+        {"protocol_version": 2, "recording_id": "recording-vector", "job": "job-vector"},
+        {"protocol_version": 1, "recording_id": "", "job": "job-vector"},
+        {"protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "unknown": true}
+      ]
+    },
+    "status_responses": {
+      "accepted": [
+        {"protocol_version": 1, "action": "wait"},
+        {"protocol_version": 1, "action": "resume_upload", "offset": 0},
+        {"protocol_version": 1, "action": "delete_local", "terminal_result": "Ready"},
+        {"protocol_version": 1, "action": "delete_local", "terminal_result": "Partial"},
+        {"protocol_version": 1, "action": "delete_local", "terminal_result": "Failed"}
+      ],
+      "rejected": [
+        {"action": "wait"},
+        {"protocol_version": 2, "action": "wait"},
+        {"protocol_version": 1, "action": "resume_upload"},
+        {"protocol_version": 1, "action": "resume_upload", "offset": -1},
+        {"protocol_version": 1, "action": "delete_local", "terminal_result": "Cancelled"},
+        {"protocol_version": 1, "action": "wait", "unknown": true}
+      ]
+    }
+  }
+}

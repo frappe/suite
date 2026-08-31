@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.meet.recording.ingest import _validate_media
+from suite.meet.recording.ingest import InfrastructureFinalizationError, _validate_media
 
 
 class IntegrationTestRecordingMediaValidation(IntegrationTestCase):
@@ -45,19 +45,23 @@ class IntegrationTestRecordingMediaValidation(IntegrationTestCase):
                 with self._probe(media), self.assertRaises(frappe.ValidationError):
                     _validate_media(Path("recording.mp4"))
 
-    def test_probe_and_decode_failures_are_validation_errors(self):
-        failures = (
-            subprocess.TimeoutExpired("ffprobe", 120),
-            subprocess.CalledProcessError(1, "ffprobe"),
-            OSError("ffprobe unavailable"),
-        )
-        for error in failures:
+    def test_probe_and_decode_failures_are_classified(self):
+        for error in (subprocess.TimeoutExpired("ffprobe", 120), OSError("ffprobe unavailable")):
             with (
                 self.subTest(error=type(error).__name__),
                 patch("suite.meet.recording.ingest.subprocess.run", side_effect=error),
-                self.assertRaises(frappe.ValidationError),
+                self.assertRaises(InfrastructureFinalizationError),
             ):
                 _validate_media(Path("recording.mp4"))
+
+        with (
+            patch(
+                "suite.meet.recording.ingest.subprocess.run",
+                side_effect=subprocess.CalledProcessError(1, "ffprobe"),
+            ),
+            self.assertRaises(frappe.ValidationError),
+        ):
+            _validate_media(Path("recording.mp4"))
 
         for output in ("not-json", json.dumps({"streams": "invalid"}), "x" * (1024 * 1024 + 1)):
             with (

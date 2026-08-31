@@ -19,7 +19,17 @@ WRITE_ONCE_FIELDS = (
     "grant_issued_at",
     "grant_expires_at",
     "stop_operation_id",
+    "metadata_accepted_at",
+    "finalization_deadline",
+    "publication_key",
 )
+TERMINAL_MUTABLE_FIELDS = {
+    "terminal_acknowledged_at",
+    "notification_pending",
+    "notification_attempts",
+    "notification_next_retry_at",
+    "notification_sent_at",
+}
 ENDPOINT_WRITE_ONCE_FIELDS = (
     "recorder_key_thumbprint",
     "grant_jti",
@@ -157,7 +167,10 @@ class MeetRecording(Document):
             changed = [
                 field.fieldname for field in self.meta.fields if self.has_value_changed(field.fieldname)
             ]
-            if changed:
+            if changed and not (
+                getattr(self.flags, "finalization_update", False)
+                and set(changed).issubset(TERMINAL_MUTABLE_FIELDS)
+            ):
                 frappe.throw(_("A terminal recording cannot be modified"))
         if previous.status in TERMINAL_STATUSES and self.has_value_changed("status"):
             frappe.throw(_("A terminal recording cannot change state"))
@@ -264,6 +277,26 @@ class MeetRecording(Document):
                 or cint(self.upload_duration_ms) <= 0
             ):
                 frappe.throw(_("Recording upload metadata is invalid"))
+
+        if cint(self.finalization_attempts) < 0 or cint(self.notification_attempts) < 0:
+            frappe.throw(_("Recording finalization counters cannot be negative"))
+        if self.finalization_stage:
+            if not self.metadata_accepted_at or not self.finalization_deadline or not self.publication_key:
+                frappe.throw(_("Recording finalization requires durable metadata"))
+            if get_datetime(self.finalization_deadline) <= get_datetime(self.metadata_accepted_at):
+                frappe.throw(_("Recording finalization deadline must follow metadata acceptance"))
+        if self.upload_completed_at and cint(self.upload_offset) != cint(self.upload_size):
+            frappe.throw(_("A completed recording upload must contain every expected byte"))
+        if self.validated_at and not self.upload_completed_at:
+            frappe.throw(_("A recording artifact cannot be validated before upload completion"))
+        if self.published_at and not self.validated_at:
+            frappe.throw(_("A recording artifact cannot be published before validation"))
+        if self.finalization_stage == "Terminal" and self.status not in ("Ready", "Partial", "Failed"):
+            frappe.throw(_("Terminal finalization requires a terminal recording result"))
+        if self.terminal_acknowledged_at and self.status not in ("Ready", "Partial", "Failed", "Cancelled"):
+            frappe.throw(_("Only a terminal recording can be acknowledged"))
+        if self.notification_sent_at and self.notification_pending:
+            frappe.throw(_("A delivered recording notification cannot remain pending"))
 
     def on_update(self):
         previous = self.get_doc_before_save()

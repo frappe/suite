@@ -17,6 +17,10 @@ from suite.meet.recording.grants import normalize_public_jwk
 CALLBACK_AUDIENCE = "meet-recording-callback"
 CALLBACK_TYPE = "meet-recording-callback+jwt"
 PROTOCOL_VERSION = 1
+FINALIZATION_AUDIENCE = "meet-recording-finalization"
+FINALIZATION_TYPE = "meet-recording-finalization+jwt"
+FINALIZATION_PROTOCOL_VERSION = 1
+FINALIZATION_BODY_KEYS = {"protocol_version", "recording_id", "job"}
 CLAIM_KEYS = {
     "aud",
     "body_sha256",
@@ -239,6 +243,19 @@ def _validate_callback_payload(operation: str, body: dict):
         _invalid_payload()
 
 
+def valid_finalization_request(body) -> bool:
+    return (
+        isinstance(body, dict)
+        and set(body) == FINALIZATION_BODY_KEYS
+        and type(body.get("protocol_version")) is int
+        and body["protocol_version"] == FINALIZATION_PROTOCOL_VERSION
+        and isinstance(body.get("recording_id"), str)
+        and bool(body["recording_id"])
+        and isinstance(body.get("job"), str)
+        and bool(body["job"])
+    )
+
+
 def valid_upload_query(args, *, content_type, content_length, body) -> bool:
     return (
         isinstance(args, dict)
@@ -380,4 +397,80 @@ def authenticate_callback(
     replay_key = frappe.cache.make_key(f"meet-recording-callback-jti:{claims['jti']}")
     if not frappe.cache.set(replay_key, "1", ex=40, nx=True):
         frappe.throw(_("Recorder callback authorization was already used"), frappe.AuthenticationError)
+    return claims
+
+
+def authenticate_finalization_status(
+    *, protocol_version: int, recording: str, job: str, now: int | None = None
+):
+    authorization = frappe.request.headers.get("X-Meet-Recorder-Authorization", "")
+    if not authorization.startswith("Bearer ") or len(authorization) == 7:
+        frappe.throw(_("Missing recorder finalization authorization"), frappe.AuthenticationError)
+    token = authorization[7:]
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.PyJWTError:
+        frappe.throw(_("Invalid recorder finalization authorization"), frappe.AuthenticationError)
+    if (
+        set(header) != {"alg", "typ"}
+        or header.get("alg") != "HS256"
+        or header.get("typ") != FINALIZATION_TYPE
+    ):
+        frappe.throw(_("Invalid recorder finalization authorization"), frappe.AuthenticationError)
+
+    now = now if now is not None else int(time.time())
+    try:
+        claims = jwt.decode(
+            token,
+            frappe.conf.get("recorder_secret"),
+            algorithms=["HS256"],
+            audience=FINALIZATION_AUDIENCE,
+            issuer=f"meet-recorder:{frappe.local.site}",
+            options={"require": list(CLAIM_KEYS)},
+        )
+    except jwt.PyJWTError:
+        frappe.throw(_("Invalid recorder finalization authorization"), frappe.AuthenticationError)
+    valid = (
+        isinstance(claims, dict)
+        and set(claims) == CLAIM_KEYS
+        and claims.get("aud") == FINALIZATION_AUDIENCE
+        and claims.get("site") == frappe.local.site
+        and claims.get("iss") == f"meet-recorder:{frappe.local.site}"
+        and claims.get("recording") == recording
+        and claims.get("job") == job
+        and claims.get("operation") == "status"
+        and claims.get("operation_id") == "status"
+        and type(claims.get("protocol_version")) is int
+        and claims.get("protocol_version") == FINALIZATION_PROTOCOL_VERSION
+        and claims.get("protocol_version") == protocol_version
+        and isinstance(claims.get("jti"), str)
+        and bool(claims["jti"])
+        and type(claims.get("iat")) is int
+        and type(claims.get("exp")) is int
+        and claims["exp"] - claims["iat"] == 30
+        and claims["iat"] <= now + 5
+        and claims["iat"] >= now - 35
+        and isinstance(claims.get("body_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", claims["body_sha256"]) is not None
+    )
+    if not valid:
+        frappe.throw(_("Invalid recorder finalization scope"), frappe.AuthenticationError)
+
+    body_data = frappe.request.get_data(cache=True)
+    if not hmac.compare_digest(claims["body_sha256"], hashlib.sha256(body_data).hexdigest()):
+        frappe.throw(_("Invalid recorder finalization body"), frappe.AuthenticationError)
+    try:
+        body = json.loads(body_data)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        frappe.throw(_("Invalid recorder finalization body"), frappe.AuthenticationError)
+    if not valid_finalization_request(body):
+        frappe.throw(_("Invalid recorder finalization body"), frappe.AuthenticationError)
+    if body["recording_id"] != recording or body["job"] != job:
+        frappe.throw(_("Invalid recorder finalization binding"), frappe.AuthenticationError)
+    expected_job = frappe.db.get_value("Meet Recording", recording, "recorder_job_id")
+    if expected_job != job:
+        frappe.throw(_("Invalid recorder finalization binding"), frappe.AuthenticationError)
+    replay_key = frappe.cache.make_key(f"meet-recording-finalization-jti:{claims['jti']}")
+    if not frappe.cache.set(replay_key, "1", ex=40, nx=True):
+        frappe.throw(_("Recorder finalization authorization was already used"), frappe.AuthenticationError)
     return claims

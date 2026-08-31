@@ -21,6 +21,7 @@ from suite.meet.recording.callback_auth import (
     FAILURE_REASON_CODES,
     _validate_callback_payload,
     valid_callback_claims,
+    valid_finalization_request,
     valid_upload_query,
 )
 from suite.meet.recording.ingest import _callback_datetime
@@ -33,6 +34,7 @@ from suite.meet.recording.recorder_client import (
 )
 
 CONTRACT = json.loads((Path(__file__).parent / "contracts" / "v1.json").read_text())
+FINALIZATION_CONTRACT = json.loads((Path(__file__).parent / "contracts" / "finalization-v1.json").read_text())
 
 
 class TestRecordingProtocolContract(TestCase):
@@ -208,6 +210,15 @@ class TestRecordingProtocolContract(TestCase):
         self.assertEqual(CONTRACT["protocol_version"], 1)
         self.assertEqual(CONTRACT["accepted_protocol_versions"], [1])
         self.assertEqual(CONTRACT["vectors"]["protocol_versions"]["accepted"], [1])
+
+    def test_shared_finalization_requests_use_the_production_parser(self):
+        vectors = FINALIZATION_CONTRACT["vectors"]["status_requests"]
+        for value in vectors["accepted"]:
+            self.assertTrue(valid_finalization_request(value))
+        for value in vectors["rejected"]:
+            self.assertFalse(valid_finalization_request(value))
+        self.assertEqual(FINALIZATION_CONTRACT["protocol_version"], 1)
+        self.assertEqual(FINALIZATION_CONTRACT["accepted_protocol_versions"], [1])
 
 
 def _response(status: int, body) -> requests.Response:

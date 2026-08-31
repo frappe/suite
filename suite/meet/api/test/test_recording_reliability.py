@@ -28,6 +28,7 @@ from suite.meet.api.recording import (
     recorder_failed,
     recorder_interrupted,
     recorder_recovered,
+    recorder_stopped,
     start,
     stop,
 )
@@ -36,7 +37,10 @@ from suite.meet.recording.ingest import (
     _upload_path,
     append_chunk,
     begin_upload,
+    complete_upload,
+    finalization_status,
     process_upload,
+    reconcile_due_finalizations,
 )
 from suite.meet.recording.recorder_client import RecorderOutcome
 
@@ -158,6 +162,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording.reload()
         path = _upload_path(recording.upload_id)
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
+        complete_upload(recording.name, event_sequence=7)
         artifact = None
         try:
             with (
@@ -172,7 +177,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = process_upload(recording.name, event_sequence=7)
+                result = process_upload(recording.name)
             artifact = frappe.get_doc("File", result["artifact"])
             self.assertEqual(artifact.owner, self.owner)
         finally:
@@ -396,6 +401,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.state_revision, 6)
         self.assertEqual(recording.recorder_event_sequence, 10)
         self.assertIsNotNone(recording.ended_at)
+        self.assertTrue(recording.notification_pending)
 
     def test_callback_timestamps_and_gaps_stay_within_recording(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -452,6 +458,78 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 end_reason="host_stop",
             )
 
+    def test_invalid_terminal_metadata_fails_durably_and_allows_cleanup(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        recording.status = "Stopping"
+        recording.state_revision += 1
+        recording.end_reason = "host_stop"
+        recording.save(ignore_permissions=True)
+        frappe.db.commit()
+        started_at = recording.started_at.replace(tzinfo=UTC)
+        ended_at = (
+            (started_at + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
+        invalid_gap_start = (
+            (started_at - timedelta(seconds=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
+
+        with patch("suite.meet.api.recording.authenticate_callback"):
+            result = recorder_stopped(
+                recording.name,
+                recording.recorder_job_id,
+                recording.recorder_event_sequence + 1,
+                8,
+                8,
+                hashlib.sha256(b"artifact").hexdigest(),
+                1000,
+                ended_at,
+                "host_stop",
+                1,
+                [
+                    {
+                        "started_at": invalid_gap_start,
+                        "ended_at": ended_at,
+                        "reason_code": "capture_interrupted",
+                    }
+                ],
+            )
+            failed_revision = frappe.db.get_value("Meet Recording", recording.name, "state_revision")
+            frappe.db.commit()
+            replay = recorder_stopped(
+                recording.name,
+                recording.recorder_job_id,
+                recording.recorder_event_sequence + 1,
+                8,
+                8,
+                hashlib.sha256(b"artifact").hexdigest(),
+                1000,
+                ended_at,
+                "host_stop",
+                1,
+                [
+                    {
+                        "started_at": invalid_gap_start,
+                        "ended_at": ended_at,
+                        "reason_code": "capture_interrupted",
+                    }
+                ],
+            )
+
+        self.assertEqual(result, {"protocol_version": 1, "offset": 0, "complete": True})
+        self.assertEqual(replay, result)
+        recording.reload()
+        self.assertEqual(recording.status, "Failed")
+        self.assertEqual(recording.state_revision, failed_revision)
+        self.assertEqual(recording.finalization_stage, "Terminal")
+        self.assertEqual(recording.finalization_failure_type, "deterministic")
+        self.assertEqual(recording.finalization_failure_code, "invalid_terminal_metadata")
+        self.assertTrue(recording.notification_pending)
+        self.assertEqual(
+            finalization_status(recording.name),
+            {"action": "delete_local", "terminal_result": "Failed"},
+        )
+
     def test_host_stop_reason_survives_conflicting_recorder_terminal_reason(self):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
@@ -490,12 +568,14 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         frappe.db.set_value(
             "Meet Recording",
             recording.name,
-            "modified",
-            add_to_date(now_datetime(), days=-2),
+            {
+                "metadata_accepted_at": add_to_date(now_datetime(), days=-2),
+                "finalization_deadline": add_to_date(now_datetime(), days=-1),
+            },
             update_modified=False,
         )
 
-        reconcile_pending_recordings()
+        reconcile_due_finalizations()
         recording.reload()
         self.assertEqual(recording.status, "Failed")
         self.assertEqual(recording.failure_code, "processing_failed")
@@ -565,8 +645,9 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         )
         recording = frappe.get_doc("Meet Recording", started["name"])
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
+        complete_upload(recording.name, event_sequence=7)
         with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
-            result = process_upload(recording.name, event_sequence=7)
+            result = process_upload(recording.name)
         artifact = frappe.get_doc("File", result["artifact"])
         active_path = manager.get_local_path(artifact.file_url)
         trash_path = manager.get_local_path(
