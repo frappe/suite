@@ -17,6 +17,8 @@
 
 		<YoutubeDropdown />
 
+		<InsertDriveVideoButton />
+
 		<ToolDropdown tooltip="Shapes" :icon="Shapes" :options="shapeTools" />
 
 		<ToolDropdown tooltip="Lines" :icon="Polyline" :options="lineTools" />
@@ -46,6 +48,7 @@ import ToolDropdown from '@/apps/slides/components/ToolDropdown.vue'
 import Polyline from '@/apps/slides/icons/Polyline.vue'
 import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
 import YoutubeDropdown from '@/apps/slides/components/YoutubeDropdown.vue'
+import InsertDriveVideoButton from '@/apps/slides/components/InsertDriveVideoButton.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 import { shapeTools, lineTools } from '@/apps/slides/utils/toolbarTools'

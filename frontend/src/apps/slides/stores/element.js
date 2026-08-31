@@ -21,6 +21,7 @@ import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
 import { defaultBorderColor, defaultShadowColor } from '../utils/constants'
 import { getYoutubeVideoId } from '../utils/youtube'
+import { getDriveVideoStreamUrl } from '../utils/driveVideo'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
 import { commandHistory } from './historyMeta'
@@ -761,6 +762,18 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
 	)
 }
 
+// a Drive file streams through Drive's own permission-checked endpoint rather
+// than a Presentation attachment, so playback follows whatever access the
+// viewer actually has there
+const addDriveVideoElement = (entityName) => {
+	return addMediaElement(
+		{ file_url: getDriveVideoStreamUrl(entityName), name: entityName },
+		'video',
+		currentSlide.value,
+		null,
+	)
+}
+
 const probeReplacementMedia = async (element, fileDoc, localFile) => {
 	const newUrl = getAttachmentUrl(fileDoc.file_url)
 
@@ -1496,6 +1509,7 @@ export {
 	addShapeElement,
 	addTableElement,
 	addYoutubeElement,
+	addDriveVideoElement,
 	duplicateElements,
 	deleteElements,
 	hasBoundConnector,
