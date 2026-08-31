@@ -878,6 +878,7 @@ def _apply_replacement_ready(
     recording.grant_delivered_at = None
     recording.flags.replacement_reconciliation = reconcile
     recording.save(ignore_permissions=True)
+    # Keep the grant identity stable if remote delivery succeeds but its response is lost.
     frappe.db.commit()
     _deliver_replacement_grant(recording, client)
     recording.reload()
