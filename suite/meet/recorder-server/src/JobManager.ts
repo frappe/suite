@@ -5,6 +5,7 @@ import type { CommandClaims, JobRecord } from './types.js';
 
 const TERMINAL_STATES = ['complete', 'partial', 'failed'] as const;
 const MAX_ACKNOWLEDGED_TERMINAL_JOBS = 1_000;
+const PROGRESS_QUEUE_TIMEOUT_MS = 5_000;
 const ACTIVE_TRANSITIONS: Record<JobRecord['state'], JobRecord['state'][]> = {
 	reserved: ['configured', 'complete', 'partial', 'failed', 'stopping'],
 	configured: ['proof_complete', 'complete', 'partial', 'failed', 'stopping'],
@@ -44,7 +45,10 @@ function sameCommand(job: JobRecord, command: CommandClaims): boolean {
 		job.origin === command.origin &&
 		job.room === command.room &&
 		job.recording === command.recording &&
-		JSON.stringify(job.limits) === JSON.stringify(command.limits)
+		job.limits.max_ends_at === command.limits.max_ends_at &&
+		JSON.stringify(job.limits.output) ===
+			JSON.stringify(command.limits.output) &&
+		command.limits.budget_bytes <= job.limits.budget_bytes
 	);
 }
 
@@ -52,7 +56,7 @@ export class JobManager {
 	private operations: Promise<void> = Promise.resolve();
 	private recoveryRequired = false;
 	private readonly terminalDeliveries = new Map<string, Promise<void>>();
-	private readonly healthDeliveries = new Map<string, Promise<void>>();
+	private readonly healthDeliveries = new Map<string, Promise<unknown>>();
 
 	constructor(
 		private readonly store: JobStore,
@@ -66,6 +70,10 @@ export class JobManager {
 		private readonly storage: StorageGuard = unrestrictedStorage,
 		private readonly onStartup?: (job: JobRecord) => Promise<void>,
 		private readonly onReplacementReady?: (job: JobRecord) => Promise<void>,
+		private readonly onProgress?: (
+			job: JobRecord,
+			capturedBytes: number,
+		) => Promise<number>,
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
@@ -73,6 +81,8 @@ export class JobManager {
 				await this.recordReplacementReady(event);
 				return;
 			}
+			if (event.capturedBytes !== undefined)
+				await this.recordTerminalProgress(event.job, event.capturedBytes);
 			await this.recordLifecycle(
 				event.job,
 				event.generation,
@@ -85,6 +95,9 @@ export class JobManager {
 				event.recovery,
 			);
 		});
+		this.bridge.onProgress?.((job, capturedBytes) =>
+			this.recordProgress(job, capturedBytes),
+		);
 	}
 
 	async initialize(): Promise<void> {
@@ -96,6 +109,8 @@ export class JobManager {
 			)) {
 			try {
 				const outcome = await this.bridge.recoverStopping?.(job.job);
+				if (outcome?.capturedBytes !== undefined)
+					await this.recordTerminalProgress(job.job, outcome.capturedBytes);
 				const type =
 					job.state !== 'stopping' && outcome?.type === 'complete'
 						? 'partial'
@@ -158,11 +173,16 @@ export class JobManager {
 				result = { status: 'rejected', reason: 'capacity' };
 				return;
 			}
-			const activeBudget = this.store
-				.all()
-				.filter((job) => !terminal(job))
-				.reduce((total, job) => total + job.limits.budget_bytes, 0);
-			const requiredBytes = (activeBudget + command.limits.budget_bytes) * 2;
+			let requiredBytes = command.limits.budget_bytes * 2;
+			for (const job of this.store.all().filter((job) => !terminal(job))) {
+				const capturedBytes = job.captured_bytes ?? 0;
+				const remaining = job.limits.budget_bytes * 2 - capturedBytes;
+				if (!Number.isSafeInteger(remaining) || remaining < 0) {
+					requiredBytes = Number.NaN;
+					break;
+				}
+				requiredBytes += remaining;
+			}
 			if (
 				!Number.isSafeInteger(requiredBytes) ||
 				!this.storage.canReserve(requiredBytes)
@@ -184,6 +204,7 @@ export class JobManager {
 				state: 'reserved',
 				event_sequence: 1,
 				stop_operation_ids: [],
+				captured_bytes: 0,
 			};
 			try {
 				await this.store.update((jobs) => {
@@ -266,6 +287,107 @@ export class JobManager {
 		await current;
 	}
 
+	private async recordProgress(
+		jobId: string,
+		capturedBytes: number,
+	): Promise<number> {
+		if (!Number.isSafeInteger(capturedBytes) || capturedBytes < 0)
+			throw new Error('invalid captured byte count');
+		return this.scheduleDelivery(
+			jobId,
+			async () => {
+				let snapshot: JobRecord | undefined;
+				let budget: number | undefined;
+				await this.serial(async () => {
+					const current = this.store.get(jobId);
+					if (!current || terminal(current))
+						throw new Error('recording job is not capturing');
+					const previousCaptured = current.captured_bytes ?? 0;
+					if (capturedBytes < previousCaptured)
+						throw new Error('captured byte count decreased');
+					if (capturedBytes === previousCaptured) {
+						budget = current.limits.budget_bytes;
+						return;
+					}
+					snapshot = structuredClone(current);
+				});
+				if (budget !== undefined) return budget;
+				if (!snapshot || !this.onProgress)
+					throw new Error('recording budget callback is unavailable');
+
+				const returnedBudget = await this.onProgress(snapshot, capturedBytes);
+				if (
+					!Number.isSafeInteger(returnedBudget) ||
+					returnedBudget < capturedBytes
+				)
+					throw new Error('invalid recording budget');
+
+				await this.serial(async () => {
+					const current = this.store.get(jobId);
+					if (!current || terminal(current))
+						throw new Error('recording job is not capturing');
+					if ((current.captured_bytes ?? 0) !== (snapshot?.captured_bytes ?? 0))
+						throw new Error('captured byte count changed');
+					if (current.limits.budget_bytes !== snapshot?.limits.budget_bytes)
+						throw new Error('recording budget changed');
+					if (returnedBudget < current.limits.budget_bytes)
+						throw new Error('invalid recording budget');
+					let requiredBytes = 0;
+					for (const job of this.store.all().filter((job) => !terminal(job))) {
+						const budget =
+							job.job === jobId ? returnedBudget : job.limits.budget_bytes;
+						const captured =
+							job.job === jobId ? capturedBytes : (job.captured_bytes ?? 0);
+						const remaining = budget * 2 - captured;
+						if (!Number.isSafeInteger(remaining) || remaining < 0) {
+							requiredBytes = Number.NaN;
+							break;
+						}
+						requiredBytes += remaining;
+					}
+					if (
+						!Number.isSafeInteger(requiredBytes) ||
+						!this.storage.canReserve(requiredBytes)
+					)
+						throw new Error('recording storage unavailable');
+					await this.store.update((jobs) => {
+						const record = jobs[jobId];
+						if (!record) throw new Error('job disappeared');
+						record.captured_bytes = capturedBytes;
+						record.limits.budget_bytes = returnedBudget;
+					});
+					budget = returnedBudget;
+				});
+				if (budget === undefined)
+					throw new Error('recording budget did not update');
+				return budget;
+			},
+			PROGRESS_QUEUE_TIMEOUT_MS,
+		);
+	}
+
+	private async recordTerminalProgress(
+		jobId: string,
+		capturedBytes: number,
+	): Promise<void> {
+		if (!Number.isSafeInteger(capturedBytes) || capturedBytes < 0)
+			throw new Error('invalid captured byte count');
+		await this.serial(async () => {
+			const current = this.store.get(jobId);
+			if (!current || terminal(current)) return;
+			if (
+				capturedBytes < (current.captured_bytes ?? 0) ||
+				capturedBytes > current.limits.budget_bytes
+			)
+				throw new Error('invalid terminal captured byte count');
+			await this.store.update((jobs) => {
+				const record = jobs[jobId];
+				if (!record) throw new Error('job disappeared');
+				record.captured_bytes = capturedBytes;
+			});
+		});
+	}
+
 	private scheduleTerminal(job: JobRecord): void {
 		if (
 			!this.onTerminal ||
@@ -283,16 +405,47 @@ export class JobManager {
 		job: JobRecord,
 		callback: (job: JobRecord) => Promise<void>,
 	): Promise<void> {
-		const previous = this.healthDeliveries.get(job.job) ?? Promise.resolve();
+		return this.scheduleDelivery(job.job, () => callback(job));
+	}
+
+	private scheduleDelivery<T>(
+		job: string,
+		callback: () => Promise<T>,
+		queueTimeoutMs?: number,
+	): Promise<T> {
+		const previous = this.healthDeliveries.get(job) ?? Promise.resolve();
+		let cancelled = false;
+		let started = false;
+		let timer: NodeJS.Timeout | undefined;
 		const delivery = previous
 			.catch(() => undefined)
-			.then(() => callback(job))
+			.then(async () => {
+				if (cancelled) return undefined;
+				started = true;
+				if (timer) clearTimeout(timer);
+				return callback();
+			})
 			.finally(() => {
-				if (this.healthDeliveries.get(job.job) === delivery)
-					this.healthDeliveries.delete(job.job);
+				if (this.healthDeliveries.get(job) === delivery)
+					this.healthDeliveries.delete(job);
 			});
-		this.healthDeliveries.set(job.job, delivery);
-		return delivery;
+		this.healthDeliveries.set(job, delivery);
+		if (queueTimeoutMs === undefined) return delivery as Promise<T>;
+		return new Promise<T>((resolve, reject) => {
+			timer = setTimeout(() => {
+				if (started) return;
+				cancelled = true;
+				reject(new Error('callback delivery queue timed out'));
+			}, queueTimeoutMs);
+			delivery.then(
+				(value) => {
+					if (!cancelled) resolve(value as T);
+				},
+				(error: unknown) => {
+					if (!cancelled) reject(error);
+				},
+			);
+		});
 	}
 
 	private async deliverTerminal(jobId: string): Promise<void> {

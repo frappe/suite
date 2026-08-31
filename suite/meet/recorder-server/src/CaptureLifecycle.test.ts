@@ -54,6 +54,291 @@ afterEach(async () => {
 });
 
 describe('capture lifecycle', () => {
+	it('applies refreshed budget before deciding whether the next segment fits', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const safetyBytes = Math.ceil(((5_000_000 + 128_000) / 8) * 1.1 * 30);
+		const onProgress = vi.fn(async () => safetyBytes * 3 + 1);
+		const onStopRequested = vi.fn();
+		const supervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process()),
+		};
+		const worker = new CaptureWorker(
+			'budget-refresh',
+			{
+				...options(root),
+				limits: {
+					...command('budget-refresh').limits,
+					budget_bytes: safetyBytes * 3,
+					max_ends_at: new Date(Date.now() + 60_000).toISOString(),
+				},
+				onProgress,
+				onStopRequested,
+			},
+			{
+				supervisor: supervisor as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				watcher: (_manifest, _tools, _epoch, onAdopt) => {
+					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					return {
+						start: () => undefined,
+						stopAndAdoptFinal: async () => 'none' as const,
+					};
+				},
+			},
+		);
+		await worker.initialize();
+		await worker.startCapture();
+		await worker.manifest.update((manifest) => {
+			manifest.segments.push({
+				epoch: 0,
+				index: 0,
+				file: 'epoch-000-segment-000000.ts',
+				bytes: 1,
+				sha256: 'a'.repeat(64),
+				duration_ms: 30_000,
+				started_at: '2026-08-30T12:00:00.000Z',
+			});
+		});
+
+		await adopted[0]?.({} as never);
+
+		expect(onProgress).toHaveBeenCalledWith(1);
+		expect(onStopRequested).not.toHaveBeenCalled();
+		await worker.manifest.update((manifest) => {
+			manifest.segments.push({
+				epoch: 0,
+				index: 1,
+				file: 'epoch-000-segment-000001.ts',
+				bytes: 1,
+				sha256: 'b'.repeat(64),
+				duration_ms: 30_000,
+				started_at: '2026-08-30T12:00:30.000Z',
+			});
+		});
+		await adopted[0]?.({} as never);
+		expect(onStopRequested).toHaveBeenCalledWith(
+			false,
+			'capture_budget_reached',
+		);
+		await worker.stop();
+	});
+
+	it('stops when progress is unavailable and includes the 10% segment margin', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const onStopRequested = vi.fn();
+		const withoutMargin = Math.ceil(((5_000_000 + 128_000) / 8) * 30);
+		const supervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0)),
+		};
+		const worker = new CaptureWorker(
+			'budget-unavailable',
+			{
+				...options(root),
+				limits: {
+					...command('budget-unavailable').limits,
+					budget_bytes: withoutMargin * 3,
+					max_ends_at: new Date(Date.now() + 60_000).toISOString(),
+				},
+				onStopRequested,
+				onProgress: async () => {
+					throw new Error('callback failed');
+				},
+			},
+			{
+				supervisor: supervisor as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				watcher: (_manifest, _tools, _epoch, onAdopt) => {
+					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					return {
+						start: () => undefined,
+						stopAndAdoptFinal: async () => 'none' as const,
+					};
+				},
+			},
+		);
+		await worker.initialize();
+
+		await worker.startCapture();
+		expect(onStopRequested).toHaveBeenCalledWith(
+			false,
+			'capture_limit_reached',
+		);
+
+		const enoughSupervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process()),
+		};
+		const enoughWorker = new CaptureWorker(
+			'callback-unavailable',
+			{
+				...options(root),
+				limits: {
+					...command('callback-unavailable').limits,
+					max_ends_at: new Date(Date.now() + 60_000).toISOString(),
+				},
+				onStopRequested,
+				onProgress: async () => {
+					throw new Error('callback failed');
+				},
+			},
+			{
+				supervisor: enoughSupervisor as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				watcher: (_manifest, _tools, _epoch, onAdopt) => {
+					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					return {
+						start: () => undefined,
+						stopAndAdoptFinal: async () => 'none' as const,
+					};
+				},
+			},
+		);
+		await enoughWorker.initialize();
+		await enoughWorker.startCapture();
+		await enoughWorker.manifest.update((manifest) => {
+			manifest.segments.push({
+				epoch: 0,
+				index: 0,
+				file: 'epoch-000-segment-000000.ts',
+				bytes: 1,
+				sha256: 'a'.repeat(64),
+				duration_ms: 30_000,
+				started_at: '2026-08-30T12:00:00.000Z',
+			});
+		});
+		await expect(adopted.at(-1)?.({} as never)).resolves.toBeUndefined();
+		expect(onStopRequested).toHaveBeenCalledWith(
+			false,
+			'capture_budget_unavailable',
+		);
+		expect(enoughWorker.manifest.get().gaps).toEqual([]);
+	});
+
+	it('reports cumulative progress after adopting the final host-stop segment', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const onProgress = vi.fn(async () => 100_000_000);
+		const onStopRequested = vi.fn();
+		const supervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process()),
+		};
+		const worker = new CaptureWorker(
+			'host-stop-final',
+			{
+				...options(root),
+				limits: {
+					...command('host-stop-final').limits,
+					max_ends_at: new Date(Date.now() + 60_000).toISOString(),
+				},
+				onProgress,
+				onStopRequested,
+			},
+			{
+				supervisor: supervisor as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				watcher: (manifest, _tools, _epoch, onAdopt) => ({
+					start: () => undefined,
+					stopAndAdoptFinal: async () => {
+						const segment = {
+							epoch: 0,
+							index: 0,
+							file: 'epoch-000-segment-000000.ts',
+							bytes: 42,
+							sha256: 'a'.repeat(64),
+							duration_ms: 1_000,
+							started_at: '2026-08-30T12:00:00.000Z',
+						};
+						await manifest.update((value) => value.segments.push(segment));
+						await onAdopt(segment);
+						return 'adopted' as const;
+					},
+				}),
+				finalizer: () => ({ finalize: async () => 'complete' as const }),
+			},
+		);
+		await worker.initialize();
+		await worker.startCapture();
+
+		await expect(worker.stop(false, 'host_stop')).resolves.toBe('complete');
+
+		expect(worker.manifest.get().segments).toHaveLength(1);
+		expect(onProgress).toHaveBeenCalledOnce();
+		expect(onProgress).toHaveBeenCalledWith(42);
+		expect(onStopRequested).not.toHaveBeenCalled();
+	});
+
+	it('requests a partial stop without throwing when a closed segment fails', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const candidateErrors: Array<(file: string, error: unknown) => void> = [];
+		const onStopRequested = vi.fn();
+		const supervisor = {
+			start: vi
+				.fn()
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process())
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process(0))
+				.mockResolvedValueOnce(process()),
+		};
+		const worker = new CaptureWorker(
+			'validation-error',
+			{ ...options(root), onStopRequested },
+			{
+				supervisor: supervisor as unknown as ProcessSupervisor,
+				sleep: async () => undefined,
+				watcher: (_manifest, _tools, _epoch, _onAdopt, onCandidateError) => {
+					candidateErrors.push(onCandidateError);
+					return {
+						start: () => undefined,
+						stopAndAdoptFinal: async () => 'none' as const,
+					};
+				},
+			},
+		);
+		await worker.initialize();
+		await worker.startCapture();
+
+		expect(() =>
+			candidateErrors[0]?.(
+				'epoch-000-segment-000000.ts',
+				new Error('invalid media'),
+			),
+		).not.toThrow();
+
+		expect(onStopRequested).toHaveBeenCalledWith(
+			true,
+			'capture_segment_failed:invalid media',
+		);
+		await worker.stop();
+	});
+
 	it('recovers FFmpeg capture with a durable bounded interruption', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
@@ -352,9 +637,9 @@ describe('capture lifecycle', () => {
 		);
 	});
 
-	it('routes worker-requested stops through lifecycle completion', async () => {
+	it('starts segment-failure stopping immediately and completes as partial', async () => {
 		const renderer = new FakeRendererBridge();
-		const stop = vi.fn(async () => 'complete' as const);
+		const stop = vi.fn(async () => 'partial' as const);
 		const worker = {
 			env: {},
 			initialize: vi.fn(async () => undefined),
@@ -377,20 +662,64 @@ describe('capture lifecycle', () => {
 		manager.onLifecycle(lifecycle);
 		await manager.reserve(command('one'));
 
-		workerOptions?.onStopRequested?.(false, 'capture_budget_reached');
+		workerOptions?.onStopRequested?.(
+			true,
+			'capture_segment_failed:invalid media',
+		);
+		expect(stop).toHaveBeenCalledWith(
+			true,
+			'capture_segment_failed:invalid media',
+		);
 
 		await vi.waitFor(() =>
 			expect(lifecycle).toHaveBeenCalledWith(
 				expect.objectContaining({
 					job: 'one',
-					type: 'complete',
-					reason: 'capture_budget_reached',
+					type: 'partial',
+					reason: 'capture_segment_failed:invalid media',
 				}),
 			),
 		);
-		expect(stop).toHaveBeenCalledWith(false, 'capture_budget_reached');
+		expect(stop).toHaveBeenCalledOnce();
 		expect(manager.hasWorker('one')).toBe(false);
 	});
+
+	it.each([
+		['capture_time_limit_reached', false, 'complete'],
+		['capture_recovery_timeout', true, 'partial'],
+	] as const)(
+		'starts %s capture stop immediately',
+		async (reason, partial, outcome) => {
+			const renderer = new FakeRendererBridge();
+			const stop = vi.fn(async () => outcome);
+			const worker = {
+				env: {},
+				initialize: vi.fn(async () => undefined),
+				startCapture: vi.fn(async () => undefined),
+				rendererFailed: vi.fn(async () => 'partial' as const),
+				stop,
+				recoverStopped: vi.fn(async () => outcome),
+				captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
+			};
+			let workerOptions: CaptureWorkerOptions | undefined;
+			const manager = new CaptureWorkerManager(
+				renderer,
+				{ ...options('/tmp'), maxConcurrent: 1 },
+				(_job, createdOptions) => {
+					workerOptions = createdOptions;
+					return worker;
+				},
+			);
+			manager.onLifecycle(async () => undefined);
+			await manager.reserve(command('one'));
+
+			workerOptions?.onStopRequested?.(partial, reason);
+
+			expect(stop).toHaveBeenCalledWith(partial, reason);
+			await vi.waitFor(() => expect(manager.hasWorker('one')).toBe(false));
+			expect(stop).toHaveBeenCalledOnce();
+		},
+	);
 
 	it('retries fresh replacement generations under one interruption and recovers only through the worker', async () => {
 		const renderer = new FakeRendererBridge();

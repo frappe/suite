@@ -12,8 +12,12 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
-from suite.drive.api.storage import get_storage_usage
+from suite.drive.api.storage import get_storage_reservation, get_storage_usage
 from suite.meet.api.recording import (
+    BYTES_PER_SECOND,
+    MAX_BUDGET_BYTES,
+    MINIMUM_BUDGET_BYTES,
+    _apply_segment_progress,
     _limits,
     _reconcile_interrupted,
     _reconcile_recording,
@@ -30,6 +34,7 @@ from suite.meet.api.recording import (
     start,
     stop,
 )
+from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.meet.recording.callback_auth import CALLBACK_AUDIENCE, CALLBACK_TYPE, authenticate_callback
 from suite.meet.recording.ingest import (
     _upload_path,
@@ -104,6 +109,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
@@ -126,6 +132,89 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         stopped = stop(self.room.name)
         self.assertEqual(stopped["status"], "Processing")
         self.assertIsNone(get_state(self.room.name))
+
+    def test_durable_segment_grows_absolute_budget_and_reservation(self):
+        with patch("suite.meet.api.recording._get_free_bytes", return_value=MINIMUM_BUDGET_BYTES):
+            started = start(self.room.name, str(uuid.uuid4()))
+
+        with patch("suite.meet.api.recording._get_free_bytes", return_value=123):
+            result = _apply_segment_progress(started["name"], 1)
+
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        reservation = get_storage_reservation(recording_storage_reservation_key(recording.name))
+        self.assertEqual(result, {"budget_bytes": MINIMUM_BUDGET_BYTES + 123})
+        self.assertEqual(recording.captured_bytes, 1)
+        self.assertEqual(recording.budget_bytes, result["budget_bytes"])
+        self.assertEqual(reservation.reserved_bytes, result["budget_bytes"])
+
+        with patch("suite.meet.api.recording._get_free_bytes") as free_bytes:
+            self.assertEqual(_apply_segment_progress(recording.name, 1), result)
+        free_bytes.assert_not_called()
+
+        with self.assertRaisesRegex(frappe.ValidationError, "cannot decrease"):
+            _apply_segment_progress(recording.name, 0)
+
+    def test_final_segment_progress_does_not_grow_a_stopping_budget(self):
+        with patch("suite.meet.api.recording._get_free_bytes", return_value=MINIMUM_BUDGET_BYTES):
+            started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        initial_budget = recording.budget_bytes
+        recording.db_set("status", "Stopping", update_modified=False)
+
+        with patch("suite.meet.api.recording._get_free_bytes") as free_bytes:
+            result = _apply_segment_progress(recording.name, 42)
+
+        recording.reload()
+        reservation = get_storage_reservation(recording_storage_reservation_key(recording.name))
+        self.assertEqual(result, {"budget_bytes": initial_budget})
+        self.assertEqual(recording.captured_bytes, 42)
+        self.assertEqual(reservation.reserved_bytes, initial_budget)
+        free_bytes.assert_not_called()
+
+    def test_budget_warnings_are_threshold_based_and_sent_once(self):
+        initial_budget = BYTES_PER_SECOND * 700
+        with patch("suite.meet.api.recording._get_free_bytes", return_value=initial_budget):
+            started = start(self.room.name, str(uuid.uuid4()))
+
+        with (
+            patch("suite.meet.api.recording._get_free_bytes", return_value=0),
+            patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
+        ):
+            ten_minute_progress = initial_budget - BYTES_PER_SECOND * 599
+            _apply_segment_progress(started["name"], ten_minute_progress)
+            ten_minute_deliveries = publish.call_count
+            _apply_segment_progress(started["name"], ten_minute_progress)
+            self.assertEqual(publish.call_count, ten_minute_deliveries)
+            _apply_segment_progress(started["name"], initial_budget - BYTES_PER_SECOND * 119)
+
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        self.assertTrue(recording.budget_warning_10m_sent)
+        self.assertTrue(recording.budget_warning_2m_sent)
+        warning_calls = [
+            call for call in publish.call_args_list if call.args[0] == "meeting:recording_budget_warning"
+        ]
+        self.assertEqual(
+            {call.kwargs["message"]["threshold_seconds"] for call in warning_calls},
+            {600, 120},
+        )
+
+    def test_maximum_budget_does_not_emit_quota_warnings(self):
+        with (
+            patch("suite.meet.api.recording._get_free_bytes", return_value=MAX_BUDGET_BYTES),
+            patch("suite.drive.api.storage.get_quota", return_value=MAX_BUDGET_BYTES * 2),
+        ):
+            started = start(self.room.name, str(uuid.uuid4()))
+
+        with (
+            patch("suite.meet.api.recording._get_free_bytes", return_value=0),
+            patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
+        ):
+            result = _apply_segment_progress(started["name"], MAX_BUDGET_BYTES - BYTES_PER_SECOND * 60)
+
+        self.assertEqual(result, {"budget_bytes": MAX_BUDGET_BYTES})
+        self.assertFalse(
+            any(call.args[0] == "meeting:recording_budget_warning" for call in publish.call_args_list)
+        )
 
     def test_start_retry_after_grant_expiry_keeps_active_recording(self):
         request_id = str(uuid.uuid4())
@@ -184,6 +273,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                         as_dict=True,
                     ),
                     before,
+                )
+                frappe.db.delete(
+                    "Drive Storage Reservation",
+                    recording_storage_reservation_key(started["name"]),
                 )
                 frappe.db.delete("Meet Recording", started["name"])
 
@@ -324,6 +417,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             duration_ms=1000,
         )
         recording = frappe.get_doc("Meet Recording", started["name"])
+        self.assertEqual(
+            get_storage_reservation(recording_storage_reservation_key(recording.name)).reserved_bytes,
+            len(content),
+        )
         path = _upload_path(recording.upload_id)
         append_chunk(
             recording.name,
@@ -367,6 +464,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(result, {"artifact": artifact.name, "status": "Ready"})
             self.assertEqual(completed.artifact_size, len(content))
             self.assertEqual(completed.artifact_sha256, digest)
+            self.assertIsNone(get_storage_reservation(recording_storage_reservation_key(recording.name)))
             self.assertEqual(artifact.owner, self.owner)
             self.assertEqual(artifact.folder, recording.drive_home_folder)
             self.assertEqual(artifact.file_type, "Video")
@@ -1142,6 +1240,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 client.query.return_value = outcome
                 reconcile_pending_recordings()
                 if outcome.outcome == "accepted":
+                    frappe.db.delete(
+                        "Drive Storage Reservation",
+                        recording_storage_reservation_key(result["name"]),
+                    )
                     frappe.db.delete("Meet Recording", result["name"])
                     frappe.db.commit()
         self.assertEqual(frappe.db.get_value("Meet Recording", names[1], "status"), "Failed")

@@ -19,6 +19,84 @@ afterEach(async () => {
 });
 
 describe('CallbackClient', () => {
+	it('reports segment progress with the captured byte operation ID', async () => {
+		const fetch = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ message: { budget_bytes: 2_000_000 } }), {
+					status: 200,
+				}),
+		);
+		vi.stubGlobal('fetch', fetch);
+		const secret = 's'.repeat(32);
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+		} as JobRecord;
+
+		await expect(
+			new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret,
+				dataRoot: '/tmp',
+			}).segmentProgress(job, 1_234_567),
+		).resolves.toBe(2_000_000);
+
+		expect(String(fetch.mock.calls[0]?.[0])).toContain(
+			'recorder_segment_progress',
+		);
+		const body = String(fetch.mock.calls[0]?.[1]?.body);
+		expect(JSON.parse(body)).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			captured_bytes: 1_234_567,
+		});
+		const authorization = new Headers(fetch.mock.calls[0]?.[1]?.headers).get(
+			'X-Meet-Recorder-Authorization',
+		);
+		expect(
+			jwt.verify(String(authorization).replace('Bearer ', ''), secret),
+		).toMatchObject({
+			operation: 'segment_progress',
+			operation_id: '1234567',
+			body_sha256: createHash('sha256').update(body).digest('hex'),
+		});
+	});
+
+	it.each([
+		{ budget_bytes: -1 },
+		{ budget_bytes: 1.5 },
+		{ budget_bytes: '2000000' },
+		{ budget_bytes: 2_000_000, extra: true },
+	])('rejects an invalid segment progress response %#', async (message) => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ message }), {
+						status: 200,
+					}),
+			),
+		);
+		await expect(
+			new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+			}).segmentProgress(
+				{
+					job: 'job',
+					recording: 'recording',
+				} as JobRecord,
+				1,
+			),
+		).rejects.toThrow('invalid Frappe callback response');
+	});
+
 	it('publishes an ordered startup milestone with its durable timestamp', async () => {
 		const fetch = vi.fn(
 			async () =>
@@ -345,6 +423,7 @@ describe('CallbackClient', () => {
 			accepted_at: '2026-01-01T00:00:00.000Z',
 			public_jwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
 			state: 'partial',
+			captured_bytes: 17,
 			terminal_at: '2026-01-01T00:01:00.000Z',
 			artifact: {
 				state: 'partial',
@@ -401,6 +480,7 @@ describe('CallbackClient', () => {
 		expect(requests[0]?.url).toContain('recorder_stopped');
 		expect(requests[1]?.url).toContain('recorder_stopped');
 		expect(JSON.parse(String(requests[1]?.init.body))).toMatchObject({
+			captured_bytes: 17,
 			gaps: [
 				{
 					started_at: '2026-01-01T00:00:59.000Z',

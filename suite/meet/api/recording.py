@@ -13,9 +13,17 @@ import isodate
 from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
-from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage
+from suite.drive.api.storage import (
+    acquire_owner_storage_lock,
+    create_storage_reservation,
+    get_storage_usage,
+    grow_storage_reservation,
+)
 from suite.drive.utils import get_user_folder
-from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
+from suite.meet.doctype.meet_recording.meet_recording import (
+    ACTIVE_RECORDING_STATUSES,
+    recording_storage_reservation_key,
+)
 from suite.meet.recording.callback_auth import authenticate_callback
 from suite.meet.recording.grants import (
     mint_recording_grant,
@@ -34,7 +42,10 @@ from suite.meet.recording.recorder_client import RecorderClient, RecorderOutcome
 MAX_SECONDS = 4 * 60 * 60
 DEFAULT_ESTIMATE_SECONDS = 60 * 60
 BYTES_PER_SECOND = int(((5_000_000 + 128_000) / 8) * 1.1)
-MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 30 + 5 * 1024 * 1024
+MAX_BUDGET_BYTES = MAX_SECONDS * BYTES_PER_SECOND
+# Successor-gated adoption, validation, and callback shutdown can leave up to
+# three full segments in flight before capture stops.
+MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 90 + 5 * 1024 * 1024
 RECONCILIATION_GRACE_SECONDS = 5 * 60
 PROCESSING_TIMEOUT_SECONDS = 24 * 60 * 60
 FAILED_RETENTION_DAYS = 30
@@ -61,7 +72,7 @@ def _get_drive_destination(owner: str) -> str:
 def _get_free_bytes(owner: str) -> int:
     usage = get_storage_usage(owner)
     if not usage["limit"]:
-        return MAX_SECONDS * BYTES_PER_SECOND
+        return MAX_BUDGET_BYTES
     return max(0, cint(usage["limit"]) - cint(usage["total_size"]))
 
 
@@ -120,7 +131,7 @@ def get_preflight(meeting_id: str) -> dict:
     except frappe.ValidationError:
         storage_available = False
 
-    budget_bytes = min(estimated_bytes, free_bytes)
+    budget_bytes = min(MAX_BUDGET_BYTES, free_bytes)
     return {
         "eligible": global_enabled
         and not bool(room.e2ee_enabled)
@@ -253,6 +264,11 @@ def _bounded_end(recording):
         maximum = _system_datetime_as_utc(recording.max_ends_at).replace(tzinfo=None)
         ended_at = min(ended_at, maximum)
     return ended_at
+
+
+def _locked_recording(recording_id: str):
+    frappe.db.get_value("Meet Recording", recording_id, "name", for_update=True)
+    return frappe.get_doc("Meet Recording", recording_id)
 
 
 def _fixture_outcome(recording) -> RecorderOutcome:
@@ -434,6 +450,11 @@ def start(meeting_id: str, request_id: str) -> dict:
             "drive_home_folder": destination,
         }
     ).insert(ignore_permissions=True)
+    create_storage_reservation(
+        room.owner,
+        recording_storage_reservation_key(recording.name),
+        cint(recording.budget_bytes),
+    )
     frappe.db.commit()
     client = None if _fixture_enabled() else _client()
     outcome = (
@@ -572,7 +593,7 @@ def stop(meeting_id: str) -> dict | None:
     )
     if not recording_name:
         return None
-    recording = frappe.get_doc("Meet Recording", recording_name)
+    recording = _locked_recording(recording_name)
     if recording.status == "Starting":
         recording.status = "Cancelled"
         recording.state_revision += 1
@@ -631,7 +652,7 @@ def _apply_startup_milestone(
     fieldname = STARTUP_MILESTONES.get(milestone)
     if not fieldname:
         frappe.throw(_("Invalid Recording Startup milestone"))
-    recording = frappe.get_doc("Meet Recording", recording_id)
+    recording = _locked_recording(recording_id)
     if recording.status == "Recording" and milestone == "capture_started":
         return {"status": "Recording"}
     if recording.status != "Starting":
@@ -720,6 +741,84 @@ def recorder_interrupted(
     )
 
 
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def recorder_segment_progress(recording_id: str, job: str, captured_bytes: int) -> dict:
+    """Grow one active Recording Session's budget after a durable segment."""
+    authenticate_callback(
+        recording=recording_id,
+        job=job,
+        operation="segment_progress",
+        operation_id=str(captured_bytes),
+    )
+    return _apply_segment_progress(recording_id, captured_bytes)
+
+
+def _apply_segment_progress(recording_id: str, captured_bytes: int, *, grow_budget: bool = True) -> dict:
+    if isinstance(captured_bytes, bool) or not isinstance(captured_bytes, int) or captured_bytes < 0:
+        frappe.throw(_("Captured bytes must be a nonnegative integer"))
+
+    recording = _locked_recording(recording_id)
+    if captured_bytes < cint(recording.captured_bytes):
+        frappe.throw(_("Captured bytes cannot decrease"))
+    if captured_bytes == cint(recording.captured_bytes):
+        return {"budget_bytes": cint(recording.budget_bytes)}
+    if recording.status not in ("Recording", "Interrupted", "Stopping"):
+        frappe.throw(_("Recording Session is not accepting segment progress"))
+    if captured_bytes > cint(recording.budget_bytes):
+        frappe.throw(_("Captured bytes exceed the Recording Budget"))
+
+    if recording.status == "Stopping" or not grow_budget:
+        recording.captured_bytes = captured_bytes
+        recording.flags.budget_update = True
+        recording.save(ignore_permissions=True)
+        return {"budget_bytes": cint(recording.budget_bytes)}
+
+    acquire_owner_storage_lock(recording.room_owner)
+    free_bytes = _get_free_bytes(recording.room_owner)
+    budget_bytes = min(MAX_BUDGET_BYTES, cint(recording.budget_bytes) + free_bytes)
+    if budget_bytes > cint(recording.budget_bytes):
+        grow_storage_reservation(
+            recording.room_owner,
+            recording_storage_reservation_key(recording.name),
+            budget_bytes,
+        )
+
+    warnings = []
+    remaining_seconds = max(0, budget_bytes - captured_bytes) // BYTES_PER_SECOND
+    if budget_bytes < MAX_BUDGET_BYTES:
+        if remaining_seconds <= 10 * 60 and not recording.budget_warning_10m_sent:
+            recording.budget_warning_10m_sent = True
+            warnings.append(10 * 60)
+        if remaining_seconds <= 2 * 60 and not recording.budget_warning_2m_sent:
+            recording.budget_warning_2m_sent = True
+            warnings.append(2 * 60)
+
+    recording.budget_bytes = budget_bytes
+    recording.captured_bytes = captured_bytes
+    recording.flags.budget_update = True
+    recording.save(ignore_permissions=True)
+    room = frappe.get_doc("Meet Room", recording.meet_room)
+    for threshold_seconds in warnings:
+        _publish_budget_warning(room, recording, threshold_seconds, remaining_seconds)
+    return {"budget_bytes": budget_bytes}
+
+
+def _publish_budget_warning(room, recording, threshold_seconds: int, remaining_seconds: int):
+    payload = {
+        "meeting_id": room.name,
+        "recording_id": recording.name,
+        "threshold_seconds": threshold_seconds,
+        "remaining_seconds": remaining_seconds,
+    }
+    for user in {room.owner, *room.get_co_hosts()}:
+        frappe.publish_realtime(
+            "meeting:recording_budget_warning",
+            message=payload,
+            user=user,
+            after_commit=True,
+        )
+
+
 def _apply_interruption(
     recording_id: str,
     event_sequence: int,
@@ -729,7 +828,7 @@ def _apply_interruption(
     interruption_deadline: str,
     omission_started_at: str,
 ) -> dict:
-    recording = frappe.get_doc("Meet Recording", recording_id)
+    recording = _locked_recording(recording_id)
     if recording.status == "Interrupted":
         if recording.interruption_id != interruption_id:
             frappe.throw(_("Recorder interruption does not match the active interruption"))
@@ -809,8 +908,7 @@ def _apply_replacement_ready(
     *,
     reconcile: bool = False,
 ) -> dict:
-    frappe.db.get_value("Meet Recording", recording_id, "name", for_update=True)
-    recording = frappe.get_doc("Meet Recording", recording_id)
+    recording = _locked_recording(recording_id)
     sequence = cint(event_sequence)
     if isinstance(endpoint_generation, bool) or not isinstance(endpoint_generation, int):
         frappe.throw(_("Replacement Recorder Endpoint generation must be a nonnegative integer"))
@@ -965,7 +1063,7 @@ def _apply_recovery(
     resumed_capture_started_at: str,
     recovered_at: str,
 ) -> dict:
-    recording = frappe.get_doc("Meet Recording", recording_id)
+    recording = _locked_recording(recording_id)
     if recording.status == "Recording":
         return {"status": "Recording"}
     if recording.status != "Interrupted":
@@ -1012,6 +1110,7 @@ def recorder_stopped(
     recording_id: str,
     job: str,
     event_sequence: int,
+    captured_bytes: int,
     size: int,
     sha256: str,
     duration_ms: int,
@@ -1027,6 +1126,7 @@ def recorder_stopped(
     )
     if not ended_at:
         frappe.throw(_("Recording stop callback requires an end time"))
+    _apply_segment_progress(recording_id, captured_bytes, grow_budget=False)
     result = begin_upload(
         recording_id,
         event_sequence=event_sequence,
@@ -1089,7 +1189,7 @@ def recorder_failed(
         operation="failed",
         operation_id=str(event_sequence),
     )
-    recording = frappe.get_doc("Meet Recording", recording_id)
+    recording = _locked_recording(recording_id)
     if recording.status == "Failed":
         return {"status": "Failed"}
     if recording.status == "Cancelled":

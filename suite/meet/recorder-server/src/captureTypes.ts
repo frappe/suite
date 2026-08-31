@@ -61,5 +61,5 @@ export interface MediaProbe {
 }
 
 export interface MediaTools {
-	validate(path: string): Promise<MediaProbe>;
+	validate(path: string, timeoutMs?: number): Promise<MediaProbe>;
 }

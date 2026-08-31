@@ -16,6 +16,7 @@ from suite.meet.api.recording import (
     recorder_interrupted,
     recorder_recovered,
     recorder_replacement_ready,
+    recorder_segment_progress,
     recorder_stopped,
     recorder_upload_chunk,
     start,
@@ -48,6 +49,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         frappe.conf.recording_fixture_mode = True
         frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
         frappe.clear_cache(doctype="Meet Settings")
+        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
         frappe.db.delete("Meet Recording", {"room_owner": self.owner})
         frappe.db.commit()
         frappe.set_user(self.owner)
@@ -63,6 +65,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         else:
             frappe.local.request = self.original_request
         frappe.set_user("Administrator")
+        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
@@ -145,6 +148,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
             recorder_interrupted,
             recorder_replacement_ready,
             recorder_recovered,
+            recorder_segment_progress,
             recorder_stopped,
             recorder_upload_chunk,
             recorder_complete_upload,
@@ -193,6 +197,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
                     self.recording.name,
                     self.recording.recorder_job_id,
                     2,
+                    0,
                     1,
                     "a" * 64,
                     1000,

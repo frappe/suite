@@ -38,10 +38,14 @@ export interface RendererBridge {
 		type: 'complete' | 'partial' | 'failed';
 		artifact?: CaptureArtifact;
 		gaps?: CaptureGap[];
+		capturedBytes?: number;
 	}>;
 	close?(): Promise<void>;
 	hasWorker(job: string): boolean;
 	onLifecycle(handler: (event: RendererLifecycleEvent) => Promise<void>): void;
+	onProgress?(
+		handler: (job: string, capturedBytes: number) => Promise<number>,
+	): void;
 }
 
 export type RendererLifecycleEvent = {
@@ -62,6 +66,7 @@ export type RendererLifecycleEvent = {
 	occurredAt?: string;
 	artifact?: CaptureArtifact;
 	gaps?: CaptureGap[];
+	capturedBytes?: number;
 	interruption?: CaptureInterruption;
 	recovery?: CaptureRecovery;
 	publicJwk?: PublicJwk;

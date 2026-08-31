@@ -1,7 +1,14 @@
-import { mkdir, readFile, symlink, unlink, writeFile } from 'node:fs/promises';
+import {
+	mkdir,
+	readFile,
+	stat,
+	symlink,
+	unlink,
+	writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MediaProbe } from './captureTypes.js';
 import { Finalizer } from './Finalizer.js';
 import { ManifestStore, safeJobDirectory } from './ManifestStore.js';
@@ -180,6 +187,84 @@ describe('capture pipeline', () => {
 		await Promise.all([watcher.scan(false), watcher.scan(false)]);
 		expect(maximum).toBe(1);
 		expect(manifest.get().segments).toHaveLength(1);
+	});
+
+	it('reports a closed candidate failure and quarantines that exact segment on stop', async () => {
+		const manifest = await watcherStore();
+		await Promise.all(
+			['000000', '000001', '000002'].map((index) =>
+				writeFile(
+					join(manifest.directory, `epoch-000-segment-${index}.ts`),
+					index,
+				),
+			),
+		);
+		const candidateError = vi.fn();
+		const watcher = new SegmentWatcher(
+			manifest,
+			{
+				validate: async (path) => {
+					if (path.endsWith('000000.ts'))
+						throw new Error('corrupt predecessor');
+					return probe;
+				},
+			},
+			0,
+			250,
+			undefined,
+			candidateError,
+		);
+
+		await expect(watcher.scan(false)).rejects.toThrow(
+			'segment candidate epoch-000-segment-000000.ts failed',
+		);
+
+		expect(candidateError).toHaveBeenCalledWith(
+			'epoch-000-segment-000000.ts',
+			expect.objectContaining({ message: 'corrupt predecessor' }),
+		);
+		expect(manifest.get().segments).toHaveLength(0);
+
+		expect(await watcher.stopAndAdoptFinal()).toBe('quarantined');
+
+		expect(manifest.get().segments.map((segment) => segment.file)).toEqual([
+			'epoch-000-segment-000001.ts',
+			'epoch-000-segment-000002.ts',
+		]);
+		await expect(
+			stat(join(manifest.directory, 'epoch-000-segment-000000.ts.invalid')),
+		).resolves.toBeDefined();
+		await expect(
+			stat(join(manifest.directory, 'epoch-000-segment-000002.ts.invalid')),
+		).rejects.toThrow();
+		expect(candidateError).toHaveBeenCalledOnce();
+		expect(manifest.get().gaps.at(-1)?.reason).toContain(
+			'invalid_final_segment:corrupt predecessor',
+		);
+	});
+
+	it('does not quarantine a segment already persisted in the manifest', async () => {
+		const manifest = await watcherStore();
+		const file = 'epoch-000-segment-000000.ts';
+		const path = join(manifest.directory, file);
+		await writeFile(path, 'valid');
+		const watcher = new SegmentWatcher(
+			manifest,
+			{ validate: async () => probe },
+			0,
+			250,
+			async () => {
+				throw new Error('post-persist callback failed');
+			},
+		);
+
+		expect(await watcher.stopAndAdoptFinal()).toBe('quarantined');
+
+		expect(manifest.get().segments.map((segment) => segment.file)).toEqual([
+			file,
+		]);
+		await expect(stat(path)).resolves.toBeDefined();
+		await expect(stat(`${path}.invalid`)).rejects.toThrow();
 	});
 
 	it('rejects traversal manifests and symlink segment escapes', async () => {

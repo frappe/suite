@@ -16,9 +16,10 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, get_system_timezone, now_datetime
 
-from suite.drive.api.storage import acquire_owner_storage_lock, get_storage_usage
+from suite.drive.api.storage import acquire_owner_storage_lock, reduce_storage_reservation
 from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
 from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
+from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
@@ -90,6 +91,11 @@ def begin_upload(
         recording.upload_duration_ms = duration_ms
         if gaps is not None:
             recording.capture_gaps = json.dumps(gaps)
+    reduce_storage_reservation(
+        recording.room_owner,
+        recording_storage_reservation_key(recording.name),
+        size,
+    )
     recording.save(ignore_permissions=True)
     return {"offset": recording.upload_offset, "complete": False}
 
@@ -192,10 +198,6 @@ def process_upload(recording_name: str, *, event_sequence: int) -> dict:
         frappe.throw(_("Recorder event is out of order"))
 
     acquire_owner_storage_lock(recording.room_owner)
-    usage = get_storage_usage(recording.room_owner)
-    final_usage = usage["total_size"] - recording.budget_bytes + recording.upload_size
-    if usage["limit"] and final_usage > usage["limit"]:
-        frappe.throw(_("The Room Owner does not have enough Drive storage"))
 
     callback_user = frappe.session.user
     try:

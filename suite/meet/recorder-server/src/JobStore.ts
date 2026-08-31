@@ -119,6 +119,7 @@ function validLedger(value: unknown): value is Ledger {
 			...(job.callback_completed_at === undefined
 				? []
 				: ['callback_completed_at']),
+			...(job.captured_bytes === undefined ? [] : ['captured_bytes']),
 			...(job.artifact === undefined ? [] : ['artifact']),
 		].sort();
 		if (JSON.stringify(Object.keys(job).sort()) !== JSON.stringify(keys))
@@ -181,6 +182,9 @@ function validLedger(value: unknown): value is Ledger {
 			(job.terminal_at === undefined || validUtcTimestamp(job.terminal_at)) &&
 			(job.callback_completed_at === undefined ||
 				validUtcTimestamp(job.callback_completed_at)) &&
+			(job.captured_bytes === undefined ||
+				(Number.isSafeInteger(job.captured_bytes) &&
+					job.captured_bytes >= 0)) &&
 			Array.isArray(job.stop_operation_ids) &&
 			job.stop_operation_ids.length <= 10_000 &&
 			job.stop_operation_ids.every(nonempty) &&

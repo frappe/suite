@@ -29,6 +29,7 @@ interface ManagedWorker {
 	active: boolean;
 	interruption?: CaptureInterruption;
 	replacement?: Promise<void>;
+	captureStop?: Promise<'complete' | 'partial' | 'failed'>;
 	deadlineTimer?: NodeJS.Timeout;
 }
 
@@ -43,6 +44,10 @@ export class CaptureWorkerManager implements RendererBridge {
 	private readonly stopping = new Map<string, Promise<void>>();
 	private handler: (event: RendererLifecycleEvent) => Promise<void> =
 		async () => undefined;
+	private progressHandler?: (
+		job: string,
+		capturedBytes: number,
+	) => Promise<number>;
 	private nextDisplay = 100;
 	constructor(
 		private readonly renderer: RendererBridge,
@@ -65,6 +70,11 @@ export class CaptureWorkerManager implements RendererBridge {
 	onLifecycle(handler: (event: RendererLifecycleEvent) => Promise<void>): void {
 		this.handler = handler;
 	}
+	onProgress(
+		handler: (job: string, capturedBytes: number) => Promise<number>,
+	): void {
+		this.progressHandler = handler;
+	}
 	workerEnvironment(job: string): NodeJS.ProcessEnv | undefined {
 		return this.workers.get(job)?.worker.env;
 	}
@@ -78,6 +88,11 @@ export class CaptureWorkerManager implements RendererBridge {
 			...this.options,
 			display: this.nextDisplay++,
 			limits: command.limits,
+			onProgress: async (capturedBytes) => {
+				if (!this.progressHandler)
+					throw new Error('recording budget callback is unavailable');
+				return this.progressHandler(command.job, capturedBytes);
+			},
 			onInterrupted: (interruption) => {
 				managed.interruption ??= interruption;
 				this.armDeadline(managed);
@@ -101,9 +116,8 @@ export class CaptureWorkerManager implements RendererBridge {
 				});
 			},
 			onStopRequested: (partial, reason) => {
+				managed.captureStop ??= worker.stop(partial, reason);
 				void this.enqueue(command.job, async () => {
-					if (reason === 'capture_recovery_timeout' && !managed.interruption)
-						return;
 					await this.stopWorker(command.job, partial, reason);
 				});
 			},
@@ -151,6 +165,7 @@ export class CaptureWorkerManager implements RendererBridge {
 		type: 'complete' | 'partial' | 'failed';
 		artifact?: CaptureArtifact;
 		gaps: CaptureGap[];
+		capturedBytes: number;
 	}> {
 		const worker = this.createWorker(job, {
 			...this.options,
@@ -162,6 +177,7 @@ export class CaptureWorkerManager implements RendererBridge {
 			type,
 			...(result.artifact ? { artifact: result.artifact } : {}),
 			gaps: result.gaps,
+			capturedBytes: result.capturedBytes,
 		};
 	}
 	async close(): Promise<void> {
@@ -199,7 +215,7 @@ export class CaptureWorkerManager implements RendererBridge {
 				.catch((error: unknown) => {
 					rendererError = error;
 				});
-			outcome = await worker.stop(partial, reason);
+			outcome = await (managed.captureStop ?? worker.stop(partial, reason));
 		} finally {
 			this.workers.delete(job);
 			await this.renderer.stop(job, managed.generation).catch(() => undefined);
@@ -213,6 +229,7 @@ export class CaptureWorkerManager implements RendererBridge {
 			...(reason ? { reason } : {}),
 			...(result.artifact ? { artifact: result.artifact } : {}),
 			gaps: result.gaps,
+			capturedBytes: result.capturedBytes,
 			...(outcome === 'partial' && !reason
 				? { reason: reason ?? 'capture_interrupted' }
 				: {}),

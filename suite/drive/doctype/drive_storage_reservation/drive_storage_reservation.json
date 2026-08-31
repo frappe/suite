@@ -1,0 +1,41 @@
+{
+ "actions": [],
+ "autoname": "prompt",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "storage_owner",
+  "reserved_bytes"
+ ],
+ "fields": [
+  {
+   "fieldname": "storage_owner",
+   "fieldtype": "Link",
+   "label": "Storage Owner",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "reserved_bytes",
+   "fieldtype": "Long Int",
+   "label": "Reserved Bytes",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Storage Reservation",
+ "naming_rule": "Set by user",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

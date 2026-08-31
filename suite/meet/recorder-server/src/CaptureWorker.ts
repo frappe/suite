@@ -30,6 +30,7 @@ export interface CaptureWorkerOptions {
 	onStopRequested?: (partial: boolean, reason: string) => void;
 	onInterrupted?: (interruption: CaptureInterruption) => void;
 	onRecovered?: (recovery: CaptureRecovery) => void;
+	onProgress?: (capturedBytes: number) => Promise<number>;
 }
 
 export interface CaptureWorkerDependencies {
@@ -42,6 +43,7 @@ export interface CaptureWorkerDependencies {
 		tools: MediaTools,
 		epoch: number,
 		onAdopt: (segment: CaptureSegment) => void | Promise<void>,
+		onCandidateError: (file: string, error: unknown) => void | Promise<void>,
 	) => Watcher;
 	finalizer?: (manifest: ManifestStore) => Pick<Finalizer, 'finalize'>;
 }
@@ -85,7 +87,13 @@ export class CaptureWorker {
 				? { supervisor: dependencies }
 				: dependencies;
 		this.supervisor = injected.supervisor ?? new ProcessSupervisor();
-		this.tools = injected.tools ?? new FfmpegMediaTools(options.ffmpeg);
+		this.tools =
+			injected.tools ??
+			new FfmpegMediaTools(
+				options.ffmpeg,
+				'ffprobe',
+				options.segmentSeconds * 1000,
+			);
 		this.now = injected.now ?? Date.now;
 		this.sleep =
 			injected.sleep ??
@@ -93,8 +101,15 @@ export class CaptureWorker {
 		this.manifest = new ManifestStore(options.dataRoot, job);
 		this.makeWatcher =
 			injected.watcher ??
-			((manifest, tools, epoch, onAdopt) =>
-				new SegmentWatcher(manifest, tools, epoch, 250, onAdopt));
+			((manifest, tools, epoch, onAdopt, onCandidateError) =>
+				new SegmentWatcher(
+					manifest,
+					tools,
+					epoch,
+					250,
+					onAdopt,
+					onCandidateError,
+				));
 		this.makeFinalizer =
 			injected.finalizer ?? ((manifest) => new Finalizer(manifest, this.tools));
 		const runtime = join(this.manifest.directory, 'pulse');
@@ -204,6 +219,7 @@ export class CaptureWorker {
 			this.tools,
 			epoch,
 			(segment) => this.segmentAdopted(epoch, segment),
+			(file, error) => this.segmentCandidateFailed(file, error),
 		);
 		const pattern = join(
 			this.manifest.directory,
@@ -322,6 +338,7 @@ export class CaptureWorker {
 				this.tools,
 				manifest.epochs - 1,
 				() => undefined,
+				() => undefined,
 			).stopAndAdoptFinal();
 			manifest = this.manifest.get();
 		}
@@ -333,7 +350,14 @@ export class CaptureWorker {
 
 	captureResult() {
 		const manifest = this.manifest.get();
-		return { artifact: manifest.artifact, gaps: manifest.gaps };
+		return {
+			artifact: manifest.artifact,
+			gaps: manifest.gaps,
+			capturedBytes: manifest.segments.reduce(
+				(total, segment) => total + segment.bytes,
+				0,
+			),
+		};
 	}
 
 	private async performStop(reason?: string): Promise<Outcome> {
@@ -469,9 +493,34 @@ export class CaptureWorker {
 		epoch: number,
 		_segment: CaptureSegment,
 	): Promise<void> {
+		const stopping = Boolean(this.stopPromise);
+		const capturedBytes = this.manifest
+			.get()
+			.segments.reduce((sum, segment) => sum + segment.bytes, 0);
+		if (this.options.limits) {
+			try {
+				if (!this.options.onProgress)
+					throw new Error('recording budget callback is unavailable');
+				this.options.limits.budget_bytes =
+					await this.options.onProgress(capturedBytes);
+			} catch {
+				if (!stopping) this.requestStop(false, 'capture_budget_unavailable');
+				return;
+			}
+		}
+		if (stopping) return;
 		if (this.healthyEpoch?.epoch === epoch)
 			this.healthyEpoch.resolve(new Date(this.now()).toISOString());
-		if (this.limitReached()) this.requestStop(false, 'capture_budget_reached');
+		if (this.limitReached()) {
+			this.requestStop(false, 'capture_budget_reached');
+			return;
+		}
+	}
+
+	private segmentCandidateFailed(_file: string, error: unknown): void {
+		if (this.stopPromise) return;
+		const detail = error instanceof Error ? error.message : 'validation_failed';
+		this.requestStop(true, `capture_segment_failed:${detail}`.slice(0, 256));
 	}
 
 	private limitReached(): boolean {
@@ -481,11 +530,13 @@ export class CaptureWorker {
 		const bytes = this.manifest
 			.get()
 			.segments.reduce((sum, segment) => sum + segment.bytes, 0);
-		return bytes + this.segmentSafetyBytes() > limits.budget_bytes;
+		return bytes + this.segmentSafetyBytes() * 3 > limits.budget_bytes;
 	}
 
 	private segmentSafetyBytes(): number {
-		return Math.ceil(((5_000_000 + 128_000) / 8) * this.options.segmentSeconds);
+		return Math.ceil(
+			((5_000_000 + 128_000) / 8) * 1.1 * this.options.segmentSeconds,
+		);
 	}
 
 	private armEndLimit(): void {

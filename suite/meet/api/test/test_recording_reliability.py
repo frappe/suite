@@ -293,7 +293,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             ):
                 result = get_preflight(self.room.name)
                 self.assertEqual(result["eligible"], eligible)
-                self.assertEqual(result["budget_bytes"], min(result["estimated_bytes"], free_bytes))
+                self.assertEqual(result["budget_bytes"], min(MAX_SECONDS * BYTES_PER_SECOND, free_bytes))
                 self.assertEqual(
                     result["budget_seconds"],
                     min(MAX_SECONDS, result["budget_bytes"] // BYTES_PER_SECOND),

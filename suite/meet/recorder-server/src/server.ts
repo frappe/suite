@@ -92,6 +92,7 @@ async function main(): Promise<void> {
 				throw error;
 			}
 		},
+		(job, capturedBytes) => callbacks.segmentProgress(job, capturedBytes),
 	);
 	await jobs.initialize();
 	const auth = new AuthManager(

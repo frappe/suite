@@ -69,6 +69,7 @@ export interface JobRecord {
 	health_reason?: string;
 	terminal_at?: string;
 	callback_completed_at?: string;
+	captured_bytes?: number;
 	artifact?: {
 		state: 'complete' | 'partial';
 		path: string;

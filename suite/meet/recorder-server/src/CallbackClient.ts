@@ -67,6 +67,7 @@ interface StoppedRequest {
 	recording_id: string;
 	job: string;
 	event_sequence: number;
+	captured_bytes: number;
 	size: number;
 	sha256: string;
 	duration_ms: number;
@@ -81,6 +82,12 @@ interface CompleteUploadRequest {
 	event_sequence: number;
 }
 
+interface SegmentProgressRequest {
+	recording_id: string;
+	job: string;
+	captured_bytes: number;
+}
+
 type CallbackRequest =
 	| StartupProgressRequest
 	| InterruptedRequest
@@ -88,7 +95,8 @@ type CallbackRequest =
 	| ReplacementReadyRequest
 	| FailedRequest
 	| StoppedRequest
-	| CompleteUploadRequest;
+	| CompleteUploadRequest
+	| SegmentProgressRequest;
 
 type CallbackMethod =
 	| 'recorder_startup_progress'
@@ -97,6 +105,7 @@ type CallbackMethod =
 	| 'recorder_replacement_ready'
 	| 'recorder_failed'
 	| 'recorder_stopped'
+	| 'recorder_segment_progress'
 	| 'recorder_complete_upload';
 
 type CallbackOperation =
@@ -106,6 +115,7 @@ type CallbackOperation =
 	| 'replacement_ready'
 	| 'failed'
 	| 'stopped'
+	| 'segment_progress'
 	| 'upload_chunk'
 	| 'complete_upload';
 
@@ -120,6 +130,10 @@ interface UploadStartResponse {
 
 interface UploadChunkResponse {
 	offset: number;
+}
+
+interface SegmentProgressResponse {
+	budget_bytes: number;
 }
 
 export class CallbackClient {
@@ -249,6 +263,27 @@ export class CallbackClient {
 		);
 	}
 
+	async segmentProgress(
+		job: JobRecord,
+		capturedBytes: number,
+	): Promise<number> {
+		if (!Number.isSafeInteger(capturedBytes) || capturedBytes < 0)
+			throw new Error('invalid captured byte count');
+		const response = await this.json(
+			'recorder_segment_progress',
+			job,
+			'segment_progress',
+			String(capturedBytes),
+			{
+				recording_id: job.recording,
+				job: job.job,
+				captured_bytes: capturedBytes,
+			},
+			parseSegmentProgressResponse,
+		);
+		return response.budget_bytes;
+	}
+
 	async upload(job: JobRecord): Promise<void> {
 		let delay = 1_000;
 		for (let attempt = 0; ; attempt += 1) {
@@ -303,6 +338,7 @@ export class CallbackClient {
 				recording_id: job.recording,
 				job: job.job,
 				event_sequence: stoppedSequence,
+				captured_bytes: job.captured_bytes ?? 0,
 				size: artifact.bytes,
 				sha256: artifact.sha256,
 				duration_ms: artifact.duration_ms,
@@ -562,4 +598,21 @@ function parseUploadChunkResponse(value: unknown): UploadChunkResponse {
 		throw new Error('invalid Frappe callback response');
 	}
 	return { offset: value.offset };
+}
+
+function parseSegmentProgressResponse(value: unknown): SegmentProgressResponse {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		JSON.stringify(Object.keys(value).sort()) !==
+			JSON.stringify(['budget_bytes']) ||
+		!('budget_bytes' in value) ||
+		typeof value.budget_bytes !== 'number' ||
+		!Number.isSafeInteger(value.budget_bytes) ||
+		value.budget_bytes < 0
+	) {
+		throw new Error('invalid Frappe callback response');
+	}
+	return { budget_bytes: value.budget_bytes };
 }

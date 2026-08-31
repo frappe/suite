@@ -7,28 +7,79 @@ import { pathToFileURL } from 'node:url';
 import type { CaptureState, MediaProbe, MediaTools } from './captureTypes.js';
 import type { ManifestStore } from './ManifestStore.js';
 
-async function command(program: string, args: string[]): Promise<string> {
+const MIN_ARTIFACT_COMMAND_TIMEOUT_MS = 60_000;
+const MAX_ARTIFACT_CONCAT_TIMEOUT_MS = 15 * 60_000;
+const MAX_ARTIFACT_VALIDATION_TIMEOUT_MS = 8 * 60 * 60_000;
+
+async function command(
+	program: string,
+	args: string[],
+	timeoutMs?: number,
+	spawner: typeof spawn = spawn,
+): Promise<string> {
+	if (
+		timeoutMs !== undefined &&
+		(!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+	)
+		throw new Error('media command timeout must be positive');
 	return new Promise((resolve, reject) => {
-		const child = spawn(program, args, {
+		const child = spawner(program, args, {
 			shell: false,
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
 		let out = '';
 		let error = '';
-		child.stdout.on('data', (x) => {
+		let timer: NodeJS.Timeout | undefined;
+		let timedOut = false;
+		let settled = false;
+		const readOut = (x: Buffer | string) => {
 			if (out.length < 1024 * 1024)
 				out += String(x).slice(0, 1024 * 1024 - out.length);
-		});
-		child.stderr.on('data', (x) => {
+		};
+		const readError = (x: Buffer | string) => {
 			if (error.length < 1024 * 1024)
 				error += String(x).slice(0, 1024 * 1024 - error.length);
-		});
-		child.once('error', reject);
-		child.once('exit', (code) =>
-			code === 0
-				? resolve(out)
-				: reject(new Error(error.slice(-1024) || `${program} exited ${code}`)),
-		);
+		};
+		const cleanup = () => {
+			if (timer) clearTimeout(timer);
+			child.stdout.off('data', readOut);
+			child.stderr.off('data', readError);
+			child.off('error', onError);
+			child.off('exit', onExit);
+		};
+		const finish = (failure?: Error) => {
+			if (settled) return;
+			settled = true;
+			cleanup();
+			if (failure) reject(failure);
+			else resolve(out);
+		};
+		const onError = (failure: Error) => {
+			finish(timedOut ? new Error('media command timed out') : failure);
+		};
+		const onExit = (code: number | null) => {
+			if (timedOut) {
+				finish(new Error('media command timed out'));
+				return;
+			}
+			finish(
+				code === 0
+					? undefined
+					: new Error(error.slice(-1024) || `${program} exited ${code}`),
+			);
+		};
+		child.stdout.on('data', readOut);
+		child.stderr.on('data', readError);
+		child.once('error', onError);
+		child.once('exit', onExit);
+		if (timeoutMs !== undefined)
+			timer = setTimeout(() => {
+				if (settled) return;
+				timedOut = true;
+				child.kill('SIGKILL');
+				child.once('error', () => undefined);
+				finish(new Error('media command timed out'));
+			}, timeoutMs);
 	});
 }
 
@@ -146,37 +197,67 @@ export class FfmpegMediaTools implements MediaTools {
 	constructor(
 		private readonly ffmpeg = 'ffmpeg',
 		private readonly ffprobe = 'ffprobe',
-	) {}
-	async validate(path: string): Promise<MediaProbe> {
-		await command(this.ffmpeg, ['-v', 'error', '-i', path, '-f', 'null', '-']);
+		private readonly validationTimeoutMs?: number,
+		private readonly spawner: typeof spawn = spawn,
+	) {
+		if (
+			validationTimeoutMs !== undefined &&
+			(!Number.isFinite(validationTimeoutMs) || validationTimeoutMs <= 0)
+		)
+			throw new Error('media validation timeout must be positive');
+	}
+	async validate(
+		path: string,
+		timeoutMs = this.validationTimeoutMs,
+	): Promise<MediaProbe> {
+		const deadline =
+			timeoutMs === undefined ? undefined : performance.now() + timeoutMs;
+		const remaining = () => {
+			if (deadline === undefined) return undefined;
+			const milliseconds = Math.ceil(deadline - performance.now());
+			if (milliseconds <= 0) throw new Error('media validation timed out');
+			return milliseconds;
+		};
+		await command(
+			this.ffmpeg,
+			['-v', 'error', '-i', path, '-f', 'null', '-'],
+			remaining(),
+			this.spawner,
+		);
 		const parsed: unknown = JSON.parse(
-			await command(this.ffprobe, [
-				'-v',
-				'error',
-				'-show_streams',
-				'-show_format',
-				'-of',
-				'json',
-				path,
-			]),
+			await command(
+				this.ffprobe,
+				['-v', 'error', '-show_streams', '-show_format', '-of', 'json', path],
+				remaining(),
+				this.spawner,
+			),
 		);
 		return validateFfprobeOutput(parsed);
 	}
-	async concat(list: string, output: string): Promise<void> {
-		await command(this.ffmpeg, [
-			'-v',
-			'error',
-			'-y',
-			'-protocol_whitelist',
-			'file,concatf',
-			'-i',
-			`concatf:${list}`,
-			'-c',
-			'copy',
-			'-movflags',
-			'+faststart',
-			output,
-		]);
+	async concat(
+		list: string,
+		output: string,
+		timeoutMs?: number,
+	): Promise<void> {
+		await command(
+			this.ffmpeg,
+			[
+				'-v',
+				'error',
+				'-y',
+				'-protocol_whitelist',
+				'file,concatf',
+				'-i',
+				`concatf:${list}`,
+				'-c',
+				'copy',
+				'-movflags',
+				'+faststart',
+				output,
+			],
+			timeoutMs,
+			this.spawner,
+		);
 	}
 }
 
@@ -184,7 +265,7 @@ export class Finalizer {
 	constructor(
 		private readonly store: ManifestStore,
 		private readonly tools: MediaTools & {
-			concat(list: string, output: string): Promise<void>;
+			concat(list: string, output: string, timeoutMs?: number): Promise<void>;
 		},
 	) {}
 	async finalize(forcePartial = false, reason?: string): Promise<CaptureState> {
@@ -206,6 +287,18 @@ export class Finalizer {
 		);
 		const output = join(this.store.directory, 'recording.mp4');
 		try {
+			const expectedDuration = manifest.segments.reduce(
+				(total, segment) => total + segment.duration_ms,
+				0,
+			);
+			const concatTimeoutMs = Math.min(
+				MAX_ARTIFACT_CONCAT_TIMEOUT_MS,
+				Math.max(MIN_ARTIFACT_COMMAND_TIMEOUT_MS, expectedDuration),
+			);
+			const validationTimeoutMs = Math.min(
+				MAX_ARTIFACT_VALIDATION_TIMEOUT_MS,
+				Math.max(MIN_ARTIFACT_COMMAND_TIMEOUT_MS, expectedDuration * 2),
+			);
 			const paths: string[] = [];
 			for (const segment of manifest.segments) {
 				const path = await this.store.resolveFile(segment.file);
@@ -219,12 +312,8 @@ export class Finalizer {
 				`${paths.map((path) => pathToFileURL(path).href).join('\n')}\n`,
 				{ mode: 0o600 },
 			);
-			await this.tools.concat(list, temp);
-			const probe = await this.tools.validate(temp);
-			const expectedDuration = manifest.segments.reduce(
-				(total, segment) => total + segment.duration_ms,
-				0,
-			);
+			await this.tools.concat(list, temp, concatTimeoutMs);
+			const probe = await this.tools.validate(temp, validationTimeoutMs);
 			if (
 				Math.abs(probe.duration_ms - expectedDuration) >
 				Math.max(1_000, expectedDuration * 0.05)
