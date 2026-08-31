@@ -30,7 +30,7 @@ def add_rate_limits() -> None:
         {"method_path": "suite.meet.api.meeting.check_meeting_access", "limit": 10, "seconds": 5 * 60},
         {"method_path": "suite.meet.api.meeting.join_meeting", "limit": 60, "seconds": 60},
         {
-            "method_path": "suite.meet.api.meeting.get_guest_sfu_connection_details",
+            "method_path": "suite.meet.api.meeting.refresh_guest_sfu_token",
             "limit": 30,
             "seconds": 60,
         },

@@ -9,7 +9,6 @@ import time
 import frappe
 import jwt
 from frappe import _
-from suite.utils.rate_limiter import dynamic_rate_limit
 
 from suite.meet import guest_access
 from suite.meet.api.recording import get_active_recording_state
@@ -19,6 +18,7 @@ from suite.meet.utils.user import (
     get_user_info,
     validate_guest_name,
 )
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 _GUEST_PROOF_FIELD = "guest_session_token"
 _REDACTED_PROOF = "[REDACTED]"
@@ -588,6 +588,7 @@ def get_approved_guest_connection_details(
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@dynamic_rate_limit()
 def refresh_guest_sfu_token(
     meeting_id: str,
     guest_id: str,
