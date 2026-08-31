@@ -666,7 +666,7 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
             "uid": uid,
             "action": a.get("action", "").title(),
             "type": a.get("trigger", {}).get("@type", ""),
-            "relative_to": a.get("trigger", {}).get("relativeTo", "").title(),
+            "relative_to": (a.get("trigger", {}).get("relativeTo") or "start").title(),
             "offset": a.get("trigger", {}).get("offset", "").upper(),
             # AbsoluteTrigger.when is a UTCDateTime; serve it in the canonical ``...Z`` form.
             "when": normalize_utc_z(a.get("trigger", {}).get("when")) or "",
