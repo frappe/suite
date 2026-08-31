@@ -167,6 +167,8 @@ const eventParams = computed(() => {
 	// so omitting them would strip Meet links from the event.
 	if (event.links?.length) params.links = event.links
 	if (event.participants?.length) params.participants = event.participants
+	// No reminder set means the calendar's default one, not silence.
+	params.use_default_alerts = !event.alerts?.length
 	if (event.alerts?.length) {
 		params.alerts = event.alerts.map((a) => {
 			const base = { action: a.action, type: a.type }

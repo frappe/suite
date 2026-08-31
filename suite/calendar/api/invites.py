@@ -121,6 +121,11 @@ def _ensure_on_calendar(service: CalendarEventService, events: list[dict]) -> st
         event = {k: v for k, v in event.items() if k not in SERVER_MANAGED_KEYS}
         event["@type"] = "Event"
         event["calendarIds"] = {default_calendar_id: True}
+        # Invitations arrive without alarms (organizers' are stripped in transit), so
+        # the attendee's copy leans on the calendar's defaults — the invitee gets a
+        # reminder without ever opening the event.
+        if not event.get("alerts"):
+            event["useDefaultAlerts"] = True
         payload[str(uuid7())] = event
 
     created_ids = []

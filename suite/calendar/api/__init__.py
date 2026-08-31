@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from suite.calendar.api.rsvp import record_rsvp
-from suite.calendar.doctype.calendar.calendar import fetch_calendars
+from suite.calendar.doctype.calendar.calendar import ensure_default_alerts, fetch_calendars
 from suite.calendar.doctype.calendar_event.calendar_event import (
     fetch_calendar_events,
     update_calendar_event,
@@ -21,6 +21,7 @@ from suite.utils.rate_limiter import dynamic_rate_limit
 def get_calendars(account: str) -> list[dict[str, str]]:
     """Returns a list of the specified account's calendars."""
 
+    ensure_default_alerts(account)
     calendars = fetch_calendars(account)
 
     return [{key: cal[key] for key in ["name", "_name"]} for cal in calendars]

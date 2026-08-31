@@ -277,6 +277,61 @@ def delete_calendars(account: str, ids: list[str], remove_events: bool = True) -
         )
 
 
+# What a calendar reminds about when an event carries no alerts of its own
+# (`useDefaultAlerts`): ten minutes before a timed event, nine in the morning on
+# the day of an all-day one. Per-user, per-calendar state on the JMAP server —
+# every client honouring JSCalendar sees the same defaults.
+DEFAULT_ALERTS_WITH_TIME = {
+    "default-10m": {
+        "@type": "Alert",
+        "action": "display",
+        "trigger": {"@type": "OffsetTrigger", "offset": "-PT10M", "relativeTo": "start"},
+    }
+}
+DEFAULT_ALERTS_WITHOUT_TIME = {
+    "default-9am": {
+        "@type": "Alert",
+        "action": "display",
+        "trigger": {"@type": "OffsetTrigger", "offset": "PT9H", "relativeTo": "start"},
+    }
+}
+
+
+def ensure_default_alerts(account: str) -> None:
+    """Seeds the account's calendars with default alerts, where they have none.
+
+    Idempotent, and deliberately only fills emptiness: a calendar whose defaults were set —
+    by this, by another client, by a future settings page — is left alone. Until there is a
+    place to clear defaults on purpose, empty always means unseeded. A day-long cache mark
+    keeps the extra round-trip off every sidebar load."""
+
+    cache_key = f"calendar|default_alerts_seeded|{account}"
+    if frappe.cache.get_value(cache_key):
+        return
+
+    service = get_calendar_service(account)
+    response = service._get(properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"])
+    method_responses = response.get("methodResponses") or []
+    calendars = method_responses[0][1].get("list", []) if method_responses else []
+
+    update = {}
+    for calendar in calendars:
+        if not (calendar.get("myRights") or {}).get("mayWriteAll", True):
+            continue
+        patch = {}
+        if not calendar.get("defaultAlertsWithTime"):
+            patch["defaultAlertsWithTime"] = DEFAULT_ALERTS_WITH_TIME
+        if not calendar.get("defaultAlertsWithoutTime"):
+            patch["defaultAlertsWithoutTime"] = DEFAULT_ALERTS_WITHOUT_TIME
+        if patch:
+            update[calendar["id"]] = patch
+
+    if update:
+        service._update(update)
+
+    frappe.cache.set_value(cache_key, True, expires_in_sec=24 * 60 * 60)
+
+
 @frappe.whitelist()
 def fetch_calendars(account: str, page: int = 1, limit: int = 10) -> list:
     """Returns a list of calendars for the given account."""
