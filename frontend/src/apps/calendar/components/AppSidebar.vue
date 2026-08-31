@@ -72,7 +72,9 @@ const upcoming = computed(() => {
 			// An all-day event covers the whole of today; a timed one is over once its end has passed.
 			return event.isAllDay || dayjs(`${event.toDate} ${event.toTime}`).isAfter(current)
 		})
-		.sort((a, b) => a.fromDateTime.localeCompare(b.fromDateTime))
+		// Sorted on the shape transformEvent hands over — date plus wall clock. An
+		// all-day event starts at midnight, so it leads the day on its own.
+		.sort((a, b) => `${a.fromDate} ${a.fromTime}`.localeCompare(`${b.fromDate} ${b.fromTime}`))
 })
 
 const isOpen = (event: any) =>
@@ -97,8 +99,10 @@ const title = computed(() =>
 )
 
 const subtitle = computed(() => {
+	// A user with no personal account and no stored id leaves `accountId` empty,
+	// and the find unmatched — as mail's sidebar already allows for.
 	const currentAccount = user.data.accounts.find((a) => a.id === store.accountId)
-	if (currentAccount.is_personal) return toTitleCase(user.data.full_name)
+	if (!currentAccount || currentAccount.is_personal) return toTitleCase(user.data.full_name)
 	return currentAccount._name
 })
 

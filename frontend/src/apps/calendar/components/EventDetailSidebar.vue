@@ -537,16 +537,24 @@ const openUrl = (location: string) => {
 					</span>
 				</div>
 
-				<!-- Alerts -->
+				<!-- Alerts. Every reminder is the same kind of thing, so the bell is
+				     drawn once and the rows below it keep the text column — the group
+				     reads as one list rather than as several details. -->
 				<div
-					v-for="(alert, i) in calendarEvent.alerts"
-					:key="i"
-					class="flex items-center gap-2.5 px-4.5 py-2"
+					v-if="calendarEvent.alerts?.length"
+					class="flex flex-col gap-1 px-4.5 py-2"
 				>
-					<Bell class="icon text-ink-gray-5 size-4 shrink-0" />
-					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
-						{{ formatAlert(alert) }}
-					</span>
+					<div
+						v-for="(alert, i) in calendarEvent.alerts"
+						:key="i"
+						class="flex items-center gap-2.5"
+					>
+						<Bell v-if="i === 0" class="icon text-ink-gray-5 size-4 shrink-0" />
+						<span v-else class="size-4 shrink-0" />
+						<span class="text-ink-gray-7 min-w-0 break-words text-sm">
+							{{ formatAlert(alert) }}
+						</span>
+					</div>
 				</div>
 
 				<!-- Availability -->
