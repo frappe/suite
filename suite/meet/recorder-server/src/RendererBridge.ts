@@ -26,9 +26,14 @@ declare global {
 
 export interface RendererBridge {
 	readonly productionReady: boolean;
-	reserve(command: CommandClaims): Promise<PublicJwk>;
-	deliverGrant(job: string, grant: string, acceptedAt: string): Promise<void>;
-	stop(job: string): Promise<void>;
+	reserve(command: CommandClaims, generation?: number): Promise<PublicJwk>;
+	deliverGrant(
+		job: string,
+		grant: string,
+		acceptedAt: string,
+		generation: number,
+	): Promise<void>;
+	stop(job: string, generation?: number, reason?: string): Promise<void>;
 	recoverStopping?(job: string): Promise<{
 		type: 'complete' | 'partial' | 'failed';
 		artifact?: CaptureArtifact;
@@ -41,11 +46,13 @@ export interface RendererBridge {
 
 export type RendererLifecycleEvent = {
 	job: string;
+	generation: number;
 	type:
 		| 'configured'
 		| 'proof_complete'
 		| 'joined'
 		| 'capture_ready'
+		| 'replacement_ready'
 		| 'interrupted'
 		| 'room_empty'
 		| 'failed'
@@ -57,6 +64,9 @@ export type RendererLifecycleEvent = {
 	gaps?: CaptureGap[];
 	interruption?: CaptureInterruption;
 	recovery?: CaptureRecovery;
+	publicJwk?: PublicJwk;
+	readyAt?: string;
+	interruptionId?: string;
 };
 
 export interface BrowserAdapter {
@@ -80,10 +90,19 @@ interface RendererJob {
 	browser: Browser;
 	page: Page;
 	command: CommandClaims;
+	generation: number;
 	grantHash?: string;
 	configurationAccepted?: Promise<void>;
 	resolveConfiguration?: () => void;
 	rejectConfiguration?: (error: Error) => void;
+}
+
+interface PendingRenderer {
+	generation: number;
+	cancelled: boolean;
+	browser?: Browser;
+	settled: Promise<void>;
+	resolveSettled: () => void;
 }
 
 const browserAdapter: BrowserAdapter = {
@@ -108,6 +127,7 @@ function isPublicJwk(value: unknown): value is PublicJwk {
 
 export class ChromiumRendererBridge implements RendererBridge {
 	private readonly jobs = new Map<string, RendererJob>();
+	private readonly reservations = new Map<string, PendingRenderer>();
 	private server: Server | undefined;
 	private rendererOrigin?: string;
 	private available = false;
@@ -171,10 +191,10 @@ export class ChromiumRendererBridge implements RendererBridge {
 		this.available = true;
 	}
 
-	async reserve(command: CommandClaims): Promise<PublicJwk> {
+	async reserve(command: CommandClaims, generation = 0): Promise<PublicJwk> {
 		if (!this.available || !this.rendererOrigin)
 			throw new Error('renderer bridge is unavailable');
-		if (this.jobs.has(command.job))
+		if (this.jobs.has(command.job) || this.reservations.has(command.job))
 			throw new Error('renderer job already exists');
 
 		const args = [
@@ -184,22 +204,36 @@ export class ChromiumRendererBridge implements RendererBridge {
 		];
 		if (this.options.noSandbox)
 			args.push('--no-sandbox', '--disable-setuid-sandbox');
-		const workerEnvironment = this.options.workerEnvironment?.(command.job);
-		const browser = await this.adapter.launch({
-			executablePath: this.options.executablePath,
-			headless: false,
-			...(workerEnvironment ? { env: workerEnvironment } : {}),
-			defaultViewport: null,
-			ignoreDefaultArgs: ['--enable-automation'],
-			args: [
-				...args,
-				'--kiosk',
-				'--window-position=0,0',
-				'--window-size=1920,1080',
-				'--force-device-scale-factor=1',
-			],
-		});
+		let resolveSettled!: () => void;
+		const pending: PendingRenderer = {
+			generation,
+			cancelled: false,
+			settled: new Promise<void>((resolve) => {
+				resolveSettled = resolve;
+			}),
+			resolveSettled: () => resolveSettled(),
+		};
+		this.reservations.set(command.job, pending);
+		let browser: Browser | undefined;
 		try {
+			const workerEnvironment = this.options.workerEnvironment?.(command.job);
+			browser = await this.adapter.launch({
+				executablePath: this.options.executablePath,
+				headless: false,
+				...(workerEnvironment ? { env: workerEnvironment } : {}),
+				defaultViewport: null,
+				ignoreDefaultArgs: ['--enable-automation'],
+				args: [
+					...args,
+					'--kiosk',
+					'--window-position=0,0',
+					'--window-size=1920,1080',
+					'--force-device-scale-factor=1',
+				],
+			});
+			pending.browser = browser;
+			if (pending.cancelled || !this.available)
+				throw new Error('renderer reservation was cancelled');
 			const page = await browser.newPage();
 			await page.setViewport({ width: 1920, height: 1080 });
 			await page.setRequestInterception(true);
@@ -235,7 +269,13 @@ export class ChromiumRendererBridge implements RendererBridge {
 			await page.exposeFunction(
 				'__suiteRecorderLifecycle',
 				(value: unknown) => {
-					this.receive(command.job, value, resolveReady, rejectReady);
+					this.receive(
+						command.job,
+						generation,
+						value,
+						resolveReady,
+						rejectReady,
+					);
 				},
 			);
 			await page.evaluateOnNewDocument(() => {
@@ -265,19 +305,31 @@ export class ChromiumRendererBridge implements RendererBridge {
 			const publicJwk = await readyWithinDeadline.finally(() =>
 				clearTimeout(timeout),
 			);
-			this.jobs.set(command.job, { browser, page, command });
+			if (pending.cancelled || !this.available)
+				throw new Error('renderer reservation was cancelled');
+			const renderer = { browser, page, command, generation };
+			this.jobs.set(command.job, renderer);
 			browser.on(
 				'disconnected',
-				() => void this.workerFailed(command.job, 'browser_disconnected'),
+				() =>
+					void this.workerFailed(
+						command.job,
+						generation,
+						'browser_disconnected',
+					),
 			);
 			page.on(
 				'error',
-				() => void this.workerFailed(command.job, 'page_crashed'),
+				() => void this.workerFailed(command.job, generation, 'page_crashed'),
 			);
 			return publicJwk;
 		} catch (error) {
-			await browser.close();
+			await browser?.close().catch(() => undefined);
 			throw error;
+		} finally {
+			if (this.reservations.get(command.job) === pending)
+				this.reservations.delete(command.job);
+			pending.resolveSettled();
 		}
 	}
 
@@ -285,9 +337,11 @@ export class ChromiumRendererBridge implements RendererBridge {
 		job: string,
 		grant: string,
 		acceptedAt: string,
+		generation = 0,
 	): Promise<void> {
 		const renderer = this.jobs.get(job);
-		if (!renderer) throw new Error('renderer job is unavailable');
+		if (!renderer || renderer.generation !== generation)
+			throw new Error('renderer generation is unavailable');
 		const hash = createHash('sha256').update(grant).digest('base64url');
 		if (renderer.grantHash) {
 			if (renderer.grantHash !== hash)
@@ -327,9 +381,10 @@ export class ChromiumRendererBridge implements RendererBridge {
 				}),
 			]).finally(() => clearTimeout(timeout));
 		} catch (error) {
-			await this.stop(job);
+			await this.stop(job, generation);
 			await this.lifecycleHandler({
 				job,
+				generation,
 				type: 'failed',
 				reason: 'configuration_failed',
 			});
@@ -337,17 +392,34 @@ export class ChromiumRendererBridge implements RendererBridge {
 		}
 	}
 
-	async stop(job: string): Promise<void> {
+	async stop(job: string, generation?: number): Promise<void> {
 		const renderer = this.jobs.get(job);
-		if (!renderer) return;
-		this.jobs.delete(job);
-		renderer.rejectConfiguration?.(new Error('renderer stopped'));
-		await renderer.browser.close().catch(() => undefined);
+		if (
+			renderer &&
+			(generation === undefined || renderer.generation === generation)
+		) {
+			this.jobs.delete(job);
+			renderer.rejectConfiguration?.(new Error('renderer stopped'));
+			await renderer.browser.close().catch(() => undefined);
+		}
+		const pending = this.reservations.get(job);
+		if (
+			pending &&
+			(generation === undefined || pending.generation === generation)
+		) {
+			pending.cancelled = true;
+			await pending.browser?.close().catch(() => undefined);
+			await pending.settled;
+		}
 	}
 
 	async close(): Promise<void> {
 		this.available = false;
-		await Promise.all([...this.jobs.keys()].map((job) => this.stop(job)));
+		await Promise.all(
+			[...new Set([...this.jobs.keys(), ...this.reservations.keys()])].map(
+				(job) => this.stop(job),
+			),
+		);
 		if (!this.server) return;
 		await new Promise<void>((resolve, reject) =>
 			this.server?.close((error) => (error ? reject(error) : resolve())),
@@ -405,6 +477,7 @@ export class ChromiumRendererBridge implements RendererBridge {
 
 	private receive(
 		job: string,
+		generation: number,
 		value: unknown,
 		resolveReady: (jwk: PublicJwk) => void,
 		rejectReady: (error: Error) => void,
@@ -419,6 +492,7 @@ export class ChromiumRendererBridge implements RendererBridge {
 		}
 		if (!('job' in value) || value.job !== job || !('type' in value)) return;
 		const renderer = this.jobs.get(job);
+		if (!renderer || renderer.generation !== generation) return;
 		const type = rendererLifecycleType(value.type);
 		if (!type) return;
 		if (type === 'configured') renderer?.resolveConfiguration?.();
@@ -428,17 +502,22 @@ export class ChromiumRendererBridge implements RendererBridge {
 				: undefined;
 		void this.lifecycleHandler({
 			job,
+			generation,
 			type,
 			occurredAt: new Date().toISOString(),
 			...(reason ? { reason } : {}),
 		});
 	}
 
-	private async workerFailed(job: string, reason: string): Promise<void> {
+	private async workerFailed(
+		job: string,
+		generation: number,
+		reason: string,
+	): Promise<void> {
 		const renderer = this.jobs.get(job);
-		if (!renderer) return;
+		if (!renderer || renderer.generation !== generation) return;
 		renderer.rejectConfiguration?.(new Error(reason));
-		await this.lifecycleHandler({ job, type: 'failed', reason });
+		await this.lifecycleHandler({ job, generation, type: 'failed', reason });
 	}
 }
 
@@ -474,10 +553,14 @@ export const TEST_PUBLIC_JWK: PublicJwk = {
 
 export class FakeRendererBridge implements RendererBridge {
 	readonly productionReady = false;
-	readonly grants: Array<{ job: string; grant: string; acceptedAt: string }> =
-		[];
+	readonly grants: Array<{
+		job: string;
+		grant: string;
+		acceptedAt: string;
+		generation: number;
+	}> = [];
 	readonly stopped = new Set<string>();
-	private readonly workers = new Set<string>();
+	private readonly workers = new Map<string, number>();
 	private handler: (event: RendererLifecycleEvent) => Promise<void> =
 		async () => undefined;
 	hasWorker(job: string): boolean {
@@ -487,22 +570,37 @@ export class FakeRendererBridge implements RendererBridge {
 		this.handler = handler;
 	}
 	async emit(event: RendererLifecycleEvent): Promise<void> {
-		await this.handler(event);
+		const current = this.workers.get(event.job);
+		const generation = event.generation ?? current ?? 0;
+		if (
+			current !== undefined &&
+			current !== generation &&
+			event.type !== 'replacement_ready'
+		)
+			return;
+		if (event.type === 'replacement_ready')
+			this.workers.set(event.job, generation);
+		await this.handler({ ...event, generation });
 	}
 
-	async reserve(command: CommandClaims): Promise<PublicJwk> {
-		this.workers.add(command.job);
+	async reserve(command: CommandClaims, generation = 0): Promise<PublicJwk> {
+		this.workers.set(command.job, generation);
 		return TEST_PUBLIC_JWK;
 	}
 	async deliverGrant(
 		job: string,
 		grant: string,
 		acceptedAt: string,
+		generation: number,
 	): Promise<void> {
-		this.grants.push({ job, grant, acceptedAt });
-		void this.handler({ job, type: 'configured' });
+		if (this.workers.get(job) !== generation)
+			throw new Error('renderer generation is unavailable');
+		this.grants.push({ job, grant, acceptedAt, generation });
+		void this.handler({ job, generation, type: 'configured' });
 	}
-	async stop(job: string): Promise<void> {
+	async stop(job: string, generation?: number): Promise<void> {
+		if (generation !== undefined && this.workers.get(job) !== generation)
+			return;
 		this.stopped.add(job);
 		this.workers.delete(job);
 	}

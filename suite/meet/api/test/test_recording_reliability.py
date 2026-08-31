@@ -440,6 +440,24 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 end_reason="host_stop",
             )
 
+    def test_host_stop_reason_survives_conflicting_recorder_terminal_reason(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        content = b"artifact"
+        begin_upload(
+            recording.name,
+            event_sequence=recording.recorder_event_sequence + 1,
+            size=len(content),
+            sha256=hashlib.sha256(content).hexdigest(),
+            duration_ms=1000,
+            ended_at=_system_datetime_as_utc(now_datetime()).isoformat(),
+            end_reason="interruption_timeout",
+        )
+
+        recording.reload()
+        self.assertEqual(recording.end_reason, "host_stop")
+
     def test_reconciliation_bounds_stale_states_and_cleans_failed_uploads(self):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)

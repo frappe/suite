@@ -47,6 +47,7 @@ class TestRecorderClient(unittest.TestCase):
                 "job": "job",
                 "accepted_at": "2026-07-31T10:11:12.123Z",
                 "public_jwk": PUBLIC_JWK,
+                "endpoint_generation": 0,
                 "state": "reserved",
                 "event_sequence": 1,
             },
@@ -57,6 +58,7 @@ class TestRecorderClient(unittest.TestCase):
         self.assertEqual(outcome.outcome, "accepted")
         self.assertEqual(outcome.accepted_at.isoformat(), "2026-07-31T10:11:12.123000+00:00")
         self.assertEqual(outcome.event_sequence, 1)
+        self.assertEqual(outcome.endpoint_generation, 0)
         call = self.session.request.call_args
         token = call.kwargs["headers"]["Authorization"].removeprefix("Bearer ")
         claims = jwt.decode(
@@ -113,8 +115,10 @@ class TestRecorderClient(unittest.TestCase):
                 "job": "job",
                 "accepted_at": "2026-07-31T10:11:12.123Z",
                 "public_jwk": PUBLIC_JWK,
+                "endpoint_generation": 1,
                 "state": "interrupted",
                 "event_sequence": 6,
+                "replacement_ready_at": "2026-07-31T10:12:10.000Z",
                 "interruption": {
                     "id": "4cad3218-a956-4dec-a522-18f0dd3b75a2",
                     "interrupted_at": "2026-07-31T10:12:00.000Z",
@@ -131,6 +135,22 @@ class TestRecorderClient(unittest.TestCase):
         self.assertEqual(outcome.outcome, "accepted")
         self.assertIsNone(outcome.interruption["resumed_capture_started_at"])
         self.assertIsNone(outcome.interruption["recovered_at"])
+        self.assertEqual(outcome.endpoint_generation, 1)
+        self.assertEqual(outcome.replacement_ready_at.isoformat(), "2026-07-31T10:12:10+00:00")
+
+    def test_endpoint_generation_must_be_a_nonnegative_integer(self):
+        body = {
+            "status": "accepted",
+            "job": "job",
+            "accepted_at": "2026-07-31T10:11:12.123Z",
+            "public_jwk": PUBLIC_JWK,
+            "state": "reserved",
+            "event_sequence": 1,
+        }
+        for generation in (-1, True, "0", None):
+            with self.subTest(generation=generation):
+                self.session.request.return_value = response(202, {**body, "endpoint_generation": generation})
+                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
 
     def test_timeout_invalid_json_wrong_job_and_5xx_are_indeterminate(self):
         cases = [
@@ -174,13 +194,17 @@ class TestRecorderClient(unittest.TestCase):
 
     def test_grant_delivery_requires_explicit_success(self):
         self.session.request.return_value = response(200, {"status": "accepted"})
-        self.assertTrue(self.client.deliver_grant(**self.arguments, grant="token"))
+        self.assertTrue(self.client.deliver_grant(**self.arguments, grant="token", endpoint_generation=2))
         self.assertEqual(
             self.session.request.call_args.args[:2], ("POST", "http://recorder.test/v1/recordings/job/grant")
         )
+        self.assertEqual(
+            self.session.request.call_args.kwargs["json"],
+            {"grant": "token", "endpoint_generation": 2},
+        )
 
         self.session.request.return_value = response(500, {"status": "error"})
-        self.assertFalse(self.client.deliver_grant(**self.arguments, grant="token"))
+        self.assertFalse(self.client.deliver_grant(**self.arguments, grant="token", endpoint_generation=2))
 
     def test_stop_requires_exact_acknowledgement_and_sends_operation_id(self):
         self.session.request.return_value = response(

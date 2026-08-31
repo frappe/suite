@@ -65,11 +65,17 @@ export class JobManager {
 		private readonly onRecovered?: (job: JobRecord) => Promise<void>,
 		private readonly storage: StorageGuard = unrestrictedStorage,
 		private readonly onStartup?: (job: JobRecord) => Promise<void>,
+		private readonly onReplacementReady?: (job: JobRecord) => Promise<void>,
 	) {
 		this.bridge.onLifecycle(async (event) => {
 			if (event.type === 'room_empty') return;
+			if (event.type === 'replacement_ready') {
+				await this.recordReplacementReady(event);
+				return;
+			}
 			await this.recordLifecycle(
 				event.job,
+				event.generation,
 				event.type,
 				event.reason,
 				event.artifact,
@@ -96,6 +102,7 @@ export class JobManager {
 						: (outcome?.type ?? 'failed');
 				await this.recordLifecycle(
 					job.job,
+					job.endpoint_generation,
 					type,
 					'worker_missing_after_restart',
 					outcome?.artifact,
@@ -163,7 +170,7 @@ export class JobManager {
 				result = { status: 'rejected', reason: 'storage' };
 				return;
 			}
-			const publicJwk = await this.bridge.reserve(command);
+			const publicJwk = await this.bridge.reserve(command, 0);
 			const job: JobRecord = {
 				job: command.job,
 				site: command.site,
@@ -173,6 +180,7 @@ export class JobManager {
 				limits: command.limits,
 				accepted_at: new Date().toISOString(),
 				public_jwk: publicJwk,
+				endpoint_generation: 0,
 				state: 'reserved',
 				event_sequence: 1,
 				stop_operation_ids: [],
@@ -203,15 +211,24 @@ export class JobManager {
 			: undefined;
 	}
 
-	async grant(command: CommandClaims, grant: string): Promise<boolean> {
+	async grant(
+		command: CommandClaims,
+		grant: string,
+		generation: number,
+	): Promise<boolean> {
 		let acceptedAt: string | undefined;
 		await this.serial(async () => {
 			const job = this.query(command);
-			if (!job || !['reserved', 'configured'].includes(job.state)) return;
+			if (
+				!job ||
+				job.endpoint_generation !== generation ||
+				!['reserved', 'configured', 'interrupted'].includes(job.state)
+			)
+				return;
 			acceptedAt = job.accepted_at;
 		});
 		if (!acceptedAt) return false;
-		await this.bridge.deliverGrant(command.job, grant, acceptedAt);
+		await this.bridge.deliverGrant(command.job, grant, acceptedAt, generation);
 		return true;
 	}
 
@@ -232,7 +249,14 @@ export class JobManager {
 			});
 			invoke = true;
 		});
-		if (invoke) await this.bridge.stop(command.job);
+		if (invoke) {
+			const job = this.store.get(command.job);
+			await this.bridge.stop(
+				command.job,
+				job?.endpoint_generation,
+				'host_stop',
+			);
+		}
 		return found;
 	}
 
@@ -304,6 +328,7 @@ export class JobManager {
 
 	private async recordLifecycle(
 		job: string,
+		generation: number,
 		type:
 			| 'configured'
 			| 'proof_complete'
@@ -339,6 +364,7 @@ export class JobManager {
 		let healthDelivery: Promise<void> | undefined;
 		await this.serial(async () => {
 			const current = this.store.get(job);
+			if (current?.endpoint_generation !== generation) return;
 			if (!current || !ACTIVE_TRANSITIONS[current.state].includes(type)) return;
 			const recovered =
 				current.state === 'interrupted' && type === 'capture_ready';
@@ -362,6 +388,9 @@ export class JobManager {
 					record.interrupted_at = interruption.detected_at;
 					record.interruption_deadline = interruption.deadline;
 					record.omission_started_at = interruption.omission_started_at;
+					delete record.resumed_capture_started_at;
+					delete record.recovered_at;
+					delete record.replacement_ready_at;
 				}
 				if (recovered && recovery) {
 					record.resumed_capture_started_at = recovery.capture_started_at;
@@ -398,7 +427,7 @@ export class JobManager {
 				healthDelivery = this.scheduleHealth({ ...updated }, this.onStartup);
 		});
 		await healthDelivery;
-		if (cleanup) await this.bridge.stop(job);
+		if (cleanup) await this.bridge.stop(job, generation);
 		const terminal = this.store.get(job);
 		if (
 			terminal &&
@@ -407,5 +436,41 @@ export class JobManager {
 			)
 		)
 			this.scheduleTerminal(terminal);
+	}
+
+	private async recordReplacementReady(
+		event: import('./RendererBridge.js').RendererLifecycleEvent,
+	): Promise<void> {
+		if (
+			!event.publicJwk ||
+			!event.readyAt ||
+			!event.interruptionId ||
+			event.generation <= 0
+		)
+			throw new Error('replacement readiness metadata is unavailable');
+		const publicJwk = event.publicJwk;
+		const readyAt = event.readyAt;
+		let delivery: Promise<void> | undefined;
+		await this.serial(async () => {
+			const current = this.store.get(event.job);
+			if (
+				current?.state !== 'interrupted' ||
+				current.interruption_id !== event.interruptionId ||
+				event.generation <= current.endpoint_generation
+			)
+				throw new Error('stale renderer replacement');
+			await this.store.update((jobs) => {
+				const record = jobs[event.job];
+				if (!record) throw new Error('job disappeared');
+				record.endpoint_generation = event.generation;
+				record.public_jwk = publicJwk;
+				record.replacement_ready_at = readyAt;
+				record.event_sequence = (record.event_sequence ?? 1) + 1;
+			});
+			const updated = this.store.get(event.job);
+			if (updated && this.onReplacementReady)
+				delivery = this.scheduleHealth({ ...updated }, this.onReplacementReady);
+		});
+		await delivery;
 	}
 }

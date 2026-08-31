@@ -36,6 +36,48 @@ const command: CommandClaims = {
 };
 
 describe('ChromiumRendererBridge', () => {
+	it('cancels and awaits a Chromium launch during shutdown', async () => {
+		const assets = await mkdtemp(join(tmpdir(), 'renderer-assets-'));
+		await writeFile(join(assets, 'recorder.html'), '<!doctype html>');
+		let resolveLaunch!: (browser: Browser) => void;
+		const launch = vi.fn(
+			() =>
+				new Promise<Browser>((resolve) => {
+					resolveLaunch = resolve;
+				}),
+		);
+		const close = vi.fn(async () => undefined);
+		const browser = {
+			newPage: vi.fn(),
+			close,
+			on: vi.fn(),
+		} as unknown as Browser;
+		const bridge = new ChromiumRendererBridge(
+			{
+				executablePath: process.execPath,
+				assetDirectory: assets,
+				sfuOrigin: 'https://sfu.test',
+				sfuSocketPath: '/socket.io',
+				trustedCommandOrigin: 'https://site.test',
+				listenerPort: 0,
+				noSandbox: false,
+				reserveTimeoutMs: 1_000,
+				configureTimeoutMs: 1_000,
+			},
+			{ launch },
+		);
+		await bridge.initialize();
+		const reservation = bridge.reserve(command);
+		await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
+		const shutdown = bridge.close();
+
+		resolveLaunch(browser);
+		await expect(reservation).rejects.toThrow('cancelled');
+		await shutdown;
+		expect(close).toHaveBeenCalledOnce();
+		expect(bridge.hasWorker(command.job)).toBe(false);
+	});
+
 	it('reserves one isolated page, delivers trusted config, and stops idempotently', async () => {
 		const assets = await mkdtemp(join(tmpdir(), 'renderer-assets-'));
 		await writeFile(join(assets, 'recorder.html'), '<!doctype html>');
@@ -184,6 +226,7 @@ describe('ChromiumRendererBridge', () => {
 
 		expect(lifecycle).toHaveBeenCalledWith({
 			job: 'job-1',
+			generation: 0,
 			type: 'failed',
 			reason,
 		});

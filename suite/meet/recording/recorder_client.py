@@ -32,6 +32,8 @@ class RecorderOutcome:
     event_sequence: int | None = None
     milestones: dict[str, datetime] | None = None
     interruption: dict[str, Any] | None = None
+    endpoint_generation: int = 0
+    replacement_ready_at: datetime | None = None
 
 
 class RecorderClient:
@@ -84,10 +86,24 @@ class RecorderClient:
         }
 
     def deliver_grant(
-        self, *, room: str, recording: str, job: str, limits: dict[str, Any], grant: str
+        self,
+        *,
+        room: str,
+        recording: str,
+        job: str,
+        limits: dict[str, Any],
+        grant: str,
+        endpoint_generation: int,
     ) -> bool:
         outcome = self._raw_request(
-            "grant", "POST", f"/v1/recordings/{job}/grant", room, recording, job, limits, {"grant": grant}
+            "grant",
+            "POST",
+            f"/v1/recordings/{job}/grant",
+            room,
+            recording,
+            job,
+            limits,
+            {"grant": grant, "endpoint_generation": endpoint_generation},
         )
         if outcome is None:
             return False
@@ -115,10 +131,17 @@ class RecorderClient:
             "job",
             "accepted_at",
             "public_jwk",
+            "endpoint_generation",
             "state",
             "event_sequence",
         }
-        optional_keys = {"health_reason", "milestones", "artifact", "interruption"}
+        optional_keys = {
+            "health_reason",
+            "milestones",
+            "artifact",
+            "interruption",
+            "replacement_ready_at",
+        }
         if (
             response.status_code in (200, 202)
             and accepted_keys.issubset(body)
@@ -141,6 +164,9 @@ class RecorderClient:
                 body["state"] not in states
                 or not isinstance(body["event_sequence"], int)
                 or body["event_sequence"] < 1
+                or isinstance(body["endpoint_generation"], bool)
+                or not isinstance(body["endpoint_generation"], int)
+                or body["endpoint_generation"] < 0
                 or (
                     "health_reason" in body
                     and (not isinstance(body["health_reason"], str) or len(body["health_reason"]) > 256)
@@ -150,6 +176,9 @@ class RecorderClient:
             try:
                 accepted_at = _utc_datetime(body["accepted_at"])
                 public_jwk = normalize_public_jwk(body["public_jwk"])
+                replacement_ready_at = (
+                    _utc_datetime(body["replacement_ready_at"]) if "replacement_ready_at" in body else None
+                )
                 raw_milestones = body.get("milestones", {})
                 if not isinstance(raw_milestones, dict) or not set(raw_milestones).issubset(
                     {"configured", "proof_complete", "joined", "capture_started"}
@@ -181,11 +210,13 @@ class RecorderClient:
                 "accepted",
                 accepted_at=accepted_at,
                 public_jwk=public_jwk,
+                endpoint_generation=body["endpoint_generation"],
                 state=body["state"],
                 health_reason=body.get("health_reason"),
                 event_sequence=body["event_sequence"],
                 milestones=milestones,
                 interruption=interruption,
+                replacement_ready_at=replacement_ready_at,
             )
         if response.status_code in (409, 422, 429, 507) and set(body) == {"status", "job", "reason"}:
             reason = body["reason"]

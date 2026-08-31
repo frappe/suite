@@ -16,6 +16,7 @@ interface ReserveBody {
 
 interface GrantBody {
 	grant: string;
+	endpoint_generation: number;
 }
 
 interface StopBody {
@@ -40,10 +41,14 @@ function reserveBody(value: unknown): value is ReserveBody {
 
 function grantBody(value: unknown): value is GrantBody {
 	return (
-		exactBody(value, ['grant']) &&
+		exactBody(value, ['endpoint_generation', 'grant']) &&
 		'grant' in value &&
 		typeof value.grant === 'string' &&
-		value.grant.length > 0
+		value.grant.length > 0 &&
+		'endpoint_generation' in value &&
+		typeof value.endpoint_generation === 'number' &&
+		Number.isSafeInteger(value.endpoint_generation) &&
+		value.endpoint_generation >= 0
 	);
 }
 
@@ -76,11 +81,15 @@ function accepted(job: JobRecord) {
 		job: job.job,
 		accepted_at: job.accepted_at,
 		public_jwk: job.public_jwk,
+		endpoint_generation: job.endpoint_generation,
 		state: job.state,
 		event_sequence: job.event_sequence ?? 1,
 		...(Object.keys(milestones).length ? { milestones } : {}),
 		...(job.artifact ? { artifact: job.artifact } : {}),
 		...(job.health_reason ? { health_reason: job.health_reason } : {}),
+		...(job.replacement_ready_at
+			? { replacement_ready_at: job.replacement_ready_at }
+			: {}),
 		...(job.interruption_id
 			? {
 					interruption: {
@@ -239,7 +248,7 @@ export function createApp(
 						reason: 'invalid_job',
 					});
 				await auth.consume(claims);
-				if (!(await jobs.grant(claims, body.grant)))
+				if (!(await jobs.grant(claims, body.grant, body.endpoint_generation)))
 					return res.status(422).json({
 						status: 'rejected',
 						job: claims.job,

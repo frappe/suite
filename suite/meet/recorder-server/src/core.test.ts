@@ -228,6 +228,24 @@ describe('JobStore and JobManager', () => {
 		).toEqual(TEST_PUBLIC_JWK);
 	});
 
+	it('migrates version 1 ledgers written before endpoint generations', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const manager = new JobManager(store, new FakeRendererBridge(), 1);
+		await manager.reserve(baseClaims);
+		const ledger = JSON.parse(await readFile(path, 'utf8'));
+		delete ledger.jobs.job.endpoint_generation;
+		await writeFile(path, JSON.stringify(ledger), { mode: 0o600 });
+
+		const migrated = new JobStore(path);
+		await migrated.initialize();
+
+		expect(migrated.get('job')?.endpoint_generation).toBe(0);
+		expect(
+			JSON.parse(await readFile(path, 'utf8')).jobs.job.endpoint_generation,
+		).toBe(0);
+	});
+
 	it('persists consumed command nonces across restart through expiry skew', async () => {
 		const first = new JobStore(path);
 		await first.initialize();
@@ -510,6 +528,75 @@ describe('JobStore and JobManager', () => {
 			'2026-08-30T12:00:00.000Z',
 		);
 		expect(recovered).toHaveBeenCalledTimes(2);
+	});
+
+	it('persists a fresh replacement generation before callback and rejects stale grants and events', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const replacementReady = vi.fn(async () => undefined);
+		const manager = new JobManager(
+			store,
+			bridge,
+			1,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			replacementReady,
+		);
+		await manager.reserve(baseClaims);
+		for (const type of [
+			'configured',
+			'proof_complete',
+			'joined',
+			'capture_ready',
+		] as const)
+			await bridge.emit({ job: 'job', generation: 0, type });
+		const interruption = {
+			id: '11111111-1111-4111-8111-111111111111',
+			detected_at: '2026-08-30T12:00:00.000Z',
+			deadline: '2026-08-30T12:01:00.000Z',
+			omission_started_at: '2026-08-30T11:59:30.000Z',
+			reason: 'renderer:disconnected',
+		};
+		await bridge.emit({
+			job: 'job',
+			generation: 0,
+			type: 'interrupted',
+			interruption,
+		});
+		const publicJwk = {
+			...TEST_PUBLIC_JWK,
+			x: `b${TEST_PUBLIC_JWK.x.slice(1)}`,
+		};
+		await bridge.emit({
+			job: 'job',
+			generation: 1,
+			type: 'replacement_ready',
+			publicJwk,
+			readyAt: '2026-08-30T12:00:05.000Z',
+			interruptionId: interruption.id,
+		});
+
+		expect(replacementReady).toHaveBeenCalledWith(
+			expect.objectContaining({
+				state: 'interrupted',
+				endpoint_generation: 1,
+				public_jwk: publicJwk,
+				replacement_ready_at: '2026-08-30T12:00:05.000Z',
+			}),
+		);
+		expect(await manager.grant(baseClaims, 'stale', 0)).toBe(false);
+		expect(await manager.grant(baseClaims, 'fresh', 1)).toBe(true);
+		await bridge.emit({ job: 'job', generation: 0, type: 'capture_ready' });
+		expect(manager.query(baseClaims)).toMatchObject({
+			state: 'interrupted',
+			endpoint_generation: 1,
+			public_jwk: publicJwk,
+		});
 	});
 
 	it.each(['complete', 'partial', 'failed'] as const)(
@@ -845,9 +932,11 @@ describe('HTTP contract', () => {
 			public_jwk: typeof TEST_PUBLIC_JWK;
 			state: string;
 			event_sequence: number;
+			endpoint_generation: number;
 		} = await reserve.json();
 		expect(Object.keys(reserveBody).sort()).toEqual([
 			'accepted_at',
+			'endpoint_generation',
 			'event_sequence',
 			'job',
 			'public_jwk',
@@ -869,7 +958,7 @@ describe('HTTP contract', () => {
 			'/v1/recordings/job/grant',
 			authenticated(
 				'POST',
-				{ grant: 'grant-token' },
+				{ grant: 'grant-token', endpoint_generation: 0 },
 				token({ operation: 'grant' }),
 			),
 		);
@@ -895,6 +984,7 @@ describe('HTTP contract', () => {
 				job: 'job',
 				grant: 'grant-token',
 				acceptedAt: expect.any(String),
+				generation: 0,
 			},
 		]);
 	});

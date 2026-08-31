@@ -62,6 +62,8 @@ export interface JobRecord {
 	resumed_capture_started_at?: string;
 	recovered_at?: string;
 	public_jwk: PublicJwk;
+	endpoint_generation: number;
+	replacement_ready_at?: string;
 	state: JobState;
 	event_sequence?: number;
 	health_reason?: string;

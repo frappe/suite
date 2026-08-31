@@ -15,6 +15,7 @@ from suite.meet.api.recording import (
     recorder_failed,
     recorder_interrupted,
     recorder_recovered,
+    recorder_replacement_ready,
     recorder_stopped,
     recorder_upload_chunk,
     start,
@@ -142,6 +143,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
     def test_mutating_callbacks_are_post_only(self):
         for callback in (
             recorder_interrupted,
+            recorder_replacement_ready,
             recorder_recovered,
             recorder_stopped,
             recorder_upload_chunk,

@@ -73,7 +73,7 @@ def begin_upload(
         recording.ended_at = _callback_datetime(ended_at) if ended_at else current_utc
         if recording.ended_at > add_to_date(current_utc, minutes=5):
             frappe.throw(_("Recording end time is too far in the future"))
-        recording.end_reason = end_reason or recording.end_reason
+        recording.end_reason = recording.end_reason or end_reason
         recording.capture_gaps = json.dumps(gaps or [])
     elif recording.upload_size and (
         recording.upload_size != size

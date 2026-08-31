@@ -67,6 +67,7 @@ export class CaptureWorker {
 	private captureFailed = false;
 	private captureLaunchedAt?: string;
 	private limitTimer?: NodeJS.Timeout;
+	private interruptionTimer?: NodeJS.Timeout;
 	private healthyEpoch?: {
 		epoch: number;
 		resolve: (adoptedAt: string) => void;
@@ -280,33 +281,29 @@ export class CaptureWorker {
 		this.armEndLimit();
 	}
 
-	async rendererFailed(reason: string): Promise<Outcome> {
-		if (this.stopPromise) return this.stopPromise;
+	async rendererFailed(reason: string): Promise<void> {
+		if (this.stopPromise) return;
 		this.partial = true;
 		this.rendererUnavailable = true;
 		if (this.recoveryPromise)
 			this.healthyEpoch?.reject(new Error('renderer unavailable'));
-		if (!this.interruption) {
-			const detectedAt = this.now();
-			const interruption: CaptureInterruption = {
-				id: crypto.randomUUID(),
-				detected_at: new Date(detectedAt).toISOString(),
-				deadline: new Date(
-					detectedAt + this.options.recoveryTimeoutMs,
-				).toISOString(),
-				omission_started_at: new Date(detectedAt).toISOString(),
-				reason: `renderer:${reason}`,
-			};
-			this.interruption = interruption;
-			interruption.omission_started_at = await this.openGap(
-				`renderer:${reason}`,
-			);
-			this.options.onInterrupted?.(interruption);
-		}
-		const deadline = Date.parse(this.interruption.deadline);
+		await this.beginInterruption(`renderer:${reason}`);
 		await this.stopCaptureProcess();
-		await this.sleep(Math.max(0, deadline - this.now()));
-		return this.stop(true, 'renderer_recovery_timeout');
+	}
+
+	recoverRenderer(): void {
+		if (this.stopPromise || !this.interruption) return;
+		this.rendererUnavailable = false;
+		if (this.recoveryPromise) {
+			void this.recoveryPromise.then(
+				() => this.recoverRenderer(),
+				() => this.recoverRenderer(),
+			);
+			return;
+		}
+		this.recoveryPromise = this.recover().finally(() => {
+			this.recoveryPromise = undefined;
+		});
 	}
 
 	stop(forcePartial = false, reason?: string): Promise<Outcome> {
@@ -341,8 +338,11 @@ export class CaptureWorker {
 
 	private async performStop(reason?: string): Promise<Outcome> {
 		if (this.limitTimer) clearTimeout(this.limitTimer);
+		if (this.interruptionTimer) clearTimeout(this.interruptionTimer);
 		let outcome: Outcome = 'failed';
 		try {
+			if (reason === 'service_shutdown' && !this.interruption)
+				await this.openGap(reason);
 			await this.stopCaptureProcess();
 			outcome = (await this.makeFinalizer(this.manifest).finalize(
 				this.partial,
@@ -387,17 +387,8 @@ export class CaptureWorker {
 		this.ffmpeg = undefined;
 		await this.watcher?.stopAndAdoptFinal().catch(() => undefined);
 		this.watcher = undefined;
-		const deadline = this.now() + this.options.recoveryTimeoutMs;
-		const interruption: CaptureInterruption = {
-			id: crypto.randomUUID(),
-			detected_at: new Date(this.now()).toISOString(),
-			deadline: new Date(deadline).toISOString(),
-			omission_started_at: new Date(this.now()).toISOString(),
-			reason: 'ffmpeg_exited',
-		};
-		this.interruption = interruption;
-		interruption.omission_started_at = await this.openGap('ffmpeg_exited');
-		this.options.onInterrupted?.(interruption);
+		const interruption = await this.beginInterruption('ffmpeg_exited');
+		const deadline = Date.parse(interruption.deadline);
 		let backoff = 250;
 		while (
 			!this.stopPromise &&
@@ -417,17 +408,25 @@ export class CaptureWorker {
 				]);
 				if (this.rendererUnavailable || this.captureFailed)
 					throw new Error('capture unavailable');
+				if (this.now() > deadline || Date.parse(recoveredAt) > deadline)
+					throw new Error('recovery timeout');
 				const captureStartedAt = this.captureLaunchedAt;
 				if (!captureStartedAt)
 					throw new Error('capture launch time unavailable');
 				await this.closeGap(captureStartedAt);
-				if (this.rendererUnavailable || this.captureFailed)
+				if (
+					this.rendererUnavailable ||
+					this.captureFailed ||
+					this.now() > deadline
+				)
 					throw new Error('capture unavailable');
 				this.options.onRecovered?.({
 					id: interruption.id,
 					capture_started_at: captureStartedAt,
 					recovered_at: recoveredAt,
 				});
+				if (this.interruptionTimer) clearTimeout(this.interruptionTimer);
+				delete this.interruptionTimer;
 				this.interruption = undefined;
 				return;
 			} catch {
@@ -440,6 +439,30 @@ export class CaptureWorker {
 		}
 		if (!this.stopPromise && !this.rendererUnavailable)
 			this.requestStop(true, 'capture_recovery_timeout');
+	}
+
+	private async beginInterruption(
+		reason: string,
+	): Promise<CaptureInterruption> {
+		if (this.interruption) return this.interruption;
+		const detectedAt = this.now();
+		const interruption: CaptureInterruption = {
+			id: crypto.randomUUID(),
+			detected_at: new Date(detectedAt).toISOString(),
+			deadline: new Date(
+				detectedAt + this.options.recoveryTimeoutMs,
+			).toISOString(),
+			omission_started_at: new Date(detectedAt).toISOString(),
+			reason,
+		};
+		this.interruption = interruption;
+		interruption.omission_started_at = await this.openGap(reason);
+		this.interruptionTimer = setTimeout(
+			() => this.requestStop(true, 'capture_recovery_timeout'),
+			Math.max(0, Date.parse(interruption.deadline) - this.now()),
+		);
+		this.options.onInterrupted?.(interruption);
+		return interruption;
 	}
 
 	private async segmentAdopted(

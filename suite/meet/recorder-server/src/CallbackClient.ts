@@ -38,6 +38,16 @@ interface RecoveredRequest {
 	recovered_at: string;
 }
 
+interface ReplacementReadyRequest {
+	recording_id: string;
+	job: string;
+	event_sequence: number;
+	interruption_id: string;
+	endpoint_generation: number;
+	public_jwk: JobRecord['public_jwk'];
+	ready_at: string;
+}
+
 interface StartupProgressRequest {
 	recording_id: string;
 	job: string;
@@ -75,6 +85,7 @@ type CallbackRequest =
 	| StartupProgressRequest
 	| InterruptedRequest
 	| RecoveredRequest
+	| ReplacementReadyRequest
 	| FailedRequest
 	| StoppedRequest
 	| CompleteUploadRequest;
@@ -83,6 +94,7 @@ type CallbackMethod =
 	| 'recorder_startup_progress'
 	| 'recorder_interrupted'
 	| 'recorder_recovered'
+	| 'recorder_replacement_ready'
 	| 'recorder_failed'
 	| 'recorder_stopped'
 	| 'recorder_complete_upload';
@@ -91,6 +103,7 @@ type CallbackOperation =
 	| 'startup_progress'
 	| 'interrupted'
 	| 'recovered'
+	| 'replacement_ready'
 	| 'failed'
 	| 'stopped'
 	| 'upload_chunk'
@@ -206,6 +219,30 @@ export class CallbackClient {
 					interruption_id: job.interruption_id,
 					resumed_capture_started_at: job.resumed_capture_started_at,
 					recovered_at: job.recovered_at,
+				},
+				parseStatusResponse,
+			),
+		);
+	}
+
+	async replacementReady(job: JobRecord): Promise<void> {
+		const sequence = job.event_sequence ?? 2;
+		if (!job.interruption_id || !job.replacement_ready_at)
+			throw new Error('replacement metadata is unavailable');
+		await this.retryHealthCallback(() =>
+			this.json(
+				'recorder_replacement_ready',
+				job,
+				'replacement_ready',
+				String(sequence),
+				{
+					recording_id: job.recording,
+					job: job.job,
+					event_sequence: sequence,
+					interruption_id: job.interruption_id,
+					endpoint_generation: job.endpoint_generation,
+					public_jwk: job.public_jwk,
+					ready_at: job.replacement_ready_at,
 				},
 				parseStatusResponse,
 			),

@@ -183,6 +183,106 @@ describe('CallbackClient', () => {
 		});
 	});
 
+	it('publishes replacement readiness with the exact authenticated body and bounded retries', async () => {
+		const fetch = vi
+			.fn()
+			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
+			.mockResolvedValue(
+				new Response(JSON.stringify({ message: { status: 'Interrupted' } }), {
+					status: 200,
+				}),
+			);
+		vi.stubGlobal('fetch', fetch);
+		const publicJwk = {
+			kty: 'EC' as const,
+			crv: 'P-256' as const,
+			x: 'axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY',
+			y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU',
+		};
+		const job = {
+			job: 'job',
+			site: 'site.test',
+			origin: 'https://site.test',
+			room: 'room',
+			recording: 'recording',
+			state: 'interrupted',
+			event_sequence: 7,
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			endpoint_generation: 2,
+			public_jwk: publicJwk,
+			replacement_ready_at: '2026-08-30T12:00:10.000Z',
+		} as JobRecord;
+
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+			sleep: async () => undefined,
+		}).replacementReady(job);
+
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(String(fetch.mock.calls[1]?.[0])).toContain(
+			'recorder_replacement_ready',
+		);
+		const body = String(fetch.mock.calls[1]?.[1]?.body);
+		expect(JSON.parse(body)).toEqual({
+			recording_id: 'recording',
+			job: 'job',
+			event_sequence: 7,
+			interruption_id: '11111111-1111-4111-8111-111111111111',
+			endpoint_generation: 2,
+			public_jwk: publicJwk,
+			ready_at: '2026-08-30T12:00:10.000Z',
+		});
+		const authorization = new Headers(fetch.mock.calls[1]?.[1]?.headers).get(
+			'X-Meet-Recorder-Authorization',
+		);
+		const claims = jwt.verify(
+			String(authorization).replace('Bearer ', ''),
+			's'.repeat(32),
+		) as jwt.JwtPayload;
+		expect(claims).toMatchObject({
+			operation: 'replacement_ready',
+			operation_id: '7',
+			body_sha256: createHash('sha256').update(body).digest('hex'),
+		});
+	});
+
+	it('propagates final replacement callback failure', async () => {
+		const fetch = vi.fn(
+			async () => new Response('unavailable', { status: 503 }),
+		);
+		vi.stubGlobal('fetch', fetch);
+		await expect(
+			new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+				sleep: async () => undefined,
+			}).replacementReady({
+				job: 'job',
+				site: 'site.test',
+				origin: 'https://site.test',
+				room: 'room',
+				recording: 'recording',
+				state: 'interrupted',
+				event_sequence: 7,
+				interruption_id: '11111111-1111-4111-8111-111111111111',
+				endpoint_generation: 2,
+				public_jwk: {
+					kty: 'EC',
+					crv: 'P-256',
+					x: 'axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY',
+					y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU',
+				},
+				replacement_ready_at: '2026-08-30T12:00:10.000Z',
+			} as JobRecord),
+		).rejects.toThrow('HTTP 503');
+		expect(fetch).toHaveBeenCalledTimes(5);
+	});
+
 	it('publishes later interruption cycles with their persisted sequence', async () => {
 		const fetch = vi.fn(
 			async () =>

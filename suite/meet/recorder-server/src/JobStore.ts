@@ -26,6 +26,31 @@ function nonempty(value: unknown): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= 512;
 }
 
+function migrateLegacyLedger(value: unknown): boolean {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const ledger = value as { version?: unknown; jobs?: unknown };
+	if (
+		ledger.version !== 1 ||
+		!ledger.jobs ||
+		typeof ledger.jobs !== 'object' ||
+		Array.isArray(ledger.jobs)
+	)
+		return false;
+	let migrated = false;
+	for (const job of Object.values(ledger.jobs)) {
+		if (
+			job &&
+			typeof job === 'object' &&
+			!Array.isArray(job) &&
+			!('endpoint_generation' in job)
+		) {
+			Object.assign(job, { endpoint_generation: 0 });
+			migrated = true;
+		}
+	}
+	return migrated;
+}
+
 function validLedger(value: unknown): value is Ledger {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 	const ledger = value as Partial<Ledger>;
@@ -61,6 +86,7 @@ function validLedger(value: unknown): value is Ledger {
 		if (!job || typeof job !== 'object' || job.job !== id) return false;
 		const keys = [
 			'accepted_at',
+			'endpoint_generation',
 			'job',
 			'limits',
 			'origin',
@@ -85,6 +111,9 @@ function validLedger(value: unknown): value is Ledger {
 				? []
 				: ['resumed_capture_started_at']),
 			...(job.recovered_at === undefined ? [] : ['recovered_at']),
+			...(job.replacement_ready_at === undefined
+				? []
+				: ['replacement_ready_at']),
 			...(job.event_sequence === undefined ? [] : ['event_sequence']),
 			...(job.terminal_at === undefined ? [] : ['terminal_at']),
 			...(job.callback_completed_at === undefined
@@ -107,6 +136,8 @@ function validLedger(value: unknown): value is Ledger {
 			(job.event_sequence === undefined ||
 				(Number.isSafeInteger(job.event_sequence) &&
 					job.event_sequence >= 1)) &&
+			Number.isSafeInteger(job.endpoint_generation) &&
+			job.endpoint_generation >= 0 &&
 			validUtcTimestamp(job.accepted_at) &&
 			(job.configured_at === undefined ||
 				validUtcTimestamp(job.configured_at)) &&
@@ -125,6 +156,8 @@ function validLedger(value: unknown): value is Ledger {
 			(job.resumed_capture_started_at === undefined ||
 				validUtcTimestamp(job.resumed_capture_started_at)) &&
 			(job.recovered_at === undefined || validUtcTimestamp(job.recovered_at)) &&
+			(job.replacement_ready_at === undefined ||
+				validUtcTimestamp(job.replacement_ready_at)) &&
 			[
 				'reserved',
 				'configured',
@@ -177,8 +210,10 @@ export class JobStore {
 			await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
 			try {
 				const parsed: unknown = JSON.parse(await readFile(this.path, 'utf8'));
+				const migrated = migrateLegacyLedger(parsed);
 				if (!validLedger(parsed)) throw new Error('invalid ledger schema');
 				this.ledger = { ...parsed, consumed_jtis: parsed.consumed_jtis ?? {} };
+				if (migrated) await this.persist(this.ledger);
 				await chmod(this.path, 0o600);
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;

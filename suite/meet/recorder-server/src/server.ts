@@ -81,6 +81,17 @@ async function main(): Promise<void> {
 				throw error;
 			}
 		},
+		async (job) => {
+			try {
+				await callbacks.replacementReady(job);
+			} catch (error) {
+				logger.error({
+					event: 'replacement_ready_callback_failed',
+					reason: error instanceof Error ? error.message : 'callback_failed',
+				});
+				throw error;
+			}
+		},
 	);
 	await jobs.initialize();
 	const auth = new AuthManager(

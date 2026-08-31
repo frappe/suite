@@ -20,6 +20,12 @@ WRITE_ONCE_FIELDS = (
     "grant_expires_at",
     "stop_operation_id",
 )
+ENDPOINT_WRITE_ONCE_FIELDS = (
+    "recorder_key_thumbprint",
+    "grant_jti",
+    "grant_issued_at",
+    "grant_expires_at",
+)
 ALLOWED_TRANSITIONS = {
     "Pending": {"Recording", "Failed"},
     "Starting": {"Recording", "Stopping", "Failed", "Cancelled"},
@@ -52,20 +58,50 @@ class MeetRecording(Document):
             frappe.throw(_("Recording identity cannot change"))
         if any(self.has_value_changed(fieldname) for fieldname in IMMUTABLE_CONFIGURATION_FIELDS):
             frappe.throw(_("Recording configuration cannot change"))
+        endpoint_rotated = (
+            previous.status == "Interrupted"
+            and self.status == "Interrupted"
+            and (
+                cint(self.endpoint_generation) == cint(previous.endpoint_generation) + 1
+                or (
+                    getattr(self.flags, "replacement_reconciliation", False)
+                    and cint(self.endpoint_generation) > cint(previous.endpoint_generation)
+                )
+            )
+        )
+        new_interruption = previous.status == "Recording" and self.status == "Interrupted"
+        if self.has_value_changed("endpoint_generation") and not endpoint_rotated:
+            frappe.throw(_("Recorder Endpoint generation can advance only during an interruption"))
+        if any(
+            self.has_value_changed(fieldname)
+            for fieldname in ("replacement_ready_at", "replacement_event_sequence")
+        ) and not (endpoint_rotated or new_interruption):
+            frappe.throw(_("Replacement readiness can change only with the Recorder Endpoint generation"))
         if self.has_value_changed("max_ends_at") and not (
             previous.status == "Starting" and self.status == "Recording"
         ):
             frappe.throw(_("Recording maximum end can change only when capture starts"))
-        if previous.recorder_public_jwk and frappe.parse_json(self.recorder_public_jwk) != frappe.parse_json(
+        if (
             previous.recorder_public_jwk
+            and frappe.parse_json(self.recorder_public_jwk) != frappe.parse_json(previous.recorder_public_jwk)
+            and not endpoint_rotated
         ):
             frappe.throw(_("Recording operation identifiers cannot change"))
         if any(
             previous.get(fieldname) and self.get(fieldname) != previous.get(fieldname)
             for fieldname in WRITE_ONCE_FIELDS
+            if fieldname not in ENDPOINT_WRITE_ONCE_FIELDS
         ):
             frappe.throw(_("Recording operation identifiers cannot change"))
-        if cint(previous.grant_delivered) and not cint(self.grant_delivered):
+        if (
+            any(
+                previous.get(fieldname) and self.get(fieldname) != previous.get(fieldname)
+                for fieldname in ENDPOINT_WRITE_ONCE_FIELDS
+            )
+            and not endpoint_rotated
+        ):
+            frappe.throw(_("Recording operation identifiers cannot change"))
+        if cint(previous.grant_delivered) and not cint(self.grant_delivered) and not endpoint_rotated:
             frappe.throw(_("Grant delivery acknowledgement cannot be cleared"))
 
     def validate_transition(self):
@@ -108,6 +144,8 @@ class MeetRecording(Document):
             frappe.throw(_("Recorder event sequence cannot decrease"))
 
     def validate_state(self):
+        if cint(self.endpoint_generation) < 0:
+            frappe.throw(_("Recorder Endpoint generation cannot be negative"))
         artifact_fields = (self.artifact, self.artifact_size, self.artifact_duration, self.artifact_sha256)
         capture_gaps = frappe.parse_json(self.capture_gaps) or []
         if not isinstance(capture_gaps, list):

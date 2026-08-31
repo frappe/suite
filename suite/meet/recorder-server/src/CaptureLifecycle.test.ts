@@ -286,6 +286,39 @@ describe('capture lifecycle', () => {
 		expect(worker.recoverStopped).toHaveBeenCalledOnce();
 	});
 
+	it('marks service shutdown as a partial non-host stop', async () => {
+		const renderer = new FakeRendererBridge();
+		const stop = vi.fn(async () => 'partial' as const);
+		const worker = {
+			env: {},
+			initialize: vi.fn(async () => undefined),
+			startCapture: vi.fn(async () => undefined),
+			rendererFailed: vi.fn(async () => undefined),
+			recoverRenderer: vi.fn(),
+			stop,
+			recoverStopped: vi.fn(async () => 'partial' as const),
+			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
+		};
+		const manager = new CaptureWorkerManager(
+			renderer,
+			{ ...options('/tmp'), maxConcurrent: 1 },
+			() => worker,
+		);
+		const lifecycle = vi.fn(async () => undefined);
+		manager.onLifecycle(lifecycle);
+		await manager.reserve(command('one'));
+
+		await manager.close();
+
+		expect(stop).toHaveBeenCalledWith(true, 'service_shutdown');
+		expect(lifecycle).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'partial',
+				reason: 'service_shutdown',
+			}),
+		);
+	});
+
 	it('stops capture when the renderer reports a human-empty room', async () => {
 		const renderer = new FakeRendererBridge();
 		const stop = vi.fn(async () => 'complete' as const);
@@ -359,18 +392,146 @@ describe('capture lifecycle', () => {
 		expect(manager.hasWorker('one')).toBe(false);
 	});
 
+	it('retries fresh replacement generations under one interruption and recovers only through the worker', async () => {
+		const renderer = new FakeRendererBridge();
+		const originalReserve = renderer.reserve.bind(renderer);
+		const reserve = vi
+			.spyOn(renderer, 'reserve')
+			.mockImplementation(async (claimedCommand, generation = 0) => {
+				await originalReserve(claimedCommand, generation);
+				return {
+					...TEST_PUBLIC_JWK,
+					x: `${String.fromCharCode(97 + generation)}${TEST_PUBLIC_JWK.x.slice(1)}`,
+				};
+			});
+		let workerOptions: CaptureWorkerOptions | undefined;
+		let interrupted = false;
+		const recoverRenderer = vi.fn();
+		const worker = {
+			env: {},
+			initialize: vi.fn(async () => undefined),
+			startCapture: vi.fn(async () => undefined),
+			rendererFailed: vi.fn(async () => {
+				if (interrupted) return;
+				interrupted = true;
+				workerOptions?.onInterrupted?.({
+					id: '11111111-1111-4111-8111-111111111111',
+					detected_at: new Date().toISOString(),
+					deadline: new Date(Date.now() + 60_000).toISOString(),
+					omission_started_at: new Date().toISOString(),
+					reason: 'renderer:disconnected',
+				});
+			}),
+			recoverRenderer,
+			stop: vi.fn(async () => 'partial' as const),
+			recoverStopped: vi.fn(async () => 'partial' as const),
+			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
+		};
+		const manager = new CaptureWorkerManager(
+			renderer,
+			{ ...options('/tmp'), maxConcurrent: 1 },
+			(_job, createdOptions) => {
+				workerOptions = createdOptions;
+				return worker;
+			},
+		);
+		const replacementEvents: Array<{
+			generation: number;
+			interruptionId?: string;
+			publicJwk?: typeof TEST_PUBLIC_JWK;
+		}> = [];
+		manager.onLifecycle(async (event) => {
+			if (event.type !== 'replacement_ready') return;
+			replacementEvents.push(event);
+			if (event.generation === 1) throw new Error('callback unavailable');
+		});
+		await manager.reserve(command('one'));
+		await renderer.emit({ job: 'one', generation: 0, type: 'capture_ready' });
+		await renderer.emit({
+			job: 'one',
+			generation: 0,
+			type: 'failed',
+			reason: 'disconnected',
+		});
+
+		await vi.waitFor(() => expect(replacementEvents).toHaveLength(2));
+		expect(replacementEvents).toEqual([
+			expect.objectContaining({
+				generation: 1,
+				interruptionId: '11111111-1111-4111-8111-111111111111',
+				publicJwk: expect.objectContaining({
+					x: `b${TEST_PUBLIC_JWK.x.slice(1)}`,
+				}),
+			}),
+			expect.objectContaining({
+				generation: 2,
+				interruptionId: '11111111-1111-4111-8111-111111111111',
+				publicJwk: expect.objectContaining({
+					x: `c${TEST_PUBLIC_JWK.x.slice(1)}`,
+				}),
+			}),
+		]);
+		expect(reserve.mock.calls.map((call) => call[1])).toEqual([0, 1, 2]);
+		await renderer.emit({ job: 'one', generation: 1, type: 'capture_ready' });
+		expect(recoverRenderer).not.toHaveBeenCalled();
+		await renderer.emit({ job: 'one', generation: 2, type: 'configured' });
+		await renderer.emit({ job: 'one', generation: 2, type: 'capture_ready' });
+		expect(recoverRenderer).toHaveBeenCalledOnce();
+		await manager.stop('one');
+	});
+
+	it('does not make host stop wait for a replacement callback or deadline', async () => {
+		const renderer = new FakeRendererBridge();
+		let workerOptions: CaptureWorkerOptions | undefined;
+		const stop = vi.fn(async () => 'partial' as const);
+		const worker = {
+			env: {},
+			initialize: vi.fn(async () => undefined),
+			startCapture: vi.fn(async () => undefined),
+			rendererFailed: vi.fn(async () => {
+				workerOptions?.onInterrupted?.({
+					id: '11111111-1111-4111-8111-111111111111',
+					detected_at: new Date().toISOString(),
+					deadline: new Date(Date.now() + 60_000).toISOString(),
+					omission_started_at: new Date().toISOString(),
+					reason: 'renderer:disconnected',
+				});
+			}),
+			recoverRenderer: vi.fn(),
+			stop,
+			recoverStopped: vi.fn(async () => 'partial' as const),
+			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
+		};
+		const manager = new CaptureWorkerManager(
+			renderer,
+			{ ...options('/tmp'), maxConcurrent: 1 },
+			(_job, createdOptions) => {
+				workerOptions = createdOptions;
+				return worker;
+			},
+		);
+		manager.onLifecycle(async (event) => {
+			if (event.type === 'replacement_ready')
+				await new Promise(() => undefined);
+		});
+		await manager.reserve(command('one'));
+		await renderer.emit({ job: 'one', generation: 0, type: 'capture_ready' });
+		await renderer.emit({ job: 'one', generation: 0, type: 'failed' });
+		await vi.waitFor(() => expect(renderer.hasWorker('one')).toBe(true));
+
+		await expect(manager.stop('one', 0, 'host_stop')).resolves.toBeUndefined();
+		expect(stop).toHaveBeenCalledWith(false, 'host_stop');
+		expect(manager.hasWorker('one')).toBe(false);
+	});
+
 	it('publishes interruption before waiting for terminal recovery timeout', async () => {
 		const renderer = new FakeRendererBridge();
-		let finishRecovery!: (outcome: 'partial') => void;
-		const recovery = new Promise<'partial'>((resolve) => {
-			finishRecovery = resolve;
-		});
 		let workerOptions: CaptureWorkerOptions | undefined;
 		const worker = {
 			env: {},
 			initialize: vi.fn(async () => undefined),
 			startCapture: vi.fn(async () => undefined),
-			rendererFailed: vi.fn((reason: string) => {
+			rendererFailed: vi.fn(async (reason: string) => {
 				workerOptions?.onInterrupted?.({
 					id: '4cad3218-a956-4dec-a522-18f0dd3b75a2',
 					detected_at: '2026-08-30T12:00:30.000Z',
@@ -378,8 +539,8 @@ describe('capture lifecycle', () => {
 					omission_started_at: '2026-08-30T12:00:00.000Z',
 					reason: `renderer:${reason}`,
 				});
-				return recovery;
 			}),
+			recoverRenderer: vi.fn(),
 			stop: vi.fn(async () => 'complete' as const),
 			recoverStopped: vi.fn(async () => 'complete' as const),
 			captureResult: vi.fn(() => ({ artifact: undefined, gaps: [] })),
@@ -395,6 +556,7 @@ describe('capture lifecycle', () => {
 		const lifecycle = vi.fn(async () => undefined);
 		manager.onLifecycle(lifecycle);
 		await manager.reserve(command('one'));
+		await renderer.emit({ job: 'one', generation: 0, type: 'capture_ready' });
 
 		const interrupted = renderer.emit({
 			job: 'one',
@@ -404,6 +566,7 @@ describe('capture lifecycle', () => {
 		await vi.waitFor(() =>
 			expect(lifecycle).toHaveBeenCalledWith({
 				job: 'one',
+				generation: 0,
 				type: 'interrupted',
 				reason: 'renderer:connection_lost',
 				interruption: {
@@ -417,7 +580,6 @@ describe('capture lifecycle', () => {
 		);
 		expect(worker.rendererFailed).toHaveBeenCalledWith('connection_lost');
 
-		finishRecovery('partial');
 		await interrupted;
 	});
 });
