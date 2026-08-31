@@ -26,7 +26,7 @@ def execute():
             "publication_key",
         ],
     ):
-        accepted_at = recording.metadata_accepted_at or migration_time
+        accepted_at = recording.metadata_accepted_at or recording.modified or migration_time
         upload_complete = (
             recording.upload_id
             and cint(recording.upload_size) > 0
