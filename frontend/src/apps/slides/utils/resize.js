@@ -5,12 +5,13 @@ const MIN_SIZE = {
 	shape: { width: 10, height: 16 },
 	image: { width: 20, height: 20 },
 	video: { width: 20, height: 20 },
+	youtube: { width: 20, height: 20 },
 	default: { width: 10, height: 16 },
 }
 
 export const getMinSizeForElement = (type) => MIN_SIZE[type] ?? MIN_SIZE.default
 
-export const isAspectLocked = (type) => type === 'image' || type === 'video'
+export const isAspectLocked = (type) => ['image', 'video', 'youtube'].includes(type)
 
 // 2d vector helpers, all working on { x, y } points
 const addVectors = (a, b) => ({ x: a.x + b.x, y: a.y + b.y })

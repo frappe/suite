@@ -19,6 +19,8 @@ import { getMinSizeForElement } from '../utils/resize'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
 import { getAttachmentUrl } from '../utils/mediaUploads'
 import { guessTextColorFromBackground, guessShapeColorsFromBackground } from '../utils/color'
+import { defaultBorderColor, defaultShadowColor } from '../utils/constants'
+import { getYoutubeVideoId } from '../utils/youtube'
 import { presentationId } from './presentation'
 import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
 import { commandHistory } from './historyMeta'
@@ -459,6 +461,57 @@ const addTableElement = async (rows = 3, cols = 3) => {
 			commands,
 		}),
 	)
+}
+
+// returns false for an unrecognised URL so the caller can show an inline error
+const addYoutubeElement = (url) => {
+	const videoId = getYoutubeVideoId(url)
+	if (!videoId) return false
+
+	const width = 480
+	const height = width * (9 / 16)
+	const position = getLeftTopForCenteredElement(width, height)
+
+	const element = {
+		id: generateUniqueId(),
+		zIndex: currentSlide.value.elements.length + 1,
+		left: position.left,
+		top: position.top,
+		width,
+		height,
+		opacity: 100,
+		type: 'youtube',
+		videoId,
+		borderStyle: 'none',
+		borderWidth: 0,
+		borderRadius: 0,
+		borderColor: defaultBorderColor,
+		shadowColor: defaultShadowColor,
+		shadowOpacity: 100,
+		shadowBlur: 0,
+		shadowOffset: 0,
+		shadowAngle: 45,
+	}
+
+	const refCommands = getCommandsToUpdateElementRefId(element) || []
+
+	const commands = [
+		addElementCommand({
+			slideId: currentSlide.value.clientId,
+			element: element,
+		}),
+		...refCommands,
+	]
+
+	commandHistory.execute(
+		batchCommand({
+			slideId: currentSlide.value.clientId,
+			elementIds: [element.id],
+			commands,
+		}),
+	)
+
+	return true
 }
 
 // createResource hands back the last poster it saved when a request fails, which
@@ -1442,6 +1495,7 @@ export {
 	addMediaElement,
 	addShapeElement,
 	addTableElement,
+	addYoutubeElement,
 	duplicateElements,
 	deleteElements,
 	hasBoundConnector,

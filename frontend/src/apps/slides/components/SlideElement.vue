@@ -16,6 +16,7 @@ import { computed } from 'vue'
 import TextElement from '@/apps/slides/components/TextElement.vue'
 import ImageElement from '@/apps/slides/components/ImageElement.vue'
 import VideoElement from '@/apps/slides/components/VideoElement.vue'
+import YoutubeElement from '@/apps/slides/components/YoutubeElement.vue'
 import ShapeElement from '@/apps/slides/components/ShapeElement.vue'
 import TableElement from '@/apps/slides/components/TableElement.vue'
 
@@ -141,6 +142,8 @@ const getDynamicComponent = (type) => {
 			return ImageElement
 		case 'video':
 			return VideoElement
+		case 'youtube':
+			return YoutubeElement
 		case 'shape':
 			return ShapeElement
 		case 'table':

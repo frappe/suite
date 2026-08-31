@@ -47,11 +47,11 @@
 					<hr class="border-t" />
 					<PlaybackSection />
 				</template>
-				<template v-if="['image', 'video'].includes(activeElement?.type)">
+				<template v-if="['image', 'video', 'youtube'].includes(activeElement?.type)">
 					<hr class="border-t" />
 					<BorderSection :key="activeElement?.id" />
 				</template>
-				<template v-if="['image', 'video', 'shape'].includes(activeElement?.type)">
+				<template v-if="['image', 'video', 'youtube', 'shape'].includes(activeElement?.type)">
 					<hr class="border-t" />
 					<ShadowSection :key="activeElement?.id" />
 				</template>
@@ -109,6 +109,7 @@ const selectionLabel = computed(() => {
 	const count = activeElementIds.value.length
 	if (count > 1) return `${count} elements`
 	const type = activeElement.value?.type
+	if (type === 'youtube') return 'YouTube'
 	return type ? type[0].toUpperCase() + type.slice(1) : ''
 })
 

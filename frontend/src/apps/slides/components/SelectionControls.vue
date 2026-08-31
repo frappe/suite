@@ -52,7 +52,7 @@ const { currentResizer, startResize } = inject('resizer', {})
 const { isHovered, isRounding } = inject('cornerRadius', {})
 
 const showRotateHandle = computed(() => {
-	return !['line', 'text', 'table', 'video'].includes(props.elementType)
+	return !['line', 'text', 'table', 'video', 'youtube'].includes(props.elementType)
 })
 
 const isResizeHandleVisible = (resizer) => {
@@ -73,7 +73,7 @@ const resizeHandles = computed(() => {
 			'bottom-left',
 			'bottom-right',
 		]
-	} else if (['image', 'video'].includes(props.elementType)) {
+	} else if (['image', 'video', 'youtube'].includes(props.elementType)) {
 		directions = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 	} else if (props.elementType === 'line') {
 		directions = ['line-left', 'line-right']
@@ -122,7 +122,7 @@ const isEndBound = (direction) => {
 
 const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
 
-const ROUNDABLE = ['rectangle', 'image', 'video']
+const ROUNDABLE = ['rectangle', 'image', 'video', 'youtube']
 
 const cornerHandles = computed(() => {
 	if (!ROUNDABLE.includes(props.elementType) || currentResizer.value) return []

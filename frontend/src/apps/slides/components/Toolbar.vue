@@ -15,6 +15,8 @@
 			</div>
 		</Tooltip>
 
+		<YoutubeDropdown />
+
 		<ToolDropdown tooltip="Shapes" :icon="Shapes" :options="shapeTools" />
 
 		<ToolDropdown tooltip="Lines" :icon="Polyline" :options="lineTools" />
@@ -43,6 +45,7 @@ import { allowedImageFileTypes } from '@/apps/slides/utils/constants'
 import ToolDropdown from '@/apps/slides/components/ToolDropdown.vue'
 import Polyline from '@/apps/slides/icons/Polyline.vue'
 import TableDropdown from '@/apps/slides/components/TableDropdown.vue'
+import YoutubeDropdown from '@/apps/slides/components/YoutubeDropdown.vue'
 
 import { handleScrollBarWheelEvent } from '@/apps/slides/utils/helpers'
 import { shapeTools, lineTools } from '@/apps/slides/utils/toolbarTools'
