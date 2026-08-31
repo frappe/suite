@@ -145,6 +145,9 @@ const eventParams = computed(() => {
 		organizer: event.organizer,
 		start: startsAt.value.format('YYYY-MM-DD[T]HH:mm:ss'),
 		duration: duration.value,
+		// Without this the server sees a timed midnight event and applies the
+		// wrong default alert (10 mins before instead of 9am day-of).
+		show_without_time: event.isAllDay,
 	}
 
 	if (event.title) params.title = event.title
