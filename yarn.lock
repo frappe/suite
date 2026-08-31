@@ -1797,6 +1797,11 @@
   dependencies:
     "@swc/helpers" "^0.5.0"
 
+"@ironcalc/wasm@0.8.4":
+  version "0.8.4"
+  resolved "https://registry.yarnpkg.com/@ironcalc/wasm/-/wasm-0.8.4.tgz#575d779a810493986c9187e5415341fdedb576ae"
+  integrity sha512-kdOr3nzb170Wrd2S371QEuCRC3q1EoBdu9CCOU06E3L2dr3cswOuSJmlJM4KHumqFaWEpWb2kiBfOz/szgZ/3Q==
+
 "@isaacs/cliui@^9.0.0":
   version "9.0.0"
   resolved "https://registry.yarnpkg.com/@isaacs/cliui/-/cliui-9.0.0.tgz#4d0a3f127058043bf2e7ee169eaf30ed901302f3"
