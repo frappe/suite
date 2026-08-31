@@ -39,8 +39,9 @@ def execute():
                 "finalization_deadline": recording.finalization_deadline
                 or add_to_date(accepted_at, hours=24),
                 "publication_key": recording.publication_key or f"meet-recording-{recording.name}",
-                "finalization_stage": recording.finalization_stage
-                or ("Pending" if upload_complete else "Awaiting Upload"),
+                "finalization_stage": (
+                    "Pending" if upload_complete else recording.finalization_stage or "Awaiting Upload"
+                ),
                 "upload_completed_at": recording.upload_completed_at
                 or (recording.modified if upload_complete else None),
                 "finalization_next_retry_at": recording.finalization_next_retry_at

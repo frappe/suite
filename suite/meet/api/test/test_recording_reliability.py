@@ -553,7 +553,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 "Meet Recording",
                 recording.name,
                 {
-                    "finalization_stage": "",
+                    "finalization_stage": "Awaiting Upload",
                     "metadata_accepted_at": None,
                     "upload_completed_at": None,
                     "finalization_deadline": None,
