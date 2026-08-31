@@ -567,14 +567,17 @@ def deliver_recording_notification(recording_name: str):
                     "from_user": "Administrator",
                 }
             ).insert(ignore_permissions=True)
-        frappe.sendmail(
-            recipients=[recording.room_owner],
-            subject=subject,
-            message=subject,
-            reference_doctype="Meet Recording",
-            reference_name=recording.name,
-            now=False,
-        )
+        message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
+        if not frappe.db.exists("Email Queue", {"message_id": message_id}):
+            frappe.sendmail(
+                recipients=[recording.room_owner],
+                subject=subject,
+                message=subject,
+                reference_doctype="Meet Recording",
+                reference_name=recording.name,
+                message_id=message_id,
+                now=False,
+            )
         recording = _locked_recording(recording_name)
         recording.notification_pending = 0
         recording.notification_next_retry_at = None

@@ -65,6 +65,7 @@ suite.meet.patches.migrate_meeting_fields_to_table_multiselect
 suite.meet.patches.switch_meet_user_to_suite_user
 suite.meet.patches.migrate_pending_recording_startups
 suite.meet.patches.backfill_recording_storage_reservations
+suite.meet.patches.backfill_recording_finalization
 # --- mail ---
 suite.mail.patches.generate_ssh_keypair_for_cluster
 suite.mail.patches.create_push_subscriptions

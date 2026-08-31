@@ -32,6 +32,7 @@ from suite.meet.api.recording import (
     start,
     stop,
 )
+from suite.meet.patches.backfill_recording_finalization import execute as backfill_recording_finalization
 from suite.meet.recording.ingest import (
     _recordings_folder,
     _upload_path,
@@ -466,6 +467,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         recording.end_reason = "host_stop"
         recording.save(ignore_permissions=True)
         frappe.db.commit()
+        frappe.db.set_value("Meet Room", self.room.name, "title", "Pending request update")
         started_at = recording.started_at.replace(tzinfo=UTC)
         ended_at = (
             (started_at + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -518,6 +520,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
 
         self.assertEqual(result, {"protocol_version": 1, "offset": 0, "complete": True})
         self.assertEqual(replay, result)
+        self.assertEqual(frappe.db.get_value("Meet Room", self.room.name, "title"), "Pending request update")
         recording.reload()
         self.assertEqual(recording.status, "Failed")
         self.assertEqual(recording.state_revision, failed_revision)
@@ -529,6 +532,47 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             finalization_status(recording.name),
             {"action": "delete_local", "terminal_result": "Failed"},
         )
+
+    def test_upgrade_backfills_inflight_finalization_state(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        content = b"legacy-artifact"
+        digest = hashlib.sha256(content).hexdigest()
+        begin_upload(
+            started["name"],
+            event_sequence=2,
+            size=len(content),
+            sha256=digest,
+            duration_ms=1000,
+        )
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        path = _upload_path(recording.upload_id)
+        try:
+            append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
+            frappe.db.set_value(
+                "Meet Recording",
+                recording.name,
+                {
+                    "finalization_stage": "",
+                    "metadata_accepted_at": None,
+                    "upload_completed_at": None,
+                    "finalization_deadline": None,
+                    "finalization_next_retry_at": None,
+                    "publication_key": None,
+                },
+                update_modified=False,
+            )
+
+            backfill_recording_finalization()
+            recording.reload()
+            self.assertEqual(recording.finalization_stage, "Pending")
+            self.assertIsNotNone(recording.metadata_accepted_at)
+            self.assertIsNotNone(recording.upload_completed_at)
+            self.assertIsNotNone(recording.finalization_deadline)
+            self.assertIsNotNone(recording.finalization_next_retry_at)
+            self.assertEqual(recording.publication_key, f"meet-recording-{recording.name}")
+        finally:
+            path.unlink(missing_ok=True)
 
     def test_host_stop_reason_survives_conflicting_recorder_terminal_reason(self):
         started = start(self.room.name, str(uuid.uuid4()))

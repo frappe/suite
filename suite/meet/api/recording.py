@@ -1207,6 +1207,8 @@ def recorder_stopped(
         and recording.finalization_failure_code == "invalid_terminal_metadata"
     ):
         return _callback_response({"offset": 0, "complete": True})
+    savepoint = "meet_recording_terminal_metadata"
+    frappe.db.savepoint(savepoint)
     try:
         _apply_segment_progress(recording_id, captured_bytes, grow_budget=False)
         result = begin_upload(
@@ -1227,8 +1229,10 @@ def recorder_stopped(
             end_reason=end_reason_code,
         )
     except frappe.ValidationError as error:
-        frappe.db.rollback()
+        frappe.db.rollback(save_point=savepoint)
         result = reject_upload_metadata(recording_id, event_sequence=event_sequence, error=error)
+    finally:
+        frappe.db.release_savepoint(savepoint)
     recording = frappe.get_doc("Meet Recording", recording_id)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
     return _callback_response({"offset": result["offset"], "complete": result["complete"]})

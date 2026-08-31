@@ -633,6 +633,10 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(recording.notification_attempts, 2)
             self.assertIsNotNone(recording.notification_sent_at)
             self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
+            self.assertEqual(
+                sendmail.call_args.kwargs["message_id"],
+                f"meet-recording-finalization-{recording.name}@{frappe.local.site}",
+            )
             self.assertTrue(
                 frappe.db.exists(
                     "Notification Log",
