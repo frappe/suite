@@ -861,7 +861,7 @@ def _apply_replacement_ready(
     if now >= min(deadline, maximum):
         frappe.throw(_("The Recording Interruption no longer accepts a replacement endpoint"))
 
-    issued_at = int(time.time())
+    issued_at = int(ready.timestamp())
     expires_at = int(min(deadline, maximum).timestamp())
     if expires_at <= issued_at:
         frappe.throw(_("The Recording Interruption no longer accepts a replacement endpoint"))
@@ -871,15 +871,18 @@ def _apply_replacement_ready(
     recording.recorder_event_sequence = sequence
     recording.recorder_public_jwk = normalized_jwk
     recording.recorder_key_thumbprint = public_jwk_thumbprint(normalized_jwk)
-    recording.grant_jti = str(uuid.uuid4())
+    recording.grant_jti = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{frappe.local.site}:{recording.name}:{interruption_id}:{generation}",
+        )
+    )
     recording.grant_issued_at = issued_at
     recording.grant_expires_at = expires_at
     recording.grant_delivered = False
     recording.grant_delivered_at = None
     recording.flags.replacement_reconciliation = reconcile
     recording.save(ignore_permissions=True)
-    # Keep the grant identity stable if remote delivery succeeds but its response is lost.
-    frappe.db.commit()
     _deliver_replacement_grant(recording, client)
     recording.reload()
     return {

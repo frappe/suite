@@ -590,6 +590,46 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertEqual(recording.grant_jti, persisted_jti)
         self.assertEqual(client.deliver_grant.call_count, 2)
 
+    def test_replacement_delivery_exception_rolls_back_and_remints_same_grant(self):
+        recording, interrupted, interruption_id = self._interrupted_recording()
+        initial_jti = recording.grant_jti
+        frappe.db.commit()
+        client = Mock()
+        client.deliver_grant.side_effect = [RuntimeError("delivery failed"), True]
+        arguments = (
+            recording.name,
+            recording.recorder_job_id,
+            7,
+            interruption_id,
+            1,
+            REPLACEMENT_JWK,
+            (interrupted + timedelta(seconds=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        )
+
+        with (
+            patch("suite.meet.api.recording.authenticate_callback"),
+            patch("suite.meet.api.recording._client", return_value=client),
+            self.assertRaisesRegex(RuntimeError, "delivery failed"),
+        ):
+            recorder_replacement_ready(*arguments)
+        frappe.db.rollback()
+        recording.reload()
+        self.assertEqual(recording.endpoint_generation, 0)
+        self.assertEqual(recording.grant_jti, initial_jti)
+
+        with (
+            patch("suite.meet.api.recording.authenticate_callback"),
+            patch("suite.meet.api.recording._client", return_value=client),
+        ):
+            recorder_replacement_ready(*arguments)
+
+        first_grant = client.deliver_grant.call_args_list[0].kwargs["grant"]
+        second_grant = client.deliver_grant.call_args_list[1].kwargs["grant"]
+        self.assertEqual(first_grant, second_grant)
+        recording.reload()
+        self.assertEqual(recording.endpoint_generation, 1)
+        self.assertTrue(recording.grant_delivered)
+
     def test_replacement_ready_refuses_expired_interruption_and_host_stop(self):
         recording, interrupted, interruption_id = self._interrupted_recording()
         client = Mock()
