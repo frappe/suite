@@ -65,6 +65,22 @@ const getEventData = () => {
 // How long an event runs when the end hasn't been set by hand.
 const DEFAULT_DURATION_MINUTES = 60
 
+// The calendar's default reminder, pre-filled as an ordinary row the user can
+// edit or remove (removing it means no reminder at all): ten minutes before a
+// timed event, at nine in the morning on the day of an all-day one — spelled
+// as a concrete date and time, which reads better than '9 hours after start'.
+const defaultAlert = (isAllDay: boolean, startDate: string) =>
+	isAllDay
+		? { type: 'AbsoluteTrigger', action: 'Display', date: startDate, time: '09:00' }
+		: {
+				type: 'OffsetTrigger',
+				action: 'Display',
+				number: 10,
+				unit: 'minutes',
+				direction: -1,
+				relative_to: 'Start',
+			}
+
 const getDefaultEventData = () => {
 	const startTime = selectedEvent?.time
 		? dayjs(selectedEvent.time, 'h a').format('HH:mm')
@@ -83,7 +99,7 @@ const getDefaultEventData = () => {
 		endTime: dayjs(startTime, 'HH:mm').add(DEFAULT_DURATION_MINUTES, 'minute').format('HH:mm'),
 		locations: [],
 		links: [],
-		alerts: [],
+		alerts: [defaultAlert(!selectedEvent?.time, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
 		description: '',
 		free_busy_status: 'Busy',
 		privacy: 'Public',
@@ -170,8 +186,6 @@ const eventParams = computed(() => {
 	// so omitting them would strip Meet links from the event.
 	if (event.links?.length) params.links = event.links
 	if (event.participants?.length) params.participants = event.participants
-	// No reminder set means the calendar's default one, not silence.
-	params.use_default_alerts = !event.alerts?.length
 	if (event.alerts?.length) {
 		params.alerts = event.alerts.map((a) => {
 			const base = { action: a.action, type: a.type }
@@ -188,6 +202,10 @@ const eventParams = computed(() => {
 				relative_to: a.relative_to,
 			}
 		})
+	} else {
+		// An empty list is a choice: removing the pre-filled default row means
+		// no reminder at all, so the clear must reach the server.
+		params.alerts = []
 	}
 
 	return params
@@ -202,6 +220,9 @@ const patch = computed(() => {
 	// A changed start is a wall clock in the viewer's zone; without the zone alongside it the
 	// server would reinterpret those numbers in the event's stored zone.
 	if ('start' in changed && !('time_zone' in changed)) changed.time_zone = eventParams.value.time_zone
+	// Alert edits must also switch a defaults-following event off useDefaultAlerts,
+	// or the server would keep overriding them with the calendar's defaults.
+	if ('alerts' in changed) changed.use_default_alerts = false
 	return changed
 })
 
@@ -294,6 +315,13 @@ watch(
 
 		if (!previous?.date || !startDate) return
 		if (previous.date === startDate && previous.time === startTime) return
+
+		// An untouched default reminder follows the event to its new day.
+		if (
+			event.alerts?.length === 1 &&
+			JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(true, previous.date))
+		)
+			event.alerts = [defaultAlert(true, startDate)]
 
 		if (event.isAllDay) {
 			const days = dayjs(event.endDate).diff(dayjs(previous.date), 'day')
@@ -580,6 +608,16 @@ const addAlertOptions = computed(() => [
 	},
 ])
 
+// Flipping All Day swaps an untouched default reminder for the other mode's;
+// a reminder the user has edited is theirs and stays put.
+const setAllDay = (isAllDay: boolean) => {
+	const untouched =
+		event.alerts?.length === 1 &&
+		JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(event.isAllDay, event.startDate))
+	event.isAllDay = isAllDay
+	if (untouched) event.alerts = [defaultAlert(isAllDay, event.startDate)]
+}
+
 // --- Dialog options ---
 
 const isSaving = computed(
@@ -687,10 +725,11 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 									{{ __('Date & Time') }}
 								</span>
 								<FormControl
-									v-model="event.isAllDay"
+									:model-value="event.isAllDay"
 									:label="__('All Day')"
 									type="checkbox"
 									class="dark:[&_input:not(:checked)]:bg-surface-gray-2"
+									@update:model-value="setAllDay"
 								/>
 							</div>
 							<div class="flex gap-3 p-3.5">
