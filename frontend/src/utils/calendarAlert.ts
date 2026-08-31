@@ -1,3 +1,4 @@
+import { h } from 'vue'
 import { toast } from 'frappe-ui'
 
 import router from '@/router'
@@ -12,7 +13,8 @@ export const showCalendarAlert = (alert: { title: string; body: string; path: st
 	// Both surfaces, deliberately: the toast is the in-app affordance with an
 	// Open action, the system notification is the one the OS manages — Do Not
 	// Disturb, stacking, and (via the tag) deduping across open tabs.
-	toast.info(alert.title, {
+	toast.message(alert.title, {
+		icon: () => h('span', { class: 'lucide-bell size-4' }),
 		description: alert.body,
 		duration: 15_000,
 		action: { label: __('Open'), onClick: () => router.push(alert.path) },
