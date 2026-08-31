@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -16,9 +17,41 @@ from suite.meet.recording.grants import normalize_public_jwk
 
 COMMAND_AUDIENCE = "meet-recorder-control"
 COMMAND_TYPE = "meet-recorder-command+jwt"
+PROTOCOL_VERSION = 1
 MAX_RESPONSE_BYTES = 16 * 1024
 TIMEOUT = (2, 5)
 REJECTION_REASONS = {"capacity", "storage", "policy", "invalid_job"}
+REJECTION_STATUSES = {"capacity": 429, "storage": 507, "policy": 422, "invalid_job": 422}
+HEALTH_REASON_CODES = {
+    "browser_disconnected",
+    "capture_interrupted",
+    "configuration_failed",
+    "duration_limit",
+    "ffmpeg_exited",
+    "interruption_timeout",
+    "media_attachment_failed",
+    "media_subscription_failed",
+    "page_crashed",
+    "quota_limit",
+    "receive_transport_failed",
+    "room_empty",
+    "service_shutdown",
+    "sfu_disconnected",
+    "worker_missing_after_restart",
+}
+COMMAND_STATES = {
+    "reserved",
+    "configured",
+    "proof_complete",
+    "joined",
+    "capture_ready",
+    "interrupted",
+    "failed",
+    "recovery_required",
+    "stopping",
+    "complete",
+    "partial",
+}
 
 
 @dataclass(frozen=True)
@@ -26,9 +59,8 @@ class RecorderOutcome:
     outcome: Literal["accepted", "rejected", "indeterminate"]
     accepted_at: datetime | None = None
     public_jwk: dict[str, str] | None = None
-    reason: str | None = None
+    reason_code: str | None = None
     state: str | None = None
-    health_reason: str | None = None
     event_sequence: int | None = None
     milestones: dict[str, datetime] | None = None
     interruption: dict[str, Any] | None = None
@@ -74,12 +106,13 @@ class RecorderClient:
             recording,
             job,
             limits,
-            {"job": job, "operation_id": operation_id},
+            {"protocol_version": PROTOCOL_VERSION, "job": job, "operation_id": operation_id},
         )
         if result is None:
             return False
         response, body = result
         return response.status_code in (200, 202) and body == {
+            "protocol_version": PROTOCOL_VERSION,
             "status": "accepted",
             "job": job,
             "operation_id": operation_id,
@@ -103,12 +136,19 @@ class RecorderClient:
             recording,
             job,
             limits,
-            {"grant": grant, "endpoint_generation": endpoint_generation},
+            {
+                "protocol_version": PROTOCOL_VERSION,
+                "grant": grant,
+                "endpoint_generation": endpoint_generation,
+            },
         )
         if outcome is None:
             return False
         response, body = outcome
-        return response.status_code in (200, 204) and (body is None or body == {"status": "accepted"})
+        return response.status_code == 200 and body == {
+            "protocol_version": PROTOCOL_VERSION,
+            "status": "accepted",
+        }
 
     def _request(
         self,
@@ -120,13 +160,23 @@ class RecorderClient:
         job: str,
         limits: dict[str, Any],
     ) -> RecorderOutcome:
-        result = self._raw_request(operation, method, path, room, recording, job, limits, {"job": job})
+        result = self._raw_request(
+            operation,
+            method,
+            path,
+            room,
+            recording,
+            job,
+            limits,
+            {"protocol_version": PROTOCOL_VERSION, "job": job},
+        )
         if result is None:
             return RecorderOutcome("indeterminate")
         response, body = result
         if not isinstance(body, dict) or body.get("job") != job:
             return RecorderOutcome("indeterminate")
         accepted_keys = {
+            "protocol_version",
             "status",
             "job",
             "accepted_at",
@@ -136,9 +186,8 @@ class RecorderClient:
             "event_sequence",
         }
         optional_keys = {
-            "health_reason",
+            "reason_code",
             "milestones",
-            "artifact",
             "interruption",
             "replacement_ready_at",
         }
@@ -147,29 +196,26 @@ class RecorderClient:
             and accepted_keys.issubset(body)
             and set(body).issubset(accepted_keys | optional_keys)
         ):
-            if body["status"] != "accepted":
-                return RecorderOutcome("indeterminate")
-            states = {
-                "reserved",
-                "configured",
-                "proof_complete",
-                "joined",
-                "capture_ready",
-                "interrupted",
-                "failed",
-                "recovery_required",
-                "stopping",
-            }
             if (
-                body["state"] not in states
-                or not isinstance(body["event_sequence"], int)
+                type(body["protocol_version"]) is not int
+                or body["protocol_version"] != PROTOCOL_VERSION
+                or body["status"] != "accepted"
+            ):
+                return RecorderOutcome("indeterminate")
+            if (
+                not isinstance(body["state"], str)
+                or body["state"] not in COMMAND_STATES
+                or type(body["event_sequence"]) is not int
                 or body["event_sequence"] < 1
                 or isinstance(body["endpoint_generation"], bool)
                 or not isinstance(body["endpoint_generation"], int)
                 or body["endpoint_generation"] < 0
                 or (
-                    "health_reason" in body
-                    and (not isinstance(body["health_reason"], str) or len(body["health_reason"]) > 256)
+                    "reason_code" in body
+                    and (
+                        not isinstance(body["reason_code"], str)
+                        or body["reason_code"] not in HEALTH_REASON_CODES
+                    )
                 )
             ):
                 return RecorderOutcome("indeterminate")
@@ -212,16 +258,28 @@ class RecorderClient:
                 public_jwk=public_jwk,
                 endpoint_generation=body["endpoint_generation"],
                 state=body["state"],
-                health_reason=body.get("health_reason"),
+                reason_code=body.get("reason_code"),
                 event_sequence=body["event_sequence"],
                 milestones=milestones,
                 interruption=interruption,
                 replacement_ready_at=replacement_ready_at,
             )
-        if response.status_code in (409, 422, 429, 507) and set(body) == {"status", "job", "reason"}:
-            reason = body["reason"]
-            if body["status"] == "rejected" and reason in REJECTION_REASONS:
-                return RecorderOutcome("rejected", reason=reason)
+        if response.status_code in (409, 422, 429, 507) and set(body) == {
+            "protocol_version",
+            "status",
+            "job",
+            "reason_code",
+        }:
+            reason_code = body["reason_code"]
+            if (
+                type(body["protocol_version"]) is int
+                and body["protocol_version"] == PROTOCOL_VERSION
+                and body["status"] == "rejected"
+                and isinstance(reason_code, str)
+                and reason_code in REJECTION_REASONS
+                and response.status_code == REJECTION_STATUSES[reason_code]
+            ):
+                return RecorderOutcome("rejected", reason_code=reason_code)
         return RecorderOutcome("indeterminate")
 
     def _raw_request(
@@ -268,6 +326,7 @@ class RecorderClient:
     ) -> str:
         now = int(time.time())
         payload = {
+            "protocol_version": PROTOCOL_VERSION,
             "iss": f"frappe-site:{self.site}",
             "aud": COMMAND_AUDIENCE,
             "site": self.site,
@@ -306,7 +365,7 @@ def _validate_url(value: str, *, allow_http: bool, allow_loopback_http: bool = F
 
 
 def _utc_datetime(value: Any) -> datetime:
-    if not isinstance(value, str) or not value.endswith("Z"):
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
         raise ValueError("accepted_at must be UTC RFC 3339")
     parsed = datetime.fromisoformat(value[:-1] + "+00:00")
     if parsed.tzinfo != UTC:

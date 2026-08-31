@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import hashlib
+import json
 import time
 import uuid
 from unittest.mock import Mock, patch
@@ -90,6 +91,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
             "future-issued": {"iat": now + 6, "exp": now + 36},
             "too-old": {"iat": now - 36, "exp": now - 6},
             "wrong-lifetime": {"exp": now + 31},
+            "protocol-version": {"protocol_version": 2},
         }
         for label, changes in cases.items():
             with self.subTest(label=label):
@@ -143,6 +145,83 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         with self.assertRaises(frappe.AuthenticationError):
             self._authenticate(now)
 
+    def test_callback_rejects_unknown_json_fields_before_binding_lookup(self):
+        now = int(time.time())
+        body = json.loads(self._body())
+        body["unknown"] = True
+        encoded = json.dumps(body, separators=(",", ":")).encode()
+        claims = {**self._claims(now), "body_sha256": hashlib.sha256(encoded).hexdigest()}
+        self._set_token(claims, body=encoded)
+
+        with (
+            patch("suite.meet.recording.callback_auth.frappe.db.get_value") as get_value,
+            self.assertRaises(frappe.AuthenticationError),
+        ):
+            self._authenticate(now)
+        get_value.assert_not_called()
+
+    def test_invalid_callback_semantics_do_not_consume_replay_token(self):
+        now = int(time.time())
+        claims = self._claims(now)
+        invalid = json.loads(self._body())
+        invalid["size"] = 0
+        encoded = json.dumps(invalid, separators=(",", ":")).encode()
+        self._set_token({**claims, "body_sha256": hashlib.sha256(encoded).hexdigest()}, body=encoded)
+
+        with self.assertRaises(frappe.AuthenticationError):
+            self._authenticate(now)
+
+        self._set_token(claims)
+        self.assertEqual(self._authenticate(now)["jti"], claims["jti"])
+
+    def test_invalid_upload_bytes_do_not_consume_replay_token(self):
+        now = int(time.time())
+        body = b"chunk"
+        digest = hashlib.sha256(body).hexdigest()
+        query = {
+            "protocol_version": "1",
+            "recording_id": self.recording.name,
+            "job": self.recording.recorder_job_id,
+            "offset": "0",
+            "chunk_sha256": digest,
+        }
+        claims = {
+            **self._claims(now),
+            "operation": "upload_chunk",
+            "operation_id": f"0:{digest}",
+        }
+
+        invalid = b"bad"
+        self._set_token({**claims, "body_sha256": hashlib.sha256(invalid).hexdigest()}, body=invalid)
+        frappe.local.request.args.to_dict.return_value = query
+        frappe.local.request.content_type = "application/octet-stream"
+        frappe.local.request.content_length = len(invalid)
+        with self.assertRaises(frappe.AuthenticationError):
+            authenticate_callback(
+                protocol_version=1,
+                recording=self.recording.name,
+                job=self.recording.recorder_job_id,
+                operation="upload_chunk",
+                operation_id=f"0:{digest}",
+                now=now,
+            )
+
+        self._set_token({**claims, "body_sha256": hashlib.sha256(body).hexdigest()}, body=body)
+        frappe.local.request.args.to_dict.return_value = query
+        frappe.local.request.content_type = "application/octet-stream"
+        frappe.local.request.content_length = len(body)
+        self.assertEqual(
+            authenticate_callback(
+                protocol_version=1,
+                recording=self.recording.name,
+                job=self.recording.recorder_job_id,
+                operation="upload_chunk",
+                operation_id=f"0:{digest}",
+                now=now,
+            )["jti"],
+            claims["jti"],
+        )
+
     def test_mutating_callbacks_are_post_only(self):
         for callback in (
             recorder_interrupted,
@@ -167,12 +246,14 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
                 with self.subTest(content_type=content_type):
                     frappe.local.request = Mock(content_type=content_type, content_length=5)
                     with self.assertRaises(frappe.ValidationError):
-                        recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest)
+                        recorder_upload_chunk(
+                            self.recording.name, self.recording.recorder_job_id, 0, digest, 1
+                        )
 
             request = Mock(content_type="application/octet-stream", content_length=CHUNK_SIZE + 1)
             frappe.local.request = request
             with self.assertRaises(frappe.ValidationError):
-                recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest)
+                recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest, 1)
             request.get_data.assert_not_called()
 
             request = Mock(content_type="application/octet-stream", content_length=5)
@@ -180,8 +261,8 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
             frappe.local.request = request
             with patch("suite.meet.api.recording.append_chunk", return_value={"offset": 5}) as append:
                 self.assertEqual(
-                    recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest),
-                    {"offset": 5},
+                    recorder_upload_chunk(self.recording.name, self.recording.recorder_job_id, 0, digest, 1),
+                    {"protocol_version": 1, "offset": 5},
                 )
             append.assert_called_once_with(
                 self.recording.name,
@@ -203,7 +284,19 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
                     1000,
                     "",
                     "host_stop",
+                    1,
                 )
+
+    def test_wrong_callback_protocol_is_rejected_before_authentication(self):
+        with patch("suite.meet.api.recording.authenticate_callback") as authenticate:
+            with self.assertRaisesRegex(frappe.ValidationError, "protocol version"):
+                recorder_segment_progress(
+                    self.recording.name,
+                    self.recording.recorder_job_id,
+                    0,
+                    2,
+                )
+        authenticate.assert_not_called()
 
     def test_upload_chunk_boundary_failures_do_not_mutate_state(self):
         stop(self.room.name)
@@ -241,6 +334,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
 
     def _claims(self, now: int) -> dict:
         return {
+            "protocol_version": 1,
             "iss": f"meet-recorder:{frappe.local.site}",
             "aud": CALLBACK_AUDIENCE,
             "site": frappe.local.site,
@@ -248,13 +342,14 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
             "job": self.recording.recorder_job_id,
             "operation": "stopped",
             "operation_id": "2",
-            "body_sha256": hashlib.sha256(b"{}").hexdigest(),
+            "body_sha256": hashlib.sha256(self._body()).hexdigest(),
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + 30,
         }
 
-    def _set_token(self, claims: dict, headers: dict | None = None, body: bytes = b"{}"):
+    def _set_token(self, claims: dict, headers: dict | None = None, body: bytes | None = None):
+        body = self._body() if body is None else body
         token = jwt.encode(
             claims,
             frappe.conf.recorder_secret,
@@ -268,9 +363,28 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
 
     def _authenticate(self, now: int):
         return authenticate_callback(
+            protocol_version=1,
             recording=self.recording.name,
             job=self.recording.recorder_job_id,
             operation="stopped",
             operation_id="2",
             now=now,
         )
+
+    def _body(self) -> bytes:
+        return json.dumps(
+            {
+                "protocol_version": 1,
+                "recording_id": self.recording.name,
+                "job": self.recording.recorder_job_id,
+                "event_sequence": 2,
+                "captured_bytes": 0,
+                "size": 1,
+                "sha256": "a" * 64,
+                "duration_ms": 1000,
+                "ended_at": "2026-01-01T00:00:00.000Z",
+                "end_reason_code": "host_stop",
+                "gaps": [],
+            },
+            separators=(",", ":"),
+        ).encode()

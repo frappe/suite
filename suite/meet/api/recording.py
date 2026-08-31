@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from re import fullmatch
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -24,7 +25,7 @@ from suite.meet.doctype.meet_recording.meet_recording import (
     ACTIVE_RECORDING_STATUSES,
     recording_storage_reservation_key,
 )
-from suite.meet.recording.callback_auth import authenticate_callback
+from suite.meet.recording.callback_auth import PROTOCOL_VERSION, authenticate_callback
 from suite.meet.recording.grants import (
     mint_recording_grant,
     normalize_public_jwk,
@@ -56,6 +57,35 @@ STARTUP_MILESTONES = {
     "joined": "joined_at",
     "capture_started": "capture_started_at",
 }
+INTERRUPTION_REASON_CODES = {
+    "browser_disconnected",
+    "capture_interrupted",
+    "configuration_failed",
+    "ffmpeg_exited",
+    "media_attachment_failed",
+    "media_subscription_failed",
+    "page_crashed",
+    "receive_transport_failed",
+    "sfu_disconnected",
+}
+END_REASON_CODES = {
+    "duration_limit",
+    "host_stop",
+    "interruption_timeout",
+    "quota_limit",
+    "room_empty",
+    "service_shutdown",
+}
+GAP_REASON_CODES = {"capture_interrupted", "ffmpeg_exited", "renderer_interrupted"}
+
+
+def _validate_callback_protocol(protocol_version: int):
+    if isinstance(protocol_version, bool) or protocol_version != PROTOCOL_VERSION:
+        frappe.throw(_("Unsupported recording callback protocol version"))
+
+
+def _callback_response(result: dict) -> dict:
+    return {"protocol_version": PROTOCOL_VERSION, **result}
 
 
 def _get_room(meeting_id: str):
@@ -632,8 +662,8 @@ def _stop_operation_id(recording) -> str:
 
 
 def _startup_timestamp(value: str) -> datetime:
-    if not isinstance(value, str) or not value.endswith("Z"):
-        frappe.throw(_("Recording startup timestamp must be UTC"))
+    if not isinstance(value, str) or not fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
+        frappe.throw(_("Recording startup timestamp must use canonical UTC milliseconds"))
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
@@ -702,15 +732,18 @@ def recorder_startup_progress(
     event_sequence: int,
     milestone: str,
     occurred_at: str,
+    protocol_version: int,
 ) -> dict:
     """Apply one authenticated, strictly ordered Recorder Startup milestone."""
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="startup_progress",
         operation_id=str(event_sequence),
     )
-    return _apply_startup_milestone(recording_id, event_sequence, milestone, occurred_at)
+    return _callback_response(_apply_startup_milestone(recording_id, event_sequence, milestone, occurred_at))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -718,39 +751,50 @@ def recorder_interrupted(
     recording_id: str,
     job: str,
     event_sequence: int,
-    reason: str,
+    reason_code: str,
     interruption_id: str,
     interrupted_at: str,
     interruption_deadline: str,
     omission_started_at: str,
+    protocol_version: int,
 ) -> dict:
+    if not isinstance(reason_code, str) or reason_code not in INTERRUPTION_REASON_CODES:
+        frappe.throw(_("Invalid recording interruption reason code"))
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="interrupted",
         operation_id=str(event_sequence),
     )
-    return _apply_interruption(
-        recording_id,
-        event_sequence,
-        reason,
-        interruption_id,
-        interrupted_at,
-        interruption_deadline,
-        omission_started_at,
+    return _callback_response(
+        _apply_interruption(
+            recording_id,
+            event_sequence,
+            reason_code,
+            interruption_id,
+            interrupted_at,
+            interruption_deadline,
+            omission_started_at,
+        )
     )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def recorder_segment_progress(recording_id: str, job: str, captured_bytes: int) -> dict:
+def recorder_segment_progress(
+    recording_id: str, job: str, captured_bytes: int, protocol_version: int
+) -> dict:
     """Grow one active Recording Session's budget after a durable segment."""
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="segment_progress",
         operation_id=str(captured_bytes),
     )
-    return _apply_segment_progress(recording_id, captured_bytes)
+    return _callback_response(_apply_segment_progress(recording_id, captured_bytes))
 
 
 def _apply_segment_progress(recording_id: str, captured_bytes: int, *, grow_budget: bool = True) -> dict:
@@ -878,22 +922,27 @@ def recorder_replacement_ready(
     endpoint_generation: int,
     public_jwk: str | dict,
     ready_at: str,
+    protocol_version: int,
 ) -> dict:
     """Authorize one strictly ordered replacement Recorder Endpoint."""
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="replacement_ready",
         operation_id=str(event_sequence),
     )
-    return _apply_replacement_ready(
-        recording_id,
-        event_sequence,
-        interruption_id,
-        endpoint_generation,
-        public_jwk,
-        ready_at,
-        _client(),
+    return _callback_response(
+        _apply_replacement_ready(
+            recording_id,
+            event_sequence,
+            interruption_id,
+            endpoint_generation,
+            public_jwk,
+            ready_at,
+            _client(),
+        )
     )
 
 
@@ -1040,19 +1089,24 @@ def recorder_recovered(
     interruption_id: str,
     resumed_capture_started_at: str,
     recovered_at: str,
+    protocol_version: int,
 ) -> dict:
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="recovered",
         operation_id=str(event_sequence),
     )
-    return _apply_recovery(
-        recording_id,
-        event_sequence,
-        interruption_id,
-        resumed_capture_started_at,
-        recovered_at,
+    return _callback_response(
+        _apply_recovery(
+            recording_id,
+            event_sequence,
+            interruption_id,
+            resumed_capture_started_at,
+            recovered_at,
+        )
     )
 
 
@@ -1115,10 +1169,13 @@ def recorder_stopped(
     sha256: str,
     duration_ms: int,
     ended_at: str,
-    end_reason: str,
+    end_reason_code: str,
+    protocol_version: int,
     gaps: str | list | None = None,
 ) -> dict:
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="stopped",
@@ -1126,6 +1183,17 @@ def recorder_stopped(
     )
     if not ended_at:
         frappe.throw(_("Recording stop callback requires an end time"))
+    if not isinstance(end_reason_code, str) or end_reason_code not in END_REASON_CODES:
+        frappe.throw(_("Invalid recording end reason code"))
+    gaps = frappe.parse_json(gaps) if isinstance(gaps, str) else gaps
+    if not isinstance(gaps, list) or any(
+        not isinstance(gap, dict)
+        or set(gap) != {"started_at", "ended_at", "reason_code"}
+        or not isinstance(gap["reason_code"], str)
+        or gap["reason_code"] not in GAP_REASON_CODES
+        for gap in gaps
+    ):
+        frappe.throw(_("Invalid recording gap reason code"))
     _apply_segment_progress(recording_id, captured_bytes, grow_budget=False)
     result = begin_upload(
         recording_id,
@@ -1133,18 +1201,29 @@ def recorder_stopped(
         size=size,
         sha256=sha256,
         duration_ms=duration_ms,
-        gaps=frappe.parse_json(gaps) if isinstance(gaps, str) else gaps,
+        gaps=[
+            {
+                "started_at": gap["started_at"],
+                "ended_at": gap["ended_at"],
+                "reason": gap["reason_code"],
+            }
+            for gap in gaps
+        ],
         ended_at=ended_at,
-        end_reason=end_reason,
+        end_reason=end_reason_code,
     )
     recording = frappe.get_doc("Meet Recording", recording_id)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
-    return result
+    return _callback_response({"offset": result["offset"], "complete": result["complete"]})
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def recorder_upload_chunk(recording_id: str, job: str, offset: int, chunk_sha256: str) -> dict:
+def recorder_upload_chunk(
+    recording_id: str, job: str, offset: int, chunk_sha256: str, protocol_version: int
+) -> dict:
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="upload_chunk",
@@ -1154,17 +1233,21 @@ def recorder_upload_chunk(recording_id: str, job: str, offset: int, chunk_sha256
         frappe.throw(_("Recording upload chunks must be binary data"))
     if frappe.request.content_length is not None and frappe.request.content_length > CHUNK_SIZE:
         frappe.throw(_("Recording upload chunk is too large"))
-    return append_chunk(
-        recording_id,
-        offset=offset,
-        chunk=frappe.request.get_data(cache=True),
-        chunk_sha256=chunk_sha256,
+    return _callback_response(
+        append_chunk(
+            recording_id,
+            offset=offset,
+            chunk=frappe.request.get_data(cache=True),
+            chunk_sha256=chunk_sha256,
+        )
     )
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def recorder_complete_upload(recording_id: str, job: str, event_sequence: int) -> dict:
+def recorder_complete_upload(recording_id: str, job: str, event_sequence: int, protocol_version: int) -> dict:
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="complete_upload",
@@ -1173,7 +1256,7 @@ def recorder_complete_upload(recording_id: str, job: str, event_sequence: int) -
     result = complete_upload(recording_id, event_sequence=event_sequence)
     recording = frappe.get_doc("Meet Recording", recording_id)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
-    return result
+    return _callback_response(result)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -1181,9 +1264,12 @@ def recorder_failed(
     recording_id: str,
     job: str,
     event_sequence: int,
-    failure_code: str = "capture_failed",
+    protocol_version: int,
+    reason_code: str = "capture_failed",
 ) -> dict:
+    _validate_callback_protocol(protocol_version)
     authenticate_callback(
+        protocol_version=protocol_version,
         recording=recording_id,
         job=job,
         operation="failed",
@@ -1191,20 +1277,25 @@ def recorder_failed(
     )
     recording = _locked_recording(recording_id)
     if recording.status == "Failed":
-        return {"status": "Failed"}
+        return _callback_response({"status": "Failed"})
     if recording.status == "Cancelled":
-        return {"status": "Cancelled"}
+        return _callback_response({"status": "Cancelled"})
     if recording.status not in ("Starting", "Recording", "Interrupted", "Stopping", "Processing"):
         frappe.throw(_("Recording cannot accept a failure callback"))
     if cint(event_sequence) <= recording.recorder_event_sequence:
         frappe.throw(_("Recorder event is out of order"))
-    if failure_code not in ("capture_failed", "processing_failed", "storage_unavailable", "quota_exhausted"):
+    if not isinstance(reason_code, str) or reason_code not in (
+        "capture_failed",
+        "processing_failed",
+        "storage_unavailable",
+        "quota_exhausted",
+    ):
         frappe.throw(_("Invalid recording failure code"))
     startup_failure = recording.status == "Starting"
     recording.status = "Failed"
     recording.state_revision += 1
     recording.recorder_event_sequence = cint(event_sequence)
-    recording.failure_code = failure_code
+    recording.failure_code = reason_code
     if recording.started_at:
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     if startup_failure:
@@ -1215,7 +1306,7 @@ def recorder_failed(
         None if startup_failure else recording,
         hosts_only=startup_failure,
     )
-    return {"status": "Failed"}
+    return _callback_response({"status": "Failed"})
 
 
 def reconcile_pending_recordings():
@@ -1394,7 +1485,7 @@ def _reconcile_recording(name: str):
     _apply_interruption(
         recording.name,
         interruption_sequence,
-        outcome.health_reason or "capture_interrupted",
+        outcome.reason_code or "capture_interrupted",
         interruption["id"],
         _callback_timestamp(interruption["interrupted_at"]),
         _callback_timestamp(interruption["deadline"]),

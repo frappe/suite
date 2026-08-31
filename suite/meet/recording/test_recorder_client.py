@@ -43,6 +43,7 @@ class TestRecorderClient(unittest.TestCase):
         self.session.request.return_value = response(
             202,
             {
+                "protocol_version": 1,
                 "status": "accepted",
                 "job": "job",
                 "accepted_at": "2026-07-31T10:11:12.123Z",
@@ -83,27 +84,30 @@ class TestRecorderClient(unittest.TestCase):
                 "jti",
                 "iat",
                 "exp",
+                "protocol_version",
             },
         )
+        self.assertEqual(claims["protocol_version"], 1)
+        self.assertEqual(call.kwargs["json"], {"protocol_version": 1, "job": "job"})
         self.assertEqual(claims["operation"], "reserve")
         self.assertEqual(call.kwargs["timeout"], (2, 5))
         self.assertFalse(call.kwargs["allow_redirects"])
 
     def test_explicit_rejection_is_bounded(self):
         self.session.request.return_value = response(
-            429, {"status": "rejected", "job": "job", "reason": "capacity"}
+            429, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "capacity"}
         )
         self.assertEqual(self.client.reserve(**self.arguments).outcome, "rejected")
 
         self.session.request.return_value = response(
-            507, {"status": "rejected", "job": "job", "reason": "storage"}
+            507, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "storage"}
         )
         outcome = self.client.reserve(**self.arguments)
         self.assertEqual(outcome.outcome, "rejected")
-        self.assertEqual(outcome.reason, "storage")
+        self.assertEqual(outcome.reason_code, "storage")
 
         self.session.request.return_value = response(
-            429, {"status": "rejected", "job": "job", "reason": "anything"}
+            429, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "anything"}
         )
         self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
 
@@ -111,6 +115,7 @@ class TestRecorderClient(unittest.TestCase):
         self.session.request.return_value = response(
             200,
             {
+                "protocol_version": 1,
                 "status": "accepted",
                 "job": "job",
                 "accepted_at": "2026-07-31T10:11:12.123Z",
@@ -140,6 +145,7 @@ class TestRecorderClient(unittest.TestCase):
 
     def test_endpoint_generation_must_be_a_nonnegative_integer(self):
         body = {
+            "protocol_version": 1,
             "status": "accepted",
             "job": "job",
             "accepted_at": "2026-07-31T10:11:12.123Z",
@@ -163,6 +169,62 @@ class TestRecorderClient(unittest.TestCase):
             with self.subTest(result=result):
                 self.session.request.side_effect = result if isinstance(result, Exception) else None
                 self.session.request.return_value = None if isinstance(result, Exception) else result
+                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+
+    def test_rejects_missing_wrong_and_unknown_response_protocol_fields(self):
+        accepted = {
+            "protocol_version": 1,
+            "status": "accepted",
+            "job": "job",
+            "accepted_at": "2026-07-31T10:11:12.123Z",
+            "public_jwk": PUBLIC_JWK,
+            "endpoint_generation": 0,
+            "state": "reserved",
+            "event_sequence": 1,
+        }
+        for body in (
+            {key: value for key, value in accepted.items() if key != "protocol_version"},
+            {**accepted, "protocol_version": 2},
+            {**accepted, "extra": True},
+        ):
+            with self.subTest(body=body):
+                self.session.request.return_value = response(202, body)
+                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+
+    def test_unhashable_state_and_reason_values_are_indeterminate(self):
+        accepted = {
+            "protocol_version": 1,
+            "status": "accepted",
+            "job": "job",
+            "accepted_at": "2026-07-31T10:11:12.123Z",
+            "public_jwk": PUBLIC_JWK,
+            "endpoint_generation": 0,
+            "state": "reserved",
+            "event_sequence": 1,
+        }
+        for body in ({**accepted, "state": []}, {**accepted, "reason_code": {}}):
+            with self.subTest(body=body):
+                self.session.request.return_value = response(202, body)
+                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+
+    def test_timestamp_requires_exact_millisecond_precision(self):
+        base = {
+            "protocol_version": 1,
+            "status": "accepted",
+            "job": "job",
+            "public_jwk": PUBLIC_JWK,
+            "endpoint_generation": 0,
+            "state": "reserved",
+            "event_sequence": 1,
+        }
+        for timestamp in (
+            "2026-07-31T10:11:12Z",
+            "2026-07-31T10:11:12.12Z",
+            "2026-07-31T10:11:12.1234Z",
+            "2026-07-31T10:11:12.123+00:00",
+        ):
+            with self.subTest(timestamp=timestamp):
+                self.session.request.return_value = response(202, {**base, "accepted_at": timestamp})
                 self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
 
     def test_rejects_untrusted_urls(self):
@@ -193,14 +255,14 @@ class TestRecorderClient(unittest.TestCase):
             )
 
     def test_grant_delivery_requires_explicit_success(self):
-        self.session.request.return_value = response(200, {"status": "accepted"})
+        self.session.request.return_value = response(200, {"protocol_version": 1, "status": "accepted"})
         self.assertTrue(self.client.deliver_grant(**self.arguments, grant="token", endpoint_generation=2))
         self.assertEqual(
             self.session.request.call_args.args[:2], ("POST", "http://recorder.test/v1/recordings/job/grant")
         )
         self.assertEqual(
             self.session.request.call_args.kwargs["json"],
-            {"grant": "token", "endpoint_generation": 2},
+            {"protocol_version": 1, "grant": "token", "endpoint_generation": 2},
         )
 
         self.session.request.return_value = response(500, {"status": "error"})
@@ -208,11 +270,13 @@ class TestRecorderClient(unittest.TestCase):
 
     def test_stop_requires_exact_acknowledgement_and_sends_operation_id(self):
         self.session.request.return_value = response(
-            202, {"status": "accepted", "job": "job", "operation_id": "stop-1"}
+            202,
+            {"protocol_version": 1, "status": "accepted", "job": "job", "operation_id": "stop-1"},
         )
         self.assertTrue(self.client.stop(**self.arguments, operation_id="stop-1"))
         self.assertEqual(
-            self.session.request.call_args.kwargs["json"], {"job": "job", "operation_id": "stop-1"}
+            self.session.request.call_args.kwargs["json"],
+            {"protocol_version": 1, "job": "job", "operation_id": "stop-1"},
         )
 
         for result in (

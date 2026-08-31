@@ -308,7 +308,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             recording.name,
             recording.recorder_job_id,
             6,
-            "connection_lost",
+            "sfu_disconnected",
             first_id,
             first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             (first_interrupted + timedelta(seconds=60))
@@ -317,6 +317,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             recording.started_at.replace(tzinfo=UTC)
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
+            1,
         )
         first_recovery = (
             recording.name,
@@ -325,6 +326,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             first_id,
             first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            1,
         )
         second_id = str(uuid.uuid4())
         second_interrupted = first_interrupted
@@ -332,13 +334,14 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             recording.name,
             recording.recorder_job_id,
             8,
-            "connection_lost",
+            "sfu_disconnected",
             second_id,
             second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             (second_interrupted + timedelta(seconds=60))
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z"),
             first_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            1,
         )
         second_recovery = (
             recording.name,
@@ -347,6 +350,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             second_id,
             second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
             second_interrupted.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            1,
         )
         with (
             patch("suite.meet.api.recording.authenticate_callback"),
@@ -354,36 +358,36 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         ):
             self.assertEqual(
                 recorder_interrupted(*first_interruption),
-                {"status": "Interrupted"},
+                {"protocol_version": 1, "status": "Interrupted"},
             )
             interruption_publish_count = publish.call_count
             self.assertEqual(
                 recorder_interrupted(*first_interruption),
-                {"status": "Interrupted"},
+                {"protocol_version": 1, "status": "Interrupted"},
             )
             self.assertEqual(publish.call_count, interruption_publish_count)
             self.assertEqual(
                 recorder_recovered(*first_recovery),
-                {"status": "Recording"},
+                {"protocol_version": 1, "status": "Recording"},
             )
             recovery_publish_count = publish.call_count
             self.assertEqual(
                 recorder_recovered(*first_recovery),
-                {"status": "Recording"},
+                {"protocol_version": 1, "status": "Recording"},
             )
             self.assertEqual(publish.call_count, recovery_publish_count)
             self.assertEqual(
                 recorder_interrupted(*second_interruption),
-                {"status": "Interrupted"},
+                {"protocol_version": 1, "status": "Interrupted"},
             )
             self.assertEqual(
                 recorder_recovered(*second_recovery),
-                {"status": "Recording"},
+                {"protocol_version": 1, "status": "Recording"},
             )
             second_recovery_publish_count = publish.call_count
             self.assertEqual(
-                recorder_failed(recording.name, recording.recorder_job_id, 10, "capture_failed"),
-                {"status": "Failed"},
+                recorder_failed(recording.name, recording.recorder_job_id, 10, 1, "capture_failed"),
+                {"protocol_version": 1, "status": "Failed"},
             )
             self.assertGreater(publish.call_count, second_recovery_publish_count)
 
@@ -406,8 +410,10 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
 
         invalid_ends = (
             "2026-08-10 12:00:00",
-            (_system_datetime_as_utc(recording.max_ends_at) + timedelta(seconds=1)).isoformat(),
-            (started_at - timedelta(seconds=1)).isoformat(),
+            (_system_datetime_as_utc(recording.max_ends_at) + timedelta(seconds=1))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            (started_at - timedelta(seconds=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
         )
         for ended_at in invalid_ends:
             with self.subTest(ended_at=ended_at), self.assertRaises(frappe.ValidationError):
@@ -422,10 +428,16 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 )
             recording.reload()
 
-        valid_end = (started_at + timedelta(seconds=60)).isoformat()
+        valid_end = (
+            (started_at + timedelta(seconds=60)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        )
         gap = {
-            "started_at": (started_at - timedelta(seconds=1)).isoformat(),
-            "ended_at": (started_at + timedelta(seconds=1)).isoformat(),
+            "started_at": (started_at - timedelta(seconds=1))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
+            "ended_at": (started_at + timedelta(seconds=1))
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
             "reason": "capture_interrupted",
         }
         with self.assertRaisesRegex(frappe.ValidationError, "within the recording interval"):

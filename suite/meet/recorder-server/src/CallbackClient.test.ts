@@ -22,9 +22,14 @@ describe('CallbackClient', () => {
 	it('reports segment progress with the captured byte operation ID', async () => {
 		const fetch = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ message: { budget_bytes: 2_000_000 } }), {
-					status: 200,
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, budget_bytes: 2_000_000 },
+					}),
+					{
+						status: 200,
+					},
+				),
 		);
 		vi.stubGlobal('fetch', fetch);
 		const secret = 's'.repeat(32);
@@ -50,6 +55,7 @@ describe('CallbackClient', () => {
 		);
 		const body = String(fetch.mock.calls[0]?.[1]?.body);
 		expect(JSON.parse(body)).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			captured_bytes: 1_234_567,
@@ -60,6 +66,7 @@ describe('CallbackClient', () => {
 		expect(
 			jwt.verify(String(authorization).replace('Bearer ', ''), secret),
 		).toMatchObject({
+			protocol_version: 1,
 			operation: 'segment_progress',
 			operation_id: '1234567',
 			body_sha256: createHash('sha256').update(body).digest('hex'),
@@ -67,10 +74,12 @@ describe('CallbackClient', () => {
 	});
 
 	it.each([
-		{ budget_bytes: -1 },
-		{ budget_bytes: 1.5 },
-		{ budget_bytes: '2000000' },
-		{ budget_bytes: 2_000_000, extra: true },
+		{ protocol_version: 1, budget_bytes: -1 },
+		{ protocol_version: 1, budget_bytes: 1.5 },
+		{ protocol_version: 1, budget_bytes: '2000000' },
+		{ protocol_version: 1, budget_bytes: 2_000_000, extra: true },
+		{ protocol_version: 2, budget_bytes: 2_000_000 },
+		{ budget_bytes: 2_000_000 },
 	])('rejects an invalid segment progress response %#', async (message) => {
 		vi.stubGlobal(
 			'fetch',
@@ -97,13 +106,44 @@ describe('CallbackClient', () => {
 		).rejects.toThrow('invalid Frappe callback response');
 	});
 
+	it('requires the exact Frappe response wrapper', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							message: { protocol_version: 1, budget_bytes: 2_000_000 },
+							extra: true,
+						}),
+					),
+			),
+		);
+		await expect(
+			new CallbackClient({
+				origin: 'https://site.test',
+				site: 'site.test',
+				secret: 's'.repeat(32),
+				dataRoot: '/tmp',
+			}).segmentProgress(
+				{ job: 'job', recording: 'recording' } as JobRecord,
+				1,
+			),
+		).rejects.toThrow('invalid Frappe callback response');
+	});
+
 	it('publishes an ordered startup milestone with its durable timestamp', async () => {
 		const fetch = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ message: { status: 'Starting' } }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Starting' },
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				),
 		);
 		vi.stubGlobal('fetch', fetch);
 		const job = {
@@ -130,6 +170,7 @@ describe('CallbackClient', () => {
 		);
 		expect(fetch).toHaveBeenCalledTimes(2);
 		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 2,
@@ -137,6 +178,7 @@ describe('CallbackClient', () => {
 			occurred_at: '2026-08-30T11:59:59.000Z',
 		});
 		expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 3,
@@ -151,10 +193,15 @@ describe('CallbackClient', () => {
 			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
 			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
 			.mockResolvedValue(
-				new Response(JSON.stringify({ message: { status: 'Recording' } }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Recording' },
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				),
 			);
 		vi.stubGlobal('fetch', fetch);
 		const job = {
@@ -182,10 +229,15 @@ describe('CallbackClient', () => {
 	it('publishes recorder interruption with the next lifecycle sequence', async () => {
 		const fetch = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ message: { status: 'Interrupted' } }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Interrupted' },
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				),
 		);
 		vi.stubGlobal('fetch', fetch);
 		const job = {
@@ -211,10 +263,11 @@ describe('CallbackClient', () => {
 
 		expect(String(fetch.mock.calls[0]?.[0])).toContain('recorder_interrupted');
 		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 2,
-			reason: 'connection_lost',
+			reason_code: 'capture_interrupted',
 			interruption_id: '11111111-1111-4111-8111-111111111111',
 			interrupted_at: '2026-08-30T12:00:00.000Z',
 			interruption_deadline: '2026-08-30T12:01:00.000Z',
@@ -225,10 +278,15 @@ describe('CallbackClient', () => {
 	it('publishes recovery for the active interruption sequence', async () => {
 		const fetch = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ message: { status: 'Recording' } }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Recording' },
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				),
 		);
 		vi.stubGlobal('fetch', fetch);
 		const job = {
@@ -252,6 +310,7 @@ describe('CallbackClient', () => {
 
 		expect(String(fetch.mock.calls[0]?.[0])).toContain('recorder_recovered');
 		expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 2,
@@ -266,9 +325,14 @@ describe('CallbackClient', () => {
 			.fn()
 			.mockResolvedValueOnce(new Response('unavailable', { status: 503 }))
 			.mockResolvedValue(
-				new Response(JSON.stringify({ message: { status: 'Interrupted' } }), {
-					status: 200,
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Interrupted' },
+					}),
+					{
+						status: 200,
+					},
+				),
 			);
 		vi.stubGlobal('fetch', fetch);
 		const publicJwk = {
@@ -305,6 +369,7 @@ describe('CallbackClient', () => {
 		);
 		const body = String(fetch.mock.calls[1]?.[1]?.body);
 		expect(JSON.parse(body)).toEqual({
+			protocol_version: 1,
 			recording_id: 'recording',
 			job: 'job',
 			event_sequence: 7,
@@ -321,6 +386,7 @@ describe('CallbackClient', () => {
 			's'.repeat(32),
 		) as jwt.JwtPayload;
 		expect(claims).toMatchObject({
+			protocol_version: 1,
 			operation: 'replacement_ready',
 			operation_id: '7',
 			body_sha256: createHash('sha256').update(body).digest('hex'),
@@ -364,10 +430,15 @@ describe('CallbackClient', () => {
 	it('publishes later interruption cycles with their persisted sequence', async () => {
 		const fetch = vi.fn(
 			async () =>
-				new Response(JSON.stringify({ message: { status: 'Interrupted' } }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
+				new Response(
+					JSON.stringify({
+						message: { protocol_version: 1, status: 'Interrupted' },
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				),
 		);
 		vi.stubGlobal('fetch', fetch);
 		const job = {
@@ -459,10 +530,13 @@ describe('CallbackClient', () => {
 							: requests.length === 4
 								? { status: 'Processing' }
 								: { offset: content.length, complete: true };
-			return new Response(JSON.stringify({ message }), {
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			});
+			return new Response(
+				JSON.stringify({ message: { protocol_version: 1, ...message } }),
+				{
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
 		});
 		vi.stubGlobal('fetch', fetch);
 		const secret = 's'.repeat(32);
@@ -485,7 +559,7 @@ describe('CallbackClient', () => {
 				{
 					started_at: '2026-01-01T00:00:59.000Z',
 					ended_at: '2026-01-01T00:01:00.000Z',
-					reason: 'ffmpeg_exited',
+					reason_code: 'ffmpeg_exited',
 				},
 			],
 		});
@@ -498,6 +572,7 @@ describe('CallbackClient', () => {
 		);
 		const token = authorization?.slice('Bearer '.length) ?? '';
 		expect(jwt.verify(token, secret, { algorithms: ['HS256'] })).toMatchObject({
+			protocol_version: 1,
 			aud: 'meet-recording-callback',
 			site: 'site.test',
 			recording: 'recording',
@@ -505,6 +580,7 @@ describe('CallbackClient', () => {
 			operation: 'upload_chunk',
 			body_sha256: createHash('sha256').update(content).digest('hex'),
 		});
+		expect(requests[2]?.url).toContain('protocol_version=1');
 		expect(jwt.decode(token, { complete: true })?.header.typ).toBe(
 			'meet-recording-callback+jwt',
 		);

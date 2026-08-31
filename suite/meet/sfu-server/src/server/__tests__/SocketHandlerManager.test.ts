@@ -373,7 +373,11 @@ describe('SocketHandlerManager characterization', () => {
 		});
 		const provedDisconnect = vi.spyOn(proved, 'disconnect');
 		harness.connect(proved);
-		proved.fire('recording:proof', { signature: 'valid' }, vi.fn());
+		proved.fire(
+			'recording:proof',
+			{ protocol_version: 1, signature: 'valid' },
+			vi.fn(),
+		);
 		await vi.runAllTicks();
 		await vi.advanceTimersByTimeAsync(10_000);
 		expect(provedDisconnect).not.toHaveBeenCalled();
@@ -421,9 +425,16 @@ describe('SocketHandlerManager characterization', () => {
 			} as never,
 		});
 		const firstProof = vi.fn();
-		first.fire('recording:proof', { signature: 'valid' }, firstProof);
+		first.fire(
+			'recording:proof',
+			{ protocol_version: 1, signature: 'valid' },
+			firstProof,
+		);
 		await new Promise((resolve) => setImmediate(resolve));
-		expect(firstProof).toHaveBeenCalledWith({ success: true });
+		expect(firstProof).toHaveBeenCalledWith({
+			protocol_version: 1,
+			success: true,
+		});
 
 		first.fire('disconnect', 'client namespace disconnect');
 		await new Promise((resolve) => setImmediate(resolve));
@@ -438,12 +449,50 @@ describe('SocketHandlerManager characterization', () => {
 		const replacementProof = vi.fn();
 		replacement.fire(
 			'recording:proof',
-			{ signature: 'valid' },
+			{ protocol_version: 1, signature: 'valid' },
 			replacementProof,
 		);
 		await new Promise((resolve) => setImmediate(resolve));
 
-		expect(replacementProof).toHaveBeenCalledWith({ success: true });
+		expect(replacementProof).toHaveBeenCalledWith({
+			protocol_version: 1,
+			success: true,
+		});
+	});
+
+	it.each([
+		{ signature: 'valid' },
+		{ protocol_version: 2, signature: 'valid' },
+		{ protocol_version: 1, signature: 'valid', extra: true },
+	])('rejects a non-contract recording proof before verification %#', async (proof) => {
+		const grantManager = {
+			createChallenge: vi.fn(() => ({
+				protocol_version: 1,
+				nonce: 'challenge',
+			})),
+			verifyProofAndConsume: vi.fn(),
+		};
+		const harness = createManager(grantManager as never);
+		const socket = connectFullSocket(harness, {
+			scope: 'recording',
+			recordingClaims: {
+				recording_id: 'recording-1',
+				recorder_job_id: 'job-1',
+			} as never,
+		});
+		const callback = vi.fn();
+
+		socket.fire('recording:proof', proof, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(grantManager.verifyProofAndConsume).not.toHaveBeenCalled();
+		expect(callback).toHaveBeenCalledWith({
+			protocol_version: 1,
+			success: false,
+			reason_code: 'invalid_proof',
+			diagnostic: 'Invalid recording proof',
+		});
+		expect(socket.recordingProofComplete).not.toBe(true);
 	});
 
 	it('join_room with scope:full adds the socket to fullAccessSockets, calls mediasoup.createRoom + addPeer, and emits existing_raised_hands to the joiner', async () => {

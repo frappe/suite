@@ -50,7 +50,9 @@ import type {
 	ReactionMessage,
 	ReactionSendRequest,
 	RecordingJoinRequest,
+	RecordingProofChallenge,
 	RecordingProofRequest,
+	RecordingProofResponse,
 	ScreenShareRequest,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
@@ -102,7 +104,9 @@ export type {
 	ReactionMessage,
 	ReactionSendRequest,
 	RecordingJoinRequest,
+	RecordingProofChallenge,
 	RecordingProofRequest,
+	RecordingProofResponse,
 	Router,
 	RouterRtpCodecCapability,
 	RtpCapabilities,
@@ -123,9 +127,7 @@ export type {
 
 // Socket.IO types
 export interface ServerToClientEvents {
-	'recording:challenge': (
-		data: import('../server/RecordingGrantManager').RecordingProofChallenge,
-	) => void;
+	'recording:challenge': (data: RecordingProofChallenge) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
 	participant_connection_replaced: (data: {
@@ -158,7 +160,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
 	'recording:proof': (
 		data: RecordingProofRequest,
-		callback: (response: SFUResponse) => void,
+		callback: (response: RecordingProofResponse) => void,
 	) => void;
 	'recording:join': (
 		data: RecordingJoinRequest,

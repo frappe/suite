@@ -29,7 +29,7 @@ const publicJwk: JsonWebKey = {
 	y: privateJwk.y,
 };
 const vectorChallenge: RecordingProofChallenge = {
-	version: 1,
+	protocol_version: 1,
 	jti: 'jti-vector',
 	socket_id: 'socket-vector',
 	nonce: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
@@ -81,6 +81,15 @@ describe('RecordingGrantManager', () => {
 				NOW,
 			),
 		).toThrow('public JWK');
+	});
+
+	it.each([
+		['missing protocol version', { protocol_version: undefined }],
+		['wrong protocol version', { protocol_version: 2 }],
+		['non-integer protocol version', { protocol_version: 1.5 }],
+		['unknown claim', { unexpected: 'claim' }],
+	])('rejects %s before using grant claims', (_name, overrides) => {
+		expect(() => manager.verifyGrant(makeToken(overrides), NOW)).toThrow();
 	});
 
 	it.each([
@@ -264,19 +273,41 @@ describe('RecordingGrantManager', () => {
 			NOW,
 		);
 		expect(Buffer.from(challenge.nonce, 'base64url')).toHaveLength(32);
+		expect(challenge.protocol_version).toBe(1);
 		expect(challenge.expires_at).toBe(NOW + 10);
+	});
+
+	it.each([
+		{ ...vectorChallenge, protocol_version: 2 },
+		{ ...vectorChallenge, protocol_version: 1.5 },
+		{ ...vectorChallenge, extra: true },
+	])('rejects a non-contract challenge %#', async (challenge) => {
+		await expect(
+			manager.verifyProofAndConsume(
+				manager.verifyGrant(makeToken(), NOW),
+				challenge as RecordingProofChallenge,
+				vectorSignature,
+				'socket-vector',
+				NOW + 1,
+			),
+		).rejects.toThrow('challenge');
 	});
 });
 
 function makeToken(
 	overrides: Record<
 		string,
-		string | number | readonly string[] | { jwk: JsonWebKey; jkt: string }
+		| string
+		| number
+		| readonly string[]
+		| { jwk: JsonWebKey; jkt: string }
+		| undefined
 	> = {},
 	header: Record<string, string> = {},
 	algorithm: jwt.Algorithm = 'HS256',
 ): string {
 	const claims: RecordingGrantClaims = {
+		protocol_version: 1,
 		iss: 'frappe-site:test.local',
 		aud: 'meet-sfu-recorder',
 		scope: 'recording',

@@ -1,5 +1,6 @@
 export const COMMAND_AUDIENCE = 'meet-recorder-control';
 export const COMMAND_TYPE = 'meet-recorder-command+jwt';
+export const PROTOCOL_VERSION = 1;
 export type CommandOperation = 'reserve' | 'query' | 'grant' | 'stop';
 
 export interface RecordingLimits {
@@ -9,6 +10,7 @@ export interface RecordingLimits {
 }
 
 export interface CommandClaims {
+	protocol_version: typeof PROTOCOL_VERSION;
 	iss: string;
 	aud: typeof COMMAND_AUDIENCE;
 	site: string;

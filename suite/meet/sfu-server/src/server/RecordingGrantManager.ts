@@ -6,6 +6,7 @@ import {
 	verify as verifySignature,
 } from 'node:crypto';
 import * as jwt from 'jsonwebtoken';
+import type { RecordingProofChallenge } from '../../../types';
 import type { RecordingGrantPersistenceFile } from './RecordingGrantPersistenceFile';
 
 const GRANT_TYPE = 'meet-recording-grant+jwt';
@@ -13,8 +14,33 @@ const GRANT_AUDIENCE = 'meet-sfu-recorder';
 const MAX_AUTHORIZATION_SECONDS = 4 * 60 * 60;
 const CHALLENGE_SECONDS = 10;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const ACCEPTED_PROTOCOL_VERSIONS = new Set([1]);
+const GRANT_CLAIM_KEYS = [
+	'protocol_version',
+	'iss',
+	'aud',
+	'scope',
+	'jti',
+	'site',
+	'meeting_id',
+	'recording_id',
+	'recorder_job_id',
+	'cnf',
+	'iat',
+	'exp',
+	'authorization_expires_at',
+] as const;
+const CHALLENGE_KEYS = [
+	'protocol_version',
+	'jti',
+	'socket_id',
+	'nonce',
+	'issued_at',
+	'expires_at',
+] as const;
 
 export type RecordingGrantClaims = {
+	protocol_version: 1;
 	iss: string;
 	aud: typeof GRANT_AUDIENCE;
 	scope: 'recording';
@@ -29,14 +55,7 @@ export type RecordingGrantClaims = {
 	authorization_expires_at: number;
 };
 
-export type RecordingProofChallenge = {
-	version: 1;
-	jti: string;
-	socket_id: string;
-	nonce: string;
-	issued_at: number;
-	expires_at: number;
-};
+export type { RecordingProofChallenge } from '../../../types';
 
 export class RecordingGrantManager {
 	constructor(
@@ -111,7 +130,7 @@ export class RecordingGrantManager {
 	): RecordingProofChallenge {
 		if (!socketId) throw new Error('Socket ID is required');
 		return {
-			version: 1,
+			protocol_version: 1,
 			jti: claims.jti,
 			socket_id: socketId,
 			nonce: randomBytes(32).toString('base64url'),
@@ -171,9 +190,19 @@ export function jwkThumbprint(jwk: JsonWebKey): string {
 	return createHash('sha256').update(canonical).digest('base64url');
 }
 
-function parseClaims(payload: unknown): RecordingGrantClaims {
+export function parseClaims(payload: unknown): RecordingGrantClaims {
 	if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
 		throw new Error('Invalid recording grant claims');
+	}
+	if (!hasExactKeys(payload, GRANT_CLAIM_KEYS)) {
+		throw new Error('Invalid recording grant claim shape');
+	}
+	const protocolVersion = property(payload, 'protocol_version');
+	if (
+		!Number.isSafeInteger(protocolVersion) ||
+		!ACCEPTED_PROTOCOL_VERSIONS.has(protocolVersion as number)
+	) {
+		throw new Error('Unsupported recording grant protocol version');
 	}
 	if (
 		!('aud' in payload) ||
@@ -184,6 +213,7 @@ function parseClaims(payload: unknown): RecordingGrantClaims {
 		throw new Error('Invalid recording grant audience or scope');
 	}
 	return {
+		protocol_version: 1,
 		iss: requiredClaimString(property(payload, 'iss'), 'iss'),
 		aud: GRANT_AUDIENCE,
 		scope: 'recording',
@@ -215,6 +245,14 @@ function property(value: object, key: string): unknown {
 	return key in value ? value[key as keyof typeof value] : undefined;
 }
 
+function hasExactKeys(value: object, expected: readonly string[]): boolean {
+	const keys = Object.keys(value);
+	return (
+		keys.length === expected.length &&
+		expected.every((key) => keys.includes(key))
+	);
+}
+
 function requiredClaimString(value: unknown, name: string): string {
 	if (typeof value !== 'string' || value.length === 0) {
 		throw new Error(`Missing recording grant claim: ${name}`);
@@ -233,7 +271,12 @@ function parseConfirmation(value: unknown): { jwk: JsonWebKey; jkt: string } {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Missing recording grant claim: cnf');
 	}
-	if (!('jwk' in value) || !('jkt' in value) || typeof value.jkt !== 'string') {
+	if (
+		!hasExactKeys(value, ['jwk', 'jkt']) ||
+		!('jwk' in value) ||
+		!('jkt' in value) ||
+		typeof value.jkt !== 'string'
+	) {
 		throw new Error('Invalid recording grant cnf');
 	}
 	return { jwk: parsePublicJwk(value.jwk), jkt: value.jkt };
@@ -244,6 +287,7 @@ function parsePublicJwk(value: unknown): JsonWebKey {
 		throw new Error('Invalid recording grant public JWK');
 	}
 	if (
+		!hasExactKeys(value, ['crv', 'kty', 'x', 'y']) ||
 		!('kty' in value) ||
 		value.kty !== 'EC' ||
 		!('crv' in value) ||
@@ -269,16 +313,19 @@ function validatePublicJwk(jwk: JsonWebKey): void {
 	decodeBase64Url(jwk.y, 32, 'JWK y');
 }
 
-function validateChallenge(
+export function validateChallenge(
 	challenge: RecordingProofChallenge,
 	jti: string,
 	socketId: string,
 	now: number,
 ): void {
 	if (
-		challenge.version !== 1 ||
+		!hasExactKeys(challenge, CHALLENGE_KEYS) ||
+		!Number.isSafeInteger(challenge.protocol_version) ||
+		!ACCEPTED_PROTOCOL_VERSIONS.has(challenge.protocol_version) ||
 		challenge.jti !== jti ||
 		challenge.socket_id !== socketId ||
+		typeof challenge.nonce !== 'string' ||
 		!Number.isSafeInteger(challenge.issued_at) ||
 		!Number.isSafeInteger(challenge.expires_at) ||
 		challenge.expires_at - challenge.issued_at !== CHALLENGE_SECONDS ||

@@ -4,9 +4,28 @@ export interface RecordingJoinRequest {
 	roomId: string;
 }
 
+export interface RecordingProofChallenge {
+	protocol_version: 1;
+	jti: string;
+	socket_id: string;
+	nonce: string;
+	issued_at: number;
+	expires_at: number;
+}
+
 export interface RecordingProofRequest {
+	protocol_version: 1;
 	signature: string;
 }
+
+export type RecordingProofResponse =
+	| { protocol_version: 1; success: true }
+	| {
+			protocol_version: 1;
+			success: false;
+			reason_code: 'invalid_proof';
+			diagnostic?: string;
+	  };
 
 export interface UserData {
 	name: string;

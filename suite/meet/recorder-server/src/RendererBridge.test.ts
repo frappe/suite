@@ -36,6 +36,48 @@ const command: CommandClaims = {
 };
 
 describe('ChromiumRendererBridge', () => {
+	it.each([
+		{
+			type: 'suite-recorder:public-key-ready',
+			publicKey: TEST_PUBLIC_JWK,
+		},
+		{
+			type: 'suite-recorder:public-key-ready',
+			protocol_version: 2,
+			occurred_at: '2026-08-30T12:00:00.000Z',
+			publicKey: TEST_PUBLIC_JWK,
+		},
+		{
+			type: 'suite-recorder:public-key-ready',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:00.000Z',
+			publicKey: TEST_PUBLIC_JWK,
+			extra: true,
+		},
+		{
+			type: 'suite-recorder:public-key-ready',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:00.000Z',
+			publicKey: { ...TEST_PUBLIC_JWK, ext: true },
+		},
+	])('rejects malformed public-key message %#', (message) => {
+		const bridge = new ChromiumRendererBridge({} as never);
+		const resolveReady = vi.fn();
+		const rejectReady = vi.fn();
+		const receive = Reflect.get(bridge, 'receive') as (
+			job: string,
+			generation: number,
+			value: unknown,
+			resolve: typeof resolveReady,
+			reject: typeof rejectReady,
+		) => void;
+
+		receive.call(bridge, 'job-1', 0, message, resolveReady, rejectReady);
+
+		expect(resolveReady).not.toHaveBeenCalled();
+		expect(rejectReady).toHaveBeenCalledOnce();
+	});
+
 	it('cancels and awaits a Chromium launch during shutdown', async () => {
 		const assets = await mkdtemp(join(tmpdir(), 'renderer-assets-'));
 		await writeFile(join(assets, 'recorder.html'), '<!doctype html>');
@@ -85,6 +127,8 @@ describe('ChromiumRendererBridge', () => {
 		const evaluate = vi.fn(async () => {
 			exposed?.({
 				type: 'suite-recorder:configuration-accepted',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:01.000Z',
 				job: 'job-1',
 			});
 		});
@@ -99,7 +143,9 @@ describe('ChromiumRendererBridge', () => {
 			goto: vi.fn(async () => {
 				exposed?.({
 					type: 'suite-recorder:public-key-ready',
-					publicKey: { ...TEST_PUBLIC_JWK, ext: true, key_ops: ['verify'] },
+					protocol_version: 1,
+					occurred_at: '2026-08-30T12:00:00.000Z',
+					publicKey: TEST_PUBLIC_JWK,
 				});
 				return null;
 			}),
@@ -128,6 +174,8 @@ describe('ChromiumRendererBridge', () => {
 			},
 			adapter,
 		);
+		const lifecycle = vi.fn(async () => undefined);
+		bridge.onLifecycle(lifecycle);
 
 		await bridge.initialize();
 		expect(bridge.productionReady).toBe(true);
@@ -140,20 +188,85 @@ describe('ChromiumRendererBridge', () => {
 			page.goto as never,
 		);
 
-		await bridge.deliverGrant('job-1', 'private-grant', '2026-07-31T12:00:00Z');
+		await bridge.deliverGrant(
+			'job-1',
+			'private-grant',
+			'2026-07-31T12:00:00.000Z',
+		);
 		expect(evaluate.mock.calls[0]?.[1]).toEqual({
-			job: 'job-1',
-			grant: 'private-grant',
-			frappeOrigin: 'https://site.test',
-			meetingId: 'room-1',
-			sfuOrigin: 'https://sfu.test',
-			socketPath: '/socket.io',
-			startedAt: Date.parse('2026-07-31T12:00:00Z'),
+			type: 'suite-recorder:configure',
+			protocol_version: 1,
+			config: {
+				job: 'job-1',
+				grant: 'private-grant',
+				frappeOrigin: 'https://site.test',
+				meetingId: 'room-1',
+				sfuOrigin: 'https://sfu.test',
+				socketPath: '/socket.io',
+				acceptedAt: '2026-07-31T12:00:00.000Z',
+			},
 		});
-		await bridge.deliverGrant('job-1', 'private-grant', '2026-07-31T12:00:00Z');
+		expect(lifecycle).toHaveBeenCalledTimes(1);
+		for (const message of [
+			{ type: 'suite-recorder:capture-ready', job: 'job-1' },
+			{
+				type: 'suite-recorder:capture-ready',
+				protocol_version: 2,
+				occurred_at: '2026-08-30T12:00:02.000Z',
+				job: 'job-1',
+			},
+			{
+				type: 'suite-recorder:capture-ready',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:02.000Z',
+				job: 'job-1',
+				extra: true,
+			},
+			{
+				type: 'suite-recorder:interruption',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:02.000Z',
+				job: 'job-1',
+				reason_code: 'arbitrary_reason',
+			},
+			{
+				type: 'suite-recorder:interruption',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:02.000Z',
+				job: 'job-1',
+				reason_code: 'sfu_disconnected',
+				diagnostic: 'x'.repeat(257),
+			},
+		])
+			exposed?.(message);
+		expect(lifecycle).toHaveBeenCalledTimes(1);
+		exposed?.({
+			type: 'suite-recorder:interruption',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:02.000Z',
+			job: 'job-1',
+			reason_code: 'sfu_disconnected',
+			diagnostic: 'connection lost',
+		});
+		expect(lifecycle).toHaveBeenLastCalledWith({
+			job: 'job-1',
+			generation: 0,
+			type: 'interrupted',
+			reason: 'sfu_disconnected',
+			occurredAt: '2026-08-30T12:00:02.000Z',
+		});
+		await bridge.deliverGrant(
+			'job-1',
+			'private-grant',
+			'2026-07-31T12:00:00.000Z',
+		);
 		expect(evaluate).toHaveBeenCalledOnce();
 		await expect(
-			bridge.deliverGrant('job-1', 'different-grant', '2026-07-31T12:00:00Z'),
+			bridge.deliverGrant(
+				'job-1',
+				'different-grant',
+				'2026-07-31T12:00:00.000Z',
+			),
 		).rejects.toThrow('conflicting');
 
 		await bridge.stop('job-1');
@@ -185,6 +298,8 @@ describe('ChromiumRendererBridge', () => {
 			goto: vi.fn(async () => {
 				exposed?.({
 					type: 'suite-recorder:public-key-ready',
+					protocol_version: 1,
+					occurred_at: '2026-08-30T12:00:00.000Z',
 					publicKey: TEST_PUBLIC_JWK,
 				});
 				return null;

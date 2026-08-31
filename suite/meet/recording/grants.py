@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 
 GRANT_AUDIENCE = "meet-sfu-recorder"
 GRANT_TYPE = "meet-recording-grant+jwt"
+PROTOCOL_VERSION = 1
 MAX_CONNECTION_LIFETIME_SECONDS = 60
 
 
@@ -104,6 +105,7 @@ def mint_recording_grant(
 
     normalized_jwk = normalize_public_jwk(public_jwk)
     payload = {
+        "protocol_version": PROTOCOL_VERSION,
         "iss": f"frappe-site:{site}",
         "aud": GRANT_AUDIENCE,
         "scope": "recording",

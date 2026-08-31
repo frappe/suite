@@ -10,6 +10,7 @@ import puppeteer, {
 	type HTTPRequest,
 	type Page,
 } from 'puppeteer-core';
+import { validUtcTimestamp } from './AuthManager.js';
 import type {
 	CaptureArtifact,
 	CaptureGap,
@@ -117,6 +118,7 @@ const browserAdapter: BrowserAdapter = {
 function isPublicJwk(value: unknown): value is PublicJwk {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 	return (
+		hasExactKeys(value, ['kty', 'crv', 'x', 'y']) &&
 		'kty' in value &&
 		value.kty === 'EC' &&
 		'crv' in value &&
@@ -127,6 +129,29 @@ function isPublicJwk(value: unknown): value is PublicJwk {
 		typeof value.y === 'string' &&
 		/^[A-Za-z0-9_-]{43}$/.test(value.x) &&
 		/^[A-Za-z0-9_-]{43}$/.test(value.y)
+	);
+}
+
+const RECORDER_PROTOCOL_VERSION = 1;
+const RENDERER_REASON_CODES = new Set([
+	'sfu_disconnected',
+	'media_attachment_failed',
+	'media_subscription_failed',
+	'receive_transport_failed',
+	'configuration_failed',
+	'browser_disconnected',
+	'page_crashed',
+]);
+
+function hasExactKeys(
+	value: object,
+	required: string[],
+	optional: string[] = [],
+): boolean {
+	const keys = Object.keys(value);
+	return (
+		required.every((key) => keys.includes(key)) &&
+		keys.every((key) => required.includes(key) || optional.includes(key))
 	);
 }
 
@@ -359,21 +384,22 @@ export class ChromiumRendererBridge implements RendererBridge {
 			renderer.resolveConfiguration = resolve;
 			renderer.rejectConfiguration = reject;
 		});
-		const config = {
-			job,
-			grant,
-			meetingId: renderer.command.room,
-			sfuOrigin: this.options.sfuOrigin,
-			frappeOrigin: renderer.command.origin,
-			socketPath: this.options.sfuSocketPath,
-			startedAt: Date.parse(acceptedAt),
+		const message = {
+			type: 'suite-recorder:configure' as const,
+			protocol_version: RECORDER_PROTOCOL_VERSION,
+			config: {
+				job,
+				grant,
+				meetingId: renderer.command.room,
+				sfuOrigin: this.options.sfuOrigin,
+				frappeOrigin: renderer.command.origin,
+				socketPath: this.options.sfuSocketPath,
+				acceptedAt,
+			},
 		};
 		await renderer.page.evaluate((value) => {
-			window.postMessage(
-				{ type: 'suite-recorder:configure', config: value },
-				window.location.origin,
-			);
-		}, config);
+			window.postMessage(value, window.location.origin);
+		}, message);
 		let timeout: NodeJS.Timeout | undefined;
 		try {
 			await Promise.race([
@@ -489,28 +515,22 @@ export class ChromiumRendererBridge implements RendererBridge {
 	): void {
 		if (!value || typeof value !== 'object' || Array.isArray(value)) return;
 		if ('type' in value && value.type === 'suite-recorder:public-key-ready') {
-			if ('publicKey' in value && isPublicJwk(value.publicKey)) {
-				const { kty, crv, x, y } = value.publicKey;
-				resolveReady({ kty, crv, x, y });
-			} else rejectReady(new Error('renderer returned an invalid public JWK'));
+			const publicKey = parseRendererPublicKeyReady(value);
+			if (publicKey) resolveReady(publicKey);
+			else rejectReady(new Error('renderer returned an invalid public JWK'));
 			return;
 		}
-		if (!('job' in value) || value.job !== job || !('type' in value)) return;
+		const lifecycle = parseRendererLifecycle(value);
+		if (!lifecycle || lifecycle.job !== job) return;
 		const renderer = this.jobs.get(job);
 		if (!renderer || renderer.generation !== generation) return;
-		const type = rendererLifecycleType(value.type);
-		if (!type) return;
-		if (type === 'configured') renderer?.resolveConfiguration?.();
-		const reason =
-			'reason' in value && typeof value.reason === 'string'
-				? value.reason.slice(0, 256)
-				: undefined;
+		if (lifecycle.type === 'configured') renderer.resolveConfiguration?.();
 		void this.lifecycleHandler({
 			job,
 			generation,
-			type,
-			occurredAt: new Date().toISOString(),
-			...(reason ? { reason } : {}),
+			type: lifecycle.type,
+			occurredAt: lifecycle.occurredAt,
+			...(lifecycle.reasonCode ? { reason: lifecycle.reasonCode } : {}),
 		});
 	}
 
@@ -526,27 +546,92 @@ export class ChromiumRendererBridge implements RendererBridge {
 	}
 }
 
-function rendererLifecycleType(
-	value: unknown,
-): RendererLifecycleEvent['type'] | undefined {
-	switch (value) {
-		case 'suite-recorder:configuration-accepted':
-			return 'configured';
-		case 'suite-recorder:proof-complete':
-			return 'proof_complete';
-		case 'suite-recorder:join-complete':
-			return 'joined';
-		case 'suite-recorder:capture-ready':
-			return 'capture_ready';
-		case 'suite-recorder:interruption':
-			return 'interrupted';
-		case 'suite-recorder:room-empty':
-			return 'room_empty';
-		case 'suite-recorder:failure':
-			return 'failed';
-		default:
+export function parseRendererPublicKeyReady(value: object): PublicJwk | null {
+	if (
+		!hasExactKeys(value, [
+			'type',
+			'protocol_version',
+			'occurred_at',
+			'publicKey',
+		]) ||
+		!('type' in value) ||
+		value.type !== 'suite-recorder:public-key-ready' ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== RECORDER_PROTOCOL_VERSION ||
+		!('occurred_at' in value) ||
+		!validUtcTimestamp(value.occurred_at) ||
+		!('publicKey' in value) ||
+		!isPublicJwk(value.publicKey)
+	)
+		return null;
+	const { kty, crv, x, y } = value.publicKey;
+	return { kty, crv, x, y };
+}
+
+export function parseRendererLifecycle(value: object):
+	| {
+			job: string;
+			type: RendererLifecycleEvent['type'];
+			occurredAt: string;
+			reasonCode?: string;
+	  }
+	| undefined {
+	if (
+		!('type' in value) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== RECORDER_PROTOCOL_VERSION ||
+		!('occurred_at' in value) ||
+		!validUtcTimestamp(value.occurred_at) ||
+		!('job' in value) ||
+		typeof value.job !== 'string' ||
+		!value.job
+	)
+		return undefined;
+	const types: Record<string, RendererLifecycleEvent['type']> = {
+		'suite-recorder:configuration-accepted': 'configured',
+		'suite-recorder:proof-complete': 'proof_complete',
+		'suite-recorder:join-complete': 'joined',
+		'suite-recorder:capture-ready': 'capture_ready',
+		'suite-recorder:room-empty': 'room_empty',
+	};
+	const lifecycleType =
+		typeof value.type === 'string' ? types[value.type] : undefined;
+	if (lifecycleType) {
+		if (
+			!hasExactKeys(value, ['type', 'protocol_version', 'occurred_at', 'job'])
+		)
 			return undefined;
+		return {
+			job: value.job,
+			type: lifecycleType,
+			occurredAt: value.occurred_at,
+		};
 	}
+	if (
+		value.type !== 'suite-recorder:interruption' &&
+		value.type !== 'suite-recorder:failure'
+	)
+		return undefined;
+	if (
+		!hasExactKeys(
+			value,
+			['type', 'protocol_version', 'occurred_at', 'job', 'reason_code'],
+			['diagnostic'],
+		) ||
+		!('reason_code' in value) ||
+		typeof value.reason_code !== 'string' ||
+		!RENDERER_REASON_CODES.has(value.reason_code) ||
+		('diagnostic' in value &&
+			(typeof value.diagnostic !== 'string' || value.diagnostic.length > 256))
+	)
+		return undefined;
+	return {
+		job: value.job,
+		occurredAt: value.occurred_at,
+		type:
+			value.type === 'suite-recorder:interruption' ? 'interrupted' : 'failed',
+		reasonCode: value.reason_code,
+	};
 }
 
 export const TEST_PUBLIC_JWK: PublicJwk = {

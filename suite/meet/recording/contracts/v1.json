@@ -1,0 +1,693 @@
+{
+  "name": "meet-recording-contracts",
+  "protocol_version": 1,
+  "accepted_protocol_versions": [1],
+  "timestamp_format": "UTC RFC 3339 with exactly millisecond precision and Z",
+  "vocabularies": {
+    "command_operations": ["reserve", "query", "grant", "stop"],
+    "command_states": [
+      "reserved",
+      "configured",
+      "proof_complete",
+      "joined",
+      "capture_ready",
+      "interrupted",
+      "failed",
+      "recovery_required",
+      "stopping",
+      "complete",
+      "partial"
+    ],
+    "command_rejection_reason_codes": ["capacity", "storage", "policy", "invalid_job"],
+    "health_reason_codes": [
+      "browser_disconnected",
+      "capture_interrupted",
+      "configuration_failed",
+      "duration_limit",
+      "ffmpeg_exited",
+      "interruption_timeout",
+      "media_attachment_failed",
+      "media_subscription_failed",
+      "page_crashed",
+      "quota_limit",
+      "receive_transport_failed",
+      "room_empty",
+      "service_shutdown",
+      "sfu_disconnected",
+      "worker_missing_after_restart"
+    ],
+    "startup_milestones": ["configured", "proof_complete", "joined", "capture_started"],
+    "interruption_reason_codes": [
+      "browser_disconnected",
+      "capture_interrupted",
+      "configuration_failed",
+      "ffmpeg_exited",
+      "media_attachment_failed",
+      "media_subscription_failed",
+      "page_crashed",
+      "receive_transport_failed",
+      "sfu_disconnected"
+    ],
+    "renderer_reason_codes": [
+      "sfu_disconnected",
+      "media_attachment_failed",
+      "media_subscription_failed",
+      "receive_transport_failed",
+      "configuration_failed",
+      "browser_disconnected",
+      "page_crashed"
+    ],
+    "callback_failure_reason_codes": [
+      "capture_failed",
+      "processing_failed",
+      "storage_unavailable",
+      "quota_exhausted"
+    ],
+    "end_reason_codes": [
+      "duration_limit",
+      "host_stop",
+      "interruption_timeout",
+      "quota_limit",
+      "room_empty",
+      "service_shutdown"
+    ],
+    "gap_reason_codes": ["capture_interrupted", "ffmpeg_exited", "renderer_interrupted"],
+    "frappe_recording_states": [
+      "Pending",
+      "Starting",
+      "Recording",
+      "Interrupted",
+      "Stopping",
+      "Processing",
+      "Ready",
+      "Partial",
+      "Failed",
+      "Cancelled"
+    ],
+    "proof_reason_codes": ["invalid_proof"]
+  },
+  "message_shapes": {
+    "command_claims": {
+      "required": [
+        "aud",
+        "exp",
+        "iat",
+        "iss",
+        "job",
+        "jti",
+        "limits",
+        "operation",
+        "origin",
+        "protocol_version",
+        "recording",
+        "room",
+        "site"
+      ],
+      "optional": []
+    },
+    "reserve_request": { "required": ["job", "protocol_version"], "optional": [] },
+    "grant_request": {
+      "required": ["endpoint_generation", "grant", "protocol_version"],
+      "optional": []
+    },
+    "stop_request": {
+      "required": ["job", "operation_id", "protocol_version"],
+      "optional": []
+    },
+    "command_accepted_response": {
+      "required": [
+        "accepted_at",
+        "endpoint_generation",
+        "event_sequence",
+        "job",
+        "protocol_version",
+        "public_jwk",
+        "state",
+        "status"
+      ],
+      "optional": ["interruption", "milestones", "reason_code", "replacement_ready_at"]
+    },
+    "command_rejected_response": {
+      "required": ["job", "protocol_version", "reason_code", "status"],
+      "optional": []
+    },
+    "grant_success_response": {
+      "required": ["protocol_version", "status"],
+      "optional": []
+    },
+    "stop_success_response": {
+      "required": ["job", "operation_id", "protocol_version", "status"],
+      "optional": []
+    },
+    "callback_claims": {
+      "required": [
+        "aud",
+        "body_sha256",
+        "exp",
+        "iat",
+        "iss",
+        "job",
+        "jti",
+        "operation",
+        "operation_id",
+        "protocol_version",
+        "recording",
+        "site"
+      ],
+      "optional": []
+    },
+    "callback_startup_progress": {
+      "required": [
+        "event_sequence",
+        "job",
+        "milestone",
+        "occurred_at",
+        "protocol_version",
+        "recording_id"
+      ],
+      "optional": []
+    },
+    "callback_interrupted": {
+      "required": [
+        "event_sequence",
+        "interrupted_at",
+        "interruption_deadline",
+        "interruption_id",
+        "job",
+        "omission_started_at",
+        "protocol_version",
+        "reason_code",
+        "recording_id"
+      ],
+      "optional": []
+    },
+    "callback_recovered": {
+      "required": [
+        "event_sequence",
+        "interruption_id",
+        "job",
+        "protocol_version",
+        "recovered_at",
+        "recording_id",
+        "resumed_capture_started_at"
+      ],
+      "optional": []
+    },
+    "callback_replacement_ready": {
+      "required": [
+        "endpoint_generation",
+        "event_sequence",
+        "interruption_id",
+        "job",
+        "protocol_version",
+        "public_jwk",
+        "ready_at",
+        "recording_id"
+      ],
+      "optional": []
+    },
+    "callback_failed": {
+      "required": ["event_sequence", "job", "protocol_version", "reason_code", "recording_id"],
+      "optional": []
+    },
+    "callback_stopped": {
+      "required": [
+        "captured_bytes",
+        "duration_ms",
+        "ended_at",
+        "end_reason_code",
+        "event_sequence",
+        "gaps",
+        "job",
+        "protocol_version",
+        "recording_id",
+        "sha256",
+        "size"
+      ],
+      "optional": []
+    },
+    "callback_segment_progress": {
+      "required": ["captured_bytes", "job", "protocol_version", "recording_id"],
+      "optional": []
+    },
+    "callback_complete_upload": {
+      "required": ["event_sequence", "job", "protocol_version", "recording_id"],
+      "optional": []
+    },
+    "callback_upload_query": {
+      "required": ["chunk_sha256", "job", "offset", "protocol_version", "recording_id"],
+      "optional": []
+    },
+    "renderer_configure": {
+      "required": ["config", "protocol_version", "type"],
+      "optional": []
+    },
+    "renderer_lifecycle": {
+      "required": ["job", "occurred_at", "protocol_version", "type"],
+      "optional": []
+    },
+    "renderer_reason_lifecycle": {
+      "required": ["job", "occurred_at", "protocol_version", "reason_code", "type"],
+      "optional": ["diagnostic"]
+    },
+    "renderer_public_key_ready": {
+      "required": ["occurred_at", "protocol_version", "publicKey", "type"],
+      "optional": []
+    },
+    "recording_grant_claims": {
+      "required": [
+        "aud",
+        "authorization_expires_at",
+        "cnf",
+        "exp",
+        "iat",
+        "iss",
+        "jti",
+        "meeting_id",
+        "protocol_version",
+        "recorder_job_id",
+        "recording_id",
+        "scope",
+        "site"
+      ],
+      "optional": []
+    },
+    "proof_challenge": {
+      "required": ["expires_at", "issued_at", "jti", "nonce", "protocol_version", "socket_id"],
+      "optional": []
+    },
+    "proof_request": { "required": ["protocol_version", "signature"], "optional": [] },
+    "proof_success": { "required": ["protocol_version", "success"], "optional": [] },
+    "proof_failure": {
+      "required": ["protocol_version", "reason_code", "success"],
+      "optional": ["diagnostic"]
+    }
+  },
+  "mappings": {
+    "startup_milestone_to_frappe_state": {
+      "configured": "Starting",
+      "proof_complete": "Starting",
+      "joined": "Starting",
+      "capture_started": "Recording"
+    },
+    "callback_event_to_frappe_state": {
+      "interrupted": ["Interrupted"],
+      "recovered": ["Recording"],
+      "replacement_ready": ["Interrupted"],
+      "failed": ["Failed", "Cancelled"],
+      "stopped": ["Processing", "Ready", "Partial"],
+      "segment_progress": ["Recording", "Interrupted", "Stopping"],
+      "complete_upload": ["Processing", "Ready", "Partial"]
+    }
+  },
+  "vectors": {
+    "protocol_versions": {
+      "accepted": [1],
+      "rejected": [0, 2, 1.5, true, "1", null]
+    },
+    "timestamps": {
+      "accepted": [
+        "2026-08-30T12:00:00.000Z",
+        "2026-08-30T12:00:00.999Z"
+      ],
+      "rejected": [
+        "2026-08-30T12:00:00Z",
+        "2026-08-30T12:00:00.00Z",
+        "2026-08-30T12:00:00.000+00:00",
+        "2026-02-30T12:00:00.000Z",
+        1788091200000,
+        null
+      ]
+    },
+    "renderer_lifecycle": {
+      "accepted": [
+        {
+          "type": "suite-recorder:configuration-accepted",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:proof-complete",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:join-complete",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:capture-ready",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:room-empty",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:interruption",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "sfu_disconnected"
+        },
+        {
+          "type": "suite-recorder:interruption",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "media_attachment_failed"
+        },
+        {
+          "type": "suite-recorder:interruption",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "media_subscription_failed"
+        },
+        {
+          "type": "suite-recorder:interruption",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "receive_transport_failed"
+        },
+        {
+          "type": "suite-recorder:failure",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "configuration_failed"
+        },
+        {
+          "type": "suite-recorder:failure",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "browser_disconnected"
+        },
+        {
+          "type": "suite-recorder:failure",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "page_crashed",
+          "diagnostic": "renderer page crashed"
+        }
+      ],
+      "rejected": [
+        {
+          "type": "suite-recorder:capture-ready",
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:capture-ready",
+          "protocol_version": 2,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z"
+        },
+        {
+          "type": "suite-recorder:capture-ready",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00Z"
+        },
+        {
+          "type": "suite-recorder:failure",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "unknown"
+        },
+        {
+          "type": "suite-recorder:capture-ready",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "unknown": true
+        }
+      ]
+    },
+    "proof_challenges": {
+      "accepted": [
+        {
+          "protocol_version": 1,
+          "jti": "jti-vector",
+          "socket_id": "socket-vector",
+          "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "issued_at": 1700000000,
+          "expires_at": 1700000010
+        }
+      ],
+      "rejected": [
+        {
+          "protocol_version": 2,
+          "jti": "jti-vector",
+          "socket_id": "socket-vector",
+          "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "issued_at": 1700000000,
+          "expires_at": 1700000010
+        },
+        {
+          "protocol_version": 1,
+          "jti": "jti-vector",
+          "socket_id": "socket-vector",
+          "nonce": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "issued_at": 1700000000,
+          "expires_at": 1700000010,
+          "unknown": true
+        }
+      ]
+    },
+    "command_claims": {
+      "accepted": [{
+        "protocol_version": 1,
+        "iss": "frappe-site:site.test",
+        "aud": "meet-recorder-control",
+        "site": "site.test",
+        "origin": "https://site.test",
+        "room": "room-vector",
+        "recording": "recording-vector",
+        "job": "job-vector",
+        "operation": "reserve",
+        "limits": {
+          "budget_bytes": 1000000,
+          "max_ends_at": "2026-08-30T12:00:00.000Z",
+          "output": { "width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac" }
+        },
+        "jti": "jti-vector",
+        "iat": 1700000000,
+        "exp": 1700000030
+      }],
+      "rejected": [
+        { "protocol_version": 2 },
+        { "protocol_version": 1, "unknown": true }
+      ]
+    },
+    "command_requests": {
+      "accepted": [
+        { "operation": "reserve", "body": { "protocol_version": 1, "job": "job-vector" } },
+        { "operation": "grant", "body": { "protocol_version": 1, "grant": "grant-vector", "endpoint_generation": 0 } },
+        { "operation": "stop", "body": { "protocol_version": 1, "job": "job-vector", "operation_id": "stop-vector" } }
+      ],
+      "rejected": [
+        { "operation": "reserve", "body": { "job": "job-vector" } },
+        { "operation": "grant", "body": { "protocol_version": 2, "grant": "grant-vector", "endpoint_generation": 0 } },
+        { "operation": "stop", "body": { "protocol_version": 1, "job": "job-vector", "operation_id": "stop-vector", "unknown": true } }
+      ]
+    },
+    "command_responses": {
+      "accepted": [{
+        "protocol_version": 1,
+        "status": "accepted",
+        "job": "job-vector",
+        "accepted_at": "2026-08-30T12:00:00.000Z",
+        "public_jwk": {
+          "kty": "EC",
+          "crv": "P-256",
+          "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+          "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU"
+        },
+        "endpoint_generation": 0,
+        "state": "reserved",
+        "event_sequence": 1
+      }],
+      "rejected": [
+        { "status": "accepted", "job": "job-vector" },
+        { "protocol_version": 2, "status": "rejected", "job": "job-vector", "reason_code": "capacity" }
+      ]
+    },
+    "command_rejected_responses": {
+      "accepted": [
+        { "http_status": 429, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "capacity" } },
+        { "http_status": 507, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "storage" } },
+        { "http_status": 422, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "policy" } },
+        { "http_status": 422, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "invalid_job" } }
+      ],
+      "rejected": [
+        { "http_status": 429, "body": { "protocol_version": 2, "status": "rejected", "job": "job-vector", "reason_code": "capacity" } },
+        { "http_status": 429, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "unknown" } },
+        { "http_status": 507, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "capacity" } },
+        { "http_status": 409, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "invalid_job" } }
+      ]
+    },
+    "grant_responses": {
+      "accepted": [{ "http_status": 200, "body": { "protocol_version": 1, "status": "accepted" } }],
+      "rejected": [
+        { "http_status": 200, "body": { "status": "accepted" } },
+        { "http_status": 200, "body": { "protocol_version": 1, "status": "accepted", "unknown": true } }
+      ]
+    },
+    "stop_responses": {
+      "accepted": [{ "http_status": 202, "body": { "protocol_version": 1, "status": "accepted", "job": "job-vector", "operation_id": "stop-vector" } }],
+      "rejected": [
+        { "http_status": 202, "body": { "status": "accepted", "job": "job-vector", "operation_id": "stop-vector" } },
+        { "http_status": 202, "body": { "protocol_version": 1, "status": "accepted", "job": "job-vector", "operation_id": "stop-vector", "unknown": true } }
+      ]
+    },
+    "callback_claims": {
+      "accepted": [{
+        "protocol_version": 1,
+        "iss": "meet-recorder:site.test",
+        "aud": "meet-recording-callback",
+        "site": "site.test",
+        "recording": "recording-vector",
+        "job": "job-vector",
+        "operation": "stopped",
+        "operation_id": "2",
+        "body_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "jti": "jti-vector",
+        "iat": 1700000000,
+        "exp": 1700000030
+      }],
+      "rejected": [
+        { "protocol_version": 2 },
+        { "protocol_version": 1, "unknown": true }
+      ]
+    },
+    "callback_requests": {
+      "accepted": [
+        { "operation": "startup_progress", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "milestone": "configured", "occurred_at": "2026-08-30T12:00:00.000Z" } },
+        { "operation": "interrupted", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "reason_code": "capture_interrupted", "interruption_id": "4cad3218-a956-4dec-a522-18f0dd3b75a2", "interrupted_at": "2026-08-30T12:00:00.000Z", "interruption_deadline": "2026-08-30T12:01:00.000Z", "omission_started_at": "2026-08-30T11:59:30.000Z" } },
+        { "operation": "recovered", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 3, "interruption_id": "4cad3218-a956-4dec-a522-18f0dd3b75a2", "resumed_capture_started_at": "2026-08-30T12:00:30.000Z", "recovered_at": "2026-08-30T12:00:31.000Z" } },
+        { "operation": "replacement_ready", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 3, "interruption_id": "4cad3218-a956-4dec-a522-18f0dd3b75a2", "endpoint_generation": 1, "public_jwk": { "kty": "EC", "crv": "P-256", "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY", "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU" }, "ready_at": "2026-08-30T12:00:10.000Z" } },
+        { "operation": "failed", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "reason_code": "capture_failed" } },
+        { "operation": "stopped", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "captured_bytes": 10, "size": 10, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "duration_ms": 1000, "ended_at": "2026-08-30T12:00:00.000Z", "end_reason_code": "host_stop", "gaps": [] } },
+        { "operation": "segment_progress", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "captured_bytes": 10 } },
+        { "operation": "complete_upload", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 3 } }
+      ],
+      "rejected": [
+        { "operation": "startup_progress", "body": { "protocol_version": 2, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "milestone": "configured", "occurred_at": "2026-08-30T12:00:00.000Z" } },
+        { "operation": "interrupted", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "reason_code": "capture_interrupted", "interruption_id": "4cad3218-a956-4dec-a522-18f0dd3b75a2", "interrupted_at": "2026-08-30T12:00:00.000Z", "interruption_deadline": "2026-08-30T12:00:59.000Z", "omission_started_at": "2026-08-30T11:59:30.000Z" } },
+        { "operation": "recovered", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 3, "interruption_id": "4cad3218-a956-4dec-a522-18f0dd3b75a2", "resumed_capture_started_at": "2026-08-30T12:00:31.000Z", "recovered_at": "2026-08-30T12:00:30.000Z" } },
+        { "operation": "stopped", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "captured_bytes": 10, "size": 0, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "duration_ms": 1000, "ended_at": "2026-08-30T12:00:00.000Z", "end_reason_code": "host_stop", "gaps": [] } },
+        { "operation": "stopped", "body": { "protocol_version": 1, "recording_id": "recording-vector", "job": "job-vector", "event_sequence": 2, "captured_bytes": 10, "size": 10, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "duration_ms": 1000, "ended_at": "2026-08-30T12:00:00Z", "end_reason_code": "host_stop", "gaps": [] } }
+      ]
+    },
+    "callback_upload_queries": {
+      "accepted": [{ "protocol_version": "1", "recording_id": "recording-vector", "job": "job-vector", "offset": "0", "chunk_sha256": "6c87f68371b28954707ebb92afee7ccffb74c6f71ec8fea8a98cf6104289585b" }],
+      "rejected": [
+        { "recording_id": "recording-vector", "job": "job-vector", "offset": "0", "chunk_sha256": "6c87f68371b28954707ebb92afee7ccffb74c6f71ec8fea8a98cf6104289585b" },
+        { "protocol_version": "1", "recording_id": "recording-vector", "job": "job-vector", "offset": "-1", "chunk_sha256": "6c87f68371b28954707ebb92afee7ccffb74c6f71ec8fea8a98cf6104289585b" },
+        { "protocol_version": "1", "recording_id": "recording-vector", "job": "job-vector", "offset": "0", "chunk_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ]
+    },
+    "renderer_configure": {
+      "accepted": [{ "type": "suite-recorder:configure", "protocol_version": 1, "config": { "job": "job-vector", "grant": "grant-vector", "meetingId": "room-vector", "sfuOrigin": "https://sfu.test", "frappeOrigin": "https://site.test", "socketPath": "/socket.io", "acceptedAt": "2026-08-30T12:00:00.000Z" } }],
+      "rejected": [
+        { "type": "suite-recorder:configure", "protocol_version": 2, "config": {} },
+        { "type": "suite-recorder:configure", "protocol_version": 1, "config": { "job": "job-vector" }, "unknown": true }
+      ]
+    },
+    "renderer_public_key_ready": {
+      "accepted": [{ "type": "suite-recorder:public-key-ready", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.000Z", "publicKey": { "kty": "EC", "crv": "P-256", "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY", "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU" } }],
+      "rejected": [
+        { "type": "suite-recorder:public-key-ready", "protocol_version": 2, "occurred_at": "2026-08-30T12:00:00.000Z", "publicKey": { "kty": "EC", "crv": "P-256", "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY", "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU" } },
+        { "type": "suite-recorder:public-key-ready", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00Z", "publicKey": {} }
+      ]
+    },
+    "recording_grant_claims": {
+      "accepted": [{
+        "protocol_version": 1,
+        "iss": "frappe-site:site.test",
+        "aud": "meet-sfu-recorder",
+        "scope": "recording",
+        "jti": "jti-vector",
+        "site": "site.test",
+        "meeting_id": "room-vector",
+        "recording_id": "recording-vector",
+        "recorder_job_id": "job-vector",
+        "cnf": {
+          "jwk": { "kty": "EC", "crv": "P-256", "x": "dekZC7nsWz9JfUnSQDU0HAyC2rFohnQ1xG1oiGPCASs", "y": "uQYwl6W7tkTphKATetD73cCx6_QObRdD9VqsCTA0mlE" },
+          "jkt": "5_dTnFp8YLZgTpIYA00V-_KwFyfTvqnxBPQECGyfOlU"
+        },
+        "iat": 1700000000,
+        "exp": 1700000060,
+        "authorization_expires_at": 1700003600
+      }],
+      "rejected": [
+        { "protocol_version": 2 },
+        { "protocol_version": 1, "unknown": true }
+      ]
+    },
+    "proof_requests": {
+      "accepted": [{ "protocol_version": 1, "signature": "signature-vector" }],
+      "rejected": [
+        { "signature": "signature-vector" },
+        { "protocol_version": 1, "signature": "signature-vector", "unknown": true }
+      ]
+    },
+    "proof_responses": {
+      "accepted": [
+        { "protocol_version": 1, "success": true },
+        { "protocol_version": 1, "success": false, "reason_code": "invalid_proof" }
+      ],
+      "rejected": [
+        { "success": true },
+        { "protocol_version": 1, "success": false, "reason_code": "unknown" }
+      ]
+    },
+    "finite_values": {
+      "command_operations": ["reserve", "query", "grant", "stop"],
+      "command_states": ["reserved", "configured", "proof_complete", "joined", "capture_ready", "interrupted", "failed", "recovery_required", "stopping", "complete", "partial"],
+      "command_rejection_reason_codes": ["capacity", "storage", "policy", "invalid_job"],
+      "health_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "duration_limit", "ffmpeg_exited", "interruption_timeout", "media_attachment_failed", "media_subscription_failed", "page_crashed", "quota_limit", "receive_transport_failed", "room_empty", "service_shutdown", "sfu_disconnected", "worker_missing_after_restart"],
+      "startup_milestones": ["configured", "proof_complete", "joined", "capture_started"],
+      "interruption_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "ffmpeg_exited", "media_attachment_failed", "media_subscription_failed", "page_crashed", "receive_transport_failed", "sfu_disconnected"],
+      "renderer_reason_codes": ["sfu_disconnected", "media_attachment_failed", "media_subscription_failed", "receive_transport_failed", "configuration_failed", "browser_disconnected", "page_crashed"],
+      "callback_failure_reason_codes": ["capture_failed", "processing_failed", "storage_unavailable", "quota_exhausted"],
+      "end_reason_codes": ["duration_limit", "host_stop", "interruption_timeout", "quota_limit", "room_empty", "service_shutdown"],
+      "gap_reason_codes": ["capture_interrupted", "ffmpeg_exited", "renderer_interrupted"],
+      "frappe_recording_states": ["Pending", "Starting", "Recording", "Interrupted", "Stopping", "Processing", "Ready", "Partial", "Failed", "Cancelled"],
+      "proof_reason_codes": ["invalid_proof"]
+    },
+    "callback_status_responses": {
+      "accepted": [
+        { "protocol_version": 1, "status": "Pending" },
+        { "protocol_version": 1, "status": "Starting" },
+        { "protocol_version": 1, "status": "Recording" },
+        { "protocol_version": 1, "status": "Interrupted" },
+        { "protocol_version": 1, "status": "Stopping" },
+        { "protocol_version": 1, "status": "Processing" },
+        { "protocol_version": 1, "status": "Ready" },
+        { "protocol_version": 1, "status": "Partial" },
+        { "protocol_version": 1, "status": "Failed" },
+        { "protocol_version": 1, "status": "Cancelled" }
+      ],
+      "rejected": [
+        { "status": "Recording" },
+        { "protocol_version": 2, "status": "Recording" },
+        { "protocol_version": 1, "status": "Unknown" },
+        { "protocol_version": 1, "status": "Recording", "unknown": true }
+      ]
+    }
+  }
+}

@@ -89,31 +89,35 @@ describe('recorder vertical chain', () => {
 				});
 				const issuedAt = Math.floor(Date.now() / 1000);
 				const challenge = {
-					version: 1 as const,
+					protocol_version: 1 as const,
 					jti: 'grant-jti',
 					socket_id: socket.id,
-					nonce: randomBytes(24).toString('base64url'),
+					nonce: randomBytes(32).toString('base64url'),
 					issued_at: issuedAt,
-					expires_at: issuedAt + 30,
+					expires_at: issuedAt + 10,
 				};
-				socket.on('recording:proof', ({ signature }, callback) => {
-					const canonical = Buffer.from(
-						`meet-recording-proof-v1\n${challenge.jti}\n${challenge.socket_id}\n${challenge.nonce}\n${challenge.issued_at}\n${challenge.expires_at}`,
-					);
-					proofAccepted = Boolean(
-						publicJwk &&
-							verify(
-								'sha256',
-								canonical,
-								{
-									key: createPublicKey({ key: publicJwk, format: 'jwk' }),
-									dsaEncoding: 'ieee-p1363',
-								},
-								Buffer.from(signature, 'base64url'),
-							),
-					);
-					callback({ success: proofAccepted });
-				});
+				socket.on(
+					'recording:proof',
+					({ protocol_version, signature }, callback) => {
+						expect(protocol_version).toBe(1);
+						const canonical = Buffer.from(
+							`meet-recording-proof-v1\n${challenge.jti}\n${challenge.socket_id}\n${challenge.nonce}\n${challenge.issued_at}\n${challenge.expires_at}`,
+						);
+						proofAccepted = Boolean(
+							publicJwk &&
+								verify(
+									'sha256',
+									canonical,
+									{
+										key: createPublicKey({ key: publicJwk, format: 'jwk' }),
+										dsaEncoding: 'ieee-p1363',
+									},
+									Buffer.from(signature, 'base64url'),
+								),
+						);
+						callback({ protocol_version: 1, success: proofAccepted });
+					},
+				);
 				socket.on('recording:join', (data, callback) => {
 					expect(proofAccepted).toBe(true);
 					expect(data).toEqual({ roomId: command.room });
@@ -182,7 +186,7 @@ describe('recorder vertical chain', () => {
 				await bridge.deliverGrant(
 					command.job,
 					'recording-grant',
-					'2026-07-31T12:00:00Z',
+					'2026-07-31T12:00:00.000Z',
 				);
 				await expect
 					.poll(() => lifecycle.at(-1)?.type, { timeout: 15_000 })

@@ -1,3 +1,8 @@
+import type {
+	RecordingProofChallenge,
+	RecordingProofResponse,
+} from "../../suite/meet/types";
+
 export interface RecorderParticipantUserData {
 	name?: string;
 	avatar?: string | null;
@@ -30,7 +35,10 @@ export interface RecorderParticipantUpdate {
 }
 
 export type ParticipantMessage =
-	| { type: "participant-joined"; value: RecorderParticipantData & { participantId: string } }
+	| {
+			type: "participant-joined";
+			value: RecorderParticipantData & { participantId: string };
+	  }
 	| { type: "participant-left"; value: { participantId: string } };
 
 export interface ProducerEvent {
@@ -55,7 +63,10 @@ export type MediaControlAction =
 
 export type MediaControlMessage =
 	| { participantId: string; action: LegacyMediaControlAction }
-	| { participantId: string; action: { type: "audio" | "video"; enabled: boolean } };
+	| {
+			participantId: string;
+			action: { type: "audio" | "video"; enabled: boolean };
+	  };
 
 export interface ParticipantSnapshot {
 	id: string;
@@ -76,14 +87,19 @@ export interface ChatMessage {
 	timestamp?: string;
 }
 
-export interface RecordingChallengeMessage {
-	version: 1;
-	jti: string;
-	socket_id: string;
-	nonce: string;
-	issued_at: number;
-	expires_at: number;
-}
+export type RecordingChallengeMessage = RecordingProofChallenge;
+
+const exactKeys = (
+	value: object,
+	required: readonly string[],
+	optional: readonly string[] = [],
+): boolean => {
+	const keys = Object.keys(value);
+	return (
+		required.every((key) => keys.includes(key)) &&
+		keys.every((key) => required.includes(key) || optional.includes(key))
+	);
+};
 
 const optionalString = (value: unknown): value is string | undefined =>
 	value === undefined || typeof value === "string";
@@ -109,7 +125,8 @@ const parseParticipantUserData = (
 		!optionalBoolean(audioEnabled) ||
 		!optionalBoolean(videoEnabled) ||
 		!optionalBoolean(isGuest)
-	) return null;
+	)
+		return null;
 	return {
 		name,
 		avatar,
@@ -132,7 +149,9 @@ export const parseParticipantMessage = (
 	}
 	const userDataValue = "userData" in value ? value.userData : undefined;
 	const userData =
-		userDataValue === undefined ? undefined : parseParticipantUserData(userDataValue);
+		userDataValue === undefined
+			? undefined
+			: parseParticipantUserData(userDataValue);
 	if (userDataValue !== undefined && !userData) return null;
 	return { type, value: { participantId, ...(userData ? { userData } : {}) } };
 };
@@ -152,7 +171,8 @@ export const parseProducerMessage = (
 		typeof participantId !== "string" ||
 		!participantId ||
 		typeof isScreen !== "boolean"
-	) return null;
+	)
+		return null;
 	return { type, value: { producerId, participantId, isScreen } };
 };
 
@@ -169,7 +189,8 @@ export const parseParticipantSnapshot = (
 		!optionalString(userId) ||
 		typeof infoValue !== "object" ||
 		infoValue === null
-	) return null;
+	)
+		return null;
 	const info = parseParticipantUserData(infoValue);
 	const userName = "user_name" in infoValue ? infoValue.user_name : undefined;
 	if (!info || !optionalString(userName)) return null;
@@ -181,13 +202,14 @@ export const parseProducerSnapshot = (
 ): ProducerSnapshot | null => {
 	if (typeof value !== "object" || value === null) return null;
 	const id = "id" in value ? value.id : undefined;
-	const participantId = "participantId" in value
-		? value.participantId
-		: "user_id" in value
-			? value.user_id
-			: "userId" in value
-				? value.userId
-				: undefined;
+	const participantId =
+		"participantId" in value
+			? value.participantId
+			: "user_id" in value
+				? value.user_id
+				: "userId" in value
+					? value.userId
+					: undefined;
 	const isScreen = "isScreen" in value ? value.isScreen : false;
 	if (
 		typeof id !== "string" ||
@@ -195,7 +217,8 @@ export const parseProducerSnapshot = (
 		typeof participantId !== "string" ||
 		!participantId ||
 		typeof isScreen !== "boolean"
-	) return null;
+	)
+		return null;
 	return { id, participantId, isScreen };
 };
 
@@ -212,14 +235,16 @@ export const parseMediaControlMessage = (
 		action === "unmute" ||
 		action === "video_off" ||
 		action === "video_on"
-	) return { participantId, action };
+	)
+		return { participantId, action };
 	if (typeof action !== "object" || action === null) return null;
 	const actionType = "type" in action ? action.type : undefined;
 	const enabled = "enabled" in action ? action.enabled : undefined;
 	if (
 		(actionType !== "audio" && actionType !== "video") ||
 		typeof enabled !== "boolean"
-	) return null;
+	)
+		return null;
 	return { participantId, action: { type: actionType, enabled } };
 };
 
@@ -254,8 +279,10 @@ export const parseReaction = (
 	if (typeof value !== "object" || value === null) return null;
 	const fromUser = "fromUser" in value ? value.fromUser : undefined;
 	const reaction = "reaction" in value ? value.reaction : undefined;
-	return typeof fromUser === "string" && fromUser &&
-		typeof reaction === "string" && reaction
+	return typeof fromUser === "string" &&
+		fromUser &&
+		typeof reaction === "string" &&
+		reaction
 		? { fromUser, reaction }
 		: null;
 };
@@ -273,7 +300,8 @@ export const parseHandChange = (
 		!participantId ||
 		typeof raised !== "boolean" ||
 		!optionalString(timestamp)
-	) return null;
+	)
+		return null;
 	return {
 		participantId,
 		raised,
@@ -290,7 +318,8 @@ export const parseRaisedHands = (
 	if (typeof hands !== "object" || hands === null || Array.isArray(hands))
 		return null;
 	const entries = Object.entries(hands);
-	if (entries.some(([, timestamp]) => typeof timestamp !== "string")) return null;
+	if (entries.some(([, timestamp]) => typeof timestamp !== "string"))
+		return null;
 	return Object.fromEntries(entries);
 };
 
@@ -306,7 +335,8 @@ export const parseChatMessage = (value: unknown): ChatMessage | null => {
 		typeof message !== "string" ||
 		!message ||
 		!optionalString(timestamp)
-	) return null;
+	)
+		return null;
 	return { fromUser, fromName, message, timestamp };
 };
 
@@ -326,9 +356,10 @@ export const parseParticipantUpdate = (
 		"video_enabled" in value ? value.video_enabled : undefined;
 	const isGuest = "is_guest" in value ? value.is_guest : undefined;
 	const userDataValue = "userData" in value ? value.userData : undefined;
-	const userData = userDataValue === undefined
-		? undefined
-		: parseParticipantUserData(userDataValue);
+	const userData =
+		userDataValue === undefined
+			? undefined
+			: parseParticipantUserData(userDataValue);
 	if (
 		!optionalString(participantId) ||
 		!optionalString(userId) ||
@@ -339,7 +370,8 @@ export const parseParticipantUpdate = (
 		!optionalBoolean(videoEnabled) ||
 		!optionalBoolean(isGuest) ||
 		(userDataValue !== undefined && !userData)
-	) return null;
+	)
+		return null;
 	return {
 		...("participantId" in value ? { participantId } : {}),
 		...("user_id" in value ? { user_id: userId } : {}),
@@ -356,22 +388,90 @@ export const parseParticipantUpdate = (
 export const parseRecordingChallenge = (
 	value: unknown,
 ): RecordingChallengeMessage | null => {
-	if (typeof value !== "object" || value === null) return null;
-	const version = "version" in value ? value.version : undefined;
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		Array.isArray(value) ||
+		!exactKeys(value, [
+			"protocol_version",
+			"jti",
+			"socket_id",
+			"nonce",
+			"issued_at",
+			"expires_at",
+		])
+	)
+		return null;
+	const protocolVersion =
+		"protocol_version" in value ? value.protocol_version : undefined;
 	const jti = "jti" in value ? value.jti : undefined;
 	const socketId = "socket_id" in value ? value.socket_id : undefined;
 	const nonce = "nonce" in value ? value.nonce : undefined;
 	const issuedAt = "issued_at" in value ? value.issued_at : undefined;
 	const expiresAt = "expires_at" in value ? value.expires_at : undefined;
 	if (
-		version !== 1 ||
-		typeof jti !== "string" || !jti ||
-		typeof socketId !== "string" || !socketId ||
-		typeof nonce !== "string" || !nonce ||
-		typeof issuedAt !== "number" || !Number.isFinite(issuedAt) ||
-		typeof expiresAt !== "number" || !Number.isFinite(expiresAt)
-	) return null;
-	return { version, jti, socket_id: socketId, nonce, issued_at: issuedAt, expires_at: expiresAt };
+		protocolVersion !== 1 ||
+		typeof jti !== "string" ||
+		!jti ||
+		typeof socketId !== "string" ||
+		!socketId ||
+		typeof nonce !== "string" ||
+		!/^[A-Za-z0-9_-]{43}$/.test(nonce) ||
+		typeof issuedAt !== "number" ||
+		!Number.isSafeInteger(issuedAt) ||
+		typeof expiresAt !== "number" ||
+		!Number.isSafeInteger(expiresAt) ||
+		expiresAt - issuedAt !== 10
+	)
+		return null;
+	return {
+		protocol_version: protocolVersion,
+		jti,
+		socket_id: socketId,
+		nonce,
+		issued_at: issuedAt,
+		expires_at: expiresAt,
+	};
+};
+
+export const parseRecordingProofResponse = (
+	value: unknown,
+): RecordingProofResponse | null => {
+	if (typeof value !== "object" || value === null || Array.isArray(value))
+		return null;
+	if (
+		!("protocol_version" in value) ||
+		value.protocol_version !== 1 ||
+		!("success" in value)
+	)
+		return null;
+	if (
+		value.success === true &&
+		exactKeys(value, ["protocol_version", "success"])
+	) {
+		return { protocol_version: 1, success: true };
+	}
+	if (
+		value.success === false &&
+		exactKeys(
+			value,
+			["protocol_version", "success", "reason_code"],
+			["diagnostic"],
+		) &&
+		"reason_code" in value &&
+		value.reason_code === "invalid_proof" &&
+		(!("diagnostic" in value) ||
+			(typeof value.diagnostic === "string" && value.diagnostic.length <= 256))
+	)
+		return {
+			protocol_version: 1,
+			success: false,
+			reason_code: "invalid_proof",
+			...("diagnostic" in value
+				? { diagnostic: value.diagnostic as string }
+				: {}),
+		};
+	return null;
 };
 
 export const parseRequestResponse = (
@@ -393,18 +493,25 @@ export const parseScreenShareStarted = (
 	stream: MediaStream;
 } | null => {
 	if (typeof value !== "object" || value === null) return null;
-	const participantId = "participantId" in value ? value.participantId : undefined;
+	const participantId =
+		"participantId" in value ? value.participantId : undefined;
 	const stream = "stream" in value ? value.stream : undefined;
 	const consumer = "consumer" in value ? value.consumer : undefined;
 	if (
-		typeof participantId !== "string" || !participantId ||
-		(typeof MediaStream === "undefined" || !(stream instanceof MediaStream)) ||
-		typeof consumer !== "object" || consumer === null ||
-		!("id" in consumer) || typeof consumer.id !== "string" || !consumer.id ||
+		typeof participantId !== "string" ||
+		!participantId ||
+		typeof MediaStream === "undefined" ||
+		!(stream instanceof MediaStream) ||
+		typeof consumer !== "object" ||
+		consumer === null ||
+		!("id" in consumer) ||
+		typeof consumer.id !== "string" ||
+		!consumer.id ||
 		!("producerId" in consumer) ||
 		typeof consumer.producerId !== "string" ||
 		!consumer.producerId
-	) return null;
+	)
+		return null;
 	return {
 		participantId,
 		consumerId: consumer.id,
@@ -417,13 +524,15 @@ export const parseScreenShareStopped = (
 	value: unknown,
 ): { participantId: string; producerId: string } | null => {
 	if (typeof value !== "object" || value === null) return null;
-	const participantId = "participantId" in value ? value.participantId : undefined;
+	const participantId =
+		"participantId" in value ? value.participantId : undefined;
 	const producerId = "producerId" in value ? value.producerId : undefined;
 	if (
 		typeof participantId !== "string" ||
 		!participantId ||
 		typeof producerId !== "string" ||
 		!producerId
-	) return null;
+	)
+		return null;
 	return { participantId, producerId };
 };

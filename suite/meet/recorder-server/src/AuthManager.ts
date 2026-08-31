@@ -5,6 +5,7 @@ import {
 	COMMAND_AUDIENCE,
 	COMMAND_TYPE,
 	type CommandClaims,
+	PROTOCOL_VERSION,
 	type RecordingLimits,
 } from './types.js';
 
@@ -18,6 +19,7 @@ const CLAIM_KEYS = [
 	'limits',
 	'operation',
 	'origin',
+	'protocol_version',
 	'recording',
 	'room',
 	'site',
@@ -38,18 +40,12 @@ function nonempty(value: unknown): value is string {
 export function validUtcTimestamp(value: unknown): value is string {
 	if (
 		typeof value !== 'string' ||
-		!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value)
+		!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)
 	)
 		return false;
 	const parsed = Date.parse(value);
 	if (Number.isNaN(parsed)) return false;
-	const normalized = value.includes('.')
-		? value.replace(
-				/\.(\d{1,2})Z$/,
-				(_match, digits: string) => `.${digits.padEnd(3, '0')}Z`,
-			)
-		: value.replace('Z', '.000Z');
-	return new Date(parsed).toISOString() === normalized;
+	return new Date(parsed).toISOString() === value;
 }
 
 export function validLimits(value: unknown): value is RecordingLimits {
@@ -160,7 +156,8 @@ export class AuthManager {
 			claims.operation !== expectedOperation ||
 			claims.site !== this.site ||
 			claims.origin !== this.origin ||
-			claims.iss !== `frappe-site:${claims.site}`
+			claims.iss !== `frappe-site:${claims.site}` ||
+			claims.protocol_version !== PROTOCOL_VERSION
 		)
 			throw new AuthError('wrong command scope');
 		if (
@@ -191,7 +188,7 @@ export class AuthManager {
 	}
 }
 
-function parseCommandClaims(value: unknown): CommandClaims {
+export function parseCommandClaims(value: unknown): CommandClaims {
 	if (
 		!value ||
 		typeof value !== 'object' ||
@@ -201,6 +198,8 @@ function parseCommandClaims(value: unknown): CommandClaims {
 		throw new AuthError('invalid claims');
 	}
 	if (
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
 		!('aud' in value) ||
 		value.aud !== COMMAND_AUDIENCE ||
 		!('operation' in value) ||
@@ -221,6 +220,7 @@ function parseCommandClaims(value: unknown): CommandClaims {
 	const limits = parseLimits(value.limits);
 	if (!limits) throw new AuthError('invalid limits');
 	return {
+		protocol_version: PROTOCOL_VERSION,
 		iss: claimString(value, 'iss'),
 		aud: COMMAND_AUDIENCE,
 		site: claimString(value, 'site'),

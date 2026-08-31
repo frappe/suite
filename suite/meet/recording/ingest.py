@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 from contextlib import suppress
@@ -377,7 +378,12 @@ def _validate_media(path: Path) -> dict:
 
 
 def _callback_datetime(value):
-    parsed = get_datetime(value)
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
+        frappe.throw(_("Recording callback timestamps must use canonical UTC milliseconds"))
+    try:
+        parsed = get_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        frappe.throw(_("Recording callback timestamp is invalid"))
     if parsed.tzinfo is None:
         frappe.throw(_("Recording callback timestamps must include a timezone"))
     return parsed.astimezone(UTC).replace(tzinfo=None)

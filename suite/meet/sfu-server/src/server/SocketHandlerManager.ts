@@ -31,6 +31,7 @@ import { RoomLifecycleCoordinator } from './RoomLifecycleCoordinator';
 import { RoomRegistry } from './RoomRegistry';
 
 const RECORDING_PROOF_TIMEOUT_MS = 10_000;
+const RECORDING_PROOF_KEYS = ['protocol_version', 'signature'] as const;
 
 export class SocketHandlerManager {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
@@ -222,7 +223,7 @@ export class SocketHandlerManager {
 				socket.once('recording:proof', async (data, callback) => {
 					try {
 						const claims = socket.recordingClaims;
-						if (!claims || !challenge || typeof data?.signature !== 'string')
+						if (!claims || !challenge || !isRecordingProofRequest(data))
 							throw new Error('Invalid recording proof');
 						const expiresAt = await manager.verifyProofAndConsume(
 							claims,
@@ -239,10 +240,15 @@ export class SocketHandlerManager {
 						clearProofTimeout();
 						socket.tokenExpiresAt = expiresAt * 1000;
 						challenge = undefined;
-						callback({ success: true });
+						callback({ protocol_version: 1, success: true });
 					} catch (error) {
 						clearProofTimeout();
-						callback({ success: false, error: (error as Error).message });
+						callback({
+							protocol_version: 1,
+							success: false,
+							reason_code: 'invalid_proof',
+							diagnostic: (error as Error).message.slice(0, 256),
+						});
 						socket.disconnect(true);
 					}
 				});
@@ -286,4 +292,20 @@ export class SocketHandlerManager {
 			this.idleExpirySweep = null;
 		}
 	}
+}
+
+export function isRecordingProofRequest(
+	value: unknown,
+): value is import('../types').RecordingProofRequest {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+	const keys = Object.keys(value);
+	return (
+		keys.length === RECORDING_PROOF_KEYS.length &&
+		RECORDING_PROOF_KEYS.every((key) => keys.includes(key)) &&
+		'protocol_version' in value &&
+		value.protocol_version === 1 &&
+		'signature' in value &&
+		typeof value.signature === 'string' &&
+		value.signature.length > 0
+	);
 }

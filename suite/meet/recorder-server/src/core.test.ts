@@ -13,11 +13,17 @@ import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
 import type { LogEntry, Logger } from './logger.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
-import { COMMAND_AUDIENCE, COMMAND_TYPE, type CommandClaims } from './types.js';
+import {
+	COMMAND_AUDIENCE,
+	COMMAND_TYPE,
+	type CommandClaims,
+	PROTOCOL_VERSION,
+} from './types.js';
 
 const secret = 'a-long-enough-test-secret-for-hs256';
 const now = Math.floor(Date.now() / 1000);
 const baseClaims = {
+	protocol_version: PROTOCOL_VERSION,
 	iss: 'frappe-site:site.test',
 	aud: COMMAND_AUDIENCE,
 	site: 'site.test',
@@ -31,7 +37,7 @@ const baseClaims = {
 	exp: now + 30,
 	limits: {
 		budget_bytes: 1_000_000,
-		max_ends_at: '2026-07-31T12:00:00Z',
+		max_ends_at: '2026-07-31T12:00:00.000Z',
 		output: { width: 1920, height: 1080, fps: 30, video: 'h264', audio: 'aac' },
 	},
 } satisfies CommandClaims;
@@ -82,7 +88,11 @@ function authenticated(
 			Authorization: `Bearer ${signed}`,
 			...(body ? { 'Content-Type': 'application/json' } : {}),
 		},
-		...(body ? { body: JSON.stringify(body) } : {}),
+		...(body
+			? {
+					body: JSON.stringify({ protocol_version: PROTOCOL_VERSION, ...body }),
+				}
+			: {}),
 	};
 }
 
@@ -175,6 +185,22 @@ describe('AuthManager', () => {
 
 	it('accepts the exact Python RecorderClient command', () => {
 		expect(auth.authenticate(`Bearer ${token()}`, 'reserve').job).toBe('job');
+	});
+
+	it('rejects missing and unsupported command protocol versions', () => {
+		const { protocol_version: _version, ...missingVersion } = baseClaims;
+		for (const claims of [
+			missingVersion,
+			{ ...baseClaims, protocol_version: 2 },
+		]) {
+			const signed = jwt.sign(claims, secret, {
+				algorithm: 'HS256',
+				header: { alg: 'HS256', typ: COMMAND_TYPE },
+			});
+			expect(() => auth.authenticate(`Bearer ${signed}`, 'reserve')).toThrow(
+				AuthError,
+			);
+		}
 	});
 
 	it('atomically rejects replay', () => {
@@ -1351,6 +1377,7 @@ describe('HTTP contract', () => {
 		);
 		expect(reserve.status).toBe(202);
 		const reserveBody: {
+			protocol_version: 1;
 			status: 'accepted';
 			job: string;
 			accepted_at: string;
@@ -1364,6 +1391,7 @@ describe('HTTP contract', () => {
 			'endpoint_generation',
 			'event_sequence',
 			'job',
+			'protocol_version',
 			'public_jwk',
 			'state',
 			'status',
@@ -1389,7 +1417,7 @@ describe('HTTP contract', () => {
 		);
 		expect([grant.status, await grant.json()]).toEqual([
 			200,
-			{ status: 'accepted' },
+			{ protocol_version: 1, status: 'accepted' },
 		]);
 		const stop = await call(
 			app,
@@ -1402,7 +1430,12 @@ describe('HTTP contract', () => {
 		);
 		expect([stop.status, await stop.json()]).toEqual([
 			202,
-			{ status: 'accepted', job: 'job', operation_id: 'stop-1' },
+			{
+				protocol_version: 1,
+				status: 'accepted',
+				job: 'job',
+				operation_id: 'stop-1',
+			},
 		]);
 		expect(bridge.grants).toEqual([
 			{
@@ -1423,9 +1456,10 @@ describe('HTTP contract', () => {
 		);
 		expect(response.status).toBe(507);
 		expect(await response.json()).toEqual({
+			protocol_version: 1,
 			status: 'rejected',
 			job: 'job',
-			reason: 'storage',
+			reason_code: 'storage',
 		});
 	});
 
@@ -1443,7 +1477,10 @@ describe('HTTP contract', () => {
 			authenticated('POST', { job: 'job', padding: 'x'.repeat(17 * 1024) }),
 		);
 		expect(oversized.status).toBe(413);
-		expect(await oversized.json()).toEqual({ status: 'indeterminate' });
+		expect(await oversized.json()).toEqual({
+			protocol_version: 1,
+			status: 'indeterminate',
+		});
 	});
 
 	it('binds route and body to signed job and rejects extra fields', async () => {
@@ -1514,6 +1551,34 @@ describe('HTTP contract', () => {
 				)
 			).status,
 		).toBe(401);
+	});
+
+	it('rejects body protocol errors before consuming a command nonce', async () => {
+		const signed = token({ jti: 'protocol-retry', operation: 'reserve' });
+		for (const body of [
+			{ job: 'job' },
+			{ protocol_version: 2, job: 'job' },
+			{ protocol_version: 1, job: 'job', unknown: true },
+		]) {
+			const response = await call(app, '/v1/recordings', {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${signed}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			});
+			expect(response.status).toBe(422);
+		}
+		expect(
+			(
+				await call(
+					app,
+					'/v1/recordings',
+					authenticated('POST', { job: 'job' }, signed),
+				)
+			).status,
+		).toBe(202);
 	});
 
 	it('protects metrics independently', async () => {

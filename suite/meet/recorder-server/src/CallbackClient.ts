@@ -7,7 +7,20 @@ import type { JobRecord } from './types.js';
 
 const AUDIENCE = 'meet-recording-callback';
 const TYPE = 'meet-recording-callback+jwt';
+const PROTOCOL_VERSION = 1;
 const CHUNK_SIZE = 8 * 1024 * 1024;
+const FRAPPE_RECORDING_STATES = new Set([
+	'Pending',
+	'Starting',
+	'Recording',
+	'Interrupted',
+	'Stopping',
+	'Processing',
+	'Ready',
+	'Partial',
+	'Failed',
+	'Cancelled',
+]);
 
 interface CallbackClientOptions {
 	origin: string;
@@ -19,10 +32,11 @@ interface CallbackClientOptions {
 }
 
 interface InterruptedRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
-	reason: string;
+	reason_code: string;
 	interruption_id: string;
 	interrupted_at: string;
 	interruption_deadline: string;
@@ -30,6 +44,7 @@ interface InterruptedRequest {
 }
 
 interface RecoveredRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
@@ -39,6 +54,7 @@ interface RecoveredRequest {
 }
 
 interface ReplacementReadyRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
@@ -49,6 +65,7 @@ interface ReplacementReadyRequest {
 }
 
 interface StartupProgressRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
@@ -57,13 +74,15 @@ interface StartupProgressRequest {
 }
 
 interface FailedRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
-	failure_code: 'capture_failed';
+	reason_code: 'capture_failed';
 }
 
 interface StoppedRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
@@ -72,17 +91,19 @@ interface StoppedRequest {
 	sha256: string;
 	duration_ms: number;
 	ended_at: string;
-	end_reason: string;
-	gaps: Array<{ started_at: string; ended_at: string; reason: string }>;
+	end_reason_code: string;
+	gaps: Array<{ started_at: string; ended_at: string; reason_code: string }>;
 }
 
 interface CompleteUploadRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	event_sequence: number;
 }
 
 interface SegmentProgressRequest {
+	protocol_version: typeof PROTOCOL_VERSION;
 	recording_id: string;
 	job: string;
 	captured_bytes: number;
@@ -120,19 +141,23 @@ type CallbackOperation =
 	| 'complete_upload';
 
 interface StatusResponse {
+	protocol_version: typeof PROTOCOL_VERSION;
 	status: string;
 }
 
 interface UploadStartResponse {
+	protocol_version: typeof PROTOCOL_VERSION;
 	offset: number;
 	complete: boolean;
 }
 
 interface UploadChunkResponse {
+	protocol_version: typeof PROTOCOL_VERSION;
 	offset: number;
 }
 
 interface SegmentProgressResponse {
+	protocol_version: typeof PROTOCOL_VERSION;
 	budget_bytes: number;
 }
 
@@ -169,6 +194,7 @@ export class CallbackClient {
 						'startup_progress',
 						String(sequence),
 						{
+							protocol_version: PROTOCOL_VERSION,
 							recording_id: job.recording,
 							job: job.job,
 							event_sequence: sequence,
@@ -198,10 +224,11 @@ export class CallbackClient {
 				'interrupted',
 				String(sequence),
 				{
+					protocol_version: PROTOCOL_VERSION,
 					recording_id: job.recording,
 					job: job.job,
 					event_sequence: sequence,
-					reason: job.health_reason ?? 'capture_interrupted',
+					reason_code: this.healthReason(job.health_reason),
 					interruption_id: job.interruption_id,
 					interrupted_at: job.interrupted_at,
 					interruption_deadline: job.interruption_deadline,
@@ -227,6 +254,7 @@ export class CallbackClient {
 				'recovered',
 				String(sequence),
 				{
+					protocol_version: PROTOCOL_VERSION,
 					recording_id: job.recording,
 					job: job.job,
 					event_sequence: sequence,
@@ -250,6 +278,7 @@ export class CallbackClient {
 				'replacement_ready',
 				String(sequence),
 				{
+					protocol_version: PROTOCOL_VERSION,
 					recording_id: job.recording,
 					job: job.job,
 					event_sequence: sequence,
@@ -275,6 +304,7 @@ export class CallbackClient {
 			'segment_progress',
 			String(capturedBytes),
 			{
+				protocol_version: PROTOCOL_VERSION,
 				recording_id: job.recording,
 				job: job.job,
 				captured_bytes: capturedBytes,
@@ -311,10 +341,11 @@ export class CallbackClient {
 				'failed',
 				String(terminalSequence),
 				{
+					protocol_version: PROTOCOL_VERSION,
 					recording_id: job.recording,
 					job: job.job,
 					event_sequence: terminalSequence,
-					failure_code: 'capture_failed',
+					reason_code: 'capture_failed',
 				},
 				parseStatusResponse,
 			);
@@ -335,6 +366,7 @@ export class CallbackClient {
 			'stopped',
 			String(stoppedSequence),
 			{
+				protocol_version: PROTOCOL_VERSION,
 				recording_id: job.recording,
 				job: job.job,
 				event_sequence: stoppedSequence,
@@ -343,11 +375,11 @@ export class CallbackClient {
 				sha256: artifact.sha256,
 				duration_ms: artifact.duration_ms,
 				ended_at: job.terminal_at ?? new Date().toISOString(),
-				end_reason: this.endReason(job),
+				end_reason_code: this.endReason(job),
 				gaps: (artifact.gaps ?? []).map((gap) => ({
 					started_at: gap.started_at,
 					ended_at: gap.ended_at ?? job.terminal_at ?? new Date().toISOString(),
-					reason: this.gapReason(gap.reason),
+					reason_code: this.gapReason(gap.reason),
 				})),
 			},
 			parseUploadStartResponse,
@@ -385,6 +417,7 @@ export class CallbackClient {
 			'complete_upload',
 			String(stoppedSequence + 1),
 			{
+				protocol_version: PROTOCOL_VERSION,
 				recording_id: job.recording,
 				job: job.job,
 				event_sequence: stoppedSequence + 1,
@@ -425,6 +458,7 @@ export class CallbackClient {
 		);
 		url.searchParams.set('recording_id', job.recording);
 		url.searchParams.set('job', job.job);
+		url.searchParams.set('protocol_version', String(PROTOCOL_VERSION));
 		url.searchParams.set('offset', String(offset));
 		url.searchParams.set('chunk_sha256', hash);
 		const body = new Uint8Array(chunk.length);
@@ -497,7 +531,7 @@ export class CallbackClient {
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
 			throw new Error('invalid Frappe callback response');
 		}
-		if (!('message' in parsed)) {
+		if (!exactKeys(parsed, ['message']) || !('message' in parsed)) {
 			throw new Error('invalid Frappe callback response');
 		}
 		return parseResponse(parsed.message);
@@ -519,6 +553,7 @@ export class CallbackClient {
 		if (!bytes) throw new Error('unsupported callback request body');
 		return jwt.sign(
 			{
+				protocol_version: PROTOCOL_VERSION,
 				iss: `meet-recorder:${this.options.site}`,
 				aud: AUDIENCE,
 				site: this.options.site,
@@ -549,6 +584,21 @@ export class CallbackClient {
 		return 'host_stop';
 	}
 
+	private healthReason(reason?: string): string {
+		const finite = new Set([
+			'browser_disconnected',
+			'capture_interrupted',
+			'configuration_failed',
+			'ffmpeg_exited',
+			'media_attachment_failed',
+			'media_subscription_failed',
+			'page_crashed',
+			'receive_transport_failed',
+			'sfu_disconnected',
+		]);
+		return reason && finite.has(reason) ? reason : 'capture_interrupted';
+	}
+
 	private gapReason(reason: string): string {
 		if (reason.includes('ffmpeg') || reason.includes('segment'))
 			return 'ffmpeg_exited';
@@ -557,24 +607,25 @@ export class CallbackClient {
 	}
 }
 
-function parseStatusResponse(value: unknown): StatusResponse {
+export function parseStatusResponse(value: unknown): StatusResponse {
 	if (
-		!value ||
-		typeof value !== 'object' ||
-		Array.isArray(value) ||
+		!exactKeys(value, ['protocol_version', 'status']) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
 		!('status' in value) ||
-		typeof value.status !== 'string'
+		typeof value.status !== 'string' ||
+		!FRAPPE_RECORDING_STATES.has(value.status)
 	) {
 		throw new Error('invalid Frappe callback response');
 	}
-	return { status: value.status };
+	return { protocol_version: PROTOCOL_VERSION, status: value.status };
 }
 
 function parseUploadStartResponse(value: unknown): UploadStartResponse {
 	if (
-		!value ||
-		typeof value !== 'object' ||
-		Array.isArray(value) ||
+		!exactKeys(value, ['complete', 'offset', 'protocol_version']) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
 		!('complete' in value) ||
 		typeof value.complete !== 'boolean' ||
 		!('offset' in value) ||
@@ -583,30 +634,32 @@ function parseUploadStartResponse(value: unknown): UploadStartResponse {
 	) {
 		throw new Error('invalid Frappe callback response');
 	}
-	return { complete: value.complete, offset: value.offset };
+	return {
+		protocol_version: PROTOCOL_VERSION,
+		complete: value.complete,
+		offset: value.offset,
+	};
 }
 
 function parseUploadChunkResponse(value: unknown): UploadChunkResponse {
 	if (
-		!value ||
-		typeof value !== 'object' ||
-		Array.isArray(value) ||
+		!exactKeys(value, ['offset', 'protocol_version']) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
 		!('offset' in value) ||
 		typeof value.offset !== 'number' ||
 		!Number.isSafeInteger(value.offset)
 	) {
 		throw new Error('invalid Frappe callback response');
 	}
-	return { offset: value.offset };
+	return { protocol_version: PROTOCOL_VERSION, offset: value.offset };
 }
 
 function parseSegmentProgressResponse(value: unknown): SegmentProgressResponse {
 	if (
-		!value ||
-		typeof value !== 'object' ||
-		Array.isArray(value) ||
-		JSON.stringify(Object.keys(value).sort()) !==
-			JSON.stringify(['budget_bytes']) ||
+		!exactKeys(value, ['budget_bytes', 'protocol_version']) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
 		!('budget_bytes' in value) ||
 		typeof value.budget_bytes !== 'number' ||
 		!Number.isSafeInteger(value.budget_bytes) ||
@@ -614,5 +667,17 @@ function parseSegmentProgressResponse(value: unknown): SegmentProgressResponse {
 	) {
 		throw new Error('invalid Frappe callback response');
 	}
-	return { budget_bytes: value.budget_bytes };
+	return {
+		protocol_version: PROTOCOL_VERSION,
+		budget_bytes: value.budget_bytes,
+	};
+}
+
+function exactKeys(value: unknown, keys: string[]): value is object {
+	return (
+		!!value &&
+		typeof value === 'object' &&
+		!Array.isArray(value) &&
+		JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys)
+	);
 }
