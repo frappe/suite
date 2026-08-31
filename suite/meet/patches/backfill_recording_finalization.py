@@ -8,6 +8,7 @@ def execute():
     ):
         return
 
+    migration_time = now_datetime()
     for recording in frappe.get_all(
         "Meet Recording",
         filters={"status": "Processing"},
@@ -25,7 +26,7 @@ def execute():
             "publication_key",
         ],
     ):
-        accepted_at = recording.metadata_accepted_at or recording.modified
+        accepted_at = recording.metadata_accepted_at or migration_time
         upload_complete = (
             recording.upload_id
             and cint(recording.upload_size) > 0
@@ -45,7 +46,7 @@ def execute():
                 "upload_completed_at": recording.upload_completed_at
                 or (recording.modified if upload_complete else None),
                 "finalization_next_retry_at": recording.finalization_next_retry_at
-                or (now_datetime() if upload_complete else None),
+                or (migration_time if upload_complete else None),
             },
             update_modified=False,
         )

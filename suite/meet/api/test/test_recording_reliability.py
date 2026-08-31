@@ -554,6 +554,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 recording.name,
                 {
                     "finalization_stage": "Awaiting Upload",
+                    "modified": add_to_date(now_datetime(), days=-2),
                     "metadata_accepted_at": None,
                     "upload_completed_at": None,
                     "finalization_deadline": None,
@@ -569,6 +570,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             self.assertIsNotNone(recording.metadata_accepted_at)
             self.assertIsNotNone(recording.upload_completed_at)
             self.assertIsNotNone(recording.finalization_deadline)
+            self.assertGreater(recording.finalization_deadline, now_datetime())
             self.assertIsNotNone(recording.finalization_next_retry_at)
             self.assertEqual(recording.publication_key, f"meet-recording-{recording.name}")
         finally:
