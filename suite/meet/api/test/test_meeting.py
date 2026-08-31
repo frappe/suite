@@ -360,7 +360,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
     def test_approved_guest_connection_details_is_post_only(self):
         self.assertEqual(
             frappe.allowed_http_methods_for_whitelisted_func[get_approved_guest_connection_details],
-            ("POST",),
+            ["POST"],
         )
 
     def test_wrong_guest_proof_cannot_get_admitted_token(self):
@@ -496,8 +496,20 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
     def test_guest_proof_is_redacted_before_downstream_endpoint_errors(self):
         original_request = getattr(frappe.local, "request", None)
         original_form_dict = frappe.local.form_dict
+        original_request_ip = getattr(frappe.local, "request_ip", None)
         self.addCleanup(setattr, frappe.local, "request", original_request)
         self.addCleanup(setattr, frappe.local, "form_dict", original_form_dict)
+        if original_request_ip is not None:
+            self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
+        else:
+
+            def delete_request_ip():
+                if hasattr(frappe.local, "request_ip"):
+                    delattr(frappe.local, "request_ip")
+
+            self.addCleanup(delete_request_ip)
+
+        frappe.local.request_ip = "127.0.0.1"
         proof = "private-proof-that-must-not-reach-telemetry"
         endpoints = (
             (

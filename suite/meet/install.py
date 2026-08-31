@@ -1,3 +1,5 @@
+import frappe
+
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 
 
@@ -38,6 +40,8 @@ def add_rate_limits() -> None:
         {"method_path": "suite.meet.api.meeting.approve_all_join_requests", "limit": 10, "seconds": 60},
         {"method_path": "suite.meet.api.meeting.reject_join_request", "limit": 60, "seconds": 60},
     ]
+
+    frappe.db.delete("Rate Limit", {"method_path": ["in", [rl["method_path"] for rl in rate_limits]]})
 
     for rl in rate_limits:
         create_rate_limit(**rl)
