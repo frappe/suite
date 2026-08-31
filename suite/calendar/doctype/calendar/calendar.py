@@ -310,7 +310,9 @@ def ensure_default_alerts(account: str) -> None:
         return
 
     service = get_calendar_service(account)
-    response = service._get(properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"])
+    response = service._get(
+        properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"]
+    )
     method_responses = response.get("methodResponses") or []
     calendars = method_responses[0][1].get("list", []) if method_responses else []
 
