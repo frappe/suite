@@ -1,0 +1,114 @@
+<!-- Calendar alarm ("upcoming event") email, restyled to the Frappe event-email family
+     (see _event_base.html / the "Calendar Event Emails" design, frame 4).
+
+     NOT a suite/Jinja template: this file is rendered by the Stalwart mail server, which
+     sends the alarm emails. Deploy by setting it as `template` on the CalendarAlarm
+     singleton (WebUI: Settings > Calendar & Contacts > Alarms) — an Enterprise Edition
+     feature. Placeholders are Stalwart's own double-brace variables and if/each blocks
+     (kept out of this comment: the server parses braces even here). `logo_cid` arrives
+     as a complete img src.
+
+     Deliberately absent: the stock footer ("log in to the self-service portal...") —
+     reminders are managed on the event in Frappe Calendar, so the line only misled. -->
+<!DOCTYPE html>
+<html lang="{{lang}}" dir="{{dir}}">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="x-apple-disable-message-reformatting" content="" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
+<title>{{page_title}}</title>
+<style>
+	@media only screen and (max-width: 480px) {
+		.evt-page { padding: 20px 12px !important; }
+		.evt-card { padding: 24px 20px !important; border-radius: 14px !important; }
+		.evt-title { font-size: 20px !important; }
+		.evt-detail-pad { padding: 2px 14px !important; }
+	}
+</style>
+</head>
+<body data-fixed-palette style="margin: 0; padding: 0; background-color: #f3f3f3;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f3f3; margin: 0; padding: 0;">
+	<tr>
+		<td align="center" class="evt-page" style="padding: 32px 16px;">
+			<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
+			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; max-width: 600px;">
+				<tr>
+					<td align="center" style="padding: 8px 0 26px;">
+						<table role="presentation" cellpadding="0" cellspacing="0">
+							<tr>
+								<td style="vertical-align: middle; padding-right: 9px;">
+									<img src="{{logo_cid}}" width="22" height="22" alt="" style="display: block; border: 0; width: 22px; height: 22px;" />
+								</td>
+								<td style="vertical-align: middle; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 19px; font-weight: 600; color: #171717; letter-spacing: -0.01em;">Frappe Calendar</td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+				<tr>
+					<td class="evt-card" style="background-color: #ffffff; border: 1px solid #ededed; border-radius: 16px; padding: 36px; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+{{#if header}}
+						<table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 0 20px;">
+							<tr>
+								<td style="vertical-align: middle; padding-right: 8px; font-size: 0; line-height: 0;">
+									<span style="display: inline-block; width: 8px; height: 8px; border-radius: 8px; background-color: #999999;">&nbsp;</span>
+								</td>
+								<td style="vertical-align: middle; font-size: 13px; color: #7c7c7c; letter-spacing: 0.01em;">{{header}}</td>
+							</tr>
+						</table>
+{{/if header}}
+{{#if event_title}}
+						<h1 class="evt-title" style="margin: 0; font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; color: #171717;">{{event_title}}</h1>
+{{/if event_title}}
+{{#if event_details}}
+						<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f8f8; border-radius: 12px; margin: 22px 0;">
+							<tr>
+								<td class="evt-detail-pad" style="padding: 6px 18px;">
+									<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+{{#each event_details}}
+										<tr>
+											<td style="padding: 12px 0; font-size: 14px; color: #7c7c7c; width: 88px; vertical-align: top;">{{key}}</td>
+											<td style="padding: 12px 0; font-size: 14px; color: #383838; line-height: 1.5; word-break: break-word;">{{#if link}}<a href="{{link}}" style="color: #007be0; text-decoration: none;">{{/if link}}{{value}}{{#if link}}</a>{{/if link}}</td>
+										</tr>
+{{/each event_details}}
+									</table>
+								</td>
+							</tr>
+						</table>
+{{/if event_details}}
+{{#if event_description}}
+						<p style="margin: 4px 0 22px; font-size: 15px; line-height: 1.6; color: #383838;">{{event_description}}</p>
+{{/if event_description}}
+{{#if attendees}}
+						<p style="margin: 0 0 8px; font-size: 14px; color: #7c7c7c;">{{attendees_title}}</p>
+						<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 0 0 22px;">
+{{#each attendees}}
+							<tr>
+								<td style="padding: 4px 0; font-size: 14px; line-height: 1.45; color: #171717;">{{key}} <span style="color: #7c7c7c;">{{value}}</span></td>
+							</tr>
+{{/each attendees}}
+						</table>
+{{/if attendees}}
+						<table role="presentation" cellpadding="0" cellspacing="0">
+							<tr>
+								<td align="center" valign="middle" style="border-radius: 10px; background-color: #171717; mso-padding-alt: 10px 20px;">
+									<a href="{{action_url}}" target="_blank" style="display: inline-block; padding: 10px 20px; font-size: 14px; font-weight: 600; line-height: 1.4; color: #ffffff; text-decoration: none; border-radius: 10px;">{{action_name}}</a>
+								</td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+				<tr>
+					<td align="center" style="padding: 18px 8px 4px; font-size: 13px; color: #7c7c7c; font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+						This email was sent by Frappe Mail.
+					</td>
+				</tr>
+			</table>
+			<!--[if mso]></td></tr></table><![endif]-->
+		</td>
+	</tr>
+</table>
+</body>
+</html>
