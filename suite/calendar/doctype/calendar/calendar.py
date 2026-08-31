@@ -12,6 +12,7 @@ from frappe.utils import cint, today
 
 from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import get_calendar_service
+from suite.mail.utils import log_mail_error
 from suite.utils import parse_filters
 from suite.utils.rate_limiter import dynamic_rate_limit
 
@@ -309,27 +310,33 @@ def ensure_default_alerts(account: str) -> None:
     if frappe.cache.get_value(cache_key):
         return
 
-    service = get_calendar_service(account)
-    response = service._get(
-        properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"]
-    )
-    method_responses = response.get("methodResponses") or []
-    calendars = method_responses[0][1].get("list", []) if method_responses else []
+    try:
+        service = get_calendar_service(account)
+        response = service._get(
+            properties=["id", "myRights", "defaultAlertsWithTime", "defaultAlertsWithoutTime"]
+        )
+        method_responses = response.get("methodResponses") or []
+        calendars = method_responses[0][1].get("list", []) if method_responses else []
 
-    update = {}
-    for calendar in calendars:
-        if not (calendar.get("myRights") or {}).get("mayWriteAll", True):
-            continue
-        patch = {}
-        if not calendar.get("defaultAlertsWithTime"):
-            patch["defaultAlertsWithTime"] = DEFAULT_ALERTS_WITH_TIME
-        if not calendar.get("defaultAlertsWithoutTime"):
-            patch["defaultAlertsWithoutTime"] = DEFAULT_ALERTS_WITHOUT_TIME
-        if patch:
-            update[calendar["id"]] = patch
+        update = {}
+        for calendar in calendars:
+            if not (calendar.get("myRights") or {}).get("mayWriteAll", True):
+                continue
+            patch = {}
+            if not calendar.get("defaultAlertsWithTime"):
+                patch["defaultAlertsWithTime"] = DEFAULT_ALERTS_WITH_TIME
+            if not calendar.get("defaultAlertsWithoutTime"):
+                patch["defaultAlertsWithoutTime"] = DEFAULT_ALERTS_WITHOUT_TIME
+            if patch:
+                update[calendar["id"]] = patch
 
-    if update:
-        service._update(update)
+        if update:
+            service._update(update)
+    except Exception:
+        # Best-effort: a seeding failure must never break calendar listing. The mark
+        # stays unset, so the next load retries.
+        log_mail_error("Calendar Default Alerts Seeding")
+        return
 
     frappe.cache.set_value(cache_key, True, expires_in_sec=24 * 60 * 60)
 
