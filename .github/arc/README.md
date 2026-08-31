@@ -8,9 +8,10 @@ because the E2E workflows require MariaDB and Redis service containers.
 
 - Both scale sets are scoped to `frappe/suite` and start at zero. Meet permits
   three 6-CPU jobs; Drive permits two 2-CPU jobs.
-- E2E jobs run only for pushes, manual dispatches, and `pull_request_target`
-  events whose head repository is `frappe/suite`. The protected base workflow
-  enforces that gate before explicitly checking out the internal PR commit.
+- Self-hosted E2E jobs run only for pushes, schedules, manual dispatches, and
+  `pull_request_target` events whose head repository is `frappe/suite`.
+  Vouched fork pull requests run on GitHub-hosted runners instead; fork code
+  never reaches these scale sets.
 - The Yarn Classic cache is baked into the runner image. Each runner receives a
   private writable copy-on-write view, so cache misses and dependency changes
   remain pod-local and are discarded with the runner.

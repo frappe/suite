@@ -109,9 +109,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  author_check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      trusted: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository || steps.vouch.outputs.vouched == 'true' }}
+    steps:
+      - if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
+        id: vouch
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1.5.0
+        with:
+          user: ${{ github.event.pull_request.user.login }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   e2e:
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: suite-e2e-drive
+    needs: author_check
+    if: needs.author_check.outputs.trusted == 'true'
+    runs-on: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'suite-e2e-drive' }}
     timeout-minutes: 45
     permissions:
       contents: read
@@ -138,6 +157,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
 
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -151,6 +172,13 @@ jobs:
 
       - name: Setup Yarn
         run: corepack enable && corepack prepare yarn@1.22.22 --activate
+
+      - name: Install GitHub-hosted dependencies
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mariadb-client
+          python -m pip install uv
 
       - name: Add to hosts
         run: echo "127.0.0.1 drive-writer.test" | sudo tee -a /etc/hosts
@@ -202,6 +230,11 @@ jobs:
         run: |
           yarn install --frozen-lockfile --non-interactive
           google-chrome --version
+
+      - name: Install Playwright system dependencies
+        if: runner.environment == 'github-hosted'
+        working-directory: ${{ github.workspace }}/e2e
+        run: yarn playwright install-deps chromium
 
       - name: Start Frappe server
         id: start-frappe
