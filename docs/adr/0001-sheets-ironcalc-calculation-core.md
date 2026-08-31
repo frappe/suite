@@ -45,11 +45,27 @@ A Node sidecar runs `@ironcalc/nodejs` as the authoritative model. It persists
 snapshots and handles xlsx import and export. The wasm binding has no xlsx
 support.
 
-## Renderer consequence
+## Renderer and recalculation consequences
 
 IronCalc exposes no changed-cell set. The canvas renderer re-reads the visible
-viewport after each commit (a pull model) and caches styles. Measured cost
-fits the 4 ms frame budget.
+viewport after each commit (a pull model) and caches display values and styles.
+Agents measured the cached pattern in headless Chrome at devicePixelRatio 2:
+engine reads cost 0.3 ms per scroll frame. Canvas paint (4.4 ms p95) is the
+frame floor, not the engine.
+
+IronCalc recalculates the whole workbook on every edit. It has no dependency
+graph. Agents measured per-edit cost: ~90 ms on a cheap 100k-cell workbook,
+~9 s on a 150k-cell workbook with running-SUM columns, even for an edit to a
+cell that nothing references. Two consequences:
+
+- The engine must run in a Web Worker. Commits are asynchronous; the UI never
+  blocks on recalculation.
+- Incremental recalculation is our top upstream contribution target. It is an
+  open IronCalc issue ("use dependency DAG").
+
+For balance: the in-house engine handles the same edit in 363 ms (referenced)
+or ~0 ms (unreferenced), but needs 132 s and 8.8 GB to build its dependency
+graph for that workbook shape. It cannot load what IronCalc loads in 1 s.
 
 ## Features that stay in-house
 
@@ -91,6 +107,8 @@ These layers sit on top of IronCalc. IronCalc does not model them:
 - The xlsx path depends on `zip` 0.6.6, which is unmaintained.
 - Merged cells exist on the IronCalc repo main branch but are not yet on npm.
 - IronCalc has no batch range-read API.
+- Every edit costs a full workbook recalculation. Heavy formula workbooks pay
+  seconds per edit until incremental recalculation lands upstream or in a fork.
 
 ### Mitigations
 
