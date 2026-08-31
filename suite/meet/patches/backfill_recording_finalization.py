@@ -1,4 +1,5 @@
 import frappe
+from frappe.utils import add_to_date, cint, now_datetime
 
 
 def execute():
@@ -7,34 +8,43 @@ def execute():
     ):
         return
 
-    frappe.db.sql(
-        """
-        UPDATE `tabMeet Recording`
-        SET
-            metadata_accepted_at = COALESCE(metadata_accepted_at, modified),
-            finalization_deadline = COALESCE(
-                finalization_deadline,
-                DATE_ADD(COALESCE(metadata_accepted_at, modified), INTERVAL 24 HOUR)
-            ),
-            publication_key = COALESCE(publication_key, CONCAT('meet-recording-', name)),
-            finalization_stage = COALESCE(
-                NULLIF(finalization_stage, ''),
-                CASE
-                    WHEN upload_id IS NOT NULL AND upload_size > 0 AND upload_offset = upload_size
-                    THEN 'Pending'
-                    ELSE 'Awaiting Upload'
-                END
-            ),
-            upload_completed_at = CASE
-                WHEN upload_id IS NOT NULL AND upload_size > 0 AND upload_offset = upload_size
-                THEN COALESCE(upload_completed_at, modified)
-                ELSE upload_completed_at
-            END,
-            finalization_next_retry_at = CASE
-                WHEN upload_id IS NOT NULL AND upload_size > 0 AND upload_offset = upload_size
-                THEN COALESCE(finalization_next_retry_at, NOW(6))
-                ELSE finalization_next_retry_at
-            END
-        WHERE status = 'Processing'
-        """
-    )
+    for recording in frappe.get_all(
+        "Meet Recording",
+        filters={"status": "Processing"},
+        fields=[
+            "name",
+            "modified",
+            "upload_id",
+            "upload_offset",
+            "upload_size",
+            "finalization_stage",
+            "metadata_accepted_at",
+            "upload_completed_at",
+            "finalization_deadline",
+            "finalization_next_retry_at",
+            "publication_key",
+        ],
+    ):
+        accepted_at = recording.metadata_accepted_at or recording.modified
+        upload_complete = (
+            recording.upload_id
+            and cint(recording.upload_size) > 0
+            and cint(recording.upload_offset) == cint(recording.upload_size)
+        )
+        frappe.db.set_value(
+            "Meet Recording",
+            recording.name,
+            {
+                "metadata_accepted_at": accepted_at,
+                "finalization_deadline": recording.finalization_deadline
+                or add_to_date(accepted_at, hours=24),
+                "publication_key": recording.publication_key or f"meet-recording-{recording.name}",
+                "finalization_stage": recording.finalization_stage
+                or ("Pending" if upload_complete else "Awaiting Upload"),
+                "upload_completed_at": recording.upload_completed_at
+                or (recording.modified if upload_complete else None),
+                "finalization_next_retry_at": recording.finalization_next_retry_at
+                or (now_datetime() if upload_complete else None),
+            },
+            update_modified=False,
+        )
