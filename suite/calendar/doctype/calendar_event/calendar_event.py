@@ -779,11 +779,6 @@ def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = Non
         return
 
     try:
-        pn = PushNotification("mail")
-        if not pn.is_enabled():
-            logger.debug("push-notifications-disabled")
-            return
-
         service = CalendarEventService(account, get_jmap_connection(user))
 
         events = service.get([event_id])
@@ -826,9 +821,24 @@ def send_event_alert_notification(user: str, alert: dict, ctx: dict | None = Non
             if recurrence_id:
                 link += f"&recurrence={quote(recurrence_id, safe='')}"
 
+        title = event.get("title") or _("[No title]")
+
+        # An open tab hears the alert over the socket whether or not device push is set
+        # up; the path is the link without the host, for the app's router.
+        frappe.publish_realtime(
+            "calendar_alert",
+            {"title": title, "body": body, "path": link[len(url) :]},
+            user=user,
+        )
+
+        pn = PushNotification("mail")
+        if not pn.is_enabled():
+            logger.debug("push-notifications-disabled")
+            return
+
         pn.send_notification_to_user(
             user,
-            event.get("title") or _("[No title]"),
+            title,
             body,
             link,
             f"{url}/assets/suite/calendar/images/logo.png",
