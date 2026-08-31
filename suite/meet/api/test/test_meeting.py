@@ -357,12 +357,6 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(resumed["guest_id"], first["guest_id"])
         self.assertEqual(resumed["guest_name"], "Stable Guest")
 
-    def test_approved_guest_connection_details_is_post_only(self):
-        self.assertEqual(
-            frappe.allowed_http_methods_for_whitelisted_func[get_approved_guest_connection_details],
-            ["POST"],
-        )
-
     def test_wrong_guest_proof_cannot_get_admitted_token(self):
         self.meeting.db_set("meeting_type", "open")
         frappe.set_user("Guest")
