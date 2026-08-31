@@ -106,6 +106,7 @@ def validate_quota(user: str | None = None, incoming_size: int = 0):
 
 
 def create_storage_reservation(owner: str, key: str, reserved_bytes: int):
+    """Reserve an absolute byte amount for owner; an exact-key retry is idempotent."""
     reserved_bytes = _validate_reserved_bytes(reserved_bytes)
     _validate_reservation_identity(owner, key)
     acquire_owner_storage_lock(owner)
@@ -129,6 +130,7 @@ def create_storage_reservation(owner: str, key: str, reserved_bytes: int):
 
 
 def grow_storage_reservation(owner: str, key: str, reserved_bytes: int):
+    """Grow an owned reservation to an absolute amount after locked quota admission."""
     reserved_bytes = _validate_reserved_bytes(reserved_bytes)
     reservation = _get_owned_storage_reservation(owner, key)
     if reserved_bytes < reservation.reserved_bytes:
@@ -143,6 +145,7 @@ def grow_storage_reservation(owner: str, key: str, reserved_bytes: int):
 
 
 def reduce_storage_reservation(owner: str, key: str, reserved_bytes: int):
+    """Reduce an owned reservation to an absolute nonnegative amount under its owner lock."""
     reserved_bytes = _validate_reserved_bytes(reserved_bytes)
     reservation = _get_owned_storage_reservation(owner, key)
     if reserved_bytes > reservation.reserved_bytes:
@@ -156,6 +159,7 @@ def reduce_storage_reservation(owner: str, key: str, reserved_bytes: int):
 
 
 def release_storage_reservation(owner: str, key: str):
+    """Idempotently release an owned reservation under its owner lock."""
     _validate_reservation_identity(owner, key)
     acquire_owner_storage_lock(owner)
     reservation = _get_storage_reservation(key, for_update=True)
@@ -167,6 +171,7 @@ def release_storage_reservation(owner: str, key: str):
 
 
 def get_storage_reservation(key: str):
+    """Return a reservation by key for trusted server-side callers without an ownership check."""
     return _get_storage_reservation(key)
 
 
