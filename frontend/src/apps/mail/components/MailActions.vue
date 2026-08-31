@@ -146,13 +146,14 @@ interface MailAction {
 
 interface GroupedAction {
 	group: string
-	items: MailAction[]
+	// `options`, not `items`: a menu group keyed on `items` renders nothing.
+	options: MailAction[]
 }
 
 const moreActions = (mail: Mail): GroupedAction[] => [
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Reply'),
 				onClick: () => setTimeout(() => reply(mail), 300),
@@ -175,7 +176,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Unstar'),
 				onClick: () => emit('setFlagged', mail.id, false),
@@ -254,7 +255,7 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 	},
 	{
 		group: '',
-		items: [
+		options: [
 			{
 				label: __('Download Email'),
 				onClick: () => downloadEmail.submit(),
