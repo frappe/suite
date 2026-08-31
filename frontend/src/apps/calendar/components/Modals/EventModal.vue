@@ -592,11 +592,18 @@ const shouldShowRecurringEventModal = computed(
 
 // --- Alerts ---
 
+// Touching the alert UI is a choice about reminders: from here on an empty
+// list means cleared, not "still following the calendar's defaults".
+const addAlert = (alert: object) => {
+	event.followsDefaults = false
+	event.alerts.push(alert)
+}
+
 const addAlertOptions = computed(() => [
 	{
 		label: __('Relative to Event'),
 		onClick: () =>
-			event.alerts.push({
+			addAlert({
 				type: 'OffsetTrigger',
 				action: 'Display',
 				number: 10,
@@ -608,7 +615,7 @@ const addAlertOptions = computed(() => [
 	{
 		label: __('On Specific Date'),
 		onClick: () =>
-			event.alerts.push({
+			addAlert({
 				type: 'AbsoluteTrigger',
 				action: 'Display',
 				date: dayjs(event.startDate).subtract(1, 'day').format('YYYY-MM-DD'),
