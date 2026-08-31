@@ -55,6 +55,9 @@ const getEventData = () => {
 		locations: ev.locations.map((l) => l._name),
 		links: ev.links ? [...ev.links] : [],
 		alerts: ev.alerts?.map(parseAlert) ?? [],
+		// True only while the server follows its defaults without spelling them out
+		// as alert rows — an empty list then means "no rows shown", not "cleared".
+		followsDefaults: !!ev.use_default_alerts && !ev.alerts?.length,
 		description: ev.description || '',
 		participants: [...ev.participants],
 		recurrence_rule: ev.recurrence_rule,
@@ -100,6 +103,7 @@ const getDefaultEventData = () => {
 		locations: [],
 		links: [],
 		alerts: [defaultAlert(!selectedEvent?.time, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
+		followsDefaults: false,
 		description: '',
 		free_busy_status: 'Busy',
 		privacy: 'Public',
@@ -202,6 +206,10 @@ const eventParams = computed(() => {
 				relative_to: a.relative_to,
 			}
 		})
+	} else if (event.followsDefaults) {
+		// updates send these params whole, so an unrelated edit must say the
+		// event still follows the calendar's defaults.
+		params.use_default_alerts = true
 	} else {
 		// An empty list is a choice: removing the pre-filled default row means
 		// no reminder at all, so the clear must reach the server.
@@ -318,6 +326,7 @@ watch(
 
 		// An untouched default reminder follows the event to its new day.
 		if (
+			event.isAllDay &&
 			event.alerts?.length === 1 &&
 			JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(true, previous.date))
 		)
