@@ -1,0 +1,630 @@
+# Sheets frontend rewrite: implementation spec
+
+Status: draft for branch `sheets/ironcalc-core`.
+Decision record: `docs/adr/0001-sheets-ironcalc-calculation-core.md`.
+Glossary: `frontend/src/apps/sheets/CONTEXT.md`.
+
+All frontend paths below are relative to `frontend/src/apps/sheets/`.
+All backend paths are relative to `suite/sheets/`.
+
+## Open questions
+
+Points where the code contradicts the design brief. Each needs a decision
+before its phase starts.
+
+1. Awareness split. `collab/awareness.js` is the awareness mechanism for the
+   `frappe.realtime` path only. The current sidecar path uses y-protocols
+   Awareness inside `collab/hocuspocus-client.js`, which this rewrite
+   removes. "Keep awareness unchanged" therefore holds for path A. Path B
+   needs the sidecar to relay awareness frames. Proposal: the sidecar
+   forwards `yjs_awareness` frames verbatim, so `collab/awareness.js` works
+   over both transports with only a transport adapter.
+2. Snapshot bytes vs JSON field. `Sheet Snapshot.sheets_data` is a JSON
+   field. Engine bytes from `toBytes()` are binary. This spec puts them in
+   the JSON envelope as base64 (about 33% size overhead). Alternative: add a
+   binary or Attach field to the doctype.
+3. Batch size cap. `versioning/save.py` sets `MAX_OPS_PER_SAVE = 500`. A
+   solo-mode paste or fill can exceed 500 commands. Options: raise the cap,
+   or nest large edits inside one `batch` command (one op-log row). This
+   spec assumes the `batch` option.
+4. Resolved: `deleteSheet` undo preserves tab order. The engine exposes
+   `moveSheet(sheet, new_index)` (`wasm.d.ts:667`). P2 adds a `moveSheet`
+   command to `core/commands.js` and the adapter. The `deleteSheet` inverse
+   is then `addSheet` + `renameSheet` + `moveSheet` + content restore.
+5. Native undo removal. `core/workbook.js` currently implements `undo()` /
+   `redo()` via `model.undo()` (native IronCalc). Decision 3 removes them.
+   The `restore()` failure path in `workbook.js` also notes native-history
+   loss; that note becomes moot.
+6. Sidecar replacement, not evolution. `collab-server/index.js` is today a
+   Hocuspocus Y.Doc server that persists to `Sheet Collab State` via
+   `collab.py`. The rewrite replaces its document model. `Sheet Collab
+   State` rows become dead data after migration and need a retirement patch.
+7. Op log payload version. `Sheet Op Log` has no version field today. This
+   spec adds `payload_version` (Int, default 1). Command records write 2.
+
+## Architecture overview
+
+| Layer | Location | Role |
+|---|---|---|
+| Engine | `@ironcalc/wasm` in a Web Worker; `@ironcalc/nodejs` in the sidecar | Calculation and document core |
+| Adapter | `core/workbook.js` (`createWorkbook`) | Commands to engine calls; reads |
+| Worker host | `core/worker.js` (new) | Runs engine plus adapter off the main thread |
+| Client proxy | `core/client.js` (new) | Message protocol; CommandDispatcher |
+| Display cache | `core/display-cache.js` (new) | Main-thread cell value/style cache |
+| View model | `core/view-model.js` (new) | Serializable view state |
+| Renderer | `canvas/` (kept) | Paint, geometry, scrollbars, overlay |
+| Feature layers | `engine/pivot.js`, `engine/charts.js`, etc. (ported) | Read via CellProvider, write via commands |
+| Sequencer | `collab-server/` (rewritten) | Orders commands; authoritative model; persistence; xlsx |
+| Storage | `Sheet`, `Sheet Op Log`, `Sheet Snapshot`, `Sheet Seq` | Command log and snapshots |
+
+Rules:
+
+- No code path calls the engine outside the command dispatcher (ADR 0001).
+- Commands are the schema in `core/commands.js`: `{ id, actor, ts, type,
+  payload }`, validated by `validateCommand`.
+- Rows and columns are 1-based in commands. The canvas is 0-based. The
+  CellProvider converts at the boundary.
+
+## 1. Worker host
+
+The engine and `core/workbook.js` move into a Web Worker. The main thread
+never blocks on recalculation (ADR 0001: up to seconds per edit on heavy
+workbooks).
+
+New files:
+
+| File | Content |
+|---|---|
+| `core/worker.js` | Worker entry. Inits wasm, holds one `createWorkbook` instance, handles messages. |
+| `core/client.js` | Main-thread proxy. Promise-per-request correlation. Hosts CommandDispatcher. |
+| `core/display-cache.js` | DisplayCache. |
+
+### Message protocol
+
+Every request carries a client-assigned `reqId`. Every response echoes it.
+Errors return `{ reqId, error: { message, command? } }` using
+`WorkbookError` fields from `core/workbook.js`.
+
+| Request | Payload | Response |
+|---|---|---|
+| `init` | `{ snapshotBytes: Uint8Array \| null, name?, locale?, timezone? }` | `{ version: 0, sheets: string[] }` |
+| `apply` | `{ commands: Command[] }` | `{ version, results: [{ id, ok, inverse?, error? }] }` |
+| `readViewport` | `{ sheet, r1, c1, r2, c2, includeStyles }` | `{ values: string[][], styles?: object[][] }` |
+| `readCells` | `{ sheet, cells: [{ row, col }], what: ('display'\|'input'\|'style')[] }` | `{ cells: [{ row, col, display?, input?, style? }] }` |
+| `undo` | `{}` | `{ version }` |
+| `redo` | `{}` | `{ version }` |
+| `toBytes` | `{}` | `{ bytes: Uint8Array }` (transferred, then re-serialized on next call) |
+
+Notes:
+
+- `apply` computes inverse commands before it mutates (section 3) and
+  returns them in `results[]`.
+- `readViewport` loops `getDisplayValue` / `getStyle` per cell. IronCalc has
+  no batch range read (ADR 0001 known risk). The loop stays in the worker so
+  the boundary cost is one message, not one per cell. Measured cost: 1.25 ms
+  values, 3.6 ms with styles, for 50x30.
+- `undo` / `redo` in the worker pop the inverse stack and apply through the
+  same `apply` path. In collab mode the stack lives in the dispatcher
+  instead (section 3); the worker messages remain for solo mode.
+- `toBytes` transfers the buffer. The worker rebuilds it lazily on the next
+  request that needs it.
+
+### CommandDispatcher (`core/client.js`)
+
+Responsibilities:
+
+- Queue. One in-flight `apply` at a time. Later commands coalesce into the
+  next `apply` batch.
+- Optimistic echo. On `dispatch(cmd)`, before the worker replies:
+  - `setInput`: write the raw input string into the DisplayCache at that
+    cell, so the typed value paints on the next frame.
+  - All other types: no echo; wait for the version bump.
+- Version tracking. Holds `engineVersion` (from `apply` responses) and
+  notifies subscribers (`onVersion(cb)`). The renderer and feature layers
+  refresh on version change.
+- Inverse collection. Pushes `results[].inverse` onto the history stack
+  (section 3).
+- Collab hand-off. In collab mode, forwards dispatched commands to the
+  collab client (section 4) and applies remote commands received from it.
+
+API sketch:
+
+```
+const wb = await createWorkbookClient({ snapshotBytes })
+wb.dispatch(command)          // validate, queue, echo, apply
+wb.onVersion(cb)              // version bumped; caches are stale
+wb.readViewport(args)         // proxied
+wb.readCells(args)            // proxied
+wb.undo() / wb.redo()
+wb.toBytes()
+```
+
+`dispatch` runs `validateCommand` on the main thread first. A validation
+error never reaches the worker.
+
+### DisplayCache (`core/display-cache.js`)
+
+- A `Map` keyed `"{sheet}:{row}:{col}"`.
+- Value: `{ display, style? }`.
+- Invalidation: wholesale `clear()` on every version bump. No partial
+  invalidation, because IronCalc exposes no changed-cell set (ADR 0001).
+- Refill: the renderer's CellProvider requests `readViewport` for the
+  visible rectangle plus one viewport of overscan, then bulk-inserts.
+- Optimistic echo inserts the raw typed string with a `provisional: true`
+  flag. The next viewport refill overwrites it with the evaluated display.
+- Cache misses return `undefined`. The renderer paints blank and the
+  provider schedules a refill. No synchronous engine read exists on the
+  main thread.
+
+### Acceptance criteria (worker host)
+
+- The main thread bundle imports nothing from `@ironcalc/wasm`.
+- A 9 s recalculation (ADR 0001 measurement) does not block input; typing
+  during it echoes into the grid.
+- `core/worker.js`, `core/client.js`, `core/display-cache.js` each have unit
+  tests; the protocol round-trips all seven message types.
+
+## 2. Renderer integration
+
+`canvas/` stays: `geometry.js`, `renderer.js`, `painters/`, `overlay.js`,
+`scrollbars.js`, `chip-geometry.js`, `checkbox-geometry.js`.
+
+### CellProvider
+
+`createGrid` in `canvas/index.js` today takes injected callbacks:
+`getDisplay`, `getFormat`, `getMergeInfo`, `isSlave`, `getComment`,
+`getValidation`, `getCondFormat`, `getSparkline`, `getCellIds`, plus a
+`lazyValues` flag and an internal eager `data` map.
+
+Replace the value seams with one injected `CellProvider` object backed by
+the DisplayCache:
+
+| Method | Backing |
+|---|---|
+| `getDisplay(id)` | DisplayCache lookup; miss schedules a viewport refill |
+| `getStyle(id)` | DisplayCache lookup (style part) |
+| `getMergeInfo(id)`, `isSlave(id)` | `engine/merge.js` layer (interim, section 6) |
+| `getComment(id)` etc. | Respective feature layer |
+| `getCellIds()` | `readCells` sweep; used by cold paths (Cmd+Arrow, autofit) |
+
+The eager `data` map and the `lazyValues` flag are deleted. Lazy is the only
+mode. Callback IDs stay "A1"-style strings; the provider converts to 1-based
+`(sheet, row, col)` at the cache boundary.
+
+### ViewModel (`core/view-model.js`)
+
+View state moves out of `canvas/index.js` locals (`colW`, `rowH`, `scroll`,
+`freeze`, `hiddenRows`, `hiddenCols`, `filterHiddenRows`, `_zoom`, `sel`,
+`selEnd`, `selMode`) into a serializable module.
+
+- The canvas receives the ViewModel and mutates it through setters, so
+  `createGeometry` keeps reading live objects.
+- `viewModel.serialize()` produces the `view` slice of the save payload.
+  The shape stays compatible with what `usePersistence.js` saves today via
+  `getViewState()` / `applyViewState()`, so old `view` slices load.
+- Selection serializes but never persists to the server (per-user state).
+- Note: column widths, row heights, and freeze also live in the engine
+  (`setColumnsWidth`, `setRowsHeight`, `setFrozen` commands). The engine is
+  authoritative for those. The ViewModel mirrors them for geometry and is
+  refreshed on version bump. Hidden rows/cols and zoom are ViewModel-only.
+
+### Paint work
+
+Canvas paint is the frame floor: 4.4 ms p95 at devicePixelRatio 2
+(ADR 0001). Two renderer tasks, both in P5:
+
+- Dirty-rect repaint. `renderer.render` repaints the full viewport today.
+  Track invalid rects (selection change, single-cell echo, marching-ants
+  step) and repaint only those. Full repaint stays for scroll and version
+  bumps.
+- Text-layout cache. Cache per-cell wrapped-line layout (`wrapLines` /
+  `lineHeightFor` results from `utils/text-wrap.js`) keyed by cell content,
+  width, and font. Invalidate with the DisplayCache.
+
+### Later-phase items (P5, scope listed here)
+
+- Touch handling: pan/fling scroll, tap select, long-press context menu,
+  drag handles for selection and fill, pinch zoom writing `_zoom`.
+- Hidden DOM/ARIA layer: an offscreen grid of the visible viewport with
+  `role="grid"` / `role="gridcell"`, focus tracking synced to the selection,
+  and `aria-live` announcement of the active cell. Screen readers get the
+  viewport, not the 10k-row sheet.
+
+### Acceptance criteria (renderer)
+
+- `canvas/index.js` contains no cell-data storage and no view-state
+  ownership; it consumes CellProvider and ViewModel.
+- Scroll p95 stays under 8 ms per frame at dpr 2 on the P1 benchmark doc.
+- The `view` slice round-trips: save, reload, identical widths, heights,
+  freeze, hidden sets, zoom.
+
+## 3. Undo: inverse commands
+
+Native IronCalc undo/redo is not used. Before the worker applies a command,
+the adapter captures the state the command overwrites and derives an inverse
+command. Undo dispatches inverse commands through the normal path, so remote
+clients see them as ordinary commands and stay convergent.
+
+- History stack: main thread, in the dispatcher. Entries: `{ forward,
+  inverse }`. Redo re-dispatches `forward`.
+- Batch inverse: a `batch` whose `commands` are the member inverses in
+  reverse order.
+- Collab: undo is per-actor. The stack holds only local commands. Cell-level
+  last-writer-wins applies; undoing your edit can overwrite a later remote
+  edit to the same cell. Accepted for v1.
+
+Inverse per `CommandTypes` entry (capture reads use adapter getters in
+`core/workbook.js`):
+
+| Command | Capture before apply | Inverse | Cost |
+|---|---|---|---|
+| `setInput` | `getInput(sheet, row, col)` | `setInput` with prior input | O(1) |
+| `setArrayFormula` | `getInput` for each cell in the width x height block | `batch` of `setInput` restores | O(area) |
+| `clearContents` | `getInput` for each non-empty cell in range | `batch` of `setInput` | O(area); expensive on large ranges |
+| `setRangeStyle` | `getStyle` for each cell, only the paths being set | `batch` of per-cell `setRangeStyle` | O(area); expensive; coalesce runs of equal style |
+| `setColumnsWidth` | `getColumnWidth` per column c1..c2 | `batch` of `setColumnsWidth`, one per run of equal prior width | O(cols) |
+| `setRowsHeight` | `getRowHeight` per row r1..r2 | `batch` of `setRowsHeight` per run | O(rows) |
+| `insertRows` | nothing | `deleteRows(row, count)` | O(1) |
+| `deleteRows` | full contents of the rows: inputs, styles, heights | `insertRows` + `batch` restore | O(row area); expensive |
+| `insertColumns` | nothing | `deleteColumns(col, count)` | O(1) |
+| `deleteColumns` | full contents of the columns | `insertColumns` + `batch` restore | O(col area); expensive |
+| `moveRows` | nothing | `moveRows(row + delta, count, -delta)` | O(1) |
+| `moveColumns` | nothing | `moveColumns(col + delta, count, -delta)` | O(1) |
+| `setFrozen` | `getFrozen(sheet)` | `setFrozen` with prior rows/cols | O(1) |
+| `addSheet` | resulting sheet name (read after apply) | `deleteSheet(name)` | O(1) |
+| `deleteSheet` | full sheet: all inputs, styles, widths, heights, frozen | `addSheet` + `batch` restore | O(sheet); expensive; tab order not preserved (open question 4) |
+| `renameSheet` | prior name | `renameSheet(new -> old)` | O(1) |
+| `duplicateSheet` | name of the created copy (read after apply) | `deleteSheet(copyName)` | O(1) |
+| `setDefinedName` | prior entry from `getDefinedNameList()` | prior existed: `setDefinedName` with old formula; else `deleteDefinedName` | O(names) |
+| `deleteDefinedName` | prior formula and scope | `setDefinedName` restore | O(names) |
+| `batch` | member captures, in order | `batch` of member inverses, reversed | sum of members |
+
+Expensive captures (`clearContents`, `setRangeStyle`, `deleteRows`,
+`deleteColumns`, `deleteSheet`) run inside the worker, so they cost latency,
+not jank. Cap capture size (proposal: 1M cells); above the cap the command
+applies but records no inverse, and the history entry is marked
+non-undoable.
+
+### Acceptance criteria (undo)
+
+- Property test: for each command type, apply then apply-inverse restores
+  the prior `toBytes()` state (excluding tab order for `deleteSheet`).
+- `core/workbook.js` no longer calls `model.undo()` / `model.redo()`.
+- Two-client test: client A undoes; client B converges to the same bytes.
+
+## 4. Collab and sequencing
+
+The sidecar (`collab-server/`) becomes the command sequencer and the
+authoritative model, running `@ironcalc/nodejs`. The Hocuspocus/Yjs stack
+(`@hocuspocus/server`, `collab/ydoc.js`, `collab/cells-binding.js`,
+`collab/hocuspocus-client.js`, `collab/frappe-provider.js`) is retired.
+
+### Protocol
+
+| Message | Direction | Payload | Reply |
+|---|---|---|---|
+| `join` | client -> sidecar | `{ docId }` | `{ snapshotBytes, seq, featureSlices, view, canWrite }` |
+| `submit` | client -> sidecar | `{ commands: Command[], baseSeq }` | `{ assignments: [{ id, seq }] }` |
+| `commands` | sidecar -> all clients | `{ docId, entries: [{ seq, command }] }` | none |
+| `awareness` | both ways | opaque frame, relayed verbatim | none |
+
+- The sidecar validates each command with the same `core/commands.js`
+  module (it is dependency-free by design), applies it to its nodejs model,
+  assigns the next seq, and broadcasts.
+- A command the sidecar rejects (validation or engine error) returns an
+  error per command id; the client rolls back by dispatching the stored
+  inverse locally.
+- `baseSeq` is telemetry only. There is no rebase: payloads are absolute
+  and convergence is cell-level last-writer-wins by seq order.
+
+### Client apply rules
+
+- Apply remote entries strictly in seq order; buffer gaps.
+- A broadcast entry whose `command.id` matches a locally submitted command
+  is a confirmation: record the seq, do not re-apply.
+- Other entries dispatch to the worker as remote applies (no history entry,
+  no optimistic echo).
+- On reconnect: re-`join`, reload from `snapshotBytes` + replay entries
+  after the snapshot seq, then resubmit unconfirmed local commands.
+
+### Transport: mirror the current path A / path B split
+
+`components/SheetEditor/useCollaboration.js` selects paths today via
+`_collabV2Enabled()` (boot flag `collab_v2`) and `_collabWsUrl()` (default
+same-origin `/collab/`). Keep that split:
+
+| Path | Transport | When |
+|---|---|---|
+| A (default) | Frappe socket.io realtime relay (`collab/realtime-adapter.js`, `collab/frappe-realtime-init.js` shim) carrying `join`/`submit`/`commands` events to the sidecar via server relay | Benches without a reachable sidecar socket |
+| B | Direct websocket to the sidecar at `collab_ws_url` | Benches with the sidecar deployed |
+
+Presence: keep `collab/awareness.js` unchanged. It already speaks
+`yjs_awareness` frames over an injected `realtime` transport. Path B wraps
+the sidecar socket in the same `{ on, off, publish }` adapter shape.
+`useCollaboration.js` keeps its public API (`presentUsers`, `remoteCursors`,
+`broadcastCursor`, cursor palette, throttle).
+
+### Auth
+
+- Browser to sidecar: the client sends the Frappe `sid` (read as in
+  `_readSessionId()` in `useCollaboration.js`). The sidecar calls
+  `suite.sheets.collab.check_collab_access` with it, as
+  `collab-server/frappe-client.js` does today. `canWrite: false` connections
+  receive broadcasts but their `submit` is rejected.
+- Sidecar to Frappe: shared secret in the `X-Collab-Secret` header,
+  enforced by `_require_collab_secret()` in `collab.py`. New persistence
+  endpoints (section 5) use the same header.
+
+### Acceptance criteria (collab)
+
+- Convergence test: N simulated clients submit interleaved random command
+  streams; all client `toBytes()` match the sidecar's after quiesce.
+- A read-only sharee receives broadcasts and cursors but cannot mutate.
+- Kill and restart the sidecar mid-session; clients reconnect and converge
+  with no lost confirmed commands.
+- Both transports pass the same protocol test suite.
+
+## 5. Persistence
+
+### Command log
+
+- The sidecar appends each sequenced command to `Sheet Op Log` through a new
+  `X-Collab-Secret` endpoint in `collab.py`, batched (flush every ~2 s or
+  100 entries), reusing `versioning/save.py` seq semantics
+  (`seq_mod.allocate`, monotonic `head_seq` advance as in `append_op`).
+- Row mapping: `op_type` = command type, `after_json` = full command JSON,
+  `sub_sheet` = `payload.sheet`, `cell_refs` = affected range for
+  `ops_for_cell` lookup, `actor` = command actor, `payload_version` = 2
+  (new field, open question 7).
+- `versioning/timeline.py` bucketing and `versioning/api.py`
+  (`timeline`, `timeline_page`, `ops_between`, `ops_for_cell`) keep working
+  unchanged: commands are semantic JSON with the same columns.
+
+### Snapshots
+
+- The sidecar writes periodic snapshots via `versioning/save.py` ->
+  `snapshots_mod.maybe_snapshot`, advancing `head_seq`.
+- Snapshot payload (`Sheet Snapshot.sheets_data`), v3 envelope:
+
+```
+{ "v": 3,
+  "engine": "<base64 of workbook.toBytes()>",
+  "features": { "pivot": ..., "charts": ..., "sortFilter": ...,
+                "validation": ..., "comments": ..., "condFormat": ...,
+                "links": ..., "slicers": ..., "merge": ..., "protection": ... },
+  "view": <ViewModel.serialize()> }
+```
+
+- Base64-in-JSON is open question 2.
+- Snapshots stay a replay shortcut. The command log is the source of truth
+  (CONTEXT.md).
+
+### Solo / offline mode
+
+- No sidecar connection: the client keeps the worker authoritative and
+  saves through the existing `suite.sheets.api.save_sheet` flow in
+  `usePersistence.js`, with the pending command batch in the `ops`
+  parameter (already accepted by `save_sheet` in `versioning/save.py`).
+- `sheets_data` in that call carries the v3 envelope instead of the packed
+  v2 sheet slice.
+- Large batches nest in one `batch` command to respect `MAX_OPS_PER_SAVE`
+  (open question 3).
+
+### xlsx
+
+- Import and export run in the sidecar; `@ironcalc/nodejs` has xlsx, the
+  wasm build does not (ADR 0001).
+- New whitelisted endpoints proxy file upload/download to the sidecar.
+- The client-side `engine/xlsx-io.js` path is retired in P4.
+
+### Acceptance criteria (persistence)
+
+- Version history UI (`useVersionHistory.js`, `VersionHistory.vue`) renders
+  a timeline from command-log entries; `ops_for_cell` shows cell history for
+  a cell edited via commands.
+- Restore to a snapshot rebuilds a working workbook from `engine` bytes plus
+  feature slices.
+- Offline edit, reload, and the batch replays: no data loss.
+- xlsx round-trip through the sidecar preserves the difftest fixture doc.
+
+## 6. Feature layers
+
+Each layer keeps its own pure-JS engine, reads cells through the
+CellProvider, and writes through commands. Layer state stays in its JSON
+slice (LWW per slice in v1). Promoting slice mutations to first-class
+commands is a v2 item.
+
+| Layer | File(s) | Reads | Writes | Slice |
+|---|---|---|---|---|
+| Pivot | `engine/pivot.js` | source range values | `batch` of `setInput` into the output range | `pivot` |
+| Charts | `engine/charts.js`, `engine/chart-data.js` | series ranges | none (render-only) | `charts` |
+| Sort/filter | `engine/sortFilter.js` | column values | `moveRows` / `setInput`; filter hides via ViewModel `filterHiddenRows` | `sortFilter` |
+| Validation | `engine/validation.js` | cell values | none (blocks commits) | `validation` |
+| Comments | `engine/comments.js` | none | none | `comments` |
+| Cond. format | `engine/cond-format.js` | cell values | none (paint-time); rules IronCalc supports migrate into `setRangeStyle` paths later | `condFormat` |
+| Links | `engine/links.js` | cell inputs | `setInput` | `links` |
+| Slicers | `engine/slicers.js` | ranges | via sortFilter | `slicers` |
+| Sparklines | `engine/sparkline.js` | ranges | none | (in `formats` today; moves to `sparkline` slice) |
+| Smart fill | `engine/smart-fill.js`, `engine/fill-series.js`, `engine/patterns/` | selection values | `batch` of `setInput` | none |
+| Protection | `engine/protection.js` | none | none (blocks commits) | `protection` |
+| Merge (interim) | `engine/merge.js` | none | none; provides `getMergeInfo` / `isSlave` to the renderer | `merge` |
+
+Merge migrates into IronCalc when merged cells reach npm (they exist on
+IronCalc main, not on npm; ADR 0001 known risk). Until then `merge.js` stays
+authoritative and the migration adds `mergeCells` / `unmergeCells` commands
+plus a slice-to-engine converter.
+
+### Acceptance criteria (feature layers)
+
+- No feature layer imports the engine or the worker client directly; the
+  CellProvider and dispatcher are their only seams.
+- Each ported layer keeps its existing unit tests green
+  (`engine/*.test.ts` / `.test.js`).
+- Feature slices survive a save/load round-trip through the v3 envelope.
+
+## 7. Document migration
+
+One-time importer, `core/import-v1.js` (new, pure, environment-free):
+
+- Input: a parsed v1 `sheets_data` payload.
+- Reads the packed sheet slice via `unpackSheet` and `boundsOf` from
+  `utils/sheet-codec.js` (handles both the v2 packed and legacy cell-map
+  shapes).
+- Output: `{ commands, features, view }`: one `batch` command per sheet
+  (cell inputs, then widths/heights/frozen from the old `view` and
+  `formats` slices as commands), feature slices copied across, view slice
+  translated.
+- Format mapping: the old `formats` slice maps to `setRangeStyle` style
+  paths (`font.b`, `fill.color`, `num_fmt`, ...). Unmappable properties
+  (hyperlink, checkbox, sparkline markers) go to their feature slice.
+
+Execution:
+
+- Runs lazily on first open of a v1 document.
+- Collab open: the sidecar runs it on `join` when the stored payload has no
+  `v: 3` envelope, then writes the log batch and a v3 snapshot.
+- Solo open: the worker runs it; the first save persists the v3 envelope.
+- No dual-format support beyond this importer. After the first v3 save the
+  v1 payload is gone.
+
+### Acceptance criteria (migration)
+
+- Corpus test: every fixture v1 doc imports, and cell display values match
+  the old engine's rendering for the difftest-covered function surface.
+- Import of a 2M-cell doc completes without main-thread jank (worker or
+  sidecar hosts the work).
+- A migrated doc's version timeline shows one import batch entry.
+
+## 8. Phasing
+
+### P1: read-only viewer
+
+Scope: worker + DisplayCache + renderer render an imported v1 doc.
+No editing, no collab, no save.
+
+New files: `core/worker.js`, `core/client.js`, `core/display-cache.js`,
+`core/view-model.js`, `core/import-v1.js`.
+Changed: `canvas/index.js` (CellProvider seam, delete eager `data` path),
+`canvas/renderer.js` (provider plumbing).
+
+Acceptance criteria:
+
+- Open a migrated v1 fixture doc; values, number formats, widths, heights,
+  freeze, and hidden rows render correctly.
+- Scroll p95 under 8 ms per frame at dpr 2 (measure with the ADR 0001
+  headless-Chrome harness).
+- Zero main-thread wasm imports; typing does nothing (read-only) but never
+  blocks.
+
+### P2: solo editing
+
+Scope: command dispatch, inverse undo, persistence via `save_sheet`.
+The 305 KB `components/SheetEditor/index.vue` SFC is replaced by a thin
+component plus composables, each under 500 lines:
+
+| Composable | Owns |
+|---|---|
+| `useSelection` | selection state, ViewModel sync, cursor movement |
+| `useCellEditing` | edit mode, formula bar, autocomplete, commit -> `setInput` |
+| `useClipboard` | copy/cut/paste, marching ants, `batch` emission |
+| `useFormatting` | toolbar -> `setRangeStyle`, number formats |
+| `useCharts` | chart overlay wiring (from `useChartIntegration.js`) |
+| `usePersistence` | evolves the existing `usePersistence.js`: v3 envelope, command batches |
+| `useCollaboration` | evolves the existing file: new protocol (lands in P3) |
+| `useHistory` | undo/redo stacks over dispatcher inverses |
+| `useKeyboard` | shortcuts (from `useShortcuts.js`) |
+| `useTouch` | stub in P2; filled in P5 |
+
+Acceptance criteria:
+
+- Every `CommandTypes` entry reachable from the UI; inverse property tests
+  pass (section 3).
+- Save/reload round-trip of the v3 envelope; version timeline shows
+  command entries with correct `ops_for_cell` results.
+- No file in `components/SheetEditor/` exceeds 500 lines; `index.vue` is
+  deleted.
+
+### P3: collab
+
+Scope: sidecar sequencing, presence, versioning timeline on the new log.
+
+New/changed: `collab-server/index.js` rewrite (`@ironcalc/nodejs`,
+sequencer, op-log/snapshot writers), `collab-server/frappe-client.js`
+(new endpoints), `collab.py` (persist endpoints, `payload_version`),
+`useCollaboration.js` (new protocol, both transports),
+`collab/realtime-adapter.js` (command events). Removed: `collab/ydoc.js`,
+`collab/cells-binding.js`, `collab/hocuspocus-client.js`,
+`collab/frappe-provider.js`, Hocuspocus dependencies.
+
+Acceptance criteria:
+
+- Collab acceptance list from section 4 passes.
+- Presence and cursors work on both transports with `collab/awareness.js`
+  unchanged.
+- The versioning timeline reflects multi-user edits with per-actor
+  attribution.
+
+### P4: feature layers, xlsx, migration importer in production
+
+Scope: port all section 6 layers; sidecar xlsx endpoints; lazy migration on
+first open enabled for all documents.
+
+Acceptance criteria:
+
+- Feature-layer acceptance list from section 6 passes.
+- xlsx import of the difftest fixture and export round-trip pass in e2e.
+- Migration acceptance list from section 7 passes on the fixture corpus.
+
+### P5: mobile touch, ARIA, paint optimization, e2e coverage
+
+Scope: touch handling and the hidden ARIA layer (section 2 scope lists),
+dirty-rect repaint, text-layout cache, and a Sheets e2e suite.
+
+E2e location: `e2e/drive-backed-apps/specs/` has `drive/`, `writer/`,
+`drive-writer/` today and no Sheets specs. Add `specs/sheets/` using the
+existing fixtures/global-setup harness.
+
+Acceptance criteria:
+
+- Paint p95 under 3 ms at dpr 2 on the P1 benchmark doc after dirty-rect
+  and text-cache land.
+- Touch: pan, tap-select, long-press menu, fill-handle drag, pinch zoom
+  pass on an emulated mobile viewport in e2e.
+- Screen reader announces active cell and value; keyboard-only navigation
+  covers selection, editing, and menus.
+- e2e specs cover: open, edit, undo, save, reload, two-client collab,
+  version restore, xlsx import.
+
+## 9. Risks
+
+From ADR 0001; each maps to a mitigation in this spec.
+
+| Risk | Consequence here | Mitigation |
+|---|---|---|
+| Full-workbook recalculation per edit (~90 ms cheap / ~9 s heavy) | UI would freeze if the engine ran on the main thread | Worker host (section 1); optimistic echo keeps typing responsive |
+| No dependency DAG upstream | Heavy docs pay seconds per edit | Top upstream contribution target ("use dependency DAG" issue); vendored fork is the fallback (MIT) |
+| No batch range-read API | Per-cell read loop per viewport | Loop confined to the worker; upstream contribution target |
+| No history-free bulk load | Import replays cost undo-history memory | Upstream contribution target; importer uses `batch` + `pauseEvaluation` path in the adapter |
+| Two-person upstream, pre-1.0 | Breaking changes between releases | Version pinning gated by `engine/difftest/ironcalc.test.ts` |
+| Engine panics on edge input | Poisoned wasm instance | Snapshot + command-log recovery: rebuild worker from last snapshot, replay |
+| Merged cells not on npm | `merge.js` interim layer (section 6) | Migrate when released |
+| `zip` 0.6.6 unmaintained (xlsx path) | Sidecar-only exposure | xlsx confined to sidecar; monitor upstream |
+
+## 10. Test strategy
+
+- Unit tests per module. Every new `core/` file ships with a test beside it,
+  matching the existing pattern (`core/commands.test.js`,
+  `core/workbook.test.js`).
+- Difftest gate. `engine/difftest/ironcalc.test.ts` runs on every
+  `@ironcalc/wasm` version bump; agreement must not regress from the
+  0.8.4 baseline (99.91% corpus agreement, 15/16 curated,
+  `engine/difftest/IRONCALC-REPORT.md`).
+- Command-log fuzz and convergence suite, extending `core/workbook.test.js`
+  (its "determinism" describe block is the seed): random command streams,
+  seeded, applied to two workbook instances and to
+  snapshot-then-replay; assert byte-identical `toBytes()`. Add
+  apply-inverse-apply round-trips per command type.
+- Protocol tests: `core/client.js` against a worker stub; sidecar sequencer
+  against `collab-server/test/`.
+- E2e per phase, listed in each phase's acceptance criteria, in
+  `e2e/drive-backed-apps/specs/sheets/`.
