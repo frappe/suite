@@ -31,6 +31,7 @@
 			<ThreadPane
 				:thread-open="!!threadID"
 				@touch-start="onThreadTouchStart"
+				@touch-move="onThreadTouchMove"
 				@touch-end="onThreadTouchEnd"
 			>
 				<template #list>
@@ -397,7 +398,11 @@ const threadSlide = ref('')
 let pendingThreadSlide = ''
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
-const { onTouchStart: onThreadTouchStart, onTouchEnd: onThreadTouchEnd } = useSwipeNav(
+const {
+	onTouchStart: onThreadTouchStart,
+	onTouchMove: onThreadTouchMove,
+	onTouchEnd: onThreadTouchEnd,
+} = useSwipeNav(
 	() => isMobile.value && !!threadID,
 	(offset) => {
 		// Arms the paging animation for this navigation only — openThread consumes it.

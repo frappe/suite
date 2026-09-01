@@ -7,6 +7,7 @@ import { useTheme as useSuiteTheme } from '@/composables/useTheme'
 import { matchesScreenedValue, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import router from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
+import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 
 import type { ComposeMailData, Identity, ScreenedAddress } from '@/apps/mail/types'
 
@@ -100,16 +101,15 @@ export const useSidebar = () => {
 }
 
 // Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
-// preview: left → onSwipe(1) (next), right → onSwipe(-1). Judged on touchend (passive) so
-// vertical scrolling is never delayed; a swipe must be decisively horizontal — at least
-// 64px long and twice its vertical drift. Swipes over an email body never reach the pane:
-// EmailContent detects them inside its iframe and re-broadcasts them as `email-swipe`
-// window events, which this subscribes to as well. The time guard dedupes those (every
-// mounted EmailContent re-dispatches the same message) and paces direct swipes alike.
-const SWIPE_MIN_X = 64
-
+// preview: left → onSwipe(1) (next), right → onSwipe(-1). The rule itself lives in
+// createSwipeGesture; this binds it to the touch events and to the view. Judged on
+// touchend (passive) so vertical scrolling is never delayed. Swipes over an email body
+// never reach the pane: EmailContent detects them inside its iframe and re-broadcasts
+// them as `email-swipe` window events, which this subscribes to as well. The time guard
+// dedupes those (every mounted EmailContent re-dispatches the same message) and paces
+// direct swipes alike.
 export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) => void) => {
-	let origin: { x: number; y: number } | null = null
+	const gesture = createSwipeGesture()
 	let lastSwipeAt = 0
 
 	const swipe = (offset: 1 | -1) => {
@@ -121,19 +121,18 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
 	}
 
 	const onTouchStart = (e: TouchEvent) => {
-		origin =
-			enabled() && e.touches.length === 1
-				? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-				: null
+		if (!enabled()) return gesture.cancel()
+		gesture.start(e.touches[0].clientX, e.touches[0].clientY, e.touches.length)
+	}
+
+	const onTouchMove = (e: TouchEvent) => {
+		const touch = e.touches[0]
+		if (touch) gesture.move(touch.clientX, touch.clientY)
 	}
 
 	const onTouchEnd = (e: TouchEvent) => {
-		if (!origin) return
-		const dx = e.changedTouches[0].clientX - origin.x
-		const dy = e.changedTouches[0].clientY - origin.y
-		origin = null
-		if (Math.abs(dx) < SWIPE_MIN_X || Math.abs(dx) < Math.abs(dy) * 2) return
-		swipe(dx < 0 ? 1 : -1)
+		const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
+		if (offset) swipe(offset)
 	}
 
 	const onEmailSwipe = (e: Event) => swipe((e as CustomEvent).detail === 'left' ? 1 : -1)
@@ -141,7 +140,7 @@ export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) =>
 	onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
 	onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
 
-	return { onTouchStart, onTouchEnd }
+	return { onTouchStart, onTouchMove, onTouchEnd }
 }
 
 // Mobile folder bottom sheet — shared so both the header title (mailbox views)

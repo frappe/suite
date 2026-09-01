@@ -33,6 +33,7 @@
 				hidden: !isMobile && !showReadingPane && !threadOpen,
 			}"
 			@touchstart.passive="emit('touchStart', $event)"
+			@touchmove.passive="emit('touchMove', $event)"
 			@touchend.passive="emit('touchEnd', $event)"
 		>
 			<!-- The swipe slide lives inside MailThread (its toolbar must not move), armed via
@@ -71,6 +72,7 @@ const { threadOpen } = defineProps<{
 // forwards the touches. `.passive` stays on the listener here, where the native event is bound.
 const emit = defineEmits<{
 	touchStart: [TouchEvent]
+	touchMove: [TouchEvent]
 	touchEnd: [TouchEvent]
 }>()
 

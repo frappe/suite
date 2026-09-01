@@ -271,6 +271,7 @@
 						hidden: !isMobile && !showReadingPane && !openSender,
 					}"
 					@touchstart.passive="onPreviewTouchStart"
+					@touchmove.passive="onPreviewTouchMove"
 					@touchend.passive="onPreviewTouchEnd"
 				>
 					<template v-if="openSender">
@@ -638,7 +639,11 @@ watch(
 
 // Swipe on the open preview (mobile): left → next sender, right → previous — the
 // screener counterpart of the mailbox thread swipe.
-const { onTouchStart: onPreviewTouchStart, onTouchEnd: onPreviewTouchEnd } = useSwipeNav(
+const {
+	onTouchStart: onPreviewTouchStart,
+	onTouchMove: onPreviewTouchMove,
+	onTouchEnd: onPreviewTouchEnd,
+} = useSwipeNav(
 	() => isMobile.value && !!openSender.value,
 	(offset) => {
 		const list = senders.data ?? []
