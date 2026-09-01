@@ -32,7 +32,8 @@ interface BackgroundImage {
 	};
 }
 
-export function readBackgroundEffectPreferences() {
+/** Read background-effect preferences with the caller's existing intensity default. */
+export function readBackgroundEffectPreferences(blurIntensityFallback = 4) {
 	const blurEnabled = readBoolean("backgroundEffects.blur");
 	const imageEnabled = readBoolean("backgroundEffects.image");
 	const autoFramingEnabled = readBoolean("backgroundEffects.autoFraming");
@@ -42,7 +43,13 @@ export function readBackgroundEffectPreferences() {
 		imageEnabled,
 		selectedImage: readString("backgroundEffects.imageName"),
 		blurIntensity:
-			Number.parseInt(readString("backgroundEffects.blurIntensity", "4"), 10) || 4,
+			Number.parseInt(
+				readString(
+					"backgroundEffects.blurIntensity",
+					blurIntensityFallback.toString(),
+				),
+				10,
+			) || blurIntensityFallback,
 		autoFramingEnabled,
 		anyEnabled: blurEnabled || imageEnabled || autoFramingEnabled,
 	};

@@ -53,7 +53,7 @@ function getCameraVideoConstraints(): MediaTrackConstraints {
 
 function getBackgroundEffectsFromStorage() {
 	return {
-		...readBackgroundEffectPreferences(),
+		...readBackgroundEffectPreferences(12),
 		autoFramingPaused: autoFramingPaused.value,
 	};
 }

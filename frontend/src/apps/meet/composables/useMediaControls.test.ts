@@ -1678,6 +1678,11 @@ describe("useMediaControls", () => {
 		const raw = videoTrack("raw");
 		const processed = videoTrack("processed");
 		const replaceTrack = vi.fn().mockResolvedValue(undefined);
+		const applyBackgroundEffects = vi.fn().mockResolvedValue({
+			stream: new FakeMediaStream([processed]),
+			cleanup: vi.fn(),
+			updateOptions: vi.fn(),
+		});
 		const producer = {
 			id: "camera-producer",
 			track: videoTrack("old"),
@@ -1686,11 +1691,7 @@ describe("useMediaControls", () => {
 		const { controls, setLocalMediaTrack } = createCameraHarness({
 			getUserMedia: vi.fn().mockResolvedValue(new FakeMediaStream([raw])),
 			videoProducer: producer,
-			applyBackgroundEffects: vi.fn().mockResolvedValue({
-				stream: new FakeMediaStream([processed]),
-				cleanup: vi.fn(),
-				updateOptions: vi.fn(),
-			}),
+			applyBackgroundEffects,
 		});
 
 		await controls.toggleCamera();
@@ -1698,6 +1699,11 @@ describe("useMediaControls", () => {
 		expect(replaceTrack).toHaveBeenCalledTimes(1);
 		expect(replaceTrack).toHaveBeenCalledWith({ track: processed });
 		expect(setLocalMediaTrack).toHaveBeenCalledWith("video", processed);
+		expect(applyBackgroundEffects).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ blurIntensity: 12 }),
+			expect.any(AbortSignal),
+		);
 	});
 
 	it("publishes auto-framed output without requiring a background effect", async () => {
