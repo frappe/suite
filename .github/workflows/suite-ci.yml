@@ -232,8 +232,8 @@ jobs:
       - name: Collect Backend Evidence
         if: always()
         run: |
-          if [ -f /home/runner/frappe-bench/coverage.xml ]; then
-            cp /home/runner/frappe-bench/coverage.xml test-results/backend/coverage.xml
+          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
           fi
 
       - name: Upload Backend Evidence
