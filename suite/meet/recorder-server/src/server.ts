@@ -124,16 +124,6 @@ async function main(): Promise<void> {
 		store,
 	);
 	const server = createApp(config, auth, jobs, logger).listen(config.port);
-	try {
-		await store.initialize();
-		await renderer.initialize();
-		await jobs.initialize();
-	} catch (error) {
-		logger.error({
-			event: 'service_initialization_failed',
-			reason: error instanceof Error ? error.message : 'initialization_failed',
-		});
-	}
 	let shuttingDown = false;
 	const shutdown = async () => {
 		if (shuttingDown) return;
@@ -143,6 +133,19 @@ async function main(): Promise<void> {
 	};
 	process.once('SIGINT', () => void shutdown());
 	process.once('SIGTERM', () => void shutdown());
+	try {
+		await store.initialize();
+		await renderer.initialize();
+		await jobs.initialize();
+	} catch (error) {
+		logger.error({
+			event: 'service_initialization_failed',
+			reason: error instanceof Error ? error.message : 'initialization_failed',
+		});
+		await new Promise((resolve) => setTimeout(resolve, 5_000));
+		await shutdown();
+		throw error;
+	}
 }
 
 main().catch((error: unknown) => {
