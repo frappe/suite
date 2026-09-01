@@ -1,13 +1,15 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
-from suite.utils.rate_limiter import dynamic_rate_limit
+from suite.utils.rate_limiter import _is_trusted_socket_request, dynamic_rate_limit
 
 # On IntegrationTestCase, the doctype test records and all
 # link-field test record dependencies are recursively loaded
@@ -31,8 +33,15 @@ def probe_outer() -> str:
     return probe_inner()
 
 
+@dynamic_rate_limit(trusted_socket_bypass=True)
+def probe_trusted_socket() -> str:
+    return "trusted"
+
+
 OUTER_PATH = f"{__name__}.probe_outer"
 INNER_PATH = f"{__name__}.probe_inner"
+TRUSTED_SOCKET_PATH = f"{__name__}.probe_trusted_socket"
+PROBE_PATHS = (OUTER_PATH, INNER_PATH, TRUSTED_SOCKET_PATH)
 
 
 class UnitTestRateLimit(UnitTestCase):
@@ -41,7 +50,18 @@ class UnitTestRateLimit(UnitTestCase):
     Use this class for testing individual functions and methods.
     """
 
-    pass
+    def test_socket_bypass_requires_matching_secret(self):
+        with (
+            patch("frappe.get_request_header", return_value="trusted-secret"),
+            patch("frappe.realtime.get_socketio_secret", return_value="trusted-secret"),
+        ):
+            self.assertTrue(_is_trusted_socket_request())
+
+        with (
+            patch("frappe.get_request_header", return_value="wrong-secret"),
+            patch("frappe.realtime.get_socketio_secret", return_value="trusted-secret"),
+        ):
+            self.assertFalse(_is_trusted_socket_request())
 
 
 class IntegrationTestRateLimit(IntegrationTestCase):
@@ -51,7 +71,7 @@ class IntegrationTestRateLimit(IntegrationTestCase):
     """
 
     def setUp(self) -> None:
-        for path in (OUTER_PATH, INNER_PATH):
+        for path in PROBE_PATHS:
             # Every row for a path applies, so clear first: a leftover from an earlier test would
             # stack a second identical limit and charge the counter twice per call.
             frappe.db.delete("Rate Limit", {"method_path": path})
@@ -63,7 +83,7 @@ class IntegrationTestRateLimit(IntegrationTestCase):
     def tearDown(self) -> None:
         # The rows go with the test transaction; the redis counters and cache do not.
         self._reset_counters()
-        for path in (OUTER_PATH, INNER_PATH):
+        for path in PROBE_PATHS:
             frappe.cache.hdel("rate_limits", path)
 
     def test_nested_endpoints_charge_their_own_bucket(self):
@@ -96,7 +116,18 @@ class IntegrationTestRateLimit(IntegrationTestCase):
         self.assertEqual(self._counter(OUTER_PATH), 1)
         self.assertEqual(self._counter(INNER_PATH), 1)
 
-    def _dispatch(self, cmd: str | None) -> None:
+    def test_trusted_socket_request_bypasses_configured_limit(self):
+        with patch("suite.utils.rate_limiter._is_trusted_socket_request", return_value=True):
+            self._dispatch(TRUSTED_SOCKET_PATH, probe_trusted_socket)
+
+        self.assertEqual(self._counter(TRUSTED_SOCKET_PATH), 0)
+
+    def test_untrusted_request_still_uses_configured_limit(self):
+        self._dispatch(TRUSTED_SOCKET_PATH, probe_trusted_socket)
+
+        self.assertEqual(self._counter(TRUSTED_SOCKET_PATH), 1)
+
+    def _dispatch(self, cmd: str | None, endpoint=probe_outer) -> None:
         """Calls probe_outer as a request dispatched under `cmd`."""
 
         builder = EnvironBuilder(path=f"/api/method/{cmd}", method="POST")
@@ -106,7 +137,7 @@ class IntegrationTestRateLimit(IntegrationTestCase):
         frappe.local.request_ip = PROBE_IP
         frappe.form_dict.cmd = cmd
         try:
-            probe_outer()
+            endpoint()
         finally:
             frappe.form_dict.cmd = previous_cmd
             if previous_request is None:
@@ -124,5 +155,5 @@ class IntegrationTestRateLimit(IntegrationTestCase):
         return int(value) if value else 0
 
     def _reset_counters(self) -> None:
-        for path in (OUTER_PATH, INNER_PATH):
+        for path in PROBE_PATHS:
             frappe.cache.delete(self._counter_key(path))

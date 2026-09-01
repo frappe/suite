@@ -166,65 +166,94 @@ describe("guest realtime lifecycle", () => {
 		},
 	);
 
-	it("reconciles a terminal status over HTTP when its realtime event is missed", async () => {
+	it("does not poll guest validation while the realtime subscription is active", async () => {
 		vi.useFakeTimers();
 		try {
-			vi.mocked(frappeRequest).mockResolvedValue({
-				valid: false,
-				status: "rejected",
-			});
 			const { socket } = createSocket();
-			const { lifecycle, callbacks } = createLifecycle(socket);
+			const { lifecycle } = createLifecycle(socket);
 			lifecycle.start();
 
-			await vi.advanceTimersByTimeAsync(5_000);
+			await vi.advanceTimersByTimeAsync(60_000);
 
-			expect(callbacks.onTerminalStatus).toHaveBeenCalledWith("rejected");
-			expect(frappeRequest).toHaveBeenCalledWith({
-				url: "suite.meet.api.meeting.validate_guest_session",
-				method: "POST",
-				params: {
-					meeting_id: "room-1",
-					guest_id: "guest_private",
-					guest_session_token: "private-proof",
-				},
-			});
+			expect(frappeRequest).not.toHaveBeenCalled();
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 
-	it("expires a stored guest when reconciliation can no longer find its lease", async () => {
-		vi.useFakeTimers();
-		try {
-			vi.mocked(frappeRequest).mockResolvedValue({ valid: false });
-			const { socket } = createSocket();
-			const { lifecycle, callbacks } = createLifecycle(socket);
-			lifecycle.start();
+	it("surfaces invalid request acknowledgement failures", () => {
+		const { socket, emit } = createSocket();
+		const { lifecycle, callbacks } = createLifecycle(socket);
+		lifecycle.start();
 
-			await vi.advanceTimersByTimeAsync(5_000);
+		const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void;
+		acknowledge({ ok: false, error: "invalid_request" });
 
-			expect(callbacks.onTerminalStatus).toHaveBeenCalledWith("expired");
-		} finally {
-			vi.useRealTimers();
-		}
+		expect(callbacks.onError).toHaveBeenCalledWith(
+			expect.objectContaining({ message: expect.stringContaining("invalid_request") }),
+		);
 	});
 
-	it.each(["invalid_request", "validation_failed"])(
-		"surfaces %s acknowledgement failures",
-		(error) => {
+	it("retries transient validation failures without terminating the guest", async () => {
+		vi.useFakeTimers();
+		try {
 			const { socket, emit } = createSocket();
 			const { lifecycle, callbacks } = createLifecycle(socket);
 			lifecycle.start();
 
 			const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void;
-			acknowledge({ ok: false, error });
+			acknowledge({ ok: false, error: "validation_failed" });
 
+			expect(callbacks.onError).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(emit).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("cancels a pending validation retry when stopped", async () => {
+		vi.useFakeTimers();
+		try {
+			const { socket, emit } = createSocket();
+			const { lifecycle } = createLifecycle(socket);
+			lifecycle.start();
+
+			const acknowledge = emit.mock.calls[0][2] as (response: unknown) => void;
+			acknowledge({ ok: false, error: "validation_failed" });
+			lifecycle.stop();
+			await vi.advanceTimersByTimeAsync(5_000);
+
+			expect(emit.mock.calls.filter(([event]) => event === "guest_subscribe"))
+				.toHaveLength(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("surfaces validation failure after bounded exponential retries", async () => {
+		vi.useFakeTimers();
+		try {
+			const { socket, emit } = createSocket();
+			const { lifecycle, callbacks } = createLifecycle(socket);
+			lifecycle.start();
+
+			for (const delay of [5_000, 10_000, 20_000, 40_000]) {
+				const acknowledge = emit.mock.calls.at(-1)?.[2] as (response: unknown) => void;
+				acknowledge({ ok: false, error: "validation_failed" });
+				await vi.advanceTimersByTimeAsync(delay);
+			}
+			const acknowledge = emit.mock.calls.at(-1)?.[2] as (response: unknown) => void;
+			acknowledge({ ok: false, error: "validation_failed" });
+
+			expect(callbacks.onError).toHaveBeenCalledOnce();
 			expect(callbacks.onError).toHaveBeenCalledWith(
-				expect.objectContaining({ message: expect.stringContaining(error) }),
+				expect.objectContaining({ message: "Could not verify your guest session. Please reconnect." }),
 			);
-		},
-	);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 
 	it("fetches admitted details through the active-status callback after approval", () => {
 		const { socket, listeners } = createSocket();

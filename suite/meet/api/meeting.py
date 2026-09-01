@@ -620,7 +620,7 @@ def ban_guest(meeting_id: str, guest_id: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@dynamic_rate_limit()
+@dynamic_rate_limit(trusted_socket_bypass=True)
 def validate_guest_session(
     meeting_id: str,
     guest_id: str,

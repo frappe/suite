@@ -184,7 +184,7 @@ const joinGuestAPI = createResource({
 	},
 });
 
-const isGuest = computed(() => !session.isLoggedIn && !props.guestAuthToken);
+const isGuest = computed(() => !session.isLoggedIn);
 
 const previewName = computed(() => {
 	if (isGuest.value && guestName.value.trim()) {

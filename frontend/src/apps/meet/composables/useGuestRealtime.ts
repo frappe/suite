@@ -24,7 +24,8 @@ interface GuestRealtimeEvent {
 	meetingId: string;
 }
 
-const GUEST_STATUS_RECONCILIATION_INTERVAL = 5_000;
+const GUEST_SUBSCRIPTION_RETRY_DELAY = 5_000;
+const GUEST_SUBSCRIPTION_MAX_RETRIES = 4;
 
 interface GuestRealtimeLifecycleOptions {
 	socket: Socket | null;
@@ -98,8 +99,8 @@ export function createGuestRealtimeLifecycle({
 }: GuestRealtimeLifecycleOptions) {
 	let setup = false;
 	let subscribedSession: StoredGuestSession | null = null;
-	let reconciliationInterval: ReturnType<typeof setInterval> | null = null;
-	let reconciliationInProgress = false;
+	let subscriptionRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+	let subscriptionRetryCount = 0;
 
 	const matchesSubscribedSession = (value: unknown) => {
 		const event = normalizeGuestRealtimeEvent(value);
@@ -122,10 +123,11 @@ export function createGuestRealtimeLifecycle({
 
 	const stop = () => {
 		unsubscribe();
-		if (reconciliationInterval) {
-			clearInterval(reconciliationInterval);
-			reconciliationInterval = null;
+		if (subscriptionRetryTimeout) {
+			clearTimeout(subscriptionRetryTimeout);
+			subscriptionRetryTimeout = null;
 		}
+		subscriptionRetryCount = 0;
 		if (!socket || !setup) return;
 		socket.off("meet:guest_join_approved", handleApproved);
 		socket.off("meet:guest_join_rejected", handleRejected);
@@ -145,6 +147,7 @@ export function createGuestRealtimeLifecycle({
 		}
 		const status = normalizeStatus(value.status);
 		if (value.ok) {
+			subscriptionRetryCount = 0;
 			if (!status || status === "rejected" || status === "banned" || status === "expired") {
 				onError(new Error("Invalid guest subscription status"));
 				return;
@@ -157,12 +160,31 @@ export function createGuestRealtimeLifecycle({
 			return;
 		}
 		const reason = typeof value.error === "string" ? value.error : "invalid_request";
+		if (reason === "validation_failed") {
+			if (subscriptionRetryCount >= GUEST_SUBSCRIPTION_MAX_RETRIES) {
+				onError(new Error("Could not verify your guest session. Please reconnect."));
+				return;
+			}
+			if (!subscriptionRetryTimeout) {
+				const delay = GUEST_SUBSCRIPTION_RETRY_DELAY * 2 ** subscriptionRetryCount;
+				subscriptionRetryCount += 1;
+				subscriptionRetryTimeout = setTimeout(() => {
+					subscriptionRetryTimeout = null;
+					subscribe();
+				}, delay);
+			}
+			return;
+		}
 		onError(new Error(`Guest realtime subscription failed: ${reason}`));
 	};
 
 	const subscribe = () => {
 		const session = readSession();
 		if (!socket || !isActiveSession(session)) return;
+		if (subscriptionRetryTimeout) {
+			clearTimeout(subscriptionRetryTimeout);
+			subscriptionRetryTimeout = null;
+		}
 		if (
 			subscribedSession &&
 			(subscribedSession.guestId !== session.guestId ||
@@ -180,36 +202,6 @@ export function createGuestRealtimeLifecycle({
 		);
 	};
 
-	const reconcile = async () => {
-		const session = readSession();
-		if (!isActiveSession(session) || reconciliationInProgress) return;
-		reconciliationInProgress = true;
-		try {
-			const response = await frappeRequest({
-				url: "suite.meet.api.meeting.validate_guest_session",
-				method: "POST",
-				params: {
-					meeting_id: meetingId,
-					guest_id: session.guestId,
-					guest_session_token: session.guestSessionToken,
-				},
-			});
-			if (!isUnknownRecord(response)) return;
-			const status = normalizeStatus(response.status);
-			if (response.valid === true && (status === "pending" || status === "admitted")) {
-				await onActiveStatus(status, session);
-			} else if (status === "rejected" || status === "banned" || status === "expired") {
-				handleTerminalStatus(status);
-			} else if (response.valid === false) {
-				handleTerminalStatus("expired");
-			}
-		} catch {
-			// Realtime remains the primary path; retry transient reconciliation failures.
-		} finally {
-			reconciliationInProgress = false;
-		}
-	};
-
 	function handleApproved(value: unknown) {
 		if (matchesSubscribedSession(value) && subscribedSession) {
 			void onActiveStatus("admitted", subscribedSession);
@@ -219,6 +211,7 @@ export function createGuestRealtimeLifecycle({
 		if (matchesSubscribedSession(value)) handleTerminalStatus("rejected");
 	}
 	function handleReconnect() {
+		subscriptionRetryCount = 0;
 		subscribe();
 	}
 
@@ -235,10 +228,6 @@ export function createGuestRealtimeLifecycle({
 			socket.on("meet:guest_join_rejected", handleRejected);
 			socket.on("connect", handleReconnect);
 			setup = true;
-			reconciliationInterval = setInterval(
-				() => void reconcile(),
-				GUEST_STATUS_RECONCILIATION_INTERVAL,
-			);
 		}
 		subscribe();
 	};

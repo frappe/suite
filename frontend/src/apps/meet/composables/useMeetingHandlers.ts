@@ -79,6 +79,9 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 			await manager?.cleanup();
 		} finally {
 			deps.connectionState.connectionError = null;
+			deps.connectionState.guestAuthToken = null;
+			deps.connectionState.guestSfuUrl = null;
+			deps.connectionState.guestSfuPort = null;
 			deps.connectionState.isInPreview = true;
 		}
 	};

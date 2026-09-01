@@ -1,3 +1,4 @@
+import hmac
 from functools import wraps
 
 import frappe
@@ -7,7 +8,7 @@ from frappe.rate_limiter import rate_limit
 from suite.suite_core.doctype.rate_limit.rate_limit import get_rate_limits
 
 
-def dynamic_rate_limit() -> callable:
+def dynamic_rate_limit(*, trusted_socket_bypass: bool = False) -> callable:
     """A decorator to apply rate limits dynamically based on the method path."""
 
     def decorator(fn):
@@ -23,6 +24,9 @@ def dynamic_rate_limit() -> callable:
         def wrapper(*args, **kwargs):
             # Limits describe request traffic; an internal call is not an endpoint hit.
             if not getattr(frappe.local, "request", None):
+                return fn(*args, **kwargs)
+
+            if trusted_socket_bypass and _is_trusted_socket_request():
                 return fn(*args, **kwargs)
 
             method_path = declared_method_path
@@ -78,3 +82,14 @@ def dynamic_rate_limit() -> callable:
         return wrapper
 
     return decorator
+
+
+def _is_trusted_socket_request() -> bool:
+    provided_secret = frappe.get_request_header("X-Frappe-Socket-Secret")
+    if not provided_secret:
+        return False
+
+    from frappe.realtime import get_socketio_secret
+
+    trusted_secret = get_socketio_secret()
+    return hmac.compare_digest(trusted_secret.encode(), provided_secret.encode())
