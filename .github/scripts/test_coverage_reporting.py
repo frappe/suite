@@ -55,6 +55,9 @@ class CoverageReportTest(unittest.TestCase):
         self.assertIn("Backend 85.0% (+5.0%)", markdown)
         self.assertIn("**70.0%** (70 / 100) (-2.0%)", markdown)
 
+    def test_renders_rounded_zero_delta_as_percentage(self):
+        self.assertEqual(coverage_report.delta(34.6, 34.6), " (+0%)")
+
 
 class UpdatePrCoverageTest(unittest.TestCase):
     def test_appends_and_replaces_one_block(self):

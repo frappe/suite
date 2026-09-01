@@ -58,7 +58,7 @@ def delta(current: float | None, baseline: float | None) -> str:
         return ""
     change = current - baseline
     if abs(change) < 0.05:
-        return " (no change)"
+        return " (+0%)"
     return f" ({change:+.1f}%)"
 
 
