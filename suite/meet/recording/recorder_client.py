@@ -32,6 +32,7 @@ HEALTH_REASON_CODES = {
     "media_attachment_failed",
     "media_subscription_failed",
     "page_crashed",
+    "projection_invalid",
     "quota_limit",
     "receive_transport_failed",
     "room_empty",

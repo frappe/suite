@@ -343,6 +343,67 @@ describe('SocketHandlerManager characterization', () => {
 		});
 	});
 
+	it('recording:join rolls back recorder and media membership when peer creation fails', async () => {
+		const harness = createManager();
+		const recorder = connectFullSocket(harness, {
+			id: 'recorder-rollback',
+			scope: 'recording',
+			recordingProofComplete: true,
+			userId: 'recorder:rollback',
+			recordingClaims: {
+				recording_id: 'recording-rollback',
+				recorder_job_id: 'job-rollback',
+			} as never,
+		});
+		const registry = (
+			harness.manager as unknown as {
+				registry: {
+					activateRecorder(
+						socket: MockSocket,
+						recordingId: string,
+						jobId: string,
+					): void;
+					getRecorderSockets(roomId: string): MockSocket[];
+					isRecorderPeer(roomId: string, peerId: string): boolean;
+					isJoinedActiveRecorder(socket: MockSocket, roomId: string): boolean;
+				};
+			}
+		).registry;
+		registry.activateRecorder(recorder, 'recording-rollback', 'job-rollback');
+		vi.mocked(harness.mediasoup.addPeer).mockRejectedValueOnce(
+			new Error('injected peer fault'),
+		);
+		const callback = vi.fn();
+
+		recorder.fire('recording:join', { roomId: 'room-1' }, callback);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(callback).toHaveBeenCalledWith({
+			success: false,
+			error: 'injected peer fault',
+		});
+		expect(harness.mediasoup.removePeer).toHaveBeenCalledWith(
+			'room-1',
+			'recorder:rollback',
+		);
+		expect(recorder.roomId).toBeUndefined();
+		expect(recorder.participantId).toBeUndefined();
+		expect(harness.io.socketsAdapterRooms.get('room-1')).not.toContain(
+			recorder.id,
+		);
+		expect(
+			harness.io.socketsAdapterRooms.get('room-1:recorders'),
+		).not.toContain(recorder.id);
+		expect(registry.getRecorderSockets('room-1')).toEqual([]);
+		expect(registry.isRecorderPeer('room-1', 'recorder:rollback')).toBe(false);
+
+		const retryCallback = vi.fn();
+		recorder.fire('recording:join', { roomId: 'room-1' }, retryCallback);
+		await new Promise((resolve) => setImmediate(resolve));
+		expect(retryCallback).toHaveBeenCalledWith({ success: true });
+		expect(registry.isJoinedActiveRecorder(recorder, 'room-1')).toBe(true);
+	});
+
 	it('disconnects an unproved recorder after ten seconds and clears the timer on proof', async () => {
 		vi.useFakeTimers();
 		const grantManager = {
@@ -1035,7 +1096,17 @@ describe('SocketHandlerManager characterization', () => {
 			userId: 'user-1',
 		});
 		const callback = vi.fn();
-		emitJoin(reconnected, { connectionId: 'stable-device' }, callback);
+		emitJoin(
+			reconnected,
+			{
+				connectionId: 'stable-device',
+				name: 'Alice Updated',
+				avatar: 'updated.png',
+				audioEnabled: false,
+				videoEnabled: false,
+			},
+			callback,
+		);
 		await new Promise((r) => setImmediate(r));
 
 		expect(callback).toHaveBeenCalledWith({
@@ -1053,6 +1124,22 @@ describe('SocketHandlerManager characterization', () => {
 		expect(
 			reconnected.emitCalls.some((call) => call.event === 'participant_joined'),
 		).toBe(false);
+		const registry = (
+			harness.manager as unknown as {
+				registry: {
+					getRecorderStageSnapshot(roomId: string): { participants: unknown[] };
+				};
+			}
+		).registry;
+		expect(registry.getRecorderStageSnapshot('room-1').participants).toEqual([
+			{
+				participant_id: 'user-1',
+				name: 'Alice Updated',
+				avatar: 'updated.png',
+				audio_enabled: false,
+				video_enabled: false,
+			},
+		]);
 	});
 
 	it('keeps previews connected while grace cleanup evicts recorders and closes media', async () => {
@@ -1563,6 +1650,68 @@ describe('SocketHandlerManager characterization', () => {
 			event: 'producer_created',
 			data: expect.objectContaining({ producerId: 'producer-1' }),
 		});
+	});
+
+	it('closes a producer created after its participant connection loses ownership', async () => {
+		const harness = createManager();
+		const publisher = connectFullSocket(harness, {
+			id: 'publisher-old',
+			userId: 'publisher-race',
+		});
+		emitJoin(publisher, {
+			userId: 'publisher-race',
+			connectionId: 'publisher-device',
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		let resolveProducer!: (producer: {
+			id: string;
+			kind: 'video';
+			appData: { type: 'camera' };
+		}) => void;
+		vi.mocked(harness.mediasoup.createProducer).mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveProducer = resolve;
+			}) as never,
+		);
+		const callback = vi.fn();
+		publisher.fire(
+			'create_producer',
+			{
+				transportId: 'send-1',
+				rtpParameters: {},
+				kind: 'video',
+				appData: { type: 'camera' },
+			},
+			callback,
+		);
+
+		const replacement = connectFullSocket(harness, {
+			id: 'publisher-new',
+			userId: 'publisher-race',
+		});
+		emitJoin(replacement, {
+			userId: 'publisher-race',
+			connectionId: 'publisher-device',
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		resolveProducer({
+			id: 'producer-race',
+			kind: 'video',
+			appData: { type: 'camera' },
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(harness.mediasoup.closeProducer).toHaveBeenCalledWith(
+			'producer-race',
+			{ reason: 'cleanup' },
+		);
+		expect(callback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Participant connection is no longer active',
+		});
+		expect(
+			replacement.emitCalls.some((call) => call.event === 'producer_created'),
+		).toBe(false);
 	});
 
 	it('reports a consumer creation fault and allows the same request to retry', async () => {
@@ -2110,6 +2259,52 @@ describe('SocketHandlerManager characterization', () => {
 		expect(host.emitCalls.some((c) => c.event === 'chat:pin_updated')).toBe(
 			false,
 		);
+	});
+
+	it('rejects chat restriction and pin mutations from a replaced host connection', async () => {
+		const harness = createManager();
+		const staleHost = connectFullSocket(harness, {
+			id: 'stale-chat-host',
+			userId: 'chat-host',
+			userName: 'Chat Host',
+			isHost: true,
+		});
+		emitJoin(staleHost, {
+			userId: 'chat-host',
+			connectionId: 'chat-device',
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		const sendCallback = vi.fn();
+		staleHost.fire('chat:send', { message: 'owned message' }, sendCallback);
+		const messageId = sendCallback.mock.calls[0]?.[0].messageId as string;
+
+		const currentHost = connectFullSocket(harness, {
+			id: 'current-chat-host',
+			userId: 'chat-host',
+			userName: 'Chat Host',
+			isHost: true,
+		});
+		emitJoin(currentHost, {
+			userId: 'chat-host',
+			connectionId: 'chat-device',
+		});
+		await new Promise((resolve) => setImmediate(resolve));
+		currentHost.emitCalls.length = 0;
+
+		staleHost.fire('chat:toggle_restriction', { enabled: true });
+		const pinCallback = vi.fn();
+		staleHost.fire('chat:pin', { messageId, action: 'pin' }, pinCallback);
+
+		expect(currentHost.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'chat:restriction_updated' }),
+		);
+		expect(currentHost.emitCalls).not.toContainEqual(
+			expect.objectContaining({ event: 'chat:pin_updated' }),
+		);
+		expect(pinCallback).toHaveBeenCalledWith({
+			success: false,
+			error: 'Participant connection is no longer active',
+		});
 	});
 
 	it('late joiners receive existing_pinned_message for a currently pinned chat message', async () => {

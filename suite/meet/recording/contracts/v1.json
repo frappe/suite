@@ -29,6 +29,7 @@
       "media_attachment_failed",
       "media_subscription_failed",
       "page_crashed",
+      "projection_invalid",
       "quota_limit",
       "receive_transport_failed",
       "room_empty",
@@ -45,6 +46,7 @@
       "media_attachment_failed",
       "media_subscription_failed",
       "page_crashed",
+      "projection_invalid",
       "receive_transport_failed",
       "sfu_disconnected"
     ],
@@ -53,9 +55,23 @@
       "media_attachment_failed",
       "media_subscription_failed",
       "receive_transport_failed",
+      "projection_invalid",
       "configuration_failed",
       "browser_disconnected",
       "page_crashed"
+    ],
+    "recorder_stage_projection_payload_types": [
+      "participant_joined",
+      "participant_updated",
+      "participant_left",
+      "producer_created",
+      "producer_updated",
+      "producer_closed",
+      "media_control",
+      "active_speaker",
+      "hand_raised",
+      "reaction",
+      "chat_message"
     ],
     "callback_failure_reason_codes": [
       "capture_failed",
@@ -242,6 +258,39 @@
       "required": ["config", "protocol_version", "type"],
       "optional": []
     },
+    "recorder_stage_snapshot": {
+      "required": [
+        "active_speaker_ids",
+        "cursor",
+        "observed_at",
+        "participants",
+        "producers",
+        "protocol_version",
+        "raised_hands",
+        "room_id"
+      ],
+      "optional": []
+    },
+    "recorder_stage_projection_event": {
+      "required": ["cursor", "observed_at", "payload", "protocol_version", "room_id"],
+      "optional": []
+    },
+    "renderer_prepare_capture": {
+      "required": ["epoch", "job", "protocol_version", "type"],
+      "optional": []
+    },
+    "renderer_capture_started": {
+      "required": ["capture_started_at", "epoch", "job", "protocol_version", "type"],
+      "optional": []
+    },
+    "renderer_capture_prepared": {
+      "required": ["epoch", "job", "occurred_at", "protocol_version", "type"],
+      "optional": []
+    },
+    "renderer_capture_started_accepted": {
+      "required": ["capture_started_at", "epoch", "job", "occurred_at", "protocol_version", "type"],
+      "optional": []
+    },
     "renderer_lifecycle": {
       "required": ["job", "occurred_at", "protocol_version", "type"],
       "optional": []
@@ -378,6 +427,13 @@
           "job": "job-vector",
           "occurred_at": "2026-08-30T12:00:00.000Z",
           "reason_code": "receive_transport_failed"
+        },
+        {
+          "type": "suite-recorder:interruption",
+          "protocol_version": 1,
+          "job": "job-vector",
+          "occurred_at": "2026-08-30T12:00:00.000Z",
+          "reason_code": "projection_invalid"
         },
         {
           "type": "suite-recorder:failure",
@@ -607,6 +663,93 @@
         { "type": "suite-recorder:configure", "protocol_version": 1, "config": { "job": "job-vector" }, "unknown": true }
       ]
     },
+    "recorder_stage_snapshots": {
+      "accepted": [{
+        "protocol_version": 1,
+        "room_id": "room-vector",
+        "cursor": 0,
+        "observed_at": "2026-08-30T12:00:00.000Z",
+        "participants": [{ "participant_id": "participant-vector", "name": "Participant Vector", "avatar": "https://site.test/avatar.png", "audio_enabled": true, "video_enabled": false }],
+        "producers": [{ "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "video", "paused": false, "is_screen": true, "observed_at": "2026-08-30T12:00:00.000Z" }],
+        "raised_hands": { "participant-vector": "2026-08-30T12:00:00.000Z" },
+        "active_speaker_ids": ["participant-vector"]
+      }],
+      "rejected": [
+        { "protocol_version": 1, "room_id": "", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": -1, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00Z", "participants": [], "producers": [], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "", "name": "Participant Vector", "audio_enabled": true, "video_enabled": false }], "producers": [], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [{ "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "data", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.000Z" }], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [], "raised_hands": {}, "active_speaker_ids": [], "unknown": true },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "participant-vector", "name": "One", "audio_enabled": true, "video_enabled": true }, { "participant_id": "participant-vector", "name": "Two", "audio_enabled": true, "video_enabled": true }], "producers": [], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [{ "producer_id": "producer-vector", "participant_id": "missing", "kind": "video", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.000Z" }], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "participant-vector", "name": "Participant", "audio_enabled": true, "video_enabled": true }], "producers": [{ "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "audio", "paused": false, "is_screen": true, "observed_at": "2026-08-30T12:00:00.000Z" }], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "participant-vector", "name": "Participant", "audio_enabled": true, "video_enabled": true }], "producers": [{ "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "video", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.000Z" }, { "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "audio", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.000Z" }], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "participant-vector", "name": "Participant", "audio_enabled": true, "video_enabled": true }], "producers": [{ "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "video", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.001Z" }], "raised_hands": {}, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [], "raised_hands": { "missing": "2026-08-30T12:00:00.000Z" }, "active_speaker_ids": [] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [], "producers": [], "raised_hands": {}, "active_speaker_ids": ["missing"] },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "participants": [{ "participant_id": "participant-vector", "name": "Participant", "audio_enabled": true, "video_enabled": true }], "producers": [], "raised_hands": {}, "active_speaker_ids": ["participant-vector", "participant-vector"] }
+      ]
+    },
+    "recorder_stage_projection_events": {
+      "accepted": [
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "participant_joined", "participant": { "participant_id": "participant-vector", "name": "Participant Vector", "audio_enabled": true, "video_enabled": false } } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 2, "observed_at": "2026-08-30T12:00:00.001Z", "payload": { "type": "participant_updated", "participant": { "participant_id": "participant-vector", "name": "Participant Updated", "audio_enabled": false, "video_enabled": true } } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 2, "observed_at": "2026-08-30T12:00:00.001Z", "payload": { "type": "participant_left", "participant_id": "participant-vector" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 3, "observed_at": "2026-08-30T12:00:00.002Z", "payload": { "type": "producer_created", "producer": { "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "audio", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.002Z" } } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 4, "observed_at": "2026-08-30T12:00:00.003Z", "payload": { "type": "producer_updated", "producer_id": "producer-vector", "paused": true } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 4, "observed_at": "2026-08-30T12:00:00.003Z", "payload": { "type": "producer_closed", "producer_id": "producer-vector", "participant_id": "participant-vector", "is_screen": false } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 5, "observed_at": "2026-08-30T12:00:00.004Z", "payload": { "type": "media_control", "participant_id": "participant-vector", "action": "mute" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 6, "observed_at": "2026-08-30T12:00:00.005Z", "payload": { "type": "active_speaker", "participant_ids": ["participant-vector"] } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 7, "observed_at": "2026-08-30T12:00:00.006Z", "payload": { "type": "hand_raised", "participant_id": "participant-vector", "raised": true } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 8, "observed_at": "2026-08-30T12:00:00.007Z", "payload": { "type": "reaction", "from_user": "participant-vector", "reaction": "thumbs_up" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 9, "observed_at": "2026-08-30T12:00:00.008Z", "payload": { "type": "chat_message", "message_id": "message-vector", "message": "Hello", "from_user": "participant-vector", "from_name": "Participant Vector" } }
+      ],
+      "rejected": [
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "unknown" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "participant_left", "participant_id": "participant-vector" }, "unknown": true },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 0, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "participant_left", "participant_id": "participant-vector" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00Z", "payload": { "type": "participant_left", "participant_id": "participant-vector" } },
+        { "protocol_version": 1, "room_id": "", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "participant_left", "participant_id": "participant-vector" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "participant_joined", "participant": { "participant_id": "", "name": "Participant Vector", "audio_enabled": true, "video_enabled": false } } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "producer_created", "producer": { "producer_id": "", "participant_id": "participant-vector", "kind": "video", "paused": false, "is_screen": false, "observed_at": "2026-08-30T12:00:00.000Z" } } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "producer_updated", "producer_id": "producer-vector", "paused": "yes" } },
+        { "protocol_version": 1, "room_id": "room-vector", "cursor": 1, "observed_at": "2026-08-30T12:00:00.000Z", "payload": { "type": "producer_created", "producer": { "producer_id": "producer-vector", "participant_id": "participant-vector", "kind": "audio", "paused": false, "is_screen": true, "observed_at": "2026-08-30T12:00:00.000Z" } } }
+      ]
+    },
+    "renderer_prepare_capture": {
+      "accepted": [{ "type": "suite-recorder:prepare-capture", "protocol_version": 1, "job": "job-vector", "epoch": 0 }],
+      "rejected": [
+        { "type": "suite-recorder:prepare-capture", "protocol_version": 2, "job": "job-vector", "epoch": 0 },
+        { "type": "suite-recorder:prepare-capture", "protocol_version": 1, "job": "", "epoch": 0 },
+        { "type": "suite-recorder:prepare-capture", "protocol_version": 1, "job": "job-vector", "epoch": -1 },
+        { "type": "suite-recorder:prepare-capture", "protocol_version": 1, "job": "job-vector", "epoch": 0, "unknown": true }
+      ]
+    },
+    "renderer_capture_started": {
+      "accepted": [{ "type": "suite-recorder:capture-started", "protocol_version": 1, "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00.000Z" }],
+      "rejected": [
+        { "type": "suite-recorder:capture-started", "protocol_version": 1, "job": "job-vector", "epoch": -1, "capture_started_at": "2026-08-30T12:00:00.000Z" },
+        { "type": "suite-recorder:capture-started", "protocol_version": 1, "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00Z" },
+        { "type": "suite-recorder:capture-started", "protocol_version": 1, "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00.000Z", "unknown": true }
+      ]
+    },
+    "renderer_capture_prepared": {
+      "accepted": [{ "type": "suite-recorder:capture-prepared", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": 0 }],
+      "rejected": [
+        { "type": "suite-recorder:capture-prepared", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00Z", "job": "job-vector", "epoch": 0 },
+        { "type": "suite-recorder:capture-prepared", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": -1 },
+        { "type": "suite-recorder:capture-prepared", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": 0, "unknown": true }
+      ]
+    },
+    "renderer_capture_started_accepted": {
+      "accepted": [{ "type": "suite-recorder:capture-started-accepted", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00.000Z" }],
+      "rejected": [
+        { "type": "suite-recorder:capture-started-accepted", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00Z" },
+        { "type": "suite-recorder:capture-started-accepted", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": -1, "capture_started_at": "2026-08-30T12:00:00.000Z" },
+        { "type": "suite-recorder:capture-started-accepted", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.001Z", "job": "job-vector", "epoch": 0, "capture_started_at": "2026-08-30T12:00:00.000Z", "unknown": true }
+      ]
+    },
     "renderer_public_key_ready": {
       "accepted": [{ "type": "suite-recorder:public-key-ready", "protocol_version": 1, "occurred_at": "2026-08-30T12:00:00.000Z", "publicKey": { "kty": "EC", "crv": "P-256", "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY", "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU" } }],
       "rejected": [
@@ -659,10 +802,11 @@
       "command_operations": ["reserve", "query", "grant", "stop"],
       "command_states": ["reserved", "configured", "proof_complete", "joined", "capture_ready", "interrupted", "failed", "recovery_required", "stopping", "complete", "partial"],
       "command_rejection_reason_codes": ["capacity", "storage", "policy", "invalid_job"],
-      "health_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "duration_limit", "ffmpeg_exited", "interruption_timeout", "media_attachment_failed", "media_subscription_failed", "page_crashed", "quota_limit", "receive_transport_failed", "room_empty", "service_shutdown", "sfu_disconnected", "worker_missing_after_restart"],
+      "health_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "duration_limit", "ffmpeg_exited", "interruption_timeout", "media_attachment_failed", "media_subscription_failed", "page_crashed", "projection_invalid", "quota_limit", "receive_transport_failed", "room_empty", "service_shutdown", "sfu_disconnected", "worker_missing_after_restart"],
       "startup_milestones": ["configured", "proof_complete", "joined", "capture_started"],
-      "interruption_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "ffmpeg_exited", "media_attachment_failed", "media_subscription_failed", "page_crashed", "receive_transport_failed", "sfu_disconnected"],
-      "renderer_reason_codes": ["sfu_disconnected", "media_attachment_failed", "media_subscription_failed", "receive_transport_failed", "configuration_failed", "browser_disconnected", "page_crashed"],
+      "interruption_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "ffmpeg_exited", "media_attachment_failed", "media_subscription_failed", "page_crashed", "projection_invalid", "receive_transport_failed", "sfu_disconnected"],
+      "renderer_reason_codes": ["sfu_disconnected", "media_attachment_failed", "media_subscription_failed", "receive_transport_failed", "projection_invalid", "configuration_failed", "browser_disconnected", "page_crashed"],
+      "recorder_stage_projection_payload_types": ["participant_joined", "participant_updated", "participant_left", "producer_created", "producer_updated", "producer_closed", "media_control", "active_speaker", "hand_raised", "reaction", "chat_message"],
       "callback_failure_reason_codes": ["capture_failed", "processing_failed", "storage_unavailable", "quota_exhausted"],
       "end_reason_codes": ["duration_limit", "host_stop", "interruption_timeout", "quota_limit", "room_empty", "service_shutdown"],
       "gap_reason_codes": ["capture_interrupted", "ffmpeg_exited", "renderer_interrupted"],

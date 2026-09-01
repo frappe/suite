@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { rm, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -63,5 +63,35 @@ describe('ProcessSupervisor', () => {
 		paths.push(logPath);
 		const managed = await supervisor.start('command', [], { logPath });
 		await expect(managed.stop()).rejects.toThrow('denied');
+	});
+
+	it('handles an asynchronous child error as one unexpected termination', async () => {
+		const child = new EventEmitter() as EventEmitter & {
+			pid: number;
+			stdout: PassThrough;
+			stderr: PassThrough;
+		};
+		child.pid = 42;
+		child.stdout = new PassThrough();
+		child.stderr = new PassThrough();
+		const logPath = join(tmpdir(), `supervisor-${crypto.randomUUID()}.log`);
+		paths.push(logPath);
+		const unexpected = vi.fn();
+		const supervisor = new ProcessSupervisor(
+			vi.fn(() => child) as unknown as ProcessSpawner,
+		);
+		const managed = await supervisor.start('command', [], {
+			logPath,
+			onUnexpectedExit: unexpected,
+		});
+		child.stderr.write('failed to start');
+		child.emit('error', new Error('spawn failed'));
+		child.emit('exit', 1, null);
+
+		await expect(managed.exited).resolves.toEqual({ code: null, signal: null });
+		expect(unexpected).toHaveBeenCalledOnce();
+		await vi.waitFor(async () =>
+			expect(await readFile(logPath, 'utf8')).toBe('failed to start'),
+		);
 	});
 });

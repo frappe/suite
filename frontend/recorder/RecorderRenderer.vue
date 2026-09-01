@@ -38,7 +38,7 @@ import { provideMeetingContext } from "../src/apps/meet/composables/useMeetingCo
 import type { VideoElementManager } from "../src/apps/meet/utils/media/VideoElementManager";
 
 const props = withDefaults(defineProps<{
-	startedAt: number;
+	startedAt?: number | null;
 	interruption?: string | null;
 	messages?: Array<{ id: string; author: string; text: string; avatar?: string | null }>;
 	meetingContext: Parameters<typeof provideMeetingContext>[0];
@@ -97,6 +97,7 @@ const now = ref(Date.now());
 const timer = window.setInterval(() => now.value = Date.now(), 1000);
 onBeforeUnmount(() => clearInterval(timer));
 const elapsed = computed(() => {
+	if (props.startedAt == null) return "00:00";
 	const seconds = Math.max(0, Math.floor((now.value - props.startedAt) / 1000));
 	return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 });

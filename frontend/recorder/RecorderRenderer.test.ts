@@ -15,6 +15,18 @@ describe("RecorderRenderer", () => {
 		raiseHandStore: { raisedHands: {} }, reactionStore: { reactions: {} }, networkQuality: ref("good"),
 	});
 
+	it("shows zero before an authoritative recording start", () => {
+		const root = document.createElement("div");
+		const app = createApp(RecorderRenderer, {
+			startedAt: null,
+			videoManager: { registerVideoElement: vi.fn(), removeVideoElement: vi.fn() },
+			meetingContext: meetingContext(),
+		});
+		app.mount(root);
+		expect(root.querySelector(".rec")?.textContent).toContain("00:00");
+		app.unmount();
+	});
+
 	it("renders chat fields as text rather than executable markup", () => {
 		const root = document.createElement("div");
 		const app = createApp(RecorderRenderer, {

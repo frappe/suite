@@ -154,6 +154,21 @@ describe('recorder vertical chain', () => {
 						},
 					});
 				});
+				socket.on('recording:get_projection_snapshot', (_data, callback) => {
+					callback({
+						success: true,
+						snapshot: {
+							protocol_version: 1,
+							room_id: command.room,
+							cursor: 0,
+							observed_at: new Date().toISOString(),
+							participants: [],
+							producers: [],
+							raised_hands: {},
+							active_speaker_ids: [],
+						},
+					});
+				});
 				query('get_room_participants', { participants: [] });
 				query('get_existing_producers', { producers: [] });
 				socket.emit('recording:challenge', challenge);
@@ -200,6 +215,13 @@ describe('recorder vertical chain', () => {
 								occurredAt: expect.any(String),
 							}),
 					),
+				);
+				await bridge.prepareCapture(command.job, 0, 0);
+				await bridge.captureStarted(
+					command.job,
+					0,
+					0,
+					'2026-08-30T12:00:00.000Z',
 				);
 
 				expect(proofAccepted).toBe(true);

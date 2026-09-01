@@ -42,8 +42,12 @@ export interface CaptureArtifact {
 	duration_ms: number;
 }
 
-export interface CaptureManifest {
-	version: 1;
+export interface CaptureEpoch {
+	epoch: number;
+	capture_started_at: string;
+}
+
+interface CaptureManifestBase {
 	revision: number;
 	job: string;
 	state: CaptureState;
@@ -53,6 +57,10 @@ export interface CaptureManifest {
 	artifact?: CaptureArtifact;
 	reason?: string;
 }
+
+export type CaptureManifest =
+	| (CaptureManifestBase & { version: 1; capture_epochs?: CaptureEpoch[] })
+	| (CaptureManifestBase & { version: 2; capture_epochs: CaptureEpoch[] });
 
 export interface MediaProbe {
 	duration_ms: number;

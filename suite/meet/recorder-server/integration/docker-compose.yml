@@ -1,4 +1,42 @@
 services:
+  grant-store-init:
+    image: suite-sfu-integration:local
+    user: root
+    build:
+      context: ../..
+      dockerfile: sfu-server/Dockerfile
+    volumes:
+      - sfu-grants:/data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        node --input-type=module -e "import { RecordingGrantPersistenceFile } from
+        './dist/sfu-server/src/server/RecordingGrantPersistenceFile.js';
+        await RecordingGrantPersistenceFile.bootstrap('/data/recording-grants.json');"
+        && chown node:node /data/recording-grants.json
+
+  sfu:
+    image: suite-sfu-integration:local
+    depends_on:
+      grant-store-init:
+        condition: service_completed_successfully
+    environment:
+      JWT_SECRET: integration-secret
+      # Plain RTP is development-only test ingress for deterministic FFmpeg media.
+      # Production participants and recorder playback continue to use WebRTC.
+      NODE_ENV: development
+      MEDIASOUP_NUM_WORKERS: 1
+      MEDIASOUP_WORKER_LOGLEVEL: warn
+      RECORDING_GRANT_PERSISTENCE_FILE: /data/recording-grants.json
+      WEBRTC_LISTEN_IP: 0.0.0.0
+    volumes:
+      - sfu-grants:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+
   recorder-integration:
     image: suite-recorder-integration:local
     build:
@@ -6,5 +44,15 @@ services:
       dockerfile: suite/meet/recorder-server/Dockerfile
       target: integration
     shm_size: 1gb
+    depends_on:
+      sfu:
+        condition: service_healthy
+    environment:
+      SFU_ORIGIN: http://sfu:3000
+      SFU_MEDIA_HOST: sfu
+      JWT_SECRET: integration-secret
     volumes:
       - ./output:/output
+
+volumes:
+  sfu-grants:

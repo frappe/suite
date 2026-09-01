@@ -12,7 +12,8 @@
 		"lint:fix": "biome check --write .",
 		"test": "vitest run",
 		"test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
-		"test:integration": "./integration/run.sh"
+		"test:integration": "./integration/run.sh",
+		"test:integration:shared-stage": "./integration/run.sh shared-stage"
 	},
 	"packageManager": "yarn@1.22.22",
 	"license": "AGPL-3.0",
@@ -29,6 +30,7 @@
 		"@types/node": "^20.11.24",
 		"@vitest/coverage-v8": "4.1.10",
 		"socket.io": "^4.8.3",
+		"socket.io-client": "^4.8.3",
 		"typescript": "^5.3.3",
 		"vitest": "^4.1.6"
 	}

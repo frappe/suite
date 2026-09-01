@@ -9,9 +9,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MediaProbe } from './captureTypes.js';
+import type { CaptureManifest, MediaProbe } from './captureTypes.js';
 import { Finalizer } from './Finalizer.js';
-import { ManifestStore, safeJobDirectory } from './ManifestStore.js';
+import {
+	ManifestStore,
+	safeJobDirectory,
+	validManifest,
+} from './ManifestStore.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
 
 const roots: string[] = [];
@@ -33,6 +37,10 @@ async function watcherStore(): Promise<ManifestStore> {
 	const manifest = await store();
 	await manifest.update((m) => {
 		m.epochs = 1;
+		m.capture_epochs?.push({
+			epoch: 0,
+			capture_started_at: '2026-08-30T12:00:00.000Z',
+		});
 	});
 	return manifest;
 }
@@ -45,6 +53,90 @@ afterEach(async () => {
 });
 
 describe('capture pipeline', () => {
+	it('accepts legacy manifests and strictly validates capture epoch launches', async () => {
+		const legacy: CaptureManifest = {
+			version: 1,
+			revision: 0,
+			job: 'job',
+			state: 'capturing',
+			epochs: 2,
+			segments: [],
+			gaps: [],
+		};
+		expect(validManifest(legacy)).toBe(true);
+		expect(validManifest({ ...legacy, version: 2 })).toBe(false);
+		const current: CaptureManifest = {
+			...legacy,
+			version: 2,
+			capture_epochs: [
+				{
+					epoch: 0,
+					capture_started_at: '2026-08-30T12:00:00.000Z',
+				},
+				{
+					epoch: 1,
+					capture_started_at: '2026-08-30T12:00:01.000Z',
+				},
+			],
+		};
+		expect(validManifest(current)).toBe(true);
+		for (const capture_epochs of [
+			[
+				{ epoch: 0, capture_started_at: '2026-08-30T12:00:00.000Z' },
+				{ epoch: 0, capture_started_at: '2026-08-30T12:00:01.000Z' },
+			],
+			[{ epoch: 2, capture_started_at: '2026-08-30T12:00:00.000Z' }],
+			[{ epoch: 0, capture_started_at: '2026-08-30T12:00:00Z' }],
+			[
+				{ epoch: 0, capture_started_at: '2026-08-30T12:00:01.000Z' },
+				{ epoch: 1, capture_started_at: '2026-08-30T12:00:00.999Z' },
+			],
+		])
+			expect(validManifest({ ...legacy, capture_epochs })).toBe(false);
+
+		const manifest = await store();
+		expect(manifest.get().capture_epochs).toEqual([]);
+		await manifest.update((value) => {
+			value.epochs = 1;
+			value.capture_epochs?.push({
+				epoch: 0,
+				capture_started_at: '2026-08-30T12:00:00.000Z',
+			});
+		});
+		const disk = JSON.parse(await readFile(manifest.path, 'utf8'));
+		expect(disk.capture_epochs).toEqual([
+			{
+				epoch: 0,
+				capture_started_at: '2026-08-30T12:00:00.000Z',
+			},
+		]);
+	});
+
+	it('preserves a concrete legacy manifest without inferring commit records', async () => {
+		const root = join(tmpdir(), `capture-${crypto.randomUUID()}`);
+		roots.push(root);
+		const legacy = new ManifestStore(root, 'legacy');
+		await legacy.initialize();
+		const value = legacy.get();
+		value.version = 1;
+		value.epochs = 2;
+		delete value.capture_epochs;
+		value.segments.push({
+			epoch: 0,
+			index: 0,
+			file: 'epoch-000-segment-000000.ts',
+			bytes: 1,
+			sha256: 'a'.repeat(64),
+			duration_ms: 1_000,
+			started_at: '2026-08-30T12:00:00.000Z',
+		});
+		await writeFile(legacy.path, JSON.stringify(value));
+
+		const preserved = new ManifestStore(root, 'legacy');
+		expect(await preserved.initialize()).toEqual(value);
+		expect(JSON.parse(await readFile(legacy.path, 'utf8'))).toEqual(value);
+	});
+
 	it('uses a stable hashed job directory and atomically revisions valid manifests', async () => {
 		const manifest = await store();
 		expect(manifest.directory).toBe(

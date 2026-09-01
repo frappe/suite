@@ -1,4 +1,10 @@
 import type {
+	RecorderStageParticipant,
+	RecorderStageProducer,
+	RecorderStageProjectionEvent,
+	RecorderStageProjectionPayload,
+	RecorderStageSnapshot,
+	RecordingProjectionSnapshotResponse,
 	RecordingProofChallenge,
 	RecordingProofResponse,
 } from "../../suite/meet/types";
@@ -52,14 +58,10 @@ export type ProducerMessage =
 	| { type: "producer-closed"; value: ProducerEvent };
 
 export type LegacyMediaControlAction =
-	| "mute"
-	| "unmute"
-	| "video_off"
-	| "video_on";
+	"mute" | "unmute" | "video_off" | "video_on";
 
 export type MediaControlAction =
-	| LegacyMediaControlAction
-	| { type: "audio" | "video"; enabled: boolean };
+	LegacyMediaControlAction | { type: "audio" | "video"; enabled: boolean };
 
 export type MediaControlMessage =
 	| { participantId: string; action: LegacyMediaControlAction }
@@ -107,6 +109,330 @@ const optionalBoolean = (value: unknown): value is boolean | undefined =>
 	value === undefined || typeof value === "boolean";
 const optionalAvatar = (value: unknown): value is string | null | undefined =>
 	value === undefined || value === null || typeof value === "string";
+
+type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
+type JsonObject = Record<string, JsonValue>;
+const jsonValue = (value: unknown): value is JsonValue => {
+	if (
+		value === null ||
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean"
+	)
+		return true;
+	if (Array.isArray(value)) return value.every(jsonValue);
+	return record(value);
+};
+const record = (value: unknown): value is JsonObject =>
+	typeof value === "object" &&
+	value !== null &&
+	!Array.isArray(value) &&
+	Object.values(value).every(jsonValue);
+const nonemptyString = (value: unknown): value is string =>
+	typeof value === "string" && value.length > 0;
+const canonicalTimestamp = (value: unknown): value is string => {
+	if (
+		typeof value !== "string" ||
+		!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)
+	)
+		return false;
+	const parsed = new Date(value);
+	return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+};
+const stringArray = (value: unknown): value is string[] =>
+	Array.isArray(value) && value.every(nonemptyString);
+
+const parseStageParticipant = (
+	value: unknown,
+): RecorderStageParticipant | null => {
+	if (
+		!record(value) ||
+		!exactKeys(
+			value,
+			["participant_id", "name", "audio_enabled", "video_enabled"],
+			["avatar"],
+		) ||
+		!nonemptyString(value.participant_id) ||
+		!nonemptyString(value.name) ||
+		(typeof value.avatar !== "undefined" && !nonemptyString(value.avatar)) ||
+		typeof value.audio_enabled !== "boolean" ||
+		typeof value.video_enabled !== "boolean"
+	)
+		return null;
+	return {
+		participant_id: value.participant_id,
+		name: value.name,
+		...(typeof value.avatar === "string" ? { avatar: value.avatar } : {}),
+		audio_enabled: value.audio_enabled,
+		video_enabled: value.video_enabled,
+	};
+};
+
+const parseStageProducer = (value: unknown): RecorderStageProducer | null => {
+	if (
+		!record(value) ||
+		!exactKeys(value, [
+			"producer_id",
+			"participant_id",
+			"kind",
+			"paused",
+			"is_screen",
+			"observed_at",
+		]) ||
+		!nonemptyString(value.producer_id) ||
+		!nonemptyString(value.participant_id) ||
+		(value.kind !== "audio" && value.kind !== "video") ||
+		typeof value.paused !== "boolean" ||
+		typeof value.is_screen !== "boolean" ||
+		(value.is_screen === true && value.kind !== "video") ||
+		!canonicalTimestamp(value.observed_at)
+	)
+		return null;
+	return {
+		producer_id: value.producer_id,
+		participant_id: value.participant_id,
+		kind: value.kind,
+		paused: value.paused,
+		is_screen: value.is_screen,
+		observed_at: value.observed_at,
+	};
+};
+
+const parseProjectionPayload = (
+	value: unknown,
+): RecorderStageProjectionPayload | null => {
+	if (!record(value) || !nonemptyString(value.type)) return null;
+	switch (value.type) {
+		case "participant_joined":
+		case "participant_updated": {
+			if (!exactKeys(value, ["type", "participant"])) return null;
+			const participant = parseStageParticipant(value.participant);
+			return participant ? { type: value.type, participant } : null;
+		}
+		case "participant_left":
+			return exactKeys(value, ["type", "participant_id"]) &&
+				nonemptyString(value.participant_id)
+				? { type: value.type, participant_id: value.participant_id }
+				: null;
+		case "producer_created": {
+			if (!exactKeys(value, ["type", "producer"])) return null;
+			const producer = parseStageProducer(value.producer);
+			return producer ? { type: value.type, producer } : null;
+		}
+		case "producer_updated":
+			return exactKeys(value, ["type", "producer_id", "paused"]) &&
+				nonemptyString(value.producer_id) &&
+				typeof value.paused === "boolean"
+				? {
+						type: value.type,
+						producer_id: value.producer_id,
+						paused: value.paused,
+					}
+				: null;
+		case "producer_closed":
+			return exactKeys(value, [
+				"type",
+				"producer_id",
+				"participant_id",
+				"is_screen",
+			]) &&
+				nonemptyString(value.producer_id) &&
+				nonemptyString(value.participant_id) &&
+				typeof value.is_screen === "boolean"
+				? {
+						type: value.type,
+						producer_id: value.producer_id,
+						participant_id: value.participant_id,
+						is_screen: value.is_screen,
+					}
+				: null;
+		case "media_control":
+			return exactKeys(value, ["type", "participant_id", "action"]) &&
+				nonemptyString(value.participant_id) &&
+				(value.action === "mute" ||
+					value.action === "unmute" ||
+					value.action === "video_off" ||
+					value.action === "video_on")
+				? {
+						type: value.type,
+						participant_id: value.participant_id,
+						action: value.action,
+					}
+				: null;
+		case "active_speaker":
+			return exactKeys(value, ["type", "participant_ids"]) &&
+				stringArray(value.participant_ids)
+				? { type: value.type, participant_ids: value.participant_ids }
+				: null;
+		case "hand_raised":
+			return exactKeys(value, ["type", "participant_id", "raised"]) &&
+				nonemptyString(value.participant_id) &&
+				typeof value.raised === "boolean"
+				? {
+						type: value.type,
+						participant_id: value.participant_id,
+						raised: value.raised,
+					}
+				: null;
+		case "reaction":
+			return exactKeys(value, ["type", "from_user", "reaction"]) &&
+				nonemptyString(value.from_user) &&
+				nonemptyString(value.reaction)
+				? {
+						type: value.type,
+						from_user: value.from_user,
+						reaction: value.reaction,
+					}
+				: null;
+		case "chat_message":
+			return exactKeys(value, [
+				"type",
+				"message_id",
+				"message",
+				"from_user",
+				"from_name",
+			]) &&
+				nonemptyString(value.message_id) &&
+				nonemptyString(value.message) &&
+				nonemptyString(value.from_user) &&
+				nonemptyString(value.from_name)
+				? {
+						type: value.type,
+						message_id: value.message_id,
+						message: value.message,
+						from_user: value.from_user,
+						from_name: value.from_name,
+					}
+				: null;
+		default:
+			return null;
+	}
+};
+
+export const parseRecorderStageSnapshot = (
+	value: unknown,
+): RecorderStageSnapshot | null => {
+	if (
+		!record(value) ||
+		!exactKeys(value, [
+			"protocol_version",
+			"room_id",
+			"cursor",
+			"observed_at",
+			"participants",
+			"producers",
+			"raised_hands",
+			"active_speaker_ids",
+		]) ||
+		value.protocol_version !== 1 ||
+		!nonemptyString(value.room_id) ||
+		!Number.isSafeInteger(value.cursor) ||
+		(value.cursor as number) < 0 ||
+		!canonicalTimestamp(value.observed_at) ||
+		!Array.isArray(value.participants) ||
+		!Array.isArray(value.producers) ||
+		!record(value.raised_hands) ||
+		!stringArray(value.active_speaker_ids)
+	)
+		return null;
+	const participants: RecorderStageParticipant[] = [];
+	for (const participantValue of value.participants) {
+		const participant = parseStageParticipant(participantValue);
+		if (!participant) return null;
+		participants.push(participant);
+	}
+	const producers: RecorderStageProducer[] = [];
+	for (const producerValue of value.producers) {
+		const producer = parseStageProducer(producerValue);
+		if (!producer) return null;
+		producers.push(producer);
+	}
+	const observedAt = value.observed_at;
+	const participantIds = new Set(
+		participants.flatMap((participant) =>
+			participant ? [participant.participant_id] : [],
+		),
+	);
+	const producerIds = new Set(
+		producers.flatMap((producer) => (producer ? [producer.producer_id] : [])),
+	);
+	if (
+		participantIds.size !== participants.length ||
+		producerIds.size !== producers.length ||
+		producers.some(
+			(producer) =>
+				!participantIds.has(producer.participant_id) ||
+				producer.observed_at > observedAt,
+		) ||
+		Object.entries(value.raised_hands).some(
+			([participantId, timestamp]) =>
+				!participantIds.has(participantId) || !canonicalTimestamp(timestamp),
+		) ||
+		new Set(value.active_speaker_ids).size !== value.active_speaker_ids.length ||
+		value.active_speaker_ids.some((id) => !participantIds.has(id))
+	)
+		return null;
+	return {
+		protocol_version: 1,
+		room_id: value.room_id,
+		cursor: Number(value.cursor),
+		observed_at: observedAt,
+		participants,
+		producers,
+		raised_hands: Object.fromEntries(
+			Object.entries(value.raised_hands).map(([participantId, timestamp]) => [
+				participantId,
+				String(timestamp),
+			]),
+		),
+		active_speaker_ids: value.active_speaker_ids,
+	};
+};
+
+export const parseRecordingProjectionSnapshotResponse = (
+	value: unknown,
+): RecordingProjectionSnapshotResponse | null => {
+	if (!record(value) || typeof value.success !== "boolean") return null;
+	if (value.success) {
+		if (!exactKeys(value, ["success", "snapshot"])) return null;
+		const snapshot = parseRecorderStageSnapshot(value.snapshot);
+		return snapshot ? { success: true, snapshot } : null;
+	}
+	return exactKeys(value, ["success", "error"]) && nonemptyString(value.error)
+		? { success: false, error: value.error }
+		: null;
+};
+
+export const parseRecorderStageProjectionEvent = (
+	value: unknown,
+): RecorderStageProjectionEvent | null => {
+	if (
+		!record(value) ||
+		!exactKeys(value, [
+			"protocol_version",
+			"room_id",
+			"cursor",
+			"observed_at",
+			"payload",
+		]) ||
+		value.protocol_version !== 1 ||
+		!nonemptyString(value.room_id) ||
+		!Number.isSafeInteger(value.cursor) ||
+		(value.cursor as number) <= 0 ||
+		!canonicalTimestamp(value.observed_at)
+	)
+		return null;
+	const payload = parseProjectionPayload(value.payload);
+	return payload
+		? {
+				protocol_version: 1,
+				room_id: value.room_id,
+				cursor: value.cursor as number,
+				observed_at: value.observed_at,
+				payload,
+			}
+		: null;
+};
 
 const parseParticipantUserData = (
 	value: unknown,

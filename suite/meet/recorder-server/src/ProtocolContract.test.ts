@@ -8,6 +8,8 @@ import {
 	parseStatusResponse,
 } from './CallbackClient.js';
 import {
+	parseCapturePrepared,
+	parseCaptureStartedAccepted,
 	parseRendererLifecycle,
 	parseRendererPublicKeyReady,
 } from './RendererBridge.js';
@@ -35,6 +37,14 @@ const contract = JSON.parse(
 			rejected: JsonObject[];
 		};
 		renderer_public_key_ready: {
+			accepted: JsonObject[];
+			rejected: JsonObject[];
+		};
+		renderer_capture_prepared: {
+			accepted: JsonObject[];
+			rejected: JsonObject[];
+		};
+		renderer_capture_started_accepted: {
 			accepted: JsonObject[];
 			rejected: JsonObject[];
 		};
@@ -91,6 +101,19 @@ describe('recording protocol contract v1', () => {
 			expect(parseRendererPublicKeyReady(value)).not.toBeNull();
 		for (const value of contract.vectors.renderer_public_key_ready.rejected)
 			expect(parseRendererPublicKeyReady(value)).toBeNull();
+	});
+
+	it('runs shared capture acknowledgement vectors through production parsers', () => {
+		for (const value of contract.vectors.renderer_capture_prepared.accepted)
+			expect(parseCapturePrepared(value)).toBeDefined();
+		for (const value of contract.vectors.renderer_capture_prepared.rejected)
+			expect(parseCapturePrepared(value)).toBeUndefined();
+		for (const value of contract.vectors.renderer_capture_started_accepted
+			.accepted)
+			expect(parseCaptureStartedAccepted(value)).toBeDefined();
+		for (const value of contract.vectors.renderer_capture_started_accepted
+			.rejected)
+			expect(parseCaptureStartedAccepted(value)).toBeUndefined();
 	});
 
 	it('covers every finite renderer reason code', () => {

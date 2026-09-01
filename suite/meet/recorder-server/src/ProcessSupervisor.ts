@@ -65,14 +65,21 @@ export class ProcessSupervisor {
 		const exited = new Promise<{
 			code: number | null;
 			signal: NodeJS.Signals | null;
-		}>((resolve, reject) => {
-			child.once('error', reject);
-			child.once('exit', (code, signal) => {
+		}>((resolve) => {
+			let terminated = false;
+			const terminate = (
+				code: number | null,
+				signal: NodeJS.Signals | null,
+			) => {
+				if (terminated) return;
+				terminated = true;
 				const result = { code, signal };
 				log.end();
 				resolve(result);
 				if (!stopping) options.onUnexpectedExit?.(result);
-			});
+			};
+			child.once('error', () => terminate(null, null));
+			child.once('exit', terminate);
 		});
 		return {
 			pid: child.pid,

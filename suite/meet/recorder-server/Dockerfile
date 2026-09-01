@@ -44,6 +44,12 @@ CMD ["node", "dist/server.js"]
 
 FROM runtime AS integration
 ENV NODE_ENV=integration
+USER root
+COPY suite/meet/recorder-server/yarn.lock ./yarn.lock
+RUN corepack enable && corepack prepare yarn@1.22.22 --activate \
+  && yarn install --frozen-lockfile --production=false --ignore-scripts --prefer-offline \
+  && chown -R node:node /app/recorder-server
+USER node
 CMD ["node", "dist/integration/CaptureWorker.integration.js"]
 
 FROM runtime AS production

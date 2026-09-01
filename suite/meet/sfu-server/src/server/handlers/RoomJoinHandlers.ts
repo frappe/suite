@@ -22,6 +22,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 		const scope = socket.scope ?? 'unknown';
 		let participantClaimed = false;
 		let firstConnection = false;
+		let participantReconnected = false;
 		if (socket.scope === 'full' && !socket.peerId) socket.peerId = socket.id;
 		const peerId = socket.peerId ?? participantId;
 		const rejoin = Boolean(
@@ -57,6 +58,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				}
 				participantClaimed = true;
 				firstConnection = acquisition.status === 'acquired';
+				participantReconnected =
+					acquisition.status === 'reconnect' ||
+					acquisition.status === 'takeover';
 				if (acquisition.replacedSocket) {
 					acquisition.replacedSocket.emit('participant_connection_replaced', {
 						reason: acquisition.status,
@@ -120,6 +124,15 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					deps.registry.emitParticipantEvent(
 						scopedRoomId,
 						'participant_joined',
+						participantId,
+						userData,
+					);
+				} else if (
+					participantReconnected &&
+					isRealParticipant(userData.userId)
+				) {
+					deps.registry.emitParticipantUpdated(
+						scopedRoomId,
 						participantId,
 						userData,
 					);
@@ -239,23 +252,33 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 
 	return (socket: Socket) => {
 		socket.on('recording:join', async (data, callback) => {
+			let roomJoinAttempted = false;
+			let fieldsAssigned = false;
+			let recorderJoinAttempted = false;
+			let peerCreationAttempted = false;
+			let roomId: string | undefined;
+			let peerId: string | undefined;
 			try {
 				deps.authManager.ensureRecorderAccess(socket);
 				if (data?.roomId !== socket.meetingId)
 					throw new Error('Room ID mismatch');
-				const roomId = getRoomId(socket);
-				const peerId = socket.userId;
+				roomId = getRoomId(socket);
+				peerId = socket.userId;
 				await deps.mediasoup.createRoom(roomId, (roomIdInner, peerIds) => {
 					deps.registry.emitActiveSpeaker(
 						roomIdInner,
 						participantIdsForPeers(deps, roomIdInner, peerIds),
 					);
 				});
-				socket.join(roomId);
+				roomJoinAttempted = true;
+				await socket.join(roomId);
 				socket.roomId = roomId;
 				socket.participantId = peerId;
+				fieldsAssigned = true;
+				recorderJoinAttempted = true;
 				deps.registry.joinRecorder(socket, roomId, peerId);
-				deps.mediasoup.addPeer(roomId, peerId, {
+				peerCreationAttempted = true;
+				await deps.mediasoup.addPeer(roomId, peerId, {
 					name: 'Recorder',
 					userId: peerId,
 					audio_enabled: false,
@@ -267,6 +290,45 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 				});
 				callback({ success: true });
 			} catch (error) {
+				if (roomId && peerId) {
+					if (peerCreationAttempted) {
+						try {
+							await deps.mediasoup.removePeer(roomId, peerId);
+						} catch (cleanupError) {
+							loggers.socketHandler.warn(
+								'Recorder peer rollback failed for %s: %s',
+								peerId,
+								(cleanupError as Error).message,
+							);
+						}
+					}
+					if (recorderJoinAttempted) {
+						try {
+							deps.registry.leaveRecorderRoom(socket, roomId, peerId);
+						} catch (cleanupError) {
+							loggers.socketHandler.warn(
+								'Recorder registry rollback failed for %s: %s',
+								peerId,
+								(cleanupError as Error).message,
+							);
+						}
+					}
+					if (roomJoinAttempted) {
+						try {
+							socket.leave(roomId);
+						} catch (cleanupError) {
+							loggers.socketHandler.warn(
+								'Recorder room rollback failed for %s: %s',
+								peerId,
+								(cleanupError as Error).message,
+							);
+						}
+					}
+				}
+				if (fieldsAssigned) {
+					socket.roomId = undefined;
+					socket.participantId = undefined;
+				}
 				callback({ success: false, error: (error as Error).message });
 			}
 		});

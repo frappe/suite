@@ -40,7 +40,7 @@ export function validManifest(value: unknown): value is CaptureManifest {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
 	const m = value as CaptureManifest;
 	return (
-		m.version === 1 &&
+		(m.version === 1 || m.version === 2) &&
 		Number.isSafeInteger(m.revision) &&
 		m.revision >= 0 &&
 		typeof m.job === 'string' &&
@@ -49,6 +49,25 @@ export function validManifest(value: unknown): value is CaptureManifest {
 		) &&
 		Number.isSafeInteger(m.epochs) &&
 		m.epochs >= 0 &&
+		((m.version === 1 && m.capture_epochs === undefined) ||
+			(Array.isArray(m.capture_epochs) &&
+				m.capture_epochs.every(
+					(record, index) =>
+						record !== null &&
+						typeof record === 'object' &&
+						!Array.isArray(record) &&
+						Object.keys(record).length === 2 &&
+						Object.hasOwn(record, 'epoch') &&
+						Object.hasOwn(record, 'capture_started_at') &&
+						Number.isSafeInteger(record.epoch) &&
+						record.epoch >= 0 &&
+						record.epoch < m.epochs &&
+						(index === 0 ||
+							(record.epoch > (m.capture_epochs?.[index - 1]?.epoch ?? -1) &&
+								record.capture_started_at >=
+									(m.capture_epochs?.[index - 1]?.capture_started_at ?? ''))) &&
+						timestamp(record.capture_started_at),
+				))) &&
 		Array.isArray(m.segments) &&
 		Array.isArray(m.gaps) &&
 		(m.reason === undefined ||
@@ -67,7 +86,10 @@ export function validManifest(value: unknown): value is CaptureManifest {
 				typeof s.sha256 === 'string' &&
 				/^[a-f0-9]{64}$/.test(s.sha256) &&
 				positiveInteger(s.duration_ms) &&
-				timestamp(s.started_at),
+				timestamp(s.started_at) &&
+				(m.version === 1 ||
+					m.capture_epochs?.some((record) => record.epoch === s.epoch) ===
+						true),
 		) &&
 		m.gaps.every(
 			(g) =>
@@ -132,11 +154,12 @@ export class ManifestStore {
 					cause: currentError,
 				});
 			this.current = {
-				version: 1,
+				version: 2,
 				revision: 0,
 				job: this.job,
 				state: 'capturing',
 				epochs: 0,
+				capture_epochs: [],
 				segments: [],
 				gaps: [],
 			};

@@ -1,7 +1,7 @@
 import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { findSocketsByParticipantId } from './utils';
+import { ensureParticipantOwner, findSocketsByParticipantId } from './utils';
 
 export function registerHostControlHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -18,13 +18,11 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				const { roomId, participantId } = ensureParticipantOwner(
+					socket,
+					deps.registry,
+				);
 				const { action, targetParticipantId } = data;
-				const roomId = socket.roomId;
-
-				if (!roomId || !socket.participantId) {
-					fail('Not in a room');
-					return;
-				}
 
 				if (!socket.isHost && !socket.isCohost) {
 					fail('Only host or co-host can control participants');
@@ -83,13 +81,13 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 							targetSocket.emit('host_control_update', {
 								action,
 								targetParticipantId,
-								hostId: socket.participantId,
+								hostId: participantId,
 								timestamp: new Date().toISOString(),
 							});
 						}
 						loggers.socketHandler.info(
 							'Host %s sent mute command to participant %s in room %s',
-							socket.participantId,
+							participantId,
 							targetParticipantId,
 							roomId,
 						);
@@ -128,14 +126,14 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 							targetSocket.emit('host_control_update', {
 								action,
 								targetParticipantId,
-								hostId: socket.participantId,
+								hostId: participantId,
 								timestamp: new Date().toISOString(),
 							});
 						}
 
 						loggers.socketHandler.info(
 							'Host %s removed participant %s (senderIds=%s) from room %s',
-							socket.participantId,
+							participantId,
 							targetParticipantId,
 							targetSenderIds.join(','),
 							roomId,
@@ -176,14 +174,14 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 							return;
 						}
 						deps.registry.clearRaisedHand(roomId, targetParticipantId);
-						deps.registry.emitToFullAccessParticipants(roomId, 'hand_raised', {
+						deps.registry.emitRaisedHand(roomId, {
 							participantId: targetParticipantId,
 							raised: false,
 							timestamp: new Date().toISOString(),
 						});
 						loggers.socketHandler.info(
 							'Host %s lowered hand of participant %s',
-							socket.participantId,
+							participantId,
 							targetParticipantId,
 						);
 						break;

@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
 	type BrowserAdapter,
 	ChromiumRendererBridge,
+	parseCapturePrepared,
+	parseCaptureStartedAccepted,
 	TEST_PUBLIC_JWK,
 } from './RendererBridge.js';
 import { COMMAND_AUDIENCE, type CommandClaims } from './types.js';
@@ -36,6 +38,46 @@ const command: CommandClaims = {
 };
 
 describe('ChromiumRendererBridge', () => {
+	it('strictly parses capture acknowledgements', () => {
+		expect(
+			parseCapturePrepared({
+				type: 'suite-recorder:capture-prepared',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:00.000Z',
+				job: 'job-1',
+				epoch: 0,
+			}),
+		).toEqual({
+			job: 'job-1',
+			epoch: 0,
+			occurredAt: '2026-08-30T12:00:00.000Z',
+		});
+		expect(
+			parseCaptureStartedAccepted({
+				type: 'suite-recorder:capture-started-accepted',
+				protocol_version: 1,
+				occurred_at: '2026-08-30T12:00:01.000Z',
+				job: 'job-1',
+				epoch: 0,
+				capture_started_at: '2026-08-30T12:00:00.000Z',
+			})?.captureStartedAt,
+		).toBe('2026-08-30T12:00:00.000Z');
+		for (const invalid of [
+			{ epoch: -1 },
+			{ epoch: 0, extra: true },
+			{ epoch: 0, occurred_at: '2026-08-30T12:00:00Z' },
+		])
+			expect(
+				parseCapturePrepared({
+					type: 'suite-recorder:capture-prepared',
+					protocol_version: 1,
+					occurred_at: '2026-08-30T12:00:00.000Z',
+					job: 'job-1',
+					...invalid,
+				}),
+			).toBeUndefined();
+	});
+
 	it.each([
 		{
 			type: 'suite-recorder:public-key-ready',
@@ -110,28 +152,225 @@ describe('ChromiumRendererBridge', () => {
 		);
 		await bridge.initialize();
 		const reservation = bridge.reserve(command);
+		const rejectedReservation =
+			expect(reservation).rejects.toThrow('cancelled');
 		await vi.waitFor(() => expect(launch).toHaveBeenCalledOnce());
 		const shutdown = bridge.close();
 
-		resolveLaunch(browser);
-		await expect(reservation).rejects.toThrow('cancelled');
 		await shutdown;
+		await rejectedReservation;
+		resolveLaunch(browser);
+		await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
 		expect(close).toHaveBeenCalledOnce();
 		expect(bridge.hasWorker(command.job)).toBe(false);
+	});
+
+	it('bounds the Chromium adapter launch with the reservation timeout', async () => {
+		const assets = await mkdtemp(join(tmpdir(), 'renderer-assets-'));
+		await writeFile(join(assets, 'recorder.html'), '<!doctype html>');
+		const bridge = new ChromiumRendererBridge(
+			{
+				executablePath: process.execPath,
+				assetDirectory: assets,
+				sfuOrigin: 'https://sfu.test',
+				sfuSocketPath: '/socket.io',
+				trustedCommandOrigin: 'https://site.test',
+				listenerPort: 0,
+				noSandbox: false,
+				reserveTimeoutMs: 10,
+				configureTimeoutMs: 1_000,
+			},
+			{ launch: vi.fn(() => new Promise<Browser>(() => undefined)) },
+		);
+		await bridge.initialize();
+
+		await expect(bridge.reserve(command)).rejects.toThrow('launch timed out');
+		await bridge.close();
+	});
+
+	it('times out and rejects pending capture handshakes on stop', async () => {
+		const close = vi.fn(async () => undefined);
+		const bridge = new ChromiumRendererBridge({
+			configureTimeoutMs: 10,
+		} as never);
+		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		jobs.set('job-1', {
+			browser: { close },
+			page: { evaluate: vi.fn(async () => undefined) },
+			command,
+			generation: 0,
+		});
+		await expect(bridge.prepareCapture('job-1', 0, 0)).rejects.toThrow(
+			'timed out',
+		);
+
+		jobs.set('job-1', {
+			browser: { close },
+			page: { evaluate: vi.fn(async () => undefined) },
+			command,
+			generation: 0,
+		});
+		const pending = bridge.prepareCapture('job-1', 0, 0);
+		await bridge.stop('job-1', 0);
+		await expect(pending).rejects.toThrow('renderer stopped');
+	});
+
+	it('ignores valid stale acknowledgements without rejecting the current epoch', () => {
+		const bridge = new ChromiumRendererBridge({} as never);
+		const rejectPrepared = vi.fn();
+		const rejectStarted = vi.fn();
+		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		jobs.set('job-1', {
+			generation: 0,
+			capture: {
+				epoch: 2,
+				prepared: Promise.resolve(),
+				preparedAccepted: true,
+				resolvePrepared: vi.fn(),
+				rejectPrepared,
+				started: {
+					timestamp: '2026-08-30T12:00:02.000Z',
+					accepted: Promise.resolve(),
+					acceptedByRenderer: false,
+					resolve: vi.fn(),
+					reject: rejectStarted,
+				},
+			},
+		});
+		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
+			bridge,
+		) as (job: string, generation: number, value: object) => void;
+		receive('job-1', 0, {
+			type: 'suite-recorder:capture-prepared',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:00.000Z',
+			job: 'job-1',
+			epoch: 1,
+		});
+		receive('job-1', 0, {
+			type: 'suite-recorder:capture-started-accepted',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:00.000Z',
+			job: 'job-1',
+			epoch: 1,
+			capture_started_at: '2026-08-30T12:00:01.000Z',
+		});
+		expect(rejectPrepared).not.toHaveBeenCalled();
+		expect(rejectStarted).not.toHaveBeenCalled();
+
+		receive('job-1', 0, {
+			type: 'suite-recorder:capture-started-accepted',
+			protocol_version: 1,
+			occurred_at: '2026-08-30T12:00:02.001Z',
+			job: 'job-1',
+			epoch: 2,
+			capture_started_at: '2026-08-30T12:00:02.001Z',
+		});
+		expect(rejectStarted).toHaveBeenCalledOnce();
+	});
+
+	it('allows the next epoch after a capture-start acknowledgement timeout', async () => {
+		const bridge = new ChromiumRendererBridge({
+			configureTimeoutMs: 5,
+		} as never);
+		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
+			bridge,
+		) as (job: string, generation: number, value: object) => void;
+		const page = {
+			evaluate: vi.fn(
+				async (_callback, value: { type: string; epoch: number }) => {
+					if (value.type === 'suite-recorder:prepare-capture')
+						receive('job-1', 0, {
+							type: 'suite-recorder:capture-prepared',
+							protocol_version: 1,
+							occurred_at: '2026-08-30T12:00:00.000Z',
+							job: 'job-1',
+							epoch: value.epoch,
+						});
+				},
+			),
+		};
+		jobs.set('job-1', {
+			browser: { close: vi.fn() },
+			page,
+			command,
+			generation: 0,
+		});
+		await bridge.prepareCapture('job-1', 0, 0);
+		await expect(
+			bridge.captureStarted('job-1', 0, 0, '2026-08-30T12:00:00.000Z'),
+		).rejects.toThrow('timed out');
+
+		await expect(bridge.prepareCapture('job-1', 0, 1)).resolves.toBeUndefined();
+	});
+
+	it('allows a newer epoch to supersede an acknowledged prepare with no start', async () => {
+		const bridge = new ChromiumRendererBridge({
+			configureTimeoutMs: 100,
+		} as never);
+		const jobs = Reflect.get(bridge, 'jobs') as Map<string, unknown>;
+		const receive = Reflect.get(bridge, 'receiveCaptureAcknowledgement').bind(
+			bridge,
+		) as (job: string, generation: number, value: object) => void;
+		const page = {
+			evaluate: vi.fn(async (_callback, value: { epoch: number }) => {
+				receive('job-1', 0, {
+					type: 'suite-recorder:capture-prepared',
+					protocol_version: 1,
+					occurred_at: '2026-08-30T12:00:00.000Z',
+					job: 'job-1',
+					epoch: value.epoch,
+				});
+			}),
+		};
+		jobs.set('job-1', {
+			browser: { close: vi.fn() },
+			page,
+			command,
+			generation: 0,
+		});
+
+		await bridge.prepareCapture('job-1', 0, 0);
+		await expect(bridge.prepareCapture('job-1', 0, 1)).resolves.toBeUndefined();
+		expect(page.evaluate).toHaveBeenCalledTimes(2);
 	});
 
 	it('reserves one isolated page, delivers trusted config, and stops idempotently', async () => {
 		const assets = await mkdtemp(join(tmpdir(), 'renderer-assets-'));
 		await writeFile(join(assets, 'recorder.html'), '<!doctype html>');
 		let exposed: ((value: unknown) => void) | undefined;
-		const evaluate = vi.fn(async () => {
-			exposed?.({
-				type: 'suite-recorder:configuration-accepted',
-				protocol_version: 1,
-				occurred_at: '2026-08-30T12:00:01.000Z',
-				job: 'job-1',
-			});
-		});
+		const evaluate = vi.fn(
+			async (
+				_callback,
+				value: { type: string; epoch?: number; capture_started_at?: string },
+			) => {
+				if (value.type === 'suite-recorder:configure')
+					exposed?.({
+						type: 'suite-recorder:configuration-accepted',
+						protocol_version: 1,
+						occurred_at: '2026-08-30T12:00:01.000Z',
+						job: 'job-1',
+					});
+				if (value.type === 'suite-recorder:prepare-capture')
+					exposed?.({
+						type: 'suite-recorder:capture-prepared',
+						protocol_version: 1,
+						occurred_at: '2026-08-30T12:00:02.000Z',
+						job: 'job-1',
+						epoch: value.epoch,
+					});
+				if (value.type === 'suite-recorder:capture-started')
+					exposed?.({
+						type: 'suite-recorder:capture-started-accepted',
+						protocol_version: 1,
+						occurred_at: '2026-08-30T12:00:03.000Z',
+						job: 'job-1',
+						epoch: value.epoch,
+						capture_started_at: value.capture_started_at,
+					});
+			},
+		);
 		const page = {
 			setViewport: vi.fn(),
 			setRequestInterception: vi.fn(),
@@ -207,6 +446,30 @@ describe('ChromiumRendererBridge', () => {
 			},
 		});
 		expect(lifecycle).toHaveBeenCalledTimes(1);
+		await bridge.prepareCapture('job-1', 0, 0);
+		await bridge.prepareCapture('job-1', 0, 0);
+		await bridge.captureStarted('job-1', 0, 0, '2026-08-30T12:00:02.500Z');
+		await expect(
+			bridge.captureStarted('job-1', 0, 0, '2026-08-30T12:00:02.501Z'),
+		).rejects.toThrow('conflicting');
+		await bridge.captureStarted('job-1', 0, 0, '2026-08-30T12:00:02.500Z');
+		expect(evaluate.mock.calls.slice(1).map((call) => call[1])).toEqual([
+			{
+				type: 'suite-recorder:prepare-capture',
+				protocol_version: 1,
+				job: 'job-1',
+				epoch: 0,
+			},
+			{
+				type: 'suite-recorder:capture-started',
+				protocol_version: 1,
+				job: 'job-1',
+				epoch: 0,
+				capture_started_at: '2026-08-30T12:00:02.500Z',
+			},
+		]);
+		await expect(bridge.prepareCapture('job-1', 0, 1)).resolves.toBeUndefined();
+		await expect(bridge.prepareCapture('job-1', 0, 0)).rejects.toThrow('stale');
 		for (const message of [
 			{ type: 'suite-recorder:capture-ready', job: 'job-1' },
 			{
@@ -260,7 +523,7 @@ describe('ChromiumRendererBridge', () => {
 			'private-grant',
 			'2026-07-31T12:00:00.000Z',
 		);
-		expect(evaluate).toHaveBeenCalledOnce();
+		expect(evaluate).toHaveBeenCalledTimes(4);
 		await expect(
 			bridge.deliverGrant(
 				'job-1',

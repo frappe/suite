@@ -20,6 +20,7 @@ export type RendererReasonCode =
 	| "media_attachment_failed"
 	| "media_subscription_failed"
 	| "receive_transport_failed"
+	| "projection_invalid"
 	| "configuration_failed"
 	| "browser_disconnected"
 	| "page_crashed";
@@ -40,6 +41,34 @@ type RendererReport =
 			diagnostic?: string;
 	  };
 
+export type PrepareCaptureCommand = {
+	type: "suite-recorder:prepare-capture";
+	protocol_version: 1;
+	job: string;
+	epoch: number;
+};
+
+export type CaptureStartedCommand = {
+	type: "suite-recorder:capture-started";
+	protocol_version: 1;
+	job: string;
+	epoch: number;
+	capture_started_at: string;
+};
+
+export interface CaptureCommandController {
+	prepareCapture(epoch: number): Promise<void>;
+	captureStarted(epoch: number, timestamp: string): Promise<void>;
+	failCaptureCommand(reason: string): void;
+}
+
+export class CaptureCommandSupersededError extends Error {
+	constructor() {
+		super("Capture command superseded");
+		this.name = "CaptureCommandSupersededError";
+	}
+}
+
 export type OutboundRendererMessage =
 	| {
 			type: "suite-recorder:public-key-ready";
@@ -53,11 +82,26 @@ export type OutboundRendererMessage =
 			occurred_at: string;
 			job: string;
 	  }
-	| (RendererReport & {
+	  | (RendererReport & {
 			protocol_version: 1;
 			occurred_at: string;
 			job: string;
-	  });
+	  })
+	| {
+			type: "suite-recorder:capture-prepared";
+			protocol_version: 1;
+			occurred_at: string;
+			job: string;
+			epoch: number;
+	  }
+	| {
+			type: "suite-recorder:capture-started-accepted";
+			protocol_version: 1;
+			occurred_at: string;
+			job: string;
+			epoch: number;
+			capture_started_at: string;
+	  };
 
 export const canonicalChallenge = (
 	challenge: RecordingChallenge,
@@ -143,6 +187,65 @@ export class RecorderRendererBridge {
 		});
 	}
 
+	bindCaptureCommands(
+		controller: CaptureCommandController,
+		source: Pick<Window, "addEventListener" | "removeEventListener"> = window,
+	): () => void {
+		let bound = true;
+		const receive = (event: MessageEvent) => {
+			if (
+				event.source !== window ||
+				event.origin !== window.location.origin ||
+				!this.job
+			)
+				return;
+			const type =
+				event.data && typeof event.data === "object" && "type" in event.data
+					? event.data.type
+					: undefined;
+			if (
+				type !== "suite-recorder:prepare-capture" &&
+				type !== "suite-recorder:capture-started"
+			)
+				return;
+			const prepare = parsePrepareCaptureMessage(event.data);
+			const started = parseCaptureStartedMessage(event.data);
+			if ((!prepare && !started) || (prepare ?? started)?.job !== this.job) {
+				failClosed("Invalid recorder capture command");
+				return;
+			}
+			const operation = prepare
+				? controller.prepareCapture(prepare.epoch).then(() => {
+						this.reportCapturePrepared(prepare.epoch);
+					})
+				: controller
+						.captureStarted(started.epoch, started.capture_started_at)
+						.then(() => {
+							this.reportCaptureStartedAccepted(
+								started.epoch,
+								started.capture_started_at,
+							);
+						});
+			void operation.catch((error: unknown) => {
+				if (error instanceof CaptureCommandSupersededError) return;
+				failClosed(
+					error instanceof Error ? error.message : "Capture command failed",
+				);
+			});
+		};
+		const unbind = () => {
+			if (!bound) return;
+			bound = false;
+			source.removeEventListener("message", receive as EventListener);
+		};
+		const failClosed = (diagnostic: string) => {
+			unbind();
+			controller.failCaptureCommand(diagnostic);
+		};
+		source.addEventListener("message", receive as EventListener);
+		return unbind;
+	}
+
 	async sign(challenge: RecordingChallenge): Promise<string> {
 		if (!this.privateKey) throw new Error("Recorder bridge is not initialized");
 		const signature = await crypto.subtle.sign(
@@ -199,6 +302,32 @@ export class RecorderRendererBridge {
 		);
 	}
 
+	private reportCapturePrepared(epoch: number): void {
+		if (!this.job) return;
+		this.post({
+			type: "suite-recorder:capture-prepared",
+			protocol_version: RECORDER_PROTOCOL_VERSION,
+			occurred_at: new Date().toISOString(),
+			job: this.job,
+			epoch,
+		});
+	}
+
+	private reportCaptureStartedAccepted(
+		epoch: number,
+		captureStartedAt: string,
+	): void {
+		if (!this.job) return;
+		this.post({
+			type: "suite-recorder:capture-started-accepted",
+			protocol_version: RECORDER_PROTOCOL_VERSION,
+			occurred_at: new Date().toISOString(),
+			job: this.job,
+			epoch,
+			capture_started_at: captureStartedAt,
+		});
+	}
+
 	private report(
 		message: RendererReport,
 		target: Pick<Window, "postMessage">,
@@ -239,10 +368,15 @@ const isHttpUrl = (value: string): boolean => {
 	}
 };
 
-const isUtcTimestamp = (value: unknown): value is string =>
-	typeof value === "string" &&
-	/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value) &&
-	new Date(value).toISOString() === value;
+const isUtcTimestamp = (value: unknown): value is string => {
+	if (
+		typeof value !== "string" ||
+		!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(value)
+	)
+		return false;
+	const parsed = new Date(value);
+	return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+};
 
 const parseConfig = (value: unknown): RecorderConfig | null => {
 	if (
@@ -319,4 +453,69 @@ export const parseConfigureMessage = (
 		return null;
 	const config = parseConfig(value.config);
 	return config ? { type: value.type, config } : null;
+};
+
+export const parsePrepareCaptureMessage = (
+	value: unknown,
+): PrepareCaptureCommand | null => {
+	if (
+		!value ||
+		typeof value !== "object" ||
+		Array.isArray(value) ||
+		!hasExactKeys(value, ["type", "protocol_version", "job", "epoch"]) ||
+		!("type" in value) ||
+		value.type !== "suite-recorder:prepare-capture" ||
+		!("protocol_version" in value) ||
+		value.protocol_version !== RECORDER_PROTOCOL_VERSION ||
+		!("job" in value) ||
+		typeof value.job !== "string" ||
+		!value.job ||
+		!("epoch" in value) ||
+		!Number.isSafeInteger(value.epoch) ||
+		Number(value.epoch) < 0
+	)
+		return null;
+	return {
+		type: value.type,
+		protocol_version: RECORDER_PROTOCOL_VERSION,
+		job: value.job,
+		epoch: value.epoch as number,
+	};
+};
+
+export const parseCaptureStartedMessage = (
+	value: unknown,
+): CaptureStartedCommand | null => {
+	if (
+		!value ||
+		typeof value !== "object" ||
+		Array.isArray(value) ||
+		!hasExactKeys(value, [
+			"type",
+			"protocol_version",
+			"job",
+			"epoch",
+			"capture_started_at",
+		]) ||
+		!("type" in value) ||
+		value.type !== "suite-recorder:capture-started" ||
+		!("protocol_version" in value) ||
+		value.protocol_version !== RECORDER_PROTOCOL_VERSION ||
+		!("job" in value) ||
+		typeof value.job !== "string" ||
+		!value.job ||
+		!("epoch" in value) ||
+		!Number.isSafeInteger(value.epoch) ||
+		Number(value.epoch) < 0 ||
+		!("capture_started_at" in value) ||
+		!isUtcTimestamp(value.capture_started_at)
+	)
+		return null;
+	return {
+		type: value.type,
+		protocol_version: RECORDER_PROTOCOL_VERSION,
+		job: value.job,
+		epoch: value.epoch as number,
+		capture_started_at: value.capture_started_at,
+	};
 };

@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
+	CaptureEpoch,
 	CaptureInterruption,
 	CaptureRecovery,
 	CaptureSegment,
@@ -31,6 +32,10 @@ export interface CaptureWorkerOptions {
 	onInterrupted?: (interruption: CaptureInterruption) => void;
 	onRecovered?: (recovery: CaptureRecovery) => void;
 	onProgress?: (capturedBytes: number) => Promise<number>;
+	onCapturePreparing?: (epoch: number) => Promise<void>;
+	onCaptureCommitted?: (launch: CaptureEpoch) => Promise<void>;
+	onCaptureLaunched?: (launch: CaptureEpoch) => Promise<void>;
+	onCaptureAborted?: (epoch: number) => Promise<void>;
 }
 
 export interface CaptureWorkerDependencies {
@@ -76,6 +81,10 @@ export class CaptureWorker {
 		reject: (error: Error) => void;
 		promise: Promise<string>;
 	};
+	private launchPromise: Promise<CaptureEpoch | undefined> | undefined;
+	private initializePromise: Promise<void> | undefined;
+	private initialStartupPublication: Promise<void> | undefined;
+	private stopping = false;
 
 	constructor(
 		readonly job: string,
@@ -130,8 +139,14 @@ export class CaptureWorker {
 		CaptureWorkerDependencies['finalizer']
 	>;
 
-	async initialize(): Promise<void> {
-		await this.manifest.initialize();
+	initialize(): Promise<void> {
+		this.initializePromise ??= this.initializeWorker();
+		return this.initializePromise;
+	}
+
+	private async initializeWorker(): Promise<void> {
+		const manifest = await this.manifest.initialize();
+		this.epoch = manifest.epochs;
 		await mkdir(join(this.manifest.directory, 'pulse'), {
 			recursive: true,
 			mode: 0o700,
@@ -191,17 +206,38 @@ export class CaptureWorker {
 		}
 	}
 
-	async startCapture(): Promise<void> {
-		if (this.ffmpeg || this.stopPromise) return;
+	startCapture(): Promise<CaptureEpoch | undefined> {
+		if (this.launchPromise) return this.launchPromise;
+		const launch = this.launchCapture().finally(() => {
+			if (this.launchPromise === launch) this.launchPromise = undefined;
+		});
+		this.launchPromise = launch;
+		return launch;
+	}
+
+	private async launchCapture(): Promise<CaptureEpoch | undefined> {
+		if (this.ffmpeg || this.stopping) return;
 		if (this.limitReached()) {
 			this.requestStop(false, 'capture_limit_reached');
 			return;
 		}
-		const epoch = this.epoch++;
+		const epoch = this.epoch;
+		let prepareAttempted = false;
+		let process: ManagedProcess | undefined;
+		try {
+			prepareAttempted = true;
+			await this.options.onCapturePreparing?.(epoch);
+			if (this.stopping) throw new Error('capture launch stopped');
+			await this.manifest.update((m) => {
+				m.epochs = epoch + 1;
+			});
+			this.epoch = epoch + 1;
+		} catch (error) {
+			if (prepareAttempted)
+				await this.options.onCaptureAborted?.(epoch).catch(() => undefined);
+			throw error;
+		}
 		this.captureFailed = false;
-		await this.manifest.update((m) => {
-			m.epochs = this.epoch;
-		});
 		let resolveHealth!: (adoptedAt: string) => void;
 		let rejectHealth!: (error: Error) => void;
 		const health = new Promise<string>((resolve, reject) => {
@@ -214,7 +250,7 @@ export class CaptureWorker {
 			reject: rejectHealth,
 			promise: health,
 		};
-		this.watcher = this.makeWatcher(
+		const watcher = this.makeWatcher(
 			this.manifest,
 			this.tools,
 			epoch,
@@ -225,76 +261,125 @@ export class CaptureWorker {
 			this.manifest.directory,
 			`epoch-${String(epoch).padStart(3, '0')}-segment-%06d.ts`,
 		);
-		this.ffmpeg = await this.supervisor.start(
-			this.options.ffmpeg,
-			[
-				'-hide_banner',
-				'-y',
-				'-use_wallclock_as_timestamps',
-				'1',
-				'-f',
-				'x11grab',
-				'-draw_mouse',
-				'0',
-				'-video_size',
-				'1920x1080',
-				'-framerate',
-				'30',
-				'-i',
-				`${this.env.DISPLAY}.0`,
-				'-use_wallclock_as_timestamps',
-				'1',
-				'-f',
-				'pulse',
-				'-sample_rate',
-				'48000',
-				'-channels',
-				'2',
-				'-i',
-				'recorder.monitor',
-				'-c:v',
-				'libx264',
-				'-preset',
-				'veryfast',
-				'-pix_fmt',
-				'yuv420p',
-				'-g',
-				String(this.options.segmentSeconds * 30),
-				'-keyint_min',
-				String(this.options.segmentSeconds * 30),
-				'-sc_threshold',
-				'0',
-				'-maxrate',
-				'5M',
-				'-bufsize',
-				'10M',
-				'-c:a',
-				'aac',
-				'-af',
-				'aresample=async=1000:first_pts=0',
-				'-b:a',
-				'128k',
-				'-ar',
-				'48000',
-				'-ac',
-				'2',
-				'-f',
-				'segment',
-				'-segment_time',
-				String(this.options.segmentSeconds),
-				'-reset_timestamps',
-				'1',
-				pattern,
-			],
-			{
-				env: this.env,
-				logPath: join(this.manifest.directory, `logs/ffmpeg-${epoch}.log`),
-				onUnexpectedExit: () => this.queueRecovery(),
-			},
-		);
-		this.captureLaunchedAt = new Date(this.now()).toISOString();
-		this.watcher.start();
-		this.armEndLimit();
+		let committed = false;
+		let exitError: Error | undefined;
+		try {
+			process = await this.supervisor.start(
+				this.options.ffmpeg,
+				[
+					'-hide_banner',
+					'-y',
+					'-use_wallclock_as_timestamps',
+					'1',
+					'-f',
+					'x11grab',
+					'-draw_mouse',
+					'0',
+					'-video_size',
+					'1920x1080',
+					'-framerate',
+					'30',
+					'-i',
+					`${this.env.DISPLAY}.0`,
+					'-use_wallclock_as_timestamps',
+					'1',
+					'-f',
+					'pulse',
+					'-sample_rate',
+					'48000',
+					'-channels',
+					'2',
+					'-i',
+					'recorder.monitor',
+					'-c:v',
+					'libx264',
+					'-preset',
+					'veryfast',
+					'-pix_fmt',
+					'yuv420p',
+					'-g',
+					String(this.options.segmentSeconds * 30),
+					'-keyint_min',
+					String(this.options.segmentSeconds * 30),
+					'-sc_threshold',
+					'0',
+					'-maxrate',
+					'5M',
+					'-bufsize',
+					'10M',
+					'-c:a',
+					'aac',
+					'-af',
+					'aresample=async=1000:first_pts=0',
+					'-b:a',
+					'128k',
+					'-ar',
+					'48000',
+					'-ac',
+					'2',
+					'-f',
+					'segment',
+					'-segment_time',
+					String(this.options.segmentSeconds),
+					'-reset_timestamps',
+					'1',
+					pattern,
+				],
+				{
+					env: this.env,
+					logPath: join(this.manifest.directory, `logs/ffmpeg-${epoch}.log`),
+					onUnexpectedExit: () => {
+						if (committed) this.queueRecovery();
+						else exitError = new Error('ffmpeg exited during capture launch');
+					},
+				},
+			);
+			if (exitError) throw exitError;
+			const launch: CaptureEpoch = {
+				epoch,
+				capture_started_at: this.nextLaunchTimestamp(),
+			};
+			if (this.stopping || exitError)
+				throw exitError ?? new Error('capture launch stopped');
+			await this.manifest.update((manifest) => {
+				manifest.capture_epochs ??= [];
+				const existing = manifest.capture_epochs.find(
+					(record) => record.epoch === epoch,
+				);
+				if (existing) {
+					if (existing.capture_started_at !== launch.capture_started_at)
+						throw new Error('conflicting capture epoch launch');
+					return;
+				}
+				manifest.capture_epochs.push(launch);
+			});
+			this.ffmpeg = process;
+			this.watcher = watcher;
+			this.captureLaunchedAt = launch.capture_started_at;
+			committed = true;
+			watcher.start();
+			this.armEndLimit();
+			const initial = this.manifest.get().capture_epochs?.[0]?.epoch === epoch;
+			const publication = initial
+				? (this.options.onCaptureCommitted?.(launch) ?? Promise.resolve())
+				: Promise.resolve();
+			if (initial) this.initialStartupPublication = publication;
+			if (exitError) this.queueRecovery();
+			await publication;
+			if (this.stopping) throw new Error('capture launch stopped');
+			await (this.options.onCaptureLaunched?.(launch) ?? Promise.resolve());
+			if (this.stopping) throw new Error('capture launch stopped');
+			return launch;
+		} catch (error) {
+			if (committed) await this.stopCaptureProcess().catch(() => undefined);
+			else
+				await process
+					?.stop(this.options.gracefulTimeoutMs)
+					.catch(() => undefined);
+			await this.options.onCaptureAborted?.(epoch).catch(() => undefined);
+			if (this.healthyEpoch?.epoch === epoch) delete this.healthyEpoch;
+			throw error;
+		}
 	}
 
 	async rendererFailed(reason: string): Promise<void> {
@@ -303,7 +388,9 @@ export class CaptureWorker {
 		this.rendererUnavailable = true;
 		if (this.recoveryPromise)
 			this.healthyEpoch?.reject(new Error('renderer unavailable'));
-		await this.beginInterruption(`renderer:${reason}`);
+		await this.beginInterruption(
+			reason === 'projection_invalid' ? reason : `renderer:${reason}`,
+		);
 		await this.stopCaptureProcess();
 	}
 
@@ -324,7 +411,11 @@ export class CaptureWorker {
 
 	stop(forcePartial = false, reason?: string): Promise<Outcome> {
 		this.partial ||= forcePartial;
-		if (!this.stopPromise) this.stopPromise = this.performStop(reason);
+		if (!this.stopPromise) {
+			this.stopping = true;
+			const captureStop = this.stopCaptureProcess();
+			this.stopPromise = this.performStop(reason, captureStop);
+		}
 		return this.stopPromise;
 	}
 
@@ -332,11 +423,12 @@ export class CaptureWorker {
 		let manifest = await this.manifest.initialize();
 		if (['complete', 'partial', 'failed'].includes(manifest.state))
 			return manifest.state as Outcome;
-		if (manifest.state === 'capturing' && manifest.epochs > 0) {
+		const committedEpoch = manifest.capture_epochs?.at(-1)?.epoch;
+		if (manifest.state === 'capturing' && committedEpoch !== undefined) {
 			await this.makeWatcher(
 				this.manifest,
 				this.tools,
-				manifest.epochs - 1,
+				committedEpoch,
 				() => undefined,
 				() => undefined,
 			).stopAndAdoptFinal();
@@ -353,6 +445,7 @@ export class CaptureWorker {
 		return {
 			artifact: manifest.artifact,
 			gaps: manifest.gaps,
+			captureStartedAt: manifest.capture_epochs?.[0]?.capture_started_at,
 			capturedBytes: manifest.segments.reduce(
 				(total, segment) => total + segment.bytes,
 				0,
@@ -360,11 +453,17 @@ export class CaptureWorker {
 		};
 	}
 
-	private async performStop(reason?: string): Promise<Outcome> {
+	private async performStop(
+		reason: string | undefined,
+		captureStop: Promise<void>,
+	): Promise<Outcome> {
 		if (this.limitTimer) clearTimeout(this.limitTimer);
 		if (this.interruptionTimer) clearTimeout(this.interruptionTimer);
 		let outcome: Outcome = 'failed';
 		try {
+			await captureStop;
+			await this.initializePromise?.catch(() => undefined);
+			await this.launchPromise?.catch(() => undefined);
 			if (reason === 'service_shutdown' && !this.interruption)
 				await this.openGap(reason);
 			await this.stopCaptureProcess();
@@ -401,9 +500,14 @@ export class CaptureWorker {
 			);
 			return;
 		}
-		this.recoveryPromise = this.recover().finally(() => {
-			this.recoveryPromise = undefined;
-		});
+		this.recoveryPromise = (this.initialStartupPublication ?? Promise.resolve())
+			.catch(() => undefined)
+			.then(() => {
+				if (!this.stopPromise) return this.recover();
+			})
+			.finally(() => {
+				this.recoveryPromise = undefined;
+			});
 	}
 
 	private async recover(): Promise<void> {
@@ -430,20 +534,21 @@ export class CaptureWorker {
 						throw new Error('recovery timeout');
 					}),
 				]);
-				if (this.rendererUnavailable || this.captureFailed)
+				if (this.stopPromise || this.rendererUnavailable || this.captureFailed)
 					throw new Error('capture unavailable');
-				if (this.now() > deadline || Date.parse(recoveredAt) > deadline)
+				if (this.now() >= deadline || Date.parse(recoveredAt) >= deadline)
 					throw new Error('recovery timeout');
 				const captureStartedAt = this.captureLaunchedAt;
 				if (!captureStartedAt)
 					throw new Error('capture launch time unavailable');
 				await this.closeGap(captureStartedAt);
 				if (
+					this.stopPromise ||
 					this.rendererUnavailable ||
 					this.captureFailed ||
-					this.now() > deadline
+					this.now() >= deadline
 				)
-					throw new Error('capture unavailable');
+					throw new Error('capture unavailable after gap close');
 				this.options.onRecovered?.({
 					id: interruption.id,
 					capture_started_at: captureStartedAt,
@@ -453,8 +558,12 @@ export class CaptureWorker {
 				delete this.interruptionTimer;
 				this.interruption = undefined;
 				return;
-			} catch {
-				if (this.captureFailed) await this.reopenGap();
+			} catch (error) {
+				if (
+					this.captureFailed ||
+					(error instanceof Error && error.message.includes('after gap close'))
+				)
+					await this.reopenGap();
 				await this.stopCaptureProcess().catch(() => undefined);
 				const remaining = deadline - this.now();
 				if (remaining > 0) await this.sleep(Math.min(backoff, remaining));
@@ -586,6 +695,17 @@ export class CaptureWorker {
 			const gap = m.gaps.at(-1);
 			if (gap) delete gap.ended_at;
 		});
+	}
+
+	private nextLaunchTimestamp(): string {
+		const manifest = this.manifest.get();
+		const previousLaunch = manifest.capture_epochs?.at(-1)?.capture_started_at;
+		const gapStart = manifest.gaps.at(-1)?.started_at;
+		const floor = Math.max(
+			previousLaunch ? Date.parse(previousLaunch) : 0,
+			gapStart ? Date.parse(gapStart) : 0,
+		);
+		return new Date(Math.max(this.now(), floor)).toISOString();
 	}
 
 	private async startService(

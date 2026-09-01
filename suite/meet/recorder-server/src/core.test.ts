@@ -832,14 +832,166 @@ describe('JobStore and JobManager', () => {
 		expect(restartedBridge.recoverStopping).toHaveBeenCalledWith('job');
 		expect(restarted.activeCount).toBe(0);
 		expect(reloaded.get('job')).toMatchObject({
-			state: 'partial',
+			state: 'failed',
 			captured_bytes: 42,
-			health_reason: 'worker_missing_after_restart',
-			artifact: { state: 'partial', path: 'recording.mp4' },
+			health_reason: 'capture_not_committed',
 		});
-		expect(restarted.query(baseClaims)?.state).toBe('partial');
+		expect(restarted.query(baseClaims)?.state).toBe('failed');
 		expect(terminal).toHaveBeenCalledWith(
-			expect.objectContaining({ state: 'partial' }),
+			expect.objectContaining({ state: 'failed' }),
+		);
+		expect(terminal.mock.calls[0]?.[0]).not.toHaveProperty('artifact');
+	});
+
+	it('adopts a durable capture start before restart terminalization without duplication', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const firstBridge = new FakeRendererBridge();
+		const first = new JobManager(store, firstBridge, 1);
+		await first.reserve(baseClaims);
+		await firstBridge.emit({
+			job: 'job',
+			type: 'configured',
+			occurredAt: '2026-08-30T11:59:57.000Z',
+		});
+		await firstBridge.emit({
+			job: 'job',
+			type: 'proof_complete',
+			occurredAt: '2026-08-30T11:59:58.000Z',
+		});
+		await firstBridge.emit({
+			job: 'job',
+			type: 'joined',
+			occurredAt: '2026-08-30T11:59:59.000Z',
+		});
+		const reloaded = new JobStore(path);
+		await reloaded.initialize();
+		const captureStartedAt = '2026-08-30T12:00:00.123Z';
+		const restartedBridge = Object.assign(new FakeRendererBridge(), {
+			recoverStopping: vi.fn(async () => ({
+				type: 'failed' as const,
+				gaps: [],
+				capturedBytes: 0,
+				captureStartedAt,
+			})),
+		});
+		const startup = vi.fn(async () => undefined);
+		const terminal = vi.fn(async () => undefined);
+		await new JobManager(
+			reloaded,
+			restartedBridge,
+			1,
+			terminal,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			startup,
+		).initialize();
+
+		expect(startup).toHaveBeenCalledOnce();
+		expect(startup).toHaveBeenCalledWith(
+			expect.objectContaining({
+				state: 'capture_ready',
+				capture_started_at: captureStartedAt,
+			}),
+		);
+		expect(startup).toHaveBeenCalledBefore(terminal);
+		expect(reloaded.get('job')).toMatchObject({
+			state: 'failed',
+			capture_started_at: captureStartedAt,
+		});
+
+		const again = new JobStore(path);
+		await again.initialize();
+		const duplicateStartup = vi.fn(async () => undefined);
+		await new JobManager(
+			again,
+			new FakeRendererBridge(),
+			1,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			duplicateStartup,
+		).initialize();
+		expect(duplicateStartup).not.toHaveBeenCalled();
+	});
+
+	it('replays a persisted capture startup before restart terminal publication', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const firstBridge = new FakeRendererBridge();
+		const first = new JobManager(store, firstBridge, 1);
+		await first.reserve(baseClaims);
+		for (const type of ['configured', 'proof_complete', 'joined'] as const)
+			await firstBridge.emit({ job: 'job', type });
+		const captureStartedAt = '2026-08-30T12:00:00.123Z';
+		await firstBridge.emit({
+			job: 'job',
+			type: 'capture_ready',
+			occurredAt: captureStartedAt,
+		});
+
+		const reloaded = new JobStore(path);
+		await reloaded.initialize();
+		const restartedBridge = Object.assign(new FakeRendererBridge(), {
+			recoverStopping: vi.fn(async () => ({
+				type: 'failed' as const,
+				capturedBytes: 0,
+				captureStartedAt,
+			})),
+		});
+		const startup = vi.fn(async () => undefined);
+		const terminal = vi.fn(async () => undefined);
+		await new JobManager(
+			reloaded,
+			restartedBridge,
+			1,
+			terminal,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			startup,
+		).initialize();
+
+		expect(startup).toHaveBeenCalledWith(
+			expect.objectContaining({
+				state: 'capture_ready',
+				capture_started_at: captureStartedAt,
+			}),
+		);
+		expect(startup).toHaveBeenCalledBefore(terminal);
+	});
+
+	it('cannot publish a terminal artifact before capture commits', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const bridge = new FakeRendererBridge();
+		const terminal = vi.fn(async () => undefined);
+		const manager = new JobManager(store, bridge, 1, terminal);
+		await manager.reserve(baseClaims);
+
+		await bridge.emit({
+			job: 'job',
+			type: 'complete',
+			artifact: {
+				file: 'recording.mp4',
+				bytes: 42,
+				sha256: 'a'.repeat(64),
+				duration_ms: 1_000,
+			},
+		});
+
+		expect(store.get('job')).toMatchObject({
+			state: 'failed',
+			health_reason: 'capture_not_committed',
+		});
+		expect(store.get('job')).not.toHaveProperty('artifact');
+		expect(terminal).toHaveBeenCalledWith(
+			expect.objectContaining({ state: 'failed' }),
 		);
 	});
 
@@ -1058,6 +1210,15 @@ describe('JobStore and JobManager', () => {
 			const bridge = new FakeRendererBridge();
 			const manager = new JobManager(store, bridge, 1);
 			await manager.reserve(baseClaims);
+			if (outcome !== 'failed') {
+				for (const type of [
+					'configured',
+					'proof_complete',
+					'joined',
+					'capture_ready',
+				] as const)
+					await bridge.emit({ job: 'job', type });
+			}
 			await bridge.emit({ job: 'job', type: outcome, reason: 'final' });
 			await bridge.emit({ job: 'job', type: 'configured', reason: 'delayed' });
 			await bridge.emit({ job: 'job', type: 'failed', reason: 'delayed' });
@@ -1077,6 +1238,13 @@ describe('JobStore and JobManager', () => {
 		const bridge = new FakeRendererBridge();
 		const manager = new JobManager(store, bridge, 1);
 		await manager.reserve(baseClaims);
+		for (const type of [
+			'configured',
+			'proof_complete',
+			'joined',
+			'capture_ready',
+		] as const)
+			await bridge.emit({ job: 'job', type });
 		await bridge.emit({ job: 'job', type: 'complete' });
 
 		const reloaded = new JobStore(path);
@@ -1108,6 +1276,13 @@ describe('JobStore and JobManager', () => {
 			async () => undefined,
 		);
 		await manager.reserve(baseClaims);
+		for (const type of [
+			'configured',
+			'proof_complete',
+			'joined',
+			'capture_ready',
+		] as const)
+			await bridge.emit({ job: 'job', type });
 
 		await bridge.emit({ job: 'job', type: 'complete' });
 
@@ -1176,6 +1351,13 @@ describe('JobStore and JobManager', () => {
 		const bridge = new FakeRendererBridge();
 		const manager = new JobManager(store, bridge, 1);
 		await manager.reserve(baseClaims);
+		for (const type of [
+			'configured',
+			'proof_complete',
+			'joined',
+			'capture_ready',
+		] as const)
+			await bridge.emit({ job: 'job', type });
 		await manager.stop(baseClaims, 'stop-1');
 
 		const reloaded = new JobStore(path);
@@ -1221,6 +1403,13 @@ describe('JobStore and JobManager', () => {
 		const bridge = new FakeRendererBridge();
 		const manager = new JobManager(store, bridge, 1);
 		await manager.reserve(baseClaims);
+		for (const type of [
+			'configured',
+			'proof_complete',
+			'joined',
+			'capture_ready',
+		] as const)
+			await bridge.emit({ job: 'job', type });
 		await bridge.emit({ job: 'job', type: 'partial', reason: 'capture_gap' });
 		await bridge.emit({ job: 'job', type: 'complete' });
 		expect(store.get('job')).toMatchObject({

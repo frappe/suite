@@ -8,7 +8,7 @@ import type {
 } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
-import { getPeerId, getRoomId } from './utils';
+import { ensureParticipantOwner, getPeerId } from './utils';
 
 export function registerProducerHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -21,10 +21,13 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			let outcome: 'success' | 'failure' = 'failure';
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				const { roomId, participantId } = ensureParticipantOwner(
+					socket,
+					deps.registry,
+				);
 				enforceE2EEMediaPolicy(socket);
 				const { transportId, rtpParameters, kind } = data;
 				const startPaused = appData.e2eeStartPaused === true;
-				const roomId = getRoomId(socket);
 				const producer = await deps.mediasoup.createProducer(
 					transportId,
 					roomId,
@@ -35,6 +38,20 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 					socket.senderId ?? 0,
 					startPaused,
 				);
+				try {
+					ensureParticipantOwner(socket, deps.registry);
+				} catch (error) {
+					try {
+						deps.mediasoup.closeProducer(producer.id, { reason: 'cleanup' });
+					} catch (cleanupError) {
+						loggers.socketHandler.warn(
+							'Producer rollback failed for %s: %s',
+							producer.id,
+							(cleanupError as Error).message,
+						);
+					}
+					throw error;
+				}
 
 				const isScreen =
 					(producer.appData && producer.appData.type === 'screen') ||
@@ -44,7 +61,7 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 				outcome = 'success';
 
 				deps.registry.emitProducerCreated(roomId, {
-					participantId: socket.userId,
+					participantId,
 					producerId: producer.id,
 					kind: producer.kind,
 					paused: startPaused,
@@ -73,13 +90,14 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 		socket.on('close_producer', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				const { roomId } = ensureParticipantOwner(socket, deps.registry);
 				const { producerId } = data;
 				const reason = producerCloseReason(data.reason);
 				const source = data.source === 'screen-share' ? data.source : undefined;
 				const details = sanitizeProducerCloseDetails(data.details);
 				deps.mediasoup.assertProducerAccess(
 					producerId,
-					getRoomId(socket),
+					roomId,
 					getPeerId(socket),
 				);
 				const result = deps.mediasoup.closeProducer(producerId, {
@@ -111,13 +129,25 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 		socket.on('pause_producer', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				const { roomId, participantId } = ensureParticipantOwner(
+					socket,
+					deps.registry,
+				);
 				const { producerId } = data;
 				deps.mediasoup.assertProducerAccess(
 					producerId,
-					getRoomId(socket),
+					roomId,
 					getPeerId(socket),
 				);
 				const paused = await deps.mediasoup.pauseProducer(producerId);
+				ensureParticipantOwner(socket, deps.registry);
+				if (paused) {
+					deps.registry.emitProducerPaused(roomId, {
+						participantId,
+						producerId,
+						paused: true,
+					});
+				}
 
 				callback({ success: true, paused });
 			} catch (error) {
@@ -132,13 +162,25 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 		socket.on('resume_producer', async (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
+				const { roomId, participantId } = ensureParticipantOwner(
+					socket,
+					deps.registry,
+				);
 				const { producerId } = data;
 				deps.mediasoup.assertProducerAccess(
 					producerId,
-					getRoomId(socket),
+					roomId,
 					getPeerId(socket),
 				);
 				const resumed = await deps.mediasoup.resumeProducer(producerId);
+				ensureParticipantOwner(socket, deps.registry);
+				if (resumed) {
+					deps.registry.emitProducerPaused(roomId, {
+						participantId,
+						producerId,
+						paused: false,
+					});
+				}
 
 				callback({ success: true, resumed });
 			} catch (error) {

@@ -111,6 +111,22 @@ export class JobManager {
 				const outcome = await this.bridge.recoverStopping?.(job.job);
 				if (outcome?.capturedBytes !== undefined)
 					await this.recordTerminalProgress(job.job, outcome.capturedBytes);
+				const captureStartedAt =
+					outcome?.captureStartedAt ?? job.capture_started_at;
+				if (captureStartedAt) {
+					await this.store.update((jobs) => {
+						const current = jobs[job.job];
+						if (!current || current.capture_started_at) return;
+						current.capture_started_at = captureStartedAt;
+						current.event_sequence = Math.max(current.event_sequence ?? 1, 5);
+					});
+					const adopted = this.store.get(job.job);
+					if (adopted && this.onStartup)
+						await this.scheduleHealth(
+							{ ...adopted, state: 'capture_ready' },
+							this.onStartup,
+						);
+				}
 				const type =
 					job.state !== 'stopping' && outcome?.type === 'complete'
 						? 'partial'
@@ -519,6 +535,15 @@ export class JobManager {
 			const current = this.store.get(job);
 			if (current?.endpoint_generation !== generation) return;
 			if (!current || !ACTIVE_TRANSITIONS[current.state].includes(type)) return;
+			if (
+				(type === 'complete' || type === 'partial') &&
+				!current.capture_started_at
+			) {
+				type = 'failed';
+				reason = 'capture_not_committed';
+				artifact = undefined;
+				gaps = undefined;
+			}
 			const recovered =
 				current.state === 'interrupted' && type === 'capture_ready';
 			const startupMilestone =

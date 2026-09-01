@@ -273,6 +273,16 @@ describe('CallbackClient', () => {
 			interruption_deadline: '2026-08-30T12:01:00.000Z',
 			omission_started_at: '2026-08-30T11:59:30.000Z',
 		});
+		job.health_reason = 'projection_invalid';
+		await new CallbackClient({
+			origin: 'https://site.test',
+			site: 'site.test',
+			secret: 's'.repeat(32),
+			dataRoot: '/tmp',
+		}).interrupted(job);
+		expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).reason_code).toBe(
+			'projection_invalid',
+		);
 	});
 
 	it('publishes recovery for the active interruption sequence', async () => {

@@ -3,6 +3,7 @@ import type { Socket } from 'socket.io';
 import type { ChatMessage, PinnedChatMessage } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
+import { ensureParticipantOwner } from './utils';
 
 function toPinnedChatMessage(
 	message: ChatMessage,
@@ -22,9 +23,9 @@ export function registerChatHandlers(deps: HandlerDeps) {
 		socket.on('chat:toggle_restriction', (data) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				const roomId = socket.roomId;
+				const { roomId } = ensureParticipantOwner(socket, deps.registry);
 
-				if (!roomId || (!socket.isHost && !socket.isCohost)) return;
+				if (!socket.isHost && !socket.isCohost) return;
 				const isRestricted = Boolean(data.enabled);
 				deps.registry.setHostOnlyChat(roomId, isRestricted);
 
@@ -41,17 +42,15 @@ export function registerChatHandlers(deps: HandlerDeps) {
 		socket.on('chat:send', (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				const roomId = socket.roomId;
+				const { roomId, participantId } = ensureParticipantOwner(
+					socket,
+					deps.registry,
+				);
 				const text = (
 					typeof data.message === 'string' ? data.message : ''
 				).slice(0, 2000);
 
-				if (
-					!roomId ||
-					!text.trim() ||
-					!socket.participantId ||
-					!socket.userName
-				) {
+				if (!text.trim() || !socket.userName) {
 					callback?.({ success: false, error: 'Invalid chat message' });
 					return;
 				}
@@ -77,7 +76,7 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					roomId,
 					messageId: randomUUID(),
 					message: text,
-					fromUser: socket.participantId,
+					fromUser: participantId,
 					fromName: socket.userName,
 					timestamp: new Date().toISOString(),
 				};
@@ -105,9 +104,9 @@ export function registerChatHandlers(deps: HandlerDeps) {
 		socket.on('chat:pin', (data, callback) => {
 			try {
 				deps.authManager.ensureFullAccess(socket);
-				const roomId = socket.roomId;
+				const { roomId } = ensureParticipantOwner(socket, deps.registry);
 
-				if (!roomId || (!socket.isHost && !socket.isCohost)) {
+				if (!socket.isHost && !socket.isCohost) {
 					callback?.({
 						success: false,
 						error: 'Only hosts and co-hosts can pin messages',

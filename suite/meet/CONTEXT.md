@@ -13,7 +13,7 @@ One browser endpoint's live connection to a Meet Room, from join setup through c
 _Avoid_: Meeting Session, SFU Session
 
 **Recording Session**:
-One continuous interval beginning when an authorized start is accepted and ending when recording stops.
+One continuous interval beginning when the Recorder Endpoint is ready to capture the Shared Stage and ending when recording stops.
 _Avoid_: Recording Job, Recording File
 
 **Recording Artifact**:
@@ -81,7 +81,7 @@ _Avoid_: Server-side Encryption
 - A **Recording Session** produces at most one **Recording Artifact**.
 - A **Recording Session** may exist without a **Recording Artifact** while it is active or processing, or after an unrecoverable failure.
 - A failed **Recording Session** with no Recording Artifact is retained for 30 days and then deleted automatically.
-- A **Recording Artifact** may begin after its Recording Session when recorder startup takes time.
+- Recorder startup happens before the **Recording Session** and is not part of the Recording Artifact.
 - A Recording Session with one or more known capture gaps produces one **Partial Artifact**, not multiple artifacts.
 - A **Partial Artifact** omits known gaps from playback and records their session timestamps as metadata; it does not synthesize filler media.
 - A recorder service restart ends the active Recording Session and does not resume capture automatically. The Room Owner receives a Partial Artifact when valid captured media exists; otherwise the session fails without an artifact. A host or co-host may start a new Recording Session after the recorder becomes ready.
@@ -95,12 +95,18 @@ _Avoid_: Server-side Encryption
 - A **Recording Initiator** controls a **Recording Session** but does not thereby own its **Recording Artifact**.
 - A **Recorder Endpoint** observes the **Shared Stage** but does not count as a participant or keep the room human-occupied.
 - A **Recording Artifact** contains the **Shared Stage**, including public chat messages sent after artifact capture begins but not earlier chat or messages sent during recorder startup.
+- The SFU supplies the Recorder Endpoint with one recorder-safe Shared Stage snapshot and monotonic room-event cursor; subsequent recorder projection events carry ordered cursors and SFU-observed timestamps.
+- The Recorder Endpoint is ready to capture only after it proves its Recording Grant, joins the Meet Room, reconciles the recorder-safe snapshot with buffered events, attaches every current producer for playback, and commits one rendered Shared Stage frame.
+- Before each capture epoch, the Recorder Endpoint clears and buffers transient Shared Stage overlays and commits a clean frame. After capture launches, it releases only public chat and reactions observed at or after that epoch's capture start.
+- Persistent Shared Stage state, including participants, media, screen shares, and raised hands, survives the capture-start reset.
+- Recovery from a Recording Interruption repeats Shared Stage reconciliation, media attachment, transient reset, and rendered-frame readiness before capture resumes.
+- Unknown or invalid recorder projection data causes a Recording Interruption and fresh snapshot recovery rather than being silently omitted from the Recording Artifact.
 - The recorded **Shared Stage** uses the current desktop Meet layout at 1920x1080: screen shares auto-pin with the standard sidebar, otherwise participants use the standard grid and overflow priorities.
 - The **Recorder Endpoint** never appears as a tile in the recorded Shared Stage.
 - The recorded **Shared Stage** includes names, avatars, active-speaker treatment, reactions, raised hands, timed public-chat overlays, and a small recording timer.
 - The recorded **Shared Stage** excludes meeting controls, sidebars, polls, menus, private notifications, and personalized participant state.
 - A **Recording Notice** informs participants but does not represent explicit individual consent.
-- A **Recording Notice** and live recording indicator appear immediately when the Recording Session begins; there is no countdown.
+- A **Recording Notice** and live recording indicator appear immediately when the Recorder Endpoint is ready to capture and the Recording Session begins; there is no countdown.
 - A late joiner's media may enter an active **Recording Session** immediately; a **Recording Notice** does not gate publication.
 - A scheduled **Recording Estimate** uses the time remaining in the Calendar event plus a 15-minute overrun allowance.
 - A recurring scheduled **Recording Estimate** uses one occurrence's full event duration plus a 15-minute overrun allowance.

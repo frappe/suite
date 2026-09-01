@@ -102,6 +102,7 @@ INTERRUPTION_REASON_CODES = {
     "media_attachment_failed",
     "media_subscription_failed",
     "page_crashed",
+    "projection_invalid",
     "receive_transport_failed",
     "sfu_disconnected",
 }

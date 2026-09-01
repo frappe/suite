@@ -49,7 +49,13 @@ import type {
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecorderStageParticipant,
+	RecorderStageProducer,
+	RecorderStageProjectionEvent,
+	RecorderStageProjectionPayload,
+	RecorderStageSnapshot,
 	RecordingJoinRequest,
+	RecordingProjectionSnapshotResponse,
 	RecordingProofChallenge,
 	RecordingProofRequest,
 	RecordingProofResponse,
@@ -103,7 +109,13 @@ export type {
 	RaiseHandRequest,
 	ReactionMessage,
 	ReactionSendRequest,
+	RecorderStageParticipant,
+	RecorderStageProducer,
+	RecorderStageProjectionEvent,
+	RecorderStageProjectionPayload,
+	RecorderStageSnapshot,
 	RecordingJoinRequest,
+	RecordingProjectionSnapshotResponse,
 	RecordingProofChallenge,
 	RecordingProofRequest,
 	RecordingProofResponse,
@@ -128,6 +140,7 @@ export type {
 // Socket.IO types
 export interface ServerToClientEvents {
 	'recording:challenge': (data: RecordingProofChallenge) => void;
+	'recording:projection': (data: RecorderStageProjectionEvent) => void;
 	participant_joined: (data: ParticipantJoinedEvent) => void;
 	participant_left: (data: ParticipantLeftEvent) => void;
 	participant_connection_replaced: (data: {
@@ -165,6 +178,10 @@ export interface ClientToServerEvents {
 	'recording:join': (
 		data: RecordingJoinRequest,
 		callback: (response: SFUResponse) => void,
+	) => void;
+	'recording:get_projection_snapshot': (
+		data: Record<string, never>,
+		callback: (response: RecordingProjectionSnapshotResponse) => void,
 	) => void;
 	client_telemetry: (data: ClientTelemetryEvent) => void;
 	'auth:update_token': (
