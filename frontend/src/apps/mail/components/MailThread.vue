@@ -153,8 +153,8 @@
 										:reload-mails="handleReload"
 										:thread="thread"
 										@set-flagged="
-											(id: string, flagged: boolean) =>
-												emit('setFlagged', [id], flagged)
+											(ids: string[], flagged: boolean) =>
+												emit('setFlagged', ids, flagged)
 										"
 										@sync-unseen="handleSyncUnseen"
 										@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
@@ -323,8 +323,8 @@
 												:reload-mails="handleReload"
 												:thread="thread"
 												@set-flagged="
-													(id: string, flagged: boolean) =>
-														emit('setFlagged', [id], flagged)
+													(ids: string[], flagged: boolean) =>
+														emit('setFlagged', ids, flagged)
 												"
 												@sync-unseen="handleSyncUnseen"
 												@move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
@@ -584,6 +584,7 @@ import {
 } from '@/apps/mail/utils'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
+import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { useFilterBySender, useScreenSize, useSettings, useTheme } from '@/apps/mail/utils/composables'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
 import { userStore } from '@/apps/mail/stores/user'
@@ -898,7 +899,7 @@ const loadThread = () => {
 // all). Persisted via the parent (list + server) WITHOUT mutating the displayed messages, so the
 // "unread from here" marker survives reopening. Works for list and get_thread-fallback threads alike.
 const setThreadSeen = (seen: boolean) => {
-	const ids = (sourceMessages() ?? thread.value).map((mail) => mail.id)
+	const ids = (sourceMessages() ?? thread.value).flatMap(mailCopyIds)
 	emit('setSeen', seen, ids)
 }
 

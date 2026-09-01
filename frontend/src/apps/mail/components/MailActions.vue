@@ -59,6 +59,7 @@ import {
 	raiseToast,
 } from '@/apps/mail/utils'
 import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/composables'
+import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 
 import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
@@ -113,13 +114,13 @@ const isSenderBlocked = (email: string) =>
 const primaryActions = (mail: Mail): MailAction[] => [
 	{
 		label: __('Unstar'),
-		onClick: () => emit('setFlagged', mail.id, false),
+		onClick: () => emit('setFlagged', mailCopyIds(mail), false),
 		icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
 		condition: !!mail.flagged && mailbox !== mailboxIds.value.trash && !isMobile.value,
 	},
 	{
 		label: __('Star'),
-		onClick: () => emit('setFlagged', mail.id, true),
+		onClick: () => emit('setFlagged', mailCopyIds(mail), true),
 		icon: Star,
 		condition: !mail.flagged && !mail.draft && mailbox !== mailboxIds.value.trash && !isMobile.value,
 	},
@@ -179,13 +180,13 @@ const moreActions = (mail: Mail): GroupedAction[] => [
 		options: [
 			{
 				label: __('Unstar'),
-				onClick: () => emit('setFlagged', mail.id, false),
+				onClick: () => emit('setFlagged', mailCopyIds(mail), false),
 				icon: () => h(Star, { style: FLAGGED_STAR_STYLE }),
 				condition: () => !!mail.flagged && mailbox !== mailboxIds.value.trash,
 			},
 			{
 				label: __('Star'),
-				onClick: () => emit('setFlagged', mail.id, true),
+				onClick: () => emit('setFlagged', mailCopyIds(mail), true),
 				icon: Star,
 				condition: () => !mail.flagged && !mail.draft && mailbox !== mailboxIds.value.trash,
 			},
@@ -327,7 +328,7 @@ const handleMarkUnreadFromHere = () => {
 	const ids = thread
 		.slice(idx)
 		.filter((m: Mail) => !m.draft)
-		.map((m: Mail) => m.id)
+		.flatMap(mailCopyIds)
 	if (ids.length) setMailsSeen.submit({ ids })
 }
 

@@ -189,6 +189,7 @@ import {
 } from '@/apps/mail/utils/listNavigation'
 import { useStoredFilter } from '@/apps/mail/utils/listFilter'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
+import { mailCopyIds, rowMailIds } from '@/apps/mail/utils/mailCopies'
 import { useListReload, useUndo, useScreenSize, useSwipeNav } from '@/apps/mail/utils/composables'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
 import { useListRows } from '@/apps/mail/composables/useListRows'
@@ -618,7 +619,7 @@ const paneCall = (method: string, params: Record<string, unknown>, account?: str
 	return call(`suite.mail.api.mail.${method}`, { account: acting, ...params })
 }
 
-const messageIdsOf = (thread: Thread) => thread.messages?.map((m) => m.id) ?? [thread.id]
+const messageIdsOf = (thread: Thread) => thread.messages?.flatMap(mailCopyIds) ?? [thread.id]
 
 // Marked unread from a message downwards: MailThread reports the ids, we mirror it in the list.
 const handleSyncUnseen = (ids: string[]) => {
@@ -834,7 +835,7 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
 // message, so BOTH have to be told: the pane's star stayed hollow when starring from the list, and
 // the list's star stayed hollow when starring from the pane. Only the ids actually sent to the
 // server are flipped locally, or a refetch would contradict whatever we lit up.
-const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = [thread.id]) => {
+const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = rowMailIds(thread)) => {
 	// The row stands for its representative mail (see serialize_thread), so it takes the star only
 	// when that mail is one of the ones being starred.
 	const rowChanged = ids.includes(thread.id)

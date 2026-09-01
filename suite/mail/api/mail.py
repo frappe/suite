@@ -281,7 +281,11 @@ def get_threads(account: str, mailbox: str, limit: int, start: int = 0, filter_b
         # draft reply must keep its own recipients and its "Draft" badge when the thread it answers
         # receives a newer mail.
         latest = in_mailbox[-1] if mailbox in outgoing_mailboxes else visible[-1]
-        threads.append(serialize_thread(in_mailbox, visible, latest, first=conversation[0]))
+        threads.append(
+            serialize_thread(
+                in_mailbox, visible, latest, first=conversation[0], sent_mailbox=ids_by_role.get("sent")
+            )
+        )
 
     # Avatars for the list-view summary rows, and for each message in the nested threads.
     add_user_images_to_emails(account, threads, is_thread=False)
@@ -312,6 +316,75 @@ def visible_in_mailbox(messages: list[dict], mailbox: str, trash: str | None, ju
         return [m for m in messages if m.get("junk")] or messages
 
     return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
+
+
+# Of a message's copies, the one kept carries these fields of the ones it stands in for — what an
+# action needs to reach them, and what an undo needs to put them back exactly as they were. Never a
+# body: the copies are the same message, and a second copy of it is only weight on the wire.
+DUPLICATE_COPY_FIELDS = (
+    "name",
+    "id",
+    "thread_id",
+    "from_name",
+    "from_email",
+    "received_at",
+    "mailboxes",
+    "seen",
+    "junk",
+    "flagged",
+    "draft",
+)
+
+
+def collapse_duplicate_copies(mails: list[dict], sent_mailbox: str | None) -> list[dict]:
+    """Collapse the copies one message left in the account back into the single message they are.
+
+    Mail you send to yourself — directly, by copying yourself, or through a list you are on — leaves
+    the account holding two JMAP Emails: the copy saved in Sent, and the copy the delivery filed.
+    They share a Message-ID because they are one message, and the thread was showing both, as was
+    the list row's message count, which is read off this same list.
+
+    The delivered copy is the one kept, in every view: it is the message as it actually arrived,
+    headers and unread state and all, and choosing it by what the message *is* rather than by which
+    mailbox is being looked at means the same copy survives in Sent as in Inbox — nothing swaps under
+    the reader when they change view, and nothing swaps between one request and the next. Where that
+    doesn't decide it (no copy in Sent, or both there), received time and then id settle it.
+
+    What is collapsed away is not dropped. Those are real messages on the server, and an action on
+    the survivor has to reach them, or trashing a mail to yourself would leave its twin sitting in
+    Sent and unstarring it would leave the thread starred. They ride along under `duplicates`, which
+    is what the client fans its actions out over (see utils/mailCopies); only the display reads the
+    collapsed list.
+
+    Drafts and mail with no Message-ID are left alone: a draft has no delivered twin, and an absent
+    header is not an identity.
+    """
+
+    groups: dict[str, list[dict]] = {}
+    for mail in mails:
+        if mail.get("draft") or not mail.get("message_id"):
+            continue
+        groups.setdefault(mail["message_id"], []).append(mail)
+
+    duplicated = [group for group in groups.values() if len(group) > 1]
+    if not duplicated:
+        return mails
+
+    def in_sent(mail: dict) -> bool:
+        return any(mb["mailbox_id"] == sent_mailbox for mb in mail["mailboxes"])
+
+    merged: dict[str, dict] = {}
+    absorbed: set[str] = set()
+    for group in duplicated:
+        survivor = min(group, key=lambda mail: (in_sent(mail), str(mail["received_at"] or ""), mail["id"]))
+        copies = [mail for mail in group if mail["id"] != survivor["id"]]
+        merged[survivor["id"]] = {
+            **survivor,
+            "duplicates": [{field: mail[field] for field in DUPLICATE_COPY_FIELDS} for mail in copies],
+        }
+        absorbed.update(mail["id"] for mail in copies)
+
+    return [merged.get(mail["id"], mail) for mail in mails if mail["id"] not in absorbed]
 
 
 def get_user_jmap_accounts() -> list[dict]:
@@ -407,7 +480,10 @@ def get_thread(account: str, thread_id: str) -> list[dict]:
     """Returns the full list of messages in a thread, for threads not present in the mailbox list
     (e.g. search results or a thread on another page)."""
 
-    mails = [serialize_mail(m) for m in fetch_thread(account, thread_id)]
+    mails = collapse_duplicate_copies(
+        [serialize_mail(m) for m in fetch_thread(account, thread_id)],
+        get_mailbox_id_by_role(account, "sent"),
+    )
     return add_user_images_to_emails(account, mails, is_thread=True)
 
 
@@ -430,6 +506,7 @@ def serialize_thread(
     thread_messages: list[dict],
     latest: dict | None = None,
     first: dict | None = None,
+    sent_mailbox: str | None = None,
 ) -> dict:
     """Serializes a thread for response.
 
@@ -470,7 +547,9 @@ def serialize_thread(
         **{field: latest[field] for field in activity_fields},
         "subject": first["subject"],
         "attachments": serialize_attachments(latest.get("attachments", [])),
-        "messages": [serialize_mail(message) for message in thread_messages],
+        "messages": collapse_duplicate_copies(
+            [serialize_mail(message) for message in thread_messages], sent_mailbox
+        ),
     }
 
 

@@ -140,9 +140,34 @@ export interface Mail {
 	attachments: Attachment[]
 	// Blob id of a bounce message's message/delivery-status part (see DeliveryStatusBanner).
 	dsn_blob_id?: string | null
+	// The other copies of this same message the account holds — see MailCopy.
+	duplicates?: MailCopy[]
 	user_image?: string
 	collapsed?: boolean
 }
+
+/**
+ * One of the copies a message left in the account, stripped to what acting on it takes.
+ *
+ * Mail you send to yourself lands twice: the copy saved in Sent and the one delivery filed. The
+ * thread shows a single message for the pair (the server picks it — see collapse_duplicate_copies)
+ * and hangs the copies it stands in for off it, so an action can still reach them. A body is never
+ * copied here; it is the same message.
+ */
+export type MailCopy = Pick<
+	Mail,
+	| 'name'
+	| 'id'
+	| 'thread_id'
+	| 'from_name'
+	| 'from_email'
+	| 'received_at'
+	| 'mailboxes'
+	| 'seen'
+	| 'junk'
+	| 'flagged'
+	| 'draft'
+>
 
 export interface DraftRecipient {
 	email: string
