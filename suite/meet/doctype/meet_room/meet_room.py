@@ -602,6 +602,7 @@ class MeetRoom(Document):
         Update meeting settings (host or co-host only)
         """
 
+        self.lock_for_update()
         if not self.is_host_or_cohost(frappe.session.user):
             frappe.throw(_("Only the meeting host or co-host can update settings"))
 

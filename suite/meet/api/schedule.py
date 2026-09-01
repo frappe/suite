@@ -10,7 +10,7 @@ from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs
 from suite.meet.api.meeting import create as create_meeting
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_scheduled_meeting(
     account: str,
     user: str | None = None,
@@ -74,7 +74,7 @@ def create_scheduled_meeting(
     return {"meeting_id": meeting_id, "meeting_url": meet_url, "event_id": event_id}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_meet_link(account: str, title: str | None = None, meeting_type: str = "open") -> dict[str, str]:
     """Create a Meet room and return its link, for attaching to an existing calendar event."""
 

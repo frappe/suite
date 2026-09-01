@@ -95,7 +95,7 @@ class IntegrationTestMeetRoom(IntegrationTestCase):
             with self.subTest(method=method_name):
                 method = getattr(room, method_name)
                 fn = getattr(method, "__func__", method)
-                self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], ("POST",))
+                self.assertEqual(set(frappe.allowed_http_methods_for_whitelisted_func[fn]), {"POST"})
 
     def test_every_access_field_rejects_generic_document_updates(self):
         user = self._ensure_user("room-protected@example.com", "Room Protected")

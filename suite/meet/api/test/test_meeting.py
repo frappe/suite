@@ -24,6 +24,7 @@ from suite.meet.api.meeting import (
     refresh_sfu_token,
     validate_guest_session,
 )
+from suite.meet.api.schedule import create_meet_link, create_scheduled_meeting
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 
 
@@ -48,6 +49,11 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             self._ensure_user(email, first_name)
 
         self.meeting = self._create_meeting(self.host_email, meeting_type="restricted")
+
+    def test_scheduling_mutations_are_post_only(self):
+        for method in (create_scheduled_meeting, create_meet_link):
+            with self.subTest(method=method.__name__):
+                self.assertEqual(set(frappe.allowed_http_methods_for_whitelisted_func[method]), {"POST"})
 
     def test_member_can_get_sfu_connection_details(self):
         self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
