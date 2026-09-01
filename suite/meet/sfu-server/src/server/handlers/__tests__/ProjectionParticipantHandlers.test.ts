@@ -170,4 +170,27 @@ describe('projection-producing participant handlers', () => {
 
 		expect(registry.emitProducerPaused).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		['audio', false, 'mute'],
+		['audio', true, 'unmute'],
+		['video', false, 'video_off'],
+		['video', true, 'video_on'],
+	] as const)('normalizes legacy %s media state before projection', async (type, enabled, action) => {
+		const { handlers, mediasoup, registry } = setup(true);
+
+		await handlers.get('media_control')?.({
+			action: { type, enabled },
+		} as never);
+
+		expect(mediasoup.applyMediaControl).toHaveBeenCalledWith(
+			'room-1',
+			'participant-1',
+			action,
+		);
+		expect(registry.emitMediaControlUpdate).toHaveBeenCalledWith(
+			'room-1',
+			expect.objectContaining({ action }),
+		);
+	});
 });

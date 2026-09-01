@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type {
 	CaptureEpoch,
@@ -423,6 +423,40 @@ export class CaptureWorker {
 		let manifest = await this.manifest.initialize();
 		if (['complete', 'partial', 'failed'].includes(manifest.state))
 			return manifest.state as Outcome;
+		const allocatedEpoch = manifest.epochs - 1;
+		if (
+			manifest.state === 'capturing' &&
+			allocatedEpoch >= 0 &&
+			!manifest.capture_epochs?.some(
+				(record) => record.epoch === allocatedEpoch,
+			)
+		) {
+			const prefix = `epoch-${String(allocatedEpoch).padStart(3, '0')}-segment-`;
+			const candidate = (await readdir(this.manifest.directory))
+				.filter(
+					(file) =>
+						file.startsWith(prefix) &&
+						/^epoch-\d{3}-segment-\d{6}\.ts$/.test(file),
+				)
+				.sort()[0];
+			if (candidate) {
+				const info = await stat(join(this.manifest.directory, candidate));
+				const previousStartedAt =
+					manifest.capture_epochs?.at(-1)?.capture_started_at;
+				const startedAt = Math.max(
+					info.birthtimeMs > 0 ? info.birthtimeMs : info.mtimeMs,
+					previousStartedAt ? Date.parse(previousStartedAt) : 0,
+				);
+				await this.manifest.update((current) => {
+					current.capture_epochs ??= [];
+					current.capture_epochs.push({
+						epoch: allocatedEpoch,
+						capture_started_at: new Date(startedAt).toISOString(),
+					});
+				});
+				manifest = this.manifest.get();
+			}
+		}
 		const committedEpoch = manifest.capture_epochs?.at(-1)?.epoch;
 		if (manifest.state === 'capturing' && committedEpoch !== undefined) {
 			await this.makeWatcher(

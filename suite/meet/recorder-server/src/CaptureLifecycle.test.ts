@@ -1,4 +1,4 @@
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -391,6 +391,39 @@ describe('capture lifecycle', () => {
 			});
 		},
 	);
+
+	it('recovers an allocated epoch when a crash leaves a media candidate', async () => {
+		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
+		roots.push(root);
+		const makeWatcher = vi.fn(() => ({
+			start: () => undefined,
+			stopAndAdoptFinal: async () => 'adopted' as const,
+		}));
+		const worker = new CaptureWorker('crash-after-spawn', options(root), {
+			watcher: makeWatcher,
+			finalizer: () => ({ finalize: async () => 'failed' as const }),
+		});
+		await worker.manifest.initialize();
+		await worker.manifest.update((manifest) => {
+			manifest.epochs = 1;
+		});
+		await writeFile(
+			join(worker.manifest.directory, 'epoch-000-segment-000000.ts'),
+			'captured media',
+		);
+
+		await expect(worker.recoverStopped()).resolves.toBe('failed');
+		expect(makeWatcher).toHaveBeenCalledWith(
+			worker.manifest,
+			expect.anything(),
+			0,
+			expect.any(Function),
+			expect.any(Function),
+		);
+		expect(worker.manifest.get().capture_epochs).toEqual([
+			{ epoch: 0, capture_started_at: expect.any(String) },
+		]);
+	});
 
 	it('serializes FFmpeg exit recovery behind initial startup publication', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);

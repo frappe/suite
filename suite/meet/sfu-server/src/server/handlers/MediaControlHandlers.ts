@@ -1,7 +1,26 @@
 import type { Socket } from 'socket.io';
+import type { MediaControlAction } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 import { ensureParticipantOwner } from './utils';
+
+function normalizeMediaControlAction(value: unknown): MediaControlAction {
+	if (
+		value === 'mute' ||
+		value === 'unmute' ||
+		value === 'video_off' ||
+		value === 'video_on'
+	)
+		return value;
+	if (value && typeof value === 'object' && !Array.isArray(value)) {
+		const { type, enabled } = value as { type?: unknown; enabled?: unknown };
+		if (typeof enabled === 'boolean') {
+			if (type === 'audio') return enabled ? 'unmute' : 'mute';
+			if (type === 'video') return enabled ? 'video_on' : 'video_off';
+		}
+	}
+	throw new Error('invalid media control action');
+}
 
 export function registerMediaControlHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
@@ -12,7 +31,7 @@ export function registerMediaControlHandlers(deps: HandlerDeps) {
 					socket,
 					deps.registry,
 				);
-				const { action } = data;
+				const action = normalizeMediaControlAction(data.action);
 
 				try {
 					deps.mediasoup.applyMediaControl(roomId, participantId, action);
