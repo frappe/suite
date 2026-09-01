@@ -162,6 +162,7 @@ jobs:
         working-directory: /home/runner/frappe-bench
         run: |
           mkdir -p "$GITHUB_WORKSPACE/test-results/backend"
+          printf '[run]\nbranch = true\n' > "$RUNNER_TEMP/suite-coveragerc"
           bench --site test_site set-config allow_tests true
           status=0
           bench --site test_site run-tests --app suite --coverage --junit-xml-output "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml" || status=$?
@@ -171,6 +172,7 @@ jobs:
           rm "$GITHUB_WORKSPACE/test-results/backend/junit-fragments.xml"
           exit "$status"
         env:
+          COVERAGE_RCFILE: ${{ runner.temp }}/suite-coveragerc
           TYPE: server
 
       - name: Check Background Worker
