@@ -1,4 +1,4 @@
-import { createResource, dialog, frappeRequest, toast } from "frappe-ui";
+import { dialog, toast, useCall } from "frappe-ui";
 import {
 	defineAsyncComponent,
 	computed,
@@ -67,6 +67,7 @@ import type {
 	ParticipantConnectionState,
 	SFUEventHandlers,
 } from "../utils/sfu/ParticipantConnection";
+import { submit, type Call } from "../utils/request";
 
 const LARGE_MEETING_PARTICIPANT_THRESHOLD = 5;
 
@@ -77,6 +78,10 @@ interface WaitingRoomResponse {
 		user_image?: string;
 		is_guest?: boolean;
 	}>;
+}
+
+interface WaitingRoomDocument {
+	getWaitingRoomDetails: Call<unknown>;
 }
 
 interface MeetingRealtimeEvent {
@@ -199,6 +204,7 @@ export function useSFUConnection(deps: {
 	onRecordingState?: (recording: RecordingState | null) => void;
 	onRecordingEnabled?: (enabled: boolean) => void;
 	onCohostPromoted?: () => Promise<void>;
+	meetingDoc: WaitingRoomDocument;
 }): SFUConnectionAPI {
 	const {
 		connectionState,
@@ -217,6 +223,7 @@ export function useSFUConnection(deps: {
 		onRecordingState,
 		onRecordingEnabled,
 		onCohostPromoted,
+		meetingDoc,
 	} = deps;
 
 	const router = useRouter();
@@ -258,10 +265,15 @@ export function useSFUConnection(deps: {
 		isCurrentTabHost,
 	});
 
-	const joinMeetingAPI = createResource({
-		url: "suite.meet.api.meeting.join_meeting",
+	const joinMeetingAPI = useCall<JoinPayload, { meeting_id: string }>({
+		url: "/api/v2/method/suite.meet.api.meeting.join_meeting",
 		method: "POST",
-		makeParams: () => ({ meeting_id: meetingId }),
+		immediate: false,
+	});
+	const getSFUConnectionDetails = useCall<JoinPayload, { meeting_id: string }>({
+		url: "/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+		method: "POST",
+		immediate: false,
 	});
 
 	const activeSpeakerTimeout = shallowRef<ReturnType<typeof setTimeout> | null>(
@@ -690,10 +702,9 @@ export function useSFUConnection(deps: {
 
 	const fetchExistingWaitingRoomUsers = async () => {
 		try {
-			const result = normalizeWaitingRoomResponse(await frappeRequest({
-				url: "suite.meet.api.meeting.get_waiting_room",
-				params: { meeting_id: meetingId },
-			}));
+			const result = normalizeWaitingRoomResponse(
+				await submit(meetingDoc.getWaitingRoomDetails),
+			);
 
 			if (result?.waiting_users) {
 				const transformedUsers = result.waiting_users.map((user) => ({
@@ -847,12 +858,9 @@ export function useSFUConnection(deps: {
 			lobbyStore.isWaitingForApproval = false;
 
 			try {
-				const sfuResult = normalizeJoinPayload(await frappeRequest({
-					url: "suite.meet.api.meeting.get_sfu_connection_details",
-					params: {
-						meeting_id: meetingId,
-					},
-				}));
+				const sfuResult = normalizeJoinPayload(
+					await getSFUConnectionDetails.submit({ meeting_id: meetingId }),
+				);
 
 				if (sfuResult) {
 					onRecordingEnabled?.(!!sfuResult.recording_enabled);
@@ -1061,7 +1069,9 @@ export function useSFUConnection(deps: {
 			connectionState.guestSfuUrl = null;
 			connectionState.guestSfuPort = null;
 
-			const joinResult = normalizeJoinPayload(await joinMeetingAPI.fetch());
+			const joinResult = normalizeJoinPayload(
+				await joinMeetingAPI.submit({ meeting_id: meetingId }),
+			);
 			if (!joinResult) throw new Error("Invalid meeting join response");
 
 			if (joinResult.status === "waiting_for_approval") {

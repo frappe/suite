@@ -282,9 +282,10 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, createResource, frappeRequest, toast } from "frappe-ui";
+import { Badge, Button, toast, useCall, useDoc } from "frappe-ui";
 import { computed, h, onMounted, onUnmounted, provide, ref, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { submit } from "../utils/request";
 
 import ChatPanel from "../components/ChatPanel.vue";
 import JoinRequestNotifications from "../components/JoinRequestNotifications.vue";
@@ -316,7 +317,6 @@ import {
 	useMediaState,
 } from "../composables/useMediaState";
 import { provideMeetingContext } from "../composables/useMeetingContext";
-import { useMeetingDoc } from "../composables/useMeetingDoc";
 import {
 	useMeetingHandlers,
 } from "../composables/useMeetingHandlers";
@@ -358,6 +358,13 @@ const route = useRoute();
 const router = useRouter();
 const meetingId = computed(() => route.params.meetingId as string);
 
+interface MeetingDocument {
+	name: string;
+	title?: string;
+	owner?: string;
+	co_hosts?: { user: string }[];
+}
+
 function redirectToLogin() {
 	const path = window.location.pathname.startsWith("/meet")
 		? window.location.pathname
@@ -390,15 +397,39 @@ const gridLayout = useGridLayout(mediaState);
 const notifiedLobbyUsers = ref(new Set<string>());
 
 // --- Meeting doc ---
-const {
-	getMeetingDoc,
-	meetingTitle,
-	meetingOwner,
-	isCurrentUserHost,
-	isCurrentUserCohost,
-	meetingCoHosts,
-} = useMeetingDoc();
-const meetingDoc = getMeetingDoc(meetingId.value);
+const meetingDoc = useDoc<MeetingDocument, {
+	approveJoinRequest: (params: { user_id: string }) => unknown;
+	approveAllJoinRequests: () => unknown;
+	rejectJoinRequest: (params: { user_id: string }) => unknown;
+	getWaitingRoomDetails: () => unknown;
+	banGuest: (params: { guest_id: string }) => unknown;
+	promoteToCohost: (params: { user_id: string }) => unknown;
+}>({
+	doctype: "Meet Room",
+	name: meetingId,
+	immediate: session.isLoggedIn,
+	methods: {
+		approveJoinRequest: "approve_join_request",
+		approveAllJoinRequests: "approve_all_join_requests",
+		rejectJoinRequest: "reject_join_request",
+		getWaitingRoomDetails: "get_waiting_room_details",
+		banGuest: "ban_guest",
+		promoteToCohost: "promote_to_cohost",
+	},
+});
+const meetingTitle = computed(
+	() => meetingDoc.doc?.title || meetingDoc.doc?.name || meetingId.value,
+);
+const meetingOwner = computed(() => meetingDoc.doc?.owner || "");
+const meetingCoHosts = computed(
+	() => meetingDoc.doc?.co_hosts?.map((row) => row.user) || [],
+);
+const isCurrentUserHost = computed(
+	() => Boolean(session.user?.sessionUser && session.user.sessionUser === meetingOwner.value),
+);
+const isCurrentUserCohost = computed(
+	() => Boolean(session.user?.sessionUser && meetingCoHosts.value.includes(session.user.sessionUser)),
+);
 const recording = useRecording(meetingId.value);
 const recordingDialogOpen = ref(false);
 const recordingStopDialogOpen = ref(false);
@@ -436,20 +467,24 @@ async function confirmRecordingStart() {
 		throw error;
 	}
 }
-const previewDetails = createResource({
-	url: "suite.meet.api.meeting.get_public_meeting_preview",
+const previewDetails = useCall<{ title?: string }, { meeting_id: string }>({
+	url: "/api/v2/method/suite.meet.api.meeting.get_public_meeting_preview",
 	params: { meeting_id: meetingId.value },
-	auto: !session.isLoggedIn,
+	immediate: !session.isLoggedIn,
+});
+const checkMeetingAccess = useCall<AccessData, { meeting_id: string }>({
+	url: "/api/v2/method/suite.meet.api.meeting.check_meeting_access",
+	immediate: false,
 });
 const previewTitle = computed(
 	() => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
 );
 
 watch(
-	() => meetingDoc.get.error,
+	() => meetingDoc.error,
 	(error) => {
 		if (error && !previewDetails.data && !previewDetails.loading) {
-			previewDetails.fetch();
+			void previewDetails.reload();
 		}
 	},
 );
@@ -529,6 +564,7 @@ const sfuConnection = useSFUConnection({
 	mediaState,
 	participantStore,
 	lobbyStore,
+	meetingDoc,
 	gridLayout,
 	meetingId: meetingId.value,
 	notifiedLobbyUsers,
@@ -714,7 +750,7 @@ const raiseHand = useRaiseHand({
 // --- Lobby ---
 const lobby = useLobby({
 	lobbyStore,
-	meetingId: meetingId.value as string,
+	meetingDoc,
 });
 
 type AccessData = { allow_guest?: boolean; host_only_chat?: boolean };
@@ -1070,17 +1106,14 @@ onMounted(async () => {
 	// Check meeting access for unauthenticated users
 	if (!session.isLoggedIn) {
 		try {
-			const accessData = await frappeRequest({
-				url: "suite.meet.api.meeting.check_meeting_access",
-				params: {
-					meeting_id: meetingId.value,
-				},
+			const accessData = await submit(checkMeetingAccess, {
+				meeting_id: meetingId.value,
 			});
 
-			if ((accessData as AccessData).host_only_chat !== undefined) {
-				chatStore.hostOnlyChat = !!(accessData as AccessData).host_only_chat;
+			if (accessData?.host_only_chat !== undefined) {
+				chatStore.hostOnlyChat = !!accessData.host_only_chat;
 			}
-			if (!(accessData as { allow_guest?: boolean }).allow_guest) {
+			if (!accessData?.allow_guest) {
 				const loginUrl = `/login?redirect-to=${encodeURIComponent(`/meet/${meetingId.value}`)}`;
 				window.location.href = loginUrl;
 				return;

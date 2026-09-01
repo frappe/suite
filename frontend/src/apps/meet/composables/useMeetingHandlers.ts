@@ -1,4 +1,4 @@
-import { frappeRequest, toast } from "frappe-ui";
+import { toast } from "frappe-ui";
 import type { Ref } from "vue";
 import type { Router } from "vue-router";
 import type { SFUMeetingManager } from "../utils/SFUMeetingManager";
@@ -12,7 +12,6 @@ import type { CurrentUser } from "./useCurrentUser";
 import type { GridLayout } from "./useGridLayout";
 import type { LobbyStore } from "./useLobbyStore";
 import type { MediaState } from "./useMediaState";
-import type { DocumentResource } from "./useMeetingDoc";
 import type { ParticipantStore } from "./useParticipantStore";
 import type { RecoveryTimelineEntry } from "./useParticipantConnectionState";
 import type { RaiseHandStore } from "./useRaiseHandStore";
@@ -22,6 +21,7 @@ import {
 	type JoinPayload,
 	normalizeJoinPayload,
 } from "../types";
+import { submit, type Call } from "../utils/request";
 
 interface LobbyActions {
 	approveUser: (userId: string) => Promise<void>;
@@ -38,7 +38,11 @@ interface MediaControlsActions {
 	) => Promise<void>;
 }
 
-export type MeetingDocLike = DocumentResource;
+export interface MeetingDocLike {
+	banGuest: Call<unknown, { guest_id: string }>;
+	promoteToCohost: Call<unknown, { user_id: string }>;
+	reload: () => Promise<unknown>;
+}
 
 interface SFUConnectionActions {
 	sfuManager: Ref<SFUMeetingManager | null>;
@@ -189,13 +193,7 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 				return;
 			}
 			if (shouldBan) {
-				await frappeRequest({
-					url: "suite.meet.api.meeting.ban_guest",
-					params: {
-						meeting_id: deps.meetingId,
-						guest_id: participantId,
-					},
-				});
+				await submit(deps.meetingDoc.banGuest, { guest_id: participantId });
 				backendBanRecorded = true;
 			}
 
@@ -226,12 +224,8 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
 	const handlePromoteToCohost = async (participantId: string) => {
 		try {
-			const response = await frappeRequest({
-				url: "suite.meet.api.meeting.promote_to_cohost",
-				params: {
-					meeting_id: deps.meetingId,
-					user_id: participantId,
-				},
+			const response = await submit(deps.meetingDoc.promoteToCohost, {
+				user_id: participantId,
 			});
 
 			if (

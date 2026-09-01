@@ -419,6 +419,12 @@ ALLOWED_PATHS = [
     "/api/method/frappe.website.doctype.web_form.web_form.accept",
     "/api/method/frappe.core.doctype.user.user.test_password_strength",
     "/api/method/frappe.core.doctype.user.user.update_password",
+    "/api/v2/method/suite.meet.api.recording.get_state",
+    "/api/v2/method/suite.meet.api.recording.get_preflight",
+    "/api/v2/method/suite.meet.api.recording.start",
+    "/api/v2/method/suite.meet.api.recording.stop",
+    "/api/v2/method/suite.api.account.get_logged_in_user",
+    "/api/v2/method/suite.calendar.api.get_calendar_events",
     # drive — WebDAV mount root
     "/dav",
 ]
@@ -430,7 +436,12 @@ ALLOWED_WILDCARD_PATHS = [
     # endpoints still called by Frappe Framework (see override_whitelisted_methods).
     "/api/method/mail.api.",
     "/api/method/suite.calendar.api.",
-    "/api/method/suite.meet.api.",
+    # meet — recorder callbacks remain on their existing protocol during the API cutover
+    "/api/method/suite.meet.api.recording.recorder_",
+    "/api/v2/method/suite.meet.api.meeting.",
+    "/api/v2/method/suite.meet.api.schedule.",
+    "/api/v2/method/suite.meet.api.test_helpers.",
+    "/api/v2/document/Meet%20Room/",
     "/api/method/suite.drive.api.",
     "/api/method/suite.writer.api.",
     # writer — backward-compatible prefix for embed URLs stored in old documents

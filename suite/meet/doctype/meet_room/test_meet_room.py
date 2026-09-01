@@ -4,6 +4,7 @@
 import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests import IntegrationTestCase
+from frappe.tests.test_api import FrappeAPITestCase
 
 # On IntegrationTestCase, the doctype test records and all
 # link-field test record dependencies are recursively loaded
@@ -78,10 +79,30 @@ class IntegrationTestMeetRoom(IntegrationTestCase):
         room.reload()
         self.assertEqual(room.get_waiting_room(), [user])
 
+    def test_room_api_methods_are_post_only(self):
+        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+
+        for method_name in (
+            "approve_join_request",
+            "approve_all_join_requests",
+            "reject_join_request",
+            "get_waiting_room_details",
+            "ban_guest",
+            "promote_to_cohost",
+            "enable_e2ee",
+            "update_settings",
+        ):
+            with self.subTest(method=method_name):
+                method = getattr(room, method_name)
+                fn = getattr(method, "__func__", method)
+                self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], ("POST",))
+
     def test_every_access_field_rejects_generic_document_updates(self):
         user = self._ensure_user("room-protected@example.com", "Room Protected")
         mutations = {
             "owner": lambda room: room.set("owner", user),
+            "title": lambda room: room.set("title", "Changed outside the room API"),
+            "calendar_event": lambda room: room.set("calendar_event", "event-1"),
             "allow_guest": lambda room: room.set("allow_guest", not room.allow_guest),
             "meeting_type": lambda room: room.set("meeting_type", "restricted"),
             "host_only_chat": lambda room: room.set("host_only_chat", 1),
@@ -110,3 +131,42 @@ class IntegrationTestMeetRoom(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
         return email
+
+
+class TestMeetRoomAPI(FrappeAPITestCase):
+    version = "v2"
+
+    def test_document_method_route(self):
+        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+
+        response = self.post(
+            self.resource("Meet Room", room.name, "method", "get_waiting_room_details"),
+            {"sid": self.sid},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["data"], {"meeting_id": room.name, "waiting_users": []})
+
+    def test_document_method_returns_the_mutated_room(self):
+        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "restricted"}).insert()
+        room.append("waiting_room", {"user": "guest:test", "user_name": "Test Guest"})
+        room.allow_controlled_update("waiting_room")
+        room.save()
+
+        response = self.post(
+            self.resource("Meet Room", room.name, "method", "approve_join_request"),
+            {"sid": self.sid, "user_id": "guest:test"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned_room = response.json["docs"][0]
+        self.assertEqual(returned_room["waiting_room"], [])
+        self.assertIn("guest:test", [row["user"] for row in returned_room["members"]])
+
+    def test_removed_module_method_is_not_routable(self):
+        response = self.post(
+            self.method("suite.meet.api.meeting.get_meeting_e2ee_details"),
+            {"sid": self.sid, "meeting_id": "missing"},
+        )
+
+        self.assertNotEqual(response.status_code, 200)

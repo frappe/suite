@@ -5,7 +5,7 @@ import {
 	SidebarHeader,
 	SidebarItem,
 	SidebarSection,
-	createResource,
+	useCall,
 } from "frappe-ui";
 import { computed, inject, ref } from "vue";
 import { useStorage } from "@vueuse/core";
@@ -31,10 +31,8 @@ setupTheme();
 
 const isCollapsed = useStorage("isSidebarCollapsed", false);
 
-const userResource = createResource({
-	url: "suite.api.account.get_logged_in_user",
-	cache: "User",
-	auto: true,
+const userResource = useCall<{ name?: string; full_name?: string }>({
+	url: "/api/v2/method/suite.api.account.get_logged_in_user",
 });
 
 function selectTheme(theme: string) {

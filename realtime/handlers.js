@@ -73,15 +73,15 @@ const validate_guest = async (socket, payload) => {
 	try {
 		const body = new URLSearchParams(payload);
 		const response = await socket.frappe_request(
-			"/api/method/suite.meet.api.meeting.validate_guest_session",
+			"/api/v2/method/suite.meet.api.meeting.validate_guest_session",
 			{},
 			{ method: "POST", body },
 		);
-		const data = await response.json();
-		const status = GUEST_STATUSES.has(data?.message?.status)
-			? data.message.status
+		const bodyData = await response.json();
+		const status = GUEST_STATUSES.has(bodyData?.data?.status)
+			? bodyData.data.status
 			: undefined;
-		return data?.message?.valid === true
+		return bodyData?.data?.valid === true
 			? { ok: true, ...(status && { status }) }
 			: { ok: false, error: "unauthorized", ...(status && { status }) };
 	} catch {

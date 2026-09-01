@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNow } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { useCall } from 'frappe-ui'
 
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
@@ -73,10 +73,10 @@ const now = useNow({ interval: 30_000 })
 
 const timezone = () => dayjs.tz?.guess?.() || Intl.DateTimeFormat().resolvedOptions().timeZone
 
-const upcomingEvents = createResource({
-	url: 'suite.calendar.api.get_calendar_events',
-	cache: 'UpcomingMeetings',
-	makeParams: () => ({
+const upcomingEvents = useCall({
+	url: '/api/v2/method/suite.calendar.api.get_calendar_events',
+	immediate: false,
+	params: () => ({
 		account: calendarStore.accountId,
 		from_date: dayjs().startOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),
 		to_date: dayjs().endOf('day').format('YYYY-MM-DD[T]HH:mm:ss'),

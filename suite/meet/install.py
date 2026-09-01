@@ -19,6 +19,7 @@ def add_rate_limits() -> None:
     usage never reaches them, but spamming/DoS attempts are blocked.
     """
 
+    room_method = "suite.meet.doctype.meet_room.meet_room.MeetRoom"
     rate_limits = [
         {"method_path": "suite.meet.api.meeting.create", "limit": 10, "seconds": 60 * 60},
         {"method_path": "suite.meet.api.meeting.get_public_meeting_preview", "limit": 10, "seconds": 60},
@@ -35,12 +36,36 @@ def add_rate_limits() -> None:
             "limit": 30,
             "seconds": 60,
         },
-        {"method_path": "suite.meet.api.meeting.approve_join_request", "limit": 60, "seconds": 60},
-        {"method_path": "suite.meet.api.meeting.approve_all_join_requests", "limit": 10, "seconds": 60},
-        {"method_path": "suite.meet.api.meeting.reject_join_request", "limit": 60, "seconds": 60},
+        {"method_path": f"{room_method}.approve_join_request", "limit": 60, "seconds": 60},
+        {"method_path": f"{room_method}.approve_all_join_requests", "limit": 10, "seconds": 60},
+        {"method_path": f"{room_method}.reject_join_request", "limit": 60, "seconds": 60},
     ]
 
-    frappe.db.delete("Rate Limit", {"method_path": ["in", [rl["method_path"] for rl in rate_limits]]})
+    old_paths = [
+        "suite.meet.api.meeting.approve_join_request",
+        "suite.meet.api.meeting.approve_all_join_requests",
+        "suite.meet.api.meeting.reject_join_request",
+    ]
+    frappe.db.delete(
+        "Rate Limit",
+        {"method_path": ["in", old_paths + [rl["method_path"] for rl in rate_limits]]},
+    )
 
     for rl in rate_limits:
-        create_rate_limit(**rl)
+        if not rl["method_path"].startswith(room_method):
+            create_rate_limit(**rl)
+            continue
+
+        # Rate Limit validation resolves module functions only, while document methods
+        # are addressed by their class-qualified path at runtime.
+        frappe.get_doc(
+            {
+                "doctype": "Rate Limit",
+                "enabled": 1,
+                "ignore_in_developer_mode": 1,
+                "methods": "ALL",
+                "ip_based": 1,
+                **rl,
+            }
+        ).db_insert()
+        frappe.cache.hdel("rate_limits", rl["method_path"])

@@ -19,7 +19,7 @@ function createSocket(options = {}) {
 					if (options.jsonError) throw options.jsonError;
 					return (
 						options.responses?.[responseIndex++] ??
-						options.response ?? { message: { valid: true, status: "pending" } }
+						options.response ?? { data: { valid: true, status: "pending" } }
 					);
 				},
 			};
@@ -58,7 +58,7 @@ test("guest_subscribe validates structured proof before joining", async () => {
 	assert.deepEqual(fixture.joinedRooms, ["guest:guest_12345"]);
 	assert.equal(
 		fixture.requests[0].url,
-		"/api/method/suite.meet.api.meeting.validate_guest_session",
+		"/api/v2/method/suite.meet.api.meeting.validate_guest_session",
 	);
 	assert.equal(fixture.requests[0].url.includes("private-proof"), false);
 	assert.deepEqual(fixture.requests[0].params, {});
@@ -87,7 +87,7 @@ test("guest_subscribe rejects missing proof", async () => {
 });
 
 test("guest_subscribe rejects wrong-room or invalid proof response", async () => {
-	const fixture = createSocket({ response: { message: { valid: false } } });
+	const fixture = createSocket({ response: { data: { valid: false } } });
 	let acknowledgement;
 
 	await fixture.handlers.get("guest_subscribe")(subscription, (value) => {
@@ -100,7 +100,7 @@ test("guest_subscribe rejects wrong-room or invalid proof response", async () =>
 
 test("guest_subscribe propagates proof-bound terminal status without joining", async () => {
 	const fixture = createSocket({
-		response: { message: { valid: false, status: "rejected" } },
+		response: { data: { valid: false, status: "rejected" } },
 	});
 	let acknowledgement;
 
@@ -119,8 +119,8 @@ test("guest_subscribe propagates proof-bound terminal status without joining", a
 test("guest_subscribe acknowledges admission that races with room join", async () => {
 	const fixture = createSocket({
 		responses: [
-			{ message: { valid: true, status: "pending" } },
-			{ message: { valid: true, status: "admitted" } },
+			{ data: { valid: true, status: "pending" } },
+			{ data: { valid: true, status: "admitted" } },
 		],
 	});
 	let acknowledgement;
@@ -138,8 +138,8 @@ test("guest_subscribe acknowledges admission that races with room join", async (
 test("guest_subscribe leaves and acknowledges rejection that races with room join", async () => {
 	const fixture = createSocket({
 		responses: [
-			{ message: { valid: true, status: "pending" } },
-			{ message: { valid: false, status: "rejected" } },
+			{ data: { valid: true, status: "pending" } },
+			{ data: { valid: false, status: "rejected" } },
 		],
 	});
 	let acknowledgement;
@@ -158,8 +158,10 @@ test("guest_subscribe leaves and acknowledges rejection that races with room joi
 	});
 });
 
-test("guest_subscribe acknowledges malformed validation responses", async () => {
-	const fixture = createSocket({ response: {} });
+test("guest_subscribe acknowledges malformed and legacy validation responses", async () => {
+	const fixture = createSocket({
+		response: { message: { valid: true, status: "pending" } },
+	});
 	let acknowledgement;
 
 	await fixture.handlers.get("guest_subscribe")(subscription, (value) => {
@@ -220,7 +222,7 @@ test("guest_unsubscribe permits every recognized proof-bound status", async () =
 	for (const status of ["pending", "admitted", "expired", "rejected", "banned"]) {
 		const fixture = createSocket({
 			response: {
-				message: {
+				data: {
 					valid: ["pending", "admitted"].includes(status),
 					status,
 				},
@@ -239,8 +241,8 @@ test("guest_unsubscribe permits every recognized proof-bound status", async () =
 
 test("guest_unsubscribe rejects invalid proof without a status", async () => {
 	for (const response of [
-		{ message: { valid: false } },
-		{ message: { valid: false, status: "unrecognized" } },
+		{ data: { valid: false } },
+		{ data: { valid: false, status: "unrecognized" } },
 	]) {
 		const fixture = createSocket({ response });
 

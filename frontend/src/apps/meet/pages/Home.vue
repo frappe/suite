@@ -146,8 +146,8 @@ import {
 	Button,
 	Dialog,
 	FormControl,
-	createResource,
 	toast,
+	useCall,
 } from "frappe-ui";
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
@@ -160,6 +160,7 @@ import {
 	adjustScheduleStartTime,
 } from "@/apps/calendar/utils/scheduleTime";
 import { useConnectionState } from "../composables/useConnectionState";
+import { submit } from "../utils/request";
 import MeetSidebar from "../components/MeetSidebar.vue";
 import UpcomingMeetings from "../components/UpcomingMeetings.vue";
 import LucideCalendarPlus from "~icons/lucide/calendar-plus";
@@ -198,10 +199,8 @@ watch(scheduleEndTime, (endTime) => {
 	scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime);
 });
 
-const userResource = createResource({
-	url: "suite.api.account.get_logged_in_user",
-	cache: "User",
-	auto: true,
+const userResource = useCall<{ name?: string; full_name?: string; user_image?: string }>({
+	url: "/api/v2/method/suite.api.account.get_logged_in_user",
 });
 
 const firstName = computed(() => {
@@ -209,9 +208,10 @@ const firstName = computed(() => {
 	return name.split(" ")[0] || "there";
 });
 
-const createMeeting = createResource({
-	url: "suite.meet.api.meeting.create",
+const createMeeting = useCall<string, { meeting_type: "open" | "restricted" }>({
+	url: "/api/v2/method/suite.meet.api.meeting.create",
 	method: "POST",
+	immediate: false,
 	onSuccess: (meeting_code: string) => {
 		router.push({
 			name: "meet-meeting",
@@ -265,9 +265,10 @@ const scheduledParticipants = computed(() => {
 	return participants;
 });
 
-const scheduleMeeting = createResource({
-	url: "suite.meet.api.schedule.create_scheduled_meeting",
-	makeParams: () => ({
+const scheduleMeeting = useCall({
+	url: "/api/v2/method/suite.meet.api.schedule.create_scheduled_meeting",
+	method: "POST",
+	params: () => ({
 		account: calendarStore.accountId,
 		title: scheduleTitle.value,
 		start: scheduleStart.value.format("YYYY-MM-DD[T]HH:mm:ss"),
@@ -276,6 +277,7 @@ const scheduleMeeting = createResource({
 		participants: scheduledParticipants.value,
 		send_scheduling_messages: scheduledParticipants.value.length > 1,
 	}),
+	immediate: false,
 	onSuccess: () => {
 		showScheduleDialog.value = false;
 		toast.success("Meeting scheduled.");
@@ -288,8 +290,7 @@ const scheduleMeeting = createResource({
 
 const startMeeting = (meetingType: "open" | "restricted") => {
 	const toastId = toast.loading("Creating meeting...");
-	createMeeting
-		.submit({ meeting_type: meetingType })
+	submit(createMeeting, { meeting_type: meetingType })
 		.then((meetingCode: string) => {
 			toast.dismiss(toastId);
 			toast.success("Meeting created successfully!", {
@@ -336,7 +337,7 @@ const submitScheduledMeeting = () => {
 		toast.error("Enter a valid date and an end time after the start time.");
 		return;
 	}
-	toast.promise(scheduleMeeting.submit(), {
+	toast.promise(submit(scheduleMeeting), {
 		loading: "Scheduling meeting...",
 		error: "Failed to schedule meeting. Please try again.",
 	});

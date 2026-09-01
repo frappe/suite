@@ -14,11 +14,14 @@ from suite.meet.utils.user import (
     get_user_info,
     unique_users,
 )
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 
 class MeetRoom(Document):
     CONTROLLED_FIELDS: ClassVar[set[str]] = {
         "owner",
+        "title",
+        "calendar_event",
         "allow_guest",
         "meeting_type",
         "host_only_chat",
@@ -180,6 +183,16 @@ class MeetRoom(Document):
                     "waiting_count": waiting_count,
                 },
             )
+
+    def publish_waiting_room_updated(self):
+        waiting_count = len(self.get_waiting_room()) + len(guest_access.list_pending(self.name))
+        frappe.publish_realtime(
+            "meeting_waiting_room_updated",
+            doctype=self.doctype,
+            docname=self.name,
+            message={"meeting": self.name, "waiting_count": waiting_count},
+            after_commit=True,
+        )
 
     def after_insert(self):
         self.join(frappe.session.user)
@@ -390,23 +403,24 @@ class MeetRoom(Document):
         if target_user not in self.get_members():
             frappe.throw(_("User is not currently in the meeting"))
 
-    def promote_to_cohost(self, user: str, target_user: str) -> dict:
+    @frappe.whitelist(methods=["POST"])
+    def promote_to_cohost(self, user_id: str) -> dict:
         """Promote a user to co-host during an active meeting (host only)"""
-        self.validate_can_promote_to_cohost(user, target_user)
+        self.lock_for_update()
+        self.validate_can_promote_to_cohost(frappe.session.user, user_id)
 
-        self.add_user_to_table("co_hosts", target_user)
-        self.allow_controlled_update("co_hosts")
+        self.add_user_to_table("co_hosts", user_id)
         self.save()
         frappe.publish_realtime(
             "meeting:cohost_promoted",
-            message={"meeting": self.name, "user": target_user},
-            user=target_user,
+            message={"meeting": self.name, "user": user_id},
+            user=user_id,
             after_commit=True,
         )
 
         return {
             "meeting_id": self.name,
-            "user_id": target_user,
+            "user_id": user_id,
             "message": _("User promoted to co-host successfully"),
         }
 
@@ -431,7 +445,106 @@ class MeetRoom(Document):
         if self.is_user_banned(guest_id):
             frappe.throw(_("Guest is banned from this meeting"))
 
-    @frappe.whitelist()
+    @frappe.whitelist(methods=["POST"])
+    @dynamic_rate_limit()
+    def approve_join_request(self, user_id: str) -> dict:
+        """Approve a user's join request from the waiting room."""
+        self.lock_for_update()
+        if not self.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Only hosts and co-hosts can approve join requests"))
+        if user_id.startswith("guest_"):
+            lease = guest_access.admit(self.name, user_id)
+            frappe.publish_realtime(
+                "meet:guest_join_approved",
+                {
+                    "meeting_id": self.name,
+                    "guest_id": user_id,
+                    "guest_name": lease.guest_name,
+                    "message": "Your join request has been approved",
+                },
+                room=f"guest:{user_id}",
+                after_commit=True,
+            )
+            self.publish_waiting_room_updated()
+        else:
+            self.approve_user(user_id)
+
+        return {"meeting_id": self.name, "user_id": user_id, "message": "User approved successfully"}
+
+    @frappe.whitelist(methods=["POST"])
+    @dynamic_rate_limit()
+    def approve_all_join_requests(self) -> dict:
+        """Approve all users' join requests from the waiting room."""
+        self.lock_for_update()
+        self.approve_all_users()
+        for lease in guest_access.list_pending(self.name):
+            self.approve_join_request(lease.guest_id)
+
+        return {"meeting_id": self.name, "message": "All users approved successfully"}
+
+    @frappe.whitelist(methods=["POST"])
+    @dynamic_rate_limit()
+    def reject_join_request(self, user_id: str) -> dict:
+        """Reject a user's join request from the waiting room."""
+        self.lock_for_update()
+        if user_id.startswith("guest_"):
+            if not self.is_host_or_cohost(frappe.session.user):
+                frappe.throw(_("Only hosts and co-hosts can reject join requests"))
+            guest_access.reject(self.name, user_id)
+            frappe.publish_realtime(
+                "meet:guest_join_rejected",
+                {"meeting_id": self.name, "guest_id": user_id},
+                room=f"guest:{user_id}",
+                after_commit=True,
+            )
+            self.publish_waiting_room_updated()
+        else:
+            self.reject_user(user_id)
+
+        return {"meeting_id": self.name, "user_id": user_id, "message": "User rejected successfully"}
+
+    @frappe.whitelist(methods=["POST"])
+    def get_waiting_room_details(self) -> dict:
+        """Return display details for users waiting for approval."""
+        if not self.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Access denied"))
+
+        user_details = []
+        for row in self.waiting_room or []:
+            user = row.user
+            user_info = get_user_info(user) or {}
+            user_name = row.user_name or user_info.get("full_name") or user
+            user_details.append(
+                {
+                    "user_id": user,
+                    "full_name": user_name,
+                    "user_name": user_name,
+                    "user_image": user_info.get("user_image"),
+                    "is_guest": user_info.get("is_guest", user.startswith("guest_")),
+                }
+            )
+
+        user_details.extend(
+            {
+                "user_id": lease.guest_id,
+                "full_name": lease.guest_name,
+                "user_name": lease.guest_name,
+                "user_image": None,
+                "is_guest": True,
+            }
+            for lease in guest_access.list_pending(self.name)
+        )
+
+        return {"meeting_id": self.name, "waiting_users": user_details}
+
+    @frappe.whitelist(methods=["POST"])
+    def ban_guest(self, guest_id: str) -> dict:
+        if not self.is_host_or_cohost(frappe.session.user):
+            frappe.throw(_("Only hosts and co-hosts can ban guests"), frappe.PermissionError)
+        guest_access.ban(self.name, guest_id)
+        return {"meeting_id": self.name, "guest_id": guest_id, "status": "banned"}
+
+    @frappe.whitelist(methods=["POST"])
     def enable_e2ee(self) -> bool:
         """Enable epoch-based E2EE for this meeting."""
         if not self.is_host_or_cohost(frappe.session.user):
@@ -471,13 +584,13 @@ class MeetRoom(Document):
 
         return True
 
-    @frappe.whitelist()
+    @frappe.whitelist(methods=["POST"])
     def update_settings(
         self,
         allow_guest: int | None = None,
         meeting_type: str | None = None,
         host_only_chat: int | None = None,
-    ) -> None:
+    ) -> dict:
         """
         Update meeting settings (host or co-host only)
         """
@@ -506,6 +619,13 @@ class MeetRoom(Document):
         if updated_fields:
             self.allow_controlled_update(*updated_fields)
             self.save()
+
+        return updated_fields
+
+    def lock_for_update(self) -> None:
+        """Lock and refresh this instance so the endpoint returns the mutated document."""
+        frappe.db.get_value("Meet Room", self.name, "name", for_update=True)
+        self.reload()
 
 
 def generate(segment_length=4, num_segments=3, separator="-"):

@@ -1,5 +1,6 @@
-import { frappeRequest, toast } from "frappe-ui";
+import { toast } from "frappe-ui";
 import { getErrorMessage } from "../utils/error";
+import { submit, type Call } from "../utils/request";
 import type { LobbyStore } from "./useLobbyStore";
 
 interface LobbyAPI {
@@ -8,21 +9,21 @@ interface LobbyAPI {
 	rejectUser: (userId: string) => Promise<void>;
 }
 
+interface LobbyMeetingDoc {
+	approveJoinRequest: Call<unknown, { user_id: string }>;
+	approveAllJoinRequests: Call<unknown>;
+	rejectJoinRequest: Call<unknown, { user_id: string }>;
+}
+
 export function useLobby(deps: {
 	lobbyStore: LobbyStore;
-	meetingId: string;
+	meetingDoc: LobbyMeetingDoc;
 }): LobbyAPI {
-	const { lobbyStore, meetingId } = deps;
+	const { lobbyStore, meetingDoc } = deps;
 
 	const approveUser = async (userId: string) => {
 		try {
-			await frappeRequest({
-				url: "suite.meet.api.meeting.approve_join_request",
-				params: {
-					meeting_id: meetingId,
-					user_id: userId,
-				},
-			});
+			await submit(meetingDoc.approveJoinRequest, { user_id: userId });
 
 			lobbyStore.removeLobbyUser(userId);
 		} catch (error) {
@@ -33,12 +34,7 @@ export function useLobby(deps: {
 
 	const approveAllUsers = async () => {
 		try {
-			await frappeRequest({
-				url: "suite.meet.api.meeting.approve_all_join_requests",
-				params: {
-					meeting_id: meetingId,
-				},
-			});
+			await submit(meetingDoc.approveAllJoinRequests);
 
 			lobbyStore.setLobbyUsers([]);
 		} catch (error) {
@@ -49,13 +45,7 @@ export function useLobby(deps: {
 
 	const rejectUser = async (userId: string) => {
 		try {
-			await frappeRequest({
-				url: "suite.meet.api.meeting.reject_join_request",
-				params: {
-					meeting_id: meetingId,
-					user_id: userId,
-				},
-			});
+			await submit(meetingDoc.rejectJoinRequest, { user_id: userId });
 
 			lobbyStore.removeLobbyUser(userId);
 		} catch (error) {

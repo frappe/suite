@@ -1,4 +1,3 @@
-import { frappeRequest } from "frappe-ui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Socket } from "socket.io-client";
 import {
@@ -6,7 +5,8 @@ import {
 	getApprovedGuestConnectionDetails,
 } from "./useGuestRealtime";
 
-vi.mock("frappe-ui", () => ({ frappeRequest: vi.fn() }));
+vi.mock("../utils/request", () => ({ request: vi.fn() }));
+import { request } from "../utils/request";
 
 const session = {
 	guestId: "guest_private",
@@ -56,7 +56,7 @@ describe("guest realtime lifecycle", () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it("fetches admitted credentials through the POST-only proof-bound endpoint", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			status: "joined",
 			guest_id: "guest_private",
 			auth_token: "guest-jwt",
@@ -64,15 +64,14 @@ describe("guest realtime lifecycle", () => {
 
 		await getApprovedGuestConnectionDetails(session);
 
-		expect(frappeRequest).toHaveBeenCalledWith({
-			url: "suite.meet.api.meeting.get_approved_guest_connection_details",
-			method: "POST",
-			params: {
+		expect(request).toHaveBeenCalledWith(
+			"/api/v2/method/suite.meet.api.meeting.get_approved_guest_connection_details",
+			{
 				meeting_id: "room-1",
 				guest_id: "guest_private",
 				guest_session_token: "private-proof",
 			},
-		});
+		);
 	});
 
 	it.each(["pending", "admitted"] as const)(
@@ -175,7 +174,7 @@ describe("guest realtime lifecycle", () => {
 
 			await vi.advanceTimersByTimeAsync(60_000);
 
-			expect(frappeRequest).not.toHaveBeenCalled();
+			expect(request).not.toHaveBeenCalled();
 		} finally {
 			vi.useRealTimers();
 		}

@@ -1,6 +1,5 @@
 import type { APIRequestContext } from "@playwright/test";
 import type { Credentials } from "../../shared/auth";
-import { frappeData } from "../../shared/frappe";
 
 export const meetHost: Credentials = {
 	email: "meet-e2e-host@example.com",
@@ -12,10 +11,18 @@ export async function provisionMeetHost(
 	request: APIRequestContext,
 ): Promise<void> {
 	const response = await request.post(
-		"/api/method/suite.meet.api.test_helpers.provision_host",
+		"/api/v2/method/suite.meet.api.test_helpers.provision_host",
 	);
-	const credentials = await frappeData<Credentials>(response);
+	if (!response.ok()) {
+		throw new Error(
+			`Meet host provisioning failed with status ${response.status()}: ${await response.text()}`,
+		);
+	}
+	const { data: credentials } = (await response.json()) as {
+		data?: Credentials;
+	};
 	if (
+		!credentials ||
 		credentials.email !== meetHost.email ||
 		credentials.password !== meetHost.password
 	) {

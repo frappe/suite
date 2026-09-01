@@ -13,9 +13,20 @@ import {
 	Users,
 	X,
 } from 'lucide-vue-next'
-import { Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, toast } from 'frappe-ui'
+import {
+	Button,
+	Dialog,
+	Dropdown,
+	FormControl,
+	Switch,
+	Tooltip,
+	createResource,
+	toast,
+	useCall,
+} from 'frappe-ui'
 
 import meetLogo from '@/assets/app-logos/meet.png'
+import { submit as submitCall } from '@/apps/meet/utils/request'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
 import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
@@ -458,15 +469,18 @@ const createEvent = createResource({
 	onSuccess: handleSuccess,
 })
 
-const createMeetEvent = createResource({
-	url: 'suite.meet.api.schedule.create_scheduled_meeting',
-	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
-		account: store.accountId,
-		...eventParams.value,
-		send_scheduling_messages: sendEmail,
-	}),
+const createMeetEventCall = useCall({
+	url: '/api/v2/method/suite.meet.api.schedule.create_scheduled_meeting',
 	onSuccess: handleSuccess,
 })
+const createMeetEvent = {
+	submit: ({ sendEmail }: { sendEmail: boolean }) =>
+		submitCall(createMeetEventCall, {
+			account: store.accountId,
+			...eventParams.value,
+			send_scheduling_messages: sendEmail,
+		}),
+}
 
 const editEventInstance = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
@@ -494,9 +508,8 @@ const editEvent = createResource({
 	onSuccess: handleSuccess,
 })
 
-const createMeetLink = createResource({
-	url: 'suite.meet.api.schedule.create_meet_link',
-	makeParams: () => ({ account: store.accountId, title: event.title }),
+const createMeetLink = useCall<{ meeting_url: string }>({
+	url: '/api/v2/method/suite.meet.api.schedule.create_meet_link',
 })
 
 const isUpdateInstance = ref(false)
@@ -524,7 +537,10 @@ const submitEvent = (sendEmail: boolean) => {
 		// retry rather than creating an orphaned duplicate.
 		const alreadyMinted = (event.links || []).some((l: any) => l?.href?.includes('/meet/'))
 		if (attachMeetLink && !alreadyMinted) {
-			const { meeting_url } = await createMeetLink.submit()
+			const { meeting_url } = await submitCall(createMeetLink, {
+				account: store.accountId,
+				title: event.title,
+			})
 			event.links = [...(event.links || []), { href: meeting_url, content_type: 'text/html' }]
 		}
 		return resource.submit({ sendEmail })

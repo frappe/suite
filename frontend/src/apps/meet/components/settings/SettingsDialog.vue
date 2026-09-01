@@ -51,15 +51,16 @@ import {
 	SettingsNavItem,
 	SettingsPanel,
 	SettingsSidebar,
+	useDoc,
 } from "frappe-ui";
 import { type Component, computed, h, markRaw, ref, watch } from "vue";
+import { session } from "@/boot/session";
 import LucideAudioLines from "~icons/lucide/audio-lines";
 import LucideBell from "~icons/lucide/bell";
 import LucideCamera from "~icons/lucide/camera";
 import LucideLayoutDashboard from "~icons/lucide/layout-dashboard";
 import LucideMonitorSmartphone from "~icons/lucide/monitor-smartphone";
 import LucideUser from "~icons/lucide/user";
-import { useMeetingDoc } from "../../composables/useMeetingDoc";
 import AudioSettingsTab from "./AudioSettingsTab.vue";
 import BackgroundSettingsTab from "./BackgroundSettingsTab.vue";
 import DeviceSettingsTab from "./DeviceSettingsTab.vue";
@@ -91,14 +92,25 @@ const emit = defineEmits<{
 	"update:modelValue": [value: boolean];
 }>();
 
-const { isCurrentUserHost, isCurrentUserCohost, getMeetingDoc } =
-	useMeetingDoc();
-
-// sometimes we won't see meeting access tab right after creating a meeting
-// this loads the meeting doc to avoid that
-if (props.meetingId) {
-	getMeetingDoc(props.meetingId);
-}
+const meetingDoc = useDoc<{
+	name: string;
+	owner?: string;
+	co_hosts?: { user: string }[];
+}>({
+	doctype: "Meet Room",
+	name: () => props.meetingId || "",
+});
+const isCurrentUserHost = computed(
+	() => meetingDoc.doc?.owner === session.user?.sessionUser,
+);
+const isCurrentUserCohost = computed(() =>
+	Boolean(
+		session.user?.sessionUser &&
+			meetingDoc.doc?.co_hosts?.some(
+				(row) => row.user === session.user?.sessionUser,
+			),
+	),
+);
 
 const show = computed({
 	get: () => props.modelValue,

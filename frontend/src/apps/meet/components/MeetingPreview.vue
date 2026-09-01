@@ -104,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, createResource, FormControl, toast } from "frappe-ui";
+import { Button, FormControl, toast, useCall } from "frappe-ui";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import AvatarGroup from "../components/AvatarGroup.vue";
 import ParticipantTile from "../components/ParticipantTile.vue";
@@ -119,6 +119,8 @@ import {
 import { session } from "@/boot/session";
 import { getErrorMessage } from "../utils/error";
 import { getInitials } from "../utils/text";
+import type { JoinPayload } from "../types";
+import { submit } from "../utils/request";
 import type { Participant } from "../utils/media/ParticipantManager";
 interface VideoElement {
 	$el?:
@@ -147,7 +149,7 @@ const emit = defineEmits<{
 	"toggle-camera": [];
 	"join-from-preview": [switchHere: boolean];
 	"device-changed": [event: unknown];
-	"guest-join-complete": [data: { guestName: string; joinResult: unknown }];
+	"guest-join-complete": [data: { guestName: string; joinResult: JoinPayload }];
 }>();
 
 const guestName = ref("");
@@ -167,19 +169,19 @@ onMounted(() => {
 });
 const guestNameInputRef = ref<VideoElement | null>(null);
 
-const joinGuestAPI = createResource({
-	url: "suite.meet.api.meeting.join_meeting_as_guest",
-	makeParams: () => {
+const joinGuestAPI = useCall({
+	url: "/api/v2/method/suite.meet.api.meeting.join_meeting_as_guest",
+	method: "POST",
+	immediate: false,
+	params: () => {
 		const guestSession = readActiveGuestSession(props.meetingId);
 		return {
 			meeting_id: props.meetingId,
 			guest_name: guestName.value.trim(),
-			...(guestSession
-				? {
-						guest_id: guestSession.guestId,
-						guest_session_token: guestSession.guestSessionToken,
-					}
-				: {}),
+			...(guestSession && {
+				guest_id: guestSession.guestId,
+				guest_session_token: guestSession.guestSessionToken,
+			}),
 		};
 	},
 });
@@ -245,7 +247,7 @@ const handleJoin = async () => {
 		}
 
 		try {
-			const result = await joinGuestAPI.submit();
+			const result = await submit<JoinPayload>(joinGuestAPI);
 
 			emit("guest-join-complete", {
 				guestName: guestName.value.trim(),

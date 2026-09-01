@@ -17,11 +17,8 @@ const mockSignalChannel = () => ({
 	updateAuth: vi.fn(),
 });
 
-vi.mock("frappe-ui", () => ({
-	frappeRequest: vi.fn(),
-}));
-
-import { frappeRequest } from "frappe-ui";
+vi.mock("../request", () => ({ request: vi.fn() }));
+import { request } from "../request";
 
 beforeEach(() => {
 	vi.clearAllMocks();
@@ -482,13 +479,13 @@ describe("scheduleTokenRefresh", () => {
 		client.connectionDetails.tokenExpiresAt = Date.now() + 10_000;
 		client.connectionDetails.meetingId = "meet-1";
 
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "new-token",
 			expires_in: 3600,
 			codec_strategy: "svc",
 		});
 		client.scheduleTokenRefresh();
-		expect(frappeRequest).toHaveBeenCalled();
+		expect(request).toHaveBeenCalled();
 	});
 
 	it("does not refresh an already-expired token", () => {
@@ -498,7 +495,7 @@ describe("scheduleTokenRefresh", () => {
 
 		client.scheduleTokenRefresh();
 
-		expect(frappeRequest).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
 		expect(client.tokenRefreshTimer).toBeNull();
 	});
 
@@ -510,7 +507,7 @@ describe("scheduleTokenRefresh", () => {
 
 		expect(vi.getTimerCount()).toBe(1);
 		vi.advanceTimersByTime(239_999);
-		expect(frappeRequest).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
 	});
 
 	it("clears existing timer before scheduling", () => {
@@ -571,11 +568,11 @@ describe("getConnectionDetails", () => {
 		});
 		expect(details.authToken).toBe("pre-tok");
 		expect(details.isHost).toBe(true);
-		expect(frappeRequest).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
 	});
 
 	it("ignores prefetched details for a different meeting id", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "tok-1",
 			meeting_id: "meet-1",
 			user_id: "usr-1",
@@ -602,11 +599,11 @@ describe("getConnectionDetails", () => {
 			isCohost: false,
 		});
 		expect(details.authToken).toBe("tok-1");
-		expect(frappeRequest).toHaveBeenCalled();
+		expect(request).toHaveBeenCalled();
 	});
 
 	it("fetches regular connection details", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "tok-1",
 			meeting_id: "meet-1",
 			user_id: "usr-1",
@@ -627,11 +624,9 @@ describe("getConnectionDetails", () => {
 		expect(details.e2eeRequired).toBe(true);
 		expect(details.isHost).toBe(true);
 		expect(details.isCohost).toBe(false);
-		expect(frappeRequest).toHaveBeenCalledWith(
-			expect.objectContaining({
-				url: "suite.meet.api.meeting.get_sfu_connection_details",
-				params: { meeting_id: "meet-1" },
-			}),
+		expect(request).toHaveBeenCalledWith(
+			"/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+			{ meeting_id: "meet-1" },
 		);
 	});
 
@@ -641,7 +636,7 @@ describe("getConnectionDetails", () => {
 		sessionStorage.setItem("guest_meeting_id", "meet-2");
 		sessionStorage.setItem("guest_session_token", "private-proof");
 
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "fresh-guest-token",
 			expires_in: 300,
 			sfu_url: "https://sfu.example.com",
@@ -655,14 +650,14 @@ describe("getConnectionDetails", () => {
 		expect(details.userId).toBe("guest-1");
 		expect(details.userData?.is_guest).toBe(true);
 		expect(details.e2eeRequired).toBe(true);
-		expect(frappeRequest).toHaveBeenCalledWith({
-			url: "suite.meet.api.meeting.refresh_guest_sfu_token",
-			params: {
+		expect(request).toHaveBeenCalledWith(
+			"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+			{
 				meeting_id: "meet-2",
 				guest_id: "guest-1",
 				guest_session_token: "private-proof",
 			},
-		});
+		);
 	});
 });
 
@@ -684,7 +679,7 @@ describe("connect refresh", () => {
 		};
 		const signalChannel = client.signalChannel;
 
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "fresh-token",
 			meeting_id: "meet-1",
 			user_id: "usr-1",
@@ -728,7 +723,7 @@ describe("connect refresh", () => {
 			isCohost: false,
 		};
 
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "fresh-guest-token-2",
 			expires_in: 300,
 			sfu_url: "https://sfu.example.com",
@@ -951,7 +946,7 @@ describe("E2EE signaling payloads", () => {
 	});
 
 	it("picks up e2ee_required returned by refresh_sfu_token", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "tok-2",
 			expires_in: 3600,
 			codec_strategy: "svc",
@@ -965,7 +960,7 @@ describe("E2EE signaling payloads", () => {
 
 	it("refreshes guests only with their private session proof", async () => {
 		sessionStorage.setItem("guest_session_token", "private-proof");
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "guest-token-2",
 			expires_in: 300,
 		});
@@ -976,14 +971,14 @@ describe("E2EE signaling payloads", () => {
 
 		await client.refreshToken();
 
-		expect(frappeRequest).toHaveBeenCalledWith({
-			url: "suite.meet.api.meeting.refresh_guest_sfu_token",
-			params: {
+		expect(request).toHaveBeenCalledWith(
+			"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+			{
 				meeting_id: "meet-2",
 				guest_id: "guest-2",
 				guest_session_token: "private-proof",
 			},
-		});
+		);
 		expect(client.connectionDetails.tokenExpiresAt).toBe(Date.now() + 300_000);
 	});
 
@@ -996,11 +991,11 @@ describe("E2EE signaling payloads", () => {
 		await expect(client.refreshToken()).rejects.toThrow(
 			"Guest session proof required",
 		);
-		expect(frappeRequest).not.toHaveBeenCalled();
+		expect(request).not.toHaveBeenCalled();
 	});
 
 	it("does not downgrade local e2ee requirement during token refresh", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "tok-2",
 			expires_in: 3600,
 			codec_strategy: "svc",
@@ -1016,7 +1011,7 @@ describe("E2EE signaling payloads", () => {
 		const refreshResolvers: Array<
 			(value: { auth_token: string; expires_in: number }) => void
 		> = [];
-		vi.mocked(frappeRequest).mockImplementation(
+		vi.mocked(request).mockImplementation(
 			() => new Promise((resolve) => refreshResolvers.push(resolve)),
 		);
 		const client = createClient();
@@ -1029,7 +1024,7 @@ describe("E2EE signaling payloads", () => {
 		const promotionRefresh = client.refreshToken({ forceNewRequest: true });
 		refreshResolvers[0]({ auth_token: "pre-promotion", expires_in: 3600 });
 		await scheduledRefresh;
-		await vi.waitFor(() => expect(frappeRequest).toHaveBeenCalledTimes(2));
+		await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
 		refreshResolvers[1]({ auth_token: "post-promotion", expires_in: 3600 });
 
 		await expect(
@@ -1042,7 +1037,7 @@ describe("E2EE signaling payloads", () => {
 
 	it("discards a token refresh from before disconnect", async () => {
 		let resolveRefresh!: (value: { auth_token: string; expires_in: number }) => void;
-		vi.mocked(frappeRequest).mockImplementation(
+		vi.mocked(request).mockImplementation(
 			() => new Promise((resolve) => (resolveRefresh = resolve)),
 		);
 		const client = createClient();
@@ -1060,7 +1055,7 @@ describe("E2EE signaling payloads", () => {
 	});
 
 	it("does not sync a refreshed token after the connection is rebuilt", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "old-connection-token",
 			expires_in: 3600,
 		});
@@ -1159,7 +1154,7 @@ describe("setupDefaultHandlers", () => {
 	});
 
 	it("recovers auth:expired through token refresh and server token update", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "fresh-token",
 			expires_in: 3600,
 		});
@@ -1180,7 +1175,7 @@ describe("setupDefaultHandlers", () => {
 	});
 
 	it("refreshes an already-expired token before a reconnect attempt", async () => {
-		vi.mocked(frappeRequest).mockResolvedValue({
+		vi.mocked(request).mockResolvedValue({
 			auth_token: "reconnect-token",
 			expires_in: 3600,
 		});

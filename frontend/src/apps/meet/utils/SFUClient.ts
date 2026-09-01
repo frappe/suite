@@ -1,7 +1,6 @@
 // Copyright (c) 2025, Frappe and contributors
 // For license information, please see license.txt
 
-import { frappeRequest } from "frappe-ui";
 import type {
 	AppData,
 	DtlsParameters,
@@ -27,6 +26,7 @@ import type { E2eeEpochEnvelope } from "./media/E2EEEpochSignaling";
 import { getE2EETransformCapability } from "./media/e2ee";
 import type { SignalChannel } from "./media/SignalChannel";
 import type { ClientTelemetryEvent } from "./telemetry/ClientTelemetry";
+import { request } from "./request";
 
 export interface ConnectionDetails {
 	authToken: string | null;
@@ -456,14 +456,14 @@ export class SFUClient {
 			}
 
 			try {
-				const response = requireJoinPayload(await frappeRequest({
-					url: "suite.meet.api.meeting.refresh_guest_sfu_token",
-					params: {
+				const response = requireJoinPayload(await request(
+					"/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token",
+					{
 						meeting_id: meetingId,
 						guest_id: guestId,
 						guest_session_token: guestSessionToken,
 					},
-				}), "guest SFU connection details");
+				), "guest SFU connection details");
 				const authToken = requireString(
 					response.auth_token,
 					"auth_token",
@@ -497,10 +497,10 @@ export class SFUClient {
 			}
 		}
 
-		const response = requireJoinPayload(await frappeRequest({
-			url: "suite.meet.api.meeting.get_sfu_connection_details",
-			params: { meeting_id: meetingId },
-		}), "SFU connection details");
+		const response = requireJoinPayload(await request(
+			"/api/v2/method/suite.meet.api.meeting.get_sfu_connection_details",
+			{ meeting_id: meetingId },
+		), "SFU connection details");
 		const authToken = requireString(
 			response.auth_token,
 			"auth_token",
@@ -665,18 +665,18 @@ export class SFUClient {
 						throw new Error("Guest session proof required for token refresh");
 					}
 					const response = requireJoinPayload(
-						await frappeRequest({
-							url: isGuest
-								? "suite.meet.api.meeting.refresh_guest_sfu_token"
-								: "suite.meet.api.meeting.refresh_sfu_token",
-							params: isGuest
+						await request(
+							isGuest
+								? "/api/v2/method/suite.meet.api.meeting.refresh_guest_sfu_token"
+								: "/api/v2/method/suite.meet.api.meeting.refresh_sfu_token",
+							isGuest
 								? {
 										meeting_id: this.connectionDetails.meetingId,
 										guest_id: this.connectionDetails.userId,
 										guest_session_token: guestSessionToken,
 									}
 								: { meeting_id: this.connectionDetails.meetingId },
-						}),
+						),
 						"SFU token refresh",
 					);
 					const authToken = requireString(

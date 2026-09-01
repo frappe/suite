@@ -1,5 +1,5 @@
-import { frappeRequest } from "frappe-ui";
 import type { Socket } from "socket.io-client";
+import { request } from "../utils/request";
 import {
 	isUnknownRecord,
 	type JoinPayload,
@@ -70,15 +70,14 @@ export async function getApprovedGuestConnectionDetails(
 	session: StoredGuestSession,
 ): Promise<JoinPayload> {
 	const response = normalizeJoinPayload(
-		await frappeRequest({
-			url: "suite.meet.api.meeting.get_approved_guest_connection_details",
-			method: "POST",
-			params: {
+		await request(
+			"/api/v2/method/suite.meet.api.meeting.get_approved_guest_connection_details",
+			{
 				meeting_id: session.meetingId,
 				guest_id: session.guestId,
 				guest_session_token: session.guestSessionToken,
 			},
-		}),
+		),
 	);
 	if (response?.status !== "joined" || !response.auth_token) {
 		throw new Error("Guest is not admitted to this meeting");

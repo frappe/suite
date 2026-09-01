@@ -9,29 +9,19 @@
 </template>
 
 <script setup lang="ts">
-import { frappeRequest, SettingsRow, Switch, toast } from "frappe-ui";
+import { SettingsRow, Switch, toast, useCall } from "frappe-ui";
 import { computed, onMounted, ref, watch } from "vue";
 import { useDeviceIdentity } from "../../composables/useDeviceIdentity";
 import { getE2EETransformCapability } from "../../utils/media/e2ee";
-
-interface MeetingDocument {
-	allow_guest?: boolean;
-	meeting_type?: string;
-	e2ee_enabled?: boolean;
-	host_only_chat?: boolean;
-}
+import { submit, type Call } from "../../utils/request";
 
 interface E2EESettingsSectionProps {
 	meetingId: string;
 	meetingDoc: {
-		doc?: MeetingDocument;
 		reload: () => Promise<void>;
 		updateSettings: { loading: boolean };
-		enableE2ee: {
-			submit: () => Promise<unknown>;
-			loading: boolean;
-		};
-		get: { loading: boolean };
+		enableE2ee: Call<unknown> & { loading: boolean };
+		loading: boolean;
 	};
 	globallyEnabled: boolean;
 }
@@ -39,12 +29,20 @@ interface E2EESettingsSectionProps {
 const props = defineProps<E2EESettingsSectionProps>();
 
 const { getIdentity } = useDeviceIdentity();
+const registerE2EEDeviceCall = useCall<unknown, {
+	device_id: string;
+	ed25519_public_key: string;
+}>({
+	url: "/api/v2/method/suite.meet.api.meeting.register_e2ee_device",
+	method: "POST",
+	immediate: false,
+});
 
 const e2eeEnabled = ref<boolean>(props.globallyEnabled);
 const isConvertingToE2EE = ref(false);
 const isE2EEMediaSupported = ref<boolean | null>(null);
 
-let detailsLoaded = false;
+let syncingFromDocument = false;
 
 const e2eeDescription = computed(() => {
 	if (isE2EEMediaSupported.value === false) {
@@ -58,59 +56,27 @@ const isToggleDisabled = computed(
 		isConvertingToE2EE.value ||
 		props.meetingDoc.updateSettings.loading ||
 		props.meetingDoc.enableE2ee.loading ||
-		props.meetingDoc.get.loading ||
+		props.meetingDoc.loading ||
 		e2eeEnabled.value ||
 		isE2EEMediaSupported.value !== true,
 );
 
-onMounted(async () => {
-	try {
-		isE2EEMediaSupported.value = getE2EETransformCapability() !== "none";
-		e2eeEnabled.value = props.globallyEnabled;
-		if (e2eeEnabled.value) {
-			await loadE2EEDetails();
-		}
-	} catch (error) {
-		console.error("Failed to load E2EE settings:", error);
-	} finally {
-		detailsLoaded = true;
-	}
+onMounted(() => {
+	isE2EEMediaSupported.value = getE2EETransformCapability() !== "none";
 });
 
-const loadE2EEDetails = async () => {
-	try {
-		const response = (await frappeRequest({
-			url: "suite.meet.api.meeting.get_meeting_e2ee_details",
-			params: { meeting_id: props.meetingId },
-		})) as {
-			e2ee_enabled?: boolean;
-			message?: {
-				e2ee_enabled?: boolean;
-			};
-		};
-		const payload = response.message || response;
-		e2eeEnabled.value = Boolean(payload.e2ee_enabled);
-	} catch (error) {
-		console.error("Failed to load E2EE details:", error);
-	}
-};
-
-const registerE2EEDevice = async (identity: {
-	deviceId: string;
-	authPublicKey: string;
-}): Promise<void> => {
-	await frappeRequest({
-		url: "suite.meet.api.meeting.register_e2ee_device",
-		params: {
-			device_id: identity.deviceId,
-			ed25519_public_key: identity.authPublicKey,
-		},
-		method: "POST",
-	});
-};
+watch(
+	() => props.globallyEnabled,
+	(enabled) => {
+		syncingFromDocument = true;
+		e2eeEnabled.value = enabled;
+		syncingFromDocument = false;
+	},
+	{ immediate: true },
+);
 
 watch(e2eeEnabled, async (val, oldVal) => {
-	if (!detailsLoaded) return;
+	if (syncingFromDocument) return;
 	if (!val || oldVal) return;
 	if (isConvertingToE2EE.value) return;
 	if (getE2EETransformCapability() === "none") {
@@ -124,9 +90,12 @@ watch(e2eeEnabled, async (val, oldVal) => {
 	try {
 		// Register the device identity used to sign epoch key packages.
 		const identity = await getIdentity();
-		await registerE2EEDevice(identity);
+		await submit(registerE2EEDeviceCall, {
+			device_id: identity.deviceId,
+			ed25519_public_key: identity.authPublicKey,
+		});
 
-		await props.meetingDoc.enableE2ee.submit();
+		await submit(props.meetingDoc.enableE2ee);
 		e2eeEnabled.value = true;
 
 		// Broadcast locally after the server-side meeting flag is enabled, so
@@ -148,5 +117,5 @@ watch(e2eeEnabled, async (val, oldVal) => {
 	} finally {
 		isConvertingToE2EE.value = false;
 	}
-});
+}, { flush: "sync" });
 </script>
