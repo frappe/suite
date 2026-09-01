@@ -1,0 +1,32 @@
+{
+	// Strict type-check for the sheets rewrite (P1 onward).
+	//
+	// Frontend-wide checking is not viable: the pre-existing app is untyped
+	// JavaScript and would report thousands of errors. This config scopes
+	// `tsc --noEmit` to the rewritten sheets core, so new code is checked
+	// from the first commit and the checked surface grows per phase.
+	//
+	// Run: yarn workspace @suite/frontend typecheck
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"allowJs": false,
+		// Beyond `strict`. Each of these catches a class of bug the sheets
+		// core is exposed to: sparse cell lookups, optional style paths,
+		// and message-protocol payloads.
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitReturns": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"verbatimModuleSyntax": true,
+		"types": []
+	},
+	"include": [
+		"src/apps/sheets/core/**/*.ts",
+		"src/apps/sheets/utils/sheet-codec.ts",
+		"src/apps/sheets/canvas/index.d.ts"
+	]
+}

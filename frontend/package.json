@@ -15,6 +15,7 @@
     "watch:service-worker": "vite build --config vite.sw.config.ts --watch",
     "dev:recorder": "vite --config vite.recorder.config.ts --host",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.sheets.json",
     "test": "vitest run",
     "test:ci": "vitest run --coverage --reporter=default --reporter=junit --reporter=github-actions --outputFile=test-results/junit.xml",
     "copy-noise-assets": "node scripts/copy-noise-suppression-assets.mjs"
