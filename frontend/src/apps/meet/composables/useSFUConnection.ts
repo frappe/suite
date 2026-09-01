@@ -25,6 +25,7 @@ import {
 } from "../utils/SFUClient";
 import { SFUMeetingManager } from "../utils/SFUMeetingManager";
 import { getClientTelemetry } from "../utils/telemetry/ClientTelemetry";
+import MeetAvatar from "../components/MeetAvatar.vue";
 import { useChatStore } from "./useChatStore";
 import {
 	clearGuestSession,
@@ -311,17 +312,12 @@ export function useSFUConnection(deps: {
 			participant.user_id,
 		);
 
-		const LucideUserIcon = defineAsyncComponent(
-			() => import("~icons/lucide/user"),
-		);
-
 		toast(`${participantName} joined the meeting`, {
-			icon: participant.avatar
-				? h("img", {
-						src: participant.avatar as string,
-						class: "h-5 w-5 rounded-full object-cover",
-					})
-				: h(LucideUserIcon),
+			icon: h(MeetAvatar, {
+				image: participant.avatar,
+				label: participant.user_name || participant.user_id,
+				size: "sm",
+			}),
 			duration: 3000,
 		});
 	};
@@ -340,17 +336,12 @@ export function useSFUConnection(deps: {
 			return;
 		}
 
-		const LucideUserIcon = defineAsyncComponent(
-			() => import("~icons/lucide/user"),
-		);
-
 		toast(`${participantName} left the meeting`, {
-			icon: participant?.avatar
-				? h("img", {
-						src: participant.avatar as string,
-						class: "h-4 w-4 rounded-full object-cover",
-					})
-				: h(LucideUserIcon),
+			icon: h(MeetAvatar, {
+				image: participant?.avatar,
+				label: participantName,
+				size: "xs",
+			}),
 			duration: 3000,
 		});
 	};
