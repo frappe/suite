@@ -8,7 +8,7 @@ import {
 import { MEDIA_FAULT_SCRIPT, STUB_MEDIA_SCRIPT } from "./media";
 import { loginViaApi } from "../../shared/auth";
 import {
-	clearMeetingCreateRateLimit,
+	clearMeetingRateLimits,
 	createMeetingViaApi,
 	type MeetingType,
 } from "../helpers/meeting";
@@ -198,7 +198,7 @@ export const test = base.extend<TestFixtures>({
 		await loginViaApi(api, meetHost);
 
 		await use(async (meetingType = "open") => {
-			await clearMeetingCreateRateLimit(api);
+			await clearMeetingRateLimits(api);
 			return createMeetingViaApi(api, meetingType);
 		});
 
@@ -207,7 +207,7 @@ export const test = base.extend<TestFixtures>({
 
 	createMeetingViaUi: async ({ hostPage }, use) => {
 		await use(async (meetingType = "open") => {
-			await clearMeetingCreateRateLimit(hostPage.request);
+			await clearMeetingRateLimits(hostPage.request);
 			return createMeetingViaUi(hostPage, meetingType);
 		});
 	},
