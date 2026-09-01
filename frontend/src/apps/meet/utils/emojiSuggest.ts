@@ -1,4 +1,5 @@
 import { gemoji } from "gemoji";
+import { readJSON, remove, writeJSON } from "@/utils/localStorage";
 
 export type EmojiSuggestion = {
 	name: string;
@@ -31,9 +32,7 @@ export function findColonQuery(
 
 function readRecentStore(): EmojiSuggestion[] {
 	try {
-		const raw = localStorage.getItem(RECENT_STORAGE_KEY);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw) as unknown;
+		const parsed = readJSON(RECENT_STORAGE_KEY);
 		if (!Array.isArray(parsed)) return [];
 		return parsed
 			.filter(
@@ -51,7 +50,7 @@ function readRecentStore(): EmojiSuggestion[] {
 
 function writeRecentStore(items: EmojiSuggestion[]) {
 	try {
-		localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(items.slice(0, RECENT_LIMIT)));
+		writeJSON(RECENT_STORAGE_KEY, items.slice(0, RECENT_LIMIT));
 	} catch {
 		// private mode / quota — ignore
 	}
@@ -120,7 +119,7 @@ export function insertEmojiAtQuery(
 /** Test helper — clear recents without poking localStorage from callers. */
 export function clearRecentEmojis(): void {
 	try {
-		localStorage.removeItem(RECENT_STORAGE_KEY);
+		remove(RECENT_STORAGE_KEY);
 	} catch {
 		// ignore
 	}

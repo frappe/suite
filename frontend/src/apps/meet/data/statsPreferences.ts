@@ -1,12 +1,11 @@
 import { type Ref, ref } from "vue";
+import { readBoolean, writeBoolean } from "@/utils/localStorage";
 
 const STORAGE_KEY = "meetPref.statsForNerds";
 
-export const showStatsForNerds: Ref<boolean> = ref(
-	localStorage.getItem(STORAGE_KEY) === "1",
-);
+export const showStatsForNerds: Ref<boolean> = ref(readBoolean(STORAGE_KEY));
 
 export function setShowStatsForNerds(value: boolean): void {
 	showStatsForNerds.value = value;
-	localStorage.setItem(STORAGE_KEY, value ? "1" : "0");
+	writeBoolean(STORAGE_KEY, value);
 }

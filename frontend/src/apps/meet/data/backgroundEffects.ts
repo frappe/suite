@@ -7,6 +7,15 @@ import {
 	saveCustomImage,
 	validateImageFile,
 } from "../utils/customImages";
+import {
+	readBoolean,
+	readJSON,
+	readString,
+	remove,
+	writeBoolean,
+	writeJSON,
+	writeString,
+} from "@/utils/localStorage";
 
 // Types and interfaces
 interface BackgroundImage {
@@ -23,32 +32,37 @@ interface BackgroundImage {
 	};
 }
 
-function readBool(key: string, def = false) {
-	const v = localStorage.getItem(key);
-	if (v === null) return def;
-	return v === "1";
+export function readBackgroundEffectPreferences() {
+	const blurEnabled = readBoolean("backgroundEffects.blur");
+	const imageEnabled = readBoolean("backgroundEffects.image");
+	const autoFramingEnabled = readBoolean("backgroundEffects.autoFraming");
+
+	return {
+		blurEnabled,
+		imageEnabled,
+		selectedImage: readString("backgroundEffects.imageName"),
+		blurIntensity:
+			Number.parseInt(readString("backgroundEffects.blurIntensity", "4"), 10) || 4,
+		autoFramingEnabled,
+		anyEnabled: blurEnabled || imageEnabled || autoFramingEnabled,
+	};
 }
 
-function readString(key: string, def = "") {
-	const v = localStorage.getItem(key);
-	return v !== null ? v : def;
-}
+const storedPreferences = readBackgroundEffectPreferences();
 
 // Background effects preferences
 export const backgroundBlurEnabled: Ref<boolean> = ref(
-	readBool("backgroundEffects.blur", false),
+	storedPreferences.blurEnabled,
 );
 export const backgroundImageEnabled: Ref<boolean> = ref(
-	readBool("backgroundEffects.image", false),
+	storedPreferences.imageEnabled,
 );
 export const selectedBackgroundImage: Ref<string> = ref(
-	readString("backgroundEffects.imageName", ""),
+	storedPreferences.selectedImage,
 );
-export const blurIntensity: Ref<number> = ref(
-	Number.parseInt(readString("backgroundEffects.blurIntensity", "4"), 10) || 4,
-);
+export const blurIntensity: Ref<number> = ref(storedPreferences.blurIntensity);
 export const autoFramingEnabled: Ref<boolean> = ref(
-	readBool("backgroundEffects.autoFraming", false),
+	storedPreferences.autoFramingEnabled,
 );
 
 export interface FramingCropSnapshot {
@@ -59,9 +73,9 @@ export interface FramingCropSnapshot {
 
 function readFramingCrop(): FramingCropSnapshot | null {
 	try {
-		const raw = localStorage.getItem("backgroundEffects.framingCrop");
-		if (!raw) return null;
-		const parsed = JSON.parse(raw) as Partial<FramingCropSnapshot> | null;
+		const parsed = readJSON(
+			"backgroundEffects.framingCrop",
+		) as Partial<FramingCropSnapshot> | null;
 		if (
 			typeof parsed?.x !== "number" ||
 			typeof parsed?.y !== "number" ||
@@ -79,7 +93,7 @@ function readFramingCrop(): FramingCropSnapshot | null {
 }
 
 export const autoFramingPaused: Ref<boolean> = ref(
-	readBool("backgroundEffects.autoFramingPaused", false),
+	readBoolean("backgroundEffects.autoFramingPaused", false),
 );
 export const framingCrop: Ref<FramingCropSnapshot | null> =
 	ref(readFramingCrop());
@@ -152,54 +166,42 @@ loadCustomImages()
 
 export function setBackgroundBlurEnabled(val: boolean): void {
 	backgroundBlurEnabled.value = !!val;
-	localStorage.setItem(
-		"backgroundEffects.blur",
-		backgroundBlurEnabled.value ? "1" : "0",
-	);
+	writeBoolean("backgroundEffects.blur", backgroundBlurEnabled.value);
 }
 
 export function setBackgroundImageEnabled(val: boolean): void {
 	backgroundImageEnabled.value = !!val;
-	localStorage.setItem(
-		"backgroundEffects.image",
-		backgroundImageEnabled.value ? "1" : "0",
-	);
+	writeBoolean("backgroundEffects.image", backgroundImageEnabled.value);
 }
 
 export function setSelectedBackgroundImage(imageName: string): void {
 	selectedBackgroundImage.value = imageName;
-	localStorage.setItem("backgroundEffects.imageName", imageName);
+	writeString("backgroundEffects.imageName", imageName);
 }
 
 export function setBlurIntensity(intensity: number): void {
 	blurIntensity.value = intensity;
-	localStorage.setItem("backgroundEffects.blurIntensity", intensity.toString());
+	writeString("backgroundEffects.blurIntensity", intensity.toString());
 }
 
 export function setAutoFramingEnabled(val: boolean): void {
 	autoFramingEnabled.value = !!val;
-	localStorage.setItem(
-		"backgroundEffects.autoFraming",
-		autoFramingEnabled.value ? "1" : "0",
-	);
+	writeBoolean("backgroundEffects.autoFraming", autoFramingEnabled.value);
 	if (!autoFramingEnabled.value) setAutoFramingPaused(false);
 }
 
 export function setAutoFramingPaused(val: boolean): void {
 	autoFramingPaused.value = !!val;
-	localStorage.setItem(
-		"backgroundEffects.autoFramingPaused",
-		autoFramingPaused.value ? "1" : "0",
-	);
+	writeBoolean("backgroundEffects.autoFramingPaused", autoFramingPaused.value);
 	if (!autoFramingPaused.value) setFramingCrop(null);
 }
 
 export function setFramingCrop(crop: FramingCropSnapshot | null): void {
 	framingCrop.value = crop;
 	if (crop) {
-		localStorage.setItem("backgroundEffects.framingCrop", JSON.stringify(crop));
+		writeJSON("backgroundEffects.framingCrop", crop);
 	} else {
-		localStorage.removeItem("backgroundEffects.framingCrop");
+		remove("backgroundEffects.framingCrop");
 	}
 }
 

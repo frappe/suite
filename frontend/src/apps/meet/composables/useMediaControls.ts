@@ -1,6 +1,9 @@
 import { dialog, toast } from "frappe-ui";
 import { onUnmounted, type Ref, ref, watch } from "vue";
-import { autoFramingPaused } from "../data/backgroundEffects";
+import {
+	autoFramingPaused,
+	readBackgroundEffectPreferences,
+} from "../data/backgroundEffects";
 import {
 	cameraEnabled as prefCameraEnabled,
 	micEnabled as prefMicEnabled,
@@ -49,26 +52,9 @@ function getCameraVideoConstraints(): MediaTrackConstraints {
 }
 
 function getBackgroundEffectsFromStorage() {
-	const blurEnabled = localStorage.getItem("backgroundEffects.blur") === "1";
-	const imageEnabled = localStorage.getItem("backgroundEffects.image") === "1";
-	const autoFramingEnabled =
-		localStorage.getItem("backgroundEffects.autoFraming") === "1";
-	const selectedImage =
-		localStorage.getItem("backgroundEffects.imageName") || "";
-	const blurIntensity = Number.parseInt(
-		localStorage.getItem("backgroundEffects.blurIntensity") || "12",
-		10,
-	);
-	const anyEnabled = blurEnabled || imageEnabled || autoFramingEnabled;
-
 	return {
-		blurEnabled,
-		imageEnabled,
-		selectedImage,
-		blurIntensity,
-		autoFramingEnabled,
+		...readBackgroundEffectPreferences(),
 		autoFramingPaused: autoFramingPaused.value,
-		anyEnabled,
 	};
 }
 
