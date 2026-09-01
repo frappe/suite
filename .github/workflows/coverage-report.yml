@@ -26,13 +26,23 @@ jobs:
       - name: Checkout trusted report scripts
         uses: actions/checkout@v7
 
-      - name: Download coverage artifacts
+      - name: Download backend coverage
         uses: actions/download-artifact@v7
+        continue-on-error: true
         with:
+          name: suite-backend-coverage
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-          path: artifacts
-          pattern: suite-*-coverage
+          path: artifacts/current/backend
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: suite-frontend-coverage
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: artifacts/current/frontend
 
       - name: Resolve PR number
         id: pr
@@ -72,8 +82,8 @@ jobs:
         if: steps.pr.outputs.number != ''
         run: |
           python .github/scripts/coverage_report.py \
-            --backend artifacts/suite-backend-coverage/coverage.xml \
-            --frontend artifacts/suite-frontend-coverage/cobertura-coverage.xml \
+            --backend artifacts/current/backend/coverage.xml \
+            --frontend artifacts/current/frontend/cobertura-coverage.xml \
             --backend-baseline artifacts/baseline/backend.xml \
             --frontend-baseline artifacts/baseline/frontend.xml \
             --baseline-ref "${{ steps.pr.outputs.base_ref }}" \

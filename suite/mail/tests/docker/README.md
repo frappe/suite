@@ -27,7 +27,7 @@ performs. Override with `STALWART_VERSION`, `STALWART_CLI_VERSION`,
 ```sh
 bench --site <site> set-config allow_tests true
 bench --site <site> set-config mute_emails 1  # unless the site has an outgoing Email Account
-bench --site <site> set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0, 'root_domain_name': 'example.test'}" --parse
+bench --site <site> set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
 bench --site <site> execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
 bench --site <site> clear-cache
 ```

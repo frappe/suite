@@ -101,12 +101,6 @@ export interface MailDomain extends DocType {
 
 // Last updated: 2026-06-15 15:27:49.779589
 export interface MailSettings extends DocType {
-  /** Root Domain Name: Data */
-  root_domain_name?: string;
-  /** DNS Provider: Select */
-  dns_provider?: '' | 'AmazonRoute53' | 'DigitalOcean' | 'Cloudflare' | 'Hetzner' | 'Linode' | 'Namecheap' | 'GoDaddy';
-  /** Token: Password */
-  dns_provider_token?: string;
   /** JMAP Push Key (P256DH): Data */
   jmap_push_p256dh?: string;
   /** JMAP Push Private Key: Password */
@@ -117,44 +111,20 @@ export interface MailSettings extends DocType {
   allow_signup: 0 | 1;
   /** Signup Domains: Small Text */
   signup_domains?: string;
-  /** Username: Data */
-  dns_provider_username?: string;
-  /** Zone ID: Data */
-  dns_provider_zone_id?: string;
-  /** Key: Data */
-  dns_provider_key?: string;
-  /** Secret: Password */
-  dns_provider_secret?: string;
-  /** Client IP: Data */
-  dns_provider_client_ip?: string;
-  /** Private Zone: Check */
-  dns_provider_private_zone: 0 | 1;
-  /** Access Key: Data */
-  dns_provider_access_key?: string;
-  /** Access Secret: Password */
-  dns_provider_access_secret?: string;
   /** Server URL: Data */
   server_url?: string;
   /** Username: Data */
   username?: string;
   /** Password: Password */
   password?: string;
-  /** Ansible Play Timeout: Int */
-  ansible_play_timeout: number;
   /** Mail Exchange Export Timeout: Int */
   exchange_export_timeout: number;
   /** Mail Exchange Import Timeout: Int */
   exchange_import_timeout: number;
   /** Scan Message Timeout: Int */
   scan_message_timeout: number;
-  /** Server Deployment Timeout: Int */
-  server_deployment_timeout: number;
   /** Process Pending Emails Timeout: Int */
   process_pending_emails_timeout: number;
-  /** Server Job Timeout: Int */
-  server_job_timeout: number;
-  /** Stalwart CLI Command Timeout: Int */
-  stalwart_cli_command_timeout: number;
   /** Default DNS TTL: Int */
   default_dns_ttl: number;
   /** Default Disk Quota (GB): Int */
@@ -162,11 +132,7 @@ export interface MailSettings extends DocType {
   /** Enable Gravatar: Check */
   enable_gravatar: 0 | 1;
   /** Default Gravatar: Select */
-  default_gravatar: '404';
-  /** Stalwart CLI Version: Data */
-  stalwart_cli_version: string;
-  /** Stalwart Version: Data */
-  stalwart_version: string;
+  default_gravatar: '404' | 'mp' | 'identicon' | 'monsterid' | 'wavatar' | 'retro' | 'robohash' | 'blank';
   /** Push Log File Count: Int */
   push_log_file_count: number;
   /** Push Log Level: Select */

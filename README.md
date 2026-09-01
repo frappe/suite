@@ -38,6 +38,10 @@ Frappe Suite brings seven collaboration products into one Frappe app. Keep files
 | [Mail](https://github.com/frappe/mail) | Manage email in a modern client |
 | [Calendar](https://github.com/frappe/calendar_app) | Plan events and manage schedules |
 
+## Deploying Mail Servers
+
+Provisioning Stalwart mail servers (Mail Cluster, Mail Server, Server Deployment, Server Job, Ansible plays, DNS Records) lives in the separate [Suite Cloud](https://github.com/frappe/suite_cloud) app. Suite only needs the server URL and admin credentials in Mail Settings to talk to a Stalwart server. Sites that deployed servers through Suite keep their data: update Suite, run `bench --site yoursite migrate`, then `bench --site yoursite install-app suite_cloud`. Installing it adopts the existing records and copies the root domain, DNS provider and timeouts that Mail Settings used to hold.
+
 ## Under the Hood
 
 - [**Frappe Framework**](https://github.com/frappe/frappe): Provides the database, authentication, permissions, realtime events, and APIs shared by Drive, Writer, Sheets, Slides, Meet, Mail, and Calendar.

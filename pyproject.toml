@@ -25,12 +25,8 @@ dependencies = [
     "msgpack~=1.2.1",
     "isodate~=0.7.2",
     "tantivy~=0.26.0",
-    "paramiko~=5.0.0",
     "icalendar~=6.1.0",
-    "dnspython~=2.6.1",
     "pydenticon~=0.3.1",
-    "dns-lexicon~=3.20.1",
-    "ansible-runner~=2.4.1",
     # sheets — AI Assist (Claude)
     "anthropic>=0.40",
 ]
@@ -38,7 +34,6 @@ dependencies = [
 [deploy.dependencies.apt]
 packages = [
     "ffmpeg",   # drive: video thumbnails/transcode
-    "ansible",  # mail: stalwart provisioning (ansible-runner)
 ]
 
 [build-system]

@@ -14,8 +14,6 @@ CONFIG_KEY_FIELD_MAP = {
     "default_dns_ttl": None,
     "default_mail_quota": "default_disk_quota_gb",
     "gravatar_default_avatar": "default_gravatar",
-    "stalwart_version": None,
-    "stalwart_cli_version": None,
     # Logs
     "push_log_file_count": None,
     "push_log_level": None,
@@ -30,12 +28,8 @@ CONFIG_KEY_FIELD_MAP = {
     "process_pending_emails_batch_size": None,
     "process_pending_emails_max_batch_size": None,
     # Timeouts
-    "ansible_play_timeout": None,
-    "server_job_timeout": None,
-    "server_deployment_timeout": None,
     "scan_message_timeout": None,
     "process_pending_emails_timeout": None,
-    "stalwart_cli_command_timeout": None,
     "exchange_export_timeout": None,
     "exchange_import_timeout": None,
 }

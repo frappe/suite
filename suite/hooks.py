@@ -313,10 +313,7 @@ scheduler_events = {
         ],
         "*/5 * * * *": [
             # mail
-            "suite.mail.doctype.server_job.server_job.retry_failed_jobs",
             "suite.mail.doctype.mail_queue.mail_queue.enqueue_process_pending_emails",
-            "suite.mail.doctype.server_deployment.server_deployment.retry_failed_deployments",
-            "suite.mail.doctype.server_ansible_play.server_ansible_play.retry_failed_ansible_plays",
         ],
     },
 }
@@ -379,9 +376,6 @@ ignore_links_on_delete = [
     "Drive DAV Lock",
     # mail
     "Mail Account Request",
-    "Server Job",
-    "Server Ansible Play",
-    "Server Deployment",
     "JMAP Account",
     "User Account",
     "Screened Email Address",

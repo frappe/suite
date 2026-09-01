@@ -13,7 +13,6 @@ suite.drive.patches.update_roles
 suite.drive.patches.remove_personal #3
 suite.drive.patches.integrate_with_framework
 # --- mail ---
-suite.mail.patches.delete_stale_cluster_stores
 # --- writer ---
 suite.writer.patches.remove_frappe_writer_module
 
@@ -68,14 +67,11 @@ suite.meet.patches.backfill_recording_storage_reservations
 suite.meet.patches.add_meet_rate_limits
 suite.meet.patches.backfill_recording_finalization
 # --- mail ---
-suite.mail.patches.generate_ssh_keypair_for_cluster
 suite.mail.patches.create_push_subscriptions
 suite.mail.patches.rename_user_settings
 suite.mail.patches.remove_mail_admin_role
 suite.mail.patches.remove_mail_user_role
 suite.mail.patches.configure_mail_settings
-suite.mail.patches.configure_mail_cluster
-suite.mail.patches.configure_mail_server
 suite.mail.patches.configure_inbound_outbound_log
 suite.mail.patches.configure_exchange_log
 suite.mail.patches.sync_jmap_accounts_for_configured_users
@@ -100,6 +96,7 @@ suite.mail.patches.rename_skip_schedule_fetch_changes
 execute:frappe.db.set_single_value("Mail Settings", "expand_mailing_list_participants", 1)
 execute:frappe.db.set_single_value("Mail Settings", "max_mailing_list_participants", 100)
 suite.mail.patches.remove_held_queue_statuses
+suite.mail.patches.hand_over_deployment_to_suite_cloud
 # --- calendar ---
 # (no patches)
 # --- suite_core ---

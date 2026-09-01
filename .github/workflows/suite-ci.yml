@@ -232,8 +232,8 @@ jobs:
       - name: Collect Backend Evidence
         if: always()
         run: |
-          if [ -f /home/runner/frappe-bench/coverage.xml ]; then
-            cp /home/runner/frappe-bench/coverage.xml test-results/backend/coverage.xml
+          if [ -f /home/runner/frappe-bench/sites/coverage.xml ]; then
+            cp /home/runner/frappe-bench/sites/coverage.xml test-results/backend/coverage.xml
           fi
 
       - name: Upload Backend Evidence
@@ -386,7 +386,7 @@ jobs:
           # Invite/OTP flows send transactional emails; with mute_emails set, frappe
           # builds the queue against a dummy outgoing account and never sends.
           bench --site test_site set-config mute_emails 1
-          bench --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0, 'root_domain_name': 'example.test'}" --parse
+          bench --site test_site set-config mail "{'server_url': 'http://127.0.0.1:8080', 'username': 'admin', 'password': 'admin', 'verify_ssl': 0}" --parse
           # Mail Settings wins over site_config and its verify_ssl checkbox defaults to on,
           # which would shadow the verify_ssl: 0 above (the container's cert is self-signed).
           bench --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"

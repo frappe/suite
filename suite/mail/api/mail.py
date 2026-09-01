@@ -1056,6 +1056,8 @@ def get_avatar(email: str, size: int = 128, strict: bool = False) -> None:
     if not avatar:
         # 2. Try Gravatar (opt-in: avoids leaking emails to a third party when disabled)
         if get_config("enable_gravatar"):
+            # Gravatar's placeholder for unknown addresses. "404" makes it fail instead, which
+            # is what routes us to the locally generated identicon below.
             default = get_config("default_gravatar")
             try:
                 res = requests.get(

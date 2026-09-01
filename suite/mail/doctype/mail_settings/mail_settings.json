@@ -22,14 +22,13 @@
   "spamd_scanning_mode",
   "spamd_hybrid_scanning_threshold",
   "defaults_section",
-  "default_dns_ttl",
   "default_disk_quota_gb",
   "disabled_account_role",
+  "column_break_defaults_1",
   "enable_gravatar",
   "default_gravatar",
-  "column_break_cuxv",
-  "stalwart_version",
-  "stalwart_cli_version",
+  "column_break_defaults_2",
+  "default_dns_ttl",
   "limits_section",
   "exchange_max_export",
   "exchange_max_import",
@@ -60,37 +59,16 @@
   "outbound_log_max_file_size",
   "exchange_log_max_file_size",
   "timeouts_seconds_section",
-  "column_break_rtlq",
-  "ansible_play_timeout",
-  "server_job_timeout",
-  "server_deployment_timeout",
-  "column_break_ahml",
-  "scan_message_timeout",
-  "process_pending_emails_timeout",
-  "stalwart_cli_command_timeout",
-  "column_break_wvdy",
   "exchange_export_timeout",
   "exchange_import_timeout",
+  "column_break_ahml",
+  "scan_message_timeout",
+  "column_break_wvdy",
+  "process_pending_emails_timeout",
   "signup_tab",
   "allow_signup",
   "column_break_daqm",
   "signup_domains",
-  "dns_tab",
-  "section_break_hrww",
-  "root_domain_name",
-  "column_break_4ccc",
-  "dns_provider_section",
-  "dns_provider",
-  "column_break_pntn",
-  "dns_provider_zone_id",
-  "dns_provider_access_key",
-  "dns_provider_access_secret",
-  "dns_provider_key",
-  "dns_provider_secret",
-  "dns_provider_username",
-  "dns_provider_client_ip",
-  "dns_provider_token",
-  "dns_provider_private_zone",
   "jmap_push_tab",
   "section_break_qvpk",
   "enable_jmap_push_encryption",
@@ -106,179 +84,14 @@
  ],
  "fields": [
   {
-   "description": "The domain name used to create DNS records.",
-   "fieldname": "root_domain_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Root Domain Name",
-   "mandatory_depends_on": "eval: doc.dns_provider",
-   "placeholder": "frappemail.com"
+   "fieldname": "config_tab",
+   "fieldtype": "Tab Break",
+   "label": "Config"
   },
   {
-   "description": "The service provider managing your root domain's DNS records.",
-   "fieldname": "dns_provider",
-   "fieldtype": "Select",
-   "label": "DNS Provider",
-   "options": "\nAmazonRoute53\nDigitalOcean\nCloudflare\nHetzner\nLinode\nNamecheap\nGoDaddy"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"DigitalOcean\", \"Cloudflare\", \"Hetzner\", \"Linode\", \"Namecheap\"].includes(doc.dns_provider)",
-   "description": "The token used to authenticate with your DNS provider.",
-   "fieldname": "dns_provider_token",
-   "fieldtype": "Password",
-   "label": "Token",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"DigitalOcean\", \"Cloudflare\", \"Hetzner\", \"Linode\", \"Namecheap\"].includes(doc.dns_provider)"
-  },
-  {
-   "fieldname": "section_break_hrww",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "column_break_4ccc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_qvpk",
-   "fieldtype": "Section Break"
-  },
-  {
-   "default": "0",
-   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
-   "fieldname": "enable_jmap_push_encryption",
-   "fieldtype": "Check",
-   "label": "Enable Push Encryption"
-  },
-  {
-   "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_p256dh",
-   "fieldtype": "Data",
-   "label": "JMAP Push Key (P256DH)",
-   "read_only": 1
-  },
-  {
-   "description": "ECDH P-256 private key used to decrypt incoming encrypted push notifications.",
-   "fieldname": "jmap_push_private_key",
-   "fieldtype": "Password",
-   "label": "JMAP Push Private Key",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_wpvf",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Authentication secret for JMAP PushSubscription encryption.",
-   "fieldname": "jmap_push_auth",
-   "fieldtype": "Password",
-   "label": "JMAP Push Auth Secret",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "description": "Allows users to sign up and select a preferred username.",
-   "fieldname": "allow_signup",
-   "fieldtype": "Check",
-   "label": "Allow Signup"
-  },
-  {
-   "fieldname": "column_break_daqm",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval: doc.allow_signup",
-   "description": "Domains allowed for signup.",
-   "fieldname": "signup_domains",
-   "fieldtype": "Small Text",
-   "label": "Signup Domains",
-   "mandatory_depends_on": "eval: doc.allow_signup"
-  },
-  {
-   "fieldname": "column_break_pntn",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "dns_provider_section",
+   "fieldname": "jmap_section",
    "fieldtype": "Section Break",
-   "label": "DNS Provider"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"Cloudflare\", \"Namecheap\"].includes(doc.dns_provider)",
-   "description": "Account username for the DNS provider.",
-   "fieldname": "dns_provider_username",
-   "fieldtype": "Data",
-   "label": "Username",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"Namecheap\"].includes(doc.dns_provider)"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\", \"Cloudflare\"].includes(doc.dns_provider)",
-   "description": "Unique identifier for your DNS zone.",
-   "fieldname": "dns_provider_zone_id",
-   "fieldtype": "Data",
-   "label": "Zone ID"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"GoDaddy\"].includes(doc.dns_provider)",
-   "description": "Key used for authorization with the DNS provider.",
-   "fieldname": "dns_provider_key",
-   "fieldtype": "Data",
-   "label": "Key",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"GoDaddy\"].includes(doc.dns_provider)"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"GoDaddy\"].includes(doc.dns_provider)",
-   "description": "Secret used along with the auth key for secure access.",
-   "fieldname": "dns_provider_secret",
-   "fieldtype": "Password",
-   "label": "Secret",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"GoDaddy\"].includes(doc.dns_provider)"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"Namecheap\"].includes(doc.dns_provider)",
-   "description": "IP address whitelisted to make API calls.",
-   "fieldname": "dns_provider_client_ip",
-   "fieldtype": "Data",
-   "label": "Client IP",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"Namecheap\"].includes(doc.dns_provider)"
-  },
-  {
-   "default": "0",
-   "depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\"].includes(doc.dns_provider)",
-   "description": "Indicates whether the DNS zone is private.",
-   "fieldname": "dns_provider_private_zone",
-   "fieldtype": "Check",
-   "label": "Private Zone",
-   "options": "0"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\"].includes(doc.dns_provider)",
-   "description": "Public key used to authenticate API requests.",
-   "fieldname": "dns_provider_access_key",
-   "fieldtype": "Data",
-   "label": "Access Key",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\"].includes(doc.dns_provider)"
-  },
-  {
-   "depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\"].includes(doc.dns_provider)",
-   "description": "Secret key paired with the access key for authentication.",
-   "fieldname": "dns_provider_access_secret",
-   "fieldtype": "Password",
-   "label": "Access Secret",
-   "mandatory_depends_on": "eval: doc.dns_provider && [\"AmazonRoute53\"].includes(doc.dns_provider)"
-  },
-  {
-   "fieldname": "signup_tab",
-   "fieldtype": "Tab Break",
-   "label": "Signup"
-  },
-  {
-   "fieldname": "dns_tab",
-   "fieldtype": "Tab Break",
-   "label": "DNS"
-  },
-  {
-   "fieldname": "jmap_push_tab",
-   "fieldtype": "Tab Break",
-   "label": "JMAP Push"
+   "label": "Stalwart/JMAP"
   },
   {
    "fieldname": "server_url",
@@ -295,16 +108,6 @@
    "label": "Verify SSL"
   },
   {
-   "fieldname": "config_tab",
-   "fieldtype": "Tab Break",
-   "label": "Config"
-  },
-  {
-   "fieldname": "jmap_section",
-   "fieldtype": "Section Break",
-   "label": "Stalwart/JMAP"
-  },
-  {
    "fieldname": "column_break_xvlo",
    "fieldtype": "Column Break"
   },
@@ -319,240 +122,6 @@
    "fieldtype": "Password",
    "label": "Password",
    "mandatory_depends_on": "eval: doc.username"
-  },
-  {
-   "default": "1500",
-   "fieldname": "ansible_play_timeout",
-   "fieldtype": "Int",
-   "label": "Ansible Play Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "3600",
-   "fieldname": "exchange_export_timeout",
-   "fieldtype": "Int",
-   "label": "Mail Exchange Export Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "3600",
-   "fieldname": "exchange_import_timeout",
-   "fieldtype": "Int",
-   "label": "Mail Exchange Import Timeout",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_rtlq",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "120",
-   "fieldname": "scan_message_timeout",
-   "fieldtype": "Int",
-   "label": "Scan Message Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "1500",
-   "fieldname": "server_deployment_timeout",
-   "fieldtype": "Int",
-   "label": "Server Deployment Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "1500",
-   "fieldname": "process_pending_emails_timeout",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "1500",
-   "fieldname": "server_job_timeout",
-   "fieldtype": "Int",
-   "label": "Server Job Timeout",
-   "reqd": 1
-  },
-  {
-   "default": "3600",
-   "fieldname": "stalwart_cli_command_timeout",
-   "fieldtype": "Int",
-   "label": "Stalwart CLI Command Timeout",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_wvdy",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_ahml",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "3600",
-   "fieldname": "default_dns_ttl",
-   "fieldtype": "Int",
-   "label": "Default DNS TTL",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_cuxv",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "1",
-   "fieldname": "default_disk_quota_gb",
-   "fieldtype": "Int",
-   "label": "Default Disk Quota (GB)",
-   "reqd": 1
-  },
-  {
-   "description": "Stalwart role (by description) applied to a user's mail account when the user is disabled. The role must be created manually on Stalwart with the appropriate allowed/disabled permissions. Leave blank to skip applying a role on disable.",
-   "fieldname": "disabled_account_role",
-   "fieldtype": "Data",
-   "label": "Disabled Account Role"
-  },
-  {
-   "default": "0",
-   "description": "Use Gravatar for default user images. Gravatar is a third-party service; enabling this shares users' email addresses (hashed) with it. When disabled, initials are shown instead.",
-   "fieldname": "enable_gravatar",
-   "fieldtype": "Check",
-   "label": "Enable Gravatar"
-  },
-  {
-   "default": "404",
-   "depends_on": "eval: doc.enable_gravatar",
-   "fieldname": "default_gravatar",
-   "fieldtype": "Select",
-   "label": "Default Gravatar",
-   "options": "404",
-   "reqd": 1
-  },
-  {
-   "default": "v1.0.12",
-   "fieldname": "stalwart_cli_version",
-   "fieldtype": "Data",
-   "label": "Stalwart CLI Version",
-   "reqd": 1
-  },
-  {
-   "default": "v0.16.16",
-   "fieldname": "stalwart_version",
-   "fieldtype": "Data",
-   "label": "Stalwart Version",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "admin_log_file_count",
-   "fieldtype": "Int",
-   "label": "Admin Log File Count",
-   "reqd": 1
-  },
-  {
-   "default": "INFO",
-   "fieldname": "admin_log_level",
-   "fieldtype": "Select",
-   "label": "Admin Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "admin_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Admin Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "10",
-   "fieldname": "push_log_file_count",
-   "fieldtype": "Int",
-   "label": "Push Log File Count",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_ztzv",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "INFO",
-   "fieldname": "push_log_level",
-   "fieldtype": "Select",
-   "label": "Push Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "push_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Push Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "default": "1000",
-   "fieldname": "exchange_max_export",
-   "fieldtype": "Int",
-   "label": "Exchange Max Export",
-   "reqd": 1
-  },
-  {
-   "default": "1000",
-   "fieldname": "exchange_max_import",
-   "fieldtype": "Int",
-   "label": "Exchange Max Import",
-   "reqd": 1
-  },
-  {
-   "default": "500",
-   "fieldname": "exchange_export_batch_size",
-   "fieldtype": "Int",
-   "label": "Exchange Export Batch Size",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_rvxs",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "100",
-   "fieldname": "max_email_sync",
-   "fieldtype": "Int",
-   "label": "Max Email Sync",
-   "reqd": 1
-  },
-  {
-   "default": "25",
-   "fieldname": "max_message_payload_size_mb",
-   "fieldtype": "Int",
-   "label": "Max Message Payload Size (MB)",
-   "reqd": 1
-  },
-  {
-   "default": "5",
-   "fieldname": "max_push_notifications",
-   "fieldtype": "Int",
-   "label": "Max Push Notifications",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_cazi",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "2500",
-   "fieldname": "process_pending_emails_batch_size",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Batch Size",
-   "reqd": 1
-  },
-  {
-   "default": "25000",
-   "fieldname": "process_pending_emails_max_batch_size",
-   "fieldtype": "Int",
-   "label": "Process Pending Emails Max Batch Size",
-   "reqd": 1
   },
   {
    "collapsible": 1,
@@ -631,18 +200,49 @@
    "label": "Defaults"
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "logs_section",
-   "fieldtype": "Section Break",
-   "label": "Logs"
+   "default": "1",
+   "fieldname": "default_disk_quota_gb",
+   "fieldtype": "Int",
+   "label": "Default Disk Quota (GB)",
+   "reqd": 1
   },
   {
-   "collapsible": 1,
-   "collapsible_depends_on": "eval: true",
-   "fieldname": "timeouts_seconds_section",
-   "fieldtype": "Section Break",
-   "label": "Timeouts (Seconds)"
+   "description": "Stalwart role (by description) applied to a user's mail account when the user is disabled. The role must be created manually on Stalwart with the appropriate allowed/disabled permissions. Leave blank to skip applying a role on disable.",
+   "fieldname": "disabled_account_role",
+   "fieldtype": "Data",
+   "label": "Disabled Account Role"
+  },
+  {
+   "fieldname": "column_break_defaults_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Use Gravatar for default user images. Gravatar is a third-party service; enabling this shares users' email addresses (hashed) with it. When disabled, initials are shown instead.",
+   "fieldname": "enable_gravatar",
+   "fieldtype": "Check",
+   "label": "Enable Gravatar"
+  },
+  {
+   "default": "404",
+   "depends_on": "eval: doc.enable_gravatar",
+   "description": "Image Gravatar serves for addresses that have no Gravatar. 404 uses a locally generated identicon instead.",
+   "fieldname": "default_gravatar",
+   "fieldtype": "Select",
+   "label": "Default Gravatar",
+   "options": "404\nmp\nidenticon\nmonsterid\nwavatar\nretro\nrobohash\nblank",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_defaults_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "3600",
+   "fieldname": "default_dns_ttl",
+   "fieldtype": "Int",
+   "label": "Default DNS TTL",
+   "reqd": 1
   },
   {
    "collapsible": 1,
@@ -652,6 +252,98 @@
    "label": "Limits"
   },
   {
+   "default": "1000",
+   "fieldname": "exchange_max_export",
+   "fieldtype": "Int",
+   "label": "Exchange Max Export",
+   "reqd": 1
+  },
+  {
+   "default": "1000",
+   "fieldname": "exchange_max_import",
+   "fieldtype": "Int",
+   "label": "Exchange Max Import",
+   "reqd": 1
+  },
+  {
+   "default": "500",
+   "fieldname": "exchange_export_batch_size",
+   "fieldtype": "Int",
+   "label": "Exchange Export Batch Size",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_rvxs",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "fieldname": "max_email_sync",
+   "fieldtype": "Int",
+   "label": "Max Email Sync",
+   "reqd": 1
+  },
+  {
+   "default": "25",
+   "fieldname": "max_message_payload_size_mb",
+   "fieldtype": "Int",
+   "label": "Max Message Payload Size (MB)",
+   "reqd": 1
+  },
+  {
+   "default": "5",
+   "fieldname": "max_push_notifications",
+   "fieldtype": "Int",
+   "label": "Max Push Notifications",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_cazi",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2500",
+   "fieldname": "process_pending_emails_batch_size",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Batch Size",
+   "reqd": 1
+  },
+  {
+   "default": "25000",
+   "fieldname": "process_pending_emails_max_batch_size",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Max Batch Size",
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval: true",
+   "fieldname": "logs_section",
+   "fieldtype": "Section Break",
+   "label": "Logs"
+  },
+  {
+   "default": "10",
+   "fieldname": "admin_log_file_count",
+   "fieldtype": "Int",
+   "label": "Admin Log File Count",
+   "reqd": 1
+  },
+  {
+   "default": "10",
+   "fieldname": "push_log_file_count",
+   "fieldtype": "Int",
+   "label": "Push Log File Count",
+   "reqd": 1
+  },
+  {
+   "default": "10",
+   "fieldname": "inbound_log_file_count",
+   "fieldtype": "Int",
+   "label": "Inbound Log File Count",
+   "reqd": 1
+  },
+  {
    "default": "10",
    "fieldname": "outbound_log_file_count",
    "fieldtype": "Int",
@@ -659,29 +351,30 @@
    "reqd": 1
   },
   {
+   "default": "10",
+   "fieldname": "exchange_log_file_count",
+   "fieldtype": "Int",
+   "label": "Exchange Log File Count",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_ztzv",
+   "fieldtype": "Column Break"
+  },
+  {
    "default": "INFO",
-   "fieldname": "outbound_log_level",
+   "fieldname": "admin_log_level",
    "fieldtype": "Select",
-   "label": "Outbound Log Level",
+   "label": "Admin Log Level",
    "options": "ERROR\nWARNING\nINFO\nDEBUG",
    "reqd": 1
   },
   {
-   "default": "5000000",
-   "fieldname": "outbound_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Outbound Log Max File Size",
-   "reqd": 1
-  },
-  {
-   "fieldname": "column_break_pvju",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "10",
-   "fieldname": "inbound_log_file_count",
-   "fieldtype": "Int",
-   "label": "Inbound Log File Count",
+   "default": "INFO",
+   "fieldname": "push_log_level",
+   "fieldtype": "Select",
+   "label": "Push Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
    "reqd": 1
   },
   {
@@ -693,6 +386,40 @@
    "reqd": 1
   },
   {
+   "default": "INFO",
+   "fieldname": "outbound_log_level",
+   "fieldtype": "Select",
+   "label": "Outbound Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "default": "INFO",
+   "fieldname": "exchange_log_level",
+   "fieldtype": "Select",
+   "label": "Exchange Log Level",
+   "options": "ERROR\nWARNING\nINFO\nDEBUG",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_pvju",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "5000000",
+   "fieldname": "admin_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Admin Log Max File Size",
+   "reqd": 1
+  },
+  {
+   "default": "5000000",
+   "fieldname": "push_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Push Log Max File Size",
+   "reqd": 1
+  },
+  {
    "default": "5000000",
    "fieldname": "inbound_log_max_file_size",
    "fieldtype": "Int",
@@ -700,11 +427,126 @@
    "reqd": 1
   },
   {
-   "default": "10",
-   "fieldname": "exchange_log_file_count",
+   "default": "5000000",
+   "fieldname": "outbound_log_max_file_size",
    "fieldtype": "Int",
-   "label": "Exchange Log File Count",
+   "label": "Outbound Log Max File Size",
    "reqd": 1
+  },
+  {
+   "default": "5000000",
+   "fieldname": "exchange_log_max_file_size",
+   "fieldtype": "Int",
+   "label": "Exchange Log Max File Size",
+   "reqd": 1
+  },
+  {
+   "collapsible": 1,
+   "collapsible_depends_on": "eval: true",
+   "fieldname": "timeouts_seconds_section",
+   "fieldtype": "Section Break",
+   "label": "Timeouts (Seconds)"
+  },
+  {
+   "default": "3600",
+   "fieldname": "exchange_export_timeout",
+   "fieldtype": "Int",
+   "label": "Mail Exchange Export Timeout",
+   "reqd": 1
+  },
+  {
+   "default": "3600",
+   "fieldname": "exchange_import_timeout",
+   "fieldtype": "Int",
+   "label": "Mail Exchange Import Timeout",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_ahml",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "120",
+   "fieldname": "scan_message_timeout",
+   "fieldtype": "Int",
+   "label": "Scan Message Timeout",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_wvdy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1500",
+   "fieldname": "process_pending_emails_timeout",
+   "fieldtype": "Int",
+   "label": "Process Pending Emails Timeout",
+   "reqd": 1
+  },
+  {
+   "fieldname": "signup_tab",
+   "fieldtype": "Tab Break",
+   "label": "Signup"
+  },
+  {
+   "default": "0",
+   "description": "Allows users to sign up and select a preferred username.",
+   "fieldname": "allow_signup",
+   "fieldtype": "Check",
+   "label": "Allow Signup"
+  },
+  {
+   "fieldname": "column_break_daqm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval: doc.allow_signup",
+   "description": "Domains allowed for signup.",
+   "fieldname": "signup_domains",
+   "fieldtype": "Small Text",
+   "label": "Signup Domains",
+   "mandatory_depends_on": "eval: doc.allow_signup"
+  },
+  {
+   "fieldname": "jmap_push_tab",
+   "fieldtype": "Tab Break",
+   "label": "JMAP Push"
+  },
+  {
+   "fieldname": "section_break_qvpk",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, push subscriptions are created with the encryption keys below, so the JMAP server end-to-end encrypts push payloads. Leave disabled to send push notifications as plain JSON.",
+   "fieldname": "enable_jmap_push_encryption",
+   "fieldtype": "Check",
+   "label": "Enable Push Encryption"
+  },
+  {
+   "fieldname": "column_break_wpvf",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Authentication secret for JMAP PushSubscription encryption.",
+   "fieldname": "jmap_push_auth",
+   "fieldtype": "Password",
+   "label": "JMAP Push Auth Secret",
+   "read_only": 1
+  },
+  {
+   "description": "ECDH P-256 private key used to decrypt incoming encrypted push notifications.",
+   "fieldname": "jmap_push_private_key",
+   "fieldtype": "Password",
+   "label": "JMAP Push Private Key",
+   "read_only": 1
+  },
+  {
+   "description": "P-256 ECDH public key for JMAP PushSubscription encryption.",
+   "fieldname": "jmap_push_p256dh",
+   "fieldtype": "Data",
+   "label": "JMAP Push Key (P256DH)",
+   "read_only": 1
   },
   {
    "fieldname": "event_invites_tab",
@@ -737,27 +579,12 @@
    "fieldname": "max_mailing_list_participants",
    "fieldtype": "Int",
    "label": "Max Mailing List Participants"
-  },
-  {
-   "default": "INFO",
-   "fieldname": "exchange_log_level",
-   "fieldtype": "Select",
-   "label": "Exchange Log Level",
-   "options": "ERROR\nWARNING\nINFO\nDEBUG",
-   "reqd": 1
-  },
-  {
-   "default": "5000000",
-   "fieldname": "exchange_log_max_file_size",
-   "fieldtype": "Int",
-   "label": "Exchange Log Max File Size",
-   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-03 13:00:00.000000",
+ "modified": "2026-09-01 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Settings",

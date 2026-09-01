@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Boots a bootstrapped Stalwart server for the mail/calendar integration tests.
-# Mirrors the production sequence in suite/mail/utils/ansible/playbooks/deploy-mail-server.yml:
+# Mirrors the production sequence in the Suite Cloud app's deploy-mail-server.yml playbook:
 # start container -> wait for :8080 -> stalwart-cli apply bootstrap.ndjson -> restart -> wait.
 set -euo pipefail
 

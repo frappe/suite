@@ -8,7 +8,6 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from suite.mail.doctype.dns_record.dns_record import get_dns_provider
 from suite.mail.stalwart import get_domain_service
 from suite.mail.utils import is_stalwart_configured
 
@@ -30,24 +29,13 @@ class MailSettings(Document):
         admin_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
         admin_log_max_file_size: DF.Int
         allow_signup: DF.Check
-        ansible_play_timeout: DF.Int
         custom_event_invites: DF.Check
         default_disk_quota_gb: DF.Int
         default_dns_ttl: DF.Int
-        default_gravatar: DF.Literal["404"]
-        disabled_account_role: DF.Data | None
-        dns_provider: DF.Literal[
-            "", "AmazonRoute53", "DigitalOcean", "Cloudflare", "Hetzner", "Linode", "Namecheap", "GoDaddy"
+        default_gravatar: DF.Literal[
+            "404", "mp", "identicon", "monsterid", "wavatar", "retro", "robohash", "blank"
         ]
-        dns_provider_access_key: DF.Data | None
-        dns_provider_access_secret: DF.Password | None
-        dns_provider_client_ip: DF.Data | None
-        dns_provider_key: DF.Data | None
-        dns_provider_private_zone: DF.Check
-        dns_provider_secret: DF.Password | None
-        dns_provider_token: DF.Password | None
-        dns_provider_username: DF.Data | None
-        dns_provider_zone_id: DF.Data | None
+        disabled_account_role: DF.Data | None
         enable_gravatar: DF.Check
         enable_jmap_push_encryption: DF.Check
         exchange_export_batch_size: DF.Int
@@ -80,10 +68,7 @@ class MailSettings(Document):
         push_log_file_count: DF.Int
         push_log_level: DF.Literal["ERROR", "WARNING", "INFO", "DEBUG"]
         push_log_max_file_size: DF.Int
-        root_domain_name: DF.Data | None
         scan_message_timeout: DF.Int
-        server_deployment_timeout: DF.Int
-        server_job_timeout: DF.Int
         server_url: DF.Data | None
         show_calendar_client_config: DF.Check
         show_mail_client_config: DF.Check
@@ -92,73 +77,18 @@ class MailSettings(Document):
         spamd_hybrid_scanning_threshold: DF.Float
         spamd_port: DF.Int
         spamd_scanning_mode: DF.Literal["Exclude Attachments", "Include Attachments", "Hybrid Approach"]
-        stalwart_cli_command_timeout: DF.Int
-        stalwart_cli_version: DF.Data
-        stalwart_version: DF.Data
         username: DF.Data | None
         verify_ssl: DF.Check
     # end: auto-generated types
 
     def validate(self) -> None:
         if not frappe.flags.in_migrate:
-            self.validate_root_domain_name()
-            self.validate_dns_provider()
             self.validate_jmap_push_subscription_keys()
             self.validate_signup()
 
     def on_update(self) -> None:
         self.clear_cache()
         frappe.clear_document_cache(self.doctype)
-
-        if self.has_value_changed("root_domain_name"):
-            self.handle_root_domain_change()
-
-    def validate_root_domain_name(self) -> None:
-        """Validates the Root Domain Name."""
-
-        if self.root_domain_name:
-            self.root_domain_name = self.root_domain_name.lower()
-
-    def validate_dns_provider(self) -> None:
-        """Validates the DNS Provider."""
-
-        if not self.dns_provider:
-            return
-
-        if not self.root_domain_name:
-            frappe.throw(_("Please set the Root Domain Name before configuring the DNS Provider."))
-
-        match self.dns_provider:
-            case "AmazonRoute53":
-                if not self.dns_provider_access_key or not self.dns_provider_access_secret:
-                    frappe.throw(_("Please set the DNS Provider Access Key and Secret."))
-
-            case "DigitalOcean" | "Cloudflare" | "Hetzner" | "Linode" | "Namecheap":
-                if not self.dns_provider_token:
-                    frappe.throw(_("Please set the DNS Provider Token."))
-                elif self.dns_provider == "Namecheap":
-                    if not self.dns_provider_username or not self.dns_provider_client_ip:
-                        frappe.throw(_("Please set the DNS Provider Username and Client IP."))
-
-            case "GoDaddy":
-                if not self.dns_provider_key or not self.dns_provider_secret:
-                    frappe.throw(_("Please set the DNS Provider Key and Secret."))
-
-        verify_dns_provider = (
-            self.has_value_changed("root_domain_name")
-            or self.has_value_changed("dns_provider")
-            or self.has_value_changed("dns_provider_access_key")
-            or self.has_value_changed("dns_provider_access_secret")
-            or self.has_value_changed("dns_provider_token")
-            or self.has_value_changed("dns_provider_username")
-            or self.has_value_changed("dns_provider_client_ip")
-            or self.has_value_changed("dns_provider_key")
-            or self.has_value_changed("dns_provider_secret")
-        )
-
-        if verify_dns_provider:
-            dns_provider = get_dns_provider(self)
-            dns_provider.read_dns_records("MX")
 
     def validate_signup(self) -> None:
         """Validates the Signup."""
@@ -283,19 +213,6 @@ class MailSettings(Document):
             return True
         except Exception:
             return False
-
-    def handle_root_domain_change(self) -> None:
-        """Resets DNS Record verification and notifies user after root domain change."""
-
-        frappe.db.set_value("DNS Record", {"is_verified": 1}, "is_verified", 0)
-
-        if self.has_value_changed("root_domain_name"):
-            dns_record_list_link = f'<a href="/app/dns-record">{_("DNS Records")}</a>'
-            frappe.msgprint(
-                _("Please verify the {0} for the new {1}.").format(
-                    dns_record_list_link, frappe.bold("Root Domain Name")
-                )
-            )
 
     def clear_cache(self) -> None:
         """Clears the Cache."""

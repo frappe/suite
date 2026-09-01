@@ -27,8 +27,6 @@ CONFIG_KEYS = [
     "enable_gravatar",
     "default_gravatar",
     "expand_mailing_list_participants",
-    "stalwart_version",
-    "stalwart_cli_version",
     # Logs
     "admin_log_file_count",
     "admin_log_level",
@@ -56,12 +54,8 @@ CONFIG_KEYS = [
     "process_pending_emails_batch_size",
     "process_pending_emails_max_batch_size",
     # Timeouts
-    "ansible_play_timeout",
-    "server_job_timeout",
-    "server_deployment_timeout",
     "scan_message_timeout",
     "process_pending_emails_timeout",
-    "stalwart_cli_command_timeout",
     "exchange_export_timeout",
     "exchange_import_timeout",
 ]
@@ -159,12 +153,6 @@ def generate_uuid_style_hash(input_str: str) -> str:
     return f"{hash[:8]}-{hash[8:12]}-{hash[12:16]}-{hash[16:20]}-{hash[20:]}"
 
 
-def get_mail_app_path() -> str:
-    """Returns the path to the Suite app directory."""
-
-    return os.path.join(get_bench_path(), "apps/suite")
-
-
 def get_messages_directory() -> str:
     """Returns the path to the messages directory for the current site."""
 
@@ -219,26 +207,3 @@ def get_contacts_export_directory() -> str:
     directory = os.path.join(get_bench_path(), "sites", frappe.local.site, "contacts-exchange", "export")
     os.makedirs(directory, exist_ok=True)
     return directory
-
-
-def get_stalwart_cli_path(raise_exception: bool = False) -> str:
-    """Returns the path to the Stalwart CLI tool, raising an error if not found."""
-
-    cli_path = os.path.join(get_mail_app_path(), "stalwart-cli")
-    if not os.path.exists(cli_path) and raise_exception:
-        relpath = os.path.relpath(cli_path, get_bench_path())
-        frappe.throw(_("Stalwart CLI not found at {0}.").format(relpath))
-
-    return cli_path
-
-
-def get_stalwart_version() -> str:
-    """Returns the Stalwart version from configuration or default."""
-
-    return get_config("stalwart_version")
-
-
-def get_stalwart_cli_version() -> str:
-    """Returns the Stalwart CLI version from configuration or default."""
-
-    return get_config("stalwart_cli_version")

@@ -34,13 +34,16 @@ export async function createMeetingViaApi(
 	return meetingId;
 }
 
-export async function clearMeetingCreateRateLimit(
+export async function clearMeetingRateLimits(
 	request: APIRequestContext,
 ): Promise<void> {
-	await request.post(
-		"/api/method/suite.meet.api.test_helpers.clear_create_rate_limit",
+	const response = await request.post(
+		"/api/method/suite.meet.api.test_helpers.clear_rate_limits",
 		{ data: {} },
 	);
+	if (!response.ok()) {
+		throw new Error(`Meeting rate-limit reset failed with status ${response.status()}`);
+	}
 }
 
 export type { MeetingType };
