@@ -555,6 +555,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                         raise RuntimeError("downstream infrastructure failed")
 
                     with (
+                        patch("suite.meet.api.meeting._require_trusted_realtime_request"),
                         patch(downstream, side_effect=fail_after_redaction),
                         self.assertRaisesRegex(
                             RuntimeError,
@@ -562,6 +563,38 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                         ),
                     ):
                         endpoint(*args)
+
+    def test_guest_status_validation_requires_realtime_secret_for_http_requests(self):
+        frappe.set_user("Guest")
+        waiting = join_meeting_as_guest(self.meeting.name, "Socket Auth Guest")
+        previous_request = getattr(frappe.local, "request", None)
+        self.addCleanup(setattr, frappe.local, "request", previous_request)
+
+        with patch("frappe.realtime.get_socketio_secret", return_value="trusted-secret"):
+            for provided_secret in (None, "wrong-secret"):
+                headers = {"X-Frappe-Socket-Secret": provided_secret} if provided_secret else None
+                frappe.local.request = Request(EnvironBuilder(method="POST", headers=headers).get_environ())
+                with self.assertRaises(frappe.PermissionError):
+                    validate_guest_session(
+                        self.meeting.name,
+                        waiting["guest_id"],
+                        waiting["guest_session_token"],
+                    )
+
+            frappe.local.request = Request(
+                EnvironBuilder(
+                    method="POST",
+                    headers={"X-Frappe-Socket-Secret": "trusted-secret"},
+                ).get_environ()
+            )
+            self.assertEqual(
+                validate_guest_session(
+                    self.meeting.name,
+                    waiting["guest_id"],
+                    waiting["guest_session_token"],
+                ),
+                {"valid": True, "status": "pending"},
+            )
 
     def test_guest_room_index_has_bounded_ttl_and_atomic_updates_reset_it(self):
         pending, _session_token = guest_access.create_lease(

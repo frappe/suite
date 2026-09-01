@@ -65,6 +65,7 @@ suite.meet.patches.switch_meet_user_to_suite_user
 suite.meet.patches.migrate_pending_recording_startups
 suite.meet.patches.backfill_recording_storage_reservations
 suite.meet.patches.add_meet_rate_limits
+suite.meet.patches.remove_guest_session_validation_rate_limit
 suite.meet.patches.backfill_recording_finalization
 # --- mail ---
 suite.mail.patches.create_push_subscriptions

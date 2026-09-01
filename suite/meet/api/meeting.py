@@ -45,6 +45,18 @@ def _redact_guest_proof_from_request() -> None:
         form_dict[_GUEST_PROOF_FIELD] = _REDACTED_PROOF
 
 
+def _require_trusted_realtime_request() -> None:
+    if not getattr(frappe.local, "request", None):
+        return
+
+    from frappe.realtime import get_socketio_secret
+
+    provided_secret = frappe.get_request_header("X-Frappe-Socket-Secret")
+    trusted_secret = get_socketio_secret()
+    if not provided_secret or not secrets.compare_digest(trusted_secret, provided_secret):
+        frappe.throw(_("Realtime authentication required"), frappe.PermissionError)
+
+
 def _generate_sfu_token(
     user_id: str,
     meeting_id: str,
@@ -620,13 +632,13 @@ def ban_guest(meeting_id: str, guest_id: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@dynamic_rate_limit(trusted_socket_bypass=True)
 def validate_guest_session(
     meeting_id: str,
     guest_id: str,
     guest_session_token: str | None = None,
 ) -> dict:
     """Return active validity and any proof-bound lease status."""
+    _require_trusted_realtime_request()
     _redact_guest_proof_from_request()
     status = guest_access.get_status(meeting_id, guest_id, guest_session_token)
     result: dict[str, bool | str] = {"valid": status in guest_access.ACTIVE_STATUSES}
