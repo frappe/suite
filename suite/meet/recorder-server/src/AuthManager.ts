@@ -5,8 +5,12 @@ import {
 	COMMAND_AUDIENCE,
 	COMMAND_TYPE,
 	type CommandClaims,
+	HEALTH_AUDIENCE,
+	HEALTH_TYPE,
+	type HealthClaims,
 	PROTOCOL_VERSION,
 	type RecordingLimits,
+	type RecordingPolicy,
 } from './types.js';
 
 const CLAIM_KEYS = [
@@ -19,13 +23,26 @@ const CLAIM_KEYS = [
 	'limits',
 	'operation',
 	'origin',
+	'policy',
 	'protocol_version',
 	'recording',
 	'room',
 	'site',
 ];
+const HEALTH_CLAIM_KEYS = [
+	'aud',
+	'exp',
+	'iat',
+	'iss',
+	'jti',
+	'operation',
+	'origin',
+	'protocol_version',
+	'site',
+];
 const LIMIT_KEYS = ['budget_bytes', 'max_ends_at', 'output'];
 const OUTPUT_KEYS = ['audio', 'fps', 'height', 'video', 'width'];
+const POLICY_KEYS = ['recording_allowed'];
 
 export class AuthError extends Error {}
 
@@ -98,6 +115,19 @@ function parseLimits(value: unknown): RecordingLimits | null {
 	};
 }
 
+function parsePolicy(value: unknown): RecordingPolicy | null {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!exactKeys(value, POLICY_KEYS) ||
+		!('recording_allowed' in value) ||
+		typeof value.recording_allowed !== 'boolean'
+	)
+		return null;
+	return { recording_allowed: value.recording_allowed };
+}
+
 export class AuthManager {
 	constructor(
 		private readonly secret: string,
@@ -106,7 +136,7 @@ export class AuthManager {
 		private readonly store: JobStore,
 	) {}
 
-	async consume(claims: CommandClaims): Promise<void> {
+	async consume(claims: { jti: string; exp: number }): Promise<void> {
 		if (!(await this.store.consumeJti(claims.jti, claims.exp)))
 			throw new AuthError('replayed command');
 	}
@@ -175,6 +205,55 @@ export class AuthManager {
 		return claims;
 	}
 
+	authenticateHealth(
+		authorization: string | undefined,
+		now = Math.floor(Date.now() / 1000),
+	): HealthClaims {
+		if (!authorization?.startsWith('Bearer ') || authorization.length === 7)
+			throw new AuthError('missing bearer token');
+		const token = authorization.slice(7);
+		let header: JwtHeader | undefined;
+		try {
+			header = jwt.decode(token, { complete: true })?.header;
+		} catch {
+			throw new AuthError('invalid token');
+		}
+		if (
+			!header ||
+			!exactKeys(header, ['alg', 'typ']) ||
+			header.alg !== 'HS256' ||
+			header.typ !== HEALTH_TYPE
+		)
+			throw new AuthError('invalid header');
+		let decoded: unknown;
+		try {
+			decoded = jwt.verify(token, this.secret, {
+				algorithms: ['HS256'],
+				audience: HEALTH_AUDIENCE,
+				issuer: `frappe-site:${this.site}`,
+				clockTimestamp: now,
+			});
+		} catch {
+			throw new AuthError('invalid signature or registered claims');
+		}
+		const claims = parseHealthClaims(decoded);
+		if (
+			claims.site !== this.site ||
+			claims.origin !== this.origin ||
+			claims.iss !== `frappe-site:${claims.site}`
+		)
+			throw new AuthError('wrong health scope');
+		if (![claims.site, claims.origin, claims.jti].every(nonempty))
+			throw new AuthError('invalid binding');
+		if (
+			claims.exp - claims.iat !== 30 ||
+			claims.iat > now + 5 ||
+			claims.iat < now - 35
+		)
+			throw new AuthError('invalid health lifetime');
+		return claims;
+	}
+
 	authenticateMetrics(
 		authorization: string | undefined,
 		token: string,
@@ -219,6 +298,9 @@ export function parseCommandClaims(value: unknown): CommandClaims {
 	}
 	const limits = parseLimits(value.limits);
 	if (!limits) throw new AuthError('invalid limits');
+	if (!('policy' in value)) throw new AuthError('invalid policy');
+	const policy = parsePolicy(value.policy);
+	if (!policy) throw new AuthError('invalid policy');
 	return {
 		protocol_version: PROTOCOL_VERSION,
 		iss: claimString(value, 'iss'),
@@ -230,6 +312,41 @@ export function parseCommandClaims(value: unknown): CommandClaims {
 		job: claimString(value, 'job'),
 		operation: value.operation,
 		limits,
+		policy,
+		jti: claimString(value, 'jti'),
+		iat: value.iat,
+		exp: value.exp,
+	};
+}
+
+export function parseHealthClaims(value: unknown): HealthClaims {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!exactKeys(value, HEALTH_CLAIM_KEYS) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== PROTOCOL_VERSION ||
+		!('aud' in value) ||
+		value.aud !== HEALTH_AUDIENCE ||
+		!('operation' in value) ||
+		value.operation !== 'deployment_health' ||
+		!('iat' in value) ||
+		typeof value.iat !== 'number' ||
+		!Number.isSafeInteger(value.iat) ||
+		!('exp' in value) ||
+		typeof value.exp !== 'number' ||
+		!Number.isSafeInteger(value.exp)
+	) {
+		throw new AuthError('invalid health claims');
+	}
+	return {
+		protocol_version: PROTOCOL_VERSION,
+		iss: claimString(value, 'iss'),
+		aud: HEALTH_AUDIENCE,
+		site: claimString(value, 'site'),
+		origin: claimString(value, 'origin'),
+		operation: 'deployment_health',
 		jti: claimString(value, 'jti'),
 		iat: value.iat,
 		exp: value.exp,

@@ -502,6 +502,7 @@ def start(meeting_id: str, request_id: str) -> dict:
             recording=recording.name,
             job=recording.recorder_job_id,
             limits=_limits(recording),
+            recording_allowed=bool(preflight["eligible"]),
         )
     )
     return _finish_start(room, recording, outcome, client)

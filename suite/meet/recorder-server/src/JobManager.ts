@@ -1,7 +1,13 @@
 import type { StorageGuard } from './DiskGuard.js';
 import type { JobStore } from './JobStore.js';
 import type { RendererBridge } from './RendererBridge.js';
-import type { CommandClaims, JobRecord } from './types.js';
+import {
+	type CommandClaims,
+	type CommandRejectionReason,
+	type DeploymentHealthResponse,
+	type JobRecord,
+	PROTOCOL_VERSION,
+} from './types.js';
 
 const TERMINAL_STATES = ['complete', 'partial', 'failed'] as const;
 const MAX_ACKNOWLEDGED_TERMINAL_JOBS = 1_000;
@@ -30,7 +36,7 @@ export type ReserveResult =
 	| { status: 'accepted'; job: JobRecord }
 	| {
 			status: 'rejected';
-			reason: 'capacity' | 'storage' | 'policy' | 'invalid_job';
+			reason: CommandRejectionReason;
 	  };
 
 const unrestrictedStorage: StorageGuard = {
@@ -45,6 +51,7 @@ function sameCommand(job: JobRecord, command: CommandClaims): boolean {
 		job.origin === command.origin &&
 		job.room === command.room &&
 		job.recording === command.recording &&
+		command.policy.recording_allowed &&
 		job.limits.max_ends_at === command.limits.max_ends_at &&
 		JSON.stringify(job.limits.output) ===
 			JSON.stringify(command.limits.output) &&
@@ -55,6 +62,7 @@ function sameCommand(job: JobRecord, command: CommandClaims): boolean {
 export class JobManager {
 	private operations: Promise<void> = Promise.resolve();
 	private recoveryRequired = false;
+	private readonly pendingReservations = new Map<string, CommandClaims>();
 	private readonly terminalDeliveries = new Map<string, Promise<void>>();
 	private readonly healthDeliveries = new Map<string, Promise<unknown>>();
 
@@ -161,20 +169,56 @@ export class JobManager {
 	}
 
 	get ready(): boolean {
-		return (
-			this.store.ready &&
-			this.bridge.productionReady &&
-			!this.recoveryRequired &&
-			this.storage.ready()
-		);
+		return this.deploymentHealth().ready;
+	}
+	get ledgerReady(): boolean {
+		return this.store.ready;
 	}
 	get activeCount(): number {
-		return this.store.all().filter((job) => !terminal(job)).length;
+		return (
+			(this.store.ready
+				? this.store.all().filter((job) => !terminal(job)).length
+				: 0) + this.pendingReservations.size
+		);
+	}
+
+	deploymentHealth(): DeploymentHealthResponse {
+		const reason = !this.store.ready
+			? 'ledger_unavailable'
+			: !this.bridge.productionReady
+				? 'renderer_unavailable'
+				: this.recoveryRequired
+					? 'recovery_required'
+					: !this.storage.ready()
+						? 'storage_unavailable'
+						: 'ready';
+		const activeCount = this.store.ready ? this.activeCount : this.capacity;
+		return {
+			protocol_version: PROTOCOL_VERSION,
+			observed_at: new Date().toISOString(),
+			ready: reason === 'ready',
+			reason_code: reason,
+			configured_capacity: this.capacity,
+			active_count: activeCount,
+			available_count: Math.max(0, this.capacity - activeCount),
+		};
 	}
 
 	async reserve(command: CommandClaims): Promise<ReserveResult> {
 		let result: ReserveResult | undefined;
 		await this.serial(async () => {
+			if (!command.policy.recording_allowed) {
+				result = { status: 'rejected', reason: 'policy' };
+				return;
+			}
+			if (this.recoveryRequired) {
+				result = { status: 'rejected', reason: 'recovery_required' };
+				return;
+			}
+			if (!this.store.ready) {
+				result = { status: 'rejected', reason: 'readiness' };
+				return;
+			}
 			const existing = this.store.get(command.job);
 			if (existing) {
 				result =
@@ -183,6 +227,14 @@ export class JobManager {
 					(terminal(existing) || this.bridge.hasWorker(existing.job))
 						? { status: 'accepted', job: existing }
 						: { status: 'rejected', reason: 'invalid_job' };
+				return;
+			}
+			if (this.pendingReservations.has(command.job)) {
+				result = { status: 'rejected', reason: 'invalid_job' };
+				return;
+			}
+			if (!this.bridge.productionReady) {
+				result = { status: 'rejected', reason: 'readiness' };
 				return;
 			}
 			if (this.activeCount >= this.capacity) {
@@ -199,13 +251,21 @@ export class JobManager {
 				}
 				requiredBytes += remaining;
 			}
+			for (const pending of this.pendingReservations.values())
+				requiredBytes += pending.limits.budget_bytes * 2;
 			if (
 				!Number.isSafeInteger(requiredBytes) ||
+				!this.storage.ready() ||
 				!this.storage.canReserve(requiredBytes)
 			) {
 				result = { status: 'rejected', reason: 'storage' };
 				return;
 			}
+			this.pendingReservations.set(command.job, structuredClone(command));
+		});
+		if (result) return result;
+
+		try {
 			const publicJwk = await this.bridge.reserve(command, 0);
 			const job: JobRecord = {
 				job: command.job,
@@ -222,18 +282,22 @@ export class JobManager {
 				stop_operation_ids: [],
 				captured_bytes: 0,
 			};
-			try {
+			await this.serial(async () => {
 				await this.store.update((jobs) => {
 					jobs[job.job] = job;
 				});
-			} catch (error) {
-				await this.bridge.stop(job.job);
-				throw error;
-			}
-			result = { status: 'accepted', job };
-		});
-		if (!result) throw new Error('reservation did not complete');
-		return result;
+				this.pendingReservations.delete(command.job);
+			});
+			return { status: 'accepted', job };
+		} catch (error) {
+			await this.bridge.stop(command.job).catch(() => undefined);
+			throw error;
+		} finally {
+			if (this.pendingReservations.has(command.job))
+				await this.serial(async () => {
+					this.pendingReservations.delete(command.job);
+				});
+		}
 	}
 
 	query(command: CommandClaims): JobRecord | undefined {

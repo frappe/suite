@@ -15,7 +15,6 @@ async function main(): Promise<void> {
 	await mkdir(config.dataRoot, { recursive: true, mode: 0o700 });
 	const disk = new DiskGuard(config.dataRoot, config.minimumFreeBytes);
 	const store = new JobStore(config.ledgerPath);
-	await store.initialize();
 	let capture!: CaptureWorkerManager;
 	const renderer = new ChromiumRendererBridge({
 		executablePath: config.chromiumExecutable,
@@ -29,7 +28,6 @@ async function main(): Promise<void> {
 		configureTimeoutMs: config.rendererConfigureTimeoutMs,
 		workerEnvironment: (job) => capture.workerEnvironment(job),
 	});
-	await renderer.initialize();
 	capture = new CaptureWorkerManager(renderer, {
 		dataRoot: config.dataRoot,
 		segmentSeconds: config.segmentSeconds,
@@ -119,7 +117,6 @@ async function main(): Promise<void> {
 		},
 		(job, capturedBytes) => callbacks.segmentProgress(job, capturedBytes),
 	);
-	await jobs.initialize();
 	const auth = new AuthManager(
 		config.secret,
 		config.site,
@@ -127,6 +124,16 @@ async function main(): Promise<void> {
 		store,
 	);
 	const server = createApp(config, auth, jobs, logger).listen(config.port);
+	try {
+		await store.initialize();
+		await renderer.initialize();
+		await jobs.initialize();
+	} catch (error) {
+		logger.error({
+			event: 'service_initialization_failed',
+			reason: error instanceof Error ? error.message : 'initialization_failed',
+		});
+	}
 	let shuttingDown = false;
 	const shutdown = async () => {
 		if (shuttingDown) return;

@@ -29,6 +29,7 @@ const command = (job: string): CommandClaims => ({
 	recording: 'recording',
 	job,
 	operation: 'reserve',
+	policy: { recording_allowed: true },
 	limits: {
 		budget_bytes: 100_000_000,
 		max_ends_at: '2030-01-01T00:00:00Z',

@@ -39,7 +39,9 @@ finalization output; `/ready` fails when free space falls below the floor.
 
 The recorder API remains bound to host loopback on port 3010. Caddy exposes
 the control and status routes plus bearer-protected `/recorder/metrics` over
-HTTPS. Configure the Frappe site with the same secret:
+HTTPS. Frappe probes `/v1/deployment-health` with a short-lived deployment-health
+JWT; the response is advisory, while `POST /v1/recordings` remains the only
+authoritative admission decision. Configure the Frappe site with the same secret:
 
 ```json
 {

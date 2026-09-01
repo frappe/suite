@@ -36,7 +36,12 @@ class TestRecorderClient(unittest.TestCase):
             allow_http=True,
             session=self.session,
         )
-        self.arguments = {"room": "room", "recording": "recording", "job": "job", "limits": {"x": 1}}
+        self.arguments = {
+            "room": "room",
+            "recording": "recording",
+            "job": "job",
+            "limits": {"x": 1},
+        }
 
     @patch("suite.meet.recording.recorder_client.time.time", return_value=100)
     def test_accepted_response_and_exact_command_claims(self, _time):
@@ -54,7 +59,7 @@ class TestRecorderClient(unittest.TestCase):
             },
         )
 
-        outcome = self.client.reserve(**self.arguments)
+        outcome = self.client.reserve(**self.arguments, recording_allowed=True)
 
         self.assertEqual(outcome.outcome, "accepted")
         self.assertEqual(outcome.accepted_at.isoformat(), "2026-07-31T10:11:12.123000+00:00")
@@ -81,6 +86,7 @@ class TestRecorderClient(unittest.TestCase):
                 "job",
                 "operation",
                 "limits",
+                "policy",
                 "jti",
                 "iat",
                 "exp",
@@ -88,6 +94,7 @@ class TestRecorderClient(unittest.TestCase):
             },
         )
         self.assertEqual(claims["protocol_version"], 1)
+        self.assertEqual(claims["policy"], {"recording_allowed": True})
         self.assertEqual(call.kwargs["json"], {"protocol_version": 1, "job": "job"})
         self.assertEqual(claims["operation"], "reserve")
         self.assertEqual(call.kwargs["timeout"], (2, 5))
@@ -97,19 +104,21 @@ class TestRecorderClient(unittest.TestCase):
         self.session.request.return_value = response(
             429, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "capacity"}
         )
-        self.assertEqual(self.client.reserve(**self.arguments).outcome, "rejected")
+        self.assertEqual(self.client.reserve(**self.arguments, recording_allowed=True).outcome, "rejected")
 
         self.session.request.return_value = response(
             507, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "storage"}
         )
-        outcome = self.client.reserve(**self.arguments)
+        outcome = self.client.reserve(**self.arguments, recording_allowed=True)
         self.assertEqual(outcome.outcome, "rejected")
         self.assertEqual(outcome.reason_code, "storage")
 
         self.session.request.return_value = response(
             429, {"protocol_version": 1, "status": "rejected", "job": "job", "reason_code": "anything"}
         )
-        self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+        self.assertEqual(
+            self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+        )
 
     def test_interrupted_response_preserves_unrecovered_timestamps(self):
         self.session.request.return_value = response(
@@ -156,7 +165,9 @@ class TestRecorderClient(unittest.TestCase):
         for generation in (-1, True, "0", None):
             with self.subTest(generation=generation):
                 self.session.request.return_value = response(202, {**body, "endpoint_generation": generation})
-                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+                self.assertEqual(
+                    self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+                )
 
     def test_timeout_invalid_json_wrong_job_and_5xx_are_indeterminate(self):
         cases = [
@@ -169,7 +180,9 @@ class TestRecorderClient(unittest.TestCase):
             with self.subTest(result=result):
                 self.session.request.side_effect = result if isinstance(result, Exception) else None
                 self.session.request.return_value = None if isinstance(result, Exception) else result
-                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+                self.assertEqual(
+                    self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+                )
 
     def test_rejects_missing_wrong_and_unknown_response_protocol_fields(self):
         accepted = {
@@ -189,7 +202,9 @@ class TestRecorderClient(unittest.TestCase):
         ):
             with self.subTest(body=body):
                 self.session.request.return_value = response(202, body)
-                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+                self.assertEqual(
+                    self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+                )
 
     def test_unhashable_state_and_reason_values_are_indeterminate(self):
         accepted = {
@@ -205,7 +220,9 @@ class TestRecorderClient(unittest.TestCase):
         for body in ({**accepted, "state": []}, {**accepted, "reason_code": {}}):
             with self.subTest(body=body):
                 self.session.request.return_value = response(202, body)
-                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+                self.assertEqual(
+                    self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+                )
 
     def test_timestamp_requires_exact_millisecond_precision(self):
         base = {
@@ -225,7 +242,9 @@ class TestRecorderClient(unittest.TestCase):
         ):
             with self.subTest(timestamp=timestamp):
                 self.session.request.return_value = response(202, {**base, "accepted_at": timestamp})
-                self.assertEqual(self.client.reserve(**self.arguments).outcome, "indeterminate")
+                self.assertEqual(
+                    self.client.reserve(**self.arguments, recording_allowed=True).outcome, "indeterminate"
+                )
 
     def test_rejects_untrusted_urls(self):
         for url in (

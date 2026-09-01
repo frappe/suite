@@ -49,6 +49,7 @@ const command: CommandClaims = {
 	recording: 'recording-vertical',
 	job: 'job-vertical',
 	operation: 'reserve',
+	policy: { recording_allowed: true },
 	limits: {
 		budget_bytes: 1_000_000,
 		max_ends_at: '2026-07-31T12:00:00Z',

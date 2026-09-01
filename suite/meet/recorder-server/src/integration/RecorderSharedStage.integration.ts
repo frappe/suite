@@ -400,6 +400,7 @@ try {
 		recording: 'recording-shared-stage',
 		job,
 		operation: 'reserve',
+		policy: { recording_allowed: true },
 		limits: {
 			budget_bytes: 100_000_000,
 			max_ends_at: new Date(Date.now() + 300_000).toISOString(),

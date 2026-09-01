@@ -1,7 +1,27 @@
 export const COMMAND_AUDIENCE = 'meet-recorder-control';
 export const COMMAND_TYPE = 'meet-recorder-command+jwt';
+export const HEALTH_AUDIENCE = 'meet-recorder-health';
+export const HEALTH_TYPE = 'meet-recorder-health+jwt';
 export const PROTOCOL_VERSION = 1;
 export type CommandOperation = 'reserve' | 'query' | 'grant' | 'stop';
+export type CommandRejectionReason =
+	| 'capacity'
+	| 'storage'
+	| 'readiness'
+	| 'recovery_required'
+	| 'policy'
+	| 'invalid_request'
+	| 'invalid_job';
+export type DeploymentReadinessReason =
+	| 'ready'
+	| 'ledger_unavailable'
+	| 'renderer_unavailable'
+	| 'recovery_required'
+	| 'storage_unavailable';
+
+export interface RecordingPolicy {
+	recording_allowed: boolean;
+}
 
 export interface RecordingLimits {
 	budget_bytes: number;
@@ -20,9 +40,32 @@ export interface CommandClaims {
 	job: string;
 	operation: CommandOperation;
 	limits: RecordingLimits;
+	policy: RecordingPolicy;
 	jti: string;
 	iat: number;
 	exp: number;
+}
+
+export interface HealthClaims {
+	protocol_version: typeof PROTOCOL_VERSION;
+	iss: string;
+	aud: typeof HEALTH_AUDIENCE;
+	site: string;
+	origin: string;
+	operation: 'deployment_health';
+	jti: string;
+	iat: number;
+	exp: number;
+}
+
+export interface DeploymentHealthResponse {
+	protocol_version: typeof PROTOCOL_VERSION;
+	observed_at: string;
+	ready: boolean;
+	reason_code: DeploymentReadinessReason;
+	configured_capacity: number;
+	active_count: number;
+	available_count: number;
 }
 
 export interface PublicJwk {

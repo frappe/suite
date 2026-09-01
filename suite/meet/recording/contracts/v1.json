@@ -5,6 +5,7 @@
   "timestamp_format": "UTC RFC 3339 with exactly millisecond precision and Z",
   "vocabularies": {
     "command_operations": ["reserve", "query", "grant", "stop"],
+    "health_operations": ["deployment_health"],
     "command_states": [
       "reserved",
       "configured",
@@ -18,7 +19,22 @@
       "complete",
       "partial"
     ],
-    "command_rejection_reason_codes": ["capacity", "storage", "policy", "invalid_job"],
+    "command_rejection_reason_codes": [
+      "capacity",
+      "storage",
+      "readiness",
+      "recovery_required",
+      "policy",
+      "invalid_request",
+      "invalid_job"
+    ],
+    "deployment_readiness_reason_codes": [
+      "ready",
+      "ledger_unavailable",
+      "renderer_unavailable",
+      "recovery_required",
+      "storage_unavailable"
+    ],
     "health_reason_codes": [
       "browser_disconnected",
       "capture_interrupted",
@@ -114,10 +130,37 @@
         "limits",
         "operation",
         "origin",
+        "policy",
         "protocol_version",
         "recording",
         "room",
         "site"
+      ],
+      "optional": []
+    },
+    "health_claims": {
+      "required": [
+        "aud",
+        "exp",
+        "iat",
+        "iss",
+        "jti",
+        "operation",
+        "origin",
+        "protocol_version",
+        "site"
+      ],
+      "optional": []
+    },
+    "deployment_health_response": {
+      "required": [
+        "active_count",
+        "available_count",
+        "configured_capacity",
+        "observed_at",
+        "protocol_version",
+        "ready",
+        "reason_code"
       ],
       "optional": []
     },
@@ -539,13 +582,121 @@
           "max_ends_at": "2026-08-30T12:00:00.000Z",
           "output": { "width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac" }
         },
+        "policy": { "recording_allowed": true },
         "jti": "jti-vector",
         "iat": 1700000000,
         "exp": 1700000030
       }],
       "rejected": [
         { "protocol_version": 2 },
-        { "protocol_version": 1, "unknown": true }
+        { "protocol_version": 1, "unknown": true },
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-control",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "room": "room-vector",
+          "recording": "recording-vector",
+          "job": "job-vector",
+          "operation": "reserve",
+          "limits": {
+            "budget_bytes": 1000000,
+            "max_ends_at": "2026-08-30T12:00:00.000Z",
+            "output": { "width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac" }
+          },
+          "jti": "jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030
+        },
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-control",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "room": "room-vector",
+          "recording": "recording-vector",
+          "job": "job-vector",
+          "operation": "reserve",
+          "limits": {
+            "budget_bytes": 1000000,
+            "max_ends_at": "2026-08-30T12:00:00.000Z",
+            "output": { "width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac" }
+          },
+          "policy": { "recording_allowed": "true" },
+          "jti": "jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030
+        },
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-control",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "room": "room-vector",
+          "recording": "recording-vector",
+          "job": "job-vector",
+          "operation": "reserve",
+          "limits": {
+            "budget_bytes": 1000000,
+            "max_ends_at": "2026-08-30T12:00:00.000Z",
+            "output": { "width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac" }
+          },
+          "policy": { "recording_allowed": true, "unknown": true },
+          "jti": "jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030
+        }
+      ]
+    },
+    "health_claims": {
+      "accepted": [{
+        "protocol_version": 1,
+        "iss": "frappe-site:site.test",
+        "aud": "meet-recorder-health",
+        "site": "site.test",
+        "origin": "https://site.test",
+        "operation": "deployment_health",
+        "jti": "health-jti-vector",
+        "iat": 1700000000,
+        "exp": 1700000030
+      }],
+      "rejected": [
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-health",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "jti": "health-jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030
+        },
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-health",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "operation": "health",
+          "jti": "health-jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030
+        },
+        {
+          "protocol_version": 1,
+          "iss": "frappe-site:site.test",
+          "aud": "meet-recorder-health",
+          "site": "site.test",
+          "origin": "https://site.test",
+          "operation": "deployment_health",
+          "jti": "health-jti-vector",
+          "iat": 1700000000,
+          "exp": 1700000030,
+          "unknown": true
+        }
       ]
     },
     "command_requests": {
@@ -585,7 +736,10 @@
       "accepted": [
         { "http_status": 429, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "capacity" } },
         { "http_status": 507, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "storage" } },
+        { "http_status": 503, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "readiness" } },
+        { "http_status": 503, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "recovery_required" } },
         { "http_status": 422, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "policy" } },
+        { "http_status": 422, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "invalid_request" } },
         { "http_status": 422, "body": { "protocol_version": 1, "status": "rejected", "job": "job-vector", "reason_code": "invalid_job" } }
       ],
       "rejected": [
@@ -800,8 +954,10 @@
     },
     "finite_values": {
       "command_operations": ["reserve", "query", "grant", "stop"],
+      "health_operations": ["deployment_health"],
       "command_states": ["reserved", "configured", "proof_complete", "joined", "capture_ready", "interrupted", "failed", "recovery_required", "stopping", "complete", "partial"],
-      "command_rejection_reason_codes": ["capacity", "storage", "policy", "invalid_job"],
+      "command_rejection_reason_codes": ["capacity", "storage", "readiness", "recovery_required", "policy", "invalid_request", "invalid_job"],
+      "deployment_readiness_reason_codes": ["ready", "ledger_unavailable", "renderer_unavailable", "recovery_required", "storage_unavailable"],
       "health_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "duration_limit", "ffmpeg_exited", "interruption_timeout", "media_attachment_failed", "media_subscription_failed", "page_crashed", "projection_invalid", "quota_limit", "receive_transport_failed", "room_empty", "service_shutdown", "sfu_disconnected", "worker_missing_after_restart"],
       "startup_milestones": ["configured", "proof_complete", "joined", "capture_started"],
       "interruption_reason_codes": ["browser_disconnected", "capture_interrupted", "configuration_failed", "ffmpeg_exited", "media_attachment_failed", "media_subscription_failed", "page_crashed", "projection_invalid", "receive_transport_failed", "sfu_disconnected"],

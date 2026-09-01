@@ -989,7 +989,7 @@ export const TEST_PUBLIC_JWK: PublicJwk = {
 };
 
 export class FakeRendererBridge implements RendererBridge {
-	readonly productionReady = false;
+	readonly productionReady = true;
 	readonly grants: Array<{
 		job: string;
 		grant: string;

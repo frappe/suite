@@ -209,6 +209,20 @@ export function createApp(
 			return res.status(401).json({ status: 'unauthorized' });
 		res.type(registry.contentType).send(await registry.metrics());
 	});
+	app.get('/v1/deployment-health', (req, res) => {
+		try {
+			auth.authenticateHealth(req.header('authorization'));
+			return res.json(jobs.deploymentHealth());
+		} catch (error) {
+			log.info({
+				event: 'authorization_rejected',
+				reason: error instanceof AuthError ? error.message : 'invalid',
+			});
+			return res
+				.status(401)
+				.json({ protocol_version: PROTOCOL_VERSION, status: 'unauthorized' });
+		}
+	});
 
 	function command(operation: CommandClaims['operation']) {
 		return (req: Request, res: Response, next: NextFunction): void => {
@@ -246,8 +260,17 @@ export function createApp(
 						protocol_version: PROTOCOL_VERSION,
 						status: 'rejected',
 						job: claims.job,
-						reason_code: 'invalid_job',
+						reason_code: 'invalid_request',
 					});
+				if (!jobs.ledgerReady) {
+					starts.inc({ outcome: 'rejected', reason: 'readiness' });
+					return res.status(503).json({
+						protocol_version: PROTOCOL_VERSION,
+						status: 'rejected',
+						job: claims.job,
+						reason_code: 'readiness',
+					});
+				}
 				await auth.consume(claims);
 				const result = await jobs.reserve(claims);
 				if (result.status === 'accepted') {
@@ -262,7 +285,10 @@ export function createApp(
 							? 429
 							: result.reason === 'storage'
 								? 507
-								: 422,
+								: result.reason === 'readiness' ||
+										result.reason === 'recovery_required'
+									? 503
+									: 422,
 					)
 					.json({
 						protocol_version: PROTOCOL_VERSION,

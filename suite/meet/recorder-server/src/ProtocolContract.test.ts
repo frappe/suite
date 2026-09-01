@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parseCommandClaims, validUtcTimestamp } from './AuthManager.js';
+import {
+	parseCommandClaims,
+	parseHealthClaims,
+	validUtcTimestamp,
+} from './AuthManager.js';
 import { grantBody, reserveBody, stopBody } from './app.js';
 import {
 	parseFinalizationResponse,
@@ -53,9 +57,14 @@ const contract = JSON.parse(
 			rejected: JsonObject[];
 		};
 		command_claims: { accepted: JsonObject[]; rejected: JsonObject[] };
+		health_claims: { accepted: JsonObject[]; rejected: JsonObject[] };
 		command_requests: {
 			accepted: { operation: string; body: JsonObject }[];
 			rejected: { operation: string; body: JsonObject }[];
+		};
+		command_rejected_responses: {
+			accepted: { http_status: number; body: JsonObject }[];
+			rejected: { http_status: number; body: JsonObject }[];
 		};
 		finite_values: { [key: string]: string[] };
 	};
@@ -154,6 +163,23 @@ describe('recording protocol contract v1', () => {
 			expect(parseCommandClaims({ ...base, operation }).operation).toBe(
 				operation,
 			);
+	});
+
+	it('runs shared deployment-health claims through the production parser', () => {
+		for (const value of contract.vectors.health_claims.accepted)
+			expect(parseHealthClaims(value)).toBeDefined();
+		for (const value of contract.vectors.health_claims.rejected)
+			expect(() => parseHealthClaims(value)).toThrow();
+	});
+
+	it('covers every finite command rejection reason', () => {
+		expect(
+			new Set(
+				contract.vectors.command_rejected_responses.accepted.map(
+					(value) => value.body.reason_code,
+				),
+			),
+		).toEqual(new Set(contract.vocabularies.command_rejection_reason_codes));
 	});
 
 	it('enumerates every finite vocabulary in executable vectors', () => {

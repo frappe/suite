@@ -20,8 +20,24 @@ COMMAND_TYPE = "meet-recorder-command+jwt"
 PROTOCOL_VERSION = 1
 MAX_RESPONSE_BYTES = 16 * 1024
 TIMEOUT = (2, 5)
-REJECTION_REASONS = {"capacity", "storage", "policy", "invalid_job"}
-REJECTION_STATUSES = {"capacity": 429, "storage": 507, "policy": 422, "invalid_job": 422}
+REJECTION_REASONS = {
+    "capacity",
+    "storage",
+    "readiness",
+    "recovery_required",
+    "policy",
+    "invalid_request",
+    "invalid_job",
+}
+REJECTION_STATUSES = {
+    "capacity": 429,
+    "storage": 507,
+    "readiness": 503,
+    "recovery_required": 503,
+    "policy": 422,
+    "invalid_request": 422,
+    "invalid_job": 422,
+}
 HEALTH_REASON_CODES = {
     "browser_disconnected",
     "capture_interrupted",
@@ -92,8 +108,25 @@ class RecorderClient:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
-    def reserve(self, *, room: str, recording: str, job: str, limits: dict[str, Any]) -> RecorderOutcome:
-        return self._request("reserve", "POST", "/v1/recordings", room, recording, job, limits)
+    def reserve(
+        self,
+        *,
+        room: str,
+        recording: str,
+        job: str,
+        limits: dict[str, Any],
+        recording_allowed: bool,
+    ) -> RecorderOutcome:
+        return self._request(
+            "reserve",
+            "POST",
+            "/v1/recordings",
+            room,
+            recording,
+            job,
+            limits,
+            recording_allowed,
+        )
 
     def query(self, *, room: str, recording: str, job: str, limits: dict[str, Any]) -> RecorderOutcome:
         return self._request("query", "GET", f"/v1/recordings/{job}", room, recording, job, limits)
@@ -160,6 +193,7 @@ class RecorderClient:
         recording: str,
         job: str,
         limits: dict[str, Any],
+        recording_allowed: bool = True,
     ) -> RecorderOutcome:
         result = self._raw_request(
             operation,
@@ -170,6 +204,7 @@ class RecorderClient:
             job,
             limits,
             {"protocol_version": PROTOCOL_VERSION, "job": job},
+            recording_allowed,
         )
         if result is None:
             return RecorderOutcome("indeterminate")
@@ -265,7 +300,7 @@ class RecorderClient:
                 interruption=interruption,
                 replacement_ready_at=replacement_ready_at,
             )
-        if response.status_code in (409, 422, 429, 507) and set(body) == {
+        if response.status_code in (422, 429, 503, 507) and set(body) == {
             "protocol_version",
             "status",
             "job",
@@ -293,8 +328,9 @@ class RecorderClient:
         job: str,
         limits: dict[str, Any],
         body: dict[str, Any],
+        recording_allowed: bool = True,
     ) -> tuple[requests.Response, Any] | None:
-        token = self._command_token(operation, room, recording, job, limits)
+        token = self._command_token(operation, room, recording, job, limits, recording_allowed)
         try:
             response = self.session.request(
                 method,
@@ -323,7 +359,13 @@ class RecorderClient:
             return None
 
     def _command_token(
-        self, operation: str, room: str, recording: str, job: str, limits: dict[str, Any]
+        self,
+        operation: str,
+        room: str,
+        recording: str,
+        job: str,
+        limits: dict[str, Any],
+        recording_allowed: bool,
     ) -> str:
         now = int(time.time())
         payload = {
@@ -337,6 +379,7 @@ class RecorderClient:
             "job": job,
             "operation": operation,
             "limits": limits,
+            "policy": {"recording_allowed": recording_allowed},
             "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + 30,
