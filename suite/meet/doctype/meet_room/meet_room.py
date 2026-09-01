@@ -453,18 +453,7 @@ class MeetRoom(Document):
         if not self.is_host_or_cohost(frappe.session.user):
             frappe.throw(_("Only hosts and co-hosts can approve join requests"))
         if user_id.startswith("guest_"):
-            lease = guest_access.admit(self.name, user_id)
-            frappe.publish_realtime(
-                "meet:guest_join_approved",
-                {
-                    "meeting_id": self.name,
-                    "guest_id": user_id,
-                    "guest_name": lease.guest_name,
-                    "message": "Your join request has been approved",
-                },
-                room=f"guest:{user_id}",
-                after_commit=True,
-            )
+            self._approve_guest_join_request(user_id)
             self.publish_waiting_room_updated()
         else:
             self.approve_user(user_id)
@@ -477,10 +466,27 @@ class MeetRoom(Document):
         """Approve all users' join requests from the waiting room."""
         self.lock_for_update()
         self.approve_all_users()
-        for lease in guest_access.list_pending(self.name):
-            self.approve_join_request(lease.guest_id)
+        pending_guests = guest_access.list_pending(self.name)
+        for lease in pending_guests:
+            self._approve_guest_join_request(lease.guest_id)
+        if pending_guests:
+            self.publish_waiting_room_updated()
 
         return {"meeting_id": self.name, "message": "All users approved successfully"}
+
+    def _approve_guest_join_request(self, guest_id: str) -> None:
+        lease = guest_access.admit(self.name, guest_id)
+        frappe.publish_realtime(
+            "meet:guest_join_approved",
+            {
+                "meeting_id": self.name,
+                "guest_id": guest_id,
+                "guest_name": lease.guest_name,
+                "message": "Your join request has been approved",
+            },
+            room=f"guest:{guest_id}",
+            after_commit=True,
+        )
 
     @frappe.whitelist(methods=["POST"])
     @dynamic_rate_limit()
@@ -539,6 +545,7 @@ class MeetRoom(Document):
 
     @frappe.whitelist(methods=["POST"])
     def ban_guest(self, guest_id: str) -> dict:
+        """Permanently revoke a guest's access to this Meet Room."""
         if not self.is_host_or_cohost(frappe.session.user):
             frappe.throw(_("Only hosts and co-hosts can ban guests"), frappe.PermissionError)
         guest_access.ban(self.name, guest_id)

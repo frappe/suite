@@ -24,6 +24,7 @@ from suite.meet.api.meeting import (
     refresh_sfu_token,
     validate_guest_session,
 )
+from suite.meet.doctype.meet_room.meet_room import MeetRoom
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -919,6 +920,22 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.meeting.reload()
         self.assertEqual(self.meeting.get_waiting_room(), [])
         self.assertTrue({self.member_email, another}.issubset(self.meeting.get_members()))
+
+    def test_approve_all_does_not_reenter_single_guest_endpoint(self):
+        waiting = join_meeting_as_guest(self.meeting.name, "Bulk Guest")
+        frappe.set_user(self.host_email)
+
+        with patch.object(
+            MeetRoom,
+            "approve_join_request",
+            side_effect=AssertionError("bulk approval re-entered the single endpoint"),
+        ):
+            self.meeting.approve_all_join_requests()
+
+        self.assertIn(
+            waiting["guest_id"],
+            [lease.guest_id for lease in guest_access.list_admitted(self.meeting.name)],
+        )
 
     def _join_waiting(self, user: str):
         frappe.set_user(user)
