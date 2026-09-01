@@ -61,7 +61,7 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-describe("VideoElementManager.attachStream stale re-attach", () => {
+describe("VideoElementManager.attachStream continuity", () => {
 	let manager: VideoElementManager;
 
 	beforeEach(() => {
@@ -207,7 +207,7 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 		expect(el.srcObject).toBe(originalSrc);
 	});
 
-	it("re-attaches when the last attach is older than the stale threshold", async () => {
+	it("keeps an unchanged video track attached across later tile updates", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(1_000_000));
 
@@ -219,14 +219,12 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 
 		vi.setSystemTime(new Date(1_000_000 + 70_000));
 
-		await manager.attachStream("p1", makeStream([track1]), false);
-		expect(el.srcObject).not.toBe(originalSrc);
-		expect((el.srcObject as MediaStream).getVideoTracks()[0].id).toBe(
-			"track-1",
-		);
+		manager.registerRemoteVideoElement("p1", el);
+		await Promise.resolve();
+		expect(el.srcObject).toBe(originalSrc);
 	});
 
-	it("clears the attach timestamp when the element is removed", async () => {
+	it("reattaches after an element is removed and replaced", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(1_000_000));
 
@@ -260,7 +258,7 @@ describe("VideoElementManager.attachStream stale re-attach", () => {
 	});
 });
 
-describe("VideoElementManager.attachAudioStream stale re-attach", () => {
+describe("VideoElementManager.attachAudioStream continuity", () => {
 	let manager: VideoElementManager;
 
 	beforeEach(() => {
@@ -271,7 +269,7 @@ describe("VideoElementManager.attachAudioStream stale re-attach", () => {
 		vi.useRealTimers();
 	});
 
-	it("re-attaches audio when the last attach is older than the stale threshold", () => {
+	it("keeps an unchanged audio track attached over time", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(1_000_000));
 
@@ -289,15 +287,15 @@ describe("VideoElementManager.attachAudioStream stale re-attach", () => {
 			}) as never);
 
 		const track = { id: "a1", kind: "audio" } as MediaStreamTrack;
-		manager.attachAudioStream("p1", [track]);
+		await manager.attachAudioStream("p1", [track]);
 		const audioEl = manager.audioElements.get("p1");
 		expect(audioEl).toBeDefined();
 		const originalSrc = audioEl?.srcObject;
 
 		vi.setSystemTime(new Date(1_000_000 + 70_000));
 
-		manager.attachAudioStream("p1", [track]);
-		expect(audioEl?.srcObject).not.toBe(originalSrc);
+		await manager.attachAudioStream("p1", [track]);
+		expect(audioEl?.srcObject).toBe(originalSrc);
 
 		createElementSpy.mockRestore();
 	});

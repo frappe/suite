@@ -70,6 +70,10 @@ export interface JobRecord {
 	event_sequence?: number;
 	health_reason?: string;
 	terminal_at?: string;
+	finalization_started_at?: string;
+	cleanup_authorized_at?: string;
+	cleanup_result?: 'Ready' | 'Partial' | 'Failed';
+	local_deleted_at?: string;
 	callback_completed_at?: string;
 	captured_bytes?: number;
 	artifact?: {

@@ -8,6 +8,9 @@ import type { JobRecord } from './types.js';
 const AUDIENCE = 'meet-recording-callback';
 const TYPE = 'meet-recording-callback+jwt';
 const PROTOCOL_VERSION = 1;
+const FINALIZATION_AUDIENCE = 'meet-recording-finalization';
+const FINALIZATION_TYPE = 'meet-recording-finalization+jwt';
+const FINALIZATION_PROTOCOL_VERSION = 1;
 const CHUNK_SIZE = 8 * 1024 * 1024;
 const FRAPPE_RECORDING_STATES = new Set([
 	'Pending',
@@ -138,7 +141,8 @@ type CallbackOperation =
 	| 'stopped'
 	| 'segment_progress'
 	| 'upload_chunk'
-	| 'complete_upload';
+	| 'complete_upload'
+	| 'status';
 
 interface StatusResponse {
 	protocol_version: typeof PROTOCOL_VERSION;
@@ -160,6 +164,20 @@ interface SegmentProgressResponse {
 	protocol_version: typeof PROTOCOL_VERSION;
 	budget_bytes: number;
 }
+
+type FinalizationAction =
+	| { protocol_version: 1; action: 'wait' }
+	| { protocol_version: 1; action: 'resume_upload'; offset: number }
+	| {
+			protocol_version: 1;
+			action: 'delete_local';
+			terminal_result: 'Ready' | 'Partial' | 'Failed';
+	  };
+
+export type FinalizationProgress = (
+	phase: 'started' | 'cleanup_authorized' | 'local_deleted',
+	terminalResult?: 'Ready' | 'Partial' | 'Failed',
+) => Promise<void>;
 
 export class CallbackClient {
 	private readonly timeoutMs: number;
@@ -314,25 +332,56 @@ export class CallbackClient {
 		return response.budget_bytes;
 	}
 
-	async upload(job: JobRecord): Promise<void> {
+	async upload(
+		job: JobRecord,
+		onProgress: FinalizationProgress = async () => undefined,
+	): Promise<void> {
+		if (job.cleanup_authorized_at) {
+			await this.deleteLocal(job);
+			await onProgress('local_deleted', job.cleanup_result);
+			return;
+		}
+		let started = Boolean(job.finalization_started_at);
 		let delay = 1_000;
-		for (let attempt = 0; ; attempt += 1) {
+		let attempt = 0;
+		for (;;) {
 			try {
-				await this.performUpload(job);
-				await rm(safeJobDirectory(this.options.dataRoot, job.job), {
-					recursive: true,
-					force: true,
-				});
+				if (!started) {
+					await this.beginFinalization(job, async () => {
+						await onProgress('started');
+						started = true;
+					});
+				}
+				const action = await this.finalizationStatus(job);
+				if (action.action === 'wait') {
+					attempt = 0;
+					delay = 1_000;
+					await this.sleep(5_000);
+					continue;
+				}
+				if (action.action === 'resume_upload') {
+					await this.uploadArtifact(job, action.offset);
+					attempt = 0;
+					delay = 1_000;
+					continue;
+				}
+				await onProgress('cleanup_authorized', action.terminal_result);
+				await this.deleteLocal(job);
+				await onProgress('local_deleted', action.terminal_result);
 				return;
 			} catch (error) {
-				if (attempt === 4) throw error;
+				attempt += 1;
+				if (attempt >= 5) throw error;
 				await this.sleep(delay);
 				delay *= 2;
 			}
 		}
 	}
 
-	private async performUpload(job: JobRecord): Promise<void> {
+	private async beginFinalization(
+		job: JobRecord,
+		onAccepted: () => Promise<void>,
+	): Promise<void> {
 		const terminalSequence = (job.event_sequence ?? 2) + 1;
 		if (job.state === 'failed') {
 			await this.json(
@@ -349,6 +398,7 @@ export class CallbackClient {
 				},
 				parseStatusResponse,
 			);
+			await onAccepted();
 			return;
 		}
 		const artifact = job.artifact;
@@ -384,8 +434,23 @@ export class CallbackClient {
 			},
 			parseUploadStartResponse,
 		);
-		if (begun.complete === true) return;
-		let offset = begun.offset;
+		await onAccepted();
+		if (!begun.complete) await this.uploadArtifact(job, begun.offset);
+	}
+
+	private async uploadArtifact(
+		job: JobRecord,
+		requestedOffset: number,
+	): Promise<void> {
+		const artifact = job.artifact;
+		if (
+			!artifact?.bytes ||
+			!artifact.sha256 ||
+			!artifact.duration_ms ||
+			!['complete', 'partial'].includes(artifact.state)
+		)
+			throw new Error('terminal recording artifact is incomplete');
+		let offset = requestedOffset;
 		if (!Number.isSafeInteger(offset) || offset < 0 || offset > artifact.bytes)
 			throw new Error('invalid Frappe upload offset');
 
@@ -415,17 +480,51 @@ export class CallbackClient {
 			'recorder_complete_upload',
 			job,
 			'complete_upload',
-			String(stoppedSequence + 1),
+			String((job.event_sequence ?? 2) + 2),
 			{
 				protocol_version: PROTOCOL_VERSION,
 				recording_id: job.recording,
 				job: job.job,
-				event_sequence: stoppedSequence + 1,
+				event_sequence: (job.event_sequence ?? 2) + 2,
 			},
 			parseStatusResponse,
 		);
-		if (!['Ready', 'Partial'].includes(completed.status))
-			throw new Error('Frappe recording artifact is still processing');
+		if (!['Processing', 'Ready', 'Partial'].includes(completed.status))
+			throw new Error('invalid Frappe upload completion state');
+	}
+
+	private async finalizationStatus(
+		job: JobRecord,
+	): Promise<FinalizationAction> {
+		const body = JSON.stringify({
+			protocol_version: FINALIZATION_PROTOCOL_VERSION,
+			recording_id: job.recording,
+			job: job.job,
+		});
+		const url = new URL(
+			'/api/method/suite.meet.api.recording.recorder_finalization_status',
+			this.options.origin,
+		);
+		return this.request(
+			url,
+			job,
+			'status',
+			'status',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body,
+			},
+			parseFinalizationResponse,
+			true,
+		);
+	}
+
+	private async deleteLocal(job: JobRecord): Promise<void> {
+		await rm(safeJobDirectory(this.options.dataRoot, job.job), {
+			recursive: true,
+			force: true,
+		});
 	}
 
 	private async retryHealthCallback(
@@ -510,6 +609,7 @@ export class CallbackClient {
 		operationId: string,
 		init: RequestInit,
 		parseResponse: (value: unknown) => T,
+		finalization = false,
 	): Promise<T> {
 		const response = await fetch(url, {
 			...init,
@@ -520,6 +620,7 @@ export class CallbackClient {
 					operation,
 					operationId,
 					init.body,
+					finalization,
 				)}`,
 			},
 			signal: AbortSignal.timeout(this.timeoutMs),
@@ -542,6 +643,7 @@ export class CallbackClient {
 		operation: CallbackOperation,
 		operationId: string,
 		body: BodyInit | null | undefined,
+		finalization = false,
 	): string {
 		const now = Math.floor(Date.now() / 1000);
 		const bytes =
@@ -553,9 +655,11 @@ export class CallbackClient {
 		if (!bytes) throw new Error('unsupported callback request body');
 		return jwt.sign(
 			{
-				protocol_version: PROTOCOL_VERSION,
+				protocol_version: finalization
+					? FINALIZATION_PROTOCOL_VERSION
+					: PROTOCOL_VERSION,
 				iss: `meet-recorder:${this.options.site}`,
-				aud: AUDIENCE,
+				aud: finalization ? FINALIZATION_AUDIENCE : AUDIENCE,
 				site: this.options.site,
 				recording: job.recording,
 				job: job.job,
@@ -567,7 +671,10 @@ export class CallbackClient {
 				exp: now + 30,
 			},
 			this.options.secret,
-			{ algorithm: 'HS256', header: { alg: 'HS256', typ: TYPE } },
+			{
+				algorithm: 'HS256',
+				header: { alg: 'HS256', typ: finalization ? FINALIZATION_TYPE : TYPE },
+			},
 		);
 	}
 
@@ -619,6 +726,49 @@ export function parseStatusResponse(value: unknown): StatusResponse {
 		throw new Error('invalid Frappe callback response');
 	}
 	return { protocol_version: PROTOCOL_VERSION, status: value.status };
+}
+
+export function parseFinalizationResponse(value: unknown): FinalizationAction {
+	if (
+		!value ||
+		typeof value !== 'object' ||
+		Array.isArray(value) ||
+		!('protocol_version' in value) ||
+		value.protocol_version !== FINALIZATION_PROTOCOL_VERSION ||
+		!('action' in value) ||
+		typeof value.action !== 'string'
+	)
+		throw new Error('invalid Frappe finalization response');
+	if (
+		value.action === 'wait' &&
+		exactKeys(value, ['action', 'protocol_version'])
+	)
+		return { protocol_version: 1, action: 'wait' };
+	if (
+		value.action === 'resume_upload' &&
+		exactKeys(value, ['action', 'offset', 'protocol_version']) &&
+		'offset' in value &&
+		typeof value.offset === 'number' &&
+		Number.isSafeInteger(value.offset) &&
+		value.offset >= 0
+	)
+		return {
+			protocol_version: 1,
+			action: 'resume_upload',
+			offset: value.offset,
+		};
+	if (
+		value.action === 'delete_local' &&
+		exactKeys(value, ['action', 'protocol_version', 'terminal_result']) &&
+		'terminal_result' in value &&
+		['Ready', 'Partial', 'Failed'].includes(String(value.terminal_result))
+	)
+		return {
+			protocol_version: 1,
+			action: 'delete_local',
+			terminal_result: value.terminal_result as 'Ready' | 'Partial' | 'Failed',
+		};
+	throw new Error('invalid Frappe finalization response');
 }
 
 function parseUploadStartResponse(value: unknown): UploadStartResponse {

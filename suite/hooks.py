@@ -307,7 +307,10 @@ scheduler_events = {
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
     "cron": {
-        "* * * * *": ["suite.meet.api.recording.reconcile_pending_recordings"],
+        "* * * * *": [
+            "suite.meet.api.recording.reconcile_pending_recordings",
+            "suite.meet.recording.ingest.reconcile_due_finalizations",
+        ],
         "*/5 * * * *": [
             # mail
             "suite.mail.doctype.server_job.server_job.retry_failed_jobs",

@@ -38,11 +38,15 @@ from suite.meet.api.recording import (
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.meet.recording.callback_auth import CALLBACK_AUDIENCE, CALLBACK_TYPE, authenticate_callback
 from suite.meet.recording.ingest import (
+    InfrastructureFinalizationError,
     _upload_path,
     append_chunk,
     begin_upload,
     complete_upload,
+    deliver_recording_notification,
+    finalization_status,
     process_upload,
+    reconcile_due_finalizations,
 )
 from suite.meet.recording.recorder_client import RecorderOutcome
 
@@ -463,13 +467,12 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.api.recording._publish_state") as publish_state,
             ):
                 self.assertEqual(complete_upload(recording.name, event_sequence=7), {"status": "Processing"})
-                result = process_upload(recording.name, event_sequence=7)
-                self.assertEqual(process_upload(recording.name, event_sequence=7), result)
+                result = process_upload(recording.name)
+                self.assertEqual(process_upload(recording.name), result)
 
             enqueue.assert_called_once_with(
                 process_upload,
                 recording_name=recording.name,
-                event_sequence=7,
                 queue="long",
                 timeout=6 * 60 * 60 + 5 * 60,
                 enqueue_after_commit=True,
@@ -484,6 +487,19 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(result, {"artifact": artifact.name, "status": "Ready"})
             self.assertEqual(completed.artifact_size, len(content))
             self.assertEqual(completed.artifact_sha256, digest)
+            self.assertEqual(artifact.name, completed.publication_key)
+            self.assertEqual(artifact.content_hash, digest)
+            self.assertEqual(completed.finalization_stage, "Terminal")
+            self.assertIsNotNone(completed.validated_at)
+            self.assertIsNotNone(completed.published_at)
+            self.assertTrue(completed.notification_pending)
+            self.assertEqual(
+                finalization_status(recording.name),
+                {"action": "delete_local", "terminal_result": "Ready"},
+            )
+            completed.reload()
+            self.assertIsNotNone(completed.terminal_acknowledged_at)
+            self.assertTrue(completed.notification_pending)
             self.assertIsNone(get_storage_reservation(recording_storage_reservation_key(recording.name)))
             self.assertEqual(artifact.owner, self.owner)
             self.assertEqual(artifact.folder, recording.drive_home_folder)
@@ -501,6 +517,138 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             path.unlink(missing_ok=True)
             if artifact:
                 frappe.delete_doc("File", artifact.name, force=True, ignore_permissions=True)
+
+    def test_finalization_resumes_verified_bytes_and_retries_infrastructure_failures(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        content = b"retryable-artifact"
+        digest = hashlib.sha256(content).hexdigest()
+        begin_upload(
+            started["name"],
+            event_sequence=2,
+            size=len(content),
+            sha256=digest,
+            duration_ms=1000,
+        )
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        path = _upload_path(recording.upload_id)
+        try:
+            self.assertEqual(finalization_status(recording.name), {"action": "resume_upload", "offset": 0})
+            append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
+            self.assertEqual(
+                finalization_status(recording.name),
+                {"action": "resume_upload", "offset": len(content)},
+            )
+            with patch("suite.meet.recording.ingest.frappe.enqueue"):
+                complete_upload(recording.name, event_sequence=7)
+            self.assertEqual(finalization_status(recording.name), {"action": "wait"})
+
+            with patch(
+                "suite.meet.recording.ingest._validate_media",
+                side_effect=InfrastructureFinalizationError("media_tool_unavailable", "ffprobe unavailable"),
+            ):
+                self.assertEqual(process_upload(recording.name), {"status": "Processing"})
+            recording.reload()
+            self.assertEqual(recording.finalization_attempts, 1)
+            self.assertEqual(recording.finalization_stage, "Pending")
+            self.assertEqual(recording.finalization_failure_type, "infrastructure")
+            self.assertEqual(recording.finalization_failure_code, "media_tool_unavailable")
+            self.assertIsNotNone(recording.finalization_next_retry_at)
+
+            recording.db_set("finalization_next_retry_at", add_to_date(now_datetime(), seconds=-1))
+            with patch("suite.meet.recording.ingest.frappe.enqueue") as enqueue:
+                reconcile_due_finalizations()
+            self.assertTrue(
+                any(
+                    call.kwargs.get("recording_name") == recording.name
+                    and call.kwargs.get("job_id") == f"meet-recording-upload::{recording.name}"
+                    for call in enqueue.call_args_list
+                )
+            )
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_terminal_notification_is_owner_only_and_does_not_gate_cleanup(self):
+        started = start(self.room.name, str(uuid.uuid4()))
+        stop(self.room.name)
+        content = b"invalid-artifact"
+        begin_upload(
+            started["name"],
+            event_sequence=2,
+            size=len(content),
+            sha256=hashlib.sha256(content).hexdigest(),
+            duration_ms=1000,
+        )
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        path = _upload_path(recording.upload_id)
+        try:
+            append_chunk(
+                recording.name,
+                offset=0,
+                chunk=content,
+                chunk_sha256=hashlib.sha256(content).hexdigest(),
+            )
+            with patch("suite.meet.recording.ingest.frappe.enqueue"):
+                complete_upload(recording.name, event_sequence=7)
+            with patch(
+                "suite.meet.recording.ingest._validate_media",
+                side_effect=frappe.ValidationError("invalid media"),
+            ):
+                process_upload(recording.name)
+            recording.reload()
+            self.assertEqual(recording.status, "Processing")
+
+            recording.db_set(
+                {
+                    "metadata_accepted_at": add_to_date(now_datetime(), seconds=-2),
+                    "finalization_deadline": add_to_date(now_datetime(), seconds=-1),
+                    "finalization_next_retry_at": add_to_date(now_datetime(), seconds=-1),
+                }
+            )
+            with patch("suite.meet.recording.ingest.frappe.enqueue"):
+                reconcile_due_finalizations()
+            recording.reload()
+            self.assertEqual(recording.status, "Failed")
+            self.assertTrue(recording.notification_pending)
+            self.assertEqual(
+                finalization_status(recording.name),
+                {"action": "delete_local", "terminal_result": "Failed"},
+            )
+
+            with patch(
+                "suite.meet.recording.ingest.frappe.sendmail",
+                side_effect=RuntimeError("mail queue unavailable"),
+            ):
+                deliver_recording_notification(recording.name)
+            recording.reload()
+            self.assertTrue(recording.notification_pending)
+            self.assertEqual(recording.notification_attempts, 1)
+            self.assertIsNotNone(recording.notification_next_retry_at)
+
+            recording.db_set("notification_next_retry_at", add_to_date(now_datetime(), seconds=-1))
+            with patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail:
+                deliver_recording_notification(recording.name)
+            recording.reload()
+            self.assertFalse(recording.notification_pending)
+            self.assertEqual(recording.notification_attempts, 2)
+            self.assertIsNotNone(recording.notification_sent_at)
+            self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
+            self.assertEqual(
+                sendmail.call_args.kwargs["message_id"],
+                f"meet-recording-finalization-{recording.name}@{frappe.local.site}",
+            )
+            self.assertTrue(
+                frappe.db.exists(
+                    "Notification Log",
+                    {
+                        "for_user": self.owner,
+                        "document_type": "Meet Recording",
+                        "document_name": recording.name,
+                    },
+                )
+            )
+        finally:
+            path.unlink(missing_ok=True)
 
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -528,6 +676,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertIsNone(recording.ended_at.tzinfo)
         path = _upload_path(recording.upload_id)
         append_chunk(recording.name, offset=0, chunk=content, chunk_sha256=digest)
+        complete_upload(recording.name, event_sequence=7)
         artifact = None
         try:
             with (
@@ -539,7 +688,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 patch("suite.meet.recording.ingest.update_file_size"),
                 patch("suite.meet.recording.ingest.FileManager.upload_file"),
             ):
-                result = process_upload(recording.name, event_sequence=7)
+                result = process_upload(recording.name)
             completed = frappe.get_doc("Meet Recording", recording.name)
             artifact = frappe.get_doc("File", completed.artifact)
             self.assertEqual(result["status"], "Partial")

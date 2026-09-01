@@ -249,6 +249,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Upload Backend Coverage
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-backend-coverage
+          path: test-results/backend/coverage.xml
+          if-no-files-found: warn
+          retention-days: 7
+
   mail-calendar:
     runs-on: ubuntu-latest
     name: ${{ matrix.name }}
@@ -482,3 +491,12 @@ jobs:
           path: frontend/test-results/
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Upload Frontend Coverage
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push') && steps.frontend-changes.outputs.run == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-frontend-coverage
+          path: frontend/test-results/coverage/cobertura-coverage.xml
+          if-no-files-found: warn
+          retention-days: 7

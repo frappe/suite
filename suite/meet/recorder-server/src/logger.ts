@@ -8,6 +8,7 @@ export type LogEvent =
 	| 'recovery_callback_failed'
 	| 'startup_callback_failed'
 	| 'replacement_ready_callback_failed'
+	| 'terminal_delivery_failed'
 	| 'service_error';
 
 export interface LogEntry {
@@ -16,6 +17,7 @@ export interface LogEntry {
 	reason?: string;
 	method?: string;
 	route?: string;
+	job?: string;
 }
 
 export interface Logger {

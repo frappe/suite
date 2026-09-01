@@ -3,7 +3,10 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseCommandClaims, validUtcTimestamp } from './AuthManager.js';
 import { grantBody, reserveBody, stopBody } from './app.js';
-import { parseStatusResponse } from './CallbackClient.js';
+import {
+	parseFinalizationResponse,
+	parseStatusResponse,
+} from './CallbackClient.js';
 import {
 	parseRendererLifecycle,
 	parseRendererPublicKeyReady,
@@ -45,6 +48,19 @@ const contract = JSON.parse(
 			rejected: { operation: string; body: JsonObject }[];
 		};
 		finite_values: { [key: string]: string[] };
+	};
+};
+
+const finalizationContract = JSON.parse(
+	readFileSync(
+		resolve(process.cwd(), '../recording/contracts/finalization-v1.json'),
+		'utf8',
+	),
+) as {
+	protocol_version: number;
+	vocabularies: { actions: string[]; terminal_results: string[] };
+	vectors: {
+		status_responses: { accepted: JsonObject[]; rejected: JsonObject[] };
 	};
 };
 
@@ -119,5 +135,29 @@ describe('recording protocol contract v1', () => {
 
 	it('enumerates every finite vocabulary in executable vectors', () => {
 		expect(contract.vectors.finite_values).toEqual(contract.vocabularies);
+	});
+});
+
+describe('recording finalization contract v1', () => {
+	it('runs every shared response vector through the production parser', () => {
+		for (const value of finalizationContract.vectors.status_responses.accepted)
+			expect(parseFinalizationResponse(value)).toEqual(value);
+		for (const value of finalizationContract.vectors.status_responses.rejected)
+			expect(() => parseFinalizationResponse(value)).toThrow();
+	});
+
+	it('covers every action and terminal result', () => {
+		const accepted = finalizationContract.vectors.status_responses.accepted;
+		expect(new Set(accepted.map((value) => value.action))).toEqual(
+			new Set(finalizationContract.vocabularies.actions),
+		);
+		expect(
+			new Set(
+				accepted
+					.map((value) => value.terminal_result)
+					.filter((value): value is string => typeof value === 'string'),
+			),
+		).toEqual(new Set(finalizationContract.vocabularies.terminal_results));
+		expect(finalizationContract.protocol_version).toBe(1);
 	});
 });

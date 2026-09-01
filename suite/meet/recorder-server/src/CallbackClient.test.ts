@@ -467,7 +467,7 @@ describe('CallbackClient', () => {
 		);
 	});
 
-	it('rejects string offsets while uploading with scoped chunk tokens', async () => {
+	it('polls finalization without replaying completion and deletes only when instructed', async () => {
 		const root = join(tmpdir(), `callback-client-${crypto.randomUUID()}`);
 		roots.push(root);
 		const content = Buffer.from('recording artifact');
@@ -515,7 +515,7 @@ describe('CallbackClient', () => {
 		let retainedWhileProcessing = false;
 		const fetch = vi.fn(async (url: URL, init: RequestInit) => {
 			requests.push({ url: String(url), init });
-			if (requests.length === 5)
+			if (requests.length === 6)
 				retainedWhileProcessing = await stat(directory).then(
 					() => true,
 					() => false,
@@ -529,7 +529,9 @@ describe('CallbackClient', () => {
 							? { offset: content.length }
 							: requests.length === 4
 								? { status: 'Processing' }
-								: { offset: content.length, complete: true };
+								: requests.length === 5
+									? { action: 'wait' }
+									: { action: 'delete_local', terminal_result: 'Ready' };
 			return new Response(
 				JSON.stringify({ message: { protocol_version: 1, ...message } }),
 				{
@@ -541,16 +543,17 @@ describe('CallbackClient', () => {
 		vi.stubGlobal('fetch', fetch);
 		const secret = 's'.repeat(32);
 
+		const progress = vi.fn(async () => undefined);
 		const upload = new CallbackClient({
 			origin: 'https://site.test',
 			site: 'site.test',
 			secret,
 			dataRoot: root,
 			sleep: async () => undefined,
-		}).upload(job);
+		}).upload(job, progress);
 		await upload;
 
-		expect(requests).toHaveLength(5);
+		expect(requests).toHaveLength(6);
 		expect(requests[0]?.url).toContain('recorder_stopped');
 		expect(requests[1]?.url).toContain('recorder_stopped');
 		expect(JSON.parse(String(requests[1]?.init.body))).toMatchObject({
@@ -565,7 +568,16 @@ describe('CallbackClient', () => {
 		});
 		expect(Buffer.from(requests[2]?.init.body as Uint8Array)).toEqual(content);
 		expect(requests[3]?.url).toContain('recorder_complete_upload');
-		expect(requests[4]?.url).toContain('recorder_stopped');
+		expect(requests[4]?.url).toContain('recorder_finalization_status');
+		expect(requests[5]?.url).toContain('recorder_finalization_status');
+		expect(
+			requests.filter((request) => request.url.includes('recorder_stopped')),
+		).toHaveLength(2);
+		expect(progress.mock.calls).toEqual([
+			['started'],
+			['cleanup_authorized', 'Ready'],
+			['local_deleted', 'Ready'],
+		]);
 		expect(retainedWhileProcessing).toBe(true);
 		const authorization = new Headers(requests[2]?.init.headers).get(
 			'X-Meet-Recorder-Authorization',
@@ -584,6 +596,117 @@ describe('CallbackClient', () => {
 		expect(jwt.decode(token, { complete: true })?.header.typ).toBe(
 			'meet-recording-callback+jwt',
 		);
+		const finalizationBody = Buffer.from(String(requests[4]?.init.body));
+		const finalizationAuthorization = new Headers(
+			requests[4]?.init.headers,
+		).get('X-Meet-Recorder-Authorization');
+		const finalizationToken =
+			finalizationAuthorization?.slice('Bearer '.length) ?? '';
+		expect(
+			jwt.verify(finalizationToken, secret, { algorithms: ['HS256'] }),
+		).toMatchObject({
+			protocol_version: 1,
+			aud: 'meet-recording-finalization',
+			operation: 'status',
+			operation_id: 'status',
+			body_sha256: createHash('sha256').update(finalizationBody).digest('hex'),
+		});
+		expect(jwt.decode(finalizationToken, { complete: true })?.header.typ).toBe(
+			'meet-recording-finalization+jwt',
+		);
 		await expect(stat(directory)).rejects.toThrow();
 	});
+});
+
+it('resumes from Frappe verified bytes after metadata acknowledgement', async () => {
+	const root = join(tmpdir(), `callback-client-${crypto.randomUUID()}`);
+	roots.push(root);
+	const content = Buffer.from('recording artifact');
+	const directory = safeJobDirectory(root, 'job');
+	await mkdir(directory, { recursive: true });
+	await writeFile(join(directory, 'recording.mp4'), content);
+	const job = {
+		job: 'job',
+		site: 'site.test',
+		origin: 'https://site.test',
+		room: 'room',
+		recording: 'recording',
+		state: 'complete',
+		finalization_started_at: '2026-01-01T00:01:00.000Z',
+		artifact: {
+			state: 'complete',
+			path: 'recording.mp4',
+			bytes: content.length,
+			sha256: createHash('sha256').update(content).digest('hex'),
+			duration_ms: 1000,
+		},
+	} as JobRecord;
+	const requests: Array<{ url: string; init: RequestInit }> = [];
+	const fetch = vi.fn(async (url: URL, init: RequestInit) => {
+		requests.push({ url: String(url), init });
+		const message =
+			requests.length === 1
+				? { action: 'resume_upload', offset: 5 }
+				: requests.length === 2
+					? { offset: content.length }
+					: requests.length === 3
+						? { status: 'Processing' }
+						: { action: 'delete_local', terminal_result: 'Ready' };
+		return new Response(
+			JSON.stringify({ message: { protocol_version: 1, ...message } }),
+			{ status: 200, headers: { 'Content-Type': 'application/json' } },
+		);
+	});
+	vi.stubGlobal('fetch', fetch);
+
+	const progress = vi.fn(async () => undefined);
+	await new CallbackClient({
+		origin: 'https://site.test',
+		site: 'site.test',
+		secret: 's'.repeat(32),
+		dataRoot: root,
+		sleep: async () => undefined,
+	}).upload(job, progress);
+
+	expect(requests).toHaveLength(4);
+	expect(
+		requests.every((request) => !request.url.includes('recorder_stopped')),
+	).toBe(true);
+	expect(Buffer.from(requests[1]?.init.body as Uint8Array)).toEqual(
+		content.subarray(5),
+	);
+	expect(requests[2]?.url).toContain('recorder_complete_upload');
+	expect(progress.mock.calls).toEqual([
+		['cleanup_authorized', 'Ready'],
+		['local_deleted', 'Ready'],
+	]);
+});
+
+it('finishes authorized cleanup after restart without contacting Frappe', async () => {
+	const root = join(tmpdir(), `callback-client-${crypto.randomUUID()}`);
+	roots.push(root);
+	const directory = safeJobDirectory(root, 'job');
+	await mkdir(directory, { recursive: true });
+	await writeFile(join(directory, 'recording.mp4'), 'artifact');
+	const fetch = vi.fn();
+	vi.stubGlobal('fetch', fetch);
+	const progress = vi.fn(async () => undefined);
+
+	await new CallbackClient({
+		origin: 'https://site.test',
+		site: 'site.test',
+		secret: 's'.repeat(32),
+		dataRoot: root,
+	}).upload(
+		{
+			job: 'job',
+			cleanup_authorized_at: '2026-01-01T00:02:00.000Z',
+			cleanup_result: 'Partial',
+		} as JobRecord,
+		progress,
+	);
+
+	expect(fetch).not.toHaveBeenCalled();
+	expect(progress).toHaveBeenCalledWith('local_deleted', 'Partial');
+	await expect(stat(directory)).rejects.toThrow();
 });

@@ -25,7 +25,12 @@ from suite.meet.doctype.meet_recording.meet_recording import (
     ACTIVE_RECORDING_STATUSES,
     recording_storage_reservation_key,
 )
-from suite.meet.recording.callback_auth import PROTOCOL_VERSION, authenticate_callback
+from suite.meet.recording.callback_auth import (
+    FINALIZATION_PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
+    authenticate_callback,
+    authenticate_finalization_status,
+)
 from suite.meet.recording.grants import (
     mint_recording_grant,
     normalize_public_jwk,
@@ -37,6 +42,8 @@ from suite.meet.recording.ingest import (
     append_chunk,
     begin_upload,
     complete_upload,
+    finalization_status,
+    reject_upload_metadata,
 )
 from suite.meet.recording.recorder_client import RecorderClient, RecorderOutcome
 
@@ -48,7 +55,6 @@ MAX_BUDGET_BYTES = MAX_SECONDS * BYTES_PER_SECOND
 # three full segments in flight before capture stops.
 MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 90 + 5 * 1024 * 1024
 RECONCILIATION_GRACE_SECONDS = 5 * 60
-PROCESSING_TIMEOUT_SECONDS = 24 * 60 * 60
 FAILED_RETENTION_DAYS = 30
 STARTUP_TIMEOUT_SECONDS = 60
 STARTUP_MILESTONES = {
@@ -1194,24 +1200,39 @@ def recorder_stopped(
         for gap in gaps
     ):
         frappe.throw(_("Invalid recording gap reason code"))
-    _apply_segment_progress(recording_id, captured_bytes, grow_budget=False)
-    result = begin_upload(
-        recording_id,
-        event_sequence=event_sequence,
-        size=size,
-        sha256=sha256,
-        duration_ms=duration_ms,
-        gaps=[
-            {
-                "started_at": gap["started_at"],
-                "ended_at": gap["ended_at"],
-                "reason": gap["reason_code"],
-            }
-            for gap in gaps
-        ],
-        ended_at=ended_at,
-        end_reason=end_reason_code,
-    )
+    recording = frappe.get_doc("Meet Recording", recording_id)
+    if (
+        recording.status == "Failed"
+        and recording.finalization_stage == "Terminal"
+        and recording.finalization_failure_code == "invalid_terminal_metadata"
+    ):
+        return _callback_response({"offset": 0, "complete": True})
+    savepoint = "meet_recording_terminal_metadata"
+    frappe.db.savepoint(savepoint)
+    try:
+        _apply_segment_progress(recording_id, captured_bytes, grow_budget=False)
+        result = begin_upload(
+            recording_id,
+            event_sequence=event_sequence,
+            size=size,
+            sha256=sha256,
+            duration_ms=duration_ms,
+            gaps=[
+                {
+                    "started_at": gap["started_at"],
+                    "ended_at": gap["ended_at"],
+                    "reason": gap["reason_code"],
+                }
+                for gap in gaps
+            ],
+            ended_at=ended_at,
+            end_reason=end_reason_code,
+        )
+    except frappe.ValidationError as error:
+        frappe.db.rollback(save_point=savepoint)
+        result = reject_upload_metadata(recording_id, event_sequence=event_sequence, error=error)
+    finally:
+        frappe.db.release_savepoint(savepoint)
     recording = frappe.get_doc("Meet Recording", recording_id)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
     return _callback_response({"offset": result["offset"], "complete": result["complete"]})
@@ -1260,6 +1281,18 @@ def recorder_complete_upload(recording_id: str, job: str, event_sequence: int, p
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+def recorder_finalization_status(recording_id: str, job: str, protocol_version: int) -> dict:
+    if isinstance(protocol_version, bool) or protocol_version != FINALIZATION_PROTOCOL_VERSION:
+        frappe.throw(_("Unsupported recording finalization protocol version"))
+    authenticate_finalization_status(
+        protocol_version=protocol_version,
+        recording=recording_id,
+        job=job,
+    )
+    return {"protocol_version": FINALIZATION_PROTOCOL_VERSION, **finalization_status(recording_id)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def recorder_failed(
     recording_id: str,
     job: str,
@@ -1300,6 +1333,9 @@ def recorder_failed(
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     if startup_failure:
         recording.flags.startup_failure = True
+    else:
+        recording.notification_pending = 1
+        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),
@@ -1353,14 +1389,6 @@ def reconcile_pending_recordings():
     ):
         _run_reconciliation(name, _fail_stale_recording)
 
-    processing_cutoff = add_to_date(now_datetime(), seconds=-PROCESSING_TIMEOUT_SECONDS)
-    for name in frappe.get_all(
-        "Meet Recording",
-        filters={"status": "Processing", "modified": ["<=", processing_cutoff]},
-        pluck="name",
-    ):
-        _run_reconciliation(name, _fail_stale_recording)
-
     failed_cutoff = add_to_date(now_datetime(), days=-FAILED_RETENTION_DAYS)
     for name in frappe.get_all(
         "Meet Recording",
@@ -1394,22 +1422,14 @@ def _run_reconciliation(name: str, operation):
 
 def _fail_stale_recording(name: str):
     recording = frappe.get_doc("Meet Recording", name)
-    if recording.status not in ("Pending", "Starting", "Recording", "Interrupted", "Stopping", "Processing"):
+    if recording.status not in ("Pending", "Starting", "Recording", "Interrupted", "Stopping"):
         return
-    if recording.status == "Processing" and recording.modified > add_to_date(
-        now_datetime(), seconds=-PROCESSING_TIMEOUT_SECONDS
-    ):
-        return
-    if recording.status != "Processing" and recording.max_ends_at > add_to_date(
-        now_datetime(), seconds=-RECONCILIATION_GRACE_SECONDS
-    ):
+    if recording.max_ends_at > add_to_date(now_datetime(), seconds=-RECONCILIATION_GRACE_SECONDS):
         return
     previous_status = recording.status
     recording.status = "Failed"
     recording.state_revision += 1
-    recording.failure_code = (
-        "processing_failed" if previous_status == "Processing" else "recorder_unavailable"
-    )
+    recording.failure_code = "recorder_unavailable"
     if recording.started_at:
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True

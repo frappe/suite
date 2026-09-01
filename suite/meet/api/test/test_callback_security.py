@@ -14,6 +14,7 @@ from frappe.tests import IntegrationTestCase
 from suite.meet.api.recording import (
     recorder_complete_upload,
     recorder_failed,
+    recorder_finalization_status,
     recorder_interrupted,
     recorder_recovered,
     recorder_replacement_ready,
@@ -26,6 +27,8 @@ from suite.meet.api.recording import (
 from suite.meet.recording.callback_auth import (
     CALLBACK_AUDIENCE,
     CALLBACK_TYPE,
+    FINALIZATION_AUDIENCE,
+    FINALIZATION_TYPE,
     authenticate_callback,
 )
 from suite.meet.recording.ingest import CHUNK_SIZE, _upload_path, append_chunk, begin_upload
@@ -134,6 +137,87 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         self.assertEqual(self._authenticate(now)["jti"], claims["jti"])
         with self.assertRaises(frappe.AuthenticationError):
             self._authenticate(now)
+
+    def test_finalization_status_uses_an_independent_exact_authentication_seam(self):
+        now = int(time.time())
+        body = json.dumps(
+            {
+                "protocol_version": 1,
+                "recording_id": self.recording.name,
+                "job": self.recording.recorder_job_id,
+            },
+            separators=(",", ":"),
+        ).encode()
+        claims = {
+            "protocol_version": 1,
+            "iss": f"meet-recorder:{frappe.local.site}",
+            "aud": FINALIZATION_AUDIENCE,
+            "site": frappe.local.site,
+            "recording": self.recording.name,
+            "job": self.recording.recorder_job_id,
+            "operation": "status",
+            "operation_id": "status",
+            "body_sha256": hashlib.sha256(body).hexdigest(),
+            "jti": str(uuid.uuid4()),
+            "iat": now,
+            "exp": now + 30,
+        }
+        token = jwt.encode(
+            claims,
+            frappe.conf.recorder_secret,
+            algorithm="HS256",
+            headers={"typ": FINALIZATION_TYPE},
+        )
+        frappe.local.request = Mock(
+            headers={"X-Meet-Recorder-Authorization": f"Bearer {token}"},
+            get_data=Mock(return_value=body),
+        )
+
+        self.assertEqual(
+            recorder_finalization_status(
+                recording_id=self.recording.name,
+                job=self.recording.recorder_job_id,
+                protocol_version=1,
+            ),
+            {"protocol_version": 1, "action": "wait"},
+        )
+        with self.assertRaises(frappe.AuthenticationError):
+            recorder_finalization_status(
+                recording_id=self.recording.name,
+                job=self.recording.recorder_job_id,
+                protocol_version=1,
+            )
+
+        altered_body_token = jwt.encode(
+            {**claims, "jti": str(uuid.uuid4())},
+            frappe.conf.recorder_secret,
+            algorithm="HS256",
+            headers={"typ": FINALIZATION_TYPE},
+        )
+        frappe.local.request = Mock(
+            headers={"X-Meet-Recorder-Authorization": f"Bearer {altered_body_token}"},
+            get_data=Mock(return_value=body + b" "),
+        )
+        with self.assertRaises(frappe.AuthenticationError):
+            recorder_finalization_status(
+                recording_id=self.recording.name,
+                job=self.recording.recorder_job_id,
+                protocol_version=1,
+            )
+
+        wrong_audience = jwt.encode(
+            {**claims, "aud": CALLBACK_AUDIENCE, "jti": str(uuid.uuid4())},
+            frappe.conf.recorder_secret,
+            algorithm="HS256",
+            headers={"typ": FINALIZATION_TYPE},
+        )
+        frappe.local.request.headers = {"X-Meet-Recorder-Authorization": f"Bearer {wrong_audience}"}
+        with self.assertRaises(frappe.AuthenticationError):
+            recorder_finalization_status(
+                recording_id=self.recording.name,
+                job=self.recording.recorder_job_id,
+                protocol_version=1,
+            )
 
     def test_callback_token_is_bound_to_exact_request_body(self):
         now = int(time.time())

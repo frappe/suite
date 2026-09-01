@@ -24,6 +24,22 @@ from suite.meet.doctype.meet_recording.meet_recording import recording_storage_r
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
+FINALIZATION_TIMEOUT_HOURS = 24
+FINALIZATION_LEASE_SECONDS = 6 * 60 * 60 + 10 * 60
+FINALIZATION_RETRY_MAX_SECONDS = 60 * 60
+NOTIFICATION_RETRY_MAX_SECONDS = 60 * 60
+
+
+class DeterministicFinalizationError(frappe.ValidationError):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+class InfrastructureFinalizationError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
 
 
 def begin_upload(
@@ -47,6 +63,12 @@ def begin_upload(
         if recording.artifact_size == size and recording.artifact_sha256 == sha256:
             return {"offset": size, "complete": True, "artifact": recording.artifact}
         frappe.throw(_("Recording artifact metadata conflicts with the completed upload"))
+    if (
+        recording.status == "Failed"
+        and recording.finalization_stage == "Terminal"
+        and recording.finalization_failure_code == "invalid_terminal_metadata"
+    ):
+        return {"offset": 0, "complete": True}
     if recording.status not in ("Recording", "Interrupted", "Stopping", "Processing"):
         frappe.throw(_("Recording is not ready for artifact upload"))
     if size > recording.budget_bytes:
@@ -92,6 +114,12 @@ def begin_upload(
         recording.upload_duration_ms = duration_ms
         if gaps is not None:
             recording.capture_gaps = json.dumps(gaps)
+    if not recording.metadata_accepted_at:
+        accepted_at = now_datetime()
+        recording.metadata_accepted_at = accepted_at
+        recording.finalization_deadline = add_to_date(accepted_at, hours=FINALIZATION_TIMEOUT_HOURS)
+        recording.publication_key = f"meet-recording-{recording.name}"
+    recording.finalization_stage = recording.finalization_stage or "Awaiting Upload"
     reduce_storage_reservation(
         recording.room_owner,
         recording_storage_reservation_key(recording.name),
@@ -99,6 +127,37 @@ def begin_upload(
     )
     recording.save(ignore_permissions=True)
     return {"offset": recording.upload_offset, "complete": False}
+
+
+def reject_upload_metadata(recording_name: str, *, event_sequence: int, error: Exception) -> dict:
+    from suite.meet.api.recording import _publish_state
+
+    recording = _locked_recording(recording_name)
+    if recording.metadata_accepted_at:
+        raise error
+    if recording.status not in ("Recording", "Interrupted", "Stopping"):
+        raise error
+    if cint(event_sequence) <= cint(recording.recorder_event_sequence):
+        raise error
+
+    now = now_datetime()
+    recording.metadata_accepted_at = now
+    recording.finalization_deadline = add_to_date(now, hours=FINALIZATION_TIMEOUT_HOURS)
+    recording.publication_key = f"meet-recording-{recording.name}"
+    recording.status = "Failed"
+    recording.state_revision += 1
+    recording.recorder_event_sequence = cint(event_sequence)
+    recording.failure_code = "processing_failed"
+    recording.finalization_stage = "Terminal"
+    recording.finalization_failure_type = "deterministic"
+    recording.finalization_failure_code = "invalid_terminal_metadata"
+    recording.finalization_diagnostic = str(error)[:1000]
+    recording.notification_pending = 1
+    recording.notification_next_retry_at = now
+    recording.flags.reconciliation_update = True
+    recording.save(ignore_permissions=True)
+    _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
+    return {"offset": 0, "complete": True}
 
 
 def append_chunk(recording_name: str, *, offset: int, chunk: bytes, chunk_sha256: str) -> dict:
@@ -111,6 +170,8 @@ def append_chunk(recording_name: str, *, offset: int, chunk: bytes, chunk_sha256
     recording = _locked_recording(recording_name)
     if recording.status != "Processing" or not recording.upload_id:
         frappe.throw(_("Recording upload is not active"))
+    if recording.upload_completed_at:
+        frappe.throw(_("Recording upload is already complete"))
     if offset < 0 or offset + len(chunk) > recording.upload_size:
         frappe.throw(_("Recording upload chunk is outside the expected artifact"))
 
@@ -150,101 +211,395 @@ def complete_upload(recording_name: str, *, event_sequence: int) -> dict:
         return {"artifact": recording.artifact, "status": recording.status}
     if recording.status != "Processing" or not recording.upload_id:
         frappe.throw(_("Recording upload is not ready to complete"))
+    if recording.upload_completed_at:
+        return {"status": "Processing"}
     if cint(event_sequence) <= recording.recorder_event_sequence:
         frappe.throw(_("Recorder event is out of order"))
     if recording.upload_offset != recording.upload_size:
         frappe.throw(_("Recording upload is incomplete"))
 
+    recording.upload_completed_at = now_datetime()
+    recording.finalization_stage = "Pending"
+    recording.finalization_next_retry_at = now_datetime()
+    recording.recorder_event_sequence = cint(event_sequence)
+    recording.save(ignore_permissions=True)
+    _enqueue_finalization(recording_name)
+    return {"status": "Processing"}
+
+
+def finalization_status(recording_name: str) -> dict:
+    recording = _locked_recording(recording_name)
+    if recording.status in ("Ready", "Partial", "Failed", "Cancelled"):
+        if not recording.terminal_acknowledged_at:
+            recording.terminal_acknowledged_at = now_datetime()
+            recording.flags.finalization_update = True
+            recording.save(ignore_permissions=True)
+        terminal_result = recording.status if recording.status in ("Ready", "Partial") else "Failed"
+        return {"action": "delete_local", "terminal_result": terminal_result}
+    if recording.status != "Processing" or not recording.upload_id:
+        return {"action": "wait"}
+
+    path = _upload_path(recording.upload_id)
+    actual_size = path.stat().st_size if path.exists() else 0
+    committed_offset = min(cint(recording.upload_offset), cint(recording.upload_size))
+    if actual_size > committed_offset:
+        _truncate_upload(path, committed_offset)
+        actual_size = committed_offset
+    verified_offset = min(actual_size, committed_offset)
+    if verified_offset < cint(recording.upload_offset):
+        recording.upload_offset = verified_offset
+        recording.upload_completed_at = None
+        recording.validated_at = None
+        recording.finalization_stage = "Awaiting Upload"
+        recording.finalization_next_retry_at = None
+        recording.save(ignore_permissions=True)
+    if verified_offset < cint(recording.upload_size) or not recording.upload_completed_at:
+        return {"action": "resume_upload", "offset": verified_offset}
+    return {"action": "wait"}
+
+
+def _enqueue_finalization(recording_name: str):
     frappe.enqueue(
         process_upload,
         recording_name=recording_name,
-        event_sequence=cint(event_sequence),
         queue="long",
         timeout=6 * 60 * 60 + 5 * 60,
         enqueue_after_commit=True,
         job_id=f"meet-recording-upload::{recording_name}",
         deduplicate=True,
     )
-    return {"status": "Processing"}
 
 
-def process_upload(recording_name: str, *, event_sequence: int) -> dict:
+def process_upload(recording_name: str) -> dict:
     from suite.meet.api.recording import _publish_state
 
-    recording = frappe.get_doc("Meet Recording", recording_name)
-    if recording.status in ("Ready", "Partial"):
-        return {"artifact": recording.artifact, "status": recording.status}
-    if recording.status != "Processing" or not recording.upload_id:
-        return {"status": recording.status}
-    if cint(event_sequence) <= recording.recorder_event_sequence:
-        frappe.throw(_("Recorder event is out of order"))
+    try:
+        recording = _claim_finalization(recording_name)
+        if not recording:
+            current = frappe.get_doc("Meet Recording", recording_name)
+            result = {"status": current.status}
+            if current.artifact:
+                result["artifact"] = current.artifact
+            return result
+        path = _upload_path(recording.upload_id)
+        if not recording.validated_at:
+            digest = _file_digest(path)
+            if digest != (cint(recording.upload_size), recording.upload_sha256):
+                raise DeterministicFinalizationError(
+                    "size_hash_mismatch", _("Recording artifact size or hash does not match")
+                )
+            probe = _validate_media(path)
+            if abs(probe["duration_ms"] - cint(recording.upload_duration_ms)) > max(
+                1000, cint(recording.upload_duration_ms) * 0.05
+            ):
+                raise DeterministicFinalizationError(
+                    "duration_mismatch", _("Recording artifact duration does not match")
+                )
+            recording = _locked_recording(recording_name)
+            if recording.status != "Processing":
+                return {"status": recording.status}
+            recording.validated_at = now_datetime()
+            recording.finalization_stage = "Validated"
+            recording.finalization_next_retry_at = now_datetime()
+            recording.save(ignore_permissions=True)
+            frappe.db.commit()
 
-    path = _upload_path(recording.upload_id)
-    digest = _file_digest(path)
-    if digest != (recording.upload_size, recording.upload_sha256):
-        frappe.throw(_("Recording artifact size or hash does not match"))
-    probe = _validate_media(path)
-    if abs(probe["duration_ms"] - recording.upload_duration_ms) > max(
-        1000, recording.upload_duration_ms * 0.05
-    ):
-        frappe.throw(_("Recording artifact duration does not match"))
+        result = _publish_artifact(recording_name, path)
+        completed = frappe.get_doc("Meet Recording", recording_name)
+        _publish_state(frappe.get_doc("Meet Room", completed.meet_room), completed)
+        return result
+    except DeterministicFinalizationError as error:
+        frappe.db.rollback()
+        return _record_finalization_failure(recording_name, error, deterministic=True)
+    except Exception as error:
+        frappe.db.rollback()
+        return _record_finalization_failure(recording_name, error, deterministic=False)
 
-    upload_id = recording.upload_id
+
+def _claim_finalization(recording_name: str):
+    recording = _locked_recording(recording_name)
+    if recording.status != "Processing" or not recording.upload_completed_at:
+        return None
+    now = now_datetime()
+    if recording.finalization_deadline and get_datetime(recording.finalization_deadline) <= now:
+        raise InfrastructureFinalizationError(
+            "deadline_exceeded", _("Recording finalization deadline was exceeded")
+        )
+    if recording.finalization_next_retry_at and get_datetime(recording.finalization_next_retry_at) > now:
+        return None
+    if recording.finalization_stage not in ("Pending", "Validating", "Validated", "Publishing"):
+        return None
+    recording.finalization_attempts = cint(recording.finalization_attempts) + 1
+    recording.finalization_stage = "Publishing" if recording.validated_at else "Validating"
+    recording.finalization_next_retry_at = add_to_date(now, seconds=FINALIZATION_LEASE_SECONDS)
+    recording.finalization_failure_type = None
+    recording.finalization_failure_code = None
+    recording.finalization_diagnostic = None
+    recording.save(ignore_permissions=True)
+    frappe.db.commit()
+    return frappe.get_doc("Meet Recording", recording_name)
+
+
+def _publish_artifact(recording_name: str, path: Path) -> dict:
     recording = _locked_recording(recording_name)
     if recording.status in ("Ready", "Partial"):
         return {"artifact": recording.artifact, "status": recording.status}
-    if recording.status != "Processing" or recording.upload_id != upload_id:
+    if recording.status != "Processing" or not recording.validated_at:
         return {"status": recording.status}
-    if cint(event_sequence) <= recording.recorder_event_sequence:
-        frappe.throw(_("Recorder event is out of order"))
-
+    recording.finalization_stage = "Publishing"
+    recording.save(ignore_permissions=True)
     acquire_owner_storage_lock(recording.room_owner)
 
     callback_user = frappe.session.user
     try:
         frappe.set_user(recording.room_owner)
         parent = _recordings_folder(recording)
-        file_name = get_new_file_name(_artifact_name(recording), parent, "Video")
+        existing_name = frappe.db.get_value("File", recording.publication_key, "file_name")
+        file_name = existing_name or get_new_file_name(_artifact_name(recording), parent, "Video")
     finally:
         frappe.set_user(callback_user)
-    manager = FileManager()
-    drive_file = create_drive_file(
-        file_name,
-        parent,
-        "Video",
-        lambda entity: "/" + str(manager.get_disk_path(entity)),
-        mime_type="video/mp4",
-        file_size=recording.upload_size,
-        owner=recording.room_owner,
-    )
-    frappe.db.after_rollback.add(lambda: _delete_drive_blob(manager, drive_file))
-    transfer_path = path.with_name(f"{path.name}.{frappe.generate_hash(length=12)}.transfer")
-    try:
-        shutil.copyfile(path, transfer_path)
-        manager.upload_file(transfer_path, drive_file)
-        if manager.s3_enabled:
-            drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
-            drive_file.save(ignore_permissions=True)
-        update_file_size(parent, recording.upload_size)
 
-        recording.artifact = drive_file.name
-        recording.artifact_size = recording.upload_size
-        recording.artifact_duration = recording.upload_duration_ms / 1000
-        recording.artifact_sha256 = recording.upload_sha256
-        capture_gaps = frappe.parse_json(recording.capture_gaps) or []
-        recording.capture_gaps = json.dumps(capture_gaps)
-        recording.status = "Partial" if capture_gaps else "Ready"
+    manager = FileManager()
+    drive_file = _reconcile_publication(manager, recording, parent, file_name)
+    created = drive_file is None
+    if created:
+        drive_file = create_drive_file(
+            file_name,
+            parent,
+            "Video",
+            lambda entity: "/" + str(manager.get_disk_path(entity)),
+            mime_type="video/mp4",
+            file_size=recording.upload_size,
+            owner=recording.room_owner,
+            name=recording.publication_key,
+        )
+        frappe.db.after_rollback.add(lambda: _delete_drive_blob(manager, drive_file))
+        transfer_path = path.with_name(f"{path.name}.{frappe.generate_hash(length=12)}.transfer")
+        try:
+            shutil.copyfile(path, transfer_path)
+            manager.upload_file(transfer_path, drive_file)
+            if manager.s3_enabled:
+                drive_file.file_url = get_s3_url(get_s3_key(drive_file.file_url))
+            drive_file.content_hash = recording.upload_sha256
+            drive_file.save(ignore_permissions=True)
+            update_file_size(parent, recording.upload_size)
+        except Exception:
+            _delete_drive_blob(manager, drive_file)
+            raise
+        finally:
+            transfer_path.unlink(missing_ok=True)
+
+    recording.artifact = drive_file.name
+    recording.artifact_size = recording.upload_size
+    recording.artifact_duration = recording.upload_duration_ms / 1000
+    recording.artifact_sha256 = recording.upload_sha256
+    capture_gaps = frappe.parse_json(recording.capture_gaps) or []
+    recording.capture_gaps = json.dumps(capture_gaps)
+    recording.status = "Partial" if capture_gaps else "Ready"
+    recording.state_revision += 1
+    recording.published_at = now_datetime()
+    recording.finalization_stage = "Terminal"
+    recording.finalization_next_retry_at = None
+    recording.notification_pending = 1
+    recording.notification_next_retry_at = now_datetime()
+    recording.flags.reconciliation_update = True
+    recording.save(ignore_permissions=True)
+    frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
+    return {"artifact": drive_file.name, "status": recording.status}
+
+
+def _reconcile_publication(manager: FileManager, recording, parent: str, file_name: str):
+    if not frappe.db.exists("File", recording.publication_key):
+        return None
+    drive_file = frappe.get_doc("File", recording.publication_key)
+    if (
+        drive_file.owner == recording.room_owner
+        and drive_file.folder == parent
+        and drive_file.file_name == file_name
+        and drive_file.file_type == "Video"
+        and drive_file.status == "Active"
+        and cint(drive_file.file_size) == cint(recording.upload_size)
+        and drive_file.content_hash == recording.upload_sha256
+    ):
+        return drive_file
+    _delete_drive_blob(manager, drive_file)
+    frappe.delete_doc("File", drive_file.name, force=True, ignore_permissions=True)
+    return None
+
+
+def _record_finalization_failure(recording_name: str, error: Exception, *, deterministic: bool) -> dict:
+    from suite.meet.api.recording import _publish_state
+
+    recording = _locked_recording(recording_name)
+    if recording.status != "Processing":
+        return {"status": recording.status}
+    now = now_datetime()
+    code = getattr(error, "code", "publication_failed")
+    recording.finalization_failure_type = "deterministic" if deterministic else "infrastructure"
+    recording.finalization_failure_code = code
+    recording.finalization_diagnostic = str(error)[:1000]
+    deadline_reached = (
+        recording.finalization_deadline and get_datetime(recording.finalization_deadline) <= now
+    )
+    if deterministic or deadline_reached:
+        recording.status = "Failed"
         recording.state_revision += 1
-        recording.recorder_event_sequence = cint(event_sequence)
+        recording.failure_code = "processing_failed"
+        recording.finalization_stage = "Terminal"
+        recording.finalization_next_retry_at = None
+        recording.notification_pending = 1
+        recording.notification_next_retry_at = now
+        recording.flags.reconciliation_update = True
         recording.save(ignore_permissions=True)
         _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
-        frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
+        return {"status": "Failed"}
+    delay = min(60 * (2 ** max(cint(recording.finalization_attempts) - 1, 0)), FINALIZATION_RETRY_MAX_SECONDS)
+    recording.finalization_stage = "Pending"
+    recording.finalization_next_retry_at = add_to_date(now, seconds=delay)
+    recording.save(ignore_permissions=True)
+    return {"status": "Processing"}
+
+
+def reconcile_due_finalizations():
+    now = now_datetime()
+    for name in frappe.get_all(
+        "Meet Recording",
+        filters={"status": "Processing", "metadata_accepted_at": ["is", "not set"]},
+        pluck="name",
+    ):
+        recording = _locked_recording(name)
+        if recording.status != "Processing" or recording.metadata_accepted_at:
+            continue
+        accepted_at = get_datetime(recording.modified) or now
+        recording.metadata_accepted_at = accepted_at
+        recording.finalization_deadline = add_to_date(accepted_at, hours=FINALIZATION_TIMEOUT_HOURS)
+        recording.publication_key = f"meet-recording-{recording.name}"
+        if cint(recording.upload_size) > 0 and cint(recording.upload_offset) == cint(recording.upload_size):
+            recording.upload_completed_at = accepted_at
+            recording.finalization_stage = "Pending"
+            recording.finalization_next_retry_at = now
+        else:
+            recording.finalization_stage = "Awaiting Upload"
+        recording.save(ignore_permissions=True)
+    for name in frappe.get_all(
+        "Meet Recording",
+        filters={"status": "Processing", "finalization_deadline": ["<=", now]},
+        pluck="name",
+    ):
+        try:
+            _record_finalization_failure(
+                name,
+                InfrastructureFinalizationError(
+                    "deadline_exceeded", _("Recording finalization deadline was exceeded")
+                ),
+                deterministic=False,
+            )
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            frappe.log_error(
+                title=f"Meet recording finalization deadline failed for {name}",
+                message=frappe.get_traceback(),
+            )
+    for name in frappe.get_all(
+        "Meet Recording",
+        filters={
+            "status": "Processing",
+            "upload_completed_at": ["is", "set"],
+            "finalization_next_retry_at": ["<=", now],
+        },
+        pluck="name",
+    ):
+        _enqueue_finalization(name)
+    for name in frappe.get_all(
+        "Meet Recording",
+        filters={
+            "notification_pending": 1,
+            "notification_next_retry_at": ["<=", now],
+        },
+        pluck="name",
+    ):
+        frappe.enqueue(
+            deliver_recording_notification,
+            recording_name=name,
+            enqueue_after_commit=True,
+            job_id=f"meet-recording-notification::{name}",
+            deduplicate=True,
+        )
+
+
+def deliver_recording_notification(recording_name: str):
+    recording = _locked_recording(recording_name)
+    if recording.status not in ("Ready", "Partial", "Failed") or not recording.notification_pending:
+        return
+    now = now_datetime()
+    if recording.notification_next_retry_at and get_datetime(recording.notification_next_retry_at) > now:
+        return
+    recording.notification_attempts = cint(recording.notification_attempts) + 1
+    recording.notification_next_retry_at = add_to_date(now, minutes=10)
+    recording.flags.finalization_update = True
+    recording.save(ignore_permissions=True)
+    frappe.db.commit()
+    try:
+        recording = frappe.get_doc("Meet Recording", recording_name)
+        subject = {
+            "Ready": _("Your recording is ready"),
+            "Partial": _("Your partial recording is ready"),
+            "Failed": _("Your recording could not be processed"),
+        }[recording.status]
+        if not frappe.db.exists(
+            "Notification Log",
+            {
+                "for_user": recording.room_owner,
+                "document_type": "Meet Recording",
+                "document_name": recording.name,
+                "type": "Alert",
+            },
+        ):
+            frappe.get_doc(
+                {
+                    "doctype": "Notification Log",
+                    "subject": subject,
+                    "for_user": recording.room_owner,
+                    "type": "Alert",
+                    "document_type": "Meet Recording",
+                    "document_name": recording.name,
+                    "from_user": "Administrator",
+                }
+            ).insert(ignore_permissions=True)
+        message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
+        if not frappe.db.exists("Email Queue", {"message_id": message_id}):
+            frappe.sendmail(
+                recipients=[recording.room_owner],
+                subject=subject,
+                message=subject,
+                reference_doctype="Meet Recording",
+                reference_name=recording.name,
+                message_id=message_id,
+                now=False,
+            )
+        recording = _locked_recording(recording_name)
+        recording.notification_pending = 0
+        recording.notification_next_retry_at = None
+        recording.notification_sent_at = now_datetime()
+        recording.flags.finalization_update = True
+        recording.save(ignore_permissions=True)
     except Exception:
-        _delete_drive_blob(manager, drive_file)
-        raise
-    finally:
-        transfer_path.unlink(missing_ok=True)
-    return {"artifact": drive_file.name, "status": recording.status}
+        traceback = frappe.get_traceback()
+        frappe.db.rollback()
+        recording = _locked_recording(recording_name)
+        delay = min(
+            60 * (2 ** max(cint(recording.notification_attempts) - 1, 0)),
+            NOTIFICATION_RETRY_MAX_SECONDS,
+        )
+        recording.notification_next_retry_at = add_to_date(now_datetime(), seconds=delay)
+        recording.flags.finalization_update = True
+        recording.save(ignore_permissions=True)
+        frappe.db.commit()
+        frappe.log_error(
+            title=f"Meet recording notification failed for {recording_name}",
+            message=traceback,
+        )
 
 
 def _locked_recording(name: str):
@@ -310,19 +665,25 @@ def _validate_media(path: Path) -> dict:
             text=True,
             timeout=120,
         )
-    except (OSError, subprocess.SubprocessError):
-        frappe.throw(_("Recording media metadata could not be read"))
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise InfrastructureFinalizationError(
+            "media_tool_unavailable", _("Recording media metadata could not be read")
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise DeterministicFinalizationError(
+            "invalid_media", _("Recording media metadata could not be read")
+        ) from error
     if len(result.stdout) > 1024 * 1024:
-        frappe.throw(_("Recording media metadata is too large"))
+        raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is too large"))
     try:
         media = json.loads(result.stdout)
     except (json.JSONDecodeError, TypeError):
-        frappe.throw(_("Recording media metadata is invalid"))
+        raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
     if not isinstance(media, dict):
-        frappe.throw(_("Recording media metadata is invalid"))
+        raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
     streams = media.get("streams", [])
     if not isinstance(streams, list) or any(not isinstance(stream, dict) for stream in streams):
-        frappe.throw(_("Recording media metadata is invalid"))
+        raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
     try:
@@ -347,14 +708,16 @@ def _validate_media(path: Path) -> dict:
     except (TypeError, ValueError, ZeroDivisionError):
         valid_profile = False
     if not valid_profile:
-        frappe.throw(_("Recording artifact media profile is invalid"))
+        raise DeterministicFinalizationError(
+            "invalid_media_profile", _("Recording artifact media profile is invalid")
+        )
     try:
         media_format = media.get("format", {})
         duration = float(media_format.get("duration", 0)) if isinstance(media_format, dict) else 0
     except (TypeError, ValueError):
         duration = 0
     if not math.isfinite(duration) or duration <= 0:
-        frappe.throw(_("Recording artifact duration is invalid"))
+        raise DeterministicFinalizationError("invalid_duration", _("Recording artifact duration is invalid"))
     try:
         subprocess.run(
             [
@@ -372,8 +735,14 @@ def _validate_media(path: Path) -> dict:
             stderr=subprocess.DEVNULL,
             timeout=6 * 60 * 60,
         )
-    except (OSError, subprocess.SubprocessError):
-        frappe.throw(_("Recording artifact could not be decoded"))
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise InfrastructureFinalizationError(
+            "media_tool_unavailable", _("Recording artifact could not be decoded")
+        ) from error
+    except subprocess.CalledProcessError as error:
+        raise DeterministicFinalizationError(
+            "decode_failed", _("Recording artifact could not be decoded")
+        ) from error
     return {"duration_ms": round(duration * 1000)}
 
 

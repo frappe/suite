@@ -50,13 +50,11 @@ interface Attachment {
 	stream: MediaStream | null;
 	ownsTracks: boolean;
 	createdElement: boolean;
-	lastAttachAt?: number;
 	attachedStreamId?: string;
 	attachedTrackIds?: string;
 	revision: number;
 }
 
-const STALE_REATTACH_MS = 60_000;
 const LOCAL_PREVIEW_ID = "local";
 
 const attachmentKey = (role: MediaAttachmentRole, id: string) => `${role}:${id}`;
@@ -392,9 +390,6 @@ export class VideoElementManager implements MediaAttachmentFacade {
 			?.getTracks()
 			.map((track) => track.id)
 			.join(",");
-		const stale =
-			attachment.lastAttachAt !== undefined &&
-			Date.now() - attachment.lastAttachAt > STALE_REATTACH_MS;
 		const sourceStreamChanged =
 			role !== "remote-video" &&
 			role !== "remote-audio" &&
@@ -404,14 +399,13 @@ export class VideoElementManager implements MediaAttachmentFacade {
 			sourceStreamChanged ||
 			attachment.attachedTrackIds !== trackIds ||
 			currentTracks !== trackIds;
-		if (!changed && !stale) return;
+		if (!changed) return;
 
 		this.configureElement(element, role);
 		this.clearPlaybackHandler(element);
 		element.srcObject = new MediaStream(tracks);
 		attachment.attachedStreamId = stream.id;
 		attachment.attachedTrackIds = trackIds;
-		attachment.lastAttachAt = Date.now();
 		const revision = ++attachment.revision;
 		const played = await this.playElement(
 			element,
@@ -497,7 +491,6 @@ export class VideoElementManager implements MediaAttachmentFacade {
 		attachment.stream = null;
 		attachment.attachedStreamId = undefined;
 		attachment.attachedTrackIds = undefined;
-		attachment.lastAttachAt = undefined;
 		if (attachment.element) this.detachElement(attachment.element, false);
 	}
 

@@ -1130,6 +1130,46 @@ describe('JobStore and JobManager', () => {
 		expect(afterRestart).not.toHaveBeenCalled();
 	});
 
+	it('reloads and reschedules cleanup authorization after restart', async () => {
+		const store = new JobStore(path);
+		await store.initialize();
+		const manager = new JobManager(store, new FakeRendererBridge(), 1);
+		await manager.reserve(baseClaims);
+		await store.update((jobs) => {
+			const job = jobs.job;
+			if (!job) throw new Error('job disappeared');
+			job.state = 'complete';
+			job.terminal_at = '2026-01-01T00:01:00.000Z';
+			job.artifact = { state: 'complete', path: 'recording.mp4' };
+			job.finalization_started_at = '2026-01-01T00:01:01.000Z';
+			job.cleanup_authorized_at = '2026-01-01T00:01:02.000Z';
+			job.cleanup_result = 'Ready';
+		});
+
+		const reloaded = new JobStore(path);
+		await reloaded.initialize();
+		const cleanup = vi.fn(async (job: import('./types.js').JobRecord) => {
+			expect(job).toMatchObject({
+				finalization_started_at: '2026-01-01T00:01:01.000Z',
+				cleanup_authorized_at: '2026-01-01T00:01:02.000Z',
+				cleanup_result: 'Ready',
+			});
+		});
+		await new JobManager(
+			reloaded,
+			new FakeRendererBridge(),
+			1,
+			cleanup,
+		).initialize();
+
+		await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(1));
+		await vi.waitFor(() =>
+			expect(reloaded.get('job')?.callback_completed_at).toEqual(
+				expect.any(String),
+			),
+		);
+	});
+
 	it('finalizes a stopping job through the local restart hook', async () => {
 		const store = new JobStore(path);
 		await store.initialize();

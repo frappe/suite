@@ -615,6 +615,7 @@ def create_drive_file(
     content_doctype=None,
     content_docname=None,
     owner=None,
+    name=None,
 ):
     values = {
         "doctype": "File",
@@ -632,6 +633,8 @@ def create_drive_file(
         values["content_docname"] = content_docname
     drive_file = frappe.get_doc(values)
     drive_file.flags.file_created = True
+    if name:
+        drive_file._name = name
     drive_file.insert(ignore_permissions=True)
     path = entity_path(drive_file) if callable(entity_path) else entity_path
     drive_file.file_url = str(path) if path else ""
