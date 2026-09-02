@@ -128,12 +128,15 @@ const defaultAlert = (isAllDay: boolean, startDate: string) =>
 				relative_to: 'Start',
 			}
 
+// When an event on this day starts, absent a slot to put it in: the next full hour today,
+// ten in the morning on any other day.
+const defaultStartTime = (date: string) =>
+	dayjs(date).isToday() ? dayjs().add(1, 'hour').startOf('hour').format('HH:mm') : '10:00'
+
 const getDefaultEventData = () => {
 	const startTime = selectedEvent?.time
 		? dayjs(selectedEvent.time, 'h a').format('HH:mm')
-		: dayjs(selectedEvent.date).isToday()
-			? dayjs().add(1, 'hour').startOf('hour').format('HH:mm')
-			: '10:00'
+		: defaultStartTime(selectedEvent.date)
 
 	const identity = store.organizerIdentity
 
@@ -717,6 +720,16 @@ const setAllDay = (isAllDay: boolean) => {
 		JSON.stringify(event.alerts[0]) === JSON.stringify(defaultAlert(event.isAllDay, event.startDate))
 	event.isAllDay = isAllDay
 	if (untouched) event.alerts = [defaultAlert(isAllDay, event.startDate)]
+
+	// A saved all-day event carries midnight at both ends of the same day: its duration counts
+	// whole days, so taking the exclusive last day off the end lands it back on the start. As a
+	// timed event that is a zero-length range, which the form won't save — and the reader is left
+	// with a disabled Save and nothing saying why. Give it the slot a new event on that day would
+	// get; the end follows an hour later, dragged along by the start watcher (the gap it reads is
+	// zero, so it falls back to the default duration). A range that already spans days is a real
+	// one and keeps its own hours.
+	if (!isAllDay && !endsAt.value.isAfter(startsAt.value))
+		event.startTime = defaultStartTime(event.startDate)
 }
 
 // --- Delete ---
