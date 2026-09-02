@@ -63,9 +63,20 @@ one. The roles, lowest first: Read, Comment, Upload, Edit, Manage.
 _Avoid_: Permission level, Access flags, Rights
 
 **Principal**:
-Whoever a grant names: a user, a user group, any signed-in user, or a share
-link.
+Whoever a grant names: a user, a user group, any signed-in user, a share
+link, or anyone at all.
 _Avoid_: User, Member, Recipient
+
+**Public**:
+The principal that stands for anyone at all, signed in or not, with no
+link. A grant to it may carry Read and nothing higher.
+_Avoid_: Guest, Anonymous, Everyone, World
+
+**Published**:
+The state of a node that the Public may read. A node is published by a
+grant, and stops being published when that grant is revoked or refused
+nearer to the node.
+_Avoid_: Public file, Shared to web, Open
 
 **Deny**:
 A grant that refuses rights rather than giving them.
@@ -165,6 +176,19 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - The **Grant** nearest a node on its path decides a right. A **Deny** nearer
   than a grant refuses the right.
 - A **Grant** on a **Drive Root** reaches every node in that root.
+- A **Published** node is read by anyone. Nothing above Read ever reaches
+  the **Public**; anything more for a visitor comes through a share link.
+- Publishing a folder publishes everything below it, until a **Deny** to the
+  **Public** nearer a node stops it.
+- A **Drive Root** is never **Published**. No one, Suite Admins included,
+  may grant the **Public** on a root.
+- Publishing needs the same right as any other **Grant**: Manage at the
+  node. No app publishes on a user's behalf.
+- A deck built from other decks shows a viewer only the decks that viewer
+  may read. It is not **Published** by being built.
+- Every change to a **Grant** leaves a record of who made it, which
+  **Principal** it named, and the **Role** before and after. Publishing is
+  such a change, not a separate act.
 - Suite Admins reach every node on the site without a grant.
 - **Offboarding** sets a **Personal Root** to archived. It writes no node and
   changes no grant.
@@ -230,5 +254,9 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - "Thumbnail", "rendition", and "variant" named one thing and hinted at
   more. Resolved: there is one derived image, the **Preview**. An **Export**
   is not a stored thing at all.
+- "Public" meant an anonymous reader, a not-private framework File, a
+  deck anyone may open, and the Slides media URL flag. Resolved: **Public**
+  is a **Principal**, **Published** is the node state it produces, and the
+  framework File flag is not a Drive term.
 - "Home" and "Everyone" are the labels WebDAV mounts show for the **Personal
   Root** and the **Shared Root**. They are display names, not domain terms.

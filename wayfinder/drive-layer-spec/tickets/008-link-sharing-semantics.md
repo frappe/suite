@@ -25,3 +25,11 @@ it. Likely answer: no row; decide here.
 
 Red-team walkthroughs: scenarios S5 and S10. Blocked by Role ladder
 semantics.
+
+Handed from [Publishing capability](007-publishing-capability.md)
+(2026-09-03): a `$PUBLIC` principal exists and caps at READ. Every
+anonymous right above READ (Writer's shipped anonymous comments, file
+requests, anyone-with-link edit) rides on a `$LINK:<token>` grant. Decide
+here how a guest's unlocked links combine with `$PUBLIC` in the session
+principal list, and whether Writer's anonymous comment author stays
+`Guest` or becomes the link token.

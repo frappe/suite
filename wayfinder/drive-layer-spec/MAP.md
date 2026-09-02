@@ -80,6 +80,13 @@ implementation effort can execute from the documents alone.
   second table for documents and file nodes; Sheets retention ladder goes
   site-wide; enqueue on write, daily sweep fills gaps.
 
+- [Publishing capability](tickets/007-publishing-capability.md) — published
+  = a `Drive Grant` to `$PUBLIC`, a principal every session holds; caps at
+  READ; MANAGE publishes, no capability, no bypass; composites lose the
+  always-public invariant (render checks READ per reference); inherits, deny
+  cuts, invalid on a Drive Root; unpublish = revoke or deny; one activity row
+  per grant write, no publish verb.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip

@@ -31,3 +31,13 @@ Edit, `everyone` -> any-signed-in-user principal), then the rows are deleted.
 `Writer Version` and `Sheet Snapshot` rows become Drive versions. Writer
 `ycomments` and Sheets in-workbook comments become Drive comments. Title and
 trashed fields on content doctypes are dropped after the node holds them.
+
+Handed from [Publishing capability](007-publishing-capability.md)
+(2026-09-03): a `Drive Permission` row with `user = ""` (Guest, no token)
+maps to a `$PUBLIC` READ grant. If the row carries flags above read, add
+one `$LINK:<token>` grant at the mapped level beside it; the plain URL
+keeps read, the new link URL keeps the rest. A `user = ""` deny row maps to
+a `$PUBLIC` deny. Rows on a Drive Root (the shipped `Site` folder) are
+invalid under the root guardrail: drop them and report the count. Also:
+Slides' forced composite rows are ordinary `user = ""` read rows and need
+no special case.
