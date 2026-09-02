@@ -58,6 +58,12 @@ implementation effort can execute from the documents alone.
   links cap at EDIT; admin bypass survives; five-flag migration table
   (grants round down, denies round up).
 
+- [GC reference discovery mechanism](tickets/003-gc-reference-discovery-mechanism.md) —
+  meta-driven, no hook: GC calls `get_link_fields("File Blob")`, one
+  `NOT EXISTS` per column (Singles via `tabSingles`); a blob is live only
+  while a Link field names it; unindexed column = include and warn;
+  discovery failure = delete nothing; public `blob_reference_columns()`.
+
 ## Not yet specified
 
 - HTTP API surface details (endpoint list, request/response shapes).

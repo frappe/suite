@@ -45,6 +45,11 @@ Stored bytes, identified by their content, so two nodes holding the same
 content hold the same blob.
 _Avoid_: File, Object, Attachment
 
+**Reference**:
+A record that names a Blob. A Blob stays while any Reference names it, and
+is gone a day after the last one goes.
+_Avoid_: Refcount, Link, Owner of the blob
+
 ### Access
 
 **Grant**:
@@ -92,6 +97,10 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A **Path** is a name for a position, not a location. Nothing in storage
   matches it, because a **Blob** is addressed by its content.
 - Renaming or moving a node rewrites its **Path** and touches no **Blob**.
+- A **Drive Node** that holds bytes is a **Reference**. So is each version,
+  thumbnail, or export kept beside a node.
+- Drive never deletes bytes. It deletes a **Reference**, and the **Blob**
+  follows once nothing names it.
 - A business site has exactly one active **Shared Root**. A personal site has
   none.
 - Every user has at most one **Personal Root**.
