@@ -72,6 +72,14 @@ implementation effort can execute from the documents alone.
   home (DocShare rows become grants); one declaration per app (identity,
   factories, bytes, on_purge, satellites with Read-to-see/Edit-to-change).
 
+- [Renditions and thumbnails model](tickets/006-renditions-and-thumbnails-model.md) —
+  `Drive Node Preview` (node, source_blob, blob), one 512 px WebP per node,
+  reuse by source blob; exports are streamed, never stored; Drive renders
+  bytes by mime, apps push a document's image; listings mint signed `/f/`
+  URLs; replace swaps, trash keeps, purge deletes; `Drive Node Version` is a
+  second table for documents and file nodes; Sheets retention ladder goes
+  site-wide; enqueue on write, daily sweep fills gaps.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
