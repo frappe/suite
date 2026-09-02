@@ -35,9 +35,12 @@ import {
 	shiftedMasterStart,
 } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -235,7 +238,7 @@ const eventParams = computed(() => {
 	// master's zone either way: pairing the master's wall clock with the browser's zone would
 	// move the series on its own.
 	const ev = selectedEvent?.calendarEvent
-	if (ev?.recurrence_id && !isUpdateInstance.value) {
+	if (ev?.recurrence_id && editScope.value !== 'instance') {
 		// An unresolved master (no master_start) is already past saving — the update is addressed by
 		// master_id too, and falls back to an id the server won't take — so it is left exactly as it
 		// was rather than given a start of this occurrence's, or of now.
@@ -539,10 +542,12 @@ const createMeetLink = useCall<{ meeting_url: string }>({
 	immediate: false,
 })
 
-const isUpdateInstance = ref(false)
+// How far the save reaches. A one-off event is its own series, so nothing asks and nothing
+// else reads this.
+const editScope = ref<RecurringScope>('series')
 
 const submitEvent = (sendEmail: boolean) => {
-	const isInstance = isUpdateInstance.value && selectedEvent.calendarEvent?.recurrence_id
+	const isInstance = editScope.value === 'instance' && selectedEvent.calendarEvent?.recurrence_id
 	const resource = isNew.value
 		? event.addMeetLink
 			? createMeetEvent
@@ -666,8 +671,8 @@ const handleSave = () => {
 	else submitEvent(false)
 }
 
-const handleSaveRecurringEvent = (updateInstance: boolean) => {
-	isUpdateInstance.value = updateInstance
+const handleSaveRecurringEvent = (scope: RecurringScope) => {
+	editScope.value = scope
 	showRecurringEventModal.value = false
 	handleSave()
 }
@@ -741,6 +746,9 @@ const setAllDay = (isAllDay: boolean) => {
 const {
 	deleteOption,
 	isDeleting,
+	showScopeModal: showDeleteScopeModal,
+	deleteScopeModalProps,
+	deleteScope,
 	showNotifyModal: showNotifyDeleteModal,
 	pendingDelete,
 	NOTIFY_DELETE_OPTIONS,
@@ -783,8 +791,11 @@ const draftOptions = computed(() => [
 ])
 
 const handleSaveClick = () => {
-	if (shouldShowRecurringEventModal.value) showRecurringEventModal.value = true
-	else handleSave()
+	if (shouldShowRecurringEventModal.value) return (showRecurringEventModal.value = true)
+	// Nothing to ask, so nothing may be left over from the last time it was asked: an answer
+	// standing from an earlier event would send this one's edit somewhere it never chose.
+	editScope.value = 'series'
+	handleSave()
 }
 
 const dialogTitle = computed(() =>
@@ -818,11 +829,14 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 		: __('Your unsaved edits to this event will be lost.'),
 }))
 
-const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
-	title: __('Update Recurring Event'),
-	icon: { name: 'lucide-repeat' },
-	message: __('Do you want to update just this instance, or all events in the series?'),
-}
+const recurringScopeModalProps = computed(() => ({
+	title: __('Update repeating event'),
+	// Changing a rule from a date onward means splitting the series in two, and there is no
+	// call for that yet — so the row is there, greyed out, rather than missing.
+	options: scopeOptions({ unavailable: ['following'] }),
+	confirmLabel: __('Update'),
+	loading: isSaving.value,
+}))
 </script>
 
 <template>
@@ -1140,13 +1154,16 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 			</div>
 		</template>
 	</Dialog>
-	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
-			</div>
-		</template>
-	</Dialog>
+	<RecurringScopeModal
+		v-model="showRecurringEventModal"
+		v-bind="recurringScopeModalProps"
+		@confirm="handleSaveRecurringEvent"
+	/>
+	<RecurringScopeModal
+		v-model="showDeleteScopeModal"
+		v-bind="deleteScopeModalProps"
+		@confirm="deleteScope"
+	/>
 	<Dialog v-model:open="showNotifyDeleteModal" v-bind="NOTIFY_DELETE_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">

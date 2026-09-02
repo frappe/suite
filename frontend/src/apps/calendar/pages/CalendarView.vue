@@ -9,10 +9,13 @@ import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 
 const dayjs = inject('$dayjs')
 
@@ -395,7 +398,7 @@ watch(
 
 const eventToBeUpdated = reactive({})
 const showRecurringEventModal = ref(false)
-const isUpdateInstance = ref(false)
+const updateScope = ref<RecurringScope>('series')
 const showNotifyModal = ref(false)
 
 // The calendar draws a move or resize before it is confirmed here. Until a
@@ -412,12 +415,16 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
 	confirmed = false
+	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
+	// one-off event dragged after an instance edit would be written as an override of a series
+	// it isn't part of.
+	updateScope.value = 'series'
 	if (e.recurrence_id) showRecurringEventModal.value = true
 	else handleUpdateEvent()
 }
 
-const handleUpdateRecurringEvent = (updateInstance: boolean) => {
-	isUpdateInstance.value = updateInstance
+const handleUpdateRecurringEvent = (scope: RecurringScope) => {
+	updateScope.value = scope
 	showRecurringEventModal.value = false
 	handleUpdateEvent()
 }
@@ -438,9 +445,9 @@ const hasParticipantsOtherThanUser = computed(
 const submitEvent = (sendEmail: boolean) => {
 	confirmed = true
 	showNotifyModal.value = false
-	// Editing a single instance of a series is not supported yet; the move is undone rather
-	// than left on screen as if it had been saved.
-	if (isUpdateInstance.value) return revertUpdate()
+	// Neither of the narrower answers is wired here yet, and the dialog greys both out. If one
+	// is reached anyway the move is undone rather than left on screen as if it had been saved.
+	if (updateScope.value !== 'series') return revertUpdate()
 
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
@@ -475,11 +482,14 @@ const editEvent = createResource({
 	},
 })
 
-const RECURRING_EVENT_MODAL_OPTIONS = {
-	title: __('Update Recurring Event'),
-	icon: { name: 'lucide-repeat' },
-	message: __('Do you want to update just this instance, or all events in the series?'),
-}
+const recurringScopeModalProps = computed(() => ({
+	title: __('Update repeating event'),
+	// A dragged occurrence can only be saved as the whole series so far: the edit modal writes
+	// one occurrence's override, the grid does not, and no one splits a series.
+	options: scopeOptions({ unavailable: ['instance', 'following'] }),
+	confirmLabel: __('Update'),
+	loading: editEvent.loading,
+}))
 
 const NOTIFY_MODAL_OPTIONS = {
 	title: __('Notify Participants'),
@@ -573,15 +583,11 @@ const NOTIFY_MODAL_OPTIONS = {
 		</div>
 	</div>
 	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="events.reload()" />
-	<Dialog v-model:open="showRecurringEventModal" v-bind="RECURRING_EVENT_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button @click="handleUpdateRecurringEvent(false)">
-					{{ __('Entire series') }}
-				</Button>
-			</div>
-		</template>
-	</Dialog>
+	<RecurringScopeModal
+		v-model="showRecurringEventModal"
+		v-bind="recurringScopeModalProps"
+		@confirm="handleUpdateRecurringEvent"
+	/>
 	<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">

@@ -25,9 +25,11 @@ import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/uti
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent } = defineProps<{ calendarEvent: any }>()
@@ -67,14 +69,46 @@ const rsvpEvent = createResource({
 	onSuccess: () => emit('reloadEvents'),
 })
 
-const handleSetResponse = (response: string) => {
-	if (!response || response === userResponse.value) return
+// A recurring event asks the same question an edit or a delete asks — a standup you miss one
+// week is not a standup you have left. Only the series-wide answer reaches the server so far,
+// so the other is greyed out rather than absent. The tab buttons stay where they were until
+// the server confirms, so cancelling the question leaves the shown answer alone.
+const showRsvpScopeModal = ref(false)
+const pendingResponse = ref('')
+
+const submitResponse = (response: string) => {
+	showRsvpScopeModal.value = false
 	toast.promise(rsvpEvent.submit(response), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),
 	})
 }
+
+const handleSetResponse = (response: string) => {
+	if (!response || response === userResponse.value) return
+	if (!calendarEvent.recurrence_id) return submitResponse(response)
+	pendingResponse.value = response
+	showRsvpScopeModal.value = true
+}
+
+const rsvpScopeModalProps = computed(() => ({
+	title: __('Respond to repeating event'),
+	icon: { name: 'lucide-calendar-check' },
+	// No "this and following": ending a series partway is the organizer's act, and an attendee
+	// answering an invitation is not editing the event at all.
+	options: scopeOptions({ unavailable: ['instance'] }).filter(
+		(option) => option.value !== 'following',
+	),
+	confirmLabel: __('Send response'),
+	loading: rsvpEvent.loading,
+}))
+
+// An occurrence whose series has no readable rule left has nothing to say here,
+// and the row goes with the sentence rather than standing empty beside an icon.
+const repeatMessage = computed(() =>
+	calendarEvent.recurrence_id ? getRepeatMessage(calendarEvent.recurrence_rule) : '',
+)
 
 // --- Calendar (colour + account) ---
 
@@ -279,14 +313,22 @@ const hasDetails = computed(
 
 // --- Actions dropdown (delete) ---
 
-const { deleteOption, isDeleting, showNotifyModal, pendingDelete, NOTIFY_DELETE_OPTIONS } =
-	useEventDelete(
-		() => calendarEvent,
-		() => {
-			emit('reloadEvents')
-			emit('close')
-		},
-	)
+const {
+	deleteOption,
+	isDeleting,
+	showScopeModal: showDeleteScopeModal,
+	deleteScopeModalProps,
+	deleteScope,
+	showNotifyModal,
+	pendingDelete,
+	NOTIFY_DELETE_OPTIONS,
+} = useEventDelete(
+	() => calendarEvent,
+	() => {
+		emit('reloadEvents')
+		emit('close')
+	},
+)
 
 const dropdownOptions = computed(() => [
 	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
@@ -367,14 +409,9 @@ const openUrl = (location: string) => {
 			     panel reads title / date / participants. -->
 			<div v-if="hasDetails" class="flex flex-col py-2">
 				<!-- Recurrence -->
-				<div
-					v-if="calendarEvent.recurrence_id"
-					class="flex items-center gap-2.5 px-4.5 py-2"
-				>
+				<div v-if="repeatMessage" class="flex items-center gap-2.5 px-4.5 py-2">
 					<Repeat class="icon text-ink-gray-5 size-4 shrink-0" />
-					<span class="text-ink-gray-7 min-w-0 break-words text-sm">
-						{{ getRepeatMessage(calendarEvent.recurrence_rule) }}
-					</span>
+					<span class="text-ink-gray-7 min-w-0 break-words text-sm">{{ repeatMessage }}</span>
 				</div>
 
 				<!-- Meet link -->
@@ -532,6 +569,16 @@ const openUrl = (location: string) => {
 			/>
 		</div>
 
+		<RecurringScopeModal
+			v-model="showDeleteScopeModal"
+			v-bind="deleteScopeModalProps"
+			@confirm="deleteScope"
+		/>
+		<RecurringScopeModal
+			v-model="showRsvpScopeModal"
+			v-bind="rsvpScopeModalProps"
+			@confirm="() => submitResponse(pendingResponse)"
+		/>
 		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>
 				<div class="flex justify-end space-x-2">
