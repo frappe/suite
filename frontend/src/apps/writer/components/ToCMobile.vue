@@ -32,6 +32,7 @@ const setBarHeight = (height) =>
   )
 
 let observer
+let editorDom
 watchEffect(() => {
   observer?.disconnect()
   if (!bar.value) return setBarHeight(0)
@@ -63,13 +64,14 @@ onMounted(() => {
   updateTabs()
   activeTabId.value = props.editor.storage.tab?.activeTabId ?? activeTabId.value
   props.editor.on('update', updateTabs)
-  props.editor.view.dom.addEventListener('tab-changed', handleTabChange)
+  editorDom = props.editor.view.dom
+  editorDom.addEventListener('tab-changed', handleTabChange)
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   setBarHeight(0)
   props.editor.off('update', updateTabs)
-  props.editor.view.dom.removeEventListener('tab-changed', handleTabChange)
+  editorDom?.removeEventListener('tab-changed', handleTabChange)
 })
 </script>

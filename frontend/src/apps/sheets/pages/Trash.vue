@@ -71,8 +71,11 @@ import { Icon as FeatherIcon, ListView, ListRowItem } from 'frappe-ui/experiment
 import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'
+import { setupTheme } from '@/utils/setupTheme'
 
 const router = useRouter()
+
+setupTheme()
 
 const sheets  = ref([])
 const loading = ref(true)
@@ -167,16 +170,16 @@ async function doPurge() {
 .home-topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 32px;
+  gap: 8px;
+  padding: 0 12px;
   height: 48px;
-  background: var(--surface-base);
-  border-bottom: 1px solid var(--outline-gray-2);
+  background: var(--surface-elevation-1);
+  border-bottom: 1px solid var(--outline-elevation-1);
   flex-shrink: 0;
 }
 .home-brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .home-brand-name { font-size: 16px; font-weight: 600; letter-spacing: .01em; color: var(--ink-gray-9); }
-.home-topbar-right { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.home-topbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .home-trash-note { font-size: 12px; letter-spacing: .02em; color: var(--ink-gray-5); }
 .home-body {
   flex: 1;

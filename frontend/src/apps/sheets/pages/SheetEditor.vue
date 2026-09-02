@@ -27,6 +27,9 @@ import { Dialogs } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 
 import SheetEditor from '@/apps/sheets/components/SheetEditor/index.vue'
+import { setupTheme } from '@/utils/setupTheme'
+
+setupTheme()
 
 defineProps({
   // The sheet name (route param). 'new' is the special create id.

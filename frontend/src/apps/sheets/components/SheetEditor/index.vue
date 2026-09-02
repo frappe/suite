@@ -32,16 +32,19 @@
     <!-- Bar 1 · Identity -->
     <div class="sn-topbar">
       <div class="sn-topbar-left">
-        <!-- Brand mark doubles as the "back to home" action. Clicking it runs
-             flushAndClose so any pending edits are saved before navigation. -->
-        <button class="sn-app-icon-btn" type="button" aria-label="Back to home" title="Back to home" @click="flushAndClose">
-          <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
-            <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
-            <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
-            <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
-            <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
-          </svg>
-        </button>
+        <Dropdown :options="brandMenuOptions" :offset="16">
+          <template #default="{ open }">
+            <div class="sn-app-menu-trigger" aria-label="Open Sheets menu" title="Open Sheets menu">
+              <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
+                <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
+                <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
+                <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
+                <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
+              </svg>
+              <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
+            </div>
+          </template>
+        </Dropdown>
         <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
              sizes the box via real DOM text layout, so the input grows
              pixel-perfect and smooth per keystroke, with no JS canvas measuring
@@ -1264,7 +1267,9 @@ import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
 import { call } from '../../utils/api.js'
-import { useCurrentUser } from '@/boot/session'
+import { useCurrentUser, useSessionStore } from '@/boot/session'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
@@ -1339,6 +1344,27 @@ import {
 
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])
+const sessionStore = useSessionStore()
+const appsMenuOption = useAppSwitcher('sheets')
+const themeMenuOption = useThemeMenuOption()
+const brandMenuOptions = computed(() => [
+  {
+    group: '',
+    options: [
+      { label: 'Back to Home', icon: 'lucide-arrow-left', onClick: flushAndClose },
+      appsMenuOption.value,
+    ],
+  },
+  {
+    group: '',
+    options: [
+      themeMenuOption,
+      ...(sessionStore.isLoggedIn
+        ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]
+        : []),
+    ],
+  },
+])
 
 // ── Engine instances ──────────────────────────────────────────────────────────
 
@@ -6015,21 +6041,14 @@ function toggleShowFormulas() {
 .sn-load-error-sub   { font-size: 13px; color: var(--ink-gray-6); margin: 0 0 8px; max-width: 360px; }
 
 /* ── Bar 1 · Identity / topbar ───────────────────────────────────────────── */
-.sn-topbar       { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 16px; border-bottom:1px solid var(--outline-gray-2); background:var(--surface-base); flex-shrink:0; }
+.sn-topbar       { position:relative; z-index:10; display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 12px; border-bottom:1px solid var(--outline-elevation-1); background:var(--surface-elevation-1); flex-shrink:0; }
 /* Left cluster groups: brand+title tight (gap:4); status chips sit further away
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
-.sn-topbar-left  > .sn-app-icon-btn + .sn-title-fit { margin-left:-8px; }
 .sn-topbar-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
-.sn-app-icon-btn {
-  display:inline-flex; align-items:center; justify-content:center;
-  width:36px; height:36px; padding:4px; margin:0; border:none; background:transparent; cursor:pointer;
-  border-radius:8px; transition:background-color .12s;
-}
-.sn-app-icon-btn:hover  { background:var(--surface-gray-2); }
-.sn-app-icon-btn:focus-visible { outline:2px solid var(--outline-gray-4); outline-offset:2px; }
+.sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
 
 /* Auto-sizing title. A hidden ::after mirror carries the exact same typography
    and box as the input; being normal flow, ITS width sizes the wrapper to the

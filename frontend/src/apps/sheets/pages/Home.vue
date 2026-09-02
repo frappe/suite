@@ -2,17 +2,21 @@
   <div class="home">
     <!-- Top bar -->
     <div class="home-topbar">
-      <div class="home-brand">
-        <!-- Frappe Suite brand mark: green #278F5E rounded square, white
-             spreadsheet glyph. Matches the app-launcher and sheet-editor icons. -->
-        <svg width="28" height="28" viewBox="0 0 118 118" fill="none" style="flex-shrink:0">
-          <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
-          <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
-          <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
-          <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
-        </svg>
-        <span class="home-brand-name">Frappe Sheets</span>
-      </div>
+      <Dropdown :options="brandMenuOptions" :offset="16">
+        <template #default="{ open }">
+          <div class="home-brand home-brand--interactive">
+            <!-- Frappe Suite brand mark: green #278F5E rounded square, white
+                 spreadsheet glyph. Matches the app-launcher and sheet-editor icons. -->
+            <svg width="28" height="28" viewBox="0 0 118 118" fill="none" style="flex-shrink:0">
+              <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
+              <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
+              <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
+              <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
+            </svg>
+            <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
+          </div>
+        </template>
+      </Dropdown>
       <!-- Right-aligned controls. Wrapped in an explicit container with
            `margin-left: auto` because frappe-ui 1.0-beta's TextInput
            renders extra DOM around the input — relying on margin-left
@@ -308,8 +312,30 @@ import { useRouter } from 'vue-router'
 
 import { call } from '@/apps/sheets/utils/api.js'
 import { groupSheetsByRecency, parseFrappeDatetime } from '@/apps/sheets/utils/recency-groups.js'
+import { useSessionStore } from '@/boot/session'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { setupTheme } from '@/utils/setupTheme'
 
 const router = useRouter()
+const sessionStore = useSessionStore()
+const appsMenuOption = useAppSwitcher('sheets')
+const themeMenuOption = useThemeMenuOption()
+
+setupTheme()
+
+const brandMenuOptions = computed(() => [
+  { group: '', options: [appsMenuOption.value] },
+  {
+    group: '',
+    options: [
+      themeMenuOption,
+      ...(sessionStore.isLoggedIn
+        ? [{ label: 'Log out', icon: 'lucide-log-out', onClick: () => sessionStore.logout.submit() }]
+        : []),
+    ],
+  },
+])
 
 // Navigate directly to the editor route (':id'); `new` is the special create id.
 function openSheet(name) {
@@ -672,20 +698,21 @@ async function duplicate(sheet) {
 .home-topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 32px;
+  gap: 8px;
+  padding: 0 12px;
   height: 48px;
-  background: var(--surface-base);
-  border-bottom: 1px solid var(--outline-gray-2);
+  background: var(--surface-elevation-1);
+  border-bottom: 1px solid var(--outline-elevation-1);
   flex-shrink: 0;
 }
 
 .home-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
+.home-brand--interactive { cursor: pointer; }
 
 /* Right-aligned cluster: search + view toggle + New Sheet button.
    `margin-left: auto` pushes the whole group to the right edge, leaving
@@ -693,7 +720,7 @@ async function duplicate(sheet) {
 .home-topbar-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   margin-left: auto;
 }
 
@@ -701,13 +728,6 @@ async function duplicate(sheet) {
 .home-search       { width: 220px; }
 .home-search :deep(input) { height: 28px; font-size: 13px; }
 .home-search-icon  { width: 13px; height: 13px; color: var(--ink-gray-5); }
-
-.home-brand-name {
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: .01em;
-  color: var(--ink-gray-9);
-}
 
 /* Filter toolbar — sits between the topbar and content, outside any scroll
    region so it stays put in both view modes. */

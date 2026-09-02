@@ -3,33 +3,33 @@
     id="navbar"
     ondragstart="return false;"
     ondrop="return false;"
-    class="bg-surface-base border-b pr-3 py-2.5 h-12 flex items-center justify-between"
+    class="relative z-10 flex h-12 shrink-0 items-center justify-between border-b border-outline-elevation-1 bg-surface-elevation-1 px-3"
   >
-    <div class="pl-4 pr-1">
+    <div class="flex w-fit items-center gap-2">
       <Dropdown
-        v-if="$route.name !== 'writer-home'"
-        :options="[
-          {
-            label: 'Back to Home',
-            icon: LucideChevronLeft,
-            route: { name: 'writer-home' },
-          },
-        ]"
+        :options="navbarMenuOptions"
+        :offset="16"
       >
-        <WriterLogo class="size-7 cursor-pointer" />
+        <template #default="{ open }">
+          <div class="flex cursor-pointer items-center gap-2">
+            <WriterLogo class="size-7" />
+            <LucideChevronUp v-if="open" class="size-4 stroke-[1.5] text-ink-gray-7" />
+            <LucideChevronDown v-else class="size-4 stroke-[1.5] text-ink-gray-7" />
+          </div>
+        </template>
       </Dropdown>
-      <WriterLogo v-else class="size-7" />
     </div>
     <slot name="breadcrumbs">
       <EditableBreadcrumbs
+        v-if="route.name !== 'writer-home'"
         :items="formattedCrumbs"
         :entity="file?.doc || null"
         class="select-none truncate max-w-[80%]"
       />
     </slot>
 
-    <div class="ml-auto flex items-center gap-3">
-      <div id="navbar-content" class="flex gap-3" />
+    <div class="ml-auto flex items-center gap-2">
+      <div id="navbar-content" class="flex gap-2" />
       <slot name="content" />
       <Button
         v-if="isOffline"
@@ -112,6 +112,8 @@ import { getFileLink } from '@/apps/drive/sdk'
 import { toggleFav } from '@/apps/drive/resources/files'
 
 import { useSessionStore } from '@/boot/session'
+import { useAppSwitcher } from '@/composables/useAppSwitcher'
+import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
 import emitter from '@/apps/writer/emitter'
 import { ref, computed, inject, h } from 'vue'
 import { createDocument, apps } from '@/apps/writer/resources/'
@@ -150,7 +152,8 @@ import LucideHistory from '~icons/lucide/history'
 import LucideLayoutTemplate from '~icons/lucide/layout-template'
 import LucideMarkdown from '~icons/lucide/pilcrow'
 import LucideWifiOff from '~icons/lucide/wifi-off'
-import LucideChevronLeft from '~icons/lucide/chevron-left'
+import LucideChevronUp from '~icons/lucide/chevron-up'
+import LucideChevronDown from '~icons/lucide/chevron-down'
 
 import WriterLogo from './WriterLogo.vue'
 import { useRoute } from 'vue-router'
@@ -217,11 +220,32 @@ const exportDocx = () => {
 }
 
 const route = useRoute()
+const sessionStore = useSessionStore()
+const appsMenuOption = useAppSwitcher('writer')
+const themeMenuOption = useThemeMenuOption()
+const navbarMenuOptions = computed(() => [
+  {
+    group: '',
+    options: [appsMenuOption.value],
+  },
+  {
+    group: '',
+    options: [
+      themeMenuOption,
+      ...(sessionStore.isLoggedIn
+        ? [
+            {
+              label: 'Log out',
+              icon: 'lucide-log-out',
+              onClick: () => sessionStore.logout.submit(),
+            },
+          ]
+        : []),
+    ],
+  },
+])
 const formattedCrumbs = computed(() => {
-  const ORIG =
-    route.name === 'writer-home'
-      ? { label: 'Writer', href: '/writer' }
-      : { label: 'Drive', href: '/drive' }
+  const ORIG = { label: 'Writer', href: '/writer' }
   if (!props.breadcrumbs.length) return [ORIG]
   return [
     ORIG,
