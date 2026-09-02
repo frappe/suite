@@ -1,17 +1,5 @@
 import type { RouteRecordRaw } from "vue-router";
 
-// Install the meet-local navigation guard (requiresAdmin role check) on the
-// shared suite router. Imported for side effects only.
-import "@/apps/meet/router";
-
-// Boot side-effects the suite's shared main.ts does not run, so trigger them
-// on meet module load.
-import { loadMediaPreferences } from "@/apps/meet/data/mediaPreferences";
-import { installConsoleBuffer } from "@/apps/meet/utils/diagnostics/consoleBuffer";
-
-loadMediaPreferences();
-installConsoleBuffer();
-
 /**
  * Meet route module — mounted by the suite router under the '/meet' prefix.
  * Paths are RELATIVE to '/meet' (no leading slash; the empty-path child '' is

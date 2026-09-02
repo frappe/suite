@@ -1,4 +1,4 @@
-import type { RouteLocationNormalized, Router } from 'vue-router'
+import type { RouteLocationNormalized } from 'vue-router'
 
 import suiteRouter from '@/router'
 
@@ -35,25 +35,21 @@ const resolveShortcut = (
 	}
 }
 
-function installCalendarGuard(r: Router) {
-	r.beforeEach(async (to: RouteLocationNormalized) => {
-		// Only act on calendar routes; let the suite handle everything else.
-		if (typeof to.name !== 'string' || !to.name.startsWith('calendar-')) return
+export const calendarGuard = async (to: RouteLocationNormalized) => {
+	// Only act on calendar routes; let the suite handle everything else.
+	if (typeof to.name !== 'string' || !to.name.startsWith('calendar-')) return
 
-		// Wait for user data, then resolve the active account.
-		const store = userStore()
-		await store.userResource.promise
-		const user = store.userResource.data
+	// Wait for user data, then resolve the active account.
+	const store = userStore()
+	await store.userResource.promise
+	const user = store.userResource.data
 
-		store.resolveAccount(user?.accounts, to.params.accountId as string | undefined)
-		const accountId = store.accountId
+	store.resolveAccount(user?.accounts, to.params.accountId as string | undefined)
+	const accountId = store.accountId
 
-		// Expand shortcut routes to their full account-scoped equivalents. The
-		// query rides along — it carries the open event's deep link (?event=).
-		if (to.meta.shortcut) return { ...resolveShortcut(to.name, to.params, accountId), query: to.query }
-	})
+	// Expand shortcut routes to their full account-scoped equivalents. The
+	// query rides along — it carries the open event's deep link (?event=).
+	if (to.meta.shortcut) return { ...resolveShortcut(to.name, to.params, accountId), query: to.query }
 }
-
-installCalendarGuard(router)
 
 export default router

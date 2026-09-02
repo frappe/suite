@@ -1,4 +1,4 @@
-import type { RouteLocationNormalized, Router } from "vue-router";
+import type { RouteLocationNormalized } from "vue-router";
 
 import suiteRouter from "@/router";
 import { userResource } from "@/boot/session";
@@ -15,37 +15,33 @@ import { isUnknownRecord } from "./types";
  */
 export const router = suiteRouter;
 
-function installMeetGuard(r: Router) {
-	r.beforeEach(async (to: RouteLocationNormalized) => {
-		// Only act on meet routes; let the suite handle everything else.
-		if (typeof to.name !== "string" || !to.name.startsWith("meet-")) return;
+export const meetGuard = async (to: RouteLocationNormalized) => {
+	// Only act on meet routes; let the suite handle everything else.
+	if (typeof to.name !== "string" || !to.name.startsWith("meet-")) return;
 
-		if (to.meta?.requiresAdmin) {
-			try {
-				if (!userResource.fetched) {
-					await userResource.fetch();
-				}
-			} catch {
-				// userResource onError already redirects to /login on auth errors.
-				return false;
+	if (to.meta?.requiresAdmin) {
+		try {
+			if (!userResource.fetched) {
+				await userResource.fetch();
 			}
-			const user = userResource.data;
-			const roles =
-				isUnknownRecord(user) &&
-				Array.isArray(user.roles) &&
-				user.roles.every((role) => typeof role === "string")
-					? user.roles
-					: [];
-			const isAdmin = roles.some((r) =>
-				["System Manager", "Administrator"].includes(r),
-			);
-			if (!isAdmin) {
-				return { name: "meet-home" };
-			}
+		} catch {
+			// userResource onError already redirects to /login on auth errors.
+			return false;
 		}
-	});
-}
-
-installMeetGuard(router);
+		const user = userResource.data;
+		const roles =
+			isUnknownRecord(user) &&
+			Array.isArray(user.roles) &&
+			user.roles.every((role) => typeof role === "string")
+				? user.roles
+				: [];
+		const isAdmin = roles.some((r) =>
+			["System Manager", "Administrator"].includes(r),
+		);
+		if (!isAdmin) {
+			return { name: "meet-home" };
+		}
+	}
+};
 
 export default router;

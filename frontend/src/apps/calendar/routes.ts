@@ -1,11 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-import { createResource } from 'frappe-ui'
-
-// Install the calendar-local navigation guard (account resolution + shortcut
-// expansion) on the shared suite router. Importing for side effects only.
-import '@/apps/calendar/router'
-
 /**
  * Calendar route module — mounted by the suite router under the '/calendar'
  * prefix. Paths are RELATIVE to '/calendar' (no leading slash; the empty-path
@@ -79,20 +73,3 @@ export const routes: RouteRecordRaw[] = [
 ]
 
 export default routes
-
-/* -------------------------------------------------------------------------- */
-/* Translations                                                                */
-/*                                                                             */
-/* The suite installs ONE global translation plugin (foundation                */
-/* src/boot/translation.ts) so bare `__('text')` works everywhere. We only     */
-/* need to populate `window.translatedMessages`. Port calendar's translations  */
-/* fetch as a side-effect on module load. Backend method path preserved as-is. */
-/* -------------------------------------------------------------------------- */
-
-const translations = createResource({
-	url: 'suite.mail.api.get_translations',
-	cache: 'translations',
-	transform: (data) => (window.translatedMessages = data),
-})
-
-if (!window.translatedMessages) translations.fetch()

@@ -1,12 +1,21 @@
 import {
   createRouter,
   createWebHistory,
+  type NavigationGuardReturn,
+  type RouteLocationNormalized,
   type RouteLocationNormalizedLoaded,
   type RouteRecordRaw,
 } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
 import { SUITE_APPS, SUITE_LOGO } from '@/apps/registry'
+import { routes as calendarRoutes } from '@/apps/calendar/routes'
+import { routes as driveRoutes } from '@/apps/drive/routes'
+import { routes as mailRoutes } from '@/apps/mail/routes'
+import { routes as meetRoutes } from '@/apps/meet/routes'
+import { routes as sheetsRoutes } from '@/apps/sheets/routes'
+import { routes as slidesRoutes } from '@/apps/slides/routes'
+import { routes as writerRoutes } from '@/apps/writer/routes'
 import { hasServerBoot, useSessionStore } from '@/boot/session'
 import APPLE_SPLASH_DEVICES from './pwa-splash-devices.json'
 
@@ -23,43 +32,74 @@ declare module 'vue-router' {
 /**
  * ONE Vue Router for the whole suite.
  *
- * Each of the 7 apps contributes a route GROUP mounted at its original prefix
- * (/drive /slides /writer /sheets /meet /mail /calendar). Every group lazy-loads
- * `src/apps/<id>/routes.ts`, which exports a `routes: RouteRecordRaw[]` array
- * RELATIVE to that prefix (paths without a leading slash; the empty-path child
- * is the app's index). This keeps per-app bundles code-split so the shell stays
- * small (heavy app deps — mediasoup, firebase, xlsx, docx — load only on demand).
+ * Each app contributes lightweight route definitions mounted at its original
+ * prefix. Views and app-specific runtime behavior remain lazy, while the full
+ * route table and metadata are available on the first navigation.
  *
  * `/suite` is the launcher (app switcher).
  *
- * Lazy registration: each app's prefix initially resolves to a placeholder
- * record carrying `meta.appId`. The first navigation into a prefix loads that
- * app's route module, replaces the placeholder with a real group containing the
- * module's `routes`, and re-resolves the navigation (see `beforeEach`).
  */
 
-// Dynamic-import loaders for each app's route module. The import is a dynamic
-// `import()` so the app's actual views/components stay code-split.
-const appRouteLoaders: Record<string, () => Promise<{ routes: RouteRecordRaw[] }>> = {
-  drive: () => import('@/apps/drive/routes'),
-  slides: () => import('@/apps/slides/routes'),
-  writer: () => import('@/apps/writer/routes'),
-  sheets: () => import('@/apps/sheets/routes'),
-  meet: () => import('@/apps/meet/routes'),
-  mail: () => import('@/apps/mail/routes'),
-  calendar: () => import('@/apps/calendar/routes'),
+const appRoutes: Record<string, RouteRecordRaw[]> = {
+  drive: driveRoutes,
+  slides: slidesRoutes,
+  writer: writerRoutes,
+  sheets: sheetsRoutes,
+  meet: meetRoutes,
+  mail: mailRoutes,
+  calendar: calendarRoutes,
+}
+
+type AppRuntime = {
+  bootstrap?: () => void | Promise<void>
+  beforeEach?: (
+    to: RouteLocationNormalized,
+    from: RouteLocationNormalizedLoaded,
+  ) => NavigationGuardReturn | Promise<NavigationGuardReturn>
+  afterEach?: (to: RouteLocationNormalizedLoaded) => void
+}
+
+const appRuntimeLoaders: Record<string, () => Promise<AppRuntime>> = {
+  drive: () => import('@/apps/drive/runtime'),
+  slides: () => import('@/apps/slides/runtime'),
+  writer: () => import('@/apps/writer/runtime'),
+  meet: () => import('@/apps/meet/runtime'),
+  mail: () => import('@/apps/mail/runtime'),
+  calendar: () => import('@/apps/calendar/runtime'),
+}
+
+const appRuntimePromises = new Map<string, Promise<AppRuntime>>()
+const loadedAppRuntimes = new Map<string, AppRuntime>()
+
+function ensureAppRuntime(appId: string): Promise<AppRuntime> | undefined {
+  const loader = appRuntimeLoaders[appId]
+  if (!loader) return
+
+  let promise = appRuntimePromises.get(appId)
+  if (!promise) {
+    promise = loader()
+      .then(async (runtime) => {
+        await runtime.bootstrap?.()
+        loadedAppRuntimes.set(appId, runtime)
+        return runtime
+      })
+      .catch((error) => {
+        appRuntimePromises.delete(appId)
+        throw error
+      })
+    appRuntimePromises.set(appId, promise)
+  }
+  return promise
 }
 
 const SUITE_FAVICON = SUITE_LOGO
 let currentFaviconScope: string | undefined
 
-// Placeholder record per app: matches the prefix + everything under it and
-// carries `meta.appId`. `beforeEach` swaps it for the real routes on first hit.
-const placeholderGroups: RouteRecordRaw[] = SUITE_APPS.map((app) => ({
-  path: `${app.prefix}/:pathMatch(.*)*`,
-  name: `${app.id}-placeholder`,
+const appGroups: RouteRecordRaw[] = SUITE_APPS.map((app) => ({
+  path: app.prefix,
   component: () => import('@/shell/AppContainer.vue'),
   meta: { appId: app.id, title: `Frappe ${app.name}`, favicon: app.logo },
+  children: appRoutes[app.id],
 }))
 
 const routes: RouteRecordRaw[] = [
@@ -79,7 +119,18 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/shell/SetupView.vue'),
     meta: { isShell: true, title: 'Set up Frappe Suite', favicon: SUITE_FAVICON },
   },
-  ...placeholderGroups,
+  {
+    path: '/suite/load-error',
+    name: 'app-load-error',
+    component: () => import('@/shell/AppLoadErrorView.vue'),
+    meta: {
+      isShell: true,
+      allowGuest: true,
+      title: 'Frappe Suite',
+      favicon: SUITE_FAVICON,
+    },
+  },
+  ...appGroups,
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
@@ -93,9 +144,6 @@ const router = createRouter({
   history: createWebHistory('/'),
   routes,
 })
-
-// Apps whose real route groups have already been registered.
-const registeredApps = new Set<string>()
 
 // First-run onboarding state: boot globals in prod, fetch in dev.
 type OnboardingState = { isOnboarded: boolean; canOnboard: boolean }
@@ -123,53 +171,15 @@ function ensureOnboardingState(): OnboardingState | Promise<OnboardingState> {
   return onboardingStatePromise
 }
 
-/**
- * Load `src/apps/<appId>/routes.ts`, register its routes under the app prefix
- * inside an AppContainer group, and drop the placeholder so future navigations
- * resolve straight to the real routes.
- */
-async function ensureAppRoutesLoaded(appId: string): Promise<void> {
-  if (registeredApps.has(appId)) return
-
-  const loader = appRouteLoaders[appId]
-  const app = SUITE_APPS.find((a) => a.id === appId)
-  if (!loader || !app) return
-
-  const mod = await loader()
-
-  router.addRoute({
-    path: app.prefix,
-    component: () => import('@/shell/AppContainer.vue'),
-    meta: { appId, title: `Frappe ${app.name}`, favicon: app.logo },
-    children: mod.routes,
-  })
-
-  // Remove the catch-all placeholder so it no longer shadows the real routes.
-  if (router.hasRoute(`${appId}-placeholder`)) {
-    router.removeRoute(`${appId}-placeholder`)
-  }
-
-  registeredApps.add(appId)
-}
-
-router.beforeEach(async (to) => {
-  // 1. Lazy-load the target app's route module before resolving the route.
-  const appId = to.meta.appId
-  if (appId && !registeredApps.has(appId)) {
-    await ensureAppRoutesLoaded(appId)
-    // Re-resolve now that the real routes exist without replacing the previous
-    // page in browser history.
-    return to.fullPath
-  }
-
-  // 2. Auth gate (shell launcher + every app require a logged-in user).
+router.beforeEach(async (to, from) => {
+  // 1. Auth gate (shell launcher + every app require a logged-in user).
   const session = useSessionStore()
   if (!session.isLoggedIn && !to.meta.allowGuest) {
     window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
     return false
   }
 
-  // 3. First-run onboarding gate. Only System Managers are sent to /suite/setup —
+  // 2. First-run onboarding gate. Only System Managers are sent to /suite/setup —
   // they alone can complete it; everyone else uses the site as-is.
   const onboarding = await ensureOnboardingState()
   const onSetupPage = to.path === '/suite/setup'
@@ -179,7 +189,21 @@ router.beforeEach(async (to) => {
     return '/suite'
   }
 
-  return true
+  // 3. Load only the target app's initialization and local guard behavior.
+  const appId = to.meta.appId
+  if (!appId) return true
+
+  let runtime: AppRuntime | undefined
+  try {
+    runtime = await ensureAppRuntime(appId)
+  } catch (error) {
+    console.error(`Failed to load ${appId} runtime`, error)
+    return {
+      name: 'app-load-error',
+      query: { app: appId, redirect: to.fullPath },
+    }
+  }
+  return (await runtime?.beforeEach?.(to, from)) ?? true
 })
 
 router.afterEach((to, from, failure) => {
@@ -190,6 +214,8 @@ router.afterEach((to, from, failure) => {
   setDocumentTitle(to, from)
   setFavicon(to)
   setPwaTags(to)
+  const appId = to.meta.appId
+  if (appId) loadedAppRuntimes.get(appId)?.afterEach?.(to)
 })
 
 export function setDocumentTitle(

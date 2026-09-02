@@ -1,12 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-import { createResource } from 'frappe-ui'
-
-// Install the mail-local navigation guard (auth-aware account resolution,
-// dashboard access control, mailbox validation + shortcut expansion) on the
-// shared suite router. Imported for side effects only.
-import '@/apps/mail/router'
-
 /**
  * Mail route module — mounted by the suite router under the '/mail' prefix.
  * Paths are RELATIVE to '/mail' (no leading slash; the empty-path '' is the
@@ -448,20 +441,3 @@ export const routes: RouteRecordRaw[] = [
 ]
 
 export default routes
-
-/* -------------------------------------------------------------------------- */
-/* Translations                                                               */
-/*                                                                            */
-/* The suite installs ONE global translation plugin (foundation              */
-/* src/boot/translation.ts) so bare `__('text')` works everywhere. We only   */
-/* need to populate `window.translatedMessages`. Mail's translation.ts plugin */
-/* was DELETED; this side-effect replaces it. Backend method preserved as-is. */
-/* -------------------------------------------------------------------------- */
-
-const translations = createResource({
-	url: 'suite.mail.api.get_translations',
-	cache: 'translations',
-	transform: (data) => (window.translatedMessages = data),
-})
-
-if (!window.translatedMessages) translations.fetch()
