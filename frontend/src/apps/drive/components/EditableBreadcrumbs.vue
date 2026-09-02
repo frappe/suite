@@ -10,7 +10,7 @@
         <Breadcrumbs :items="parentItems" />
         <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
       </template>
-      <InlineRenameInput :entity="entity" class="text-md-medium" />
+      <InlineRenameInput :entity="entity" appearance="breadcrumb" />
     </template>
     <Breadcrumbs v-else :items="displayItems" />
   </div>

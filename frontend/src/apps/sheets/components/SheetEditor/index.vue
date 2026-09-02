@@ -53,7 +53,8 @@
             <InlineRenameInput
               v-model="currentTitle"
               :editing="isTitleEditing"
-              class="max-w-[520px] text-lg-medium"
+              appearance="breadcrumb"
+              class="max-w-[520px]"
               @submit="finishTitleEditing"
               @cancel="cancelTitleEditing"
               @blur="finishTitleEditing"

@@ -7,8 +7,10 @@
     spellcheck="false"
     style="field-sizing: content"
     :class="[
-      'min-w-[4ch] max-w-full rounded-1 bg-surface-base px-1.5 py-0.5 text-ink-gray-9 border border-outline-gray-2 outline-none focus:border-outline-gray-4 focus:outline-none focus:ring-0 focus:shadow-none focus-visible:outline-none',
-      $attrs.class || 'text-base',
+      appearance === 'breadcrumb'
+        ? 'min-w-[4ch] max-w-full rounded-1 border-0 bg-surface-base px-0.5 py-1 text-lg-medium text-ink-gray-9 shadow-[inset_0_0_0_1px_var(--outline-gray-4)] outline-none focus:outline-none focus:ring-0 focus-visible:outline-none'
+        : 'min-w-[4ch] max-w-full rounded-1 border border-outline-gray-2 bg-surface-base px-1.5 py-0.5 text-ink-gray-9 outline-none focus:border-outline-gray-4 focus:outline-none focus:ring-0 focus:shadow-none focus-visible:outline-none',
+      $attrs.class || (appearance === 'breadcrumb' ? '' : 'text-base'),
     ]"
     @click.stop
     @mousedown.stop
@@ -34,6 +36,7 @@ const props = defineProps({
   entity: Object,
   modelValue: String,
   editing: { type: Boolean, default: undefined },
+  appearance: { type: String, default: 'default' },
 })
 const emit = defineEmits(['update:modelValue', 'submit', 'cancel', 'blur'])
 
