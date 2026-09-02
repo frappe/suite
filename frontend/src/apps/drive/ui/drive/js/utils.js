@@ -2,6 +2,8 @@ import { toast } from 'frappe-ui'
 import slugify from 'slugify'
 import { useTimeAgo } from '@vueuse/core'
 
+import router from '@/apps/drive/router'
+
 import dayjs from 'dayjs'
 import localizedFormat from 'dayjs/plugin/localizedFormat'
 import utc from 'dayjs/plugin/utc'
@@ -109,32 +111,23 @@ export const formatDate = (date) => {
   return `${formattedDate}, ${formattedTime}`
 }
 
-
 export const openEntity = (entity, new_tab = false) => {
-  if (new_tab) {
-    return window.open(getFileLink(entity, false), '_blank')
-  }
+  if (new_tab) return window.open(getFileLink(entity, false), '_blank')
 
   if (entity.name === '') {
-    window.location.href = '/drive/'
+    router.push({ name: 'drive-Home' })
   } else if (entity.is_folder) {
-    window.location.href = '/drive/d/' + entity.name
+    router.push({ name: 'drive-Folder', params: { entityName: entity.name } })
   } else if (entity.file_type === 'Link') {
     const origin = new URL(entity.file_url).origin
-    if (
-      confirm(
-        `This will open an external link to ${origin} - are you sure you want to open?`,
-      )
-    )
+    if (confirm(`This will open an external link to ${origin} - are you sure you want to open?`)) {
       window.open(entity.file_url, '_blank')
+    }
   } else if (entity.file_type === 'Presentation') {
-    window.location.href = '/slides/presentation/' + entity.name
-  } else if (
-    entity.file_type === 'Document' ||
-    entity.file_type === 'Markdown'
-  ) {
-    window.location.href = '/writer/w/' + entity.name
+    router.push({ name: 'slides-editor', params: { presentationId: entity.name } })
+  } else if (entity.file_type === 'Document' || entity.file_type === 'Markdown') {
+    router.push({ name: 'writer-document', params: { id: entity.name } })
   } else {
-    window.location.href = '/drive/f/' + entity.name
+    router.push({ name: 'drive-File', params: { entityName: entity.name } })
   }
 }
