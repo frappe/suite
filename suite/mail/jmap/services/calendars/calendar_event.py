@@ -373,15 +373,8 @@ class CalendarEventService(CalendarsService):
                 value = patch[key]
                 out[target] = transform(value) if transform else value
 
-        payload = {id: {}}
-
-        if recurrence_id in recurrence_overrides:
-            payload[id].update({f"recurrenceOverrides/{recurrence_id}/{k}": v for k, v in out.items()})
-        else:
-            recurrence_overrides[recurrence_id] = out
-            payload = {id: {"recurrenceOverrides": recurrence_overrides}}
-
-        payload[id]["updated"] = utcnow()
+        patch_ops = self._override_patch(recurrence_overrides, recurrence_id, out)
+        payload = {id: {**patch_ops, "updated": utcnow()}}
 
         # Bump the master SEQUENCE (iTIP) so attendees' clients accept the re-sent series.
         if sequence is not None:
@@ -443,10 +436,15 @@ class CalendarEventService(CalendarsService):
 
         event = events[0]
         recurrence_overrides = event.get("recurrenceOverrides", {}) or {}
-        recurrence_overrides.setdefault(recurrence_id, {}).update({"excluded": True})
+
+        # The exclusion goes on the occurrence's own key, whether or not it already carries an
+        # override. What that key said before does not survive — the server keeps the exclusion
+        # alone, which is right: a start or a title for an occurrence that no longer happens
+        # describes nothing.
+        patch = self._override_patch(recurrence_overrides, recurrence_id, {"excluded": True})
 
         response = self._update(
-            {id: {"recurrenceOverrides": recurrence_overrides, "updated": utcnow()}},
+            {id: {**patch, "updated": utcnow()}},
             sendSchedulingMessages=send_scheduling_messages,
         )
 
@@ -457,6 +455,30 @@ class CalendarEventService(CalendarsService):
                 result["notUpdated"].update(not_updated)
 
         return result
+
+    @staticmethod
+    def _override_patch(overrides: dict, recurrence_id: str, override: dict) -> dict:
+        """The smallest write that lands `override` on one occurrence of a series.
+
+        JMAP refuses a patch whose parent isn't there — `recurrenceOverrides/<id>/<property>`
+        where that occurrence has no override yet, and `recurrenceOverrides/<id>` where the event
+        carries no overrides at all — both come back as "Patch operation failed". So the shape
+        follows what is already stored, and only an event with nothing at all is sent a map.
+
+        Which is the point: sending the map back is a read-modify-write over shared state. Every
+        other occurrence's override goes over the wire again, and anything written between the read
+        and the write — another client, another device, the same person in a second tab — is
+        overwritten by a copy taken before it existed. Patching one key touches one occurrence.
+        """
+
+        if not overrides:
+            return {"recurrenceOverrides": {recurrence_id: override}}
+        if recurrence_id in overrides:
+            return {
+                f"recurrenceOverrides/{recurrence_id}/{key}": value
+                for key, value in override.items()
+            }
+        return {f"recurrenceOverrides/{recurrence_id}": override}
 
     @staticmethod
     def _get_locations_map(locations: list[dict] | None = None) -> dict[str, dict] | None:

@@ -137,6 +137,67 @@ class TestCalendarEvents(StalwartIntegrationTestCase):
             message="Deleted instance still expands in the range query.",
         )
 
+        # The override written first has to survive both of the writes that followed it. Each of
+        # them lands on one occurrence's key; the map as a whole is never read, edited and sent
+        # back, which is how a second writer's override used to disappear.
+        moved = self._events_in_range(f"{title} (moved)")
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0]["recurrence_id"], target["recurrence_id"])
+
+    def test_instance_overrides_are_independent(self):
+        """Overriding one occurrence leaves every other occurrence's override where it was."""
+
+        title = f"Series {unique_name('event')}"
+        with self.set_user(self.member.email):
+            master_id = add_calendar_event(
+                self.account,
+                title=title,
+                start="2026-09-07T08:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+                recurrence_rule={"@type": "RecurrenceRule", "frequency": "weekly", "count": 3},
+            )
+
+        instances = self._wait_for_event(title, count=3)
+        first, second, third = instances[0], instances[1], instances[2]
+
+        with self.set_user(self.member.email):
+            # The first override on an event with none: the whole map is written, since there is
+            # nothing to patch into. The second adds a key beside it, the third patches a property
+            # of the first — three different shapes, and none of them may disturb the others.
+            update_calendar_event_instance(
+                self.account, master_id, first["recurrence_id"], {"title": f"{title} (first)"}
+            )
+            update_calendar_event_instance(
+                self.account, master_id, second["recurrence_id"], {"title": f"{title} (second)"}
+            )
+            update_calendar_event_instance(
+                self.account, master_id, first["recurrence_id"], {"start": "2026-09-07T11:00:00"}
+            )
+
+        def all_three_stand():
+            events = {
+                e["recurrence_id"]: e
+                for e in self._events_in_range(f"{title} (first)")
+                + self._events_in_range(f"{title} (second)")
+                + self._events_in_range(title)
+            }
+            first_now = events.get(first["recurrence_id"])
+            second_now = events.get(second["recurrence_id"])
+            third_now = events.get(third["recurrence_id"])
+            if not (first_now and second_now and third_now):
+                return None
+            # The first keeps the title it was given AND takes the later start; the second keeps
+            # its own title; the third was never touched.
+            return (
+                first_now["title"] == f"{title} (first)"
+                and first_now["start"].endswith("11:00:00")
+                and second_now["title"] == f"{title} (second)"
+                and third_now["title"] == title
+            ) or None
+
+        self.wait_until(all_three_stand, message="An override was lost when another one was written.")
+
     def test_unknown_event(self):
         with self.set_user(self.member.email):
             self.assertEqual(get_events_by_ids(self.account, ["nope"]), [])
