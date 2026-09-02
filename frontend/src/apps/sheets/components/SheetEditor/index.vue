@@ -45,25 +45,27 @@
             </div>
           </template>
         </Dropdown>
-        <div class="sn-breadcrumb">
-          <button type="button" class="sn-breadcrumb-home" @click="flushAndClose">Sheets</button>
-          <FeatherIcon name="chevron-right" class="size-4 text-ink-gray-5" />
-        </div>
+        <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
         <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
              sizes the box via real DOM text layout, so the input grows
              pixel-perfect and smooth per keystroke, with no JS canvas measuring
              and no width animation lagging behind the caret. -->
-        <span class="sn-title-fit" :data-value="currentTitle || 'Untitled Sheet'">
+        <template v-else>
+          <Breadcrumbs :items="sheetHomeBreadcrumbs" />
+          <span class="text-base text-ink-gray-4" aria-hidden="true">/</span>
+          <span class="sn-title-fit" :data-value="currentTitle || 'Untitled Sheet'">
           <input
+            ref="titleInputRef"
             name="sheet-title"
             class="sn-title-input"
             v-model="currentTitle"
             placeholder="Untitled Sheet"
             spellcheck="false"
-            @focus="onTitleFocus"
-            @blur="onTitleBlur"
+            @blur="finishTitleEditing"
+            @keydown.enter="titleInputRef?.blur()"
           />
-        </span>
+          </span>
+        </template>
         <!-- Save status — muted inline text; never competes with the title -->
         <span v-if="isSaving" class="sn-save-status">
           <FeatherIcon name="loader" class="sn-save-icon sn-save-spin" />
@@ -1335,7 +1337,7 @@ import NamedRangesDialog       from './NamedRangesDialog.vue'
 import { useSmartFill }        from './useSmartFill.js'
 import * as versionsApi        from '../../services/versions.js'
 import {
-   Avatar, Badge, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
+   Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
 import {
   CommandPalette,
   CommandPaletteEmpty,
@@ -1354,6 +1356,15 @@ const appsMenuOption = useAppSwitcher('sheets', async () => {
   return !saveError.value
 })
 const themeMenuOption = useThemeMenuOption()
+const isTitleEditing = ref(false)
+const titleInputRef = ref(null)
+const sheetHomeBreadcrumbs = computed(() => [
+  { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
+])
+const sheetBreadcrumbs = computed(() => [
+  ...sheetHomeBreadcrumbs.value,
+  { label: currentTitle.value || 'Untitled Sheet', onClick: startTitleEditing },
+])
 const brandMenuOptions = computed(() => [
   {
     group: '',
@@ -3736,13 +3747,12 @@ function _diffRefs(before, after) {
 // the server returns an HTML 413 instead of JSON.
 const _MAX_OP_PAYLOAD_BYTES = 64 * 1024
 
-// Drains the queue and returns the ops as a single batch shaped for the
-// versioning save endpoint. We hand this directly to `saveExisting` so the
-// server allocates one contiguous block of op-log seqs in user-action order.
-function _drainOpsForSave() {
-	if (!_opQueue.length || props.id === 'new') return []
-	const batch = _opQueue.splice(0, _opQueue.length)
-	return batch.map(_serialiseOp)
+// Snapshot the queue without removing entries. They are removed only after the
+// save succeeds, so a failed save can retry without losing operation history.
+function _opsForSave() {
+	if (!_opQueue.length || props.id === 'new') return { ops: [], count: 0 }
+	const batch = _opQueue.slice()
+	return { ops: batch.map(_serialiseOp), count: batch.length }
 }
 
 function _serialiseOp(op) {
@@ -3785,9 +3795,10 @@ async function _doAutoSave() {
   if (props.id === 'new') return
   // Drain queued ops BEFORE the save so the batch lands atomically with the
   // implicit `save` op and keeps the canonical user-action ordering intact.
-  const ops = _drainOpsForSave()
+  const { ops, count } = _opsForSave()
   await saveExisting(props.id, currentTitle.value, { ops })
   if (!saveError.value) {
+    _opQueue.splice(0, count)
     isDirty.value   = false
     justSaved.value = true
     setTimeout(() => { justSaved.value = false }, 2500)
@@ -3850,9 +3861,17 @@ watch(showSortFilter, () => { grid?.render?.() })
 // → `flushSave` did the same. Snapshotting on focus avoids spurious saves
 // when the user just clicks into and out of the field without typing.
 let _titleAtFocus = ''
-function onTitleFocus() { _titleAtFocus = currentTitle.value }
-function onTitleBlur() {
+function startTitleEditing() {
+  _titleAtFocus = currentTitle.value
+  isTitleEditing.value = true
+  nextTick(() => {
+    titleInputRef.value?.focus()
+    titleInputRef.value?.select()
+  })
+}
+function finishTitleEditing() {
   if (currentTitle.value !== _titleAtFocus) isDirty.value = true
+  isTitleEditing.value = false
   _triggerAutoSave()
 }
 
@@ -6053,9 +6072,6 @@ function toggleShowFormulas() {
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
 .sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
-.sn-breadcrumb { display:flex; align-items:center; gap:4px; flex-shrink:0; }
-.sn-breadcrumb-home { padding:0; border:0; background:transparent; color:var(--ink-gray-6); font-size:14px; cursor:pointer; }
-.sn-breadcrumb-home:hover { color:var(--ink-gray-8); }
 
 /* Auto-sizing title. A hidden ::after mirror carries the exact same typography
    and box as the input; being normal flow, ITS width sizes the wrapper to the
