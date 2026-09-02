@@ -50,6 +50,10 @@ const appRoutes: Record<string, RouteRecordRaw[]> = {
   calendar: calendarRoutes,
 }
 
+/**
+ * Lazy app lifecycle: bootstrap runs once before the first navigation,
+ * beforeEach gates every app navigation, and afterEach runs after completion.
+ */
 type AppRuntime = {
   bootstrap?: () => void | Promise<void>
   beforeEach?: (
