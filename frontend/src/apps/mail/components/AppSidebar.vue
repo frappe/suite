@@ -288,23 +288,21 @@ const menuItems = computed(() => [
 			{
 				icon: User,
 				label: __('Accounts'),
+				// The row is the menu's own — an avatar where an icon goes, the name as
+				// the label, a tick on the one you are in. It used to be a hand-built
+				// div standing in for the whole row, which meant re-declaring the
+				// padding, hover and truncation the row already had, and rebuilding its
+				// element on every render — so hovering an account destroyed the node
+				// under the pointer and the submenu closed before it could be clicked.
 				submenu: user.data.accounts.map?.((a) => ({
 					label: a._name,
 					onClick: () => switchAccount(a.id),
 					slots: {
-						item: () =>
-							h(
-								'div',
-								{
-									class: 'flex items-center gap-2 p-1.5 rounded-4 hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-								},
-								[
-									h(Avatar, { label: a._name, size: 'md' }),
-									h('span', { class: 'text-sm w-full truncate' }, a._name),
-									a.id === store.accountId &&
-										h(Check, { label: a._name, class: 'shrink-0 icon' }),
-								],
-							),
+						prefix: () => h(Avatar, { label: a._name, size: 'md' }),
+						suffix: () =>
+							a.id === store.accountId
+								? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
+								: null,
 					},
 				})),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
