@@ -32,35 +32,37 @@
     <!-- Bar 1 · Identity -->
     <div class="sn-topbar">
       <div class="sn-topbar-left">
-        <Dropdown :options="brandMenuOptions" :offset="16">
-          <template #default="{ open }">
-            <div class="sn-app-menu-trigger" aria-label="Open Sheets menu" title="Open Sheets menu">
-              <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
-                <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
-                <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
-                <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
-                <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
-              </svg>
-              <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
+        <div class="sn-identity">
+          <Dropdown :options="brandMenuOptions" :offset="16">
+            <template #default="{ open }">
+              <div class="sn-app-menu-trigger" aria-label="Open Sheets menu" title="Open Sheets menu">
+                <svg class="sn-app-icon" width="28" height="28" viewBox="0 0 118 118" fill="none" aria-hidden="true">
+                  <path d="M93.9278 0H23.1013C10.3428 0 0 10.3428 0 23.1013V93.9278C0 106.686 10.3428 117.029 23.1013 117.029H93.9278C106.686 117.029 117.029 106.686 117.029 93.9278V23.1013C117.029 10.3428 106.686 0 93.9278 0Z" fill="#278F5E"/>
+                  <path d="M77.757 25.9364H23.5215V36.437H77.757C80.6447 36.437 83.0073 38.7996 83.0073 41.6873V75.3942C83.0073 78.2818 80.6447 80.6445 77.757 80.6445H39.2724C36.3847 80.6445 34.0221 78.2818 34.0221 75.3942V50.6653H23.5215V75.3942C23.5215 84.0572 30.6094 91.1451 39.2724 91.1451H77.757C86.42 91.1451 93.5079 84.0572 93.5079 75.3942V41.6873C93.5079 33.0243 86.42 25.9364 77.757 25.9364Z" fill="white"/>
+                  <path d="M53.8678 59.6958H43.3672V70.0914H53.8678V59.6958Z" fill="white"/>
+                  <path d="M73.6617 50.6653H63.1611V70.1439H73.6617V50.6653Z" fill="white"/>
+                </svg>
+                <FeatherIcon :name="open ? 'chevron-up' : 'chevron-down'" class="size-4 text-ink-gray-7" />
+              </div>
+            </template>
+          </Dropdown>
+          <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
+          <template v-else>
+            <div class="flex min-w-0 items-center">
+              <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
+              <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
+              <InlineRenameInput
+                v-model="currentTitle"
+                :editing="isTitleEditing"
+                appearance="breadcrumb"
+                class="max-w-[520px]"
+                @submit="finishTitleEditing"
+                @cancel="cancelTitleEditing"
+                @blur="finishTitleEditing"
+              />
             </div>
           </template>
-        </Dropdown>
-        <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
-        <template v-else>
-          <div class="flex min-w-0 items-center">
-            <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
-            <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
-            <InlineRenameInput
-              v-model="currentTitle"
-              :editing="isTitleEditing"
-              appearance="breadcrumb"
-              class="max-w-[520px]"
-              @submit="finishTitleEditing"
-              @cancel="cancelTitleEditing"
-              @blur="finishTitleEditing"
-            />
-          </div>
-        </template>
+        </div>
         <!-- Save status — muted inline text; never competes with the title -->
         <span v-if="isSaving" class="sn-save-status">
           <FeatherIcon name="loader" class="sn-save-icon sn-save-spin" />
@@ -6065,6 +6067,7 @@ function toggleShowFormulas() {
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
 .sn-topbar-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.sn-identity { display:flex; min-width:0; align-items:center; }
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
 .sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
