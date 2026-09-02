@@ -50,16 +50,13 @@
           <div class="flex min-w-0 items-center">
             <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
             <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
-            <input
-              ref="titleInputRef"
-              name="sheet-title"
-              class="min-w-[4ch] max-w-[520px] rounded-4 border border-outline-gray-4 bg-surface-base px-0.5 py-1 text-lg-medium text-ink-gray-9 outline-none"
-              style="field-sizing: content"
+            <InlineRenameInput
               v-model="currentTitle"
-              placeholder="Untitled Sheet"
-              spellcheck="false"
+              :editing="isTitleEditing"
+              class="max-w-[520px] text-lg-medium"
+              @submit="finishTitleEditing"
+              @cancel="cancelTitleEditing"
               @blur="finishTitleEditing"
-              @keydown.enter="titleInputRef?.blur()"
             />
           </div>
         </template>
@@ -1328,6 +1325,7 @@ import { createChartEngine } from '../../engine/charts.js'
 import { useChartIntegration } from './useChartIntegration.js'
 import ChartDialog             from './ChartDialog.vue'
 import ChartOverlay            from './ChartOverlay.vue'
+import InlineRenameInput       from '@/apps/drive/components/InlineRenameInput.vue'
 import { createNamedRanges }   from '../../engine/named-ranges.js'
 import { getFunctionNames }    from '../../engine/formula.js'
 import NamedRangesDialog       from './NamedRangesDialog.vue'
@@ -1354,7 +1352,6 @@ const appsMenuOption = useAppSwitcher('sheets', async () => {
 })
 const themeMenuOption = useThemeMenuOption()
 const isTitleEditing = ref(false)
-const titleInputRef = ref(null)
 const sheetHomeBreadcrumbs = computed(() => [
   { label: 'Sheets', href: '/sheets', onClick: flushAndClose },
 ])
@@ -3861,15 +3858,16 @@ let _titleAtFocus = ''
 function startTitleEditing() {
   _titleAtFocus = currentTitle.value
   isTitleEditing.value = true
-  nextTick(() => {
-    titleInputRef.value?.focus()
-    titleInputRef.value?.select()
-  })
 }
 function finishTitleEditing() {
+  if (!isTitleEditing.value) return
   if (currentTitle.value !== _titleAtFocus) isDirty.value = true
   isTitleEditing.value = false
   _triggerAutoSave()
+}
+function cancelTitleEditing() {
+  currentTitle.value = _titleAtFocus
+  isTitleEditing.value = false
 }
 
 watch(isSaving, (cur, prev) => { if (prev && !cur && !saveError.value) isDirty.value = false })

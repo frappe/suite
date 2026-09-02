@@ -2,7 +2,7 @@
   <input
     v-if="isEditing"
     ref="input"
-    v-model="draft"
+    v-model="value"
     type="text"
     spellcheck="false"
     style="field-sizing: content"
@@ -16,34 +16,62 @@
     @keydown.stop
     @keyup.stop
     @keyup.space.prevent
-    @keydown.enter.prevent="submit"
-    @keydown.escape.prevent="cancel"
-    @focus="selectBaseName"
-    @blur="blur"
+    @keydown.enter.prevent="submitValue"
+    @keydown.escape.prevent="cancelValue"
+    @focus="selectValue"
+    @blur="blurValue"
   />
   <slot v-else />
 </template>
 <script setup>
-import { computed, onMounted, watch } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import { renamingEntity } from '@/apps/drive/data/selection'
 import { useInlineRename } from '@/apps/drive/utils/useInlineRename'
 
 defineOptions({ inheritAttrs: false })
 
-const props = defineProps({ entity: Object })
+const props = defineProps({
+  entity: Object,
+  modelValue: String,
+  editing: { type: Boolean, default: undefined },
+})
+const emit = defineEmits(['update:modelValue', 'submit', 'cancel', 'blur'])
 
 const { draft, input, start, submit, blur, selectBaseName, cancel } = useInlineRename(
   () => props.entity,
 )
-const isEditing = computed(() => renamingEntity.value === props.entity?.name)
+const isControlled = computed(() => props.editing !== undefined)
+const isEditing = computed(() =>
+  isControlled.value ? props.editing : renamingEntity.value === props.entity?.name,
+)
+const value = computed({
+  get: () => (isControlled.value ? props.modelValue ?? '' : draft.value),
+  set: (value) => isControlled.value ? emit('update:modelValue', value) : (draft.value = value),
+})
+
+function startEditing() {
+  if (!isControlled.value) {
+    start()
+    return
+  }
+  nextTick(() => {
+    input.value?.focus()
+    input.value?.select()
+  })
+}
+
+const submitValue = () => isControlled.value ? emit('submit') : submit()
+const cancelValue = () => isControlled.value ? emit('cancel') : cancel()
+const blurValue = () => isControlled.value ? emit('blur') : blur()
+const selectValue = () => isControlled.value ? input.value?.select() : selectBaseName()
 
 // List/grid rows keep this component mounted and toggle isEditing, so the watch
 // catches the transition. The breadcrumb only renders it while editing, so it
 // mounts already-editing — onMounted handles that case.
 watch(isEditing, (editing) => {
-  if (editing) start()
+  if (editing) startEditing()
 })
 onMounted(() => {
-  if (isEditing.value) start()
+  if (isEditing.value) startEditing()
 })
 </script>
