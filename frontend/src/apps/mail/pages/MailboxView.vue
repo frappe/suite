@@ -497,6 +497,7 @@ import {
 	hasCursor,
 	isNavigationKey,
 	navigationOffset,
+	neighbourAfterRemoval,
 	stepFromKey,
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
@@ -1391,9 +1392,14 @@ const {
 const threadSlide = ref('')
 let pendingThreadSlide = ''
 
+// Down the list first, then up: triaging from the oldest mail lives at the bottom, where there is
+// never anything below (see neighbourAfterRemoval). Only an emptied list falls back to the mailbox.
 const goToNextThreadOrMailbox = (excludedThreads: string[] = []) => {
-	const idx = threadIDs.value.indexOf(threadID)
-	const next = threadIDs.value.slice(idx + 1).find((id) => !excludedThreads.includes(id))
+	const next = neighbourAfterRemoval(
+		threadIDs.value,
+		threadIDs.value.indexOf(threadID),
+		(id) => !excludedThreads.includes(id),
+	)
 	if (next) goToThread(next)
 	else goToMailbox()
 }

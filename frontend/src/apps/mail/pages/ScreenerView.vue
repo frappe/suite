@@ -451,7 +451,11 @@ import {
 } from 'frappe-ui'
 
 import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
-import { isNavigationKey, navigationOffset } from '@/apps/mail/utils/listNavigation'
+import {
+	isNavigationKey,
+	navigationOffset,
+	neighbourAfterRemoval,
+} from '@/apps/mail/utils/listNavigation'
 import {
 	useListReload,
 	useReadingPane,
@@ -912,8 +916,10 @@ const runAction = (
 ) => {
 	if (!fromEmails.length) return
 
-	// When acting on the sender open in the detail view, line up the next one down so you can triage
-	// straight through — resolved before the optimistic removal.
+	// When acting on the sender open in the detail view, line up the next one so you can triage
+	// straight through — the one below, or the one above at the end of the queue, since a pass that
+	// starts at the oldest sender spends all of itself there (see neighbourAfterRemoval). Resolved
+	// before the optimistic removal.
 	const list = senders.data ?? []
 	const actingOnOpen = !!openSender.value && matchSender(openSender.value)
 	let nextSender: ScreeningSender | undefined
@@ -921,7 +927,11 @@ const runAction = (
 		const idx = list.findIndex(
 			(s: ScreeningSender) => s.from_email === openSender.value!.from_email,
 		)
-		nextSender = list.slice(idx + 1).find((s: ScreeningSender) => !matchSender(s))
+		nextSender = neighbourAfterRemoval(
+			list as ScreeningSender[],
+			idx,
+			(s: ScreeningSender) => !matchSender(s),
+		)
 	}
 
 	// Optimistically drop the acted senders so the rows leave immediately and every other row stays

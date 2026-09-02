@@ -39,6 +39,30 @@ export const hasCursor = <T extends { key: string }>(rows: T[], currentKey: stri
 	rows.some((row) => row.key === currentKey)
 
 /**
+ * What to open once the item at `index` leaves the list: the nearest survivor below it, and
+ * failing that the nearest above.
+ *
+ * Downwards alone is the obvious reading of "the next one", and it is right for a pass that
+ * starts at the top. It runs out at the bottom — which is where a pass that starts at the
+ * oldest mail spends its whole time, so every verdict there closed the pane and asked for the
+ * list to be re-aimed at. Turning around instead keeps a bottom-up run going the same way a
+ * top-down one already ran.
+ *
+ * `survives` excludes the items leaving in the same action (the one acted on included), so a
+ * bulk verdict doesn't hand back a row that is about to go. An `index` of -1 — the open item
+ * is no longer in the list — searches the whole list forwards, as it did before.
+ */
+export const neighbourAfterRemoval = <T>(
+	items: T[],
+	index: number,
+	survives: (item: T) => boolean,
+): T | undefined => {
+	for (let i = index + 1; i < items.length; i++) if (survives(items[i])) return items[i]
+	for (let i = Math.min(index, items.length) - 1; i >= 0; i--) if (survives(items[i])) return items[i]
+	return undefined
+}
+
+/**
  * The `g` prefix: `g g` jumps to the first entry, `G` to the last. A lone `g` arms for
  * this long, then forgets — so `g`, pause, `g` is two separate presses, not a jump.
  */

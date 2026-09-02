@@ -185,6 +185,7 @@ import {
 	hasCursor,
 	isNavigationKey,
 	navigationOffset,
+	neighbourAfterRemoval,
 	stepFromKey,
 	useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
@@ -874,7 +875,8 @@ const handleSetFlagged = (thread: Thread, flagged: boolean, ids: string[] = rowM
 const goToNextThreadOrClose = (movedThreadID: string) => {
 	if (threadID !== movedThreadID) return
 	const ids = threadIDs.value
-	const next = ids.slice(ids.indexOf(movedThreadID) + 1).find((id) => id !== movedThreadID)
+	// Below first, then above — the same turn-around the mailbox makes at the end of the list.
+	const next = neighbourAfterRemoval(ids, ids.indexOf(movedThreadID), (id) => id !== movedThreadID)
 	if (next) openThread(next)
 	else closeThread()
 }
