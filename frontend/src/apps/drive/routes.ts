@@ -2,6 +2,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import { createResource } from 'frappe-ui'
 
 import { useSessionStore } from '@/boot/session'
+import { appDocumentTitle } from '@/utils/documentTitle'
 
 /**
  * Drive route module — mounted by the suite router under the '/drive' prefix.
@@ -22,7 +23,7 @@ import { useSessionStore } from '@/boot/session'
 
 const setPageTitle = (to: any) => {
   if (useSessionStore().isLoggedIn) {
-    document.title = __(String(to.name).replace(/^drive-/, ''))
+    document.title = appDocumentTitle(__(String(to.name).replace(/^drive-/, '')), 'Drive')
   }
 }
 

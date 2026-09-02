@@ -40,6 +40,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { Button, Dialog, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 
@@ -68,7 +69,7 @@ type ActionField = {
 	options?: ActionOption[]
 }
 
-usePageMeta(() => ({ title: __('Actions') }))
+usePageMeta(() => appPageMeta(__('Actions'), 'Mail'))
 
 // Input fields for the parameterized actions (parameterless actions run directly).
 const ACTION_FIELDS: Record<string, ActionField[]> = {

@@ -64,6 +64,7 @@ import {
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 
 import { call, toast, usePageMeta, KeyboardShortcutsDialog } from 'frappe-ui'
+import { appPageMeta } from '@/utils/documentTitle'
 
 import ExportView from '@/apps/slides/pages/ExportView.vue'
 import EditorNavbar from '@/apps/slides/components/EditorNavbar.vue'
@@ -158,9 +159,7 @@ setCommandHistory(commandHistoryInstance)
 useShortcuts(inReadonlyMode, inSlideShowMode)
 
 usePageMeta(() => {
-	return {
-		title: pageTitle(),
-	}
+	return appPageMeta(pageTitle(), 'Slides')
 })
 
 onActivated(() => (document.title = pageTitle()))

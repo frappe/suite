@@ -28,6 +28,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRoute, useRouter } from 'vue-router'
 import { Mails, Users } from 'lucide-vue-next'
 import { Tabs, usePageMeta } from 'frappe-ui'
@@ -37,7 +38,7 @@ import UsersView from '@/apps/mail/pages/dashboard/UsersView.vue'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import AddMemberModal from '@/apps/mail/components/Modals/AddMemberModal.vue'
 
-usePageMeta(() => ({ title: __('Members') }))
+usePageMeta(() => appPageMeta(__('Members'), 'Mail'))
 
 const route = useRoute()
 const router = useRouter()

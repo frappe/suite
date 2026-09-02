@@ -14,6 +14,7 @@
 import GenericPage from '@/apps/drive/components/GenericPage.vue'
 import { watch, computed, onUnmounted } from 'vue'
 import { createResource } from 'frappe-ui'
+import { appDocumentTitle } from '@/utils/documentTitle'
 import { COMMON_OPTIONS } from '@/apps/drive/resources/files'
 import { prettyData, setCache, updateURLSlug } from '@/apps/drive/utils/files'
 import { setCrumbEntity, clearCrumbEntity } from '@/apps/drive/data/breadcrumbs'
@@ -45,7 +46,7 @@ setCache(getFolderContents, ['folder', props.entityName])
 
 const onSuccess = (entity) => {
   if (router.currentRoute.value.params.entityName !== entity.name) return
-  document.title = 'Folder - ' + entity.file_name
+  document.title = appDocumentTitle(entity.file_name, 'Drive')
   setCrumbEntity(entity)
   updateURLSlug(entity.file_name)
 }

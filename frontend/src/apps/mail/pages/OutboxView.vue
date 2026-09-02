@@ -107,6 +107,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { useDebounceFn, watchDebounced } from '@vueuse/core'
 import { EllipsisVertical, Mail } from 'lucide-vue-next'
@@ -144,7 +145,7 @@ import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.v
 import OutboxFilters from '@/apps/mail/components/OutboxFilters.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 
-usePageMeta(() => ({ title: __('Outbox') }))
+usePageMeta(() => appPageMeta(__('Outbox'), 'Mail'))
 
 const store = userStore()
 const router = useRouter()

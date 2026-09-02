@@ -126,6 +126,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
 	Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, usePageMeta } from 'frappe-ui'
@@ -165,7 +166,7 @@ const { groupId } = defineProps<{ groupId: string }>()
 const router = useRouter()
 const { localeLabel } = useAccountOptions()
 
-usePageMeta(() => ({ title: (member.data as GroupData | undefined)?.email || groupId }))
+usePageMeta(() => appPageMeta((member.data as GroupData | undefined)?.email || groupId, 'Mail'))
 
 const showEdit = ref(false)
 const showEditQuota = ref(false)

@@ -13,15 +13,14 @@ import { getDocuments } from '@/apps/writer/resources/'
 import RoundedListView from '@/apps/writer/components/RoundedListView.vue'
 import Navbar from '@/apps/writer/components/Navbar.vue'
 import { usePageMeta } from 'frappe-ui'
+import { appPageMeta } from '@/utils/documentTitle'
 import ErrorPage from '@/apps/writer/components/ErrorPage.vue'
 import WriterDocumentsSkeleton from '@/apps/writer/components/WriterDocumentsSkeleton.vue'
 
 const groupedDocuments = computed(() => getDocuments.data && groupByTime(getDocuments.data))
 getDocuments.fetch()
 
-usePageMeta(() => ({
-  title: 'Writer',
-}))
+usePageMeta(() => appPageMeta('Writer', 'Writer'))
 
 function groupByTime(entities) {
   const today = new Date()

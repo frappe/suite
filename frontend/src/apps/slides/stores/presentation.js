@@ -8,6 +8,7 @@ import { slides } from './slide'
 import { markClean, markDirty, getPresentationFromLocalDB } from './saving'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
 import { normalizeColor } from '@/apps/slides/utils/color'
+import { appDocumentTitle } from '@/utils/documentTitle'
 import { v4 as uuid4 } from 'uuid'
 import { commandHistory } from './historyMeta'
 
@@ -383,9 +384,8 @@ const duplicatePresentation = async (presentation) => {
 }
 
 const pageTitle = () => {
-	const appTitle = router.currentRoute.value.meta.title || 'Frappe Slides'
 	const title = presentationDoc.value?.title
-	return title ? `${title} - ${appTitle}` : appTitle
+	return appDocumentTitle(title, 'Slides')
 }
 
 const resetEditorState = () => {

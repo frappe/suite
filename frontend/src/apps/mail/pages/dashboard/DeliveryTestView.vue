@@ -50,6 +50,7 @@
 </template>
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { Button, FormControl, LoadingIndicator, usePageMeta } from 'frappe-ui'
 
 import { raiseToast } from '@/apps/mail/utils'
@@ -58,7 +59,7 @@ import DashboardCard from '@/apps/mail/components/DashboardCard.vue'
 
 type TraceEvent = { type: string; [key: string]: unknown }
 
-usePageMeta(() => ({ title: __('Delivery Test') }))
+usePageMeta(() => appPageMeta(__('Delivery Test'), 'Mail'))
 
 const target = ref('')
 const running = ref(false)

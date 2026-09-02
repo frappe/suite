@@ -88,6 +88,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
 	Badge, Button, Dialog, Dropdown, LoadingIndicator, createResource, usePageMeta } from 'frappe-ui'
@@ -130,7 +131,7 @@ type MessageData = {
 const { messageId } = defineProps<{ messageId: string }>()
 const router = useRouter()
 
-usePageMeta(() => ({ title: __('Queued Message') }))
+usePageMeta(() => appPageMeta(__('Queued Message'), 'Mail'))
 
 const showEditMessage = ref(false)
 const showEditRecipient = ref(false)

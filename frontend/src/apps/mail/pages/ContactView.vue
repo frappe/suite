@@ -210,6 +210,7 @@
 
 <script setup lang="ts">
 import { capitalize, computed, inject, ref, useTemplateRef } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Trash2 } from 'lucide-vue-next'
 import {
@@ -369,7 +370,7 @@ const contactDisplay = computed(
 	() => contact.doc?.full_name || contact.doc?.emails[0]?.address || contactName,
 )
 
-usePageMeta(() => ({ title: contactDisplay.value }))
+usePageMeta(() => appPageMeta(contactDisplay.value, 'Mail'))
 
 const breadcrumbs = computed(() => [
 	{ label: __('Contacts'), route: '/mail/contacts' },

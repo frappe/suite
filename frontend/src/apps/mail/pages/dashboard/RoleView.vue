@@ -56,6 +56,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, MultiSelect, createResource, usePageMeta } from 'frappe-ui'
 
@@ -78,7 +79,7 @@ type RoleData = {
 const { roleId } = defineProps<{ roleId: string }>()
 const router = useRouter()
 
-usePageMeta(() => ({ title: (role.data as RoleData | undefined)?.description || roleId }))
+usePageMeta(() => appPageMeta((role.data as RoleData | undefined)?.description || roleId, 'Mail'))
 
 const showEdit = ref(false)
 const showDelete = ref(false)

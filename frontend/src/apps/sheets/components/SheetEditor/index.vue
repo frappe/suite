@@ -1273,6 +1273,7 @@ import { call } from '../../utils/api.js'
 import { useCurrentUser, useSessionStore } from '@/boot/session'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { useThemeMenuOption } from '@/composables/useThemeMenuOption'
+import { appPageMeta } from '@/utils/documentTitle'
 import { userInitials } from '../../utils/session.js'
 import { parseNumberFmt, buildNumberFmt, applyNumberFmt } from '../../utils/format-number.js'
 import { getTextWrap } from '../../utils/text-wrap.js'
@@ -1335,7 +1336,7 @@ import NamedRangesDialog       from './NamedRangesDialog.vue'
 import { useSmartFill }        from './useSmartFill.js'
 import * as versionsApi        from '../../services/versions.js'
 import {
-   Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip } from 'frappe-ui'
+   Avatar, Badge, Breadcrumbs, Button, Checkbox, Dialog, Dropdown, FormControl, KeyboardShortcut, KeyboardShortcutsDialog, Spinner, TextInput, Tooltip, usePageMeta } from 'frappe-ui'
 import {
   CommandPalette,
   CommandPaletteEmpty,
@@ -1695,6 +1696,7 @@ const formulaValue      = ref('')
 const canUndo           = ref(false)
 const canRedo           = ref(false)
 const currentTitle      = ref('Untitled Sheet')
+usePageMeta(() => appPageMeta(currentTitle.value, 'Sheets'))
 const activeNumberFormat = ref('')
 
 // Cross-sheet picker: when the user starts a `=…` edit in the top formula
@@ -6094,7 +6096,7 @@ function toggleShowFormulas() {
    (gap:12) so the title reads as the focal point, not crowded by badges. */
 .sn-topbar-left  { display:flex; align-items:center; gap:8px; min-width:0; }
 .sn-topbar-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-.sn-identity { display:flex; min-width:0; align-items:center; }
+.sn-identity { display:flex; min-width:0; align-items:center; gap:8px; }
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
 .sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }

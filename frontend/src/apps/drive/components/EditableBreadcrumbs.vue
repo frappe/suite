@@ -7,7 +7,7 @@
     </div>
     <template v-else-if="isEditing">
       <template v-if="parentItems.length">
-        <Breadcrumbs :items="parentItems" />
+        <Breadcrumbs class="parent-breadcrumbs" :items="parentItems" />
         <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
       </template>
       <InlineRenameInput :entity="entity" appearance="breadcrumb" />
@@ -50,3 +50,9 @@ const displayItems = computed(() => {
   return items
 })
 </script>
+
+<style scoped>
+.parent-breadcrumbs :deep(a) {
+  color: var(--ink-gray-5);
+}
+</style>

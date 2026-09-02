@@ -10,6 +10,7 @@ import globalStyle from '@/apps/writer/styles/index.css?inline'
 import slugify from 'slugify'
 import { useFileUpload, toast as nToast, createResource } from 'frappe-ui'
 import { rootInfo } from '@/apps/drive/sdk'
+import { appDocumentTitle } from '@/utils/documentTitle'
 
 rootInfo.fetch()
 import emitter from '@/apps/writer/emitter'
@@ -435,9 +436,7 @@ export function dynamicList(k) {
   return k.filter((a) => typeof a !== 'object' || !('cond' in a) || a.cond)
 }
 
-export const setTitle = (title) =>
-  (document.title =
-    (router.currentRoute.value.name === 'Folder' ? 'Folder - ' : '') + title)
+export const setTitle = (title) => (document.title = appDocumentTitle(title, 'Writer'))
 
 async function uploadImage(file, params) {
   const uploader = useFileUpload()

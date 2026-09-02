@@ -80,6 +80,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
@@ -113,7 +114,7 @@ const getErrorMessage = (error: ResourceError) =>
 
 const { domainId } = defineProps<{ domainId: string }>()
 
-usePageMeta(() => ({ title: domain.data?.name || domainId }))
+usePageMeta(() => appPageMeta(domain.data?.name || domainId, 'Mail'))
 
 const router = useRouter()
 

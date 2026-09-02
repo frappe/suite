@@ -30,6 +30,7 @@
 	</DashboardLayout>
 </template>
 <script setup lang="ts">
+import { appPageMeta } from '@/utils/documentTitle'
 import { createResource, usePageMeta } from 'frappe-ui'
 import { ListEmptyState, ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
 
@@ -37,7 +38,7 @@ import { fromNow } from '@/apps/mail/utils/datetime'
 import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 
-usePageMeta(() => ({ title: __('DKIM Signatures') }))
+usePageMeta(() => appPageMeta(__('DKIM Signatures'), 'Mail'))
 
 const signatures = createResource({
 	url: 'suite.mail.api.admin.get_dkim_signatures',

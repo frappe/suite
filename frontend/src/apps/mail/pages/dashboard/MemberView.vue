@@ -173,6 +173,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
 	Button, Dialog, Dropdown, Switch, Tooltip, createResource, usePageMeta } from 'frappe-ui'
@@ -214,7 +215,7 @@ const { memberId } = defineProps<{ memberId: string }>()
 const router = useRouter()
 const { localeLabel } = useAccountOptions()
 
-usePageMeta(() => ({ title: memberId }))
+usePageMeta(() => appPageMeta(memberId, 'Mail'))
 
 const showDeleteMember = ref(false)
 const showResetPassword = ref(false)

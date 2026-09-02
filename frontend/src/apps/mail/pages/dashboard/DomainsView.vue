@@ -59,6 +59,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Badge, FormControl, createResource, usePageMeta } from 'frappe-ui'
@@ -69,7 +70,7 @@ import DashboardLayout from '@/apps/mail/components/DashboardLayout.vue'
 import DashboardListSkeleton from '@/apps/mail/components/DashboardListSkeleton.vue'
 import AddDomainModal from '@/apps/mail/components/Modals/AddDomainModal.vue'
 
-usePageMeta(() => ({ title: __('Domains') }))
+usePageMeta(() => appPageMeta(__('Domains'), 'Mail'))
 
 const showAddDomain = ref(false)
 const search = ref('')

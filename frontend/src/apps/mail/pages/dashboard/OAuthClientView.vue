@@ -84,6 +84,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
@@ -103,7 +104,7 @@ import AddOAuthRedirectUrisModal from '@/apps/mail/components/Modals/AddOAuthRed
 const { clientId } = defineProps<{ clientId: string }>()
 const router = useRouter()
 
-usePageMeta(() => ({ title: client.data?.client_id || clientId }))
+usePageMeta(() => appPageMeta(client.data?.client_id || clientId, 'Mail'))
 
 const showEdit = ref(false)
 const showAddContacts = ref(false)

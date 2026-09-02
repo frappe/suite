@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { useDebounceFn, watchDebounced } from '@vueuse/core'
 import { Pin, Trash2 } from 'lucide-vue-next'
@@ -183,7 +184,7 @@ const loadMoreContacts = useDebounceFn((e) => {
 
 const addressBookDisplay = computed(() => addressBook.doc?._name || addressBookName)
 
-usePageMeta(() => ({ title: addressBookDisplay.value }))
+usePageMeta(() => appPageMeta(addressBookDisplay.value, 'Mail'))
 
 const breadcrumbs = computed(() => [
 	{ label: __('Address Books'), route: '/mail/address-books' },

@@ -67,6 +67,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Dialog, Dropdown, Tooltip, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
@@ -101,7 +102,7 @@ const router = useRouter()
 
 const showDelete = ref(false)
 
-usePageMeta(() => ({ title: (signature.data as DkimData | undefined)?.selector || signatureId }))
+usePageMeta(() => appPageMeta((signature.data as DkimData | undefined)?.selector || signatureId, 'Mail'))
 
 const signature = createResource({
 	url: 'suite.mail.api.admin.get_dkim_signature',

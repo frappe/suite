@@ -58,6 +58,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Badge, Button, FormControl, createResource, usePageMeta } from 'frappe-ui'
@@ -78,7 +79,7 @@ type LogRow = {
 	details?: string
 }
 
-usePageMeta(() => ({ title: __('Logs') }))
+usePageMeta(() => appPageMeta(__('Logs'), 'Mail'))
 
 const PAGE_LENGTH = 100
 const search = ref('')

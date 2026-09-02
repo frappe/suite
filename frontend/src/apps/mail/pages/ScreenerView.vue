@@ -423,6 +423,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
 	Archive,
@@ -764,10 +765,11 @@ usePageMeta(() => {
 	// Name the open sender, the way the mailbox view names the open thread. The queue's own title is
 	// the right one for the list, but it made every sender's page — each its own URL, each shareable
 	// and restorable — read as the same tab, and the count kept moving under it as you triaged.
-	if (openSender.value) return { title: openSender.value.from_name || openSender.value.from_email }
+	if (openSender.value)
+		return appPageMeta(openSender.value.from_name || openSender.value.from_email, 'Mail')
 
 	const n = senders.data?.length ?? 0
-	return { title: n ? `(${n}) ${__('Screener')}` : __('Screener') }
+	return appPageMeta(n ? `(${n}) ${__('Screener')}` : __('Screener'), 'Mail')
 })
 
 const waitingLabel = computed(() => {

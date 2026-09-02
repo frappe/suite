@@ -5,7 +5,7 @@
     ondrop="return false;"
     class="relative z-10 flex h-12 shrink-0 items-center justify-between border-b border-outline-elevation-1 bg-surface-elevation-1 px-3"
   >
-    <div class="flex w-fit items-center gap-2">
+    <div class="flex min-w-0 items-center gap-2">
       <Dropdown
         :options="navbarMenuOptions"
         :offset="16"
@@ -18,15 +18,15 @@
           </div>
         </template>
       </Dropdown>
+      <slot name="breadcrumbs">
+        <EditableBreadcrumbs
+          v-if="route.name !== 'writer-home'"
+          :items="formattedCrumbs"
+          :entity="file?.doc || null"
+          class="select-none truncate max-w-[80%]"
+        />
+      </slot>
     </div>
-    <slot name="breadcrumbs">
-      <EditableBreadcrumbs
-        v-if="route.name !== 'writer-home'"
-        :items="formattedCrumbs"
-        :entity="file?.doc || null"
-        class="select-none truncate max-w-[80%]"
-      />
-    </slot>
 
     <div class="ml-auto flex items-center gap-2">
       <div id="navbar-content" class="flex gap-2" />

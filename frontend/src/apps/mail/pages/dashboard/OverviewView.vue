@@ -82,6 +82,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Badge, Button, createResource, usePageMeta } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
@@ -120,7 +121,7 @@ type OverviewData = {
 	recent_logs: LogEntry[]
 }
 
-usePageMeta(() => ({ title: __('Overview') }))
+usePageMeta(() => appPageMeta(__('Overview'), 'Mail'))
 
 const router = useRouter()
 

@@ -5,6 +5,7 @@ import { Button, Dialog, TabButtons, createResource, usePageMeta } from 'frappe-
 import { Calendar } from 'frappe-ui/experimental'
 
 import { useScreenSize } from '@/composables/useScreenSize'
+import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
@@ -31,7 +32,7 @@ const ROUTE_TO_VIEW = { 'calendar-month': 'Month', 'calendar-week': 'Week', 'cal
 const routeNameForView = (view) => VIEW_TO_ROUTE[view as keyof typeof VIEW_TO_ROUTE]
 const viewForRouteName = (name) => ROUTE_TO_VIEW[name as keyof typeof ROUTE_TO_VIEW]
 
-usePageMeta(() => ({ title: calendarRef.value?.currentMonthYear || __('Frappe Calendar') }))
+usePageMeta(() => appPageMeta(calendarRef.value?.currentMonthYear || __('Frappe Calendar'), 'Calendar'))
 
 watch(
 	() => [

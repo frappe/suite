@@ -108,6 +108,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import {
 	Button, Dialog, Dropdown, FormControl, Switch, Tooltip, createResource, usePageMeta } from 'frappe-ui'
@@ -136,7 +137,7 @@ const { listId } = defineProps<{ listId: string }>()
 
 const router = useRouter()
 
-usePageMeta(() => ({ title: (list.data as ListData | undefined)?.email || listId }))
+usePageMeta(() => appPageMeta((list.data as ListData | undefined)?.email || listId, 'Mail'))
 
 const showEdit = ref(false)
 const showAddEmail = ref(false)

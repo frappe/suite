@@ -46,6 +46,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Button, Dialog, FormControl, createResource, usePageMeta } from 'frappe-ui'
@@ -75,7 +76,7 @@ const title = computed(() => {
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Reports')}`
 })
 
-usePageMeta(() => ({ title: title.value }))
+usePageMeta(() => appPageMeta(title.value, 'Mail'))
 
 const reports = createResource({
 	url: 'suite.mail.api.admin.get_reports',

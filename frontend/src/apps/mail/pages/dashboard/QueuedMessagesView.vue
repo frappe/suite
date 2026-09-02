@@ -60,6 +60,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { watchDebounced } from '@vueuse/core'
 import {
 	Button, Dialog, FormControl, createResource, usePageMeta } from 'frappe-ui'
@@ -81,7 +82,7 @@ type QueueRow = {
 	created_at?: string
 }
 
-usePageMeta(() => ({ title: __('Queued') }))
+usePageMeta(() => appPageMeta(__('Queued'), 'Mail'))
 
 const PAGE_LENGTH = 50
 const search = ref('')

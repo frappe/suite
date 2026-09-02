@@ -282,7 +282,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, toast, useCall, useDoc } from "frappe-ui";
+import { Badge, Button, toast, useCall, useDoc, usePageMeta } from "frappe-ui";
 import { computed, h, onMounted, onUnmounted, provide, ref, toRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { submit } from "../utils/request";
@@ -347,6 +347,7 @@ import {
 	showStatsForNerds,
 } from "../data/statsPreferences";
 import { session, userResource } from "@/boot/session";
+import { appPageMeta } from "@/utils/documentTitle";
 import { useSocket } from "../socket";
 import { deviceManager } from "../utils/media/DeviceManager";
 import type { Participant } from "../utils/media/ParticipantManager";
@@ -479,6 +480,7 @@ const checkMeetingAccess = useCall<AccessData, { meeting_id: string }>({
 const previewTitle = computed(
 	() => meetingDoc.doc?.title || previewDetails.data?.title || meetingId.value,
 );
+usePageMeta(() => appPageMeta(previewTitle.value, "Meet"));
 
 watch(
 	() => meetingDoc.error,

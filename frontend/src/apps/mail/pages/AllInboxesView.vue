@@ -171,6 +171,7 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRoute, useRouter } from 'vue-router'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { Breadcrumbs, Button, call, createResource, usePageMeta } from 'frappe-ui'
@@ -1019,7 +1020,7 @@ const unreadPrefix = computed(() =>
 	store.allInboxesUnread.data ? `(${store.allInboxesUnread.data})` : '',
 )
 
-usePageMeta(() => ({ title: `${unreadPrefix.value} ${__('All Inboxes')}` }))
+usePageMeta(() => appPageMeta(`${unreadPrefix.value} ${__('All Inboxes')}`, 'Mail'))
 
 // Keep the merged list fresh: poll periodically and react to new-mail push events (which can arrive
 // for any account). Both merge the newest window at the top, preserving scroll.

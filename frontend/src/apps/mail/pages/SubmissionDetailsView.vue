@@ -144,6 +144,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { ArrowUpRight } from 'lucide-vue-next'
 import { Breadcrumbs, Button, Dialog, Skeleton, createResource, usePageMeta } from 'frappe-ui'
@@ -218,7 +219,7 @@ const data = computed<SubmissionDetails | null>(() =>
 // and be replaced.
 const title = computed(() => (data.value ? subjectLabel(data.value) : ''))
 
-usePageMeta(() => ({ title: title.value || __('Outbox') }))
+usePageMeta(() => appPageMeta(title.value || __('Outbox'), 'Mail'))
 
 const summary = computed(() => (data.value ? statusSummary(data.value) : ''))
 const activity = computed(() => (data.value ? activityEntries(data.value) : []))

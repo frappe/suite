@@ -66,6 +66,7 @@
 <script setup>
 import { computed, onActivated, onDeactivated, ref, watch, provide } from 'vue'
 import { toast, useKeyboardShortcut, usePageMeta } from 'frappe-ui'
+import { appPageMeta } from '@/utils/documentTitle'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
 import SlideshowEndScreen from '@/apps/slides/components/SlideshowEndScreen.vue'
@@ -326,7 +327,7 @@ const updateWindowSize = () => {
 	windowHeight.value = window.innerHeight
 }
 
-usePageMeta(() => ({ title: pageTitle() }))
+usePageMeta(() => appPageMeta(pageTitle(), 'Slides'))
 
 onActivated(() => {
 	document.title = pageTitle()

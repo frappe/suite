@@ -455,6 +455,7 @@
 </template>
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRoute, useRouter } from 'vue-router'
 import {
 	Archive,
@@ -1599,8 +1600,8 @@ const currentThread = computed(() =>
 )
 
 usePageMeta(() => {
-	if (threadID) return { title: currentThread.value?.subject || __('[No Subject]') }
-	return { title: `${unreadThreadsPrefix.value} ${mailboxName.value}` }
+	if (threadID) return appPageMeta(currentThread.value?.subject || __('[No Subject]'), 'Mail')
+	return appPageMeta(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail')
 })
 
 const title = computed(() => {

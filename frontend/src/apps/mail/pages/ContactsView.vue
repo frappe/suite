@@ -40,6 +40,7 @@
 
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useDebounceFn, watchDebounced } from '@vueuse/core'
 import {
 	Button, Dialog, FormControl, createResource, usePageMeta } from 'frappe-ui'
@@ -52,7 +53,7 @@ import AddContactModal from '@/apps/mail/components/Modals/AddContactModal.vue'
 
 const { accountId } = defineProps<{ accountId: string }>()
 
-usePageMeta(() => ({ title: __('Contacts') }))
+usePageMeta(() => appPageMeta(__('Contacts'), 'Mail'))
 
 const store = userStore()
 

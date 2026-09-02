@@ -44,6 +44,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { appPageMeta } from '@/utils/documentTitle'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Dropdown, createResource, usePageMeta } from 'frappe-ui'
 
@@ -85,7 +86,7 @@ const detailTitle = computed(() => {
 	return `${dir} ${KIND_LABELS[kind] || kind} ${__('Report')}`
 })
 
-usePageMeta(() => ({ title: listTitle.value }))
+usePageMeta(() => appPageMeta(listTitle.value, 'Mail'))
 
 const showDelete = ref(false)
 

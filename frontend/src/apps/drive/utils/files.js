@@ -17,6 +17,7 @@ import { set } from 'idb-keyval'
 import { toast } from '@/apps/drive/utils/toasts.js'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
 import emitter from '@/apps/drive/emitter'
+import { appDocumentTitle } from '@/utils/documentTitle'
 
 import folderIcon from '../../../../../suite/public/drive/images/icons/folder.svg'
 import imageIcon from '../../../../../suite/public/drive/images/icons/image.svg'
@@ -540,10 +541,7 @@ export function dynamicList(k) {
   return k.filter((a) => typeof a !== 'object' || !('cond' in a) || a.cond)
 }
 
-export const setTitle = (file_name) =>
-  (document.title =
-    (router.currentRoute.value.name === 'drive-Folder' ? 'Folder - ' : '') +
-    file_name)
+export const setTitle = (file_name) => (document.title = appDocumentTitle(file_name, 'Drive'))
 
 async function uploadImage(file, params) {
   const uploader = useFileUpload()

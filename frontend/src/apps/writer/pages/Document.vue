@@ -81,6 +81,7 @@ import { useSessionStore } from '@/boot/session'
 const currentUserId = computed(() => useSessionStore().user)
 const isLoggedIn = computed(() => useSessionStore().isLoggedIn)
 import { Button, Skeleton, useDoc, usePageMeta } from 'frappe-ui'
+import { appPageMeta } from '@/utils/documentTitle'
 
 import VersionsSidebar from '@/apps/writer/components/VersionsSidebar.vue'
 import WriterSettings from '@/apps/writer/components/WriterSettings.vue'
@@ -142,9 +143,7 @@ const editable = computed(() => {
 watch(showVersions, (v) => {
   if (!v) versionPreview.value = null
 })
-usePageMeta(() => ({
-  title: file.doc ? file.doc.file_name : 'Loading...',
-}))
+usePageMeta(() => appPageMeta(file.doc ? file.doc.file_name : 'Loading...', 'Writer'))
 
 // fix: bad pattern
 const globalSettings = !isLoggedIn.value
