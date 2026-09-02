@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, h, inject, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Check, LogOut, Settings, User } from 'lucide-vue-next'
+import { LogOut, Settings, User } from 'lucide-vue-next'
 import {
 	Sidebar,
 	SidebarCollapseToggle,
@@ -14,6 +14,7 @@ import { CalendarColorMap } from 'frappe-ui/experimental'
 import { useNow, useStorage } from '@vueuse/core'
 
 import { useSessionStore } from '@/boot/session'
+import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { toTitleCase } from '@/apps/calendar/utils/format'
@@ -132,19 +133,9 @@ const menuItems = computed(() => [
 			{
 				icon: User,
 				label: __('Accounts'),
-				// A tick on the account you are in, as in mail. Selection used to be a
-				// filled row, which on a list this short read as a hover that had stuck
-				// rather than as the answer to "which one am I in".
-				submenu: user.data.accounts.map?.((a) => ({
-					label: a._name,
-					onClick: () => router.push({ name: route.name, params: { ...route.params, accountId: a.id } }),
-					slots: {
-						suffix: () =>
-							a.id === store.accountId
-								? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
-								: null,
-					},
-				})),
+				submenu: accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
+					router.push({ name: route.name, params: { ...route.params, accountId } }),
+				),
 				condition: () => user.data.accounts?.length > 1,
 			},
 			{

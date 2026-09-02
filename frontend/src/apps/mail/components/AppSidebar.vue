@@ -117,9 +117,8 @@ import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/experimental'
-import { Check, Keyboard, User } from 'lucide-vue-next'
+import { Keyboard, User } from 'lucide-vue-next'
 import {
-	Avatar,
 	Button,
 	Dropdown,
 	Sidebar,
@@ -129,6 +128,7 @@ import {
 	SidebarSection,
 } from 'frappe-ui'
 
+import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
@@ -288,23 +288,7 @@ const menuItems = computed(() => [
 			{
 				icon: User,
 				label: __('Accounts'),
-				// The row is the menu's own — an avatar where an icon goes, the name as
-				// the label, a tick on the one you are in. It used to be a hand-built
-				// div standing in for the whole row, which meant re-declaring the
-				// padding, hover and truncation the row already had, and rebuilding its
-				// element on every render — so hovering an account destroyed the node
-				// under the pointer and the submenu closed before it could be clicked.
-				submenu: user.data.accounts.map?.((a) => ({
-					label: a._name,
-					onClick: () => switchAccount(a.id),
-					slots: {
-						prefix: () => h(Avatar, { label: a._name, size: 'md' }),
-						suffix: () =>
-							a.id === store.accountId
-								? h(Check, { class: 'icon size-4 shrink-0 text-ink-gray-7' })
-								: null,
-					},
-				})),
+				submenu: accountSubmenu(user.data.accounts, store.accountId, switchAccount),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
 			},
 			{
