@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, Minus, X } from 'lucide-vue-next'
 import { Avatar, Button } from 'frappe-ui'
 
+import { participationStatusDisplay } from '@/apps/calendar/utils'
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 
@@ -24,11 +24,6 @@ const isUserOrganizer = computed(
 const showRemoveParticipant = (participant: any) =>
 	!participant.isOrganizer && (isUserOrganizer.value || participant.isNew) && !dontShowRemove
 
-const getParticipantStatusValues = (status: string) => {
-	if (status === 'ACCEPTED') return { icon: Check, class: 'bg-surface-green-1 text-ink-green-6' }
-	if (status === 'TENTATIVE') return { icon: Minus, class: 'bg-surface-gray-1 text-ink-gray-6' }
-	return { icon: X, class: 'bg-surface-red-1 text-ink-red-6' }
-}
 </script>
 <template>
 	<div v-for="p in participants" :key="p.email">
@@ -51,10 +46,10 @@ const getParticipantStatusValues = (status: string) => {
 								p.participation_status && p.participation_status !== 'NEEDS-ACTION'
 							"
 							class="rounded-full p-px"
-							:class="getParticipantStatusValues(p.participation_status).class"
+							:class="participationStatusDisplay(p.participation_status).class"
 						>
 							<component
-								:is="getParticipantStatusValues(p.participation_status).icon"
+								:is="participationStatusDisplay(p.participation_status).icon"
 								class="h-3 w-3"
 							/>
 						</div>

@@ -21,7 +21,12 @@ import DOMPurify from 'dompurify'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 
-import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
+import {
+	getMeetUrl,
+	getReorderedParticipants,
+	isUrl,
+	participationStatusDisplay,
+} from '@/apps/calendar/utils'
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
@@ -94,7 +99,12 @@ const handleSetResponse = (response: string) => {
 
 const rsvpScopeModalProps = computed(() => ({
 	title: __('Respond to repeating event'),
-	icon: { name: 'lucide-calendar-check' },
+	// The answer about to be sent, drawn as the participant list draws it: the dialog is
+	// about this yes or this no, not about responding in general.
+	icon: {
+		name: participationStatusDisplay(pendingResponse.value).name,
+		theme: participationStatusDisplay(pendingResponse.value).theme,
+	},
 	// No "this and following": ending a series partway is the organizer's act, and an attendee
 	// answering an invitation is not editing the event at all.
 	options: scopeOptions({ unavailable: ['instance'] }).filter(
