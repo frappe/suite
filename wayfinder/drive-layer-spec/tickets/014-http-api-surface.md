@@ -19,3 +19,11 @@ endpoints are part of the surface.
 
 Graduated from Not yet specified on 2026-09-03 after
 [Content app contract](005-content-app-contract.md) closed.
+
+Handed from [Publishing capability](007-publishing-capability.md)
+(2026-09-03): publish and unpublish are the grant and revoke endpoints
+with principal `$PUBLIC`; do not add separate verbs. The grant endpoint
+must refuse `$PUBLIC` above READ and `$PUBLIC` on a Drive Root. The
+activity endpoint returns grant writes with actor, principal, old role,
+new role. Guest calls carry `$PUBLIC` as their only principal until link
+sessions (008) add more.
