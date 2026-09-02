@@ -65,12 +65,19 @@ export const getRepeatFrequencyOptions = (interval: number) => [
 ]
 
 export const getRepeatMessage = (recurrenceRule: RecurrenceRule) => {
-  const interval = recurrenceRule.interval || 1
+  const interval = recurrenceRule?.interval || 1
+  const frequency = getRepeatFrequencyOptions(interval).find(
+    (option) => option.value === recurrenceRule?.frequency,
+  )
+  // An event can carry an occurrence's recurrence id and no readable rule to go
+  // with it - a series whose rule was cleared keeps the occurrences the server
+  // had already expanded. There is nothing to say about how it repeats, so this
+  // says nothing, rather than throwing out of the panel that was rendering it.
+  if (!frequency) return ''
+
   const message = __('Every {0} {1}', [
     interval === 1 ? '' : interval,
-    getRepeatFrequencyOptions(interval)
-      .find((option) => option.value === recurrenceRule.frequency)!
-      .label.toLowerCase(),
+    frequency.label.toLowerCase(),
   ])
 
   const suffix =
