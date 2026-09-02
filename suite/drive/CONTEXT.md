@@ -96,9 +96,20 @@ needs Edit.
 _Avoid_: Side table, Child, Related doctype
 
 **Version**:
-An immutable copy of a Content Document's bytes at one moment, kept by Drive
-beside the node.
+An immutable copy of a node's bytes at one moment, kept by Drive beside the
+node. A Content Document gets one when its app takes one; a file gets one
+when its bytes are replaced.
 _Avoid_: Snapshot, Revision, History entry
+
+**Preview**:
+The one small image Drive keeps beside a node to show it in a listing. Drive
+makes it from a file's bytes; an app supplies it for a Content Document.
+_Avoid_: Thumbnail, Rendition, Variant, Cover
+
+**Export**:
+A Content Document turned into a file format on request, streamed to whoever
+asked, and never kept.
+_Avoid_: Rendition, Cache, Derived file
 
 **Comment**:
 A remark on a Content Document, kept by Drive beside the node, anchored to a
@@ -130,8 +141,11 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A **Path** is a name for a position, not a location. Nothing in storage
   matches it, because a **Blob** is addressed by its content.
 - Renaming or moving a node rewrites its **Path** and touches no **Blob**.
-- A **Drive Node** that holds bytes is a **Reference**. So is each version,
-  thumbnail, or export kept beside a node.
+- A **Drive Node** that holds bytes is a **Reference**. So is each
+  **Version** and each **Preview** kept beside a node.
+- Two nodes with the same bytes share one **Preview**, because a Preview
+  follows the Blob it was made from.
+- An **Export** is never a **Reference**. Nothing about it is stored.
 - Drive never deletes bytes. It deletes a **Reference**, and the **Blob**
   follows once nothing names it.
 - A business site has exactly one active **Shared Root**. A personal site has
@@ -172,8 +186,12 @@ _Avoid_: Deletion, Ownership transfer, Handover
   app alone.
 - An edit to a **Content Document** owes Drive one **Touch** and nothing
   else.
-- **Versions** and **Comments** belong to the node. They go when the node is
-  purged.
+- **Versions**, **Comments**, and the **Preview** belong to the node. They go
+  when the node is purged. Trashing the node keeps them.
+- Replacing a file's bytes keeps the old bytes as a **Version** and replaces
+  the **Preview**.
+- Drive keeps every named or pinned **Version**. It thins the automatic ones
+  as they age, on one ladder for every node kind.
 - A **Satellite** has no rights of its own. The node decides.
 - The Comment **Role** is enough to add a **Comment** or resolve a thread.
   Editing or deleting one needs Edit, or being its author.
@@ -209,5 +227,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - "Snapshot", "Version", and "Revision" named the same thing in three apps.
   Resolved: **Version**, kept by Drive. A Sheets snapshot in the rewrite is a
   replay shortcut inside the document body, not a **Version**.
+- "Thumbnail", "rendition", and "variant" named one thing and hinted at
+  more. Resolved: there is one derived image, the **Preview**. An **Export**
+  is not a stored thing at all.
 - "Home" and "Everyone" are the labels WebDAV mounts show for the **Personal
   Root** and the **Shared Root**. They are display names, not domain terms.
