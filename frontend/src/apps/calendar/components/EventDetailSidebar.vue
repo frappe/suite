@@ -24,9 +24,12 @@ import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/uti
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { scopeLabels } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent } = defineProps<{ calendarEvent: any }>()
@@ -56,23 +59,53 @@ const RSVP_OPTIONS = [
 // event_response template when custom event invites are enabled.
 const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
-	makeParams: (response: string) => ({
+	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
 		account: store.accountId,
 		// master_id is only set on recurring events; fall back to the event's own id
 		id: calendarEvent.master_id || calendarEvent.id,
 		response: response.toLowerCase(),
+		// One occurrence answered on its own is an override on the series, addressed by this
+		// occurrence's recurrence id — the whole series is the same call without one.
+		recurrence_id: scope === 'instance' ? calendarEvent.recurrence_id : null,
 	}),
 	onSuccess: () => emit('reloadEvents'),
 })
 
-const handleSetResponse = (response: string) => {
-	if (!response || response === userResponse.value) return
-	toast.promise(rsvpEvent.submit(response), {
+// An occurrence of a series can be answered on its own — a standup you miss one
+// week is not a standup you have left. So the answer asks which it is; a one-off
+// has nothing to ask. The tab buttons stay where they were until the server
+// confirms, so cancelling the question leaves the shown answer alone.
+const showRsvpScopeModal = ref(false)
+const pendingResponse = ref('')
+
+const submitResponse = (response: string, scope: RecurringScope) => {
+	showRsvpScopeModal.value = false
+	toast.promise(rsvpEvent.submit({ response, scope }), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),
 	})
 }
+
+const handleSetResponse = (response: string) => {
+	if (!response || response === userResponse.value) return
+	if (!calendarEvent.recurrence_id) return submitResponse(response, 'series')
+	pendingResponse.value = response
+	showRsvpScopeModal.value = true
+}
+
+const rsvpScopeModalProps = computed(() => ({
+	title: __('Respond to repeating event'),
+	icon: { name: 'lucide-calendar-check' },
+	// No "this and following": splitting a series is the organizer's to do, and an
+	// attendee answering is not editing the event at all.
+	options: [
+		{ value: 'instance' as const, label: scopeLabels().instance },
+		{ value: 'series' as const, label: scopeLabels().series },
+	],
+	confirmLabel: __('Send response'),
+	loading: rsvpEvent.loading,
+}))
 
 // --- Calendar (colour + account) ---
 
@@ -277,14 +310,22 @@ const hasDetails = computed(
 
 // --- Actions dropdown (delete) ---
 
-const { deleteOption, isDeleting, showNotifyModal, pendingDelete, NOTIFY_DELETE_OPTIONS } =
-	useEventDelete(
-		() => calendarEvent,
-		() => {
-			emit('reloadEvents')
-			emit('close')
-		},
-	)
+const {
+	deleteOption,
+	isDeleting,
+	showScopeModal: showDeleteScopeModal,
+	deleteScopeModalProps,
+	deleteScope,
+	showNotifyModal,
+	pendingDelete,
+	NOTIFY_DELETE_OPTIONS,
+} = useEventDelete(
+	() => calendarEvent,
+	() => {
+		emit('reloadEvents')
+		emit('close')
+	},
+)
 
 const dropdownOptions = computed(() => [
 	{ label: __('Edit'), icon: SquarePen, onClick: () => emit('edit') },
@@ -530,6 +571,16 @@ const openUrl = (location: string) => {
 			/>
 		</div>
 
+		<RecurringScopeModal
+			v-model="showDeleteScopeModal"
+			v-bind="deleteScopeModalProps"
+			@confirm="deleteScope"
+		/>
+		<RecurringScopeModal
+			v-model="showRsvpScopeModal"
+			v-bind="rsvpScopeModalProps"
+			@confirm="(scope) => submitResponse(pendingResponse, scope)"
+		/>
 		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>
 				<div class="flex justify-end space-x-2">

@@ -8,10 +8,13 @@ import { useScreenSize } from '@/composables/useScreenSize'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
 import EventDetailSidebar from '@/apps/calendar/components/EventDetailSidebar.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
+import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 
 const dayjs = inject('$dayjs')
 
@@ -394,7 +397,7 @@ watch(
 
 const eventToBeUpdated = reactive({})
 const showRecurringEventModal = ref(false)
-const isUpdateInstance = ref(false)
+const updateScope = ref<RecurringScope>('series')
 const showNotifyModal = ref(false)
 
 // The calendar draws a move or resize before it is confirmed here. Until a
@@ -414,13 +417,13 @@ const handleUpdate = (e) => {
 	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
 	// one-off event dragged after an instance edit would be written as an override of a series
 	// it isn't part of.
-	isUpdateInstance.value = false
+	updateScope.value = 'series'
 	if (e.recurrence_id) showRecurringEventModal.value = true
 	else handleUpdateEvent()
 }
 
-const handleUpdateRecurringEvent = (updateInstance: boolean) => {
-	isUpdateInstance.value = updateInstance
+const handleUpdateRecurringEvent = (scope: RecurringScope) => {
+	updateScope.value = scope
 	showRecurringEventModal.value = false
 	handleUpdateEvent()
 }
@@ -460,7 +463,11 @@ const submitEvent = (sendEmail: boolean) => {
 	// the occurrence within it by the recurrence id — its original start, which the drag leaves
 	// alone. Synthetic instance ids are no use for that: the server reshuffles them whenever an
 	// override lands.
-	if (isUpdateInstance.value) return editEventInstance.submit({ sendEmail })
+	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
+	// This occurrence and the ones after it: the series is cut here and the move starts its
+	// second half, since a rule has no way to change partway through.
+	if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
 
 	editEvent.submit({ sendEmail })
 }
@@ -496,6 +503,17 @@ const editEventInstance = createResource({
 	...onEventSaved,
 })
 
+const splitSeries = createResource({
+	url: 'suite.calendar.api.split_calendar_event_series',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		...eventToBeUpdated,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
+
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
@@ -507,11 +525,24 @@ const editEvent = createResource({
 	...onEventSaved,
 })
 
-const RECURRING_EVENT_MODAL_OPTIONS = {
-	title: __('Update Recurring Event'),
-	icon: { name: 'lucide-repeat' },
-	message: __('Do you want to update just this instance, or all events in the series?'),
-}
+// Splitting a series ends it and starts another, which only its organizer can do.
+const isAttendee = computed(
+	() =>
+		!!eventToBeUpdated.organizer &&
+		!participantIdentities.data?.some(
+			(identity) => identity.email === eventToBeUpdated.organizer.replace('mailto:', ''),
+		),
+)
+
+const recurringScopeModalProps = computed(() => ({
+	title: __('Update repeating event'),
+	options: scopeOptions({
+		isFirst: isFirstOccurrence(eventToBeUpdated),
+		splitBlockedReason: isAttendee.value ? __('Only the organizer can split a series') : undefined,
+	}),
+	confirmLabel: __('Update'),
+	loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
+}))
 
 const NOTIFY_MODAL_OPTIONS = {
 	title: __('Notify Participants'),
@@ -605,18 +636,11 @@ const NOTIFY_MODAL_OPTIONS = {
 		</div>
 	</div>
 	<EventModal v-model="showEditEvent" :selected-event="event" @reload-events="events.reload()" />
-	<Dialog v-model:open="showRecurringEventModal" v-bind="RECURRING_EVENT_MODAL_OPTIONS">
-		<template #actions>
-			<div class="flex justify-end space-x-2">
-				<Button variant="outline" @click="handleUpdateRecurringEvent(true)">
-					{{ __('This instance') }}
-				</Button>
-				<Button variant="solid" @click="handleUpdateRecurringEvent(false)">
-					{{ __('Entire series') }}
-				</Button>
-			</div>
-		</template>
-	</Dialog>
+	<RecurringScopeModal
+		v-model="showRecurringEventModal"
+		v-bind="recurringScopeModalProps"
+		@confirm="handleUpdateRecurringEvent"
+	/>
 	<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
