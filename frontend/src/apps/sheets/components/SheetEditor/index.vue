@@ -3902,8 +3902,6 @@ function cancelTitleEditing() {
   isTitleEditing.value = false
 }
 
-watch(isSaving, (cur, prev) => { if (prev && !cur && !saveError.value) isDirty.value = false })
-
 function onSave() { _doAutoSave() }
 
 // ── Formula bar ───────────────────────────────────────────────────────────────
