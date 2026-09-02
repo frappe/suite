@@ -54,4 +54,44 @@ describe('calendar datetime helpers', () => {
 		expect(formatDateTime(null)).toBe('')
 		expect(fromWallClock('')).toBe('')
 	})
+
+	describe('shiftedMasterStart', () => {
+		// The series anchors on Sep 7; the reader has the Sep 14 occurrence open.
+		const master = '2026-09-07T15:00:00'
+		const opened = dayjs('2026-09-14T15:00:00')
+
+		it('leaves the anchor where it is when the time was not touched', async () => {
+			const { shiftedMasterStart } = await load()
+			expect(shiftedMasterStart(master, opened, dayjs('2026-09-14T15:00:00'))).toBe(master)
+		})
+
+		it('moves the series by what the reader changed, not to the occurrence', async () => {
+			const { shiftedMasterStart } = await load()
+			// 3 PM to 5 PM on the occurrence: the anchor keeps its own date and moves two hours.
+			expect(shiftedMasterStart(master, opened, dayjs('2026-09-14T17:00:00'))).toBe(
+				'2026-09-07T17:00:00',
+			)
+			// And backwards, across midnight into the previous day.
+			expect(shiftedMasterStart(master, opened, dayjs('2026-09-13T23:00:00'))).toBe(
+				'2026-09-06T23:00:00',
+			)
+		})
+
+		it('carries a date change through as the same shift', async () => {
+			const { shiftedMasterStart } = await load()
+			// Dragged a day later and an hour earlier: the whole series follows.
+			expect(shiftedMasterStart(master, opened, dayjs('2026-09-15T14:00:00'))).toBe(
+				'2026-09-08T14:00:00',
+			)
+		})
+
+		it('counts wall clocks, so a DST boundary cannot add an hour of its own', async () => {
+			const { shiftedMasterStart } = await load()
+			// Europe/Vienna springs forward on 2026-03-29. The arithmetic runs in UTC, so an hour
+			// asked for is an hour given, whatever the browser's zone does that night.
+			expect(shiftedMasterStart('2026-03-29T01:30:00', opened, dayjs('2026-09-14T16:00:00'))).toBe(
+				'2026-03-29T02:30:00',
+			)
+		})
+	})
 })

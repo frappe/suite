@@ -28,7 +28,12 @@ import {
 import meetLogo from '@/assets/app-logos/meet.png'
 import { submit as submitCall } from '@/apps/meet/utils/request'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
-import { fromEventZone, fromWallClock, inUserTimeZone } from '@/apps/calendar/utils/datetime'
+import {
+	fromEventZone,
+	fromWallClock,
+	inUserTimeZone,
+	shiftedMasterStart,
+} from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -67,13 +72,16 @@ const isTitleFocused = ref(false)
 
 // --- Event initialization ---
 
+// The occurrence's own start, as the form reads it. Timed events edit in the viewer's zone
+// (saving re-zones them to it, see eventParams); all-day events keep their calendar date.
+const occurrenceStart = (ev: any) =>
+	ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
+
 const getEventData = () => {
 	if (isNew.value) return getDefaultEventData()
 
 	const { calendarEvent: ev } = selectedEvent
-	// Timed events edit in the viewer's zone (saving re-zones them to it, see eventParams);
-	// all-day events keep their calendar date.
-	const start = ev.isAllDay ? dayjs(ev.start) : fromEventZone(ev.start, ev.time_zone)
+	const start = occurrenceStart(ev)
 	const end = start.add(dayjs.duration(ev.duration))
 	const displayEnd = ev.isAllDay ? end.subtract(1, 'day') : end
 
@@ -218,11 +226,20 @@ const eventParams = computed(() => {
 	if (event.title) params.title = event.title
 	if (dayjs?.tz) params.time_zone = dayjs.tz.guess()
 
-	if (selectedEvent.calendarEvent?.recurrence_id && !isUpdateInstance.value) {
-		// The master's start passes through unchanged, so it must keep the master's zone —
-		// pairing it with the browser's would silently shift the whole series.
-		params.start = selectedEvent.calendarEvent.master_start
-		params.time_zone = selectedEvent.calendarEvent.time_zone || params.time_zone
+	// Saving the whole series from one of its occurrences. The start on screen belongs to that
+	// occurrence, so what reaches the master is the shift the reader made to it — nothing at all
+	// when they made none, which is how the anchor used to pass through untouched. It keeps the
+	// master's zone either way: pairing the master's wall clock with the browser's zone would
+	// move the series on its own.
+	const ev = selectedEvent?.calendarEvent
+	if (ev?.recurrence_id && !isUpdateInstance.value) {
+		// An unresolved master (no master_start) is already past saving — the update is addressed by
+		// master_id too, and falls back to an id the server won't take — so it is left exactly as it
+		// was rather than given a start of this occurrence's, or of now.
+		params.start = ev.master_start
+			? shiftedMasterStart(ev.master_start, occurrenceStart(ev), startsAt.value)
+			: ev.master_start
+		params.time_zone = ev.time_zone || params.time_zone
 	}
 	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length)
 		params.recurrence_rule = event.recurrence_rule

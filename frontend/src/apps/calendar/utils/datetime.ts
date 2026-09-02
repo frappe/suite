@@ -11,6 +11,8 @@ import { userStore } from '@/apps/calendar/stores/user'
 
 const UTC_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
 
+type Dayjs = ReturnType<typeof dayjs>
+
 /**
  * The zone timestamps are displayed and typed in: the browser's, falling back to `time_zone` on
  * the User doc for the rare environment where the browser cannot say (`get_user_info` resolves
@@ -51,3 +53,21 @@ export const utcDayStart = (date?: string | null): string =>
 /** The end of a `YYYY-MM-DD` day in the user's zone, as a UTC timestamp the APIs take. */
 export const utcDayEnd = (date?: string | null): string =>
 	date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''
+
+/**
+ * Where a recurring series' anchor lands when the reader edits the time on one of its occurrences
+ * and saves the whole series.
+ *
+ * The form is showing one occurrence, so its start is that occurrence's — sending it as the
+ * master's would drag the anchor onto this week and re-base every date after it. What carries over
+ * is the difference the reader made, applied to the master's own start: no edit moves nothing, and
+ * an edit moves the series by exactly what they changed, as every other calendar does.
+ *
+ * A JSCalendar `start` is a wall clock with no offset, and the master keeps its own zone, so the
+ * arithmetic runs in UTC — in the browser's zone a DST boundary would add an hour of its own.
+ */
+export const shiftedMasterStart = (masterStart: string, opened: Dayjs, edited: Dayjs): string =>
+	dayjs
+		.utc(masterStart)
+		.add(edited.diff(opened, 'minute'), 'minute')
+		.format('YYYY-MM-DD[T]HH:mm:ss')
