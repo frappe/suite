@@ -87,6 +87,16 @@ implementation effort can execute from the documents alone.
   cuts, invalid on a Drive Root; unpublish = revoke or deny; one activity row
   per grant write, no publish verb.
 
+- [WebDAV mapping](tickets/009-webdav-mapping.md) — three mounts (Home,
+  Everyone, Shared with me as grant roots); one role-per-method table,
+  DELETE and LOCK-create tightened; documents appear as read-only export
+  files and are leaves; GET streams with an opt-in signed redirect; PUT is
+  one `put_blob` and every replace versions (empty head excepted);
+  cross-root MOVE rebills quota; COPY copies no grants or versions;
+  `file_modified` becomes `content_modified`; DAV rides the same SDK and
+  activity rows; auth stays Basic with no link principals; protocol modules
+  kept, storage machinery deleted.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip

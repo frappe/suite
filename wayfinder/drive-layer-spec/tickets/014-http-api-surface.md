@@ -27,3 +27,11 @@ must refuse `$PUBLIC` above READ and `$PUBLIC` on a Drive Root. The
 activity endpoint returns grant writes with actor, principal, old role,
 new role. Guest calls carry `$PUBLIC` as their only principal until link
 sessions (008) add more.
+
+Handed from [WebDAV mapping](009-webdav-mapping.md) (2026-09-03): create
+and replace accept an optional client modification time that sets
+`content_modified` (today `api/files.py:53`, epoch ms). The activity row
+gains a `client` column (User-Agent, DAV only). A copy endpoint exists and
+is the one COPY primitive: new nodes owned by the caller, charged to the
+destination root, no grants or versions copied, documents through the
+declared duplicate.

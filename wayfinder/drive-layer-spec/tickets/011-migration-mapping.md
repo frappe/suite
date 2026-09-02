@@ -41,3 +41,10 @@ a `$PUBLIC` deny. Rows on a Drive Root (the shipped `Site` folder) are
 invalid under the root guardrail: drop them and report the count. Also:
 Slides' forced composite rows are ordinary `user = ""` read rows and need
 no special case.
+
+Handed from [WebDAV mapping](009-webdav-mapping.md) (2026-09-03): the
+`File.file_modified` custom field becomes `Drive Node.content_modified`
+(same meaning, same values). `Drive DAV Lock.entity` and
+`Drive DAV Property.entity` retarget from File to Drive Node by the node
+identity map. The `.thumbnails` reserved name and the `.thumbnail` sidecar
+check go.

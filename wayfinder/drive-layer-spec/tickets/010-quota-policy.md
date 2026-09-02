@@ -27,3 +27,10 @@ Handed from [Content app contract](005-content-app-contract.md): the live
 document body stays in the app doctype (not a blob), while its versions and
 comments are Drive-owned. Decide whether the body counts against the root's
 quota, and how version blobs are charged.
+
+Handed from [WebDAV mapping](009-webdav-mapping.md) (2026-09-03): a
+cross-root MOVE (Home to Everyone or the reverse) moves the subtree's
+bytes from the source root's quota to the destination root's, and is
+refused when the destination would exceed its quota. Decide here whether
+the DAV `quota-used-bytes` and `quota-available-bytes` properties, which
+read the collection's Drive Root, count versions and previews.

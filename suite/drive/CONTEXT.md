@@ -82,6 +82,11 @@ _Avoid_: Public file, Shared to web, Open
 A grant that refuses rights rather than giving them.
 _Avoid_: Block, Revoke, Remove access
 
+**Grant Root**:
+The nearest node at which a grant names one of a person's principals. The
+top of one thing shared with them.
+_Avoid_: Share, Shared folder, Entry point
+
 **Owner**:
 The party a node's or a root's bytes are counted against, and the record of
 who put it there. An owner holds no access by being one.
@@ -130,6 +135,11 @@ _Avoid_: Annotation, Note, Thread (a thread is a group of comments)
 **Touch**:
 The one thing an edit tells Drive: this node changed now, by this person.
 _Avoid_: Sync, Save hook, Update event
+
+**Content Time**:
+When a node's content last changed, as its content says. A client may set
+it to the time a file carried before upload.
+_Avoid_: Modified, Last modified, mtime, Row timestamp
 
 ### Deployment
 
@@ -219,6 +229,16 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A **Satellite** has no rights of its own. The node decides.
 - The Comment **Role** is enough to add a **Comment** or resolve a thread.
   Editing or deleting one needs Edit, or being its author.
+- A **Grant Root** is where "shared with me" begins. What lies below it
+  is reached through it, and never listed on its own.
+- **Content Time** changes when bytes, a body, or a title change. It does
+  not change when a **Grant** does.
+- A WebDAV client sees the same tree, the same **Roles**, and the same
+  **Grant Roots** as the web app. It holds no rights the web app lacks.
+- Over WebDAV a **Content Document** is its **Export**, read-only. It can be
+  moved, renamed, trashed, and copied there, never written.
+- A **Content Document** has no children over WebDAV. Its embedded nodes
+  are reached only through its app.
 
 ## Example Dialogue
 
@@ -258,5 +278,6 @@ _Avoid_: Deletion, Ownership transfer, Handover
   deck anyone may open, and the Slides media URL flag. Resolved: **Public**
   is a **Principal**, **Published** is the node state it produces, and the
   framework File flag is not a Drive term.
-- "Home" and "Everyone" are the labels WebDAV mounts show for the **Personal
-  Root** and the **Shared Root**. They are display names, not domain terms.
+- "Home", "Everyone", and "Shared with me" are the labels WebDAV mounts show
+  for the **Personal Root**, the **Shared Root**, and the person's **Grant
+  Roots**. They are display names, not domain terms.
