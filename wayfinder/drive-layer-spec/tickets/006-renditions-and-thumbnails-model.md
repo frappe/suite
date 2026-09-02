@@ -23,3 +23,8 @@ settled; decide here only when Drive deletes those rows (source blob
 replaced, node trashed, node purged) and whether renditions keyed on
 source checksum share one row set across nodes.
 
+Handed from [Content app contract](005-content-app-contract.md): versions of
+every content document (Writer, Slides, Sheets) become one Drive-owned table
+whose bytes are blobs. Decide here how version blobs are stored beside
+renditions and exports, and confirm the tiered retention policy that applies
+to every app.

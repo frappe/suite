@@ -19,9 +19,9 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
 - **Slides → Drive**: a deck has a Drive Node standing for it. Its media are
   framework attachments today, authorized by their own endpoint. Moving them
   under the deck node is decided but not built.
-- **Sheets → Drive**: a sheet has a Drive Node standing for it. Sheets holds
-  the most state outside Drive, so what it must declare to Drive is still
-  being specified.
+- **Sheets → Drive**: a sheet has a Drive Node standing for it. Its change
+  log and collab state stay with Sheets as the document body. Its versions,
+  comments, title, and trash state are Drive's.
 - **Meet → Drive**: a Recording Artifact becomes a file in Drive. A Recording
   Budget is a reservation held against the Room Owner's Drive quota while a
   Recording Session runs.
@@ -31,6 +31,8 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
   Estimate shown before a Recording Session starts.
 
 Every product above depends on Drive for storage and sharing. Drive depends on
-none of them. The one seam is a content type declaration: a product tells
-Drive what its documents are called, how to export them, and which of its own
-doctypes resolve through the same node.
+none of them. The one seam is a Content Type declaration: a product tells
+Drive how to create, copy, export, version, and purge one of its documents,
+and which of its own records are Satellites of the node. Drive holds the
+title, place, grants, lifecycle, versions, and comments; the product holds
+the body.

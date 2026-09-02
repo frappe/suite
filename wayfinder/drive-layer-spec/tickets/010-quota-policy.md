@@ -22,3 +22,8 @@ archives a root in place and moves no bytes, so two extra things to settle:
 
 - Who is charged for an archived root's bytes.
 - Whether archived roots are ever reclaimed, and on what retention clock.
+
+Handed from [Content app contract](005-content-app-contract.md): the live
+document body stays in the app doctype (not a blob), while its versions and
+comments are Drive-owned. Decide whether the body counts against the root's
+quota, and how version blobs are charged.

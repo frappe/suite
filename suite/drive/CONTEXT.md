@@ -76,6 +76,39 @@ The party a node's or a root's bytes are counted against, and the record of
 who put it there. An owner holds no access by being one.
 _Avoid_: Creator, Admin, Manager
 
+### Content
+
+**Content Document**:
+A document owned by another Suite app (a Writer document, a deck, a sheet)
+that a Drive Node stands for. Its body lives with its app; everything about
+its place, sharing, lifecycle, versions, and comments lives with Drive.
+_Avoid_: Content doc, Linked doc, Backing file
+
+**Content Type**:
+What one app declares to Drive about its documents: how to create, copy,
+export, version, and purge one, and which of its own records are Satellites.
+_Avoid_: Kind, Integration, Plugin
+
+**Satellite**:
+A record kept by an app that belongs to one Content Document and takes its
+rights from that document's node. Reading it needs Read there; changing it
+needs Edit.
+_Avoid_: Side table, Child, Related doctype
+
+**Version**:
+An immutable copy of a Content Document's bytes at one moment, kept by Drive
+beside the node.
+_Avoid_: Snapshot, Revision, History entry
+
+**Comment**:
+A remark on a Content Document, kept by Drive beside the node, anchored to a
+place only the owning app can read.
+_Avoid_: Annotation, Note, Thread (a thread is a group of comments)
+
+**Touch**:
+The one thing an edit tells Drive: this node changed now, by this person.
+_Avoid_: Sync, Save hook, Update event
+
 ### Deployment
 
 **Business site**:
@@ -131,6 +164,19 @@ _Avoid_: Deletion, Ownership transfer, Handover
   the content there.
 - Recreating a deleted user's email address gives a fresh **Personal Root**,
   never the archived one.
+- A **Content Document** has exactly one Drive Node, and that node has exactly
+  one Content Document. Neither reference ever changes.
+- A **Content Document** has no title and no trash state of its own. Its node
+  holds both.
+- A **Content Document** is created and copied through Drive, never by its
+  app alone.
+- An edit to a **Content Document** owes Drive one **Touch** and nothing
+  else.
+- **Versions** and **Comments** belong to the node. They go when the node is
+  purged.
+- A **Satellite** has no rights of its own. The node decides.
+- The Comment **Role** is enough to add a **Comment** or resolve a thread.
+  Editing or deleting one needs Edit, or being its author.
 
 ## Example Dialogue
 
@@ -160,5 +206,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - "Space" was used for both a person's own area and the shared one. Resolved:
   both are a **Drive Root**, distinguished as **Personal Root** and **Shared
   Root**.
+- "Snapshot", "Version", and "Revision" named the same thing in three apps.
+  Resolved: **Version**, kept by Drive. A Sheets snapshot in the rewrite is a
+  replay shortcut inside the document body, not a **Version**.
 - "Home" and "Everyone" are the labels WebDAV mounts show for the **Personal
   Root** and the **Shared Root**. They are display names, not domain terms.
