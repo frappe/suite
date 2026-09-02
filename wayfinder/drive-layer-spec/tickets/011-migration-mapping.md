@@ -42,6 +42,14 @@ invalid under the root guardrail: drop them and report the count. Also:
 Slides' forced composite rows are ordinary `user = ""` read rows and need
 no special case.
 
+Handed from [Link sharing semantics](008-link-sharing-semantics.md)
+(2026-09-03): the `$LINK:<token>` grant minted for a `user = ""` row above
+read gets a fresh 22-char base62 token, `password_hash = NULL`,
+`expires_on = NULL`. One link per such row. The new URL is
+`/drive/l/<token>`; report the count so owners can be told their links
+changed. `Drive Token` rows (single-use download capabilities) are not
+links and are dropped.
+
 Handed from [WebDAV mapping](009-webdav-mapping.md) (2026-09-03): the
 `File.file_modified` custom field becomes `Drive Node.content_modified`
 (same meaning, same values). `Drive DAV Lock.entity` and

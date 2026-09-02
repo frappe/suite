@@ -63,9 +63,21 @@ one. The roles, lowest first: Read, Comment, Upload, Edit, Manage.
 _Avoid_: Permission level, Access flags, Rights
 
 **Principal**:
-Whoever a grant names: a user, a user group, any signed-in user, a share
-link, or anyone at all.
+Whoever a grant names: a user, a user group, any signed-in user, a Share
+Link, or anyone at all. The first three are a person's own; the last two
+are open to whoever arrives.
 _Avoid_: User, Member, Recipient
+
+**Share Link**:
+The principal that stands for whoever holds one secret. A grant to it may
+carry Read, Comment, Upload, or Edit, never Manage, may need a password,
+and may end on a date.
+_Avoid_: Public link, Anyone with the link, Token, Anonymous access
+
+**Unlock**:
+Proving a Share Link's password once, so the holder counts as that link
+until the proof lapses or the link changes.
+_Avoid_: Login, Sign in, Session, Authenticate
 
 **Public**:
 The principal that stands for anyone at all, signed in or not, with no
@@ -187,7 +199,21 @@ _Avoid_: Deletion, Ownership transfer, Handover
   than a grant refuses the right.
 - A **Grant** on a **Drive Root** reaches every node in that root.
 - A **Published** node is read by anyone. Nothing above Read ever reaches
-  the **Public**; anything more for a visitor comes through a share link.
+  the **Public**; anything more for a visitor comes through a **Share
+  Link**.
+- A **Share Link** is a **Grant**. There is no link without one, and
+  revoking the grant ends the link.
+- A **Share Link** works for whoever holds it, signed in or not.
+- A **Share Link** never lowers what a person already holds. It can only
+  add.
+- A **Deny** naming a person or a group is final. No **Share Link** below
+  it lets that person back in.
+- What comes in through a **Share Link** is owned by no one in particular.
+  The record keeps which link it came through.
+- Uploading through a **Share Link** gives the uploader no **Grant** on
+  what they uploaded, because the grant would belong to every holder.
+- A **Drive Root** is never reached through a **Share Link**. No one may
+  grant one on a root.
 - Publishing a folder publishes everything below it, until a **Deny** to the
   **Public** nearer a node stops it.
 - A **Drive Root** is never **Published**. No one, Suite Admins included,
@@ -278,6 +304,10 @@ _Avoid_: Deletion, Ownership transfer, Handover
   deck anyone may open, and the Slides media URL flag. Resolved: **Public**
   is a **Principal**, **Published** is the node state it produces, and the
   framework File flag is not a Drive term.
+- "Token" names both the shipped single-use download capability (`Drive
+  Token`) and the secret inside a **Share Link**. Resolved: the download
+  capability is not a Drive term. Only a **Share Link** has a secret, and
+  the glossary calls it that, not a token.
 - "Home", "Everyone", and "Shared with me" are the labels WebDAV mounts show
   for the **Personal Root**, the **Shared Root**, and the person's **Grant
   Roots**. They are display names, not domain terms.

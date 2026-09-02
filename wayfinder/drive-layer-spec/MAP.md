@@ -97,6 +97,17 @@ implementation effort can execute from the documents alone.
   activity rows; auth stays Basic with no link principals; protocol modules
   kept, storage machinery deleted.
 
+- [Link sharing semantics](tickets/008-link-sharing-semantics.md) — clear
+  22-char token in `$LINK:<token>`, many per node; stateless
+  `X-Drive-Links` header, no cookie; password unlock returns an HMAC ticket
+  bound to token and hash, 30 days, no server state; two-pass resolution:
+  own principals first and a deny is final, else max with nearest-wins over
+  `$PUBLIC` and links; no creator grant on link uploads; actor stays
+  `Guest` with `via_link` on activity; collab socket re-checks on an
+  interval; `expires_on` on every grant, `password_hash` on links only,
+  rotate is one op, daily sweep; no link on a root, none over WebDAV, URL
+  is `/drive/l/<token>`.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
@@ -114,3 +125,6 @@ implementation effort can execute from the documents alone.
   Ruled out in [Shared spaces and offboarding model](tickets/001-shared-spaces-and-offboarding-model.md):
   it rebuilds the Drive Team model `remove_teams.py` dissolved, and neither
   deployment model needs it. A third `kind` is a Select option if that changes.
+- Blind drop-box (upload without seeing the folder). Ruled out in
+  [Link sharing semantics](tickets/008-link-sharing-semantics.md): UPLOAD
+  contains READ in the strict ladder, so the state is unrepresentable.
