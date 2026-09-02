@@ -41,7 +41,9 @@ implementation effort can execute from the documents alone.
 
 ## Decisions so far
 
-(none yet)
+- [Index benchmark parent-state-title](tickets/004-index-benchmark-parent-state-title.md) —
+  freeze `(parent, state, title)`, drop `(parent, state)`; 10k-folder page
+  11.7 ms -> 0.57 ms; accept filesort for modified/size sorts.
 
 ## Not yet specified
 
