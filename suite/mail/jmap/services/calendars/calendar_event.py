@@ -382,13 +382,7 @@ class CalendarEventService(CalendarsService):
 
         response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 
-        result = {"updated": [], "notUpdated": {}}
-        if method_responses := response.get("methodResponses"):
-            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
-            if not_updated := method_responses[0][1].get("notUpdated", {}):
-                result["notUpdated"].update(not_updated)
-
-        return result
+        return self._update_result(response)
 
     def set_participation_status(
         self,
@@ -415,13 +409,42 @@ class CalendarEventService(CalendarsService):
 
         response = self._update(payload, sendSchedulingMessages=send_scheduling_messages)
 
-        result = {"updated": [], "notUpdated": {}}
-        if method_responses := response.get("methodResponses"):
-            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
-            if not_updated := method_responses[0][1].get("notUpdated", {}):
-                result["notUpdated"].update(not_updated)
+        return self._update_result(response)
 
-        return result
+    def set_instance_participation_status(
+        self,
+        id: str,
+        recurrence_id: str,
+        participant_uid: str,
+        participation_status: str,
+        send_scheduling_messages: bool = False,
+    ) -> dict:
+        """Patches one participant's participationStatus on a single occurrence of a series.
+
+        The series keeps the answer it had; this date gets an override carrying the new one —
+        the same mechanism a moved or renamed occurrence uses, so every client reading the event
+        sees one occurrence answered differently rather than a series that changed its mind.
+        """
+
+        if not id or not recurrence_id or not participant_uid:
+            raise ValueError("'id', 'recurrence_id' and 'participant_uid' are all required.")
+
+        events = self.get([id])
+        if not events:
+            raise ValueError(f"Event with id '{id}' not found.")
+
+        overrides = events[0].get("recurrenceOverrides", {}) or {}
+        patch = self._override_patch(
+            overrides,
+            recurrence_id,
+            {f"participants/{participant_uid}/participationStatus": participation_status.lower()},
+        )
+
+        response = self._update(
+            {id: {**patch, "updated": utcnow()}}, sendSchedulingMessages=send_scheduling_messages
+        )
+
+        return self._update_result(response)
 
     def delete_instance(self, id: str, recurrence_id: str, send_scheduling_messages: bool = False) -> dict:
         """Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides.
@@ -447,6 +470,42 @@ class CalendarEventService(CalendarsService):
             {id: {**patch, "updated": utcnow()}},
             sendSchedulingMessages=send_scheduling_messages,
         )
+
+        return self._update_result(response)
+
+    def remove_overrides(self, id: str, recurrence_ids: list[str]) -> dict:
+        """Drops the named occurrences' overrides, leaving every other one where it is.
+
+        One key removed per occurrence rather than a rewritten map: the map is shared state, and
+        a copy of it taken before someone else's write would put their occurrence back.
+        """
+
+        if not id or not recurrence_ids:
+            raise ValueError("Both 'id' and 'recurrence_ids' are required.")
+
+        payload = {id: {f"recurrenceOverrides/{rid}": None for rid in recurrence_ids}}
+        payload[id]["updated"] = utcnow()
+
+        return self._update_result(self._update(payload))
+
+    def set_overrides(self, id: str, overrides: dict) -> dict:
+        """Writes an event's whole recurrenceOverrides map.
+
+        For an event nobody else has seen yet — the second half of a split series, which is
+        given the overrides that used to belong to the first. Anywhere else, patch one
+        occurrence's key instead (`_override_patch`).
+        """
+
+        if not id:
+            raise ValueError("'id' is required.")
+
+        payload = {id: {"recurrenceOverrides": overrides, "updated": utcnow()}}
+
+        return self._update_result(self._update(payload))
+
+    @staticmethod
+    def _update_result(response: dict) -> dict:
+        """The ids a single '/set' updated, and the per-id reasons it did not update the rest."""
 
         result = {"updated": [], "notUpdated": {}}
         if method_responses := response.get("methodResponses"):
@@ -474,10 +533,7 @@ class CalendarEventService(CalendarsService):
         if not overrides:
             return {"recurrenceOverrides": {recurrence_id: override}}
         if recurrence_id in overrides:
-            return {
-                f"recurrenceOverrides/{recurrence_id}/{key}": value
-                for key, value in override.items()
-            }
+            return {f"recurrenceOverrides/{recurrence_id}/{key}": value for key, value in override.items()}
         return {f"recurrenceOverrides/{recurrence_id}": override}
 
     @staticmethod

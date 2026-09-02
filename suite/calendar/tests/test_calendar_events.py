@@ -3,7 +3,12 @@
 
 import frappe
 
-from suite.calendar.api import edit_calendar_event, get_calendar_events
+from suite.calendar.api import (
+    edit_calendar_event,
+    get_calendar_events,
+    rsvp_calendar_event,
+    split_calendar_event_series,
+)
 from suite.calendar.doctype.calendar.calendar import add_calendar
 from suite.calendar.doctype.calendar_event.calendar_event import (
     add_calendar_event,
@@ -197,6 +202,104 @@ class TestCalendarEvents(StalwartIntegrationTestCase):
             ) or None
 
         self.wait_until(all_three_stand, message="An override was lost when another one was written.")
+
+    def test_this_and_following_splits_the_series(self):
+        """The occurrences before the split keep what they had; the rest carry the edit.
+
+        JSCalendar can say "this date" or "the series" and nothing in between, so the series is
+        cut in two. The old half stops before this occurrence and the new one starts at it —
+        which is why the count has to be shared out rather than repeated.
+        """
+
+        title = f"Series {unique_name('event')}"
+        with self.set_user(self.member.email):
+            master_id = add_calendar_event(
+                self.account,
+                title=title,
+                start="2026-09-07T08:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+                recurrence_rule={"@type": "RecurrenceRule", "frequency": "weekly", "count": 4},
+            )
+
+        instances = self._wait_for_event(title, count=4)
+        third = instances[2]
+        renamed = f"{title} (from the third)"
+
+        with self.set_user(self.member.email):
+            split_calendar_event_series(
+                self.account,
+                master_id,
+                third["recurrence_id"],
+                title=renamed,
+                start=third["recurrence_id"],
+                duration="PT1H",
+                time_zone="UTC",
+                recurrence_rule={"@type": "RecurrenceRule", "frequency": "weekly", "count": 4},
+            )
+
+        def both_halves_stand():
+            kept = self._events_in_range(title)
+            moved = self._events_in_range(renamed)
+            # Two each: the count is shared out between the halves, not handed to both.
+            if len(kept) != 2 or len(moved) != 2:
+                return None
+            return sorted(e["start"] for e in kept) < sorted(e["start"] for e in moved) or None
+
+        self.wait_until(both_halves_stand, message="The series did not split into two halves.")
+
+    def test_rsvp_answers_one_occurrence_at_a_time(self):
+        """An answer to one occurrence is stored on that date and leaves the others alone."""
+
+        title = f"Series {unique_name('event')}"
+        with self.set_user(self.member.email):
+            master_id = add_calendar_event(
+                self.account,
+                organizer=self.member.email,
+                title=title,
+                start="2026-09-08T08:00:00",
+                duration="PT1H",
+                time_zone="UTC",
+                recurrence_rule={"@type": "RecurrenceRule", "frequency": "weekly", "count": 3},
+                participants=[
+                    {
+                        "email": self.member.email,
+                        "participation_status": "NEEDS-ACTION",
+                        "expect_reply": True,
+                    }
+                ],
+            )
+
+        instances = self._wait_for_event(title, count=3)
+        answered = instances[1]
+
+        with self.set_user(self.member.email):
+            rsvp_calendar_event(self.account, master_id, "declined", recurrence_id=answered["recurrence_id"])
+
+        def only_that_one_declined():
+            statuses = {
+                event["recurrence_id"]: next(
+                    (
+                        p["participation_status"]
+                        for p in event["participants"]
+                        if p["email"] == self.member.email
+                    ),
+                    None,
+                )
+                for event in self._events_in_range(title)
+            }
+            if len(statuses) != 3:
+                return None
+            return (
+                statuses.get(answered["recurrence_id"]) == "DECLINED"
+                and all(
+                    status != "DECLINED"
+                    for rid, status in statuses.items()
+                    if rid != answered["recurrence_id"]
+                )
+            ) or None
+
+        self.wait_until(only_that_one_declined, message="The RSVP did not stay on its own occurrence.")
 
     def test_unknown_event(self):
         with self.set_user(self.member.email):
