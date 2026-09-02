@@ -187,9 +187,3 @@ settings survive. Litmus stays the acceptance test.
   ask -> Draft the spec (013).
 - Glossary updated: **Grant Root**, **Content Time**, DAV relationship
   lines, the mount-name ambiguity (`suite/drive/CONTEXT.md`).
-
-Handed from [Link sharing semantics](008-link-sharing-semantics.md)
-(2026-09-03): no link auth over WebDAV. Clients present user credentials
-only; a `$LINK:<token>` principal never enters a WebDAV request's
-principal list. The two-pass resolution (own principals first, deny final,
-else max with `$PUBLIC` and links) still applies, with an empty link set.
