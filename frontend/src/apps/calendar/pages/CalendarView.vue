@@ -411,6 +411,10 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
 	confirmed = false
+	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
+	// one-off event dragged after an instance edit would be written as an override of a series
+	// it isn't part of.
+	isUpdateInstance.value = false
 	if (e.recurrence_id) showRecurringEventModal.value = true
 	else handleUpdateEvent()
 }
@@ -437,9 +441,6 @@ const hasParticipantsOtherThanUser = computed(
 const submitEvent = (sendEmail: boolean) => {
 	confirmed = true
 	showNotifyModal.value = false
-	// Editing a single instance of a series is not supported yet; the move is undone rather
-	// than left on screen as if it had been saved.
-	if (isUpdateInstance.value) return revertUpdate()
 
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
@@ -453,8 +454,47 @@ const submitEvent = (sendEmail: boolean) => {
 		const minutes = diff.minutes()
 		eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
 	}
+
+	// One occurrence moved on its own: the series keeps its rule and this date gets an override,
+	// which is what the instance update writes. The series itself is addressed by master_id, and
+	// the occurrence within it by the recurrence id — its original start, which the drag leaves
+	// alone. Synthetic instance ids are no use for that: the server reshuffles them whenever an
+	// override lands.
+	if (isUpdateInstance.value) return editEventInstance.submit({ sendEmail })
+
 	editEvent.submit({ sendEmail })
 }
+
+// Both writes land the same way: the calendar has already drawn the move, so success only has to
+// confirm it and refresh, and a failure has to put the pill back where it was.
+const onEventSaved = {
+	onSuccess: () => {
+		raiseToast(__('Event updated.'), 'success')
+		events.reload()
+	},
+	onError: (error) => {
+		revertUpdate()
+		raiseToast(error.message, 'error')
+	},
+}
+
+const editEventInstance = createResource({
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: eventToBeUpdated.account,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		// Only what a drag can change. The zone rides with the start, since the dragged numbers
+		// are a wall clock in the viewer's zone and would otherwise be read in the event's own.
+		patch: {
+			start: eventToBeUpdated.start,
+			duration: eventToBeUpdated.duration,
+			...(eventToBeUpdated.isAllDay ? {} : { time_zone: eventToBeUpdated.time_zone }),
+		},
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
 
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
@@ -464,14 +504,7 @@ const editEvent = createResource({
 		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
 		send_scheduling_messages: sendEmail,
 	}),
-	onSuccess: () => {
-		raiseToast(__('Event updated.'), 'success')
-		events.reload()
-	},
-	onError: (error) => {
-		revertUpdate()
-		raiseToast(error.message, 'error')
-	},
+	...onEventSaved,
 })
 
 const RECURRING_EVENT_MODAL_OPTIONS = {
@@ -575,7 +608,10 @@ const NOTIFY_MODAL_OPTIONS = {
 	<Dialog v-model:open="showRecurringEventModal" v-bind="RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
-				<Button @click="handleUpdateRecurringEvent(false)">
+				<Button variant="outline" @click="handleUpdateRecurringEvent(true)">
+					{{ __('This instance') }}
+				</Button>
+				<Button variant="solid" @click="handleUpdateRecurringEvent(false)">
 					{{ __('Entire series') }}
 				</Button>
 			</div>

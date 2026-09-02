@@ -1107,10 +1107,17 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 			</div>
 		</template>
 	</Dialog>
+	<!-- The dialog has always asked which of the two this should be; until now it offered only
+	     the second, and the instance branch behind the first was written and unreachable. -->
 	<Dialog v-model:open="showRecurringEventModal" v-bind="SHOW_RECURRING_EVENT_MODAL_OPTIONS">
 		<template #actions>
 			<div class="flex justify-end space-x-2">
-				<Button @click="handleSaveRecurringEvent(false)">{{ __('Entire Series') }}</Button>
+				<Button variant="outline" @click="handleSaveRecurringEvent(true)">
+					{{ __('This Instance') }}
+				</Button>
+				<Button variant="solid" @click="handleSaveRecurringEvent(false)">
+					{{ __('Entire Series') }}
+				</Button>
 			</div>
 		</template>
 	</Dialog>
