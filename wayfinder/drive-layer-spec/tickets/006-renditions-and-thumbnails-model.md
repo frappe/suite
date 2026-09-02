@@ -16,3 +16,10 @@ app exporters via ContentTypeSpec); how they serve (signed /f/ URLs);
 and how they die (GC coupled to the source blob). Today: PIL/PyAV/pymupdf
 generation behind a Redis lock, stored as `.thumbnail` files, plus the
 framework's `make_thumbnail` which is broken for private v2 files.
+
+Handed from [GC reference discovery mechanism](003-gc-reference-discovery-mechanism.md):
+a rendition blob is live while a `Drive Node Blob` row names it. GC is
+settled; decide here only when Drive deletes those rows (source blob
+replaced, node trashed, node purged) and whether renditions keyed on
+source checksum share one row set across nodes.
+
