@@ -134,8 +134,14 @@ export const usePaginatedThreads = ({
 
 	const list = () => resource().data ?? []
 
-	/** The loaded threads' ids, in list order — what the reading pane pages through. */
-	const threadIDs = computed(() => list().map((thread: Thread) => thread.thread_id))
+	/**
+	 * The loaded threads' ids, in list order — what the reading pane pages through.
+	 *
+	 * In `threadKey` space, which is the thread id itself for a single-account list and the
+	 * account-qualified key for a merged one: two accounts can hold the same thread id, and paging
+	 * that walks bare ids there lands on whichever duplicate comes first.
+	 */
+	const threadIDs = computed(() => list().map(threadKey))
 
 	/** Whether any fetch is in flight. Gates the Refresh affordance and a new refresh. */
 	const isFetching = computed(() => resource().loading || loadingMore.value)

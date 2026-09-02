@@ -21,9 +21,17 @@ export interface ListRowsOptions {
 	threads: () => Thread[]
 	/** A thread row's key. The all-accounts views prefix it with the account. */
 	rowKey: (thread: Thread) => string
+	/**
+	 * A thread's identity, for every lookup below: which row stands for the open thread, which
+	 * stack is expanded, which threads a date group holds. The thread id by default, and NOT the
+	 * row key — the mailbox list keys its rows by mail name, while `openThreadID` names a thread.
+	 * The merged All Inboxes list qualifies it with the account, since one thread id can name a
+	 * thread in each of two accounts.
+	 */
+	threadKey?: (thread: Thread) => string
 	/** Whether runs of look-alike threads collapse into stack rows. On everywhere by default. */
 	stackingEnabled?: () => boolean
-	/** The open thread, if any — folding a row that hides it has to move the reading pane. */
+	/** The open thread's key, if any — folding a row that hides it has to move the reading pane. */
 	openThreadID: () => string | undefined
 	/** Called when a fold is about to hide the open thread: leave the pane. */
 	onOpenThreadHidden: () => void
@@ -49,6 +57,7 @@ export interface ListRowsOptions {
 export const useListRows = ({
 	threads,
 	rowKey,
+	threadKey = (thread: Thread) => thread.thread_id,
 	stackingEnabled = () => true,
 	openThreadID,
 	onOpenThreadHidden,
@@ -77,7 +86,7 @@ export const useListRows = ({
 		}, {}),
 	)
 
-	const getGroupThreads = (group: string) => groupedThreads.value[group]?.map((t) => t.thread_id)
+	const getGroupThreads = (group: string) => groupedThreads.value[group]?.map(threadKey)
 
 	// The last group never collapses — it's where infinite scroll appends, so hiding it would swallow
 	// newly loaded rows.
@@ -93,13 +102,13 @@ export const useListRows = ({
 	// notification sender can't bury the rest of the list. This is a display layer over groupedThreads:
 	// runs are detected within a date group and never span one.
 
-	// The thread_ids of every member of every expanded stack. In-memory only — stacks re-collapse on a
-	// mailbox switch. Keyed by member id rather than by stack key so a run keeps its expanded state as
+	// The keys of every member of every expanded stack. In-memory only — stacks re-collapse on a
+	// mailbox switch. Keyed by member rather than by stack key so a run keeps its expanded state as
 	// it grows in either direction (appended by infinite scroll, prepended by a refresh), and so
 	// routing to a thread can expand its stack without having to locate the run first.
 	const expandedStacks = ref(new Set<string>())
 
-	const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(t.thread_id))
+	const isRunExpanded = (run: Thread[]) => run.some((t) => expandedStacks.value.has(threadKey(t)))
 
 	const groupedRows = computed<Record<string, ListRow[]>>(() =>
 		Object.fromEntries(
@@ -191,25 +200,25 @@ export const useListRows = ({
 	 * hides it, or — when its whole day is folded away — that day's header. Callers name a thread ("go
 	 * to the first mail", "open the thread that just loaded"); this is how that lands somewhere visible.
 	 */
-	const rowForThread = (threadID?: string): NavRow | undefined => {
-		if (!threadID) return
+	const rowForThread = (key?: string): NavRow | undefined => {
+		if (!key) return
 
 		const row = navigableRows.value.find(
 			(row) =>
-				(row.type === 'thread' && row.thread.thread_id === threadID) ||
+				(row.type === 'thread' && threadKey(row.thread) === key) ||
 				// Only a collapsed stack stands in for its members. An expanded one precedes its member
 				// rows, so without this guard every member would resolve to the stack row above it.
 				(row.type === 'stack' &&
 					!row.expanded &&
-					row.threads.some((t) => t.thread_id === threadID)),
+					row.threads.some((t) => threadKey(t) === key)),
 		)
 		if (row) return row
 
-		const dateKey = collapsedGroups.value.find((key) => getGroupThreads(key)?.includes(threadID))
+		const dateKey = collapsedGroups.value.find((group) => getGroupThreads(group)?.includes(key))
 		return navigableRows.value.find((row) => row.key === `group:${dateKey}`)
 	}
 
-	const focusOnThread = (threadID?: string) => focusRow(rowForThread(threadID))
+	const focusOnThread = (key?: string) => focusRow(rowForThread(key))
 
 	/**
 	 * What a rendered row looks like in its list, as opposed to in itself: the cursor's left marker,
@@ -223,14 +232,14 @@ export const useListRows = ({
 		'border-l-transparent sm:border-l': true,
 		'!border-l-outline-blue-5': row.key === focusedRowKey.value,
 		'!bg-surface-blue-1':
-			row.type === 'thread' && row.thread.thread_id === openThreadID() && !isMobile.value,
+			row.type === 'thread' && threadKey(row.thread) === openThreadID() && !isMobile.value,
 		'!pl-10 sm:!pl-12': row.type === 'thread' && !!row.inStack,
 	})
 
 	// ── Folding ─────────────────────────────────────────────────────────────────────────────────────
 
 	const toggleStack = (row: StackRow) => {
-		const ids = row.threads.map((t) => t.thread_id)
+		const ids = row.threads.map(threadKey)
 		// The cursor follows the click, as it does when you open a mail. This also covers the fold: the
 		// members are about to be hidden, so the stack row that now stands for them is where the cursor
 		// belongs, and Enter-fold-Enter-unfold stays a round trip rather than a way to lose your place.
@@ -271,13 +280,13 @@ export const useListRows = ({
 	 * The focus is deferred a tick because the row may only just have been revealed by the two lines
 	 * above it, and because callers run this from a watcher whose immediate run fires mid-setup.
 	 */
-	const revealThread = (threadID: string) => {
-		expandedStacks.value.add(threadID)
+	const revealThread = (key: string) => {
+		expandedStacks.value.add(key)
 
-		setTimeout(() => focusOnThread(threadID))
+		setTimeout(() => focusOnThread(key))
 
 		for (const group of collapsedGroups.value) {
-			if (getGroupThreads(group)?.includes(threadID))
+			if (getGroupThreads(group)?.includes(key))
 				return (collapsedGroups.value = collapsedGroups.value.filter((d) => d !== group))
 		}
 	}
