@@ -48,6 +48,7 @@ def save_sheet(
     name: str | None = None,
     ops: list | str | None = None,
     parent: str | None = None,
+    request_id: str | None = None,
 ) -> dict:
     """Create or update a sheet.
 
@@ -58,6 +59,12 @@ def save_sheet(
     Drive folder the new sheet's backing File should land in, passed through
     to ``Sheet.after_insert``.
     """
+    if name and request_id:
+        frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
+        completed_seq = frappe.db.get_value("Sheet Op Log", {"sheet": name, "request_id": request_id}, "seq")
+        if completed_seq is not None:
+            return {"name": name, "head_seq": int(completed_seq)}
+
     plain = _validate_payload(sheets_data)
     clean_title = _clean_title(title)
     encoded = encode_sheets_data(plain)
@@ -65,7 +72,9 @@ def save_sheet(
     ops_list = _coerce_ops(ops)
 
     if name:
-        sheet_id, head_seq = _update_existing(name, clean_title, encoded, byte_size, ops_list)
+        sheet_id, head_seq = _update_existing(
+            name, clean_title, encoded, byte_size, ops_list, request_id=request_id
+        )
     else:
         sheet_id, head_seq = _insert_new(clean_title, encoded, byte_size, ops_list, parent=parent)
 
@@ -100,13 +109,18 @@ def _insert_new(
 
 
 def _update_existing(
-    name: str, title: str, encoded: str, byte_size: int, ops_list: list[dict]
+    name: str,
+    title: str,
+    encoded: str,
+    byte_size: int,
+    ops_list: list[dict],
+    request_id: str | None = None,
 ) -> tuple[str, int]:
     frappe.has_permission("Sheet", doc=name, ptype="write", throw=True)
     # Cheap PK read so the rare rename path (below) only runs on an actual title
     # change, not on every autosave.
     old_title = frappe.db.get_value("Sheet", name, "title")
-    head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save")
+    head_seq = _append_ops_and_save(name, ops_list, byte_size, save_op_type="save", request_id=request_id)
     if title != old_title:
         # The editor's inline rename rides the autosave. A title change is rare,
         # so route the whole write through the ORM: on_update then fires and Drive
@@ -130,7 +144,13 @@ def _update_existing(
     return name, head_seq
 
 
-def _append_ops_and_save(sheet: str, ops_list: list[dict], byte_size: int, save_op_type: str) -> int:
+def _append_ops_and_save(
+    sheet: str,
+    ops_list: list[dict],
+    byte_size: int,
+    save_op_type: str,
+    request_id: str | None = None,
+) -> int:
     """Append the user ops + the implicit save op as one contiguous range.
 
     Returns the final seq (the save op's seq).
@@ -150,6 +170,7 @@ def _append_ops_and_save(sheet: str, ops_list: list[dict], byte_size: int, save_
             "op_type": save_op_type,
             "summary": f"Saved ({_format_bytes(byte_size)})",
             "actor": actor,
+            "request_id": request_id,
         }
     )
     for row in rows:

@@ -387,12 +387,19 @@ def save_sheet(
     sheets_data: str,
     name: str = "",
     ops: str = "",
+    request_id: str = "",
 ) -> dict:
     # Delegates to versioning.save — appends a batch of ops + the implicit
     # save op atomically, advances head_seq, enqueues an async snapshot.
     # Returns {"name": <sheet_id>, "head_seq": <int>} so the caller knows
     # where its ops landed in the canonical order.
-    return save_mod.save_sheet(title, sheets_data, name or None, ops or None)
+    return save_mod.save_sheet(
+        title,
+        sheets_data,
+        name or None,
+        ops or None,
+        request_id=request_id or None,
+    )
 
 
 @frappe.whitelist()

@@ -13,7 +13,8 @@
   "before_json",
   "after_json",
   "summary",
-  "actor"
+  "actor",
+  "request_id"
  ],
  "fields": [
   {
@@ -69,6 +70,12 @@
    "fieldtype": "Link",
    "label": "Actor",
    "options": "User"
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "label": "Save request ID",
+   "unique": 1
   }
  ],
  "index_web_pages_for_search": 0,

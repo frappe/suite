@@ -1265,7 +1265,7 @@
 </template>
 
 <script setup>
-import { h, ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { h, ref, reactive, computed, customRef, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { createGrid }          from '../../canvas/index.js'
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { colLabel, parseCellId, cellId } from '../../utils/cells.js'
@@ -1729,7 +1729,22 @@ const hasActiveHyperlink   = computed(() => !!activeFormat.value?.hyperlink)
 const showFormulas      = ref(false)
 
 const selectionStats    = ref(null)
-const isDirty           = ref(false)
+let _dirtyRevision = 0
+const isDirty = customRef((track, trigger) => {
+  let value = false
+  return {
+    get() {
+      track()
+      return value
+    },
+    set(next) {
+      if (next) _dirtyRevision += 1
+      if (next === value) return
+      value = next
+      trigger()
+    },
+  }
+})
 const isPaintingFormat  = ref(false)
 
 // ── Comment UI state ──────────────────────────────────────────────────────────
@@ -3500,6 +3515,8 @@ function onBeforeUnloadGuard(e) {
 }
 
 let _autoSaveTimer = null
+let _savePromise = null
+let _pendingSaveBatch = null
 
 // Operation queue — populated by _queueOp() at write sites (paste, fill,
 // import, cell edit, etc.).  Flushed after each successful save so each
@@ -3780,6 +3797,7 @@ function _triggerAutoSave() {
 }
 
 async function _doAutoSave() {
+  if (_savePromise) await _savePromise
   if (!isDirty.value) return
   // Backstop: a viewer should never reach save_sheet (which would throw
   // PermissionError). The input layer already blocks their edits, so isDirty
@@ -3790,22 +3808,33 @@ async function _doAutoSave() {
   // bootstrap save failed for any reason, leave it to a subsequent reload
   // rather than spamming the server on every typed character.
   if (props.id === 'new') return
+  isDirty.value = false
   // Drain queued ops BEFORE the save so the batch lands atomically with the
   // implicit `save` op and keeps the canonical user-action ordering intact.
-  const { ops, count } = _opsForSave()
-  await saveExisting(props.id, currentTitle.value, { ops })
-  if (!saveError.value) {
-    _opQueue.splice(0, count)
-    isDirty.value   = false
-    justSaved.value = true
-    setTimeout(() => { justSaved.value = false }, 2500)
+  const batch = _pendingSaveBatch || { ..._opsForSave(), revision: _dirtyRevision }
+  _pendingSaveBatch = batch
+  _savePromise = _pendingSaveBatch.failed
+    ? retrySave()
+    : saveExisting(props.id, currentTitle.value, { ops: batch.ops })
+  await _savePromise
+  _savePromise = null
+  if (saveError.value) {
+    batch.failed = true
+    isDirty.value = true
+    return
   }
+  _opQueue.splice(0, batch.count)
+  _pendingSaveBatch = null
+  isDirty.value = _dirtyRevision > batch.revision
+  justSaved.value = true
+  setTimeout(() => { justSaved.value = false }, 2500)
 }
 
 async function flushSave() {
-  if (!isDirty.value) return
   clearTimeout(_autoSaveTimer)
-  await _doAutoSave()
+  do {
+    await _doAutoSave()
+  } while (isDirty.value && !saveError.value)
 }
 
 // Manual retry handler — bound to the refresh button next to the

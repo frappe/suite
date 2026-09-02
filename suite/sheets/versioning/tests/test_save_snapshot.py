@@ -79,5 +79,24 @@ class InlineSnapshotFromSave(unittest.TestCase):
         self.assertIn("maybe_snapshot", log_error.call_args.kwargs["title"])
 
 
+class IdempotentSave(unittest.TestCase):
+    def test_completed_request_returns_existing_sequence_without_saving_again(self):
+        with (
+            mock.patch.object(save_mod.frappe, "has_permission") as has_permission,
+            mock.patch.object(save_mod.frappe.db, "get_value", return_value=12),
+            mock.patch.object(save_mod, "_update_existing") as update_existing,
+        ):
+            result = save_mod.save_sheet(
+                title="My Sheet",
+                sheets_data='{"A1":1}',
+                name="sheet_x",
+                request_id="request-1",
+            )
+
+        self.assertEqual(result, {"name": "sheet_x", "head_seq": 12})
+        has_permission.assert_called_once_with("Sheet", doc="sheet_x", ptype="write", throw=True)
+        update_existing.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

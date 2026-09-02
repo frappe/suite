@@ -105,12 +105,11 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
   let _lastSaveArgs = null
   async function retrySave() {
     if (!_lastSaveArgs) return null
-    const { name, title, opts } = _lastSaveArgs
-    return _persist(name, title, opts)
+    const { args, keepalive } = _lastSaveArgs
+    return _send(args, keepalive)
   }
 
   async function _persist(name, title, { keepalive = false, ops } = {}) {
-    _lastSaveArgs = { name, title, opts: { keepalive, ops } }
     isSaving.value = true
     // Build the payload ONCE up-front. If we rebuilt on each retry the
     // snapshots could pick up mid-edit state that arrived between
@@ -143,6 +142,7 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       args = {
         title,
         sheets_data: payload,
+        request_id: crypto.randomUUID(),
         ...(name ? { name } : {}),
         ...(ops && ops.length ? { ops: JSON.stringify(ops) } : {}),
       }
@@ -152,6 +152,12 @@ export function usePersistence({ sheet, formats, merge, comments, validation, pr
       return null
     }
 
+    _lastSaveArgs = { args, keepalive }
+    return _send(args, keepalive)
+  }
+
+  async function _send(args, keepalive) {
+    isSaving.value = true
     // keepalive saves fire from onBeforeUnmount — the browser may kill
     // the page before any backoff finishes, so don't retry them.
     const backoffMs = keepalive ? [0] : [0, 1000, 2500]
