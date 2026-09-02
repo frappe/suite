@@ -19,16 +19,21 @@ export const raisePromiseToast = (
 	success: string,
 	undoAction?: () => void,
 ) => {
-	toast.removeAll()
+	toast.dismiss()
 
 	const error = __('Action failed. Please try again later.')
 
 	if (undoAction)
 		return toast.promise(action(), {
 			loading,
-			success,
+			// The button rides on the success slot itself. `successAction` was a frappe-ui 0.1.x
+			// extension to toast.promise, dropped in v1 — sonner has no such key, so it went
+			// nowhere and the toast came up without its Undo.
+			success: {
+				message: success,
+				action: { label: __('Undo'), onClick: () => undoAction() },
+			},
 			error,
-			successAction: { label: __('Undo'), onClick: () => undoAction() },
 		})
 
 	toast.promise(action(), { loading, success, error })

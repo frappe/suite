@@ -92,7 +92,7 @@ export const raisePromiseToast = (
 	success: string,
 	undoAction?: () => void,
 ) => {
-	toast.removeAll()
+	toast.dismiss()
 
 	const error = __('Action failed. Please try again later.')
 
@@ -117,7 +117,7 @@ export const raiseOptimisticToast = (
 	success: string,
 	undoAction?: () => void,
 ) => {
-	toast.removeAll()
+	toast.dismiss()
 	const id = toast.success(
 		success,
 		undoAction ? { action: { label: __('Undo'), onClick: () => undoAction() } } : undefined,

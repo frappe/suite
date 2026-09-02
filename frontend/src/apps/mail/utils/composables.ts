@@ -318,9 +318,9 @@ export const useUndo = () => {
 		outlivingAction = outlivesView ? action : undefined
 		// Clearing the undo with no replacement toast (e.g. leaving the mailbox) leaves a lingering toast
 		// whose "Undo" button is now dead — dismiss toasts. When a new action is set instead, the toast it
-		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the removeAll, and doing it
+		// raises right after (via raiseOptimisticToast/raisePromiseToast) does the dismiss, and doing it
 		// here too would dismiss the reconcile paths' in-flight loading toast — so only clear on undefined.
-		if (!action) toast.removeAll()
+		if (!action) toast.dismiss()
 	}
 
 	// What a view does on the way out: its own undo goes, toast and all, so nothing can undo into a
