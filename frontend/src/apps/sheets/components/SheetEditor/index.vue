@@ -46,25 +46,22 @@
           </template>
         </Dropdown>
         <Breadcrumbs v-if="!isTitleEditing" :items="sheetBreadcrumbs" />
-        <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
-             sizes the box via real DOM text layout, so the input grows
-             pixel-perfect and smooth per keystroke, with no JS canvas measuring
-             and no width animation lagging behind the caret. -->
         <template v-else>
-          <Breadcrumbs :items="sheetHomeBreadcrumbs" />
-          <span class="text-base text-ink-gray-4" aria-hidden="true">/</span>
-          <span class="sn-title-fit" :data-value="currentTitle || 'Untitled Sheet'">
-          <input
-            ref="titleInputRef"
-            name="sheet-title"
-            class="sn-title-input"
-            v-model="currentTitle"
-            placeholder="Untitled Sheet"
-            spellcheck="false"
-            @blur="finishTitleEditing"
-            @keydown.enter="titleInputRef?.blur()"
-          />
-          </span>
+          <div class="flex min-w-0 items-center">
+            <Breadcrumbs class="sn-parent-breadcrumb" :items="sheetHomeBreadcrumbs" />
+            <span class="mx-0.5 text-base text-ink-gray-4" aria-hidden="true">/</span>
+            <input
+              ref="titleInputRef"
+              name="sheet-title"
+              class="min-w-[4ch] max-w-[520px] rounded-4 border border-outline-gray-4 bg-surface-base px-0.5 py-1 text-lg-medium text-ink-gray-9 outline-none"
+              style="field-sizing: content"
+              v-model="currentTitle"
+              placeholder="Untitled Sheet"
+              spellcheck="false"
+              @blur="finishTitleEditing"
+              @keydown.enter="titleInputRef?.blur()"
+            />
+          </div>
         </template>
         <!-- Save status — muted inline text; never competes with the title -->
         <span v-if="isSaving" class="sn-save-status">
@@ -6072,31 +6069,14 @@ function toggleShowFormulas() {
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
 .sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
+.sn-parent-breadcrumb :deep(a) { color:var(--ink-gray-5); }
 
-/* Auto-sizing title. A hidden ::after mirror carries the exact same typography
-   and box as the input; being normal flow, ITS width sizes the wrapper to the
-   real rendered text. The input is positioned absolutely on top so its own
+/*
    intrinsic ~20ch width is taken out of the layout — otherwise it, not the
    text, would dictate the box. Result: the box hugs the text and grows smoothly
    per keystroke, with no width animation lagging the caret and no canvas
    measurement drifting from actual metrics. min/max-width keep the old
    click-target floor and runaway-title ceiling. */
-.sn-title-fit { position:relative; display:inline-block; min-width:56px; max-width:520px; }
-.sn-title-fit::after {
-  content:attr(data-value) ' ';
-  display:block;
-  visibility:hidden;
-  white-space:pre;
-  box-sizing:border-box;
-  height:32px; border:1px solid transparent; padding:0 10px;
-  max-width:520px; overflow:hidden;
-  font-size:15px; font-weight:600; font-family:inherit; letter-spacing:-.005em;
-}
-.sn-title-input { position:absolute; inset:0; box-sizing:border-box; width:100%; height:100%; border:1px solid transparent; border-radius:6px; padding:0 10px; font-size:15px; font-weight:600; color:var(--ink-gray-9); background:transparent; outline:none; font-family:inherit; letter-spacing:-.005em; transition:background-color .12s, border-color .12s; }
-
-.sn-title-input:hover { background:var(--surface-gray-2); }
-.sn-title-input:focus { border-color:var(--outline-gray-4); background:var(--surface-base); box-shadow:0 0 0 2px rgba(23,23,23,.10); }
-
 /* Hairline between action buttons and avatar — groups the cluster without
    relying on extra padding. */
 .sn-topbar-divider { width:1px; height:20px; background:var(--outline-gray-2); margin:0 4px; flex-shrink:0; }
