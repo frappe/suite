@@ -831,9 +831,9 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	// Changing a rule from a date onward means splitting the series in two, and there is no
-	// call for that yet — so the row is there, greyed out, rather than missing.
-	options: scopeOptions({ unavailable: ['following'] }),
+	// Only the whole series so far: writing one occurrence's override and splitting a series
+	// are both still to land, so both rows are there, greyed out, rather than missing.
+	options: scopeOptions({ unavailable: ['instance', 'following'] }),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))

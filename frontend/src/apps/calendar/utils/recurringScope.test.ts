@@ -49,7 +49,6 @@ describe('scopeOptions', () => {
 
 		expect(values(options)).toEqual(['instance', 'following', 'series'])
 		expect(following.disabled).toBe(true)
-		expect(following.description).toBe('Not supported yet')
 		expect(options[0].disabled).toBe(false)
 	})
 

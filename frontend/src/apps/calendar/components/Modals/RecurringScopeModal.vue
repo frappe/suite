@@ -61,7 +61,6 @@ const confirm = () => {
 					:key="option.value"
 					:value="option.value"
 					:label="option.label"
-					:description="option.description"
 					:disabled="option.disabled"
 				/>
 			</RadioGroup>

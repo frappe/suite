@@ -11,9 +11,8 @@ export type RecurringScope = 'instance' | 'following' | 'series'
 export interface RecurringScopeOption {
 	value: RecurringScope
 	label: string
-	/** Offered but not available yet — the row is greyed out and says so. */
+	/** Offered but not available yet — the row is there, greyed out. */
 	disabled?: boolean
-	description?: string
 }
 
 /**
@@ -60,5 +59,4 @@ export const scopeOptions = ({
 			value,
 			label: scopeLabels()[value],
 			disabled: unavailable.includes(value),
-			description: unavailable.includes(value) ? __('Not supported yet') : undefined,
 		}))
