@@ -48,9 +48,14 @@ _Avoid_: File, Object, Attachment
 ### Access
 
 **Grant**:
-A row that gives or refuses a set of rights to one principal at one node, and
+A row that gives or refuses a role to one principal at one node, and
 applies to everything below it.
 _Avoid_: Permission, ACL, Share, Rule
+
+**Role**:
+The one ordered right a grant carries. A higher role contains every lower
+one. The roles, lowest first: Read, Comment, Upload, Edit, Manage.
+_Avoid_: Permission level, Access flags, Rights
 
 **Principal**:
 Whoever a grant names: a user, a user group, any signed-in user, or a share
@@ -95,6 +100,12 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A **Personal Root** carries a grant to its own user only. It is private
   until its user grants further.
 - Access comes only from **Grants**. Being the **Owner** grants nothing.
+- A **Grant** carries exactly one **Role**, or is a **Deny**.
+- Read sees content. Comment annotates it. Upload adds children. Edit
+  changes, moves, and trashes what exists. Manage shares and deletes for
+  good.
+- Creating a node gives its creator an Edit **Grant** on it, unless
+  something higher already reaches them there.
 - The **Grant** nearest a node on its path decides a right. A **Deny** nearer
   than a grant refuses the right.
 - A **Grant** on a **Drive Root** reaches every node in that root.

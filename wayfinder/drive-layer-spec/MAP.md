@@ -51,6 +51,13 @@ implementation effort can execute from the documents alone.
   grants no access (short-circuit dropped); offboarding is `state = Archived`
   on one row, no node writes.
 
+- [Role ladder semantics](tickets/002-role-ladder-semantics.md) — strict
+  ladder NONE=0/READ=10/COMMENT=20/UPLOAD=30/EDIT=40/MANAGE=50; creators
+  below EDIT get an EDIT grant on what they create; MANAGE alone shares;
+  personal-root deny guardrail; fresh Shared Root = `$GENERAL` UPLOAD;
+  links cap at EDIT; admin bypass survives; five-flag migration table
+  (grants round down, denies round up).
+
 ## Not yet specified
 
 - HTTP API surface details (endpoint list, request/response shapes).
