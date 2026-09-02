@@ -145,9 +145,10 @@ export const routes: RouteRecordRaw[] = [
         path: 'w/:entityName/:slug?',
         name: 'drive-Document',
         meta: { allowGuest: true },
-        beforeEnter: (props) => {
-          window.location.href = '/writer/w/' + props.params.entityName
-        },
+        redirect: (to) => ({
+          name: 'writer-document',
+          params: { id: to.params.entityName, slug: to.params.slug },
+        }),
       },
       // old redirects
       {

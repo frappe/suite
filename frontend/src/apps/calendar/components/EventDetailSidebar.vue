@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
 	Bell,
 	Briefcase,
@@ -30,6 +31,7 @@ import EventParticipantList from '@/apps/calendar/components/EventParticipantLis
 import LinkifiedText from '@/components/LinkifiedText.vue'
 
 const { calendarEvent } = defineProps<{ calendarEvent: any }>()
+const router = useRouter()
 
 const emit = defineEmits(['close', 'edit', 'reloadEvents', 'emailParticipants'])
 
@@ -256,7 +258,7 @@ const copyMeetLink = async () => {
 const joinMeet = () => {
 	if (!meetUrl.value) return
 	// Same-origin paths stay in-app; foreign links open in a new tab.
-	if (meetUrl.value.startsWith('/')) window.location.href = meetUrl.value
+	if (meetUrl.value.startsWith('/')) router.push(meetUrl.value)
 	else window.open(meetUrl.value, '_blank', 'noopener')
 }
 

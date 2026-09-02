@@ -154,14 +154,20 @@ export const openEntity = (entity, new_tab = false) => {
     )
       window.open(entity.file_url, '_blank')
   } else if (isPresentation(entity)) {
-    window.location.href = '/slides/presentation/' + entity.content_docname
+    router.push({
+      name: 'slides-editor',
+      params: { presentationId: entity.content_docname },
+    })
   } else if (
     entity.file_type === 'Document' ||
     entity.file_type === 'Markdown'
   ) {
-    window.location.href = '/writer/w/' + entity.name
+    router.push({ name: 'writer-document', params: { id: entity.name } })
   } else if (isSheet(entity)) {
-    window.location.href = '/sheets/' + (entity.content_docname || entity.name)
+    router.push({
+      name: 'sheets-editor',
+      params: { id: entity.content_docname || entity.name },
+    })
   } else {
     router.push({
       name: 'drive-File',
@@ -714,9 +720,10 @@ export function getRandomColor() {
 }
 export const newExternal = async (type) => {
   if (type === 'Presentation') {
-    window.location.href = `/slides/presentation/new?parent=${
-      currentFolder.value.name
-    }`
+    router.push({
+      name: 'slides-editor-new',
+      query: { parent: currentFolder.value.name },
+    })
     return
   }
   if (type === 'Spreadsheet') {
@@ -724,7 +731,7 @@ export const newExternal = async (type) => {
     // sheet (its after_insert backs it with the Drive File in this folder)
     // then hand off to the Sheets SPA.
     const name = await createSheet.submit({ parent: currentFolder.value.name })
-    window.location.href = '/sheets/' + name
+    router.push({ name: 'sheets-editor', params: { id: name } })
     return
   }
   const data = await createDocument.submit({
@@ -733,7 +740,7 @@ export const newExternal = async (type) => {
   prettyData([data])
   data.file_type = type
   getDocuments.data?.push?.(data)
-  window.location.href = '/writer/w/' + data.name
+  router.push({ name: 'writer-document', params: { id: data.name } })
 }
 
 export function isApple() {

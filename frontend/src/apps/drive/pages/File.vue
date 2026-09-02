@@ -107,7 +107,8 @@ onKeyStroke('ArrowRight', (e) => {
 const onSuccess = async (entity) => {
   // temporary hack: #475
   if (isWriterDocument(entity)) {
-    window.location.href = '/writer/w/' + entity.name
+    await router.push({ name: 'writer-document', params: { id: entity.name } })
+    return
   }
   document.title = entity.file_name
   setCrumbEntity(entity)

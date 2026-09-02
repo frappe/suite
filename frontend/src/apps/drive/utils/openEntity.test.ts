@@ -25,11 +25,10 @@ vi.mock('frappe-ui', () => ({ useFileUpload: () => ({}), toast: vi.fn() }))
 
 import { openEntity, folderRoute } from './files'
 
-const location = { href: '', origin: 'http://localhost' }
+const location = { origin: 'http://localhost' }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  location.href = ''
   Object.defineProperty(window, 'location', { configurable: true, value: location })
   window.open = mocks.open
   window.confirm = mocks.confirm
@@ -60,7 +59,10 @@ describe('openEntity', () => {
         content_docname: 'pres-9',
       })
     )
-    expect(location.href).toBe('/slides/presentation/pres-9')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'slides-editor',
+      params: { presentationId: 'pres-9' },
+    })
   })
 
   it('previews an uploaded .pptx instead of opening Slides', () => {
@@ -71,7 +73,6 @@ describe('openEntity', () => {
           'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       })
     )
-    expect(location.href).toBe('')
     expect(mocks.routerPush).toHaveBeenCalledWith({
       name: 'drive-File',
       params: { entityName: 'file-1' },
@@ -86,12 +87,14 @@ describe('openEntity', () => {
         content_docname: 'sheet-4',
       })
     )
-    expect(location.href).toBe('/sheets/sheet-4')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'sheets-editor',
+      params: { id: 'sheet-4' },
+    })
   })
 
   it('previews an uploaded spreadsheet instead of opening Sheets', () => {
     openEntity(entity({ file_type: 'Spreadsheet', mime_type: 'text/csv' }))
-    expect(location.href).toBe('')
     expect(mocks.routerPush).toHaveBeenCalledWith({
       name: 'drive-File',
       params: { entityName: 'file-1' },
@@ -106,7 +109,10 @@ describe('openEntity', () => {
         content_docname: 'doc-2',
       })
     )
-    expect(location.href).toBe('/writer/w/file-1')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      name: 'writer-document',
+      params: { id: 'file-1' },
+    })
   })
 
   it('confirms before following a link entity', () => {
