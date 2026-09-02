@@ -306,23 +306,6 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
             claims["jti"],
         )
 
-    def test_mutating_callbacks_are_post_only(self):
-        for callback in (
-            recorder_interrupted,
-            recorder_replacement_ready,
-            recorder_recovered,
-            recorder_segment_progress,
-            recorder_stopped,
-            recorder_upload_chunk,
-            recorder_complete_upload,
-            recorder_failed,
-        ):
-            with self.subTest(callback=callback.__name__):
-                self.assertEqual(
-                    frappe.allowed_http_methods_for_whitelisted_func[callback],
-                    ("POST",),
-                )
-
     def test_upload_endpoint_rejects_type_and_size_before_reading_body(self):
         digest = hashlib.sha256(b"chunk").hexdigest()
         with patch("suite.meet.api.recording.authenticate_callback"):

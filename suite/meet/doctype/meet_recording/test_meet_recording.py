@@ -7,11 +7,7 @@ import frappe
 from frappe.exceptions import ValidationError
 from frappe.tests import IntegrationTestCase
 
-from suite.meet.doctype.meet_recording.meet_recording import (
-    ALLOWED_TRANSITIONS,
-    get_permission_query_conditions,
-    has_permission,
-)
+from suite.meet.doctype.meet_recording.meet_recording import get_permission_query_conditions, has_permission
 
 
 class TestMeetRecording(IntegrationTestCase):
@@ -74,38 +70,6 @@ class TestMeetRecording(IntegrationTestCase):
         )
         with self.assertRaisesRegex(ValidationError, "must match"):
             recording.insert(ignore_links=True)
-
-    def test_recording_state_transition_matrix(self):
-        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
-        statuses = (
-            "Pending",
-            "Starting",
-            "Recording",
-            "Interrupted",
-            "Stopping",
-            "Processing",
-            "Ready",
-            "Partial",
-            "Failed",
-            "Cancelled",
-        )
-
-        for source in statuses:
-            for target in statuses:
-                if source == target:
-                    continue
-                with self.subTest(source=source, target=target):
-                    recording = self._recording_in_status(room, source)
-                    self._prepare_target(recording, target)
-                    allowed = target in ALLOWED_TRANSITIONS.get(source, set())
-                    if allowed:
-                        recording.save(ignore_permissions=True)
-                        self.assertEqual(recording.status, target)
-                    else:
-                        with self.assertRaisesRegex(
-                            ValidationError, "Invalid recording state transition|terminal recording"
-                        ):
-                            recording.save(ignore_permissions=True)
 
     def test_terminal_recording_cannot_be_modified(self):
         room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()

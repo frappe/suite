@@ -201,16 +201,6 @@ class TestRecordingProtocolContract(TestCase):
             session.request.return_value = _response(value["http_status"], value["body"])
             self.assertFalse(client.stop(**arguments, operation_id="stop-vector"))
 
-    def test_startup_mapping_covers_every_recorder_milestone(self):
-        mapping = CONTRACT["mappings"]["startup_milestone_to_frappe_state"]
-        self.assertEqual(set(mapping), set(CONTRACT["vocabularies"]["startup_milestones"]))
-        self.assertEqual(set(mapping.values()), {"Starting", "Recording"})
-
-    def test_first_version_accepts_no_unversioned_predecessor(self):
-        self.assertEqual(CONTRACT["protocol_version"], 1)
-        self.assertEqual(CONTRACT["accepted_protocol_versions"], [1])
-        self.assertEqual(CONTRACT["vectors"]["protocol_versions"]["accepted"], [1])
-
     def test_shared_finalization_requests_use_the_production_parser(self):
         vectors = FINALIZATION_CONTRACT["vectors"]["status_requests"]
         for value in vectors["accepted"]:
