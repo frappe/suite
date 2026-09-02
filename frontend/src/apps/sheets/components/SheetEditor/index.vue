@@ -45,6 +45,10 @@
             </div>
           </template>
         </Dropdown>
+        <div class="sn-breadcrumb">
+          <button type="button" class="sn-breadcrumb-home" @click="flushAndClose">Sheets</button>
+          <FeatherIcon name="chevron-right" class="size-4 text-ink-gray-5" />
+        </div>
         <!-- Auto-sizing title. A hidden ::after pseudo mirrors the text and
              sizes the box via real DOM text layout, so the input grows
              pixel-perfect and smooth per keystroke, with no JS canvas measuring
@@ -1345,15 +1349,15 @@ import {
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])
 const sessionStore = useSessionStore()
-const appsMenuOption = useAppSwitcher('sheets')
+const appsMenuOption = useAppSwitcher('sheets', async () => {
+  await flushSave()
+  return !saveError.value
+})
 const themeMenuOption = useThemeMenuOption()
 const brandMenuOptions = computed(() => [
   {
     group: '',
-    options: [
-      { label: 'Back to Home', icon: 'lucide-arrow-left', onClick: flushAndClose },
-      appsMenuOption.value,
-    ],
+    options: [appsMenuOption.value],
   },
   {
     group: '',
@@ -6049,6 +6053,9 @@ function toggleShowFormulas() {
 
 .sn-app-icon { width:28px; height:28px; flex-shrink:0; display:block; }
 .sn-app-menu-trigger { display:flex; width:fit-content; align-items:center; gap:8px; cursor:pointer; }
+.sn-breadcrumb { display:flex; align-items:center; gap:4px; flex-shrink:0; }
+.sn-breadcrumb-home { padding:0; border:0; background:transparent; color:var(--ink-gray-6); font-size:14px; cursor:pointer; }
+.sn-breadcrumb-home:hover { color:var(--ink-gray-8); }
 
 /* Auto-sizing title. A hidden ::after mirror carries the exact same typography
    and box as the input; being normal flow, ITS width sizes the wrapper to the
