@@ -54,6 +54,15 @@ export const utcDayStart = (date?: string | null): string =>
 export const utcDayEnd = (date?: string | null): string =>
 	date ? dayjs.tz(date, userTimeZone()).endOf('day').utc().format(UTC_FORMAT) : ''
 
+const WALL_FORMAT = 'YYYY-MM-DD[T]HH:mm:ss'
+
+/**
+ * The clock face a moment shows, read back as UTC. Two of these subtract to the difference a
+ * reader would count off a calendar — which is not the time that elapsed between them whenever a
+ * DST boundary sits in between.
+ */
+const asWallClock = (moment: Dayjs) => dayjs.utc(moment.format(WALL_FORMAT))
+
 /**
  * Where a recurring series' anchor lands when the reader edits the time on one of its occurrences
  * and saves the whole series.
@@ -63,11 +72,15 @@ export const utcDayEnd = (date?: string | null): string =>
  * is the difference the reader made, applied to the master's own start: no edit moves nothing, and
  * an edit moves the series by exactly what they changed, as every other calendar does.
  *
- * A JSCalendar `start` is a wall clock with no offset, and the master keeps its own zone, so the
- * arithmetic runs in UTC — in the browser's zone a DST boundary would add an hour of its own.
+ * Both halves of that are wall-clock work, and neither can be done on instants. The difference is
+ * what the reader typed against what they were shown — move an occurrence across the day the
+ * clocks change and an hour of elapsed time appears that nobody asked for. The master is a
+ * JSCalendar `start`: a clock face with no offset, kept in the master's own zone, so adding to it
+ * in the browser's zone would find a second boundary to trip over. Hence UTC on both sides, where
+ * an hour is always an hour.
  */
 export const shiftedMasterStart = (masterStart: string, opened: Dayjs, edited: Dayjs): string =>
 	dayjs
 		.utc(masterStart)
-		.add(edited.diff(opened, 'minute'), 'minute')
-		.format('YYYY-MM-DD[T]HH:mm:ss')
+		.add(asWallClock(edited).diff(asWallClock(opened), 'minute'), 'minute')
+		.format(WALL_FORMAT)

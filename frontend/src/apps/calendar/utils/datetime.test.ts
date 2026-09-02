@@ -85,13 +85,25 @@ describe('calendar datetime helpers', () => {
 			)
 		})
 
-		it('counts wall clocks, so a DST boundary cannot add an hour of its own', async () => {
+		it('adds to the anchor in wall-clock time, whatever the date it lands on does', async () => {
 			const { shiftedMasterStart } = await load()
-			// Europe/Vienna springs forward on 2026-03-29. The arithmetic runs in UTC, so an hour
-			// asked for is an hour given, whatever the browser's zone does that night.
+			// An anchor sitting on the morning Europe/Vienna springs forward. An hour asked for is
+			// an hour given: the master is a clock face in its own zone, not an instant here.
 			expect(shiftedMasterStart('2026-03-29T01:30:00', opened, dayjs('2026-09-14T16:00:00'))).toBe(
 				'2026-03-29T02:30:00',
 			)
+		})
+
+		it('measures the edit in wall-clock time too, across a DST boundary', async () => {
+			const { shiftedMasterStart } = await load()
+			// Europe/Vienna falls back on 2026-10-25, so 10:00 on the 18th and 10:00 on the 25th are
+			// seven days apart on the calendar and seven days *and an hour* apart in elapsed time.
+			// The reader moved the occurrence a week, and a week is what the series moves.
+			const before = dayjs.tz('2026-10-18T10:00:00', 'Europe/Vienna')
+			const after = dayjs.tz('2026-10-25T10:00:00', 'Europe/Vienna')
+			expect(shiftedMasterStart('2026-09-07T15:00:00', before, after)).toBe('2026-09-14T15:00:00')
+			// And the other way: back a week is back a week, not an hour short of it.
+			expect(shiftedMasterStart('2026-09-14T15:00:00', after, before)).toBe('2026-09-07T15:00:00')
 		})
 	})
 })
