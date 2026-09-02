@@ -15,3 +15,10 @@ Trashed? Pending reservations?), where usage is stored (per-root counter
 vs computed), how enforcement runs in Drive's own upload preflight, and
 what happens to quota on ownership transfer. Blocked by Shared spaces and
 offboarding model (transfer semantics feed in).
+
+Context from [Shared spaces and offboarding model](001-shared-spaces-and-offboarding-model.md):
+quota sits on `Drive Root.quota_bytes`, not on the node owner. Offboarding
+archives a root in place and moves no bytes, so two extra things to settle:
+
+- Who is charged for an archived root's bytes.
+- Whether archived roots are ever reclaimed, and on what retention clock.

@@ -45,6 +45,12 @@ implementation effort can execute from the documents alone.
   freeze `(parent, state, title)`, drop `(parent, state)`; 10k-folder page
   11.7 ms -> 0.57 ms; accept filesort for modified/size sorts.
 
+- [Shared spaces and offboarding model](tickets/001-shared-spaces-and-offboarding-model.md) —
+  `Drive Root` doctype, `kind` Personal|Shared and `state` Active|Archived;
+  business site = 1 Shared + N Personal, personal site = N Personal; owner
+  grants no access (short-circuit dropped); offboarding is `state = Archived`
+  on one row, no node writes.
+
 ## Not yet specified
 
 - HTTP API surface details (endpoint list, request/response shapes).
@@ -60,3 +66,7 @@ implementation effort can execute from the documents alone.
   HTTP API only; UI is a later effort.
 - Standalone frappe/drive migration (Drive Team model). This spec covers
   suite sites only.
+- Many shared spaces (a `Space` root kind with its own quota and member list).
+  Ruled out in [Shared spaces and offboarding model](tickets/001-shared-spaces-and-offboarding-model.md):
+  it rebuilds the Drive Team model `remove_teams.py` dissolved, and neither
+  deployment model needs it. A third `kind` is a Select option if that changes.
