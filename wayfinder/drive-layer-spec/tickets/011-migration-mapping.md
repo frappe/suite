@@ -24,3 +24,10 @@ the target shape is `Drive Root` (`kind` Personal|Shared, `state`
 Active|Archived). `Users/<email>` folders become Personal roots, `Drive`
 becomes the one Shared root, and `Drive/Previous Teams` stays an ordinary
 folder under it with its group grants intact.
+
+Handed from [Content app contract](005-content-app-contract.md): Sheets
+`DocShare` rows become grants on the sheet's node (`read` -> Read, `write` ->
+Edit, `everyone` -> any-signed-in-user principal), then the rows are deleted.
+`Writer Version` and `Sheet Snapshot` rows become Drive versions. Writer
+`ycomments` and Sheets in-workbook comments become Drive comments. Title and
+trashed fields on content doctypes are dropped after the node holds them.

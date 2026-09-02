@@ -64,10 +64,16 @@ implementation effort can execute from the documents alone.
   while a Link field names it; unindexed column = include and warn;
   discovery failure = delete nothing; public `blob_reference_columns()`.
 
+- [Content app contract](tickets/005-content-app-contract.md) — reframed
+  from Sheets-only to every content app: title and lifecycle live on the
+  node only; versions and comments become Drive tables, change logs and live
+  state stay app-owned; a content edit owes Drive one `touch`; creation goes
+  through Drive with an immutable two-way identity link; sharing has one
+  home (DocShare rows become grants); one declaration per app (identity,
+  factories, bytes, on_purge, satellites with Read-to-see/Edit-to-change).
+
 ## Not yet specified
 
-- HTTP API surface details (endpoint list, request/response shapes).
-  Sharpens after the role ladder and content SDK decisions land.
 - Search-within-shared derived index. Only if the ancestor-union round trip
   proves too slow on real data; benchmark said it is fine synthetic.
 - Concurrency validation under live load. All benchmark numbers are
