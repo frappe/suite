@@ -18,3 +18,9 @@ Grant roles; blobs backfilled through storage_v2; satellite doctypes
 custom-field cleanup on File. Include ordering, idempotency, and a
 rollback story. Blocked by Shared spaces and offboarding model and Role
 ladder semantics.
+
+Context from [Shared spaces and offboarding model](001-shared-spaces-and-offboarding-model.md):
+the target shape is `Drive Root` (`kind` Personal|Shared, `state`
+Active|Archived). `Users/<email>` folders become Personal roots, `Drive`
+becomes the one Shared root, and `Drive/Previous Teams` stays an ordinary
+folder under it with its group grants intact.
