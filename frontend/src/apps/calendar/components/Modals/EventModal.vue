@@ -839,17 +839,20 @@ const SHOW_RECURRING_EVENT_MODAL_OPTIONS = {
 						<!-- lead title. The field sizes to its own text — a mirror span shares
 						     the grid cell and sets the width — so the pencil sits against the
 						     title instead of adrift at the column's edge. The mirror falls back
-						     to the placeholder so an empty title still leaves something to click,
+						     to the placeholder so an empty title still leaves something to read,
 						     and max-w-full keeps a long one inside the column, where the input
-						     scrolls internally as it did at full width. w-fit ends the hover
-						     group at the pencil, so the underline answers the title and the
-						     pencil only — not the empty column beside them, and the pb sits on
-						     a wrapper so the band below the title is outside it too. The click
-						     is on the row rather than its two children, which is what makes the
-						     gap between title and pencil live rather than dead space. -->
+						     scrolls internally as it did at full width. The click is on the row
+						     rather than its two children, which is what makes the gap between
+						     title and pencil live rather than dead space — and the row runs the
+						     width of the column, so the whole line answers, not just the words:
+						     an empty title is a short word to aim at, and the line beside it read
+						     as dead. The underline still only spans the title, since it is the
+						     input that carries it and the input is only as wide as its text. The
+						     pb sits on a wrapper so the band below the title stays outside the
+						     target. -->
 						<div class="pb-4">
 							<div
-								class="group flex w-fit max-w-full items-center gap-2"
+								class="group flex w-full items-center gap-2"
 								:class="{ 'cursor-pointer': !isTitleFocused }"
 								@click="titleInput?.focus()"
 							>
