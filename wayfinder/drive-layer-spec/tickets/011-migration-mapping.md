@@ -341,6 +341,27 @@ rows dropped, trash disagreements, orphan content docs adopted, versions
 the ladder will thin, S3 objects copied and bytes, Personal Roots created
 for reservation owners.
 
+### Amendment (2026-09-04): one storage location
+
+Decided with Faris after the resolution. After Build, blobs point at two
+places on an S3 site: Drive files copied to the bucket (`driver = s3`) and
+legacy attachments under `Home` linked in place on local disk
+(`driver = local`, `../<rel_path>` keys). Faris wants one location.
+
+Decision 15: a framework ask, not a suite job. `frappe.storage` gets a
+public, resumable `relocate_blobs()` that moves every blob whose driver
+differs from the configured one: copy the bytes, rewrite `driver` and
+`key` under the same row lock the GC uses, delete the old bytes after
+commit. It runs after Build, at any time, and needs no Drive knowledge. On
+a local-disk site it folds the in-place `../` files into the blobs
+directory. Build and Cleanup stay as decided.
+
+Rejected: a suite job in Build or Cleanup (Drive would write and delete
+bytes, and would copy a key layout that already drifted from the spec
+once); leaving two locations.
+
+Handed to Draft the spec (013): framework ask 5, `relocate_blobs()`.
+
 ### Handed off
 
 - The migration section (all of the above), the Cleanup patch, and the
