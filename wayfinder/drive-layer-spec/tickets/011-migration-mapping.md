@@ -378,3 +378,33 @@ Handed to Draft the spec (013): framework ask 5, `relocate_blobs()`.
   operational task; noted on the map.
 - Glossary: **Activity**, **Favourite**, **Recent**, **Notification**;
   "Log" and "Event" ambiguities (`suite/drive/CONTEXT.md`).
+
+## Amendment, 2026-09-04
+
+Added while resolving [Slides media to nodes](012-slides-media-to-nodes.md),
+after this ticket closed. These rows are part of the same patch set.
+
+- Slide media `File` rows (`attached_to_doctype = "Presentation"`) become
+  child nodes of the deck node, one node per deck per blob; duplicates
+  within a deck collapse to one node. A video poster is a media node like
+  any other.
+- `Slide.elements` JSON is rewritten: `src` holds the node id, not a file
+  path, and `attachmentName` is dropped. `Slide.background` and legacy
+  `/files/` paths (left by `sanitize_attachment_urls.py`) are rewritten the
+  same way. A legacy `poster` may be a dict, not a string.
+- `Presentation.thumbnail` Files become `Drive Node Preview` rows on the
+  deck node; the field and its `attached_to_field` handling go.
+- Template decks (`is_template = 1`) gain nodes in Administrator's Personal
+  Root under `Templates`, each with a `$GENERAL` READ grant, and carry
+  `Drive Node.is_template`. They have no node today
+  (`presentation.py:43`), so this is a create, not a move.
+- `Writer Template` rows become `Writer Document` rows with nodes and
+  `is_template`, granted the same way. The doctype is then dropped.
+- The forced-public `Drive Permission` rows on composite decks
+  (`user = ""`, written by `presentation.py:47`) are dropped, not mapped:
+  ticket 007 removed the invariant and ticket 012 checks each reference per
+  viewer. This is narrower than the general `user = ""` rule above, which
+  still applies to rows a person created.
+- Media nodes get no `Drive Node Preview` rows at migration; the daily sweep
+  fills them (ticket 006). Deck previews come from the thumbnail Files
+  above.

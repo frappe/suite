@@ -3,7 +3,7 @@ id: 014
 title: HTTP API surface
 label: wayfinder:grilling
 status: open
-assignee:
+assignee: faris
 blocked-by: [007, 008]
 ---
 
@@ -68,3 +68,15 @@ client, detail), and `Drive Notification` as a pointer (activity, to_user,
 read) whose message renders from the activity row. Mark-read and
 clear-recents act on those rows only; clearing recents never touches
 favourites.
+
+Handed from [Slides media to nodes](012-slides-media-to-nodes.md)
+(2026-09-04): a call returns a content document's media — the node ids under
+it paired with short-TTL signed `/f/` URLs — after one Read check on the
+document, and the page calls it again on a timer to refresh expired links.
+Template calls are generic, not per app: list nodes I can read where
+`is_template` is set, filtered by content type; "new from template" is the
+copy endpoint plus the app's declared duplicate; no template verbs. Ordinary
+listings exclude `is_template` nodes, and no listing returns the children of
+a content document node. The composite response marks a reference the caller
+cannot read instead of dropping it silently. Slide media uploads use the
+same create-upload call and so return the same over-quota error.

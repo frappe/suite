@@ -123,8 +123,21 @@ _Avoid_: Creator, Admin, Manager, Payer
 **Content Document**:
 A document owned by another Suite app (a Writer document, a deck, a sheet)
 that a Drive Node stands for. Its body lives with its app; everything about
-its place, sharing, lifecycle, versions, and comments lives with Drive.
+its place, sharing, lifecycle, versions, and comments lives with Drive. It may
+hold child nodes for the pictures and files inside it, and it is always a leaf
+in a listing: opening one opens its editor, never a folder.
 _Avoid_: Content doc, Linked doc, Backing file
+
+**Media Node**:
+A child node of a Content Document holding a picture, a video, or a sound the
+document shows. It takes its rights from the document above it. Copied, not
+borrowed, when the content is pasted into another document.
+_Avoid_: Attachment, Embed, Asset
+
+**Template**:
+A node marked as a starting point. Who may use it is the grant on that node.
+Starting from one is a copy.
+_Avoid_: Layout, Boilerplate, Starter, Sample
 
 **Content Type**:
 What one app declares to Drive about its documents: how to create, copy,

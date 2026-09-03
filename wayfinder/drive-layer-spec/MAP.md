@@ -135,6 +135,18 @@ implementation effort can execute from the documents alone.
   depth-ordered, batch-committed, id-keyed reruns; JSON report. Amended
   2026-09-04: one storage location via a framework `relocate_blobs()`.
 
+- [Slides media to nodes](tickets/012-slides-media-to-nodes.md) — slide media
+  becomes child nodes of the deck node and a content document node is always a
+  leaf in every listing; the slide holds the node id and the wire carries a
+  short-TTL signed `/f/` link the page refreshes, so the 122-line endpoint and
+  its streamer go; paste copies the node across decks and reuses it inside one;
+  Drive sweeps unused media and each app declares only "list the nodes you
+  still use"; a template becomes `Drive Node.is_template` plus a grant for
+  every content app, deleting the Slides and Writer bypasses; a composite
+  authorizes through each reference and may reference anything its author
+  reads; the deck preview is a preview row written without a touch; webp
+  conversion happens before the node exists.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
