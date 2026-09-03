@@ -50,6 +50,20 @@ A record that names a Blob. A Blob stays while any Reference names it, and
 is gone a day after the last one goes.
 _Avoid_: Refcount, Link, Owner of the blob
 
+**Quota**:
+The most bytes a Drive Root may hold. Zero means no limit.
+_Avoid_: Storage limit, Disk space, Plan, Allowance
+
+**Usage**:
+The bytes a Drive Root is charged for now: its nodes, active or trashed,
+their Versions, and its Reservations.
+_Avoid_: Storage used, Size, Footprint, Total
+
+**Reservation**:
+Bytes a Drive Root has promised to something not yet stored, counted as
+Usage until the bytes land or the promise is let go.
+_Avoid_: Budget, Hold, Pending upload, Lock
+
 ### Access
 
 **Grant**:
@@ -100,9 +114,9 @@ top of one thing shared with them.
 _Avoid_: Share, Shared folder, Entry point
 
 **Owner**:
-The party a node's or a root's bytes are counted against, and the record of
-who put it there. An owner holds no access by being one.
-_Avoid_: Creator, Admin, Manager
+The record of who put a node there. An owner holds no access and pays no
+bytes by being one; the node's Drive Root carries the charge.
+_Avoid_: Creator, Admin, Manager, Payer
 
 ### Content
 
@@ -259,12 +273,33 @@ _Avoid_: Deletion, Ownership transfer, Handover
   is reached through it, and never listed on its own.
 - **Content Time** changes when bytes, a body, or a title change. It does
   not change when a **Grant** does.
-- A WebDAV client sees the same tree, the same **Roles**, and the same
-  **Grant Roots** as the web app. It holds no rights the web app lacks.
+- A WebDAV client sees only the person's **Personal Root**, under the same
+  **Roles** as the web app. It holds no rights the web app lacks, and
+  reaches no other root.
 - Over WebDAV a **Content Document** is its **Export**, read-only. It can be
   moved, renamed, trashed, and copied there, never written.
 - A **Content Document** has no children over WebDAV. Its embedded nodes
   are reached only through its app.
+- A **Drive Node** that holds a **Blob**, active or trashed, adds the Blob's
+  full size to its root's **Usage**. So does every **Version** beside it.
+- Two nodes with the same **Blob** each pay for it. Deduplication saves the
+  site, never the root.
+- A **Preview**, an **Export**, and a **Content Document**'s body add nothing
+  to **Usage**.
+- A **Reservation** counts as **Usage** from the moment it is made.
+- A write that would take **Usage** past **Quota** is refused. **Usage**
+  never passes **Quota** by a write.
+- Purging a node, thinning a **Version**, or releasing a **Reservation**
+  lowers **Usage**. Trashing lowers nothing.
+- Moving a node to another **Drive Root** moves its charge, **Versions**
+  included. A **Reservation** never moves.
+- Copying a node charges the destination root for the copy alone, because
+  no **Version** is copied.
+- A **Drive Root** with no **Quota** of its own takes the site's default for
+  its kind.
+- An **Archived Root** keeps its own **Quota** and **Usage**. Nobody else
+  pays for it, and nothing in it is reclaimed until a Suite Admin purges the
+  root.
 
 ## Example Dialogue
 
@@ -308,6 +343,9 @@ _Avoid_: Deletion, Ownership transfer, Handover
   Token`) and the secret inside a **Share Link**. Resolved: the download
   capability is not a Drive term. Only a **Share Link** has a secret, and
   the glossary calls it that, not a token.
-- "Home", "Everyone", and "Shared with me" are the labels WebDAV mounts show
-  for the **Personal Root**, the **Shared Root**, and the person's **Grant
-  Roots**. They are display names, not domain terms.
+- "Home", "Everyone", and "Shared with me" were the labels of three planned
+  WebDAV mounts. Resolved: WebDAV mounts the **Personal Root** alone. The
+  other two labels are not used.
+- "Quota" was used for the limit and for the amount used. Resolved: **Quota**
+  is the limit, **Usage** is the amount. A Meet "Recording Budget" is a
+  **Reservation**.

@@ -36,3 +36,15 @@ Shared-with-me grant-root query with its collision suffix, the export
 naming and collision rules for documents, the empty-head no-version rule
 (applies to every replace path), the `content_modified` column, and one
 framework ask: Range on non-local drivers through the public stream-read.
+
+Handed from [Quota policy](010-quota-policy.md) (2026-09-03): a Quota
+section with the charge rule (logical, per reference), what counts (Active
+and Trashed nodes, versions, reservations) and what is free (previews,
+exports, bodies), `Drive Root.used_bytes` with the conditional admission
+UPDATE and the daily recompute, the two-stage browser preflight, the
+configuration fields (`quota_bytes` 0 = inherit; `default_personal_quota`,
+`shared_quota`), the archived-root rule (pays for itself, admin purge
+only), the UI cross-root move rebill, and the DAV quota properties. The
+WebDAV section shrinks to one mount, the Personal Root: drop the
+three-mount list, the Shared-with-me grant-root query and its collision
+suffix, and the cross-root MOVE paragraph (the method-role table stays).
