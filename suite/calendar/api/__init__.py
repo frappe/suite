@@ -19,7 +19,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     get_calendar_events as get_calendar_events_by_ids,
 )
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
-from suite.mail.jmap import get_calendar_event_service
+from suite.mail.jmap import get_calendar_event_service, get_participant_identities
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
 
@@ -48,6 +48,7 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
     )[0]
 
     enrich_events_with_master_data(account, events)
+    events = merge_own_copies(account, events)
     enrich_participants_with_avatars(events)
 
     return events
@@ -130,6 +131,58 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
         for name, jmap_name in INHERITED_FROM_SERIES:
             if jmap_name not in owned:
                 event[name] = master[name]
+
+
+def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
+    """Draws an invitation once, with the answer the account gave it.
+
+    An invitation is delivered as an occurrence of its own — organized by whoever sent it, and
+    carrying a recurrence id — while the account keeps its own copy of that uid alongside. The
+    delivered occurrence is the one worth drawing: it has the title, the time and the
+    organizer's guest list. The copy holds nothing but what the account itself put there, which
+    is its answer, and the RSVP endpoint writes there because that is the copy the account owns.
+
+    Drawn as it comes back, that is two events on the same day — the invitation, and an
+    untitled one beside it that appears the moment the invitation is answered. So the copy's
+    answer is carried onto the occurrence and the copy itself is not drawn.
+
+    A row is the copy when it resolves to the same event as an occurrence does and carries no
+    recurrence id of its own. An event with no occurrences beside it is left alone, which is
+    every ordinary event.
+    """
+
+    siblings: dict[str, list[dict]] = {}
+    for event in events:
+        if event.get("master_id"):
+            siblings.setdefault(event["master_id"], []).append(event)
+
+    identities = {identity["email"] for identity in get_participant_identities(account)}
+    copies = set()
+
+    for rows in siblings.values():
+        occurrences = [row for row in rows if row.get("recurrence_id")]
+        own = [row for row in rows if not row.get("recurrence_id")]
+        if not occurrences or not own:
+            continue
+
+        answer = next(
+            (
+                participant.get("participation_status")
+                for row in own
+                for participant in row.get("participants") or []
+                if participant.get("email") in identities and participant.get("participation_status")
+            ),
+            None,
+        )
+        if answer:
+            for row in occurrences:
+                for participant in row.get("participants") or []:
+                    if participant.get("email") in identities:
+                        participant["participation_status"] = answer
+
+        copies.update(row["id"] for row in own)
+
+    return [event for event in events if event["id"] not in copies]
 
 
 def enrich_participants_with_avatars(events: list[dict]) -> None:
