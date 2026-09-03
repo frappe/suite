@@ -101,6 +101,17 @@ const handleSetResponse = (response: string) => {
 	showRsvpScopeModal.value = true
 }
 
+// An event this account organizes is one whose series it can write an override on; an
+// invitation delivered from elsewhere is not, whoever else is on it.
+const isOwnEvent = computed(
+	() =>
+		!calendarEvent.organizer ||
+		(participantIdentities.data?.some(
+			(id) => id.email === calendarEvent.organizer.replace('mailto:', ''),
+		) ??
+			false),
+)
+
 const rsvpScopeModalProps = computed(() => ({
 	title: __('Respond to repeating event'),
 	// The answer about to be sent, drawn as the participant list draws it: the dialog is
@@ -112,13 +123,14 @@ const rsvpScopeModalProps = computed(() => ({
 	// No "this and following": ending a series partway is the organizer's act, and an attendee
 	// answering an invitation is not editing the event at all.
 	//
-	// And no "this event only" where the account's copy of the event carries no rule of its own.
-	// An invitation can arrive as a set of separate occurrences beside a copy that holds nothing
-	// but the answer; there is no series there to override, and the server takes a status meant
-	// for one date and applies it to the whole event — so the narrower answer is shown greyed
-	// rather than taken and quietly given for every occurrence.
+	// And no "this event only" on an event this account did not call. An invitation can arrive
+	// as a set of separate occurrences beside a copy that holds nothing but the answer, and
+	// answering one date of one of those is what makes it so: the server finds no series on the
+	// copy to hang the status on and gives it to the whole event, which then reads onto every
+	// occurrence. The copy only loses its rule at that moment, so nothing about the event before
+	// the answer tells the two apart — only whose event it is.
 	options: scopeOptions({
-		unavailable: calendarEvent.recurrence_rule?.frequency ? [] : ['instance'],
+		unavailable: isOwnEvent.value ? [] : ['instance'],
 	}).filter((option) => option.value !== 'following'),
 	confirmLabel: __('Send response'),
 	loading: rsvpEvent.loading,
