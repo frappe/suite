@@ -216,12 +216,8 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
             ),
             None,
         )
-        # Onto the occurrences that have no answer of their own. One answered on its own date
-        # comes back as this account's own copy of that date, carrying what was said there —
-        # and the copy of the whole event, which is the series-wide answer, must not be read
-        # over the top of it.
         if answer:
-            for row in (row for row in occurrences if row.get("created")):
+            for row in occurrences:
                 for participant in row.get("participants") or []:
                     if participant.get("email") in identities:
                         participant["participation_status"] = answer
@@ -277,14 +273,14 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def rsvp_calendar_event(account: str, id: str, response: str, recurrence_id: str | None = None) -> None:
+def rsvp_calendar_event(account: str, id: str, response: str) -> None:
     """Records the logged-in user's RSVP (accepted / declined / tentative) on the event.
 
     Patches only the caller's own participationStatus — unlike edit_calendar_event, which
     rewrites the whole event — and routes the organizer's notification through the custom
     event_response template when custom event invites are enabled (see record_rsvp)."""
 
-    record_rsvp(account, id, response, recurrence_id=recurrence_id)
+    record_rsvp(account, id, response)
 
 
 @frappe.whitelist()
