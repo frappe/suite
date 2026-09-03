@@ -72,6 +72,11 @@ INHERITED_FROM_SERIES = (
     ("show_without_time", "showWithoutTime"),
     ("locations", "locations"),
     ("links", "links"),
+    # Who is on it and who called it. A start-only override — what dragging one occurrence
+    # writes — drops both, so an occurrence moved on its own came back with an empty guest list
+    # and no organizer, and the panel said nobody was going.
+    ("participants", "participants"),
+    ("organizer", "organizerCalendarAddress"),
     ("alerts", "alerts"),
     ("use_default_alerts", "useDefaultAlerts"),
 )
@@ -131,6 +136,16 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
         for name, jmap_name in INHERITED_FROM_SERIES:
             if jmap_name not in owned:
                 event[name] = master[name]
+
+        # An override that touches one participant carries only that one — answering for a single
+        # occurrence would otherwise empty its guest list down to the responder. The series says
+        # who is on it; the override says what they answered, so the two are laid over each other
+        # by address rather than one replacing the other.
+        if "participants" in owned:
+            answered = {p.get("email"): p for p in event.get("participants") or []}
+            event["participants"] = [
+                answered.pop(p.get("email"), p) for p in master.get("participants") or []
+            ] + list(answered.values())
 
 
 def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
