@@ -101,6 +101,17 @@ const handleSetResponse = (response: string) => {
 	showRsvpScopeModal.value = true
 }
 
+// An event this account organizes is one it can write per occurrence; an invitation delivered
+// from elsewhere is not, whoever else is on it.
+const isOwnEvent = computed(
+	() =>
+		!calendarEvent.organizer ||
+		(participantIdentities.data?.some(
+			(id) => id.email === calendarEvent.organizer.replace('mailto:', ''),
+		) ??
+			false),
+)
+
 const rsvpScopeModalProps = computed(() => ({
 	title: __('Respond to repeating event'),
 	// The answer about to be sent, drawn as the participant list draws it: the dialog is
@@ -111,7 +122,14 @@ const rsvpScopeModalProps = computed(() => ({
 	},
 	// No "this and following": ending a series partway is the organizer's act, and an attendee
 	// answering an invitation is not editing the event at all.
-	options: scopeOptions().filter((option) => option.value !== 'following'),
+	//
+	// "This event only" writes an override on the series, which the server accepts only on the
+	// copy of the event this account owns. An invitation from elsewhere is not that copy — the
+	// answer can only go to the account's own copy of the whole thing — so the narrower answer
+	// is greyed rather than taken and quietly applied to every occurrence.
+	options: scopeOptions({ unavailable: isOwnEvent.value ? [] : ['instance'] }).filter(
+		(option) => option.value !== 'following',
+	),
 	confirmLabel: __('Send response'),
 	loading: rsvpEvent.loading,
 }))
