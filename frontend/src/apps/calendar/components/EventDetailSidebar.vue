@@ -21,10 +21,16 @@ import DOMPurify from 'dompurify'
 
 import meetLogo from '@/assets/app-logos/meet.png'
 
-import { getMeetUrl, getReorderedParticipants, isUrl } from '@/apps/calendar/utils'
+import {
+	getMeetUrl,
+	getReorderedParticipants,
+	isUrl,
+	participationStatusDisplay,
+} from '@/apps/calendar/utils'
 import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
@@ -68,18 +74,49 @@ const rsvpEvent = createResource({
 	onSuccess: () => emit('reloadEvents'),
 })
 
-// An answer is the series': the server records a participation status on the event, and an
-// occurrence answered on its own is not reliably read back from it — see the notes on the
-// scope dialog. So there is nothing to ask here yet, unlike editing and deleting, which do
-// reach one occurrence at a time.
-const handleSetResponse = (response: string) => {
-	if (!response || response === userResponse.value) return
+// A recurring event is asked the same question an edit or a delete is asked, and told the same
+// thing: this answer is the series'. Only the wider answer can be given — an answer written for
+// one date is stored as an override, and the server does not read that back the same way in
+// every shape an invitation arrives in — so the narrower one is shown greyed rather than left
+// out, and the reader can see what is being answered before it is sent.
+//
+// The tab buttons stay where they were until the server confirms, so cancelling leaves the
+// shown answer alone.
+const showRsvpScopeModal = ref(false)
+const pendingResponse = ref('')
+
+const submitResponse = (response: string) => {
+	showRsvpScopeModal.value = false
 	toast.promise(rsvpEvent.submit(response), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),
 	})
 }
+
+const handleSetResponse = (response: string) => {
+	if (!response || response === userResponse.value) return
+	if (!calendarEvent.recurrence_id) return submitResponse(response)
+	pendingResponse.value = response
+	showRsvpScopeModal.value = true
+}
+
+const rsvpScopeModalProps = computed(() => ({
+	title: __('Respond to repeating event'),
+	// The answer about to be sent, drawn as the participant list draws it: the dialog is about
+	// this yes or this no, not about responding in general.
+	icon: {
+		name: participationStatusDisplay(pendingResponse.value).name,
+		theme: participationStatusDisplay(pendingResponse.value).theme,
+	},
+	// No "this and following": ending a series partway is the organizer's act, and an attendee
+	// answering an invitation is not editing the event at all.
+	options: scopeOptions({ unavailable: ['instance'] }).filter(
+		(option) => option.value !== 'following',
+	),
+	confirmLabel: __('Send response'),
+	loading: rsvpEvent.loading,
+}))
 
 // --- Calendar (colour + account) ---
 
@@ -544,6 +581,11 @@ const openUrl = (location: string) => {
 			v-model="showDeleteScopeModal"
 			v-bind="deleteScopeModalProps"
 			@confirm="deleteScope"
+		/>
+		<RecurringScopeModal
+			v-model="showRsvpScopeModal"
+			v-bind="rsvpScopeModalProps"
+			@confirm="() => submitResponse(pendingResponse)"
 		/>
 		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>
