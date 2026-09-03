@@ -167,6 +167,26 @@ When a node's content last changed, as its content says. A client may set
 it to the time a file carried before upload.
 _Avoid_: Modified, Last modified, mtime, Row timestamp
 
+### Record
+
+**Activity**:
+One thing that happened to a node: what was done, by whom, and when. Written
+once, never edited.
+_Avoid_: Event, Log, Activity log, Audit entry
+
+**Favourite**:
+One person's mark on a node, kept for that person alone.
+_Avoid_: Star, Bookmark, Pin
+
+**Recent**:
+The last time one person opened a node, kept for that person alone.
+_Avoid_: History, Entity log, Last interaction
+
+**Notification**:
+One person's pointer at one Activity, with whether they have seen it. It
+says nothing the Activity does not.
+_Avoid_: Alert, Message, Inbox item
+
 ### Deployment
 
 **Business site**:
@@ -300,6 +320,13 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - An **Archived Root** keeps its own **Quota** and **Usage**. Nobody else
   pays for it, and nothing in it is reclaimed until a Suite Admin purges the
   root.
+- An **Activity** is written once and never edited. It goes when its node
+  is purged.
+- A **Notification** points at one **Activity** for one person. It carries
+  no message of its own.
+- A **Favourite** and a **Recent** are one person's own. Nobody else sees
+  them, and clearing one never touches the other.
+- Opening a node writes a **Recent**, never an **Activity**.
 
 ## Example Dialogue
 
@@ -349,3 +376,7 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - "Quota" was used for the limit and for the amount used. Resolved: **Quota**
   is the limit, **Usage** is the amount. A Meet "Recording Budget" is a
   **Reservation**.
+- "Log" named both a person's recents (`Drive Entity Log`) and a node's
+  history (`Drive Entity Activity Log`). Resolved: a **Recent** is the
+  person's, an **Activity** is the node's. "Event" is not used; the
+  calendar owns that word.

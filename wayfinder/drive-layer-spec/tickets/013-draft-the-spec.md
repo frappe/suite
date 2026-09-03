@@ -48,3 +48,19 @@ only), the UI cross-root move rebill, and the DAV quota properties. The
 WebDAV section shrinks to one mount, the Personal Root: drop the
 three-mount list, the Shared-with-me grant-root query and its collision
 suffix, and the cross-root MOVE paragraph (the method-role table stays).
+
+Handed from [Migration mapping](011-migration-mapping.md) (2026-09-04):
+the migration section is the ticket's fourteen decisions and report, as
+two patches (additive Build, Cleanup one release later, gated on node
+coverage and GC reference discovery). Build's S3 step copies Drive's
+objects into the framework layout, and the section must state the
+site_config precondition (`storage_driver = s3`,
+`storage_driver_config`). Node and root ids equal the File names. New
+schemas to freeze: `Drive Activity` (node, action, actor, at, via_link,
+client, detail JSON), `Drive Recent` (user, node, opened_at; unique),
+`Drive Favourite` (user, node; unique), `Drive Notification` (activity,
+to_user, read), and the comment thread and comment tables with the opaque
+anchor (Writer: comment id; Sheets: sheet plus cell id). Every one links
+`node` and is deleted on purge. `Drive Entity Log` is renamed to
+`Drive Recent` pre-model-sync; `Drive Entity Activity Log`, `Drive Token`,
+and `Drive Permission` are dropped in Cleanup.

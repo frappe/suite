@@ -29,3 +29,12 @@ through the composite. Also decide here what a Slides template is: today
 (`presentation.py:496`), which "sharing has one home" (005) forbids.
 Proposed: templates are nodes under a system-owned folder with a
 `$GENERAL` READ grant.
+
+Handed from [Migration mapping](011-migration-mapping.md) (2026-09-04):
+Build migrates only File rows reachable from the `Drive` or
+`Users/<email>` folders. Slide media are framework File rows with
+`attached_to_doctype = Presentation`, so Build does not touch them. This
+ticket must define its own Build step (which attachments become nodes,
+under which deck node, and how slide elements are rewritten to the new
+URLs), following Build's rules: ids survive, additive, id-keyed reruns,
+counts in the report.
