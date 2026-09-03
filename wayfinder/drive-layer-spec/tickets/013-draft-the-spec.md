@@ -64,3 +64,10 @@ anchor (Writer: comment id; Sheets: sheet plus cell id). Every one links
 `node` and is deleted on purge. `Drive Entity Log` is renamed to
 `Drive Recent` pre-model-sync; `Drive Entity Activity Log`, `Drive Token`,
 and `Drive Permission` are dropped in Cleanup.
+
+Amended by [Migration mapping](011-migration-mapping.md) (2026-09-04): the
+framework asks gain a fifth item, `relocate_blobs()`, a public resumable
+job that moves every File Blob to the configured driver (copy bytes,
+rewrite `driver` and `key` under the GC's row lock, delete old bytes after
+commit). The migration section states that it runs after Build to reach
+one storage location, and that Build and Cleanup do not depend on it.

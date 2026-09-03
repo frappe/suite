@@ -132,7 +132,8 @@ implementation effort can execute from the documents alone.
   reported; side tables reshaped (`Drive Activity`, `Drive Recent`,
   `Drive Favourite`, `Drive Notification` as an activity pointer);
   DocShare to grants, Writer/Sheet versions and comments to Drive tables;
-  depth-ordered, batch-committed, id-keyed reruns; JSON report.
+  depth-ordered, batch-committed, id-keyed reruns; JSON report. Amended
+  2026-09-04: one storage location via a framework `relocate_blobs()`.
 
 ## Not yet specified
 
