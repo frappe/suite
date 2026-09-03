@@ -113,7 +113,7 @@ def resolve_rsvp(token: str) -> dict:
     }
 
 
-def record_rsvp(account: str, event_id: str, response: str) -> str:
+def record_rsvp(account: str, event_id: str, response: str, recurrence_id: str | None = None) -> str:
     """Records the logged-in caller's RSVP on their own copy of the event and tells the organizer.
 
     Their entry is matched by address against the account's participant identities and patched
@@ -121,6 +121,11 @@ def record_rsvp(account: str, event_id: str, response: str) -> str:
     mail is suppressed and the custom event_response email — carrying the iTIP REPLY — is sent
     instead (see `notify_organizer_of_reply`); otherwise the JMAP server emits its own reply.
     Returns the responder's address.
+
+    `recurrence_id` answers for one occurrence and leaves the rest as they were: the status
+    lands as an override on that date, and the reply carries a RECURRENCE-ID so the organizer's
+    calendar records it against the same occurrence. Without one the answer is the series',
+    which is what a one-off event always is.
     """
 
     from suite.calendar.doctype.calendar_event.invitations import custom_event_invites_enabled
@@ -149,9 +154,14 @@ def record_rsvp(account: str, event_id: str, response: str) -> str:
         frappe.throw(_("You are not a participant of this event."))
 
     use_custom_reply = custom_event_invites_enabled()
-    result = service.set_participation_status(
-        event_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
-    )
+    if recurrence_id:
+        result = service.set_instance_participation_status(
+            event_id, recurrence_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
+        )
+    else:
+        result = service.set_participation_status(
+            event_id, participant_uid, response, send_scheduling_messages=not use_custom_reply
+        )
     if result.get("notUpdated"):
         error = next(iter(result["notUpdated"].values()), None)
         frappe.throw(_("Could not record your response: {0}").format(format_jmap_error(error)))
@@ -165,6 +175,7 @@ def record_rsvp(account: str, event_id: str, response: str) -> str:
             event_id=event_id,
             responder_email=responder_email,
             status=response,
+            recurrence_id=recurrence_id,
         )
 
     return responder_email

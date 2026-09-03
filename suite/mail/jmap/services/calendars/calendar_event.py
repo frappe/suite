@@ -430,6 +430,54 @@ class CalendarEventService(CalendarsService):
 
         return result
 
+    def set_instance_participation_status(
+        self,
+        id: str,
+        recurrence_id: str,
+        participant_uid: str,
+        participation_status: str,
+        send_scheduling_messages: bool = False,
+    ) -> dict:
+        """Patches one participant's participationStatus on a single occurrence of a series.
+
+        The series keeps the answer it had and this date gets an override carrying the new one —
+        the same mechanism a renamed or moved occurrence uses, so other clients read one
+        occurrence answered differently rather than a series that changed its mind.
+        """
+
+        if not id or not recurrence_id or not participant_uid:
+            raise ValueError("'id', 'recurrence_id' and 'participant_uid' are all required.")
+
+        events = self.get([id])
+        if not events:
+            raise ValueError(f"Event with id '{id}' not found.")
+
+        overrides = events[0].get("recurrenceOverrides", {}) or {}
+        key = f"participants/{participant_uid}/participationStatus"
+        status = participation_status.lower()
+
+        # JMAP refuses a patch whose parent isn't there, so the shape follows what is stored:
+        # a whole map only when the event carries no overrides at all, and otherwise the
+        # smallest write that touches this occurrence and no other.
+        if not overrides:
+            patch = {"recurrenceOverrides": {recurrence_id: {key: status}}}
+        elif recurrence_id in overrides:
+            patch = {f"recurrenceOverrides/{recurrence_id}/{key}": status}
+        else:
+            patch = {f"recurrenceOverrides/{recurrence_id}": {key: status}}
+
+        response = self._update(
+            {id: {**patch, "updated": utcnow()}}, sendSchedulingMessages=send_scheduling_messages
+        )
+
+        result = {"updated": [], "notUpdated": {}}
+        if method_responses := response.get("methodResponses"):
+            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+            if not_updated := method_responses[0][1].get("notUpdated", {}):
+                result["notUpdated"].update(not_updated)
+
+        return result
+
     def delete_instance(self, id: str, recurrence_id: str, send_scheduling_messages: bool = False) -> dict:
         """Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides.
         If send_scheduling_messages is True, the JMAP server sends a cancellation for the excluded instance; pass False to suppress it (e.g. when the client sends its own)."""

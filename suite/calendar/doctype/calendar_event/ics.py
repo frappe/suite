@@ -8,6 +8,7 @@ export feature stay in sync. The only extra work here is wrapping the components
 VCALENDAR with the right iTIP METHOD (REQUEST for invites/updates, CANCEL for removals).
 """
 
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from frappe.utils import cint
@@ -31,7 +32,9 @@ def build_event_ics(
     """Returns the iCalendar text for a JSCalendar event using the given iTIP method.
 
     When `recurrence_id` is set, a single occurrence (tagged with RECURRENCE-ID) is emitted
-    instead of the whole series — used to cancel one instance of a recurring event.
+    instead of the whole series — used to cancel one instance of a recurring event, and to
+    reply to one. That occurrence's override wins wherever it says anything, so an answer
+    stored on that date is the answer the component carries.
 
     Pass `attendee_email` for a REPLY: RFC 5546 requires the reply to carry exactly the
     responding ATTENDEE, so every other one is dropped from the components.
@@ -88,9 +91,14 @@ def _stamp_outgoing(component, method: str) -> None:
 def _instance_component(event: dict, recurrence_id: str, method: str):
     """Builds a single-occurrence VEVENT carrying RECURRENCE-ID (no RRULE/overrides)."""
 
-    base = {k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")}
+    # Deep-copied: the override below writes into nested maps (a participant's status), and
+    # the event dict belongs to the caller.
+    base = deepcopy({k: v for k, v in event.items() if k not in ("recurrenceRule", "recurrenceOverrides")})
     # RFC 5545: an instance component's DTSTART is that occurrence's start, not the series'.
     base["start"] = recurrence_id
+    # What the occurrence says about itself beats what the series says: a REPLY about one date
+    # carries the status stored on that date, not the one the series still holds.
+    _apply_override(base, (event.get("recurrenceOverrides") or {}).get(recurrence_id) or {})
     component = jscalendar_to_vevent(base)
 
     instance_dt = _parse_local_datetime(recurrence_id, event.get("timeZone"))
@@ -101,6 +109,29 @@ def _instance_component(event: dict, recurrence_id: str, method: str):
         _mark_cancelled(component)
 
     return component
+
+
+def _apply_override(event: dict, override: dict) -> None:
+    """Folds one occurrence's JSCalendar PatchObject into the series properties it overrides.
+
+    An override's keys are paths — `title`, or `participants/<uid>/participationStatus` — so
+    each is walked down and set, creating whatever it passes through. Only `excluded` is
+    ignored: an occurrence that does not happen is never described in a component, and the
+    callers that emit one have already decided it does.
+    """
+
+    for path, value in override.items():
+        if path in ("excluded", "updated"):
+            continue
+        segments = path.split("/")
+        target = event
+        for segment in segments[:-1]:
+            nested = target.get(segment)
+            if not isinstance(nested, dict):
+                nested = {}
+                target[segment] = nested
+            target = nested
+        target[segments[-1]] = value
 
 
 def _only_attendee(component, email: str) -> None:
