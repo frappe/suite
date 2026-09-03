@@ -213,8 +213,12 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
             ),
             None,
         )
+        # Onto the occurrences that have no answer of their own. One answered on its own date
+        # comes back as this account's own copy of that date, carrying what was said there —
+        # and the copy of the whole event, which is the series-wide answer, must not be read
+        # over the top of it.
         if answer:
-            for row in occurrences:
+            for row in (row for row in occurrences if not row.get("is_origin")):
                 for participant in row.get("participants") or []:
                     if participant.get("email") in identities:
                         participant["participation_status"] = answer
