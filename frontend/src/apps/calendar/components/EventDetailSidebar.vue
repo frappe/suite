@@ -111,7 +111,15 @@ const rsvpScopeModalProps = computed(() => ({
 	},
 	// No "this and following": ending a series partway is the organizer's act, and an attendee
 	// answering an invitation is not editing the event at all.
-	options: scopeOptions().filter((option) => option.value !== 'following'),
+	//
+	// And no "this event only" where the account's copy of the event carries no rule of its own.
+	// An invitation can arrive as a set of separate occurrences beside a copy that holds nothing
+	// but the answer; there is no series there to override, and the server takes a status meant
+	// for one date and applies it to the whole event — so the narrower answer is shown greyed
+	// rather than taken and quietly given for every occurrence.
+	options: scopeOptions({
+		unavailable: calendarEvent.recurrence_rule?.frequency ? [] : ['instance'],
+	}).filter((option) => option.value !== 'following'),
 	confirmLabel: __('Send response'),
 	loading: rsvpEvent.loading,
 }))
