@@ -109,9 +109,16 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
         if not event.get("recurrence_id"):
             continue
 
+        # Only where the series actually carries an override for this date. An occurrence the
+        # server keeps as its own object — or one whose series has lost its rule — is not a
+        # patch over anything, and reading the series onto it would replace what it does say
+        # with what the series does not.
+        override = overrides.get(master["id"], {}).get(event["recurrence_id"])
+        if not override:
+            continue
+
         # A patch names its property first, whether it replaces the whole thing ("title") or
         # reaches inside it ("participants/<uid>/participationStatus").
-        override = overrides.get(master["id"], {}).get(event["recurrence_id"]) or {}
         owned = {key.split("/")[0] for key in override}
         for name, jmap_name in INHERITED_FROM_SERIES:
             if jmap_name not in owned:
