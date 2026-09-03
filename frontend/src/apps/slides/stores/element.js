@@ -342,7 +342,7 @@ const addShapeElement = async (shapeType, bounds = null, overrides = {}) => {
 	)
 }
 
-const getTextElementDimensions = (presets) => {
+const measureHTML = (html) => {
 	const tempTextElement = document.createElement('div')
 
 	// the element's own markup and CSS, or the measurement drifts by sub-pixels
@@ -351,7 +351,7 @@ const getTextElementDimensions = (presets) => {
 		position: 'absolute',
 		visibility: 'hidden',
 	})
-	tempTextElement.innerHTML = getElementContent(presets)
+	tempTextElement.innerHTML = html
 
 	document.body.appendChild(tempTextElement)
 
@@ -363,7 +363,9 @@ const getTextElementDimensions = (presets) => {
 	return { elementWidth, elementHeight }
 }
 
-const addTextElement = async (text, position) => {
+const getTextElementDimensions = (presets) => measureHTML(getElementContent(presets))
+
+const addTextElement = async (text, position, contentHTML = null) => {
 	const elementPresets = {
 		textAlign: 'center',
 		fontSize: 28,
@@ -375,7 +377,9 @@ const addTextElement = async (text, position) => {
 	}
 
 	if (!position) {
-		const { elementWidth, elementHeight } = getTextElementDimensions(elementPresets)
+		const { elementWidth, elementHeight } = contentHTML
+			? measureHTML(contentHTML)
+			: getTextElementDimensions(elementPresets)
 		position = getLeftTopForCenteredElement(elementWidth, elementHeight)
 	}
 
@@ -387,7 +391,7 @@ const addTextElement = async (text, position) => {
 		left: position.left,
 		top: position.top,
 		type: 'text',
-		content: getElementContent(elementPresets),
+		content: contentHTML ?? getElementContent(elementPresets),
 		lineHeight: elementPresets.lineHeight,
 	}
 

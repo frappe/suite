@@ -19,7 +19,7 @@ import { Decoration, DecorationSet } from 'prosemirror-view'
 import { joinBackward } from 'prosemirror-commands'
 import { liftListItem } from 'prosemirror-schema-list'
 
-import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 import { scaleAwareColumnResizing } from '@/apps/slides/utils/columnResizing'
 
 const parseElementStyle = (attribute, value) => {
@@ -150,6 +150,10 @@ const PastePlainText = Extension.create({
 
 	addProseMirrorPlugins() {
 		const pasteWithInheritedStyles = (view, event) => {
+			// list markup forced through plain text comes out unbulleted,
+			// so it falls through to the default rich paste instead
+			if (hasListMarkup(event.clipboardData?.getData('text/html'))) return false
+
 			const plainText = event.clipboardData?.getData('text/plain')
 			if (!plainText) return false
 

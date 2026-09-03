@@ -28,6 +28,7 @@ vi.mock('@/apps/slides/composables/useTextEditor', () => ({
 }))
 vi.mock('@/apps/slides/utils/helpers', () => ({
 	getDocFromHTML: (html: string) => new DOMParser().parseFromString(html, 'text/html'),
+	hasListMarkup: (html: string) => !!html && /<(ul|ol|li)[\s>]/i.test(html),
 }))
 vi.mock('@/apps/slides/utils/connectors', () => ({
 	remapElementIds: (els: any) => els,

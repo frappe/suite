@@ -15,7 +15,7 @@ import {
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-import { getDocFromHTML } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
@@ -86,9 +86,11 @@ const copyToClipboard = async (text) => {
 
 // Paste Handlers
 
-const handlePastedText = async (clipboardText) => {
+const handlePastedText = async (clipboardText, clipboardHTML = '') => {
 	await resetFocus()
-	addTextElement(clipboardText)
+	// a copied bullet block pasted onto the canvas has to arrive as a list,
+	// not as the plain lines its text/plain fallback holds
+	addTextElement(clipboardText, undefined, hasListMarkup(clipboardHTML) ? clipboardHTML : null)
 }
 
 const handlePastedJSON = async ({ srcPresentation, srcSlide, elements }) => {
@@ -161,11 +163,11 @@ const isInputElement = (target) => {
 	return isEditableTarget(document.activeElement)
 }
 
-const handleClipboardText = (clipboardText) => {
+const handleClipboardText = (clipboardText, clipboardHTML = '') => {
 	if (clipboardText?.trim().startsWith('<svg') && clipboardText?.trim().endsWith('</svg>')) {
 		handleSvgText(clipboardText)
 	} else if (clipboardText && !focusElementId.value) {
-		handlePastedText(clipboardText)
+		handlePastedText(clipboardText, clipboardHTML)
 	}
 }
 
@@ -225,7 +227,7 @@ const handlePaste = (e) => {
 	if (clipboardJSON) return handleClipboardJSON(clipboardJSON)
 
 	const clipboardText = e.clipboardData.getData('text/plain')
-	if (clipboardText) return handleClipboardText(clipboardText)
+	if (clipboardText) return handleClipboardText(clipboardText, clipboardTextHTML)
 
 	const clipboardItems = e.clipboardData.items
 	if (clipboardItems) return handleUploadedMedia(clipboardItems)

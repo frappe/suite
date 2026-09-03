@@ -83,6 +83,8 @@ const getDocFromHTML = (html: string) => {
 	return parser.parseFromString(html, 'text/html')
 }
 
+const hasListMarkup = (html: string) => !!html && /<(ul|ol|li)[\s>]/i.test(html)
+
 const sanitizeSlideHTML = (html: string) => {
 	return DOMPurify.sanitize(html, {
 		ALLOWED_TAGS: [
@@ -126,6 +128,7 @@ export {
 	cloneObj,
 	getThumbnailCardStyles,
 	getDocFromHTML,
+	hasListMarkup,
 	sanitizeSlideHTML,
 	isCmdOrCtrl,
 	normalizeRotation,
