@@ -121,6 +121,19 @@ implementation effort can execute from the documents alone.
   plus versions, reservations never move; DAV props read the counter;
   amends WebDAV mapping to one mount.
 
+- [Migration mapping](tickets/011-migration-mapping.md) — two patches:
+  additive Build, then Cleanup one release later; Build throws without
+  storage_v2, runs the framework backfill inline, and copies Drive's S3
+  objects into the framework layout (suite.frappe.io is on S3); ids
+  survive (node = File name); `Drive` becomes the Shared Root, each
+  `Users/<email>` a Personal Root (Archived if the user is gone); trashed
+  subtrees share a `trash_root`, Removed rows skipped; Active-sibling
+  title dedupe; dead-principal and guardrail grant rows dropped and
+  reported; side tables reshaped (`Drive Activity`, `Drive Recent`,
+  `Drive Favourite`, `Drive Notification` as an activity pointer);
+  DocShare to grants, Writer/Sheet versions and comments to Drive tables;
+  depth-ordered, batch-committed, id-keyed reruns; JSON report.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
@@ -141,3 +154,8 @@ implementation effort can execute from the documents alone.
 - Blind drop-box (upload without seeing the folder). Ruled out in
   [Link sharing semantics](tickets/008-link-sharing-semantics.md): UPLOAD
   contains READ in the strict ladder, so the state is unrepresentable.
+- Frappe Cloud allowlisting of the `storage_driver` and
+  `storage_driver_config` site_config keys for suite.frappe.io. An
+  operational precondition surfaced by
+  [Migration mapping](tickets/011-migration-mapping.md), not a spec
+  decision.

@@ -59,3 +59,12 @@ over-quota error, not a permission error; node create, replace, and move
 return the same error when the admission UPDATE affects zero rows. The
 reservation functions stay Python-only for Meet; they get no HTTP
 endpoint.
+
+Handed from [Migration mapping](011-migration-mapping.md) (2026-09-04):
+favourites, recents, activity, and notification endpoints read the
+reshaped tables: `Drive Favourite` (user, node), `Drive Recent` (user,
+node, opened_at), `Drive Activity` (node, action, actor, at, via_link,
+client, detail), and `Drive Notification` as a pointer (activity, to_user,
+read) whose message renders from the activity row. Mark-read and
+clear-recents act on those rows only; clearing recents never touches
+favourites.
