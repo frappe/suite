@@ -185,9 +185,12 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
         for drawn in by_date.values():
             if len(drawn) < 2:
                 continue
-            own = next((row for row in drawn if row.get("is_origin")), None)
-            if own:
-                duplicates.update(row["id"] for row in drawn if row is not own)
+            # The one built from the override is the one the server never stored, so it is the
+            # one with no creation time. It is the one to keep: it carries the answer, and the
+            # series fills in everything the override does not name.
+            answered = next((row for row in drawn if not row.get("created")), None)
+            if answered:
+                duplicates.update(row["id"] for row in drawn if row is not answered)
 
     events = [event for event in events if event["id"] not in duplicates]
     siblings = {
@@ -218,7 +221,7 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
         # and the copy of the whole event, which is the series-wide answer, must not be read
         # over the top of it.
         if answer:
-            for row in (row for row in occurrences if not row.get("is_origin")):
+            for row in (row for row in occurrences if row.get("created")):
                 for participant in row.get("participants") or []:
                     if participant.get("email") in identities:
                         participant["participation_status"] = answer

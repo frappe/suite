@@ -769,10 +769,12 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
         "id": event["id"],
         "uid": event["uid"],
         "recurrence_id": event.get("recurrenceId"),
-        # Whether this copy is the account's own. An occurrence of a series organized elsewhere
-        # comes back as the sender's copy; one the account overrode comes back as its own, and
-        # both are returned for the same date.
+        # Whether this copy is the account's own.
         "is_origin": cint(event.get("isOrigin") or False),
+        # When the event behind this row was stored. An occurrence the server holds has one; one
+        # synthesised from a recurrence override does not, which is what tells the two apart when
+        # both come back for the same date.
+        "created": event.get("created"),
         "organizer": organizer,
         "calendars": calendars,
         "status": (event.get("status") and event["status"].title()) or "Confirmed",
