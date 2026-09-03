@@ -98,6 +98,30 @@ def update_account_password(doc: Document, method: str | None = None) -> None:
     )
 
 
+def delete_push_subscriptions_on_disable(doc: Document, method: str | None = None) -> None:
+    """Delete this site's push subscriptions on the mail server when the user is disabled.
+
+    Only the subscriptions wearing the site's device client id go; the user's custom ones stay.
+    Ordered ahead of apply_disabled_account_role: that role may revoke the account's access on
+    Stalwart, after which the JMAP delete would be refused.
+    """
+
+    if doc.flags.in_insert or doc.enabled or not doc.has_value_changed("enabled"):
+        return
+    if not is_jmap_configured(doc.name):
+        return
+
+    from suite.mail.doctype.push_subscription.push_subscription import delete_site_push_subscriptions
+
+    user = doc.name
+    execute_with_logging(
+        lambda: delete_site_push_subscriptions(user),
+        title="Failed to delete push subscriptions on mail server",
+        with_context=False,
+        module="Mail",
+    )
+
+
 def clear_sessions_on_disable(doc: Document, method: str | None = None) -> None:
     """Log the user out everywhere when they are disabled.
 

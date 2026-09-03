@@ -14,6 +14,7 @@ import { CalendarColorMap } from 'frappe-ui/experimental'
 import { useNow, useStorage } from '@vueuse/core'
 
 import { useSessionStore } from '@/boot/session'
+import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { toTitleCase } from '@/apps/calendar/utils/format'
@@ -132,11 +133,9 @@ const menuItems = computed(() => [
 			{
 				icon: User,
 				label: __('Accounts'),
-				submenu: user.data.accounts.map?.((a) => ({
-					label: a._name,
-					selected: a.id === store.accountId,
-					onClick: () => router.push({ name: route.name, params: { ...route.params, accountId: a.id } }),
-				})),
+				submenu: accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
+					router.push({ name: route.name, params: { ...route.params, accountId } }),
+				),
 				condition: () => user.data.accounts?.length > 1,
 			},
 			{

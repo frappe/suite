@@ -9,6 +9,7 @@ import unittest
 from datetime import timedelta
 from unittest import mock
 
+import frappe
 from frappe.utils.file_lock import LockTimeoutError
 
 from suite.mail.doctype.push_subscription import push_subscription
@@ -339,3 +340,120 @@ class OnLogin(unittest.TestCase):
 
     def test_skips_users_without_jmap(self):
         self._run(USER, jmap_configured=False).assert_not_called()
+
+
+class DeleteSitePushSubscriptions(unittest.TestCase):
+    def _run(self, subscriptions: list[dict], not_destroyed: dict | None = None) -> mock.Mock:
+        with (
+            mock.patch.object(push_subscription, "get_site_device_client_id", return_value="site-device"),
+            mock.patch.object(push_subscription, "get_push_subscription_service") as service,
+        ):
+            service.return_value.get.return_value = subscriptions
+            service.return_value.delete.return_value = {"destroyed": [], "notDestroyed": not_destroyed or {}}
+            push_subscription.delete_site_push_subscriptions(USER)
+
+        return service
+
+    def test_deletes_only_the_site_subscriptions(self):
+        service = self._run(
+            [
+                {"id": "site-1", "deviceClientId": "site-device"},
+                {"id": "custom", "deviceClientId": "other-device"},
+                {"id": "site-2", "deviceClientId": "site-device"},
+            ]
+        )
+
+        service.assert_called_once_with(USER, ignore_permissions=True, allow_disabled=True)
+        service.return_value.delete.assert_called_once_with(["site-1", "site-2"])
+
+    def test_nothing_to_delete_skips_the_delete_call(self):
+        service = self._run([{"id": "custom", "deviceClientId": "other-device"}])
+
+        service.return_value.delete.assert_not_called()
+
+    def test_server_side_delete_errors_surface(self):
+        with self.assertRaises(push_subscription.frappe.ValidationError):
+            self._run(
+                [{"id": "site-1", "deviceClientId": "site-device"}],
+                not_destroyed={"site-1": {"type": "notFound", "description": "gone"}},
+            )
+
+
+class DeletePushSubscriptionsOnDisable(unittest.TestCase):
+    def _run(
+        self,
+        enabled: int = 0,
+        changed: bool = True,
+        in_insert: bool = False,
+        jmap_configured: bool = True,
+    ) -> mock.Mock:
+        from suite.mail import events
+
+        doc = mock.Mock()
+        doc.name = USER
+        doc.enabled = enabled
+        doc.flags = frappe._dict(in_insert=in_insert)
+        doc.has_value_changed.return_value = changed
+
+        with (
+            mock.patch.object(events, "is_jmap_configured", return_value=jmap_configured),
+            mock.patch.object(push_subscription, "delete_site_push_subscriptions") as delete,
+        ):
+            events.delete_push_subscriptions_on_disable(doc)
+
+        return delete
+
+    def test_disabling_deletes_the_site_subscriptions(self):
+        self._run().assert_called_once_with(USER)
+
+    def test_enabled_user_or_unchanged_flag_is_ignored(self):
+        self._run(enabled=1).assert_not_called()
+        self._run(changed=False).assert_not_called()
+        self._run(in_insert=True).assert_not_called()
+
+    def test_users_without_jmap_are_skipped(self):
+        self._run(jmap_configured=False).assert_not_called()
+
+    def test_server_failure_is_logged_not_raised(self):
+        from suite.mail import events
+
+        doc = mock.Mock()
+        doc.name = USER
+        doc.enabled = 0
+        doc.flags = frappe._dict()
+        doc.has_value_changed.return_value = True
+
+        with (
+            mock.patch.object(events, "is_jmap_configured", return_value=True),
+            mock.patch.object(push_subscription, "delete_site_push_subscriptions", side_effect=RuntimeError),
+            mock.patch("suite.utils.log_error") as log_error,
+        ):
+            events.delete_push_subscriptions_on_disable(doc)
+
+        log_error.assert_called_once()
+
+
+class GetJMAPConnectionForDisabledUser(unittest.TestCase):
+    """The factory refuses disabled users unless the caller says the disabled state is expected."""
+
+    def _run(self, enabled: int | None, allow_disabled: bool = False) -> None:
+        from suite.mail import jmap
+
+        with (
+            mock.patch.object(jmap.frappe, "get_cached_value", return_value=enabled),
+            # No User Settings: a call that gets past the enabled check fails here instead.
+            mock.patch.object(jmap.frappe.db, "exists", return_value=None),
+            self.assertRaises(frappe.ValidationError) as raised,
+        ):
+            jmap.get_jmap_connection(USER, ignore_permissions=True, allow_disabled=allow_disabled)
+
+        return str(raised.exception)
+
+    def test_disabled_user_is_refused_by_default(self):
+        self.assertIn("disabled", self._run(enabled=0))
+
+    def test_allow_disabled_lets_the_call_through(self):
+        self.assertIn("JMAP settings", self._run(enabled=0, allow_disabled=True))
+
+    def test_allow_disabled_still_refuses_a_missing_user(self):
+        self.assertIn("does not exist", self._run(enabled=None, allow_disabled=True))

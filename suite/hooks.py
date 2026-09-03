@@ -254,6 +254,9 @@ doc_events = {
             "suite.mail.events.create_user_settings",
         ],
         "on_update": [
+            # First: the disabled account role applied below may cut the JMAP access the
+            # deletion needs.
+            "suite.mail.events.delete_push_subscriptions_on_disable",
             "suite.mail.events.update_account_password",
             "suite.mail.events.clear_sessions_on_disable",
             "suite.mail.events.apply_disabled_account_role",

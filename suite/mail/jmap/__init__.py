@@ -33,12 +33,17 @@ from suite.utils.user import is_system_manager
 
 @request_cache
 def get_jmap_connection(
-    user: str, ignore_permissions: bool = False, timeout: tuple[float, float] = (30.0, 60.0)
+    user: str,
+    ignore_permissions: bool = False,
+    timeout: tuple[float, float] = (30.0, 60.0),
+    allow_disabled: bool = False,
 ) -> JMAPConnection:
     """Returns a JMAPConnection instance for the specified user, using the user's settings for connection details.
 
     Cached per request so the many service factories that resolve a connection for the same
     user reuse one instance (and skip the repeated password decryption / session lookup).
+    ``allow_disabled`` is for server-side cleanup that must still reach the mail server on
+    behalf of a user who has just been disabled; requests never pass it.
     """
 
     if not ignore_permissions:
@@ -50,7 +55,8 @@ def get_jmap_connection(
                 frappe.PermissionError,
             )
 
-    if not frappe.get_cached_value("User", user, "enabled"):
+    enabled = frappe.get_cached_value("User", user, "enabled")
+    if enabled is None or (not enabled and not allow_disabled):
         frappe.throw(_("User {0} does not exist or is disabled.").format(frappe.bold(user)))
 
     settings = frappe.db.exists("User Settings", {"user": user, "username": ["!=", None]})
@@ -229,10 +235,13 @@ def get_principal_service(
 def get_push_subscription_service(
     user: str,
     ignore_permissions: bool = False,
+    allow_disabled: bool = False,
 ) -> PushSubscriptionService:
     """Returns an instance of PushSubscriptionService for handling push subscription-related operations for the specified user."""
 
-    connection = get_jmap_connection(user, ignore_permissions=ignore_permissions)
+    connection = get_jmap_connection(
+        user, ignore_permissions=ignore_permissions, allow_disabled=allow_disabled
+    )
     return PushSubscriptionService(connection)
 
 

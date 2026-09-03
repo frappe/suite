@@ -530,16 +530,42 @@ def delete_push_subscriptions(user: str, ids: list[str]) -> None:
     has_permission_for_user(user, raise_exception=True)
 
     service = get_push_subscription_service(user)
-    response = service.delete(ids)
+    _raise_for_not_destroyed(service.delete(ids))
 
-    if response.get("notDestroyed"):
-        error_messages = []
-        for id, error in response["notDestroyed"].items():
-            error_messages.append(f"{id}: {error['description']}")
-        frappe.throw(
-            _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
-            title=_("Push Subscription Deletion Error"),
-        )
+
+def delete_site_push_subscriptions(user: str) -> None:
+    """Deletes every subscription on the mail server that wears this site's device client id.
+
+    Used when the user is disabled: the subscriptions would otherwise keep webhooks flowing
+    for an account the site no longer serves, and the server only purges them at expiry.
+    Custom subscriptions carry their own device client id and are left alone. Login healing
+    recreates the site's subscription once the user is enabled again. The user is already
+    disabled when this runs, so the connection is opened with that allowed explicitly.
+    """
+
+    device_client_id = get_site_device_client_id(user)
+    service = get_push_subscription_service(user, ignore_permissions=True, allow_disabled=True)
+
+    ids = [
+        subscription["id"]
+        for subscription in service.get()
+        if subscription.get("deviceClientId") == device_client_id
+    ]
+    if ids:
+        _raise_for_not_destroyed(service.delete(ids))
+
+
+def _raise_for_not_destroyed(response: dict) -> None:
+    """Surfaces the server's per-id errors from a delete response, if any."""
+
+    if not (not_destroyed := response.get("notDestroyed")):
+        return
+
+    error_messages = [f"{id}: {error['description']}" for id, error in not_destroyed.items()]
+    frappe.throw(
+        _("Push Subscription Deletion Error(s):<br>{0}").format("<br>".join(error_messages)),
+        title=_("Push Subscription Deletion Error"),
+    )
 
 
 @frappe.whitelist()

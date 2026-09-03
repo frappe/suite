@@ -117,9 +117,8 @@ import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useStorage } from '@vueuse/core'
 import { Icon } from 'frappe-ui/experimental'
-import { Check, Keyboard, User } from 'lucide-vue-next'
+import { Keyboard, User } from 'lucide-vue-next'
 import {
-	Avatar,
 	Button,
 	Dropdown,
 	Sidebar,
@@ -129,6 +128,7 @@ import {
 	SidebarSection,
 } from 'frappe-ui'
 
+import { accountSubmenu } from '@/composables/accountSubmenu'
 import { useAppSwitcher } from '@/composables/useAppSwitcher'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { getIcon, getMailboxName, toTitleCase } from '@/apps/mail/utils'
@@ -288,25 +288,7 @@ const menuItems = computed(() => [
 			{
 				icon: User,
 				label: __('Accounts'),
-				submenu: user.data.accounts.map?.((a) => ({
-					label: a._name,
-					onClick: () => switchAccount(a.id),
-					slots: {
-						item: () =>
-							h(
-								'div',
-								{
-									class: 'flex items-center gap-2 p-1.5 rounded-4 hover:bg-surface-gray-2 cursor-pointer w-48 shrink-0',
-								},
-								[
-									h(Avatar, { label: a._name, size: 'md' }),
-									h('span', { class: 'text-sm w-full truncate' }, a._name),
-									a.id === store.accountId &&
-										h(Check, { label: a._name, class: 'shrink-0 icon' }),
-								],
-							),
-					},
-				})),
+				submenu: accountSubmenu(user.data.accounts, store.accountId, switchAccount),
 				condition: () => user.data.accounts?.length > 1 && !route.meta.isDashboard,
 			},
 			{

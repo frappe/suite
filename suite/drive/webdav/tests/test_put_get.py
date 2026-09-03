@@ -512,6 +512,8 @@ class TestWebDAVPut(IntegrationTestCase):
         # the file log sits on the very disk that may have failed the
         # promotion — a failure opening or writing it must not gate the
         # database record or the queued repair, which ride other services
+        import contextlib
+        import io
         from unittest.mock import patch
 
         from suite.drive.webdav import put as put_module
@@ -537,6 +539,8 @@ class TestWebDAVPut(IntegrationTestCase):
             patch.object(put_module, "apply_file_size_delta", side_effect=frappe.QueryTimeoutError),
             patch("frappe.logger", side_effect=broken_drive_logger),
             patch("frappe.enqueue") as enqueue_mock,
+            # the stderr rung fires; keep it off the runner's console
+            contextlib.redirect_stderr(io.StringIO()),
             self.assertRaises(OSError),
         ):
             frappe.db.commit()
