@@ -430,6 +430,54 @@ class CalendarEventService(CalendarsService):
 
         return result
 
+    def set_instance_participation_status(
+        self,
+        id: str,
+        recurrence_id: str,
+        participant_uid: str,
+        participation_status: str,
+        send_scheduling_messages: bool = False,
+    ) -> dict:
+        """Patches one participant's participationStatus on a single occurrence of a series.
+
+        The series keeps the answer it had and this date gets an override carrying the new one —
+        the same mechanism a renamed or moved occurrence uses, so other clients read one
+        occurrence answered differently rather than a series that changed its mind.
+        """
+
+        if not id or not recurrence_id or not participant_uid:
+            raise ValueError("'id', 'recurrence_id' and 'participant_uid' are all required.")
+
+        events = self.get([id])
+        if not events:
+            raise ValueError(f"Event with id '{id}' not found.")
+
+        overrides = events[0].get("recurrenceOverrides", {}) or {}
+        key = f"participants/{participant_uid}/participationStatus"
+        status = participation_status.lower()
+
+        # JMAP refuses a patch whose parent isn't there, so the shape follows what is stored:
+        # a whole map only when the event carries no overrides at all, and otherwise the
+        # smallest write that touches this occurrence and no other.
+        if not overrides:
+            patch = {"recurrenceOverrides": {recurrence_id: {key: status}}}
+        elif recurrence_id in overrides:
+            patch = {f"recurrenceOverrides/{recurrence_id}/{key}": status}
+        else:
+            patch = {f"recurrenceOverrides/{recurrence_id}": {key: status}}
+
+        response = self._update(
+            {id: {**patch, "updated": utcnow()}}, sendSchedulingMessages=send_scheduling_messages
+        )
+
+        result = {"updated": [], "notUpdated": {}}
+        if method_responses := response.get("methodResponses"):
+            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+            if not_updated := method_responses[0][1].get("notUpdated", {}):
+                result["notUpdated"].update(not_updated)
+
+        return result
+
     def remove_overrides(self, id: str, recurrence_ids: list[str]) -> dict:
         """Drops the named occurrences' overrides, leaving every other one where it is.
 
@@ -457,9 +505,8 @@ class CalendarEventService(CalendarsService):
         """Replaces an event's whole recurrenceOverrides map.
 
         For rewriting the map as a whole — re-keying every override after the series it belongs
-        to has moved, or handing them to the half a split begins. Anywhere that touches a single
-        occurrence must patch that occurrence's key instead, so a copy of the map taken before
-        someone else's write cannot undo it.
+        to has moved. Anywhere that touches a single occurrence must patch that occurrence's key
+        instead, so a copy of the map taken before someone else's write cannot undo it.
         """
 
         if not id:

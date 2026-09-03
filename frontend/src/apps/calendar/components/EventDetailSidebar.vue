@@ -31,6 +31,7 @@ import { fromEventZone, inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
@@ -65,29 +66,28 @@ const RSVP_OPTIONS = [
 // event_response template when custom event invites are enabled.
 const rsvpEvent = createResource({
 	url: 'suite.calendar.api.rsvp_calendar_event',
-	makeParams: (response: string) => ({
+	makeParams: ({ response, scope }: { response: string; scope: RecurringScope }) => ({
 		account: store.accountId,
 		// master_id is only set on recurring events; fall back to the event's own id
 		id: calendarEvent.master_id || calendarEvent.id,
 		response: response.toLowerCase(),
+		// One occurrence answered on its own is an override on the series, addressed by this
+		// occurrence's recurrence id. The whole series is the same call without one.
+		recurrence_id: scope === 'instance' ? calendarEvent.recurrence_id : null,
 	}),
 	onSuccess: () => emit('reloadEvents'),
 })
 
-// A recurring event is asked the same question an edit or a delete is asked, and told the same
-// thing: this answer is the series'. Only the wider answer can be given — an answer written for
-// one date is stored as an override, and the server does not read that back the same way in
-// every shape an invitation arrives in — so the narrower one is shown greyed rather than left
-// out, and the reader can see what is being answered before it is sent.
-//
-// The tab buttons stay where they were until the server confirms, so cancelling leaves the
-// shown answer alone.
+// A recurring event asks the same question an edit or a delete asks — a standup you miss one
+// week is not a standup you have left. Only the series-wide answer reaches the server so far,
+// so the other is greyed out rather than absent. The tab buttons stay where they were until
+// the server confirms, so cancelling the question leaves the shown answer alone.
 const showRsvpScopeModal = ref(false)
 const pendingResponse = ref('')
 
-const submitResponse = (response: string) => {
+const submitResponse = (response: string, scope: RecurringScope) => {
 	showRsvpScopeModal.value = false
-	toast.promise(rsvpEvent.submit(response), {
+	toast.promise(rsvpEvent.submit({ response, scope }), {
 		loading: __('Sending response...'),
 		success: __('Response sent.'),
 		error: __('Action failed. Please try again in some time.'),
@@ -96,27 +96,31 @@ const submitResponse = (response: string) => {
 
 const handleSetResponse = (response: string) => {
 	if (!response || response === userResponse.value) return
-	if (!calendarEvent.recurrence_id) return submitResponse(response)
+	if (!calendarEvent.recurrence_id) return submitResponse(response, 'series')
 	pendingResponse.value = response
 	showRsvpScopeModal.value = true
 }
 
 const rsvpScopeModalProps = computed(() => ({
 	title: __('Respond to repeating event'),
-	// The answer about to be sent, drawn as the participant list draws it: the dialog is about
-	// this yes or this no, not about responding in general.
+	// The answer about to be sent, drawn as the participant list draws it: the dialog is
+	// about this yes or this no, not about responding in general.
 	icon: {
 		name: participationStatusDisplay(pendingResponse.value).name,
 		theme: participationStatusDisplay(pendingResponse.value).theme,
 	},
 	// No "this and following": ending a series partway is the organizer's act, and an attendee
 	// answering an invitation is not editing the event at all.
-	options: scopeOptions({ unavailable: ['instance'] }).filter(
-		(option) => option.value !== 'following',
-	),
+	options: scopeOptions().filter((option) => option.value !== 'following'),
 	confirmLabel: __('Send response'),
 	loading: rsvpEvent.loading,
 }))
+
+// An occurrence whose series has no readable rule left has nothing to say here,
+// and the row goes with the sentence rather than standing empty beside an icon.
+const repeatMessage = computed(() =>
+	calendarEvent.recurrence_id ? getRepeatMessage(calendarEvent.recurrence_rule) : '',
+)
 
 // --- Calendar (colour + account) ---
 
@@ -585,7 +589,7 @@ const openUrl = (location: string) => {
 		<RecurringScopeModal
 			v-model="showRsvpScopeModal"
 			v-bind="rsvpScopeModalProps"
-			@confirm="() => submitResponse(pendingResponse)"
+			@confirm="(scope) => submitResponse(pendingResponse, scope)"
 		/>
 		<Dialog v-model:open="showNotifyModal" v-bind="NOTIFY_DELETE_OPTIONS">
 			<template #actions>

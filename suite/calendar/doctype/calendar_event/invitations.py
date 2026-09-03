@@ -187,7 +187,13 @@ def notify_organizer_of_response(account: str, event_id: str, participant_email:
         frappe.set_user(original_user)
 
 
-def notify_organizer_of_reply(account: str, event_id: str, responder_email: str, status: str) -> None:
+def notify_organizer_of_reply(
+    account: str,
+    event_id: str,
+    responder_email: str,
+    status: str,
+    recurrence_id: str | None = None,
+) -> None:
     """Sends the organizer an attendee's RSVP as a custom-template email carrying an iTIP REPLY.
 
     The custom-invite counterpart of the server's iMIP scheduling mail: when Mail Settings sends
@@ -227,7 +233,9 @@ def notify_organizer_of_reply(account: str, event_id: str, responder_email: str,
             logo_src_attr='src="cid:eventlogo"',
         )
 
-        ics = build_event_ics(event, method="REPLY", attendee_email=responder_email)
+        ics = build_event_ics(
+            event, method="REPLY", recurrence_id=recurrence_id, attendee_email=responder_email
+        )
         message = _build_mime(responder_name, responder_email, organizer, subject, html, ics, "REPLY")
 
         MailQueue._create(

@@ -132,7 +132,10 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
 
         # A patch names its property first, whether it replaces the whole thing ("title") or
         # reaches inside it ("participants/<uid>/participationStatus").
-        owned = {key.split("/")[0] for key in override}
+        # An override says what is different about one occurrence, not who called the meeting.
+        # Answering one writes the responder in as its organizer and owner, which would show the
+        # guest who declined as the host of that week, so the series keeps the say on both.
+        owned = {key.split("/")[0] for key in override} - {"organizerCalendarAddress"}
         for name, jmap_name in INHERITED_FROM_SERIES:
             if jmap_name not in owned:
                 event[name] = master[name]
@@ -142,10 +145,18 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
         # who is on it; the override says what they answered, so the two are laid over each other
         # by address rather than one replacing the other.
         if "participants" in owned:
-            answered = {p.get("email"): p for p in event.get("participants") or []}
+            answered = {
+                p.get("email"): p.get("participation_status")
+                for p in event.get("participants") or []
+                if p.get("participation_status")
+            }
+            # Only the answer is taken from the override. The name, the roles and who else is on
+            # it are the series' — an override carries just enough of a participant to say what
+            # they replied, and reading the rest of it back would rewrite them.
             event["participants"] = [
-                answered.pop(p.get("email"), p) for p in master.get("participants") or []
-            ] + list(answered.values())
+                {**p, "participation_status": answered.get(p.get("email"), p.get("participation_status"))}
+                for p in master.get("participants") or []
+            ]
 
 
 def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
@@ -216,8 +227,12 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
             ),
             None,
         )
+        # Onto the occurrences that have no answer of their own. One answered on its own date
+        # comes back as this account's own copy of that date, carrying what was said there —
+        # and the copy of the whole event, which is the series-wide answer, must not be read
+        # over the top of it.
         if answer:
-            for row in occurrences:
+            for row in (row for row in occurrences if row.get("created")):
                 for participant in row.get("participants") or []:
                     if participant.get("email") in identities:
                         participant["participation_status"] = answer
@@ -273,14 +288,14 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def rsvp_calendar_event(account: str, id: str, response: str) -> None:
+def rsvp_calendar_event(account: str, id: str, response: str, recurrence_id: str | None = None) -> None:
     """Records the logged-in user's RSVP (accepted / declined / tentative) on the event.
 
     Patches only the caller's own participationStatus — unlike edit_calendar_event, which
     rewrites the whole event — and routes the organizer's notification through the custom
     event_response template when custom event invites are enabled (see record_rsvp)."""
 
-    record_rsvp(account, id, response)
+    record_rsvp(account, id, response, recurrence_id=recurrence_id)
 
 
 @frappe.whitelist()
