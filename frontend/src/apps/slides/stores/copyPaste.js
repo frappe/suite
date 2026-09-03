@@ -53,6 +53,10 @@ const copyElements = (e) => {
 const handleCopy = (e) => {
 	if (isCopyTriggeredByButton.value) return
 
+	// let native copy work in text fields (e.g. hex input in color picker,
+	// text editing) instead of hijacking it with element/slide JSON
+	if (isInputElement(e.target)) return
+
 	e.preventDefault()
 	const isCopyingElements = activeElementIds.value.length > 0
 	if (isCopyingElements) {
@@ -146,13 +150,15 @@ const handlePastedSlideJSON = async (slideJSON) => {
 	insertSlide(slideJSON, index)
 }
 
-const isInputElement = (el) => {
-	const activeElement = document.activeElement
+const isEditableTarget = (el) => {
 	return (
-		activeElement?.tagName == 'INPUT' ||
-		activeElement?.tagName == 'TEXTAREA' ||
-		activeElement?.isContentEditable
+		el?.tagName == 'INPUT' || el?.tagName == 'TEXTAREA' || el?.isContentEditable
 	)
+}
+
+const isInputElement = (target) => {
+	if (isEditableTarget(target)) return true
+	return isEditableTarget(document.activeElement)
 }
 
 const handleClipboardText = (clipboardText) => {
