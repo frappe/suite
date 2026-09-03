@@ -1,0 +1,1225 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTTP API surface · Decision 014</title>
+<meta name="description" content="What the Drive layer’s HTTP front door should look like.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ---------------------------------------------------------------
+   Tokens. Values copied from frappe-ui's generated palette:
+   node_modules/frappe-ui/tailwind/generated/{colors,radius}.json
+   --------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --surface-base: #ffffff;
+  --surface-1: #f8f8f8;
+  --surface-2: #f3f3f3;
+  --surface-3: #ededed;
+  --surface-4: #e2e2e2;
+
+  --ink-1: #ededed;
+  --ink-3: #c7c7c7;
+  --ink-4: #999999;
+  --ink-5: #7c7c7c;
+  --ink-6: #525252;
+  --ink-7: #383838;
+  --ink-8: #171717;
+  --ink-9: #0f0f0f;
+
+  --outline-1: #ededed;
+  --outline-2: #e2e2e2;
+  --outline-3: #c7c7c7;
+
+  --blue-1: #f1f8fe; --blue-2: #e6f4ff; --blue-3: #d1eaff;
+  --blue-6: #0d8ef8; --blue-7: #077ddf; --blue-9: #005cad;
+  --green-1: #f0faf3; --green-2: #e4faeb; --green-3: #bdefcc;
+  --green-7: #268c5c; --green-8: #14804d;
+  --red-1: #fff5f5; --red-2: #ffe7e7; --red-3: #ffd8d8;
+  --red-6: #e03434; --red-7: #ce2c2c;
+  --amber-1: #fdf8ed; --amber-2: #fff4d3; --amber-3: #f6eac0;
+  --amber-7: #bb6f0c;
+  --violet-2: #eeeafd; --violet-3: #ded5fc; --violet-7: #6d4ad8;
+
+  --r1: 4px; --r3: 6px; --r4: 8px; --r5: 10px; --r6: 12px; --r7: 16px;
+
+  --shadow-sm: 0px 0px 1px 0px #00000033, 0px 1px 3px 0px #00000024;
+  --shadow-md: 0px 0px 1.5px 0px #00000026, 0px 6px 12px -2px #00000014;
+
+  /* chart series: dataviz validated palette, light mode
+     validator: PASS band / chroma / CVD 9.2 / normal-vision 24.0 */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --de-emphasis: #c7c7c7;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-base: #171717;
+  --surface-1: #1f1f1f;
+  --surface-2: #292929;
+  --surface-3: #383838;
+  --surface-4: #424242;
+
+  --ink-1: #242424;
+  --ink-3: #424242;
+  --ink-4: #7a7a7a;
+  --ink-5: #7a7a7a;
+  --ink-6: #999999;
+  --ink-7: #afafaf;
+  --ink-8: #d9d9d9;
+  --ink-9: #f8f8f8;
+
+  --outline-1: #242424;
+  --outline-2: #383838;
+  --outline-3: #424242;
+
+  --blue-1: #0f233d; --blue-2: #0a2e5c; --blue-3: #063465;
+  --blue-6: #349bef; --blue-7: #76bef9; --blue-9: #add2f5;
+  --green-1: #0a3020; --green-2: #173b2c; --green-3: #075e35;
+  --green-7: #7edaa1; --green-8: #a8e6be;
+  --red-1: #331414; --red-2: #4a1a1a; --red-3: #5e2020;
+  --red-6: #f79596; --red-7: #fdc2c2;
+  --amber-1: #2a1e0a; --amber-2: #4e2209; --amber-3: #763813;
+  --amber-7: #f4cd80;
+  --violet-2: #241b47; --violet-3: #2f2463; --violet-7: #b9a8f5;
+
+  --shadow-sm: 0px 0px 1px 0px #00000066, 0px 1px 3px 0px #00000055;
+  --shadow-md: 0px 0px 1.5px 0px #00000066, 0px 6px 12px -2px #00000044;
+
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --de-emphasis: #575757;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  background: var(--surface-base);
+  color: var(--ink-8);
+  font-feature-settings: "cv11", "ss01";
+}
+code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ---- layout ---- */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; display: grid; grid-template-columns: 1fr; gap: 40px; }
+@media (min-width: 1080px) {
+  .wrap { grid-template-columns: 220px minmax(0, 1fr); }
+}
+main { max-width: 820px; min-width: 0; }
+
+/* ---- table of contents ---- */
+nav.toc { display: none; }
+@media (min-width: 1080px) {
+  nav.toc {
+    display: block; position: sticky; top: 0; align-self: start;
+    max-height: 100vh; overflow-y: auto; padding: 40px 0 40px;
+    font-size: 13px;
+  }
+}
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc li { margin: 0; }
+nav.toc a {
+  display: block; padding: 4px 10px; border-radius: var(--r3);
+  color: var(--ink-5); text-decoration: none; line-height: 1.4;
+  border-left: 2px solid transparent;
+}
+nav.toc a:hover { color: var(--ink-8); background: var(--surface-1); }
+nav.toc a.active { color: var(--ink-9); border-left-color: var(--blue-6); font-weight: 500; }
+nav.toc .toc-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-4); padding: 0 10px; margin-bottom: 8px; font-weight: 600;
+}
+
+/* ---- typography ---- */
+h1 { font-size: 34px; line-height: 1.2; letter-spacing: -0.022em; margin: 0 0 12px; color: var(--ink-9); font-weight: 600; }
+h2 {
+  font-size: 22px; line-height: 1.3; letter-spacing: -0.014em; font-weight: 600;
+  margin: 56px 0 14px; color: var(--ink-9); scroll-margin-top: 24px;
+}
+h3 { font-size: 16px; line-height: 1.4; font-weight: 600; margin: 30px 0 8px; color: var(--ink-8); }
+h4 { font-size: 14px; font-weight: 600; margin: 20px 0 6px; color: var(--ink-7); }
+p { margin: 0 0 14px; }
+a { color: var(--blue-7); }
+strong { font-weight: 600; color: var(--ink-9); }
+ul, ol { margin: 0 0 14px; padding-left: 22px; }
+li { margin: 0 0 5px; }
+hr { border: 0; border-top: 1px solid var(--outline-1); margin: 44px 0; }
+.lede { font-size: 17px; line-height: 1.6; color: var(--ink-7); }
+.muted { color: var(--ink-5); }
+.small { font-size: 13px; }
+
+/* ---- header ---- */
+header.page { padding: 44px 0 0; }
+.eyebrow {
+  font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-4); margin-bottom: 10px;
+}
+.byline {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  font-size: 13px; color: var(--ink-5); margin-top: 18px;
+}
+.byline .sep { color: var(--ink-3); }
+/* the dots only separate items that sit on one line */
+@media (max-width: 620px) { .byline .sep { display: none; } }
+
+/* ---- badges ---- */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: var(--r1);
+  font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap;
+}
+.badge.done   { background: var(--green-2); color: var(--green-8); }
+.badge.open   { background: var(--amber-2); color: var(--amber-7); }
+.badge.gone   { background: var(--surface-2); color: var(--ink-5); }
+.badge.neutral{ background: var(--surface-2); color: var(--ink-6); }
+.dot { width: 6px; height: 6px; border-radius: 999px; flex: none; }
+
+/* ---- cards ---- */
+.card {
+  background: var(--surface-base); border: 1px solid var(--outline-1);
+  border-radius: var(--r6); padding: 18px 20px; margin: 0 0 16px;
+}
+.card.tint-blue  { background: var(--blue-1);  border-color: var(--blue-3); }
+.card.tint-green { background: var(--green-1); border-color: var(--green-3); }
+.card.tint-amber { background: var(--amber-1); border-color: var(--amber-3); }
+.card.tint-red   { background: var(--red-1);   border-color: var(--red-3); }
+.card h3:first-child, .card h4:first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+.card-label {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-4); margin-bottom: 8px;
+}
+
+.grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px; }
+@media (min-width: 680px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+.grid3 { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
+@media (min-width: 680px) { .grid3 { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---- code ---- */
+pre {
+  background: var(--surface-1); border: 1px solid var(--outline-1);
+  border-radius: var(--r5); padding: 14px 16px; margin: 0 0 16px;
+  overflow-x: auto; font-size: 12.5px; line-height: 1.65; color: var(--ink-8);
+}
+pre code { background: none; padding: 0; font-size: inherit; border: none; }
+:not(pre) > code {
+  background: var(--surface-2); border-radius: var(--r1);
+  padding: 1px 5px; font-size: 0.88em; color: var(--ink-8);
+  white-space: nowrap;
+}
+.code-title {
+  font-size: 11.5px; font-weight: 500; color: var(--ink-5);
+  background: var(--surface-2); border: 1px solid var(--outline-1); border-bottom: none;
+  border-radius: var(--r5) var(--r5) 0 0; padding: 6px 14px; margin: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+.code-title + pre { border-radius: 0 0 var(--r5) var(--r5); }
+/* syntax */
+.tok-kw { color: #a626a4; } .tok-str { color: #0b7a45; }
+.tok-com { color: var(--ink-4); font-style: italic; }
+.tok-fn { color: #3d5cc9; } .tok-num { color: #b45309; }
+:root[data-theme="dark"] .tok-kw { color: #d4a0ec; }
+:root[data-theme="dark"] .tok-str { color: #86d9a8; }
+:root[data-theme="dark"] .tok-fn { color: #8ab4f8; }
+:root[data-theme="dark"] .tok-num { color: #f0b060; }
+
+/* ---- tables ---- */
+.tw { overflow-x: auto; margin: 0 0 16px; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td {
+  text-align: left; padding: 8px 12px;
+  border-bottom: 1px solid var(--outline-1); vertical-align: top;
+}
+th {
+  font-weight: 600; color: var(--ink-6); font-size: 12px;
+  text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--surface-1); }
+td.mono, th.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+.nowrap { white-space: nowrap; }
+
+/* ---- figure ---- */
+figure { margin: 0 0 20px; }
+figure svg { display: block; width: 100%; height: auto; }
+figcaption { font-size: 12.5px; color: var(--ink-5); margin-top: 8px; line-height: 1.5; }
+.fig-frame {
+  border: 1px solid var(--outline-1); border-radius: var(--r6);
+  background: var(--surface-base); padding: 18px;
+}
+
+/* ---- callout ---- */
+.callout {
+  border-left: 3px solid var(--blue-6); background: var(--blue-1);
+  border-radius: 0 var(--r4) var(--r4) 0; padding: 12px 16px; margin: 0 0 16px;
+  font-size: 14px;
+}
+.callout.warn { border-left-color: var(--amber-7); background: var(--amber-1); }
+.callout > :last-child { margin-bottom: 0; }
+
+/* ---- theme toggle ---- */
+.theme-toggle {
+  position: fixed; top: 14px; right: 14px; z-index: 50;
+  width: 32px; height: 32px; border-radius: var(--r4);
+  border: 1px solid var(--outline-2); background: var(--surface-base);
+  color: var(--ink-6); cursor: pointer; font-size: 14px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+.theme-toggle:hover { background: var(--surface-2); color: var(--ink-8); }
+
+/* ---- two-pass diagram ---- */
+.passes { list-style: none; margin: 0; padding: 0; }
+.passes li {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr);
+  gap: 16px; position: relative; padding-bottom: 22px; margin: 0;
+}
+/* the rail is drawn by each step, so it always spans that step's real height */
+.passes li:not(.pass-end)::before {
+  content: ""; position: absolute; left: 12px; top: 32px; bottom: 0;
+  width: 2px; background: var(--outline-2);
+}
+.passes li.pass-end { padding-bottom: 0; }
+.pass-num {
+  width: 26px; height: 26px; border-radius: 999px;
+  background: var(--blue-2); color: var(--blue-9);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; line-height: 1;
+}
+.pass-num.answer { background: var(--green-2); color: var(--green-8); font-size: 13px; }
+.passes strong { font-size: 14px; }
+.passes .small { margin: 3px 0 0; color: var(--ink-6); }
+.pass-stop {
+  margin-top: 10px !important; background: var(--red-1);
+  border: 1px solid var(--red-3); border-radius: var(--r4);
+  padding: 8px 12px; font-size: 13px; color: var(--red-7);
+}
+.pass-stop strong { color: inherit; font-size: 13px; }
+
+footer.page {
+  margin: 64px 0 80px; padding-top: 20px;
+  border-top: 1px solid var(--outline-1);
+  font-size: 13px; color: var(--ink-5);
+}
+</style>
+</head>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" aria-label="Switch colour theme">◐</button>
+<div class="wrap">
+<nav class="toc" aria-label="On this page">
+  <div class="toc-label">On this page</div>
+  <ol id="tocList"></ol>
+</nav>
+<main>
+
+<header class="page">
+  <div class="eyebrow">Suite · Drive layer · Decision 014</div>
+  <h1>The front door</h1>
+  <p class="lede">
+    Nine decisions are closed. They describe tables, roles, quota, and links.
+    None of them says how a browser asks for any of it. The architecture doc
+    has no HTTP section at all. This page shows what is there today, what the
+    closed decisions already fix, and the choices left.
+  </p>
+  <div class="byline">
+    <span class="badge done"><span class="dot" style="background:currentColor"></span>9 of 14 decided</span>
+    <span class="sep" aria-hidden="true">·</span>
+    <span>Counted from the code on 4 September 2026</span>
+  </div>
+</header>
+
+<hr>
+
+<h2 id="today">What is there today</h2>
+
+<p>
+  Drive has <strong>69 whitelisted methods</strong> in 11 files.
+  26 of them accept guests. There is no route table: every call is
+  <code>/api/method/suite.drive.api.&lt;module&gt;.&lt;function&gt;</code>, which is
+  Frappe's normal way of doing things.
+</p>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-label">Reads</div>
+    <p class="small" style="margin:0">Five list endpoints, all funnelling
+    into one <code>get_query_data</code>. Offset paging. Seven sortable
+    fields. Page size 50 from the client, capped at 100.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">Writes</div>
+    <p class="small" style="margin:0">One verb per action:
+    <code>rename</code>, <code>move</code>, <code>remove_or_restore</code>,
+    <code>delete_entities</code>, <code>set_favourite</code>,
+    <code>update_access</code>.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">Bytes</div>
+    <p class="small" style="margin:0">Four separate paths:
+    <code>get_file_content</code>, <code>stream_file_content</code>,
+    <code>get_thumbnail</code>, and a three-step zip download
+    (<code>start</code>, <code>poll</code>, <code>fetch</code>).</p>
+  </div>
+</div>
+
+<div class="callout warn">
+  <p><strong>Four things cannot simply be renamed.</strong></p>
+  <ul style="margin:8px 0 0">
+    <li><code>api.s3.fetch?path=</code> is written into
+      <code>File.file_url</code> rows in live databases. A patch already
+      exists for one earlier rename of it.</li>
+    <li><code>overrides.file.get_file_for_doc</code> is the cross-app SDK.
+      Writer, Sheets, and Slides call it through a built bundle checked in
+      at <code>suite/public/frontend/assets/sdk-o7hlQ1xj.js</code>.</li>
+    <li><code>api.files.track_visit</code> and <code>api.files.upload_file</code>
+      are called from Writer, Sheets, and Slides, not just Drive.</li>
+    <li><code>/dav</code> is bound by Finder and Windows Explorer.</li>
+  </ul>
+</div>
+
+<h2 id="given">What the closed decisions already fix</h2>
+
+<p>
+  Five closed tickets handed this one a list of requirements. These are
+  <em>inputs</em>. They are not up for discussion here.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th style="width:130px">From</th><th>What it demands of the API</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Publishing</td>
+      <td>Publish is a grant to <code>$PUBLIC</code>, not a verb. The grant
+      endpoint refuses <code>$PUBLIC</code> above READ, and on a root.</td>
+    </tr>
+    <tr>
+      <td>Link sharing</td>
+      <td>A link is a grant with principal <code>$LINK</code>. Add
+      <code>rotate</code> and <code>unlock</code>. Every endpoint reads
+      <code>X-Drive-Links</code>. A password link with no ticket returns a
+      distinct <strong>locked</strong> answer, not a 403.</td>
+    </tr>
+    <tr>
+      <td>WebDAV</td>
+      <td>Create and replace take a client modification time. Activity gains a
+      <code>client</code> column. One copy endpoint, and it is the COPY
+      primitive.</td>
+    </tr>
+    <tr>
+      <td>Quota</td>
+      <td>A usage endpoint per root. Admin endpoints to set quota and purge an
+      archived root. Over quota is its <strong>own</strong> error, never a
+      permission error.</td>
+    </tr>
+    <tr>
+      <td>Migration</td>
+      <td>Favourites, recents, activity, and notifications read the four
+      reshaped tables. Notification is a pointer to an activity row.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="frame">The frame</h2>
+
+<p>
+  Everything below sits in one picture. There is a Python SDK, an HTTP layer,
+  and a WebDAV layer. Two of the three already exist as decisions. The middle
+  one is what this ticket writes.
+</p>
+
+<figure>
+  <div class="fig-frame">
+<pre style="margin:0;border:none;background:none;padding:0"><code>browser            WebDAV client         other suite apps
+   │                    │                       │
+   ▼                    ▼                       ▼
+<span class="tok-com">┌─────────────┐  ┌─────────────┐          │</span>
+<span class="tok-com">│</span> HTTP layer  <span class="tok-com">│  │</span>   /dav     <span class="tok-com">│</span>          <span class="tok-com">│</span>
+<span class="tok-com">│</span> <span class="tok-str">← THIS</span>      <span class="tok-com">│  │</span> <span class="tok-com">(decided)</span>   <span class="tok-com">│</span>          <span class="tok-com">│</span>
+<span class="tok-com">└──────┬──────┘  └──────┬──────┘</span>          <span class="tok-com">│</span>
+       └────────────────┴───────────────────────┘
+                        ▼
+              <span class="tok-fn">drive.node / drive.access / drive.content</span>
+              <span class="tok-com">the Python SDK — ten entry points</span>
+                        ▼
+              <span class="tok-fn">Drive Node · Drive Grant · Drive Root</span></code></pre>
+  </div>
+  <figcaption>The SDK shape comes from the architecture doc. The WebDAV
+  mapping is decision 009. The box in the middle is empty.</figcaption>
+</figure>
+
+<div class="callout">
+  <p><strong>The ten entry points.</strong>
+  <code>create</code>, <code>update</code>, <code>open</code>,
+  <code>browse</code> · <code>share</code>, <code>role_of</code>,
+  <code>readable_sql</code> · the content registry, the mixin,
+  <code>node_of</code>. <code>update()</code> alone covers rename, move,
+  trash, restore, and byte replacement.</p>
+</div>
+
+<hr>
+
+<h2 id="q1">Question 1 — RPC or routes? <span class="badge done">answered</span></h2>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>Real routes, under a suite namespace.</strong>
+  Not <code>/api/method/suite.drive.api.node.update</code>. Something a person
+  can read:</p>
+  <pre style="margin:0"><code>PATCH /api/suite/drive/nodes/&lt;id&gt;</code></pre>
+  <p class="small" style="margin:8px 0 0">Second half of the answer: harden the
+  site by denying the framework's default API surface on the suite frontend,
+  and keeping it for Desk system users — the shape Frappe Cloud's Press
+  already uses.</p>
+</div>
+
+<h3>What that costs, in facts</h3>
+
+<div class="tw">
+<table>
+  <thead><tr><th style="width:210px">Fact</th><th>Consequence</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>/api/suite/…</code> matches no existing rule
+        (<code>api/v1.py:152</code>, <code>api/v2.py:604</code>)</td>
+      <td>The namespace is free. Nothing to reserve or rename.</td>
+    </tr>
+    <tr>
+      <td><code>API_URL_MAP</code> is built at import time
+        (<code>api/__init__.py:95</code>)</td>
+      <td>An app cannot add a route. The request has to be caught before the
+      map is consulted.</td>
+    </tr>
+    <tr>
+      <td><code>before_request</code> runs inside <code>init_request()</code>
+        (<code>app.py:226</code>), ahead of the <code>/api/</code> branch
+        (<code>app.py:134</code>)</td>
+      <td>That is the catch point. Drive already uses it for
+      <code>/dav</code>, returning its response by raising an
+      <code>HTTPException</code> (<code>app.py:150</code>).</td>
+    </tr>
+    <tr>
+      <td><strong><code>validate_auth()</code> runs after it</strong>
+        (<code>app.py:118</code>)</td>
+      <td>At catch time the session cookie is resolved, but
+      <code>Authorization: token key:secret</code> is not. WebDAV pays this
+      today by doing its own Basic auth.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  <p><strong>The hardening is already half-written.</strong>
+  <code>suite/hooks.py:403-452</code> declares <code>ALLOWED_PATHS</code>,
+  <code>ALLOWED_WILDCARD_PATHS</code>, and
+  <code>DENIED_WILDCARD_PATHS = ["/api/"]</code> — deny everything under
+  <code>/api/</code>, then allow back <code>/api/method/suite.*.api.</code>,
+  login, ping, upload, OAuth, realtime, and <code>/dav</code>.
+  Nothing in suite or frappe reads those lists. The gate is external, so on a
+  self-hosted bench nothing is denied today.</p>
+</div>
+
+<h2 id="q1b">Question 1b — one namespace, or one per app? <span class="badge done">answered</span></h2>
+
+<p>
+  Suite is eight apps sharing a site: Drive, Writer, Sheets, Slides, Mail,
+  Calendar, Meet, and the product shell. <code>/api/suite/nodes/</code> reads
+  beautifully — and it spends the whole namespace on Drive's noun.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0"><strong>An app segment.</strong>
+  <code>/api/suite/drive/…</code>. One segment buys collision-free nouns across
+  eight apps, a readable owner when a route breaks, and one allowlist prefix
+  per app instead of one per route.</p>
+</div>
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-label">A · Flat suite namespace</div>
+    <pre style="margin:0;font-size:11.5px"><code>/api/suite/nodes/&lt;id&gt;
+/api/suite/grants/&lt;id&gt;
+/api/suite/messages/&lt;id&gt;   <span class="tok-com">mail</span>
+/api/suite/events/&lt;id&gt;     <span class="tok-com">calendar</span></code></pre>
+    <p class="small" style="margin:8px 0 0"><strong>For:</strong> shortest
+    URLs. One resource list for the whole product, which is what the product
+    claims to be.
+    <br><strong>Against:</strong> eight apps must agree on every noun forever.
+    Drive and Mail both want <code>attachments</code>. Nothing tells you which
+    app owns a route when it breaks.</p>
+  </div>
+  <div class="card tint-green">
+    <div class="card-label">B · App segment <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0;font-size:11.5px"><code>/api/suite/drive/nodes/&lt;id&gt;
+/api/suite/drive/roots/&lt;id&gt;
+/api/suite/mail/messages/&lt;id&gt;
+/api/suite/calendar/events/&lt;id&gt;</code></pre>
+    <p class="small" style="margin:8px 0 0"><strong>For:</strong> one segment
+    buys collision-free nouns, a readable owner, and an allowlist entry per app
+    (<code>/api/suite/drive/</code>) instead of per route.
+    <br><strong>Against:</strong> one more segment. That is the whole cost.</p>
+  </div>
+</div>
+
+<h3>What the routes would look like</h3>
+
+<div class="code-title">a first sketch — react to the shape, not the spelling</div>
+<pre><code>POST   /api/suite/drive/nodes                      <span class="tok-com">create</span>
+GET    /api/suite/drive/nodes/&lt;id&gt;                 <span class="tok-com">one node</span>
+PATCH  /api/suite/drive/nodes/&lt;id&gt;                 <span class="tok-com">rename · move · trash · restore</span>
+GET    /api/suite/drive/nodes/&lt;id&gt;/children        <span class="tok-com">browse</span>
+POST   /api/suite/drive/nodes/&lt;id&gt;/copy
+PUT    /api/suite/drive/nodes/&lt;id&gt;/content         <span class="tok-com">replace bytes</span>
+
+GET    /api/suite/drive/nodes/&lt;id&gt;/grants
+PUT    /api/suite/drive/nodes/&lt;id&gt;/grants/&lt;principal&gt;   <span class="tok-com">share · publish · link</span>
+DELETE /api/suite/drive/nodes/&lt;id&gt;/grants/&lt;principal&gt;
+POST   /api/suite/drive/grants/&lt;id&gt;/rotate         <span class="tok-com">new link token</span>
+POST   /api/suite/drive/links/&lt;token&gt;/unlock       <span class="tok-com">password → ticket</span>
+
+GET    /api/suite/drive/views/&lt;name&gt;               <span class="tok-com">shared · recents · favourites · trash</span>
+GET    /api/suite/drive/roots/&lt;id&gt;/usage           <span class="tok-com">quota</span>
+GET    /api/suite/drive/nodes/&lt;id&gt;/activity</code></pre>
+
+<h2 id="q1c">Question 1c — how do the routes get mounted? <span class="badge done">answered</span></h2>
+
+<p>
+  Three ways to make <code>PATCH /api/suite/drive/nodes/abc</code> reach Python.
+  They differ in how much of Frappe's request machinery Drive keeps.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>Translate, then delegate.</strong> The
+  pretty path is the public contract. A <code>before_request</code> translator
+  matches it, seeds <code>frappe.form_dict</code> from the path segments,
+  rewrites <code>PATH_INFO</code>, and lets the framework do the rest.</p>
+  <pre style="margin:0"><code>PATCH /api/suite/drive/nodes/abc   { "title": "Q3" }
+      <span class="tok-com">↓ translator</span>
+PATH_INFO  → /api/v2/method/suite.drive.api.node.update
+form_dict  → { node: "abc", title: "Q3" }
+      <span class="tok-com">↓ frappe: auth, CSRF, rate limit, response</span>
+{ "message": { … } }              <span class="tok-com">envelope unchanged</span></code></pre>
+</div>
+
+<h3>What this costs, measured</h3>
+
+<div class="tw">
+<table>
+  <thead><tr><th style="width:150px">Where</th><th>Cost</th></tr></thead>
+  <tbody>
+    <tr><td>Backend</td>
+      <td>One module: a route table, a matcher, and the rewrite. For scale,
+      <code>/dav</code> needs 139 lines of dispatch plus 132 of error
+      rendering — but that one re-implements auth, locking and XML. A
+      translator does none of it.</td></tr>
+    <tr><td>Frontend<br><span class="small muted">out of scope, but someone pays</span></td>
+      <td>Nearly nothing. <code>frappeRequest.ts:66</code> already passes any
+      <code>url</code> starting with <code>/</code> through untouched, and
+      <code>:83</code> already honours <code>options.method</code>. So
+      <code>createResource({url: '/api/suite/drive/nodes/x', method: 'PATCH'})</code>
+      works today.</td></tr>
+    <tr><td>The catch</td>
+      <td><code>frappeRequest.ts:118</code> returns <code>data.message</code>,
+      and its error branch reads <code>exc_type</code> and
+      <code>_error_message</code>. <strong>Keep that envelope and no call site
+      changes.</strong> This constrains question 4.</td></tr>
+    <tr><td>Unchanged</td>
+      <td>WebDAV, the Python SDK, and the shim story for the old 69 methods.
+      Same work either way.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p class="small muted">The two options below were rejected for the reasons in
+their cards.</p>
+
+<div class="grid3">
+  <div class="card tint-green">
+    <div class="card-label">A · Translate, then delegate <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>before_request:
+  match the path
+  seed form_dict
+  rewrite PATH_INFO →
+    /api/v2/method/…</code></pre>
+    <p class="small" style="margin:0">The pretty path is the public contract;
+    the framework still does auth, CSRF, rate limits, error rendering, and
+    monitoring. <strong>Cost:</strong> the method name still shows up in logs
+    and error bodies.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">B · Own dispatcher</div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>before_request:
+  werkzeug Map
+  handle end to end
+  raise HTTPException</code></pre>
+    <p class="small" style="margin:0">Exactly how <code>/dav</code> works, so
+    it is proven. <strong>Cost:</strong> API-key auth, CSRF, rate limiting and
+    the error envelope are all Drive's to re-implement, because
+    <code>validate_auth()</code> has not run yet.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">C · Framework ask</div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>frappe: let apps
+register API rules
+(a sixth storage_v2
+ style ask)</code></pre>
+    <p class="small" style="margin:0">The only one that makes app routes a real
+    feature, for every Frappe app. <strong>Cost:</strong> a framework change
+    this spec would then depend on, and it does not exist today.</p>
+  </div>
+</div>
+
+<div class="callout warn">
+  <p><strong>Scope check.</strong> Denying the default framework API is a
+  <em>site</em> decision, not a Drive one — it changes Mail, Calendar, Meet,
+  and Desk at the same time. The Drive-shaped part of it (Drive's routes go on
+  the allowlist, its 69 old methods come off) belongs here. The site-wide part
+  may be its own ticket, or out of scope for this map.</p>
+</div>
+
+<h2 id="q2">Question 2 — how many routes? <span class="badge done">answered</span></h2>
+
+<p>
+  The SDK has ten entry points; <code>update()</code> alone covers rename,
+  move, trash, restore, and byte replacement. Today's API has 69 methods. With
+  routes chosen, the question becomes: does a node change through <strong>one
+  PATCH with fields</strong>, or through <strong>a route per verb</strong>?
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>One PATCH for what can be undone.
+  DELETE for what cannot.</strong></p>
+  <pre style="margin:0"><code>PATCH  /api/suite/drive/nodes/&lt;id&gt;
+         { "title":  "Q3 deck"  }      <span class="tok-com">rename</span>
+         { "parent": "folder-9" }      <span class="tok-com">move</span>
+         { "state":  "trashed"  }      <span class="tok-com">trash</span>
+         { "state":  "active"   }      <span class="tok-com">restore</span>
+
+DELETE /api/suite/drive/nodes/&lt;id&gt;    <span class="tok-com">purge — terminal</span></code></pre>
+  <p class="small" style="margin:8px 0 0">DAV MOVE keeps one path, because a
+  MOVE is a rename, a move, or both, and it does not know which.</p>
+</div>
+
+<div class="callout">
+  <p><strong>One thing pulls toward the PATCH.</strong> The architecture doc
+  says <code>update()</code> "gives WebDAV MOVE, the UI, and content sync one
+  tested path". A DAV MOVE is a rename, a move, or both, and it does not know
+  which — so it wants one route that takes both fields.</p>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-label">A · One PATCH, all of it</div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>PATCH /nodes/&lt;id&gt;
+  { title }
+  { parent }
+  { state: "trashed" }
+  { state: "active" }
+  { state: "purged" }</code></pre>
+    <p class="small" style="margin:0">Mirrors the SDK exactly. One route to
+    authorize and test.
+    <br><strong>Against:</strong> an accidental
+    <code>state: "purged"</code> is unrecoverable, and it looks like every
+    other field.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">B · A route per verb</div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>PATCH /nodes/&lt;id&gt;   <span class="tok-com">title</span>
+POST  /nodes/&lt;id&gt;/move
+POST  /nodes/&lt;id&gt;/trash
+POST  /nodes/&lt;id&gt;/restore
+POST  /nodes/&lt;id&gt;/purge</code></pre>
+    <p class="small" style="margin:0">Each route validates only its own
+    arguments, and gets its own rate limit and activity verb.
+    <br><strong>Against:</strong> five routes that must stay in step, and DAV
+    MOVE has to pick one.</p>
+  </div>
+  <div class="card tint-green">
+    <div class="card-label">C · PATCH, but purge is DELETE <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0 0 8px;font-size:11.5px"><code>PATCH  /nodes/&lt;id&gt;
+  { title }
+  { parent }
+  { state: "trashed"
+        | "active" }
+
+DELETE /nodes/&lt;id&gt;   <span class="tok-com">purge</span></code></pre>
+    <p class="small" style="margin:0">Reversible changes are one PATCH, so DAV
+    MOVE still has one path. The one irreversible act is the one HTTP verb
+    that means it.</p>
+  </div>
+</div>
+
+<h2 id="q3">Question 3 — who checks permission? <span class="badge done">answered</span></h2>
+
+<p>
+  The architecture doc says Drive "owns its endpoints and preflights itself".
+  That was written about the framework seam, not about this one. So it is
+  still open whether the check lives in the endpoint or below it.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0"><strong>The SDK checks. The HTTP layer translates.</strong>
+  A route handler parses the path, seeds principals from
+  <code>X-Drive-Links</code>, calls the SDK, and maps the exception. Three
+  callers reach the same nodes — routes, <code>/dav</code>, and other suite
+  apps — and all three get one rule because none of them owns it.</p>
+</div>
+
+<div class="grid2">
+  <div class="card tint-green">
+    <div class="card-label">A · SDK checks, HTTP translates <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0;font-size:11.5px"><code><span class="tok-kw">def</span> <span class="tok-fn">patch_node</span>(node, **fields):
+    <span class="tok-kw">return</span> drive.node.update(
+        node, **fields)
+    <span class="tok-com"># raises. that is all.</span></code></pre>
+    <p class="small" style="margin:8px 0 0">One home for the rule. WebDAV, the
+    HTTP layer, and Sheets cannot disagree, because none of them decides.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">B · Endpoint checks first</div>
+    <pre style="margin:0;font-size:11.5px"><code><span class="tok-kw">def</span> <span class="tok-fn">patch_node</span>(node, **fields):
+    require(node, EDIT)
+    <span class="tok-kw">return</span> drive.node.update(
+        node, **fields)</code></pre>
+    <p class="small" style="margin:8px 0 0">Lets the endpoint fail early and
+    give a better message. Costs a second read of the grants, and a second
+    place the rule can be wrong.</p>
+  </div>
+</div>
+
+<h2 id="q4">Question 4 — what does an error look like? <span class="badge done">answered</span></h2>
+
+<p>
+  Today the same condition is signalled two ways. <code>files.py:73</code>
+  throws; <code>files.py:290</code> raises. One endpoint hand-builds a
+  v2-shaped error body so the SPA routes correctly
+  (<code>permissions.py:124</code>). Search swallows every exception and
+  returns <code>{"error": …}</code> with a 200.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>The v2 <code>errors[]</code> shape.</strong>
+  The exception class name is the code; <code>http_status_code</code> on the
+  class gives the status.</p>
+  <pre style="margin:0"><code><span class="tok-kw">class</span> DriveOverQuota(frappe.ValidationError):
+    http_status_code = <span class="tok-num">413</span>
+
+<span class="tok-com">HTTP 413</span>
+{ <span class="tok-str">"errors"</span>: [ { <span class="tok-str">"type"</span>: <span class="tok-str">"DriveOverQuota"</span>,
+              <span class="tok-str">"message"</span>: <span class="tok-str">"Needs 4 MB, 1 MB free"</span> } ] }</code></pre>
+  <p class="small" style="margin:8px 0 0">What today is a hack at
+  <code>permissions.py:124</code> becomes the rule. Success rides the same
+  envelope: <code>{ "data": … }</code>.</p>
+</div>
+
+<div class="callout">
+  <p><strong>No upstream ask. <code>useCall</code> already speaks this.</strong>
+  <code>frappe-ui</code>'s newer data-fetching layer parses the v2
+  <code>errors[]</code> array natively
+  (<code>data-fetching/useFrappeFetch.ts:90-105</code>), surfacing
+  <code>type</code>, <code>message</code>, <code>title</code> and
+  <code>exception</code> as a <code>FrappeResponseError</code>. It is the older
+  <code>createResource</code> path (<code>frappeRequest.ts:118</code>) that
+  reads <code>exc_type</code>, and Drive is leaving it.</p>
+</div>
+
+<div class="tw">
+<table>
+  <thead><tr><th style="width:130px">Client</th><th>Fits Drive's routes?</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>useCall</code></td>
+      <td><strong>Yes.</strong> Takes an arbitrary <code>url</code>
+      (<code>useCall.ts:54</code>) and <code>GET | POST | PUT | DELETE</code>
+      (<code>useCall/types.ts:11</code>). Unwraps <code>data.data</code>, which
+      is what <code>frappe/api/__init__.py:66</code> writes.</td>
+    </tr>
+    <tr>
+      <td><code>useList</code><br><code>useDoc</code></td>
+      <td><strong>No.</strong> Both build
+      <code>/api/v2/document/&lt;doctype&gt;</code> URLs
+      (<code>useList.ts:65</code>, <code>useDoc.ts:63</code>) — the framework's
+      generic document API, which bypasses the grant engine.</td>
+    </tr>
+    <tr>
+      <td><code>createResource</code></td>
+      <td>The v1 path Drive uses today. Superseded here.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <p><strong>Both envelopes must be v2, together.</strong>
+  <code>useCall</code> reads success as <code>{ data: … }</code> and failure as
+  <code>{ errors: [ … ] }</code>. Translating to
+  <code>/api/v2/method/…</code> produces both. Translating to
+  <code>/api/method/…</code> produces neither.</p>
+</div>
+
+<h3>Two things the spec must pin down</h3>
+
+<div class="tw">
+<table>
+  <thead><tr><th style="width:180px">Item</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Clear the cached path</td>
+      <td><code>frappe.api.handle</code> routes from
+      <code>request.environ</code>, but <code>get_api_version()</code> reads
+      the cached <code>request.path</code>, which <code>init_request</code>
+      already touched at <code>app.py:218</code>. Rewriting environ alone
+      changes the route and <em>not</em> the error shape. The translator must
+      drop the cache.</td>
+    </tr>
+    <tr>
+      <td>The class list</td>
+      <td>Three failures must stay distinguishable, by decisions 008 and 010:
+      over quota is not a permission error, a locked link is not a 403, and an
+      expired link is not the same as a locked one.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Condition</th><th class="nowrap">Class</th><th class="nowrap">Status</th></tr></thead>
+  <tbody>
+    <tr><td>Node missing, or hidden from you</td><td class="mono">DriveNotFound</td><td class="mono">404</td></tr>
+    <tr><td>Role below what the act needs</td><td class="mono">DriveForbidden</td><td class="mono">403</td></tr>
+    <tr><td>Password link, no ticket</td><td class="mono">DriveLocked</td><td class="mono">401</td></tr>
+    <tr><td>Link past <code>expires_on</code></td><td class="mono">DriveLinkExpired</td><td class="mono">410</td></tr>
+    <tr><td>Admission UPDATE hit zero rows</td><td class="mono">DriveOverQuota</td><td class="mono">413</td></tr>
+    <tr><td>Title taken, or node moved under itself</td><td class="mono">DriveConflict</td><td class="mono">409</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="q5">Question 5 — how does paging work? <span class="badge done">answered</span></h2>
+
+<p>
+  Today's paging has a wart worth understanding. The SQL window is taken
+  <em>first</em>, then rows the user cannot see are dropped. So a page of 50
+  can return 12 rows, and the next offset is not <code>start + limit</code> —
+  it is a raw offset the server computes and hands back
+  (<code>list.py:477-495</code>).
+</p>
+
+<p>
+  The new engine has the same shape: fetch child ids, then batch-read grants
+  over that page. Filtering still happens after the window.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>An opaque cursor.</strong> The client
+  echoes back a string it never parses.</p>
+  <pre style="margin:0"><code>GET /api/suite/drive/nodes/&lt;id&gt;/children?limit=50
+
+{ <span class="tok-str">"data"</span>: { <span class="tok-str">"rows"</span>: [ … 12 rows … ],
+            <span class="tok-str">"next_cursor"</span>: <span class="tok-str">"b2Zmc2V0OjUw"</span> } }
+
+GET …/children?limit=50&amp;cursor=b2Zmc2V0OjUw</code></pre>
+  <p class="small" style="margin:8px 0 0">It holds an offset today. It can hold
+  a keyset later, with no call site changed. No page jumping — the honest
+  answer while filtering happens after the window.</p>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-label">A · Keep offsets</div>
+    <p class="small" style="margin:0">
+      <code>start</code>, <code>limit</code>, and a server-computed
+      <code>next_start</code>. Honest about what it is. Clients can jump to
+      page 40 — and will get wrong results when rows shift.</p>
+  </div>
+  <div class="card tint-green">
+    <div class="card-label">B · Opaque cursor <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <p class="small" style="margin:0">
+      <code>{rows, next_cursor}</code>, where the cursor is a string the
+      client only ever echoes back. It holds an offset today and can hold a
+      keyset later without a client change.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">C · Filter before the window</div>
+    <p class="small" style="margin:0">
+      Push the grant join into the list query so a page of 50 is 50 rows.
+      Decision 004 froze the index that makes the unfiltered scan fast; a join
+      would need re-benchmarking.</p>
+  </div>
+</div>
+
+<h2 id="q6">Question 6 — what is in a node's JSON? <span class="badge done">answered</span></h2>
+
+<p>
+  <code>get_entity_with_permissions</code> returns the file, the access bits,
+  the owner's name and avatar, the breadcrumb chain, the favourite flag, and a
+  share count — in one call. The list endpoints return a thinner row. Two
+  shapes for one thing.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>One node shape, with opt-in
+  expansions.</strong> A list row and a detail fetch carry identical base
+  fields, so the client has one type.</p>
+  <pre style="margin:0"><code>GET /nodes/abc
+{ <span class="tok-str">"data"</span>: { name, title, kind, parent, state, size, modified, owner } }
+
+GET /nodes/abc?expand=access,breadcrumbs,preview
+{ <span class="tok-str">"data"</span>: { …base…, <span class="tok-str">"access"</span>: {…}, <span class="tok-str">"breadcrumbs"</span>: […], <span class="tok-str">"preview"</span>: {…} } }</code></pre>
+  <p class="small" style="margin:8px 0 0">Extras are named in the query, so a
+  50-row folder page pays for no breadcrumb chains it did not ask for.</p>
+</div>
+
+<div class="grid2">
+  <div class="card tint-green">
+    <div class="card-label">A · One node, opt-in extras <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0;font-size:11.5px"><code>GET /nodes/&lt;id&gt;
+  ?expand=access,
+          breadcrumbs,
+          preview</code></pre>
+    <p class="small" style="margin:8px 0 0">The base node is always the same
+    fields, in lists and in detail. Extras cost extra queries only when
+    asked for. One serializer to keep correct.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">B · Purpose-built payloads</div>
+    <pre style="margin:0;font-size:11.5px"><code>GET /nodes/&lt;id&gt;/children
+  <span class="tok-com">row shape</span>
+GET /nodes/&lt;id&gt;
+  <span class="tok-com">page shape</span></code></pre>
+    <p class="small" style="margin:8px 0 0">Each view returns exactly what it
+    needs, no negotiation. That is today's design, and it is why the two
+    shapes drifted apart.</p>
+  </div>
+</div>
+
+<h2 id="q7">Question 7 — what happens when half a batch fails? <span class="badge done">answered</span></h2>
+
+<p>
+  Today <code>move</code>, <code>delete_entities</code>,
+  <code>remove_or_restore</code>, and <code>set_favourite</code> all take
+  lists. But <code>PATCH /nodes/&lt;id&gt;</code> is singular. Select 30 files,
+  move them, and 3 have no EDIT grant.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>A batch route that reports per item.</strong>
+  Partial success is a result, not an error.</p>
+  <pre style="margin:0"><code>POST /api/suite/drive/nodes/batch
+{ <span class="tok-str">"nodes"</span>: [ … 30 ids … ], <span class="tok-str">"patch"</span>: { <span class="tok-str">"parent"</span>: <span class="tok-str">"folder-9"</span> } }
+
+{ <span class="tok-str">"data"</span>: { <span class="tok-str">"ok"</span>: [ … 27 ids … ],
+            <span class="tok-str">"failed"</span>: [ { <span class="tok-str">"node"</span>: <span class="tok-str">"c"</span>, <span class="tok-str">"type"</span>: <span class="tok-str">"DriveForbidden"</span> } ] } }</code></pre>
+  <p class="small" style="margin:8px 0 0">The 27 move. The UI names the 3 that
+  did not. One gesture stays one request and produces 27 activity rows, not
+  30 requests.</p>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-label">A · All or nothing</div>
+    <p class="small" style="margin:0">One failure rolls the whole batch back
+    and returns one error. Simple to reason about, and infuriating when one
+    file in thirty is locked.</p>
+  </div>
+  <div class="card tint-green">
+    <div class="card-label">B · Per-item results <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <pre style="margin:0 0 6px;font-size:11.5px"><code>{"ok": ["a","b"],
+ "failed": [
+   {"node":"c",
+    "code":"forbidden"}]}</code></pre>
+    <p class="small" style="margin:0">The 27 move. The UI names the 3 that
+    did not.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">C · One node per call</div>
+    <p class="small" style="margin:0">The client loops. Honest, matches the
+    SDK exactly, and turns a 30-file move into 30 round trips and 30 activity
+    rows.</p>
+  </div>
+</div>
+
+<h2 id="q8">Question 8 — what happens to the 69 methods? <span class="badge done">answered</span></h2>
+
+<p>
+  The frontend is out of scope for this map. But the frontend still has to
+  work on the day the migration patch runs. Every one of these names is called
+  by shipped JavaScript.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Answer · 4 September 2026</div>
+  <p style="margin:0 0 8px"><strong>Shim, then drop.</strong> Old names become
+  thin forwarders into the new SDK and die one release later — the same
+  two-step shape decision 011 chose for the data.</p>
+  <pre style="margin:0"><code><span class="tok-com">Build patch (additive)</span>
+  routes live
+  suite.drive.api.files.rename  →  drive.node.update
+  … × 69 forwarders
+
+<span class="tok-com">Cleanup patch (one release later)</span>
+  forwarders deleted, gated on the SPA having moved</code></pre>
+  <p class="small" style="margin:8px 0 0">The API and the tables move on one
+  schedule. The SPA rewrite does not have to land in the same release as the
+  backend.</p>
+</div>
+
+<div class="grid3">
+  <div class="card">
+    <div class="card-label">A · Cut over</div>
+    <p class="small" style="margin:0">New names only. The SPA is rewritten in
+    the same release. Nothing to keep in step, and the two efforts must land
+    together.</p>
+  </div>
+  <div class="card tint-green">
+    <div class="card-label">B · Shim, then drop <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <p class="small" style="margin:0">Old names stay as thin forwarders that
+    call the new API. They die in the Cleanup patch, one release later —
+    the same two-step decision 011 already chose for the data.</p>
+  </div>
+  <div class="card">
+    <div class="card-label">C · Keep them</div>
+    <p class="small" style="margin:0">The old surface is the public API
+    forever; the new one is internal. No migration, and 69 methods to keep
+    correct against a model they no longer match.</p>
+  </div>
+</div>
+
+<div class="callout warn">
+  <p><strong>Three names may not get a choice.</strong>
+  <code>api.s3.fetch</code> is inside stored data.
+  <code>get_file_for_doc</code> is inside a checked-in built bundle.
+  <code>/dav</code> is inside other people's file managers. Those are
+  permanent whatever we decide here.</p>
+</div>
+
+<hr>
+
+<h2 id="order">Where this landed</h2>
+
+<p>
+  All eight are answered. One scope boundary is still open: how much of the
+  site hardening belongs to this map.
+</p>
+
+<div class="code-title">the surface, in one block</div>
+<pre><code><span class="tok-com">reads</span>
+GET    /api/suite/drive/nodes/&lt;id&gt;?expand=access,breadcrumbs,preview
+GET    /api/suite/drive/nodes/&lt;id&gt;/children?limit=50&amp;cursor=…
+GET    /api/suite/drive/nodes/&lt;id&gt;/activity
+GET    /api/suite/drive/views/&lt;name&gt;          <span class="tok-com">shared · recents · favourites · trash</span>
+GET    /api/suite/drive/roots/&lt;id&gt;/usage
+
+<span class="tok-com">writes</span>
+POST   /api/suite/drive/nodes                 <span class="tok-com">create</span>
+PATCH  /api/suite/drive/nodes/&lt;id&gt;            <span class="tok-com">rename · move · trash · restore</span>
+DELETE /api/suite/drive/nodes/&lt;id&gt;            <span class="tok-com">purge — terminal</span>
+POST   /api/suite/drive/nodes/&lt;id&gt;/copy
+PUT    /api/suite/drive/nodes/&lt;id&gt;/content    <span class="tok-com">replace bytes</span>
+POST   /api/suite/drive/nodes/batch           <span class="tok-com">per-item ok / failed</span>
+
+<span class="tok-com">access</span>
+GET    /api/suite/drive/nodes/&lt;id&gt;/grants
+PUT    /api/suite/drive/nodes/&lt;id&gt;/grants/&lt;principal&gt;   <span class="tok-com">share · publish · link</span>
+DELETE /api/suite/drive/nodes/&lt;id&gt;/grants/&lt;principal&gt;
+POST   /api/suite/drive/grants/&lt;id&gt;/rotate
+POST   /api/suite/drive/links/&lt;token&gt;/unlock
+
+<span class="tok-com">mounted by a before_request translator; SDK checks; v2 { data } / { errors }</span></code></pre>
+
+<ol class="passes">
+  <li><span class="pass-num answer">✓</span><div><strong>RPC or routes</strong>
+    <p class="small">Real routes under <code>/api/suite/</code>, mounted by a
+    <code>before_request</code> translator that keeps the framework envelope.
+    Open: the namespace.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>How many routes</strong>
+    <p class="small">PATCH for reversible changes, DELETE for purge.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>Who checks permission</strong>
+    <p class="small">The SDK. The HTTP layer only translates.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>Error vocabulary</strong>
+    <p class="small">v2 <code>errors[]</code>, exception class as the code.
+    <code>useCall</code> reads it as-is.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>Paging</strong>
+    <p class="small">Opaque cursor. The frozen index is untouched.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>Node JSON</strong>
+    <p class="small">One shape, plus named expansions.</p></div></li>
+  <li><span class="pass-num answer">✓</span><div><strong>Batch failure</strong>
+    <p class="small">A batch route reporting each node.</p></div></li>
+  <li class="pass-end"><span class="pass-num answer">✓</span><div><strong>The old 69 methods</strong>
+    <p class="small">Shim in Build, drop in Cleanup.</p></div></li>
+</ol>
+
+<footer class="page">
+  Decision 014 · HTTP API surface · map <em>Drive layer spec</em>.
+  Blocked by Publishing capability and Link sharing semantics, both closed.
+  Blocks Draft the spec.
+</footer>
+
+
+</main>
+</div>
+<script>
+(function () {
+  // theme toggle: remembers the choice, otherwise follows the OS
+  var root = document.documentElement;
+  var stored = null;
+  try { stored = localStorage.getItem('drive-explainer-theme'); } catch (e) {}
+  var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  root.setAttribute('data-theme', stored || (prefersDark ? 'dark' : 'light'));
+  document.getElementById('themeToggle').addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('drive-explainer-theme', next); } catch (e) {}
+  });
+
+  // build the table of contents from the h2s
+  var list = document.getElementById('tocList');
+  var heads = [].slice.call(document.querySelectorAll('main h2[id]'));
+  heads.forEach(function (h) {
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent.trim();
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+
+  // highlight the section currently on screen
+  var links = [].slice.call(list.querySelectorAll('a'));
+  if ('IntersectionObserver' in window) {
+    var seen = {};
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { seen[e.target.id] = e.isIntersecting; });
+      var current = null;
+      heads.forEach(function (h) { if (seen[h.id] && !current) current = h.id; });
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+      });
+    }, { rootMargin: '0px 0px -70% 0px' });
+    heads.forEach(function (h) { obs.observe(h); });
+  }
+})();
+</script>
+</body>
+</html>

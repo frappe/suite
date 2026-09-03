@@ -147,6 +147,21 @@ implementation effort can execute from the documents alone.
   reads; the deck preview is a preview row written without a touch; webp
   conversion happens before the node exists.
 
+- [HTTP API surface](tickets/014-http-api-surface.md) — real routes at
+  `/api/suite/drive/...`, not RPC; an app segment because eight apps share the
+  site; mounted by a `before_request` translator that rewrites `PATH_INFO` to
+  `/api/v2/method/...` and keeps framework auth, CSRF and rate limits (a full
+  dispatcher was rejected: `validate_auth()` runs after the hook); PATCH for
+  rename, move, trash and restore so DAV MOVE keeps one path, DELETE for the
+  one terminal act; the SDK checks permission and the HTTP layer only
+  translates; v2 envelopes both ways (`{data}` / `{errors}`), exception class
+  as the code, six classes with status codes; opaque cursor paging; one node
+  shape with `?expand=access,breadcrumbs,preview`; a batch route reporting
+  ok/failed per node; the 69 old methods shimmed in Build and dropped in
+  Cleanup, except three that are permanent (`api.s3.fetch` in stored URLs,
+  `get_file_for_doc` in a built bundle, `/dav`); no upstream ask — `useCall`
+  already reads the v2 shape, `useList` and `useDoc` do not fit.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
@@ -167,6 +182,15 @@ implementation effort can execute from the documents alone.
 - Blind drop-box (upload without seeing the folder). Ruled out in
   [Link sharing semantics](tickets/008-link-sharing-semantics.md): UPLOAD
   contains READ in the strict ladder, so the state is unrepresentable.
+- Site-wide API hardening: enforcing `DENIED_WILDCARD_PATHS = ["/api/"]`
+  across mail, calendar, meet, writer, sheets and slides, with a Desk
+  carve-out for system users. Wanted eventually for the whole codebase, but it
+  must not block the Drive rewrite, so it is a separate effort. The Drive-shaped
+  part stays in [HTTP API surface](tickets/014-http-api-surface.md): add
+  `/api/suite/drive/`, drop `/api/method/suite.drive.api.` in Cleanup. Note for
+  that effort: the lists are already declared at `suite/hooks.py:403-452` and
+  nothing in suite or frappe reads them — the gate is external (Frappe Cloud),
+  so a self-hosted bench denies nothing today.
 - Frappe Cloud allowlisting of the `storage_driver` and
   `storage_driver_config` site_config keys for suite.frappe.io. An
   operational precondition surfaced by

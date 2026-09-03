@@ -2,7 +2,7 @@
 id: 014
 title: HTTP API surface
 label: wayfinder:grilling
-status: open
+status: closed
 assignee: faris
 blocked-by: [007, 008]
 ---
@@ -80,3 +80,134 @@ listings exclude `is_template` nodes, and no listing returns the children of
 a content document node. The composite response marks a reference the caller
 cannot read instead of dropping it silently. Slide media uploads use the
 same create-upload call and so return the same over-quota error.
+
+## Resolution
+
+Resolved 2026-09-04. Explainer:
+https://md.netchamp.dev/drive-http-api/ (source
+`explainer/http-api.html`).
+
+**1. Real routes, not RPC.** The surface is
+`/api/suite/drive/...`, not `/api/method/suite.drive.api....`. The
+namespace carries an app segment (`drive`), because eight suite apps share
+one site and two of them want the noun `attachments`. One segment gives
+collision-free nouns, a readable owner in a log line, and one hardening
+allowlist prefix per app instead of one per route.
+
+**2. Mounted by a translator, not a dispatcher.** `API_URL_MAP` is built at
+import time (`frappe/api/__init__.py:95`), so an app cannot add a rule. A
+`before_request` hook matches the pretty path, seeds `frappe.form_dict`
+from the path segments, rewrites `PATH_INFO` to `/api/v2/method/...`, and
+lets the framework do auth, CSRF, rate limiting and response building. This
+is the same catch point `/dav` uses (`suite/hooks.py:336`), but it delegates
+instead of handling. Cost: one module. A full dispatcher was rejected
+because `validate_auth()` runs after `before_request` (`app.py:118` vs
+`:226`), so Drive would have to re-implement API-key auth, CSRF, rate
+limits and the response envelope.
+
+The translator must also clear the cached `request.path`. `frappe.api.handle`
+routes from `request.environ`, but `get_api_version()` reads `request.path`,
+which `init_request` already touched at `app.py:218`. Rewriting environ alone
+changes the route and not the response version.
+
+**3. Node changes: PATCH for what can be undone, DELETE for what cannot.**
+
+    PATCH  /api/suite/drive/nodes/<id>   { title } | { parent }
+                                         | { state: "trashed" | "active" }
+    DELETE /api/suite/drive/nodes/<id>   purge, terminal
+
+One PATCH keeps the architecture doc's promise that `update()` gives WebDAV
+MOVE and the UI one tested path: a MOVE is a rename, a move, or both, and it
+does not know which. Purge is the one irreversible act, so it gets the one
+HTTP verb that means it instead of hiding as `state: "purged"` beside
+`state: "active"`.
+
+**4. The SDK checks permission. The HTTP layer translates.** A route handler
+parses the path, seeds principals from `X-Drive-Links`, calls the SDK and maps
+the exception. It never calls `require()` itself. Three callers reach the same
+nodes — routes, `/dav`, and other suite apps through the content contract —
+and all three get one rule because none of them owns it.
+
+**5. Errors and successes both speak the v2 envelope.** Success is
+`{ "data": ... }` (`frappe/api/__init__.py:66`); failure is
+`{ "errors": [ { "type", "message" } ] }` (`frappe/utils/response.py:57-61`).
+The exception class name is the code, and `http_status_code` on the class
+gives the status. What `permissions.py:124` does today as a hack becomes the
+rule.
+
+No upstream ask. `frappe-ui`'s `useCall` already parses the v2 `errors[]`
+array (`data-fetching/useFrappeFetch.ts:90-105`), takes an arbitrary `url`
+(`useCall.ts:54`) and four verbs (`useCall/types.ts:11`), and unwraps
+`data.data`. `useList` and `useDoc` do **not** fit: both build
+`/api/v2/document/<doctype>` URLs (`useList.ts:65`, `useDoc.ts:63`), which is
+the generic document API and bypasses the grant engine. The frontend moves
+from `createResource` to `useCall`; that work belongs to the UI effort.
+
+The class list, satisfying decisions 008 and 010:
+
+| Condition | Class | Status |
+|---|---|---|
+| Node missing, or hidden from you | `DriveNotFound` | 404 |
+| Role below what the act needs | `DriveForbidden` | 403 |
+| Password link, no ticket | `DriveLocked` | 401 |
+| Link past `expires_on` | `DriveLinkExpired` | 410 |
+| Admission UPDATE hit zero rows | `DriveOverQuota` | 413 |
+| Title taken, or node moved under itself | `DriveConflict` | 409 |
+
+**6. Paging is an opaque cursor.** `{ "data": { "rows", "next_cursor" } }`,
+where the client only echoes the cursor back. It holds an offset today and can
+hold a keyset later with no call site changed. Offsets were rejected because
+permission filtering happens after the SQL window, so a page of 50 can return
+12 and `next_start` is not `start + limit` (`list.py:477-495`). Pushing the
+grant join into the list query was rejected because it re-opens the index
+frozen by [Index benchmark parent-state-title](004-index-benchmark-parent-state-title.md).
+
+**7. One node shape, with opt-in expansions.** A list row and a detail fetch
+carry identical base fields, so the client has one type. `?expand=` names the
+extras — `access`, `breadcrumbs`, `preview` — and each costs its queries only
+when asked for. This replaces today's two shapes: the fat
+`get_entity_with_permissions` payload and the thin list row, which drifted.
+
+**8. Batch writes report per item.**
+
+    POST /api/suite/drive/nodes/batch
+    { "nodes": [ ...ids... ], "patch": { "parent": "folder-9" } }
+
+    { "data": { "ok": [ ...ids... ],
+                "failed": [ { "node": "c", "type": "DriveForbidden" } ] } }
+
+Partial success is a result, not an error. All-or-nothing punishes 27 files
+for 3, and looping PATCH turns one gesture into 30 requests and 30 activity
+rows.
+
+**9. The 69 old methods are shimmed, then dropped.** Build adds the routes and
+keeps every old name as a thin forwarder into the new SDK. Cleanup deletes the
+forwarders one release later, gated on the SPA having moved. This is the
+two-patch shape [Migration mapping](011-migration-mapping.md) already chose for
+the data, so the API and the tables move on one schedule, and the SPA rewrite
+need not land in the same release as the backend.
+
+Three names are permanent whatever else happens: `suite.drive.api.s3.fetch`
+sits inside stored `File.file_url` values, `overrides.file.get_file_for_doc`
+sits inside a checked-in built bundle
+(`suite/public/frontend/assets/sdk-o7hlQ1xj.js`), and `/dav` sits inside
+third-party file managers.
+
+**10. Hardening: the Drive-shaped part only.** This spec adds
+`/api/suite/drive/` to `ALLOWED_WILDCARD_PATHS` and removes
+`/api/method/suite.drive.api.` in Cleanup (`suite/hooks.py:429-447`).
+Site-wide enforcement is ruled out of scope — see the map. Note for whoever
+picks it up: `DENIED_WILDCARD_PATHS = ["/api/"]` is already declared at
+`suite/hooks.py:450`, and nothing in suite or frappe reads it, so the gate
+lives outside this repo (Frappe Cloud). On a self-hosted bench nothing is
+denied today.
+
+### Handoff to [Draft the spec](013-draft-the-spec.md)
+
+The HTTP API section is the ten decisions above. It states the route table,
+the translator (including the cached-path clearing), the exception class list
+with status codes, the cursor contract, the node shape with its three
+expansions, the batch result shape, and the shim-then-drop plan for the 69
+methods. The migration section gains the forwarder list and its Cleanup gate.
+The frontend note — `useCall`, not `createResource`, and not `useList` or
+`useDoc` — is a handoff to the UI effort, not part of this spec.
