@@ -46,25 +46,51 @@ def get_calendar_events(account: str, from_date: str, to_date: str, time_zone: s
     return events
 
 
+# What an occurrence inherits from its series, as (our name, the JMAP name the override uses).
+#
+# An occurrence that carries a recurrence override comes back from Stalwart 0.16.20 with the
+# structural half merged — uid, zone, calendars, organizer, participants — and this half
+# dropped, plus a duration invented to run to the end of the day. RFC 8984 reads an override as
+# a patch over the series, so the series is what these should say unless the override says
+# otherwise. Applying that here is the whole of the workaround; delete it, and the test that
+# pins it, once the server merges them itself.
+INHERITED_FROM_SERIES = (
+    ("title", "title"),
+    ("description", "description"),
+    ("duration", "duration"),
+    ("privacy", "privacy"),
+    ("free_busy_status", "freeBusyStatus"),
+    ("status", "status"),
+    ("show_without_time", "showWithoutTime"),
+    ("locations", "locations"),
+    ("links", "links"),
+    ("alerts", "alerts"),
+    ("use_default_alerts", "useDefaultAlerts"),
+)
+
+
 def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
-    """Attaches recurrence/master info to each event in-place.
+    """Attaches recurrence/master info to each event in-place, and what its series says about it.
 
     Masters are resolved through baseEventId rather than a uid query: the uid filter runs on
     the server's search index, which is updated asynchronously, so a query-based lookup misses
     events created moments ago — leaving them without a master_id (so the frontend falls back
-    to the synthetic id, which cannot be updated or deleted) and with an unparsed
+    to the synthetic id, which the server renumbers as overrides land) and with an unparsed
     recurrence_rule string until the index catches up."""
 
     if not events:
         return
 
-    base_ids = get_calendar_event_service(account).get_base_event_ids([event["id"] for event in events])
+    service = get_calendar_event_service(account)
+    base_ids = service.get_base_event_ids([event["id"] for event in events])
     if not base_ids:
         return
 
-    masters = {
-        master["id"]: master for master in get_calendar_events_by_ids(account, sorted(set(base_ids.values())))
-    }
+    master_ids = sorted(set(base_ids.values()))
+    # The raw copies carry recurrenceOverrides, which the formatter drops — and the override is
+    # the only thing that says which properties an occurrence owns rather than inherits.
+    overrides = {master["id"]: master.get("recurrenceOverrides") or {} for master in service.get(master_ids)}
+    masters = {master["id"]: master for master in get_calendar_events_by_ids(account, master_ids)}
 
     for event in events:
         master = masters.get(base_ids.get(event["id"]))
@@ -79,6 +105,17 @@ def enrich_events_with_master_data(account: str, events: list[dict]) -> None:
                 "master_duration": master["duration"],
             }
         )
+
+        if not event.get("recurrence_id"):
+            continue
+
+        # A patch names its property first, whether it replaces the whole thing ("title") or
+        # reaches inside it ("participants/<uid>/participationStatus").
+        override = overrides.get(master["id"], {}).get(event["recurrence_id"]) or {}
+        owned = {key.split("/")[0] for key in override}
+        for name, jmap_name in INHERITED_FROM_SERIES:
+            if jmap_name not in owned:
+                event[name] = master[name]
 
 
 def enrich_participants_with_avatars(events: list[dict]) -> None:
@@ -127,14 +164,14 @@ def _with_name(items: list[dict] | None) -> list[dict] | None:
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def rsvp_calendar_event(account: str, id: str, response: str) -> None:
+def rsvp_calendar_event(account: str, id: str, response: str, recurrence_id: str | None = None) -> None:
     """Records the logged-in user's RSVP (accepted / declined / tentative) on the event.
 
     Patches only the caller's own participationStatus — unlike edit_calendar_event, which
     rewrites the whole event — and routes the organizer's notification through the custom
     event_response template when custom event invites are enabled (see record_rsvp)."""
 
-    record_rsvp(account, id, response)
+    record_rsvp(account, id, response, recurrence_id=recurrence_id)
 
 
 @frappe.whitelist()
