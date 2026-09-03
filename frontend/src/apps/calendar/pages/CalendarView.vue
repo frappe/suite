@@ -240,12 +240,13 @@ const handleOpenEvent = (e) => {
 	// from the detail sidebar's ?event=: the sidebar is derived from that one,
 	// so sharing it would open the sidebar under every double-clicked pill.
 	const opened = e.calendarEvent
-	if (opened?.id && route.query.edit !== opened.id)
+	const editing = opened?.master_id || opened?.id
+	if (editing && route.query.edit !== editing)
 		router.replace({
 			query: {
 				...route.query,
 				// The master's id, for the same reason as the event link above.
-				edit: opened.master_id || opened.id,
+				edit: editing,
 				editRecurrence: opened.recurrence_id || undefined,
 			},
 		})
@@ -487,7 +488,7 @@ const submitEvent = (sendEmail: boolean) => {
 	if (updateScope.value === 'series' && eventToBeUpdated.master_start) {
 		eventToBeUpdated.start = shiftedMasterStart(
 			eventToBeUpdated.master_start,
-			fromEventZone(eventToBeUpdated.startBeforeDrag, eventToBeUpdated.masterTimeZone),
+			shownStart(eventToBeUpdated.startBeforeDrag),
 			dayjs(eventToBeUpdated.fromDateTime),
 		)
 		eventToBeUpdated.time_zone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
@@ -499,14 +500,25 @@ const submitEvent = (sendEmail: boolean) => {
 	// follow the anchor, and which start was the anchor depends on what is being written: the
 	// whole series is anchored at the master's start, while the half a split begins is
 	// anchored at the occurrence the reader dragged.
+	// Both ends of the move read in the same zone. The recurrence id and the master start are
+	// wall clocks in the event's; the dragged start has just been written in the viewer's for
+	// the series path, and left in the event's for a split.
+	// The half a split begins is anchored where the reader saw this occurrence, and starts at
+	// the clock they dragged it to — both the viewer's. The whole series is anchored at the
+	// master's start and moves to the shifted one — both the event's. Reading one of each would
+	// measure a change nobody made.
 	const anchorWas =
 		updateScope.value === 'following'
-			? eventToBeUpdated.recurrence_id
-			: eventToBeUpdated.master_start
-	if (anchorWas && eventToBeUpdated.recurrence_rule && eventToBeUpdated.start !== anchorWas)
+			? shownStart(eventToBeUpdated.startBeforeDrag)
+			: dayjs(eventToBeUpdated.master_start)
+	if (
+		anchorWas?.isValid() &&
+		eventToBeUpdated.recurrence_rule &&
+		!anchorWas.isSame(dayjs(eventToBeUpdated.start), 'day')
+	)
 		eventToBeUpdated.recurrence_rule = reanchoredRule(
 			eventToBeUpdated.recurrence_rule,
-			dayjs(anchorWas),
+			anchorWas,
 			dayjs(eventToBeUpdated.start),
 		)
 
@@ -517,6 +529,12 @@ const submitEvent = (sendEmail: boolean) => {
 
 	editEvent.submit({ sendEmail })
 }
+
+// The clock the grid was showing for a start it holds. An all-day event is drawn on its stored
+// date without being re-read in the viewer's zone, so re-reading one here would measure a change
+// against a time nobody saw — and move the event by the zone's offset.
+const shownStart = (start: string) =>
+	eventToBeUpdated.isAllDay ? dayjs(start) : fromEventZone(start, eventToBeUpdated.masterTimeZone)
 
 // The dragged numbers are a wall clock in the viewer's zone; an occurrence keeps the series'
 // zone, so the instant is re-expressed in it. An all-day occurrence has no clock to convert.

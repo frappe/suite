@@ -445,8 +445,16 @@ def split_calendar_event_series(
 
     # Only when the new series falls on the same dates — an occurrence's override is addressed by
     # its date, and a series that moved has none of them left.
-    if tail_overrides and fields.get("start") == recurrence_id:
-        service.set_overrides(new_id, tail_overrides)
+    # The occurrence the split begins at is not carried over: the edit being applied is its new
+    # description, and its old override would sit on top of the change the reader just made.
+    carried = {rid: override for rid, override in tail_overrides.items() if rid != recurrence_id}
+    # And only where the new half still falls on their dates. An override is addressed by the date
+    # it belongs to, and a rule the reader changed in the same save generates other dates — where
+    # RFC 8984 reads an override as an occurrence in its own right, which is the extra event this
+    # is trying to avoid everywhere else.
+    rule_kept = spoken_rule(fields.get("recurrence_rule")) == spoken_rule(rule)
+    if carried and rule_kept and fields.get("start") == recurrence_id:
+        service.set_overrides(new_id, carried)
 
     return new_id
 
@@ -530,6 +538,16 @@ def _end_series_before(
         service.remove_overrides(master_id, list(tail_overrides))
 
     return tail_overrides
+
+
+def spoken_rule(value: dict | None) -> str:
+    """A recurrence rule reduced to what it actually says, for comparing two of them.
+
+    The server normalises what it is sent — dropping "@type" and anything left at its default —
+    so a stored rule and the one that produced it are rarely equal as written.
+    """
+
+    return json.dumps({k: v for k, v in (value or {}).items() if k != "@type" and v}, sort_keys=True)
 
 
 def _as_edit_kwargs(fields: dict) -> dict:

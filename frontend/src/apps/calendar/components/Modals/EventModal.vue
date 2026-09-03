@@ -255,10 +255,14 @@ const eventParams = computed(() => {
 		// generates and is not drawn at all. Which start was the anchor depends on what is being
 		// written: the series is anchored at the master's start, the half a split begins at the
 		// occurrence the reader opened.
-		const anchorWas = editScope.value === 'following' ? ev?.recurrence_id : ev?.master_start
+		// Both ends read the same way. A split is anchored where the form opened this occurrence
+		// and starts where the form now says — both the viewer's clock. The series is anchored
+		// at the master's start and moves to the one computed from it — both the event's.
+		const anchorWas =
+			editScope.value === 'following' ? occurrenceStart(ev) : dayjs(ev?.master_start)
 		params.recurrence_rule =
-			ev?.recurrence_id && anchorWas && params.start !== anchorWas
-				? reanchoredRule(event.recurrence_rule, dayjs(anchorWas), dayjs(params.start))
+			ev?.recurrence_id && anchorWas?.isValid() && !anchorWas.isSame(dayjs(params.start), 'day')
+				? reanchoredRule(event.recurrence_rule, anchorWas, dayjs(params.start))
 				: event.recurrence_rule
 	}
 	if (event.privacy) params.privacy = event.privacy
@@ -530,7 +534,9 @@ const createMeetEvent = {
 const instancePatch = computed(() => {
 	const { time_zone: zone, ...rest } = patch.value
 	const eventZone = selectedEvent.calendarEvent?.time_zone
-	if (!('start' in rest) || !eventZone || !dayjs?.tz) return rest
+	// An all-day start is a date, held and shown in the event's own terms — there is no viewer
+	// clock to translate, and translating anyway moves the occurrence off its day.
+	if (!('start' in rest) || !eventZone || !dayjs?.tz || event.isAllDay) return rest
 
 	return {
 		...rest,

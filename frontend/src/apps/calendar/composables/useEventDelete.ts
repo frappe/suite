@@ -76,11 +76,11 @@ export function useEventDelete(
 	// them leaves every edited occurrence behind as an event of its own.
 	const deleteFollowing = createResource({
 		url: 'suite.calendar.api.delete_calendar_event_series_from',
-		makeParams: () => ({
+		makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 			account: store.accountId,
 			master_id: eventId.value,
 			recurrence_id: calendarEvent.value.recurrence_id,
-			send_scheduling_messages: true,
+			send_scheduling_messages: sendEmail,
 		}),
 		onSuccess: onDeleted,
 	})
@@ -136,12 +136,12 @@ export function useEventDelete(
 			!!calendarEvent.value.recurrence_id,
 		)
 
+	// Through the same prompt as the other two answers. Ending a series cancels the occurrences
+	// after it for everyone on them, so it asks about the cancellation email exactly as deleting
+	// one occurrence or the whole thing does — and a draft, which invited nobody, still asks
+	// nobody.
 	const handleDeleteFollowingEventInstances = () =>
-		toast.promise(deleteFollowing.submit(), {
-			loading: __('Deleting events...'),
-			success: __('Events deleted.'),
-			error: __('Action failed. Please try again in some time.'),
-		})
+		confirmDelete((sendEmail) => deleteFollowing.submit({ sendEmail }), true)
 
 	// How far the delete reaches used to be a submenu off the Delete item: three
 	// commands hidden behind a hover, each firing the moment it was touched. It
