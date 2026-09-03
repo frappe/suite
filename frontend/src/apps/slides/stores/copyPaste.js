@@ -15,7 +15,7 @@ import {
 import { inCropMode } from '@/apps/slides/stores/imageCrop'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
 
-import { getDocFromHTML, hasListMarkup } from '@/apps/slides/utils/helpers'
+import { getDocFromHTML, hasListMarkup, sanitizeSlideHTML } from '@/apps/slides/utils/helpers'
 import { remapElementIds } from '@/apps/slides/utils/connectors'
 import { v4 as uuid4 } from 'uuid'
 import { handleUploadedMedia } from '@/apps/slides/utils/mediaUploads'
@@ -89,8 +89,10 @@ const copyToClipboard = async (text) => {
 const handlePastedText = async (clipboardText, clipboardHTML = '') => {
 	await resetFocus()
 	// a copied bullet block pasted onto the canvas has to arrive as a list,
-	// not as the plain lines its text/plain fallback holds
-	addTextElement(clipboardText, undefined, hasListMarkup(clipboardHTML) ? clipboardHTML : null)
+	// not as the plain lines its text/plain fallback holds. Clipboard markup
+	// is untrusted, so it is sanitized before measurement and persistence
+	const listHTML = hasListMarkup(clipboardHTML) ? sanitizeSlideHTML(clipboardHTML) : null
+	addTextElement(clipboardText, undefined, listHTML)
 }
 
 const handlePastedJSON = async ({ srcPresentation, srcSlide, elements }) => {
