@@ -99,7 +99,7 @@ export const getRepeatMessage = (recurrenceRule: RecurrenceRule) => {
   return fullMessage
 }
 
-interface RecurrenceRule {
+export interface RecurrenceRule {
   frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
   interval: number
   byDay?: { day: string; nthOfPeriod?: number }[]

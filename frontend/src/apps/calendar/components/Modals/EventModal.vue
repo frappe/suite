@@ -35,6 +35,7 @@ import {
 	shiftedMasterStart,
 } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
+import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -247,8 +248,19 @@ const eventParams = computed(() => {
 			: ev.master_start
 		params.time_zone = ev.time_zone || params.time_zone
 	}
-	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length)
-		params.recurrence_rule = event.recurrence_rule
+	if (event.recurrence_rule && Object.keys(event.recurrence_rule).length) {
+		// A rule names its days by reading them off the start, and does not re-read them when the
+		// anchor moves. Left alone, a Monday series edited onto a Wednesday starts on Wednesday
+		// and repeats on Mondays — so the occurrence just edited matches nothing the rule
+		// generates and is not drawn at all. Which start was the anchor depends on what is being
+		// written: the series is anchored at the master's start, the half a split begins at the
+		// occurrence the reader opened.
+		const anchorWas = editScope.value === 'following' ? ev?.recurrence_id : ev?.master_start
+		params.recurrence_rule =
+			ev?.recurrence_id && anchorWas && params.start !== anchorWas
+				? reanchoredRule(event.recurrence_rule, dayjs(anchorWas), dayjs(params.start))
+				: event.recurrence_rule
+	}
 	if (event.privacy) params.privacy = event.privacy
 	if (event.free_busy_status) params.free_busy_status = event.free_busy_status
 	if (event.description) params.description = event.description

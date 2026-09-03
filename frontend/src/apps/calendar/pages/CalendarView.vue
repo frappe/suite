@@ -9,6 +9,7 @@ import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
+import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -467,6 +468,23 @@ const submitEvent = (sendEmail: boolean) => {
 	// grid holds is no use for that: the server derives it from the occurrence's position in
 	// the expansion, and a later override renumbers it onto a different date.
 	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
+	// A rule reads its days off the start once and never again, so an anchor dragged onto
+	// another weekday leaves the series repeating on the old one — and the occurrence just
+	// dragged matches nothing the rule generates, so it is not drawn at all. The selectors
+	// follow the anchor, and which start was the anchor depends on what is being written: the
+	// whole series is anchored at the master's start, while the half a split begins is
+	// anchored at the occurrence the reader dragged.
+	const anchorWas =
+		updateScope.value === 'following'
+			? eventToBeUpdated.recurrence_id
+			: eventToBeUpdated.master_start
+	if (anchorWas && eventToBeUpdated.recurrence_rule && eventToBeUpdated.start !== anchorWas)
+		eventToBeUpdated.recurrence_rule = reanchoredRule(
+			eventToBeUpdated.recurrence_rule,
+			dayjs(anchorWas),
+			dayjs(eventToBeUpdated.start),
+		)
 
 	// This occurrence and the ones after it: the series is cut here and the move starts its
 	// second half, since a rule has no way to change partway through. The new half is a new
