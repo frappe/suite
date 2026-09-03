@@ -478,6 +478,27 @@ class CalendarEventService(CalendarsService):
 
         return result
 
+    def set_overrides(self, id: str, overrides: dict) -> dict:
+        """Replaces an event's whole recurrenceOverrides map.
+
+        For rewriting the map as a whole — re-keying every override after the series it belongs
+        to has moved. Anywhere that touches a single occurrence must patch that occurrence's key
+        instead, so a copy of the map taken before someone else's write cannot undo it.
+        """
+
+        if not id:
+            raise ValueError("'id' is required.")
+
+        response = self._update({id: {"recurrenceOverrides": overrides, "updated": utcnow()}})
+
+        result = {"updated": [], "notUpdated": {}}
+        if method_responses := response.get("methodResponses"):
+            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+            if not_updated := method_responses[0][1].get("notUpdated", {}):
+                result["notUpdated"].update(not_updated)
+
+        return result
+
     def delete_instance(self, id: str, recurrence_id: str, send_scheduling_messages: bool = False) -> dict:
         """Public method to delete a specific instance of a recurring calendar event based on its ID and recurrence ID by marking it as excluded in the master event's recurrence overrides.
         If send_scheduling_messages is True, the JMAP server sends a cancellation for the excluded instance; pass False to suppress it (e.g. when the client sends its own)."""

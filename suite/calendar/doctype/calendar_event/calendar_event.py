@@ -521,6 +521,8 @@ def update_calendar_event(
         previous_emails, event["sequence"] = _previous_invite_state(account, id)
 
     service = get_calendar_event_service(account)
+    # Read before the write: moving a series moves the occurrences its overrides are keyed by.
+    stored = (service.get([id]) or [{}])[0]
     response = service.update(
         [event], send_scheduling_messages=send_scheduling_messages and not use_custom_invites
     )
@@ -532,8 +534,56 @@ def update_calendar_event(
         else:
             frappe.throw(_(response["description"]), title=title)
 
+    _reanchor_overrides(service, id, stored, start, recurrence_rule)
+
     if use_custom_invites:
         _enqueue_event_notification(account, "update", event_id=id, previous_emails=previous_emails)
+
+
+def _reanchor_overrides(service, id: str, stored: dict, start: str | None, rule: dict | None) -> None:
+    """Moves an edited series' overrides along with the occurrences they belong to.
+
+    An override is keyed by the start its occurrence was expanded at. Move the series and every
+    occurrence moves with it, but the key does not — and an override on a date the rule no
+    longer generates is not ignored: RFC 8984 reads it as an occurrence in its own right, so the
+    edited occurrence is drawn twice, once where the rule now puts it and once where it used to
+    be. Shifting the keys by what the series moved keeps each edit on its own occurrence.
+
+    Only a plain shift is followed. Changing the rule itself can move occurrences by no single
+    amount, and guessing which one an override belonged to would be worse than leaving it.
+    """
+
+    overrides = stored.get("recurrenceOverrides") or {}
+    if not overrides or not start or not stored.get("start"):
+        return
+
+    # The stored rule is the server's own normalisation of what was sent — it drops "@type" and
+    # anything left at its default — so the two are compared on what they actually say.
+    def spoken(value: dict | None) -> str:
+        return json.dumps({k: v for k, v in (value or {}).items() if k != "@type" and v}, sort_keys=True)
+
+    if spoken(stored.get("recurrenceRule")) != spoken(rule):
+        return
+
+    try:
+        shift = datetime.fromisoformat(start) - datetime.fromisoformat(stored["start"])
+    except ValueError:
+        return
+    if not shift:
+        return
+
+    def moved(value: str) -> str:
+        return (datetime.fromisoformat(value) + shift).strftime("%Y-%m-%dT%H:%M:%S")
+
+    try:
+        reanchored = {
+            moved(key): ({**override, "start": moved(override["start"])} if "start" in override else override)
+            for key, override in overrides.items()
+        }
+    except ValueError:
+        return
+
+    service.set_overrides(id, reanchored)
 
 
 @frappe.whitelist()
