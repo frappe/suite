@@ -7,7 +7,7 @@ import { Calendar } from 'frappe-ui/experimental'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { appPageMeta } from '@/utils/documentTitle'
 import { raiseToast } from '@/apps/calendar/utils'
-import { fromEventZone } from '@/apps/calendar/utils/datetime'
+import { fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
 import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
@@ -415,9 +415,11 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
-	// The series path re-zones the event to the viewer's before it submits; an occurrence's
-	// override has to keep the zone the event arrived with.
+	// Both remembered before the drag overwrites them: an occurrence's override has to keep the
+	// zone the event arrived with, and saving the whole series needs the start the reader was
+	// looking at to measure what they changed.
 	eventToBeUpdated.masterTimeZone = e.time_zone
+	eventToBeUpdated.startBeforeDrag = e.start
 	confirmed = false
 	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
 	// one-off event dragged after an instance edit would be written as an override of a series
@@ -468,6 +470,21 @@ const submitEvent = (sendEmail: boolean) => {
 	// grid holds is no use for that: the server derives it from the occurrence's position in
 	// the expansion, and a later override renumbers it onto a different date.
 	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
+	// Saving the whole series from one of its occurrences. The grid is showing one occurrence,
+	// so its start is that occurrence's — sending it as the master's drags the anchor onto this
+	// week and drops every occurrence before it, which is the first one vanishing when the
+	// second is moved. What carries over is the difference the reader made, applied to the
+	// master's own start, and the master keeps its own zone: pairing its wall clock with the
+	// viewer's would move the series again on its own.
+	if (updateScope.value === 'series' && eventToBeUpdated.master_start) {
+		eventToBeUpdated.start = shiftedMasterStart(
+			eventToBeUpdated.master_start,
+			fromEventZone(eventToBeUpdated.startBeforeDrag, eventToBeUpdated.masterTimeZone),
+			dayjs(eventToBeUpdated.fromDateTime),
+		)
+		eventToBeUpdated.time_zone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+	}
 
 	// A rule reads its days off the start once and never again, so an anchor dragged onto
 	// another weekday leaves the series repeating on the old one — and the occurrence just
