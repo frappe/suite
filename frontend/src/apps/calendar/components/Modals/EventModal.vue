@@ -36,7 +36,7 @@ import {
 } from '@/apps/calendar/utils/datetime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
-import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
@@ -883,7 +883,9 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	options: scopeOptions(),
+	// At the head of a series "this and following" reaches exactly what "all events"
+	// reaches, so the list does not ask the same question twice.
+	options: scopeOptions({ isFirst: isFirstOccurrence(selectedEvent?.calendarEvent) }),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))

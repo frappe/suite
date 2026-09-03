@@ -10,7 +10,7 @@ import { raiseToast } from '@/apps/calendar/utils'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { reanchoredRule } from '@/apps/calendar/utils/recurrence'
-import { scopeOptions } from '@/apps/calendar/utils/recurringScope'
+import { isFirstOccurrence, scopeOptions } from '@/apps/calendar/utils/recurringScope'
 import type { RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import { userStore } from '@/apps/calendar/stores/user'
 import AppSidebar from '@/apps/calendar/components/AppSidebar.vue'
@@ -561,7 +561,9 @@ const editEvent = createResource({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	options: scopeOptions(),
+	// See the event modal: nothing precedes the first occurrence, so the narrower answer
+	// there is the wider one.
+	options: scopeOptions({ isFirst: isFirstOccurrence(eventToBeUpdated) }),
 	confirmLabel: __('Update'),
 	loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
 }))
