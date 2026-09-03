@@ -87,12 +87,13 @@ implementation effort can execute from the documents alone.
   cuts, invalid on a Drive Root; unpublish = revoke or deny; one activity row
   per grant write, no publish verb.
 
-- [WebDAV mapping](tickets/009-webdav-mapping.md) — three mounts (Home,
-  Everyone, Shared with me as grant roots); one role-per-method table,
+- [WebDAV mapping](tickets/009-webdav-mapping.md) — one mount, the
+  Personal Root (amended 2026-09-03 while resolving Quota policy; the
+  original answer was three mounts); one role-per-method table,
   DELETE and LOCK-create tightened; documents appear as read-only export
   files and are leaves; GET streams with an opt-in signed redirect; PUT is
   one `put_blob` and every replace versions (empty head excepted);
-  cross-root MOVE rebills quota; COPY copies no grants or versions;
+  cross-root MOVE is a UI operation only; COPY copies no grants or versions;
   `file_modified` becomes `content_modified`; DAV rides the same SDK and
   activity rows; auth stays Basic with no link principals; protocol modules
   kept, storage machinery deleted.
@@ -107,6 +108,18 @@ implementation effort can execute from the documents alone.
   interval; `expires_on` on every grant, `password_hash` on links only,
   rotate is one op, daily sweep; no link on a root, none over WebDAV, URL
   is `/drive/l/<token>`.
+
+- [Quota policy](tickets/010-quota-policy.md) — logical size, each node
+  reference pays; Active and Trashed nodes, every version, and every
+  reservation count; previews, exports, and document bodies are free;
+  `Drive Root.used_bytes` counter, admission by one conditional UPDATE,
+  daily recompute, Redis owner lock dropped; browser upload preflights the
+  declared size and charges the actual size at node create; `quota_bytes`
+  0 = inherit, site has `default_personal_quota` and `shared_quota`,
+  `Drive Settings.quota` dropped; archived roots pay for themselves, no
+  reclaim clock, Suite Admin purge only; UI cross-root move rebills nodes
+  plus versions, reservations never move; DAV props read the counter;
+  amends WebDAV mapping to one mount.
 
 ## Not yet specified
 

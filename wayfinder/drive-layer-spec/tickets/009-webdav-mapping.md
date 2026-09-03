@@ -25,6 +25,9 @@ shipped server first (`suite/drive/webdav/*`, the two DAV doctypes,
 
 ### 1. Three mounts
 
+> Amended 2026-09-03: one mount, the Personal Root. See the Amendment
+> section at the end.
+
 `PROPFIND /dav/` lists `Home` (the user's Personal Root), `Everyone` (the
 Shared Root, business sites only), and `Shared with me`. The third is a
 read-only virtual collection whose children are the user's grant roots:
@@ -117,6 +120,9 @@ lifecycle state and a per-owner rule in every listing query).
 
 ### 7. Cross-root MOVE is allowed
 
+> Amended 2026-09-03: UI move only. DAV reaches one root, so no DAV MOVE
+> crosses roots. See the Amendment section at the end.
+
 Same rule as the UI move. The subtree UPDATE rewrites `path` and `root`.
 Quota moves from the source root to the destination root, and the move is
 refused when the destination root would exceed its quota. Own grants on
@@ -187,3 +193,15 @@ settings survive. Litmus stays the acceptance test.
   ask -> Draft the spec (013).
 - Glossary updated: **Grant Root**, **Content Time**, DAV relationship
   lines, the mount-name ambiguity (`suite/drive/CONTEXT.md`).
+
+## Amendment (2026-09-03)
+
+Made while resolving [Quota policy](010-quota-policy.md). Faris reversed
+§1: WebDAV mounts the **Personal Root only**. `PROPFIND /dav/` is the
+user's Personal Root. There is no `Everyone` mount, no `Shared with me`
+collection, no grant-root query, and no collision suffix. Content in the
+Shared Root or shared from another Personal Root is not reachable over
+DAV. §7 stands for the UI move; over DAV no MOVE crosses roots. §9's
+`quota-used-bytes` and `quota-available-bytes` read the Personal Root.
+Reason: keep DAV simple. The rejected option in §1, "Home only", is now
+the decision.

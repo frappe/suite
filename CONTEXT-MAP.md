@@ -23,8 +23,8 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
   log and collab state stay with Sheets as the document body. Its versions,
   comments, title, and trash state are Drive's.
 - **Meet → Drive**: a Recording Artifact becomes a file in Drive. A Recording
-  Budget is a reservation held against the Room Owner's Drive quota while a
-  Recording Session runs.
+  Budget is a reservation held against the Room Owner's Personal Root while a
+  Recording Session runs, and counts as that root's usage.
 - **Mail → Drive**: compose attachments land in one Drive folder that all
   users may add to, and stay there.
 - **Calendar → Meet**: a scheduled event's remaining time sets the Recording

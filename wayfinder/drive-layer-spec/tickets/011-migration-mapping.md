@@ -56,3 +56,13 @@ Handed from [WebDAV mapping](009-webdav-mapping.md) (2026-09-03): the
 `Drive DAV Property.entity` retarget from File to Drive Node by the node
 identity map. The `.thumbnails` reserved name and the `.thumbnail` sidecar
 check go.
+
+Handed from [Quota policy](010-quota-policy.md) (2026-09-03):
+`Drive Disk Settings.quota` (MB) becomes `default_personal_quota` (bytes,
+value x 1024^2); `shared_quota` starts at 0 (unlimited). Each
+`Drive Settings.quota` > 0 becomes that user's Personal Root
+`quota_bytes` (MB x 1024^2); the field is then dropped.
+`Drive Storage Reservation.storage_owner` becomes `root`, the owner's
+Personal Root. `Drive Root.used_bytes` is not set by the patch: the daily
+recompute fills it once nodes and versions are in place, so run it as the
+last migration step.

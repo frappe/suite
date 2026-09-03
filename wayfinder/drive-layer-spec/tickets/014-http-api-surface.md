@@ -48,3 +48,14 @@ gains a `client` column (User-Agent, DAV only). A copy endpoint exists and
 is the one COPY primitive: new nodes owned by the caller, charged to the
 destination root, no grants or versions copied, documents through the
 declared duplicate.
+
+Handed from [Quota policy](010-quota-policy.md) (2026-09-03): a usage
+endpoint per root returning `used_bytes`, reserved bytes, and the
+effective quota (the storage bar reads the caller's Personal Root; a
+Suite Admin may name any root). A Suite Admin endpoint sets
+`Drive Root.quota_bytes`. A Suite Admin endpoint purges an Archived Root.
+The create-upload endpoint takes the declared size and returns a distinct
+over-quota error, not a permission error; node create, replace, and move
+return the same error when the admission UPDATE affects zero rows. The
+reservation functions stay Python-only for Meet; they get no HTTP
+endpoint.
