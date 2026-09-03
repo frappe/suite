@@ -769,6 +769,10 @@ def format_calendar_event(account: str, calendar_map: dict, event: dict) -> dict
         "id": event["id"],
         "uid": event["uid"],
         "recurrence_id": event.get("recurrenceId"),
+        # Whether this copy is the account's own. An occurrence of a series organized elsewhere
+        # comes back as the sender's copy; one the account overrode comes back as its own, and
+        # both are returned for the same date.
+        "is_origin": cint(event.get("isOrigin") or False),
         "organizer": organizer,
         "calendars": calendars,
         "status": (event.get("status") and event["status"].title()) or "Confirmed",

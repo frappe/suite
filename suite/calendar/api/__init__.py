@@ -171,6 +171,30 @@ def merge_own_copies(account: str, events: list[dict]) -> list[dict]:
         if event.get("master_id"):
             siblings.setdefault(event["master_id"], []).append(event)
 
+    # An override on a series organized elsewhere does not replace the occurrence it names; the
+    # sender's copy of that date comes back beside it, so the same occurrence is drawn twice —
+    # once as it was sent and once as this account answered it. The account's own copy is the
+    # one to keep: it carries the answer, and the series has already filled in everything the
+    # override does not name. Where nothing was overridden there is only ever one.
+    duplicates = set()
+    for rows in siblings.values():
+        by_date: dict[str, list[dict]] = {}
+        for row in rows:
+            if row.get("recurrence_id"):
+                by_date.setdefault(row["recurrence_id"], []).append(row)
+        for drawn in by_date.values():
+            if len(drawn) < 2:
+                continue
+            own = next((row for row in drawn if row.get("is_origin")), None)
+            if own:
+                duplicates.update(row["id"] for row in drawn if row is not own)
+
+    events = [event for event in events if event["id"] not in duplicates]
+    siblings = {
+        master_id: [row for row in rows if row["id"] not in duplicates]
+        for master_id, rows in siblings.items()
+    }
+
     identities = {identity["email"] for identity in get_participant_identities(account)}
     copies = set()
 
