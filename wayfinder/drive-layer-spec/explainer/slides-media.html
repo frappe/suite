@@ -330,7 +330,7 @@ footer.page {
     we have to make.
   </p>
   <div class="byline">
-    <span class="badge open"><span class="dot" style="background:currentColor"></span>Open · question 1 of 9</span>
+    <span class="badge done"><span class="dot" style="background:currentColor"></span>8 of 9 decided</span>
     <span class="sep" aria-hidden="true">·</span>
     <span>Read from the code on 4 September 2026</span>
   </div>
@@ -615,20 +615,701 @@ who may have it, in four separate rules:</p>
   leaving, written in a new table.</p>
 </div>
 
-<div class="callout">
-  <p><strong>My answer: A.</strong> The path walk that answers "can Priya read
-  this deck" already answers "can Priya read the logo inside it". That is what
-  removes the second permission system. B buys tidiness a listing rule gives
-  for free. C throws away three decisions we already made. D keeps the
-  problem.</p>
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">A. The picture is a child node of the deck</h3>
+  <p class="small" style="margin-bottom:6px">
+    The path walk that answers "can Priya read this deck" also answers "can
+    Priya read the logo inside it". The 122-line endpoint goes.
+  </p>
+  <p class="small" style="margin:0">
+    <strong>And a deck is always a leaf.</strong> Drive is the only list view
+    in Suite — for documents, sheets and decks alike — and clicking any of
+    them opens its editor. No listing descends into a content document, so
+    media nodes are never shown. That is one rule for all three apps, not a
+    Slides special case.
+  </p>
 </div>
 
-<div class="card tint-amber">
-  <div class="card-label">Also decide</div>
-  <p style="margin:0">Under A, can Faris <strong>see</strong> the pictures? If
-  he opens the deck in Drive rather than in Slides, does he get a folder view
-  of <code>logo.webp</code> and <code>intro.mp4</code>, or is a deck always a
-  leaf and the pictures never listed?</p>
+<hr>
+
+<h2 id="q2">Question 2 — what does the slide point at?</h2>
+
+<p>
+  The picture is now a node under the deck. But the slide JSON still holds a
+  piece of text in <code>src</code>. What text?
+</p>
+
+<p>
+  This matters more than it looks, because the same bytes are shared. The
+  framework stores a file once per <strong>content hash</strong>. Upload the
+  same logo to ten decks and you get ten rows and one copy of the bytes.
+</p>
+
+<figure>
+  <div class="fig-frame">
+<pre style="margin:0;border:none;background:none;padding:0"><code>Q3 deck/logo.webp   ─┐
+Q4 deck/logo.webp   ─┼──&gt;  one blob   ab3f9c…   <span class="tok-com">(stored once)</span>
+Sales deck/logo.webp ─┘</code></pre>
+  </div>
+  <figcaption>Three nodes, three names, one set of bytes. Decision 003 deletes
+  the bytes only when the last node stops naming them.</figcaption>
+</figure>
+
+<h3>The three things <code>src</code> could hold</h3>
+
+<div class="card">
+  <div class="card-label">Option A</div>
+  <h3 style="margin-top:0">The node</h3>
+  <pre style="margin-bottom:10px"><code>"src": "/drive/media/n_8f21c4"</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> one
+  permission check, on the node, exactly like every other Drive read.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> every request for
+  bytes goes through Python. Video needs byte ranges, so we keep writing a
+  streamer. And the browser caches the same logo three times, once per deck,
+  because the URL differs.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option B</div>
+  <h3 style="margin-top:0">The bytes</h3>
+  <pre style="margin-bottom:10px"><code>"src": "/f/ab3f9c…/logo.webp"</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> copy and
+  paste rewrites nothing. One cache entry for one picture.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> the bytes do not
+  know who owns them. To check permission the server must search for a node
+  that holds this blob and that you may read. <em>That is rule 1 of today's
+  endpoint, rebuilt.</em></p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Option C · recommended</div>
+  <h3 style="margin-top:0">The node in the slide, the bytes on the wire</h3>
+  <pre style="margin-bottom:10px"><code>slide JSON   "src": "n_8f21c4"          <span class="tok-com">← the node</span>
+
+on open      Drive checks the deck once, then hands back
+             "/f/ab3f9c…/logo.webp?sig=…&amp;exp=…"   <span class="tok-com">← a signed link</span>
+
+browser      fetches that link directly. No Python.</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> one
+  permission check per deck open, not one per picture. Byte ranges, caching
+  and resume come from the file server for free, so the streamer is deleted
+  outright. The browser caches by blob, so one logo is one cache entry across
+  every deck.</p>
+  <p class="small" style="margin:0"><strong>This is already the pattern.</strong>
+  Decision 006 serves every Drive thumbnail exactly this way: check the folder
+  once, mint short-lived signed links, let the browser fetch them.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">C. The node in the slide, a signed blob link on the wire</h3>
+  <p class="small" style="margin:0">
+    Drive checks the deck once when it opens and hands back short-lived signed
+    <code>/f/</code> links. The browser fetches them directly. No Python in the
+    byte path, so the whole 122-line endpoint goes, streamer included.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q3">Question 3 — the link expires. Then what?</h2>
+
+<p>
+  A signed link carries an expiry time. That is what makes it safe to hand out.
+  It is also the one loose end in decision 2, and Slides has two cases that
+  outlive a short link.
+</p>
+
+<div class="grid2">
+  <div class="card">
+    <div class="card-label">Case 1 · the long meeting</div>
+    <p class="small" style="margin:0">
+      Someone opens a deck at 9 a.m. and presents from it at 4 p.m. without
+      reloading the page. Every picture link minted at 9 a.m. is dead.
+    </p>
+  </div>
+  <div class="card">
+    <div class="card-label">Case 2 · the plane</div>
+    <p class="small" style="margin:0">
+      Slides can pin a deck for offline use. A service worker stores the
+      pictures in a cache and serves them with no network at all
+      (<code>stores/offlineCopy.js</code>).
+    </p>
+  </div>
+</div>
+
+<h3>Three ways to handle case 1</h3>
+
+<div class="card">
+  <div class="card-label">Option A</div>
+  <h3 style="margin-top:0">Make the link live a long time</h3>
+  <pre style="margin-bottom:10px"><code>exp = now + 24 hours</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> nothing to
+  build.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> unshare a deck at
+  noon and the pictures stay reachable until tomorrow. Drive already accepts a
+  short window for this. A day is a different promise.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Option B · recommended</div>
+  <h3 style="margin-top:0">Short link, the page asks again</h3>
+  <pre style="margin-bottom:10px"><code>deck opens   →  links, each good for a short window
+near expiry  →  the page calls the same endpoint again
+                and swaps in fresh links</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> one extra
+  call on a timer, reusing the call the deck already makes. Revoking access
+  bites within the window. The window is a Drive-wide setting shared with
+  thumbnails, not a Slides number.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> the editor keeps a
+  timer. About twenty lines.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option C</div>
+  <h3 style="margin-top:0">A permanent address that redirects</h3>
+  <pre style="margin-bottom:10px"><code>"src": "/drive/media/n_8f21c4"
+
+  →  Drive checks permission, answers 302
+  →  browser follows to a fresh signed /f/ link</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> the address
+  in the slide never goes stale. No timer. This is the shape decision 009 chose
+  for WebDAV downloads.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> a permission check
+  per picture, not per deck. A deck with forty images costs forty round trips
+  on open — the per-picture cost we are removing.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">B. Short link, the page asks again on a timer</h3>
+  <p class="small" style="margin-bottom:6px">
+    The window is a Drive-wide setting shared with thumbnails. Slides does not
+    pick a number.
+  </p>
+  <p class="small" style="margin:0">
+    <strong>And offline is stated, not implied:</strong> pinning a deck keeps
+    its pictures until you unpin it. Unsharing does not reach into a laptop.
+    The same promise as downloading a file.
+  </p>
+</div>
+
+<div class="card tint-blue">
+  <div class="card-label">A bonus that falls out</div>
+  <p class="small" style="margin:0">
+    Today the owner and a viewer fetch the same picture under two different
+    URLs, so Slides carries <code>canonicalMediaKey.ts</code> to make one cache
+    entry serve both. Now everyone fetches <code>/f/&lt;blob&gt;</code>. Strip
+    the signature and the cache key is the blob itself. That file goes, and one
+    logo is one cache entry across every pinned deck.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q4">Question 4 — copy and paste</h2>
+
+<p>
+  Faris copies a slide out of the Q3 deck and pastes it into the Q4 deck. The
+  slide carries a logo. The logo is a node under the Q3 deck, and the Q4 deck
+  cannot borrow it: a viewer of Q4 may have no rights at all on Q3.
+</p>
+
+<p>Three places this happens today, all through one function
+(<code>presentation.py:444</code>):</p>
+
+<ul>
+  <li>paste one picture into another deck</li>
+  <li>paste a whole slide into another deck</li>
+  <li>duplicate a whole deck</li>
+</ul>
+
+<h3>What paste should do</h3>
+
+<div class="card tint-green">
+  <div class="card-label">Option A · recommended</div>
+  <h3 style="margin-top:0">Copy the node, share the bytes</h3>
+  <pre style="margin-bottom:10px"><code>Q3 deck/
+└── logo.webp   node n_8f21  ─┐
+                              ├─&gt;  one blob  ab3f9c…
+Q4 deck/                      │
+└── logo.webp   node n_c40a  ─┘   <span class="tok-com">new node, no new bytes</span>
+
+the pasted slide's "src" is rewritten  n_8f21 → n_c40a</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> the Q4 deck
+  owns everything it shows. Share it, delete the Q3 deck, archive Faris — the
+  Q4 deck is unaffected. No bytes are copied; the blob is shared. This is the
+  copy that decision 014 already defines: a new node owned by whoever pasted,
+  no grants and no history carried over.</p>
+  <p class="small" style="margin:0"><strong>Check on paste:</strong> you must
+  be able to read the source node. Same guard as today.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option B</div>
+  <h3 style="margin-top:0">Point at the original</h3>
+  <pre style="margin-bottom:10px"><code>Q4 deck's slide  "src": n_8f21   <span class="tok-com">← still the Q3 deck's node</span></code></pre>
+  <p class="small" style="margin:0"><strong>Cost:</strong> anyone who opens Q4
+  now needs read on Q3. Delete the Q3 deck and the Q4 deck loses its picture.
+  This is the coupling we are removing.</p>
+</div>
+
+<div class="callout warn">
+  <p><strong>The price of A, stated plainly.</strong> Decision 010 charges
+  storage per node, not per blob. A 50 MB video pasted into three decks is
+  150 MB of quota against one 50 MB blob on disk. That is deliberate — a deck
+  you can delete on your own must cost you something — but you should agree to
+  it here rather than find it later.</p>
+</div>
+
+<h3>A smaller question inside it</h3>
+
+<p>
+  Paste the same logo twice into the <em>same</em> deck. One node reused, or
+  two nodes with identical bytes?
+</p>
+
+<div class="grid2">
+  <div class="card tint-green">
+    <div class="card-label">Reuse · recommended</div>
+    <p class="small" style="margin:0">
+      One node per deck per blob. Both slides point at it. Charged once. A
+      repeated header image costs what it looks like it costs.
+    </p>
+  </div>
+  <div class="card">
+    <div class="card-label">Always a new node</div>
+    <p class="small" style="margin:0">
+      Simpler to write, and each picture can be renamed on its own. But a logo
+      on twenty slides is twenty nodes and twenty charges.
+    </p>
+  </div>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">A. Copy the node across decks, reuse it inside one</h3>
+  <p class="small" style="margin:0">
+    The blob is shared either way. What is decided is who is on the hook: the
+    destination deck owns and pays for what it shows. One node per deck per
+    blob, so a logo on twenty slides is one node and one charge.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q5">Question 5 — when does a picture die?</h2>
+
+<p>Two halves. One is free, one is not.</p>
+
+<div class="card tint-green">
+  <div class="card-label">Free · falls out of decision 1</div>
+  <h3 style="margin-top:0">The deck goes, its pictures go</h3>
+  <pre style="margin-bottom:10px"><code>trash the deck    →  Q3 deck/ and everything under it is trashed
+restore it        →  they come back
+purge it          →  they are purged, the blob follows if nobody else names it</code></pre>
+  <p class="small" style="margin:0">
+    Nothing to build. The pictures are inside the deck, so they move with it.
+    Today the picture sits in the uploader's folder and survives the deck
+    forever.
+  </p>
+</div>
+
+<div class="card tint-red">
+  <div class="card-label">Not free</div>
+  <h3 style="margin-top:0">The picture is removed but the deck lives</h3>
+  <p class="small" style="margin:0">
+    Faris deletes the logo from slide 3 and keeps working. Nothing tells Drive.
+    The slide's content is one opaque blob of JSON, so Drive cannot see that the
+    picture is no longer named. Today the file simply stays, forever. Now it
+    also costs quota.
+  </p>
+</div>
+
+<h3>Three ways to handle it</h3>
+
+<div class="card">
+  <div class="card-label">Option A</div>
+  <h3 style="margin-top:0">Never delete</h3>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> nothing to
+  build. Undo always works.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> a deck worked on for
+  a year carries every picture ever dropped into it, and charges for all of
+  them. This is today's behaviour with a bill attached.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Option B · recommended</div>
+  <h3 style="margin-top:0">Ask the app, on a timer</h3>
+  <pre style="margin-bottom:10px"><code>each night, for each deck touched since the last run:
+    ask Slides   "which pictures do you still use?"
+    any node under the deck not in that answer,
+    and older than a grace period   →  trash it</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> Slides is
+  the only thing that can read its own JSON, so Slides answers. Drive does the
+  deleting. Undo and collaboration are safe because nothing is removed the
+  moment it stops being used.</p>
+  <p class="small" style="margin:0"><strong>Worth noting:</strong> this is not
+  a Slides feature. Writer has the same hole with pasted images. It should be a
+  new line in the contract every content app signs (decision 005) — "list the
+  nodes you still use" — and then Writer gets the cleanup for free.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option C</div>
+  <h3 style="margin-top:0">Delete the moment the element goes</h3>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> immediate.
+  No sweep.</p>
+  <p class="small" style="margin:0"><strong>Cost:</strong> undo loses the
+  picture. Two people editing at once means "removed" is not a fact yet. Every
+  removal becomes a write.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">B. Drive sweeps. The app answers one question.</h3>
+  <pre style="margin-bottom:10px"><code><span class="tok-com">Drive owns everything except one line</span>
+
+Drive   picks the decks to check, keeps the grace period,
+        does the trashing, runs the job          <span class="tok-com">← written once</span>
+
+Slides  "which nodes do I still use?"            <span class="tok-com">← five lines</span>
+Writer  "which nodes do I still use?"            <span class="tok-com">← five lines</span>
+Sheets  "which nodes do I still use?"            <span class="tok-com">← five lines</span></code></pre>
+  <p class="small" style="margin-bottom:6px">
+    No app writes sweep code. The app cannot avoid answering the question,
+    because only it can read its own content, but that is one function, not a
+    job. It becomes a new line in the contract every content app signs
+    (decision 005), so Writer's pasted images get cleaned up for free.
+  </p>
+  <p class="small" style="margin:0">
+    <strong>Trashed, not purged.</strong> An unused picture lands in the deck
+    owner's bin and follows the normal 30-day clock. Nothing in this map
+    deletes a person's content without showing it to them first.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q6">Question 6 — what is a template?</h2>
+
+<p>
+  This is not a Slides question. Two apps already ship templates, and both
+  solve them by writing a permission in code.
+</p>
+
+<div class="tw">
+<table>
+  <thead><tr><th>App</th><th>Shape</th><th>Who may read one</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Slides</strong></td>
+      <td>a flag on the deck itself, <code>is_template</code></td>
+      <td>everyone, decided in an <code>if</code><br><span class="small muted mono">presentation.py:496</span></td>
+    </tr>
+    <tr>
+      <td><strong>Writer</strong></td>
+      <td>a separate <code>Writer Template</code> doctype</td>
+      <td>everyone signed in, decided in an <code>if</code><br><span class="small muted mono">writer/overrides/__init__.py:16</span></td>
+    </tr>
+    <tr>
+      <td><strong>Sheets</strong></td>
+      <td>none yet</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <p>Two apps, two different shapes, the same hole. Fix it in Slides only and
+  Sheets will invent a third shape next year. Decision 005 says sharing has one
+  home; this is the last place in Suite that ignores it.</p>
+</div>
+
+<h3>Strip it back: what is a template, really?</h3>
+
+<p>Only two things ever happen to one.</p>
+
+<pre><code>list     "show me the ones I can start from"
+create   "make me a new document from this one"</code></pre>
+
+<p>
+  Drive already does both. Listing readable things is what Drive is. And
+  "make a new document from this one" is <strong>copy</strong> — the primitive
+  decision 014 already defines, and the same one decision 4 above uses for
+  paste.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">The abstraction · recommended</div>
+  <h3 style="margin-top:0">A template is a document you may read, marked as a starting point</h3>
+  <pre style="margin-bottom:12px"><code>Drive Node
+  ...
+  is_template   <span class="tok-com">← one flag, on the node, for every app</span></code></pre>
+
+  <div class="tw" style="margin-bottom:10px">
+  <table>
+    <thead><tr><th>Operation</th><th>What it becomes</th></tr></thead>
+    <tbody>
+      <tr><td>Who may use a template</td><td>the grant on its node. Nothing else.</td></tr>
+      <tr><td>List templates</td><td>one Drive query: nodes I can read, flagged, of this content type</td></tr>
+      <tr><td>New from template</td><td><code>copy</code> — already built</td></tr>
+      <tr><td>Ship "Light" and "Dark"</td><td>decks in Administrator's drive, granted Read to everyone signed in</td></tr>
+      <tr><td>A company's own template</td><td>mark a document, share it. No code.</td></tr>
+      <tr><td>Sheets templates one day</td><td>nothing to build</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="small" style="margin:0"><strong>What this deletes:</strong> both
+  <code>if</code> bypasses, the <code>Writer Template</code> doctype and its two
+  permission functions, Slides' <code>is_template</code> branch and its
+  <code>is_template_media</code> rule, and the "a template has no Drive row"
+  special case.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">A template is a document you may read, marked as a starting point</h3>
+  <p class="small" style="margin-bottom:6px">
+    <code>is_template</code> is one flag on <code>Drive Node</code>. Permission
+    is the grant on that node and nothing else. Listing is one Drive query.
+    Starting from one is <code>copy</code>.
+  </p>
+  <p class="small" style="margin-bottom:6px">
+    <strong>Two rules with it:</strong> templates are hidden from ordinary
+    listings and appear only in the template picker; shipped templates are
+    granted to everyone signed in, not to the public.
+  </p>
+  <p class="small" style="margin:0">
+    <strong>Hand off:</strong> this changes Writer as much as Slides. It goes
+    to the content app contract and to the spec, not into a Slides patch.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q7">Question 7 — composite decks</h2>
+
+<p>
+  A composite deck shows other decks' slides inside itself. It holds a list of
+  references, and when you open it, those decks' slides are pulled in live
+  (<code>presentation.py:559</code>). Change the source deck and the composite
+  changes with it.
+</p>
+
+<figure>
+  <div class="fig-frame">
+<pre style="margin:0;border:none;background:none;padding:0"><code>All-hands deck   <span class="tok-com">(composite)</span>
+├── its own slides
+├── ← Sales deck        <span class="tok-com">slides pulled in live, with Sales' pictures</span>
+└── ← Product deck      <span class="tok-com">slides pulled in live, with Product's pictures</span></code></pre>
+  </div>
+</figure>
+
+<div class="callout warn">
+  <p><strong>Today this only works because composites are forced public.</strong>
+  Saving one writes a "everyone may read" row on the composite
+  (<code>presentation.py:47</code>), and every referenced deck must already be
+  public. Decision 007 stopped forcing that. So the rule has to be
+  rewritten.</p>
+</div>
+
+<h3>Whose permission covers a borrowed picture?</h3>
+
+<div class="card tint-green">
+  <div class="card-label">Settled by decision 007 · confirming</div>
+  <h3 style="margin-top:0">The deck it came from. Never the composite.</h3>
+  <pre style="margin-bottom:10px"><code>open the All-hands deck
+  can I read Sales deck?     yes  →  inline its slides, mint links for its pictures
+  can I read Product deck?   no   →  do not inline, mint nothing</code></pre>
+  <p class="small" style="margin:0">
+    One check per referenced deck, for the person looking. Being named by a
+    composite grants nothing. Nothing is copied — the composite stays live.
+  </p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">Reference anything you can read</h3>
+  <p class="small" style="margin-bottom:6px">
+    The save-time check becomes the ordinary one: can you read the deck you
+    point at. A composite is a view, so its contents differ by who is looking.
+    The forced-public row and the public-reference rule both go.
+  </p>
+  <p class="small" style="margin:0">
+    <strong>And the API stops dropping.</strong> Today an unreadable reference
+    vanishes silently (<code>presentation.py:571</code>) and the slide count
+    changes mid-presentation. It is returned marked "you cannot read this"; the
+    client chooses whether to draw a placeholder.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q8">Question 8 — the deck's own picture</h2>
+
+<p>
+  Every deck shows a small picture of its first slide in a list. Slides makes
+  it in an unusual way, and the way it is made constrains us.
+</p>
+
+<div class="code-title">how a deck thumbnail is made today</div>
+<pre><code>the browser draws the slide, screenshots the page itself,
+sends a webp back to the server                      <span class="tok-com">useThumbnailCapture.js:89</span>
+
+the server stores it as a File on the deck           <span class="tok-com">presentation.py:159</span>
+and writes the field <span class="tok-kw">without</span> touching "modified"   <span class="tok-com">presentation.py:184</span></code></pre>
+
+<div class="callout warn">
+  <p><strong>That last line is not an accident.</strong> If saving the picture
+  bumps the deck's modified time, the open editor believes someone else edited
+  the deck and throws away unsynced local changes. A comment in the code says
+  so.</p>
+</div>
+
+<p>
+  Decision 006 already chose the mechanism: Drive keeps one small picture per
+  node in <code>Drive Node Preview</code>, it never renders a document itself,
+  and the app pushes a ready image through one Drive call. Slides keeps its
+  browser capture. So the field on the deck goes and the row on the node
+  replaces it. Two details are left.
+</p>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">The preview row replaces the field. No touch, and duplicates carry it.</h3>
+  <p class="small" style="margin-bottom:6px">
+    Pushing a preview is not an edit: it writes the preview row and nothing
+    else. Otherwise "sorted by last modified" reorders decks because someone
+    looked at one, and the open editor drops unsynced work.
+  </p>
+  <p class="small" style="margin:0">
+    A duplicated deck copies the preview row and points at the same bytes, so
+    it looks right the instant it appears. Accepted consequence: a deck made by
+    script or by migration has a blank tile until a person opens it.
+  </p>
+</div>
+
+<hr>
+
+<h2 id="q9">Question 9 — the upload itself</h2>
+
+<p>
+  One last path. Slides does not keep what you upload. It converts every image
+  to webp, and it does so <em>after</em> the file is already stored.
+</p>
+
+<div class="code-title">presentation.py:590 — today</div>
+<pre><code>1. store the file the user picked            <span class="tok-com">logo.png</span>
+2. convert it to webp on disk, by rewriting the path string
+3. delete the original File row              <span class="tok-com">presentation.py:611</span></code></pre>
+
+<div class="callout warn">
+  <p><strong>This cannot be ported as it stands.</strong> Under the new model
+  bytes never change: replacing a node's bytes keeps the old ones as a
+  <strong>version</strong> (decision 006), and versions cost quota (decision
+  010). Port this literally and every image upload leaves a dead copy of itself
+  behind, charged to the uploader.</p>
+</div>
+
+<h3>When to convert</h3>
+
+<div class="card tint-green">
+  <div class="card-label">Option A · recommended</div>
+  <h3 style="margin-top:0">Convert first, then make the node</h3>
+  <pre style="margin-bottom:10px"><code>bytes arrive  →  Slides converts to webp  →  Drive creates the node
+
+one node, one blob, no version, nothing to delete</code></pre>
+  <p class="small" style="margin-bottom:6px"><strong>Good:</strong> the node is
+  born as the picture it will always be. No replace, no version, no cleanup
+  step, no stale reference in the slide JSON.</p>
+  <p class="small" style="margin:0"><strong>Where the conversion lives:</strong>
+  in Slides, before it calls Drive. Drive must not convert what people upload —
+  someone who puts a PNG in their drive expects a PNG back. This is a Slides
+  policy, so it stays in Slides, and no new Drive concept is needed.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option B</div>
+  <h3 style="margin-top:0">Create the node, then replace its bytes</h3>
+  <p class="small" style="margin:0">The literal port. Every upload creates a
+  version holding the original, charged to the uploader, that nobody asked
+  for.</p>
+</div>
+
+<div class="card">
+  <div class="card-label">Option C</div>
+  <h3 style="margin-top:0">Convert in the browser</h3>
+  <p class="small" style="margin:0">Cheapest for the server, and the original
+  never leaves the machine. But nothing on the server guarantees the result, so
+  the rule is not enforced — and video and other types still need the server
+  anyway.</p>
+</div>
+
+<div class="card tint-green">
+  <div class="card-label">Decided · 4 September 2026</div>
+  <h3 style="margin-top:0">A. Convert first, then make the node</h3>
+  <p class="small" style="margin:0">
+    The node is born as the picture it will always be. The conversion stays in
+    Slides, before the Drive call, because Drive must not convert what people
+    upload.
+  </p>
+</div>
+
+<h3>Two things that follow, not decisions</h3>
+
+<div class="grid2">
+  <div class="card tint-blue">
+    <div class="card-label">Media tiles come free</div>
+    <p class="small" style="margin:0">
+      A media node is an ordinary file node with a picture mime, so Drive
+      renders it a preview like any other. The media picker gets thumbnails
+      with no Slides code. This is the handoff decision 006 made to this
+      ticket.
+    </p>
+  </div>
+  <div class="card tint-blue">
+    <div class="card-label">Uploads can now run out of room</div>
+    <p class="small" style="margin:0">
+      Decision 010 makes the browser declare a size before uploading and
+      returns a distinct out-of-space error. Slide media uploads use the same
+      call, so they get the same error — not a permission failure.
+    </p>
+  </div>
+</div>
+
+<hr>
+
+<h2 id="gone">What all nine decisions delete</h2>
+
+<div class="tw">
+<table>
+  <thead><tr><th>Goes</th><th>Lines</th><th>Because</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">slides/api/file.py</td><td class="nowrap">122</td><td>the picture is inside the deck, so the deck's permission covers it</td></tr>
+    <tr><td class="mono">slides/api/test_file.py</td><td class="nowrap">274</td><td>the rules it pins no longer exist</td></tr>
+    <tr><td class="mono">utils/canonicalMediaKey.ts</td><td class="nowrap">31</td><td>owner and viewer now fetch the same address</td></tr>
+    <tr><td class="mono">Writer Template doctype<br>+ its two permission functions</td><td class="nowrap">—</td><td>a template is a flagged node with a grant</td></tr>
+    <tr><td><code>is_template</code> branch in<br><code>presentation.py:490-498</code></td><td class="nowrap">—</td><td>same</td></tr>
+    <tr><td>the forced-public row on composites<br><code>presentation.py:47-60</code></td><td class="nowrap">—</td><td>each reference is checked for the person looking</td></tr>
+    <tr><td>thumbnail File handling<br><code>presentation.py:107-188, 361-395</code></td><td class="nowrap">~120</td><td>one preview row on the node</td></tr>
+    <tr><td>webp convert-and-delete<br><code>presentation.py:583-626</code></td><td class="nowrap">~44</td><td>convert before the node exists</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="card tint-blue">
+  <div class="card-label">What this ticket hands on</div>
+  <ul class="small" style="margin:0">
+    <li><strong>Content app contract</strong> — one new declaration: "list the nodes you still use". Drive owns the sweep.</li>
+    <li><strong>Content app contract</strong> — templates are a node flag, not app code. Writer changes with Slides.</li>
+    <li><strong>Migration mapping</strong> — slide media File rows become child nodes; template decks get nodes and a grant; <code>Writer Template</code> rows become flagged documents.</li>
+    <li><strong>HTTP API surface</strong> — the media-link call and its refresh; the template list and create-from calls; the composite response marking unreadable references.</li>
+    <li><strong>Draft the spec</strong> — <code>Drive Node.is_template</code>, the sweep job and its grace period, the preview push that does not touch.</li>
+  </ul>
 </div>
 
 <footer class="page">

@@ -71,3 +71,16 @@ job that moves every File Blob to the configured driver (copy bytes,
 rewrite `driver` and `key` under the GC's row lock, delete old bytes after
 commit). The migration section states that it runs after Build to reach
 one storage location, and that Build and Cleanup do not depend on it.
+
+Handed from [Slides media to nodes](012-slides-media-to-nodes.md)
+(2026-09-04): a content document node may hold child nodes and is always a
+leaf in every listing, so no listing descends into one. `Drive Node` gains
+`is_template`; a template is a readable flagged node, its permission is its
+grant, and shipped templates are Administrator-owned nodes with a `$GENERAL`
+READ grant. The content app contract gains one declaration, "list the nodes
+you still use"; Drive owns the sweep that trashes unused child nodes after a
+grace period, and Writer's embeds ride it. The preview push owes no `touch`.
+A duplicate copies the source's preview row. Media serving is the preview
+pattern: one Read check on the document, then short-TTL signed `/f/` URLs
+the page refreshes; no Python in the byte path. This changes Writer as much
+as Slides: the `Writer Template` doctype and its two permission functions go.
