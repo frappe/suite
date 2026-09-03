@@ -448,10 +448,6 @@ const hasParticipantsOtherThanUser = computed(
 const submitEvent = (sendEmail: boolean) => {
 	confirmed = true
 	showNotifyModal.value = false
-	// Splitting a series is still to come, and the dialog greys that answer out. If it is
-	// reached anyway the move is undone rather than left on screen as if it had been saved.
-	if (updateScope.value === 'following') return revertUpdate()
-
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
 		// The dragged wall clock is in the viewer's zone; re-zone the event to match, or the
@@ -471,6 +467,11 @@ const submitEvent = (sendEmail: boolean) => {
 	// grid holds is no use for that: the server derives it from the occurrence's position in
 	// the expansion, and a later override renumbers it onto a different date.
 	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
+	// This occurrence and the ones after it: the series is cut here and the move starts its
+	// second half, since a rule has no way to change partway through. The new half is a new
+	// event, so unlike an override it carries the zone the drag was made in.
+	if (updateScope.value === 'following') return splitSeries.submit({ sendEmail })
 
 	editEvent.submit({ sendEmail })
 }
@@ -518,6 +519,17 @@ const editEventInstance = createResource({
 	...onEventSaved,
 })
 
+const splitSeries = createResource({
+	url: 'suite.calendar.api.split_calendar_event_series',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		...eventToBeUpdated,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
+
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
@@ -531,10 +543,9 @@ const editEvent = createResource({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	// Splitting a series is the one answer nothing can carry yet.
-	options: scopeOptions({ unavailable: ['following'] }),
+	options: scopeOptions(),
 	confirmLabel: __('Update'),
-	loading: editEvent.loading || editEventInstance.loading,
+	loading: editEvent.loading || editEventInstance.loading || splitSeries.loading,
 }))
 
 const NOTIFY_MODAL_OPTIONS = {

@@ -478,6 +478,29 @@ class CalendarEventService(CalendarsService):
 
         return result
 
+    def remove_overrides(self, id: str, recurrence_ids: list[str]) -> dict:
+        """Drops the named occurrences' overrides, leaving every other one where it is.
+
+        One key removed per occurrence rather than a rewritten map: the map is shared state, and
+        a copy taken before someone else's write would put their occurrence back.
+        """
+
+        if not id or not recurrence_ids:
+            raise ValueError("Both 'id' and 'recurrence_ids' are required.")
+
+        payload = {id: {f"recurrenceOverrides/{rid}": None for rid in recurrence_ids}}
+        payload[id]["updated"] = utcnow()
+
+        response = self._update(payload)
+
+        result = {"updated": [], "notUpdated": {}}
+        if method_responses := response.get("methodResponses"):
+            result["updated"].extend(method_responses[0][1].get("updated", {}).keys())
+            if not_updated := method_responses[0][1].get("notUpdated", {}):
+                result["notUpdated"].update(not_updated)
+
+        return result
+
     def set_overrides(self, id: str, overrides: dict) -> dict:
         """Replaces an event's whole recurrenceOverrides map.
 

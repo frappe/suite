@@ -238,7 +238,7 @@ const eventParams = computed(() => {
 	// master's zone either way: pairing the master's wall clock with the browser's zone would
 	// move the series on its own.
 	const ev = selectedEvent?.calendarEvent
-	if (ev?.recurrence_id && editScope.value !== 'instance') {
+	if (ev?.recurrence_id && editScope.value === 'series') {
 		// An unresolved master (no master_start) is already past saving — the update is addressed by
 		// master_id too, and falls back to an id the server won't take — so it is left exactly as it
 		// was rather than given a start of this occurrence's, or of now.
@@ -541,6 +541,21 @@ const editEventInstance = createResource({
 	onSuccess: handleSuccess,
 })
 
+// "This and following" is neither of the other two writes: JSCalendar can say "this date" or
+// "the series" and nothing in between, so the server cuts the series in two and this edit
+// starts the second half.
+const splitSeries = createResource({
+	url: 'suite.calendar.api.split_calendar_event_series',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: store.accountId,
+		master_id: selectedEvent.calendarEvent.master_id,
+		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
+		...eventParams.value,
+		send_scheduling_messages: sendEmail,
+	}),
+	onSuccess: handleSuccess,
+})
+
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
@@ -566,14 +581,16 @@ const createMeetLink = useCall<{ meeting_url: string }>({
 const editScope = ref<RecurringScope>('series')
 
 const submitEvent = (sendEmail: boolean) => {
-	const isInstance = editScope.value === 'instance' && selectedEvent.calendarEvent?.recurrence_id
+	const recurring = !!selectedEvent.calendarEvent?.recurrence_id
 	const resource = isNew.value
 		? event.addMeetLink
 			? createMeetEvent
 			: createEvent
-		: isInstance
+		: recurring && editScope.value === 'instance'
 			? editEventInstance
-			: editEvent
+			: recurring && editScope.value === 'following'
+				? splitSeries
+				: editEvent
 	const messages = isDraft.value
 		? { loading: __('Sending event...'), success: __('Event sent.') }
 		: isNew.value
@@ -785,7 +802,11 @@ const eventOptions = computed(() => [deleteOption.value])
 
 const isSaving = computed(
 	() =>
-		createEvent.loading || editEvent.loading || editEventInstance.loading || createMeetEvent.loading,
+		createEvent.loading ||
+		editEvent.loading ||
+		editEventInstance.loading ||
+		splitSeries.loading ||
+		createMeetEvent.loading,
 )
 
 const disableSave = computed(() => {
@@ -850,9 +871,7 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	// Splitting a series has no call behind it yet; the row is there, greyed out, rather
-	// than missing.
-	options: scopeOptions({ unavailable: ['following'] }),
+	options: scopeOptions(),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))
