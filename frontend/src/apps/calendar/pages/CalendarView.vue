@@ -414,6 +414,9 @@ watch([showRecurringEventModal, showNotifyModal], ([recurring, notify]) => {
 
 const handleUpdate = (e) => {
 	Object.assign(eventToBeUpdated, withActualTitle(e))
+	// The series path re-zones the event to the viewer's before it submits; an occurrence's
+	// override has to keep the zone the event arrived with.
+	eventToBeUpdated.masterTimeZone = e.time_zone
 	confirmed = false
 	// Each drag asks again. Left standing, the last drag's answer would decide this one — and a
 	// one-off event dragged after an instance edit would be written as an override of a series
@@ -445,9 +448,9 @@ const hasParticipantsOtherThanUser = computed(
 const submitEvent = (sendEmail: boolean) => {
 	confirmed = true
 	showNotifyModal.value = false
-	// Neither of the narrower answers is wired here yet, and the dialog greys both out. If one
-	// is reached anyway the move is undone rather than left on screen as if it had been saved.
-	if (updateScope.value !== 'series') return revertUpdate()
+	// Splitting a series is still to come, and the dialog greys that answer out. If it is
+	// reached anyway the move is undone rather than left on screen as if it had been saved.
+	if (updateScope.value === 'following') return revertUpdate()
 
 	eventToBeUpdated.start = dayjs(eventToBeUpdated.fromDateTime).format('YYYY-MM-DDTHH:mm:ss')
 	if (!eventToBeUpdated.isAllDay) {
@@ -461,8 +464,59 @@ const submitEvent = (sendEmail: boolean) => {
 		const minutes = diff.minutes()
 		eventToBeUpdated.duration = dayjs.duration({ hours, minutes }).toISOString()
 	}
+
+	// One occurrence moved on its own: the series keeps its rule and this date gets an
+	// override. The series is addressed by master_id and the occurrence within it by its
+	// recurrence id — the start it was expanded at, which the drag leaves alone. The id the
+	// grid holds is no use for that: the server derives it from the occurrence's position in
+	// the expansion, and a later override renumbers it onto a different date.
+	if (updateScope.value === 'instance') return editEventInstance.submit({ sendEmail })
+
 	editEvent.submit({ sendEmail })
 }
+
+// The dragged numbers are a wall clock in the viewer's zone; an occurrence keeps the series'
+// zone, so the instant is re-expressed in it. An all-day occurrence has no clock to convert.
+const instanceStart = () => {
+	const eventZone = eventToBeUpdated.masterTimeZone || eventToBeUpdated.time_zone
+	if (eventToBeUpdated.isAllDay || !eventZone || !dayjs?.tz) return eventToBeUpdated.start
+	return dayjs
+		.tz(eventToBeUpdated.fromDateTime, dayjs.tz.guess())
+		.tz(eventZone)
+		.format('YYYY-MM-DD[T]HH:mm:ss')
+}
+
+// Both writes land the same way: the calendar has already drawn the move, so success only has
+// to confirm it and refresh, and a failure has to put the pill back where it was.
+const onEventSaved = {
+	onSuccess: () => {
+		raiseToast(__('Event updated.'), 'success')
+		events.reload()
+	},
+	onError: (error) => {
+		revertUpdate()
+		raiseToast(error.message, 'error')
+	},
+}
+
+const editEventInstance = createResource({
+	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
+	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
+		account: eventToBeUpdated.account,
+		master_id: eventToBeUpdated.master_id,
+		recurrence_id: eventToBeUpdated.recurrence_id,
+		// Only what a drag can change, and never the zone: an occurrence is keyed by the start
+		// it was expanded at, and a zone here makes the server re-key it into that zone while
+		// the override stays under the old key — the two stop matching and the occurrence
+		// keeps nothing the series says. The dragged wall clock is converted instead.
+		patch: {
+			start: instanceStart(),
+			duration: eventToBeUpdated.duration,
+		},
+		send_scheduling_messages: sendEmail,
+	}),
+	...onEventSaved,
+})
 
 const editEvent = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event',
@@ -472,23 +526,15 @@ const editEvent = createResource({
 		id: eventToBeUpdated.master_id || eventToBeUpdated.id,
 		send_scheduling_messages: sendEmail,
 	}),
-	onSuccess: () => {
-		raiseToast(__('Event updated.'), 'success')
-		events.reload()
-	},
-	onError: (error) => {
-		revertUpdate()
-		raiseToast(error.message, 'error')
-	},
+	...onEventSaved,
 })
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	// A dragged occurrence can only be saved as the whole series so far: the edit modal writes
-	// one occurrence's override, the grid does not, and no one splits a series.
-	options: scopeOptions({ unavailable: ['instance', 'following'] }),
+	// Splitting a series is the one answer nothing can carry yet.
+	options: scopeOptions({ unavailable: ['following'] }),
 	confirmLabel: __('Update'),
-	loading: editEvent.loading,
+	loading: editEvent.loading || editEventInstance.loading,
 }))
 
 const NOTIFY_MODAL_OPTIONS = {

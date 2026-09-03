@@ -510,13 +510,32 @@ const createMeetEvent = {
 		}),
 }
 
+// One occurrence's override keeps the series' zone. An occurrence is keyed by the start it was
+// expanded at, and a zone in the patch makes the server re-key it into that zone while the
+// override stays under the old key — the two stop matching, and the occurrence is left with
+// nothing the series says about it. So the edited wall clock is converted into the event's own
+// zone and the zone itself is not sent.
+const instancePatch = computed(() => {
+	const { time_zone: zone, ...rest } = patch.value
+	const eventZone = selectedEvent.calendarEvent?.time_zone
+	if (!('start' in rest) || !eventZone || !dayjs?.tz) return rest
+
+	return {
+		...rest,
+		start: dayjs
+			.tz(rest.start, zone || dayjs.tz.guess())
+			.tz(eventZone)
+			.format('YYYY-MM-DD[T]HH:mm:ss'),
+	}
+})
+
 const editEventInstance = createResource({
 	url: 'suite.calendar.doctype.calendar_event.calendar_event.update_calendar_event_instance',
 	makeParams: ({ sendEmail }: { sendEmail: boolean }) => ({
 		account: store.accountId,
 		master_id: selectedEvent.calendarEvent.master_id,
 		recurrence_id: selectedEvent.calendarEvent.recurrence_id,
-		patch: patch.value,
+		patch: instancePatch.value,
 		send_scheduling_messages: sendEmail,
 	}),
 	onSuccess: handleSuccess,
@@ -831,9 +850,9 @@ const DISCARD_MODAL_OPTIONS = computed(() => ({
 
 const recurringScopeModalProps = computed(() => ({
 	title: __('Update repeating event'),
-	// Only the whole series so far: writing one occurrence's override and splitting a series
-	// are both still to land, so both rows are there, greyed out, rather than missing.
-	options: scopeOptions({ unavailable: ['instance', 'following'] }),
+	// Splitting a series has no call behind it yet; the row is there, greyed out, rather
+	// than missing.
+	options: scopeOptions({ unavailable: ['following'] }),
 	confirmLabel: __('Update'),
 	loading: isSaving.value,
 }))
