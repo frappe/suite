@@ -11,6 +11,7 @@ from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import ensure_default_alerts, fetch_calendars
 from suite.calendar.doctype.calendar_event.calendar_event import (
     add_calendar_event,
+    delete_calendar_events,
     fetch_calendar_events,
     update_calendar_event,
 )
@@ -315,32 +316,14 @@ def split_calendar_event_series(
         )
         return master_id
 
-    head_rule = dict(rule)
-    if rule.get("count") is not None:
-        # A counted series stays counted: the occurrences that already happened are its whole run.
-        head_rule["count"] = before
-    else:
-        head_rule["until"] = _moment_before(recurrence_id)
-
-    edit_calendar_event(
-        account,
-        master_id,
-        recurrence_rule=json.dumps(head_rule),
-        send_scheduling_messages=send_scheduling_messages,
+    tail_overrides = _end_series_before(
+        account, master_id, rule, before, recurrence_id, send_scheduling_messages
     )
+    service = get_calendar_event_service(account)
 
     # Overrides the rule no longer generates are not dropped with it — RFC 8984 reads an override
     # on an ungenerated date as an occurrence in its own right, so leaving them would keep every
     # edited occurrence after the split visible on the old series, beside the new one.
-    service = get_calendar_event_service(account)
-    stored = service.get([master_id])
-    overrides = (stored[0] if stored else {}).get("recurrenceOverrides") or {}
-    tail_overrides = {
-        rid: override for rid, override in overrides.items() if not _is_before(rid, recurrence_id)
-    }
-    if tail_overrides:
-        service.remove_overrides(master_id, list(tail_overrides))
-
     # The new half takes what is left of a count; an `until` needs no adjusting, since it names
     # a date the new half runs to just as the old one did.
     tail_rule = dict(fields.get("recurrence_rule") or rule)
@@ -356,6 +339,87 @@ def split_calendar_event_series(
         service.set_overrides(new_id, tail_overrides)
 
     return new_id
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def delete_calendar_event_series_from(
+    account: str,
+    master_id: str,
+    recurrence_id: str,
+    send_scheduling_messages: bool = False,
+) -> None:
+    """Deletes this occurrence of a series and every occurrence after it.
+
+    Which is an edit rather than a delete: the series stops at the occurrence before this one.
+    The overrides that belonged to the occurrences being deleted go with them — an override on a
+    date the shortened rule no longer generates is not dropped along with it, and RFC 8984 reads
+    it as an occurrence in its own right, so an edited occurrence would survive its own deletion
+    as an event of its own.
+    """
+
+    events = get_calendar_events_by_ids(account, [master_id])
+    if not events:
+        frappe.throw(
+            _("Calendar Event {0} not found.").format(frappe.bold(master_id)), frappe.DoesNotExistError
+        )
+
+    master = events[0]
+    rule = json.loads(master["recurrence_rule"] or "{}")
+    if not rule:
+        frappe.throw(_("This event does not repeat, so there is nothing following it."))
+
+    before = _occurrences_before(rule, master["start"], recurrence_id)
+    if rule.get("count") is not None and before is None:
+        frappe.throw(_("This event's repeat rule could not be read, so it cannot be ended here."))
+
+    # Nothing precedes the first occurrence, so ending the series there deletes all of it.
+    if before == 0 or recurrence_id == master["start"]:
+        delete_calendar_events(account, [master_id], send_scheduling_messages)
+        return
+
+    _end_series_before(account, master_id, rule, before, recurrence_id, send_scheduling_messages)
+
+
+def _end_series_before(
+    account: str,
+    master_id: str,
+    rule: dict,
+    before: int | None,
+    recurrence_id: str,
+    send_scheduling_messages: bool,
+) -> dict:
+    """Stops a series at the occurrence before `recurrence_id`, and lifts off what came after.
+
+    Returns the overrides that belonged to the occurrences no longer generated, already removed
+    from the series — the caller decides whether they move somewhere else or simply go.
+    """
+
+    head_rule = dict(rule)
+    if rule.get("count") is not None:
+        # A counted series stays counted: the occurrences that already happened are its whole run.
+        head_rule["count"] = before
+    else:
+        # `until` includes the moment it names, so the series stops just short of this one.
+        head_rule["until"] = _moment_before(recurrence_id)
+
+    edit_calendar_event(
+        account,
+        master_id,
+        recurrence_rule=json.dumps(head_rule),
+        send_scheduling_messages=send_scheduling_messages,
+    )
+
+    service = get_calendar_event_service(account)
+    stored = service.get([master_id])
+    overrides = (stored[0] if stored else {}).get("recurrenceOverrides") or {}
+    tail_overrides = {
+        rid: override for rid, override in overrides.items() if not _is_before(rid, recurrence_id)
+    }
+    if tail_overrides:
+        service.remove_overrides(master_id, list(tail_overrides))
+
+    return tail_overrides
 
 
 def _as_edit_kwargs(fields: dict) -> dict:

@@ -17,8 +17,6 @@ export interface DeletableEvent {
 	/** The series' own start — the same date on its first occurrence, and only there. */
 	master_start?: string
 	recurrence_rule?: Record<string, unknown>
-	/** The instance's own day — where "this and following" ends the series. */
-	date?: string
 	organizer?: string
 	participants?: { email: string }[]
 	/** A draft sent no invitations, so it never asks about a cancellation email. */
@@ -72,20 +70,23 @@ export function useEventDelete(
 		onSuccess: onDeleted,
 	})
 
-	// "This and following" is an edit, not a delete: the series stops the day before.
-	const editEvent = createResource({
-		url: 'suite.calendar.api.edit_calendar_event',
-		makeParams: ({ patch }: { patch: object }) => ({
+	// "This and following" is an edit, not a delete: the series stops at the occurrence before
+	// this one. The server does the arithmetic — where a counted series stops, and which of its
+	// overrides belonged to the occurrences going away — because a rule truncated here without
+	// them leaves every edited occurrence behind as an event of its own.
+	const deleteFollowing = createResource({
+		url: 'suite.calendar.api.delete_calendar_event_series_from',
+		makeParams: () => ({
 			account: store.accountId,
-			id: eventId.value,
-			...patch,
+			master_id: eventId.value,
+			recurrence_id: calendarEvent.value.recurrence_id,
 			send_scheduling_messages: true,
 		}),
 		onSuccess: onDeleted,
 	})
 
 	const isDeleting = computed(
-		() => deleteEventInstance.loading || deleteEvent.loading || editEvent.loading,
+		() => deleteEventInstance.loading || deleteEvent.loading || deleteFollowing.loading,
 	)
 
 	// When the organizer deletes an event with other participants, offer to email a
@@ -135,17 +136,12 @@ export function useEventDelete(
 			!!calendarEvent.value.recurrence_id,
 		)
 
-	const handleDeleteFollowingEventInstances = () => {
-		const recurrenceRule = { ...calendarEvent.value.recurrence_rule }
-		recurrenceRule.until = `${calendarEvent.value.date}T00:00:00Z`
-		const patch = { recurrence_rule: JSON.stringify(recurrenceRule) }
-
-		toast.promise(editEvent.submit({ patch }), {
+	const handleDeleteFollowingEventInstances = () =>
+		toast.promise(deleteFollowing.submit(), {
 			loading: __('Deleting events...'),
 			success: __('Events deleted.'),
 			error: __('Action failed. Please try again in some time.'),
 		})
-	}
 
 	// How far the delete reaches used to be a submenu off the Delete item: three
 	// commands hidden behind a hover, each firing the moment it was touched. It
