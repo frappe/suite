@@ -6,7 +6,7 @@
     title="Search Suite"
     @select="selectItem"
   >
-    <CommandPaletteInput :placeholder="navigationMode ? 'Switch apps' : 'Search Suite'" />
+    <CommandPaletteInput :placeholder="palettePlaceholder" />
 
     <CommandPaletteList>
       <CommandPaletteGroup v-if="exactApps.length" label="Navigate">
@@ -70,9 +70,7 @@
           class="!py-1.5 !text-sm data-[state=active]:!bg-surface-gray-2"
         >
           <template #prefix>
-            <span class="mr-2 flex size-7 shrink-0 items-center justify-center rounded-4 bg-surface-gray-2 text-ink-gray-7">
-              <span class="lucide-table-2 size-4" aria-hidden="true" />
-            </span>
+            <DriveSearchResultIcon :entity="sheet" />
           </template>
           {{ sheet.title || 'Untitled Sheet' }}
           <template #suffix>
@@ -89,14 +87,26 @@
           class="!py-1.5 !text-sm data-[state=active]:!bg-surface-gray-2"
         >
           <template #prefix>
-            <span class="mr-2 flex size-7 shrink-0 items-center justify-center rounded-4 bg-surface-gray-2 text-ink-gray-7">
-              <span class="lucide-presentation size-4" aria-hidden="true" />
-            </span>
+            <DriveSearchResultIcon :entity="presentation" />
           </template>
           {{ presentation.file_name }}
           <template #suffix>
             <DriveSearchResultModified :modified="presentation.modified" />
           </template>
+        </CommandPaletteItem>
+      </CommandPaletteGroup>
+
+      <CommandPaletteGroup v-if="writerResults.length" label="Writer">
+        <CommandPaletteItem
+          v-for="document in writerResults"
+          :key="document.name"
+          :value="document"
+          class="!py-1.5 !text-sm data-[state=active]:!bg-surface-gray-2"
+        >
+          <template #prefix>
+            <DriveSearchResultIcon :entity="document" />
+          </template>
+          {{ document.title || 'Untitled Document' }}
         </CommandPaletteItem>
       </CommandPaletteGroup>
 
@@ -195,6 +205,7 @@ import {
   type CommandPaletteSelectEvent,
 } from 'frappe-ui/experimental'
 import { getAppSwitcherItems, type SuiteAppSwitcherItem } from '@/apps/registry'
+import { parseMailSearchQuery } from '@/apps/mail/utils/searchQuery'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
 interface DriveResult {
@@ -213,6 +224,9 @@ interface SheetResult {
   name: string
   title?: string
   modified?: string
+  content_doctype: 'Sheet'
+  file_type: 'Spreadsheet'
+  [key: string]: unknown
 }
 
 interface SlideResult {
@@ -221,6 +235,19 @@ interface SlideResult {
   file_name: string
   content_docname: string
   modified?: string
+  thumbnail?: string
+  owner?: string
+  content_doctype: 'Presentation'
+  [key: string]: unknown
+}
+
+interface WriterResult {
+  resultType: 'writer'
+  name: string
+  title?: string
+  content_doctype: 'Writer Document'
+  file_type: 'Document'
+  [key: string]: unknown
 }
 
 interface MeetResult {
@@ -279,6 +306,12 @@ const slideSearch = createResource({
   url: 'suite.drive.api.list.files',
   debounce: 180,
 })
+const writerSearch = createResource({
+  auto: false,
+  method: 'GET',
+  url: 'suite.writer.api.general.search',
+  debounce: 180,
+})
 const meetSearch = createResource({
   auto: false,
   method: 'POST',
@@ -294,6 +327,7 @@ const mailSearch = createResource({
 
 const normalizedQuery = computed(() => query.value.trim().toLowerCase())
 const appQuery = computed(() => normalizedQuery.value)
+const mailFilter = computed(() => parseMailSearchQuery(query.value.trim()))
 const driveResults = computed<DriveResult[]>(() =>
   activeApp.value === 'drive' && Array.isArray(driveSearch.data)
     ? driveSearch.data.slice(0, 20)
@@ -304,6 +338,8 @@ const sheetResults = computed<SheetResult[]>(() => {
   return sheetSearch.data.sheets.slice(0, 20).map((sheet: Omit<SheetResult, 'resultType'>) => ({
     ...sheet,
     resultType: 'sheet' as const,
+    content_doctype: 'Sheet' as const,
+    file_type: 'Spreadsheet' as const,
   }))
 })
 const slideResults = computed<SlideResult[]>(() => {
@@ -312,6 +348,15 @@ const slideResults = computed<SlideResult[]>(() => {
     .filter((row: SlideResult) => row.content_docname)
     .slice(0, 20)
     .map((row: Omit<SlideResult, 'resultType'>) => ({ ...row, resultType: 'slide' as const }))
+})
+const writerResults = computed<WriterResult[]>(() => {
+  if (activeApp.value !== 'writer' || !Array.isArray(writerSearch.data?.results)) return []
+  return writerSearch.data.results.slice(0, 20).map((document: Omit<WriterResult, 'resultType'>) => ({
+    ...document,
+    resultType: 'writer' as const,
+    content_doctype: 'Writer Document' as const,
+    file_type: 'Document' as const,
+  }))
 })
 const meetResults = computed<MeetResult[]>(() => {
   if (activeApp.value !== 'meet' || !Array.isArray(meetSearch.data)) return []
@@ -329,7 +374,10 @@ const mailResults = computed<MailResult[]>(() => {
 })
 const activeApp = computed(() => String(route.meta.appId ?? ''))
 const contextSearchLabel = computed(() =>
-  ({ drive: 'Drive', sheets: 'Sheets', slides: 'Slides', meet: 'Meet', mail: 'Mail' })[activeApp.value],
+  ({ drive: 'Drive', sheets: 'Sheets', slides: 'Slides', writer: 'Writer', meet: 'Meet', mail: 'Mail', calendar: 'Calendar' })[activeApp.value],
+)
+const palettePlaceholder = computed(() =>
+  navigationMode.value ? 'Switch apps' : `Search in ${contextSearchLabel.value || 'Suite'}`,
 )
 const apps = computed(() => getAppSwitcherItems(String(route.meta.appId ?? '')))
 const filteredApps = computed(() => {
@@ -397,6 +445,8 @@ watch(query, (value) => {
       limit: 20,
       paginated: true,
     })
+  } else if (activeApp.value === 'writer') {
+    writerSearch.submit({ query: text })
   } else if (activeApp.value === 'meet') {
     meetSearch.submit({
       doctype: 'Meet Room',
@@ -410,7 +460,7 @@ watch(query, (value) => {
     })
   } else if (activeApp.value === 'mail') {
     const account = String(route.params.accountId || localStorage.getItem('mail-account-id') || '')
-    if (account) mailSearch.submit({ account, filter: { text }, limit: 20 })
+    if (account) mailSearch.submit({ account, filter: mailFilter.value, limit: 20 })
   }
 })
 
@@ -424,7 +474,7 @@ watch(
 )
 
 function resetSearches() {
-  for (const resource of [driveSearch, sheetSearch, slideSearch, meetSearch, mailSearch]) {
+  for (const resource of [driveSearch, sheetSearch, slideSearch, writerSearch, meetSearch, mailSearch]) {
     resource.submit.cancel()
     resource.abort()
     resource.reset()
@@ -432,7 +482,7 @@ function resetSearches() {
 }
 
 async function selectItem(
-  item: DriveResult | SheetResult | SlideResult | MeetResult | MailResult | PaletteCommand | SuiteAppSwitcherItem,
+  item: DriveResult | SheetResult | SlideResult | WriterResult | MeetResult | MailResult | PaletteCommand | SuiteAppSwitcherItem,
   event: CommandPaletteSelectEvent,
 ) {
   if ('run' in item) {
@@ -463,11 +513,13 @@ async function selectItem(
         params: { presentationId: item.content_docname },
         query: { slide: 1 },
       }
+    } else if (item.resultType === 'writer') {
+      location = { name: 'writer-document', params: { id: item.name } }
     } else if (item.resultType === 'mail') {
       location = {
         name: 'mail-mail',
         params: { accountId: item.account, mailbox: 'search', threadID: item.thread_id },
-        query: { text: query.value.trim() },
+        query: mailFilter.value,
       }
     } else {
       location = { name: 'meet-meeting', params: { meetingId: item.name } }

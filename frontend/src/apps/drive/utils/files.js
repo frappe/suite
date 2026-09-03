@@ -16,6 +16,10 @@ import {
 import { set } from 'idb-keyval'
 import { useFileUpload, toast as nToast } from 'frappe-ui'
 import emitter from '@/apps/drive/emitter'
+import { getSessionUser } from '@/boot/session'
+import writerIcon from '@/assets/app-logos/writer.png'
+import sheetsIcon from '@/assets/app-logos/sheets.svg'
+import slidesIcon from '@/assets/app-logos/slides.svg'
 
 import folderIcon from '../../../../../suite/public/drive/images/icons/folder.svg'
 import imageIcon from '../../../../../suite/public/drive/images/icons/image.svg'
@@ -290,11 +294,28 @@ export function getIconUrl(file_type) {
   return FILE_ICONS[file_type] ?? unknownIcon
 }
 
+export function getEntityIconUrl(entity) {
+  if (isWriterDocument(entity)) return writerIcon
+  if (isSheet(entity)) return sheetsIcon
+  if (isPresentation(entity)) return slidesIcon
+  return getIconUrl(entity?.is_folder ? 'Folder' : entity?.file_type)
+}
+
+function getPresentationThumbnailUrl(entity) {
+  let thumbnail = entity?.thumbnail
+  if (!thumbnail) return ''
+  if (thumbnail.startsWith('/files')) thumbnail = `/private${thumbnail}`
+  if (!thumbnail.startsWith('/private') || entity.owner === getSessionUser()) return thumbnail
+  return `/api/method/suite.slides.api.file.get_media_file?src=${encodeURIComponent(thumbnail)}&presentation=${encodeURIComponent(entity.content_docname)}`
+}
+
 // `src` is the thumbnail (images/videos/PDFs) or the icon; `fallback` is the icon.
-export function getThumbnailUrl({ name, file_type, thumbnail, external }, view = 'list') {
-  const fallback = getIconUrl(file_type ?? 'Presentation')
+export function getThumbnailUrl(entity, view = 'list') {
+  const { name, file_type, thumbnail, external } = entity
+  const fallback = getEntityIconUrl(entity)
   let src = ''
-  if (external) src = view !== 'list' ? thumbnail : ''
+  if (isPresentation(entity)) src = getPresentationThumbnailUrl(entity)
+  else if (external) src = view !== 'list' ? thumbnail : ''
   else if (['Image', 'Video', 'PDF'].includes(file_type))
     src = `/api/method/suite.drive.api.files.get_thumbnail?entity_name=${name}`
   return { src: src || fallback, fallback }

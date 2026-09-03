@@ -1298,7 +1298,6 @@ import { useCollaboration }    from './useCollaboration.js'
 import { useExportImport }     from './useExportImport.js'
 import { useVersionHistory }   from './useVersionHistory.js'
 import { useSplitText }        from './useSplitText.js'
-import { buildCommandGroups }  from './commandPalette.config.js'
 import FindReplace             from './FindReplace.vue'
 import VersionHistory          from './VersionHistory.vue'
 import VersionPreviewBanner    from './VersionPreviewBanner.vue'
@@ -1326,7 +1325,6 @@ import {
 import {
   Icon as FeatherIcon,
 } from 'frappe-ui/experimental'
-import { useRootStore } from '@/stores/root'
 
 const props = defineProps({ id: { type: String, default: 'new' } })
 const emit  = defineEmits(['close', 'saved'])
@@ -5855,37 +5853,6 @@ function doUnhideAllCols() {
   history.push(); isDirty.value = true
 }
 
-
-const cmdGroups = computed(() => buildCommandGroups({
-  toggleFmt, setAlign, setValign, adjustDecimals, toggleWrap, clearFormatting,
-  undo, redo, repeatLast, showFindReplace, openFindReplace, showFormulas, repopulateGrid: _repopulateGrid, showShortcutsHelp,
-  contextMenu, getGrid: () => grid,
-  doInsertRow, doDeleteRow, doInsertCol, doDeleteCol,
-  doMoveColLeft, doMoveColRight,
-  doHideRows, doHideCols, doUnhideAllRows, doUnhideAllCols,
-  doAutoFitCol, doAutoFitRow, toggleMerge, addRowsCount, doAddMoreRows,
-  doFreezeRow, doFreezeCol, doUnfreezeRows, doUnfreezeCols, showSortFilter,
-  openPivotDialog,
-  addSheet, currentSheet, openRenameDialog, doDuplicateSheet, doDeleteSheet,
-  onSave, exportCSV, exportXLSX, exportPDF, csvInputRef, xlsxInputRef,
-}))
-
-const rootStore = useRootStore()
-const unregisterPaletteGroups = rootStore.registerPaletteGroups('sheets-editor', () =>
-  cmdGroups.value.filter((group) => !readOnly.value || group.title === 'View').map((group) => ({
-    id: `sheets-${group.title.toLowerCase()}`,
-    label: group.title,
-    commands: group.items.map((item) => ({
-      id: `sheets-${item.name}`,
-      label: item.title,
-      icon: 'lucide-table-2',
-      description: item.description,
-      keywords: ['sheets', group.title],
-      run: item.fn,
-    })),
-  })),
-)
-onBeforeUnmount(unregisterPaletteGroups)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

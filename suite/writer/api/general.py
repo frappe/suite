@@ -2,6 +2,7 @@ import frappe
 from pypika import CustomFunction, Order
 from pypika import functions as fn
 
+from suite.drive.api.files import search as search_drive_files
 from suite.drive.api.permissions import get_user_access
 from suite.drive.utils import FILE_FIELDS, GENERAL_USER, STATUS_ACTIVE
 from suite.writer.search import WriterSearch
@@ -140,15 +141,33 @@ def get_versions(id: str):
 def search(query: str, filters: str | None = None):
     client = WriterSearch()
     search = client.search(query, filters=filters)
+    drive_matches = search_drive_files(query)
+    if not isinstance(drive_matches, list):
+        drive_matches = []
+    drive_matches = [row for row in drive_matches if row.get("content_doctype") == "Writer Document"]
+    current_files = {row["name"]: row for row in drive_matches}
     metadata = get_drive_file_meta([k["name"] for k in search["results"]])
     cleaned_results = []
+    seen = set()
     for k in search["results"]:
         meta = metadata.get(k["name"])
         # The index is unscoped; only surface documents the caller can read.
         if not meta or not get_user_access(meta["name"]).get("read"):
             continue
         k.update(meta)
+        if current_file := current_files.get(k["name"]):
+            k["title"] = current_file["file_name"]
         cleaned_results.append(k)
+        seen.add(k["name"])
+
+    # Writer's full-text index stores Writer Document fields, while users rename
+    # the backing Drive File. Include current filename matches so the title shown
+    # in results is always a title the query actually searched.
+    for row in drive_matches:
+        if row["name"] in seen:
+            continue
+        cleaned_results.append({"name": row["name"], "title": row["file_name"], "content": ""})
+        seen.add(row["name"])
     search["results"] = cleaned_results
 
     # The index is unscoped, so summary stats and spelling corrections are
