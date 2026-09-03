@@ -244,7 +244,8 @@ const handleOpenEvent = (e) => {
 		router.replace({
 			query: {
 				...route.query,
-				edit: opened.id,
+				// The master's id, for the same reason as the event link above.
+				edit: opened.master_id || opened.id,
 				editRecurrence: opened.recurrence_id || undefined,
 			},
 		})
@@ -264,7 +265,13 @@ const handleEventClick = ({ calendarEvent }) =>
 	router.replace({
 		query: {
 			...route.query,
-			event: calendarEvent.id,
+			// The master's id, not the row's. A row's id is synthetic — the server derives it
+			// from the occurrence's position in the expansion — and it changes the moment that
+			// occurrence gains an override, which editing or answering one gives it. A link
+			// built from it stops resolving as soon as it is acted on, and the panel loses the
+			// event it is showing. The master's id does not move, and the recurrence id beside
+			// it names the occurrence.
+			event: calendarEvent.master_id || calendarEvent.id,
 			recurrence: calendarEvent.recurrence_id || undefined,
 		},
 	})
