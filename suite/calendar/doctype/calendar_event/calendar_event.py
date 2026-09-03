@@ -559,8 +559,15 @@ def _reanchor_overrides(service, id: str, stored: dict, start: str | None, rule:
 
     # The stored rule is the server's own normalisation of what was sent — it drops "@type" and
     # anything left at its default — so the two are compared on what they actually say.
+    #
+    # Not on their day selectors, though. Those are read off the start, so moving a Monday series
+    # to a Wednesday rewrites them to follow it: the rule reads differently while describing the
+    # same series, moved. What must not have changed is how far apart the occurrences are, since
+    # that is what makes one shift the answer for all of them.
+    ignored = ("@type", "byDay", "byMonthDay")
+
     def spoken(value: dict | None) -> str:
-        return json.dumps({k: v for k, v in (value or {}).items() if k != "@type" and v}, sort_keys=True)
+        return json.dumps({k: v for k, v in (value or {}).items() if k not in ignored and v}, sort_keys=True)
 
     if spoken(stored.get("recurrenceRule")) != spoken(rule):
         return
