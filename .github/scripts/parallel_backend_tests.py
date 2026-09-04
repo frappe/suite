@@ -114,6 +114,10 @@ class SuiteParallelTestRunner(parallel_runner.ParallelTestRunner):
                 print("running tests from", "/".join(file_info))
                 continue
             path, filename = file_info
+            # `bench run-tests` only sees frappe.local.request_ip because some
+            # earlier API test leaks it into frappe.local; shards run disjoint
+            # file subsets, so preset it explicitly to stay order-independent
+            frappe.local.request_ip = "127.0.0.1"
             module = self.get_module(path, filename)
             if not self.lightmode:
                 from frappe.deprecation_dumpster import compat_preload_test_records_upfront
