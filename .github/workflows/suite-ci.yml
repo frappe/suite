@@ -87,7 +87,7 @@ jobs:
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
           fi
 
-          echo "run_backend=$run_backend" >> $GITHUB_OUTPUT
+          echo "run=$run_backend" >> $GITHUB_OUTPUT
           echo "Run backend tests: $run_backend"
 
       - name: Setup Python
