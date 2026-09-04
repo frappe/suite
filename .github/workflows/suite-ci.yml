@@ -429,7 +429,9 @@ jobs:
         if: steps.mail-calendar-changes.outputs.run == '1'
         working-directory: /home/runner/frappe-bench
         run: |
-          bench get-app suite $GITHUB_WORKSPACE --skip-assets
+          git clone "$GITHUB_WORKSPACE" apps/suite
+          uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
+          printf 'frappe\nsuite\n' > sites/apps.txt
           bench setup requirements --dev
           bench new-site --db-root-password root --admin-password admin test_site
           bench --site test_site install-app suite
