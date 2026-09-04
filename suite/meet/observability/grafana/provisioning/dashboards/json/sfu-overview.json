@@ -237,7 +237,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 52 },
       "id": 21,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "sum by (instance, mode) (clamp_min(rate(meet_sfu_worker_cpu_seconds{instance=~\"$instance\"}[$__rate_interval]), 0))", "legendFormat": "{{instance}} {{mode}}", "refId": "A" }],
+      "targets": [{ "expr": "sum by (instance, worker, mode) (clamp_min(rate(meet_sfu_worker_cpu_seconds{instance=~\"$instance\"}[$__rate_interval]), 0))", "legendFormat": "{{instance}} worker {{worker}} {{mode}}", "refId": "A" }],
       "title": "Worker CPU Rate",
       "type": "timeseries"
     },
@@ -247,7 +247,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 52 },
       "id": 22,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "meet_sfu_worker_max_resident_memory_bytes{instance=~\"$instance\"}", "legendFormat": "{{instance}}", "refId": "A" }],
+      "targets": [{ "expr": "meet_sfu_worker_max_resident_memory_bytes{instance=~\"$instance\"}", "legendFormat": "{{instance}} worker {{worker}}", "refId": "A" }],
       "title": "Worker Max Resident Memory",
       "type": "timeseries"
     },

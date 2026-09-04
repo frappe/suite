@@ -86,22 +86,37 @@ describe('Telemetry', () => {
 		expect(output).not.toContain('user-controlled-state');
 	});
 
-	it('exports aggregate worker resources and bounded media scores', async () => {
+	it('exports per-worker resources and bounded media scores', async () => {
 		const telemetry = new Telemetry();
 		telemetry.mediaScore.observe({ direction: 'recv', media: 'video' }, 7);
-		telemetry.setWorkerResources({
-			userCpuSeconds: 2,
-			systemCpuSeconds: 1,
-			maxResidentMemoryBytes: 2048,
-		});
+		telemetry.setWorkerResources([
+			{
+				worker: '1',
+				userCpuSeconds: 2,
+				systemCpuSeconds: 1,
+				maxResidentMemoryBytes: 2048,
+				rooms: 1,
+				peers: 2,
+				transports: 4,
+				producers: 4,
+				consumers: 4,
+			},
+		]);
 
 		const output = await telemetry.registry.metrics();
 
 		expect(output).toContain(
 			'meet_sfu_media_score_count{direction="recv",media="video"} 1',
 		);
-		expect(output).toContain('meet_sfu_worker_cpu_seconds{mode="user"} 2');
-		expect(output).toContain('meet_sfu_worker_max_resident_memory_bytes 2048');
+		expect(output).toContain(
+			'meet_sfu_worker_cpu_seconds{worker="1",mode="user"} 2',
+		);
+		expect(output).toContain(
+			'meet_sfu_worker_max_resident_memory_bytes{worker="1"} 2048',
+		);
+		expect(output).toContain(
+			'meet_sfu_worker_resources{worker="1",resource="consumers"} 4',
+		);
 	});
 
 	it('bounds E2EE event names', async () => {

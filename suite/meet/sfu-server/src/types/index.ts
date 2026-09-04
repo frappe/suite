@@ -471,6 +471,7 @@ export interface ExistingProducer {
 // Mediasoup Manager types
 export interface Room {
 	id: string;
+	workerId: number;
 	router: Router;
 	webRtcServer: WebRtcServer;
 	audioLevelObserver: AudioLevelObserver;

@@ -180,13 +180,20 @@ export class Telemetry {
 	});
 	private workerCpu = new Gauge({
 		name: 'meet_sfu_worker_cpu_seconds',
-		help: 'Aggregate mediasoup worker CPU time',
-		labelNames: ['mode'] as const,
+		help: 'Mediasoup worker CPU time',
+		labelNames: ['worker', 'mode'] as const,
 		registers: [this.registry],
 	});
 	private workerMemory = new Gauge({
 		name: 'meet_sfu_worker_max_resident_memory_bytes',
-		help: 'Aggregate mediasoup worker maximum resident memory',
+		help: 'Mediasoup worker maximum resident memory',
+		labelNames: ['worker'] as const,
+		registers: [this.registry],
+	});
+	private workerResources = new Gauge({
+		name: 'meet_sfu_worker_resources',
+		help: 'Current resources assigned to a mediasoup worker',
+		labelNames: ['worker', 'resource'] as const,
 		registers: [this.registry],
 	});
 	private resources = new Gauge({
@@ -275,14 +282,54 @@ export class Telemetry {
 		}
 	}
 
-	setWorkerResources(resources: {
-		userCpuSeconds: number;
-		systemCpuSeconds: number;
-		maxResidentMemoryBytes: number;
-	}): void {
-		this.workerCpu.set({ mode: 'user' }, resources.userCpuSeconds);
-		this.workerCpu.set({ mode: 'system' }, resources.systemCpuSeconds);
-		this.workerMemory.set(resources.maxResidentMemoryBytes);
+	setWorkerResources(
+		workers: Array<{
+			worker: string;
+			userCpuSeconds?: number;
+			systemCpuSeconds?: number;
+			maxResidentMemoryBytes?: number;
+			rooms: number;
+			peers: number;
+			transports: number;
+			producers: number;
+			consumers: number;
+		}>,
+	): void {
+		this.workerCpu.reset();
+		this.workerMemory.reset();
+		this.workerResources.reset();
+		for (const resources of workers) {
+			if (resources.userCpuSeconds !== undefined) {
+				this.workerCpu.set(
+					{ worker: resources.worker, mode: 'user' },
+					resources.userCpuSeconds,
+				);
+			}
+			if (resources.systemCpuSeconds !== undefined) {
+				this.workerCpu.set(
+					{ worker: resources.worker, mode: 'system' },
+					resources.systemCpuSeconds,
+				);
+			}
+			if (resources.maxResidentMemoryBytes !== undefined) {
+				this.workerMemory.set(
+					{ worker: resources.worker },
+					resources.maxResidentMemoryBytes,
+				);
+			}
+			for (const resource of [
+				'rooms',
+				'peers',
+				'transports',
+				'producers',
+				'consumers',
+			] as const) {
+				this.workerResources.set(
+					{ worker: resources.worker, resource },
+					resources[resource],
+				);
+			}
+		}
 	}
 
 	recordE2EEEvent(

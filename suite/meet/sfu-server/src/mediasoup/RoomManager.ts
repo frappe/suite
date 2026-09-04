@@ -10,6 +10,7 @@ export class RoomManager {
 
 	async createRoom(
 		roomId: string,
+		workerId: number,
 		worker: mediasoup.types.Worker,
 		webRtcServer: mediasoup.types.WebRtcServer,
 		mediaCodecs: RtpCodecCapability[],
@@ -54,6 +55,7 @@ export class RoomManager {
 
 		const room: Room = {
 			id: roomId,
+			workerId,
 			router,
 			webRtcServer,
 			audioLevelObserver,
@@ -124,6 +126,10 @@ export class RoomManager {
 
 	getRoomCount(): number {
 		return this.rooms.size;
+	}
+
+	getAllRooms(): Room[] {
+		return Array.from(this.rooms.values());
 	}
 
 	getParticipantCount(): number {

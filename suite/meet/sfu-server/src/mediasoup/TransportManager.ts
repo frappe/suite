@@ -211,6 +211,14 @@ export class TransportManager {
 		return this.transports.size;
 	}
 
+	getTransportCountByRoom(roomId: string): number {
+		let count = 0;
+		for (const data of this.transports.values()) {
+			if (data.roomId === roomId) count++;
+		}
+		return count;
+	}
+
 	closePeerTransports(roomId: string, peerId: string): void {
 		for (const direction of ['send', 'recv'] as const) {
 			const key = `${roomId}:${peerId}:${direction}`;

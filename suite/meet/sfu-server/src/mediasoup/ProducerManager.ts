@@ -166,6 +166,14 @@ export class ProducerManager extends EventEmitter {
 		return this.producers.size;
 	}
 
+	getProducerCountByRoom(roomId: string): number {
+		let count = 0;
+		for (const data of this.producers.values()) {
+			if (data.roomId === roomId) count++;
+		}
+		return count;
+	}
+
 	getProducerIdsByPeer(roomId: string, peerId: string): string[] {
 		return Array.from(this.producers.entries())
 			.filter(

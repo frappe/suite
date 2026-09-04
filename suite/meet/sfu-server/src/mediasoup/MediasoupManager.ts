@@ -203,30 +203,55 @@ export class MediasoupManager {
 		this.producerClosedListeners.push(listener);
 	}
 
-	async getWorkerResourceUsage(): Promise<{
-		userCpuSeconds: number;
-		systemCpuSeconds: number;
-		maxResidentMemoryBytes: number;
-	}> {
+	async getWorkerResourceUsage(): Promise<
+		Array<{
+			worker: string;
+			userCpuSeconds?: number;
+			systemCpuSeconds?: number;
+			maxResidentMemoryBytes?: number;
+			rooms: number;
+			peers: number;
+			transports: number;
+			producers: number;
+			consumers: number;
+		}>
+	> {
+		const workers = this.workerManager.getAllWorkers();
 		const usage = await Promise.allSettled(
-			this.workerManager
-				.getAllWorkers()
-				.map(({ worker }) => worker.getResourceUsage()),
+			workers.map(({ worker }) => worker.getResourceUsage()),
 		);
-		return usage.reduce(
-			(total, result) => {
-				if (result.status === 'rejected') return total;
-				return {
-					userCpuSeconds:
-						total.userCpuSeconds + result.value.ru_utime / 1_000_000,
-					systemCpuSeconds:
-						total.systemCpuSeconds + result.value.ru_stime / 1_000_000,
-					maxResidentMemoryBytes:
-						total.maxResidentMemoryBytes + result.value.ru_maxrss * 1024,
-				};
-			},
-			{ userCpuSeconds: 0, systemCpuSeconds: 0, maxResidentMemoryBytes: 0 },
-		);
+		return workers.map(({ id }, index) => {
+			const rooms = this.roomManager
+				.getAllRooms()
+				.filter((room) => room.workerId === id);
+			const counts = rooms.reduce(
+				(total, room) => ({
+					rooms: total.rooms + 1,
+					peers: total.peers + room.peers.size,
+					transports:
+						total.transports +
+						this.transportManager.getTransportCountByRoom(room.id),
+					producers:
+						total.producers +
+						this.producerManager.getProducerCountByRoom(room.id),
+					consumers:
+						total.consumers +
+						this.consumerManager.getConsumerCountByRoom(room.id),
+				}),
+				{ rooms: 0, peers: 0, transports: 0, producers: 0, consumers: 0 },
+			);
+			const result = usage[index];
+			if (result.status === 'rejected')
+				return { worker: String(id), ...counts };
+			return {
+				worker: String(id),
+				...counts,
+				// mediasoup reports CPU time in milliseconds and max RSS in KiB.
+				userCpuSeconds: result.value.ru_utime / 1_000,
+				systemCpuSeconds: result.value.ru_stime / 1_000,
+				maxResidentMemoryBytes: result.value.ru_maxrss * 1024,
+			};
+		});
 	}
 
 	async init(): Promise<void> {
@@ -245,9 +270,10 @@ export class MediasoupManager {
 		roomId: string,
 		onActiveSpeaker?: (roomId: string, participantIds: string[]) => void,
 	): Promise<Room> {
-		const { worker, webRtcServer } = this.workerManager.getNextWorker();
+		const { id, worker, webRtcServer } = this.workerManager.getNextWorker();
 		return this.roomManager.createRoom(
 			roomId,
+			id,
 			worker,
 			webRtcServer,
 			this.config.router.mediaCodecs as RtpCodecCapability[],

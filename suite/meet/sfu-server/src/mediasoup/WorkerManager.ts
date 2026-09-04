@@ -4,6 +4,7 @@ import { loggers } from '../utils/logger';
 import { captureException, flushSentry } from '../utils/sentry';
 
 interface WorkerEntry {
+	id: number;
 	worker: mediasoup.types.Worker;
 	webRtcServer: mediasoup.types.WebRtcServer;
 }
@@ -58,7 +59,7 @@ export class WorkerManager {
 				],
 			});
 
-			this.workers.push({ worker, webRtcServer });
+			this.workers.push({ id: i + 1, worker, webRtcServer });
 			loggers.workerManager.info(
 				'Created worker %d/%d with WebRtcServer on UDP port %d',
 				i + 1,

@@ -11,6 +11,7 @@ import { PeerManager } from '../PeerManager';
 function makeRoom(): Room {
 	return {
 		id: 'r1',
+		workerId: 1,
 		router: {} as Room['router'],
 		audioLevelObserver: {} as Room['audioLevelObserver'],
 		peers: new Map(),

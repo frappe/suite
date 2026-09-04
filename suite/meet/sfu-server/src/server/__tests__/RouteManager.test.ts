@@ -11,11 +11,19 @@ function createHarness(token?: string) {
 	};
 	const mediasoup = {
 		getResourceCounts: vi.fn(() => ({ rooms: 2, participants: 3, peers: 4 })),
-		getWorkerResourceUsage: vi.fn(async () => ({
-			userCpuSeconds: 1,
-			systemCpuSeconds: 0.5,
-			maxResidentMemoryBytes: 1024,
-		})),
+		getWorkerResourceUsage: vi.fn(async () => [
+			{
+				worker: '1',
+				userCpuSeconds: 1,
+				systemCpuSeconds: 0.5,
+				maxResidentMemoryBytes: 1024,
+				rooms: 2,
+				peers: 4,
+				transports: 8,
+				producers: 4,
+				consumers: 12,
+			},
+		]),
 		rooms: {
 			getRoomCount: vi.fn(() => 2),
 			getParticipantCount: vi.fn(() => 3),
@@ -73,6 +81,11 @@ describe('RouteManager metrics endpoint', () => {
 		);
 		expect(response.send).toHaveBeenCalledWith(
 			expect.stringContaining('meet_sfu_resources{resource="participants"} 3'),
+		);
+		expect(response.send).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'meet_sfu_worker_resources{worker="1",resource="consumers"} 12',
+			),
 		);
 	});
 

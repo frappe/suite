@@ -209,6 +209,14 @@ export class ConsumerManager {
 		return this.consumers.size;
 	}
 
+	getConsumerCountByRoom(roomId: string): number {
+		let count = 0;
+		for (const data of this.consumers.values()) {
+			if (data.roomId === roomId) count++;
+		}
+		return count;
+	}
+
 	async pauseConsumer(consumerId: string): Promise<boolean> {
 		const consumerData = this.consumers.get(consumerId);
 		if (!consumerData) {
