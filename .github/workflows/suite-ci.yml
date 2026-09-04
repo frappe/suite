@@ -69,36 +69,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check node server changes
-        id: node-server-changes
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
-            run_sheets=1
-            run_meet=1
-            run_recorder=1
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
-          else
-            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-              changed_files="$(git diff --name-only HEAD~1 HEAD)"
-            else
-              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
-            fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
-          fi
-
-          echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
-          echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
-          echo "run_recorder=$run_recorder" >> $GITHUB_OUTPUT
-          echo "Run sheets collab server tests: $run_sheets"
-          echo "Run meet sfu server tests: $run_meet"
-          echo "Run meet recorder server tests: $run_recorder"
-
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
@@ -109,15 +79,6 @@ jobs:
         with:
           node-version: 24
           check-latest: true
-
-      - name: Run Realtime Handler Tests
-        if: matrix.shard == 1
-        run: |
-          mkdir -p test-results/realtime
-          node --test \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            --test-reporter=junit --test-reporter-destination=test-results/realtime/junit.xml \
-            'realtime/*.test.js'
 
       - name: Cache pip
         uses: actions/cache@v6
@@ -195,46 +156,6 @@ jobs:
           wait "$worker_pid" 2>/dev/null || true
           trap - EXIT
 
-      - name: Run Sheets Collab Server Tests
-        if: always() && matrix.shard == 1 && steps.node-server-changes.outputs.run_sheets == '1'
-        working-directory: suite/sheets/collab-server
-        run: |
-          npm install
-          mkdir -p "$GITHUB_WORKSPACE/test-results/sheets-collab"
-          node --test \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            --test-reporter=junit --test-reporter-destination="$GITHUB_WORKSPACE/test-results/sheets-collab/junit.xml" \
-            'test/**/*.test.js'
-
-      - name: Run Meet SFU Server Tests
-        if: always() && matrix.shard == 1 && steps.node-server-changes.outputs.run_meet == '1'
-        working-directory: suite/meet/sfu-server
-        run: |
-          yarn install --frozen-lockfile
-          mkdir -p test-results
-          yarn test:ci
-
-      - name: Build Meet Recorder UI
-        if: always() && matrix.shard == 1 && steps.node-server-changes.outputs.run_recorder == '1'
-        run: |
-          yarn install --frozen-lockfile --ignore-scripts
-          yarn workspace @suite/frontend build:recorder
-
-      - name: Run Meet Recorder Server Tests
-        if: always() && matrix.shard == 1 && steps.node-server-changes.outputs.run_recorder == '1'
-        working-directory: suite/meet/recorder-server
-        run: |
-          yarn install --frozen-lockfile
-          mkdir -p test-results
-          xvfb-run --auto-servernum yarn test:ci
-        env:
-          RECORDER_CHROMIUM_NO_SANDBOX: "1"
-
-      - name: Run Meet Recorder Integration Tests
-        if: always() && matrix.shard == 1 && (github.event_name == 'schedule' || inputs.run_recorder_integration) && steps.node-server-changes.outputs.run_recorder == '1'
-        working-directory: suite/meet/recorder-server
-        run: yarn test:integration
-
       - name: Upload Backend Evidence
         if: always()
         uses: actions/upload-artifact@v7
@@ -242,9 +163,6 @@ jobs:
           name: suite-backend-evidence-shard-${{ matrix.shard }}
           path: |
             test-results/
-            suite/meet/sfu-server/test-results/
-            suite/meet/recorder-server/test-results/
-            suite/meet/recorder-server/integration/output/
           if-no-files-found: warn
           retention-days: 30
 
@@ -258,6 +176,125 @@ jobs:
             /home/runner/frappe-bench/sites/.coveragerc
           if-no-files-found: warn
           retention-days: 7
+
+  node-servers:
+    runs-on: ubuntu-latest
+    name: Node Servers
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check node server changes
+        id: node-server-changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            run_sheets=1
+            run_meet=1
+            run_recorder=1
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
+          else
+            if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+              changed_files="$(git diff --name-only HEAD~1 HEAD)"
+            else
+              changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
+            fi
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/sheets/collab-server/|\.github/workflows/suite-ci\.yml)' && run_sheets=1 || run_sheets=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
+          fi
+
+          echo "run_sheets=$run_sheets" >> $GITHUB_OUTPUT
+          echo "run_meet=$run_meet" >> $GITHUB_OUTPUT
+          echo "run_recorder=$run_recorder" >> $GITHUB_OUTPUT
+          echo "Run sheets collab server tests: $run_sheets"
+          echo "Run meet sfu server tests: $run_meet"
+          echo "Run meet recorder server tests: $run_recorder"
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: 'echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT'
+
+      - name: Cache yarn
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Run Realtime Handler Tests
+        run: |
+          mkdir -p test-results/realtime
+          node --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination=test-results/realtime/junit.xml \
+            'realtime/*.test.js'
+
+      - name: Run Sheets Collab Server Tests
+        if: always() && steps.node-server-changes.outputs.run_sheets == '1'
+        working-directory: suite/sheets/collab-server
+        run: |
+          npm install
+          mkdir -p "$GITHUB_WORKSPACE/test-results/sheets-collab"
+          node --test \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=junit --test-reporter-destination="$GITHUB_WORKSPACE/test-results/sheets-collab/junit.xml" \
+            'test/**/*.test.js'
+
+      - name: Run Meet SFU Server Tests
+        if: always() && steps.node-server-changes.outputs.run_meet == '1'
+        working-directory: suite/meet/sfu-server
+        run: |
+          yarn install --frozen-lockfile
+          mkdir -p test-results
+          yarn test:ci
+
+      - name: Build Meet Recorder UI
+        if: always() && steps.node-server-changes.outputs.run_recorder == '1'
+        run: |
+          yarn install --frozen-lockfile --ignore-scripts
+          yarn workspace @suite/frontend build:recorder
+
+      - name: Run Meet Recorder Server Tests
+        if: always() && steps.node-server-changes.outputs.run_recorder == '1'
+        working-directory: suite/meet/recorder-server
+        run: |
+          yarn install --frozen-lockfile
+          mkdir -p test-results
+          xvfb-run --auto-servernum yarn test:ci
+        env:
+          RECORDER_CHROMIUM_NO_SANDBOX: "1"
+
+      - name: Run Meet Recorder Integration Tests
+        if: always() && (github.event_name == 'schedule' || inputs.run_recorder_integration) && steps.node-server-changes.outputs.run_recorder == '1'
+        working-directory: suite/meet/recorder-server
+        run: yarn test:integration
+
+      - name: Upload Node Servers Evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-node-servers-evidence
+          path: |
+            test-results/
+            suite/meet/sfu-server/test-results/
+            suite/meet/recorder-server/test-results/
+            suite/meet/recorder-server/integration/output/
+          if-no-files-found: warn
+          retention-days: 30
 
   backend-coverage:
     name: Backend Coverage Wrap-up
