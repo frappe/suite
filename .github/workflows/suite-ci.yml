@@ -298,28 +298,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-  backend-success:
-    name: Backend Success
-    needs: [backend, backend-coverage]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Tests '${{ needs.backend.result }}' / Coverage '${{ needs.backend-coverage.result }}'
-        shell: python
-        run: |
-          stati = [
-              '${{ needs.backend.result }}',
-              '${{ needs.backend-coverage.result }}',
-          ]
-
-          nopass = ["failure", "cancelled"]
-          dopass = ["success", "skipped"]
-          if any(r in nopass for r in stati):
-              exit(1)
-          if all(r in dopass for r in stati):
-              exit(0)
-          exit(1)
-
   mail-calendar:
     runs-on: ubuntu-latest
     name: ${{ matrix.name }}
