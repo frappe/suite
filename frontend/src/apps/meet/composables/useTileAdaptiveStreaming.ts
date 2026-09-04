@@ -57,9 +57,6 @@ export function useTileAdaptiveStreaming() {
 		return injectedManager.value;
 	}
 
-	// A tile with no visible dimensions counts as hidden. Fail closed:
-	// a wrongly-hidden tile self-corrects on the next resize, while a
-	// wrongly-visible one would leak forwarding forever.
 	function measureTile(
 		element: HTMLVideoElement,
 		target: Pick<TileController, "width" | "height" | "visible">,
@@ -90,9 +87,7 @@ export function useTileAdaptiveStreaming() {
 			!last || Math.abs(last.width - width) >= SIZE_DELTA_THRESHOLD;
 		const visibilityChanged = !last || last.visible !== visible;
 
-		// Skip if no meaningful change. forceNext is set for the first
-		// send (lastSent == null), so the initial state — visible or
-		// hidden — is always reported exactly once.
+		// Skip if no meaningful change
 		if (!controller.forceNext) {
 			if (!visibilityChanged && visible && !widthChanged) return;
 			if (!visibilityChanged && !visible) return;
@@ -127,7 +122,6 @@ export function useTileAdaptiveStreaming() {
 		}
 	}
 
-	// Send immediately while nothing has been reported yet, debounce after.
 	function scheduleRefresh(controller: TileController) {
 		scheduleUpdate(controller, controller.lastSent == null);
 	}
@@ -175,7 +169,6 @@ export function useTileAdaptiveStreaming() {
 			stopListeningForConsumer: null,
 		};
 
-		// Measure up front so the initial state is real, not a placeholder.
 		measureTile(element, controller);
 
 		controller.debouncedUpdate = debounce(() => {
@@ -234,11 +227,6 @@ export function useTileAdaptiveStreaming() {
 			});
 		}
 
-		// One explicit initial sync, independent of observer deltas: an
-		// initially-hidden tile never produces a visible-to-hidden
-		// transition, so waiting for one would leak forwarding forever.
-		// Deferred a frame so layout has settled; skipped if an observer
-		// (or metadata) already reported.
 		const sendInitialState = () => {
 			if (!controller.active || controller.lastSent != null) return;
 			measureTile(element, controller);
