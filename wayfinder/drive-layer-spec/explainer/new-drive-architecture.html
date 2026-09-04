@@ -352,21 +352,23 @@ h2 .decno { position: relative; top: -1px; }
     <li><a href="#d10">10 · WebDAV</a></li>
     <li><a href="#d11">11 · Quota</a></li>
     <li><a href="#d12">12 · Migration</a></li>
-    <li><a href="#open">Still open</a></li>
+    <li><a href="#d13">13 · Slides media</a></li>
+      <li><a href="#d14">14 · HTTP API</a></li>
+      <li><a href="#open">What is left</a></li>
   </ol>
 </nav>
 
 <main>
 
 <header class="page">
-  <div class="eyebrow">Suite · Drive layer · Twelve decisions, one example</div>
+  <div class="eyebrow">Suite · Drive layer · Fourteen decisions, one example</div>
   <h1>New Drive architecture</h1>
   <p class="lede">
     Every decision below is shown twice: how Drive works today, and what was
     decided. One example runs through all of them.
   </p>
   <div class="byline">
-    <span class="badge done"><span class="dot" style="background:currentColor"></span>11 of 14 tickets closed</span>
+    <span class="badge done"><span class="dot" style="background:currentColor"></span>13 of 14 tickets closed</span>
     <span class="sep" aria-hidden="true">·</span>
     <span>4 September 2026</span>
     <span class="sep" aria-hidden="true">·</span>
@@ -380,6 +382,7 @@ h2 .decno { position: relative; top: -1px; }
   <span class="badge neutral">Folder <code>Finance</code></span>
   <span class="badge neutral">File <code>budget.xlsx</code></span>
   <span class="badge neutral">Sheet <code>Q3 forecast</code></span>
+        <span class="badge neutral">Deck <code>Q3 review</code></span>
 </div>
 
 <hr>
@@ -402,17 +405,17 @@ h2 .decno { position: relative; top: -1px; }
     ├── budget.xlsx
     └── Q3 forecast       <span class="dim"># a Sheet, body lives elsewhere</span>
 Users/
-├── alice@x.com/          <span class="dim"># her private space</span>
-└── bob@x.com/
+├── alice<span>&#64;</span>x.com/          <span class="dim"># her private space</span>
+└── bob<span>&#64;</span>x.com/
 Home/                     <span class="dim"># framework attachments, not Drive</span></pre>
   </div>
   <div class="card">
     <div class="card-label">Sharing, as Drive Permission rows</div>
 <pre>entity   user        read comment share upload write deny
-Finance  bob@x.com    1     1       0     1     0    0
+Finance  bob<span>&#64;</span>x.com    1     1       0     1     0    0
 Finance  $GENERAL     1     0       0     0     0    0
 Finance  ""           1     0       0     0     0    0  <span class="dim"># anyone with link</span>
-budget   bob@x.com    1     1       1     1     1    1  <span class="dim"># deny = all bits set</span></pre>
+budget   bob<span>&#64;</span>x.com    1     1       1     1     1    1  <span class="dim"># deny = all bits set</span></pre>
   </div>
 </div>
 
@@ -442,11 +445,11 @@ its own endpoint that no permission model can reach.</p>
 <pre>Drive Node row
   name     k3v9q2m8xa
   title    budget.xlsx
-  path     <span class="hl">/d1x2/f7a2/</span>   <span class="dim"># ids of every ancestor</span>
+  path     <span class="hl">/d1x2/f7a2/</span>   <span class="dim"># ancestor ids, below the root</span>
 
 Drive Grant row  <span class="dim"># the ONLY permission table</span>
   node       f7a2
-  principal  bob@x.com
+  principal  bob<span>&#64;</span>x.com
   role       30           <span class="dim"># one number, 0 = deny</span></pre>
   </div>
 </div>
@@ -492,7 +495,7 @@ sort by date or size: still a filesort, accepted</pre>
 <div class="pair">
   <div class="card">
     <div class="card-label today">Today</div>
-<pre>Users/alice@x.com/        <span class="dim"># a folder like any other</span>
+<pre>Users/alice<span>&#64;</span>x.com/        <span class="dim"># a folder like any other</span>
   Finance/                <span class="dim"># if she made it in her space</span>
 
 Alice leaves:
@@ -505,8 +508,8 @@ Alice leaves:
 <pre>Drive Root                <span class="dim"># a new small table</span>
   id     kind      user        state
   r01    Shared    -           Active
-  r02    Personal  alice@x.com Active
-  r03    Personal  bob@x.com   Active
+  r02    Personal  alice<span>&#64;</span>x.com Active
+  r03    Personal  bob<span>&#64;</span>x.com   Active
 
 Alice leaves:
   r02.state = <span class="hl">Archived</span>      <span class="dim"># one field, nothing moves</span>
@@ -648,7 +651,7 @@ Exports: streamed on request, <span class="hl">never stored</span></pre>
 
 <ul>
   <li>Replacing <code>budget.xlsx</code> keeps the old bytes as an auto version.</li>
-  <li>One retention ladder for all: every auto version for 24 h, one per hour to 7 days, one per day to 30, one per week to 90, then gone. Named and pinned stay.</li>
+  <li>One retention ladder for all: every auto version for 24 h, one per hour to 7 days, one per day to 30, one per week to 90, then gone. Named, milestone, and pinned stay.</li>
 </ul>
 
 <hr>
@@ -694,10 +697,10 @@ Drive Token: single-use download links</pre>
   <div class="card">
     <div class="card-label decided">Decided</div>
 <pre>Drive Grant
-  node   principal              role  password_hash  expires_on
-  budget <span class="hl">$LINK:7Hq2ZpL9vRt3cW8kQa1b</span> 20    ab12…          2026-12-31
+  node   principal                    role  password_hash  expires_on
+  budget <span class="hl">$LINK:7Hq2ZpL9vRt3cW8kQa1bXn</span> 20    ab12…          2026-12-31
 
-URL: /drive/l/7Hq2ZpL9vRt3cW8kQa1b
+URL: /drive/l/7Hq2ZpL9vRt3cW8kQa1bXn
 many links per node, each its own grant
 browser sends X-Drive-Links: token[.ticket]
 unlock = HMAC ticket, 30 days, no server state</pre>
@@ -706,8 +709,10 @@ unlock = HMAC ticket, 30 days, no server state</pre>
 
 <pre><span class="dim"># resolution, two passes</span>
 1. Bob's own principals (email, groups, $GENERAL)
+     nearest wins; on a tie, email &gt; group &gt; $GENERAL
      a deny here is <span class="hl">final</span>
-2. else: the best of $PUBLIC and any links he holds, nearest wins</pre>
+2. $PUBLIC and every link he holds, resolved together
+answer = the <span class="hl">higher</span> of the two   <span class="dim"># a link never lowers anyone</span></pre>
 
 <hr>
 
@@ -724,10 +729,13 @@ and its own permission checks
   <div class="card">
     <div class="card-label decided">Decided</div>
 <pre>mount: the Personal Root only    <span class="dim"># one mount</span>
-  PROPFIND → READ    PUT → UPLOAD or EDIT
-  DELETE   → EDIT    LOCK → EDIT
+  PROPFIND → READ   PUT  → UPLOAD or EDIT
+  DELETE   → EDIT   LOCK → EDIT
+  LOCK, unmapped   → UPLOAD on parent
 Q3 forecast appears as <span class="hl">Q3 forecast.xlsx</span>, read-only
-PUT = one put_blob; every replace makes a version
+PUT = one put_blob; a replace makes
+      a version, unless the head was
+      size 0
 same SDK calls, same activity rows as the web app</pre>
   </div>
 </div>
@@ -770,12 +778,12 @@ daily recompute repairs drift</pre>
 <hr>
 
 <h2 id="d12"><span class="decno">12</span>Migration: Build, then Cleanup</h2>
-<p class="why">Ticket: Migration mapping. Fourteen decisions; the shape is here.</p>
+<p class="why">Ticket: Migration mapping. Fifteen decisions and two amendments; the shape is here.</p>
 
 <div class="pair">
   <div class="card">
     <div class="card-label decided">Build (additive, rerunnable)</div>
-<pre>gate: storage_v2 on, else throw
+<pre>gate: storage_v2 on; on S3, driver configured
 framework backfill → File.blob        <span class="dim"># local files</span>
 S3 objects: hash once, <span class="hl">copy</span> to framework key
 roots   Drive → Shared, Users/&lt;email&gt; → Personal
@@ -787,8 +795,8 @@ recompute used_bytes; write report.json</pre>
   </div>
   <div class="card">
     <div class="card-label decided">Cleanup (one release later)</div>
-<pre>refuses unless every File row has a node
-        and GC discovery (decision 5) exists
+<pre>refuses unless every reachable Drive File row has
+        a node, and GC discovery (decision 5) exists
 deletes Drive's File rows, 7 custom fields
 drops Drive Permission, Token, old activity log
 DocShare rows, Writer Version, Sheet Snapshot
@@ -800,32 +808,190 @@ rollback after this: database restore only</pre>
 
 <pre><span class="dim"># Bob's favourite on budget.xlsx, before and after</span>
  Drive Favourite
-   user    bob@x.com
+   user    bob<span>&#64;</span>x.com
 -  entity  k3v9q2m8xa   <span class="dim"># → File</span>
 +  node    k3v9q2m8xa   <span class="dim"># → Drive Node, same value</span></pre>
 
 <ul>
   <li>Side tables reshaped: <code>Drive Activity</code>, <code>Drive Recent</code>, <code>Drive Favourite</code>, and <code>Drive Notification</code> as a pointer at an activity row.</li>
   <li>Sites that run Drive on S3: objects are copied into the framework layout; storage doubles until Cleanup.</li>
-  <li>One storage location in the end: a framework job <code>relocate_blobs()</code> moves legacy local attachments to the configured driver after Build. Drive moves no bytes.</li>
+  <li>One storage location in the end. This is a framework ask: a resumable <code>relocate_blobs()</code> that moves every blob whose driver is not the configured one, and deletes the old bytes after commit. It runs after Build, at any time. Drive moves no bytes itself.</li>
+  <li>Slides migrates with it (decision 13). Slide media <code>File</code> rows become child nodes of their deck, one node per deck per blob. <code>Slide.elements</code> gets node ids in <code>src</code>. <code>Presentation.thumbnail</code> becomes a preview row. Template decks gain nodes with a <code>$GENERAL</code> READ grant. The forced-public grants on composite decks are dropped, not mapped.</li>
 </ul>
 
 <hr>
 
-<h2 id="open">Still open</h2>
+<h2 id="d13"><span class="decno">13</span>Slide images become nodes</h2>
+<p class="why">Ticket: Slides media to nodes. Nine decisions.
+  <a href="https://md.netchamp.dev/drive-slides-media/">Full walkthrough</a>.</p>
+
+<div class="pair">
+  <div class="card">
+    <div class="card-label today">Today</div>
+<pre>Presentation.thumbnail → File   <span class="dim"># cover</span>
+media: File rows, attached_to = deck
+slide src: "/private/files/logo.webp"
+
+authorized by slides/api/file.py
+  <span class="dim">122 lines, its own (src, deck) rule</span>
+is_template → everyone reads, in code
+composite   → references forced public</pre>
+  </div>
+  <div class="card">
+    <div class="card-label decided">Decided</div>
+<pre>Finance/Q3 review     <span class="dim"># the deck node</span>
+├── logo.webp         <span class="dim"># media = child</span>
+└── clip.mp4          <span class="dim">#   nodes, never</span>
+                      <span class="dim">#   listed (leaf)</span>
+
+slide src: <span class="hl">&lt;media node id&gt;</span>
+wire: short-TTL signed /f/&lt;blob&gt;,
+      minted after <span class="hl">one</span> Read check
+      on the deck; the page refreshes
+
+is_template  one flag, every app
+composite    one Read check per ref</pre>
+  </div>
+</div>
+
+<ul>
+  <li>Read on the deck covers its media, through the same path walk as everything else. Slides keeps no permission code.</li>
+  <li>Paste across decks copies the node: same blob, no bytes moved. Paste inside one deck reuses it, so a logo on twenty slides is one node.</li>
+  <li>Quota is charged per node reference. A 50 MB video in three decks costs 150 MB against one 50 MB blob. A deck you can delete alone must cost you something.</li>
+  <li>Drive sweeps media no slide uses any more. Each app answers one question, <em>list the nodes you still use</em>; only the app can read its own body. Unused media is <strong>trashed, not purged</strong>, into the owner's bin on the normal 30-day clock.</li>
+  <li>A template is any document you may read, marked as a starting point. Permission is the grant on its node. Shipped templates are decks in Administrator's Personal Root with a <code>$GENERAL</code> READ grant, not <code>$PUBLIC</code>: a logged-out visitor views a published deck but never starts a new one.</li>
+  <li>Slides converts to webp <em>before</em> Drive creates the node. Ported literally it would be create-then-replace, and a replace keeps the old head as a paid-for <code>auto</code> version.</li>
+</ul>
+
+<pre><span class="dim"># what goes</span>
+slides/api/file.py                            122
+slides/api/test_file.py                       274
+frontend/.../utils/canonicalMediaKey.ts        31
+thumbnail File handling, presentation.py     ~120
+webp convert-and-delete, presentation.py      ~44
+Writer Template doctype + its two permission functions
+is_template branch, forced-public composite row</pre>
+
+<hr>
+
+<h2 id="d14"><span class="decno">14</span>The front door: real routes</h2>
+<p class="why">Ticket: HTTP API surface. Ten decisions.
+  <a href="https://md.netchamp.dev/drive-http-api/">Full walkthrough</a>.</p>
+
+<div class="pair">
+  <div class="card">
+    <div class="card-label today">Today</div>
+<pre>/api/method/suite.drive.api.
+    files.get_entity  <span class="dim"># 69 like it</span>
+
+each endpoint checks permission
+  itself
+list row ≠ detail payload
+  <span class="dim">two shapes, drifted apart</span>
+paging  ?start=&amp;limit=
+  <span class="dim">the filter runs after the SQL</span>
+  <span class="dim">window, so a page of 50</span>
+  <span class="dim">returns 12</span></pre>
+  </div>
+  <div class="card">
+    <div class="card-label decided">Decided</div>
+<pre>PATCH  /api/suite/drive/nodes/&lt;id&gt;
+       { title } | { parent }
+       | { state: "trashed"|"active" }
+DELETE /api/suite/drive/nodes/&lt;id&gt;
+       <span class="dim">purge, terminal</span>
+
+the <span class="hl">SDK</span> checks permission;
+the route only translates
+
+paging  { "rows", "next_cursor" }
+node    one shape, ?expand=
+        access|breadcrumbs|preview</pre>
+  </div>
+</div>
+
+<p>
+  The path is pretty, but the framework still does the work. A
+  <code>before_request</code> hook matches the route, seeds
+  <code>frappe.form_dict</code> from the path segments, rewrites
+  <code>PATH_INFO</code> to <code>/api/v2/method/...</code>, and hands off. Auth,
+  CSRF, rate limiting, and the response envelope stay the framework's. Cost: one
+  module. A full dispatcher would have had to rebuild all four, because
+  <code>validate_auth()</code> runs after <code>before_request</code>.
+</p>
+
+<div class="pair">
+  <div class="card">
+    <div class="card-label decided">Errors: the class name is the code</div>
+<pre>DriveNotFound     404
+  <span class="dim">missing, or hidden from you</span>
+DriveForbidden    403
+  <span class="dim">role below what the act needs</span>
+DriveLocked       401
+  <span class="dim">password link, no ticket</span>
+DriveLinkExpired  410
+  <span class="dim">past expires_on</span>
+DriveOverQuota    413
+  <span class="dim">admission UPDATE hit 0 rows</span>
+DriveConflict     409
+  <span class="dim">title taken, or moved into itself</span></pre>
+  </div>
+  <div class="card">
+    <div class="card-label decided">Batch: partial success is a result</div>
+<pre>POST /api/suite/drive/nodes/batch
+{ "nodes": [ ...ids... ],
+  "patch": { "parent": "folder-9" } }
+
+{ "data": {
+    "ok": [ ...ids... ],
+    "failed": [ { "node": "c",
+      "type": "DriveForbidden" } ] } }</pre>
+  </div>
+</div>
+
+<ul>
+  <li>The namespace carries an app segment because eight suite apps share one site and two of them want the noun <code>attachments</code>. It also gives one hardening allowlist prefix per app instead of one per route.</li>
+  <li>Three callers reach the same nodes: the routes, <code>/dav</code>, and other suite apps through the content contract. None of them owns the rule, so the SDK holds it.</li>
+  <li>The cursor is opaque. It holds an offset today and can hold a keyset later without changing a call site.</li>
+  <li>Build keeps all 69 old method names as thin forwarders into the new SDK. Cleanup deletes them one release later, gated on the SPA having moved, so the frontend rewrite need not ship with the backend.</li>
+  <li>Three names are permanent: <code>suite.drive.api.s3.fetch</code> sits inside stored <code>file_url</code> values, <code>get_file_for_doc</code> sits inside a checked-in built bundle, and <code>/dav</code> sits inside third-party file managers.</li>
+  <li>No upstream ask. <code>frappe-ui</code>'s <code>useCall</code> already parses the v2 <code>errors[]</code> array and takes an arbitrary URL. <code>useList</code> and <code>useDoc</code> do not fit: they build generic document-API URLs that bypass the grant engine.</li>
+</ul>
+
+<hr>
+
+<h2 id="open">What is left</h2>
+
+<div class="pair">
+  <div class="card">
+    <div class="card-label decided">Closed · 13</div>
+    <p class="small" style="margin:0">Every question this map opened has a written decision: the engine, the roles, the principals, roots, the content contract, storage, previews, publishing, links, WebDAV, quota, migration, Slides media, and the API. Each ticket also records the designs that lost.</p>
+  </div>
+  <div class="card">
+    <div class="card-label"><span class="badge open">open · 1</span></div>
+    <p class="small" style="margin:0"><strong>Draft the spec.</strong> The destination ticket. It waited on the other thirteen. All of them are now closed, so it is on the frontier and unclaimed.</p>
+  </div>
+</div>
+
+<p>
+  The spec turns the decisions into one implementable document: the frozen
+  schemas and indexes, the engine's exact queries, the content SDK, the full
+  route table, the WebDAV mapping, the five framework asks, and the migration
+  steps in order.
+</p>
 
 <div class="grid3">
   <div class="card">
-    <div class="card-label"><span class="badge open">open</span></div>
-    <p class="small" style="margin:0"><strong>Slides media to nodes.</strong> Slide images become nodes under the deck. Claimed.</p>
+    <div class="card-label">Read next</div>
+    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-layer/">The Drive layer, explained</a>. The same design for a mixed audience, with the benchmark that chose it.</p>
   </div>
   <div class="card">
-    <div class="card-label"><span class="badge open">open</span></div>
-    <p class="small" style="margin:0"><strong>HTTP API surface.</strong> Endpoints, shapes, errors, paging. Unclaimed, on the frontier.</p>
+    <div class="card-label">Read next</div>
+    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-slides-media/">Slides media to nodes</a>. Decision 13 in full: templates, composites, quota per reference, the sweep.</p>
   </div>
   <div class="card">
-    <div class="card-label"><span class="badge neutral">blocked</span></div>
-    <p class="small" style="margin:0"><strong>Draft the spec.</strong> The destination. Waits on the two above.</p>
+    <div class="card-label">Read next</div>
+    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-http-api/">The HTTP API surface</a>. Decision 14 in full: the translator, the envelope, cursors, the 69 shimmed methods.</p>
   </div>
 </div>
 
