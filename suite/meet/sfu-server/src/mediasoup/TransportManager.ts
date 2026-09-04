@@ -211,12 +211,16 @@ export class TransportManager {
 		return this.transports.size;
 	}
 
-	getTransportCountByRoom(roomId: string): number {
-		let count = 0;
+	getTransportCountsByWorker(
+		roomWorkerIds: Map<string, number>,
+	): Map<number, number> {
+		const counts = new Map<number, number>();
 		for (const data of this.transports.values()) {
-			if (data.roomId === roomId) count++;
+			const workerId = roomWorkerIds.get(data.roomId);
+			if (workerId === undefined) continue;
+			counts.set(workerId, (counts.get(workerId) ?? 0) + 1);
 		}
-		return count;
+		return counts;
 	}
 
 	closePeerTransports(roomId: string, peerId: string): void {

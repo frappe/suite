@@ -220,26 +220,31 @@ export class MediasoupManager {
 		const usage = await Promise.allSettled(
 			workers.map(({ worker }) => worker.getResourceUsage()),
 		);
+		const rooms = this.roomManager.getAllRooms();
+		const roomWorkerIds = new Map(
+			rooms.map((room) => [room.id, room.workerId]),
+		);
+		const roomCounts = new Map<number, { rooms: number; peers: number }>();
+		for (const room of rooms) {
+			const counts = roomCounts.get(room.workerId) ?? { rooms: 0, peers: 0 };
+			counts.rooms += 1;
+			counts.peers += room.peers.size;
+			roomCounts.set(room.workerId, counts);
+		}
+		const transportCounts =
+			this.transportManager.getTransportCountsByWorker(roomWorkerIds);
+		const producerCounts =
+			this.producerManager.getProducerCountsByWorker(roomWorkerIds);
+		const consumerCounts =
+			this.consumerManager.getConsumerCountsByWorker(roomWorkerIds);
 		return workers.map(({ id }, index) => {
-			const rooms = this.roomManager
-				.getAllRooms()
-				.filter((room) => room.workerId === id);
-			const counts = rooms.reduce(
-				(total, room) => ({
-					rooms: total.rooms + 1,
-					peers: total.peers + room.peers.size,
-					transports:
-						total.transports +
-						this.transportManager.getTransportCountByRoom(room.id),
-					producers:
-						total.producers +
-						this.producerManager.getProducerCountByRoom(room.id),
-					consumers:
-						total.consumers +
-						this.consumerManager.getConsumerCountByRoom(room.id),
-				}),
-				{ rooms: 0, peers: 0, transports: 0, producers: 0, consumers: 0 },
-			);
+			const counts = {
+				...{ rooms: 0, peers: 0 },
+				...roomCounts.get(id),
+				transports: transportCounts.get(id) ?? 0,
+				producers: producerCounts.get(id) ?? 0,
+				consumers: consumerCounts.get(id) ?? 0,
+			};
 			const result = usage[index];
 			if (result.status === 'rejected')
 				return { worker: String(id), ...counts };
