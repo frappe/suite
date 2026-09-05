@@ -1,0 +1,139 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "parent",
+  "root",
+  "path",
+  "kind",
+  "blob",
+  "size",
+  "mime",
+  "url",
+  "content_doctype",
+  "content_docname",
+  "state",
+  "trashed_at",
+  "trash_root",
+  "content_modified",
+  "is_template"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "parent",
+   "fieldtype": "Link",
+   "label": "Parent",
+   "options": "Drive Node"
+  },
+  {
+   "fieldname": "root",
+   "fieldtype": "Link",
+   "label": "Root",
+   "options": "Drive Node"
+  },
+  {
+   "fieldname": "path",
+   "fieldtype": "Data",
+   "label": "Path",
+   "length": 500
+  },
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "root\nfolder\nfile\nlink\ndocument",
+   "reqd": 1
+  },
+  {
+   "fieldname": "blob",
+   "fieldtype": "Link",
+   "label": "Blob",
+   "options": "File Blob",
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "size",
+   "fieldtype": "Long Int",
+   "label": "Size"
+  },
+  {
+   "fieldname": "mime",
+   "fieldtype": "Data",
+   "label": "MIME Type"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "URL",
+   "length": 500
+  },
+  {
+   "fieldname": "content_doctype",
+   "fieldtype": "Link",
+   "label": "Content DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "content_docname",
+   "fieldtype": "Dynamic Link",
+   "label": "Content Document",
+   "options": "content_doctype"
+  },
+  {
+   "default": "Active",
+   "fieldname": "state",
+   "fieldtype": "Select",
+   "label": "State",
+   "options": "Active\nTrashed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "trashed_at",
+   "fieldtype": "Datetime",
+   "label": "Trashed At"
+  },
+  {
+   "fieldname": "trash_root",
+   "fieldtype": "Link",
+   "label": "Trash Root",
+   "options": "Drive Node",
+   "search_index": 1
+  },
+  {
+   "fieldname": "content_modified",
+   "fieldtype": "Datetime",
+   "label": "Content Modified"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_template",
+   "fieldtype": "Check",
+   "label": "Is Template",
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Node",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
