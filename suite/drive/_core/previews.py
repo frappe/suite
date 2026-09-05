@@ -15,6 +15,7 @@ from suite.drive._core.access import require
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT
+from suite.drive._core.roots import reject_illegal_root_operation
 
 # Previews sit below nodes.py so the node workflows can import this module at
 # the top. Reading the node here keeps that direction one-way: the fields are
@@ -54,6 +55,10 @@ VIDEO_MIMES = frozenset(
 PDF_MIME = "application/pdf"
 RENDERABLE_MIMES = tuple(sorted((*IMAGE_MIMES, *VIDEO_MIMES, PDF_MIME)))
 
+# §9.2's sweep matches `pv.name IS NULL`. A row that survives a head change
+# is invisible to that filter, so every writer that repoints `Drive Node.blob`
+# has to remember the delete. The `source_blob` comparison closes that class:
+# any file whose preview no longer names its head is swept and re-rendered.
 MISSING_PREVIEW_SQL = """
 SELECT n.name, n.creation
 FROM `tabDrive Node` n
@@ -62,7 +67,7 @@ WHERE n.state = 'Active'
   AND n.kind = 'file'
   AND n.blob IS NOT NULL
   AND n.mime IN %(renderable_mimes)s
-  AND pv.name IS NULL
+  AND (pv.name IS NULL OR pv.source_blob IS NULL OR pv.source_blob != n.blob)
   AND (
       %(after_creation)s IS NULL
       OR n.creation > %(after_creation)s
@@ -101,8 +106,10 @@ def render(node: str) -> None:
         "blob",
         order_by="creation, name",
     )
-    if reused:
-        _publish_rendered(node, source_blob, reused)
+    if reused and _publish_rendered(node, source_blob, reused):
+        return
+    if reused and frappe.db.get_value("Drive Node", node, "blob") != source_blob:
+        # The head moved while this job ran. A newer job owns the node.
         return
 
     source = frappe.db.get_value(
@@ -125,6 +132,7 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
     """Replace one document preview under EDIT without touching its node."""
     current = _preview_node(node)
     require(current, EDIT, principals)
+    reject_illegal_root_operation(current, "preview")
     if current.kind != "document" or current.state != "Active":
         raise DriveForbidden(_("Only an active content document accepts a pushed preview"))
     if mime not in IMAGE_MIMES or not isinstance(image_bytes, bytes) or not image_bytes:

@@ -1,17 +1,19 @@
 import io
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
+from frappe.storage.gc import blob_reference_columns
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from PIL import Image
 
 from suite.drive._core.errors import DriveForbidden
 from suite.drive._core.nodes import copy, create_file, purge, update
 from suite.drive._core.previews import (
+    MISSING_PREVIEW_SQL,
     PREVIEW_LONGEST_SIDE,
     PREVIEW_TTL_SECONDS,
     RENDERABLE_MIMES,
@@ -24,6 +26,8 @@ from suite.drive._core.previews import (
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 from suite.drive._core.roots import create_root
+from suite.drive._core.versions import restore_version, take_version
+from suite.hooks import scheduler_events
 from suite.tests.utils import ensure_user
 
 USER = "drive-preview-user@example.com"
@@ -37,6 +41,8 @@ def _png(width: int = 1024, height: int = 256, color: str = "red") -> bytes:
 
 
 class TestPreviewContract(UnitTestCase):
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+
     def test_schema_is_one_row_per_node_and_both_blobs_are_gc_references(self):
         schema_path = Path(__file__).parents[1] / "doctype" / "drive_node_preview" / "drive_node_preview.json"
         fields = {field["fieldname"]: field for field in json.loads(schema_path.read_text())["fields"]}
@@ -86,6 +92,97 @@ class TestPreviewContract(UnitTestCase):
             enqueue_after_commit=True,
             node="node",
         )
+
+    def test_sweep_is_registered_once_as_a_daily_scheduler_event(self):
+        registered = []
+        for events in scheduler_events.values():
+            if isinstance(events, dict):
+                for schedule in events.values():
+                    registered.extend(schedule)
+            else:
+                registered.extend(events)
+        self.assertIn("suite.drive.jobs.sweep_missing_previews", scheduler_events["daily"])
+        self.assertEqual(registered.count("suite.drive.jobs.sweep_missing_previews"), 1)
+
+    def test_the_sweep_query_repairs_stale_rows_and_skips_documents(self):
+        self.assertIn("n.kind = 'file'", MISSING_PREVIEW_SQL)
+        self.assertIn("n.state = 'Active'", MISSING_PREVIEW_SQL)
+        # A row that outlived a head change is not a missing row. Both are swept.
+        self.assertIn(
+            "(pv.name IS NULL OR pv.source_blob IS NULL OR pv.source_blob != n.blob)",
+            MISSING_PREVIEW_SQL,
+        )
+
+    def test_version_restore_invalidates_only_when_the_head_blob_moves(self):
+        """The ticket 12 handoff, isolated from the database.
+
+        Restore repoints `Drive Node.blob` with `frappe.db.set_value`, which
+        skips the controller. The delete and the enqueue must therefore hang
+        off the blob comparison, not off the restore itself.
+        """
+        node = frappe._dict(
+            name="node-a", kind="file", state="Active", root="root-a", blob="blob-old", size=10
+        )
+        target = frappe._dict(name="v1", seq=1, size=20, blob="blob-new")
+
+        def run(target_blob_name):
+            with (
+                patch("suite.drive._core.versions.frappe.db", new_callable=MagicMock) as db,
+                patch("suite.drive._core.versions._node", return_value=node),
+                patch("suite.drive._core.versions.require", return_value=None),
+                patch("suite.drive._core.versions._require_content_version_node"),
+                patch("suite.drive._core.versions._version", return_value=target),
+                patch(
+                    "suite.drive._core.versions._validated_version_blob",
+                    return_value=frappe._dict(name=target_blob_name, mime_type="image/png"),
+                ),
+                patch("suite.drive._core.versions._validate_existing_head"),
+                patch("suite.drive._core.versions._insert_version", return_value=2),
+                patch("suite.drive._core.versions.admit"),
+                patch("suite.drive._core.versions._record_activity"),
+                patch("suite.drive._core.versions.enqueue_render") as enqueue,
+            ):
+                restore_version(self.admin, "node-a", 1)
+            return db, enqueue
+
+        db, enqueue = run("blob-new")
+        db.delete.assert_called_once_with("Drive Node Preview", {"node": "node-a"})
+        enqueue.assert_called_once_with("node-a")
+
+        db, enqueue = run("blob-old")
+        db.delete.assert_not_called()
+        enqueue.assert_not_called()
+
+    def test_a_lost_reuse_blob_renders_again_but_a_moved_head_does_not(self):
+        snapshot = frappe._dict(name="node-a", kind="file", state="Active", blob="src", mime="image/png")
+
+        def run(head_now):
+            def get_value(doctype, *args, **kwargs):
+                if doctype == "Drive Node":
+                    return snapshot if kwargs.get("as_dict") else head_now
+                if doctype == "Drive Node Preview":
+                    return "gone-preview"
+                return frappe._dict(name="src", key="k", driver="local", is_private=1, status="Ready")
+
+            with (
+                patch("suite.drive._core.previews.frappe.db", new_callable=MagicMock) as db,
+                patch("suite.drive._core.previews._publish_rendered", return_value=False),
+                patch("suite.drive._core.previews.get_driver") as driver,
+                patch("suite.drive._core.previews._render_webp", return_value=b"webp") as webp,
+                patch(
+                    "suite.drive._core.previews.put_blob",
+                    return_value=frappe._dict(name="fresh-preview"),
+                ),
+            ):
+                db.get_value.side_effect = get_value
+                driver.return_value.read.return_value.__enter__.return_value = io.BytesIO(b"png")
+                render("node-a")
+            return webp
+
+        # The shared preview blob vanished under GC: render fresh bytes.
+        self.assertTrue(run("src").called)
+        # The head moved on: a newer job owns the node, so do no work.
+        self.assertFalse(run("other").called)
 
     def test_renderable_mimes_are_an_explicit_sweep_safe_set(self):
         self.assertEqual(tuple(sorted(RENDERABLE_MIMES)), RENDERABLE_MIMES)
@@ -306,6 +403,73 @@ class TestPreviews(IntegrationTestCase):
 
         self.assertEqual(result["enqueued"], 1)
         enqueue.assert_called_once_with(missing)
+
+    def test_version_restore_invalidates_the_preview_and_queues_one_render(self):
+        node = self._file("restore.png", _png(color="red"))
+        target_seq = take_version(self.admin, node, kind="named", label="red")
+        replacement = self._blob(_png(color="blue"), "blue.png")
+        with patch("suite.drive._core.previews.enqueue_render"):
+            update(
+                self.admin,
+                node,
+                blob=replacement.name,
+                size=replacement.file_size,
+                mime=replacement.mime_type,
+            )
+        render(node)
+        stale_preview = frappe.db.get_value("Drive Node Preview", {"node": node}, "blob")
+        self.assertTrue(stale_preview)
+
+        with patch("suite.drive._core.versions.enqueue_render") as enqueue:
+            restore_version(self.admin, node, target_seq)
+
+        self.assertFalse(frappe.db.exists("Drive Node Preview", {"node": node}))
+        enqueue.assert_called_once_with(node)
+
+    def test_version_restore_onto_the_same_blob_keeps_the_preview(self):
+        node = self._file("same.png", _png(color="green"))
+        render(node)
+        preview = frappe.db.get_value("Drive Node Preview", {"node": node}, "blob")
+        target_seq = take_version(self.admin, node, kind="named", label="green")
+
+        with patch("suite.drive._core.versions.enqueue_render") as enqueue:
+            restore_version(self.admin, node, target_seq)
+
+        row = frappe.db.get_value("Drive Node Preview", {"node": node}, ["source_blob", "blob"], as_dict=True)
+        self.assertEqual(row.blob, preview)
+        self.assertEqual(row.source_blob, frappe.db.get_value("Drive Node", node, "blob"))
+        enqueue.assert_not_called()
+
+    def test_the_sweep_repairs_a_row_left_behind_by_a_head_change(self):
+        node = self._file("stale.png", _png(color="red"))
+        render(node)
+        stale_source = frappe.db.get_value("Drive Node Preview", {"node": node}, "source_blob")
+        replacement = self._blob(_png(color="blue"), "blue.png")
+        # Repoint the head the way a writer that forgot the delete would.
+        frappe.db.set_value("Drive Node", node, "blob", replacement.name)
+
+        with patch("suite.drive._core.previews.enqueue_render") as enqueue:
+            result = sweep_missing()
+
+        self.assertEqual(result["enqueued"], 1)
+        enqueue.assert_called_once_with(node)
+        self.assertNotEqual(stale_source, replacement.name)
+
+        render(node)
+        self.assertEqual(
+            frappe.db.get_value("Drive Node Preview", {"node": node}, "source_blob"),
+            replacement.name,
+        )
+
+    def test_both_preview_blob_columns_are_gc_references(self):
+        columns = {(column["doctype"], column["fieldname"]) for column in blob_reference_columns()}
+        self.assertIn(("Drive Node Preview", "blob"), columns)
+        self.assertIn(("Drive Node Preview", "source_blob"), columns)
+
+    def test_a_root_refuses_a_pushed_preview(self):
+        with self.assertRaises(DriveForbidden) as caught:
+            push_preview(self.admin, self.root.name, _png(), "image/png")
+        self.assertIn("does not apply to a Drive root", str(caught.exception))
 
     def test_file_creation_requests_render_after_its_writes(self):
         blob = self._blob(_png())
