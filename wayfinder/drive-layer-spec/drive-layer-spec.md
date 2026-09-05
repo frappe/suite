@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | Draft |
+| Status | Decisions accepted; implementation and measurement pending |
 | Date | 2026-09-05 |
 | Source map | [`MAP.md`](MAP.md), [`tickets/`](tickets/), and [`explainer/`](explainer/) |
 | Companion plan | [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership and build order) |
@@ -13,8 +13,9 @@ schema, query, and number here is frozen. Bracketed ids cite the ticket
 that decided the rule, in [`tickets/`](tickets/). Terms are the
 [`Drive glossary`](../../suite/drive/CONTEXT.md)'s.
 
-Every `> Spec pick:` line is a choice the map did not decide. Each one is
-open to review.
+The [decision review](decision-review.md) records the accepted amendments.
+It supersedes conflicting proposals in the original decision tickets and
+reference explainers. Required measurements remain implementation work.
 
 Citation `[design]` refers to the repository-local
 [`references/drive-file-layer-designs.md`](references/drive-file-layer-designs.md).
@@ -179,10 +180,10 @@ Naming: `autoname: hash`, which is a 10-char id
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
 | `title` | Data | | reqd 1 | Display name. Unique among Active siblings. |
-| `parent` | Link | Drive Node | | Parent node. NULL for a top-level node of the root. |
-| `root` | Link | Drive Root | reqd 1 | The namespace this node belongs to. |
+| `parent` | Link | Drive Node | | Parent node. Top-level entries point to the root node; NULL only for a root node. |
+| `root` | Link | Drive Node | | Root node id, required for every non-root node. NULL on a root node itself. |
 | `path` | Data | | length 500 | Ids of the ancestors below the root, `/<id>/<id>/`. Empty string at top level. Depth cap 40. |
-| `kind` | Select | `folder`<br>`file`<br>`link`<br>`document` | reqd 1 | What the node is. |
+| `kind` | Select | `root`<br>`folder`<br>`file`<br>`link`<br>`document` | reqd 1 | What the node is. |
 | `blob` | Link | File Blob | search_index 1 | The head bytes of a file node. NULL for every other kind. |
 | `size` | Long Int | | default 0 | Logical bytes charged to the root (§7). 0 for folders, links, and documents. |
 | `mime` | Data | | | The blob's sniffed mime, copied at create. Decides preview rendering. |
@@ -200,15 +201,30 @@ Naming: `autoname: hash`, which is a 10-char id
 Rules on the columns:
 
 - `path` is root-relative, so the same string repeats across roots. Every subtree query carries `root` as well.
-- `root` changes only in a cross-root move, which rewrites `root` and `path` in one UPDATE (§8, §7.6).
+- `root` changes only in a cross-root move of a non-root subtree, which rewrites
+  `root` and `path` together (§8, §7.6). A root node itself cannot be moved.
 - The tree is a logical namespace only. `frappe.storage` keys a blob by its sha256, so no root and no path maps to a storage location. Every cost in §5 and §7 is database work [001].
 - A `document` node may hold child nodes (media, embeds) and is always a leaf in every listing [012 §1].
 - `kind`, `state`, and `is_template` are three separate fields [012 §6].
+- Root nodes have `kind = root`, `parent = NULL`, `root = NULL`, `path = ""`,
+  `state = Active`, `size = 0`, and `is_template = 0`. They hold no blob,
+  content document, URL, version, or preview. Archive state lives only on
+  their matching `Drive Root` record.
+- Every non-root node has a parent and a `root` Link to a node with
+  `kind = root`. Direct children have `parent = root` and `path = ""`.
+  Deeper nodes store ancestor ids below the root, as before. Root nodes
+  are excluded from ordinary sibling-title uniqueness; separate roots may
+  have the same display title.
+- The effective root id is `node.name` for a root node, otherwise `node.root`.
+  Validate parent/root agreement and root-node kind before every tree write.
+  Only the root lifecycle workflow creates a root node and its metadata pair.
 
-> Spec pick: `path` is `Data` with `length: 500`. Depth 40 times an
-> 11-char segment is 441 chars. `root` (varchar 140) plus `path`
-> (varchar 500) is 2560 bytes of utf8mb4, under the 3072-byte InnoDB
-> DYNAMIC key limit, so `(root, path)` is indexable with no prefix.
+Accepted in [Decision review](decision-review.md): `path` remains `Data`
+with `length: 500`, and `(root, path)` uses a full index. Validate maximum
+migrated id lengths and depth on the target database. The root id stays
+outside `path`, so adding root nodes does not consume path capacity.
+The original estimate was 441 characters at depth 40 with 10-character ids;
+actual migrated ids and index creation must be checked before shipping.
 
 #### Index set
 
@@ -216,7 +232,7 @@ Rules on the columns:
 |---|---|---|
 | PRIMARY (`name`) | framework | Node fetch by id; every side table joins on it. |
 | `node_parent_page (parent, state, title)` | `add_index` in `on_doctype_update()` | Folder page: `parent = ? AND state = 'Active' ORDER BY title`. Frozen by [004]: 11.7 ms to 0.57 ms at 10k children, index-only. Also the WebDAV path lookup by title and the children of a content document. |
-| `node_root_page (root, parent, state, title)` | `add_index` | Root page: `root = ? AND parent IS NULL AND state = 'Active' ORDER BY title`, index-only. Leading `root` also serves the per-root sweeps: trash purge, preview gap, usage recompute, cross-root move sums. |
+| `node_root_page (root, parent, state, title)` | Candidate only; no default creation | Reassess after the root-node change. Root listings now use `parent = root_node_id`, so the existing `node_parent_page` index is the primary baseline. Retain an extra index only if measurement justifies it. |
 | `node_subtree (root, path)` | `add_index` | Path-prefix `LIKE` for move, trash, restore, purge cascade, `revoke_below`, and the cross-root byte sum: `root = ? AND path LIKE '<prefix>%'`. |
 | `node_content (content_doctype, content_docname)` | `add_index` | Content reference lookup: the node of one content document, run on every autosave check and every satellite check (§10). |
 | `trash_root` | `search_index: 1` | Restore and purge of one trashed subtree: `trash_root = ?`. A path prefix cannot be used, because a subtree can hold nodes trashed earlier under their own trash root. |
@@ -230,17 +246,33 @@ Not created:
 - `(parent, state, modified)` and `(parent, state, size)`. Sorting a big folder by date or size stays a filesort: 11.5 ms at 10k children, 1.2 ms at 1k, 0.24 ms at 48. Add `(parent, state, modified)` alone only if telemetry shows the sort in use; it costs +11.5 MB per 250k nodes and about +5% on insert [004].
 - Any index for shared-with-me. That view starts from the `grant_principal` index on `Drive Grant` and fetches nodes by PRIMARY key (§5.4).
 
-> Spec pick: `node_root_page`. Ticket [004] benchmarked the child page
-> only. Without a root-leading index the root page reads the whole
-> NULL-parent bucket of every root and looks up `root` per row.
+Accepted in [Decision review](decision-review.md): decide whether an extra
+root-page index is needed after measurement. Root nodes make the top-level
+page an ordinary children query using `node_parent_page`. The existing
+`node_subtree (root, path)` remains available for whole-root queries.
+
+Benchmark the real query and selected columns with existing indexes first.
+Compare the candidate only if needed. Include representative root counts,
+top-level entries, deep descendants, and Active/Trashed distributions.
+Record plans, rows examined, latency, index size, and write overhead.
+The implementation agent records an include/omit rationale. An inconclusive
+result does not justify adding an index. Recheck root-scoped quota and trash
+queries before finalizing the choice.
 
 ### 3.2 `Drive Root`
 
-Naming: `autoname: hash`. Never the email, so recreating a deleted email
-gives a fresh root instead of reviving an archived one [001].
+Root administration is a one-to-one extension of a root node. It owns the
+root registry, user association, Personal/Shared classification, archive
+state, quota, and usage. Grants, activity, titles, and ancestry belong to nodes.
+
+Naming: `autoname: field:node`. `Drive Root.name = Drive Root.node` is the
+matching root node's id. Generate a fresh node id for a new root, never the
+email, so reusing an email does not revive an archived root [001].
+The shared key preserves existing root-id API and accounting semantics.
 
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
+| `node` | Link | Drive Node | reqd 1, unique 1 | The matching node; must have `kind = root`. |
 | `user` | Link | User | | The owner of a Personal root. Empty on a Shared root. |
 | `kind` | Select | `Personal`<br>`Shared` | reqd 1 | Which namespace this is. |
 | `state` | Select | `Active`<br>`Archived` | reqd 1, default `Active` | Archived is offboarding: one field, no node writes [001]. |
@@ -251,16 +283,38 @@ gives a fresh root instead of reviving an archived one [001].
 Rules:
 
 - A business site holds one Shared root and one Personal root per user. A personal site holds Personal roots only [001].
-- The Shared root has `owner = Administrator` and carries the `$GENERAL` grant. A fresh Shared root carries `$GENERAL UPLOAD`; a migrated one keeps whatever its row maps to [002].
-- A Personal root carries one grant: MANAGE for its own user [002].
+- The Shared root pair has `owner = Administrator`; its root node carries the `$GENERAL` grant. A fresh Shared root carries `$GENERAL UPLOAD`; a migrated one keeps whatever its row maps to [002].
+- A Personal root node carries one grant: MANAGE for its metadata record's user [002].
 - "One active Shared root per site" is checkable as `kind = 'Shared' AND state = 'Active'` [001].
 - A user may hold at most one Active Personal root. `user` is not unique: an Archived root keeps the email of a user whose address can be recreated [001].
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
-| PRIMARY (`name`) | framework | Root fetch; `Drive Node.root` joins on it. |
+| PRIMARY (`name`) | framework | Metadata lookup by the root node id; quota updates retain their existing key. |
+| UNIQUE (`node`) | `unique: 1` | Enforces at most one metadata record per root node. |
 | `root_owner (user, kind, state)` | `add_index` | The caller's Personal root: `user = ? AND kind = 'Personal' AND state = 'Active'`. Runs on every session bootstrap and every quota preflight. |
 | `root_kind (kind, state)` | `add_index` | The site's Shared root: `kind = 'Shared' AND state = 'Active'`. Also the daily recompute's list of Active roots, and the admin list of Archived roots. |
+
+
+Creation and deletion invariants:
+
+- Create the root node first (`root = NULL`), then its metadata and anchor
+  grants in one transaction. Publish no partial pair. A failure rolls back
+  the whole operation. Ordinary node and metadata creation cannot bypass
+  this workflow. Validate both directions of the one-to-one relationship.
+- Metadata links only to `kind=root` nodes. Non-root nodes cannot acquire
+  root metadata. Node kind and metadata link are immutable after creation.
+- Roots cannot be moved, copied, trashed, or restored by ordinary node
+  operations. Root titles are node data; rename obeys the root-node checks.
+- Offboarding changes metadata `state` only. The root node stays Active;
+  archived-root discovery continues to read metadata, and existing grants
+  inside an Archived root keep their specified access.
+- Only the explicit archived-root purge removes a pair. Delete descendant
+  references and nodes first, then root-node grants/activity and remaining
+  root-linked reservations/settings, then metadata, then the root node.
+  Run atomically with a consistent lock order. No committed orphan is allowed.
+- Creation, migration, and purge tests cover rollback, duplicate metadata,
+  wrong-kind links, concurrent root creation, and incomplete migration pairs.
 
 ### 3.3 `Drive Grant`
 
@@ -268,24 +322,21 @@ The only permission table. Naming: `autoname: hash`.
 
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
-| `node` | Data | | reqd 1, length 140 | A `Drive Node` name or a `Drive Root` name. |
+| `node` | Link | Drive Node | reqd 1 | Target node, including a root node. |
 | `principal` | Data | | reqd 1, length 200 | Who the grant names (§4.4). |
 | `role` | Int | | reqd 1 | One of 0, 10, 20, 30, 40, 50. 0 is a stored deny. |
 | `expires_on` | Datetime | | | The grant stops at this moment. Valid on every principal [008 §8]. |
 | `password_hash` | Data | | length 255 | Passlib hash. Valid on `$LINK:*` only [008 §8]. |
 
-> Spec pick: `node` is `Data`, not a Link. A grant may name a
-> `Drive Root` (the Personal root's MANAGE row, the Shared root's
-> `$GENERAL` row), and the ancestor chain is one `IN` list holding a
-> root id and node ids together. A Link cannot span two doctypes, and a
-> Dynamic Link adds a second column to the hot query. Referential
-> cleanup is the purge cascade's job (§8), not the framework's.
+Accepted in [Decision review](decision-review.md): all grants target a
+`Drive Node`, including grants on a root. Use a normal Link. The permission
+query and unique `(node, principal)` key remain uniform. Root metadata is
+never a grant target. Drive still owns explicit removal and purge ordering.
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
 | `UNIQUE grant_node_principal (node, principal)` | `add_unique` in `on_doctype_update()` | The engine's two hot queries: grants on the parent chain and grants on the page's child ids, both `node IN (...) AND principal IN (...)`. Also the share dialog's list for one node, and the one-row-per-pair rule. |
 | `grant_principal (principal, node)` | `add_index` | Shared-with-me and archived-roots, both `principal IN (...)` (§5.4, §5.5). Also link lookup by token, `principal = '$LINK:<token>'`, on `/drive/l/<token>` and on unlock. |
-| `expires_on` | `search_index: 1` | The daily expired-link sweep: `expires_on < NOW()` (§6.4). |
 
 ### 3.4 `Drive Node Version`
 
@@ -364,7 +415,7 @@ One thing that happened to a node. Written once, never edited [011 §10].
 
 | Field | Fieldtype | Options | Flags | Meaning |
 |---|---|---|---|---|
-| `node` | Data | | reqd 1, length 140 | The node, or the root when a grant names a root. |
+| `node` | Link | Drive Node | reqd 1 | Target node, including a root node for root-level grant activity. |
 | `action` | Select | `create`<br>`rename`<br>`move`<br>`edit`<br>`comment`<br>`trash`<br>`restore`<br>`delete`<br>`share_add`<br>`share_edit`<br>`share_remove` | reqd 1 | The verb. `delete` is a purge. |
 | `actor` | Link | User | reqd 1 | The session user. `Guest` for a link visitor. There is no system actor, because no path skips the check [007 §7]. |
 | `at` | Datetime | | reqd 1 | |
@@ -372,15 +423,10 @@ One thing that happened to a node. Written once, never edited [011 §10].
 | `client` | Data | | length 255 | The User-Agent. WebDAV only [009 §10]. |
 | `detail` | JSON | | | Verb-specific payload (§9). Grant writes carry `principal`, `old_role`, `new_role`, `expires_on`, `has_password` (§5.12). |
 
-> Spec pick: `action` splits today's `delete` into `trash`, `restore`,
-> and `delete` (the purge). Ticket [011] says "same verbs as today", and
-> today's declared list has one word for three acts that now differ in
-> retention and in the role they need. The `detail` JSON per verb is
-> §9.
-
-> Spec pick: `node` is `Data` for the same reason as
-> `Drive Grant.node`: a grant write on a root writes an activity row
-> naming that root.
+Accepted: `trash`, `restore`, and `delete` are distinct activity verbs;
+`delete` means purge. The migration maps the old single delete verb (§14.6).
+`Drive Activity.node` is a Link to Drive Node, including for root activity.
+This follows the accepted root-node model in [Decision review](decision-review.md).
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
@@ -559,6 +605,11 @@ Each level includes everything below it [002].
 - MANAGE alone purges. Retention empties trash whatever the role.
 - A trashed document opens read-only. Edits and comments are refused [005].
 
+Root nodes support READ listing, UPLOAD child creation, EDIT rename, and
+MANAGE grant administration. The ordinary folder move/trash/restore/copy/
+purge verbs do not apply to root nodes. Root metadata administration uses
+its existing Suite Admin rules (§11.2).
+
 ### 4.3 Framework ptype mapping
 
 ```python
@@ -653,11 +704,22 @@ exp           = 1*10 DIGIT                  ; epoch seconds
 mac           = 64 HEXDIG                   ; HMAC-SHA256, lowercase hex
 ```
 
-`valid_link_principals` splits on `,`, trims, splits each item on `.` into at most three parts, and drops anything malformed. It returns `$LINK:<token>` for each surviving item. The ticket check runs later, in the engine, because it needs the grant row.
+`valid_link_principals` splits on `,` and checks the item count before
+validation or deduplication. An absent or empty header contributes no links.
+More than 20 supplied items raises `frappe.ValidationError`, mapped to HTTP
+400, with a clear limit error. Do not truncate the header or process a
+partial set. Duplicate and malformed items count toward the supplied-item
+limit, so filtering cannot bypass it.
 
-> Spec pick: at most 20 links per request. Later items are ignored. The
-> header is caller-controlled and lands in a `principal IN (...)` list
-> on the hot path.
+Within the limit, trim each item, split on `.` into at most three parts,
+and drop malformed items. Return `$LINK:<token>` for each surviving item.
+The unlock-ticket check runs later in the engine because it needs the grant row.
+
+Accepted on 2026-09-05 in [Decision review](decision-review.md): send only
+codes relevant to the current operation, with an initial limit of 20 and an
+explicit error when exceeded. This replaces silent truncation. The limit
+is an initial design choice, not a benchmark result. Client selection is
+defined in §6.2.
 
 ### 4.8 Unlock ticket
 
@@ -694,7 +756,7 @@ before grants, so no deny touches it. `explain()` reports the source as
 `site admin` [002].
 
 Two guardrails bind the admin as well: no `$PUBLIC` grant and no
-`$LINK` grant on a `Drive Root` [007 §5, 008 §9].
+`$LINK` grant on a root node (`kind=root`) [007 §5, 008 §9].
 
 **Privacy statement.** A Suite Admin reads every Personal root on the site, including content its owner never shared, and including Archived roots. This is today's behaviour (`suite/drive/api/permissions.py:31`), kept on purpose. Offboarding relies on it: content a departed user never shared is reachable by Suite Admins only [001]. An admin write records the admin as actor; an admin read records nothing.
 
@@ -712,8 +774,9 @@ against the indexes in §3.
 The rule [008 §4]:
 
 1. Own principals (email, `$GROUP:*`, `$GENERAL`). Nearest wins. A tie
-   at the same depth goes email > group > `$GENERAL`. A deny here is
-   final: the answer is 0 and pass 2 does not run.
+   at the same depth goes email > group > `$GENERAL`. Within the winning
+   depth and tier, any deny wins; otherwise take the highest role.
+   A deny here is final: the answer is 0 and pass 2 does not run.
 2. Otherwise `$PUBLIC` and every valid `$LINK:*` resolve together.
    Nearest wins. A tie at the same depth takes the highest role.
 3. The answer is the higher of pass 1 and pass 2.
@@ -732,6 +795,8 @@ The chain and the accumulator:
 
 def chain_ids(node: dict) -> list[str]:
 	"""Root first, node last. Zero queries. At most 42 ids."""
+	if node["kind"] == "root":
+		return [node["name"]]
 	ids = [node["root"]]
 	if node["path"]:
 		ids.extend(node["path"].strip("/").split("/"))
@@ -767,8 +832,11 @@ class Acc:
 				self.own, self.own_depth, self.own_tier = role, depth, tier
 			elif depth == self.own_depth and tier < self.own_tier:
 				self.own, self.own_tier = role, tier
-			elif depth == self.own_depth and tier == self.own_tier and role < self.own:
-				self.own = role               # deny before grant inside one tier
+			elif depth == self.own_depth and tier == self.own_tier:
+				if self.own == 0 or role == 0:
+					self.own = 0              # an explicit deny wins the tie
+				else:
+					self.own = max(self.own, role)
 		elif depth > self.open_depth:
 			self.open, self.open_depth = role, depth
 		elif depth == self.open_depth and role > self.open:
@@ -780,11 +848,11 @@ class Acc:
 		return max(self.own or 0, self.open or 0)
 ```
 
-> Spec pick: two own rows at one depth in one tier (two groups on one
-> folder, one granting and one denying) resolve to the lower role. The
-> shipped prototype orders rows the same way,
-> `sorted(rows, key=lambda row: (tier(row), -row.deny))` in
-> `suite/drive/webdav/perms.py:97`. No ticket decided it.
+Accepted on 2026-09-05 in [Decision review](decision-review.md): two group
+grants at the same depth combine to the highest role unless either denies.
+READ plus EDIT gives EDIT; READ plus EDIT plus DENY gives NONE.
+The result must not depend on row order. Nearest-grant and principal-tier
+precedence remain unchanged.
 
 ### 5.2 Point check for one node
 
@@ -842,7 +910,7 @@ page's child ids [design].
 
 ```sql
 -- 1. the child window. Index: node_parent_page (parent, state, title)
-SELECT name, title, kind, state, blob, size, mime, url,
+SELECT name, parent, root, path, title, kind, state, blob, size, mime, url,
        content_doctype, content_docname, content_modified,
        is_template, owner, creation, modified
 FROM `tabDrive Node`
@@ -850,8 +918,8 @@ WHERE parent = %(parent)s AND state = 'Active' AND is_template = 0
 ORDER BY title
 LIMIT %(limit)s OFFSET %(offset)s
 
--- the root page is the same query on node_root_page, with the predicate
--- WHERE root = %(root)s AND parent IS NULL AND state = 'Active' AND is_template = 0
+-- A root page uses this exact query with parent = root_node_id.
+-- The parent index is the baseline; any extra index requires measurement (§3.1).
 
 -- 2. grants on the parent chain (root ... parent). Index: grant_node_principal
 SELECT node, principal, role
@@ -916,6 +984,7 @@ WHERE g.principal IN %(own)s
   AND g.role > 0
   AND (g.expires_on IS NULL OR g.expires_on > %(now)s)
   AND n.state = 'Active'
+  AND n.kind <> 'root'
   AND n.is_template = 0
   AND r.state = 'Active'
   AND n.root <> %(my_personal_root)s
@@ -928,7 +997,8 @@ PRIMARY key. Benchmarked at 8.5 ms [design].
 
 Four things the query shape does on its own:
 
-- The `JOIN` to `tabDrive Node` drops grants that name a `Drive Root`, so a root never appears in this view. The Personal root and the Shared root have their own entry points.
+- `n.kind <> 'root'` explicitly excludes root nodes. The Personal and
+  Shared roots keep their own entry points; the node join no longer excludes them.
 - `own` only. Links and `$PUBLIC` put nothing in your shared list.
 - `n.root <> my_personal_root` drops the creator grants the engine wrote on the caller's own nodes (§4.5).
 - `r.state = 'Active'` keeps archived roots out. They have their own view (§5.5).
@@ -953,10 +1023,10 @@ Offboarding archives a root in place, so its content stays reachable by
 whoever held a grant inside it [001].
 
 ```sql
-SELECT DISTINCT n.root AS root, r.user, r.used_bytes, r.quota_bytes
+SELECT DISTINCT r.node AS root, r.user, r.used_bytes, r.quota_bytes
 FROM `tabDrive Grant` g
 JOIN `tabDrive Node` n ON n.name = g.node
-JOIN `tabDrive Root` r ON r.name = n.root
+JOIN `tabDrive Root` r ON r.node = COALESCE(n.root, n.name)
 WHERE g.principal IN %(own)s
   AND g.role > 0
   AND (g.expires_on IS NULL OR g.expires_on > %(now)s)
@@ -974,7 +1044,12 @@ WHERE kind = 'Personal' AND state = 'Archived'
 
 Index: `root_kind (kind, state)`.
 
-Opening one archived root runs §5.4 with `r.state = 'Archived'` and `n.root = %(root)s`, so the caller sees their grant roots inside it. Archived roots appear in no folder listing. This is a root-level query, not a special case inside folder listing [001].
+When the caller can READ the archived root node, opening it uses the
+ordinary children query. Otherwise use §5.4 with `r.state = 'Archived'` and
+`n.root = %(root)s` to show the caller's grant roots inside it. The latter
+retains `n.kind <> 'root'`. This preserves grants on root nodes as well as
+grants on descendants. Root entry-point discovery uses metadata archive
+state; root nodes are not surfaced by general node listings [001].
 
 ### 5.6 Trash view
 
@@ -991,7 +1066,12 @@ ORDER BY trashed_at DESC
 LIMIT %(limit)s OFFSET %(offset)s
 ```
 
-Index: `node_root_page` gives the root range; `state` and `trash_root = name` filter the rows, and `ORDER BY trashed_at` is a filesort over the root's trashed rows only. Rows then run through `effective_roles`, with the chain taken from each row's own `path`, and rows below READ are dropped.
+Index: the root-leading `node_subtree` index can give the root range; the
+optional `node_root_page` candidate is subject to §3.1's measurement.
+`state` and `trash_root = name` filter rows. `ORDER BY trashed_at` is a
+filesort over the root's trashed rows only. Rows then run through
+`effective_roles`, with the chain taken from each row's own `path`, and
+rows below READ are dropped.
 
 The daily purge sweep runs the same range per root:
 
@@ -1014,6 +1094,7 @@ page [design].
 SELECT name, title, root, path, kind, mime, size, content_modified, owner
 FROM `tabDrive Node`
 WHERE state = 'Active'
+  AND kind <> 'root'
   AND is_template = 0
   AND root IN %(visible_roots)s
   AND title LIKE %(term)s              -- '%<term>%'
@@ -1097,14 +1178,14 @@ writes a row.
 
 | # | Condition | Raises | Source |
 |---|---|---|---|
-| 1 | The node or root does not exist | `DriveNotFound` | |
+| 1 | The target node does not exist | `DriveNotFound` | |
 | 2 | The caller's effective role at the node is below MANAGE | `DriveForbidden` | [002] |
 | 3 | `role` is not one of 0, 10, 20, 30, 40, 50 | `frappe.ValidationError` | |
 | 4 | The principal spelling is not one of the five in §4.4 | `frappe.ValidationError` | |
 | 5 | An `<email>` principal names no User, or a `$GROUP:` principal names no User Group | `frappe.ValidationError` | |
 | 6 | `principal = '$PUBLIC'` and `role > READ` | `DriveForbidden` | [007 §2] |
-| 7 | `principal = '$PUBLIC'` and the target is a `Drive Root` | `DriveForbidden` | [007 §5] |
-| 8 | `principal` starts with `$LINK:` and the target is a `Drive Root` | `DriveForbidden` | [008 §9] |
+| 7 | `principal = '$PUBLIC'` and the target is a root node (`kind=root`) | `DriveForbidden` | [007 §5] |
+| 8 | `principal` starts with `$LINK:` and the target is a root node (`kind=root`) | `DriveForbidden` | [008 §9] |
 | 9 | `principal` starts with `$LINK:` and `role > EDIT` | `DriveForbidden` | [002] |
 | 10 | `password` is set and the principal is not a link | `DriveForbidden` | [008 §8] |
 | 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included) | `DriveForbidden` | [002] |
@@ -1112,10 +1193,9 @@ writes a row.
 
 Refusals 7, 8, and 11 bind a Suite Admin as well.
 
-> Spec pick: refusals 3, 4, 5, and 12 are malformed arguments, not Drive
-> conditions, so they raise `frappe.ValidationError` (400). Ticket [014]
-> froze six Drive exception classes and none of them covers a bad
-> argument.
+Accepted in [Decision review](decision-review.md): refusals 3, 4, 5, and
+12 raise `frappe.ValidationError`, mapped to HTTP 400 by the Drive adapter.
+Verify the response shape and that failed requests leave no mutations.
 
 What it does when nothing refuses:
 
@@ -1136,9 +1216,11 @@ Rejected: `exceeds_grant_ceiling`
 (`suite/drive/api/permissions.py:210`). With one ordered role and
 MANAGE as the only granting right, it has nothing left to police [002].
 
-Publish and unpublish are `grant` and `revoke` with principal
-`$PUBLIC`. They may exist as sugar, and they raise without MANAGE.
-There is no publish verb and no publish capability [007 §3].
+Publish uses `grant` with principal `$PUBLIC` and role READ. Removing a
+local public grant uses `revoke`; explicitly denying public access uses
+`grant` with role NONE. All require MANAGE. The UI must distinguish removal
+from denial, including when access is inherited (§5.10).
+There is no publish activity verb or separate publish capability [007 §3].
 
 ### 5.10 Revoke and revoke-below
 
@@ -1149,28 +1231,26 @@ def revoke(node_id: str, principal: str, p: Principals) -> None
 Refusals: 1 and 2 of §5.9. It deletes the row and writes one
 `share_remove` activity row.
 
-**Revoke or deny.** Deleting a row does not always cut access: an ancestor
-may still reach the principal. `revoke_or_deny` deletes the row, re-resolves
-that one principal, and writes a deny when access survives. The rule is the
-same for every principal, not only `$PUBLIC` [007 §6].
+**Remove a grant or explicitly deny access.** Accepted on 2026-09-05 in
+[Decision review](decision-review.md): these are separate user actions.
+Removing a grant must not automatically create a deny, even if access remains.
 
-```python
-def revoke_or_deny(node_id: str, principal: str, p: Principals) -> str:
-	"""Returns "revoked" or "denied"."""
-	revoke(node_id, principal, p)
-	node = nodes.get(node_id, p)
-	if effective_role_for(node, (principal,)) >= READ:
-		grant(node_id, principal, NONE, p)
-		return "denied"
-	return "revoked"
-```
+- **Remove this grant:** call `revoke`. Inherited access can remain. Removing
+  an explicit deny can reveal an inherited positive grant again.
+- **Deny access here:** call `grant` with role NONE. This requires an explicit
+  user action and retains the grant validation rules, including the personal
+  root owner's deny protection.
+- Show local grants and inherited access distinctly. After removal, display
+  the effective access and its source instead of promising that all access ended.
+- Apply the same distinction to `$PUBLIC`. Removing its local row may leave
+  the node publicly readable through an ancestor. Denying public access here
+  is a separate explicit action. Do not label simple removal as guaranteed
+  unpublishing when an inherited public grant remains.
 
-`effective_role_for(node, (principal,))` runs the point query of §5.2 with
-that one principal, so the answer is the access the principal keeps from
-above. Unpublish is `revoke_or_deny(node, "$PUBLIC")`. The share dialog's
-"remove" button is `revoke_or_deny` for any principal; the API maps it to
-`DELETE /nodes/<id>/grants/<principal>` (§11.2), and the response says which
-of the two happened.
+The DELETE endpoint calls `revoke` only. The PUT endpoint with `{role: 0}`
+performs an explicit deny (§11.2). The proposed automatic `revoke_or_deny`
+workflow is not part of the accepted contract. Frontend labels and actions
+must preserve this distinction; compatibility shims must not synthesize a deny.
 
 Nothing is notified. Composites re-check on every render, and signed
 `/f/` URLs already minted expire on their own clock [007 §6].
@@ -1186,11 +1266,14 @@ and on every node below it, in one statement:
 DELETE g FROM `tabDrive Grant` g
 JOIN `tabDrive Node` n ON n.name = g.node
 WHERE g.principal = %(principal)s
-  AND n.root = %(root)s
-  AND (n.name = %(node)s OR n.path LIKE %(prefix)s)
+  AND (n.name = %(node)s OR
+       (n.root = %(root)s AND (%(is_root)s OR n.path LIKE %(prefix)s)))
 ```
 
-`prefix` is `CONCAT(node.path, node.name, '/')` plus `%`. Index:
+`root` is the effective root id (§3.1), and `is_root` means the origin is
+its root node. For a non-root origin, `prefix` is `child_path(node)` (§8.7)
+plus `%`. A root origin matches its own row plus every node with that
+`root` id, without relying on a root id inside `path`. Index:
 `node_subtree (root, path)`. It writes one `share_remove` activity row
 on the origin node with `detail.scope = "below"` and
 `detail.rows = <deleted count>`, and returns that count.
@@ -1241,11 +1324,12 @@ activity row [007 §7].
 | row deleted | `share_remove` | `{"principal", "old_role", "new_role": null}` |
 | `revoke_below` | `share_remove` | `{"principal", "scope": "below", "rows"}` |
 
-Other columns: `node` is the node or root the grant names, `actor` is
+Other columns: `node` is the target node, including a root node, `actor` is
 the session user, `at` is now, `via_link` is set when a link decided the
 caller's own right, `client` is the User-Agent on WebDAV only.
 
-Publish and unpublish produce `share_add` and `share_remove` rows whose
+Publishing and removing a local public grant produce `share_add` and
+`share_remove` rows whose
 principal is `$PUBLIC`. The UI labels them. There is no publish verb
 and no system actor, because no path skips the check [007 §7].
 
@@ -1285,7 +1369,25 @@ node [008 §1].
 The URL `/drive/l/<token>` seeds the client. The server resolves the grant,
 redirects to the node route, and seeds the token, so the node id never appears
 in a shared URL and a rotation changes the URL [008 §9]. The SPA keeps tokens
-in `localStorage` and sends `X-Drive-Links` on every API call (§4.7).
+in `localStorage`, associated with the file or folder resolved by each link.
+
+Accepted on 2026-09-05 in [Decision review](decision-review.md): the browser
+sends only link codes relevant to the current operation in `X-Drive-Links`.
+It must not attach every remembered code to every API request.
+
+- Ordinary browsing uses the active share link. A folder link accompanies
+  requests for its descendants while browsing through that link.
+- Requests combining separately shared content include the relevant codes
+  for those targets. Remembered target information helps select codes; it
+  does not replace server authorization of each requested node.
+- Unrelated API calls do not receive remembered share-link codes.
+- Each request stays within the 20-item limit (§4.7). Composite content
+  requiring more codes is loaded in smaller groups (§6.6).
+
+Client target association, scoped header selection, and composite grouping
+are frontend dependencies to name during ticketing. They must accompany
+adoption of this contract; older clients sending their entire token store
+can receive the explicit limit error. No adapter may silently trim the set.
 
 Rejected: a signed cookie (a cookie-held capability rides forged cross-site
 requests, and Guest has no CSRF token); a server-side link-session doctype
@@ -1304,29 +1406,28 @@ success clears it. The shape follows the framework's login-attempt tracker
 A node reached through a password link with no ticket answers `DriveLocked`
 (401), a distinct response, never a 403 [014 §5].
 
-### 6.4 Rotate and expiry sweep
+### 6.4 Rotate and expiry retention
 
 Rotate is one operation: new token, same role, password, and expiry, one
 activity row naming the old and the new principal (§5.11). It changes the URL
 and kills every unlock ticket [008 §8].
 
 `expires_on` is a column on every grant, any principal. The engine filters it
-on every read, so an expired grant is inert before any sweep runs. A **daily**
-job then deletes the link rows:
+on every read. An expired grant is inert, including an expired deny.
 
-```sql
-DELETE FROM `tabDrive Grant`
-WHERE principal LIKE '$LINK:%'
-  AND expires_on IS NOT NULL
-  AND expires_on < NOW()
-```
+Accepted on 2026-09-05 in [Decision review](decision-review.md): retain all
+expired grants, including share-link grants. Expiration must not delete a row.
+There is no expired-grant cleanup job and no retention deadline for expired
+grants. Activity rows remain under their existing lifecycle rules.
 
-Index: `expires_on`. Activity rows stay.
+An expired link remains distinguishable from an unknown link and returns
+`DriveLinkExpired` where the link API specifies that response. Keeping its
+row does not make its token or unlock ticket authorize access.
 
-> Spec pick: the sweep deletes link grants only. Ticket [008 §8] says "a daily
-> sweep deletes link grants past `expires_on`" and says nothing about other
-> principals. An expired grant on a person is inert, and deleting it would
-> lose the record of what was shared.
+Explicit grant removal and the target's normal purge cascade still apply.
+This decision removes deletion caused by expiration; it does not make grant
+rows immutable. No standalone `expires_on` index is needed for the removed
+sweep. Access queries continue to filter expiration on their grant candidates.
 
 ### 6.5 `$PUBLIC` rules
 
@@ -1334,9 +1435,11 @@ Index: `expires_on`. Activity rows stay.
 - A published node is one grant row `(node, $PUBLIC, READ)`. No node flag, no second table.
 - `$PUBLIC` caps at READ. Anonymous comment, upload, or edit rides a `$LINK:<token>` grant, which has a password, an expiry, and a rotation [007 §2].
 - A `$PUBLIC` grant on a folder publishes everything below it. A `$PUBLIC` deny nearer the node wins [007 §5].
-- A `$PUBLIC` grant naming a `Drive Root` is invalid for everyone, Suite Admin included. Publishing a folder under the root is the supported way to publish many nodes [007 §5].
+- A `$PUBLIC` grant naming a root node (`kind=root`) is invalid for everyone, Suite Admin included. Publishing a folder under the root is the supported way to publish many nodes [007 §5].
 - MANAGE publishes. There is no app-declared publish capability and no Drive workflow that skips the check [007 §3].
-- Unpublish deletes the node's own `$PUBLIC` grant, or writes a `$PUBLIC` deny when READ still reaches `$PUBLIC` from above. It needs MANAGE. The code is in §5.10 [007 §6].
+- Removing the node's own `$PUBLIC` grant deletes only that row. Inherited
+  public access can remain. Explicitly denying public access writes role 0
+  through a separate user action. Both need MANAGE (§5.10; decision review).
 
 Stated consequence: in the Shared root (`$GENERAL UPLOAD`) a contributor holds
 the creator's EDIT on a deck they made and cannot publish it. In a Personal
@@ -1354,9 +1457,19 @@ point check per referenced deck against that viewer's principals. Being named
 by a composite grants nothing, and nothing is copied: the composite stays a
 live view [007 §4, 012 §7].
 
-- A private composite of private decks works for a team. A published composite shows a guest only its published references.
+- A private composite of private decks works for a team. A guest without
+  relevant share-link codes sees only published references. Relevant codes
+  can authorize separately shared references through the ordinary engine.
 - For each readable reference, Drive inlines its slides and mints media links for that reference's own node (§6.8).
 - The response marks a reference the caller cannot read instead of dropping it silently. The client decides whether to draw a placeholder [012 §7].
+
+The client includes only codes relevant to the composite and the references
+requested in that load. If the required codes exceed 20, load references in
+smaller groups. Count the composite's own code when it is needed for a group.
+Every group still authorizes the composite and its requested references.
+Grouping must not expose an unreadable reference or silently omit one.
+The grouped-load API and frontend orchestration must be specified together
+during ticketing, preserving the per-reference READ checks above.
 
 The save-time rule "every reference must be public" becomes the ordinary read
 check: you may reference what you can read
@@ -1365,7 +1478,9 @@ forced-public row at `:47-61` with it) [007 §3].
 
 ### 6.7 Collab re-check and guest identity
 
-The browser sends the sid and its link tokens as the connection token.
+The browser sends the sid and only the link tokens relevant to the document
+as the connection token. Apply the same 20-item limit before accepting a
+connection; reject an oversized set explicitly rather than truncating it.
 `check_collab_access` resolves the node role from the full principal list
 [008 §7]: EDIT or higher means read and write, READ or COMMENT means
 read-only, below READ is refused. Guests get a generated display name. The
@@ -1557,8 +1672,9 @@ SELECT
     WHERE root = %(root)s) AS reserved
 ```
 
-`used_bytes = nodes + versions + reserved`. Indexes: `node_root_page` for the
-node sum, `version_node_seq` through the node join, and
+`used_bytes = nodes + versions + reserved`. Indexes: the root-leading
+`node_subtree` index for the node sum, or measured candidate `node_root_page`
+if retained (§3.1); `version_node_seq` through the node join; and
 `Drive Storage Reservation.root`. Build runs this job as its last step,
 because the patch does not set `used_bytes` itself [011 §12].
 
@@ -1603,6 +1719,12 @@ through `_core.access.require` and raises; no adapter or product caller checks
 first [014 §4]. Every write records one `Drive Activity` row through
 `_core.activity.record` in the same transaction. Every write that
 changes bytes charged to a root runs the admission `UPDATE` from §7.
+
+Root-node guards run before mutation. Ordinary move, copy, trash, restore,
+purge, blob replacement, versions, previews, and content operations refuse
+`kind=root` with `DriveForbidden`. Roots can be read, renamed, granted,
+and used as parents through the applicable checks. Root pair creation,
+archiving, quota changes, and final purge use root administration workflows.
 
 Every request-bound `_core` workflow takes an explicit `Principals` value as
 its first argument. The `suite.drive` facade and the HTTP/WebDAV adapters
@@ -1717,24 +1839,25 @@ Ten steps. Names in `frappe.storage.*` are the functions on branch
    `quota.effective_quota(root)` (§7.4). Refuse with `DriveOverQuota` when
    the quota is not 0 and `size > quota - used` [010 §5]. `quota.admit`
    does not run here; no byte has landed and no counter moves.
-4. `frappe.storage.upload.create_upload(filename, size, is_private=1,
-   check_permission=False, restrict_mimetypes=False)`
-   (`frappe/storage/upload.py:36`; the two keywords are framework ask 7,
-   §13.7). Drive passes no `doctype` and no `docname`, so
-   `check_write_permission(None, None)` returns at once
-   (`frappe/handler.py:248`) and Drive's UPLOAD check is the only one.
+4. Call the internal `frappe.storage.upload.create_blob_upload(filename,
+   size, is_private=True)` (§13.7), after Drive authorization. Bind the
+   returned upload id to the destination server-side. The framework records
+   a blob-only session policy; public clients cannot request that policy.
    The call returns `{"mode": "direct", "upload_id", ...}` when the driver
    offers a native target, else `{"mode": "chunked", "upload_id"}`.
 5. Chunked mode: the browser `PUT`s each part to
    `/api/suite/drive/uploads/<upload_id>/chunk?offset=<n>`, which forwards
-   to `frappe.storage.upload.upload_chunk` (`upload.py:75`). Cumulative
-   size is enforced per chunk by the framework.
+   to the internal `frappe.storage.upload.upload_blob_chunk` after checking
+   the session's destination binding and current Drive access (§13.7).
+   Cumulative size is enforced per chunk by the framework.
    Direct mode: the browser `PUT`s the bytes to the driver's target.
 6. `POST /api/suite/drive/uploads/<upload_id>/finish` with `parent`,
    `title`, optional `checksum`, optional `content_modified` (epoch ms),
    optional `replaces`. The handler calls `sdk.upload.finish_upload`.
 7. `frappe.storage.upload.finish_upload_to_blob(upload_id, checksum=...)`
-   returns a `File Blob` and creates no `File` row. This function is a
+   runs only after Drive revalidates the session binding and current
+   destination/replacement permissions. It returns a `File Blob` and creates
+   no `File` row. This function is a
    framework ask (see §13); today's `finish_upload` (`upload.py:110`) ends
    in `create_file_from_blob`, which Drive must not reach.
 8. `quota.admit(root, blob.file_size)` runs the conditional admission
@@ -1759,8 +1882,8 @@ Two facts a caller must respect.
 `frappe.storage.upload.create_upload` refuses any mime outside the legacy
 allow-list for a user without desk access, and every Drive website user is
 such a user. Drive's session must not inherit that gate. The fix is
-framework ask 7 (§13.7); Drive passes `restrict_mimetypes=False` after its
-own UPLOAD check.
+framework ask 7 (§13.7); Drive uses the trusted blob-upload session path
+after its own UPLOAD check. Public waiver keywords are not introduced.
 
 ### 8.5 Replace, and the empty-head rule
 
@@ -1789,9 +1912,8 @@ own UPLOAD check.
   instead of refusing: `copy`, restore, and the Build patch. The rule is
   `get_new_file_name`'s: the oldest keeps the plain title, later ones get
   ` (2)`, ` (3)` (`suite/drive/utils/__init__.py:644`).
-- A document node keeps no extension of its own. Over WebDAV its export
-  extension is appended by the DAV layer and a rename must preserve it
-  (§12) [009 §3].
+- A document node keeps no extension of its own. Document export naming
+  over WebDAV is deferred with document visibility (§12.2).
 
 ### 8.7 Move, as one path rewrite
 
@@ -1800,8 +1922,27 @@ form `/<id>/<id>/`, and the empty string for a top-level node. The path a
 node gives its children is
 
 ```sql
-CONCAT(IF(p.path = '', '/', p.path), p.name, '/')
+CASE WHEN p.kind = 'root' THEN ''
+     ELSE CONCAT(IF(p.path = '', '/', p.path), p.name, '/') END
 ```
+
+The equivalent helper shared by ancestry-changing workflows is:
+
+```python
+def root_id(node: dict) -> str:
+	return node["name"] if node["kind"] == "root" else node["root"]
+
+
+def child_path(node: dict) -> str:
+	if node["kind"] == "root":
+		return ""
+	return f"{node['path'] or '/'}{node['name']}/"
+```
+
+All subtree operations use this helper for their prefix. Moving a node to a
+root node sets its path to `""`; moving it into a folder uses that folder's
+child path. `dest_root` is `root_id(dest)`, never the root node's NULL field.
+For quota and reservations this id also names the matching metadata row.
 
 Guards, in order, before any write.
 
@@ -1856,7 +1997,7 @@ UPDATE `tabDrive Node`
 SET state = 'Trashed',
     trash_root = %(node)s,
     trashed_at = %(now)s
-WHERE state = 'Active'
+WHERE kind <> 'root' AND state = 'Active'
   AND root = %(root)s
   AND (name = %(node)s OR path LIKE CONCAT(%(self_prefix)s, '%%'));
 ```
@@ -1889,12 +2030,27 @@ Restore rules.
 - A document node opens read-only while it is Trashed. Edits and comments
   are refused [005].
 
-> Spec pick: when the restored node's parent chain is not Active, restore
-> reparents the node to the nearest Active ancestor inside the same root,
-> and to the root's top level when there is none. The alternative, an
-> Active node under a Trashed parent, would force every listing query to
-> walk the path, which is exactly what [011 §7] avoided by propagating the
-> trash stamp.
+Accepted on 2026-09-05 in [Decision review](decision-review.md): when the
+original parent chain is not Active, the user chooses the restore destination.
+Drive must not select the nearest Active ancestor or root automatically.
+
+- If the original parent chain is Active, ordinary restore keeps the original
+  location.
+- Otherwise, require an explicit eligible Active destination in the same root.
+  The client submits the selected destination through `update(parent=...,
+  state="Active")`. The HTTP request carries both `parent` and `state`.
+- Without that destination, raise `DriveConflict` before changing any state,
+  paths, titles, or activity. The client must ask the user where to restore.
+- Validate destination access, root, and ancestry before applying the restore.
+  Reparenting and subtree path changes occur in the same transaction as the
+  state change. Deduplicate the title against the selected destination.
+- Cancelling the choice leaves the item in Trash. Do not restore its parent
+  folders automatically.
+
+The destination picker is a frontend follow-up dependency. This backend spec
+must support the explicit destination and refusal contract. Legacy clients
+cannot complete this case until they support the choice; no shim may silently
+select a destination for them.
 
 Purge deletes the node row. There is no stored `Purged` state.
 
@@ -1960,7 +2116,8 @@ listing [012 §1].
   `DriveConflict`. No listing descends into a content document.
 - Media nodes are reached only through §11's media route, and only through
   the document above them.
-- Over WebDAV a document is an export file and has no children (§12).
+- Content document nodes and their children are hidden over WebDAV in this
+  release (§12.2).
 - The permission path walk is unchanged. READ on the deck reaches the
   pictures under it through the same nearest-wins walk, so no app writes
   permission code [012 §1].
@@ -2245,7 +2402,7 @@ class ContentTypeSpec:
 	mime: str                          # the mime written on the Drive Node, e.g. "frappe/writer"
 	node_field: str                    # fieldname holding the Link to Drive Node [005 §1]
 	default_export: str | None = None  # WebDAV and ZIP format key; None = invisible over DAV [009 §3]
-	export_formats: tuple[str, ...] = ()   # every format `export` accepts; must contain default_export
+	export_formats: tuple[str, ...] = ()   # formats `export` accepts; includes default_export when set
 
 	# factories. Drive creates the node first, then calls these.
 	create_empty: Callable[[str], str] = None
@@ -2463,7 +2620,7 @@ SPEC = drive.ContentTypeSpec(
 	doctype="Writer Document",
 	mime="frappe/writer",
 	node_field="node",
-	default_export="html",
+	default_export=None,
 	export_formats=("html",),
 	create_empty=create_empty,
 	duplicate=duplicate,
@@ -2489,10 +2646,10 @@ the `versions` field and its child table `Writer Doc Version`,
 (`writer_document.py:40,110`), and `update_file` (`writer_document.py:100`),
 which is replaced by `touch`.
 
-> Spec pick: Writer's default export is `html`, taken from the stored
-> `html` column. Its docx exporter runs in the browser
-> (`frontend/src/apps/writer/utils/docxexporter.js`), so no server-side
-> docx exists today, and [009 §3] needs a format that does.
+Accepted on 2026-09-05 in [Decision review](decision-review.md): Writer
+documents stay hidden over WebDAV, so `default_export` is `None`.
+The explicit HTML export remains available through the content API's
+`format` parameter. This decision does not remove app export behavior.
 
 **Presentation** (`suite/slides/doctype/presentation/`). Fields today:
 `slides` (child table), `title`, `slug`, `theme`, `thumbnail`,
@@ -2571,11 +2728,10 @@ App must delete: `title`, `trashed`, `trashed_on`, `trashed_by`,
 carries `seq`, `kind` (auto, milestone, named), `label`, `pinned`, and
 `actor` [011 §11].
 
-> Spec pick: Slides and Sheets declare `default_export = None`, so their
-> documents stay invisible over WebDAV, which is what every content
-> document does today (`suite/drive/webdav/pathmap.py:34`). Neither app has
-> a server-side exporter; both export in the browser. [009 §3] already
-> allows this and the field turns the behaviour on when an exporter lands.
+Accepted on 2026-09-05 in [Decision review](decision-review.md): Slides and
+Sheets also declare `default_export = None`. All three content apps stay
+hidden over WebDAV for this release. Enabling document exports over WebDAV
+is later work, not a requirement of the initial rewrite.
 
 ---
 
@@ -2676,7 +2832,7 @@ are listed.
 |---|---|---|---|---|---|
 | POST | `/nodes` | UPLOAD on `parent` | `{parent, title, kind, blob?, size?, mime?, url?, content_doctype?, from_node?, content_modified?}` | node shape | 403, 409, 413 |
 | GET | `/nodes/<id>` | READ on node | `?expand=access,breadcrumbs,preview` | node shape | none |
-| PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{content_modified}` | node shape | 403, 409, 413 |
+| PATCH | `/nodes/<id>` | see §8.2 | `{title}` \| `{parent}` \| `{state}` \| `{parent, state: "Active"}` for restore \| `{content_modified}` | node shape | 403, 409, 413 |
 | DELETE | `/nodes/<id>` | MANAGE on node | none | `{purged: <n>}` | 403 |
 | GET | `/nodes/<id>/children` | READ on node | `?limit=&cursor=&order_by=&ascending=&mime_prefix=` | cursor page of node shapes | 409 on a document node |
 | POST | `/nodes/<id>/copy` | READ on node, UPLOAD on `parent` | `{parent, title?}` | node shape | 403, 409, 413 |
@@ -2712,22 +2868,22 @@ and get the same error [012].
 |---|---|---|---|---|
 | GET | `/nodes/<id>/grants` | MANAGE on node | `?principal=<p>` for the explain chain | `{grants: [...], explain?: [...]}` |
 | PUT | `/nodes/<id>/grants/<principal>` | MANAGE on node | `{role, expires_on?, password?}` | `{grant, url?}` |
-| DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{"result": "revoked" \| "denied"}`, or `{"result": "revoked", "rows": <n>}` with `below=1` |
+| DELETE | `/nodes/<id>/grants/<principal>` | MANAGE on node | `?below=1` for revoke-below | `{"result": "revoked"}`, or `{"result": "revoked", "rows": <n>}` with `below=1` |
 | POST | `/grants/<id>/rotate` | MANAGE on the grant's node | none | `{grant, url}` |
 | POST | `/links/<token>/unlock` | none | `{password}` | `{ticket, expires}` |
 
-- Publish is `PUT .../grants/$PUBLIC {role: 10}`. Unpublish is the DELETE.
-  The DELETE is `revoke_or_deny` (§5.10) for every principal, not only
-  `$PUBLIC`: it writes a deny when READ still reaches the principal from a
-  folder above, and says which of the two it did. There are no publish verbs
-  [007 §1, §6].
+- Publish is `PUT .../grants/$PUBLIC {role: 10}`. DELETE removes only the
+  local grant, for every principal. It never writes a deny. An explicit
+  deny is `PUT .../grants/<principal> {role: 0}`, including `$PUBLIC`.
+  Inherited access after deletion is shown by the grants explanation.
+  There are no separate publish activity verbs [007 §1; decision review].
 - `?below=1` on the DELETE is `revoke_below` (§5.10). It deletes the
   principal's grants on the node and on every node under it, and returns the
   count [002].
 - A link is created with principal `$LINK`; the server mints the 22-char
   base62 token and returns `url = "/drive/l/<token>"` [008 §1, 014].
 - Refusals on the grant route: `$PUBLIC` above READ; `$PUBLIC` or `$LINK`
-  naming a Drive Root; `password` on a principal that is not `$LINK:*`; a
+  naming a root node; `password` on a principal that is not `$LINK:*`; a
   link role above EDIT; a deny naming a Personal Root's own user inside
   that root. All are 403 [002, 007 §2, §5, 008 §8, §9].
 - `rotate` mints a new token, keeps the role, the password, and the expiry,
@@ -2739,10 +2895,9 @@ and get the same error [012].
   password_hash + "|" + exp)` with a 30-day `exp`. No row is written
   [008 §3].
 
-> Spec pick: `explain` is exposed as `?principal=<p>` on
-> `GET /nodes/<id>/grants`, not as its own route. [014] did not list a
-> route for it, and the grant rows are the explanation, so the answer
-> belongs beside the rows [design].
+Accepted in [Decision review](decision-review.md): expose `explain` as
+`?principal=<p>` on `GET /nodes/<id>/grants`. The response includes the
+explanation alongside grants. Test authorization and response shape.
 
 `GET /drive/l/<token>` is a website route, not an API route. It resolves
 the grant, seeds the token into the SPA, and redirects to the node route.
@@ -2770,7 +2925,8 @@ caller cannot read marked as unreadable, instead of dropping it silently
 
 `DELETE /api/suite/drive/views/recents` clears the caller's recents and
 never touches favourites [014]. Every view excludes `is_template` nodes
-except `templates`, and no view returns the children of a document node
+except `templates`. Root nodes appear only through explicit root entry
+points, not general node views. No view returns the children of a document node
 [012 §1, 014].
 
 **Versions, comments**
@@ -2801,7 +2957,9 @@ except `templates`, and no view returns the children of a document node
 | DELETE | `/roots/<id>` | Suite Admin | none | `{purged: <n>}` |
 
 `DELETE /roots/<id>` purges every node in an Archived Root. Only a Suite
-Admin may call it, and only on an Archived Root. There is no reclaim clock
+Admin may call it, and only on an Archived Root. It removes the root pair
+after descendant and reference cleanup (§3.2). The route id is the shared
+root-node/metadata id. There is no reclaim clock
 [010 §7]. The reservation functions stay Python-only for Meet and get no
 HTTP endpoint [010 §3, 014].
 
@@ -2820,6 +2978,11 @@ Base fields, identical in a list row and in a detail fetch [014 §7]:
 ```
 
 Three expansions, each costing its queries only when named in `?expand=`:
+
+In responses, `root` is the effective root node id (§3.1), including the
+node's own id when `kind=root`. The root node's stored `root` field remains
+NULL. Root metadata fields stay on the root-administration response; do not
+copy archive state or quota counters into the node's stored fields.
 
 | Name | Adds |
 |---|---|
@@ -3020,18 +3183,22 @@ an admin reaches by path; there is no admin mount of other users' roots
 
 ### 12.2 Content documents
 
-A document node lists as `<title>.<ext>` in its content type's
-`default_export`. An app that declares none stays invisible [009 §3, §10.7].
+Writer, Slides, and Sheets content document nodes stay hidden in this
+release, as accepted in [Decision review](decision-review.md). All three
+declare `default_export = None` (§10.7).
 
-- GET streams the export. `getcontentlength` is omitted.
-- PUT, LOCK, and a content PROPPATCH on it are 403.
-- MOVE, rename, DELETE, and COPY work as node operations. COPY calls the
-  declared `duplicate`.
-- A rename must keep the extension, else 403; the title becomes the stem.
-- A document node is a leaf. Its child nodes never appear [009 §3, 012 §1].
-- Name collision with a real file: the document keeps the name and the file
-  shows as `<stem> (2).<ext>`, oldest first. Lookup tries a document match,
-  then a file match. A MOVE overwrite onto a document trashes the document.
+- Exclude content document nodes from DAV listings and path lookup.
+- Requests addressing a hidden document return 404. An available export
+  function does not make that document reachable through DAV.
+- Their child media nodes never appear or become reachable through those
+  hidden document paths [012 §1].
+- Ordinary uploaded files remain eligible for DAV, including uploaded
+  `.docx`, `.xlsx`, and `.pptx` files. Visibility depends on node kind,
+  not filename extension.
+
+Document export naming, extension rules, and export-file operations over
+DAV are deferred. Native content apps and explicit content API exports
+remain separate from DAV visibility.
 
 ### 12.3 GET, PUT, LOCK, COPY
 
@@ -3110,7 +3277,7 @@ today.
 | 4 | `after_file_upload` never fires on the v2 path | No. Drive stops using the hook. |
 | 5 | Public stream-read with Range on non-local drivers | **Yes on an S3 site**, for WebDAV GET. No on a local-disk site. |
 | 6 | `relocate_blobs()` [011 amendment] | No. It runs after Build; Build and Cleanup do not depend on it. |
-| 7 | `restrict_mimetypes` keyword on `create_upload` | **Yes.** Drive's upload path refuses ordinary files without it. |
+| 7 | Trusted blob-upload session interfaces | **Yes.** Drive requires its own authorization across create/chunk/finish without exposing public waiver arguments. |
 
 Asks 1 to 6 come from the tickets. Ask 7 was found while writing §8.4 and
 is new here.
@@ -3222,14 +3389,16 @@ def finish_upload_to_blob(
 	"""Turn a finished session into a blob. No File row.
 
 	Everything finish_upload does up to and including validate_upload: load
-	the session, re-check the upload permission, refuse an empty session,
+	the session, enforce its server-owned policy (§13.7), refuse an empty session,
 	claim the session atomically (claim_session), spool the parts or the
 	direct object through put_blob, compare the checksum, validate the
 	content. Then delete the session and return the blob."""
 ```
 
-`finish_upload` becomes a wrapper: call `finish_upload_to_blob`, then
-`create_file_from_blob`. Behaviour on the existing path does not change.
+The public `finish_upload` retains its existing checks and rejects
+blob-only sessions. It delegates to the same private finalizer, then calls
+`create_file_from_blob`. The internal `finish_upload_to_blob` returns bytes
+without a File row under the policy in §13.7. Public behavior stays guarded.
 
 Tests: a chunked session finishes to a blob and creates no `File` row; a
 direct session finishes and deletes the temporary object; a checksum mismatch
@@ -3364,59 +3533,55 @@ blob already on the target is untouched; a driver error on one blob is logged
 and the run continues; a blob deduped onto an existing target key keeps one
 row; a GC run during a relocation deletes nothing live.
 
-### 13.7 `create_upload` gates that Drive must not inherit
+### 13.7 Trusted blob-upload sessions
 
-`frappe.storage.upload.create_upload` runs two gates before any byte lands
-(`frappe/storage/upload.py:45-46`), and `finish_upload` runs them again
-(`upload.py:135-136`):
+Accepted in [Decision review](decision-review.md): Drive authorizes its
+uploads through grants and uses a trusted internal storage path. Public
+framework clients cannot disable upload permission or MIME checks.
 
-| Gate | What it does | Why Drive must skip it |
-|---|---|---|
-| `check_upload_permission` (`upload.py:263`) | a Guest is refused unless `allow_guests_to_upload_files` is on and the target doctype is allow-listed | an UPLOAD link lets a Guest upload [008 §5]. Drive has already resolved the role from the grant. |
-| `check_restricted_mimetypes` (`upload.py:288`) | a user without desk access may upload only `frappe.handler.ALLOWED_MIMETYPES` | every Drive website user lacks desk access. A drive that refuses a `.zip` is not a drive. |
+The current `create_upload` and `finish_upload` methods are whitelisted HTTP
+methods. `upload_chunk` also repeats the legacy permission check. Adding
+waiver keywords to those public endpoints is not the accepted design.
 
-Drive passes no `doctype` and no `docname`, so the first gate has no
-document to check and only its Guest branch bites. Drive's own UPLOAD check
-already ran (§8.4 step 2).
+Required storage interface (ordinary Python calls, not HTTP-whitelisted):
 
 ```python
-# frappe/storage/upload.py
-
-def create_upload(
-	filename: str,
-	size: int,
-	is_private: bool | int | str = 0,
-	doctype: str | None = None,
-	docname: str | None = None,
-	*,
-	check_permission: bool = True,
-	restrict_mimetypes: bool = True,
-): ...
+def create_blob_upload(filename: str, size: int, *, is_private: bool = True) -> dict:
+	"""Trusted caller has authorized the destination; open a blob-only session."""
 
 
-def finish_upload(
-	upload_id: str,
-	*,
-	check_permission: bool = True,
-	restrict_mimetypes: bool = True,
-	**kwargs,
-): ...
+def upload_blob_chunk(upload_id: str, offset: int, data: bytes) -> dict:
+	"""Append to a blob-only session after caller authorization."""
 ```
 
-Both default to `True`, so every existing caller is unchanged. `False`
-skips the matching gate. `finish_upload_to_blob` (§13.2) takes the same two
-keywords and stores them in the session at create time, so a finish cannot
-re-apply a gate the create waived. `check_declared_size` and
-`validate_upload`'s content sniff are never waived.
+`finish_upload_to_blob` (§13.2) is also an internal Python interface. The
+existing public upload methods retain their checks and delegate to shared
+private session machinery. The trusted blob path skips only the legacy
+framework document/Guest permission gate and filename MIME allowlist.
+Drive must already have checked its own UPLOAD/EDIT permissions.
 
-Rejected: a Drive copy of the session machinery (it re-implements chunk
-accounting and the `os.rename` claim); giving every Drive user desk access.
+Session policy is server-owned and immutable. A public upload creates a
+normal File session. The trusted interface creates a blob-only session.
+Public chunk and finish endpoints must reject blob-only sessions, and
+client input cannot convert a session or choose its policy. The shared
+private finalizer can serve both wrappers without exposing a public bypass.
 
-Tests: a session created with `restrict_mimetypes=False` accepts a `.zip`
-for a website user and finishes; the default still refuses it; a Guest
-session with `check_permission=False` is created and finished with guest
-uploads off site-wide; `upload_file` and the existing `create_upload`
-callers are unchanged.
+Drive binds each upload id to its authorized destination server-side and
+revalidates access on create, every chunk, and finish. Being the session's
+`Guest` owner is not sufficient authorization: all link visitors share that
+user. A changed finish destination requires its own permission checks.
+A revoked or expired link cannot authorize another chunk or finish.
+
+Both paths preserve declared and cumulative size limits, session ownership
+and binding checks, checksum verification, content sniffing/validation,
+atomic finish claims, and temporary-object cleanup. No duplicate storage
+session implementation or new framework hook is introduced.
+
+Tests: an authorized Guest upload and a website user's ZIP upload complete
+through Drive while ordinary framework defaults remain unchanged. Requests
+cannot disable public checks or use public endpoints to finish a blob-only
+session. Cover chunk authorization, forged destination changes, revoked
+links, replayed finishes, partial uploads, direct uploads, and quota refusal.
 
 ---
 
@@ -3455,7 +3620,7 @@ migrates.
    same bucket, insert one `File Blob` with `driver = "s3"`, and set
    `File.blob`. Objects above 5 GB go through the boto3 managed multipart
    copy. The step is resumable by the `File.blob` check [011 §3].
-4. Roots.
+4. Root nodes and their matching metadata pairs, atomically per pair.
 5. Nodes, walked from each root by depth, with title dedupe and trash
    propagation.
 6. Grants, from `Drive Permission` and Sheet `DocShare`.
@@ -3467,22 +3632,24 @@ migrates.
 12. `used_bytes` recompute, run as the last step.
 13. Report.
 
-Every target row keeps its source id, so a rerun skips rows that exist.
-Commit per batch of 1000 rows, so a stopped run resumes. Bulk SQL inserts
+Every target row keeps its source id. A rerun skips complete, validated
+records; a root is complete only when both its node and metadata exist.
+Repair or fail on an incomplete/mismatched pair before migrating descendants.
+Commit per batch of 1000 rows without splitting a root pair across commits. Bulk SQL inserts
 for nodes, grants, and side tables; the ORM only where bytes are written
 [011 §13].
 
 ### 14.3 Roots and ids
 
-`Drive Node.name = File.name`, and a root keeps the name of the File row it
-came from. New nodes keep generating 10-char hashes. Build needs no id map,
+`Drive Node.name = File.name`, including a root node. Its matching
+`Drive Root.name` and `Drive Root.node` both equal that same File name. New nodes keep generating 10-char hashes. Build needs no id map,
 so bookmarks, shared URLs, and every side table keep working [011 §4].
 
 | Source | Becomes |
 |---|---|
-| the `Drive` folder | the one Shared Root, state Active |
-| `Users/<email>` | a Personal Root with `user = <email>`; Active when the User is enabled, Archived when the User is disabled or gone |
-| children of a root folder | top-level nodes of that root, `path = ""` |
+| the `Drive` folder | one `kind=root` node plus its Shared metadata, state Active; both retain the File id |
+| `Users/<email>` | a `kind=root` node plus Personal metadata with `user = <email>`; metadata Active when enabled, otherwise Archived; node remains Active |
+| children of a root folder | top-level nodes with `parent = root_node_id`, `root = root_node_id`, `path = ""` |
 | the `Users` row | dropped |
 | a user with no folder | no row; a Personal Root is created lazily on first use |
 
@@ -3495,10 +3662,10 @@ Broken chains are skipped and reported [011 §6].
 | `Drive Node` | From |
 |---|---|
 | `title` | `file_name` |
-| `parent` | `folder`, NULL directly under a root |
-| `root` | the root reached |
+| `parent` | `folder`, including the root node id directly under a root; NULL only on root nodes |
+| `root` | the root node reached; NULL on the root node itself |
 | `path` | ids of the ancestors below the root |
-| `kind` | `folder` if `is_folder`; `link` if `file_type = "Link"` (with `url = file_url`); `document` if `content_doctype` is `Writer Document`, `Presentation`, or `Sheet` (with the content ref); else `file` |
+| `kind` | `root` for the root folders handled in §14.3; else `folder` if `is_folder`; `link` if `file_type = "Link"` (with `url = file_url`); `document` if `content_doctype` is `Writer Document`, `Presentation`, or `Sheet` (with the content ref); else `file` |
 | `blob` | `File.blob`, file nodes only |
 | `size` | `file_size` for files, 0 for folders |
 | `mime` | `mime_type` |
@@ -3541,7 +3708,7 @@ Per `Drive Permission` row. Grants round down, denies round up [002].
 | read only | one `$PUBLIC` READ grant |
 | above read | one `$PUBLIC` READ grant plus one `$LINK:<token>` grant at the mapped level, fresh 22-char base62 token, `password_hash = NULL`, `expires_on = NULL` |
 | deny | one `$PUBLIC` deny |
-| on a Drive Root | dropped, counted |
+| on a root node | dropped, counted under the public/link root guardrails |
 | forced-public rows on composite decks (`presentation.py:47`) | dropped, not mapped [011 amendment] |
 
 Sheet `DocShare` rows become grants on the sheet's node: `read` to READ,
@@ -3555,8 +3722,8 @@ under the root guardrails. Duplicate `(entity, user)` rows collapse as
 Every grant gets `expires_on = NULL`. Grants on Trashed nodes are kept.
 
 Anchors: the owner row on `Users/<email>` becomes MANAGE for that user on
-the Personal Root; `$GENERAL` read on `Drive` becomes `$GENERAL` READ on
-the Shared Root. Migrated sites keep what their row maps to; the fresh-site
+the Personal root node; `$GENERAL` read on `Drive` becomes `$GENERAL` READ
+on the Shared root node. Migrated sites keep what their row maps to; the fresh-site
 `$GENERAL` UPLOAD anchor is not forced on them [002, 011 §9].
 
 ### 14.6 Side tables and content-app data
@@ -3729,12 +3896,12 @@ the spec.
 | Node id | 10-char hash | §3.1, §14.3 | [011] |
 | Link token | 22 chars base62, about 128 bits | §3.3, §4.4, §11.2, §14.5 | [008] |
 | Folder and view page size | 60 rows by default, 200 at most | §5.3, §8.1, §11.4 | picked |
-| Link tokens accepted per request | 20 | §4.7 | picked |
-| `Drive Node.path` column length | `varchar(500)`; `(root, path)` is 2560 bytes, under the 3072-byte InnoDB DYNAMIC key limit | §3.1 | picked |
+| Link items supplied per request | 20; reject excess | §4.7 | accepted; initial limit |
+| `Drive Node.path` column length | `varchar(500)`; validate actual ids, depth, and full-index creation on the target database | §3.1 | accepted; verification pending |
 | Build commit batch | 1000 rows | §14.2 | [011] |
 | S3 multipart copy threshold | 5 GB | §14.2 | [011] |
 | Whitelisted methods shimmed | 69, in 11 files, 26 guest-callable | §11.7 | [014] |
-| Daily jobs | six: expired-link sweep, usage recompute, preview gap sweep, version thinning, trash purge, unused-media sweep | §6.4, §7.7, §8.8, §9.1, §9.2, §10.6 | [006, 008, 010, 011, 012] |
+| Daily jobs | five: usage recompute, preview gap sweep, version thinning, trash purge, unused-media sweep | §7.7, §8.8, §9.1, §9.2, §10.6 | [006, 010, 011, 012]; expiry retention accepted |
 | Framework GC orphan age | 24 h | §2.4, §8.4, §8.8, §13.1 | framework, `gc.py:17` |
 | Framework GC batch | 500 rows | §13.1 | framework, `gc.py:16` |
 | `relocate_blobs` batch | 100 blobs | §13.6 | picked |
