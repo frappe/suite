@@ -15,7 +15,7 @@ from suite.drive._core.activity import (
     unread_count,
     visit,
 )
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveNotFound
 from suite.drive._core.nodes import create_folder, purge
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
@@ -141,6 +141,9 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Favourite", {"node": self.node}))
 
     def test_losing_read_access_still_lets_the_owner_clear_their_own_mark(self):
+        # Do not depend on the setUp grant surviving an earlier test: state the
+        # Read authority this test needs, then take it away.
+        grant(self.node, OTHER, READ, self.admin)
         set_favourite(self.other, self.node)
         self.assertEqual(len(favourites(self.other)), 1)
 
@@ -153,6 +156,6 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         set_favourite(self.other, self.node, False)
         self.assertFalse(frappe.db.exists("Drive Favourite", {"user": OTHER, "node": self.node}))
 
-        # Adding one back does still need Read.
-        with self.assertRaises(DriveForbidden):
+        # Adding one back does still need Read, and an unreadable node is hidden.
+        with self.assertRaises(DriveNotFound):
             set_favourite(self.other, self.node)
