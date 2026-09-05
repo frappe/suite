@@ -1384,22 +1384,10 @@ def _validate_existing_head(node: frappe._dict) -> None:
 
 
 def _preserve_head(node: frappe._dict, principals: Principals) -> int:
-    seq = frappe.db.sql(
-        "SELECT COALESCE(MAX(seq), 0) + 1 FROM `tabDrive Node Version` WHERE node = %s",
-        node.name,
-    )[0][0]
-    frappe.get_doc(
-        {
-            "doctype": "Drive Node Version",
-            "node": node.name,
-            "seq": seq,
-            "kind": "auto",
-            "actor": principals.user,
-            "size": node.size,
-            "blob": node.blob,
-        }
-    ).insert(ignore_permissions=True)
-    return seq
+    # Imported lazily because versions use the node loader and activity helper.
+    from suite.drive._core.versions import preserve_file_head
+
+    return preserve_file_head(node, principals)
 
 
 def _content_time(value: datetime | int | float | str | None) -> datetime:
