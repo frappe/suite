@@ -61,7 +61,11 @@ class DriveNode(Document):
         if not self.parent or not self.root:
             frappe.throw(_("Every non-root node must name its parent and root"))
         parent = frappe.db.get_value(
-            "Drive Node", self.parent, ["name", "kind", "root", "path", "state"], as_dict=True
+            "Drive Node",
+            self.parent,
+            ["name", "kind", "root", "path", "state"],
+            as_dict=True,
+            for_update=True,
         )
         if not parent:
             frappe.throw(_("The parent Drive node does not exist"))
@@ -70,7 +74,7 @@ class DriveNode(Document):
         effective_parent_root = parent.name if parent.kind == "root" else parent.root
         if self.root != effective_parent_root:
             frappe.throw(_("The parent and root Drive nodes do not agree"))
-        if frappe.db.get_value("Drive Node", self.root, "kind") != "root":
+        if frappe.db.get_value("Drive Node", self.root, "kind", for_update=True) != "root":
             frappe.throw(_("A Drive node's root must name a root node"))
 
         expected_path = "" if parent.kind == "root" else f"{parent.path or '/'}{parent.name}/"
