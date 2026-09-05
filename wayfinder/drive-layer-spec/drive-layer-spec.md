@@ -13,7 +13,7 @@ schema, query, and number here is frozen. Bracketed ids cite the ticket
 that decided the rule, in [`tickets/`](tickets/). Terms are the
 [`Drive glossary`](../../suite/drive/CONTEXT.md)'s.
 
-The [decision review](decision-review.md) records the accepted amendments.
+This spec includes all twelve decisions accepted by Faris on 2026-09-05.
 It supersedes conflicting proposals in the original decision tickets and
 reference explainers. Required measurements remain implementation work.
 
@@ -21,6 +21,28 @@ Citation `[design]` refers to the repository-local
 [`references/drive-file-layer-designs.md`](references/drive-file-layer-designs.md).
 The framework storage assumptions are preserved in
 [`references/frappe-file-storage-v2-spec.md`](references/frappe-file-storage-v2-spec.md).
+
+## Accepted decisions
+
+All twelve planning choices are resolved. The table records the accepted
+outcomes from the [visual guide](explainer/remaining-decisions.html) review.
+The numbered sections below define their implementation contracts.
+Design acceptance does not complete implementation or verification.
+
+| Choice | Accepted decision | Required verification |
+|---|---|---|
+| Upload authority | Use a trusted internal storage path. Keep public upload checks enabled. Preserve validation and cover chunk authorization. | Cover create, chunk, and finish. Public clients cannot disable checks. Verify the internal interfaces in §13.7. |
+| Conflicting group roles | At equal depth and principal tier, an explicit DENY wins. Otherwise take the highest role: READ plus EDIT gives EDIT. | Test all role combinations and row orders. Preserve nearest-grant, direct-user, and public/link precedence. |
+| Restore destination | When the original parent chain is not Active, the user chooses the destination. Do not relocate automatically. | Require an explicit eligible destination before mutation. Test cancellation, destination permissions, path updates, and title conflicts. Track the frontend picker dependency. |
+| Initial WebDAV exports | Hide Writer, Slides, and Sheets content document nodes for now. | Test DAV listing and direct-path exclusion, including child media. Ordinary uploaded files remain eligible. |
+| Link-token limit | Send only codes relevant to the operation. Use an initial limit of 20 per request and reject excess explicitly. Load large composites in smaller groups. | Test scoped selection, 20 versus 21 items, HTTP errors, and per-reference authorization. Specify frontend and grouped-load integration dependencies. |
+| Expired grant retention | Keep all expired grants, including share-link grants. No cleanup based on expiry. | Verify expired grants and denies are inert while their rows remain. Remove the expiry cleanup job. Explicit removal and target purge still apply. |
+| Removing inherited access | Separate grant removal from explicit denial. Removing a local grant may leave inherited access; writing DENY requires an explicit user action. | Verify DELETE never writes DENY, explicit denial uses PUT role 0, and the UI distinguishes local grants from inherited access. Apply the same distinction to public grants. |
+| Path storage | Use `Data(500)` and the full `(root, path)` index. | Validate schema creation and maximum paths, including migrated ids, on the target database. |
+| Root-page index | Decide on any extra index after measurement. Root nodes make the parent index the new root-page baseline. | Benchmark the current shape; record read benefit, storage/write cost, and the agent's include/omit rationale. |
+| Root and target identity | Keep Drive Root metadata with a matching kind=root Drive Node. Grants, activity, and ancestry target nodes only. | Unique metadata.node Link; shared key; atomic creation/purge; root guards; migration integrity and Link validation tests. |
+| Invalid grant arguments | Use `frappe.ValidationError`, mapped to HTTP 400, for malformed roles/principals, nonexistent named users/groups, and past expiry. | Verify HTTP mapping and that failed writes leave no mutations. |
+| Permission explanation route | Use `GET /nodes/<id>/grants?principal=<principal>`. | Test MANAGE authorization and the response shape (§5.8, §11.2). |
 
 ## 1. Goal and non-goals
 
@@ -219,7 +241,7 @@ Rules on the columns:
   Validate parent/root agreement and root-node kind before every tree write.
   Only the root lifecycle workflow creates a root node and its metadata pair.
 
-Accepted in [Decision review](decision-review.md): `path` remains `Data`
+Accepted in [accepted decisions](#accepted-decisions): `path` remains `Data`
 with `length: 500`, and `(root, path)` uses a full index. Validate maximum
 migrated id lengths and depth on the target database. The root id stays
 outside `path`, so adding root nodes does not consume path capacity.
@@ -246,7 +268,7 @@ Not created:
 - `(parent, state, modified)` and `(parent, state, size)`. Sorting a big folder by date or size stays a filesort: 11.5 ms at 10k children, 1.2 ms at 1k, 0.24 ms at 48. Add `(parent, state, modified)` alone only if telemetry shows the sort in use; it costs +11.5 MB per 250k nodes and about +5% on insert [004].
 - Any index for shared-with-me. That view starts from the `grant_principal` index on `Drive Grant` and fetches nodes by PRIMARY key (§5.4).
 
-Accepted in [Decision review](decision-review.md): decide whether an extra
+Accepted in [accepted decisions](#accepted-decisions): decide whether an extra
 root-page index is needed after measurement. Root nodes make the top-level
 page an ordinary children query using `node_parent_page`. The existing
 `node_subtree (root, path)` remains available for whole-root queries.
@@ -264,6 +286,9 @@ queries before finalizing the choice.
 Root administration is a one-to-one extension of a root node. It owns the
 root registry, user association, Personal/Shared classification, archive
 state, quota, and usage. Grants, activity, titles, and ancestry belong to nodes.
+
+Rejected: mixed root/node target ids for grants and activity, and moving
+all root metadata onto Drive Node. The paired model keeps both responsibilities explicit.
 
 Naming: `autoname: field:node`. `Drive Root.name = Drive Root.node` is the
 matching root node's id. Generate a fresh node id for a new root, never the
@@ -328,7 +353,7 @@ The only permission table. Naming: `autoname: hash`.
 | `expires_on` | Datetime | | | The grant stops at this moment. Valid on every principal [008 §8]. |
 | `password_hash` | Data | | length 255 | Passlib hash. Valid on `$LINK:*` only [008 §8]. |
 
-Accepted in [Decision review](decision-review.md): all grants target a
+Accepted in [accepted decisions](#accepted-decisions): all grants target a
 `Drive Node`, including grants on a root. Use a normal Link. The permission
 query and unique `(node, principal)` key remain uniform. Root metadata is
 never a grant target. Drive still owns explicit removal and purge ordering.
@@ -426,7 +451,7 @@ One thing that happened to a node. Written once, never edited [011 §10].
 Accepted: `trash`, `restore`, and `delete` are distinct activity verbs;
 `delete` means purge. The migration maps the old single delete verb (§14.6).
 `Drive Activity.node` is a Link to Drive Node, including for root activity.
-This follows the accepted root-node model in [Decision review](decision-review.md).
+This follows the accepted root-node model in [accepted decisions](#accepted-decisions).
 
 | Index | Mechanism | The query it serves |
 |---|---|---|
@@ -715,7 +740,7 @@ Within the limit, trim each item, split on `.` into at most three parts,
 and drop malformed items. Return `$LINK:<token>` for each surviving item.
 The unlock-ticket check runs later in the engine because it needs the grant row.
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): send only
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): send only
 codes relevant to the current operation, with an initial limit of 20 and an
 explicit error when exceeded. This replaces silent truncation. The limit
 is an initial design choice, not a benchmark result. Client selection is
@@ -848,11 +873,12 @@ class Acc:
 		return max(self.own or 0, self.open or 0)
 ```
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): two group
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): two group
 grants at the same depth combine to the highest role unless either denies.
 READ plus EDIT gives EDIT; READ plus EDIT plus DENY gives NONE.
-The result must not depend on row order. Nearest-grant and principal-tier
-precedence remain unchanged.
+The result must not depend on row order. This replaces the earlier
+lower-positive-role proposal. Nearest-grant and principal-tier precedence
+remain unchanged.
 
 ### 5.2 Point check for one node
 
@@ -1193,7 +1219,7 @@ writes a row.
 
 Refusals 7, 8, and 11 bind a Suite Admin as well.
 
-Accepted in [Decision review](decision-review.md): refusals 3, 4, 5, and
+Accepted in [accepted decisions](#accepted-decisions): refusals 3, 4, 5, and
 12 raise `frappe.ValidationError`, mapped to HTTP 400 by the Drive adapter.
 Verify the response shape and that failed requests leave no mutations.
 
@@ -1232,7 +1258,7 @@ Refusals: 1 and 2 of §5.9. It deletes the row and writes one
 `share_remove` activity row.
 
 **Remove a grant or explicitly deny access.** Accepted on 2026-09-05 in
-[Decision review](decision-review.md): these are separate user actions.
+[accepted decisions](#accepted-decisions): these are separate user actions.
 Removing a grant must not automatically create a deny, even if access remains.
 
 - **Remove this grant:** call `revoke`. Inherited access can remain. Removing
@@ -1371,7 +1397,7 @@ redirects to the node route, and seeds the token, so the node id never appears
 in a shared URL and a rotation changes the URL [008 §9]. The SPA keeps tokens
 in `localStorage`, associated with the file or folder resolved by each link.
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): the browser
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): the browser
 sends only link codes relevant to the current operation in `X-Drive-Links`.
 It must not attach every remembered code to every API request.
 
@@ -1415,7 +1441,7 @@ and kills every unlock ticket [008 §8].
 `expires_on` is a column on every grant, any principal. The engine filters it
 on every read. An expired grant is inert, including an expired deny.
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): retain all
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): retain all
 expired grants, including share-link grants. Expiration must not delete a row.
 There is no expired-grant cleanup job and no retention deadline for expired
 grants. Activity rows remain under their existing lifecycle rules.
@@ -1439,7 +1465,7 @@ sweep. Access queries continue to filter expiration on their grant candidates.
 - MANAGE publishes. There is no app-declared publish capability and no Drive workflow that skips the check [007 §3].
 - Removing the node's own `$PUBLIC` grant deletes only that row. Inherited
   public access can remain. Explicitly denying public access writes role 0
-  through a separate user action. Both need MANAGE (§5.10; decision review).
+  through a separate user action. Both need MANAGE (§5.10; accepted decisions).
 
 Stated consequence: in the Shared root (`$GENERAL UPLOAD`) a contributor holds
 the creator's EDIT on a deck they made and cannot publish it. In a Personal
@@ -2030,7 +2056,7 @@ Restore rules.
 - A document node opens read-only while it is Trashed. Edits and comments
   are refused [005].
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): when the
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): when the
 original parent chain is not Active, the user chooses the restore destination.
 Drive must not select the nearest Active ancestor or root automatically.
 
@@ -2646,7 +2672,7 @@ the `versions` field and its child table `Writer Doc Version`,
 (`writer_document.py:40,110`), and `update_file` (`writer_document.py:100`),
 which is replaced by `touch`.
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): Writer
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): Writer
 documents stay hidden over WebDAV, so `default_export` is `None`.
 The explicit HTML export remains available through the content API's
 `format` parameter. This decision does not remove app export behavior.
@@ -2728,7 +2754,7 @@ App must delete: `title`, `trashed`, `trashed_on`, `trashed_by`,
 carries `seq`, `kind` (auto, milestone, named), `label`, `pinned`, and
 `actor` [011 §11].
 
-Accepted on 2026-09-05 in [Decision review](decision-review.md): Slides and
+Accepted on 2026-09-05 in [accepted decisions](#accepted-decisions): Slides and
 Sheets also declare `default_export = None`. All three content apps stay
 hidden over WebDAV for this release. Enabling document exports over WebDAV
 is later work, not a requirement of the initial rewrite.
@@ -2876,7 +2902,7 @@ and get the same error [012].
   local grant, for every principal. It never writes a deny. An explicit
   deny is `PUT .../grants/<principal> {role: 0}`, including `$PUBLIC`.
   Inherited access after deletion is shown by the grants explanation.
-  There are no separate publish activity verbs [007 §1; decision review].
+  There are no separate publish activity verbs [007 §1; accepted decisions].
 - `?below=1` on the DELETE is `revoke_below` (§5.10). It deletes the
   principal's grants on the node and on every node under it, and returns the
   count [002].
@@ -2895,7 +2921,7 @@ and get the same error [012].
   password_hash + "|" + exp)` with a 30-day `exp`. No row is written
   [008 §3].
 
-Accepted in [Decision review](decision-review.md): expose `explain` as
+Accepted in [accepted decisions](#accepted-decisions): expose `explain` as
 `?principal=<p>` on `GET /nodes/<id>/grants`. The response includes the
 explanation alongside grants. Test authorization and response shape.
 
@@ -3184,7 +3210,7 @@ an admin reaches by path; there is no admin mount of other users' roots
 ### 12.2 Content documents
 
 Writer, Slides, and Sheets content document nodes stay hidden in this
-release, as accepted in [Decision review](decision-review.md). All three
+release, as accepted in [accepted decisions](#accepted-decisions). All three
 declare `default_export = None` (§10.7).
 
 - Exclude content document nodes from DAV listings and path lookup.
@@ -3535,7 +3561,7 @@ row; a GC run during a relocation deletes nothing live.
 
 ### 13.7 Trusted blob-upload sessions
 
-Accepted in [Decision review](decision-review.md): Drive authorizes its
+Accepted in [accepted decisions](#accepted-decisions): Drive authorizes its
 uploads through grants and uses a trusted internal storage path. Public
 framework clients cannot disable upload permission or MIME checks.
 
