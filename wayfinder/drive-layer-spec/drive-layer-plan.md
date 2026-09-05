@@ -8,7 +8,7 @@ The module structure and dependency rules come from
 architecture charter disagree about placement or imports, the charter wins;
 if either disagrees with the spec about behavior, the spec wins.
 
-The [implementation ticket index](../../.scratch/drive-layer/README.md)
+The [implementation ticket index](implementation/README.md)
 refines these stages into 37 dependency-linked tickets. It includes the
 execution rules, verification evidence, and separate frontend/release gates.
 Ticket creation is complete; implementation has not started.
