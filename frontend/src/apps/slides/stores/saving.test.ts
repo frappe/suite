@@ -7,12 +7,15 @@ const inReadonlyMode = ref(false)
 const slides = ref<any[]>([{ clientId: 'c1', background: '#ff0000ff', elements: [] }])
 
 let serverSave: (content: any) => Promise<string | undefined>
+const reloadAfterConflict = vi.fn(async () => {})
 
 vi.mock('@/apps/slides/stores/presentation', () => ({
 	presentationId,
 	presentationDoc,
 	inReadonlyMode,
 	savePresentationDoc: (content: any) => serverSave(content),
+	isSaveConflict: (error: any) => error?.exc_type === 'TimestampMismatchError',
+	reloadAfterConflict,
 }))
 
 vi.mock('@/apps/slides/stores/slide', () => ({ slides }))
@@ -21,10 +24,12 @@ vi.mock('@/apps/slides/utils/helpers', () => ({
 	cloneObj: (obj: any) => JSON.parse(JSON.stringify(obj)),
 }))
 
-const { saveCurrentState, markDirty, dirty, getPresentationFromLocalDB } = await import('./saving')
+const { saveCurrentState, markDirty, dirty, saveFailed, getPresentationFromLocalDB } =
+	await import('./saving')
 
 describe('saveCurrentState', () => {
 	beforeEach(() => {
+		reloadAfterConflict.mockClear()
 		presentationId.value = 'p1'
 		presentationDoc.value = { modified: 'M1' }
 		slides.value = [{ clientId: 'c1', background: '#ff0000ff', elements: [] }]
@@ -102,5 +107,22 @@ describe('saveCurrentState', () => {
 		expect(dirty.value).toBe(false)
 		expect(local.dirty).toBe(false)
 		expect(local.baseModified).toBe('M2')
+	})
+
+	it('drops a snapshot the server refused as stale and reloads', async () => {
+		markDirty()
+
+		serverSave = async () => {
+			throw Object.assign(new Error('stale'), { exc_type: 'TimestampMismatchError' })
+		}
+
+		await saveCurrentState()
+
+		const local: any = await getPresentationFromLocalDB('p1')
+		// retrying would only be refused again, so nothing stays pending
+		expect(local.dirty).toBe(false)
+		expect(dirty.value).toBe(false)
+		expect(saveFailed.value).toBe(false)
+		expect(reloadAfterConflict).toHaveBeenCalledWith('p1')
 	})
 })

@@ -80,7 +80,6 @@ const getNewSlide = (toDuplicate = false, layoutObject, source = currentSlide.va
 	}
 
 	// override metadata and generate unique IDs for elements
-	slide.name = ''
 	slide.clientId = uuid4()
 	slide.parent = presentationId.value
 	slide.fadeUnmatchedElements = 1

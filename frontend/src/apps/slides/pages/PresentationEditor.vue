@@ -110,7 +110,7 @@ import {
 } from '@/apps/slides/stores/historyMeta'
 
 import { useShortcuts, showShortcutsModal } from '@/apps/slides/composables/useShortcuts'
-import { saveChanges, saveCurrentState, dirty } from '@/apps/slides/stores/saving'
+import { saveChanges, dirty } from '@/apps/slides/stores/saving'
 import {
 	refreshOfflineStatus,
 	warmOfflineCopyAssets,
@@ -247,7 +247,7 @@ const handleBeforeUnmount = () => {
 
 	if (router.currentRoute.value.name !== 'slides-slideshow') {
 		resetFocus()
-		saveCurrentState()
+		saveChanges()
 	}
 	window.removeEventListener('beforeunload', handleBeforeUnload)
 	window.removeEventListener('popstate', hideOpenDialogs)

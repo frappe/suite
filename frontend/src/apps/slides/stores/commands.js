@@ -130,8 +130,6 @@ const addSlideCommand = ({ slide, index, slideIndex }) => ({
 	fromSlideIndex: slideIndex,
 	debug: `Add slide ${slide.clientId} at index ${index}`,
 	execute(state) {
-		// a name carried over from another row would make the next save update it
-		slide.name = ''
 		addSlide(state, index, slide)
 	},
 	undo(state) {
@@ -148,8 +146,6 @@ const removeSlideCommand = ({ slide, index, slideIndex }) => ({
 		removeSlide(state, index, slide)
 	},
 	undo(state) {
-		// autosave may already have deleted the row, so the next save has to insert it
-		slide.name = ''
 		addSlide(state, index, slide)
 	},
 })
