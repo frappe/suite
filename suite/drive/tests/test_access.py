@@ -1,4 +1,5 @@
 import itertools
+from typing import ClassVar
 from unittest.mock import patch
 
 import frappe
@@ -87,7 +88,12 @@ class TestAccessAccumulator(UnitTestCase):
 
 
 class TestPointAccess(UnitTestCase):
-    node = {"name": "node", "kind": "folder", "root": "root", "path": ""}
+    node: ClassVar[dict[str, str]] = {
+        "name": "node",
+        "kind": "folder",
+        "root": "root",
+        "path": "",
+    }
     principals = Principals("user@example.com", ("user@example.com",), ("$PUBLIC",))
 
     @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
@@ -111,12 +117,12 @@ class TestPointAccess(UnitTestCase):
         self.assertEqual(effective_role(self.node, admin), MANAGE)
         sql.assert_not_called()
 
-    @patch("suite.drive._core.access.effective_role", return_value=NONE)
-    def test_unreadable_is_not_found(self, _effective_role):
+    @patch("suite.drive._core.access._point_state", return_value=(NONE, [], {}, {}))
+    def test_unreadable_is_not_found(self, _point_state):
         with self.assertRaises(DriveNotFound):
             require(self.node, READ, self.principals)
 
-    @patch("suite.drive._core.access.effective_role", return_value=READ)
-    def test_readable_but_insufficient_is_forbidden(self, _effective_role):
+    @patch("suite.drive._core.access._point_state", return_value=(READ, [], {}, {}))
+    def test_readable_but_insufficient_is_forbidden(self, _point_state):
         with self.assertRaises(DriveForbidden):
             require(self.node, EDIT, self.principals)

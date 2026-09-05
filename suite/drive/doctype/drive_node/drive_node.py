@@ -21,22 +21,25 @@ class DriveNode(Document):
             frappe.throw(_("Root nodes can only be removed by the Drive root lifecycle"))
 
     def _validate_root_shape(self) -> None:
-        invalid = any(
-            (
-                self.parent,
-                self.root,
-                self.path,
-                self.blob,
-                self.size,
-                self.mime,
-                self.url,
-                self.content_doctype,
-                self.content_docname,
-                self.trashed_at,
-                self.trash_root,
-                self.is_template,
+        invalid = (
+            any(
+                (
+                    self.parent,
+                    self.root,
+                    self.path,
+                    self.blob,
+                    self.size,
+                    self.mime,
+                    self.url,
+                    self.content_doctype,
+                    self.content_docname,
+                    self.trashed_at,
+                    self.trash_root,
+                    self.is_template,
+                )
             )
-        ) or self.state != "Active"
+            or self.state != "Active"
+        )
         if invalid:
             frappe.throw(_("A root node must have the canonical empty root shape"))
 
@@ -59,7 +62,7 @@ class DriveNode(Document):
         if frappe.db.get_value("Drive Node", self.root, "kind") != "root":
             frappe.throw(_("A Drive node's root must name a root node"))
 
-        expected_path = "" if parent.kind == "root" else f"{parent.path or ''}/{parent.name}/"
+        expected_path = "" if parent.kind == "root" else f"{parent.path or '/'}{parent.name}/"
         if self.path != expected_path:
             frappe.throw(_("The Drive node path does not match its parent"))
 
