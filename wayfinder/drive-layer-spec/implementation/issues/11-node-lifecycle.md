@@ -4,7 +4,7 @@
 
 **Blocked by:** [10 — Upload and replace files under Drive authority and quota](10-upload-and-quota.md)
 
-**Status:** ready-for-agent
+**Status:** done
 
 **Owner:** Suite Drive node workflows
 
@@ -15,15 +15,15 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Create folders and links; enforce kind invariants, leaf rules, title rules, and depth limits.
-- [ ] Move uses root-relative prefixes, checks cycles and destination rights, and rewrites Active and Trashed descendants atomically.
-- [ ] Cross-root moves transfer head and version charges once. Reservations stay with their original root.
-- [ ] Copy checks source READ and destination UPLOAD. Skip unreadable descendants; copy no grants, versions, or comments.
-- [ ] Trash preserves earlier independent trash stamps. Restore restores only the matching trash root and timestamp.
-- [ ] When the original chain is unavailable, require a user-selected Active destination in the same root before any mutation.
-- [ ] Cancel or missing destination leaves Trash unchanged. Validate access and deduplicate at the selected destination.
-- [ ] Implement ordered purge through registered content callbacks, with reference cleanup and quota release. Refuse ordinary root purge.
-- [ ] Register the daily 30-day trash purge through the scheduler adapter, processing each trash root once.
+- [x] Create folders and links; enforce kind invariants, leaf rules, title rules, and depth limits.
+- [x] Move uses root-relative prefixes, checks cycles and destination rights, and rewrites Active and Trashed descendants atomically.
+- [x] Cross-root moves transfer head and version charges once. Reservations stay with their original root.
+- [x] Copy checks source READ and destination UPLOAD. Skip unreadable descendants; copy no grants, versions, or comments.
+- [x] Trash preserves earlier independent trash stamps. Restore restores only the matching trash root and timestamp.
+- [x] When the original chain is unavailable, require a user-selected Active destination in the same root before any mutation.
+- [x] Cancel or missing destination leaves Trash unchanged. Validate access and deduplicate at the selected destination.
+- [x] Implement ordered purge through registered content callbacks, with reference cleanup and quota release. Refuse ordinary root purge.
+- [x] Register the daily 30-day trash purge through the scheduler adapter, processing each trash root once.
 
 ## Verification
 
@@ -31,5 +31,79 @@ Run lifecycle tests for nested trash, selected restore, rollback, title collisio
 
 ## Completion evidence
 
-Record changed behavior, exact revisions, commands, results, and unresolved gates here.
-Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+Completed 2026-09-06 from ticket 10 revision
+`b066ea2723a3c15d4adea970dff5dc089c25240c`.
+
+Suite implementation revision: `08f5b87324869216f0200774931864c784885bf4`.
+The isolated branch was reviewed and fast-forwarded onto `forge/drive-layer`.
+Frappe stayed at `158a173a1c8fb0083f2b352250f8ac4bba1781ba`.
+
+Changed behavior:
+
+- Folder and link creation now enforce active container, title, kind, leaf, and
+  depth rules. Node validation rejects malformed lifecycle stamps, tree
+  positions, mutable content identities, and non-document templates.
+- Rename checks Active sibling collisions. Move locks both endpoints, the
+  source subtree, both ancestry chains, and root pairs in stable order. It
+  rejects cycles and invalid materialized trees before its two-statement path
+  rewrite. Active and Trashed descendants move together.
+- Cross-root move computes head and version bytes with the frozen root/path
+  query. It admits the destination before releasing the source in the same
+  transaction. Reservations remain on their original root. A mover who loses
+  inherited EDIT receives one direct EDIT grant, except for link-authorized
+  destinations.
+- Copy requires source READ and destination UPLOAD. It skips unreadable
+  descendant branches, shares private Ready blobs, charges head bytes only,
+  and creates no copied grants, versions, or comments. Generic document and
+  document-media copies fail closed until the content contract owns them.
+- Trash locks and validates the physical subtree before stamping only Active
+  rows. Restore uses the exact trash root and timestamp. An actor can restore
+  their own item in place with node EDIT. Explicit reparenting requires an
+  Active same-root destination with UPLOAD and applies title deduplication
+  before the state change.
+- Purge validates the root and complete subtree before mutation. It validates
+  all registered content callbacks before cleanup, deletes references in the
+  specified order, releases head and version charges, and leaves blob deletion
+  to framework garbage collection. Ordinary root purge remains forbidden.
+- The daily scheduler adapter selects trash roots older than 30 days. It
+  rechecks each root under lock and commits or rolls back each root separately.
+
+Full worktree verification used:
+
+```text
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-11:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-11:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-11:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_upload
+```
+
+Results before final review fixes: node lifecycle 24/24, views 20/20, and
+upload 34/34, for 78/78 total. One existing upload deprecation warning was
+reported. Committed concurrency fixtures were removed cleanly.
+
+Final review found and fixed two specification gaps. Ordinary in-place restore
+no longer overchecks parent UPLOAD. Cross-root byte accounting now uses the
+single root/path-indexed SQL shape from §7.6. The focused node lifecycle module
+then passed 26/26: five unit and 21 integration tests. It had zero warnings and
+clean fixture removal.
+
+Static verification passed for the final implementation: Python compileall
+over the changed Python files, `git diff --check`, cached Ruff lint, and Ruff
+format check. The independent standards review found no blocker, high, or
+medium issue after these checks.
+
+No schema, patch, or migration changed in this ticket. The scheduler hook is
+an additive code registration. No migration or remigration was run.
+
+Deferred by the frozen plan:
+
+- Version workflows remain ticket 12.
+- Preview lifecycle and preview cloning remain ticket 13.
+- Record workflows remain ticket 14.
+- Reservations, root administration, and daily quota recompute remain ticket 15.
+- Central content registry validation, document duplication, and media
+  reference remapping remain ticket 16.
+- HTTP exposure remains ticket 21.
+- DAV dead-property cloning remains ticket 25.
+
+Generic document copy fails closed until ticket 16. No push, PR, install,
+restart, or migration was performed.
