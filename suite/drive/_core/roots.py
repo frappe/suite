@@ -61,8 +61,9 @@ def personal_root_for(user: str) -> str | None:
     return active_root_for(kind=PERSONAL, user=user)
 
 
-def validate_root_pair(node_id: str) -> frappe._dict:
+def validate_root_pair(node_id: str, *, for_update: bool = False) -> frappe._dict:
     """Validate both directions and every root-node invariant."""
+    locking = {"for_update": True} if for_update else {}
     node = frappe.db.get_value(
         "Drive Node",
         node_id,
@@ -86,32 +87,38 @@ def validate_root_pair(node_id: str) -> frappe._dict:
             "owner",
         ],
         as_dict=True,
+        **locking,
     )
     if not node:
         raise DriveNotFound(_("Drive root node {0} was not found").format(node_id))
-    if node.kind != "root" or any(
-        (
-            node.parent,
-            node.root,
-            node.path,
-            node.blob,
-            node.size,
-            node.mime,
-            node.url,
-            node.content_doctype,
-            node.content_docname,
-            node.trashed_at,
-            node.trash_root,
-            node.is_template,
+    if (
+        node.kind != "root"
+        or any(
+            (
+                node.parent,
+                node.root,
+                node.path,
+                node.blob,
+                node.size,
+                node.mime,
+                node.url,
+                node.content_doctype,
+                node.content_docname,
+                node.trashed_at,
+                node.trash_root,
+                node.is_template,
+            )
         )
-    ) or node.state != ACTIVE:
+        or node.state != ACTIVE
+    ):
         raise frappe.ValidationError(_("Drive root node {0} has an invalid root shape").format(node_id))
 
     root = frappe.db.get_value(
         "Drive Root",
         {"node": node_id},
-        ["name", "node", "kind", "user", "state"],
+        ["name", "node", "kind", "user", "state", "quota_bytes", "used_bytes"],
         as_dict=True,
+        **locking,
     )
     if not root or root.name != node_id or root.node != node_id:
         raise frappe.ValidationError(_("Drive root node {0} has no matching metadata").format(node_id))
@@ -199,6 +206,6 @@ def _insert_root_metadata(
 
 def _insert_anchor_grant(*, node: str, kind: str, user: str | None) -> None:
     principal, role = (user, MANAGE) if kind == PERSONAL else ("$GENERAL", UPLOAD)
-    frappe.get_doc(
-        {"doctype": "Drive Grant", "node": node, "principal": principal, "role": role}
-    ).insert(ignore_permissions=True)
+    frappe.get_doc({"doctype": "Drive Grant", "node": node, "principal": principal, "role": role}).insert(
+        ignore_permissions=True
+    )

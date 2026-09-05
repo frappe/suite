@@ -3,21 +3,28 @@
 import base64
 import binascii
 import collections
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import now
+from frappe.storage.blob import revive_blob
+from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core.access import (
     POINT_SQL,
     _resolve_rows,
+    add_creator_grant,
     chain_ids,
     effective_roles,
+    require,
     require_from_rows,
+    require_link,
 )
-from suite.drive._core.errors import DriveConflict, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import READ
+from suite.drive._core.quota import admit, root_for_node
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive._core.roots import personal_root_for
 
 DEFAULT_PAGE_SIZE = 60
@@ -249,6 +256,307 @@ WHERE (r.kind = 'Personal' AND r.state = 'Active' AND r.user = %(user)s)
 """
 
 
+def create_file(
+    principals: Principals,
+    parent: str,
+    title: str,
+    *,
+    blob: str,
+    size: int,
+    mime: str,
+    content_modified: datetime | int | float | str | None = None,
+    _via_link: str | None = None,
+) -> str:
+    """Create one private blob-backed file and charge its root atomically."""
+    _validate_title(title)
+    savepoint = f"drive_create_file_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        # The parent row lock serializes the title check with every compliant
+        # sibling create and closes the pre-check/insert race.
+        parent_row = _node(parent, for_update=True)
+        via_link = require(parent_row, UPLOAD, principals)
+        if _via_link is not None:
+            require_link(parent_row, UPLOAD, principals, _via_link)
+            via_link = _via_link
+        _validate_parent(parent_row, for_update=True)
+        blob_row = _validated_blob(blob, size, mime)
+        _refuse_sibling_collision(parent_row.name, title)
+        root = root_for_node(parent_row).name
+        path = "" if parent_row.kind == "root" else f"{parent_row.path or '/'}{parent_row.name}/"
+        admit(root, blob_row.file_size)
+        node = frappe.get_doc(
+            {
+                "doctype": "Drive Node",
+                "title": title,
+                "parent": parent_row.name,
+                "root": root,
+                "path": path,
+                "kind": "file",
+                "blob": blob_row.name,
+                "size": blob_row.file_size,
+                "mime": blob_row.mime_type,
+                "state": "Active",
+                "content_modified": _content_time(content_modified),
+                "is_template": 0,
+                "owner": principals.user,
+            }
+        ).insert(ignore_permissions=True)
+        # Document.insert assigns the transport session user. Ownership is the
+        # explicit Drive actor, including Guest/link attribution.
+        frappe.db.set_value("Drive Node", node.name, "owner", principals.user, update_modified=False)
+        node.owner = principals.user
+        add_creator_grant(node, parent_row, principals, via_link=via_link)
+        _record_activity(
+            node.name,
+            "create",
+            principals,
+            {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
+            via_link=via_link,
+        )
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return node.name
+
+
+def update(
+    principals: Principals,
+    node: str,
+    *,
+    blob: str | None = None,
+    size: int | None = None,
+    mime: str | None = None,
+    content_modified: datetime | int | float | str | None = None,
+    _via_link: str | None = None,
+    _bound_parent: str | None = None,
+) -> dict:
+    """Replace a file head, preserving a nonempty old head as one auto version."""
+    if blob is None or size is None or mime is None:
+        frappe.throw(_("A file replacement requires blob, size, and MIME type"), frappe.ValidationError)
+
+    savepoint = f"drive_replace_file_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        current = _node(node, for_update=True)
+        via_link = require(current, EDIT, principals)
+        if _via_link is not None:
+            # The exact link remains bound to the original upload parent. EDIT
+            # on the replacement target is a separate, fresh authorization.
+            via_link = _via_link
+        if current.kind != "file" or current.state != "Active":
+            raise DriveForbidden(_("Only an active Drive file can be replaced"))
+        if _bound_parent is not None and current.parent != _bound_parent:
+            raise DriveForbidden(_("The replacement moved outside the upload destination"))
+        _validate_stored_position(current, for_update=True)
+        blob_row = _validated_blob(blob, size, mime)
+        _validate_existing_head(current)
+
+        version = None
+        if current.blob and int(current.size or 0) > 0:
+            version = _preserve_head(current, principals)
+
+        # The old head's existing charge becomes the version's charge. Only
+        # the new head increases total logical usage, including same-blob edits.
+        admit(current.root, blob_row.file_size)
+        frappe.db.set_value(
+            "Drive Node",
+            current.name,
+            {
+                "blob": blob_row.name,
+                "size": blob_row.file_size,
+                "mime": blob_row.mime_type,
+                "content_modified": _content_time(content_modified),
+            },
+        )
+        _record_activity(
+            current.name,
+            "edit",
+            principals,
+            {"blob": blob_row.name, "size": blob_row.file_size, "version": version},
+            via_link=via_link,
+        )
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+
+    return frappe.db.get_value("Drive Node", current.name, NODE_FIELD_NAMES, as_dict=True)
+
+
+def _node(node_id: str, *, for_update: bool = False) -> frappe._dict:
+    row = frappe.db.get_value(
+        "Drive Node",
+        node_id,
+        NODE_FIELD_NAMES,
+        as_dict=True,
+        for_update=for_update,
+    )
+    if not row:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node_id))
+    return row
+
+
+def _validate_parent(parent: frappe._dict, *, for_update: bool = False) -> None:
+    if parent.state != "Active" or parent.kind not in ("root", "folder", "document"):
+        raise DriveConflict(_("Files can only be created below an active Drive container"))
+    if len(chain_ids(parent)) > 40:
+        raise DriveConflict(_("A Drive tree cannot be deeper than 40 levels"))
+    if parent.kind == "root":
+        root_for_node(parent, for_update=for_update)
+    else:
+        _validate_stored_position(parent, for_update=for_update)
+
+
+def _validate_stored_position(node: frappe._dict, *, for_update: bool = False) -> None:
+    """Validate the materialized parent/root/path chain using current reads."""
+    cursor = node
+    seen = {cursor.name}
+    for _depth in range(41):
+        if cursor.kind == "root":
+            root_for_node(cursor, for_update=for_update)
+            return
+        if not cursor.parent or not cursor.root:
+            raise DriveConflict(_("The Drive node has an invalid tree position"))
+        parent = _node(cursor.parent, for_update=for_update)
+        if parent.name in seen:
+            raise DriveConflict(_("The Drive node tree contains a cycle"))
+        if parent.state != "Active" or parent.kind not in ("root", "folder", "document"):
+            raise DriveConflict(_("The Drive node's parent is not an active container"))
+        effective_root = parent.name if parent.kind == "root" else parent.root
+        expected_path = "" if parent.kind == "root" else f"{parent.path or '/'}{parent.name}/"
+        if cursor.root != effective_root or cursor.path != expected_path:
+            raise DriveConflict(_("The Drive node's parent, root, and path do not agree"))
+        seen.add(parent.name)
+        cursor = parent
+    raise DriveConflict(_("A Drive tree cannot be deeper than 40 levels"))
+
+
+def _validate_title(title: str) -> None:
+    if not isinstance(title, str) or not title.strip():
+        frappe.throw(_("A Drive file title is required"), frappe.ValidationError)
+
+
+def _refuse_sibling_collision(parent: str, title: str) -> None:
+    collision = frappe.db.sql(
+        """
+        SELECT name
+        FROM `tabDrive Node`
+        WHERE parent = %(parent)s AND title = %(title)s AND state = 'Active'
+        LIMIT 1
+        FOR UPDATE
+        """,
+        {"parent": parent, "title": title},
+    )
+    if collision:
+        raise DriveConflict(_("An active Drive node with this title already exists"))
+
+
+def _validated_blob(blob: str, size: int, mime: str) -> frappe._dict:
+    if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+        frappe.throw(_("Drive file size must be a nonnegative integer"), frappe.ValidationError)
+    if not revive_blob(blob):
+        frappe.throw(_("Drive files require an existing private blob"), frappe.ValidationError)
+    row = frappe.db.get_value(
+        "File Blob",
+        blob,
+        ["name", "file_size", "mime_type", "is_private", "status"],
+        as_dict=True,
+    )
+    if (
+        not row
+        or row.status != "Ready"
+        or not row.is_private
+        or row.file_size != size
+        or row.mime_type != mime
+    ):
+        frappe.throw(_("Drive files require matching ready private blob metadata"), frappe.ValidationError)
+    return row
+
+
+def _validate_existing_head(node: frappe._dict) -> None:
+    if not node.blob:
+        if int(node.size or 0) != 0 or node.mime:
+            frappe.throw(_("The existing Drive file head is inconsistent"), frappe.ValidationError)
+        return
+    row = frappe.db.get_value(
+        "File Blob",
+        node.blob,
+        ["name", "file_size", "mime_type", "is_private", "status"],
+        as_dict=True,
+    )
+    if (
+        not row
+        or row.status != "Ready"
+        or not row.is_private
+        or row.file_size != int(node.size or 0)
+        or row.mime_type != node.mime
+    ):
+        frappe.throw(_("The existing Drive file head is inconsistent"), frappe.ValidationError)
+
+
+def _preserve_head(node: frappe._dict, principals: Principals) -> int:
+    seq = frappe.db.sql(
+        "SELECT COALESCE(MAX(seq), 0) + 1 FROM `tabDrive Node Version` WHERE node = %s",
+        node.name,
+    )[0][0]
+    frappe.get_doc(
+        {
+            "doctype": "Drive Node Version",
+            "node": node.name,
+            "seq": seq,
+            "kind": "auto",
+            "actor": principals.user,
+            "size": node.size,
+            "blob": node.blob,
+        }
+    ).insert(ignore_permissions=True)
+    return seq
+
+
+def _content_time(value: datetime | int | float | str | None) -> datetime:
+    if value is None:
+        return now_datetime()
+    if isinstance(value, bool):
+        frappe.throw(_("Drive content time is invalid"), frappe.ValidationError)
+    try:
+        if isinstance(value, int | float):
+            if value < 0:
+                raise ValueError
+            stamp = datetime.fromtimestamp(value / 1000, tz=UTC)
+            return convert_utc_to_system_timezone(stamp).replace(tzinfo=None)
+        parsed = get_datetime(value)
+        if parsed is None:
+            raise ValueError
+        return parsed
+    except (OverflowError, OSError, TypeError, ValueError):
+        frappe.throw(_("Drive content time is invalid"), frappe.ValidationError)
+
+
+def _record_activity(
+    node: str,
+    action: str,
+    principals: Principals,
+    detail: dict,
+    *,
+    via_link: str | None,
+) -> None:
+    frappe.get_doc(
+        {
+            "doctype": "Drive Activity",
+            "node": node,
+            "action": action,
+            "actor": principals.user,
+            "at": now_datetime(),
+            "via_link": via_link,
+            "detail": detail,
+        }
+    ).insert(ignore_permissions=True)
+
+
 def children(
     principals: Principals,
     parent: str,
@@ -282,9 +590,7 @@ def children(
 
 def _folder_page_query(order_column: str = "title", direction: str = "ASC") -> str:
     return FOLDER_PAGE_SQL.format(
-        parent_fields=", ".join(
-            f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES
-        ),
+        parent_fields=", ".join(f"parent_node.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
         order_by=order_column,
@@ -480,10 +786,7 @@ def _readable_archived_roots(rows: list, principals: Principals, values: dict) -
         as_dict=True,
     )
     readable = _readable_rows(candidates, principals)
-    accessible_roots = {
-        row.name if row.kind == "root" else row.root
-        for row in readable
-    }
+    accessible_roots = {row.name if row.kind == "root" else row.root for row in readable}
     return [row for row in rows if row.root in accessible_roots]
 
 

@@ -266,16 +266,21 @@ def check(node: Mapping, need: int, principals: Principals) -> bool:
     return effective_role(node, principals) >= need
 
 
-def require(node: Mapping, need: int, principals: Principals) -> None:
-    """Require a role while hiding unreadable nodes behind a not-found failure."""
+def require(node: Mapping, need: int, principals: Principals) -> str | None:
+    """Require a role and return the link principal that supplied it, if any.
+
+    A caller's own grant wins attribution when it is independently sufficient.
+    This lets write workflows bind a Guest/link-authorized operation to the
+    exact capability that made it possible without issuing another grant query.
+    """
     if principals.is_admin:
-        return
+        return None
     if not principals.all():
         role, rows, depth, ticket_results = 0, [], {}, {}
     else:
         role, rows, depth, ticket_results = _point_state(node, principals)
     if role >= need:
-        return
+        return _authorizing_link(rows, depth, principals, need, ticket_results)
     if _expired_link_in_rows(node, principals, need, rows, depth, ticket_results):
         raise DriveLinkExpired(_("This Drive link has expired"))
     if _locked_link_in_rows(rows, depth, principals, need, ticket_results):
@@ -283,6 +288,58 @@ def require(node: Mapping, need: int, principals: Principals) -> None:
     if role < READ:
         raise DriveNotFound(_("Drive node {0} was not found").format(node.get("name")))
     raise DriveForbidden(_("You do not have the required access to Drive node {0}").format(node.get("name")))
+
+
+def _authorizing_link(
+    rows: list,
+    depth: Mapping[str, int],
+    principals: Principals,
+    need: int,
+    ticket_results: dict,
+) -> str | None:
+    """Return a deterministic deciding link when own principals are insufficient."""
+    acc = Acc()
+    for row in rows:
+        if _grant_is_unlocked(row, principals, ticket_results):
+            acc.offer(row.principal, row.role, depth[row.node], principals)
+
+    own_role = acc.own or NONE
+    open_role = acc.open or NONE
+    if open_role < need or own_role >= open_role:
+        return None
+
+    candidates = sorted(
+        row.principal
+        for row in rows
+        if row.principal.startswith("$LINK:")
+        and row.principal in principals.open
+        and row.role == acc.open
+        and depth[row.node] == acc.open_depth
+        and _grant_is_unlocked(row, principals, ticket_results)
+    )
+    return candidates[0] if candidates else None
+
+
+def require_link(
+    node: Mapping,
+    need: int,
+    principals: Principals,
+    link: str,
+) -> None:
+    """Require current access through one exact presented link capability."""
+    require(node, need, principals)
+    if link not in principals.open or not link.startswith("$LINK:"):
+        raise DriveForbidden(_("The required Drive link was not presented"))
+    tickets = tuple(ticket for ticket in principals.link_tickets if ticket[0] == link)
+    link_only = Principals(
+        user=principals.user,
+        own=(),
+        open=(link,),
+        is_admin=False,
+        link_tickets=tickets,
+    )
+    if require(node, need, link_only) != link:
+        raise DriveForbidden(_("The required Drive link is no longer authorized"))
 
 
 def require_from_rows(
