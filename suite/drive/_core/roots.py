@@ -5,7 +5,8 @@ from uuid import uuid4
 import frappe
 from frappe import _
 
-from suite.drive._core.errors import DriveConflict, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.principals import Principals
 from suite.drive._core.roles import MANAGE, UPLOAD
 
 PERSONAL = "Personal"
@@ -59,6 +60,73 @@ def active_root_for(*, kind: str, user: str | None = None, for_update: bool = Fa
 def personal_root_for(user: str) -> str | None:
     """Return a user's active Personal root node id."""
     return active_root_for(kind=PERSONAL, user=user)
+
+
+def provision_personal_root(user: str, *, title: str = "My Drive") -> str | None:
+    """Ensure an ordinary Suite user has one fresh Active Personal root."""
+    if not user or user in ("Guest", "Administrator"):
+        return None
+    current = personal_root_for(user)
+    if current:
+        return current
+    return create_root(kind=PERSONAL, title=title, user=user).name
+
+
+def archive_personal_root(user: str) -> str | None:
+    """Archive only root metadata during offboarding."""
+    _lock_identity(PERSONAL, user)
+    root = active_root_for(kind=PERSONAL, user=user, for_update=True)
+    if not root:
+        return None
+    pair = validate_root_pair(root, for_update=True)
+    if pair.root.user != user:
+        raise frappe.ValidationError(_("The Personal Drive root owner does not match"))
+    frappe.db.set_value("Drive Root", root, "state", "Archived", update_modified=False)
+    return root
+
+
+def update_root(
+    root: str,
+    principals: Principals,
+    *,
+    quota_bytes: int | None = None,
+    state: str | None = None,
+) -> frappe._dict:
+    """Apply exactly one Suite Admin root-metadata change."""
+    _require_admin(principals)
+    if (quota_bytes is None) == (state is None):
+        raise frappe.ValidationError(_("Change exactly one of quota_bytes or state"))
+    pair = validate_root_pair(root, for_update=True)
+    if quota_bytes is not None:
+        _validate_quota(quota_bytes)
+        frappe.db.set_value("Drive Root", root, "quota_bytes", quota_bytes, update_modified=False)
+        pair.root.quota_bytes = quota_bytes
+    else:
+        if state != "Archived" or pair.root.state != ACTIVE:
+            raise DriveConflict(_("A Drive root can only transition from Active to Archived"))
+        frappe.db.set_value("Drive Root", root, "state", state, update_modified=False)
+        pair.root.state = state
+    return _root_shape(pair)
+
+
+def purge_root(root: str, principals: Principals) -> frappe._dict:
+    """Atomically remove one explicitly selected Archived root pair."""
+    _require_admin(principals)
+    savepoint = f"drive_root_purge_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        pair = validate_root_pair(root, for_update=True)
+        if pair.root.state != "Archived":
+            raise DriveForbidden(_("Only an Archived Drive root can be purged"))
+        descendants = _locked_root_descendants(root)
+        _validate_root_descendants(root, descendants)
+        _purge_root_rows(root, descendants)
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return frappe._dict(purged=len(descendants) + 1)
 
 
 def validate_root_pair(node_id: str, *, for_update: bool = False) -> frappe._dict:
@@ -146,8 +214,7 @@ def reject_illegal_root_operation(node: dict, operation: str) -> None:
 def _validate_create_arguments(kind: str, user: str | None, quota_bytes: int) -> None:
     if kind not in (PERSONAL, SHARED):
         raise frappe.ValidationError(_("Drive root kind must be Personal or Shared"))
-    if isinstance(quota_bytes, bool) or not isinstance(quota_bytes, int) or quota_bytes < 0:
-        raise frappe.ValidationError(_("Drive root quota must be a nonnegative integer"))
+    _validate_quota(quota_bytes)
     if kind == PERSONAL:
         if not user or not frappe.db.exists("User", user):
             raise frappe.ValidationError(_("A Personal Drive root must name an existing user"))
@@ -209,3 +276,119 @@ def _insert_anchor_grant(*, node: str, kind: str, user: str | None) -> None:
     frappe.get_doc({"doctype": "Drive Grant", "node": node, "principal": principal, "role": role}).insert(
         ignore_permissions=True
     )
+
+
+def _validate_quota(value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise frappe.ValidationError(_("Drive root quota must be a nonnegative integer"))
+
+
+def _require_admin(principals: Principals) -> None:
+    if not principals.is_admin:
+        raise DriveForbidden(_("Suite Admin access is required"))
+
+
+def _root_shape(pair: frappe._dict) -> frappe._dict:
+    return frappe._dict(
+        name=pair.root.name,
+        node=pair.root.node,
+        kind=pair.root.kind,
+        user=pair.root.user,
+        state=pair.root.state,
+        quota_bytes=int(pair.root.quota_bytes or 0),
+        used_bytes=int(pair.root.used_bytes or 0),
+        title=pair.node.title,
+    )
+
+
+def _locked_root_descendants(root: str) -> list[frappe._dict]:
+    from suite.drive._core.nodes import NODE_FIELDS
+
+    return frappe.db.sql(
+        f"""SELECT {NODE_FIELDS} FROM `tabDrive Node`
+            WHERE root = %(root)s ORDER BY LENGTH(path) DESC, name FOR UPDATE""",
+        {"root": root},
+        as_dict=True,
+    )
+
+
+def _validate_root_descendants(root: str, descendants: list[frappe._dict]) -> None:
+    from suite.drive._core.nodes import child_path
+
+    by_name = {row.name: row for row in descendants}
+    for row in descendants:
+        parent = frappe.db.get_value(
+            "Drive Node", row.parent, ["name", "root", "path", "kind"], as_dict=True, for_update=True
+        )
+        if not parent:
+            raise DriveConflict(_("The Archived Drive root tree is incomplete"))
+        expected_root = parent.name if parent.kind == "root" else parent.root
+        expected_path = child_path(parent)
+        if (
+            parent.kind not in ("root", "folder", "document")
+            or expected_root != root
+            or row.root != root
+            or row.path != expected_path
+            or (parent.kind != "root" and parent.name not in by_name)
+        ):
+            raise DriveConflict(_("The Archived Drive root tree is inconsistent"))
+    node_ids = (root, *tuple(by_name))
+    escaped = frappe.db.sql(
+        """SELECT name FROM `tabDrive Node`
+           WHERE parent IN %(parents)s AND name NOT IN %(nodes)s
+           LIMIT 1 FOR UPDATE""",
+        {"parents": node_ids, "nodes": node_ids},
+    )
+    if escaped:
+        raise DriveConflict(_("The Archived Drive root tree is incomplete"))
+
+
+def _purge_root_rows(root: str, descendants: list[frappe._dict]) -> None:
+    from suite.drive._core.nodes import _content_purge_callbacks
+
+    descendant_ids = tuple(row.name for row in descendants)
+    callbacks = _content_purge_callbacks(descendants)
+    _delete_node_references(descendant_ids)
+    for callback, docname in callbacks:
+        callback(docname)
+    if descendant_ids:
+        frappe.db.delete("Drive Node", {"name": ["in", descendant_ids]})
+
+    _delete_node_references((root,))
+    frappe.db.delete("Drive Storage Reservation", {"root": root})
+    frappe.db.delete("Drive Root", root)
+    frappe.db.delete("Drive Node", root)
+
+
+def _delete_node_references(node_ids: tuple[str, ...]) -> None:
+    if not node_ids:
+        return
+    activity_ids = tuple(frappe.get_all("Drive Activity", filters={"node": ["in", node_ids]}, pluck="name"))
+    _delete_existing_reference("Drive Comment", "node", node_ids)
+    _delete_existing_reference("Drive Comment Thread", "node", node_ids)
+    if activity_ids:
+        _delete_existing_reference("Drive Notification", "activity", activity_ids)
+    _delete_existing_reference("Drive Activity", "node", node_ids)
+    _delete_existing_reference("Drive Recent", "node", node_ids)
+    _delete_existing_reference("Drive Favourite", "node", node_ids)
+    _delete_existing_reference("Drive Node Preview", "node", node_ids)
+    _delete_existing_reference("Drive Node Version", "node", node_ids)
+    _delete_existing_reference("Drive Grant", "node", node_ids)
+    _delete_existing_reference("Drive DAV Lock", "entity", node_ids, require_options="Drive Node")
+    _delete_existing_reference("Drive DAV Property", "entity", node_ids, require_options="Drive Node")
+    _delete_existing_reference("Drive Legacy Route", "entity", node_ids, require_options="Drive Node")
+
+
+def _delete_existing_reference(
+    doctype: str,
+    fieldname: str,
+    values: tuple[str, ...],
+    *,
+    require_options: str | None = None,
+) -> None:
+    """Ignore optional side tables unless both their table and DocType exist."""
+    if not frappe.db.exists("DocType", doctype) or not frappe.db.table_exists(doctype):
+        return
+    from suite.drive._core.nodes import _delete_if_field
+
+    _delete_if_field(doctype, fieldname, values, require_options=require_options)

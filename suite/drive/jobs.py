@@ -6,6 +6,29 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite.drive._core.nodes import purge_expired_trash_root
+from suite.drive._core.quota import recompute_usage
+
+
+def recompute_root_usage() -> dict:
+    """Repair every Active and Archived root independently and log drift."""
+    roots = frappe.get_all("Drive Root", filters={"state": ["in", ("Active", "Archived")]}, pluck="name")
+    corrected = 0
+    failed = 0
+    for root in roots:
+        try:
+            result = recompute_usage(root)
+            if result.drift:
+                corrected += 1
+                frappe.log_error(
+                    title="Drive root usage drift corrected",
+                    message=frappe.as_json(result),
+                )
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
+            failed += 1
+            frappe.log_error("Drive: could not recompute root usage", frappe.get_traceback())
+    return {"roots": len(roots), "corrected": corrected, "failed": failed}
 
 
 def purge_trashed_nodes() -> dict:

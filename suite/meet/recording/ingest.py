@@ -18,6 +18,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_system_timezone, now_datetime
 
+from suite import drive
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 
 if TYPE_CHECKING:
@@ -54,8 +55,6 @@ def begin_upload(
     ended_at=None,
     end_reason: str | None = None,
 ) -> dict:
-    from suite.drive.api.storage import reduce_storage_reservation
-
     size = cint(size)
     duration_ms = cint(duration_ms)
     if size <= 0 or duration_ms <= 0 or not isinstance(sha256, str) or not _sha256(sha256):
@@ -123,8 +122,8 @@ def begin_upload(
         recording.finalization_deadline = add_to_date(accepted_at, hours=FINALIZATION_TIMEOUT_HOURS)
         recording.publication_key = f"meet-recording-{recording.name}"
     recording.finalization_stage = recording.finalization_stage or "Awaiting Upload"
-    reduce_storage_reservation(
-        recording.room_owner,
+    drive.reduce_storage_reservation(
+        None,
         recording_storage_reservation_key(recording.name),
         size,
     )
@@ -344,7 +343,6 @@ def _claim_finalization(recording_name: str):
 
 
 def _publish_artifact(recording_name: str, path: Path) -> dict:
-    from suite.drive.api.storage import acquire_owner_storage_lock
     from suite.drive.utils import create_drive_file, get_new_file_name, update_file_size
     from suite.drive.utils.files import FileManager, get_s3_key, get_s3_url
 
@@ -355,7 +353,6 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
         return {"status": recording.status}
     recording.finalization_stage = "Publishing"
     recording.save(ignore_permissions=True)
-    acquire_owner_storage_lock(recording.room_owner)
 
     callback_user = frappe.session.user
     try:

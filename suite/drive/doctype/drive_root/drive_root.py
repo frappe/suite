@@ -15,7 +15,7 @@ class DriveRoot(Document):
         if self.name and self.name != self.node:
             frappe.throw(_("Drive Root metadata must use its node id as its name"))
         if self.kind == "Personal":
-            if not self.user or not frappe.db.exists("User", self.user):
+            if not self.user or (self.state == "Active" and not frappe.db.exists("User", self.user)):
                 frappe.throw(_("A Personal Drive root must name an existing user"))
         elif self.kind == "Shared":
             if self.user:

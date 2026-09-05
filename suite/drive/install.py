@@ -28,3 +28,19 @@ def after_install():
     index_check = frappe.db.sql("""SHOW INDEX FROM `tabFile` WHERE Key_name = 'drive_file_name_fts_idx'""")
     if not index_check:
         frappe.db.sql("""ALTER TABLE `tabFile` ADD FULLTEXT INDEX drive_file_name_fts_idx (file_name)""")
+
+
+def after_user_insert(doc, method: str | None = None) -> None:
+    """Provision new and compatibility Drive state for an ordinary user."""
+    from suite.drive._core.roots import provision_personal_root
+    from suite.drive.utils.users import create_drive_settings
+
+    provision_personal_root(doc.name)
+    create_drive_settings(doc, method)
+
+
+def on_user_trash(doc, method: str | None = None) -> None:
+    """Archive the user's Personal root without touching its node tree."""
+    from suite.drive._core.roots import archive_personal_root
+
+    archive_personal_root(doc.name)

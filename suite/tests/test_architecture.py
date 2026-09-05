@@ -6,7 +6,6 @@ from pathlib import Path, PurePosixPath
 
 from suite import drive
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SUITE_ROOT = REPOSITORY_ROOT / "suite"
 PRODUCTS = frozenset({"calendar", "drive", "mail", "meet", "sheets", "slides", "writer"})
@@ -39,17 +38,21 @@ def _debt(owner, removal, entries):
 
 BASELINE_DEBT = {
     **_debt(
-        "Suite architecture",
-        "Move product lifecycle wiring to suite.composition when Drive installation changes.",
+        "Suite Slides",
+        "Remove with the Slides Drive adapter (18) and the legacy compatibility ticket (23).",
         (
-            "suite/suite_core/boot.py|import|suite.calendar.install",
-            "suite/suite_core/boot.py|import|suite.drive.install",
-            "suite/suite_core/boot.py|import|suite.drive.install#2",
-            "suite/suite_core/boot.py|import|suite.mail.install",
-            "suite/suite_core/boot.py|import|suite.mail.install#2",
-            "suite/suite_core/boot.py|import|suite.meet.utils",
-            "suite/suite_core/boot.py|import|suite.sheets.boot",
+            "suite/slides/doctype/presentation/patches/integrate_with_drive.py"
+            "|drive-table-write|Drive Permission",
+            "suite/slides/doctype/presentation/presentation.py|drive-table-write|Drive Permission",
+            "suite/slides/tests/test_pasted_media.py|drive-table-write|Drive Permission",
+            "suite/slides/tests/utils.py|drive-table-write|Drive Permission",
+            "suite/slides/tests/utils.py|drive-table-write|Drive Permission#2",
         ),
+    ),
+    **_debt(
+        "Suite Drive and Meet",
+        "Replace with the Suite Admin root-administration route once HTTP root workflows land (21).",
+        ("suite/meet/api/test/test_recording.py|drive-table-write|Drive Root",),
     ),
     **_debt(
         "Drive and adopting product owners",
@@ -77,7 +80,6 @@ BASELINE_DEBT = {
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#2",
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#3",
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#4",
-            "suite/hooks.py|dotted-string|suite.drive.utils.users.create_drive_settings",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.auto_delete_from_trash",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_deleted_files",
             "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_download_archives",
@@ -85,15 +87,10 @@ BASELINE_DEBT = {
             "suite/hooks.py|dotted-string|suite.drive.overrides.file.after_file_upload",
             "suite/hooks.py|dotted-string|suite.drive.api.product.after_request",
             "suite/hooks.py|dotted-string|suite.drive.webdav.dispatch.handle_before_request",
-            "suite/meet/api/recording.py|import|suite.drive.api.storage",
             "suite/meet/api/recording.py|import|suite.drive.utils",
-            "suite/meet/api/test/test_recording.py|import|suite.drive.api.storage",
-            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.api.storage.get_quota",
             "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.api.files",
             "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils",
             "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils.files",
-            "suite/meet/doctype/meet_recording/meet_recording.py|import|suite.drive.api.storage",
-            "suite/meet/recording/ingest.py|import|suite.drive.api.storage",
             "suite/meet/recording/ingest.py|import|suite.drive.utils",
             "suite/meet/recording/ingest.py|import|suite.drive.utils.files",
             "suite/sheets/api.py|import|suite.drive.api.permissions",
@@ -194,7 +191,16 @@ BASELINE_DEBT = {
 
 def _owner(path):
     parts = PurePosixPath(path).parts
-    if len(parts) > 1 and parts[0] == "suite" and parts[1] in PRODUCTS | {"suite_core"}:
+    if (
+        len(parts) > 1
+        and parts[0] == "suite"
+        and parts[1]
+        in PRODUCTS
+        | {
+            "composition",
+            "suite_core",
+        }
+    ):
         return parts[1]
     return None
 
@@ -206,6 +212,8 @@ def _classify(path, module):
 
     source = _owner(path)
     target = parts[1]
+    if source == "composition":
+        return None
     if source == "drive" and target in CONTENT_PRODUCTS:
         return "Drive imports a concrete content-product implementation"
     if source == "suite_core" and target in PRODUCTS:
@@ -224,6 +232,75 @@ def _classify(path, module):
         if module != f"suite.{target}":
             return "Suite-level code imports a product below its package-root interface"
     return None
+
+
+DRIVE_TABLE_WRITE_CALLS = frozenset(
+    {
+        "frappe.db.set_value",
+        "frappe.db.set_single_value",
+        "frappe.db.delete",
+        "frappe.db.bulk_insert",
+        "frappe.delete_doc",
+        "frappe.new_doc",
+        "frappe.rename_doc",
+    }
+)
+DRIVE_TABLE_WRITE_REASON = "code outside Drive writes a Drive table directly"
+
+
+def _dotted_call_name(node):
+    parts = []
+    current = node.func
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if not isinstance(current, ast.Name):
+        return None
+    parts.append(current.id)
+    return ".".join(reversed(parts))
+
+
+def _drive_doctype_argument(node):
+    """Return the Drive DocType a call writes to, or None."""
+    name = _dotted_call_name(node)
+    if not name or not node.args:
+        return None
+    first = node.args[0]
+    if name in DRIVE_TABLE_WRITE_CALLS:
+        if isinstance(first, ast.Constant) and str(first.value).startswith("Drive "):
+            return first.value
+        return None
+    if name in ("frappe.get_doc", "frappe.new_doc") and isinstance(first, ast.Dict):
+        for key, value in zip(first.keys, first.values, strict=True):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value == "doctype"
+                and isinstance(value, ast.Constant)
+                and str(value.value).startswith("Drive ")
+            ):
+                return value.value
+        return None
+    if name == "frappe.db.sql" and isinstance(first, ast.Constant):
+        statement = str(first.value).strip().split(None, 1)[0].upper() if first.value.strip() else ""
+        if statement in ("UPDATE", "INSERT", "DELETE", "REPLACE") and "tabDrive " in first.value:
+            return "tabDrive"
+    return None
+
+
+def table_write_violations(path, tree):
+    """Enforce ARCHITECTURE.md rule 5.5 for every caller outside Drive."""
+    if PurePosixPath(path).parts[:2] == ("suite", "drive"):
+        return []
+    violations = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        doctype = _drive_doctype_argument(node)
+        if doctype:
+            violations.append(
+                Violation(path, node.lineno, "drive-table-write", doctype, DRIVE_TABLE_WRITE_REASON)
+            )
+    return violations
 
 
 def _modules(node):
@@ -246,7 +323,10 @@ def violations_in_tree(path, tree):
             reason = _classify(path, module)
             if reason:
                 violations.append(Violation(path, node.lineno, kind, module, reason))
-    return sorted(violations, key=lambda violation: (violation.path, violation.line, violation.kind, violation.module))
+    violations.extend(table_write_violations(path, tree))
+    return sorted(
+        violations, key=lambda violation: (violation.path, violation.line, violation.kind, violation.module)
+    )
 
 
 def python_violations():
@@ -278,13 +358,15 @@ class TestArchitecture(unittest.TestCase):
         resolved = sorted(set(BASELINE_DEBT) - set(actual))
         details = []
         if unexpected:
-            details.append("New boundary violations:\n" + "\n".join(
-                f"  {key} (line {actual[key].line}: {actual[key].reason})" for key in unexpected
-            ))
+            details.append(
+                "New boundary violations:\n"
+                + "\n".join(f"  {key} (line {actual[key].line}: {actual[key].reason})" for key in unexpected)
+            )
         if resolved:
-            details.append("Resolved debt still present in BASELINE_DEBT:\n" + "\n".join(
-                f"  {key} (owner: {BASELINE_DEBT[key].owner})" for key in resolved
-            ))
+            details.append(
+                "Resolved debt still present in BASELINE_DEBT:\n"
+                + "\n".join(f"  {key} (owner: {BASELINE_DEBT[key].owner})" for key in resolved)
+            )
         self.assertFalse(details, "\n\n".join(details))
 
     def test_forbidden_static_and_dynamic_imports_are_detected(self):
@@ -296,13 +378,55 @@ class TestArchitecture(unittest.TestCase):
         self.assertEqual(len(violations), 2)
         self.assertTrue(all("package-root interface" in violation.reason for violation in violations))
 
+    def test_drive_table_writes_outside_drive_are_detected(self):
+        source = (
+            "frappe.db.set_value('Drive Root', root, 'used_bytes', 1)\n"
+            "frappe.db.delete('Drive Grant', {'node': node})\n"
+            "frappe.get_doc({'doctype': 'Drive Storage Reservation', 'root': root}).insert()\n"
+            "frappe.new_doc('Drive Node')\n"
+            "frappe.db.sql('UPDATE `tabDrive Root` SET used_bytes = 0')\n"
+        )
+        violations = violations_in_tree("suite/meet/new_caller.py", ast.parse(source))
+        self.assertEqual([violation.kind for violation in violations], ["drive-table-write"] * 5)
+        self.assertTrue(all(DRIVE_TABLE_WRITE_REASON == v.reason for v in violations))
+
+    def test_drive_reads_and_drive_owned_writes_are_allowed(self):
+        source = (
+            "frappe.db.get_value('Drive Root', root, 'used_bytes')\n"
+            "frappe.get_all('Drive Node', filters={'root': root})\n"
+            "frappe.db.sql('SELECT name FROM `tabDrive Node`')\n"
+            "frappe.db.count('Drive Storage Reservation', {'root': root})\n"
+        )
+        self.assertEqual(violations_in_tree("suite/meet/new_caller.py", ast.parse(source)), [])
+        write = "frappe.db.delete('Drive Grant', {'node': node})\n"
+        self.assertEqual(violations_in_tree("suite/drive/_core/roots.py", ast.parse(write)), [])
+
     def test_package_root_import_is_allowed(self):
         tree = ast.parse("from suite import drive\n")
         self.assertEqual(violations_in_tree("suite/writer/new_caller.py", tree), [])
 
     def test_drive_public_interface_is_explicit_and_complete_only(self):
         self.assertIsInstance(drive.__all__, tuple)
-        self.assertEqual(drive.__all__, ())
+        self.assertEqual(
+            drive.__all__,
+            (
+                "bind_legacy_storage_reservation",
+                "create_storage_reservation",
+                "ensure_personal_root",
+                "get_storage_reservation",
+                "get_storage_usage",
+                "grow_storage_reservation",
+                "personal_root_for",
+                "reduce_storage_reservation",
+                "release_storage_reservation",
+            ),
+        )
+        for name in drive.__all__:
+            self.assertTrue(getattr(drive, name, None), name)
+        self.assertIn("## Errors", drive.__doc__)
+        self.assertIn("## Transactions", drive.__doc__)
+        self.assertIn("## Permissions", drive.__doc__)
+        self.assertIn("## Performance", drive.__doc__)
 
     def test_every_baseline_entry_has_a_removal_owner(self):
         for key, debt in BASELINE_DEBT.items():

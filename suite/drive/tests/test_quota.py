@@ -1,18 +1,31 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from unittest.mock import call, patch
+from uuid import uuid4
 
 import frappe
-from frappe.tests import UnitTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive._core.errors import DriveNotFound, DriveOverQuota
 from suite.drive._core.quota import (
     ADMIT_SQL,
     RELEASE_SQL,
     admit,
+    bind_legacy_storage_reservation,
+    create_storage_reservation,
     effective_quota,
+    get_storage_reservation,
+    get_storage_usage,
+    grow_storage_reservation,
     preflight,
+    recompute_usage,
+    reduce_storage_reservation,
     release,
+    release_storage_reservation,
     root_for_node,
 )
+from suite.drive._core.roots import create_root, personal_root_for
+from suite.drive.jobs import recompute_root_usage
 
 
 class TestQuotaContract(UnitTestCase):
@@ -80,3 +93,229 @@ class TestQuotaContract(UnitTestCase):
         with self.assertRaises(DriveNotFound):
             root_for_node({"name": "root", "kind": "root"})
         validate_pair.assert_called_once_with("root")
+
+    @patch("suite.drive.jobs.frappe.db.rollback")
+    @patch("suite.drive.jobs.frappe.db.commit")
+    @patch("suite.drive.jobs.frappe.log_error")
+    @patch("suite.drive.jobs.recompute_usage")
+    @patch("suite.drive.jobs.frappe.get_all", return_value=["active", "archived", "broken"])
+    def test_daily_recompute_isolates_roots_and_logs_drift(
+        self, _get_all, recompute, log_error, commit, rollback
+    ):
+        recompute.side_effect = [
+            frappe._dict(root="active", drift=0),
+            frappe._dict(root="archived", drift=9),
+            RuntimeError("broken"),
+        ]
+
+        result = recompute_root_usage()
+
+        self.assertEqual(result, {"roots": 3, "corrected": 1, "failed": 1})
+        self.assertEqual(commit.call_count, 2)
+        rollback.assert_called_once_with()
+        self.assertEqual(log_error.call_count, 2)
+
+
+class TestRootReservationsAndRecompute(IntegrationTestCase):
+    user = "Administrator"
+
+    def setUp(self):
+        super().setUp()
+        self.root = create_root(
+            kind="Personal", title="Reservation root", user=self.user, quota_bytes=100
+        ).name
+
+    def tearDown(self):
+        node_ids = tuple(frappe.get_all("Drive Node", filters={"root": self.root}, pluck="name"))
+        if node_ids:
+            frappe.db.delete("Drive Node Version", {"node": ["in", node_ids]})
+            frappe.db.delete("Drive Node", {"name": ["in", node_ids]})
+        frappe.db.delete("Drive Storage Reservation", {"root": self.root})
+        frappe.db.delete("Drive Grant", {"node": self.root})
+        frappe.db.delete("Drive Root", self.root)
+        frappe.db.delete("Drive Node", self.root)
+        super().tearDown()
+
+    def test_create_resize_release_are_root_keyed_idempotent_and_charged(self):
+        self.assertTrue(frappe.db.has_index("tabDrive Storage Reservation", "root_index"))
+        created = create_storage_reservation(self.root, "quota-test", 60)
+        retried = create_storage_reservation(self.root, "quota-test", 60)
+        self.assertEqual(created, retried)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 60)
+
+        with self.assertRaises(DriveOverQuota):
+            grow_storage_reservation(self.root, "quota-test", 101)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 60)
+
+        reduced = reduce_storage_reservation(self.root, "quota-test", 25)
+        self.assertEqual(reduced.reserved_bytes, 25)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 25)
+        release_storage_reservation(self.root, "quota-test")
+        release_storage_reservation(self.root, "quota-test")
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+
+    def test_recompute_repairs_nodes_versions_and_reservations(self):
+        child = frappe.get_doc(
+            {
+                "doctype": "Drive Node",
+                "title": "Charged node",
+                "parent": self.root,
+                "root": self.root,
+                "path": "",
+                "kind": "folder",
+                "state": "Active",
+                "size": 0,
+                "is_template": 0,
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.set_value("Drive Node", child.name, "size", 7, update_modified=False)
+        frappe.get_doc(
+            {
+                "doctype": "Drive Node Version",
+                "node": child.name,
+                "seq": 1,
+                "kind": "auto",
+                "size": 5,
+            }
+        ).insert(ignore_permissions=True)
+        create_storage_reservation(self.root, "recompute-test", 11)
+        frappe.db.set_value("Drive Root", self.root, "used_bytes", 999, update_modified=False)
+
+        result = recompute_usage(self.root)
+
+        self.assertEqual((result.nodes, result.versions, result.reserved), (7, 5, 11))
+        self.assertEqual(result.after, 23)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 23)
+
+    def test_every_operation_stays_on_the_bound_root_once_it_is_archived(self):
+        """Archive then reprovision must not move a charged reservation.
+
+        This is the Meet recording case: the room owner is offboarded while a
+        recording is running, a same-email replacement gets a fresh Active
+        root, and every remaining call on the running reservation has to keep
+        finding and charging the archived root.
+        """
+        create_storage_reservation(self.root, "archived-recovery", 40)
+        frappe.db.set_value("Drive Root", self.root, "state", "Archived", update_modified=False)
+        replacement = create_root(kind="Personal", title="Replacement", user=self.user, quota_bytes=100)
+        self.addCleanup(self._drop_root, replacement.name)
+
+        self.assertEqual(personal_root_for(self.user), replacement.name)
+        self.assertEqual(get_storage_reservation("archived-recovery").root, self.root)
+
+        usage = get_storage_usage(self.root)
+        self.assertEqual((usage.used_bytes, usage.reserved_bytes), (40, 40))
+
+        grown = grow_storage_reservation(None, "archived-recovery", 60)
+        reduced = reduce_storage_reservation(None, "archived-recovery", 25)
+        release_storage_reservation(None, "archived-recovery")
+
+        self.assertEqual((grown.root, grown.reserved_bytes), (self.root, 60))
+        self.assertEqual((reduced.root, reduced.reserved_bytes), (self.root, 25))
+        self.assertFalse(frappe.db.exists("Drive Storage Reservation", "archived-recovery"))
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+        self.assertEqual(frappe.db.get_value("Drive Root", replacement.name, "used_bytes"), 0)
+
+    def test_a_grow_beyond_the_archived_root_quota_is_still_refused(self):
+        create_storage_reservation(self.root, "archived-limit", 60)
+        frappe.db.set_value("Drive Root", self.root, "state", "Archived", update_modified=False)
+
+        with self.assertRaises(DriveOverQuota):
+            grow_storage_reservation(None, "archived-limit", 101)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 60)
+        release_storage_reservation(None, "archived-limit")
+
+    def test_binding_a_legacy_reservation_charges_it_once_and_never_rebinds(self):
+        frappe.get_doc(
+            {
+                "doctype": "Drive Storage Reservation",
+                "name": "legacy-adopt",
+                "storage_owner": self.user,
+                "reserved_bytes": 30,
+            }
+        ).insert(ignore_permissions=True)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+
+        adopted = bind_legacy_storage_reservation(self.root, "legacy-adopt", 30)
+
+        self.assertEqual((adopted.root, adopted.reserved_bytes), (self.root, 30))
+        self.assertIsNone(frappe.db.get_value("Drive Storage Reservation", "legacy-adopt", "storage_owner"))
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 30)
+
+        other = create_root(kind="Shared", title="Other root", quota_bytes=100)
+        self.addCleanup(self._drop_root, other.name)
+
+        # A rerun against a different root keeps the original binding and only
+        # corrects the amount, so neither counter is charged twice.
+        rebound = bind_legacy_storage_reservation(other.name, "legacy-adopt", 45)
+
+        self.assertEqual((rebound.root, rebound.reserved_bytes), (self.root, 45))
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 45)
+        self.assertEqual(frappe.db.get_value("Drive Root", other.name, "used_bytes"), 0)
+
+        release_storage_reservation(None, "legacy-adopt")
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+
+    def test_releasing_an_unbound_legacy_reservation_charges_no_root(self):
+        frappe.get_doc(
+            {
+                "doctype": "Drive Storage Reservation",
+                "name": "legacy-release",
+                "storage_owner": self.user,
+                "reserved_bytes": 30,
+            }
+        ).insert(ignore_permissions=True)
+
+        release_storage_reservation(None, "legacy-release")
+        release_storage_reservation(None, "legacy-release")
+
+        self.assertFalse(frappe.db.exists("Drive Storage Reservation", "legacy-release"))
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
+
+    def _drop_root(self, root: str) -> None:
+        frappe.db.delete("Drive Storage Reservation", {"root": root})
+        frappe.db.delete("Drive Grant", {"node": root})
+        frappe.db.delete("Drive Root", root)
+        frappe.db.delete("Drive Node", root)
+
+    def test_concurrent_reservations_admit_exactly_one_near_quota(self):
+        marker = uuid4().hex
+        keys = (f"reservation-race:{marker}:1", f"reservation-race:{marker}:2")
+        frappe.db.set_value(
+            "Drive Root", self.root, {"quota_bytes": 10, "used_bytes": 0}, update_modified=False
+        )
+        frappe.db.commit()
+        site = frappe.local.site
+        barrier = Barrier(2)
+
+        def attempt(key):
+            frappe.init(site, force=True)
+            frappe.connect()
+            try:
+                barrier.wait(timeout=10)
+                try:
+                    create_storage_reservation(self.root, key, 6)
+                    frappe.db.commit()
+                    return "admitted"
+                except DriveOverQuota:
+                    frappe.db.rollback()
+                    return "refused"
+            finally:
+                frappe.destroy()
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = (pool.submit(attempt, keys[0]), pool.submit(attempt, keys[1]))
+                results = [future.result(timeout=30) for future in futures]
+            frappe.db.rollback()
+            self.assertEqual(sorted(results), ["admitted", "refused"])
+            self.assertEqual(frappe.db.count("Drive Storage Reservation", {"name": ["in", keys]}), 1)
+            self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 6)
+        finally:
+            frappe.db.rollback()
+            frappe.db.delete("Drive Storage Reservation", {"name": ["in", keys]})
+            frappe.db.delete("Drive Grant", {"node": self.root})
+            frappe.db.delete("Drive Root", self.root)
+            frappe.db.delete("Drive Node", self.root)
+            frappe.db.commit()

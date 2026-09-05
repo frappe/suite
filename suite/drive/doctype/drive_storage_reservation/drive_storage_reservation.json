@@ -4,16 +4,23 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "root",
   "storage_owner",
   "reserved_bytes"
  ],
  "fields": [
   {
+   "fieldname": "root",
+   "fieldtype": "Link",
+   "label": "Root",
+   "options": "Drive Root",
+   "search_index": 1
+  },
+  {
    "fieldname": "storage_owner",
    "fieldtype": "Link",
    "label": "Storage Owner",
    "options": "User",
-   "reqd": 1,
    "search_index": 1
   },
   {
