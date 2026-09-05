@@ -44,9 +44,7 @@ class TestListingContract(UnitTestCase):
 
     @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
     @patch("suite.drive._core.nodes.frappe.db.sql")
-    def test_folder_window_uses_exactly_three_queries_and_advances_past_hidden_rows(
-        self, sql, _now
-    ):
+    def test_folder_window_uses_exactly_three_queries_and_advances_past_hidden_rows(self, sql, _now):
         parent = frappe._dict(
             _drive_parent=0,
             name="root",
@@ -124,9 +122,7 @@ class TestListingContract(UnitTestCase):
     @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
     @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
     @patch("suite.drive._core.nodes.frappe.db.sql")
-    def test_locked_parent_preserves_the_ticket08_error_on_denial(
-        self, sql, _node_now, _access_now
-    ):
+    def test_locked_parent_preserves_the_ticket08_error_on_denial(self, sql, _node_now, _access_now):
         token = "A" * 22
         principals = Principals(VIEWER, (VIEWER,), (f"$LINK:{token}",))
         sql.side_effect = [
@@ -149,9 +145,7 @@ class TestListingContract(UnitTestCase):
     @patch("suite.drive._core.access.now", return_value="2026-09-05 12:00:00")
     @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
     @patch("suite.drive._core.nodes.frappe.db.sql")
-    def test_expired_parent_preserves_the_ticket08_error_on_denial(
-        self, sql, _node_now, _access_now
-    ):
+    def test_expired_parent_preserves_the_ticket08_error_on_denial(self, sql, _node_now, _access_now):
         token = "B" * 22
         principals = Principals(VIEWER, (VIEWER,), (f"$LINK:{token}",))
         sql.side_effect = [
@@ -216,9 +210,7 @@ class TestListingContract(UnitTestCase):
         self.assertIn("ancestor_grant.principal IN %(own)s", SHARED_SQL)
 
     def test_path_schema_is_data_500_with_a_full_composite_index(self):
-        schema_path = (
-            Path(__file__).parents[1] / "doctype" / "drive_node" / "drive_node.json"
-        )
+        schema_path = Path(__file__).parents[1] / "doctype" / "drive_node" / "drive_node.json"
         fields = {field["fieldname"]: field for field in json.loads(schema_path.read_text())["fields"]}
         self.assertEqual(fields["path"]["fieldtype"], "Data")
         self.assertEqual(fields["path"]["length"], 500)
@@ -239,9 +231,7 @@ class TestDriveViews(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.set_user("Administrator")
-        self._root_nodes_before = set(
-            frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name")
-        )
+        self._root_nodes_before = set(frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name"))
         self._root_metadata_before = set(frappe.get_all("Drive Root", pluck="name"))
         self.personal = create_root(kind="Personal", title="Viewer", user=VIEWER)
         self.other = create_root(kind="Personal", title="Other", user=OTHER)
@@ -287,12 +277,11 @@ class TestDriveViews(IntegrationTestCase):
         trash_root: str | None = None,
         content_doctype: str | None = None,
     ):
-        parent = frappe.db.get_value(
-            "Drive Node", parent_id, ["name", "kind", "root", "path"], as_dict=True
-        )
+        parent = frappe.db.get_value("Drive Node", parent_id, ["name", "kind", "root", "path"], as_dict=True)
         root = parent.name if parent.kind == "root" else parent.root
         path = "" if parent.kind == "root" else f"{parent.path or '/'}{parent.name}/"
-        stored_trash_root = None if trash_root == "self" else trash_root
+        self_trashed = trash_root == "self"
+        stored_trash_root = None if self_trashed else trash_root
         node = frappe.get_doc(
             {
                 "doctype": "Drive Node",
@@ -301,16 +290,22 @@ class TestDriveViews(IntegrationTestCase):
                 "root": root,
                 "path": path,
                 "kind": kind,
-                "state": state,
+                "state": "Active" if self_trashed else state,
                 "size": 0,
                 "is_template": is_template,
-                "trashed_at": trashed_at,
+                "trashed_at": None if self_trashed else trashed_at,
                 "trash_root": stored_trash_root,
                 "content_doctype": content_doctype,
             }
         ).insert(ignore_permissions=True)
-        if trash_root == "self":
-            frappe.db.set_value("Drive Node", node.name, "trash_root", node.name)
+        if self_trashed:
+            frappe.db.set_value(
+                "Drive Node",
+                node.name,
+                {"state": "Trashed", "trashed_at": trashed_at, "trash_root": node.name},
+            )
+            node.state = "Trashed"
+            node.trashed_at = trashed_at
             node.trash_root = node.name
         return node
 
@@ -328,7 +323,7 @@ class TestDriveViews(IntegrationTestCase):
         visible = self._node(self.personal.name, "A visible")
         folder = self._node(self.personal.name, "A folder")
         nested = self._node(folder.name, "Nested visible")
-        self._node(self.personal.name, "B template", is_template=1)
+        self._node(self.personal.name, "B template", kind="document", is_template=1)
         hidden = self._node(self.personal.name, "C hidden")
         self._grant(hidden.name, VIEWER, NONE)
 
@@ -404,12 +399,14 @@ class TestDriveViews(IntegrationTestCase):
         template = self._node(
             self.other.name,
             "Template",
+            kind="document",
             is_template=1,
             content_doctype="User",
         )
         other_template = self._node(
             self.other.name,
             "Other template",
+            kind="document",
             is_template=1,
             content_doctype="Role",
         )
@@ -427,9 +424,7 @@ class TestDriveViews(IntegrationTestCase):
             {template.name, other_template.name},
         )
         self.assertEqual(
-            [row.name for row in views(
-                self.principals, "templates", content_doctype="User"
-            )["rows"]],
+            [row.name for row in views(self.principals, "templates", content_doctype="User")["rows"]],
             [template.name],
         )
         self.assertEqual(
@@ -462,9 +457,7 @@ class TestDriveViews(IntegrationTestCase):
         second = self._node(self.other.name, "needle two")
         self._grant(self.other.name, VIEWER, READ)
 
-        with patch(
-            "suite.drive._core.nodes._grant_rows", wraps=nodes_module._grant_rows
-        ) as grant_rows:
+        with patch("suite.drive._core.nodes._grant_rows", wraps=nodes_module._grant_rows) as grant_rows:
             rows = views(self.principals, "search", term="needle")["rows"]
 
         self.assertEqual({row.name for row in rows}, {first.name, second.name})
