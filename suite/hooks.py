@@ -379,8 +379,11 @@ ignore_links_on_delete = [
     "Drive DAV Property",
     "Drive DAV Lock",
     # drive — records that link a User and outlive them. Offboarding archives
-    # the Personal Root and keeps its nodes, grants, and byte charges, so the
-    # framework's link check must not refuse the User delete over any of them.
+    # the Personal Root and keeps its nodes, grants, byte charges, and every
+    # attributed record, so the framework's link check must not refuse the User
+    # delete over any of them. suite.drive.install.on_user_trash runs first and
+    # deletes the private rows (Drive Recent, Drive Favourite, Drive
+    # Notification) so a recreated email inherits none of them.
     "Drive Root",
     "Drive Activity",
     "Drive Node Version",

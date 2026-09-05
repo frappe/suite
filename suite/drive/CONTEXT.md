@@ -299,6 +299,9 @@ _Avoid_: Deletion, Ownership transfer, Handover
   the content there.
 - Recreating a deleted user's email address gives a fresh **Personal Root**,
   never the archived one.
+- **Offboarding** deletes the departed user's **Favourites**, **Recents**, and
+  **Notifications**. They are that one person's own, so a recreated address
+  starts with none of them. Nothing anyone else can see is removed.
 - A **Content Document** has exactly one Drive Node, and that node has exactly
   one Content Document. Neither reference ever changes.
 - A **Content Document** has no title and no trash state of its own. Its node

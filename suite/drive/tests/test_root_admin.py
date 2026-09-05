@@ -1,9 +1,10 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite.drive._core.activity import discard_personal_records, notify_users, record, set_favourite, visit
 from suite.drive._core.errors import DriveConflict, DriveForbidden
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import create_storage_reservation
@@ -15,6 +16,7 @@ from suite.drive._core.roots import (
     purge_root,
     update_root,
 )
+from suite.tests.utils import stub_db
 
 
 class TestRootAdministrationContract(UnitTestCase):
@@ -31,6 +33,75 @@ class TestRootAdministrationContract(UnitTestCase):
         _delete_existing_reference("Drive Node Preview", "node", ("node",))
 
         delete_reference.assert_not_called()
+
+
+class TestRootPurgeLockOrder(UnitTestCase):
+    """Purge takes the same lock order as every other Drive tree workflow.
+
+    `_lock_tree_chains` locks descendants shallowest first and the root node
+    last, then the workflow locks `Drive Root`. A purge that took the root
+    first would deadlock against a concurrent upload or move inside the same
+    archived root instead of waiting for it.
+    """
+
+    ROOT = "archived-root-node"
+
+    def _locked(self):
+        locked = []
+        node = frappe._dict(
+            name=self.ROOT,
+            title="My Drive",
+            parent=None,
+            root=None,
+            path="",
+            kind="root",
+            blob=None,
+            size=0,
+            mime=None,
+            url=None,
+            content_doctype=None,
+            content_docname=None,
+            state="Active",
+            trashed_at=None,
+            trash_root=None,
+            is_template=0,
+            owner="leaver@example.com",
+        )
+        metadata = frappe._dict(
+            name=self.ROOT,
+            node=self.ROOT,
+            kind="Personal",
+            user="leaver@example.com",
+            state="Archived",
+            quota_bytes=0,
+            used_bytes=0,
+        )
+
+        def get_value(doctype, *args, **kwargs):
+            if kwargs.get("for_update"):
+                locked.append(doctype)
+            return node if doctype == "Drive Node" else metadata
+
+        def sql(query, *args, **kwargs):
+            if "FOR UPDATE" in query:
+                locked.append("descendants")
+            return []
+
+        db = MagicMock()
+        db.get_value.side_effect = get_value
+        db.sql.side_effect = sql
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        with stub_db(db):
+            with patch(
+                "suite.drive._core.roots._validate_root_descendants",
+                side_effect=RuntimeError("stop after locking"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "stop after locking"):
+                    purge_root(self.ROOT, admin)
+        return locked
+
+    def test_descendants_lock_before_the_root_node_and_its_metadata(self):
+        self.assertEqual(self._locked(), ["descendants", "Drive Node", "Drive Root"])
 
 
 class TestRootAdministration(IntegrationTestCase):
@@ -206,3 +277,82 @@ class TestUserOffboarding(IntegrationTestCase):
                 frappe.db.delete("Drive Grant", {"node": root})
                 frappe.db.delete("Drive Root", root)
                 frappe.db.delete("Drive Node", root)
+
+    def test_offboarding_discards_private_records_and_keeps_attributed_ones(self):
+        email = f"drive-private-{uuid4().hex}@example.com"
+        created_roots = []
+        try:
+            user = frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": email,
+                    "first_name": "Drive Private",
+                    "enabled": 1,
+                    "new_password": uuid4().hex,
+                }
+            )
+            user.flags.skip_drive_setup = True
+            user.insert(ignore_permissions=True)
+            root = personal_root_for(email)
+            created_roots.append(root)
+            leaver = Principals(email, (email,), ())
+
+            visit(leaver, root)
+            set_favourite(leaver, root, True)
+            activity = record(leaver, root, "create", detail={"kind": "root"})
+            notify_users(activity, (email,))
+            self.assertTrue(frappe.db.exists("Drive Recent", {"user": email}))
+            self.assertTrue(frappe.db.exists("Drive Favourite", {"user": email}))
+            self.assertTrue(frappe.db.exists("Drive Notification", {"to_user": email}))
+
+            frappe.delete_doc("User", email, ignore_permissions=True, force=True)
+
+            self.assertFalse(frappe.db.exists("Drive Recent", {"user": email}))
+            self.assertFalse(frappe.db.exists("Drive Favourite", {"user": email}))
+            self.assertFalse(frappe.db.exists("Drive Notification", {"to_user": email}))
+            # Attributed history and specified access outlive the person.
+            self.assertEqual(frappe.db.get_value("Drive Activity", activity, "actor"), email)
+            self.assertTrue(frappe.db.exists("Drive Grant", {"node": root, "principal": email}))
+            self.assertEqual(frappe.db.get_value("Drive Root", root, "state"), "Archived")
+
+            replacement = frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": email,
+                    "first_name": "Drive Replacement",
+                    "enabled": 1,
+                    "new_password": uuid4().hex,
+                }
+            )
+            replacement.flags.skip_drive_setup = True
+            replacement.insert(ignore_permissions=True)
+            created_roots.append(personal_root_for(email))
+
+            self.assertFalse(frappe.db.exists("Drive Recent", {"user": email}))
+            self.assertFalse(frappe.db.exists("Drive Favourite", {"user": email}))
+            self.assertFalse(frappe.db.exists("Drive Notification", {"to_user": email}))
+        finally:
+            frappe.set_user("Administrator")
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True)
+            discard_personal_records(email)
+            for root in filter(None, created_roots):
+                activities = frappe.get_all("Drive Activity", filters={"node": root}, pluck="name")
+                if activities:
+                    frappe.db.delete("Drive Notification", {"activity": ["in", tuple(activities)]})
+                frappe.db.delete("Drive Recent", {"node": root})
+                frappe.db.delete("Drive Favourite", {"node": root})
+                frappe.db.delete("Drive Activity", {"node": root})
+                frappe.db.delete("Drive Storage Reservation", {"root": root})
+                frappe.db.delete("Drive Grant", {"node": root})
+                frappe.db.delete("Drive Root", root)
+                frappe.db.delete("Drive Node", root)
+
+    def test_discarding_private_records_is_idempotent_and_needs_a_user(self):
+        email = f"drive-idempotent-{uuid4().hex}@example.com"
+        self.assertEqual(
+            discard_personal_records(email),
+            {"Drive Recent": 0, "Drive Favourite": 0, "Drive Notification": 0},
+        )
+        with self.assertRaises(frappe.ValidationError):
+            discard_personal_records("")

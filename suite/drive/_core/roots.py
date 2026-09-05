@@ -42,8 +42,8 @@ def create_root(
         )
         _insert_anchor_grant(node=node.name, kind=kind, user=user)
         validate_root_pair(node.name)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -110,19 +110,25 @@ def update_root(
 
 
 def purge_root(root: str, principals: Principals) -> frappe._dict:
-    """Atomically remove one explicitly selected Archived root pair."""
+    """Atomically remove one explicitly selected Archived root pair.
+
+    Lock order matches every other Drive tree workflow: descendants shallowest
+    first, then the root node, then the `Drive Root` row. An upload or a move
+    inside the archived root takes the same order, so the two wait for each
+    other instead of deadlocking. The Archived state is read once without a
+    lock to refuse an Active root cheaply, then proved again under the lock.
+    """
     _require_admin(principals)
+    _require_archived(validate_root_pair(root))
     savepoint = f"drive_root_purge_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        pair = validate_root_pair(root, for_update=True)
-        if pair.root.state != "Archived":
-            raise DriveForbidden(_("Only an Archived Drive root can be purged"))
         descendants = _locked_root_descendants(root)
+        _require_archived(validate_root_pair(root, for_update=True))
         _validate_root_descendants(root, descendants)
         _purge_root_rows(root, descendants)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -283,6 +289,18 @@ def _validate_quota(value: int) -> None:
         raise frappe.ValidationError(_("Drive root quota must be a nonnegative integer"))
 
 
+def _require_archived(pair: frappe._dict) -> None:
+    if pair.root.state != "Archived":
+        raise DriveForbidden(_("Only an Archived Drive root can be purged"))
+
+
+def _rollback_savepoint(savepoint: str, error: Exception) -> None:
+    """Roll one root workflow back without masking MariaDB's original deadlock."""
+    from suite.drive._core.nodes import _rollback_savepoint as rollback
+
+    rollback(savepoint, error)
+
+
 def _require_admin(principals: Principals) -> None:
     if not principals.is_admin:
         raise DriveForbidden(_("Suite Admin access is required"))
@@ -304,9 +322,11 @@ def _root_shape(pair: frappe._dict) -> frappe._dict:
 def _locked_root_descendants(root: str) -> list[frappe._dict]:
     from suite.drive._core.nodes import NODE_FIELDS
 
+    # Same order as `_subtree`: shallowest path first, then id. Every Drive
+    # workflow that locks a tree walks it in this direction.
     return frappe.db.sql(
         f"""SELECT {NODE_FIELDS} FROM `tabDrive Node`
-            WHERE root = %(root)s ORDER BY LENGTH(path) DESC, name FOR UPDATE""",
+            WHERE root = %(root)s ORDER BY CHAR_LENGTH(path), name FOR UPDATE""",
         {"root": root},
         as_dict=True,
     )
