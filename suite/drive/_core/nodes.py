@@ -411,6 +411,9 @@ def create_file(
             {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
             via_link=via_link,
         )
+        from suite.drive._core.previews import enqueue_render
+
+        enqueue_render(node.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
@@ -504,6 +507,7 @@ def _replace_file(
         # The old head's existing charge becomes the version's charge. Only
         # the new head increases total logical usage, including same-blob edits.
         admit(current.root, blob_row.file_size)
+        frappe.db.delete("Drive Node Preview", {"node": current.name})
         frappe.db.set_value(
             "Drive Node",
             current.name,
@@ -521,6 +525,9 @@ def _replace_file(
             {"blob": blob_row.name, "size": blob_row.file_size, "version": version},
             via_link=via_link,
         )
+        from suite.drive._core.previews import enqueue_render
+
+        enqueue_render(current.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
@@ -836,6 +843,8 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
         destination_root = root_id(destination)
         admit(destination_root, sum(int(row.size or 0) for row in source_rows))
 
+        from suite.drive._core.previews import copy_preview
+
         by_source: dict[str, frappe._dict] = {}
         for source_row in source_rows:
             copied_parent = destination if source_row.name == source.name else by_source[source_row.parent]
@@ -859,6 +868,7 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 {"kind": new_node.kind, "title": new_node.title, "copied_from": source_row.name},
                 via_link=activity_link,
             )
+            copy_preview(source_row.name, new_node.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
