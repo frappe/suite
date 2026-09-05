@@ -1169,7 +1169,7 @@ def _validate_purge_root(node: dict) -> None:
     cursor = node
     seen = {node.get("name")}
     for _depth_index in range(40):
-        parent = _node(cursor.get("parent"), for_update=True)
+        parent = _chain_node(cursor.get("parent"), for_update=True)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         expected_root = parent.name if parent.kind == "root" else parent.root
@@ -1303,14 +1303,28 @@ def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._d
 
     for depth in sorted(by_depth):
         for candidate in sorted(by_depth[depth]):
-            _node(candidate, for_update=True)
+            _chain_node(candidate, for_update=True)
     for root in sorted(roots):
-        _node(root, for_update=True)
+        _chain_node(root, for_update=True)
 
-    refreshed = {node_id: _node(node_id, for_update=True) for node_id in sorted(snapshots)}
+    refreshed = {node_id: _chain_node(node_id, for_update=True) for node_id in sorted(snapshots)}
     if any(tuple(chain_ids(refreshed[node_id])) != chain for node_id, chain in expected.items()):
         raise DriveConflict(_("The Drive tree changed; retry the operation"))
     return refreshed
+
+
+def _chain_node(node_id: str, *, for_update: bool = False) -> frappe._dict:
+    """Read one node the stored tree reached, refusing a missing row as a conflict.
+
+    Every id here comes from a stored parent, root, or path, or is a caller-named
+    node this workflow already found. A row missing now is corrupt or concurrently
+    removed structure, which the caller sees as a conflict, never as the node they
+    named being absent.
+    """
+    try:
+        return _node(node_id, for_update=for_update)
+    except DriveNotFound as exc:
+        raise DriveConflict(_("The Drive node has an invalid tree position")) from exc
 
 
 def _rollback_savepoint(savepoint: str, error: Exception) -> None:
@@ -1352,7 +1366,7 @@ def _validate_stored_position(node: frappe._dict, *, for_update: bool = False) -
             return
         if not cursor.parent or not cursor.root:
             raise DriveConflict(_("The Drive node has an invalid tree position"))
-        parent = _node(cursor.parent, for_update=for_update)
+        parent = _chain_node(cursor.parent, for_update=for_update)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         if parent.state != "Active" or parent.kind not in ("root", "folder", "document"):

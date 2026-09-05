@@ -10,7 +10,12 @@ from frappe.utils import now_datetime
 
 from suite.drive._core import nodes as node_workflows
 from suite.drive._core.access import effective_role
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveOverQuota
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveNotFound,
+    DriveOverQuota,
+)
 from suite.drive._core.nodes import (
     _content_purge_callbacks,
     _purge_locked,
@@ -768,6 +773,51 @@ class TestLifecyclePolicy(UnitTestCase):
             self.assertRaises(DriveConflict),
         ):
             node_workflows._lock_create_parent("descendant")
+
+    def test_create_parent_refuses_a_path_ancestor_that_no_longer_exists(self):
+        snapshot = frappe._dict(name="descendant", root="root", path="/gone/", kind="folder")
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=[snapshot, DriveNotFound("Drive node gone was not found")],
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            node_workflows._lock_create_parent("descendant")
+
+    def test_create_parent_still_reports_a_missing_parent_as_not_found(self):
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=DriveNotFound("Drive node ghost was not found"),
+            ),
+            self.assertRaises(DriveNotFound),
+        ):
+            node_workflows._lock_create_parent("ghost")
+
+    def test_stored_position_refuses_a_parent_row_that_no_longer_exists(self):
+        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=DriveNotFound("Drive node ghost was not found"),
+            ),
+            self.assertRaises(DriveConflict) as refused,
+        ):
+            node_workflows._validate_stored_position(orphan, for_update=True)
+        self.assertIsInstance(refused.exception.__cause__, DriveNotFound)
+
+    def test_purge_root_refuses_a_parent_row_that_no_longer_exists(self):
+        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        with (
+            patch("suite.drive._core.nodes.root_for_node"),
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=DriveNotFound("Drive node ghost was not found"),
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            node_workflows._validate_purge_root(orphan)
 
     def test_deadlock_cleanup_preserves_the_original_error(self):
         deadlock = frappe.QueryDeadlockError("deadlock")
