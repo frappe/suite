@@ -1,5 +1,6 @@
 import io
 import json
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -140,7 +141,11 @@ class TestPreviewContract(UnitTestCase):
                 patch("suite.drive._core.versions._insert_version", return_value=2),
                 patch("suite.drive._core.versions.admit"),
                 patch("suite.drive._core.versions._record_activity"),
-                patch("suite.drive._core.versions.enqueue_render") as enqueue,
+                patch(
+                    "suite.drive._core.versions.now_datetime",
+                    return_value=datetime(2026, 9, 6, 12),
+                ),
+                patch("suite.drive._core.previews.enqueue_render") as enqueue,
             ):
                 restore_version(self.admin, "node-a", 1)
             return db, enqueue
@@ -420,7 +425,7 @@ class TestPreviews(IntegrationTestCase):
         stale_preview = frappe.db.get_value("Drive Node Preview", {"node": node}, "blob")
         self.assertTrue(stale_preview)
 
-        with patch("suite.drive._core.versions.enqueue_render") as enqueue:
+        with patch("suite.drive._core.previews.enqueue_render") as enqueue:
             restore_version(self.admin, node, target_seq)
 
         self.assertFalse(frappe.db.exists("Drive Node Preview", {"node": node}))
@@ -432,7 +437,7 @@ class TestPreviews(IntegrationTestCase):
         preview = frappe.db.get_value("Drive Node Preview", {"node": node}, "blob")
         target_seq = take_version(self.admin, node, kind="named", label="green")
 
-        with patch("suite.drive._core.versions.enqueue_render") as enqueue:
+        with patch("suite.drive._core.previews.enqueue_render") as enqueue:
             restore_version(self.admin, node, target_seq)
 
         row = frappe.db.get_value("Drive Node Preview", {"node": node}, ["source_blob", "blob"], as_dict=True)
