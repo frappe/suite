@@ -13,6 +13,11 @@ HTTP API, WebDAV mapping, framework-side storage_v2 asks) plus a migration
 section from the current suite File-override data. Done when an
 implementation effort can execute from the documents alone.
 
+Status: complete on 2026-09-05. Every ticket is closed. The destination
+documents are [`drive-layer-spec.md`](drive-layer-spec.md) and
+[`drive-layer-plan.md`](drive-layer-plan.md). Not yet specified holds
+two conditional items only.
+
 ## Notes
 
 - Architecture is already decided (2026-09-02), outside this map:
@@ -161,6 +166,14 @@ implementation effort can execute from the documents alone.
   Cleanup, except three that are permanent (`api.s3.fetch` in stored URLs,
   `get_file_for_doc` in a built bundle, `/dav`); no upstream ask — `useCall`
   already reads the v2 shape, `useList` and `useDoc` do not fit.
+
+- [Draft the spec](tickets/013-draft-the-spec.md) — the destination:
+  [`drive-layer-spec.md`](drive-layer-spec.md) (fourteen sections, every
+  schema, query, route, and number) and
+  [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership, nine
+  stages); agents wrote and audited both; thirteen spec picks and one new
+  framework ask (upload gates for Drive and guests) are listed on the
+  ticket for review.
 
 ## Not yet specified
 
