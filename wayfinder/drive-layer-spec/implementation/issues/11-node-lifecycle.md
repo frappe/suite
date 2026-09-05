@@ -107,3 +107,42 @@ Deferred by the frozen plan:
 
 Generic document copy fails closed until ticket 16. No push, PR, install,
 restart, or migration was performed.
+
+### Post-completion concurrency correction
+
+Reviewed 2026-09-06 after a concurrent descendant create and cross-root move
+reproduced MariaDB deadlock 1213, whose cleanup then masked the cause with a
+missing-savepoint 1305. Suite correction revision `c0968458f` gives create,
+copy, and move one ancestry lock order: non-root rows by root-first depth and
+id, root-node rows last. It refreshes and rejects changed path snapshots before
+mutation, locks direct-insert parent/root validation reads, and preserves the
+original deadlock if InnoDB has already removed the workflow savepoint.
+
+The same review made optional purge reference cleanup require both DocType
+metadata and its table, so an orphan later-ticket table cannot break ticket 11
+purge. Deterministic source-side and destination-side move/create selectors
+each passed 1/1. The final node module passed 32/32 (9 unit, 23 integration),
+with no warnings, timeouts, or deadlocks, and fixture teardown completed.
+Static Ruff lint and format, Python compileall, and `git diff --check` also
+passed. No schema, migration, job, install, or restart was needed.
+
+### Corrupt ancestry error class correction
+
+Reviewed 2026-09-06 after the corrupt-path subcase of
+`TestDriveFileAccounting.test_corrupt_parent_root_and_path_are_refused_without_charging`
+failed. The ancestry lock order added by `c0968458f` locks each id the stored
+`root` and `path` name. A node whose path names a missing ancestor made that
+lock read raise `DriveNotFound`, so structural corruption reached the caller as
+404 instead of the 409 the contract states.
+
+The lock reads now go through one helper that translates a missing chain row
+into `DriveConflict`. The translation boundary is the lock order alone. The
+caller-named node is still read before the order begins, so a parent that does
+not exist, or that the caller may not see, keeps its `DriveNotFound`. Lock
+acquisition is unchanged: same ids, same depth-then-id order, root nodes last.
+
+Verified without the shared site: 61/61 Drive unit-shaped tests pass, including
+two new `_lock_create_parent` tests, and a fake-node harness shows both corrupt
+subcases refused as `DriveConflict` before any charge. Ruff lint and format
+pass. The integration case still needs `bench --site slides.localhost run-tests
+--module suite.drive.tests.test_upload`, which was not run here.

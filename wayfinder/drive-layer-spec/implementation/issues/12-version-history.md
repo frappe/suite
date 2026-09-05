@@ -4,7 +4,7 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 **Owner:** Suite Drive versions
 
@@ -28,5 +28,195 @@ Run file and fake-content contract tests with controlled time, concurrent seq al
 
 ## Completion evidence
 
-Record changed behavior, exact revisions, commands, results, and unresolved gates here.
-Keep this ticket open until its acceptance criteria pass. No implementation evidence recorded yet.
+Implemented 2026-09-06 from ticket 11 revision
+`228a5c19cc1b7a3d97222aa999d6061449667f02`. Frappe stayed at
+`158a173a1c8fb0083f2b352250f8ac4bba1781ba`. Finalized on 2026-09-06 after
+merging Drive layer revision `9cad154bf00220b713de2d1c0652fa0c4a242838`, which
+adds the corrupt-ancestry refusal. The merge was clean and touched only
+`_core/nodes.py`, `tests/test_nodes.py`, and ticket 11. Status stays
+`in-progress`: the integration tests need the shared bench site and have not
+run on this revision.
+
+Changed behavior:
+
+- `suite/drive/_core/versions.py` adds `take_version`, `list_versions`,
+  `label_version`, `delete_version`, `restore_version`, and `thin` with the
+  roles of §9.1: EDIT to take, label, and restore; READ to list; MANAGE to
+  delete.
+- A version row is immutable. `DriveNodeVersion.validate` throws if an ORM
+  save changes `node`, `seq`, `kind`, `actor`, `owner`, `size`, `blob`, or
+  `creation` on an existing row, so `label` and `pinned` are the only
+  ORM-mutable fields. That guard covers ORM saves only. Drive's own approved
+  mutators deliberately use direct DB operations: `label_version` calls
+  `frappe.db.set_value`, and `delete_version`, `_thin_node`, and the purge
+  sweep call `frappe.db.delete`. Both skip controller hooks by design. What
+  keeps rows immutable in practice is that `_core/versions.py` is the sole
+  writer and never updates those eight columns. The controller is the
+  defence-in-depth guard for Desk forms and future ORM callers.
+- `_insert_version` allocates `MAX(seq) + 1` under the node row lock every
+  caller already holds, so concurrent writers get unique sequences without a
+  counter field. `nodes._preserve_head` now delegates to
+  `versions.preserve_file_head`, so the replace path uses that one allocator.
+- Restore captures the current state first. A file node's old head charge
+  moves to the captured row and the restored head is admitted separately, so
+  the root delta is exactly the target size. A document body is free until it
+  is captured, so its captured bytes are admitted. A zero-byte old head
+  creates no row and returns 0.
+- Document bytes come from `ContentTypeSpec.version_bytes` and go back through
+  `restore_version`. File history reuses the head blob. Drive stores no second
+  copy and deletes no bytes.
+- The ladder keeps everything under 24 h, one per hour to 7 d, one per day to
+  30 d, one per week to 90 d, and nothing beyond. `named`, `milestone`, and
+  pinned rows are never candidates. `site_config.drive_version_ladder`
+  overrides the tiers and is validated for type and ordering.
+- `thin` runs one node per transaction and releases each removed size.
+  `suite.drive.jobs.thin_versions` registers it as a daily scheduler event.
+
+Review decisions recorded on this ticket:
+
+- **Root refusal.** Every version entry point now calls
+  `roots.reject_illegal_root_operation(node, "version")`, and `"version"`
+  joined `ILLEGAL_ROOT_OPERATIONS`. §8 lists versions beside move, copy,
+  trash, restore, and purge, so they share one guard and one `DriveForbidden`
+  message instead of a version-only phrasing.
+- **The content callback's MIME.** `version_bytes` returns `(stream, mime)`
+  per §10.1. The MIME is validated as a contract shape and then dropped.
+  Re-read of the spec: §3.4 lists eight fields for `Drive Node Version`
+  (`node`, `seq`, `kind`, `label`, `pinned`, `actor`, `size`, `blob`) and no
+  MIME column. §10.1 declares the return type and names no consumer and no
+  duty to persist or serve it. §11.2 specifies only "302 to a signed `/f/`
+  URL" for `GET /nodes/<id>/versions/<seq>/content`, with no response
+  content-type rule. Dropping the MIME therefore conforms to the spec as
+  written, and this stays a documentation correction, not a code gap against
+  §9.1 or §3.4.
+
+  The earlier "nothing is lost" claim was wrong and is withdrawn. It is
+  local-driver-specific. `frappe/storage/serve.py` recovers the type from the
+  download filename only on the `/f/` streaming path. On S3 that path never
+  runs: `signed_url_for_blob` returns the driver presigned URL, and
+  `serve_file` redirects before `stream_blob`. The S3 presigned URL sets
+  `ResponseContentDisposition` and no `ResponseContentType`, and the object is
+  written with no `ContentType`. A Writer version stored as JSON therefore
+  downloads as octet-stream on S3.
+
+  No architecture-consistent fix exists inside this ticket. Persisting the
+  MIME needs a §3.4 column. Serving it needs a `put_blob(content_type=)`
+  parameter plus S3 `ExtraArgs`, or `ResponseContentType` on the presigned
+  URL, which is §13 framework work and is not on the framework ask list.
+  Each amends an accepted decision, so nothing was implemented. The
+  limitation is recorded as a handoff below and as a `LIMITATION` and
+  `HANDOFF` comment at the `put_blob` call in `_content_version_blob`.
+- **Thinner transaction scope.** §7.2 makes the `Drive Root` row UPDATE the
+  quota lock. One transaction for the whole daily pass would hold that row for
+  every visited root until the job ended, blocking admission for every writer
+  on the site. `thin` now commits per node, and logs and skips a failing node,
+  matching `jobs.purge_trashed_nodes`. `_thin_node` holds the node row lock
+  for one node only and treats a node purged mid-pass as no work.
+- **Trashed nodes.** The inherited code refused all five workflows on a
+  trashed node. §8.8 says a trashed document opens read-only, which binds the
+  two calls that write the node's own bytes: `take_version` and
+  `restore_version` still refuse. §9.1 gives `label_version` EDIT and
+  `delete_version` MANAGE as their one condition, §7.1 makes deleting a
+  version the way to free its bytes, and the daily thinner already removes a
+  trashed node's auto history. Both now work while a node is trashed, so a
+  root over quota is not stranded until purge.
+- **The zero-byte head.** §9.1's exception reads "a replaced head of size 0 is
+  never kept", so it binds the two old-head captures. `preserve_file_head` and
+  restore enforce it. An explicit `take_version` of an empty file still writes
+  a size-0 row, which costs no bytes and is thinned as ordinary auto history.
+  A comment records the reading.
+
+An independent spec review of this implementation raised nine items. Four
+changed the code: the trashed-node split above, `owner` added to the
+controller's immutable field list, the lock precondition of
+`preserve_file_head` moved from a comment into its docstring, and four new
+unit tests (scheduler registration, node-kind refusals, ladder override
+validation, and the corrected trashed-node behavior). The rest are recorded
+here as deliberate readings or as handoffs below.
+
+Verification actually run in this worktree, without the bench and without the
+shared site:
+
+```text
+FILES=(suite/drive/_core/versions.py suite/drive/_core/roots.py suite/drive/_core/nodes.py suite/drive/jobs.py suite/drive/tests/test_versions.py suite/drive/tests/test_nodes.py suite/drive/doctype/drive_node_version/drive_node_version.py suite/hooks.py)
+uvx ruff@0.12.3 check "${FILES[@]}"
+uvx ruff@0.12.3 format --check "${FILES[@]}"
+/home/faris/benches/suite-bench/env/bin/python -m compileall -q "${FILES[@]}"
+git diff --check
+```
+
+All passed. Two no-database harnesses ran this worktree's own module under
+`PYTHONPATH` with `frappe.init()` and no `connect()`:
+
+- Every ladder boundary in the §9.1 table returned its decided tier, and
+  `_pick_deletions` kept the newest row per bucket.
+- `_require_version_node` refused a root with `DriveForbidden` ("The version
+  operation does not apply to a Drive root") and a folder and a link with
+  `DriveConflict`, and passed a file and a document.
+- `_require_content_version_node` refused a trashed file as read-only while
+  `_require_version_node` passed it, which is the label and delete split.
+- `thin` committed once per successful node, then rolled back, logged, and
+  continued past one failing node, returning `failed: 1`.
+- `_normalized_ladder` refused unknown tiers, negative hours, boolean hours,
+  unordered bounds, and a non-mapping, and read an override from
+  `frappe.conf`.
+- `suite.drive.jobs.thin_versions` is registered exactly once, under `daily`.
+- Every touched module imported cleanly from the worktree, proving no import
+  cycle through `nodes` -> `versions` -> `roots`, and
+  `suite.drive.jobs.thin_versions` resolved as a dotted hook target.
+
+Not run, and therefore not verified: the ten integration tests in
+`TestVersionWorkflows`. They need MariaDB and the shared bench site, which
+this run was not authorized to touch. The seven unit tests in
+`TestVersionLadder` were reproduced by the harnesses above but were not run
+through the Frappe test runner either. The commands are:
+
+```text
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
+cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_upload
+```
+
+`test_nodes` and `test_upload` are regression runs, because `_preserve_head`
+and the replace path now go through `versions.preserve_file_head`.
+
+Handoff to ticket 13, previews:
+
+Restoring a file version repoints the node's head blob, so it changes the
+node's bytes exactly as a replace does. §8.5 step 5 requires deleting the
+`Drive Node Preview` row and enqueuing a render on such a change. Neither
+`_core/previews.py` nor the `Drive Node Preview` doctype exists yet, so
+`restore_version` makes no preview call and carries a `HANDOFF, ticket 13`
+comment at that line. Ticket 13 must cover the restore path together with
+replace and upload finalize. Its criterion "Invalidate on replace" does not
+name restore today.
+
+Handoff to ticket 22, the version HTTP routes:
+
+`list_versions` returns every row. §9.1 gives it no signature, and §11.2
+requires `GET /nodes/<id>/versions` to return a cursor page under the §11.4
+grammar. Ticket 22 owns the cursor and the limit, and a docstring marks the
+line. A node with thousands of versions is unbounded until then.
+
+Handoff to ticket 16 and ticket 22, the version MIME:
+
+§10.1 declares `version_bytes` as `(stream, mime)` but no section consumes
+the second element. Ticket 16 owns §10.1 and must decide whether that MIME
+has a consumer or is dead weight in the contract. Ticket 22 owns the §11.2
+version content route and is where the served type becomes observable. If
+either decides the declared MIME must reach the client, the fix is a §3.4
+MIME column plus a framework content-type override on `put_blob` and the S3
+presigned URL. Drive cannot deliver it today on the S3 driver.
+
+Handoff to ticket 16, the content contract:
+
+`_content_spec` reads the `drive_content_types` hook directly and refuses a
+missing, duplicate, or incapable registration. When ticket 16 lands
+`_core/content.py` with a cached `spec_for(doctype)`, `_content_spec` should
+delegate to it and keep those refusals. A comment marks the line. No
+`drive_content_types` hook key exists yet, so every document version path
+raises `DriveConflict` outside the test's registered fake.
+
+No schema, patch, or migration changed. The scheduler hook is an additive code
+registration. No migration, remigration, push, PR, install, or restart was
+performed.
