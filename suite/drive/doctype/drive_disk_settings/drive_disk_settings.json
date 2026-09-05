@@ -9,6 +9,8 @@
   "preview_size",
   "general_column_break",
   "quota",
+  "default_personal_quota",
+  "shared_quota",
   "storage_section",
   "root_folder",
   "thumbnail_prefix",
@@ -52,6 +54,20 @@
    "fieldname": "quota",
    "fieldtype": "Int",
    "label": "Quota"
+  },
+  {
+   "default": "0",
+   "description": "Default quota for Personal Drive roots, in bytes. 0 means unlimited.",
+   "fieldname": "default_personal_quota",
+   "fieldtype": "Long Int",
+   "label": "Default Personal Quota"
+  },
+  {
+   "default": "0",
+   "description": "Default quota for the Shared Drive root, in bytes. 0 means unlimited.",
+   "fieldname": "shared_quota",
+   "fieldtype": "Long Int",
+   "label": "Shared Quota"
   },
   {
    "description": "Where and how Drive lays out file contents \u2014 on the site's disk, or in the S3 bucket below.",

@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node",
+  "seq",
+  "kind",
+  "label",
+  "pinned",
+  "actor",
+  "size",
+  "blob"
+ ],
+ "fields": [
+  {
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "reqd": 1
+  },
+  {
+   "fieldname": "seq",
+   "fieldtype": "Int",
+   "label": "Sequence",
+   "reqd": 1
+  },
+  {
+   "default": "auto",
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "label": "Kind",
+   "options": "auto\nnamed\nmilestone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label"
+  },
+  {
+   "default": "0",
+   "fieldname": "pinned",
+   "fieldtype": "Check",
+   "label": "Pinned"
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Link",
+   "label": "Actor",
+   "options": "User"
+  },
+  {
+   "default": "0",
+   "fieldname": "size",
+   "fieldtype": "Long Int",
+   "label": "Size"
+  },
+  {
+   "fieldname": "blob",
+   "fieldtype": "Link",
+   "label": "Blob",
+   "options": "File Blob",
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Node Version",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

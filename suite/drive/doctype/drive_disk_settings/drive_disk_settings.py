@@ -19,6 +19,7 @@ class DriveDiskSettings(Document):
         aws_key: DF.Data | None
         aws_secret: DF.Password | None
         bucket: DF.Data | None
+        default_personal_quota: DF.Int
         enabled: DF.Check
         endpoint_url: DF.Data | None
         flat: DF.Check
@@ -26,6 +27,7 @@ class DriveDiskSettings(Document):
         quota: DF.Int
         root_folder: DF.Data | None
         signature_version: DF.Data | None
+        shared_quota: DF.Int
         thumbnail_prefix: DF.Data | None
         webdav_allowed_methods: DF.SmallText | None
         webdav_enabled: DF.Check
@@ -36,7 +38,14 @@ class DriveDiskSettings(Document):
         # under it, which times out on large folders.
         if self.enabled:
             self.flat = 1
+        self._validate_drive_quotas()
         self._validate_webdav_methods()
+
+    def _validate_drive_quotas(self):
+        for fieldname in ("default_personal_quota", "shared_quota"):
+            value = self.get(fieldname) or 0
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                frappe.throw("Drive quotas must be nonnegative byte counts", frappe.ValidationError)
 
     def _validate_webdav_methods(self):
         methods, unknown = parse_webdav_methods(self.webdav_allowed_methods)

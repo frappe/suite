@@ -338,7 +338,10 @@ before_request = ["suite.drive.webdav.dispatch.handle_before_request"]
 # drive — the WebDAV dispatcher consumes /dav request bodies itself (frappe skips the
 # body cap and form_dict buffering; a no-op on frappe versions without this hook,
 # where PUT bodies fall back to buffered and capped)
-streaming_request_paths = ["/dav/"]
+# Compatible Frappe versions consume this prefix before request form parsing so
+# upload chunk bodies remain streams instead of being buffered. HTTP routing
+# lands later; declaring the path does not expose or implement ticket-21 routes.
+streaming_request_paths = ["/dav/", "/api/suite/drive/uploads/"]
 
 # ============================================================================
 # Fixtures (concatenated; identical entries de-duplicated)
