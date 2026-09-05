@@ -3,7 +3,7 @@
     <SidebarHeader title="Drive" :subtitle="currentUserFullName" :menu-items="settingsItems" :logo="FrappeDriveLogo" />
     <div class="flex-1 overflow-y-auto px-2">
       <SidebarSection v-for="(section, index) in sidebarItems" :key="section.label || index" :label="section.label" :collapsible="section.collapsible">
-        <SidebarItem v-for="item in section.items" :key="item.label" :class="draggedSpace === item.label && 'ring-1 ring-outline-gray-3 !bg-surface-gray-3'" :label="item.label" :access-key="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to" :active="item.isActive" :on-click="item.onClick" @dragover.prevent=";['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)" @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
+        <SidebarItem v-for="item in section.items" :key="item.label" :class="[draggedSpace === item.label && 'ring-1 ring-outline-gray-3 !bg-surface-gray-3', 'has-[>*:first-child:focus-visible]:focus-ring [&>*:first-child]:focus-visible:outline-none']" :label="item.label" :access-key="item.accessKey" :icon="item.icon" :suffix="item.suffix" :to="item.to" :active="item.isActive" :on-click="item.onClick" @dragover.prevent=";['Trash', 'Home'].includes(item.label) && (draggedSpace = item.label)" @dragleave="draggedSpace = null" @drop.prevent="handleDrop($event, item)" />
       </SidebarSection>
     </div>
     <div class="p-2">

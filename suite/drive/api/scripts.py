@@ -161,3 +161,18 @@ def clear_download_archives():
             stale = [{"Key": o["Key"]} for o in objects if o["LastModified"] < cutoff_dt]
             if stale:
                 manager.conn.delete_objects(Bucket=bucket, Delete={"Objects": stale})
+
+
+def clear_stale_uploads():
+    """Delete chunked-upload staging files abandoned mid-transfer (e.g. a
+    closed browser tab), which nothing in the request path otherwise reclaims."""
+    import time
+
+    from suite.drive.api.files import UPLOAD_SESSION_TTL, get_upload_path
+
+    cutoff = time.time() - UPLOAD_SESSION_TTL
+    uploads_dir = get_upload_path("probe").parent
+
+    for path in uploads_dir.iterdir():
+        if path.is_file() and path.stat().st_mtime < cutoff:
+            path.unlink(missing_ok=True)

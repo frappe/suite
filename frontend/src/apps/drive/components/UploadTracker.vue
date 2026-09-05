@@ -55,6 +55,7 @@
               variant="ghost"
               :icon="LucideRefreshCcw"
               class="rounded-full hover:bg-surface-gray-2"
+              data-testid="upload-retry-button"
               @click.stop="emitter.emit('retryUpload', upload.uuid)"
             />
             <!-- <Button
@@ -96,8 +97,9 @@ import LucideX from '~icons/lucide/x'
 import LucideRefreshCcw from '~icons/lucide/refresh-ccw'
 import { uploadsInProgress, uploadsCompleted, uploadsFailed, clearUploads } from '@/apps/drive/data/uploads'
 import { useRouter } from 'vue-router'
-import { ref } from 'vue'
+import { inject, ref } from 'vue'
 
+const emitter = inject('emitter')
 const collapsed = ref(false)
 const showErrorDialog = ref(false)
 const hoverIndex = ref(null)
