@@ -309,6 +309,9 @@ _Avoid_: Deletion, Ownership transfer, Handover
   unreserved quota.
 - A **Storage Reservation** is replaced by stored file usage or released when
   its expected file content no longer needs protection.
+- **Offboarding** deletes the departed user's **Favourites**, **Recents**, and
+  **Notifications**. They are that one person's own, so a recreated address
+  starts with none of them. Nothing anyone else can see is removed.
 - A **Content Document** has exactly one Drive Node, and that node has exactly
   one Content Document. Neither reference ever changes.
 - A **Content Document** has no title and no trash state of its own. Its node

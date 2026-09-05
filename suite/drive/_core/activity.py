@@ -296,6 +296,43 @@ def mark_read(principals: Principals, notification: str | None = None) -> int:
     return len(ids)
 
 
+def discard_personal_records(user: str) -> dict[str, int]:
+    """Delete one person's private Drive records during offboarding.
+
+    Recents, favourites, and the notification inbox are keyed by email, not by
+    a root id. Archiving the Personal Root leaves them behind, so a User row
+    recreated on the same address would read the previous person's open
+    history, stars, and inbox. Grants, comments, activity, and versions are
+    deliberately kept: they are attributed history and specified access that
+    the archived tree still needs (spec sections 3.2 and 9.5).
+
+    Idempotent, and safe on a site whose Build has not created the tables yet.
+    Runs in the caller's transaction so a refused User delete keeps the rows.
+    """
+    if not isinstance(user, str) or not user:
+        frappe.throw(_("Drive personal records need a user"), frappe.ValidationError)
+    removed = {}
+    for doctype, fieldname in (
+        ("Drive Recent", "user"),
+        ("Drive Favourite", "user"),
+        ("Drive Notification", "to_user"),
+    ):
+        removed[doctype] = _delete_personal_rows(doctype, fieldname, user)
+    return removed
+
+
+def _delete_personal_rows(doctype: str, fieldname: str, user: str) -> int:
+    if not frappe.db.exists("DocType", doctype) or not frappe.db.table_exists(doctype):
+        return 0
+    if not frappe.get_meta(doctype).get_field(fieldname):
+        return 0
+    filters = {fieldname: user}
+    count = frappe.db.count(doctype, filters)
+    if count:
+        frappe.db.delete(doctype, filters)
+    return count
+
+
 def _visible_personal_rows(principals: Principals, rows: list) -> list[dict]:
     visible = []
     for row in rows:
