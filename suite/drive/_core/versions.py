@@ -378,12 +378,20 @@ def _version_bytes(node: frappe._dict, *, spec=None) -> tuple[str, int]:
     if not hasattr(stream, "read") or not isinstance(mime, str) or not mime:
         raise DriveConflict(_("The Drive content version callback returned invalid bytes"))
     # The declared MIME is checked as a contract shape (§10.1) and then
-    # dropped on purpose. `Drive Node Version` has no MIME column (§3.4) and
-    # `put_blob` sniffs the bytes with no caller override, so a JSON or plain
-    # text body lands as `application/octet-stream`. Nothing is lost: the
-    # version download route (§11.2) signs a URL with a filename, and
-    # `frappe/storage/serve.py` recovers the type from that filename whenever
-    # the stored blob sniffed as octet-stream.
+    # dropped. Drive cannot keep it: `Drive Node Version` has no MIME column
+    # (§3.4) and `put_blob` sniffs the bytes with no caller override, so a
+    # JSON or plain text body lands as `application/octet-stream`. §10.1
+    # states the return type only and names no consumer, and §11.2 requires
+    # only a 302 to a signed URL, so dropping it conforms.
+    # LIMITATION: the served type is then driver-dependent. On the local
+    # driver `frappe/storage/serve.py` recovers the type from the download
+    # filename. On S3 it does not: `signed_url_for_blob` returns the driver
+    # presigned URL, which sets `ResponseContentDisposition` and no
+    # `ResponseContentType`, and the object was written with no `ContentType`.
+    # A Writer version therefore downloads as octet-stream on S3.
+    # HANDOFF, ticket 16 (§10.1) and ticket 22 (§11.2 version content
+    # route). Fixing it needs a §3.4 MIME column or a framework
+    # `put_blob(content_type=)`, so neither belongs to this ticket.
     with closing(stream):
         blob = put_blob(stream, is_private=True)
     return blob.name, int(blob.file_size)
