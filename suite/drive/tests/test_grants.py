@@ -78,6 +78,15 @@ class _GrantFixture(IntegrationTestCase):
                 )
             )
         if node_names:
+            activity_ids = tuple(
+                frappe.get_all(
+                    "Drive Activity",
+                    filters={"node": ["in", tuple(node_names)]},
+                    pluck="name",
+                )
+            )
+            if activity_ids:
+                frappe.db.delete("Drive Notification", {"activity": ["in", activity_ids]})
             frappe.db.delete("Drive Grant", {"node": ["in", tuple(node_names)]})
             frappe.db.delete("Drive Activity", {"node": ["in", tuple(node_names)]})
             frappe.db.delete("Drive Node", {"name": ["in", tuple(node_names)]})
