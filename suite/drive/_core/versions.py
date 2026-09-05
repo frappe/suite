@@ -11,10 +11,10 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.utils import get_attr, get_datetime, now_datetime
 
+from suite.drive._core import previews
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import _node, _record_activity, _validate_existing_head
-from suite.drive._core.previews import enqueue_render
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release
 from suite.drive._core.roles import EDIT, MANAGE, READ
@@ -221,7 +221,7 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
                 # Version, Drive Root, then Drive Node Preview; the render is
                 # queued, never run inline, so it takes no lock here.
                 frappe.db.delete("Drive Node Preview", {"node": current.name})
-                enqueue_render(current.name)
+                previews.enqueue_render(current.name)
             frappe.db.set_value(
                 "Drive Node",
                 current.name,

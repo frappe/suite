@@ -12,6 +12,7 @@ from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.utils import convert_utc_to_system_timezone, get_attr, get_datetime, now, now_datetime
 
+from suite.drive._core import previews
 from suite.drive._core.access import (
     POINT_SQL,
     _resolve_rows,
@@ -25,7 +26,6 @@ from suite.drive._core.access import (
     require_link,
 )
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
-from suite.drive._core.previews import copy_preview, enqueue_render
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
@@ -410,7 +410,7 @@ def create_file(
             {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
             via_link=via_link,
         )
-        enqueue_render(node.name)
+        previews.enqueue_render(node.name)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise
@@ -522,7 +522,7 @@ def _replace_file(
             {"blob": blob_row.name, "size": blob_row.file_size, "version": version},
             via_link=via_link,
         )
-        enqueue_render(current.name)
+        previews.enqueue_render(current.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
@@ -856,7 +856,7 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 {"kind": new_node.kind, "title": new_node.title, "copied_from": source_row.name},
                 via_link=activity_link,
             )
-            copy_preview(source_row.name, new_node.name)
+            previews.copy_preview(source_row.name, new_node.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise

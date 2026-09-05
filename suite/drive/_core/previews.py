@@ -79,7 +79,12 @@ LIMIT %(batch)s
 
 
 def enqueue_render(node: str) -> None:
-    """Queue one post-commit render attempt without taking a render lock."""
+    """Queue one post-commit render attempt without taking a render lock.
+
+    Callers reach this through the module (`previews.enqueue_render(node)`),
+    never through a `from ... import` alias. §9.2 names this function as the
+    one render entry point, so one patch point has to cover every writer.
+    """
     frappe.enqueue(
         "suite.drive._core.previews.render",
         queue="short",
