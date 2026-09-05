@@ -13,12 +13,7 @@ import isodate
 from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime, now_datetime
 
-from suite.drive.api.storage import (
-    acquire_owner_storage_lock,
-    create_storage_reservation,
-    get_storage_usage,
-    grow_storage_reservation,
-)
+from suite import drive
 from suite.drive.utils import get_user_folder
 from suite.meet.doctype.meet_recording.meet_recording import (
     ACTIVE_RECORDING_STATUSES,
@@ -70,10 +65,48 @@ def _get_drive_destination(owner: str) -> str:
 
 
 def _get_free_bytes(owner: str) -> int:
-    usage = get_storage_usage(owner)
-    if not usage["limit"]:
+    return _get_free_bytes_for_root(_get_drive_root(owner))
+
+
+def _get_free_bytes_for_root(root: str) -> int:
+    usage = drive.get_storage_usage(root)
+    if not usage["effective_quota"]:
         return MAX_BUDGET_BYTES
-    return max(0, cint(usage["limit"]) - cint(usage["total_size"]))
+    return max(0, cint(usage["effective_quota"]) - cint(usage["used_bytes"]))
+
+
+def _get_drive_root(owner: str) -> str:
+    root = drive.personal_root_for(owner)
+    if not root:
+        frappe.throw(_("The Room Owner has no Active Personal Drive root"))
+    return root
+
+
+def _lock_room_owner(owner: str) -> None:
+    """Serialize concurrent recording starts for one Room Owner.
+
+    Two rooms with the same owner start in two transactions that share no Meet
+    row, so nothing else orders them. Drive locks the same `User` row before it
+    locks a Personal Root, so taking it first here keeps the lock order
+    `User` -> `Meet Recording` -> `Drive Root` for both transactions.
+    """
+    frappe.db.get_value("User", owner, "name", for_update=True)
+
+
+def _count_active_owner_recordings(owner: str) -> int:
+    """Count the owner's live recordings, reading past the caller's snapshot.
+
+    `frappe.db.count` would answer from the REPEATABLE READ snapshot taken
+    before a competing transaction committed. A locking read sees the latest
+    committed rows, which is what makes the limit authoritative.
+    """
+    return len(
+        frappe.db.sql(
+            """SELECT name FROM `tabMeet Recording`
+               WHERE room_owner = %(owner)s AND status IN %(statuses)s FOR UPDATE""",
+            {"owner": owner, "statuses": ("Pending", *ACTIVE_RECORDING_STATUSES)},
+        )
+    )
 
 
 def _get_estimate(room) -> tuple[int, int]:
@@ -409,20 +442,9 @@ def start(meeting_id: str, request_id: str) -> dict:
     )
     if active:
         return active
+    _lock_room_owner(room.owner)
     destination = _get_drive_destination(room.owner)
-    acquire_owner_storage_lock(room.owner)
     owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
-    if (
-        frappe.db.count(
-            "Meet Recording",
-            {
-                "room_owner": room.owner,
-                "status": ["in", ("Pending", *ACTIVE_RECORDING_STATUSES)],
-            },
-        )
-        >= owner_limit
-    ):
-        frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
     preflight = get_preflight(meeting_id)
     if not preflight["eligible"]:
         frappe.throw(_("Recording is not currently available for this meeting"))
@@ -450,11 +472,17 @@ def start(meeting_id: str, request_id: str) -> dict:
             "drive_home_folder": destination,
         }
     ).insert(ignore_permissions=True)
-    create_storage_reservation(
-        room.owner,
+    drive.create_storage_reservation(
+        _get_drive_root(room.owner),
         recording_storage_reservation_key(recording.name),
         cint(recording.budget_bytes),
     )
+    if _count_active_owner_recordings(room.owner) > owner_limit:
+        # The owner limit is checked here, after this recording and its
+        # reservation exist, so the count is taken once and includes them both.
+        # Refusing rolls the whole transaction back: the recording row, the
+        # reservation, and the bytes it charged to the root all disappear.
+        frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
     frappe.db.commit()
     client = None if _fixture_enabled() else _client()
     outcome = (
@@ -773,13 +801,18 @@ def _apply_segment_progress(recording_id: str, captured_bytes: int, *, grow_budg
         recording.save(ignore_permissions=True)
         return {"budget_bytes": cint(recording.budget_bytes)}
 
-    acquire_owner_storage_lock(recording.room_owner)
-    free_bytes = _get_free_bytes(recording.room_owner)
+    reservation_key = recording_storage_reservation_key(recording.name)
+    reservation = drive.get_storage_reservation(reservation_key)
+    if not reservation:
+        frappe.throw(_("The recording has no storage reservation"))
+    # The reservation names the root it was charged to at start. That root may
+    # since have been archived by offboarding; the growth stays on it.
+    free_bytes = _get_free_bytes_for_root(reservation.root)
     budget_bytes = min(MAX_BUDGET_BYTES, cint(recording.budget_bytes) + free_bytes)
     if budget_bytes > cint(recording.budget_bytes):
-        grow_storage_reservation(
-            recording.room_owner,
-            recording_storage_reservation_key(recording.name),
+        drive.grow_storage_reservation(
+            reservation.root,
+            reservation_key,
             budget_bytes,
         )
 

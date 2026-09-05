@@ -50,8 +50,8 @@ The repository is already one Frappe app and one frontend, but much of its inter
 suite/
 ├── hooks.py                  # declarations plus cross-product wiring
 ├── api/                      # Suite-level endpoints
+├── composition/              # lifecycle and cross-product User dispatch
 ├── suite_core/
-│   ├── boot.py               # also orchestrates product lifecycles
 │   ├── doctype/
 │   └── patches/
 ├── drive/
@@ -346,7 +346,8 @@ Add `suite/tests/test_architecture.py` using Python's AST. It should reject:
 - imports from one product's internal packages by another product;
 - product imports from `suite_core`;
 - concrete content-product imports from Drive;
-- unapproved cross-product imports not targeting a declared public interface.
+- unapproved cross-product imports not targeting a declared public interface;
+- writes to a `Drive *` table from outside `suite/drive/` (rule 5.5): `frappe.db.set_value`, `set_single_value`, `delete`, `bulk_insert`, `frappe.delete_doc`, `frappe.new_doc`, `frappe.rename_doc`, a `frappe.get_doc`/`new_doc` dict naming a Drive `doctype`, and a writing `frappe.db.sql` naming a `tabDrive ` table. Reads are allowed.
 
 Start with an explicit allowlist of existing debt. New violations fail; debt entries are removed as products migrate.
 
@@ -380,7 +381,7 @@ Every significant change answers these questions in its issue or review:
 1. Keep this accepted charter, the Drive spec, and the Drive plan synchronized.
 2. Add architecture tests with a baseline allowlist for existing debt.
 3. Inventory production imports into Drive and freeze the minimal `suite.drive` exports.
-4. Move lifecycle orchestration out of `suite_core` when the Drive installation hooks are changed.
+4. Move lifecycle orchestration out of `suite_core` when the Drive installation hooks are changed. Done: `suite/composition/lifecycle.py` and `suite/composition/users.py` own it, and `suite_core` no longer imports a product.
 5. Build the new Drive implementation behind its public interface.
 6. Adopt Writer, Sheets, Slides, Meet, and Mail one adapter at a time.
 7. Replace old interface tests as each legacy path is removed.

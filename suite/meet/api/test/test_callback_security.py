@@ -10,6 +10,7 @@ import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 
+from suite import drive
 from suite.meet.api.recording import (
     recorder_complete_upload,
     recorder_failed,
@@ -30,9 +31,15 @@ from suite.meet.recording.callback_auth import (
 from suite.meet.recording.ingest import CHUNK_SIZE, _upload_path, append_chunk, begin_upload
 
 
+def release_test_reservations(root: str) -> None:
+    for key in frappe.get_all("Drive Storage Reservation", filters={"root": root}, pluck="name"):
+        drive.release_storage_reservation(root, key)
+
+
 class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
+    owner = "callback-owner@example.com"
+
     def setUp(self):
-        self.owner = "callback-owner@example.com"
         if not frappe.db.exists("User", self.owner):
             frappe.get_doc(
                 {
@@ -43,13 +50,14 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
                     "new_password": "password",
                 }
             ).insert(ignore_permissions=True)
+        self.drive_root = drive.personal_root_for(self.owner) or drive.ensure_personal_root(self.owner)
         frappe.conf.recorder_server_url = "http://recorder.test"
         frappe.conf.recorder_secret = "test-recorder-secret"
         frappe.conf.sfu_secret = "test-sfu-secret"
         frappe.conf.recording_fixture_mode = True
         frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
         frappe.clear_cache(doctype="Meet Settings")
-        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
+        release_test_reservations(self.drive_root)
         frappe.db.delete("Meet Recording", {"room_owner": self.owner})
         frappe.db.commit()
         frappe.set_user(self.owner)
@@ -65,7 +73,7 @@ class IntegrationTestRecordingCallbackSecurity(IntegrationTestCase):
         else:
             frappe.local.request = self.original_request
         frappe.set_user("Administrator")
-        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
+        release_test_reservations(self.drive_root)
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)

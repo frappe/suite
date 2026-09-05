@@ -4,7 +4,9 @@
 import hashlib
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from unittest.mock import Mock, patch
 
 import frappe
@@ -12,7 +14,7 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
 
-from suite.drive.api.storage import get_storage_reservation, get_storage_usage
+from suite import drive
 from suite.meet.api.recording import (
     BYTES_PER_SECOND,
     MAX_BUDGET_BYTES,
@@ -59,7 +61,24 @@ REPLACEMENT_JWK = {
 }
 
 
+def get_storage_usage(owner: str) -> frappe._dict:
+    """Compatibility-shaped view over the root counter for legacy assertions."""
+    usage = drive.get_storage_usage(drive.personal_root_for(owner))
+    return frappe._dict(
+        total_size=usage.used_bytes,
+        reserved_size=usage.reserved_bytes,
+        limit=usage.effective_quota,
+    )
+
+
+def release_test_reservations(root: str) -> None:
+    for key in frappe.get_all("Drive Storage Reservation", filters={"root": root}, pluck="name"):
+        drive.release_storage_reservation(root, key)
+
+
 class IntegrationTestRecordingApi(IntegrationTestCase):
+    owner = "recording-owner@example.com"
+
     def test_recorder_limits_use_javascript_compatible_utc_timestamp(self):
         recording = Mock(
             budget_bytes=1,
@@ -86,7 +105,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             frappe.conf.pop("recorder_site_origin", None)
 
     def setUp(self):
-        self.owner = "recording-owner@example.com"
         if not frappe.db.exists("User", self.owner):
             frappe.get_doc(
                 {
@@ -97,6 +115,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     "new_password": "password",
                 }
             ).insert(ignore_permissions=True)
+        self.drive_root = drive.personal_root_for(self.owner) or drive.ensure_personal_root(self.owner)
 
         frappe.conf.recorder_server_url = "http://recorder.test"
         frappe.conf.recorder_secret = "test-recorder-secret"
@@ -109,7 +128,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.delete("Drive Storage Reservation", {"storage_owner": self.owner})
+        release_test_reservations(self.drive_root)
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
@@ -137,17 +156,18 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with patch("suite.meet.api.recording._get_free_bytes", return_value=MINIMUM_BUDGET_BYTES):
             started = start(self.room.name, str(uuid.uuid4()))
 
-        with patch("suite.meet.api.recording._get_free_bytes", return_value=123):
+        with patch("suite.meet.api.recording._get_free_bytes_for_root", return_value=123):
             result = _apply_segment_progress(started["name"], 1)
 
         recording = frappe.get_doc("Meet Recording", started["name"])
-        reservation = get_storage_reservation(recording_storage_reservation_key(recording.name))
+        reservation = drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
+        self.assertEqual(reservation.root, self.drive_root)
         self.assertEqual(result, {"budget_bytes": MINIMUM_BUDGET_BYTES + 123})
         self.assertEqual(recording.captured_bytes, 1)
         self.assertEqual(recording.budget_bytes, result["budget_bytes"])
         self.assertEqual(reservation.reserved_bytes, result["budget_bytes"])
 
-        with patch("suite.meet.api.recording._get_free_bytes") as free_bytes:
+        with patch("suite.meet.api.recording._get_free_bytes_for_root") as free_bytes:
             self.assertEqual(_apply_segment_progress(recording.name, 1), result)
         free_bytes.assert_not_called()
 
@@ -161,11 +181,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         initial_budget = recording.budget_bytes
         recording.db_set("status", "Stopping", update_modified=False)
 
-        with patch("suite.meet.api.recording._get_free_bytes") as free_bytes:
+        with patch("suite.meet.api.recording._get_free_bytes_for_root") as free_bytes:
             result = _apply_segment_progress(recording.name, 42)
 
         recording.reload()
-        reservation = get_storage_reservation(recording_storage_reservation_key(recording.name))
+        reservation = drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
         self.assertEqual(result, {"budget_bytes": initial_budget})
         self.assertEqual(recording.captured_bytes, 42)
         self.assertEqual(reservation.reserved_bytes, initial_budget)
@@ -177,7 +197,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             started = start(self.room.name, str(uuid.uuid4()))
 
         with (
-            patch("suite.meet.api.recording._get_free_bytes", return_value=0),
+            patch("suite.meet.api.recording._get_free_bytes_for_root", return_value=0),
             patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
         ):
             ten_minute_progress = initial_budget - BYTES_PER_SECOND * 599
@@ -201,12 +221,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
     def test_maximum_budget_does_not_emit_quota_warnings(self):
         with (
             patch("suite.meet.api.recording._get_free_bytes", return_value=MAX_BUDGET_BYTES),
-            patch("suite.drive.api.storage.get_quota", return_value=MAX_BUDGET_BYTES * 2),
         ):
             started = start(self.room.name, str(uuid.uuid4()))
 
         with (
-            patch("suite.meet.api.recording._get_free_bytes", return_value=0),
+            patch("suite.meet.api.recording._get_free_bytes_for_root", return_value=0),
             patch("suite.meet.api.recording.frappe.publish_realtime") as publish,
         ):
             result = _apply_segment_progress(started["name"], MAX_BUDGET_BYTES - BYTES_PER_SECOND * 60)
@@ -274,9 +293,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                     ),
                     before,
                 )
-                frappe.db.delete(
-                    "Drive Storage Reservation",
-                    recording_storage_reservation_key(started["name"]),
+                drive.release_storage_reservation(
+                    self.drive_root, recording_storage_reservation_key(started["name"])
                 )
                 frappe.db.delete("Meet Recording", started["name"])
 
@@ -418,7 +436,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         )
         recording = frappe.get_doc("Meet Recording", started["name"])
         self.assertEqual(
-            get_storage_reservation(recording_storage_reservation_key(recording.name)).reserved_bytes,
+            drive.get_storage_reservation(recording_storage_reservation_key(recording.name)).reserved_bytes,
             len(content),
         )
         path = _upload_path(recording.upload_id)
@@ -464,7 +482,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(result, {"artifact": artifact.name, "status": "Ready"})
             self.assertEqual(completed.artifact_size, len(content))
             self.assertEqual(completed.artifact_sha256, digest)
-            self.assertIsNone(get_storage_reservation(recording_storage_reservation_key(recording.name)))
+            self.assertIsNone(
+                drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
+            )
             self.assertEqual(artifact.owner, self.owner)
             self.assertEqual(artifact.folder, recording.drive_home_folder)
             self.assertEqual(artifact.file_type, "Video")
@@ -1064,6 +1084,135 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
 
         self.assertEqual(get_storage_usage(self.owner)["reserved_size"], usage_before.get("reserved_size", 0))
 
+    def test_two_concurrent_rooms_admit_one_recording_and_roll_the_other_back(self):
+        """The owner limit survives the removal of the Redis owner lock.
+
+        Two rooms, one owner, two real connections. The second transaction gets
+        as far as charging its reservation and is then refused, so the rollback
+        must leave no recording, no reservation, and no bytes behind.
+        """
+        second_room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert()
+        used_before = frappe.db.get_value("Drive Root", self.drive_root, "used_bytes")
+        frappe.db.commit()
+        site = frappe.local.site
+        barrier = Barrier(2)
+        rooms = (self.room.name, second_room.name)
+
+        def attempt(room_name):
+            frappe.init(site, force=True)
+            frappe.connect()
+            try:
+                frappe.conf.recorder_server_url = "http://recorder.test"
+                frappe.conf.recorder_secret = "test-recorder-secret"
+                frappe.conf.sfu_secret = "test-sfu-secret"
+                frappe.conf.recording_fixture_mode = True
+                frappe.set_user(self.owner)
+                barrier.wait(timeout=10)
+                try:
+                    start(room_name, str(uuid.uuid4()))
+                    frappe.db.commit()
+                    return "admitted"
+                except frappe.ValidationError as error:
+                    frappe.db.rollback()
+                    if "maximum number of active recordings" in str(error):
+                        return "refused"
+                    return f"error: {error}"
+            finally:
+                frappe.destroy()
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(attempt, room) for room in rooms]
+                results = [future.result(timeout=60) for future in futures]
+            frappe.db.rollback()
+
+            self.assertEqual(sorted(results), ["admitted", "refused"])
+            live = frappe.get_all(
+                "Meet Recording",
+                filters={
+                    "room_owner": self.owner,
+                    "status": ["in", ("Pending", "Starting", "Recording", "Interrupted", "Stopping")],
+                },
+                fields=["name", "budget_bytes"],
+            )
+            self.assertEqual(len(live), 1)
+            self.assertEqual(
+                frappe.db.count("Drive Storage Reservation", {"root": self.drive_root}),
+                1,
+            )
+            self.assertEqual(
+                drive.get_storage_reservation(recording_storage_reservation_key(live[0].name)).reserved_bytes,
+                live[0].budget_bytes,
+            )
+            self.assertEqual(
+                frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"),
+                used_before + live[0].budget_bytes,
+            )
+        finally:
+            frappe.set_user("Administrator")
+            frappe.db.delete("Meet Recording", {"meet_room": second_room.name})
+            frappe.delete_doc("Meet Room", second_room.name, force=True, ignore_permissions=True)
+            frappe.db.commit()
+
+    def test_reprovision_during_recording_keeps_reservation_bound_to_archived_root(self):
+        with patch("suite.meet.api.recording._get_free_bytes", return_value=MINIMUM_BUDGET_BYTES):
+            started = start(self.room.name, str(uuid.uuid4()))
+        recording = frappe.get_doc("Meet Recording", started["name"])
+        # Offboarding archives the root in place. Drive has no public root
+        # administration workflow until the HTTP routes land (ticket 21), and
+        # this owner cannot be deleted while a Meet Room links to them, so the
+        # fixture writes the archive directly. Recorded in BASELINE_DEBT.
+        frappe.db.set_value(
+            "Drive Root",
+            self.drive_root,
+            {"state": "Archived", "quota_bytes": recording.budget_bytes + 123},
+            update_modified=False,
+        )
+        replacement_root = drive.ensure_personal_root(self.owner)
+        content = b"offboarded-recording"
+        digest = hashlib.sha256(content).hexdigest()
+        try:
+            self.assertNotEqual(replacement_root, self.drive_root)
+
+            grown = _apply_segment_progress(recording.name, 1)
+            self.assertEqual(grown["budget_bytes"], recording.budget_bytes + 123)
+            reservation = drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
+            self.assertEqual(reservation.root, self.drive_root)
+            self.assertEqual(reservation.reserved_bytes, grown["budget_bytes"])
+            self.assertEqual(frappe.db.get_value("Drive Root", replacement_root, "used_bytes"), 0)
+
+            stop(self.room.name)
+            begin_upload(
+                started["name"],
+                event_sequence=2,
+                size=len(content),
+                sha256=digest,
+                duration_ms=1000,
+            )
+            reservation = drive.get_storage_reservation(recording_storage_reservation_key(started["name"]))
+            self.assertEqual(reservation.root, self.drive_root)
+            self.assertEqual(reservation.reserved_bytes, len(content))
+
+            recording = frappe.get_doc("Meet Recording", started["name"])
+            with patch("suite.meet.api.recording.authenticate_callback"):
+                recorder_failed(
+                    recording.name,
+                    recording.recorder_job_id,
+                    recording.recorder_event_sequence + 1,
+                    "processing_failed",
+                )
+
+            self.assertIsNone(
+                drive.get_storage_reservation(recording_storage_reservation_key(started["name"]))
+            )
+            self.assertEqual(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"), 0)
+            self.assertEqual(frappe.db.get_value("Drive Root", replacement_root, "used_bytes"), 0)
+        finally:
+            # The archived root stays archived: that is what an offboarded
+            # identity looks like, and it leaves exactly one Active Personal
+            # Root for this owner.
+            release_test_reservations(replacement_root)
+
     def test_reconciliation_continues_after_one_recording_fails(self):
         with (
             patch(
@@ -1240,9 +1389,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 client.query.return_value = outcome
                 reconcile_pending_recordings()
                 if outcome.outcome == "accepted":
-                    frappe.db.delete(
-                        "Drive Storage Reservation",
-                        recording_storage_reservation_key(result["name"]),
+                    drive.release_storage_reservation(
+                        self.drive_root, recording_storage_reservation_key(result["name"])
                     )
                     frappe.db.delete("Meet Recording", result["name"])
                     frappe.db.commit()

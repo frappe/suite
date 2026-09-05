@@ -250,8 +250,7 @@ doc_events = {
             "suite.utils.user.assign_suite_role",
         ],
         "after_insert": [
-            "suite.drive.utils.users.create_drive_settings",
-            "suite.mail.events.create_user_settings",
+            "suite.composition.users.after_insert",
         ],
         "on_update": [
             "suite.mail.events.update_account_password",
@@ -260,9 +259,7 @@ doc_events = {
             "suite.mail.events.remove_disabled_account_role",
         ],
         "on_trash": [
-            "suite.mail.events.delete_account",
-            "suite.mail.events.delete_user_accounts",
-            "suite.mail.events.delete_user_settings",
+            "suite.composition.users.on_trash",
         ],
     },
 }
@@ -284,6 +281,7 @@ scheduler_events = {
         # meet
         "suite.meet.api.recording.cleanup_failed_recordings",
         # drive
+        "suite.drive.jobs.recompute_root_usage",
         "suite.drive.jobs.purge_trashed_nodes",
         "suite.drive.api.scripts.auto_delete_from_trash",
         "suite.drive.api.scripts.clear_deleted_files",
@@ -320,14 +318,14 @@ scheduler_events = {
 }
 
 # ============================================================================
-# Lifecycle hooks — dispatched through suite.suite_core.boot so that EACH
+# Lifecycle hooks — dispatched through suite.composition so that EACH
 # former app's handler is preserved and invoked in order.
 # ============================================================================
-before_install = "suite.suite_core.boot.before_install"
-after_install = "suite.suite_core.boot.after_install"
-after_migrate = "suite.suite_core.boot.after_migrate"
-after_app_install = "suite.suite_core.boot.after_app_install"
-extend_bootinfo = "suite.suite_core.boot.extend_bootinfo"
+before_install = "suite.composition.lifecycle.before_install"
+after_install = "suite.composition.lifecycle.after_install"
+after_migrate = "suite.composition.lifecycle.after_migrate"
+after_app_install = "suite.composition.lifecycle.after_app_install"
+extend_bootinfo = "suite.composition.lifecycle.extend_bootinfo"
 
 # drive — custom upload + after_request middleware (single definers)
 after_file_upload = "suite.drive.overrides.file.after_file_upload"
@@ -378,6 +376,16 @@ ignore_links_on_delete = [
     "Drive Entity Activity Log",
     "Drive DAV Property",
     "Drive DAV Lock",
+    # drive — records that link a User and outlive them. Offboarding archives
+    # the Personal Root and keeps its nodes, grants, and byte charges, so the
+    # framework's link check must not refuse the User delete over any of them.
+    "Drive Root",
+    "Drive Activity",
+    "Drive Node Version",
+    "Drive Comment",
+    "Drive Comment Thread",
+    "Drive Recent",
+    "Drive Storage Reservation",
     # mail
     "Mail Account Request",
     "Server Job",

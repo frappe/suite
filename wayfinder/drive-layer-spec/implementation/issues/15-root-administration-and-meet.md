@@ -4,7 +4,9 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress — implementation complete, site tests not run
+
+Every acceptance box stays unchecked until the commands under [Completion evidence](#completion-evidence) run on the authorized test site. The implementation and its tests are written; nothing below is proved.
 
 **Owner:** Suite Drive and Meet
 

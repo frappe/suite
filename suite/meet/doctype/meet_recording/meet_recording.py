@@ -274,10 +274,10 @@ class MeetRecording(Document):
         self._release_storage_reservation()
 
     def _release_storage_reservation(self):
-        from suite.drive.api.storage import release_storage_reservation
+        from suite import drive
 
-        release_storage_reservation(
-            self.room_owner,
+        drive.release_storage_reservation(
+            None,
             recording_storage_reservation_key(self.name),
         )
 
