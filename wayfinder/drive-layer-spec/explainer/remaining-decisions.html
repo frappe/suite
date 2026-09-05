@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Drive: accepted architecture decisions</title><style>
+/* Palette and radius tokens match the existing new-drive-architecture explainer. */
+:root{color-scheme:light;--paper:#fff;--surface:#f8f8f8;--line:#e2e2e2;--ink:#171717;--muted:#525252;--blue:#005cad;--blue-bg:#f1f8fe;--green:#14804d;--green-bg:#f0faf3;--amber:#bb6f0c;--amber-bg:#fdf8ed;--red:#ce2c2c;--red-bg:#fff5f5;--r:12px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;--s7:48px}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:24px}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}a{color:var(--blue);text-underline-offset:3px}button,select,textarea,input{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);padding:8px 12px}button{cursor:pointer}button:hover{background:var(--blue-bg)}:focus-visible{outline:3px solid var(--blue);outline-offset:3px}h1,h2,h3{line-height:1.2;letter-spacing:-.025em}h1{font-size:clamp(34px,5vw,56px);max-width:760px;margin:12px 0 24px}h2{font-size:28px;margin:0 0 16px}h3{font-size:23px;margin:8px 0 16px}p{margin:8px 0 16px}strong{font-weight:650}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.87em}code{overflow-wrap:anywhere}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.layout{max-width:1180px;margin:auto;display:grid;grid-template-columns:210px minmax(0,1fr);gap:48px;padding:48px 24px 80px}main{min-width:0}aside{position:sticky;top:32px;align-self:start;font-size:14px}aside a{display:block;text-decoration:none;padding:7px 0;color:var(--muted)}aside a:hover{color:var(--blue)}.eyebrow{font-size:12px;font-weight:650;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}.intro{font-size:19px;max-width:700px;color:var(--muted)}.stats{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:var(--r);margin:24px 0}.stats div{padding:20px;border-right:1px solid var(--line)}.stats div:last-child{border:0}.stats strong{display:block;font-size:32px;line-height:1.2}.stats span{font-size:13px;color:var(--muted)}section{margin-top:48px}.card{border:1px solid var(--line);border-radius:var(--r);padding:24px;margin:24px 0;scroll-margin-top:24px}.badge{display:inline-block;font-size:12px;font-weight:650;padding:3px 8px;border-radius:4px;background:var(--blue-bg);color:var(--blue)}.badge.attention{background:var(--amber-bg);color:var(--amber)}.badge.done{background:var(--green-bg);color:var(--green)}.meta{font-size:13px;color:var(--muted)}.figure{padding:24px;background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:20px 0}.flow{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}.box{flex:1;min-width:130px;padding:16px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}.box strong{display:block}.box small{display:block;font-size:13px;line-height:1.5;margin-top:4px;color:var(--muted)}.arrow{align-self:center;color:var(--muted)}.ok{background:var(--green-bg);color:var(--green)}.no{background:var(--red-bg);color:var(--red)}.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px}.compare>div{padding:16px;border:1px solid var(--line);border-radius:8px}.compare p{margin-bottom:0}.label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}.recommend{border-left:3px solid var(--blue);padding:8px 16px;margin:16px 0;background:var(--blue-bg)}.recommend p{margin:0}.note{padding:16px;border-radius:8px;background:var(--amber-bg);margin:16px 0}.proof{font-size:14px;color:var(--muted)}.choice{border-top:1px solid var(--line);margin-top:20px;padding-top:16px;display:grid;grid-template-columns:1fr minmax(180px,250px);align-items:center;gap:12px}.choice label{font-size:14px;font-weight:650}.choice select{width:100%}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin:16px 0}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:12px 16px;border-bottom:1px solid var(--line);vertical-align:top}th{background:var(--surface);font-weight:650}tr:last-child td{border-bottom:0}details{border:1px solid var(--line);border-radius:var(--r);margin:16px 0;padding:20px}summary{cursor:pointer;font-weight:650;line-height:1.5}details[open] summary{margin-bottom:16px}summary .meta{display:block;margin-left:18px;font-weight:400}.step{display:grid;grid-template-columns:32px 1fr;gap:12px;margin:16px 0}.step>b{width:28px;height:28px;text-align:center;border-radius:4px;background:var(--blue-bg);color:var(--blue)}.step p{margin:0}.sim{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.result{font-size:20px;font-weight:650;padding:16px;border-radius:8px;border:1px solid var(--line);min-height:68px;background:var(--paper)}textarea{display:block;width:100%;min-height:150px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);resize:vertical}#review-output{min-height:260px;font-size:14px}#feedback{min-height:28px;margin:8px 0;color:var(--green);font-size:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}.primary{background:var(--ink);color:var(--paper)}.primary:hover{background:var(--muted)}ul{padding-left:22px}li{margin:6px 0}.source-list{font-size:13px;color:var(--muted)}.footer{border-top:1px solid var(--line);margin-top:48px;padding-top:24px;color:var(--muted);font-size:13px}.noscript{padding:16px;background:var(--amber-bg)}
+@media(max-width:850px){.layout{grid-template-columns:1fr;gap:24px;padding:24px 16px 48px}aside{position:static;display:flex;flex-wrap:wrap;gap:8px 16px;border-bottom:1px solid var(--line);padding-bottom:16px}aside .eyebrow{width:100%}aside a{padding:0}h1{font-size:38px}.card{padding:20px}}
+@media(max-width:520px){.compare{grid-template-columns:1fr}.choice{grid-template-columns:1fr}.stats div{padding:12px}.stats strong{font-size:28px}.stats span{font-size:12px}.figure{padding:16px}.flow{flex-direction:column}.arrow{transform:rotate(90deg)}h1{font-size:34px}.card{padding:16px}th,td{padding:10px}section{margin-top:32px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{aside,.choice,.toolbar,#feedback,.sim, .review-tools{display:none!important}.layout{display:block;padding:0}body{font-size:11pt}.card,details{break-inside:avoid}details::details-content{display:block}h1{font-size:30pt}.figure{break-inside:avoid}textarea{border:0}.stats{margin:12px 0}}
+</style></head><body><div class="layout">
+<aside aria-label="Contents"><div class="eyebrow">Drive / accepted decisions</div>
+<a href="#overview">All choices resolved</a><a href="#roots">Root metadata + root node</a>
+<a href="#access">Sharing behavior</a><a href="#restore">Restore destination</a>
+<a href="#links">Share-link requests</a><a href="#defaults">Remaining decisions</a>
+<a href="#next">Implementation handoff</a></aside>
+<main><header id="overview"><div class="eyebrow">Accepted review · 5 September 2026</div>
+<h1>The decisions are settled.</h1><p class="intro">Drive keeps root administration separate while giving the whole tree one node identity.</p>
+<div class="stats"><div><strong>12</strong><span>Planning choices resolved</span></div><div><strong>0</strong><span>Pending user decisions in this review</span></div><div><strong>Next</strong><span>Implementation tickets</span></div></div>
+<p>This page now records the accepted outcomes. It replaces the earlier proposals and review form.</p>
+<p class="meta">Decisions are approved. Database measurements, migration rehearsals, and implementation tests remain work to do.</p></header>
+<section id="roots"><span class="badge done">Accepted · root identity and target fields</span>
+<h2>One root, two records with different responsibilities.</h2>
+<div class="figure"><div class="flow"><div class="box"><strong>Drive Root · R</strong><small>node → R, unique<br>User association<br>Personal or Shared<br>Active or Archived<br>Quota and usage</small></div><span class="arrow" aria-hidden="true">→</span><div class="box"><strong>Drive Node · R</strong><small>kind = root<br>Title: My Drive<br>Tree identity<br>Grants and activity<br>Parent of top-level entries</small></div></div></div>
+<div class="figure"><pre>My Drive                 Node R · kind=root
+├─ Projects              Node F · parent=R, root=R
+│  └─ Notes              Node N · parent=F, root=R
+└─ Budget.xlsx           Node B · parent=R, root=R
+
+Grant.node    → a Drive Node
+Activity.node → a Drive Node</pre></div>
+<p>Both records use the same id. The metadata has a required, unique Link to its root node.</p>
+<p>Descendants point to the root node. The root node itself has no parent or root pointer. Root-relative paths exclude its id.</p>
+<div class="compare"><div><div class="label">Offboarding</div><p>Archive the metadata. Keep the root node, descendants, and existing grants. No tree rewrite.</p></div><div><div class="label">Quota admission</div><p>Update used bytes on the metadata row. The root node carries no copy of those counters.</p></div></div>
+<p><strong>Pair rules:</strong> create both records and anchor grants in one transaction. Root nodes cannot be moved, copied, or trashed.</p>
+<p>Only the dedicated archived-root purge removes the pair after its descendants and references. Migration preserves existing root ids.</p>
+<p class="proof">Verification: pairing, rollback, concurrent creation, ancestry, top-level listings, quota lookup, deletion order, and migration resumption.</p></section>
+<section id="access"><h2>Sharing actions say what they do.</h2>
+<div class="card"><span class="badge done">Accepted · group roles</span><h3>Positive grants add access. Explicit DENY wins a tie.</h3>
+<div class="table-wrap"><table><thead><tr><th>Groups at the same depth and tier</th><th>Result</th></tr></thead><tbody><tr><td>READ + EDIT</td><td>EDIT</td></tr><tr><td>READ + EDIT + DENY</td><td>DENY</td></tr></tbody></table></div>
+<p>Nearer grants still take precedence. At equal depth, a direct user grant outranks group grants. Public/link resolution remains separate.</p></div>
+<div class="card"><span class="badge done">Accepted · removal and denial</span><h3>Removing a grant does not silently create a deny.</h3>
+<div class="compare"><div><div class="label">Remove this grant</div><p>Delete the local row. Inherited access may remain. Show its source in the UI.</p></div><div><div class="label">Deny access here</div><p>The user explicitly chooses DENY. Write role 0 through the normal grant operation.</p></div></div>
+<div class="figure"><pre>Folder: Alex has READ
+└─ File: Alex has EDIT
+
+Remove the file grant → Alex inherits READ.
+Explicitly deny Alex → Alex is denied at this file.</pre></div>
+<p>This distinction also applies to public access. Removing a local public grant can leave inherited public access.</p></div>
+<div class="card"><span class="badge done">Accepted · expired grant retention</span><h3>Keep expired grants. No expiry cleanup.</h3>
+<div class="flow"><div class="box"><strong>Before expiry</strong><small>The grant affects access</small></div><span class="arrow" aria-hidden="true">→</span><div class="box"><strong>After expiry</strong><small>The row remains, but is ignored</small></div></div>
+<p>Keep every expired grant, including share links and denies. Explicit removal and target purge remain separate operations.</p>
+<p>The daily expired-link deletion job is removed. Five other daily jobs remain.</p></div></section>
+<section id="restore"><span class="badge done">Accepted · restore destination</span><h2>The user chooses a replacement location.</h2>
+<div class="figure"><pre>Projects · Active
+└─ Old work · Trashed
+   └─ Notes · Trashed
+
+Restore Notes
+     ↓
+Original parent unavailable
+     ↓
+Ask where to restore it
+     ├─ Choose a valid destination → restore there
+     └─ Cancel → keep Notes in Trash</pre></div>
+<p>Never move it to the nearest Active ancestor automatically. Do not automatically restore its parent folders.</p>
+<p>If the original parent is available, ordinary restore keeps the original location. Alternate destinations stay within the same root.</p>
+<p class="proof">Backend: require an explicit destination before mutation. Frontend: provide the picker. Test destination permissions, title conflicts, and subtree paths.</p></section>
+<section id="links"><span class="badge done">Accepted · link scope and limit</span><h2>Send the links this operation needs.</h2>
+<p>A share link contains a code that identifies a sharing grant. The browser remembers each code with its target.</p>
+<div class="figure"><pre>Open Sales deck       → Sales code
+Open Product deck     → Product code
+Load Company update   → Company + Sales + Product codes</pre></div>
+<p>The combined presentation needs separate access to its referenced decks. Being included in a presentation grants no access by itself.</p>
+<ul><li>Ordinary browsing uses the active share link, including its folder descendants.</li><li>Combined content includes the relevant additional codes.</li><li>Unrelated API calls do not carry the entire remembered token store.</li><li>Allow at most 20 supplied items per request. Reject excess with a clear HTTP 400 error.</li><li>Never silently discard extra codes. Large composites load in smaller groups.</li></ul>
+<p>Every group rechecks access to the composite and requested references. Relevant collaboration tokens follow the same limit.</p>
+<p class="proof">Twenty is an initial bound, not a benchmark result. Specify client token scoping and grouped-load APIs together during ticketing.</p></section>
+<section id="defaults"><h2>The other accepted choices.</h2>
+<div class="table-wrap"><table><thead><tr><th>Choice</th><th>Accepted contract</th><th>Evidence still needed</th></tr></thead><tbody>
+<tr><td>Upload authority</td><td>Drive authorizes a trusted internal blob-upload path. Public framework checks remain enabled.</td><td>Cover create, every chunk, and finish. Public endpoints cannot accept bypass switches or operate on blob-only sessions.</td></tr>
+<tr><td>WebDAV documents</td><td>Hide Writer, Slides, and Sheets documents and their child media paths.</td><td>Test listings and direct lookups. Uploaded office files remain ordinary files. App exports are separate.</td></tr>
+<tr><td>Path storage</td><td>Keep Data(500) and the full root/path index.</td><td>Validate migrated id lengths, maximum depth, and index creation on the target database.</td></tr>
+<tr><td>Root-page index</td><td>Measure before deciding on an extra index. The root-node model now uses the existing parent index for top-level listing.</td><td>Compare query plans, latency, examined rows, storage cost, and write overhead. Record include/omit reasoning.</td></tr>
+<tr><td>Invalid grant arguments</td><td>ValidationError maps to HTTP 400 for invalid roles/principals, nonexistent named users/groups, and past expiry.</td><td>Check error shape and absence of partial writes.</td></tr>
+<tr><td>Permission explanation</td><td>GET grants with a principal query parameter returns the explanation.</td><td>Test who may inspect it and the response shape.</td></tr>
+</tbody></table></div>
+<p class="meta">The earlier activity-verb and preview-URL disagreements were already settled. Preserve distinct trash/restore/delete verbs and opt-in preview URLs.</p></section>
+<section id="next"><h2>Implementation handoff</h2>
+<div class="step"><b>1</b><p>Draft implementation tickets with dependencies, acceptance criteria, and repository ownership.</p></div>
+<div class="step"><b>2</b><p>Make frontend adoption dependencies explicit: restore picker, remove/deny actions, scoped link codes, and composite grouping.</p></div>
+<div class="step"><b>3</b><p>Run the approved ticket graph with persistent progress and serialized bench integration tests.</p></div>
+<p class="note"><strong>Later release:</strong> destructive Cleanup remains after Build, and waits for frontend migration away from legacy calls. A real migration rehearsal needs an agreed dataset and restore target.</p>
+<p>Spec examples were checked for permission tie order, root ancestry, path construction, root listing, shared listing, archived discovery, and subtree grant removal.</p>
+<p class="meta">SQL checks used small SQLite fixtures. They are not a MariaDB performance benchmark or a migration rehearsal. No production implementation changed.</p>
+<p class="meta">Canonical repository sources: drive-layer-spec.md, drive-layer-plan.md, and decision-review.md. This guide summarizes those accepted decisions.</p></section>
+<footer class="footer">Public decision guide · Updated after the review · No analytics or answer submission.</footer></main>
+</div></body></html>

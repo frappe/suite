@@ -17,14 +17,19 @@ are listed under Flagged Ambiguities.
 ### Structure
 
 **Drive Node**:
-One entry in the tree, whether it holds bytes, holds nothing, or stands for a
-document owned by another app.
+One entry in the tree: its root, a folder, a file, a link, or a document
+owned by another app.
 _Avoid_: Entity, File, Drive File
 
 **Drive Root**:
-The top of one namespace. A node belongs to exactly one, and quota is counted
-against it.
+One administered namespace, with its user association, archive status, and
+storage accounting. Each has one Root Node representing it in the tree.
 _Avoid_: Team, Space, Home folder
+
+**Root Node**:
+The tree entry representing a Drive Root. Its grants govern inherited access,
+and its children are the top-level entries in that Drive.
+_Avoid_: Root folder, Pinned folder
 
 **Personal Root**:
 The private Drive Root belonging to one user.
@@ -108,8 +113,12 @@ nearer to the node.
 _Avoid_: Public file, Shared to web, Open
 
 **Deny**:
-A grant that refuses rights rather than giving them.
+A grant that explicitly refuses a principal access at a node.
 _Avoid_: Block, Revoke, Remove access
+
+**Revoke**:
+Removal of a grant at a node. Access inherited from another grant may remain.
+_Avoid_: Deny, Block, Remove all access
 
 **Grant Root**:
 The nearest node at which a grant names one of a person's principals. The
@@ -219,8 +228,10 @@ _Avoid_: Deletion, Ownership transfer, Handover
 
 ## Relationships
 
-- A **Drive Node** belongs to exactly one **Drive Root** and has one **Path**
-  within it.
+- A **Drive Root** has exactly one **Root Node**. Every **Drive Node** belongs
+  to one Drive Root and has one **Path** within it.
+- A Root Node cannot be moved, copied, or trashed. Archiving its Drive Root
+  preserves the tree and its existing grants.
 - A **Path** is a name for a position, not a location. Nothing in storage
   matches it, because a **Blob** is addressed by its content.
 - Renaming or moving a node rewrites its **Path** and touches no **Blob**.
@@ -247,7 +258,7 @@ _Avoid_: Deletion, Ownership transfer, Handover
   something higher already reaches them there.
 - The **Grant** nearest a node on its path decides a right. A **Deny** nearer
   than a grant refuses the right.
-- A **Grant** on a **Drive Root** reaches every node in that root.
+- A **Grant** on a **Root Node** reaches every node in its Drive Root.
 - A **Published** node is read by anyone. Nothing above Read ever reaches
   the **Public**; anything more for a visitor comes through a **Share
   Link**.
@@ -262,12 +273,12 @@ _Avoid_: Deletion, Ownership transfer, Handover
   The record keeps which link it came through.
 - Uploading through a **Share Link** gives the uploader no **Grant** on
   what they uploaded, because the grant would belong to every holder.
-- A **Drive Root** is never reached through a **Share Link**. No one may
-  grant one on a root.
+- A **Root Node** is never reached through a **Share Link**. No one may
+  grant one on a root node.
 - Publishing a folder publishes everything below it, until a **Deny** to the
   **Public** nearer a node stops it.
-- A **Drive Root** is never **Published**. No one, Suite Admins included,
-  may grant the **Public** on a root.
+- A **Root Node** is never **Published**. No one, Suite Admins included,
+  may grant the **Public** on a root node.
 - Publishing needs the same right as any other **Grant**: Manage at the
   node. No app publishes on a user's behalf.
 - A deck built from other decks shows a viewer only the decks that viewer
@@ -312,8 +323,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
 - A WebDAV client sees only the person's **Personal Root**, under the same
   **Roles** as the web app. It holds no rights the web app lacks, and
   reaches no other root.
-- Over WebDAV a **Content Document** is its **Export**, read-only. It can be
-  moved, renamed, trashed, and copied there, never written.
+- **Content Documents** from Writer, Slides, and Sheets stay hidden over
+  WebDAV in this release. Their app exports remain separate capabilities.
 - A **Content Document** has no children over WebDAV. Its embedded nodes
   are reached only through its app.
 - A **Drive Node** that holds a **Blob**, active or trashed, adds the Blob's

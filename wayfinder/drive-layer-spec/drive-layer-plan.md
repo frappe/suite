@@ -8,6 +8,11 @@ The module structure and dependency rules come from
 architecture charter disagree about placement or imports, the charter wins;
 if either disagrees with the spec about behavior, the spec wins.
 
+The [implementation ticket index](../../.scratch/drive-layer/README.md)
+refines these stages into 37 dependency-linked tickets. It includes the
+execution rules, verification evidence, and separate frontend/release gates.
+Ticket creation is complete; implementation has not started.
+
 ## Target
 
 - Suite repo: the repository root that contains this plan
@@ -65,7 +70,7 @@ asks.
 | Path | Owner | Content |
 |---|---|---|
 | `frappe/storage/gc.py` | fw | `blob_reference_columns()`, `orphan_predicate()`, include-and-warn, delete-nothing-on-discovery-failure (§13.1) |
-| `frappe/storage/upload.py` | fw | `finish_upload_to_blob()`; `finish_upload` becomes its wrapper (§13.2); ask 7: `check_permission` and `restrict_mimetypes` keywords on `create_upload` and `finish_upload` (§13.7) |
+| `frappe/storage/upload.py` | fw | `finish_upload_to_blob()` and a shared private finalizer (§13.2); ask 7: internal `create_blob_upload`/`upload_blob_chunk`, immutable session policy, guarded public wrappers (§13.7) |
 | `frappe/storage/url.py` | fw | `signed_url_for_blob(blob, filename, expires_in)` (§13.3) |
 | `frappe/core/doctype/file/file_v2.py` | fw | run `after_file_upload` hooks inside `create_file_from_blob` (§13.4) |
 | `frappe/storage/driver.py` | fw | `StorageDriver.read_range()` with a read-and-slice default (§13.5) |
@@ -95,7 +100,7 @@ asks.
 | `_core/activity.py` | side | **new private module.** activity, recents, favourites, notifications (§9.4, §9.5) |
 | `_core/content.py` | writer | **new private module.** content registry and workflows (§10) |
 | `framework.py` | eng | **new Frappe adapter.** Request principal construction and permission/query hook targets; delegates to `_core` |
-| `jobs.py` | side | **new scheduler adapter.** Six daily hook targets; delegates to `_core` |
+| `jobs.py` | side | **new scheduler adapter.** Five daily hook targets; delegates to `_core`. No expired-grant cleanup. |
 
 ### `suite/drive/http/` (§11)
 
@@ -114,8 +119,8 @@ Composite indexes go in `on_doctype_update()` (§3).
 
 | Directory | Owner | Notes |
 |---|---|---|
-| `drive_root/` | eng | §3.2. Indexes `root_owner`, `root_kind` |
-| `drive_node/` | eng | §3.1. Indexes `node_parent_page`, `node_root_page`, `node_subtree`, `node_content` |
+| `drive_root/` | eng | §3.2. Unique `node` Link to a root node; metadata name equals node id. Indexes `root_owner`, `root_kind` |
+| `drive_node/` | eng | §3.1. Indexes `node_parent_page`, `node_subtree`, `node_content`; root nodes make top-level pages ordinary parent queries; measure before adding any extra index |
 | `drive_grant/` | eng | §3.3. Unique `grant_node_principal`, index `grant_principal` |
 | `drive_node_version/` | side | §3.4. Unique `version_node_seq`, index `version_thin` |
 | `drive_node_preview/` | side | §3.5 |
@@ -155,7 +160,7 @@ Composite indexes go in `on_doctype_update()` (§3).
 | `put.py` | dav | Rewritten: one `put_blob`; the staging, generation keys, compensation, and drift repair go |
 | `get.py`, `copy.py`, `structure.py`, `lock.py` | dav | Rewritten: every direct `manager.*` call goes; `copy.py` calls `_core.nodes.copy` with explicit principals |
 | `properties.py` | dav | ETag and `getlastmodified` read `content_modified` and the version seq (§12.4) |
-| `pathmap.py` | dav | Title lookup on `node_parent_page`; export extension for documents (§12.2) |
+| `pathmap.py` | dav | Title lookup on `node_parent_page`; hide content documents and their media paths (§12.2) |
 | `dispatch.py`, `auth.py`, `context.py`, `propfind.py`, `proppatch.py`, `deadprops.py`, `locks.py`, `ifheader.py`, `conditional.py`, `xmlutil.py`, `options.py`, `settings.py`, `log.py`, `errors.py` | dav | Kept, relinked to `Drive Node` |
 | `webdav/tests/` | dav | Retargeted to nodes |
 
@@ -167,7 +172,7 @@ Composite indexes go in `on_doctype_update()` (§3).
 | `patches/build.py` | patch | **new.** The 13 Build steps (§14.2 to §14.9) |
 | `patches/cleanup.py` | patch | **new.** Gate and steps (§14.10) |
 | `suite/patches.txt` | patch | Adds the rename under `[pre_model_sync]`, `build` and later `cleanup` at the end of `[post_model_sync]` |
-| `suite/hooks.py` | http | `before_request` gains the translator beside the DAV dispatcher (line 336); `streaming_request_paths` gains `/api/suite/drive/uploads/` (line 341); `drive_content_types` is new; `has_permission` and `permission_query_conditions` point to `suite.drive.framework`; the four `sync_content_file` `doc_events` go (lines 233 to 243); `scheduler_events` points six daily jobs to `suite.drive.jobs` (line 282); `ALLOWED_WILDCARD_PATHS` gains `/api/suite/drive/` and loses `/api/method/suite.drive.api.` in stage 7 (line 429) |
+| `suite/hooks.py` | http | `before_request` gains the translator beside the DAV dispatcher (line 336); `streaming_request_paths` gains `/api/suite/drive/uploads/` (line 341); `drive_content_types` is new; `has_permission` and `permission_query_conditions` point to `suite.drive.framework`; the four `sync_content_file` `doc_events` go (lines 233 to 243); `scheduler_events` points five daily jobs to `suite.drive.jobs` (line 282); `ALLOWED_WILDCARD_PATHS` gains `/api/suite/drive/` and loses `/api/method/suite.drive.api.` in stage 7 (line 429) |
 | `suite/fixtures/custom_field.json`, `suite/fixtures/property_setter.json` | patch | Stage 7 drops the seven `File` custom fields and the three property setters |
 
 ### Content apps (§10, ticket 012 "What goes")
@@ -222,8 +227,8 @@ change in stage 2 beside the Drive interface move (§7.8):
 | Path | Owner | Covers |
 |---|---|---|
 | `test_access.py` | eng | Two-pass resolution, deny, nearest-wins, ties, Suite Admin, 404-not-403 |
-| `test_principals.py` | eng | `X-Drive-Links` grammar, the 20-link cap, unlock tickets |
-| `test_grants.py` | eng | The 12 refusals of §5.9, revoke, `revoke_below`, rotate, unpublish |
+| `test_principals.py` | eng | `X-Drive-Links` grammar, 20-item boundary, explicit rejection above the limit, unlock tickets |
+| `test_grants.py` | eng | The 12 refusals of §5.9, revoke, `revoke_below`, rotate, unpublish, expired rows retained but inert for every principal kind |
 | `test_views.py` | eng | Shared-with-me, archived roots, trash, search, cursor windows |
 | `test_nodes.py` | node | Create per kind, rename, move, trash, restore, purge cascade, copy, leaf rule |
 | `test_upload.py` | node | Both modes, `finish_upload_to_blob`, the empty-head rule |
@@ -235,7 +240,7 @@ change in stage 2 beside the Drive interface move (§7.8):
 | `test_content.py` | writer | Registry validation, forbidden fields, satellites, media sweep |
 | `test_http.py` | http | Translator, route table, node shape, cursor, batch, error codes |
 | `test_shims.py` | http | Every one of the 69 forwarders answers |
-| `test_webdav.py` | dav | Method-role table, document export, ETag, quota properties |
+| `test_webdav.py` | dav | Method-role table, hidden content documents, ETag, quota properties |
 | `test_build_patch.py` | patch | Mapping tables, trash propagation, dedupe, report keys, rerun |
 | `test_cleanup_patch.py` | patch | The three gates, then each drop |
 | `test_gc_columns.py` | eng | All four columns of §3.17 appear in `blob_reference_columns()` |
@@ -254,7 +259,7 @@ Kept unchanged: `tests/test_download_archive.py`,
 - A creator whose role at the parent is below EDIT gets one EDIT grant on the
   new node. An upload through a `$LINK` principal gets none. §4.5
 - `$PUBLIC` caps at READ, for every caller. §6.5
-- A `$PUBLIC` or `$LINK` grant naming a `Drive Root` is refused, Suite Admin
+- A `$PUBLIC` or `$LINK` grant naming a root node (`kind=root`) is refused, Suite Admin
   included. §5.9
 - A Suite Admin holds MANAGE everywhere and resolves before grants. §4.9
 - Unreadable is 404, never 403, on every surface. §5.2
@@ -306,8 +311,7 @@ holds.
 - **Entry:** `frappe.storage` tests green on the branch as it stands.
 - **Files:** every row of the framework table above.
 - **Order:** ask 1 (GC discovery), ask 2 (`finish_upload_to_blob`), ask 3
-  (`signed_url_for_blob`), ask 7 (`check_permission` and
-  `restrict_mimetypes` on `create_upload` and `finish_upload`), ask 4
+  (`signed_url_for_blob`), ask 7 (trusted blob-only create/chunk/finish interfaces), ask 4
   (`after_file_upload`), ask 5 (Range), ask 6 (`relocate_blobs`).
 - **Green:** `frappe.storage.tests.test_gc_backfill`, `test_serve_upload`,
   `test_signing`, `test_drivers`, `test_relocate`, then the whole
@@ -326,8 +330,19 @@ holds.
   `_core/roles.py`, `_core/principals.py`, `_core/access.py`,
   `_core/errors.py`, `framework.py`, `suite/drive/__init__.py`,
   `patches/rename_entity_log_to_recent.py`, and its `suite/patches.txt` entry.
+- **Root pairs:** create root node, metadata, and anchor grants atomically.
+  Validate the one-to-one link. Root nodes retain tree identity; metadata
+  retains archive state and quota. Test rollback, root guards, root ancestry,
+  top-level listing, metadata lookup, root-level grant removal, and migration
+  resumption with incomplete pairs. Grant and activity targets are Node Links.
 - **Roles:** doctype permission rows. Content doctypes keep a wide-open `All`
   row (§10.4); code outside Drive reaches Drive through `suite.drive` only.
+- **Measurement:** compare the real root-page query with existing indexes
+  and, if needed, an extra candidate index. Record representative data,
+  plans, rows examined, latency, index size, and write overhead. The parent
+  index is the new root-page baseline. The implementation agent decides
+  whether to retain an extra index, checks other root-scoped queries, and
+  records the rationale.
 - **Green:** `bench --site slides.localhost migrate`, then `test_access`,
   `test_principals`, `test_grants`, `test_views`, `test_gc_columns`.
 - **Commit:** one for the doctypes and the rename patch, one for the engine.
@@ -337,7 +352,7 @@ holds.
 - **Entry:** stage 1 green. Stage 0 asks 2, 3, and 5 available on the bench.
 - **Files:** `_core/nodes.py`, `_core/upload.py`, `_core/quota.py`,
   `_core/versions.py`, `_core/previews.py`, `_core/comments.py`,
-  `_core/activity.py`, `jobs.py`, the six daily `scheduler_events` in
+  `_core/activity.py`, `jobs.py`, the five daily `scheduler_events` in
   `suite/hooks.py`,
   `streaming_request_paths`, the four Meet files above. Deletes
   `acquire_owner_storage_lock` and `validate_quota` from
@@ -424,46 +439,41 @@ holds.
 - Fix rounds, then `bench --site slides.localhost run-tests --app suite`.
 - **Commit:** one per fix round.
 
-## Deviations from spec (provisional picks)
+## Accepted decision review
 
-The spec has no accepted deviation. It carries 13 `> Spec pick:` lines, which
-this plan treats as provisional. Confirm each with Faris before the stage
-named.
+All twelve choices are resolved in [Decision review](decision-review.md).
+The spec incorporates them. The original decision tickets and reference
+explainers are historical inputs where this review amends them.
 
-| Section | Pick | Confirm before |
-|---|---|---|
-| §3.1 | `path` is `Data(500)`; `(root, path)` indexed with no prefix | stage 1 |
-| §3.1 | The `node_root_page` index exists; [004] benchmarked only the child page | stage 1 |
-| §3.3 | `Drive Grant.node` is `Data`, not a Link | stage 1 |
-| §3.8 | `action` splits today's `delete` into `trash`, `restore`, and `delete` | stage 1 |
-| §3.8 | `Drive Activity.node` is `Data` | stage 1 |
-| §4.7 | At most 20 link tokens per request | stage 1 |
-| §5.1 | Two own rows at one depth in one tier resolve to the lower role | stage 1 |
-| §5.9 | Refusals 3, 4, 5, and 12 raise `frappe.ValidationError` (400) | stage 1 |
-| §6.4 | The daily expiry sweep deletes link grants only | stage 2 |
-| §8.8 | Restore reparents to the nearest Active ancestor | stage 2 |
-| §10.7 | Writer's `default_export` is `html`, from the stored column | stage 3 |
-| §10.7 | Slides and Sheets declare `default_export = None` | stage 3 |
-| §11.2 | `explain` is `?principal=` on `GET /nodes/<id>/grants`, not a route | stage 4 |
+| Choice | Implementation requirement |
+|---|---|
+| Upload authority | Trusted internal blob-upload sessions. Public upload checks remain enabled; authorize create, every chunk, and finish. No public waiver arguments. |
+| Group roles | At equal depth and tier, DENY wins; otherwise use the highest role. Preserve nearer and direct-user precedence. |
+| Restore | Require a user-selected destination when the original parent is unavailable. Never relocate automatically. |
+| WebDAV content | Hide Writer, Slides, and Sheets documents and their media paths. App/content API exports are separate. |
+| Link transport | Send relevant codes only. Reject more than 20 supplied items with HTTP 400. Group large composites without weakening authorization. |
+| Expired grants | Retain all expired grants. They remain inert. No expiry cleanup job; five daily jobs remain. |
+| Grant removal | DELETE removes the local row only. Explicit DENY uses PUT role 0. UI labels must show the distinction and remaining inherited access. |
+| Path capacity | Keep Data(500) and a full root/path index, subject to migrated-id, maximum-depth, and schema validation. |
+| Root-page index | Root pages now use parent=root-node. Benchmark the parent-index baseline before deciding on any extra index. |
+| Root identities | Keep Drive Root metadata and a matching kind=root Node. Share the id; create/purge the pair atomically. Grants and activity link only to Nodes. |
+| Invalid grant input | ValidationError maps to HTTP 400. Failed writes leave no mutations. |
+| Explanation route | GET grants with a principal parameter; test authorization and response shape. |
 
-Three items the review closed, listed so nobody reopens them:
+Stage 1 covers root pairs, permission rules, expiry retention, and header
+limits. Stage 2 covers restore destinations and the five daily jobs.
+Stage 4 covers HTTP mappings and compatibility. Stage 5 covers DAV exclusion.
+Build creates both root records before descendants and verifies pair integrity.
 
-- **Activity verbs.** §3.8 and §9.4 now agree on eleven verbs, with `delete`
-  meaning purge alone. §14.6 states how Build maps the old single `delete`
-  verb. Stage 1 can build `Drive Activity` without a decision.
-- **Preview URLs.** §5.3's conflict between [006 §4] and [014 §7] is resolved
-  in favour of the later ticket: a page mints preview URLs only under
-  `expand=preview`. §9.2 and §11.3 say the same.
-- **Framework ask 7.** No longer a spec pick. It is a §13 blocker (§13.7) and
-  ships in stage 0.
+Frontend dependencies must be explicit during ticketing: restore destination
+selection, separate remove/deny actions, remembered link target association,
+scoped headers and collaboration tokens, and grouped composite loading.
+Frontend implementation remains a separate adoption effort; backend completion
+does not claim those user flows are available before their clients land.
+Cleanup remains blocked by the later release and removal of legacy client calls.
 
-Two things the review added that no ticket decided. They need Faris, not a
-stage gate:
-
-| Item | Where | Question |
-|---|---|---|
-| Ask 7 is new work on `forge/storage-v2` | §13.7 | Two new keywords on two framework functions, added because the spec found the gates, not because a ticket asked. Sign off before stage 0. |
-| `revoke_or_deny` is a new private workflow name | §5.10 | The frozen `access.py` list has `revoke` and `revoke_below`. `revoke_or_deny` implements [007 §6]'s rule for every principal, not only `$PUBLIC`. Sign off before stage 1. |
+Measurements, caller inventory, migration rehearsal, and test results remain
+required work. Accepted decisions do not substitute for that evidence.
 
 ## Rules for all agents
 
