@@ -86,6 +86,7 @@ asks.
 | `_core/principals.py` | eng | **new private module.** `Principals`, link-header parsing, and unlock tickets (§4.6 to §4.8) |
 | `_core/access.py` | eng | **new private module.** `chain_ids`, `Acc`, resolution, checks, grant workflows, and list predicates (§5) |
 | `_core/errors.py` | eng | **new private module.** Six exception classes with status codes (§11.6) |
+| `_core/transactions.py` | eng | **new private module.** Ordered root locks and bounded transaction retry protocol (§7.2) |
 | `_core/nodes.py` | node | **new private module.** create per kind, `get`, `update`, `purge`, `copy`, `children`, views (§8) |
 | `_core/upload.py` | node | **new private module.** `create_upload`, `finish_upload` (§8.4) |
 | `_core/quota.py` | node | **new private module.** admission, release, quota calculation, recompute, and reservations (§7) |
@@ -181,20 +182,27 @@ Composite indexes go in `on_doctype_update()` (§3).
 | `suite/slides/drive.py` | slides | **new.** `SPEC` built with the public contract, with `pushes_preview=True` and a `Slide` satellite |
 | `suite/slides/doctype/presentation/presentation.json` | slides | Adds `node`; drops `title`, `is_template`, `thumbnail` |
 | `suite/slides/doctype/presentation/presentation.py` | slides | Deletes the composite public invariant (:29-40), the forced-public row (:47-61), the `is_template` early return (:43), thumbnail File handling (:109-189, :361-395), `get_permission_query_conditions` and `has_permission` (:490-498), the webp convert-and-delete (:581-625); rewrites `get_attachment`, `attach_poster`, `update_slide_attachments`, `get_updated_json` (:240-487) onto the public `drive.copy` workflow |
-| `suite/slides/api/file.py`, `suite/slides/api/test_file.py` | slides | **deleted** (122 and 274 lines) |
+| `suite/slides/api/file.py`, `suite/slides/api/test_file.py` | slides | Replace with a temporary media adapter and contract tests in stage 3. Delete in stage 7 after frontend adoption. |
 | `suite/sheets/drive.py` | sheets | **new.** `SPEC` built with the public contract, with `import_from_file` and two satellites |
 | `suite/sheets/doctype/sheet/sheet.json` | sheets | Adds `node`; drops `title`, `trashed`, `trashed_on`, `trashed_by`, `head_snapshot` |
 | `suite/sheets/doctype/sheet/sheet.py` | sheets | Adds the mixin; deletes `after_insert`'s `create_drive_file` (:55) |
 | `suite/sheets/permissions.py`, `suite/sheets/trash.py` | sheets | **deleted** (both replaced by the engine and the trash sweep) |
-| `suite/sheets/api.py` | sheets | Deletes `share_sheet`, `unshare_sheet`, `get_sheet_shares` |
+| `suite/sheets/api.py` | sheets | Replace `share_sheet`, `unshare_sheet`, `get_sheet_shares` with temporary public-interface adapters in stage 3. Delete in stage 7. |
 | `suite/sheets/collab.py` | sheets | `check_collab_access` calls the public Drive interface; re-check every 5 minutes (§6.7) |
 
 Frontend files named by ticket 012
 (`frontend/src/apps/slides/utils/canonicalMediaKey.ts`,
 `frontend/src/apps/slides/utils/mediaUploads.js`, and
-`frontend/src/apps/slides/utils/slidesRequests.js`) are out of scope: §1 makes
-frontend work a later effort.
-They go when the SPA moves, which is also the stage 7 gate.
+`frontend/src/apps/slides/utils/slidesRequests.js`) belong to the separate frontend rewrite. They must use the new architecture.
+Production release coordinates frontend adoption with Build and backend activation.
+Legacy callers remain supported only by removable adapters (§11.7).
+Delete their temporary adapters in stage 7 after the frontend contract checks pass.
+
+Stage 3 removes legacy behavior, not required endpoint names or wire contracts.
+Writer document methods follow the same rule. Inventory generic document reads
+that expect removed fields, including title, template flags, and media references.
+Keep compatibility conversion at the transport boundary. Do not mirror these
+fields in the new model or branch new workflows by client generation.
 
 ### Deleted suite code (stage 7 unless marked)
 
@@ -205,7 +213,7 @@ They go when the SPA moves, which is also the stage 7 gate.
 | `api/s3.py` | http | Kept. `fetch` is permanent |
 | `api/product.py` | http | Kept. 19 methods, none touches a node |
 | `tests/test_sync_permissions.py` | http | **deleted** in stage 4. It covers `sync_from_disk`, which Build replaces, and `sync_preview`, which becomes a route (§11.7) |
-| `api/storage.py` | node | `acquire_owner_storage_lock` (:12) and `validate_quota` go in stage 2; the admission UPDATE is the lock (§7.2) |
+| `api/storage.py` | node | `acquire_owner_storage_lock` (:12) and `validate_quota` go in stage 2; the workflow acquires database root locks before admission (§7.2) |
 
 Meet is the only caller outside Drive. Those are not Drive files, so they
 change in stage 2 beside the Drive interface move (§7.8):
@@ -223,20 +231,21 @@ change in stage 2 beside the Drive interface move (§7.8):
 |---|---|---|
 | `test_access.py` | eng | Two-pass resolution, deny, nearest-wins, ties, Suite Admin, 404-not-403 |
 | `test_principals.py` | eng | `X-Drive-Links` grammar, the 20-link cap, unlock tickets |
-| `test_grants.py` | eng | The 12 refusals of §5.9, revoke, `revoke_below`, rotate, unpublish |
+| `test_grants.py` | eng | The 13 refusals of §5.9, media grant rejection on every mutation surface, revoke, `revoke_below`, rotate, unpublish |
 | `test_views.py` | eng | Shared-with-me, archived roots, trash, search, cursor windows |
 | `test_nodes.py` | node | Create per kind, rename, move, trash, restore, purge cascade, copy, leaf rule |
 | `test_upload.py` | node | Both modes, `finish_upload_to_blob`, the empty-head rule |
-| `test_quota.py` | node | Admission UPDATE, preflight, cross-root move, recompute |
+| `test_quota.py` | node | Admission UPDATE, preflight, cross-root move, locked recount with fresh totals |
+| `test_concurrency.py` | node | Separate database connections: opposing moves, move versus create, sibling collisions, changed roots, recount versus charged writes, lock ordering and bounded retries (§7.2) |
 | `test_versions.py` | side | Ladder, pinning, restore, thinning |
 | `test_previews.py` | side | Reuse by `source_blob`, push, gap sweep, copy |
 | `test_comments.py` | side | Roles, guest authors, anchors |
 | `test_activity.py` | side | One row per grant write, `via_link`, recents, favourites, notifications |
-| `test_content.py` | writer | Registry validation, forbidden fields, satellites, media sweep |
+| `test_content.py` | writer | Registry validation, forbidden fields, satellites, inherited media access, seven-day reconsideration without parent edits, concurrent saves and sweep failure safety |
 | `test_http.py` | http | Translator, route table, node shape, cursor, batch, error codes |
-| `test_shims.py` | http | Every one of the 69 forwarders answers |
+| `test_shims.py` | http | Old Drive arguments and response shapes work through new workflows. Product owners cover their media, sharing, document-method, and removed-field contracts. |
 | `test_webdav.py` | dav | Method-role table, document export, ETag, quota properties |
-| `test_build_patch.py` | patch | Mapping tables, trash propagation, dedupe, report keys, rerun |
+| `test_build_patch.py` | patch | Mapping tables, trash propagation, dedupe, media grant normalization, report keys, interrupted batches and rerun |
 | `test_cleanup_patch.py` | patch | The three gates, then each drop |
 | `test_gc_columns.py` | eng | All four columns of §3.17 appear in `blob_reference_columns()` |
 
@@ -252,7 +261,10 @@ Kept unchanged: `tests/test_download_archive.py`,
 - Nearest wins. A grant on the node beats every ancestor grant. §5.3
 - `owner` grants nothing. Every right comes from a `Drive Grant` row. §3.1
 - A creator whose role at the parent is below EDIT gets one EDIT grant on the
-  new node. An upload through a `$LINK` principal gets none. §4.5
+  new node. Link uploads and media children get none. §4.5
+- Media children inherit document access and reject independent grant mutations. §8.10
+- Structural and charged writes lock affected roots in ascending ID order,
+  refresh state, and retry the whole transaction when root membership changes. §7.2
 - `$PUBLIC` caps at READ, for every caller. §6.5
 - A `$PUBLIC` or `$LINK` grant naming a `Drive Root` is refused, Suite Admin
   included. §5.9
@@ -281,8 +293,15 @@ Kept unchanged: `tests/test_download_archive.py`,
 
 ## Stages
 
-Each stage ships on its own. A stage starts only when its entry condition
-holds.
+Stages are implementation milestones, not independently deployable releases.
+A stage starts only when its entry condition holds. Stages 1 through 6 may be
+incompatible with existing site data until Build completes.
+
+Production cutover releases Build, the new backend, and a compatible frontend together.
+Keep user writes and background writers paused through migration and acceptance checks.
+Stage 6 includes a rehearsal on Faris's production backup and a tested backup restore.
+Stage 7 removes temporary compatibility after the rewritten frontend no longer needs it.
+The frontend rewrite has separate file ownership but is a release dependency.
 
 ### Architecture gate. Boundaries before Stage 1
 
@@ -297,6 +316,9 @@ holds.
   app's `index.ts`. Existing debt is baselined; new debt fails.
 - **Contract:** `suite.drive.__all__` is explicit and tested. The production
   caller inventory determines the exported names.
+- **Compatibility:** new workflows cannot import legacy adapters or contain
+  legacy-client branches. Inventory temporary product and Drive contracts.
+  Public workflow additions for product adapters must have a real caller.
 - **Green:** the architecture test and frontend boundary check pass.
 - **Commit:** one architecture-boundary commit. This gate may run alongside
   Stage 0 but must finish before Stage 1.
@@ -313,7 +335,7 @@ holds.
   `test_signing`, `test_drivers`, `test_relocate`, then the whole
   `frappe.storage.tests` package.
 - **Commit:** one commit per ask, seven in all.
-- Asks 1, 2, 3, 5, and 7 are blockers (§13). Nothing in stage 2 ships
+- Asks 1, 2, 3, 5, and 7 are blockers (§13). Stage 2 is not complete
   without them. Ask 7 is a blocker because `create_upload` refuses a Guest
   and refuses any mime outside the legacy allow-list for a user without desk
   access, and every Drive website user is one (§13.7).
@@ -324,8 +346,10 @@ holds.
   Branch `forge/drive-layer` created off `forge/wayfinder-drive-layer`.
 - **Files:** the nine new doctype directories, the eight reshaped ones,
   `_core/roles.py`, `_core/principals.py`, `_core/access.py`,
-  `_core/errors.py`, `framework.py`, `suite/drive/__init__.py`,
+  `_core/errors.py`, `_core/transactions.py`, `framework.py`, `suite/drive/__init__.py`,
   `patches/rename_entity_log_to_recent.py`, and its `suite/patches.txt` entry.
+- **Order:** implement the private root lock helper before grant workflows.
+  Stage 2 extends its concurrency coverage to node and accounting mutations.
 - **Roles:** doctype permission rows. Content doctypes keep a wide-open `All`
   row (§10.4); code outside Drive reaches Drive through `suite.drive` only.
 - **Green:** `bench --site slides.localhost migrate`, then `test_access`,
@@ -334,7 +358,7 @@ holds.
 
 ### Stage 2. Node workflows, upload, quota, versions, previews, activity
 
-- **Entry:** stage 1 green. Stage 0 asks 2, 3, and 5 available on the bench.
+- **Entry:** stage 1 green. Stage 0 blocker asks 1, 2, 3, 5, and 7 available on the bench.
 - **Files:** `_core/nodes.py`, `_core/upload.py`, `_core/quota.py`,
   `_core/versions.py`, `_core/previews.py`, `_core/comments.py`,
   `_core/activity.py`, `jobs.py`, the six daily `scheduler_events` in
@@ -343,8 +367,13 @@ holds.
   `acquire_owner_storage_lock` and `validate_quota` from
   `api/storage.py` and its six call sites in `api/files.py`,
   `webdav/put.py`, `webdav/copy.py`, and `webdav/lock.py` (§7.2).
-- **Green:** `test_nodes`, `test_upload`, `test_quota`, `test_versions`,
-  `test_previews`, `test_comments`, `test_activity`.
+- **Order:** use the private root lock helper from stage 1. All structural,
+  charged, and grant mutations use the protocol in §7.2. Upload transfers stay
+  outside the root-locked database transaction. Recompute acquires the same
+  lock before reading fresh totals. Preserve deterministic root and blob lock ordering.
+- **Green:** `test_nodes`, `test_upload`, `test_quota`, `test_concurrency`,
+  `test_versions`, `test_previews`, `test_comments`, `test_activity`.
+  Concurrency checks are release blockers, not deferred live-load work.
 - **Commit:** one per module group: nodes and upload, quota, then the side
   tables.
 
@@ -355,12 +384,18 @@ holds.
   `suite/slides/drive.py`, `suite/sheets/drive.py`, the content doctype JSON
   and controllers, the `has_permission` and `permission_query_conditions`
   rewiring, `drive_content_types`, the `sync_content_file` `doc_events`
-  deletion. Deletes `suite/slides/api/file.py`,
-  `suite/slides/api/test_file.py`, `suite/sheets/permissions.py`,
+  deletion. Replaces `suite/slides/api/file.py` with a temporary adapter and
+  retargets `suite/slides/api/test_file.py` to its legacy contract.
+  Deletes `suite/sheets/permissions.py`,
   `suite/sheets/trash.py`, and the listed methods in
   `suite/writer/overrides/__init__.py`,
   `suite/slides/doctype/presentation/presentation.py`,
   `suite/sheets/doctype/sheet/sheet.py`, and `suite/sheets/api.py`.
+  Retain required whitelisted names as adapters, including Writer document
+  methods and Sheets sharing. Move rewritten behavior into the new modules.
+- **Media:** no direct grants or creator grants on media children. Generic
+  grant APIs reject media targets. The sweep selects aged children regardless
+  of parent modification time and rechecks references with content-save coordination.
 - **Green:** `test_content`, plus the existing Writer, Slides, and Sheets test
   modules.
 - **Commit:** one for the contract, one per app.
@@ -373,8 +408,10 @@ holds.
   in `suite/hooks.py`. Deletes `tests/test_sync_permissions.py`.
 - **Boundary:** the HTTP adapter calls private Drive workflows. It does not
   expose `_core`, and no product imports the HTTP adapter.
-- **Green:** `test_http`, `test_shims`. Every one of the 69 old method names
-  still answers.
+- **Green:** `test_http`, `test_shims`, and the product compatibility tests.
+  Verify old arguments and response shapes against the deployed frontend inventory.
+  Verify both old and new routes call the same workflows. No adapter writes
+  Drive tables or runs old permission, storage, or quota logic.
 - **Commit:** one for the translator and the shapes, one for the routes, one
   for the shims.
 
@@ -394,24 +431,38 @@ holds.
   later gates on it.
 - **Files:** `patches/build.py`, its `suite/patches.txt` entry,
   `test_build_patch.py`.
-- **Green:** `test_build_patch`, then a real run. Restore a copy of a
-  production site export onto `slides.localhost` and run
-  `bench --site slides.localhost migrate`. A separate scratch site needs
-  Faris's approval first.
+- **Green:** `test_build_patch`, then a rehearsal using a production database
+  backup supplied by Faris. Restore it only to `slides.localhost` with the
+  matching files or object storage needed to verify content.
+  Run `bench --site slides.localhost migrate`. A separate scratch site needs
+  Faris's approval first. Keep the source backup unchanged.
+- **Acceptance:** compare content, media, permissions, templates, versions,
+  and exact usage. Exercise the rewritten frontend and required legacy adapters.
+  Verify media children have no direct grants. Interrupt committed Build
+  batches, rerun, and compare final data and reports with an uninterrupted run.
+- **Recovery:** rehearse restoration of the database, matching storage, and old code.
+  Save the backup timestamp, code revisions, storage snapshot, and checks in the
+  cutover runbook. Define the write-pause window and recovery after writes resume.
+  A pre-migration restore loses later writes unless a tested replay recovers them.
+  Never use table truncation as rollback (§14.11).
+- **Release:** activate the new backend with Build and a compatible frontend.
+  Pause user and background writes until migration and acceptance checks pass.
 - **Report:** the §14.9 JSON, printed and saved under the site's private
   directory. Read `links_minted`, the four `grant_rows_dropped` counts,
-  `title_renames`, and `trash_disagreements` back to Faris before stage 7.
+  `title_renames`, `trash_disagreements`, and `media_grants_dropped` back to Faris
+  before production cutover and stage 7. Include details of removed media grants.
 - **Commit:** one for the patch, one for the test.
 
 ### Stage 7. Cleanup patch, one release after Build
 
 - **Entry:** all three §14.10 gates hold: every reachable Drive `File` row has
-  a node; `blob_reference_columns()` exists; the SPA no longer calls the 69
-  old names.
+  a node; `blob_reference_columns()` exists; the rewritten frontend no longer
+  uses any temporary Drive or product compatibility contract. Permanent names stay.
 - **Files:** `patches/cleanup.py`, its `suite/patches.txt` entry,
   `test_cleanup_patch.py`, the six deleted doctype directories, the deleted
   `api/*` and `overrides/file.py` bodies, `http/shims.py`, the
-  fixture edits, the dropped columns on `Drive Settings`,
+  temporary Slides media, Sheets sharing, and Writer document adapters and
+  their obsolete contract tests, fixture edits, the dropped columns on `Drive Settings`,
   `Drive Disk Settings`, and `Drive Storage Reservation`.
 - **Green:** `test_cleanup_patch`, then the full suite app run.
 - **Commit:** one for the patch, one for the deletions.

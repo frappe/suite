@@ -178,17 +178,37 @@ holds two conditional items only.
   spec picks and one new framework ask (upload gates for Drive and guests)
   are listed on the ticket for review.
 
+## Accepted review amendments, 2026-09-05
+
+These amendments supersede conflicting historical ticket resolutions above.
+The spec and implementation plan contain the executable rules.
+
+- Compatibility stays in removable, one-way adapters. New workflows contain no
+  legacy branches. Frontend adoption, Build, and backend activation form one release.
+- Media children inherit document access. They reject independent grants, denies,
+  and links, including creator grants. Build removes and reports old media grants.
+- Structural and charged mutations lock affected roots in ascending ID order.
+  They refresh state, recheck guards, and retry boundedly when root membership changes.
+  Required two-connection tests cover conflicting moves and accounting races.
+- Recompute acquires the same root lock before reading fresh totals and writing usage.
+- Rehearse migration, interrupted-run recovery, and backup restoration on Faris's
+  production backup at `slides.localhost` before production cutover. Build is not
+  fully additive. Truncating new tables cannot undo rewritten content.
+- The media sweep revisits aged children even when their document has not changed.
+  Framework GC releases bytes only after Drive removes the final references.
+
 ## Not yet specified
 
 - Search-within-shared derived index. Only if the ancestor-union round trip
   proves too slow on real data; benchmark said it is fine synthetic.
-- Concurrency validation under live load. All benchmark numbers are
-  single-connection.
+- Performance validation under live load. Existing benchmark numbers are
+  single-connection. Concurrency correctness tests are mandatory before release.
 
 ## Out of scope
 
-- Frontend/UI changes (share dialog, upload client, list views). Backend +
-  HTTP API only; UI is a later effort.
+- Frontend/UI implementation (share dialog, upload client, list views) has
+  separate ownership. Its rewrite targets the new architecture and is a
+  coordinated release dependency, with temporary adapters where needed.
 - Standalone frappe/drive migration (Drive Team model). This spec covers
   suite sites only.
 - Many shared spaces (a `Space` root kind with its own quota and member list).

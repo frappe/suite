@@ -109,6 +109,7 @@ suite/
 │   │   ├── principals.py
 │   │   ├── access.py
 │   │   ├── errors.py
+│   │   ├── transactions.py           # ordered root locks and retries
 │   │   ├── nodes.py
 │   │   ├── upload.py
 │   │   ├── quota.py
@@ -122,7 +123,7 @@ suite/
 │   ├── http/                        # HTTP adapter into Drive workflows
 │   ├── webdav/                      # WebDAV adapter into Drive workflows
 │   ├── doctype/                     # persistence implementation
-│   ├── patches/                     # additive Build, later Cleanup
+│   ├── patches/                     # Build migration, later Cleanup
 │   └── tests/                       # interface and adapter behavior
 ├── writer/
 │   └── drive.py                     # Writer content adapter
@@ -228,6 +229,18 @@ drive.touch("Writer Document", document_name)
 ```
 
 The caller requests a complete outcome. Drive owns permission checks, quota, activity, identity links, and transaction ordering.
+
+### Temporary compatibility
+
+Legacy endpoint adapters translate old requests and responses into new workflows.
+Drive adapters stay in `suite/drive/http/shims.py`. Product adapters stay at their
+old endpoint locations and call the public `suite.drive` interface.
+New workflows MUST NOT import legacy adapters, branch on legacy clients, or mirror legacy data.
+Temporary adapters and their obsolete contract tests leave together after frontend adoption.
+Permanent legacy names remain narrow adapters. The spec §11.7 owns their inventory.
+
+Implementation stages are not separate production releases. Build, backend activation,
+and a compatible frontend ship together after migration and restore rehearsals.
 
 ### Forbidden
 

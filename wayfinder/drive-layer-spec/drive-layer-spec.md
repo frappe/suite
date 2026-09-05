@@ -39,8 +39,8 @@ One tree, one permission table, one storage path, for every Suite app.
 
 ### Non-goals
 
-- Frontend work. The share dialog, the upload client, and the list views
-  are a later effort.
+- Frontend implementation. A separate effort rewrites the frontend against
+  this architecture. Its release is coordinated with Build (§11.7, §14.11).
 - Many shared spaces. A `Space` root kind with its own quota and member
   list rebuilds the team model that `remove_teams.py` dissolved [001].
 - Blind drop-box. UPLOAD contains READ, so upload without read is
@@ -93,6 +93,7 @@ frappe.storage  (blob, upload, url, serve, gc)            bytes
 | `suite/drive/_core/principals.py` | **Private.** Principal value object, `X-Drive-Links` parsing, and unlock tickets. |
 | `suite/drive/_core/access.py` | **Private.** Resolution, checks, grant workflows, and list predicates. |
 | `suite/drive/_core/nodes.py` | **Private.** Node creation, reads, updates, purge, copy, children, and views. |
+| `suite/drive/_core/transactions.py` | **Private.** Ordered root locks, fresh-state validation, and bounded transaction retries (§7.2). |
 | `suite/drive/_core/upload.py` | **Private.** Upload creation and finish. |
 | `suite/drive/_core/quota.py` | **Private.** Admission, release, quota calculation, recompute, and reservations. |
 | `suite/drive/_core/versions.py` | **Private.** Version workflows. |
@@ -597,6 +598,9 @@ When a user whose effective role at the parent is below EDIT creates a
 node, the engine writes one grant on the new node: that user, EDIT. No
 row is written when the creator already holds EDIT, so personal roots
 and EDIT-level members cost nothing [002].
+
+Media children never receive a creator grant. Their access comes only from
+the owning document (§8.10). This exception applies to create, copy, and move.
 
 An upload through an UPLOAD link writes no creator grant. The grant would name the token, and every holder would edit and trash every upload [008 §5].
 
@@ -1109,8 +1113,12 @@ writes a row.
 | 10 | `password` is set and the principal is not a link | `DriveForbidden` | [008 §8] |
 | 11 | `role = 0` and the principal is the `user` of the Personal root that contains the node (the root itself included) | `DriveForbidden` | [002] |
 | 12 | `expires_on` is in the past | `frappe.ValidationError` | |
+| 13 | The target is a media child of a content document | `DriveConflict` | §8.10 |
 
-Refusals 7, 8, and 11 bind a Suite Admin as well.
+Refusals 7, 8, 11, and 13 bind a Suite Admin as well.
+All direct grant mutations on media children are refused, including revoke,
+revoke-or-deny, revoke-below, rotation, and publishing. Change access on the
+owning document instead. Ancestor-wide revocation still operates normally.
 
 > Spec pick: refusals 3, 4, 5, and 12 are malformed arguments, not Drive
 > conditions, so they raise `frappe.ValidationError` (400). Ticket [014]
@@ -1462,12 +1470,48 @@ def release(root: str, delta: int) -> None:
 	"""Plain decrement, floored at 0. Never refuses."""
 ```
 
-The row UPDATE is the lock. The Redis owner lock
+The admission UPDATE remains atomic. The workflow first acquires the root
+row lock specified below. The Redis owner lock
 (`acquire_owner_storage_lock`, `suite/drive/api/storage.py:12`) goes, and so
 do its six call sites outside `storage.py`: `api/files.py:104,700`,
 `webdav/put.py:155,229`, `webdav/copy.py:66`, and `webdav/lock.py:202`. Rejected: a `SUM` on every preflight (a scan per write,
 and still a lock to make check-then-write atomic); a counter with no repair
 job [010 §4].
+
+#### Root mutation protocol
+
+Use database row locks on `Drive Root`, held until transaction commit or rollback.
+`_core/transactions.py` owns the private lock helper. Quota, versions, and other
+Drive workflows use it. The helper is not part of `suite.drive.__all__`.
+
+1. Determine the affected roots from the source and destination nodes.
+2. Lock those roots with `SELECT ... FOR UPDATE`, in ascending root ID order.
+3. Re-read the nodes, paths, and relevant totals from current committed data.
+4. If root membership changed while waiting, roll back and retry with the correct roots.
+5. Recheck permissions, lifecycle, cycles, depth, sibling names, and quota under the locks.
+6. Apply all related writes and commit together.
+
+Do not reuse a consistent-read snapshot established before lock acquisition.
+Use current reads or start the workflow transaction before acquiring its first snapshot.
+Never acquire another root out of order. Retry the whole transaction after
+root-membership changes or deadlocks. Limit retries to three attempts, then raise `DriveConflict`.
+
+Create, rename, move, copy, trash, restore, purge, and root deletion follow this protocol.
+Copy locks both source and destination roots. Every charged mutation locks its root
+before changing nodes, versions, reservations, or usage. Scheduled jobs and
+legacy adapters follow the same workflows. Grant writes also lock their root,
+so permission rechecks cannot race a grant change during a structural mutation.
+
+A same-root move takes one lock, even when its quota delta is zero.
+A cross-root move locks both roots before reading subtree size or admitting bytes.
+Ordinary reads do not take these locks. Upload and spool bytes before the
+short database mutation transaction. Do not hold root locks during network transfers.
+Keep lock ordering consistent with framework blob operations, including GC.
+
+Concurrency acceptance uses separate database connections. Cover opposing moves,
+move versus create, duplicate sibling names, root changes while waiting, and
+recount versus upload, version thinning, reservation changes, and cross-root move.
+Assert a valid tree, exact usage, and bounded retry behavior after both transactions finish.
 
 ### 7.3 Preflight, browser and WebDAV
 
@@ -1535,7 +1579,8 @@ FROM `tabDrive Node` n
 WHERE n.root = %(root)s AND (n.name = %(node)s OR n.path LIKE %(prefix)s)
 ```
 
-Both states count. `admit` runs on the destination, then `release` on the
+Both states count. Lock both roots before calculating the delta (§7.2).
+`admit` runs on the destination, then `release` on the
 source, in the same transaction as the path rewrite. The move is refused when
 the destination would overflow. Reservations never move. Copy charges the
 destination root for the head bytes alone, because no version is copied
@@ -1545,6 +1590,10 @@ destination root for the head bytes alone, because no version is copied
 
 One **daily** job recomputes every Active and Archived root, writes the
 corrected value, and logs the drift [010 §4].
+For each root, acquire its row lock before reading totals. Read fresh committed
+data under that lock (§7.2), replace `used_bytes`, and commit before the next root.
+Every charged writer takes the same lock before changing its records.
+Never calculate totals before locking and then write that stale result.
 
 ```sql
 SELECT
@@ -1581,8 +1630,9 @@ outside Drive, and it must move with the reservation functions:
 | `suite/meet/doctype/meet_recording/meet_recording.py` | 277 | `release_storage_reservation` |
 | `suite/meet/patches/backfill_recording_storage_reservations.py` | 19, 36 | writes `storage_owner` on the row |
 
-The lock calls are deleted, not moved: the admission UPDATE of §7.2 is the
-lock. Meet imports `from suite import drive` and reserves against the Room
+The Redis lock calls are deleted. The complete reservation workflows acquire
+the database root locks of §7.2 before changing reservations or usage.
+Meet imports `from suite import drive` and reserves against the Room
 Owner's Personal Root [010 §3]. Meet never imports `_core.quota`.
 
 ### 7.9 DAV quota properties
@@ -1672,7 +1722,7 @@ Rules that hold for every row above.
 - The creator grant fires on every create when the actor's effective role at
   the new node is below EDIT: one `Drive Grant` row `(node, actor, EDIT)`
   [002]. It does not fire when the right came from a `$LINK` principal
-  [008 §5].
+  [008 §5]. Media children never receive creator grants (§8.10).
 - The activity row carries `via_link` when the grant that decided the right
   named a link, and `client` (the User-Agent) on WebDAV requests
   [008 §6, 009 §10].
@@ -1803,7 +1853,8 @@ node gives its children is
 CONCAT(IF(p.path = '', '/', p.path), p.name, '/')
 ```
 
-Guards, in order, before any write.
+Acquire the root locks and refresh node state first (§7.2).
+Guards run in order under those locks, before any write.
 
 | Guard | Result |
 |---|---|
@@ -1842,7 +1893,7 @@ matching `path LIKE CONCAT(:old_prefix, '%')` in the source root.
 Active and Trashed nodes both count. Reservations never move [010 §3, §8].
 Own grants on the moved nodes travel with them, because grants name node
 ids and no id changes [009 §7]. The creator grant fires when the mover
-lands below EDIT at the destination.
+lands below EDIT at the destination, except for media children (§8.10).
 
 Benchmark: the subtree rewrite is 9.1 ms for 1000 nodes and is not affected
 by the frozen `(parent, state, title)` index [004].
@@ -1940,7 +1991,8 @@ it [009 §8, 012 §4, 014].
 - `Drive Node Preview` rows are copied, pointing at the same preview blob,
   so a duplicate looks right at once [012 §8].
 - Dead WebDAV properties are cloned, as today [009 §8].
-- The creator grant fires when the caller is below EDIT at the destination.
+- The creator grant fires when the caller is below EDIT at the destination,
+  except for media children (§8.10).
 - A document node is copied by calling the content type's `duplicate`
   factory, then copying its child media nodes and rewriting the app's own
   references from the old node ids to the new ones [012 §4].
@@ -1961,9 +2013,17 @@ listing [012 §1].
 - Media nodes are reached only through §11's media route, and only through
   the document above them.
 - Over WebDAV a document is an export file and has no children (§12).
-- The permission path walk is unchanged. READ on the deck reaches the
-  pictures under it through the same nearest-wins walk, so no app writes
-  permission code [012 §1].
+- Media children inherit access from their owning document. They have no
+  independent grants, denies, or share links. This is a backend invariant.
+- Grant mutation endpoints refuse media targets (§5.9), including for Suite Admins.
+  Create and copy never add creator grants to media children.
+- Moving an ordinary node with direct grants under a document is refused with
+  `DriveConflict`. Copy it instead. A move never silently removes existing grants.
+- A media child has no descendants. Refuse child creation beneath it.
+- The permission path walk is unchanged. With no grants on media children,
+  it returns the owning document's access. A media listing can check that document once.
+- Build removes and reports direct grants on adopted media children (§14.7).
+  Templates and orphan-document adoption obey the same invariant.
 
 Templates [012 §6]:
 
@@ -2311,7 +2371,7 @@ Forbids, checked at boot by `content.validate_registry()` and by a test:
 |---|---|
 | a `title` field | the title lives on the node only, with no mirror in either direction [005 §1] |
 | a trashed or trashed-at field | the node state is the only lifecycle truth [005 §2] |
-| share code, share endpoints, a share dialog | sharing has one home [005 §6] |
+| app-owned share policy or persistence | sharing has one home [005 §6]. Temporary endpoint adapters only translate calls into Drive (§11.7). |
 | a "document without a node" fallback | under [005 §5] that state cannot exist, so it is an error, not a case |
 
 ### 10.3 Registry and hook
@@ -2426,23 +2486,33 @@ and those are gone [005 §4].
 ### 10.6 Media listing and the unused-media sweep
 
 `list_media(node)` answers one Read check on the document, then returns
-every child node paired with a signed `/f/` URL for its blob, minted with a
+every Active media child paired with a signed `/f/` URL for its blob, minted with a
 15-minute TTL. The page re-requests at two thirds of the TTL, so at 10
 minutes [012 §2, §3].
 
 `sweep_unused_media()` runs daily. Drive owns the whole mechanism; the app
 answers one question [012 §5].
 
-1. Select document nodes whose `content_modified` is newer than the last
-   run.
-2. For each, call `spec.used_nodes(docname)`.
-3. Trash every Active child node of that document that is absent from the
-   answer and whose `creation` is older than 7 days.
+1. Select Active document nodes with Active media children older than seven days.
+   Do not filter by the document's `content_modified` or the previous run time.
+2. Process documents in bounded pages. For each document, call `spec.used_nodes(docname)`.
+3. Trash eligible children absent from that answer through the node workflow (§7.2).
+   Recheck the document state and body before trashing. Serialize that check with
+   content saves so a concurrent edit cannot attach a child selected for cleanup.
+   Content adapters must provide this coordination within their save transaction.
+   If the body cannot be read or the adapter fails, skip the document and report the error.
 4. Trashed, never purged. The node lands in the owner's bin and follows the
    30-day clock. Nothing deletes a person's content without showing it to
    them first.
 
 An app with no `used_nodes` is skipped, and its media is never swept.
+Children skipped while young are reconsidered after seven days, even if the
+parent never changes again. Tests must cover that case and a concurrent content save.
+
+Framework GC cannot detect unused media in document bodies. An Active or
+Trashed media node still references its blob. Drive first trashes unused media,
+then purges it after trash retention. Framework GC deletes bytes only when no
+reference remains and the blob meets its GC eligibility rules (§13.1).
 
 ### 10.7 Worked declarations
 
@@ -2485,9 +2555,10 @@ the `versions` field and its child table `Writer Doc Version`,
 `ycomments` (its comments become Drive threads),
 `filter_templates` and `template_has_permission`
 (`suite/writer/overrides/__init__.py:9,16`),
-`new_version` and `save_comments`
+the old implementations of `new_version` and `save_comments`
 (`writer_document.py:40,110`), and `update_file` (`writer_document.py:100`),
-which is replaced by `touch`.
+which is replaced by `touch`. Retain required callable names as temporary
+adapters until frontend adoption (§11.7).
 
 > Spec pick: Writer's default export is `html`, taken from the stored
 > `html` column. Its docx exporter runs in the browser
@@ -2526,8 +2597,9 @@ App must delete: `title` and `is_template` (both move to the node),
 the composite public invariant (`presentation.py:29-40`), the forced-public
 row (`presentation.py:47-61`), the `is_template` early return
 (`presentation.py:43`), `get_permission_query_conditions` and
-`has_permission` (`presentation.py:490-498`), the webp convert-and-delete
-(`presentation.py:581-625`), and `suite/slides/api/file.py` entire.
+`has_permission` (`presentation.py:490-498`), and the webp convert-and-delete
+(`presentation.py:581-625`). Replace `suite/slides/api/file.py` with a temporary
+compatibility adapter (§11.7). Cleanup removes it after frontend adoption.
 Slides keeps its browser capture and pushes it through `drive.push_preview`
 [012 §8]. Conversion to webp happens before the node exists [012 §9].
 
@@ -2564,9 +2636,9 @@ App must add: a `node` Link field; `import_from_file` for the xlsx path.
 App must delete: `title`, `trashed`, `trashed_on`, `trashed_by`,
 `head_snapshot` (it retargets to a `Drive Node Version`),
 `after_insert`'s `create_drive_file` (`sheet.py:55`),
-`suite/sheets/trash.py` and its 30-day purge, the three DocShare endpoints
-`share_sheet`, `unshare_sheet`, `get_sheet_shares`, and
-`suite/sheets/permissions.py`. `Sheet Snapshot` is dropped; its rows become
+`suite/sheets/trash.py` and its 30-day purge, and `suite/sheets/permissions.py`.
+Replace the three DocShare endpoints `share_sheet`, `unshare_sheet`, and
+`get_sheet_shares` with temporary adapters (§11.7). Cleanup removes their names. `Sheet Snapshot` is dropped; its rows become
 `Drive Node Version` rows field for field, because its schema already
 carries `seq`, `kind` (auto, milestone, named), `label`, `pinned`, and
 `actor` [011 §11].
@@ -2691,7 +2763,7 @@ are listed.
 | DELETE | `/nodes/<id>/favourite` | READ on node | none | `{}` | none |
 
 `GET /nodes/<id>/media` is the deck-media call. It runs one READ check on
-the document, then mints a signed `/f/` URL per child node with a 15-minute
+the document, then mints a signed `/f/` URL per Active media child with a 15-minute
 TTL. The page calls it again at 10 minutes [012 §2, §3, 014].
 
 **Uploads**
@@ -2893,6 +2965,24 @@ locked link is never a 403, and an expired link is never a locked one
 [014 §5].
 
 ### 11.7 The shim plan
+
+The new frontend uses the new API. Compatibility is an adapter layer with
+one-way dependencies: legacy endpoints call new workflows. New workflows never
+import legacy endpoints, inspect a legacy-client flag, or maintain legacy tables.
+Drive adapters stay in `http/shims.py`. Product adapters stay at their old
+endpoint locations and call the public `suite.drive` interface. Old document
+methods may remain thin adapters until their clients move.
+
+Inventory the old arguments and response shapes used by the deployed frontend.
+Cover Drive endpoints, Slides media, Sheets sharing, Writer document methods,
+and generic document reads that depend on removed fields. Compatibility tests
+exercise those contracts, not merely whether the old method name answers.
+Do not deploy a frontend against removed fields without a compatible read adapter.
+
+Rewritten product logic lives in the new content adapters. Do not keep the old
+permission, quota, storage, or lifecycle implementation behind the forwarders.
+Delete temporary adapters together after the frontend rewrite passes its contract checks.
+Permanent legacy names listed below remain narrow adapters.
 
 Build adds the routes and keeps every one of the 69 old whitelisted method
 names as thin forwarders into the new Drive implementation. Cleanup deletes the forwarders
@@ -3422,7 +3512,9 @@ callers are unchanged.
 
 ## 14. Migration
 
-Two patches: additive Build, then Cleanup one release later [011 §1].
+Two patches: Build, then Cleanup one release later [011 §1].
+Build retains legacy storage records but rewrites some existing content data.
+It is not fully additive or reversible by deleting the new tables (§14.11).
 
 ### 14.1 Build gate
 
@@ -3617,6 +3709,9 @@ From the [012] amendment to [011]:
   (`presentation.py:43`), so this is a create, not a move.
 - `Writer Template` rows become `Writer Document` rows with nodes and
   `is_template`, granted the same way. The doctype is then dropped.
+- Remove every direct grant on adopted media children, including migrated
+  creator grants, denies, and links. Report the rows by principal and media node.
+  Access comes only from the deck. Verify this invariant before enabling requests.
 - Media nodes get no preview rows at migration; the daily gap sweep fills
   them. Deck previews come from the thumbnail Files above.
 
@@ -3651,7 +3746,7 @@ Printed and saved as JSON under the site's private directory [011].
   "media_nodes_created": 0, "media_duplicates_collapsed": 0,
   "slide_elements_rewritten": 0, "deck_previews_created": 0,
   "template_nodes_created": 0, "writer_templates_converted": 0,
-  "composite_rows_dropped": 0 }
+  "composite_rows_dropped": 0, "media_grants_dropped": 0 }
 ```
 
 `links_minted` is the count owners must be told about: their old
@@ -3665,7 +3760,9 @@ Ships one release after Build. It refuses to run unless all three hold
 1. Every reachable Drive `File` row has a node.
 2. `frappe.storage.gc.blob_reference_columns()` exists, so deleting File
    rows does not orphan every blob under the framework GC [003].
-3. The SPA has moved off the 69 old method names, so the forwarders can go.
+3. The rewritten frontend has moved off every temporary compatibility contract (§11.7).
+   Check product endpoints, document methods, and removed-field reads as well as
+   the 69 Drive names. Permanent names are excluded.
 
 Then, in order:
 
@@ -3685,6 +3782,7 @@ Then, in order:
 - Drop the title and trashed columns on content doctypes; `user_folder` and
   `quota` on `Drive Settings`; `quota` and the S3 fields on
   `Drive Disk Settings`; `storage_owner` on `Drive Storage Reservation`.
+- Delete temporary product adapters and their obsolete contract tests (§11.7).
 - Delete the 69 API forwarders except the three permanent names (§11.7),
   and remove `/api/method/suite.drive.api.` from `ALLOWED_WILDCARD_PATHS`.
 - Delete the `.thumbnail` sidecars.
@@ -3701,11 +3799,33 @@ the bucket (`driver = "s3"`) and legacy attachments under `Home` linked in
 place on local disk (`driver = "local"`). The framework's
 `relocate_blobs()` (§13) folds them into one. It runs after Build, at any
 time. Build and Cleanup do not depend on it [011 amendment].
+The rollback rehearsal must preserve any storage paths needed by the old code.
 
-| Stage | Rollback |
+Before production migration, rehearse on a production database backup supplied
+by Faris, restored only to `slides.localhost`. Use the matching files or object
+storage snapshot needed to verify content. Keep the source backup unchanged.
+
+The rehearsal must verify content, media, grants, templates, versions, and exact
+usage through the rewritten frontend and required legacy adapters. Interrupt Build
+between committed batches, rerun it, and compare the final data and reports.
+Rehearse restoring the pre-migration database, matching storage, and old code.
+A successful Build alone does not satisfy the release gate.
+
+Production cutover is one coordinated release of Build, the new backend, and a
+compatible frontend. Pause user writes and background writers during migration
+and validation. Resume them only after the acceptance checks pass.
+
+| Stage | Recovery |
 |---|---|
-| after Build | truncate the new tables and ship the old code |
-| after Cleanup | a database restore, and nothing smaller |
+| Build failed or validation failed before writes resume | Restore the pre-migration database, required storage, and old code. Rehearse this procedure first. |
+| After user writes resume | Stop writes and preserve a fresh backup. Prefer a forward fix. Restoring the earlier backup loses subsequent changes unless a tested replay recovers them. |
+| After Cleanup | Restore a consistent database and storage backup with its matching code. Deleted legacy objects may require storage restoration. |
+
+Record the backup timestamp, code revisions, storage snapshot, and write-pause
+window in the cutover runbook. Define the recovery point and any replay procedure
+before production release. Do not claim a lossless rollback after writes resume
+without testing that replay. Truncating new tables is never a rollback procedure:
+Build rewrites existing slide JSON, references, and other content data in place.
 
 ---
 

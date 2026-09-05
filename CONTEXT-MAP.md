@@ -20,7 +20,8 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
   its embedded images are Drive Nodes beneath that node.
 - **Slides → Drive**: a deck has a Drive Node standing for it. Its media are
   framework attachments today, authorized by their own endpoint. Moving them
-  under the deck node is decided but not built.
+  under the deck node is decided but not built. Those Media Nodes inherit
+  the deck's access and have no independent grants, denies, or share links.
 - **Sheets → Drive**: a sheet has a Drive Node standing for it. Its change
   log and collab state stay with Sheets as the document body. Its versions,
   comments, title, and trash state are Drive's.

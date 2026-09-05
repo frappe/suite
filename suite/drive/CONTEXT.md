@@ -133,8 +133,8 @@ _Avoid_: Content doc, Linked doc, Backing file
 
 **Media Node**:
 A child node of a Content Document holding a picture, a video, or a sound the
-document shows. It takes its rights from the document above it. Copied, not
-borrowed, when the content is pasted into another document.
+document shows. It inherits all access from that document, with no independent
+Grant, Deny, or Share Link. Copied, not borrowed, when pasted into another document.
 _Avoid_: Attachment, Embed, Asset
 
 **Template**:
@@ -244,7 +244,8 @@ _Avoid_: Deletion, Ownership transfer, Handover
   changes, moves, and trashes what exists. Manage shares and deletes for
   good.
 - Creating a node gives its creator an Edit **Grant** on it, unless
-  something higher already reaches them there.
+  something higher already reaches them there. **Media Nodes** never receive
+  independent creator grants.
 - The **Grant** nearest a node on its path decides a right. A **Deny** nearer
   than a grant refuses the right.
 - A **Grant** on a **Drive Root** reaches every node in that root.
