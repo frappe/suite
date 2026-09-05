@@ -21,9 +21,9 @@ holds two conditional items only.
 
 ## Notes
 
-The [accepted implementation decision review](decision-review.md) amends
-the historical decisions below. The spec and plan incorporate the review,
-including paired root metadata/nodes and Node-only grant/activity targets.
+The spec’s [accepted decisions](drive-layer-spec.md#accepted-decisions) amend
+the historical decisions below. They include paired root metadata/nodes
+and Node-only grant/activity targets.
 
 
 - The file-layer decision record is local:

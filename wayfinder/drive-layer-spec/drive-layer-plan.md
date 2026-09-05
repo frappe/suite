@@ -439,26 +439,11 @@ holds.
 - Fix rounds, then `bench --site slides.localhost run-tests --app suite`.
 - **Commit:** one per fix round.
 
-## Accepted decision review
+## Accepted decision coverage
 
-All twelve choices are resolved in [Decision review](decision-review.md).
-The spec incorporates them. The original decision tickets and reference
-explainers are historical inputs where this review amends them.
-
-| Choice | Implementation requirement |
-|---|---|
-| Upload authority | Trusted internal blob-upload sessions. Public upload checks remain enabled; authorize create, every chunk, and finish. No public waiver arguments. |
-| Group roles | At equal depth and tier, DENY wins; otherwise use the highest role. Preserve nearer and direct-user precedence. |
-| Restore | Require a user-selected destination when the original parent is unavailable. Never relocate automatically. |
-| WebDAV content | Hide Writer, Slides, and Sheets documents and their media paths. App/content API exports are separate. |
-| Link transport | Send relevant codes only. Reject more than 20 supplied items with HTTP 400. Group large composites without weakening authorization. |
-| Expired grants | Retain all expired grants. They remain inert. No expiry cleanup job; five daily jobs remain. |
-| Grant removal | DELETE removes the local row only. Explicit DENY uses PUT role 0. UI labels must show the distinction and remaining inherited access. |
-| Path capacity | Keep Data(500) and a full root/path index, subject to migrated-id, maximum-depth, and schema validation. |
-| Root-page index | Root pages now use parent=root-node. Benchmark the parent-index baseline before deciding on any extra index. |
-| Root identities | Keep Drive Root metadata and a matching kind=root Node. Share the id; create/purge the pair atomically. Grants and activity link only to Nodes. |
-| Invalid grant input | ValidationError maps to HTTP 400. Failed writes leave no mutations. |
-| Explanation route | GET grants with a principal parameter; test authorization and response shape. |
+The spec owns the [twelve accepted decisions](drive-layer-spec.md#accepted-decisions)
+and their verification requirements. Historical decision tickets and explainers
+remain inputs only where they agree with that spec.
 
 Stage 1 covers root pairs, permission rules, expiry retention, and header
 limits. Stage 2 covers restore destinations and the five daily jobs.

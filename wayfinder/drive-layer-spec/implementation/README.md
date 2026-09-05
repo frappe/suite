@@ -10,8 +10,7 @@ This directory holds implementation tickets; `../tickets/` holds historical desi
 
 ## Sources
 
-- [Accepted spec](../drive-layer-spec.md): behavior.
-- [Accepted decision review](../decision-review.md): the twelve resolved choices.
+- [Accepted spec](../drive-layer-spec.md): behavior, the twelve accepted decisions, and required verification.
 - [Implementation plan](../drive-layer-plan.md): repository scope, ownership, and test commands.
 - [Architecture charter](../../../ARCHITECTURE.md): module placement and dependency boundaries.
 - [Drive glossary](../../../suite/drive/CONTEXT.md): domain terms.
