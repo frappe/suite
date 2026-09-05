@@ -7,6 +7,7 @@ from frappe.utils import now_datetime
 
 from suite.drive._core.nodes import purge_expired_trash_root
 from suite.drive._core.previews import sweep_missing
+from suite.drive._core.versions import thin
 
 
 def sweep_missing_previews() -> dict:
@@ -43,3 +44,8 @@ def purge_trashed_nodes() -> dict:
             purged_roots += 1
             purged_nodes += count
     return {"roots": purged_roots, "nodes": purged_nodes, "failed": failed}
+
+
+def thin_versions() -> dict:
+    """Apply the configured Drive version ladder once per day."""
+    return thin()
