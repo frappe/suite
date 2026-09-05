@@ -1,0 +1,311 @@
+import ast
+import unittest
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+
+from suite import drive
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+SUITE_ROOT = REPOSITORY_ROOT / "suite"
+PRODUCTS = frozenset({"calendar", "drive", "mail", "meet", "sheets", "slides", "writer"})
+CONTENT_PRODUCTS = frozenset({"sheets", "slides", "writer"})
+
+
+@dataclass(frozen=True)
+class Debt:
+    owner: str
+    removal: str
+
+
+@dataclass(frozen=True)
+class Violation:
+    path: str
+    line: int
+    kind: str
+    module: str
+    reason: str
+
+    @property
+    def base_key(self):
+        return f"{self.path}|{self.kind}|{self.module}"
+
+
+def _debt(owner, removal, entries):
+    debt = Debt(owner, removal)
+    return {entry: debt for entry in entries}
+
+
+BASELINE_DEBT = {
+    **_debt(
+        "Suite architecture",
+        "Move product lifecycle wiring to suite.composition when Drive installation changes.",
+        (
+            "suite/suite_core/boot.py|import|suite.calendar.install",
+            "suite/suite_core/boot.py|import|suite.drive.install",
+            "suite/suite_core/boot.py|import|suite.drive.install#2",
+            "suite/suite_core/boot.py|import|suite.mail.install",
+            "suite/suite_core/boot.py|import|suite.mail.install#2",
+            "suite/suite_core/boot.py|import|suite.meet.utils",
+            "suite/suite_core/boot.py|import|suite.sheets.boot",
+        ),
+    ),
+    **_debt(
+        "Drive and adopting product owners",
+        "Remove through Drive implementation tickets 15-23 and the backend integration review (30).",
+        (
+            "suite/drive/api/list.py|import|suite.slides.doctype.presentation.presentation",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_file",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_permission",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_settings",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_invitation",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_activity_log",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_favourite",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_recent",
+            "suite/hooks.py|dotted-string|suite.drive.utils.overrides.filter_drive_notif",
+            "suite/hooks.py|dotted-string|suite.drive.api.permissions.user_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_permission_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.api.permissions.activity_log_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_settings_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.api.permissions.drive_invitation_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.content_has_permission",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.File",
+            "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache",
+            "suite/hooks.py|dotted-string|suite.drive.utils.clear_user_group_cache#2",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#2",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#3",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.sync_content_file#4",
+            "suite/hooks.py|dotted-string|suite.drive.utils.users.create_drive_settings",
+            "suite/hooks.py|dotted-string|suite.drive.api.scripts.auto_delete_from_trash",
+            "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_deleted_files",
+            "suite/hooks.py|dotted-string|suite.drive.api.scripts.clear_download_archives",
+            "suite/hooks.py|dotted-string|suite.drive.webdav.locks.purge_expired_locks",
+            "suite/hooks.py|dotted-string|suite.drive.overrides.file.after_file_upload",
+            "suite/hooks.py|dotted-string|suite.drive.api.product.after_request",
+            "suite/hooks.py|dotted-string|suite.drive.webdav.dispatch.handle_before_request",
+            "suite/meet/api/recording.py|import|suite.drive.api.storage",
+            "suite/meet/api/recording.py|import|suite.drive.utils",
+            "suite/meet/api/test/test_recording.py|import|suite.drive.api.storage",
+            "suite/meet/api/test/test_recording.py|dotted-string|suite.drive.api.storage.get_quota",
+            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.api.files",
+            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils",
+            "suite/meet/api/test/test_recording_reliability.py|import|suite.drive.utils.files",
+            "suite/meet/doctype/meet_recording/meet_recording.py|import|suite.drive.api.storage",
+            "suite/meet/recording/ingest.py|import|suite.drive.api.storage",
+            "suite/meet/recording/ingest.py|import|suite.drive.utils",
+            "suite/meet/recording/ingest.py|import|suite.drive.utils.files",
+            "suite/sheets/api.py|import|suite.drive.api.permissions",
+            "suite/sheets/doctype/sheet/sheet.py|import|suite.drive.overrides.file",
+            "suite/sheets/patches/integrate_with_drive.py|import|suite.drive.utils",
+            "suite/slides/api/test_file.py|import|suite.drive.overrides.file",
+            "suite/slides/doctype/presentation/patches/integrate_with_drive.py|import|suite.drive.utils",
+            "suite/slides/doctype/presentation/presentation.py|import|suite.drive.api.permissions",
+            "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file",
+            "suite/slides/doctype/presentation/presentation.py|import|suite.drive.overrides.file#2",
+            "suite/slides/tests/test_pasted_media.py|import|suite.drive.overrides.file",
+            "suite/slides/tests/utils.py|import|suite.drive.overrides.file",
+            "suite/slides/tests/utils.py|import|suite.drive.overrides.file#2",
+            "suite/writer/api/docs.py|import|suite.drive.api.files",
+            "suite/writer/api/docs.py|import|suite.drive.api.permissions",
+            "suite/writer/api/docs.py|import|suite.drive.utils",
+            "suite/writer/api/docs.py|import|suite.drive.utils.files",
+            "suite/writer/api/embed.py|import|suite.drive.api.files",
+            "suite/writer/api/embed.py|import|suite.drive.api.permissions",
+            "suite/writer/api/general.py|import|suite.drive.api.permissions",
+            "suite/writer/api/general.py|import|suite.drive.utils",
+            "suite/writer/doctype/writer_document/writer_document.py|import|suite.drive.api.notifications",
+            "suite/writer/overrides/__init__.py|import|suite.drive.api.permissions",
+            "suite/writer/overrides/__init__.py|import|suite.drive.overrides.file",
+        ),
+    ),
+    **_debt(
+        "Mail and Calendar owners",
+        "Replace the existing Mail/Calendar cycle with declared package interfaces after the Drive rewrite.",
+        (
+            "suite/calendar/api/__init__.py|import|suite.mail.jmap",
+            "suite/calendar/api/__init__.py|import|suite.mail.utils.dt",
+            "suite/calendar/api/invites.py|import|suite.mail.jmap",
+            "suite/calendar/api/invites.py|import|suite.mail.jmap.services.calendars.calendar",
+            "suite/calendar/api/invites.py|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/calendar/api/rsvp.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/api/rsvp.py|import|suite.mail.jmap",
+            "suite/calendar/api/rsvp.py|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar/calendar.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.dt",
+            "suite/calendar/doctype/calendar_event/calendar_event.py|import|suite.mail.utils.logger",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.mail_queue.mail_queue",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_event/invitations.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.stalwart",
+            "suite/calendar/doctype/calendar_event/mailing_lists.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.push_subscription.push_subscription",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap.services.calendars.calendar",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.jmap.services.calendars.calendar_event",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.logger",
+            "suite/calendar/doctype/calendar_exchange/calendar_exchange.py|import|suite.mail.utils.user",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.doctype.user_account.user_account",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.jmap",
+            "suite/calendar/doctype/event_notification/event_notification.py|import|suite.mail.utils.dt",
+            "suite/calendar/tests/test_calendar_calendars.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_events.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_exchange_and_notifications.py|import|suite.mail.api.account",
+            "suite/calendar/tests/test_calendar_exchange_and_notifications.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_invites_rsvp.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_invites_rsvp.py|import|suite.mail.jmap",
+            "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.api.mail",
+            "suite/calendar/tests/test_calendar_mail_invites.py|import|suite.mail.tests.base",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.api.admin",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.stalwart",
+            "suite/calendar/tests/test_calendar_mailing_list_participants.py|import|suite.mail.tests.base",
+            "suite/mail/api/jmap.py|import|suite.calendar.doctype.calendar_event.calendar_event",
+            "suite/mail/tests/test_jmap_calendar_event_notification.py|import|suite.calendar.doctype.event_notification.event_notification",
+            "suite/mail/utils/query.py|import|suite.calendar.doctype.calendar.calendar",
+        ),
+    ),
+    **_debt(
+        "Meet, Mail, and Calendar owners",
+        "Declare scheduling interfaces before changing the existing Meet integration.",
+        (
+            "suite/meet/api/schedule.py|import|suite.calendar.doctype.calendar_event.calendar_event",
+            "suite/meet/api/schedule.py|import|suite.mail.doctype.user_account.user_account",
+        ),
+    ),
+    **_debt(
+        "Suite architecture",
+        "Move Suite-level orchestration behind composition-owned interfaces.",
+        (
+            "suite/api/account.py|import|suite.mail.utils.user",
+            "suite/tests/ci_smoke.py|dotted-string|suite.meet.api.recording.reconcile_pending_recordings",
+            "suite/www/event_rsvp.py|import|suite.calendar.api.rsvp",
+        ),
+    ),
+}
+
+
+def _owner(path):
+    parts = PurePosixPath(path).parts
+    if len(parts) > 1 and parts[0] == "suite" and parts[1] in PRODUCTS | {"suite_core"}:
+        return parts[1]
+    return None
+
+
+def _classify(path, module):
+    parts = module.split(".")
+    if len(parts) < 2 or parts[0] != "suite" or parts[1] not in PRODUCTS | {"suite_core"}:
+        return None
+
+    source = _owner(path)
+    target = parts[1]
+    if source == "drive" and target in CONTENT_PRODUCTS:
+        return "Drive imports a concrete content-product implementation"
+    if source == "suite_core" and target in PRODUCTS:
+        return "suite_core imports a product implementation"
+    if source in PRODUCTS and target in PRODUCTS and source != target:
+        if module == f"suite.{target}":
+            return None
+        return "a product imports another product below its package-root interface"
+    if target == "drive" and source != "drive":
+        if module == "suite.drive":
+            return None
+        if path == "suite/hooks.py" and module.startswith(("suite.drive.framework.", "suite.drive.jobs.")):
+            return None
+        return "code outside Drive imports a private Drive module"
+    if source is None and path != "suite/hooks.py" and target in PRODUCTS:
+        if module != f"suite.{target}":
+            return "Suite-level code imports a product below its package-root interface"
+    return None
+
+
+def _modules(node):
+    if isinstance(node, ast.Import):
+        return ("import", [alias.name for alias in node.names])
+    if isinstance(node, ast.ImportFrom):
+        if node.module == "suite":
+            return ("import", [f"suite.{alias.name}" for alias in node.names])
+        return ("import", [node.module] if node.module else [])
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("suite."):
+        return ("dotted-string", [node.value])
+    return (None, [])
+
+
+def violations_in_tree(path, tree):
+    violations = []
+    for node in ast.walk(tree):
+        kind, modules = _modules(node)
+        for module in modules:
+            reason = _classify(path, module)
+            if reason:
+                violations.append(Violation(path, node.lineno, kind, module, reason))
+    return sorted(violations, key=lambda violation: (violation.path, violation.line, violation.kind, violation.module))
+
+
+def python_violations():
+    violations = []
+    for source in sorted(SUITE_ROOT.rglob("*.py")):
+        relative = source.relative_to(REPOSITORY_ROOT).as_posix()
+        if relative == "suite/tests/test_architecture.py":
+            continue
+        tree = ast.parse(source.read_text(), filename=relative)
+        violations.extend(violations_in_tree(relative, tree))
+    return violations
+
+
+def keyed_violations(violations):
+    counts = Counter()
+    keyed = {}
+    for violation in violations:
+        counts[violation.base_key] += 1
+        occurrence = counts[violation.base_key]
+        key = violation.base_key if occurrence == 1 else f"{violation.base_key}#{occurrence}"
+        keyed[key] = violation
+    return keyed
+
+
+class TestArchitecture(unittest.TestCase):
+    def test_python_boundaries_match_owned_debt_baseline(self):
+        actual = keyed_violations(python_violations())
+        unexpected = sorted(set(actual) - set(BASELINE_DEBT))
+        resolved = sorted(set(BASELINE_DEBT) - set(actual))
+        details = []
+        if unexpected:
+            details.append("New boundary violations:\n" + "\n".join(
+                f"  {key} (line {actual[key].line}: {actual[key].reason})" for key in unexpected
+            ))
+        if resolved:
+            details.append("Resolved debt still present in BASELINE_DEBT:\n" + "\n".join(
+                f"  {key} (owner: {BASELINE_DEBT[key].owner})" for key in resolved
+            ))
+        self.assertFalse(details, "\n\n".join(details))
+
+    def test_forbidden_static_and_dynamic_imports_are_detected(self):
+        tree = ast.parse(
+            "from suite.drive._core.access import require\n"
+            "target = 'suite.drive.doctype.drive_node.drive_node.DriveNode'\n"
+        )
+        violations = violations_in_tree("suite/writer/new_caller.py", tree)
+        self.assertEqual(len(violations), 2)
+        self.assertTrue(all("package-root interface" in violation.reason for violation in violations))
+
+    def test_package_root_import_is_allowed(self):
+        tree = ast.parse("from suite import drive\n")
+        self.assertEqual(violations_in_tree("suite/writer/new_caller.py", tree), [])
+
+    def test_drive_public_interface_is_explicit_and_complete_only(self):
+        self.assertIsInstance(drive.__all__, tuple)
+        self.assertEqual(drive.__all__, ())
+
+    def test_every_baseline_entry_has_a_removal_owner(self):
+        for key, debt in BASELINE_DEBT.items():
+            with self.subTest(key=key):
+                self.assertTrue(debt.owner)
+                self.assertTrue(debt.removal)
