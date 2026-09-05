@@ -223,5 +223,9 @@ class TestCommentLockOrder(UnitTestCase):
         after = getattr(frappe.local, "db", missing)
         self.assertIs(after, before)
         if before is not missing:
-            # The `frappe.db` proxy still resolves, so later integration tests run.
-            self.assertIsNotNone(frappe.db.db_name)
+            # The `frappe.db` proxy still resolves to the original connection, so
+            # later integration tests run. Compare the object behind the proxy
+            # instead of an attribute that framework versions may rename.
+            proxy = frappe.db
+            resolved = getattr(proxy, "_get_current_object", lambda: proxy)()
+            self.assertIs(resolved, before)
