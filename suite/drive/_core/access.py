@@ -137,6 +137,30 @@ def effective_role(node: Mapping, principals: Principals) -> int:
     return _point_state(node, principals)[0]
 
 
+def effective_roles(
+    chain: list[str],
+    child_rows: Mapping[str, list],
+    chain_rows: list,
+    principals: Principals,
+) -> dict[str, int]:
+    """Resolve a page of children from the two grant result sets."""
+    if principals.is_admin:
+        return dict.fromkeys(child_rows, MANAGE)
+
+    ticket_results = {}
+    depth = {node_id: index for index, node_id in enumerate(chain)}
+    child_depth = len(chain)
+    roles = {}
+    for child_id, rows in child_rows.items():
+        roles[child_id] = _resolve_rows(
+            [*chain_rows, *rows],
+            {**depth, child_id: child_depth},
+            principals,
+            ticket_results=ticket_results,
+        )
+    return roles
+
+
 def _point_state(node: Mapping, principals: Principals):
     """Load current rows once and validate each protected link proof once."""
 
@@ -250,6 +274,33 @@ def require(node: Mapping, need: int, principals: Principals) -> None:
         role, rows, depth, ticket_results = 0, [], {}, {}
     else:
         role, rows, depth, ticket_results = _point_state(node, principals)
+    if role >= need:
+        return
+    if _expired_link_in_rows(node, principals, need, rows, depth, ticket_results):
+        raise DriveLinkExpired(_("This Drive link has expired"))
+    if _locked_link_in_rows(rows, depth, principals, need, ticket_results):
+        raise DriveLocked(_("This Drive link requires a password"))
+    if role < READ:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node.get("name")))
+    raise DriveForbidden(_("You do not have the required access to Drive node {0}").format(node.get("name")))
+
+
+def require_from_rows(
+    node: Mapping,
+    need: int,
+    principals: Principals,
+    rows: list,
+) -> None:
+    """Apply require semantics to already-loaded current rows.
+
+    Successful listing checks stay inside their fixed query budget. A denied
+    check may issue the expired-link probe needed to distinguish its error.
+    """
+    if principals.is_admin:
+        return
+    depth = {node_id: index for index, node_id in enumerate(chain_ids(node))}
+    ticket_results = {}
+    role = _resolve_rows(rows, depth, principals, ticket_results=ticket_results)
     if role >= need:
         return
     if _expired_link_in_rows(node, principals, need, rows, depth, ticket_results):
