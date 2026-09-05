@@ -71,6 +71,19 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
         finally:
             frappe.set_user("Administrator")
         self.rooms.append(room.name)
+        # `validate_state` accepts upload metadata only as a complete tuple, so a
+        # size needs the other three fields too. The values are dummies: the
+        # backfill only reads `upload_size`.
+        upload = (
+            {
+                "upload_id": frappe.generate_hash(length=40),
+                "upload_size": upload_size,
+                "upload_sha256": "a" * 64,
+                "upload_duration_ms": 1000,
+            }
+            if upload_size
+            else {}
+        )
         recording = frappe.get_doc(
             {
                 "doctype": "Meet Recording",
@@ -83,8 +96,8 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 "estimated_seconds": 3600,
                 "estimated_bytes": budget_bytes,
                 "budget_bytes": budget_bytes,
-                "upload_size": upload_size,
                 "drive_home_folder": self.home_folder,
+                **upload,
             }
         ).insert(ignore_permissions=True)
         self.recordings.append(recording.name)
