@@ -1303,14 +1303,27 @@ def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._d
 
     for depth in sorted(by_depth):
         for candidate in sorted(by_depth[depth]):
-            _node(candidate, for_update=True)
+            _lock_chain_node(candidate)
     for root in sorted(roots):
-        _node(root, for_update=True)
+        _lock_chain_node(root)
 
-    refreshed = {node_id: _node(node_id, for_update=True) for node_id in sorted(snapshots)}
+    refreshed = {node_id: _lock_chain_node(node_id) for node_id in sorted(snapshots)}
     if any(tuple(chain_ids(refreshed[node_id])) != chain for node_id, chain in expected.items()):
         raise DriveConflict(_("The Drive tree changed; retry the operation"))
     return refreshed
+
+
+def _lock_chain_node(node_id: str) -> frappe._dict:
+    """Lock one chain member the stored tree names, never a caller-named node.
+
+    Every id here comes from a stored parent, root, or path, so a missing row
+    is corrupt or concurrently removed structure. That is a conflict for the
+    caller, whose own node was found before this lock order began.
+    """
+    try:
+        return _node(node_id, for_update=True)
+    except DriveNotFound as exc:
+        raise DriveConflict(_("The Drive node has an invalid tree position")) from exc
 
 
 def _rollback_savepoint(savepoint: str, error: Exception) -> None:
