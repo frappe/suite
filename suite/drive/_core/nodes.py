@@ -25,6 +25,7 @@ from suite.drive._core.access import (
     require_link,
 )
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.previews import copy_preview, enqueue_render
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release, root_for_node
 from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
@@ -329,7 +330,7 @@ def _create_empty_node(
     savepoint = f"drive_create_{kind}_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        parent_row = _node(parent, for_update=True)
+        parent_row = _lock_create_parent(parent)
         via_link = require(parent_row, UPLOAD, principals)
         _validate_parent(parent_row, for_update=True, allow_document=False)
         _refuse_sibling_collision(parent_row.name, title)
@@ -345,8 +346,8 @@ def _create_empty_node(
         if url is not None:
             detail["url"] = url
         _record_activity(node.name, "create", principals, detail, via_link=via_link)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -369,9 +370,7 @@ def create_file(
     savepoint = f"drive_create_file_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        # The parent row lock serializes the title check with every compliant
-        # sibling create and closes the pre-check/insert race.
-        parent_row = _node(parent, for_update=True)
+        parent_row = _lock_create_parent(parent)
         via_link = require(parent_row, UPLOAD, principals)
         if _via_link is not None:
             require_link(parent_row, UPLOAD, principals, _via_link)
@@ -411,11 +410,9 @@ def create_file(
             {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
             via_link=via_link,
         )
-        from suite.drive._core.previews import enqueue_render
-
         enqueue_render(node.name)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -525,8 +522,6 @@ def _replace_file(
             {"blob": blob_row.name, "size": blob_row.file_size, "version": version},
             via_link=via_link,
         )
-        from suite.drive._core.previews import enqueue_render
-
         enqueue_render(current.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
@@ -610,8 +605,8 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
             },
             via_link=activity_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -621,20 +616,15 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
 def _lock_move_rows(
     node_id: str, destination_id: str
 ) -> tuple[frappe._dict, frappe._dict, list[frappe._dict]]:
-    """Lock all tree namespaces, then root metadata, in stable order."""
+    """Lock both ancestry chains, the source subtree, then root metadata."""
     initial = {node_id: _node(node_id), destination_id: _node(destination_id)}
     root_ids = {root_id(row) for row in initial.values()}
     if None in root_ids:
         raise DriveConflict(_("The Drive move has an invalid root"))
-    locked = {candidate: _node(candidate, for_update=True) for candidate in sorted(initial)}
+    locked = _lock_tree_chains(initial)
     current = locked[node_id]
     destination = locked[destination_id]
-    if {root_id(current), root_id(destination)} != root_ids:
-        raise DriveConflict(_("The Drive move endpoints changed; retry the move"))
     subtree = _subtree(current)
-    chain_node_ids = set(chain_ids(current)) | set(chain_ids(destination))
-    for chain_node_id in sorted(chain_node_ids - set(locked)):
-        _node(chain_node_id, for_update=True)
     for candidate_root in sorted(root_ids):
         validate_root_pair(candidate_root, for_update=True)
     return current, destination, subtree
@@ -842,8 +832,6 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
         copied_title = _deduplicated_title(destination.name, title or source.title)
         destination_root = root_id(destination)
         admit(destination_root, sum(int(row.size or 0) for row in source_rows))
-
-        from suite.drive._core.previews import copy_preview
 
         by_source: dict[str, frappe._dict] = {}
         for source_row in source_rows:
@@ -1186,7 +1174,7 @@ def _validate_purge_root(node: dict) -> None:
     cursor = node
     seen = {node.get("name")}
     for _depth_index in range(40):
-        parent = _node(cursor.get("parent"), for_update=True)
+        parent = _chain_node(cursor.get("parent"), for_update=True)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         expected_root = parent.name if parent.kind == "root" else parent.root
@@ -1267,7 +1255,7 @@ def _delete_if_field(
     *,
     require_options: str | None = None,
 ) -> None:
-    if not values or not frappe.db.table_exists(doctype):
+    if not values or not frappe.db.exists("DocType", doctype) or not frappe.db.table_exists(doctype):
         return
     field = frappe.get_meta(doctype).get_field(fieldname)
     if not field or (require_options is not None and field.options != require_options):
@@ -1286,6 +1274,74 @@ def _node(node_id: str, *, for_update: bool = False) -> frappe._dict:
     if not row:
         raise DriveNotFound(_("Drive node {0} was not found").format(node_id))
     return row
+
+
+def _lock_create_parent(parent_id: str) -> frappe._dict:
+    """Lock one creation chain in the source-to-descendant move order."""
+    snapshot = _node(parent_id)
+    return _lock_tree_chains({parent_id: snapshot})[parent_id]
+
+
+def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._dict]:
+    """Lock immutable snapshots by depth and id, with root nodes last.
+
+    Create and move both use this order. It puts a move source before every
+    descendant in its subtree without reversing the destination ancestry
+    order used by a concurrent create.
+    """
+    expected = {}
+    by_depth: dict[int, set[str]] = {}
+    roots = set()
+    for node_id, snapshot in snapshots.items():
+        chain = chain_ids(snapshot)
+        if (
+            not chain
+            or not all(isinstance(candidate, str) and candidate for candidate in chain)
+            or chain[-1] != node_id
+            or len(chain) != len(set(chain))
+        ):
+            raise DriveConflict(_("The Drive node has an invalid tree position"))
+        expected[node_id] = tuple(chain)
+        roots.add(chain[0])
+        for depth, candidate in enumerate(chain[1:], start=1):
+            by_depth.setdefault(depth, set()).add(candidate)
+
+    for depth in sorted(by_depth):
+        for candidate in sorted(by_depth[depth]):
+            _chain_node(candidate, for_update=True)
+    for root in sorted(roots):
+        _chain_node(root, for_update=True)
+
+    refreshed = {node_id: _chain_node(node_id, for_update=True) for node_id in sorted(snapshots)}
+    if any(tuple(chain_ids(refreshed[node_id])) != chain for node_id, chain in expected.items()):
+        raise DriveConflict(_("The Drive tree changed; retry the operation"))
+    return refreshed
+
+
+def _chain_node(node_id: str, *, for_update: bool = False) -> frappe._dict:
+    """Read one node the stored tree reached, refusing a missing row as a conflict.
+
+    Every id here comes from a stored parent, root, or path, or is a caller-named
+    node this workflow already found. A row missing now is corrupt or concurrently
+    removed structure, which the caller sees as a conflict, never as the node they
+    named being absent.
+    """
+    try:
+        return _node(node_id, for_update=for_update)
+    except DriveNotFound as exc:
+        raise DriveConflict(_("The Drive node has an invalid tree position")) from exc
+
+
+def _rollback_savepoint(savepoint: str, error: Exception) -> None:
+    """Rollback one workflow without masking MariaDB's original deadlock."""
+    try:
+        frappe.db.rollback(save_point=savepoint)
+    except Exception:
+        if not isinstance(error, frappe.QueryDeadlockError):
+            raise
+        # InnoDB has already rolled back the deadlock victim's transaction,
+        # including its savepoints. A full rollback safely resets the handle.
+        frappe.db.rollback()
 
 
 def _validate_parent(
@@ -1315,7 +1371,7 @@ def _validate_stored_position(node: frappe._dict, *, for_update: bool = False) -
             return
         if not cursor.parent or not cursor.root:
             raise DriveConflict(_("The Drive node has an invalid tree position"))
-        parent = _node(cursor.parent, for_update=for_update)
+        parent = _chain_node(cursor.parent, for_update=for_update)
         if parent.name in seen:
             raise DriveConflict(_("The Drive node tree contains a cycle"))
         if parent.state != "Active" or parent.kind not in ("root", "folder", "document"):
@@ -1394,22 +1450,10 @@ def _validate_existing_head(node: frappe._dict) -> None:
 
 
 def _preserve_head(node: frappe._dict, principals: Principals) -> int:
-    seq = frappe.db.sql(
-        "SELECT COALESCE(MAX(seq), 0) + 1 FROM `tabDrive Node Version` WHERE node = %s",
-        node.name,
-    )[0][0]
-    frappe.get_doc(
-        {
-            "doctype": "Drive Node Version",
-            "node": node.name,
-            "seq": seq,
-            "kind": "auto",
-            "actor": principals.user,
-            "size": node.size,
-            "blob": node.blob,
-        }
-    ).insert(ignore_permissions=True)
-    return seq
+    # Imported lazily because versions use the node loader and activity helper.
+    from suite.drive._core.versions import preserve_file_head
+
+    return preserve_file_head(node, principals)
 
 
 def _content_time(value: datetime | int | float | str | None) -> datetime:

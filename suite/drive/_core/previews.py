@@ -13,9 +13,14 @@ from PIL import Image, ImageOps
 
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import _node
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT
+
+# Previews sit below nodes.py so the node workflows can import this module at
+# the top. Reading the node here keeps that direction one-way: the fields are
+# the ones require() walks (name, kind, root, path) plus the head this module
+# renders from.
+PREVIEW_NODE_FIELDS = ("name", "kind", "root", "path", "state", "blob", "mime")
 
 PREVIEW_LONGEST_SIDE = 512
 PREVIEW_TTL_SECONDS = 15 * 60
@@ -118,7 +123,7 @@ def render(node: str) -> None:
 
 def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: str) -> None:
     """Replace one document preview under EDIT without touching its node."""
-    current = _node(node)
+    current = _preview_node(node)
     require(current, EDIT, principals)
     if current.kind != "document" or current.state != "Active":
         raise DriveForbidden(_("Only an active content document accepts a pushed preview"))
@@ -128,7 +133,7 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
     preview_bytes = _image_webp(io.BytesIO(image_bytes))
     preview = put_blob(io.BytesIO(preview_bytes), is_private=True, filename=f"{node}.webp")
 
-    locked = _node(node, for_update=True)
+    locked = _preview_node(node, for_update=True)
     if locked.kind != "document" or locked.state != "Active":
         raise DriveForbidden(_("Only an active content document accepts a pushed preview"))
     _write_preview(node, source_blob=None, preview_blob=preview.name)
@@ -197,6 +202,19 @@ def sweep_missing() -> dict:
     }
 
 
+def _preview_node(node: str, *, for_update: bool = False) -> frappe._dict:
+    row = frappe.db.get_value(
+        "Drive Node",
+        node,
+        PREVIEW_NODE_FIELDS,
+        as_dict=True,
+        for_update=for_update,
+    )
+    if not row:
+        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    return row
+
+
 def _renderable_file(node: frappe._dict | None) -> bool:
     return bool(
         node
@@ -252,7 +270,7 @@ def _encode_image(image: Image.Image) -> bytes:
 
 def _publish_rendered(node: str, source_blob: str, preview_blob: str) -> bool:
     try:
-        current = _node(node, for_update=True)
+        current = _preview_node(node, for_update=True)
     except DriveNotFound:
         return False
     if not _renderable_file(current) or current.blob != source_blob:

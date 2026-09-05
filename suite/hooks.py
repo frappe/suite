@@ -285,6 +285,7 @@ scheduler_events = {
         "suite.meet.api.recording.cleanup_failed_recordings",
         # drive
         "suite.drive.jobs.purge_trashed_nodes",
+        "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
         "suite.drive.api.scripts.auto_delete_from_trash",
         "suite.drive.api.scripts.clear_deleted_files",
