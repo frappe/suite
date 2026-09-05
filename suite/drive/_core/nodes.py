@@ -12,6 +12,7 @@ from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.utils import convert_utc_to_system_timezone, get_attr, get_datetime, now, now_datetime
 
+from suite.drive._core import previews
 from suite.drive._core.access import (
     POINT_SQL,
     _resolve_rows,
@@ -409,6 +410,7 @@ def create_file(
             {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
             via_link=via_link,
         )
+        previews.enqueue_render(node.name)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise
@@ -502,6 +504,7 @@ def _replace_file(
         # The old head's existing charge becomes the version's charge. Only
         # the new head increases total logical usage, including same-blob edits.
         admit(current.root, blob_row.file_size)
+        frappe.db.delete("Drive Node Preview", {"node": current.name})
         frappe.db.set_value(
             "Drive Node",
             current.name,
@@ -519,6 +522,7 @@ def _replace_file(
             {"blob": blob_row.name, "size": blob_row.file_size, "version": version},
             via_link=via_link,
         )
+        previews.enqueue_render(current.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
@@ -852,6 +856,7 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 {"kind": new_node.kind, "title": new_node.title, "copied_from": source_row.name},
                 via_link=activity_link,
             )
+            previews.copy_preview(source_row.name, new_node.name)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise

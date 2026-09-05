@@ -11,6 +11,7 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.utils import get_attr, get_datetime, now_datetime
 
+from suite.drive._core import previews
 from suite.drive._core.access import require
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import _node, _record_activity, _validate_existing_head
@@ -212,11 +213,15 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
             # The target version remains charged. Repointing the head creates
             # one additional logical reference of exactly the target's size.
             admit(current.root, int(target.size or 0))
-            # HANDOFF, ticket 13: this repoint changes a file node's bytes, so
-            # it needs the same preview invalidation as replace: delete the
-            # `Drive Node Preview` row and enqueue a render (§8.5 step 5).
-            # Neither `_core/previews.py` nor the `Drive Node Preview` doctype
-            # exists yet, so no call is made here. Ticket 13 must add one.
+            if target_blob.name != current.blob:
+                # A repoint changes the head bytes, so it invalidates the
+                # preview exactly as replace does (§8.5 step 5, §9.2). A
+                # restore that lands on the same blob keeps a preview that is
+                # still correct. Lock order stays Drive Node, Drive Node
+                # Version, Drive Root, then Drive Node Preview; the render is
+                # queued, never run inline, so it takes no lock here.
+                frappe.db.delete("Drive Node Preview", {"node": current.name})
+                previews.enqueue_render(current.name)
             frappe.db.set_value(
                 "Drive Node",
                 current.name,
