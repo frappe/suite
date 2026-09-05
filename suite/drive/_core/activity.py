@@ -2,12 +2,13 @@
 
 from collections.abc import Iterable
 from typing import Any
+from uuid import uuid4
 
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
-from suite.drive._core.errors import DriveError, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveConflict, DriveError, DriveForbidden, DriveNotFound
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
 
@@ -87,27 +88,52 @@ def visit(principals: Principals, node: str) -> str:
     _require_person(principals)
     _authorized_node(principals, node)
     stamp = now_datetime()
-    existing = frappe.db.get_value(
-        "Drive Recent",
-        {"user": principals.user, "node": node},
-        "name",
-        for_update=True,
-    )
-    if existing:
-        frappe.db.set_value("Drive Recent", existing, "opened_at", stamp, update_modified=False)
-        return existing
-    return (
-        frappe.get_doc(
+    existing = _recent_row(principals.user, node)
+    if not existing:
+        # `recent_user_node` is a database unique index, and a row that does
+        # not exist yet cannot be locked. Two concurrent opens therefore both
+        # reach the insert; the loser adopts the winner's row.
+        existing, _inserted = _insert_unique(
             {
                 "doctype": "Drive Recent",
                 "user": principals.user,
                 "node": node,
                 "opened_at": stamp,
-            }
+            },
+            lambda: _recent_row(principals.user, node),
         )
-        .insert(ignore_permissions=True)
-        .name
+        if existing is None:
+            raise DriveConflict(_("The Drive recent row could not be recorded"))
+    frappe.db.set_value("Drive Recent", existing, "opened_at", stamp, update_modified=False)
+    return existing
+
+
+def _recent_row(user: str, node: str) -> str | None:
+    return frappe.db.get_value(
+        "Drive Recent",
+        {"user": user, "node": node},
+        "name",
+        for_update=True,
     )
+
+
+def _insert_unique(doc: dict, reread) -> tuple[str | None, bool]:
+    """Insert a row guarded by a unique index, tolerating a concurrent winner.
+
+    Returns the row name and whether this call is the one that inserted it.
+    """
+    savepoint = f"drive_record_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        name = frappe.get_doc(doc).insert(ignore_permissions=True).name
+    except frappe.UniqueValidationError:
+        frappe.db.rollback(save_point=savepoint)
+        return reread(), False
+    except Exception:
+        frappe.db.rollback(save_point=savepoint)
+        raise
+    frappe.db.release_savepoint(savepoint)
+    return name, True
 
 
 def recents(
@@ -142,11 +168,15 @@ def clear_recents(principals: Principals, nodes: Iterable[str] | None = None) ->
 
 
 def set_favourite(principals: Principals, node: str, value: bool = True) -> bool:
-    """Set the caller's private favourite mark after a Read check."""
+    """Set or clear the caller's private favourite mark."""
     _require_person(principals)
-    _authorized_node(principals, node)
     if type(value) is not bool:
         frappe.throw(_("Drive favourite value must be a boolean"), frappe.ValidationError)
+    # Adding a mark needs Read on the node. Removing the caller's own private
+    # mark does not, or a node that stopped being readable would leave a
+    # favourite its owner can neither see nor clear.
+    if value:
+        _authorized_node(principals, node)
     existing = frappe.db.get_value(
         "Drive Favourite",
         {"user": principals.user, "node": node},
@@ -154,8 +184,9 @@ def set_favourite(principals: Principals, node: str, value: bool = True) -> bool
         for_update=True,
     )
     if value and not existing:
-        frappe.get_doc({"doctype": "Drive Favourite", "user": principals.user, "node": node}).insert(
-            ignore_permissions=True
+        _insert_unique(
+            {"doctype": "Drive Favourite", "user": principals.user, "node": node},
+            lambda: frappe.db.get_value("Drive Favourite", {"user": principals.user, "node": node}, "name"),
         )
     elif not value and existing:
         frappe.db.delete("Drive Favourite", {"name": existing, "user": principals.user})
@@ -187,10 +218,15 @@ def notify_users(activity: str, users: Iterable[str]) -> int:
             continue
         if frappe.db.exists("Drive Notification", {"activity": activity, "to_user": user}):
             continue
-        frappe.get_doc(
-            {"doctype": "Drive Notification", "activity": activity, "to_user": user, "read": 0}
-        ).insert(ignore_permissions=True)
-        created += 1
+        # `notif_activity_user` keeps one row per person per activity even when
+        # a concurrent writer inserts the same pair between the check and here.
+        _, inserted = _insert_unique(
+            {"doctype": "Drive Notification", "activity": activity, "to_user": user, "read": 0},
+            lambda: frappe.db.get_value(
+                "Drive Notification", {"activity": activity, "to_user": user}, "name"
+            ),
+        )
+        created += int(inserted)
     return created
 
 

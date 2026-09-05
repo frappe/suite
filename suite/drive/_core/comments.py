@@ -79,8 +79,7 @@ def reply(
     savepoint = f"drive_comment_reply_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        thread_row = _thread(thread, for_update=True)
-        node = _comment_node(thread_row.node, for_update=True)
+        thread_row, node = _locked_thread(thread)
         via_link = require(node, COMMENT, principals)
         _require_document(node)
         _require_active(node)
@@ -118,8 +117,7 @@ def resolve(principals: Principals, thread: str, resolved: bool = True) -> None:
     savepoint = f"drive_comment_resolve_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        thread_row = _thread(thread, for_update=True)
-        node = _comment_node(thread_row.node, for_update=True)
+        thread_row, node = _locked_thread(thread)
         via_link = require(node, COMMENT, principals)
         _require_document(node)
         _require_active(node)
@@ -152,8 +150,7 @@ def edit_comment(principals: Principals, comment: str, text: str) -> None:
     savepoint = f"drive_comment_edit_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        comment_row = _comment(comment, for_update=True)
-        node = _comment_node(comment_row.node, for_update=True)
+        comment_row, node = _locked_comment(comment)
         via_link = require(node, READ, principals)
         _require_document(node)
         _require_active(node)
@@ -189,8 +186,7 @@ def delete_comment(principals: Principals, comment: str) -> None:
     savepoint = f"drive_comment_delete_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        comment_row = _comment(comment, for_update=True)
-        node = _comment_node(comment_row.node, for_update=True)
+        comment_row, node = _locked_comment(comment)
         via_link = require(node, READ, principals)
         _require_document(node)
         _require_active(node)
@@ -301,6 +297,29 @@ def _comment(comment: str, *, for_update: bool = False) -> frappe._dict:
     if not row:
         raise DriveNotFound(_("Drive comment {0} was not found").format(comment))
     return row
+
+
+def _locked_thread(thread: str) -> tuple[frappe._dict, frappe._dict]:
+    """Lock the node before its thread, the order every node workflow uses.
+
+    `nodes.purge` locks the Drive Node row and then deletes the thread and
+    comment rows beneath it. Locking a thread first would invert that order
+    and deadlock a reply against a concurrent purge.
+    """
+    node = _comment_node(_thread(thread).node, for_update=True)
+    locked = _thread(thread, for_update=True)
+    if locked.node != node.name:
+        raise DriveConflict(_("The Drive comment thread moved during the write"))
+    return locked, node
+
+
+def _locked_comment(comment: str) -> tuple[frappe._dict, frappe._dict]:
+    """Lock the node before its comment, matching `_locked_thread`."""
+    node = _comment_node(_comment(comment).node, for_update=True)
+    locked = _comment(comment, for_update=True)
+    if locked.node != node.name:
+        raise DriveConflict(_("The Drive comment moved during the write"))
+    return locked, node
 
 
 def _insert_comment(

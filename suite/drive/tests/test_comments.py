@@ -1,8 +1,12 @@
+from unittest.mock import MagicMock, patch
+
 import frappe
-from frappe.tests import IntegrationTestCase
+from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.drive._core.access import grant
 from suite.drive._core.comments import (
+    _locked_comment,
+    _locked_thread,
     create_thread,
     delete_comment,
     edit_comment,
@@ -164,3 +168,47 @@ class TestCommentWorkflows(IntegrationTestCase):
             resolve(self.owner, thread)
         with self.assertRaises(DriveForbidden):
             edit_comment(self.owner, comment, "No edit")
+
+
+class TestCommentLockOrder(UnitTestCase):
+    """`nodes.purge` locks a Drive Node row and then deletes the comment rows
+    beneath it. A comment write that locked its own row first would invert that
+    order and deadlock against a concurrent purge."""
+
+    def _locked_doctypes(self, target, name):
+        seen = []
+
+        def get_value(doctype, *args, **kwargs):
+            if kwargs.get("for_update"):
+                seen.append(doctype)
+            if doctype == "Drive Node":
+                return frappe._dict(
+                    name="node-1", parent="p-1", root="r-1", path="/a", kind="document", state="Active"
+                )
+            if doctype == "Drive Comment Thread":
+                return frappe._dict(
+                    name="thread-1", node="node-1", resolved=0, resolved_by=None, resolved_at=None
+                )
+            return frappe._dict(
+                name="comment-1", thread="thread-1", node="node-1", author="a@example.com", author_name=None
+            )
+
+        db = MagicMock()
+        db.get_value.side_effect = get_value
+        # `frappe.db` is a proxy for `frappe.local.db`, so swapping the local
+        # keeps this test runnable without a database connection.
+        with patch.object(frappe.local, "db", db, create=True):
+            target(name)
+        return seen
+
+    def test_the_node_is_locked_before_its_thread(self):
+        self.assertEqual(
+            self._locked_doctypes(_locked_thread, "thread-1"),
+            ["Drive Node", "Drive Comment Thread"],
+        )
+
+    def test_the_node_is_locked_before_its_comment(self):
+        self.assertEqual(
+            self._locked_doctypes(_locked_comment, "comment-1"),
+            ["Drive Node", "Drive Comment"],
+        )

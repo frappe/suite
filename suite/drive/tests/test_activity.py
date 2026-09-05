@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.drive._core.access import grant
+from suite.drive._core.access import grant, revoke
 from suite.drive._core.activity import (
     clear_recents,
     favourites,
@@ -15,7 +15,7 @@ from suite.drive._core.activity import (
     unread_count,
     visit,
 )
-from suite.drive._core.errors import DriveNotFound
+from suite.drive._core.errors import DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import create_folder, purge
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import READ
@@ -139,3 +139,20 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertFalse(frappe.db.exists("Drive Activity", {"node": self.node}))
         self.assertFalse(frappe.db.exists("Drive Recent", {"node": self.node}))
         self.assertFalse(frappe.db.exists("Drive Favourite", {"node": self.node}))
+
+    def test_losing_read_access_still_lets_the_owner_clear_their_own_mark(self):
+        set_favourite(self.other, self.node)
+        self.assertEqual(len(favourites(self.other)), 1)
+
+        revoke(self.node, OTHER, self.admin)
+        # The mark is now invisible, because the node is unreadable.
+        self.assertEqual(favourites(self.other), [])
+        self.assertTrue(frappe.db.exists("Drive Favourite", {"user": OTHER, "node": self.node}))
+
+        # Clearing a private mark is not a read of the node, so it still works.
+        set_favourite(self.other, self.node, False)
+        self.assertFalse(frappe.db.exists("Drive Favourite", {"user": OTHER, "node": self.node}))
+
+        # Adding one back does still need Read.
+        with self.assertRaises(DriveForbidden):
+            set_favourite(self.other, self.node)
