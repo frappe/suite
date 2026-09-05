@@ -6,7 +6,9 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite.drive._core.nodes import purge_expired_trash_root
+from suite.drive._core.previews import sweep_missing
 from suite.drive._core.quota import recompute_usage
+from suite.drive._core.versions import thin
 
 
 def recompute_root_usage() -> dict:
@@ -29,6 +31,11 @@ def recompute_root_usage() -> dict:
             failed += 1
             frappe.log_error("Drive: could not recompute root usage", frappe.get_traceback())
     return {"roots": len(roots), "corrected": corrected, "failed": failed}
+
+
+def sweep_missing_previews() -> dict:
+    """Queue the next bounded page of missing file previews."""
+    return sweep_missing()
 
 
 def purge_trashed_nodes() -> dict:
@@ -60,3 +67,8 @@ def purge_trashed_nodes() -> dict:
             purged_roots += 1
             purged_nodes += count
     return {"roots": purged_roots, "nodes": purged_nodes, "failed": failed}
+
+
+def thin_versions() -> dict:
+    """Apply the configured Drive version ladder once per day."""
+    return thin()

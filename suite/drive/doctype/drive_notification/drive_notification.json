@@ -5,9 +5,10 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "from_user",
+  "activity",
   "to_user",
   "read",
+  "from_user",
   "type",
   "message",
   "notif_doctype",
@@ -16,10 +17,10 @@
  ],
  "fields": [
   {
-   "fieldname": "from_user",
+   "fieldname": "activity",
    "fieldtype": "Link",
-   "label": "From User",
-   "options": "User"
+   "label": "Activity",
+   "options": "Drive Activity"
   },
   {
    "fieldname": "to_user",
@@ -36,32 +37,38 @@
    "label": "Read"
   },
   {
+   "fieldname": "from_user",
+   "fieldtype": "Link",
+   "label": "Legacy From User",
+   "options": "User"
+  },
+  {
    "fieldname": "type",
    "fieldtype": "Select",
-   "label": "Type",
+   "label": "Legacy Type",
    "options": "Share\nMention\nSite\nComment"
   },
   {
    "fieldname": "message",
    "fieldtype": "Text",
-   "label": "Message"
+   "label": "Legacy Message"
   },
   {
    "fieldname": "notif_doctype",
    "fieldtype": "Link",
-   "label": "Document Type",
+   "label": "Legacy Document Type",
    "options": "DocType"
   },
   {
    "fieldname": "notif_doctype_name",
    "fieldtype": "Dynamic Link",
-   "label": "DocType Name",
+   "label": "Legacy Document Name",
    "options": "notif_doctype"
   },
   {
    "fieldname": "entity_type",
    "fieldtype": "Data",
-   "label": "Entity Type"
+   "label": "Legacy Entity Type"
   }
  ],
  "links": [],
@@ -81,18 +88,6 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "Suite User",
    "share": 1,
    "write": 1
   }
