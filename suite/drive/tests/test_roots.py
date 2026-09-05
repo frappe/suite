@@ -39,9 +39,7 @@ class TestRootLifecycle(IntegrationTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self._root_nodes_before = set(
-            frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name")
-        )
+        self._root_nodes_before = set(frappe.get_all("Drive Node", filters={"kind": "root"}, pluck="name"))
         self._root_metadata_before = set(frappe.get_all("Drive Root", pluck="name"))
 
     def tearDown(self) -> None:
@@ -100,9 +98,7 @@ class TestRootLifecycle(IntegrationTestCase):
         self.assertEqual(pair.node.owner, self.user)
         self.assertEqual(personal_root_for(self.user), created.name)
         self.assertEqual(
-            frappe.db.get_value(
-                "Drive Grant", {"node": created.name, "principal": self.user}, "role"
-            ),
+            frappe.db.get_value("Drive Grant", {"node": created.name, "principal": self.user}, "role"),
             MANAGE,
         )
 
@@ -118,9 +114,7 @@ class TestRootLifecycle(IntegrationTestCase):
         self.assertIsNone(pair.root.user)
         self.assertEqual(pair.node.owner, "Administrator")
         self.assertEqual(
-            frappe.db.get_value(
-                "Drive Grant", {"node": created.name, "principal": "$GENERAL"}, "role"
-            ),
+            frappe.db.get_value("Drive Grant", {"node": created.name, "principal": "$GENERAL"}, "role"),
             UPLOAD,
         )
 
@@ -142,8 +136,7 @@ class TestRootLifecycle(IntegrationTestCase):
 
     def test_final_pair_validation_failure_rolls_back_the_grant_too(self):
         counts = {
-            doctype: frappe.db.count(doctype)
-            for doctype in ("Drive Node", "Drive Root", "Drive Grant")
+            doctype: frappe.db.count(doctype) for doctype in ("Drive Node", "Drive Root", "Drive Grant")
         }
         with patch("suite.drive._core.roots.validate_root_pair", side_effect=RuntimeError("stop")):
             with self.assertRaisesRegex(RuntimeError, "stop"):
@@ -168,9 +161,7 @@ class TestRootLifecycle(IntegrationTestCase):
 
         self.assertNotEqual(first.name, second.name)
         self.assertEqual(
-            frappe.db.count(
-                "Drive Root", {"user": self.user, "kind": "Personal", "state": "Active"}
-            ),
+            frappe.db.count("Drive Root", {"user": self.user, "kind": "Personal", "state": "Active"}),
             1,
         )
 
@@ -307,10 +298,27 @@ class TestRootLifecycle(IntegrationTestCase):
                 "is_template": 0,
             }
         ).insert(ignore_permissions=True)
+        great_grandchild = frappe.get_doc(
+            {
+                "doctype": "Drive Node",
+                "title": "Deeply nested",
+                "parent": grandchild.name,
+                "root": root.name,
+                "path": f"/{child.name}/{grandchild.name}/",
+                "kind": "folder",
+                "state": "Active",
+                "size": 0,
+                "is_template": 0,
+            }
+        ).insert(ignore_permissions=True)
 
         self.assertEqual(child.parent, root.name)
         self.assertEqual(child.path, "")
         self.assertEqual(chain_ids(grandchild), [root.name, child.name, grandchild.name])
+        self.assertEqual(
+            chain_ids(great_grandchild),
+            [root.name, child.name, grandchild.name, great_grandchild.name],
+        )
 
     def test_expired_positive_grants_for_own_and_open_principals_are_retained_but_inert(self):
         root = self._personal_root()
@@ -339,9 +347,7 @@ class TestRootLifecycle(IntegrationTestCase):
     def test_expired_deny_is_inert_and_expiry_boundary_is_exclusive(self):
         root = self._personal_root()
         child = self._child(root.name)
-        frappe.db.set_value(
-            "Drive Grant", {"node": root.name, "principal": self.user}, "role", EDIT
-        )
+        frappe.db.set_value("Drive Grant", {"node": root.name, "principal": self.user}, "role", EDIT)
         deny = frappe.get_doc(
             {
                 "doctype": "Drive Grant",
@@ -364,9 +370,7 @@ class TestRootLifecycle(IntegrationTestCase):
 
         self.assertTrue(add_creator_grant(child, pair_node(root.name), principals))
         self.assertEqual(
-            frappe.db.get_value(
-                "Drive Grant", {"node": child.name, "principal": self.user}, "role"
-            ),
+            frappe.db.get_value("Drive Grant", {"node": child.name, "principal": self.user}, "role"),
             EDIT,
         )
 
@@ -375,12 +379,8 @@ class TestRootLifecycle(IntegrationTestCase):
         child = self._child(root.name)
         principals = Principals("Guest", (), ("$PUBLIC", "$LINK:abc"))
 
-        self.assertFalse(
-            add_creator_grant(child, pair_node(root.name), principals, via_link="$LINK:abc")
-        )
-        self.assertFalse(
-            frappe.db.exists("Drive Grant", {"node": child.name, "principal": "$LINK:abc"})
-        )
+        self.assertFalse(add_creator_grant(child, pair_node(root.name), principals, via_link="$LINK:abc"))
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": child.name, "principal": "$LINK:abc"}))
 
     def test_creator_gets_no_redundant_grant_when_parent_already_gives_edit(self):
         root = self._personal_root()
@@ -388,9 +388,7 @@ class TestRootLifecycle(IntegrationTestCase):
         principals = Principals(self.user, (self.user,), ("$PUBLIC",))
 
         self.assertFalse(add_creator_grant(child, pair_node(root.name), principals))
-        self.assertFalse(
-            frappe.db.exists("Drive Grant", {"node": child.name, "principal": self.user})
-        )
+        self.assertFalse(frappe.db.exists("Drive Grant", {"node": child.name, "principal": self.user}))
 
     def test_schema_has_the_required_hot_path_indexes(self):
         expected = {
@@ -460,9 +458,7 @@ class TestRootLifecycle(IntegrationTestCase):
 
             frappe.db.rollback()
             created_nodes = set(
-                frappe.get_all(
-                    "Drive Node", filters={"kind": "root", "title": marker}, pluck="name"
-                )
+                frappe.get_all("Drive Node", filters={"kind": "root", "title": marker}, pluck="name")
             )
             created_roots = set(
                 frappe.get_all("Drive Root", filters={"name": ["in", tuple(created_nodes)]}, pluck="name")
@@ -487,6 +483,4 @@ class TestRootLifecycle(IntegrationTestCase):
 
 
 def pair_node(name: str) -> frappe._dict:
-    return frappe.db.get_value(
-        "Drive Node", name, ["name", "kind", "root", "path", "owner"], as_dict=True
-    )
+    return frappe.db.get_value("Drive Node", name, ["name", "kind", "root", "path", "owner"], as_dict=True)
