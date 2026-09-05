@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
@@ -19,7 +19,7 @@ from suite.drive._core.nodes import update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, READ
 from suite.drive._core.roots import create_root
-from suite.tests.utils import ensure_user
+from suite.tests.utils import ensure_user, stub_db
 
 OWNER = "drive-comment-owner@example.com"
 COMMENTER = "drive-commenter@example.com"
@@ -196,8 +196,9 @@ class TestCommentLockOrder(UnitTestCase):
         db = MagicMock()
         db.get_value.side_effect = get_value
         # `frappe.db` is a proxy for `frappe.local.db`, so swapping the local
-        # keeps this test runnable without a database connection.
-        with patch.object(frappe.local, "db", db, create=True):
+        # keeps this test runnable without a database connection. `stub_db`
+        # restores the previous binding, which `mock.patch` cannot do.
+        with stub_db(db):
             target(name)
         return seen
 
@@ -212,3 +213,15 @@ class TestCommentLockOrder(UnitTestCase):
             self._locked_doctypes(_locked_comment, "comment-1"),
             ["Drive Node", "Drive Comment"],
         )
+
+    def test_the_stub_leaves_the_database_binding_as_it_found_it(self):
+        missing = object()
+        before = getattr(frappe.local, "db", missing)
+
+        self._locked_doctypes(_locked_thread, "thread-1")
+
+        after = getattr(frappe.local, "db", missing)
+        self.assertIs(after, before)
+        if before is not missing:
+            # The `frappe.db` proxy still resolves, so later integration tests run.
+            self.assertIsNotNone(frappe.db.db_name)
