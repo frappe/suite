@@ -91,8 +91,9 @@ class TestVersionLadder(UnitTestCase):
         ],
     )
     @patch("suite.drive._core.versions.frappe.db.sql", return_value=["a", "b", "c"])
+    @patch("suite.drive._core.versions.now_datetime", return_value=datetime(2026, 9, 6, 12))
     def test_thin_commits_each_node_and_isolates_one_failure(
-        self, _sql, thin_one, commit, rollback, log_error
+        self, now, _sql, thin_one, commit, rollback, log_error
     ):
         self.assertEqual(
             thin(),
@@ -102,6 +103,13 @@ class TestVersionLadder(UnitTestCase):
         self.assertEqual(commit.call_count, 2)
         rollback.assert_called_once_with()
         log_error.assert_called_once()
+        # One clock read for the whole pass: every node and the SQL cutoff share it.
+        now.assert_called_once_with()
+        self.assertEqual({call.args[1] for call in thin_one.call_args_list}, {now.return_value})
+        self.assertEqual(
+            _sql.call_args.args[1]["cutoff"],
+            now.return_value - timedelta(hours=DEFAULT_LADDER["keep_all_hours"]),
+        )
 
     def test_thinner_is_registered_once_as_a_daily_scheduler_event(self):
         registered = []
