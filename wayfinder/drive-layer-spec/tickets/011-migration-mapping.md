@@ -223,7 +223,7 @@ Faris asked for the right shape rather than the smallest diff.
 
 - `Drive Activity`: `node`, `action`, `actor`, `at`, `via_link`, `client`,
   `detail` (JSON: old and new title, principal and role, source and target
-  folder). One row per action, written by the SDK. Same verbs as today.
+  folder). One row per action, written by Drive. Same verbs as today.
   Not named Event; the calendar module owns that word.
 - `Drive Favourite`: `user`, `node`, unique on the pair. Unchanged in
   shape, retargeted.

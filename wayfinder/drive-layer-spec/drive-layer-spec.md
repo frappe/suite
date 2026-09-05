@@ -4,16 +4,22 @@
 |---|---|
 | Status | Draft |
 | Date | 2026-09-05 |
-| Source map | `wayfinder/drive-layer-spec/` (tickets 001 to 014, `MAP.md`, `explainer/`) |
-| Companion plan | `drive-layer-plan.md` (file ownership and build order) |
+| Source map | [`MAP.md`](MAP.md), [`tickets/`](tickets/), and [`explainer/`](explainer/) |
+| Companion plan | [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership and build order) |
+| Architecture | [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) (module placement and dependency rules) |
 
 Implementation-ready spec for the Drive layer of the `suite` app. Every
 schema, query, and number here is frozen. Bracketed ids cite the ticket
-that decided the rule, in `wayfinder/drive-layer-spec/tickets/`. Terms are
-the glossary's (`suite/drive/CONTEXT.md`).
+that decided the rule, in [`tickets/`](tickets/). Terms are the
+[`Drive glossary`](../../suite/drive/CONTEXT.md)'s.
 
 Every `> Spec pick:` line is a choice the map did not decide. Each one is
 open to review.
+
+Citation `[design]` refers to the repository-local
+[`references/drive-file-layer-designs.md`](references/drive-file-layer-designs.md).
+The framework storage assumptions are preserved in
+[`references/frappe-file-storage-v2-spec.md`](references/frappe-file-storage-v2-spec.md).
 
 ## 1. Goal and non-goals
 
@@ -28,7 +34,8 @@ One tree, one permission table, one storage path, for every Suite app.
 - Bytes go only through `frappe.storage` blobs. Drive deletes no bytes.
 - Writer, Slides, Sheets, and later apps join through one declaration.
   They write no permission, share, trash, version, or comment code.
-- One HTTP surface, one WebDAV mount, one SDK behind both.
+- One HTTP surface, one WebDAV mount, and one Drive implementation behind
+  both. Other products use the narrower `suite.drive` interface.
 
 ### Non-goals
 
@@ -49,45 +56,92 @@ One tree, one permission table, one storage path, for every Suite app.
 
 ### 2.1 Layers
 
-Each layer calls only the layer below it.
+Dependency arrows point down. Product callers use only the public Drive
+interface. Drive-owned adapters call the private implementation directly.
 
 ```
-HTTP routes (§11)   WebDAV (§12)   content apps (§10)     callers
-------------------------------------------------------------------
-suite/drive/sdk                        the only place a role is decided
-------------------------------------------------------------------
+content apps (§10)   Meet
+          \           /
+           suite.drive                       public cross-product interface
+                 |
+HTTP (§11)  WebDAV (§12)  Frappe adapters
+       \        |        /
+          suite/drive/_core                  private Drive implementation
+                 |
 Drive Node  Drive Grant  Drive Root  side tables (§3)     data
-------------------------------------------------------------------
+                 |
 frappe.storage  (blob, upload, url, serve, gc)            bytes
 ```
 
-- A caller never runs `require()` for the SDK. It calls an SDK function
-  and maps the exception [014 §4].
-- The SDK never reads `frappe.local.request`. Principals arrive as an
-  argument, built once per request by `principals_for_request()` (§4.6).
+- Code outside Drive imports `from suite import drive`. It requests a complete
+  Drive workflow and never imports `suite.drive._core`, a Drive DocType
+  controller, or a transport adapter.
+- HTTP and WebDAV never decide Drive policy. They call `_core` workflows and
+  map protocol inputs, outputs, and exceptions [014 §4].
+- `_core` never reads `frappe.local.request`. Principals arrive as an
+  argument. `suite.drive.framework` builds them once per request (§4.6).
 - The data layer holds no permission logic. `has_permission` and
   `permission_query_conditions` hooks on content doctypes point at
-  generic Drive targets (§10).
+  `suite.drive.framework` targets (§10).
 
 ### 2.2 Module layout
 
-| Module | Public names |
+| Module | Visibility and responsibility |
 |---|---|
-| `sdk/roles.py` | role constants, ptype map |
-| `sdk/principals.py` | `principals_for_request`, `X-Drive-Links` parsing, unlock tickets |
-| `sdk/access.py` | `effective_role`, `effective_roles`, `require`, `check`, `explain`, `grant`, `revoke`, `revoke_or_deny`, `revoke_below`, `rotate_link`, `unlock_link`, list predicates |
-| `sdk/nodes.py` | `create_folder`, `create_file`, `create_document`, `create_link`, `get`, `update`, `purge`, `copy`, `children`, views |
-| `sdk/upload.py` | `create_upload`, `finish_upload` |
-| `sdk/quota.py` | `admit`, `release`, `effective_quota`, `recompute`, reservations |
-| `sdk/versions.py` | `take_version`, `restore_version`, `label_version`, `delete_version`, `thin` |
-| `sdk/previews.py` | `enqueue_render`, `render`, `push_preview`, `sweep_missing` |
-| `sdk/comments.py` | threads and comments |
-| `sdk/activity.py` | `record`, recents, favourites, notifications |
-| `sdk/content.py` | `ContentTypeSpec`, `DriveContent`, registry, `touch`, `list_media`, `sweep_unused_media` |
-| `sdk/errors.py` | `DriveNotFound`, `DriveForbidden`, `DriveLocked`, `DriveLinkExpired`, `DriveOverQuota`, `DriveConflict` |
-| `http/` | `before_request` translator, route handlers |
-| `webdav/` | kept protocol modules, relinked |
-| `patches/build.py`, `patches/cleanup.py` | the two migration patches |
+| `suite/drive/__init__.py` | **Public.** The only supported cross-product Python interface. Explicit `__all__`; facade functions for complete workflows plus content contracts, documented roles, and errors. |
+| `suite/drive/_core/roles.py` | **Private.** Role constants and ptype map. Selected role values may be re-exported at the package root. |
+| `suite/drive/_core/principals.py` | **Private.** Principal value object, `X-Drive-Links` parsing, and unlock tickets. |
+| `suite/drive/_core/access.py` | **Private.** Resolution, checks, grant workflows, and list predicates. |
+| `suite/drive/_core/nodes.py` | **Private.** Node creation, reads, updates, purge, copy, children, and views. |
+| `suite/drive/_core/upload.py` | **Private.** Upload creation and finish. |
+| `suite/drive/_core/quota.py` | **Private.** Admission, release, quota calculation, recompute, and reservations. |
+| `suite/drive/_core/versions.py` | **Private.** Version workflows. |
+| `suite/drive/_core/previews.py` | **Private.** Preview workflows. |
+| `suite/drive/_core/comments.py` | **Private.** Threads and comments. |
+| `suite/drive/_core/activity.py` | **Private.** Activity, recents, favourites, and notifications. |
+| `suite/drive/_core/content.py` | **Private.** Content registry and content workflows. `ContentTypeSpec`, `Satellite`, and `DriveContent` are re-exported at the package root for product adapters. |
+| `suite/drive/_core/errors.py` | **Private definitions.** Documented Drive errors are re-exported at the package root. |
+| `suite/drive/framework.py` | **Frappe adapter.** Request principals and permission/query hook targets. Hook strings never target `_core`. |
+| `suite/drive/jobs.py` | **Scheduler adapter.** Stable Frappe hook targets that delegate to `_core`. |
+| `suite/drive/http/` | **Private adapter.** `before_request` translator and route handlers. |
+| `suite/drive/webdav/` | **Private adapter.** Kept protocol modules, relinked to `_core`. |
+| `suite/drive/patches/build.py`, `suite/drive/patches/cleanup.py` | The two migration patches. |
+
+Workflow functions at the package root are facades, not blind re-exports.
+They ask `suite.drive.framework` for the current Frappe principal context and
+pass that value into `_core`. HTTP and WebDAV already own explicit request
+adapters, so they call `_core` with an explicit `Principals` value instead of
+round-tripping through the product facade.
+
+The exact package-root export list is frozen from real production callers
+before Stage 1. Internal helpers such as raw `require`, `admit`, `release`,
+`record`, query predicates, renderers, and sweeps are not public merely
+because this spec names them.
+
+The initial public set is:
+
+```python
+# suite/drive/__init__.py
+__all__ = (
+	# contracts and roles
+	"ContentTypeSpec", "Satellite", "DriveContent",
+	"READ", "COMMENT", "UPLOAD", "EDIT", "MANAGE",
+	# product workflows
+	"check", "create_file", "create_document", "copy", "touch",
+	"take_version", "push_preview", "personal_root_for",
+	"create_storage_reservation", "grow_storage_reservation",
+	"reduce_storage_reservation", "release_storage_reservation",
+	"get_storage_usage",
+	# documented errors
+	"DriveError", "DriveNotFound", "DriveForbidden", "DriveLocked",
+	"DriveLinkExpired", "DriveOverQuota", "DriveConflict",
+)
+```
+
+The architecture gate verifies these names against current Writer, Slides,
+Sheets, and Meet call sites. It may remove a name with no production caller.
+Adding a lower-level helper requires a charter-level interface review, not
+only a test that wants access.
 
 ### 2.3 The three hot paths and their budgets
 
@@ -475,7 +529,7 @@ skip-level holes and `upload` without `read` is unrepresentable
 [002].
 
 ```python
-# suite/drive/sdk/roles.py
+# suite/drive/_core/roles.py
 NONE = 0        # a stored deny
 READ = 10
 COMMENT = 20
@@ -553,7 +607,7 @@ Consequence that drives the API: revoke must offer "delete this principal's gran
 ### 4.6 Session principals
 
 ```python
-# suite/drive/sdk/principals.py
+# suite/drive/_core/principals.py
 
 @dataclass(frozen=True)
 class Principals:
@@ -564,6 +618,13 @@ class Principals:
 
 	def all(self) -> tuple[str, ...]:
 		return self.own + self.open
+
+```
+
+The Frappe request adapter constructs it:
+
+```python
+# suite/drive/framework.py
 
 
 def principals_for_request() -> Principals:
@@ -643,7 +704,7 @@ Rejected: `$ROLE:Suite Admin` grant rows. A row per root that must always exist 
 
 ## 5. Permission engine
 
-`suite/drive/sdk/access.py`. Every query below is exact. Every one runs
+`suite/drive/_core/access.py`. Every query below is exact. Every one runs
 against the indexes in §3.
 
 ### 5.1 Two-pass resolution
@@ -667,7 +728,7 @@ published content [008 §4].
 The chain and the accumulator:
 
 ```python
-# suite/drive/sdk/access.py
+# suite/drive/_core/access.py
 
 def chain_ids(node: dict) -> list[str]:
 	"""Root first, node last. Zero queries. At most 42 ids."""
@@ -1274,7 +1335,7 @@ Index: `expires_on`. Activity rows stay.
 - `$PUBLIC` caps at READ. Anonymous comment, upload, or edit rides a `$LINK:<token>` grant, which has a password, an expiry, and a rotation [007 §2].
 - A `$PUBLIC` grant on a folder publishes everything below it. A `$PUBLIC` deny nearer the node wins [007 §5].
 - A `$PUBLIC` grant naming a `Drive Root` is invalid for everyone, Suite Admin included. Publishing a folder under the root is the supported way to publish many nodes [007 §5].
-- MANAGE publishes. There is no app-declared publish capability and no SDK path that skips the check [007 §3].
+- MANAGE publishes. There is no app-declared publish capability and no Drive workflow that skips the check [007 §3].
 - Unpublish deletes the node's own `$PUBLIC` grant, or writes a `$PUBLIC` deny when READ still reaches `$PUBLIC` from above. It needs MANAGE. The code is in §5.10 [007 §6].
 
 Stated consequence: in the Shared root (`$GENERAL UPLOAD`) a contributor holds
@@ -1505,9 +1566,10 @@ because the patch does not set `used_bytes` itself [011 §12].
 
 `Drive Storage Reservation` keeps its four operations: create, grow, reduce,
 release. They move from `suite/drive/api/storage.py` to
-`suite/drive/sdk/quota.py`, and `storage_owner` (a Link to User) becomes
-`root` (a Link to Drive Root) [010 §3]. Reserved bytes count as used from the
-moment the row is made. A reservation never moves with a node.
+`suite/drive/_core/quota.py`; the product-facing reservation workflows are
+re-exported by `suite.drive`. `storage_owner` (a Link to User) becomes `root`
+(a Link to Drive Root) [010 §3]. Reserved bytes count as used from the moment
+the row is made. A reservation never moves with a node.
 
 Drive's own callers go with the lock (§7.2). Meet is the only caller
 outside Drive, and it must move with the reservation functions:
@@ -1520,7 +1582,8 @@ outside Drive, and it must move with the reservation functions:
 | `suite/meet/patches/backfill_recording_storage_reservations.py` | 19, 36 | writes `storage_owner` on the row |
 
 The lock calls are deleted, not moved: the admission UPDATE of §7.2 is the
-lock. Meet reserves against the Room Owner's Personal Root [010 §3].
+lock. Meet imports `from suite import drive` and reserves against the Room
+Owner's Personal Root [010 §3]. Meet never imports `_core.quota`.
 
 ### 7.9 DAV quota properties
 
@@ -1534,11 +1597,16 @@ is two truths for one root [010 §9].
 
 ## 8. Node operations
 
-The SDK in `suite/drive/sdk/nodes.py` and `suite/drive/sdk/upload.py`. Every
-function checks its own permission through `sdk.access.require` and raises;
-no caller checks first [014 §4]. Every write records one `Drive Activity`
-row through `sdk.activity.record` in the same transaction. Every write that
+The private workflows live in `suite/drive/_core/nodes.py` and
+`suite/drive/_core/upload.py`. Every function checks its own permission
+through `_core.access.require` and raises; no adapter or product caller checks
+first [014 §4]. Every write records one `Drive Activity` row through
+`_core.activity.record` in the same transaction. Every write that
 changes bytes charged to a root runs the admission `UPDATE` from §7.
+
+Every request-bound `_core` workflow takes an explicit `Principals` value as
+its first argument. The `suite.drive` facade and the HTTP/WebDAV adapters
+supply it; `_core` never reaches into the transport request.
 
 Drive never deletes bytes, never renders a document, and never converts an
 upload [design, 012 §9].
@@ -1546,28 +1614,28 @@ upload [design, 012 §9].
 ### 8.1 Signatures
 
 ```python
-# suite/drive/sdk/nodes.py
-def create_folder(parent: str, title: str) -> str: ...
-def create_file(parent: str, title: str, *, blob: str, size: int, mime: str,
+# suite/drive/_core/nodes.py
+def create_folder(p: Principals, parent: str, title: str) -> str: ...
+def create_file(p: Principals, parent: str, title: str, *, blob: str, size: int, mime: str,
 	content_modified: datetime | None = None) -> str: ...
-def create_document(parent: str, title: str, *, content_doctype: str,
+def create_document(p: Principals, parent: str, title: str, *, content_doctype: str,
 	from_node: str | None = None, is_template: bool = False) -> str: ...
-def create_link(parent: str, title: str, *, url: str) -> str: ...
-def get(node: str, *, expand: tuple[str, ...] = ()) -> dict: ...
-def update(node: str, *, title: str | None = None, parent: str | None = None,
+def create_link(p: Principals, parent: str, title: str, *, url: str) -> str: ...
+def get(p: Principals, node: str, *, expand: tuple[str, ...] = ()) -> dict: ...
+def update(p: Principals, node: str, *, title: str | None = None, parent: str | None = None,
 	state: str | None = None,          # "Active" | "Trashed"
 	blob: str | None = None, size: int | None = None, mime: str | None = None,
 	content_modified: datetime | None = None) -> dict: ...
-def purge(node: str) -> int: ...          # returns the node count purged
-def copy(node: str, parent: str, *, title: str | None = None) -> str: ...
-def children(parent: str, *, cursor: str | None = None, limit: int = 60,
+def purge(p: Principals, node: str) -> int: ...  # returns the node count purged
+def copy(p: Principals, node: str, parent: str, *, title: str | None = None) -> str: ...
+def children(p: Principals, parent: str, *, cursor: str | None = None, limit: int = 60,
 	order_by: str = "title", ascending: bool = True,
 	mime_prefix: str | None = None) -> dict: ...
-def views(name: str, *, cursor: str | None = None, limit: int = 60, **filters) -> dict: ...
+def views(p: Principals, name: str, *, cursor: str | None = None, limit: int = 60, **filters) -> dict: ...
 
-# suite/drive/sdk/upload.py
-def create_upload(parent: str, filename: str, size: int, *, mime: str | None = None) -> dict: ...
-def finish_upload(upload_id: str, *, parent: str | None = None, title: str | None = None,
+# suite/drive/_core/upload.py
+def create_upload(p: Principals, parent: str, filename: str, size: int, *, mime: str | None = None) -> dict: ...
+def finish_upload(p: Principals, upload_id: str, *, parent: str | None = None, title: str | None = None,
 	checksum: str | None = None, content_modified: datetime | None = None,
 	replaces: str | None = None) -> str: ...
 ```
@@ -1703,7 +1771,7 @@ own UPLOAD check.
    one `Drive Node Version` row of kind `auto` holding the old blob, and
    charge its size to the root. A head of size 0 is not kept
    [009 §5]. This rule holds for every replace path: the HTTP route, the
-   WebDAV PUT, and the SDK.
+   WebDAV PUT, and internal Drive workflows.
 3. `quota.admit(root, new_size)`.
 4. Write `blob`, `size`, `mime`, and `content_modified` on the node.
 5. Delete the `Drive Node Preview` row and enqueue a render [006 §5].
@@ -1934,13 +2002,13 @@ Schemas are in §3. This section is behaviour only.
 
 ### 9.1 Versions
 
-`suite/drive/sdk/versions.py`: `take_version`, `restore_version`, `thin`.
+`suite/drive/_core/versions.py`: `take_version`, `restore_version`, `thin`.
 
 ```python
-def take_version(node: str, *, kind: str = "auto", label: str | None = None) -> int: ...
-def restore_version(node: str, seq: int) -> int: ...
-def label_version(node: str, seq: int, *, label: str | None, pinned: bool) -> None: ...
-def delete_version(node: str, seq: int) -> None: ...
+def take_version(p: Principals, node: str, *, kind: str = "auto", label: str | None = None) -> int: ...
+def restore_version(p: Principals, node: str, seq: int) -> int: ...
+def label_version(p: Principals, node: str, seq: int, *, label: str | None, pinned: bool) -> None: ...
+def delete_version(p: Principals, node: str, seq: int) -> None: ...
 def thin(ladder: dict | None = None) -> dict: ...
 ```
 
@@ -1948,7 +2016,7 @@ Who writes a version.
 
 | Trigger | Kind | Role |
 |---|---|---|
-| A file node's bytes are replaced (HTTP, WebDAV, SDK) | `auto` | EDIT |
+| A file node's bytes are replaced (HTTP, WebDAV, or a Drive workflow) | `auto` | EDIT |
 | An app calls `take_version` on its save path | `auto` | EDIT |
 | A person names a version | `named` | EDIT |
 | A person marks a milestone or pins one | `milestone`, `pinned = 1` | EDIT |
@@ -1989,8 +2057,15 @@ until the node is purged. `site_config` overrides the tiers under
 
 ### 9.2 Previews
 
-`suite/drive/sdk/previews.py`: `enqueue_render`, `render`, `push_preview`,
+`suite/drive/_core/previews.py`: `enqueue_render`, `render`, `push_preview`,
 `sweep_missing`.
+
+```python
+def enqueue_render(node: str) -> None: ...
+def render(node: str) -> None: ...
+def push_preview(p: Principals, node: str, image_bytes: bytes, mime: str) -> None: ...
+def sweep_missing() -> dict: ...
+```
 
 One derived artifact exists: a 512 px longest-side WebP, one row per node
 in `Drive Node Preview` [006 §1, §2].
@@ -2055,16 +2130,16 @@ is bounded by `LIMIT` and resumes from the last `creation` on the next run.
 
 ### 9.3 Comments
 
-`suite/drive/sdk/comments.py` owns `Drive Comment Thread` and
+`suite/drive/_core/comments.py` owns `Drive Comment Thread` and
 `Drive Comment`.
 
 ```python
-def create_thread(node: str, anchor: str, text: str, *, author_name: str | None = None) -> str: ...
-def reply(thread: str, text: str, *, author_name: str | None = None) -> str: ...
-def resolve(thread: str, resolved: bool = True) -> None: ...
-def edit_comment(comment: str, text: str) -> None: ...
-def delete_comment(comment: str) -> None: ...
-def threads(node: str, *, resolved: bool | None = None) -> list[dict]: ...
+def create_thread(p: Principals, node: str, anchor: str, text: str, *, author_name: str | None = None) -> str: ...
+def reply(p: Principals, thread: str, text: str, *, author_name: str | None = None) -> str: ...
+def resolve(p: Principals, thread: str, resolved: bool = True) -> None: ...
+def edit_comment(p: Principals, comment: str, text: str) -> None: ...
+def delete_comment(p: Principals, comment: str) -> None: ...
+def threads(p: Principals, node: str, *, resolved: bool | None = None) -> list[dict]: ...
 ```
 
 - The anchor is opaque. Drive stores it and lists it; the app resolves it on
@@ -2081,11 +2156,11 @@ def threads(node: str, *, resolved: bool | None = None) -> list[dict]: ...
 
 ### 9.4 Activity
 
-`suite/drive/sdk/activity.py`: `record()`, plus the recents, favourites,
+`suite/drive/_core/activity.py`: `record()`, plus the recents, favourites,
 and notification helpers.
 
 ```python
-def record(node: str, action: str, *, detail: dict | None = None) -> str: ...
+def record(p: Principals, node: str, action: str, *, detail: dict | None = None) -> str: ...
 ```
 
 Columns: `node`, `action`, `actor`, `at`, `via_link`, `client`, `detail`
@@ -2139,13 +2214,15 @@ Rules.
 
 ## 10. Content app contract
 
-One object per app, in `suite/drive/sdk/content.py`. Drive calls the app
-through it. The app calls Drive for four things only [005 §7].
+One object per app is registered with the private content registry. The
+contract types are exported by `suite.drive`; product adapters define their
+`SPEC` with `from suite import drive`. Drive calls the app through that
+object. The app uses only the package-root operations in §10.5 [005 §7].
 
 ### 10.1 `ContentTypeSpec`
 
 ```python
-# suite/drive/sdk/content.py
+# suite/drive/_core/content.py (definition; re-exported by suite.drive)
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import IO
@@ -2240,24 +2317,27 @@ Forbids, checked at boot by `content.validate_registry()` and by a test:
 ### 10.3 Registry and hook
 
 ```python
+# suite/drive/_core/content.py
 def registry() -> dict[str, ContentTypeSpec]: ...     # cached per site
 def spec_for(doctype: str) -> ContentTypeSpec: ...
 def validate_registry() -> None: ...
 
+def touch(p: Principals, doctype: str, docname: str) -> None: ...
+def list_media(p: Principals, node: str) -> list[dict]: ...
+def sweep_unused_media() -> dict: ...
+
+# suite/drive/framework.py
 def doc_has_permission(doc, ptype="read", user=None, debug=False) -> bool: ...
 def doc_query_conditions(user: str | None = None, doctype: str | None = None) -> str: ...
 def satellite_has_permission(doc, ptype="read", user=None, debug=False) -> bool: ...
 def satellite_query_conditions(user: str | None = None, doctype: str | None = None) -> str: ...
-
-def touch(doctype: str, docname: str) -> None: ...
-def list_media(node: str) -> list[dict]: ...
-def sweep_unused_media() -> dict: ...
 ```
 
 `registry()` reads the `drive_content_types` hook, a list of dotted paths to
 `ContentTypeSpec` objects, and keys the result by `spec.doctype`.
 
-The four signatures are the framework's, not ours. `has_permission` hooks
+The four hook signatures are implemented by `suite.drive.framework`. They are
+the framework's, not ours. `has_permission` hooks
 are called as `method(doc=doc, ptype=ptype, user=user, debug=debug)`
 (`frappe/permissions.py:500`), and `permission_query_conditions` hooks as
 `method(user, doctype=doctype)` (`frappe/model/db_query.py:1339`). A
@@ -2286,15 +2366,15 @@ drive_content_types = [
 ]
 
 has_permission = {
-	"Writer Document": "suite.drive.sdk.content.doc_has_permission",
-	"Presentation": "suite.drive.sdk.content.doc_has_permission",
-	"Sheet": "suite.drive.sdk.content.doc_has_permission",
+	"Writer Document": "suite.drive.framework.doc_has_permission",
+	"Presentation": "suite.drive.framework.doc_has_permission",
+	"Sheet": "suite.drive.framework.doc_has_permission",
 }
 
 permission_query_conditions = {
-	"Writer Document": "suite.drive.sdk.content.doc_query_conditions",
-	"Presentation": "suite.drive.sdk.content.doc_query_conditions",
-	"Sheet": "suite.drive.sdk.content.doc_query_conditions",
+	"Writer Document": "suite.drive.framework.doc_query_conditions",
+	"Presentation": "suite.drive.framework.doc_query_conditions",
+	"Sheet": "suite.drive.framework.doc_query_conditions",
 }
 ```
 
@@ -2302,11 +2382,11 @@ A satellite doctype adds two more, pointing at the satellite targets:
 
 ```python
 has_permission = {
-	"Sheet Op Log": "suite.drive.sdk.content.satellite_has_permission",
+	"Sheet Op Log": "suite.drive.framework.satellite_has_permission",
 }
 
 permission_query_conditions = {
-	"Sheet Op Log": "suite.drive.sdk.content.satellite_query_conditions",
+	"Sheet Op Log": "suite.drive.framework.satellite_query_conditions",
 }
 ```
 
@@ -2321,16 +2401,25 @@ Deleted with this: `doc_events` entries pointing at
 `suite.slides...presentation.has_permission`, and
 `suite.sheets.permissions.*`.
 
-### 10.5 The four calls an app makes
+### 10.5 The public calls a content app makes
 
 | Call | When | Cost |
 |---|---|---|
-| `access.check(node, role)` | autosave, editor open | one point read, under 0.15 ms [design benchmark] |
-| `content.touch(doctype, docname)` | the save path, debounced | one indexed update, no doc load, no events [005 §4] |
-| `versions.take_version(node, kind=..., label=...)` | an explicit "save a version" | one insert plus one `put_blob` |
-| `nodes.create_document(...)` or `nodes.copy(...)` | new, duplicate, new-from-template | one transaction [005 §5] |
+| `drive.check(node, role)` | autosave, editor open | one point read, under 0.15 ms [design benchmark] |
+| `drive.touch(doctype, docname)` | the save path, debounced | one indexed update, no doc load, no events [005 §4] |
+| `drive.take_version(node, kind=..., label=...)` | an explicit "save a version" | one insert plus one `put_blob` |
+| `drive.create_document(...)` or `drive.copy(...)` | new, duplicate, new-from-template | one transaction [005 §5] |
+| `drive.push_preview(node, image_bytes, mime)` | Slides browser preview capture | one permission check and one preview replacement [012 §8] |
 
-Nothing else flows from app to Drive. The "quiet write" of the original
+In each product adapter, `drive` in this table means:
+
+```python
+from suite import drive
+```
+
+No lower-level operation flows from app to Drive. The `ContentTypeSpec`
+callbacks flow in the other direction when Drive asks an app to work with its
+own document body. The "quiet write" of the original
 question is not needed: the doc events it dodged mirrored title and trash,
 and those are gone [005 §4].
 
@@ -2367,21 +2456,24 @@ has no title field and no trashed field, so it is compliant on [005 §1] and
 [005 §2].
 
 ```python
-SPEC = ContentTypeSpec(
+from suite import drive
+
+
+SPEC = drive.ContentTypeSpec(
 	doctype="Writer Document",
 	mime="frappe/writer",
 	node_field="node",
 	default_export="html",
 	export_formats=("html",),
-	create_empty=writer.drive.create_empty,
-	duplicate=writer.drive.duplicate,
-	export=writer.drive.export,
-	version_bytes=writer.drive.version_bytes,
-	restore_version=writer.drive.restore_version,
+	create_empty=create_empty,
+	duplicate=duplicate,
+	export=export,
+	version_bytes=version_bytes,
+	restore_version=restore_version,
 	pushes_preview=False,
-	on_purge=writer.drive.on_purge,
+	on_purge=on_purge,
 	satellites=(),
-	used_nodes=writer.drive.used_nodes,
+	used_nodes=used_nodes,
 )
 ```
 
@@ -2407,20 +2499,23 @@ which is replaced by `touch`.
 `is_template`, `is_composite`, `reference_presentations`.
 
 ```python
-SPEC = ContentTypeSpec(
+from suite import drive
+
+
+SPEC = drive.ContentTypeSpec(
 	doctype="Presentation",
 	mime="frappe/slides",
 	node_field="node",
 	default_export=None,
-	create_empty=slides.drive.create_empty,
-	duplicate=slides.drive.duplicate,
+	create_empty=create_empty,
+	duplicate=duplicate,
 	export=None,
-	version_bytes=slides.drive.version_bytes,
-	restore_version=slides.drive.restore_version,
+	version_bytes=version_bytes,
+	restore_version=restore_version,
 	pushes_preview=True,
-	on_purge=slides.drive.on_purge,
-	satellites=(Satellite(doctype="Slide", link_field="parent"),),
-	used_nodes=slides.drive.used_nodes,
+	on_purge=on_purge,
+	satellites=(drive.Satellite(doctype="Slide", link_field="parent"),),
+	used_nodes=used_nodes,
 )
 ```
 
@@ -2433,7 +2528,7 @@ row (`presentation.py:47-61`), the `is_template` early return
 (`presentation.py:43`), `get_permission_query_conditions` and
 `has_permission` (`presentation.py:490-498`), the webp convert-and-delete
 (`presentation.py:581-625`), and `suite/slides/api/file.py` entire.
-Slides keeps its browser capture and pushes it through `push_preview`
+Slides keeps its browser capture and pushes it through `drive.push_preview`
 [012 §8]. Conversion to webp happens before the node exists [012 §9].
 
 **Sheet** (`suite/sheets/doctype/sheet/`). Fields today: `title`,
@@ -2441,24 +2536,27 @@ Slides keeps its browser capture and pushes it through `push_preview`
 `trashed_by`.
 
 ```python
-SPEC = ContentTypeSpec(
+from suite import drive
+
+
+SPEC = drive.ContentTypeSpec(
 	doctype="Sheet",
 	mime="frappe/sheet",
 	node_field="node",
 	default_export=None,
-	create_empty=sheets.drive.create_empty,
-	duplicate=sheets.drive.duplicate,
-	import_from_file=sheets.drive.import_from_file,
+	create_empty=create_empty,
+	duplicate=duplicate,
+	import_from_file=import_from_file,
 	export=None,
-	version_bytes=sheets.drive.version_bytes,
-	restore_version=sheets.drive.restore_version,
+	version_bytes=version_bytes,
+	restore_version=restore_version,
 	pushes_preview=False,
-	on_purge=sheets.drive.on_purge,
+	on_purge=on_purge,
 	satellites=(
-		Satellite(doctype="Sheet Op Log", link_field="sheet"),
-		Satellite(doctype="Sheet Collab State", link_field="sheet"),
+		drive.Satellite(doctype="Sheet Op Log", link_field="sheet"),
+		drive.Satellite(doctype="Sheet Collab State", link_field="sheet"),
 	),
-	used_nodes=sheets.drive.used_nodes,
+	used_nodes=used_nodes,
 )
 ```
 
@@ -2564,7 +2662,7 @@ Every handler in `suite/drive/http/routes.py` is `@frappe.whitelist` with
 its verb declared, for example `@frappe.whitelist(methods=["PATCH"])`.
 Routes reachable by a guest or a link holder add `allow_guest=True`. A
 handler parses nothing beyond its arguments: it seeds principals from
-`X-Drive-Links` (§4), calls the SDK, and maps the exception [014 §4].
+`X-Drive-Links` (§4), calls the private Drive workflow, and maps the exception [014 §4].
 
 ### 11.2 Route table
 
@@ -2762,7 +2860,7 @@ and produces one activity row per node that moved [014 §8].
 ### 11.6 Errors
 
 ```python
-# suite/drive/sdk/errors.py
+# suite/drive/_core/errors.py
 class DriveError(frappe.ValidationError):
 	http_status_code = 400
 
@@ -2797,7 +2895,7 @@ locked link is never a 403, and an expired link is never a locked one
 ### 11.7 The shim plan
 
 Build adds the routes and keeps every one of the 69 old whitelisted method
-names as a thin forwarder into the new SDK. Cleanup deletes the forwarders
+names as thin forwarders into the new Drive implementation. Cleanup deletes the forwarders
 one release later, gated on the SPA having moved [014 §9]. Counted from the
 code on this bench: 69 methods in 11 files, 26 of them guest-callable.
 
@@ -2974,7 +3072,7 @@ versions are not copied, dead properties are cloned [009 §8].
 - `quota-used-bytes` = `Drive Root.used_bytes` of the Personal Root.
   `quota-available-bytes` = `max(0, quota - used)`, omitted when the root is
   unlimited (RFC 4331 §4) [010 §9].
-- DAV handlers call the same SDK and produce the same activity rows. The
+- DAV handlers call the same private Drive workflows as HTTP and produce the same activity rows. The
   actor is the session user, and the `client` column holds the User-Agent
   [009 §10].
 

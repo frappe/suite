@@ -1,5 +1,11 @@
 # Drive WebDAV Server
 
+Status: current-server operations plus the accepted rewrite target. The target
+behavior is authoritative in
+[`../../../wayfinder/drive-layer-spec/drive-layer-spec.md`](../../../wayfinder/drive-layer-spec/drive-layer-spec.md)
+§12, and its module boundaries come from
+[`../../../ARCHITECTURE.md`](../../../ARCHITECTURE.md).
+
 A first-class WebDAV server (RFC 4918 Class 1, 2, 3 — full litmus compliance)
 built into Drive. Any WebDAV client — Windows Explorer, macOS Finder, Linux
 GVFS/KDE, Cyberduck, rclone, mobile file apps, MS Office — manages Drive files
@@ -13,10 +19,24 @@ directly at `https://<site>/dav/`.
    (off by default), then connect a client to `https://<site>/dav/` and sign
    in with the Frappe username and password.
 
-The mount shows two folders: **Home** (the user's personal files) and
-**Everyone** (the shared site tree). All Drive permissions apply exactly as in
-the web app; entities WebDAV cannot represent (Writer/Sheets/Slides documents,
-links) are not shown.
+The shipped server currently shows two folders: **Home** (the user's personal
+files) and **Everyone** (the shared site tree). This is current behavior, not
+the rewrite target.
+
+## Rewrite target
+
+- `/dav/` mounts the caller's Personal Root directly. It does not expose a
+  Shared Root or a “shared with me” mount.
+- The same Drive roles apply in WebDAV and the web app. A DAV session never
+  carries a Share Link principal.
+- Content Documents appear as read-only exports when their Content Type has a
+  default export; they remain leaves and their media children are not listed.
+- HTTP and WebDAV call the same private Drive workflows in
+  `suite/drive/_core/`. WebDAV owns protocol translation, not permission,
+  quota, activity, or node policy.
+- `perms.py` is deleted. Folder pages use the Drive engine's batched access
+  resolution. Direct storage-manager calls and the staging machinery in
+  `put.py` are replaced by the node/upload workflows and `frappe.storage`.
 
 Notes on behavior:
 
@@ -37,7 +57,7 @@ Notes on behavior:
   blocked by DAV locks. Administrators can force-unlock a stuck document by
   deleting its **Drive DAV Lock** row (or via UNLOCK).
 
-## Architecture
+## Current implementation architecture
 
 The dispatcher (`dispatch.py`) is a `before_request` hook — the only point in
 the Frappe request lifecycle that sees WebDAV verbs — and answers `/dav/*`
@@ -54,6 +74,11 @@ query count per listing), `propfind`/`proppatch` (+ `deadprops` store),
 `get`/`put` (streamed content, Range, conditionals), `structure`
 (MKCOL/DELETE/MOVE), `copy` (recursive COPY with quota checks), `locks` +
 `ifheader` + `lock` (Class 2), `xmlutil` (hardened lxml + multistatus).
+
+During the rewrite, protocol-focused modules remain under
+`suite/drive/webdav/`; policy and state transitions move behind the private
+Drive implementation described above. Code outside Drive must not import this
+adapter.
 
 ## Deployment caveats (admin-facing; no end-user setup needed)
 

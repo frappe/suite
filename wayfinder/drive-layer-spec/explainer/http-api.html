@@ -378,7 +378,7 @@ footer.page {
     <li><code>api.s3.fetch?path=</code> is written into
       <code>File.file_url</code> rows in live databases. A patch already
       exists for one earlier rename of it.</li>
-    <li><code>overrides.file.get_file_for_doc</code> is the cross-app SDK.
+    <li><code>overrides.file.get_file_for_doc</code> is the legacy cross-app helper.
       Writer, Sheets, and Slides call it through a built bundle checked in
       at <code>suite/public/frontend/assets/sdk-o7hlQ1xj.js</code>.</li>
     <li><code>api.files.track_visit</code> and <code>api.files.upload_file</code>
@@ -434,7 +434,7 @@ footer.page {
 <h2 id="frame">The frame</h2>
 
 <p>
-  Everything below sits in one picture. There is a Python SDK, an HTTP layer,
+  Everything below sits in one picture. There is a private Drive operation layer, an HTTP layer,
   and a WebDAV layer. Two of the three already exist as decisions. The middle
   one is what this ticket writes.
 </p>
@@ -450,12 +450,12 @@ footer.page {
 <span class="tok-com">└──────┬──────┘  └──────┬──────┘</span>          <span class="tok-com">│</span>
        └────────────────┴───────────────────────┘
                         ▼
-              <span class="tok-fn">drive.node / drive.access / drive.content</span>
-              <span class="tok-com">the Python SDK — ten entry points</span>
+              <span class="tok-fn">suite/drive/_core</span>
+              <span class="tok-com">private Drive workflows</span>
                         ▼
               <span class="tok-fn">Drive Node · Drive Grant · Drive Root</span></code></pre>
   </div>
-  <figcaption>The SDK shape comes from the architecture doc. The WebDAV
+  <figcaption>The workflow shape comes from the architecture doc. The WebDAV
   mapping is decision 009. The box in the middle is empty.</figcaption>
 </figure>
 
@@ -638,7 +638,7 @@ form_dict  → { node: "abc", title: "Q3" }
       <code>_error_message</code>. <strong>Keep that envelope and no call site
       changes.</strong> This constrains question 4.</td></tr>
     <tr><td>Unchanged</td>
-      <td>WebDAV, the Python SDK, and the shim story for the old 69 methods.
+      <td>WebDAV, the Drive workflows, and the shim story for the old 69 methods.
       Same work either way.</td></tr>
   </tbody>
 </table>
@@ -694,7 +694,7 @@ register API rules
 <h2 id="q2">Question 2 — how many routes? <span class="badge done">answered</span></h2>
 
 <p>
-  The SDK has ten entry points; <code>update()</code> alone covers rename,
+  The original node-operation sketch has ten entry points; <code>update()</code> alone covers rename,
   move, trash, restore, and byte replacement. Today's API has 69 methods. With
   routes chosen, the question becomes: does a node change through <strong>one
   PATCH with fields</strong>, or through <strong>a route per verb</strong>?
@@ -731,7 +731,7 @@ DELETE /api/suite/drive/nodes/&lt;id&gt;    <span class="tok-com">purge — term
   { state: "trashed" }
   { state: "active" }
   { state: "purged" }</code></pre>
-    <p class="small" style="margin:0">Mirrors the SDK exactly. One route to
+    <p class="small" style="margin:0">Mirrors the node update workflow. One route to
     authorize and test.
     <br><strong>Against:</strong> an accidental
     <code>state: "purged"</code> is unrecoverable, and it looks like every
@@ -774,19 +774,19 @@ DELETE /nodes/&lt;id&gt;   <span class="tok-com">purge</span></code></pre>
 
 <div class="card tint-green">
   <div class="card-label">Answer · 4 September 2026</div>
-  <p style="margin:0"><strong>The SDK checks. The HTTP layer translates.</strong>
+  <p style="margin:0"><strong>Drive checks. The HTTP layer translates.</strong>
   A route handler parses the path, seeds principals from
-  <code>X-Drive-Links</code>, calls the SDK, and maps the exception. Three
+  <code>X-Drive-Links</code>, calls a private Drive workflow, and maps the exception. Three
   callers reach the same nodes — routes, <code>/dav</code>, and other suite
   apps — and all three get one rule because none of them owns it.</p>
 </div>
 
 <div class="grid2">
   <div class="card tint-green">
-    <div class="card-label">A · SDK checks, HTTP translates <span class="badge done" style="margin-left:6px">chosen</span></div>
+    <div class="card-label">A · Drive checks, HTTP translates <span class="badge done" style="margin-left:6px">chosen</span></div>
     <pre style="margin:0;font-size:11.5px"><code><span class="tok-kw">def</span> <span class="tok-fn">patch_node</span>(node, **fields):
-    <span class="tok-kw">return</span> drive.node.update(
-        node, **fields)
+    <span class="tok-kw">return</span> _core.nodes.update(
+        principals, node, **fields)
     <span class="tok-com"># raises. that is all.</span></code></pre>
     <p class="small" style="margin:8px 0 0">One home for the rule. WebDAV, the
     HTTP layer, and Sheets cannot disagree, because none of them decides.</p>
@@ -795,8 +795,8 @@ DELETE /nodes/&lt;id&gt;   <span class="tok-com">purge</span></code></pre>
     <div class="card-label">B · Endpoint checks first</div>
     <pre style="margin:0;font-size:11.5px"><code><span class="tok-kw">def</span> <span class="tok-fn">patch_node</span>(node, **fields):
     require(node, EDIT)
-    <span class="tok-kw">return</span> drive.node.update(
-        node, **fields)</code></pre>
+    <span class="tok-kw">return</span> _core.nodes.update(
+        principals, node, **fields)</code></pre>
     <p class="small" style="margin:8px 0 0">Lets the endpoint fail early and
     give a better message. Costs a second read of the grants, and a second
     place the rule can be wrong.</p>
@@ -1055,7 +1055,7 @@ GET /nodes/&lt;id&gt;
   <div class="card">
     <div class="card-label">C · One node per call</div>
     <p class="small" style="margin:0">The client loops. Honest, matches the
-    SDK exactly, and turns a 30-file move into 30 round trips and 30 activity
+    node workflow exactly, and turns a 30-file move into 30 round trips and 30 activity
     rows.</p>
   </div>
 </div>
@@ -1071,11 +1071,11 @@ GET /nodes/&lt;id&gt;
 <div class="card tint-green">
   <div class="card-label">Answer · 4 September 2026</div>
   <p style="margin:0 0 8px"><strong>Shim, then drop.</strong> Old names become
-  thin forwarders into the new SDK and die one release later — the same
+  thin forwarders into the new Drive implementation and die one release later — the same
   two-step shape decision 011 chose for the data.</p>
   <pre style="margin:0"><code><span class="tok-com">Build patch (additive)</span>
   routes live
-  suite.drive.api.files.rename  →  drive.node.update
+  suite.drive.api.files.rename  →  _core.nodes.update
   … × 69 forwarders
 
 <span class="tok-com">Cleanup patch (one release later)</span>
@@ -1146,7 +1146,7 @@ DELETE /api/suite/drive/nodes/&lt;id&gt;/grants/&lt;principal&gt;
 POST   /api/suite/drive/grants/&lt;id&gt;/rotate
 POST   /api/suite/drive/links/&lt;token&gt;/unlock
 
-<span class="tok-com">mounted by a before_request translator; SDK checks; v2 { data } / { errors }</span></code></pre>
+<span class="tok-com">mounted by a before_request translator; Drive checks; v2 { data } / { errors }</span></code></pre>
 
 <ol class="passes">
   <li><span class="pass-num answer">✓</span><div><strong>RPC or routes</strong>
@@ -1156,7 +1156,7 @@ POST   /api/suite/drive/links/&lt;token&gt;/unlock
   <li><span class="pass-num answer">✓</span><div><strong>How many routes</strong>
     <p class="small">PATCH for reversible changes, DELETE for purge.</p></div></li>
   <li><span class="pass-num answer">✓</span><div><strong>Who checks permission</strong>
-    <p class="small">The SDK. The HTTP layer only translates.</p></div></li>
+    <p class="small">Drive workflows. The HTTP layer only translates.</p></div></li>
   <li><span class="pass-num answer">✓</span><div><strong>Error vocabulary</strong>
     <p class="small">v2 <code>errors[]</code>, exception class as the code.
     <code>useCall</code> reads it as-is.</p></div></li>

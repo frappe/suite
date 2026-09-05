@@ -6,6 +6,9 @@ one sharing model.
 
 This glossary describes the decided target model, charted at
 [`wayfinder/drive-layer-spec/MAP.md`](../../wayfinder/drive-layer-spec/MAP.md).
+Its module boundaries follow [`ARCHITECTURE.md`](../../ARCHITECTURE.md): code
+outside Drive uses `from suite import drive`, while content adapters stay with
+their owning product and are registered by Suite composition.
 Some terms name things the shipped code calls something else; those collisions
 are listed under Flagged Ambiguities.
 

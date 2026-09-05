@@ -2,6 +2,11 @@
 
 Meet provides persistent rooms in which participants communicate through live audio, video, screen sharing, chat, and other shared-stage interactions.
 
+Meet's Drive dependency follows [`ARCHITECTURE.md`](../../ARCHITECTURE.md):
+Meet calls `from suite import drive` for Personal Root lookup, reservations,
+usage, and completed artifact creation. It does not import Drive quota,
+storage, DocType, HTTP, or WebDAV implementation modules.
+
 ## Language
 
 **Meet Room**:

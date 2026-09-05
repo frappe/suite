@@ -11,11 +11,12 @@ blocked-by: [001, 002, 003, 004, 005, 006, 007, 008, 009, 010, 011, 012, 014]
 
 The destination ticket. Write `drive-layer-spec.md` (and a companion plan
 if the storage_v2 pattern is followed): doctypes with frozen schemas and
-indexes, the permission engine with its exact queries, the content SDK
+indexes, the permission engine with its exact queries, the Drive content contract
 (ContentTypeSpec + mixin), HTTP API, WebDAV mapping, framework-side
 storage_v2 asks stated precisely, and the migration section. Inputs: every
 closed ticket on this map plus the decided architecture in
-`drive-file-layer-designs.md`. Blocked by all other tickets.
+[`references/drive-file-layer-designs.md`](../references/drive-file-layer-designs.md).
+Blocked by all other tickets.
 
 Handed from [Link sharing semantics](008-link-sharing-semantics.md)
 (2026-09-03): the engine's two-pass resolution (own principals with
@@ -89,10 +90,16 @@ as Slides: the `Writer Template` doctype and its two permission functions go.
 
 Resolved 2026-09-05. Two documents, beside this map:
 
+Architecture amendment, 2026-09-05: the accepted
+[`ARCHITECTURE.md`](../../../ARCHITECTURE.md) replaces the draft public-directory layout
+with the `suite.drive` package-root facade and private `suite/drive/_core/`
+implementation. Frappe hook targets live in `suite.drive.framework` and
+`suite.drive.jobs`. The spec and plan linked below include that amendment.
+
 - [`drive-layer-spec.md`](../drive-layer-spec.md): fourteen sections in
   the order the ticket asked for. Every doctype is a field table with its
   index set. The permission engine is exact Python and SQL. The content
-  SDK is a typed `ContentTypeSpec` dataclass, the `DriveContent` mixin,
+  contract is a typed `ContentTypeSpec` dataclass, the `DriveContent` mixin,
   and worked declarations for Writer, Slides, and Sheets. The HTTP API is
   a full route table with the translator, the six error classes, the
   cursor, the node shape, the batch shape, and the shim plan for the 69
@@ -103,8 +110,9 @@ Resolved 2026-09-05. Two documents, beside this map:
   `Fixed numbers` table at the end holds every number the spec chose.
 - [`drive-layer-plan.md`](../drive-layer-plan.md): the companion plan in
   the storage_v2 shape. Target bench and branches, test commands, a file
-  map with one owner per file, 25 behaviour anchors, nine stages from
-  the framework asks to the Cleanup patch, and the rules for agents.
+  map with one owner per file, 25 behaviour anchors, an architecture gate,
+  nine numbered stages from the framework asks to the Cleanup patch, and the
+  rules for agents.
 
 Two Opus agents wrote the halves of the spec from the fourteen tickets,
 the architecture decision, the storage_v2 spec, and the code on
@@ -138,7 +146,7 @@ Deviations with the stage before which it must be confirmed.
 - Writer's default export is `html`; Slides and Sheets declare none, so
   they stay invisible over WebDAV.
 - `explain` rides on `GET /nodes/<id>/grants?principal=`.
-- `revoke_or_deny` is the SDK name for "unpublish = revoke, or deny when
+- `revoke_or_deny` is the private Drive workflow name for "unpublish = revoke, or deny when
   inherited", generalised to every principal per
   [Publishing capability](007-publishing-capability.md).
 

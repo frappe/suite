@@ -45,7 +45,8 @@ dissolved, and neither deployment model needs it. A third `kind` is a Select
 option if that ever changes.
 
 The tree is a logical namespace only. storage_v2 keys blobs by sha256
-(`frappe-file-storage-v2-spec.md:67`), so no root or path maps to storage.
+([storage design](../references/frappe-file-storage-v2-spec.md)), so no root
+or path maps to storage.
 Every cost below is database work.
 
 ### Owner is not a permission

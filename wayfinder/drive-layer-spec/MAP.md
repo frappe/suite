@@ -8,28 +8,30 @@ tracker: local-markdown
 ## Destination
 
 An implementation-ready spec pair for the new Drive layer in suite:
-`drive-layer-spec.md` (doctypes, path-batch permission engine, content SDK,
+`drive-layer-spec.md` (doctypes, path-batch permission engine, Drive interface,
 HTTP API, WebDAV mapping, framework-side storage_v2 asks) plus a migration
 section from the current suite File-override data. Done when an
 implementation effort can execute from the documents alone.
 
 Status: complete on 2026-09-05. Every ticket is closed. The destination
 documents are [`drive-layer-spec.md`](drive-layer-spec.md) and
-[`drive-layer-plan.md`](drive-layer-plan.md). Not yet specified holds
-two conditional items only.
+[`drive-layer-plan.md`](drive-layer-plan.md). The repository architecture
+charter is [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md). Not yet specified
+holds two conditional items only.
 
 ## Notes
 
-- Architecture is already decided (2026-09-02), outside this map:
-  `~/benches/suite-bench/drive-file-layer-designs.md` (also at
-  https://md.netchamp.dev/drive-file-layer-designs/). The engine: new Drive
+- The file-layer decision record is local:
+  [`references/drive-file-layer-designs.md`](references/drive-file-layer-designs.md).
+  The engine: new Drive
   Node doctype with `path` column; `Drive Grant` is the only permission
   table, read batched, nearest-wins in Python; deny = role 0; per-token
   link principals. Prototype: `suite/drive/webdav/perms.py`.
-- Related spec: `~/benches/suite-bench/frappe-file-storage-v2-spec.md`
-  (storage_v2, branch `forge/storage-v2` in this bench's frappe).
+- Related storage design:
+  [`references/frappe-file-storage-v2-spec.md`](references/frappe-file-storage-v2-spec.md)
+  (storage_v2; framework implementation is staged on `forge/storage-v2`).
 - Constraints: no custom fields on framework File; no new framework hooks
-  (public functions only); write in ASD-STE100 per `~/CLAUDE.md`.
+  (public functions only); use short, direct technical prose.
 - Skills each session should consult: grilling + domain-modeling for
   decision tickets; codebase-design for interface work.
 - Sessions orchestrating as Fable must spawn subagents with model opus.
@@ -99,7 +101,8 @@ two conditional items only.
   files and are leaves; GET streams with an opt-in signed redirect; PUT is
   one `put_blob` and every replace versions (empty head excepted);
   cross-root MOVE is a UI operation only; COPY copies no grants or versions;
-  `file_modified` becomes `content_modified`; DAV rides the same SDK and
+  `file_modified` becomes `content_modified`; DAV uses the same Drive
+  implementation workflows and
   activity rows; auth stays Basic with no link principals; protocol modules
   kept, storage machinery deleted.
 
@@ -158,7 +161,7 @@ two conditional items only.
   `/api/v2/method/...` and keeps framework auth, CSRF and rate limits (a full
   dispatcher was rejected: `validate_auth()` runs after the hook); PATCH for
   rename, move, trash and restore so DAV MOVE keeps one path, DELETE for the
-  one terminal act; the SDK checks permission and the HTTP layer only
+  one terminal act; Drive checks permission and the HTTP layer only
   translates; v2 envelopes both ways (`{data}` / `{errors}`), exception class
   as the code, six classes with status codes; opaque cursor paging; one node
   shape with `?expand=access,breadcrumbs,preview`; a batch route reporting
@@ -170,10 +173,10 @@ two conditional items only.
 - [Draft the spec](tickets/013-draft-the-spec.md) — the destination:
   [`drive-layer-spec.md`](drive-layer-spec.md) (fourteen sections, every
   schema, query, route, and number) and
-  [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership, nine
-  stages); agents wrote and audited both; thirteen spec picks and one new
-  framework ask (upload gates for Drive and guests) are listed on the
-  ticket for review.
+  [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership, an architecture
+  gate, and nine numbered stages); agents wrote and audited both. Thirteen
+  spec picks and one new framework ask (upload gates for Drive and guests)
+  are listed on the ticket for review.
 
 ## Not yet specified
 
