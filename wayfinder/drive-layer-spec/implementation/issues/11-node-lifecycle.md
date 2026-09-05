@@ -107,3 +107,21 @@ Deferred by the frozen plan:
 
 Generic document copy fails closed until ticket 16. No push, PR, install,
 restart, or migration was performed.
+
+### Post-completion concurrency correction
+
+Reviewed 2026-09-06 after a concurrent descendant create and cross-root move
+reproduced MariaDB deadlock 1213, whose cleanup then masked the cause with a
+missing-savepoint 1305. Suite correction revision `c0968458f` gives create,
+copy, and move one ancestry lock order: non-root rows by root-first depth and
+id, root-node rows last. It refreshes and rejects changed path snapshots before
+mutation, locks direct-insert parent/root validation reads, and preserves the
+original deadlock if InnoDB has already removed the workflow savepoint.
+
+The same review made optional purge reference cleanup require both DocType
+metadata and its table, so an orphan later-ticket table cannot break ticket 11
+purge. Deterministic source-side and destination-side move/create selectors
+each passed 1/1. The final node module passed 32/32 (9 unit, 23 integration),
+with no warnings, timeouts, or deadlocks, and fixture teardown completed.
+Static Ruff lint and format, Python compileall, and `git diff --check` also
+passed. No schema, migration, job, install, or restart was needed.

@@ -1,6 +1,6 @@
 import io
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event, local
 from unittest.mock import call, patch
 
 import frappe
@@ -8,6 +8,7 @@ from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import now_datetime
 
+from suite.drive._core import nodes as node_workflows
 from suite.drive._core.access import effective_role
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveOverQuota
 from suite.drive._core.nodes import (
@@ -247,6 +248,137 @@ class TestNodeLifecycle(IntegrationTestCase):
         child_row = frappe.db.get_value("Drive Node", child, ["root", "path"], as_dict=True)
         self.assertEqual(child_row.root, self.other_root.name)
         self.assertIn(f"/{destination}/{source}/{descendant}/", child_row.path)
+
+    def test_move_and_descendant_create_do_not_reverse_node_lock_order(self):
+        source = create_folder(self.admin, self.root.name, "Source")
+        descendant = create_folder(self.admin, source, "Descendant")
+        destination = create_folder(self.admin, self.other_root.name, "Destination")
+        frappe.db.commit()
+        site = frappe.local.site
+        operation = local()
+        create_parent_locked = Event()
+        allow_create_ancestry = Event()
+        original_node = node_workflows._node
+        original_subtree = node_workflows._subtree
+
+        def coordinated_node(node_id, *, for_update=False):
+            row = original_node(node_id, for_update=for_update)
+            if for_update and node_id == descendant and getattr(operation, "name", None) == "create":
+                create_parent_locked.set()
+                allow_create_ancestry.wait(timeout=1)
+            return row
+
+        def coordinated_subtree(node):
+            if node.get("name") == source and getattr(operation, "name", None) == "move":
+                create_parent_locked.wait(timeout=1)
+                allow_create_ancestry.set()
+            return original_subtree(node)
+
+        def move_tree():
+            frappe.init(site, force=True)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            operation.name = "move"
+            try:
+                update(self.admin, source, parent=destination)
+                frappe.db.commit()
+            finally:
+                frappe.destroy()
+
+        def create_child():
+            frappe.init(site, force=True)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            operation.name = "create"
+            try:
+                child = create_folder(self.admin, descendant, "Concurrent child")
+                frappe.db.commit()
+                return child
+            finally:
+                frappe.destroy()
+
+        with (
+            patch.object(node_workflows, "_node", side_effect=coordinated_node),
+            patch.object(node_workflows, "_subtree", side_effect=coordinated_subtree),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            created = pool.submit(create_child)
+            self.assertTrue(
+                create_parent_locked.wait(timeout=10), "descendant create did not lock its parent"
+            )
+            moved = pool.submit(move_tree)
+            moved.result(timeout=30)
+            child = created.result(timeout=30)
+
+        frappe.db.rollback()
+        child_row = frappe.db.get_value("Drive Node", child, ["root", "path"], as_dict=True)
+        self.assertEqual(child_row.root, self.other_root.name)
+        self.assertIn(f"/{destination}/{source}/{descendant}/", child_row.path)
+
+    def test_move_and_destination_create_do_not_reverse_node_lock_order(self):
+        source = create_folder(self.admin, self.root.name, "Source")
+        destination_ancestor = create_folder(self.admin, self.other_root.name, "Destination ancestor")
+        destination = create_folder(self.admin, destination_ancestor, "Destination")
+        frappe.db.commit()
+        site = frappe.local.site
+        operation = local()
+        create_ancestor_locked = Event()
+        move_destination_locked = Event()
+        original_node = node_workflows._node
+
+        def coordinated_node(node_id, *, for_update=False):
+            row = original_node(node_id, for_update=for_update)
+            if not for_update:
+                return row
+            if node_id == destination_ancestor and getattr(operation, "name", None) == "create":
+                create_ancestor_locked.set()
+                move_destination_locked.wait(timeout=1)
+            elif node_id == destination and getattr(operation, "name", None) == "move":
+                move_destination_locked.set()
+                if not create_ancestor_locked.wait(timeout=10):
+                    raise AssertionError("destination create did not reach its ancestor lock")
+            return row
+
+        def move_tree():
+            frappe.init(site, force=True)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            operation.name = "move"
+            try:
+                update(self.admin, source, parent=destination)
+                frappe.db.commit()
+            finally:
+                frappe.destroy()
+
+        def create_child():
+            frappe.init(site, force=True)
+            frappe.connect()
+            frappe.set_user("Administrator")
+            operation.name = "create"
+            try:
+                child = create_folder(self.admin, destination, "Concurrent child")
+                frappe.db.commit()
+                return child
+            finally:
+                frappe.destroy()
+
+        with (
+            patch.object(node_workflows, "_node", side_effect=coordinated_node),
+            ThreadPoolExecutor(max_workers=2) as pool,
+        ):
+            created = pool.submit(create_child)
+            self.assertTrue(
+                create_ancestor_locked.wait(timeout=10), "destination create did not lock its ancestor"
+            )
+            moved = pool.submit(move_tree)
+            moved.result(timeout=30)
+            child = created.result(timeout=30)
+
+        frappe.db.rollback()
+        self.assertEqual(frappe.db.get_value("Drive Node", source, "parent"), destination)
+        child_row = frappe.db.get_value("Drive Node", child, ["root", "path"], as_dict=True)
+        self.assertEqual(child_row.root, self.other_root.name)
+        self.assertIn(f"/{destination_ancestor}/{destination}/", child_row.path)
 
     def test_cross_root_move_transfers_head_and_version_charge_once(self):
         source = create_folder(self.admin, self.root.name, "Source")
@@ -591,6 +723,74 @@ class TestNodeLifecycle(IntegrationTestCase):
 
 
 class TestLifecyclePolicy(UnitTestCase):
+    def test_optional_reference_without_doctype_metadata_is_ignored(self):
+        with (
+            patch("suite.drive._core.nodes.frappe.db.exists", return_value=False) as exists,
+            patch("suite.drive._core.nodes.frappe.db.table_exists") as table_exists,
+            patch("suite.drive._core.nodes.frappe.get_meta") as get_meta,
+        ):
+            node_workflows._delete_if_field("Drive Node Preview", "node", ("node",))
+
+        exists.assert_called_once_with("DocType", "Drive Node Preview")
+        table_exists.assert_not_called()
+        get_meta.assert_not_called()
+
+    def test_create_parent_locks_source_to_descendant_then_refreshes(self):
+        snapshot = frappe._dict(name="descendant", root="root", path="/source/", kind="folder")
+        refreshed = frappe._dict(name="descendant", root="root", path="/source/", kind="folder")
+        with patch(
+            "suite.drive._core.nodes._node",
+            side_effect=[snapshot, frappe._dict(), frappe._dict(), frappe._dict(), refreshed],
+        ) as node:
+            self.assertIs(node_workflows._lock_create_parent("descendant"), refreshed)
+
+        self.assertEqual(
+            node.call_args_list,
+            [
+                call("descendant"),
+                call("source", for_update=True),
+                call("descendant", for_update=True),
+                call("root", for_update=True),
+                call("descendant", for_update=True),
+            ],
+        )
+
+    def test_create_parent_refuses_a_changed_snapshot_before_locking_new_ancestry(self):
+        snapshot = frappe._dict(name="descendant", root="root", path="/source/", kind="folder")
+        refreshed = frappe._dict(
+            name="descendant", root="other-root", path="/destination/source/", kind="folder"
+        )
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=[snapshot, frappe._dict(), frappe._dict(), frappe._dict(), refreshed],
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            node_workflows._lock_create_parent("descendant")
+
+    def test_deadlock_cleanup_preserves_the_original_error(self):
+        deadlock = frappe.QueryDeadlockError("deadlock")
+
+        def operation():
+            try:
+                raise deadlock
+            except Exception as exc:
+                node_workflows._rollback_savepoint("drive_create", exc)
+                raise
+
+        with (
+            patch(
+                "suite.drive._core.nodes.frappe.db.rollback",
+                side_effect=[RuntimeError("savepoint no longer exists"), None],
+            ) as rollback,
+            self.assertRaises(frappe.QueryDeadlockError) as raised,
+        ):
+            operation()
+
+        self.assertIs(raised.exception, deadlock)
+        self.assertEqual(rollback.call_args_list, [call(save_point="drive_create"), call()])
+
     def test_subtree_charge_is_one_root_path_indexed_query(self):
         source = frappe._dict(name="folder", root="root", path="/ancestor/")
         with patch("suite.drive._core.nodes.frappe.db.sql", return_value=[[17]]) as sql:

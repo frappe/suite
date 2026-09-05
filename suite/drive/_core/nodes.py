@@ -329,7 +329,7 @@ def _create_empty_node(
     savepoint = f"drive_create_{kind}_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        parent_row = _node(parent, for_update=True)
+        parent_row = _lock_create_parent(parent)
         via_link = require(parent_row, UPLOAD, principals)
         _validate_parent(parent_row, for_update=True, allow_document=False)
         _refuse_sibling_collision(parent_row.name, title)
@@ -345,8 +345,8 @@ def _create_empty_node(
         if url is not None:
             detail["url"] = url
         _record_activity(node.name, "create", principals, detail, via_link=via_link)
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -369,9 +369,7 @@ def create_file(
     savepoint = f"drive_create_file_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
     try:
-        # The parent row lock serializes the title check with every compliant
-        # sibling create and closes the pre-check/insert race.
-        parent_row = _node(parent, for_update=True)
+        parent_row = _lock_create_parent(parent)
         via_link = require(parent_row, UPLOAD, principals)
         if _via_link is not None:
             require_link(parent_row, UPLOAD, principals, _via_link)
@@ -411,8 +409,8 @@ def create_file(
             {"kind": "file", "title": title, "size": blob_row.file_size, "blob": blob_row.name},
             via_link=via_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -603,8 +601,8 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
             },
             via_link=activity_link,
         )
-    except Exception:
-        frappe.db.rollback(save_point=savepoint)
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
@@ -614,20 +612,15 @@ def _move(principals: Principals, node_id: str, destination_id: str) -> dict:
 def _lock_move_rows(
     node_id: str, destination_id: str
 ) -> tuple[frappe._dict, frappe._dict, list[frappe._dict]]:
-    """Lock all tree namespaces, then root metadata, in stable order."""
+    """Lock both ancestry chains, the source subtree, then root metadata."""
     initial = {node_id: _node(node_id), destination_id: _node(destination_id)}
     root_ids = {root_id(row) for row in initial.values()}
     if None in root_ids:
         raise DriveConflict(_("The Drive move has an invalid root"))
-    locked = {candidate: _node(candidate, for_update=True) for candidate in sorted(initial)}
+    locked = _lock_tree_chains(initial)
     current = locked[node_id]
     destination = locked[destination_id]
-    if {root_id(current), root_id(destination)} != root_ids:
-        raise DriveConflict(_("The Drive move endpoints changed; retry the move"))
     subtree = _subtree(current)
-    chain_node_ids = set(chain_ids(current)) | set(chain_ids(destination))
-    for chain_node_id in sorted(chain_node_ids - set(locked)):
-        _node(chain_node_id, for_update=True)
     for candidate_root in sorted(root_ids):
         validate_root_pair(candidate_root, for_update=True)
     return current, destination, subtree
@@ -1257,7 +1250,7 @@ def _delete_if_field(
     *,
     require_options: str | None = None,
 ) -> None:
-    if not values or not frappe.db.table_exists(doctype):
+    if not values or not frappe.db.exists("DocType", doctype) or not frappe.db.table_exists(doctype):
         return
     field = frappe.get_meta(doctype).get_field(fieldname)
     if not field or (require_options is not None and field.options != require_options):
@@ -1276,6 +1269,60 @@ def _node(node_id: str, *, for_update: bool = False) -> frappe._dict:
     if not row:
         raise DriveNotFound(_("Drive node {0} was not found").format(node_id))
     return row
+
+
+def _lock_create_parent(parent_id: str) -> frappe._dict:
+    """Lock one creation chain in the source-to-descendant move order."""
+    snapshot = _node(parent_id)
+    return _lock_tree_chains({parent_id: snapshot})[parent_id]
+
+
+def _lock_tree_chains(snapshots: dict[str, frappe._dict]) -> dict[str, frappe._dict]:
+    """Lock immutable snapshots by depth and id, with root nodes last.
+
+    Create and move both use this order. It puts a move source before every
+    descendant in its subtree without reversing the destination ancestry
+    order used by a concurrent create.
+    """
+    expected = {}
+    by_depth: dict[int, set[str]] = {}
+    roots = set()
+    for node_id, snapshot in snapshots.items():
+        chain = chain_ids(snapshot)
+        if (
+            not chain
+            or not all(isinstance(candidate, str) and candidate for candidate in chain)
+            or chain[-1] != node_id
+            or len(chain) != len(set(chain))
+        ):
+            raise DriveConflict(_("The Drive node has an invalid tree position"))
+        expected[node_id] = tuple(chain)
+        roots.add(chain[0])
+        for depth, candidate in enumerate(chain[1:], start=1):
+            by_depth.setdefault(depth, set()).add(candidate)
+
+    for depth in sorted(by_depth):
+        for candidate in sorted(by_depth[depth]):
+            _node(candidate, for_update=True)
+    for root in sorted(roots):
+        _node(root, for_update=True)
+
+    refreshed = {node_id: _node(node_id, for_update=True) for node_id in sorted(snapshots)}
+    if any(tuple(chain_ids(refreshed[node_id])) != chain for node_id, chain in expected.items()):
+        raise DriveConflict(_("The Drive tree changed; retry the operation"))
+    return refreshed
+
+
+def _rollback_savepoint(savepoint: str, error: Exception) -> None:
+    """Rollback one workflow without masking MariaDB's original deadlock."""
+    try:
+        frappe.db.rollback(save_point=savepoint)
+    except Exception:
+        if not isinstance(error, frappe.QueryDeadlockError):
+            raise
+        # InnoDB has already rolled back the deadlock victim's transaction,
+        # including its savepoints. A full rollback safely resets the handle.
+        frappe.db.rollback()
 
 
 def _validate_parent(
