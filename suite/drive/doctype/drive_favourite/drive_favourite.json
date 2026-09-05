@@ -6,6 +6,7 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "node",
   "entity"
  ],
  "fields": [
@@ -18,12 +19,17 @@
    "reqd": 1
   },
   {
-   "fieldname": "entity",
+   "fieldname": "node",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "File",
-   "options": "File",
-   "reqd": 1
+   "label": "Node",
+   "options": "Drive Node"
+  },
+  {
+   "fieldname": "entity",
+   "fieldtype": "Link",
+   "label": "Legacy File",
+   "options": "File"
   }
  ],
  "links": [],
