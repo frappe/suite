@@ -15,6 +15,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite import drive
+from suite.drive.utils import get_user_folder
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.meet.patches.backfill_recording_storage_reservations import execute
 
@@ -38,6 +39,9 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
         self.root = drive.personal_root_for(self.owner) or drive.ensure_personal_root(self.owner)
+        # `drive_home_folder` is mandatory and immutable, and production reads it
+        # from the same helper, so take the owner's real private folder.
+        self.home_folder = get_user_folder(self.owner).name
         self.used_before = self._used()
         self.rooms = []
         self.recordings = []
@@ -76,8 +80,11 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 "status": "Pending",
                 "recorder_job_id": frappe.generate_hash(length=32),
                 "request_id": str(uuid.uuid4()),
+                "estimated_seconds": 3600,
+                "estimated_bytes": budget_bytes,
                 "budget_bytes": budget_bytes,
                 "upload_size": upload_size,
+                "drive_home_folder": self.home_folder,
             }
         ).insert(ignore_permissions=True)
         self.recordings.append(recording.name)
