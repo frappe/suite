@@ -254,15 +254,18 @@ class TestGrantWorkflows(_GrantFixture):
             )
 
     def test_insert_update_and_root_target_each_write_one_exact_activity(self):
-        stale_identity = Principals(MANAGER, (MANAGER,), ("$PUBLIC",), is_admin=True)
-        created = grant(self.folder.name, TARGET, READ, stale_identity)
+        manager_identity = Principals(MANAGER, (MANAGER,), ("$PUBLIC",), is_admin=True)
+        created = grant(self.folder.name, TARGET, READ, manager_identity)
         updated = grant(self.folder.name, TARGET, EDIT, self.admin)
         root_grant = grant(self.root.name, "$GENERAL", READ, self.admin)
 
         self.assertEqual(created["name"], updated["name"])
         rows = self._activity(self.folder.name)
         self.assertEqual([row.action for row in rows], ["share_add", "share_edit"])
-        self.assertEqual(rows[0].actor, "Administrator")
+        # The actor is the identity that performed the write, not the admin
+        # capability that authorized it.
+        self.assertEqual(rows[0].actor, MANAGER)
+        self.assertEqual(rows[1].actor, "Administrator")
         self.assertEqual(
             rows[0].detail,
             {
