@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node",
+  "action",
+  "actor",
+  "at",
+  "via_link",
+  "client",
+  "detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "label": "Action",
+   "options": "create\nrename\nmove\nedit\ncomment\ntrash\nrestore\ndelete\nshare_add\nshare_edit\nshare_remove",
+   "reqd": 1
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Link",
+   "label": "Actor",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "at",
+   "fieldtype": "Datetime",
+   "label": "At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "via_link",
+   "fieldtype": "Data",
+   "label": "Via Link",
+   "length": 200
+  },
+  {
+   "fieldname": "client",
+   "fieldtype": "Data",
+   "label": "Client",
+   "length": 255
+  },
+  {
+   "fieldname": "detail",
+   "fieldtype": "JSON",
+   "label": "Detail"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Activity",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "at",
+ "sort_order": "DESC",
+ "states": []
+}
