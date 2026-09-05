@@ -864,16 +864,12 @@ def _write_activity(
     principals: Principals,
     detail: dict,
 ) -> None:
-    frappe.get_doc(
-        {
-            "doctype": "Drive Activity",
-            "node": node,
-            "action": action,
-            "actor": frappe.session.user,
-            "at": now_datetime(),
-            "detail": detail,
-        }
-    ).insert(ignore_permissions=True)
+    from suite.drive._core.activity import notify_users, record
+
+    activity = record(principals, node, action, detail=detail)
+    target = detail.get("principal")
+    if isinstance(target, str) and target and not target.startswith("$"):
+        notify_users(activity, (target,))
 
 
 def _json_datetime(value) -> str | None:

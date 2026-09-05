@@ -12,7 +12,7 @@ from suite.drive._core.roles import MANAGE, UPLOAD
 PERSONAL = "Personal"
 SHARED = "Shared"
 ACTIVE = "Active"
-ILLEGAL_ROOT_OPERATIONS = frozenset({"move", "copy", "trash", "restore", "purge"})
+ILLEGAL_ROOT_OPERATIONS = frozenset({"move", "copy", "trash", "restore", "purge", "version", "preview"})
 
 
 def create_root(
