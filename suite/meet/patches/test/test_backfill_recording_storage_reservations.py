@@ -56,9 +56,16 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
         return int(frappe.db.get_value("Drive Root", self.root, "used_bytes") or 0)
 
     def _recording(self, *, status: str, budget_bytes: int = 0, upload_size: int = 0) -> str:
-        room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert(
-            ignore_permissions=True
-        )
+        # The room must really belong to the test user: `validate_parties` compares
+        # `room_owner` against the stored Meet Room owner, which Frappe sets from
+        # the session user at insert time.
+        frappe.set_user(self.owner)
+        try:
+            room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert(
+                ignore_permissions=True
+            )
+        finally:
+            frappe.set_user("Administrator")
         self.rooms.append(room.name)
         recording = frappe.get_doc(
             {
