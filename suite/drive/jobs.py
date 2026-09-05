@@ -6,7 +6,13 @@ import frappe
 from frappe.utils import now_datetime
 
 from suite.drive._core.nodes import purge_expired_trash_root
+from suite.drive._core.previews import sweep_missing
 from suite.drive._core.versions import thin
+
+
+def sweep_missing_previews() -> dict:
+    """Queue the next bounded page of missing file previews."""
+    return sweep_missing()
 
 
 def purge_trashed_nodes() -> dict:
