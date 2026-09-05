@@ -11,7 +11,8 @@ blocked-by: [007, 008]
 
 Define the HTTP API of the Drive layer: endpoint list, request and response
 shapes, error codes, and paging. Inputs: the ten-entry-point shape from the
-design doc (`drive-file-layer-designs.md`, design C), the role ladder, the
+[file-layer decision record](../references/drive-file-layer-designs.md)
+(design C), the role ladder, the
 Drive Root model (archived-roots view), and the content app contract
 (create/copy/touch/version/comment calls, satellite hooks). Blocked by
 Publishing capability and Link sharing semantics because publish and link
@@ -83,9 +84,8 @@ same create-upload call and so return the same over-quota error.
 
 ## Resolution
 
-Resolved 2026-09-04. Explainer:
-https://md.netchamp.dev/drive-http-api/ (source
-`explainer/http-api.html`).
+Resolved 2026-09-04. Repository-local explainer:
+[`explainer/http-api.html`](../explainer/http-api.html).
 
 **1. Real routes, not RPC.** The surface is
 `/api/suite/drive/...`, not `/api/method/suite.drive.api....`. The
@@ -116,15 +116,17 @@ changes the route and not the response version.
                                          | { state: "trashed" | "active" }
     DELETE /api/suite/drive/nodes/<id>   purge, terminal
 
-One PATCH keeps the architecture doc's promise that `update()` gives WebDAV
+One PATCH keeps the
+[file-layer decision record](../references/drive-file-layer-designs.md)'s
+promise that `update()` gives WebDAV
 MOVE and the UI one tested path: a MOVE is a rename, a move, or both, and it
 does not know which. Purge is the one irreversible act, so it gets the one
 HTTP verb that means it instead of hiding as `state: "purged"` beside
 `state: "active"`.
 
-**4. The SDK checks permission. The HTTP layer translates.** A route handler
-parses the path, seeds principals from `X-Drive-Links`, calls the SDK and maps
-the exception. It never calls `require()` itself. Three callers reach the same
+**4. Drive checks permission. The HTTP layer translates.** A route handler
+parses the path, seeds principals from `X-Drive-Links`, calls a private Drive
+workflow and maps the exception. It never calls `require()` itself. Three callers reach the same
 nodes — routes, `/dav`, and other suite apps through the content contract —
 and all three get one rule because none of them owns it.
 
@@ -181,7 +183,7 @@ for 3, and looping PATCH turns one gesture into 30 requests and 30 activity
 rows.
 
 **9. The 69 old methods are shimmed, then dropped.** Build adds the routes and
-keeps every old name as a thin forwarder into the new SDK. Cleanup deletes the
+keeps every old name as a thin forwarder into the new Drive implementation. Cleanup deletes the
 forwarders one release later, gated on the SPA having moved. This is the
 two-patch shape [Migration mapping](011-migration-mapping.md) already chose for
 the data, so the API and the tables move on one schedule, and the SPA rewrite

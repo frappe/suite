@@ -736,7 +736,7 @@ Q3 forecast appears as <span class="hl">Q3 forecast.xlsx</span>, read-only
 PUT = one put_blob; a replace makes
       a version, unless the head was
       size 0
-same SDK calls, same activity rows as the web app</pre>
+same private Drive workflows, same activity rows as the web app</pre>
   </div>
 </div>
 
@@ -823,7 +823,7 @@ rollback after this: database restore only</pre>
 
 <h2 id="d13"><span class="decno">13</span>Slide images become nodes</h2>
 <p class="why">Ticket: Slides media to nodes. Nine decisions.
-  <a href="https://md.netchamp.dev/drive-slides-media/">Full walkthrough</a>.</p>
+  <a href="slides-media.html">Full walkthrough</a>.</p>
 
 <div class="pair">
   <div class="card">
@@ -876,7 +876,7 @@ is_template branch, forced-public composite row</pre>
 
 <h2 id="d14"><span class="decno">14</span>The front door: real routes</h2>
 <p class="why">Ticket: HTTP API surface. Ten decisions.
-  <a href="https://md.netchamp.dev/drive-http-api/">Full walkthrough</a>.</p>
+  <a href="http-api.html">Full walkthrough</a>.</p>
 
 <div class="pair">
   <div class="card">
@@ -901,7 +901,7 @@ paging  ?start=&amp;limit=
 DELETE /api/suite/drive/nodes/&lt;id&gt;
        <span class="dim">purge, terminal</span>
 
-the <span class="hl">SDK</span> checks permission;
+the <span class="hl">Drive workflow</span> checks permission;
 the route only translates
 
 paging  { "rows", "next_cursor" }
@@ -951,9 +951,9 @@ DriveConflict     409
 
 <ul>
   <li>The namespace carries an app segment because eight suite apps share one site and two of them want the noun <code>attachments</code>. It also gives one hardening allowlist prefix per app instead of one per route.</li>
-  <li>Three callers reach the same nodes: the routes, <code>/dav</code>, and other suite apps through the content contract. None of them owns the rule, so the SDK holds it.</li>
+  <li>Three callers reach the same nodes: the routes, <code>/dav</code>, and other suite apps through the public <code>suite.drive</code> facade. None of them owns the rule, so the private Drive implementation holds it.</li>
   <li>The cursor is opaque. It holds an offset today and can hold a keyset later without changing a call site.</li>
-  <li>Build keeps all 69 old method names as thin forwarders into the new SDK. Cleanup deletes them one release later, gated on the SPA having moved, so the frontend rewrite need not ship with the backend.</li>
+  <li>Build keeps all 69 old method names as thin forwarders into the new Drive implementation. Cleanup deletes them one release later, gated on the SPA having moved, so the frontend rewrite need not ship with the backend.</li>
   <li>Three names are permanent: <code>suite.drive.api.s3.fetch</code> sits inside stored <code>file_url</code> values, <code>get_file_for_doc</code> sits inside a checked-in built bundle, and <code>/dav</code> sits inside third-party file managers.</li>
   <li>No upstream ask. <code>frappe-ui</code>'s <code>useCall</code> already parses the v2 <code>errors[]</code> array and takes an arbitrary URL. <code>useList</code> and <code>useDoc</code> do not fit: they build generic document-API URLs that bypass the grant engine.</li>
 </ul>
@@ -975,7 +975,7 @@ DriveConflict     409
 
 <p>
   The spec turns the decisions into one implementable document: the frozen
-  schemas and indexes, the engine's exact queries, the content SDK, the full
+  schemas and indexes, the engine's exact queries, the Drive content contract, the full
   route table, the WebDAV mapping, the five framework asks, and the migration
   steps in order.
 </p>
@@ -983,15 +983,15 @@ DriveConflict     409
 <div class="grid3">
   <div class="card">
     <div class="card-label">Read next</div>
-    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-layer/">The Drive layer, explained</a>. The same design for a mixed audience, with the benchmark that chose it.</p>
+    <p class="small" style="margin:0"><a href="index.html">The Drive layer, explained</a>. The same design for a mixed audience, with the benchmark that chose it.</p>
   </div>
   <div class="card">
     <div class="card-label">Read next</div>
-    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-slides-media/">Slides media to nodes</a>. Decision 13 in full: templates, composites, quota per reference, the sweep.</p>
+    <p class="small" style="margin:0"><a href="slides-media.html">Slides media to nodes</a>. Decision 13 in full: templates, composites, quota per reference, the sweep.</p>
   </div>
   <div class="card">
     <div class="card-label">Read next</div>
-    <p class="small" style="margin:0"><a href="https://md.netchamp.dev/drive-http-api/">The HTTP API surface</a>. Decision 14 in full: the translator, the envelope, cursors, the 69 shimmed methods.</p>
+    <p class="small" style="margin:0"><a href="http-api.html">The HTTP API surface</a>. Decision 14 in full: the translator, the envelope, cursors, the 69 shimmed methods.</p>
   </div>
 </div>
 

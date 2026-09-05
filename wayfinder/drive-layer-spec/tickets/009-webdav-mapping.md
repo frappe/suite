@@ -151,9 +151,9 @@ it (listing sort would flip on every grant or rename write).
 ETag stays strong: the blob checksum for files; `content_modified` plus
 the latest version seq for documents.
 
-### 10. Same SDK calls, same activity rows
+### 10. Same Drive workflows, same activity rows
 
-DAV handlers call the Drive node SDK and get the rows the UI gets. The
+DAV handlers call the same private Drive workflows as HTTP and get the rows the UI gets. The
 actor is the session user. A `client` column on the activity row records
 the User-Agent for DAV requests. No DAV-specific activity types. Today
 only a replace writes a row (`put.py:243`).

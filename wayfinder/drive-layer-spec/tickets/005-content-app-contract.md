@@ -21,9 +21,9 @@ Red-team walkthrough: scenario S9.
 
 ## Reframed
 
-Decided with Faris, 2026-09-03. Sheets is being rewritten
-(`~/benches/suite-bench-2`, branch `sheets/ironcalc-core`, frontend only so
-far), so its doctypes will change. The ticket now defines the contract for
+Decided with Faris, 2026-09-03. Sheets is being rewritten on branch
+`sheets/ironcalc-core` (frontend only at decision time), so its doctypes will
+change. The ticket now defines the contract for
 every content app (Writer, Slides, Sheets, future apps). Sheets is one worked
 example, not the target.
 
@@ -146,9 +146,10 @@ One object per app, registered through a hook:
   per-row check and list filter; the app writes no permission code for
   them. Internal tables the user never reads are not declared.
 
-Drive calls the app. The app calls Drive for four things only: the point
-permission check, touch, take a version now, create or copy this document
-here.
+Drive calls the app. The app calls only the public `suite.drive` facade: the
+point permission check, touch, take a version now, create or copy this
+document here, and—after the later decision in ticket 012—push a document
+preview. It imports that facade with `from suite import drive`.
 
 ### Defaults
 

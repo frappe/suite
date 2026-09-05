@@ -13,7 +13,7 @@ Slides force-inserts an anyone-with-link permission row on every save of a
 composite deck, bypassing the grant ceiling, because the saver may lack
 share rights. Decide how programmatic publishing works in the new model:
 publish is MANAGE-only, or a distinct app-granted capability, or an
-explicit SDK call with its own permission rule. Include unpublish and the
+explicit Drive operation with its own permission rule. Include unpublish and the
 audit trail.
 
 Red-team walkthrough: scenario S7. Blocked by Role ladder semantics.
@@ -51,7 +51,7 @@ URL. Handed to 008.
 ### 3. MANAGE publishes; no capability, no bypass
 
 Publishing is a grant, so it needs MANAGE at the node like any grant.
-There is no app-declared publish capability and no SDK path that skips the
+There is no app-declared publish capability and no Drive path that skips the
 check. `publish(node)` and `unpublish(node)` may exist as sugar over
 grant and revoke with principal `$PUBLIC`; they raise without MANAGE.
 

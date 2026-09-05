@@ -2,6 +2,8 @@
 
 Suite is one app made of several products. Each keeps its own domain language.
 This map lists the contexts that have one written down, and how they meet.
+The repository-wide dependency and interface rules are in
+[`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Contexts
 
@@ -30,9 +32,9 @@ Not charted yet: Writer, Sheets, Slides, Mail, Calendar, Suite Core.
 - **Calendar → Meet**: a scheduled event's remaining time sets the Recording
   Estimate shown before a Recording Session starts.
 
-Every product above depends on Drive for storage and sharing. Drive depends on
-none of them. The one seam is a Content Type declaration: a product tells
-Drive how to create, copy, export, version, and purge one of its documents,
-and which of its own records are Satellites of the node. Drive holds the
-title, place, grants, lifecycle, versions, and comments; the product holds
-the body.
+Every product above uses Drive for storage and sharing through the public
+`suite.drive` interface. Drive imports none of their implementations. The
+Content Type declaration is an inverted dependency: each content product owns
+an adapter such as `suite/writer/drive.py`, and Suite composition registers it
+with Drive. Drive holds the title, place, grants, lifecycle, versions, and
+comments; the product holds the body.
