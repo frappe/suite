@@ -795,6 +795,30 @@ class TestLifecyclePolicy(UnitTestCase):
         ):
             node_workflows._lock_create_parent("ghost")
 
+    def test_stored_position_refuses_a_parent_row_that_no_longer_exists(self):
+        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        with (
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=DriveNotFound("Drive node ghost was not found"),
+            ),
+            self.assertRaises(DriveConflict) as refused,
+        ):
+            node_workflows._validate_stored_position(orphan, for_update=True)
+        self.assertIsInstance(refused.exception.__cause__, DriveNotFound)
+
+    def test_purge_root_refuses_a_parent_row_that_no_longer_exists(self):
+        orphan = frappe._dict(name="orphan", root="root", path="", parent="ghost", kind="folder")
+        with (
+            patch("suite.drive._core.nodes.root_for_node"),
+            patch(
+                "suite.drive._core.nodes._node",
+                side_effect=DriveNotFound("Drive node ghost was not found"),
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            node_workflows._validate_purge_root(orphan)
+
     def test_deadlock_cleanup_preserves_the_original_error(self):
         deadlock = frappe.QueryDeadlockError("deadlock")
 
