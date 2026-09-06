@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -127,6 +129,62 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual((activity.node, activity.action), (self.node, "share_add"))
         detail = frappe.parse_json(activity.detail) if isinstance(activity.detail, str) else activity.detail
         self.assertEqual(detail["principal"], OUTSIDER)
+
+    def test_repeating_a_notification_for_the_same_pair_adds_no_second_row(self):
+        activity = record(self.admin, self.node, "edit", detail={"version": 1})
+        self.assertEqual(notify_users(activity, (OWNER, OTHER)), 2)
+        first = frappe.db.get_value("Drive Notification", {"activity": activity, "to_user": OWNER}, "name")
+        self.assertEqual(mark_read(self.owner, first), 1)
+
+        # A repeat within one call and a repeat across calls both add nothing.
+        self.assertEqual(notify_users(activity, (OWNER, OWNER, OTHER)), 0)
+
+        rows = frappe.get_all(
+            "Drive Notification",
+            filters={"activity": activity},
+            fields=["name", "to_user", "read"],
+        )
+        self.assertEqual(sorted(row.to_user for row in rows), sorted((OWNER, OTHER)))
+        owner_row = next(row for row in rows if row.to_user == OWNER)
+        # The repeat kept the same pointer, so it cannot return a notification
+        # the reader already cleared to the inbox.
+        self.assertEqual(owner_row.name, first)
+        self.assertTrue(owner_row.read)
+        inbox = [row.name for row in notifications(self.owner) if row.activity.name == activity]
+        self.assertEqual(inbox, [first])
+
+        # The row is unique per activity, not per person: a later activity on
+        # the same node still notifies the same user.
+        later = record(self.admin, self.node, "edit", detail={"version": 2})
+        self.assertEqual(notify_users(later, (OWNER,)), 1)
+        self.assertEqual(frappe.db.count("Drive Notification", {"activity": later}), 1)
+
+    def test_a_missed_uniqueness_check_still_cannot_duplicate_a_notification(self):
+        activity = record(self.admin, self.node, "edit")
+        self.assertEqual(notify_users(activity, (OWNER,)), 1)
+        existing = frappe.db.get_value("Drive Notification", {"activity": activity, "to_user": OWNER}, "name")
+        real_exists = frappe.local.db.exists
+
+        def blind_to_notifications(doctype, *args, **kwargs):
+            # One connection cannot stage a real race, so blind the check the
+            # way a concurrent writer does: it inserts the pair after this
+            # caller looked and before this caller inserts. The
+            # `notif_activity_user` index is then the only guard left.
+            if doctype == "Drive Notification":
+                return None
+            return real_exists(doctype, *args, **kwargs)
+
+        with patch.object(frappe.local.db, "exists", side_effect=blind_to_notifications):
+            self.assertEqual(notify_users(activity, (OWNER,)), 0)
+
+        self.assertEqual(
+            frappe.get_all("Drive Notification", filters={"activity": activity}, pluck="name"),
+            [existing],
+        )
+        self.assertEqual(
+            [row.name for row in notifications(self.owner) if row.activity.name == activity],
+            [existing],
+        )
 
     def test_purge_removes_notifications_before_activity_and_personal_rows(self):
         visit(self.owner, self.node)
