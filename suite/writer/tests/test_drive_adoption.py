@@ -48,11 +48,20 @@ from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.content import clear_registry_cache, governs, spec_for
 from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
-from suite.drive._core.nodes import create_file, create_folder, purge, update
+from suite.drive._core.nodes import create_file, purge, update
+from suite.drive._core.nodes import create_folder as create_node_folder
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api.files import remove_or_restore, rename, track_visit, update_access
+from suite.drive.api.files import (
+    create_folder,
+    move,
+    remove_or_restore,
+    rename,
+    set_favourite,
+    track_visit,
+    update_access,
+)
 from suite.drive.api.list import files as legacy_files
 from suite.drive.api.notifications import create_notification
 from suite.drive.api.permissions import get_general_access, get_shared_with_list, get_user_access
@@ -557,9 +566,15 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.assertEqual(len(page["rows"]), 2)
         self.assertEqual(page["next_start"], 2)
         self.assertTrue(page["has_next"])
-        rest = legacy_files(entity_name=entity.folder, start=2, limit=2, paginated=True)
-        seen = {row["name"] for row in page["rows"]} | {row["name"] for row in rest["rows"]}
-        self.assertTrue(set(made) <= seen, "every document is on one of the two pages")
+        # Walked to the end, because the folder is the fixture user's own and
+        # holds whatever the rest of the class put there.
+        seen = {row["name"] for row in page["rows"]}
+        for _ in range(20):
+            if not page["has_next"]:
+                break
+            page = legacy_files(entity_name=entity.folder, start=page["next_start"], limit=2, paginated=True)
+            seen |= {row["name"] for row in page["rows"]}
+        self.assertTrue(set(made) <= seen, "every document is on one of the pages")
 
     def test_a_stranger_is_refused_the_folder_the_document_is_in(self):
         """The gate is the old body's, on the store that holds the folder."""
@@ -573,6 +588,12 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.addCleanup(frappe.set_user, "Administrator")
         with self.assertRaises(frappe.PermissionError):
             legacy_files(entity_name=entity.folder)
+
+    @staticmethod
+    def _drop_rows(*names: str):
+        frappe.set_user("Administrator")
+        for name in names:
+            frappe.delete_doc("File", name, force=1, ignore_permissions=True, ignore_missing=True)
 
     def _opened(self, title: str):
         """One document `create_document` writes, with no node behind it."""
@@ -752,6 +773,75 @@ class TestWriterBeforeActivation(IntegrationTestCase):
             update_access(entity.name, "share", user=OTHER, read=1)
         with self.assertRaises(frappe.PermissionError):
             get_shared_with_list(entity.name)
+
+    def test_favouriting_a_document_the_api_creates_keeps_the_mark(self):
+        """Writer's navbar and the Drive row menu both offer Favourite."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Favourite {frappe.generate_hash(6)}")
+        self.addCleanup(frappe.db.delete, "Drive Favourite", {"entity": entity.name})
+
+        set_favourite([{"name": entity.name, "is_favourite": True}])
+        self.assertTrue(
+            frappe.db.exists("Drive Favourite", {"entity": entity.name, "user": USER}),
+            "the mark is on the caller's own row",
+        )
+
+        set_favourite([{"name": entity.name, "is_favourite": False}])
+        self.assertFalse(frappe.db.exists("Drive Favourite", {"entity": entity.name, "user": USER}))
+
+    def test_moving_a_document_the_api_creates_lands_it_in_the_named_folder(self):
+        """Writer's `MoveDialog` names the document the editor has open. The
+        destination is a legacy folder, because the two trees are separate
+        until Build joins them."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Moved {frappe.generate_hash(6)}")
+        home = frappe.db.get_value("File", entity.name, "folder")
+        folder = create_folder(f"Box {frappe.generate_hash(6)}", home)
+        # Registered after `_opened`, so it runs first: the folder cannot go
+        # while it still holds the document.
+        self.addCleanup(self._drop_rows, entity.name, folder["name"])
+        self.assertFalse(frappe.db.exists("Drive Node", folder["name"]), "no node before Build")
+
+        answer = move([entity.name], folder["name"])
+
+        self.assertEqual(answer["name"], folder["name"])
+        self.assertEqual(frappe.db.get_value("File", entity.name, "folder"), folder["name"])
+
+    def test_a_folder_made_in_the_folder_that_holds_the_document_lands_there(self):
+        """`list.files` serves that folder now, so Drive's New menu opens on
+        it and names it as the parent."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Neighbour {frappe.generate_hash(6)}")
+        home = frappe.db.get_value("File", entity.name, "folder")
+
+        folder = create_folder(f"Box {frappe.generate_hash(6)}", home)
+        self.addCleanup(self._drop_rows, folder["name"])
+
+        self.assertEqual(folder["folder"], home)
+        self.assertEqual(folder["file_type"], "Folder")
+        self.assertFalse(frappe.db.exists("Drive Node", folder["name"]), "and no node was created")
+        self.assertIn(folder["name"], {row["name"] for row in legacy_files(entity_name=home)})
+
+    def test_a_document_the_api_creates_will_not_move_into_the_node_tree(self):
+        """The two stores are two trees until Build joins them, so this is
+        refused by name rather than moved on a guess."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Unmovable {frappe.generate_hash(6)}")
+        frappe.set_user("Administrator")
+        root = create_root(kind="Personal", title=f"Root {frappe.generate_hash(6)}", user=USER)
+        self.addCleanup(_purge_fixture_roots)
+        frappe.set_user(USER)
+        home = frappe.db.get_value("File", entity.name, "folder")
+
+        with self.assertRaises(frappe.ValidationError) as refusal:
+            move([entity.name], root.node)
+        # Named, not the workflow's 404 for a row it cannot see.
+        self.assertIn("cannot move this into that folder yet", str(refusal.exception))
+        self.assertEqual(frappe.db.get_value("File", entity.name, "folder"), home)
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
@@ -1253,7 +1343,7 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(after.title, "Stamped")
 
     def test_an_inherited_folder_grant_reaches_the_row_and_the_list(self):
-        folder = create_folder(self.admin, self.root.node, "Shared folder")
+        folder = create_node_folder(self.admin, self.root.node, "Shared folder")
         node = self._document(title="Inherited", parent=folder)
         docname = self._docname(node)
         grant(folder, OTHER, drive.READ, self.admin)

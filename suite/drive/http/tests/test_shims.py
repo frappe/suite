@@ -1489,6 +1489,133 @@ class TestUnadoptedShare(ShimCase):
             shims.get_shared_with_list("f1")
 
 
+class TestUnadoptedNewFolder(ShimCase):
+    """`_legacy_create_folder`: a folder under a parent no node holds."""
+
+    def test_a_node_less_parent_takes_a_file_folder(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=True))
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock()))
+        self.enterContext(
+            patch("suite.drive.api.permissions.user_has_permission", MagicMock(return_value=True))
+        )
+        self.enterContext(patch("suite.drive.utils.validate_filename", MagicMock()))
+        self.enterContext(patch("suite.drive.utils.files.FileManager", MagicMock()))
+        self.enterContext(patch("suite.drive.utils.files.storage_key", MagicMock(return_value="")))
+        made = MagicMock(return_value=frappe._dict(name="f2"))
+        self.enterContext(patch("suite.drive.utils.create_drive_file", made))
+        answer = MagicMock(return_value={"name": "f2"})
+        self.enterContext(patch.object(shims, "_legacy_file_row", answer))
+        nodes = self.stub("node_core")
+
+        self.assertEqual(shims.create_folder("Reports", "f1")["name"], "f2")
+
+        nodes.create_folder.assert_not_called()
+        self.assertEqual(made.call_args.args[:3], ("Reports", "f1", "Folder"))
+
+    def test_a_parent_a_node_holds_is_still_the_workflow(self):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=False))
+        nodes = self.stub("node_core")
+        nodes.stored.return_value = node_row()
+        shims.create_folder("Reports", "n1")
+        nodes.create_folder.assert_called_once_with(SOMEONE, "n1", "Reports")
+
+
+class TestUnadoptedFavourite(ShimCase):
+    """`_legacy_favourite`: the caller's own mark, for an id no node holds."""
+
+    def store(self, *, unadopted=True, held=False):
+        self.enterContext(patch.object(shims, "_unadopted_row", return_value=unadopted))
+        db = MagicMock()
+        db.exists.return_value = "mark-1" if held else None
+        self.enterContext(patch.object(shims.frappe, "db", db))
+        doc = MagicMock()
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=doc)))
+        drop = MagicMock()
+        self.enterContext(patch.object(shims.frappe, "delete_doc", drop))
+        return doc, drop
+
+    def test_a_node_less_row_is_marked_on_the_old_table(self):
+        doc, _ = self.store()
+        activity = self.stub("activity_core")
+        shims.set_favourite([{"name": "f1", "is_favourite": True}])
+        doc.insert.assert_called_once_with()
+        activity.set_favourite.assert_not_called()
+
+    def test_a_mark_the_caller_already_holds_is_dropped(self):
+        _, drop = self.store(held=True)
+        self.stub("activity_core")
+        shims.set_favourite([{"name": "f1", "is_favourite": False}])
+        drop.assert_called_once_with("Drive Favourite", "mark-1")
+
+    def test_a_silent_client_still_toggles_the_old_table(self):
+        """The old body toggled when the client named no value, and the mark
+        it read is the caller's own row, not a node's."""
+        doc, _ = self.store(held=False)
+        self.stub("activity_core")
+        shims.set_favourite([{"name": "f1"}])
+        doc.insert.assert_called_once_with()
+
+    def test_clearing_everything_clears_both_stores(self):
+        _, drop = self.store(held=True)
+        activity = self.stub("activity_core")
+        activity.favourites.return_value = {"rows": [], "next_cursor": None}
+        self.enterContext(patch.object(shims, "_legacy_favourites_held", return_value=["f1", "f2"]))
+        shims.set_favourite(clear_all=True)
+        self.assertEqual([call.args[1] for call in drop.call_args_list], ["mark-1", "mark-1"])
+        activity.favourites.assert_called()
+
+
+class TestUnadoptedMove(ShimCase):
+    """`_legacy_move`: the folder, for rows no node holds.
+
+    The two stores are two trees until Build joins them, so a move that
+    crosses is refused by name rather than performed against a guess.
+    """
+
+    def store(self, unadopted):
+        self.enterContext(patch.object(shims, "_unadopted_row", side_effect=unadopted))
+        row = MagicMock()
+        row.move.return_value = {"file_name": "Reports", "name": "f9", "folder": "f0"}
+        self.enterContext(patch.object(shims.frappe, "get_doc", MagicMock(return_value=row)))
+        return row
+
+    def test_a_node_less_row_is_moved_by_the_rule_that_placed_it(self):
+        row = self.store(lambda name: True)
+        nodes = self.stub("node_core")
+        answer = shims.move(["f1"], "f9")
+        row.move.assert_called_once_with("f9")
+        nodes.update.assert_not_called()
+        self.assertEqual(answer["name"], "f9")
+
+    def test_an_unnamed_destination_stays_the_old_default(self):
+        """`File.move` falls back to the caller's legacy user folder. The node
+        personal root is a different folder until Build joins them."""
+        row = self.store(lambda name: True)
+        self.stub("node_core")
+        shims.move(["f1"])
+        row.move.assert_called_once_with(None)
+
+    def test_a_node_less_row_will_not_cross_into_the_node_tree(self):
+        self.store(lambda name: name != "n9")
+        self.stub("node_core")
+        with self.assertRaises(frappe.ValidationError):
+            shims.move(["f1"], "n9")
+
+    def test_a_node_will_not_cross_into_the_file_tree(self):
+        self.store(lambda name: name == "f9")
+        nodes = self.stub("node_core")
+        with self.assertRaises(frappe.ValidationError):
+            shims.move(["n1"], "f9")
+        nodes.update.assert_not_called()
+
+    def test_a_list_that_names_both_stores_is_refused_whole(self):
+        row = self.store(lambda name: name == "f1")
+        self.stub("node_core")
+        with self.assertRaises(frappe.ValidationError):
+            shims.move(["f1", "n2"], "f9")
+        row.move.assert_not_called()
+
+
 class TestUnadoptedVisit(ShimCase):
     """`_legacy_visit`: the opened-at row, for an id no node holds.
 
@@ -2114,6 +2241,7 @@ class TestFileForwarders(ShimCase):
         self.assertEqual(answer["file_name"], "New.pdf")
 
     def test_move_forwards_a_parent_for_every_named_node(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.stored.return_value = node_row()
         shims.move(["n1", "n2"], "f9")
@@ -2405,6 +2533,7 @@ class TestFileForwarders(ShimCase):
         activity.clear_recents.assert_called_once_with(SOMEONE, None)
 
     def test_set_favourite_toggles_when_the_client_says_nothing(self):
+        self.stub_unadopted_row()
         activity = self.stub("activity_core")
         activity.personal_marks.return_value = {"n1": {"favourite": "fav1", "opened_at": None}}
         shims.set_favourite([{"name": "n1"}])
@@ -2418,6 +2547,8 @@ class TestFileForwarders(ShimCase):
         `Drive Favourite` on a dict. It matched nothing, and "clear all"
         cleared nothing.
         """
+        self.stub_unadopted_row()
+        self.enterContext(patch.object(shims, "_legacy_favourites_held", return_value=[]))
         activity = self.stub("activity_core")
         activity.favourites.return_value = {
             "rows": [
@@ -2433,6 +2564,7 @@ class TestFileForwarders(ShimCase):
         )
 
     def test_set_favourite_reads_a_string_flag(self):
+        self.stub_unadopted_row()
         activity = self.stub("activity_core")
         activity.personal_marks.return_value = {}
         shims.set_favourite([{"name": "n1", "is_favourite": "true"}])
@@ -3241,6 +3373,7 @@ class TestMoveAnswersTheDestination(ShimCase):
         `updateMoved` refreshes it. Answering the moved node sent the user into
         a file and refreshed the wrong listing.
         """
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         nodes.stored.return_value = frappe._dict(name="dest", title="Archive", parent="root")
 
@@ -3254,6 +3387,7 @@ class TestMoveAnswersTheDestination(ShimCase):
         )
 
     def test_move_with_no_destination_answers_the_caller_home_folder(self):
+        self.stub_unadopted_row()
         nodes = self.stub("node_core")
         roots = self.stub("roots")
         roots.personal_root_for.return_value = "home"

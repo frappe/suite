@@ -131,6 +131,7 @@ BASELINE_DEBT = {
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.content",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.errors",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.nodes",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.nodes#2",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.principals",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.roots",
             "suite/writer/tests/test_drive_adoption.py|import|suite.drive._core.versions",
