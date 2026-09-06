@@ -520,6 +520,16 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
             frappe.get_all("File", filters={"attached_to_doctype": DOCTYPE}, pluck="name")
         )
 
+    @staticmethod
+    def _backing_file(deck: str) -> str | None:
+        """The same lookup as `DriveFile.get_for_doc`, spelled out.
+
+        Importing `suite.drive.overrides.file` here would add a fourth boundary
+        violation to the three `suite/tests/test_architecture.py` already
+        records against this module.
+        """
+        return frappe.db.get_value("File", {"content_doctype": DOCTYPE, "content_docname": deck}, "name")
+
     def _legacy_deck(self, title="Legacy deck") -> str:
         deck = make_presentation(f"{title} {frappe.generate_hash(6)}")
         self.addCleanup(
@@ -544,11 +554,9 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         sweep's cascade back to `content_docname` cannot reach it. Without the
         template every assertion below still passes with the deck sweep deleted.
         """
-        from suite.drive.overrides.file import File as DriveFile
-
         name = self._legacy_deck("Committed")
         share = frappe.share.add(DOCTYPE, name, OTHER, read=1)
-        backing = DriveFile.get_for_doc(DOCTYPE, name)
+        backing = self._backing_file(name)
         api.save_presentation_thumbnail(name, webp_capture())
         thumbnail = frappe.db.get_value(
             "File", {"attached_to_doctype": DOCTYPE, "attached_to_name": name}, "name"
@@ -563,7 +571,7 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
         ).insert()
         self.assertTrue(backing, "the deck is backed by a File")
         self.assertTrue(thumbnail, "and the capture wrote a second one")
-        self.assertIsNone(DriveFile.get_for_doc(DOCTYPE, template.name), "the template is backed by none")
+        self.assertIsNone(self._backing_file(template.name), "the template is backed by none")
         frappe.db.commit()
 
         self._remove_fixture_rows()
