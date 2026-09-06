@@ -16,9 +16,9 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The seven calls an app makes are `check`, `touch`, `take_version`,
-`create_document`, `copy`, `adopt_media`, and `push_preview`. Nothing lower
-flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
+The nine calls an app makes are `check`, `touch`, `take_version`,
+`create_document`, `import_document`, `copy`, `adopt_media`, `read_file`, and
+`push_preview`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
 accounting alone does not load the node, preview, and imaging modules.
@@ -30,6 +30,12 @@ copies the document's media one node per blob, and hands the app the old-to-new
 node map through `remap_media`. `adopt_media` is the same media step for a
 paste: it brings named media under one document, sharing blobs, and answers the
 id remapping the app applies to its own body.
+
+`import_document` is the fourth create shape of §10.1: a foreign file becoming a
+content document. It runs the app's `import_from_file` factory, which reads the
+source bytes back through `read_file` because only the app can parse its own
+format and no app may read a `Drive Node` blob itself. The source file is left
+exactly as it was: an import is neither a move nor a copy.
 
 ## Errors
 
@@ -80,8 +86,9 @@ phase only. An app whose permission hooks are still its own has to refuse a
 `DocShare` the same way this package does after activation, because Frappe
 widens both a denied row check and a list predicate with shared names.
 
-The content workflows do check. `check`, `create_document`, `copy`,
-`adopt_media`, `touch`, `take_version`, and `push_preview` build the caller's
+The content workflows do check. `check`, `create_document`,
+`import_document`, `copy`, `adopt_media`, `read_file`, `touch`, `take_version`,
+and `push_preview` build the caller's
 principals from the current Frappe session and this request's `X-Drive-Links`
 header, then run the same point check every other Drive workflow runs. A caller never constructs
 principals itself and never composes partial steps.
@@ -107,6 +114,8 @@ migration or a per-request caller can run them in a loop. They hold row locks
 until the caller commits, so a caller must not keep a Drive transaction open
 across a network call.
 """
+
+from typing import IO
 
 from suite.drive._core.content import (
     ContentTypeSpec,
@@ -165,6 +174,26 @@ def copy(node: str, parent: str, *, title: str | None = None) -> str:
     from suite.drive._core.nodes import copy as _copy
 
     return _copy(_principals(), node, parent, title=title)
+
+
+def import_document(parent: str, title: str, *, content_doctype: str, from_node: str) -> str:
+    """Create one content document from an ordinary file's bytes, in one transaction."""
+    from suite.drive._core.nodes import import_document as _import_document
+
+    return _import_document(
+        _principals(),
+        parent,
+        title,
+        content_doctype=content_doctype,
+        from_node=from_node,
+    )
+
+
+def read_file(node: str) -> tuple[IO[bytes], str]:
+    """Answer one readable file node's bytes as a stream, with its mime type."""
+    from suite.drive._core.nodes import read_file as _read_file
+
+    return _read_file(_principals(), node)
 
 
 def adopt_media(document_node: str, media_nodes) -> dict[str, str]:
@@ -234,8 +263,10 @@ __all__ = (
     "get_storage_reservation",
     "get_storage_usage",
     "grow_storage_reservation",
+    "import_document",
     "personal_root_for",
     "push_preview",
+    "read_file",
     "reduce_storage_reservation",
     "refuse_shared_linked_rows",
     "refuse_shared_row",
