@@ -43,14 +43,17 @@ Run HTTP tests through actual request dispatch for session/API-key/Guest calls, 
 
 ## Completion evidence
 
-Status: implementation and tests written. Acceptance boxes stay unchecked
-because the dispatch suite has not run. It needs the shared site.
+Status: implementation written, reviewed by a second agent, and fixed.
+Acceptance boxes stay unchecked because the dispatch suite has not run. It
+needs the shared site.
 
 ### Revisions
 
 - Suite start `501e4cea41971f942782ef06fe45e626eebdeb39`, work through
   `7801dc0052663446650e89bd3a1f6a1ea45c6b2c` on
   `implement/drive-21-http-workflows`.
+- Independent review on `review/drive-21-http-workflows`:
+  `fcc9232d5` (review fixes) and this evidence update.
 - Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, read only, unchanged.
 
 ### Changed behavior
@@ -116,12 +119,14 @@ which is where ARCHITECTURE.md puts a dotted Frappe target entering Drive.
    `routes.node_batch`, `TestBatchIsolation`, `TestBatch`.
 7. Exact §11.6 mapping including plain `ValidationError` at 400:
    `routes._route`, `TestRefusalMapping`, `TestErrorEnvelope`.
-8. Raw blob inputs stay inside the authorized workflow: `POST /nodes` and
-   `PATCH /nodes/<id>` accept §11.2's declared `blob`, `size`, and `mime` and
-   hand them to `create_file` / `_replace_file`. `_validated_blob` refuses
-   unless the declared pair matches the stored blob row, the node is written
-   from the stored values, and `admit` charges the stored size. Client
-   metadata can fail the create; it cannot change what is written or billed.
+8. Raw blob inputs stay inside the authorized workflow: `POST /nodes` is
+   the one route that accepts §11.2's declared `blob`, `size`, and `mime`,
+   and hands them to `create_file`. `_validated_blob` refuses unless the
+   declared pair matches the stored blob row, the node is written from the
+   stored values, and `admit` charges the stored size. Client metadata can
+   fail the create; it cannot change what is written or billed. Review
+   removed the same three arguments from `PATCH /nodes/<id>`: §11.2 does not
+   declare them there.
 
 ### Commands and real results
 
@@ -136,12 +141,23 @@ Run from `/home/faris/benches/suite-bench/sites`, with
 | `python -m unittest discover -s suite/drive/http/tests` | `Ran 55 tests in 0.175s ... OK` |
 | import check of `suite.drive.http.tests.test_dispatch` | imports site-free; 91 test methods collected |
 
+Re-run after the review fixes, same environment:
+
+| Command | Result |
+|---|---|
+| `ruff check suite/drive/ suite/hooks.py` (0.12.3) | pass, except the same pre-existing `E722` in `suite/drive/patches/team_restructure.py` |
+| `ruff format --check suite/drive/http/ suite/drive/_core/` | `23 files already formatted` |
+| `python -m unittest suite.tests.test_architecture` | `Ran 7 tests in 1.063s ... OK` |
+| `python -m unittest ...test_translator ...test_shapes ...test_routes` | `Ran 71 tests in 0.168s ... OK` |
+| import check of `suite.drive.http.tests.test_dispatch` | imports site-free; 96 test methods collected |
+
 ### Not verified
 
-`suite/drive/http/tests/test_dispatch.py` has not run. 91 tests, all needing
+`suite/drive/http/tests/test_dispatch.py` has not run. 96 tests, all needing
 the shared site. This worktree may not run bench, migrate, install, or restart
 services, so the whole dispatch suite is unverified, including every claim
-about real status codes, real envelopes, and real accounting.
+about real status codes, real envelopes, and real accounting. Every review
+finding below was proved site-free; none was proved through a real request.
 
 ### Required serialized site gate
 
@@ -157,15 +173,80 @@ bench --site slides.localhost run-tests --app suite --module suite.drive.tests.t
 bench --site slides.localhost run-tests --app suite --module suite.drive.tests.test_upload
 bench --site slides.localhost run-tests --app suite --module suite.drive.tests.test_content
 bench --site slides.localhost run-tests --app suite --module suite.drive.tests.test_roots
+bench --site slides.localhost run-tests --app suite --module suite.drive.tests.test_access
+bench --site slides.localhost run-tests --app suite --module suite.drive.tests.test_previews
 bench --site slides.localhost run-tests --app suite --module suite.drive.webdav.tests.test_dispatch
 ```
 
-The last five are regression cover: this ticket changed `_core/nodes.py`,
+The last seven are regression cover: this ticket changed `_core/nodes.py`,
 `_core/access.py`, `_core/content.py`, `_core/roots.py`, `_core/upload.py`,
-`_core/previews.py`, and `before_request`.
+`_core/previews.py`, and `before_request`. The review changed the winner sort
+in `access.py` and the decode guard in `previews.py`, so those two modules
+joined the list.
 
 A background worker must be running, or Drive tests fail with
 `QueueOverloaded` on this bench.
+
+### Independent review
+
+A second agent reviewed the branch against §11.1-11.6 without trusting this
+report, and fixed what it found. Commit `fcc9232d5`.
+
+**Fixed, highest severity first.**
+
+1. **The declared `{content_modified}` PATCH body always failed.** `update`
+   folded `content_modified` into the file-replacement branch, so §11.2's
+   fifth body answered `A file replacement requires blob, size, and MIME
+   type`. Proved site-free against a stub database before the fix.
+   `_stamp_content_time` now writes it alone. `POST /nodes/batch` takes the
+   same field, because §11.5 ties `patch` to the same set.
+2. **`PATCH /nodes/<id>` took bytes §11.2 does not declare.** `blob`, `size`,
+   and `mime` are gone from the route and from the batch `patch` allow-list.
+   A test pinned the old behaviour; that test pinned an error.
+3. **A non-ASCII document title killed the download.** A WSGI header is
+   latin-1 and `Headers.set` quotes a filename but never encodes one, so a
+   Cyrillic or Chinese title broke the response after the status line, and a
+   title holding a newline raised `ValueError` outside the boundary that maps
+   refusals. `_disposition_names` now writes RFC 5987.
+4. **A title holding `/` broke its own signed URL.** `signed_url_for_blob`
+   signs the filename into the path, so a slash split it and the byte fetch
+   answered 403. `content.download_filename` cleans the name where it is
+   minted, for both `/nodes/<id>/content` and `/nodes/<id>/media`.
+5. **`frappe.DoesNotExistError` escaped the §11.6 mapping** and left the
+   namespace as a 500. It maps to `DriveNotFound`.
+6. **`PUT /uploads/<id>` read the body before it authorized the session.**
+   Python evaluates arguments first, so an unknown session cost a whole
+   16 MiB chunk of memory. `upload.authorize_chunk` runs first.
+7. **An over-size upload session answered 400, not 413.**
+   `create_blob_upload` refuses above the site's `max_file_size` with a plain
+   `ValidationError`. §11.2 says over quota is never anything else, so the
+   bound is read first and reported as `DriveOverQuota`.
+8. **A nearest-wins tie named the wrong source.** When an own grant and an
+   open link tie at the same depth, §5.1 makes the own row the answer and
+   `_authorizing_link` reports no link. The winner sort ordered on depth
+   alone, so the same payload could name a link as `source` while `via_link`
+   was false.
+9. **The byte path and the breadcrumb path each spent a second point check.**
+   §2.3 budgets one. `nodes.signed_content_url` mints from the row `get`
+   already read; `children` returns its authorized parent row, so
+   `?expand=breadcrumbs` no longer re-reads the folder. The re-read also let
+   a grant revoked mid-request 404 a page the plain listing had answered.
+10. **A truncated preview image answered 500.** Pillow raises `OSError` on a
+    body that parsed as a header and then ran out. It maps to 400.
+11. **A negative integer in a JSON body was accepted** where `?limit=-1` was
+    already refused. `shapes.whole` refuses both.
+12. **`?cursor=` empty string** reached the pager as a cursor. It is `None`.
+
+**Tests added.** 16 site-free tests across `test_routes.py` and
+`test_translator.py`, and 5 in `test_dispatch.py`: the patch body alternatives,
+the batch savepoint name, the three expansions, the page envelope, the content
+answer, chunk ordering, and the two link-source ties.
+
+**Reviewed and found correct.** Route inventory against §11.2, `cmd` removal
+and path precedence, the verb and Guest matrix against the table, savepoint
+naming and one activity per successful mutation, restore with an explicit
+parent, list and detail shape parity, the sixteen published fields and the
+five withheld ones, and the ticket 19 and 20 handoffs.
 
 ### Deviations and open questions
 
@@ -191,9 +272,40 @@ A background worker must be running, or Drive tests fail with
 5. **A blob id is a bearer capability at create time.** `_validated_blob`
    proves a blob is Ready, private, and matches the declared metadata. It does
    not prove the caller produced it. A caller who learns another root's blob id
-   can attach a node to those bytes in their own root. §11.2 declares the
-   argument, so it stays. Recommend a Drive-side ownership check on
-   `create_file` be considered by ticket 30.
+   can attach a node to those bytes in their own root. Review found that blob
+   ids are not secret: Drive publishes them itself, in the `/f/` redirect from
+   `GET /nodes/<id>/content` and in every row of `GET /nodes/<id>/media`. A
+   15-minute read of someone else's bytes therefore becomes a permanent owned
+   node. §11.2 declares the argument, so it stays. Ticket 30 should decide
+   whether `create_file` proves ownership.
+6. **The site file cap bounds every Drive upload session.**
+   `max_file_size` defaults to 25 MB, and it is checked on the declared size,
+   so §11.2's own quota answer is reached only under it. The mapping is now
+   413. The cap itself is a site configuration decision, and Frappe is read
+   only here.
+7. **Three framework behaviours the namespace cannot override.** An oversized
+   body on a non-streaming route gets werkzeug's HTML 413 before any hook
+   runs. `Accept: text/html` makes `handle_exception` answer an HTML error
+   page instead of §11.6's envelope. `HEAD` on a GET row answers through
+   `routes.unknown`, so it is a JSON 404. All three need a Frappe change or a
+   product decision.
+8. **Two Guests holding the same link share one upload session.** The binding
+   records the link, not the caller, because a Guest has no identity to
+   record. Session ids are unguessable, so this is a property of link
+   sharing, not a hole. Recorded for ticket 30.
+9. **N+1 blob reads in `preview_expansions` and `list_media`.** Each row costs
+   one `frappe.get_doc("File Blob", ...)`. A page of 200 previews is 200
+   reads. A batch fix needs a Frappe helper that mints many signed URLs, so it
+   is out of this ticket's claimed files.
+10. **`roots.usage_for` admits MANAGE holders.** §11.2 says "own root, or
+    Suite Admin". A manager of a shared root can read its counters. Narrowing
+    it is a product decision.
+11. **`is_template` on `POST /nodes` is undeclared in §11.2.** It is accepted
+    and it works. Either the spec row or the argument is wrong.
+12. **§11.3 says breadcrumbs run "from the root down to the parent".** The
+    code starts at the highest ancestor the caller can see, which is what
+    §5.2 requires. The spec text disagrees with itself; the code follows
+    §5.2.
 
 ### Unresolved handoffs
 
@@ -213,4 +325,9 @@ A background worker must be running, or Drive tests fail with
 - Ticket 22 owns the rest of §11.2: activity, visit, favourite, grants, links,
   views, versions, threads, comments, and notifications. The translator table
   and `routes.unknown` are shaped to take those rows without change.
+- Ticket 18's handoff says ticket 21 owns the template route. It is
+  superseded: ticket 22 owns every view row, `templates` included.
+- A Guest reaching a session-only route gets 403 `PermissionError` from the
+  framework, which confirms the path exists. §5.2 hides nodes, not routes, so
+  this is left as is.
 - Dormant content activation is untouched, as ticket 29 requires.
