@@ -548,11 +548,15 @@ def readable_child_counts(principals: Principals, parents: list[str]) -> dict[st
         return {}
     counts = {
         row["parent"]: int(row["total"] or 0)
-        for row in frappe.get_all(
-            "Drive Node",
-            filters={"parent": ("in", parents), "state": "Active"},
-            fields=["parent", "count(name) as total"],
-            group_by="parent",
+        for row in frappe.db.sql(
+            """
+            SELECT parent, COUNT(name) AS total
+            FROM `tabDrive Node`
+            WHERE parent IN %(parents)s AND state = 'Active'
+            GROUP BY parent
+            """,
+            {"parents": _sql_values(parents)},
+            as_dict=True,
         )
     }
     if principals.is_admin:
