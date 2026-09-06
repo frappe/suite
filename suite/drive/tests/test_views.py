@@ -98,7 +98,17 @@ class TestListingContract(UnitTestCase):
 
         page = children(principals, "root", limit=500)
 
-        self.assertEqual(page, {"rows": [], "next_cursor": None})
+        # The third key is the listed folder itself, already read and
+        # authorized here. The breadcrumbs expansion takes its trail from this
+        # row instead of reading the folder a second time.
+        self.assertEqual(
+            page,
+            {
+                "rows": [],
+                "next_cursor": None,
+                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+            },
+        )
         self.assertEqual(sql.call_args_list[0].args[1]["limit"], MAX_PAGE_SIZE)
 
     @patch("suite.drive._core.nodes.now", return_value="2026-09-05 12:00:00")
@@ -200,7 +210,14 @@ class TestListingContract(UnitTestCase):
 
         page = children(self.principals, "root", limit=2)
 
-        self.assertEqual(page, {"rows": [], "next_cursor": None})
+        self.assertEqual(
+            page,
+            {
+                "rows": [],
+                "next_cursor": None,
+                "parent": {"name": "root", "kind": "root", "root": None, "path": ""},
+            },
+        )
 
     def test_shared_query_deduplicates_overlapping_grants_before_limit(self):
         distinct = SHARED_SQL.index("SELECT DISTINCT")
