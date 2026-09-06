@@ -22,7 +22,6 @@ times (§8.11).
 
 from datetime import UTC, datetime
 
-import frappe
 from werkzeug.wrappers import Response
 
 from suite.drive._core import nodes as node_core
@@ -37,7 +36,6 @@ from suite.drive.webdav.errors import (
     Conflict,
     InsufficientStorage,
     MethodNotAllowed,
-    NotFoundError,
 )
 from suite.drive.webdav.properties import to_site_naive
 
@@ -119,7 +117,7 @@ def handle(ctx: DavContext) -> Response:
         status = 204
 
     pathmap.reset_memo()
-    return _response(ctx, status, blob.checksum)
+    return _response(status, blob.checksum, content_modified)
 
 
 def _free_bytes(root: str) -> int | None:
@@ -199,14 +197,19 @@ def _client_mtime(ctx: DavContext) -> datetime | None:
     return to_site_naive(datetime.fromtimestamp(int(stamp), tz=UTC))
 
 
-def _response(ctx: DavContext, status: int, checksum: str) -> Response:
+def _response(status: int, checksum: str, content_modified: datetime | None) -> Response:
     """The stored bytes' own strong validator, the one `getetag` publishes.
 
     The legacy shape truncated the checksum to 32 characters behind a
     `sha256-` prefix, so an `If-Match` built from a PUT response could never
     match what PROPFIND or GET publish for the same bytes (§12.4).
+
+    `X-OC-Mtime: accepted` is claimed only when a time was really stamped. The
+    header is how the nextcloud vendor learns whether to re-sync, so echoing it
+    for a value we dropped would leave the client believing a time it can never
+    read back.
     """
     headers = {"ETag": f'"{checksum}"'}
-    if ctx.request.headers.get("X-OC-Mtime"):
+    if content_modified is not None:
         headers["X-OC-Mtime"] = "accepted"
     return Response(status=status, headers=headers)

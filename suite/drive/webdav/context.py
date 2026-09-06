@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
-import frappe
 from werkzeug.wrappers import Request
 
 from suite.drive._core.principals import Principals
