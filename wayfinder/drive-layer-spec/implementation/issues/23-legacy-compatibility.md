@@ -4,9 +4,22 @@
 
 **Blocked by:** [22 — Expose sharing, views, history, and comments through HTTP](22-http-sharing-and-records.md)
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 **Owner:** Suite Drive HTTP compatibility
+
+**Starting revision:** Suite `e390a44877c0185522ff186da6c9df09c0e79b89` on
+`implement/drive-23-legacy-compatibility`; Frappe
+`e9cc6261d1bb342383d9cb641e8190cbfc3854fd` (read only, unchanged).
+
+**Claimed files:** `suite/drive/http/shims.py`, `suite/drive/http/__init__.py`,
+`suite/drive/api/activity.py`, `suite/drive/api/embed.py`,
+`suite/drive/api/files.py`, `suite/drive/api/list.py`,
+`suite/drive/api/notifications.py`, `suite/drive/api/permissions.py`,
+`suite/drive/api/scripts.py`, `suite/drive/api/storage.py`,
+`suite/drive/http/tests/test_shims.py`, `suite/drive/tests/test_sync_permissions.py`,
+the caller inventory under `wayfinder/drive-layer-spec/implementation/`, and this
+ticket.
 
 **Execution gate:** None beyond completed blockers.
 
