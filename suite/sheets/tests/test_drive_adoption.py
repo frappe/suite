@@ -35,6 +35,7 @@ import dataclasses
 import datetime
 import io
 import json
+import pathlib
 import unittest
 import zipfile
 from contextlib import contextmanager
@@ -128,6 +129,19 @@ def workbook_bytes(build) -> bytes:
     return output.getvalue()
 
 
+def sheet_doctype_json() -> dict:
+    """The shipped `Sheet` DocType JSON, read from disk rather than a site."""
+    path = pathlib.Path(sheets.__file__).parent / "doctype" / "sheet" / "sheet.json"
+    return json.loads(path.read_text())
+
+
+def _doc_perm(role: str) -> dict:
+    for row in sheet_doctype_json()["permissions"]:
+        if row.get("role") == role:
+            return row
+    raise AssertionError(f"no DocPerm row for role {role}")
+
+
 def simple_workbook() -> bytes:
     def build(book):
         sheet = book.active
@@ -199,6 +213,31 @@ class TestSheetsDeclaration(unittest.TestCase):
         from suite.drive._core.content import FORBIDDEN_FIELD_NAMES
 
         self.assertNotIn("head_snapshot", FORBIDDEN_FIELD_NAMES)
+
+    # the `All` DocPerm, which the guards deny against
+
+    def test_the_open_baseline_row_still_carries_every_legacy_right(self):
+        """§10.4 needs the row open; it does not need it narrower than before.
+
+        A Frappe permission hook can only deny, so `sheet_has_permission` is
+        what puts the owner rule back. A right this row drops is a right the
+        hook can never return: `share_sheet` asks `ptype="share"` and
+        `frappe.share.check_share_permission` asks it again
+        (`frappe/share.py:239`), so dropping `share` here refuses the owner of
+        a legacy sheet, which ticket 23 still owns.
+        """
+        baseline = _doc_perm("All")
+        for right in ("read", "write", "create", "delete", "share", "export", "print", "email", "report"):
+            self.assertEqual(baseline.get(right), 1, f"the `All` row must keep `{right}`")
+
+    def test_the_open_baseline_row_no_longer_restricts_itself_to_the_owner(self):
+        self.assertNotIn("if_owner", _doc_perm("All"))
+
+    def test_guest_reads_only_through_a_link_grant(self):
+        guest = _doc_perm("Guest")
+        self.assertEqual(guest.get("read"), 1)
+        for right in ("write", "create", "delete", "share"):
+            self.assertNotIn(right, guest)
 
     # the hooks stay dormant until ticket 29
 
