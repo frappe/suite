@@ -24,6 +24,13 @@ class _PermCheckBase(unittest.TestCase):
         # `has_permission` returns True by default — endpoints proceed past
         # the gate so we can also assert what they emit downstream.
         self.frappe.has_permission.return_value = True
+        # Ticket 19: the legacy endpoints read the sheet's node column first
+        # and refuse a sheet Drive owns. These tests pin the legacy ptype
+        # shape, so the sheet here has no node; the refusal has its own tests
+        # in `suite.sheets.tests.test_drive_adoption`.
+        node = mock.patch("suite.sheets.drive.node_of", return_value=None)
+        node.start()
+        self.addCleanup(node.stop)
 
 
 class BroadcastsRequireWrite(_PermCheckBase):
