@@ -1865,7 +1865,11 @@ def delete_entities(entity_names: list[str] | None = None, clear_all: bool = Fal
     """`delete_entities` -> `DELETE /nodes/<id>`.
 
     `clear_all` is walked over the caller's own trash view, so the rows it
-    purges are the rows §11.2 would have listed and nothing else.
+    purges are the rows §11.2 would have listed and nothing else. It names no
+    `File` row: §11.2 has no trash view for the legacy store, and listing one
+    here would be a view this shim invented. A named id still purges from
+    either store, which is what `writer/utils/docximporter.js` needs when it
+    rolls back the pictures a failed import uploaded.
     """
     principals = _principals()
     if clear_all:
@@ -1882,6 +1886,11 @@ def delete_entities(entity_names: list[str] | None = None, clear_all: bool = Fal
             frappe.ValidationError,
         )
     for node in entity_names:
+        if _unadopted_row(node):
+            # `File.permanent_delete` is the rule that wrote the row, and it
+            # carries its own Write check.
+            frappe.get_doc("File", node).permanent_delete()
+            continue
         node_core.purge(principals, node)
     return None
 
@@ -2158,7 +2167,17 @@ def does_entity_exist(name: str | None = None, folder: str | None = None):
     Same UPLOAD gate as the old body, for the same reason: the answer is
     derived from names in a folder, so a caller who could not write there is
     not entitled to it.
+
+    It answers from either store: a folder that no node holds is answered off
+    `tabFile`, because `FileUploader.vue` asks about the folder it is about to
+    upload into and `list.files` now opens that folder's page.
     """
+    if _unadopted_row(folder):
+        from suite.drive.api.permissions import user_has_permission
+
+        if not user_has_permission(folder, "upload"):
+            frappe.throw(_("Ask the folder owner for upload access."), frappe.PermissionError)
+        return bool(frappe.db.exists("File", {"folder": folder, "file_name": name}))
     principals = _principals()
     return node_core.title_taken(principals, folder or _home(principals), name)
 
