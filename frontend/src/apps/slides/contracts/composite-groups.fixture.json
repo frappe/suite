@@ -760,9 +760,7 @@
           "ref19000000000000000000000000",
           "ref20000000000000000000000000"
         ],
-        "x_drive_links": [
-          "<composite code>"
-        ]
+        "x_drive_links": ["<composite code>"]
       },
       "presentation": "deck-composite",
       "node": "c0mp0site1",
@@ -843,10 +841,7 @@
     "injected_reference": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000",
-          "deck-99"
-        ]
+        "references": ["ref00000000000000000000000000", "deck-99"]
       },
       "exception": "frappe.ValidationError",
       "http_status": 417,
@@ -855,9 +850,7 @@
     "oversized_link_header": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000"
-        ],
+        "references": ["ref00000000000000000000000000"],
         "x_drive_links_count": 21
       },
       "exception": "frappe.ValidationError",
@@ -867,9 +860,7 @@
     "unreadable_composite": {
       "request": {
         "name": "deck-composite",
-        "references": [
-          "ref00000000000000000000000000"
-        ]
+        "references": ["ref00000000000000000000000000"]
       },
       "exception": "frappe.PermissionError",
       "http_status": 403,
