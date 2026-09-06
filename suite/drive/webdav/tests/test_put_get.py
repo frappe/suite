@@ -562,6 +562,15 @@ class TestWebDAVPut(IntegrationTestCase):
         with self.assertRaises(BadRequest):  # partial PUT
             self._put(self._url("x.txt"), b"x", headers={"Content-Range": "bytes 0-0/5"})
 
+    def test_a_collection_405_names_what_the_url_does_take(self):
+        """RFC 7231 §6.5.5: a 405 without `Allow` leaves Windows retrying PUT."""
+        with self.assertRaises(MethodNotAllowed) as caught:
+            self._put(f"/dav/{self.base_name}", b"x")
+        allow = caught.exception.headers["Allow"]
+        self.assertNotIn("PUT", allow)
+        self.assertIn("PROPFIND", allow)
+        self.assertIn("DELETE", allow)
+
     def test_put_refuses_a_name_the_namespace_will_not_publish(self):
         with self.assertRaises(BadRequest):
             self._put(self._url("a" * 500), b"x")

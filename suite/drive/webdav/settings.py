@@ -24,6 +24,18 @@ def allowed_webdav_methods() -> tuple[str, ...]:
     return tuple(method for method in methods if method in ALLOWED_METHODS)
 
 
+def allow_header_without(method: str) -> str:
+    """The `Allow` value for a URL that takes everything except `method`.
+
+    RFC 7231 §6.5.5 makes `Allow` mandatory on a 405. A resource-level refusal
+    (PUT at a collection, MKCOL where something already exists) without it
+    tells the client the request failed but not what to send instead, and
+    Windows retries the same verb. The answer is the site's offered list minus
+    the one verb this URL will not take.
+    """
+    return ", ".join(offered for offered in allowed_webdav_methods() if offered != method)
+
+
 def dav_compliance(methods: tuple[str, ...]) -> str:
     """The compliance classes this site can actually honour, as a header value.
 

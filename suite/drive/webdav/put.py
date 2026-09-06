@@ -38,16 +38,19 @@ from suite.drive.webdav.errors import (
     MethodNotAllowed,
 )
 from suite.drive.webdav.properties import to_site_naive
+from suite.drive.webdav.settings import allow_header_without
 
 # 9999-12-31 UTC - the largest epoch datetime.fromtimestamp can represent
 MAX_MTIME = 253402300799
+
+_COLLECTION_REFUSAL = "Cannot PUT to a collection."
 
 
 def handle(ctx: DavContext) -> Response:
     resolved = pathmap.resolve(ctx.segments, ctx.user)
 
     if resolved.is_mount:
-        raise MethodNotAllowed("Cannot PUT to a collection.")
+        raise MethodNotAllowed(_COLLECTION_REFUSAL, headers={"Allow": allow_header_without("PUT")})
     if resolved.missing_intermediate:
         raise Conflict("Intermediate collections do not exist.")
     if ctx.request.headers.get("Content-Range"):
@@ -71,7 +74,7 @@ def handle(ctx: DavContext) -> Response:
         accounting_root = node_core.root_id(parent)
     else:
         if resolved.is_collection:
-            raise MethodNotAllowed("Cannot PUT to a collection.")
+            raise MethodNotAllowed(_COLLECTION_REFUSAL, headers={"Allow": allow_header_without("PUT")})
         require(row, EDIT, ctx.principals)
         accounting_root = row.root
 

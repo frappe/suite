@@ -33,6 +33,7 @@ from suite.drive.webdav.errors import (
     PreconditionFailed,
     UnsupportedMediaType,
 )
+from suite.drive.webdav.settings import allow_header_without
 
 
 def handle_mkcol(ctx: DavContext) -> Response:
@@ -42,7 +43,10 @@ def handle_mkcol(ctx: DavContext) -> Response:
 
     resolved = pathmap.resolve(ctx.segments, ctx.user)
     if resolved.is_mount or resolved.exists:
-        raise MethodNotAllowed("A resource already exists at this URL.")
+        raise MethodNotAllowed(
+            "A resource already exists at this URL.",
+            headers={"Allow": allow_header_without("MKCOL")},
+        )
     if resolved.missing_intermediate:
         raise Conflict("Intermediate collections do not exist.")
 
