@@ -87,6 +87,13 @@ what prove the Drive lifecycle.
 | `255fa572b` | Staged `Sheet` guards and the legacy-path refusals |
 | `0895495bf` | Collab access from Drive, and the five-minute recheck |
 | `e05ad41cb` | The three new test suites and the debt baseline |
+| `f6c720707` | Review fix: keep every legacy right on the open `Sheet` row |
+| `81846e831` | Review fix: `drive.check` refuses a write on a trashed node |
+| `40991a192` | Review fix: read the stored node, exempt an operator first |
+| `f76d6c55f` | Review fix: bound the xlsx import, fix merge attribution |
+| `88c92650f` | Review fix: a restore drops the collaborative document |
+| `fe122fe8a` | Review fix: refuse a Guest on a legacy sheet, do not throw |
+| `7150208c1` | Review fix: bound what the collab server accepts and survives |
 
 ### What changed
 
@@ -180,6 +187,8 @@ turns the connection read-only, an upgrade releases writes again.
 
 ### Checks run
 
+Implementation run, at `e8a337284`:
+
 | Check | Result |
 |---|---|
 | `python -m compileall` on every changed module | clean |
@@ -189,10 +198,21 @@ turns the connection read-only, an upgrade releases writes again.
 | `npm test` in `suite/sheets/collab-server` | 33 tests, 33 pass, 0 fail |
 | xlsx importer against a generated workbook, in a bench python | values, formula, date, percent format, and merges across two worksheets all correct |
 
-The one error is
-`TestSheetsDeclaration.test_activation_registers_exactly_this_declaration`:
-`_build_registry` reads `frappe.local.flags`, which no site is bound to outside
-a request. It runs at the gate.
+Review run, at `7150208c1`:
+
+| Check | Result |
+|---|---|
+| `python -m compileall suite/sheets suite/drive` | clean |
+| `uvx ruff check` on every file the review changed | 1 error, `RUF059` at `test_collab_access.py:94`, present at `e8a337284` too |
+| `python -m unittest` on the six ticket modules | 119 tests, 5 errors |
+| The same six modules at `e8a337284`, from `git archive` | 98 tests, the same 5 errors |
+| `npm test` in `suite/sheets/collab-server` | 55 tests, 55 pass, 0 fail |
+| Two importer DoS vectors, run before the fix | 4.8 KB workbook to 2 GB in 19.7 s; 107 KB workbook to 2 GB in 7.9 s |
+| The same two vectors, run after the fix | both refused, no allocation |
+
+The review added 21 passing tests and no new failure. All 5 errors are the same
+site-bound `setUpClass` calls and the same `_build_registry` flags read as
+before, listed under **Not verified**.
 
 Every Python check ran under
 `PYTHONPATH=apps/frappe:<worktree> python -m unittest` from
@@ -207,28 +227,129 @@ command. No migration, no install, and no service restart.
   database.
 - The `Sheet` doctype JSON change. It needs `bench migrate` to reach a site.
 - `index.js` binding the recheck to hocuspocus. `@hocuspocus/server` is not
-  installed in this worktree and installing it or restarting the collab server
-  is outside this run. `connection.readOnly` mid-session and `onDisconnect({
-  context })` carrying the watcher are read from the library's documented shape,
-  not observed. The policy itself is tested with injected time and passes.
+  installed in this worktree, and the review searched the whole machine and
+  found no copy of its source in any other bench or cache. There is also no
+  lockfile, so nothing pins a version inside `^4.1.0`. `connection.readOnly`
+  mid-session and `onDisconnect({ context })` carrying the watcher are read from
+  the library's documented shape, not observed. The policy itself is tested with
+  injected time and passes. Gate step 7b is the only place this can be settled;
+  `closeConnection` now logs an error rather than passing silently when it finds
+  no close method.
+- The two `bench console` probes in gate steps 2, 3 and 6. They were written
+  against the code, not run.
 
 ### The site gate
 
 Run serially on `slides.localhost`, from the bench root, after this branch is
 integrated:
 
+Serially, and in this order. Every step has to pass before the next one runs:
+a failure in an early step makes a later result meaningless.
+
+**1. Reach the site.** The doctype JSON has never been applied anywhere.
+
 ```sh
 cd /home/faris/benches/suite-bench
 bench --site slides.localhost migrate
+```
+
+**2. Prove the `Sheet` DocPerm row is what the JSON says.** `f6c720707` restored
+five rights the ticket dropped by accident. A migrate can silently keep an old
+row, and the whole legacy share path depends on this one.
+
+```sh
+bench --site slides.localhost console <<'EOF'
+row = [p for p in frappe.get_meta("Sheet").permissions if p.role == "All"][0]
+print({k: row.get(k) for k in
+       ("read","write","create","delete","share","email","export","print","report","select","if_owner")})
+assert row.if_owner == 0 and row.share == 1 and row.export == 1 and row.report == 1
+print([ (p.role, p.read) for p in frappe.get_meta("Sheet").permissions ])
+EOF
+```
+
+**3. Prove the registry is still dormant.** The expand phase depends on it. If
+`Sheet` is registered before ticket 29, both hook sets answer and the staged
+guards are dead code.
+
+```sh
+bench --site slides.localhost console <<'EOF'
+from suite.drive._core.content import _build_registry
+assert "Sheet" not in _build_registry(), "Sheet must not be registered until 29"
+print(frappe.get_hooks("has_permission").get("Sheet"))
+EOF
+```
+
+**4. The module suites, one at a time.** `test_drive_adoption` first: its two
+`IntegrationTestCase` classes are the only proof of create, copy, import,
+version, restore, purge, media discovery, and the legacy refusals.
+
+```sh
 bench --site slides.localhost run-tests --module suite.sheets.tests.test_drive_adoption
 bench --site slides.localhost run-tests --module suite.sheets.tests.test_collab_access
 bench --site slides.localhost run-tests --module suite.sheets.tests.test_collab
 bench --site slides.localhost run-tests --module suite.sheets.tests.test_permissions
 bench --site slides.localhost run-tests --module suite.sheets.tests.test_api_security
+bench --site slides.localhost run-tests --module suite.drive.tests.test_content
 bench --site slides.localhost run-tests --module suite.tests.test_architecture
-bench --site slides.localhost run-tests --app suite
-cd apps/suite/suite/sheets/collab-server && npm test
 ```
+
+**5. The whole app, once the modules pass.**
+
+```sh
+bench --site slides.localhost run-tests --app suite
+```
+
+**6. The DocShare bypass, by hand.** No test can reach it: the widening happens
+inside Frappe, after the hook has answered. Link a sheet, share it with a user
+who holds no grant, and confirm both the row read and the list refuse.
+
+```sh
+bench --site slides.localhost console <<'EOF'
+import frappe
+from frappe.share import add
+sheet = frappe.db.get_value("Sheet", {"node": ["is", "set"]}, "name")
+assert sheet, "link a sheet through Build first"
+add("Sheet", sheet, "victim@example.com", read=1)
+frappe.set_user("victim@example.com")
+for call in (lambda: frappe.get_doc("Sheet", sheet),
+             lambda: frappe.get_list("Sheet"),
+             lambda: frappe.get_list("Sheet Op Log")):
+    try:
+        call(); print("BYPASS: returned", call)
+    except frappe.PermissionError as e:
+        print("refused:", e)
+frappe.set_user("Administrator")
+frappe.db.rollback()
+EOF
+```
+
+**7. The collab server, against its installed dependency.** Steps 7a and 7b are
+the two things this branch could not check anywhere.
+
+```sh
+cd apps/suite/suite/sheets/collab-server
+npm install
+npm test
+```
+
+7a. Commit the lockfile `npm install` writes. There is none in the repo, so
+nothing pins `@hocuspocus/server` inside `^4.1.0` today.
+
+7b. Read the installed `node_modules/@hocuspocus/server` and confirm two things
+`index.js` assumes: that setting `connection.readOnly` mid-session stops writes,
+and that one of `close` / `disconnect` / `terminate` exists on the connection
+object. `closeConnection` returns `false` and logs
+`revoked connection could not be closed` when it finds none. If it does, §6.7 is
+not met: a revoked reader keeps receiving the document until the tab closes.
+
+**8. One live revocation, with a browser.** Open a linked sheet as an EDIT
+holder, drop the grant to READ, and confirm the tab goes read-only within the
+recheck period. Then drop the grant entirely and confirm the socket closes.
+Nothing below the browser can prove this.
+
+**9. `bench migrate` on a site with legacy sheets.** Every guard has a legacy
+arm that must keep working. Confirm an owner still opens, shares, renames,
+trashes, and restores a sheet with no node.
 
 ### Handoffs
 
@@ -241,3 +362,94 @@ cd apps/suite/suite/sheets/collab-server && npm test
 | Cleanup (§14.10) | Drop `title`, `trashed`, `trashed_on`, `trashed_by`, `head_snapshot`, `Sheet Snapshot`, `Sheet Cell`, and `suite/sheets/trash.py` |
 | A later Sheets ticket | An image cell needs `remap_media` and a narrowed `used_nodes` |
 | 21 and 22 | The new test module reaches `suite.drive._core` for roots, media, and version restore. Recorded in the architecture debt baseline |
+| 29 | `sheet_has_permission` denies a Suite Admin a linked row while the child guards exempt a System Manager. Neither matches §4.9. Both close when `suite.drive.framework` answers and `is_drive_admin` is the one definition |
+| 29 | `Sheet Op Log` and `Sheet Collab State` have no satellite DocPerm baseline yet. The satellite declarations need one at activation |
+| 29 | `Drive Node` and `Sheet Seq` are taken in opposite orders by the Drive workflows and by `versioning`. Not reachable today because no Drive workflow calls `versioning.save`, but it is a lock-order inversion waiting for the ticket that joins them |
+| 34 | A restore now deletes the persisted `Sheet Collab State` row, so a reconnect rebuilds from the restored body. A Y.Doc already live in the collab server is not evicted: an open tab keeps the replaced document until it reconnects. Eviction needs a server-side signal |
+| 34 | The client does not declare its own awareness identity. The collab server names a Guest with a `randomUUID()`; the client has to stop trusting any name in the token |
+| 23 | A purge drops the `Sheet` row but not the legacy `File` backing a pre-Build sheet. Orphan rows accumulate until ticket 23 removes the backing |
+| Deploy | The collab server has no lockfile. `npm install` at the gate writes one, and it has to be committed |
+
+## Independent adversarial review
+
+Reviewed 2026-09-06 at `e8a337284`. Diff read: `d7bf210b0..e8a337284`. The
+reviewer worked in a separate worktree with no site, no bench command, no
+install, and no service restart. Three subagents audited the Python
+authorization surface, the Sheets lifecycle, and the JavaScript collaboration
+server independently.
+
+### Findings fixed
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | High | The `All` DocPerm on `Sheet` lost `share`, `email`, `export`, `print` and `report` along with `if_owner`. A hook can only deny, so a right the row does not carry is a right no hook can hand back. `share_sheet` asks `ptype="share"` and `frappe.share.check_share_permission` asks it again, so the owner of a legacy sheet could no longer share, export or print it | `f6c720707` |
+| 2 | High | The xlsx importer allocated from attacker-controlled dimensions with no bound. Two vectors reproduced: a 4.8 KB workbook reached 2 GB in 19.7 s through merge ranges, and a 107 KB workbook reached 2 GB in 7.9 s through declared row spans. `MAX_IMPORT_UNZIPPED`, `MAX_IMPORT_SLOTS`, `MAX_IMPORT_MERGED` and `MAX_IMPORT_MERGE_RANGES` now bound every one, and the zip central directory is summed before anything is read | `f76d6c55f` |
+| 3 | High | Merge ranges were mapped to worksheets by position in the zip, not by name. A workbook whose sheet parts are stored out of order put one worksheet's merges on another. Reproduced: tabs `[Beta, Gamma, Alpha]` put Beta's merge on Alpha. `_worksheet_path` is now the mapping | `f76d6c55f` |
+| 4 | High | `fetch` in the collab server had no timeout. A wedged Frappe worker leaves the recheck awaiting forever: no rejection to count, no timer pending, and a revoked caller connected for the life of the socket | `7150208c1` |
+| 5 | Medium | `drive.check` ignored §8.8. It granted EDIT on a trashed node, while `DriveContent.drive_check` refuses one. An app-facing call has to answer the same way | `81846e831` |
+| 6 | Medium | `sheet_query_conditions` refused a shared linked row before exempting a privileged caller, which locked the operator out of the very list that finds the offending `DocShare` | `40991a192` |
+| 7 | Medium | `sheet_has_permission` read `node` off the submitted document. `frappe.client.save` builds the whole `Document` from client JSON, so a caller presenting a linked row with `node` cleared took the legacy owner-or-`DocShare` branch. It now reads the stored column for any saved row | `40991a192` |
+| 8 | Medium | `_child_has_permission` returned `False` for a child row with no parent, and `false_if_not_shared` re-granted it. An orphan row is exactly what no share should reopen. It now refuses | `40991a192` |
+| 9 | Medium | `restore_version` rewrote the body and left the persisted `Sheet Collab State` row in place, so the next connection rebuilt the replaced document from the stale Y.Doc and the restore was silently undone | `88c92650f` |
+| 10 | Medium | `parseToken` bounded the number of link credentials but not their content. A CR, LF, NUL or DEL inside one forges a second header on the request the collab server makes with its own secret. The sid had the same hole, and it becomes a `Cookie` header | `7150208c1` |
+| 11 | Medium | `intervalMs` reached `setTimeout` unvalidated. Node clamps a negative or non-numeric delay to 1 ms, turning one connection into roughly 900 requests a second at an `allow_guest` endpoint | `7150208c1` |
+| 12 | Medium | An injected `onCapability` or `onRevoke` that threw rejected `tick`, which runs as a bare timer callback. Node turns an unhandled rejection into a process exit, so one connection's transport could drop every editor on the site | `7150208c1` |
+| 13 | Medium | `_legacy_access` raised `AuthenticationError` for a Guest. The collab server reads a non-2xx status as an unreachable Frappe, so a settled and permanent refusal burned three fail-closed periods and was reported as a network problem | `fe122fe8a` |
+| 14 | Low | `openpyxl` was used directly but declared nowhere. It reached the venv as a transitive Frappe dependency, so a Frappe release that drops it breaks the importer | `f76d6c55f` |
+
+### Checked and left alone
+
+- **The `DocShare` OR bypass, both halves.** `refuse_shared_row` and
+  `refuse_shared_linked_rows` are not registry-gated, so the staged refusals do
+  run today. Confirmed by reading both, not assumed.
+- **The 20-item `X-Drive-Links` limit.** `parse_link_header` rejects a 21st
+  item, never truncates. The JavaScript bound is advisory and carries a comment
+  saying Frappe is the authority.
+- **Guest identity.** The name comes back from Frappe's answer. Nothing in the
+  token can name the connected person; a link proves a capability only.
+- **Token secrecy.** `X-Collab-Secret` never travels on the access call, which
+  carries the caller's authority and nothing of the server's.
+- **The READ, COMMENT and EDIT thresholds.** They match the §4 ladder. UPLOAD
+  connects read-only because it places nodes, not cells.
+- **Expired and revoked links.** Both come back as `canRead: false` and close
+  the socket on the first tick.
+- **The dormant registry.** `drive_content_types` is empty and both `Sheet`
+  hooks still point at `suite.sheets.permissions`. Gate step 3 pins it.
+- **Error non-disclosure.** A role below READ answers `DriveNotFound`, never
+  `DrivePermissionError`, so nothing distinguishes a missing node from a
+  forbidden one.
+- **Direct SQL.** Every fragment is a literal or `frappe.db.escape`, and
+  `_CHILD_TABLES` is a lookup rather than interpolation. No caller-controlled
+  string reaches a query.
+- **Timer leaks.** `stop()` clears the pending timer, `finish()` clears it and
+  marks the watcher stopped, and the tests assert `pendingCount()` after every
+  path. `unref` keeps a pending recheck from holding the process open.
+
+### Unresolved low findings
+
+| Finding | Why it is left |
+|---|---|
+| `sheet_has_permission` denies a Suite Admin a linked row; the child guards exempt a System Manager. Neither matches §4.9 | Fixing it means this module reading `Drive Grant`, which is ticket 29's job. Handed off |
+| `used_nodes` over-reports every id-shaped token in the body | Recorded deviation 4. Over-reporting keeps media alive, so it fails safe |
+| `xml.etree.ElementTree` expands internal entities, and `defusedxml` is not installed | Mitigated, not removed: `_validate_package` rejects any part whose first 8 KB carries a `<!DOCTYPE`. Installing `defusedxml` is outside this run |
+| `RUF059` at `test_collab_access.py:94` | Present at `e8a337284`. Not this review's change |
+| No lockfile in `collab-server` | `npm install` is outside this run. Gate step 7a |
+
+### Recommendation
+
+**Integrate, then run the gate.** No acceptance blocker is open in the code. All
+14 confirmed high and medium findings are fixed and covered by tests, the diff
+compiles, and 119 Python tests plus 55 JavaScript tests pass with no new
+failure.
+
+Two conditions, both at the gate rather than in the branch:
+
+1. Gate step 7b decides whether §6.7 is met. If the installed
+   `@hocuspocus/server` exposes no way to close a connection mid-session, a
+   revoked reader keeps receiving the document and that is a blocker for
+   activation, not for this expand-phase merge.
+2. Gate step 2 has to confirm the `Sheet` DocPerm row that actually lands. The
+   JSON has never reached a site.
+
+Nothing here is safe to activate: `drive_content_types` stays empty, and ticket
+29 owns the switch.
