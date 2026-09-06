@@ -43,6 +43,8 @@ from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime
 from werkzeug.datastructures import FileStorage
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -870,6 +872,11 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.enterContext(patch.object(frappe.local, "request", request, create=True))
         self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
 
+    @staticmethod
+    def _got() -> Request:
+        """One GET, the way `send_file` reads it."""
+        return Request(EnvironBuilder(path="/api/method/drive.api.files.get_file_content").get_environ())
+
     def test_a_picture_added_to_a_legacy_document_lands_beside_it(self):
         """`embed.add` uploads into the document the editor has open, and a
         document `create_document` writes is a `File` with no node.
@@ -933,10 +940,12 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         picture = embed.add(entity.name)["file_url"].split("id=")[-1]
         self.addCleanup(self._drop_rows, picture)
 
-        with patch("suite.drive.api.files.get_file_internal") as reader:
-            get_file_content(picture)
+        # `_posted` holds the patch; this only swaps what it points at.
+        frappe.local.request = self._got()
+        answer = get_file_content(picture)
 
-        self.assertEqual(reader.call_args.args[0].name, picture)
+        self.assertEqual(answer.status_code, 200)
+        self.assertEqual(b"".join(answer.response), PNG)
 
     def test_a_stranger_cannot_open_a_picture_in_somebody_elses_folder(self):
         frappe.set_user(USER)
@@ -947,6 +956,7 @@ class TestWriterBeforeActivation(IntegrationTestCase):
 
         frappe.set_user(OTHER)
         self.addCleanup(frappe.set_user, "Administrator")
+        frappe.local.request = self._got()
         with self.assertRaises(frappe.PermissionError):
             get_file_content(picture)
 
