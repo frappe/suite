@@ -491,16 +491,18 @@ Second pass:
 
 ### Unresolved handoffs
 
-1. **The site gate has run module 1 of 17.** See "Site gate evidence" below.
-   Modules 2 to 17 have not been run. Every acceptance box waits on them.
+1. **The site gate has run modules 1 to 3 of 17.** See "Site gate evidence" and
+   "Site gate evidence: module 3" below. Modules 4 to 17 have not been run.
+   Every acceptance box waits on them.
 2. **Build has not run.** Forwarders and Build ship in one release (plan stage
    4 precedes stage 6). Before Build there is no node for a legacy id, and a
    forwarder answers the workflow's `DriveNotFound`. That is the workflow
    answering, not a fabricated deny, but it means the legacy suites cannot pass
    on this branch alone.
-3. **`suite/drive/api/tests/*` are not rewritten.** They test the legacy names
-   against `File` rows. Rewriting them before the site gate has said which ones
-   actually break would be guessing. Named as owed work, not as done.
+3. **`suite/drive/api/tests/*` are rewritten where the gate has reached.**
+   `test_files.py` is done; module 3 says what broke and why. The rest of
+   `api/tests/` still tests the legacy names against `File` rows and waits on
+   its own gate module.
 4. **Ticket 29 dormancy is preserved.** `drive_content_types = []`, no hook
    activated, no `site_config` change.
 5. **Destructive removal stays disabled.** Nothing in Cleanup's list was
@@ -519,8 +521,8 @@ Second pass:
 
 ## Site gate evidence
 
-Status: module 1 of the 17 passes. The other 16 have not been run. Work on
-`forge/drive-23-site-gate-shims`, branched from `5c902f025`.
+Status: module 1 of the 17 passes. Work on `forge/drive-23-site-gate-shims`,
+branched from `5c902f025`. Module 3 has its own section below.
 
 ### What module 1 reported
 
@@ -674,6 +676,103 @@ review's handoff 6.
 - `ruff check` reports one `B007` at `shims.py:1759`, an unused `window` loop
   variable that predates this branch. Nothing was changed for either.
 
+## Site gate evidence: module 3
+
+Module 3 of 17 is `suite.drive.api.tests.test_files`. Work on
+`forge/drive-23-site-gate-api-files`, branched from `db24d2f5f`. Module 2
+(`suite.drive.http.tests.test_dispatch`) is reported green at 154 tests by the
+gate run before this one; it was not re-run here, so its detail is not
+recorded in this section.
+
+### What module 3 reported
+
+`bench --site slides.localhost run-tests --module suite.drive.api.tests.test_files`
+ran 49 tests and reported 6 failures and 21 errors. Three causes.
+
+**Cause A: the fixtures build `File` rows, and the names read `Drive Node`.**
+Twenty-one errors and one failure. §11.7 forwards every whitelisted name in
+`api/files` into a `_core` workflow, and the workflows read nodes. A parent id
+that exists only in `tabFile` is a node that was never there, so `upload_file`
+answered `DriveNotFound` and both share cases read back `read: 0`. Carried risk
+3 in the module 1 evidence predicted this: the suites test the legacy names
+against `File` rows. It is a test defect, not a production one. Build has still
+not run on this site: 797 `File` rows, 84 `Drive Permission`, 13 `Drive Node`.
+
+**Cause B: `TestDriveSearch` patched targets that no longer run.** Five
+failures. The cases patched `SEARCH_SCAN_WINDOW`, `MAX_SEARCH_SCAN_WINDOWS`,
+`user_has_permission`, and `frappe.db.sql` in `api/files`. The shim walks
+`nodes.views(principals, "search", ...)` windows now, so every one of those
+targets is inert and the assertions read an empty list. Also a test defect.
+
+**Cause C: `create_auth_token` is retired.** One error, the retirement
+answering §11.7's own decision. The case asserted the old mint.
+
+**A fourth cause was found only by rewriting the fixtures.**
+`nodes.readable_child_counts` asked `frappe.get_all` for
+`count(name) as total`, and `frappe.db.query` refuses a function spelled as a
+string in `fields`. The ticket 23 review added the function; no run on a site
+had reached it. Every legacy list row carries `children_count`, and so does the
+`list-add` row an upload publishes, so nothing could be uploaded through
+`upload_file` at all. This one is a production defect and is fixed.
+
+### What changed
+
+- **`_core/nodes.py`.** The count is a `frappe.db.sql` `GROUP BY` over
+  `_sql_values(parents)`, the way the readable-child query below it in the same
+  function is already written. Rows, `Active` filter, and the subtraction are
+  unchanged.
+- **`api/tests/test_files.py` is split by permission store.**
+  `TestDriveFileRules` keeps the `File` and `Drive Permission` cases: the
+  `has_permission` hooks, the content-link delegation, the retained
+  `get_attachments`, `File.share`, and `FileManager`. Ticket 23 did not touch
+  those bodies. The two `FileManager` cases stage their bytes on disk, because
+  the legacy upload path that used to put them there is gone.
+  `TestLegacyFilesAPI`, `TestLegacyRetired`, and `TestLegacySearch` build
+  nodes.
+- **Each case cleans up after itself.** `IntegrationTestCase` rolls back at
+  class cleanup, not per test, so `LegacyNodeCase.tearDown` drops the nodes,
+  grants, versions, previews, activity, notifications, recents, favourites,
+  comments, and blobs the case added, then calls `quota.recompute_usage` on the
+  root it took rows out from under.
+- **Four cases were passing for the wrong reason.** `DriveNotFound` subclasses
+  `frappe.ValidationError`, so `assertRaises(frappe.ValidationError)` accepted a
+  404 that meant "your fixture is not there". Each names its own class now.
+- **Uploads need `storage_v2`.** `create_blob_upload` refuses without it. The
+  `storage_v2()` context manager moved to `suite/drive/tests/fixtures.py`
+  rather than being copied a third time, next to `drop_node_rows`,
+  `drop_record_rows`, and `nodes_in_root`. `test_dispatch.py` keeps its private
+  copies: it is module 2, it is green, and this run may not re-run it.
+- **49 cases to 59.** The new ones: the retired names refuse and write nothing
+  (`create_auth_token` mints no `Drive Token`, `get_new_title` renames
+  nothing), the dedupe rule still holds where `upload_file` needs it, a
+  single-chunk upload mints its own session, a session that is missing or empty
+  is refused, an over-quota upload charges nothing, an upload publishes exactly
+  one `list-add` to the uploader alone, and the search window walk, scan
+  budget, page cap, and blank-query short circuit are each pinned against what
+  the shim actually reads.
+
+### Gate commands and results
+
+```
+script -qec "bench --site slides.localhost run-tests \
+  --module suite.drive.api.tests.test_files" /dev/null
+before: Ran 49 tests / FAILED (failures=6, errors=21)
+after:  Ran 59 tests in 4.006s / OK
+```
+
+Site-free, `python -m unittest` over `test_shims`, `test_routes`,
+`test_shapes`, and `test_translator`: `Ran 339 tests in 1.419s / OK`. Module
+1's record names a fifth module, `test_architecture`; there is no such module
+in the tree on this branch, which is why the count reads 339 and not 346.
+
+One mutation. `readable_child_counts` reverted in place to the
+`frappe.get_all` spelling: 7 errors, all on
+`SQL functions are not allowed as strings in SELECT`. The seven are the four
+upload cases, the publish case, the mime-type case, and the dedupe case.
+
+**Formatting and lint.** `uvx ruff@0.12.3 check --select=I`, `check`, and
+`format --check` all pass on the three changed files.
+
 ### What the gate still owes
 
-Modules 2 to 17 have not been run.
+Modules 4 to 17 have not been run.
