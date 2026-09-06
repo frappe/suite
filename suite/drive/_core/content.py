@@ -835,8 +835,7 @@ def list_media(principals: Principals, node: str) -> list[dict]:
     is the per-picture permission cost §6.8 removes. The caller refreshes at
     `MEDIA_REFRESH_SECONDS`, two thirds of the TTL.
     """
-    current = _document_node(node)
-    require(current, READ, principals)
+    current = _document_node(node, principals=principals)
     expires = int(time.time()) + MEDIA_TTL_SECONDS
     return [
         {
@@ -1213,7 +1212,20 @@ def _sweep_cursor_key() -> str:
     return f"{MEDIA_SWEEP_CURSOR_KEY}:{site}"
 
 
-def _document_node(node: str, *, for_update: bool = False) -> frappe._dict:
+def _document_node(
+    node: str,
+    *,
+    for_update: bool = False,
+    principals: Principals | None = None,
+    need: int = READ,
+) -> frappe._dict:
+    """Read a content document's row, and refuse anything that is not one.
+
+    Pass `principals` when the caller has not authorized the node yet. §5.2
+    hides an unreadable node behind `DriveNotFound`, so the point check has to
+    run before the kind test: the kind test tells its caller both that the node
+    exists and what it is.
+    """
     row = frappe.db.get_value(
         "Drive Node",
         node,
@@ -1223,6 +1235,8 @@ def _document_node(node: str, *, for_update: bool = False) -> frappe._dict:
     )
     if not row:
         raise DriveNotFound(_("Drive node {0} was not found").format(node))
+    if principals is not None:
+        require(row, need, principals)
     if row.kind != "document":
         raise DriveConflict(_("That Drive node is not a content document"))
     return row

@@ -28,7 +28,7 @@ from suite.drive._core import upload as upload_core
 from suite.drive._core.access import grant, unlock_link
 from suite.drive._core.nodes import create_file, create_folder
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
+from suite.drive._core.roles import EDIT, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
@@ -110,8 +110,37 @@ class DriveHTTPCase(IntegrationTestCase):
         cls.root = create_root(kind="Personal", title="HTTP fixtures", user=OWNER)
         cls.folder = create_folder(cls.owner, cls.root.name, "Folder")
         cls.file = cls.make_file(cls.folder, "report.bin", b"drive bytes")
+        cls.document = cls.make_document("Deck")
         frappe.db.commit()
         cls.addClassCleanup(cls.remove_fixtures)
+
+    @classmethod
+    def make_document(cls, title: str) -> str:
+        """Insert a content document directly, the way `test_previews` does.
+
+        `create_document` reads `drive_content_types`, which is empty until
+        ticket 29 activates it, so no `_core` helper can mint one here. Routes
+        that only accept a document need a node of that kind to be reachable
+        at all.
+        """
+        return (
+            frappe.get_doc(
+                {
+                    "doctype": "Drive Node",
+                    "title": title,
+                    "parent": cls.root.name,
+                    "root": cls.root.name,
+                    "path": "",
+                    "kind": "document",
+                    "content_doctype": "ToDo",
+                    "content_docname": f"dispatch-{frappe.generate_hash(length=8)}",
+                    "mime": "frappe/test",
+                    "state": "Active",
+                }
+            )
+            .insert(ignore_permissions=True, ignore_links=True)
+            .name
+        )
 
     @classmethod
     def make_file(cls, parent: str, title: str, content: bytes) -> str:
@@ -897,18 +926,30 @@ class TestByteEgress(DriveHTTPCase):
         self.refusal(response, 404, "DriveNotFound")
 
     def test_a_preview_push_needs_a_real_image(self):
+        # §9.2 takes a pushed preview only on a content document, so the byte
+        # check is only reachable on one.
         response = self.as_owner(
             "POST",
-            f"{PREFIX}/nodes/{self.file}/preview",
+            f"{PREFIX}/nodes/{self.document}/preview",
             body={"image": "bm90IGFuIGltYWdl", "mime": "image/png"},
         )
         self.refusal(response, 400, "DriveError")
 
     def test_a_preview_push_refuses_a_body_that_is_not_base64(self):
         response = self.as_owner(
-            "POST", f"{PREFIX}/nodes/{self.file}/preview", body={"image": "not base64!", "mime": "image/png"}
+            "POST",
+            f"{PREFIX}/nodes/{self.document}/preview",
+            body={"image": "not base64!", "mime": "image/png"},
         )
         self.refusal(response, 400, "DriveError")
+
+    def test_a_preview_push_is_refused_on_a_node_that_is_not_a_document(self):
+        response = self.as_owner(
+            "POST",
+            f"{PREFIX}/nodes/{self.file}/preview",
+            body={"image": "bm90IGFuIGltYWdl", "mime": "image/png"},
+        )
+        self.refusal(response, 403, "DriveForbidden")
 
     def revoke(self, created):
         frappe.db.rollback()
@@ -960,9 +1001,12 @@ class TestRoots(DriveHTTPCase):
         self.refusal(response, 400, "DriveError")
 
     def test_an_active_root_cannot_be_purged(self):
+        # §11.2's roots table declares no extra error for this row, and its
+        # prose makes Archived a condition on the right to call it, next to
+        # Suite Admin. `_core` already answers `DriveForbidden`.
         sid = self.session_for("Administrator")
         response = self.drive("DELETE", f"{PREFIX}/roots/{self.root.name}", sid=sid)
-        self.refusal(response, 409, "DriveConflict")
+        self.refusal(response, 403, "DriveForbidden")
 
     def restore_quota(self):
         frappe.db.rollback()
@@ -1080,7 +1124,10 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.assertEqual(answer["access"]["source_node"], self.folder)
 
     def test_a_link_above_an_own_grant_is_named_by_both_fields(self):
-        link = grant(self.file, "$LINK", MANAGE, self.owner)
+        # §5.10 row 9 caps a link at EDIT, so the own grant has to sit below
+        # it for the link to be the strictly higher answer.
+        frappe.db.set_value("Drive Grant", self.granted["name"], "role", READ, update_modified=False)
+        link = grant(self.file, "$LINK", EDIT, self.owner)
         frappe.db.commit()
         self.addCleanup(self.revoke_row, link)
         token = link["principal"].split(":", 1)[1]
@@ -1093,7 +1140,7 @@ class TestGrantedCollaborator(DriveHTTPCase):
                 links=token,
             )
         )
-        self.assertEqual(answer["access"]["role"], MANAGE)
+        self.assertEqual(answer["access"]["role"], EDIT)
         self.assertEqual(answer["access"]["via_link"], link["principal"])
         self.assertEqual(answer["access"]["source_principal"], link["principal"])
         self.assertEqual(answer["access"]["source_node"], self.file)
