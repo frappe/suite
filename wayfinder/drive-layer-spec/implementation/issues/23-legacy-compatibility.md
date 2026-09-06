@@ -252,12 +252,17 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
 bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
 bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
 bench --site slides.localhost run-tests --module suite.slides.tests.test_drive_adoption
+bench --site slides.localhost run-tests --module suite.writer.api.tests.test_general
+bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
 ```
 
-The last three were added by the review. `test_nodes` carries the new
+Five were added by the review. `test_nodes` carries the new
 `readable_child_counts` cases; the two adoption suites cover
-`writer.api.docs.create_document` and the presentation `slide_count` path,
-both of which the review changed.
+`writer.api.docs.create_document` and the presentation `slide_count` path.
+`writer.api.tests.test_general` is the only Python caller of
+`get_user_access`, whose `type` field the review changed. `tests.test_grants`
+pins `access.grant` and `access.grants_for`, and `update_access` now calls
+both, to keep an expiry it has no field for.
 
 The `api.tests.*` suites are the ones that will move: they exercise the legacy
 names against `File` rows, and those names now answer about `Drive Node`. Their
@@ -268,13 +273,16 @@ they cannot be read without a database.
 
 Status: reviewed on `review/drive-23-legacy-compatibility`, branched from
 `25354709a`. The review did not trust the evidence above; every claim it
-repeats was re-derived from the code. Sixteen defects were found and fixed.
+repeats was re-derived from the code. Thirty defects were found and fixed
+across two passes; two more were rejected on re-derivation and are named below.
 The acceptance boxes stay unchecked: they still rest on the serialized site
 gate below, which needs `bench` and a database.
 
-Agents produced the independent name inventory, the auth and guest sweep, and
-the dropped-behavior sweep. The fixes, the regression tests, and this section
-are the review's.
+Agents produced the independent name inventory, the auth and guest sweep, the
+dropped-behavior sweep, and the second pass's correctness, security, caller,
+and coverage sweeps. Every finding was re-derived against the code before it
+was acted on. The fixes, the regression tests, the mutation runs, and this
+section are the review's.
 
 ### Review revisions
 
@@ -283,6 +291,14 @@ are the review's.
 - `f75f0aff1` pin the permanent surface to the tree, not to a phrase
 - `be89d402d` stop the S3 entry point confirming an object it refuses
 - `29eadd1cd` refuse a legacy share that reaches no rung
+- `ec5bd104c` sort the three views the toolbar can still sort
+- `3a70a6228` finish the four legacy paths the interrupted review left open
+- `45f9296b6` notice a legacy name added outside the eleven modules
+- `4a7c5a0ab` repair three legacy features the forwarders answered emptily
+- `49b413d7c` bound the listing walks and two refusals that answered a 500
+- `2a18f766d` repair the upload path and give a refusal its message back
+- `b4b6fde55` four payload defects the forwarders carried
+- `f517358f0` close the two blind spots and the check that proved nothing
 
 ### What the review confirmed
 
@@ -307,10 +323,34 @@ Re-derived, not read off this file:
 
 ### What the review changed
 
-Four security fixes, ten correctness fixes, two evidence fixes. Each carries a
+Thirty fixes over two passes. `legacy-caller-inventory.md`, section "What the
+review fixed", lists every one with the caller it breaks. Each carries a
 regression test that was run against the pre-fix body and fails there.
-`legacy-caller-inventory.md`, section "What the review fixed", lists all
-sixteen with the caller each one breaks.
+
+The second pass found seven things the first did not:
+
+- **Uploads were broken for every file under 20 MB.** Dropzone sends
+  `total_file_size` on a chunked upload only, so the session declared zero
+  bytes, refused its own first chunk, and deleted itself. The old body never
+  read the field.
+- **Refusal messages did not reach any legacy client.** The workflows raise;
+  `report_error` copies a message only when `frappe.throw` stamped one on.
+  `FileUploader.vue:208` printed "Please contact support." for a full disk and
+  `ui/drive/js/resources.js:35` threw inside its own error handler.
+- **`list.files` amplified.** It is `allow_guest`, and a `file_kinds` filter
+  matching nothing walked the whole folder one row at a time.
+- **The same walk paged wrong.** `start` and `limit` counted matching rows on
+  the old surface; the cursor counted unfiltered ones.
+- **`file_kinds=["Frappe Document"]` selected nothing**, because `frappe_doc`
+  is under `Document` first in `MIME_LIST_MAP`.
+- **A legacy re-share cleared an expiry** the new surface had set.
+- **`get_entity_with_permissions` served a trashed node**, where the old query
+  filtered `status: STATUS_ACTIVE`.
+
+Two findings from the sweeps were rejected on re-derivation and nothing was
+changed for them: the per-row `share_count` reads local rows only and legacy's
+`_get_share_count` did the same, and the `search` walk cannot repeat a row
+because each window is a distinct cursor offset.
 
 The one permanent body the review edited is `api.s3.fetch`: its `except` clause
 did not name the `_core` refusal classes, so a denied stored URL answered 403
@@ -323,27 +363,29 @@ than in the shim.
 
 ### Review commands and results
 
-Site-free, run in the review worktree at `29eadd1cd`:
+Site-free, run in the review worktree at `f517358f0`:
 
 ```
 cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<frappe>:<worktree> \
   env/bin/python -m unittest suite.drive.http.tests.test_shims \
   suite.drive.http.tests.test_routes suite.drive.http.tests.test_shapes \
   suite.drive.http.tests.test_translator suite.tests.test_architecture
-Ran 283 tests in 2.060s
+Ran 337 tests in 2.420s
 OK
 ```
 
-`test_shims` alone: `Ran 110 tests in 0.590s / OK`, up from 88.
+`test_shims` alone: `Ran 164 tests in 1.123s / OK`, up from 88 at
+`25354709a`.
 
-```
-ruff 0.12.3 format <changed files>   (2 files left unchanged on the last run)
-ruff 0.12.3 check <changed files>    All checks passed!
-```
+**Formatting and lint are unverified.** `ruff` is not installed anywhere
+reachable on this machine, in the bench venv or on `PATH`. The earlier claim
+of a clean `ruff format` and `ruff check` could not be re-run and is not
+repeated here.
 
 `suite.drive.http.tests.test_dispatch` errors in 19 `setUpClass` calls with
-`AttributeError: session`. It needs a bound site. That is true at `25354709a`
-as well, so it is the site gate's, not a regression.
+`AttributeError: session`. It needs a bound site. Re-run at `f517358f0`:
+`Ran 0 tests / FAILED (errors=19)`, the same count as at `25354709a`, so it is
+the site gate's and not a regression.
 
 Not run here, and named as unverified: every `_core` suite, `test_dispatch`,
 `suite.drive.api.tests.*`, `suite.drive.tests.test_nodes`, the WebDAV suites,
@@ -352,8 +394,14 @@ them need a live site and a database.
 
 ### Review tests written
 
-`suite/drive/http/tests/test_shims.py` grew from 88 to 110 cases, no database.
+`suite/drive/http/tests/test_shims.py` grew from 88 to 164 cases, no database.
 `suite/drive/tests/test_nodes.py` gained 2 cases, which need a site.
+
+Every new case was mutation-tested: the fix was reverted in place, the suite
+was run, and the mutation had to fail an assertion. Twenty-five mutations were
+run across the review's four fix commits, and every one was killed. The two
+that first "killed" by hanging were re-run against a finite stub, so the walk
+bounds fail a count rather than the suite.
 
 - **Permanent surface, rewritten.** Each of the 21 permanent names is compared
   with its own structure at `e390a4487`: decorators, signature, and every
@@ -373,6 +421,31 @@ them need a live site and a database.
   whose own grant names somebody else, ignores the trash, and answers every
   named folder.
 
+Second pass:
+
+- **Module surface.** No legacy whitelisted name may be added outside the
+  eleven modules §11.7 counts. The whole `drive/` package is walked.
+- **Listing bounds.** Each of the three walks stops at its own bound, against a
+  finite stub, so an unbounded walk fails a count rather than hanging.
+- **Filtered paging.** The page counts matches, walks from the top whatever
+  offset it is given, and still says there is more when it stopped at a bound.
+- **Uploads.** The session declares the bytes in hand when the client declared
+  none, keeps the client's number when it sent one, and refuses a direct
+  target by name.
+- **Refusal messages.** Every shim a legacy module reaches carries the
+  boundary, a refusal arrives with its message in `message_log`, and the class
+  §11.6 reads the status code off is preserved rather than flattened.
+- **Payloads.** The access label follows the rung the bits come from, a family
+  filter matches a mime two families share, a re-share keeps an expiry, a
+  first share carries none, a page read refuses a non-Active node, and
+  `get_root_folder` refuses a site with no Shared root.
+- **Blind spots.** `_share_counts` (a link is not a person, role 0 is a deny,
+  published beats site-wide) and `_child_named` (the UPLOAD gate before the id
+  is read, and the path walk that reuses a folder it finds).
+- **Test quality.** The forwarder check walks for a call node. Verified by
+  inlining `api.notifications.get_unread_count` with the comment "was a shims.
+  forwarder": the old substring check passed it, the new one fails it.
+
 ### Unresolved risks the review did not fix
 
 1. **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
@@ -388,11 +461,33 @@ them need a live site and a database.
    every connected session. A second person watching the same folder no longer
    sees the upload appear. Restoring the broadcast would send a node row to
    sessions never authorized for it.
-4. **A no-limit listing is unbounded.** It matches the old non-paginated
-   branch, which ran with no `LIMIT`. A folder with tens of thousands of
-   children now walks that many rows through `_legacy_list_rows`.
-5. **Everything the site gate owns.** See below. Nothing in this review has
-   touched a database either.
+4. **A no-limit listing stops at 200 windows.** It matched the old
+   non-paginated branch, which ran with no `LIMIT`, and that made a guest able
+   to walk a whole folder one row at a time. The walk is capped now, and a
+   folder past 40,000 rows comes back short with `has_next` still true. The
+   tree sidebar and the move dialog both call that way.
+5. **Uploads fail on a site whose `storage_driver` is `s3`.** The driver
+   offers a presigned target, so the session is direct and no chunk can be
+   written to it. A legacy caller has already sent its bytes here, and §11.7
+   has no way to hand them on: a presigned POST pins the object to one request
+   and the whole declared length. Relaying would mean buffering the file
+   server-side, which is the temp file §14 removed. Refused by name.
+6. **`Administrator` has no personal Drive folder.** §7 refuses to provision
+   one, and legacy `get_user_folder()` made one for anybody. Named at `_home`
+   rather than handed on as a `None`. This is a §7 question, not a shim one.
+7. **A share to an address with no `User` row is refused.** `File.share`
+   called `create_invites(user, auto=True)`; `access._validate_principal_target`
+   refuses. `TagInput` still offers "Add email".
+8. **A new share sends no email.** `Drive Permission.after_insert` enqueued
+   `notify_share`. `_core.access` writes a `Drive Notification` row and stops.
+9. **One e2e test depends on the old share ceiling.**
+   `e2e/drive-backed-apps/specs/drive/sharing.spec.ts:192-221` shares
+   `{read: 1, share: 1}` and expects the re-share to be refused with "cannot
+   grant". `share` without `write` cannot be spelled, so the first share lands
+   at READ and the second is refused by the MANAGE gate with another message.
+   Read, not run: this review has no site.
+10. **Everything the site gate owns.** See below. Nothing in this review has
+    touched a database either.
 
 ### Unresolved handoffs
 
@@ -411,3 +506,12 @@ them need a live site and a database.
 5. **Destructive removal stays disabled.** Nothing in Cleanup's list was
    deleted. `legacy-caller-inventory.md` records what may go, and in what
    order.
+6. **`ruff` is not installed on this machine.** Formatting and lint on the
+   changed files are unverified. Neither the bench venv nor `PATH` has it.
+7. **The e2e suites have not run.** Twelve legacy names are called by name from
+   `e2e/drive-backed-apps/`; the inventory now lists every call site. They need
+   a site and browsers.
+8. **`frappe.local.response.errors` is not restored.** The old
+   `get_entity_with_permissions` set it to mimic an API v2 error body. Nothing
+   in `frontend/src` reads it, and `frappe-ui` is not vendored in this
+   worktree, so whether its request layer reads it could not be checked.
