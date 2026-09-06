@@ -55,9 +55,11 @@ def after_install():
 
 
 def after_migrate():
+    from suite.drive.framework import validate_content_registry
     from suite.mail.install import after_migrate as mail_after_migrate
 
     _run("mail.after_migrate", mail_after_migrate)
+    _run("drive.validate_content_registry", validate_content_registry)
 
 
 def after_app_install(app_name=None):

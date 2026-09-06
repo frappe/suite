@@ -117,6 +117,16 @@ website_redirects = [
 ignore_file_permissions = True
 
 # ============================================================================
+# Drive content types (§10.3)
+# ============================================================================
+# Dotted paths to `suite.drive.ContentTypeSpec` objects, one per content app.
+# Registration is staged: an app joins this list in its own adoption ticket,
+# once its documents carry a `node` Link and the migrated links are valid. The
+# `has_permission` and `permission_query_conditions` entries below move to
+# `suite.drive.framework` in the same step, never before it.
+drive_content_types = []
+
+# ============================================================================
 # Permissions — permission_query_conditions (deep-merged union; no key clashes)
 # ============================================================================
 permission_query_conditions = {
@@ -285,6 +295,7 @@ scheduler_events = {
         "suite.drive.jobs.purge_trashed_nodes",
         "suite.drive.jobs.thin_versions",
         "suite.drive.jobs.sweep_missing_previews",
+        "suite.drive.jobs.sweep_unused_document_media",
         "suite.drive.api.scripts.auto_delete_from_trash",
         "suite.drive.api.scripts.clear_deleted_files",
         # sheets

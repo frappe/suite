@@ -1,10 +1,18 @@
-"""Frappe scheduler adapters for Drive-owned lifecycle work."""
+"""Frappe scheduler adapters for Drive-owned lifecycle work.
+
+Five daily jobs and no sixth: recompute root usage, purge expired trash,
+thin version history, sweep missing previews, and sweep unused media. There
+is deliberately no expired-grant cleanup. Every expired grant, including a
+share-link grant, is kept and is inert on every read, so nothing may delete
+one on a schedule (spec §6.4, accepted decisions).
+"""
 
 from datetime import timedelta
 
 import frappe
 from frappe.utils import now_datetime
 
+from suite.drive._core.content import sweep_unused_media
 from suite.drive._core.nodes import purge_expired_trash_root
 from suite.drive._core.previews import sweep_missing
 from suite.drive._core.quota import recompute_usage
@@ -72,3 +80,8 @@ def purge_trashed_nodes() -> dict:
 def thin_versions() -> dict:
     """Apply the configured Drive version ladder once per day."""
     return thin()
+
+
+def sweep_unused_document_media() -> dict:
+    """Trash media no content document has named for seven days."""
+    return sweep_unused_media()

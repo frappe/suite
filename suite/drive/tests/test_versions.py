@@ -2,7 +2,6 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from threading import Barrier
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -31,6 +30,8 @@ from suite.drive._core.versions import (
     thin,
 )
 from suite.drive.jobs import thin_versions
+from suite.drive.tests.test_content import registered as registered_content
+from suite.drive.tests.test_content import spec as content_spec
 from suite.hooks import scheduler_events
 from suite.tests.utils import ensure_user
 
@@ -362,18 +363,8 @@ class TestVersionWorkflows(IntegrationTestCase):
             self.assertEqual(docname, self.content_doc.name)
             content["body"] = stream.read()
 
-        spec = SimpleNamespace(doctype="ToDo", version_bytes=version_bytes, restore_version=restore)
-        real_get_hooks = frappe.get_hooks
-
-        def fake_hooks(key, *args, **kwargs):
-            if key == "drive_content_types":
-                return ("fake.spec",)
-            return real_get_hooks(key, *args, **kwargs)
-
-        with (
-            patch("suite.drive._core.versions.frappe.get_hooks", side_effect=fake_hooks),
-            patch("suite.drive._core.versions.get_attr", return_value=spec),
-        ):
+        spec = content_spec(doctype="ToDo", version_bytes=version_bytes, restore_version=restore)
+        with registered_content(spec):
             first = take_version(self.admin, node, kind="milestone", label="One")
             content["body"] = b"two"
             captured = restore_version(self.admin, node, first)

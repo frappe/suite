@@ -10,9 +10,9 @@ from uuid import uuid4
 import frappe
 from frappe import _
 from frappe.storage.blob import revive_blob
-from frappe.utils import convert_utc_to_system_timezone, get_attr, get_datetime, now, now_datetime
+from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
-from suite.drive._core import previews
+from suite.drive._core import content, previews
 from suite.drive._core.access import (
     POINT_SQL,
     _resolve_rows,
@@ -352,6 +352,157 @@ def _create_empty_node(
     else:
         frappe.db.release_savepoint(savepoint)
     return node.name
+
+
+def create_document(
+    principals: Principals,
+    parent: str,
+    title: str,
+    *,
+    content_doctype: str,
+    from_node: str | None = None,
+    is_template: bool = False,
+) -> str:
+    """Create one content node and its document in a single transaction (§8.3).
+
+    The node is inserted first with no content link, the app's factory is
+    called with the node id, and only then is the reciprocal link written.
+    Both sides are set once and never change. Any refusal rolls the node, the
+    document, and the copied media back together, so a document with no node
+    cannot exist.
+
+    `from_node` names an ordinary document or a template of the same content
+    type. There is no template verb: new-from-template is this call.
+    """
+    _validate_title(title)
+    spec = content.spec_for(content_doctype)
+    savepoint = f"drive_create_document_{uuid4().hex[:12]}"
+    frappe.db.savepoint(savepoint)
+    try:
+        source = _copyable_document_source(principals, from_node, content_doctype)
+        parent_row = _lock_create_parent(parent)
+        via_link = require(parent_row, UPLOAD, principals)
+        _validate_parent(parent_row, for_update=True, allow_document=False)
+        _refuse_sibling_collision(parent_row.name, title)
+        node = _insert_node(
+            principals,
+            parent_row,
+            title=title,
+            kind="document",
+            mime=spec.mime,
+            content_modified=now_datetime(),
+            is_template=is_template,
+        )
+        docname = _content_factory(spec, node.name, source)
+        _link_document(node.name, spec, docname)
+        if source is not None:
+            _admit_document_media(spec, source, node.root)
+            _copy_document_media(principals, spec, source, node, docname, destination_link=via_link)
+            previews.copy_preview(source.name, node.name)
+        add_creator_grant(node, parent_row, principals, via_link=via_link)
+        _record_activity(
+            node.name,
+            "create",
+            principals,
+            {"kind": "document", "title": title, "content_doctype": content_doctype},
+            via_link=via_link,
+        )
+    except Exception as exc:
+        _rollback_savepoint(savepoint, exc)
+        raise
+    else:
+        frappe.db.release_savepoint(savepoint)
+    return node.name
+
+
+def _copyable_document_source(
+    principals: Principals,
+    from_node: str | None,
+    content_doctype: str,
+) -> frappe._dict | None:
+    """Return the readable active document `from_node` names, or None."""
+    if from_node is None:
+        return None
+    source = _node(from_node)
+    require(source, READ, principals)
+    if source.kind != "document" or source.state != "Active":
+        raise DriveConflict(_("A Drive document can only be created from a content document"))
+    if source.content_doctype != content_doctype:
+        raise DriveConflict(_("A Drive document copy keeps its content type"))
+    if not source.content_docname:
+        raise DriveConflict(_("The Drive content document link is incomplete"))
+    return source
+
+
+def _content_factory(spec, node: str, source: frappe._dict | None) -> str:
+    """Call the app's factory with the node id and validate the docname."""
+    docname = spec.create_empty(node) if source is None else spec.duplicate(source.content_docname, node)
+    if not isinstance(docname, str) or not docname:
+        raise DriveConflict(_("The Drive content factory returned no document"))
+    return docname
+
+
+def _link_document(node: str, spec, docname: str) -> None:
+    """Write the reciprocal node and document link once, or refuse (§8.3).
+
+    The node UPDATE matches only a document row that is still unlinked, so a
+    second attempt changes nothing and raises. The document side is written
+    only when the app left it empty; an app that already bound a different
+    node is refused.
+    """
+    if not frappe.db.exists(spec.doctype, docname):
+        raise DriveConflict(_("The Drive content factory returned no document"))
+    frappe.db.sql(
+        """
+        UPDATE `tabDrive Node`
+        SET content_doctype = %(doctype)s, content_docname = %(docname)s
+        WHERE name = %(node)s
+          AND kind = 'document'
+          AND COALESCE(content_doctype, '') = ''
+          AND COALESCE(content_docname, '') = ''
+        """,
+        {"doctype": spec.doctype, "docname": docname, "node": node},
+    )
+    if int(frappe.db.sql("SELECT ROW_COUNT()")[0][0]) != 1:
+        raise DriveConflict(_("A Drive content document identity cannot change"))
+    linked = frappe.db.get_value(spec.doctype, docname, spec.node_field)
+    if linked and linked != node:
+        raise DriveConflict(_("That content document already names another Drive node"))
+    if not linked:
+        frappe.db.set_value(spec.doctype, docname, spec.node_field, node, update_modified=False)
+
+
+def _admit_document_media(spec, source: frappe._dict, root: str) -> None:
+    """Charge the destination root for the media one document copy will hold."""
+    charge = content.copyable_media_bytes((source.name,)) if spec.remap_media else 0
+    if charge:
+        admit(root, charge)
+
+
+def _copy_document_media(
+    principals: Principals,
+    spec,
+    source: frappe._dict,
+    target: frappe._dict,
+    target_docname: str,
+    *,
+    destination_link: str | None,
+) -> None:
+    """Copy one document's media, then let the app repoint its own references.
+
+    An app that declares no `remap_media` gets no media copied: nodes nothing
+    names would only charge the destination root and be swept in seven days.
+    """
+    if not spec.remap_media:
+        return
+    remapped = content.copy_document_media(
+        principals,
+        source.name,
+        target,
+        destination_link=destination_link,
+    )
+    if remapped:
+        spec.remap_media(target_docname, remapped)
 
 
 def create_file(
@@ -824,14 +975,19 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
         _validate_generic_destination(source, destination, operation="copy")
 
         source_rows = _copyable_subtree(source, principals, physical_rows=physical_source_rows)
-        if any(row.kind == "document" for row in source_rows):
-            raise DriveConflict(_("Content documents require their registered Drive copy workflow"))
         for source_row in source_rows:
             _validate_copy_source_row(source_row)
         _validate_move_depth(source, destination, source_rows)
         copied_title = _deduplicated_title(destination.name, title or source.title)
         destination_root = root_id(destination)
-        admit(destination_root, sum(int(row.size or 0) for row in source_rows))
+        specs = {
+            row.name: content.spec_for(row.content_doctype) for row in source_rows if row.kind == "document"
+        }
+        media_sources = tuple(node for node, spec in specs.items() if spec.remap_media)
+        admit(
+            destination_root,
+            sum(int(row.size or 0) for row in source_rows) + content.copyable_media_bytes(media_sources),
+        )
 
         by_source: dict[str, frappe._dict] = {}
         for source_row in source_rows:
@@ -848,6 +1004,18 @@ def copy(principals: Principals, node: str, parent: str, *, title: str | None = 
                 content_modified=source_row.content_modified,
             )
             by_source[source_row.name] = new_node
+            if source_row.kind == "document":
+                spec = specs[source_row.name]
+                docname = _content_factory(spec, new_node.name, source_row)
+                _link_document(new_node.name, spec, docname)
+                _copy_document_media(
+                    principals,
+                    spec,
+                    source_row,
+                    new_node,
+                    docname,
+                    destination_link=destination_link,
+                )
             add_creator_grant(new_node, copied_parent, principals, via_link=destination_link)
             _record_activity(
                 new_node.name,
@@ -888,6 +1056,7 @@ def _insert_node(
     mime: str | None = None,
     url: str | None = None,
     content_modified=None,
+    is_template: bool = False,
 ) -> frappe._dict:
     values = {
         "doctype": "Drive Node",
@@ -902,7 +1071,7 @@ def _insert_node(
         "url": url,
         "state": "Active",
         "content_modified": content_modified,
-        "is_template": 0,
+        "is_template": 1 if is_template else 0,
         "owner": principals.user,
     }
     node = frappe.get_doc(values).insert(ignore_permissions=True)
@@ -929,13 +1098,19 @@ def _copyable_subtree(
         physical_rows = _subtree(source)
         _validate_subtree(source, physical_rows)
     rows = [row for row in physical_rows if row.state == "Active"]
+    by_name = {row.name: row for row in rows}
     included = {source.get("name")}
     copyable = []
     for row in rows:
         if row.name == source.get("name"):
             copyable.append(row)
             continue
+        parent = by_name.get(row.parent)
         if row.parent not in included or not check(row, READ, principals):
+            continue
+        if parent is not None and parent.kind == "document":
+            # Media below a content document is copied per blob by the content
+            # workflow, never as an ordinary child (§8.9).
             continue
         included.add(row.name)
         copyable.append(row)
@@ -954,8 +1129,8 @@ def _validate_generic_destination(source: dict, destination: dict, *, operation:
         raise DriveConflict(
             _("Media below a content document requires the registered Drive content workflow")
         )
-    if operation == "copy" and source.get("kind") == "document":
-        raise DriveConflict(_("Content documents require their registered Drive copy workflow"))
+    # A content document is a legal source for both operations. A move keeps
+    # the same node; a copy runs the app's `duplicate` factory (§8.9).
 
 
 def _validate_copy_source_row(node: dict) -> None:
@@ -1000,6 +1175,15 @@ def _validate_copy_source_row(node: dict) -> None:
             )
         ):
             raise DriveConflict(_("The source Drive link shape is invalid"))
+    elif kind == "document":
+        if (
+            node.get("blob")
+            or size
+            or node.get("url")
+            or not node.get("content_doctype")
+            or not node.get("content_docname")
+        ):
+            raise DriveConflict(_("The source Drive document shape is invalid"))
     else:
         raise DriveConflict(_("The source Drive node kind cannot be copied"))
 
@@ -1226,25 +1410,11 @@ def _content_purge_callbacks(subtree: list[dict]) -> list[tuple]:
     if not documents:
         return []
 
-    registry = {}
-    for path in frappe.get_hooks("drive_content_types") or ():
-        spec = get_attr(path)
-        doctype = getattr(spec, "doctype", None)
-        if not isinstance(doctype, str) or not doctype or doctype in registry:
-            raise DriveConflict(_("The Drive content registry is invalid"))
-        callback = getattr(spec, "on_purge", None)
-        if not callable(callback):
-            raise DriveConflict(_("The Drive content type has no purge callback"))
-        registry[doctype] = callback
-
     callbacks = []
     for row in sorted(documents, key=lambda item: (-_depth(item), item.name)):
         if not row.content_doctype or not row.content_docname:
             raise DriveConflict(_("The Drive content document link is incomplete"))
-        callback = registry.get(row.content_doctype)
-        if callback is None:
-            raise DriveConflict(_("The Drive content type is not registered"))
-        callbacks.append((callback, row.content_docname))
+        callbacks.append((content.spec_for(row.content_doctype).on_purge, row.content_docname))
     return callbacks
 
 

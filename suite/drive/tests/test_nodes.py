@@ -32,6 +32,8 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.jobs import purge_trashed_nodes
+from suite.drive.tests.test_content import registered as registered_content
+from suite.drive.tests.test_content import spec as content_spec
 from suite.tests.utils import ensure_user
 
 USER = "drive-lifecycle-user@example.com"
@@ -869,18 +871,14 @@ class TestLifecyclePolicy(UnitTestCase):
 
     def test_content_callbacks_are_all_validated_before_purge(self):
         called = []
-        valid = type("Spec", (), {"doctype": "Doc A", "on_purge": called.append})()
+        valid = content_spec(doctype="Doc A", on_purge=called.append)
         rows = [
             frappe._dict(name="a", kind="document", path="", content_doctype="Doc A", content_docname="A"),
             frappe._dict(
                 name="b", kind="document", path="/a/", content_doctype="Missing", content_docname="B"
             ),
         ]
-        with (
-            patch("suite.drive._core.nodes.frappe.get_hooks", return_value=["app.valid"]),
-            patch("suite.drive._core.nodes.get_attr", return_value=valid),
-            self.assertRaises(DriveConflict),
-        ):
+        with registered_content(valid), self.assertRaises(DriveConflict):
             _content_purge_callbacks(rows)
         self.assertEqual(called, [])
 
