@@ -4,6 +4,7 @@ import frappe
 
 from suite.drive.api.files import delete_entities
 from suite.drive.api.product import is_drive_site_admin
+from suite.drive.http import shims
 from suite.drive.utils import (
     STATUS_REMOVED,
     STATUS_TRASHED,
@@ -41,66 +42,13 @@ def sync_preview(json: bool = True):
 
 @frappe.whitelist()
 def sync_from_disk():
+    """Retired. §14 makes the Build migration the disk import.
+
+    It refuses rather than answering an empty list: the caller reads the length
+    of the result, and an empty list reads as a successful run that found
+    nothing.
     """
-    One-way sync from disk to Drive. Ignores hidden files.
-    """
-    if not is_drive_site_admin():
-        frappe.throw(
-            "You do not have permission to sync files from disk.",
-            frappe.PermissionError,
-        )
-
-    sorted_files = sync_preview(json=False)
-    files_added = []
-    root_folder = get_root_folder().name
-
-    def get_or_create_parent(parent_path, owner):
-        if not parent_path:
-            return root_folder
-        # Check if the parent folder exists
-        parent = frappe.get_value(
-            "File",
-            {"file_url": (parent_path + "/") if parent_path else ""},
-            "name",
-        )
-        if parent:
-            return parent
-
-        # If not, recursively create its own parent first
-        grandparent_path = "/".join(parent_path.strip("/").split("/")[:-1])
-        grandparent = get_or_create_parent(grandparent_path, owner)
-
-        # Now create this parent folder
-        new_parent = create_drive_file(
-            file_name=parent_path.strip("/").split("/")[-1],
-            parent=grandparent,
-            file_type="Folder",
-            entity_path=lambda _: str(parent_path) + "/",
-            mime_type="folder",
-            file_size=0,
-            owner=owner,
-        )
-        return new_parent.name
-
-    for file, (file_size, file_modified, mime_type, actual_path) in sorted_files:
-        parent_path = str(file.parent).strip("./")
-        parent = get_or_create_parent(parent_path, frappe.session.user)
-
-        files_added.append(
-            create_drive_file(
-                file.name,
-                parent,
-                "Folder" if mime_type == "folder" else get_file_type(mime_type),
-                lambda _: actual_path if mime_type != "folder" else actual_path.strip("/") + "/",
-                mime_type=mime_type,
-                file_modified=file_modified,
-                file_size=file_size,
-                owner=frappe.session.user,
-            )
-        )
-        update_file_size(parent, file_size)
-
-    return files_added
+    return shims.sync_from_disk()
 
 
 def auto_delete_from_trash():

@@ -1,0 +1,1527 @@
+"""The 69 legacy whitelisted names of §11.7, answered by the new workflows.
+
+Every name a released client calls keeps its address on `/api/method/`. This
+module holds what each one does now, so the `api/*` modules keep the name and
+the `@frappe.whitelist()` decorator they were reached by and hold no second
+implementation of a Drive rule. Cleanup deletes this module and those bodies
+together, one release after Build (§14.10).
+
+Four classes, and every name is in exactly one of them (`CLASSIFICATION`).
+
+- **Forwarder.** The call is translated into the same private workflow the
+  §11.2 route calls, and the answer is translated back into the shape the old
+  client reads. No policy is decided here.
+- **Permanent.** The name outlives Cleanup because it is written into data or
+  into a shipped artifact, so it is not touched at all: `suite.drive.api.s3.fetch`
+  sits inside stored `File.file_url` values, `get_file_for_doc` sits inside the
+  checked-in `sdk-o7hlQ1xj.js` bundle, and `/dav` sits inside third-party file
+  managers. The nineteen product methods stay on `/api/method/` as well: none
+  of them touches a node.
+- **Retired.** §11.7 drops the behavior. The name still answers, and it answers
+  a refusal that names its replacement. It never mints a capability and never
+  reports a mutation it did not make.
+- **Retained.** The legacy body is still the implementation, because the
+  replacement §11.7 names does not exist. Recorded, not hidden: see
+  `RETAINED_REASON` and the caller inventory.
+
+**Ids are not translated.** §14.3 makes `Drive Node.name = File.name`, so the
+id an old client holds is the node id. A forwarder passes it through and lets
+the workflow answer. Before Build there is no node for a legacy id, and the
+workflow answers `DriveNotFound`: the forwarders and Build ship in one release.
+
+**A refusal is never invented.** Where the old body answered `None` for a row
+the caller may not see, the forwarder catches the workflow's `DriveNotFound`
+and answers `None` in the same place. It never writes a deny to express one
+(§5.9), and it never picks a restore destination for a client that named none
+(§8.7): `_restore` refuses with `DriveConflict` and the old client is told.
+"""
+
+import json
+import re
+from pathlib import Path
+
+import frappe
+from frappe import _
+
+from suite.drive import framework
+from suite.drive._core import access, content, previews, roots
+from suite.drive._core import activity as activity_core
+from suite.drive._core import nodes as node_core
+from suite.drive._core import upload as upload_core
+from suite.drive._core.errors import DriveError, DriveNotFound
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, READ, UPLOAD
+
+# One entry per legacy whitelisted name, keyed the way a client addresses it:
+# the dotted path after `suite.drive.`. `File.<method>` is a document method,
+# reached through `run_doc_method`, and keeps that spelling.
+FORWARDER = "forwarder"
+PERMANENT = "permanent"
+RETIRED = "retired"
+RETAINED = "retained"
+
+CLASSIFICATION = {
+    # api/files.py - 26 names
+    "api.files.upload_file": FORWARDER,
+    "api.files.get_thumbnail": FORWARDER,
+    "api.files.create_folder": FORWARDER,
+    "api.files.create_link": FORWARDER,
+    "api.files.create_auth_token": RETIRED,
+    "api.files.get_file_content": FORWARDER,
+    "api.files.stream_file_content": FORWARDER,
+    "api.files.download_folder": RETAINED,
+    "api.files.download_status": RETAINED,
+    "api.files.download_archive": RETAINED,
+    "api.files.set_favourite": FORWARDER,
+    "api.files.remove_or_restore": FORWARDER,
+    "api.files.delete_entities": FORWARDER,
+    "api.files.rename": FORWARDER,
+    "api.files.update_access": FORWARDER,
+    "api.files.remove_recents": FORWARDER,
+    "api.files.does_entity_exist": FORWARDER,
+    "api.files.get_new_title": RETIRED,
+    "api.files.move": FORWARDER,
+    "api.files.search": FORWARDER,
+    "api.files.translate_old_name": FORWARDER,
+    "api.files.get_entity_type": FORWARDER,
+    "api.files.get_root_folder": FORWARDER,
+    "api.files.redirect_to_original": FORWARDER,
+    "api.files.track_visit": FORWARDER,
+    "api.files.resolve_legacy_route": FORWARDER,
+    # api/list.py - 6 names
+    "api.list.files": FORWARDER,
+    "api.list.shared": FORWARDER,
+    "api.list.favourites": FORWARDER,
+    "api.list.recents": FORWARDER,
+    "api.list.trash": FORWARDER,
+    "api.list.get_attachments": RETAINED,
+    # api/permissions.py - 4 names
+    "api.permissions.get_user_access": FORWARDER,
+    "api.permissions.get_general_access": FORWARDER,
+    "api.permissions.get_entity_with_permissions": FORWARDER,
+    "api.permissions.get_shared_with_list": FORWARDER,
+    # api/activity.py - 1 name
+    "api.activity.get_entity_activity_log": FORWARDER,
+    # api/notifications.py - 3 names
+    "api.notifications.get_notifications": FORWARDER,
+    "api.notifications.get_unread_count": FORWARDER,
+    "api.notifications.mark_as_read": FORWARDER,
+    # api/storage.py - 2 names
+    "api.storage.storage_breakdown": FORWARDER,
+    "api.storage.storage_bar_data": FORWARDER,
+    # api/scripts.py - 2 names
+    "api.scripts.sync_preview": RETAINED,
+    "api.scripts.sync_from_disk": RETIRED,
+    # api/embed.py - 1 name
+    "api.embed.get_file_content": FORWARDER,
+    # api/s3.py - 1 name
+    "api.s3.fetch": PERMANENT,
+    # api/product.py - 19 names
+    "api.product.get_my_invites": PERMANENT,
+    "api.product.get_pending_invites": PERMANENT,
+    "api.product.signup": PERMANENT,
+    "api.product.oauth_providers": PERMANENT,
+    "api.product.send_otp": PERMANENT,
+    "api.product.verify_otp": PERMANENT,
+    "api.product.get_settings": PERMANENT,
+    "api.product.set_settings": PERMANENT,
+    "api.product.invite_users": PERMANENT,
+    "api.product.get_users": PERMANENT,
+    "api.product.get_user_groups": PERMANENT,
+    "api.product.accept_invite": PERMANENT,
+    "api.product.reject_invite": PERMANENT,
+    "api.product.get_translations": PERMANENT,
+    "api.product.is_site_admin": PERMANENT,
+    "api.product.disk_settings": PERMANENT,
+    "api.product.webdav_config": PERMANENT,
+    "api.product.set_webdav_enabled": PERMANENT,
+    "api.product.signup_disabled": PERMANENT,
+    # overrides/file.py - 4 names
+    "overrides.file.File.share": RETAINED,
+    "overrides.file.File.unshare": RETAINED,
+    "overrides.file.File.rename": RETAINED,
+    "overrides.file.get_file_for_doc": PERMANENT,
+}
+
+# Why a name is still answered by its old body. Every entry names the thing
+# §11.7 pointed at and what is missing from it; none of them is a decision this
+# module makes, and the caller inventory carries the same list.
+RETAINED_REASON = {
+    "api.files.download_folder": "no §11.2 route builds a folder archive",
+    "api.files.download_status": "no §11.2 route reports archive progress",
+    "api.files.download_archive": "no §11.2 route streams a built archive",
+    "api.list.get_attachments": (
+        "§14.4 keeps framework attachments under Home as File rows, so they "
+        "never become nodes; §11.7 points at GET /nodes/<id>/media, which "
+        "lists a document's embedded media, not a business document's "
+        "attachments"
+    ),
+    "api.scripts.sync_preview": (
+        "§11.7 points at POST /nodes/<id>/preview, which pushes a rendered "
+        "image; this name lists unregistered files on disk. A name collision, "
+        "not a replacement"
+    ),
+    "overrides.file.File.share": "a document method, reached only from the legacy File doctype",
+    "overrides.file.File.unshare": "a document method, reached only from the legacy File doctype",
+    "overrides.file.File.rename": "a document method, called by the legacy title sync",
+}
+
+
+class DriveRetired(DriveError):
+    """A legacy name whose behavior §11.7 dropped, answered explicitly.
+
+    410, because the capability existed and is gone. It is a `DriveError`, so
+    it carries its status through both envelopes and a client catching Drive
+    refusals by base class already handles it. It lives here, not in
+    `_core/errors.py`: §11.6's class table is the route surface's, and this
+    class dies with the shim module.
+    """
+
+    http_status_code = 410
+
+
+def names_of(kind: str) -> tuple[str, ...]:
+    """Return every legacy name in one class, in table order."""
+    return tuple(name for name, value in CLASSIFICATION.items() if value == kind)
+
+
+def _retire(name: str, replacement: str):
+    """Refuse a retired name, and say what took its place."""
+    frappe.throw(
+        _("{0} is no longer supported. {1}").format(name, replacement),
+        DriveRetired,
+    )
+
+
+# --------------------------------------------------------------------------
+# Translation between the two vocabularies
+# --------------------------------------------------------------------------
+
+# §11.7 keeps the five legacy permission bits addressable, and the ladder is
+# how they are answered now. The mapping is `roles.PTYPE_ROLE` read backwards:
+# a bit is set when the caller's role reaches the rung that bit named.
+BIT_ROLE = {
+    "read": READ,
+    "comment": COMMENT,
+    "upload": UPLOAD,
+    "write": EDIT,
+    "share": MANAGE,
+}
+
+NO_ACCESS = dict.fromkeys(BIT_ROLE, 0)
+
+# Legacy `File.file_type` for a row with no mime of its own. Everything else
+# goes through the legacy mime table, which is still the client's vocabulary.
+KIND_FILE_TYPE = {
+    "root": "Folder",
+    "folder": "Folder",
+    "link": "Link",
+}
+
+
+def _principals():
+    return framework.principals_for_request()
+
+
+def _bits(role: int) -> dict:
+    """Answer the five legacy bits from one role on the ladder.
+
+    Lossy in one direction, and it is recorded rather than papered over: a
+    legacy `Drive Permission` row decided each type independently, so it could
+    say `write=1, comment=0`. The ladder cannot spell that, and §5.9 is why -
+    a role is ordered on purpose. Nothing here invents a bit the role does not
+    reach.
+    """
+    return {bit: int(role >= rung) for bit, rung in BIT_ROLE.items()}
+
+
+def _access_type(row, role: int, principals) -> str:
+    """Answer legacy `type`: admin, user, or guest.
+
+    Legacy called the site admin and the owner `admin`, anyone who could write
+    `user`, and everybody else `guest`. Owner is still owner on a node row, and
+    `principals.is_admin` is the same test `access` runs, so both survive.
+    """
+    if principals.is_admin:
+        return "admin"
+    if principals.user != "Guest" and row.get("owner") == principals.user:
+        return "admin"
+    return "user" if role >= EDIT else "guest"
+
+
+def _file_type(row) -> str:
+    """Answer legacy `file_type` from a node's kind and mime.
+
+    The mime table is still the client's vocabulary, so it is read from the
+    legacy module rather than copied. The import is function-local because
+    `suite.drive.utils` builds a query-builder DocType at import time, which
+    needs a bound `frappe.local`; this module is imported without one.
+    """
+    from suite.drive.utils import get_file_type
+
+    kind = row.get("kind")
+    if kind in KIND_FILE_TYPE:
+        return KIND_FILE_TYPE[kind]
+    return get_file_type(row.get("mime") or "")
+
+
+def _legacy_row(row) -> dict:
+    """Return one node row under the fourteen `FILE_FIELDS` names.
+
+    Renames only, plus the two derivations above. Three legacy columns have no
+    producer on a node and are published as `None` rather than guessed:
+    `attached_to_doctype` and `attached_to_name` (§14.4 drops the attachment
+    join), and `file_url` for anything but a link, which `hide_storage_key`
+    blanked on the old surface too.
+    """
+    file_type = _file_type(row)
+    return {
+        "name": row.get("name"),
+        "file_name": row.get("title"),
+        "folder": row.get("parent"),
+        "file_url": row.get("url") if file_type in ("Link", "Presentation") else None,
+        "file_size": int(row.get("size") or 0),
+        "file_type": file_type,
+        "is_folder": int(row.get("kind") in ("folder", "root")),
+        "content_doctype": row.get("content_doctype"),
+        "content_docname": row.get("content_docname"),
+        "creation": row.get("creation"),
+        "modified": row.get("content_modified") or row.get("modified"),
+        "owner": row.get("owner"),
+        "attached_to_doctype": None,
+        "attached_to_name": None,
+    }
+
+
+def _user_info(user: str | None, fields: list[str]) -> dict:
+    """Read one User row for display, or answer nothing.
+
+    Legacy decorated four payloads with `full_name`, `user_image`, and `email`,
+    and no §11.2 shape carries them - §11.3 publishes principals, not people.
+    The lookup stays here, in the compatibility layer, so the new surface is
+    not widened to keep an old payload whole. A missing User row answers `{}`,
+    which is what the old bodies did: a file outlives its owner.
+    """
+    if not user:
+        return {}
+    return frappe.db.get_value("User", user, fields, as_dict=True) or {}
+
+
+def _principal_role(row, principal: str) -> int:
+    """Resolve what one named principal reaches on a node, as `require` would."""
+    return access.effective_role(row, framework.principals_for_principal(principal))
+
+
+def _readable_row(node: str):
+    """Read a node the caller may see, or answer `None`.
+
+    The workflow decides. A `DriveNotFound` from `require` is the workflow
+    answering "not for you" (§5.2), and the old bodies answered the same
+    question with a zeroed dict or a `None`, so it is translated back into
+    whichever of those the caller expects. It is never re-raised as a deny and
+    never stored.
+    """
+    try:
+        return node_core.get(_principals(), node)
+    except DriveNotFound:
+        return None
+
+
+# --------------------------------------------------------------------------
+# api/permissions.py
+# --------------------------------------------------------------------------
+
+
+def get_user_access(entity) -> dict:
+    """`get_user_access` -> the `access` expansion of `GET /nodes/<id>`.
+
+    Answers zeros for a node the caller cannot see, because that is what the
+    old body answered: `dribble_access` returned an all-zero dict for an entity
+    with no decided row, and callers merge this into list rows and test bits.
+    Turning that into a 404 would break a payload that only ever asked a
+    question.
+    """
+    node = entity if isinstance(entity, str) else (entity or {}).get("name")
+    principals = _principals()
+    try:
+        row = node_core.stored(node) if node else None
+    except DriveNotFound:
+        row = None
+    if row is None:
+        return {**NO_ACCESS, "type": "guest"}
+    role = access.effective_role(row, principals)
+    return {**_bits(role), "type": _access_type(row, role, principals)}
+
+
+def get_general_access(entity) -> dict:
+    """`get_general_access` -> what the site-wide principals reach on a node.
+
+    Both legacy site-wide principals survive §4.4 by name: `$PUBLIC` is the
+    published one a Guest presents, `$GENERAL` is every signed-in user. So the
+    old three-way answer is still decidable, and it is decided by the same
+    resolution `require` runs, not by reading grant rows here.
+
+    The gate is the old one: legacy needed `read` on the entity, so a caller
+    below READ gets the workflow's 404 rather than an answer about somebody
+    else's reach.
+    """
+    node = entity if isinstance(entity, str) else (entity or {}).get("name")
+    row = node_core.get(_principals(), node)
+    public = _principal_role(row, "$PUBLIC")
+    if public >= READ:
+        return {**_bits(public), "type": "public"}
+    general = _principal_role(row, "$GENERAL")
+    if general >= READ:
+        return {**_bits(general), "type": "site"}
+    return {**NO_ACCESS, "type": "restricted"}
+
+
+def get_entity_with_permissions(entity_name: str | None = None) -> dict:
+    """`get_entity_with_permissions` -> `GET /nodes/<id>?expand=access,breadcrumbs`.
+
+    The payload `get_file_for_doc` returns, so it is the one shape §11.7 makes
+    permanent by reference. Every part of it comes from a workflow: the row and
+    the trail from `nodes`, the role from `access`, the favourite mark from
+    `activity`, and the general marker from the two site-wide principals.
+
+    Three details of the old body are kept because clients depend on them:
+    the leaf is appended to `breadcrumbs` (the SPA slices it off itself), the
+    answer is also assigned to `frappe.response["data"]` for frappe-ui's
+    `useDoc`, and `file_url` stays blanked for managed files.
+    """
+    if not entity_name:
+        raise DriveNotFound(_("We couldn't find what you're looking for."))
+    principals = _principals()
+    row = node_core.get(principals, entity_name)
+    role = access.effective_role(row, principals)
+    trail = [
+        {"name": step["name"], "file_name": step["title"]} for step in node_core.breadcrumbs(row, principals)
+    ]
+    trail.append({"name": row.name, "file_name": row.title})
+    marks = activity_core.personal_marks(principals, [row.name]).get(row.name) or {}
+
+    answer = {
+        **_legacy_row(row),
+        **_bits(role),
+        "type": _access_type(row, role, principals),
+        **_user_info(row.get("owner"), ["user_image", "full_name"]),
+        "breadcrumbs": trail,
+        "is_favourite": row.name if marks.get("favourite") else None,
+        "share_count": _share_marker(row),
+        "kind": "native",
+    }
+    # To work with modern frappe-ui composables.
+    frappe.response["data"] = answer
+    return answer
+
+
+def _share_marker(row) -> int:
+    """Legacy's general-access marker: -2 published, -1 site, 0 restricted."""
+    if _principal_role(row, "$PUBLIC") >= READ:
+        return -2
+    if _principal_role(row, "$GENERAL") >= READ:
+        return -1
+    return 0
+
+
+def get_shared_with_list(entity: str) -> list[dict]:
+    """`get_shared_with_list` -> `GET /nodes/<id>/grants`.
+
+    Same gate on both sides: legacy needed the `share` bit, which is MANAGE,
+    and `grants_for` requires MANAGE. The old row filter is kept here, not
+    pushed into the workflow: legacy hid deny rows and the two site-wide
+    principals, because this list is the dialog's "shared with" list and the
+    general access sits in its own control. An expired link row is dropped for
+    the same reason - it is not somebody the node is shared with.
+    """
+    principals = _principals()
+    rows = access.grants_for(entity, principals)["grants"]
+    people = []
+    for grant in rows:
+        principal = grant.get("principal") or ""
+        if principal in ("$PUBLIC", "$GENERAL") or principal.startswith("$LINK:"):
+            continue
+        if not grant.get("role"):
+            continue
+        shaped = {"user": principal, **_bits(int(grant.get("role") or 0))}
+        if principal.startswith("$GROUP:"):
+            shaped["is_group"] = 1
+            shaped["full_name"] = principal[len("$GROUP:") :]
+        else:
+            shaped.update(_user_info(principal, ["user_image", "full_name", "email"]))
+        people.append(shaped)
+    people.sort(key=lambda person: person["user"])
+
+    owner = frappe.db.get_value("Drive Node", entity, "owner")
+    owner_info = _user_info(owner, ["user_image", "full_name", "name as user"])
+    if owner_info:
+        # The owner's User row can be gone; the node outlives them.
+        people.insert(0, owner_info)
+    return people
+
+
+# --------------------------------------------------------------------------
+# api/activity.py
+# --------------------------------------------------------------------------
+
+# A page walked to the end, for the three legacy names that answered a whole
+# list. §11.4 caps a page at 200 rows; a legacy client reads an array and has
+# no cursor to follow, so the shim follows it.
+MAX_LEGACY_ROWS = 2000
+
+
+def _walk(page_call) -> list:
+    """Collect a cursor-paged workflow into the flat list a legacy name returns."""
+    rows: list = []
+    cursor = None
+    while True:
+        page = page_call(cursor)
+        rows.extend(page["rows"])
+        cursor = page.get("next_cursor")
+        if not cursor or len(rows) >= MAX_LEGACY_ROWS:
+            return rows[:MAX_LEGACY_ROWS]
+
+
+def get_entity_activity_log(entity_name: str) -> list[dict]:
+    """`get_entity_activity_log` -> `GET /nodes/<id>/activity`.
+
+    The old columns are gone and are not reconstructed: `message` was a
+    rendered English sentence built at write time, and §9.5 replaced it with an
+    `action` and a `detail` the client renders. Both names are published, so a
+    client reading `action_type` still reads a value, and the actor's display
+    name is decorated back on because no §11.2 shape carries one.
+    """
+    principals = _principals()
+    rows = _walk(lambda cursor: activity_core.history(principals, entity_name, cursor=cursor))
+    people: dict[str, dict] = {}
+    log = []
+    for row in rows:
+        actor = row.get("actor")
+        if actor not in people:
+            people[actor] = _user_info(actor, ["full_name", "user_image"])
+        log.append(
+            {
+                "name": row.get("name"),
+                "action_type": row.get("action"),
+                "owner": actor,
+                "creation": row.get("at"),
+                "detail": row.get("detail"),
+                "full_name": people[actor].get("full_name"),
+                "user_image": people[actor].get("user_image"),
+            }
+        )
+    return log
+
+
+# --------------------------------------------------------------------------
+# api/notifications.py
+# --------------------------------------------------------------------------
+
+# Legacy `type` was one of two words. §9.5's action vocabulary is wider, and
+# only these three ever produced a notification row.
+NOTIFICATION_TYPE = {
+    "comment": "Mention",
+    "share_add": "Share",
+    "share_edit": "Share",
+}
+
+
+def get_notifications(only_unread: bool = False) -> list[dict]:
+    """`get_notifications` -> `GET /notifications`.
+
+    Same rows, flattened back into the one-level dict the old page reads. The
+    sender's display name is decorated on here for the reason §5 gives: the new
+    shape publishes principals, not people.
+    """
+    principals = _principals()
+    rows = _walk(
+        lambda cursor: activity_core.notifications(principals, only_unread=bool(only_unread), cursor=cursor)
+    )
+    people: dict[str, dict] = {}
+    answer = []
+    for row in rows:
+        record = row.get("activity") or {}
+        sender = record.get("actor")
+        if sender not in people:
+            people[sender] = _user_info(sender, ["full_name", "user_image"])
+        answer.append(
+            {
+                "name": row.get("name"),
+                "to_user": principals.user,
+                "from_user": sender,
+                "read": int(row.get("read") or 0),
+                "type": NOTIFICATION_TYPE.get(record.get("action"), "Share"),
+                "message": record.get("detail", {}).get("message"),
+                "entity_type": None,
+                "notif_doctype": "Drive Node",
+                "notif_doctype_name": record.get("node"),
+                "creation": row.get("creation"),
+                "full_name": people[sender].get("full_name"),
+                "user_image": people[sender].get("user_image"),
+            }
+        )
+    return answer
+
+
+def get_unread_count() -> int:
+    """`get_unread_count` -> the count behind `GET /notifications?unread=1`.
+
+    The scalar is kept. §11.2 has no route for it and a badge cannot page, so
+    the shim calls the workflow the route would have called. It counts what the
+    caller can still see, which the old `frappe.db.count` did not: a
+    notification about a node they lost access to no longer shows up.
+    """
+    return activity_core.unread_count(_principals())
+
+
+def mark_as_read(name: str | None = None, all: bool = False) -> None:
+    """`mark_as_read` -> `POST /notifications/read`.
+
+    Returns `None`, as the old body did. The count the workflow answers is not
+    published here: no legacy caller reads a result, and inventing one is how a
+    client learns to depend on the shim instead of the route.
+    """
+    principals = _principals()
+    if all:
+        activity_core.mark_read(principals, None)
+        return
+    if not name:
+        # The old body wrote a filter that matched nothing and said nothing.
+        # It stays a no-op; a refusal here would be new behavior.
+        return
+    activity_core.mark_read(principals, name)
+
+
+# --------------------------------------------------------------------------
+# api/storage.py
+# --------------------------------------------------------------------------
+
+
+def _own_root(principals):
+    """The caller's personal root, or `None` when they have none yet."""
+    if principals.user == "Guest":
+        return None
+    return roots.personal_root_for(principals.user)
+
+
+def storage_bar_data() -> dict:
+    """`storage_bar_data` -> `GET /roots/<id>/usage` on the caller's own root.
+
+    Legacy scoped storage to the owner and scanned `tabFile` on every call; §7
+    scopes it to a root and keeps a maintained counter. The caller's personal
+    root is the closest thing to "my storage", and it is the only root a legacy
+    client ever had.
+
+    `total_size` keeps its old meaning - usage including in-flight
+    reservations - because the storage bar is drawn from it and would jump
+    backwards mid-upload otherwise.
+    """
+    root = _own_root(_principals())
+    if not root:
+        return {"total_size": 0, "reserved_size": 0, "limit": 0}
+    usage = roots.usage_for(root, _principals())
+    return {
+        "total_size": int(usage.used_bytes or 0) + int(usage.reserved_bytes or 0),
+        "reserved_size": int(usage.reserved_bytes or 0),
+        "limit": int(usage.effective_quota or 0),
+    }
+
+
+def storage_breakdown() -> dict:
+    """`storage_breakdown` -> `GET /roots/<id>/usage`, plus the two aggregates.
+
+    §11.2 has no route for a by-type total or a largest-files list, so the two
+    lists are read here from the caller's own root. It is a read of node rows
+    the caller owns, not a second answer to a permission question: the root is
+    authorized by `usage_for` first, and nothing is listed outside it.
+    """
+    principals = _principals()
+    root = _own_root(principals)
+    if not root:
+        return {"limit": 0, "total": [], "entities": []}
+    limit = int(roots.usage_for(root, principals).effective_quota or 0)
+
+    rows = frappe.get_all(
+        "Drive Node",
+        filters={
+            "root": root,
+            "owner": principals.user,
+            "state": "Active",
+            "kind": ["in", ["file", "document", "link"]],
+        },
+        fields=["name", "title", "owner", "size", "mime", "kind"],
+        order_by="size desc",
+    )
+    by_type: dict[str, int] = {}
+    for row in rows:
+        by_type[_file_type(row)] = by_type.get(_file_type(row), 0) + int(row.size or 0)
+    # Legacy listed only the files worth acting on when a quota existed.
+    floor = limit / 200 if limit else 0
+    return {
+        "limit": limit,
+        "total": [{"file_type": name, "file_size": size} for name, size in by_type.items()],
+        "entities": [
+            {
+                "name": row.name,
+                "file_name": row.title,
+                "owner": row.owner,
+                "file_size": int(row.size or 0),
+                "file_type": _file_type(row),
+            }
+            for row in rows
+            if int(row.size or 0) >= floor
+        ],
+    }
+
+
+# --------------------------------------------------------------------------
+# api/embed.py
+# --------------------------------------------------------------------------
+
+
+def embed_file_content(embed_name: str, parent_entity_name: str):
+    """`embed.get_file_content` -> `GET /nodes/<id>/media`, then a redirect.
+
+    §6.8 stopped streaming media bytes through a method call and started
+    signing them for fifteen minutes. `list_media` authorizes the parent
+    document once and answers every picture below it, so the containment check
+    the old body ran by hand is now the query's own filter: an embed that is
+    not below `parent_entity_name` is simply not in the answer.
+
+    The old body answered a `send_file` response, so this answers a 302 to the
+    signed URL rather than a JSON body: an `<img src>` pointing at the old
+    method URL keeps working.
+    """
+    for media in content.list_media(_principals(), parent_entity_name):
+        if media["node"] == embed_name:
+            frappe.local.response["location"] = media["url"]
+            frappe.local.response["type"] = "redirect"
+            return
+    raise DriveNotFound(_("This Drive document has no such embed"))
+
+
+# --------------------------------------------------------------------------
+# Retired: §11.7 dropped the behavior
+# --------------------------------------------------------------------------
+
+
+def create_auth_token(entity_name: str | None = None) -> None:
+    """Retired. §8.4 replaced the download token with a signed URL.
+
+    It never mints anything. The old body handed back a JWT good for one
+    download, and a shim that returned any string at all would be a capability
+    token this release cannot honour.
+    """
+    _retire(
+        "suite.drive.api.files.create_auth_token",
+        _("Drive signs a download URL at GET /api/suite/drive/nodes/<id>/content."),
+    )
+
+
+def get_new_title(title: str | None = None, parent_name: str | None = None, folder: bool = False) -> None:
+    """Retired. §8.6 refuses a sibling collision instead of renaming around it.
+
+    The old body answered "Report (2)" so a client could pre-empt a clash. A
+    shim cannot answer it: a deduplicated title is now chosen inside the write,
+    under the same lock that checks the siblings, and a title guessed before
+    the write is a guess.
+    """
+    _retire(
+        "suite.drive.api.files.get_new_title",
+        _("Drive answers a sibling collision with a 409 refusal at write time."),
+    )
+
+
+def sync_from_disk() -> None:
+    """Retired. §14 makes Build the disk import.
+
+    It refuses rather than answering an empty list, because the caller reads
+    the length of what comes back and an empty list reads as "it ran, nothing
+    was new". Nothing is created and nothing is reported as created.
+    """
+    _retire(
+        "suite.drive.api.scripts.sync_from_disk",
+        _("The Drive Build migration imports the storage tree."),
+    )
+
+
+# --------------------------------------------------------------------------
+# api/files.py
+# --------------------------------------------------------------------------
+
+# The legacy client picks its own upload id and repeats it on every chunk;
+# §8.4 makes the id the server's, because it is what binds a session to the
+# destination the caller was authorized for. The two are joined here, in the
+# caller's own cache namespace, and nowhere else.
+LEGACY_UPLOAD_PREFIX = "drive:legacy-upload"
+LEGACY_UPLOAD_TTL = 24 * 60 * 60
+
+# Legacy sort columns that survive §11.4's four. Anything else fell back to
+# `modified` on the old surface rather than refusing, so it still does.
+ORDER_COLUMN = {
+    "file_name": "title",
+    "file_size": "size",
+    "modified": "modified",
+}
+
+
+def _home(principals) -> str:
+    """The caller's own root node, provisioned on first use as §14.3 says."""
+    if principals.user == "Guest":
+        frappe.throw(_("A Drive folder is required"), frappe.ValidationError)
+    return roots.personal_root_for(principals.user) or roots.provision_personal_root(principals.user)
+
+
+def _child_named(principals, parent: str, title: str) -> str | None:
+    """The active child of `parent` called `title`, if the caller may ask.
+
+    `title_taken` is the gate: it requires UPLOAD on the parent for the reason
+    `does_entity_exist` did, so the id read after it is never an answer to a
+    caller who could not have asked the question.
+    """
+    if not node_core.title_taken(principals, parent, title):
+        return None
+    return frappe.db.get_value("Drive Node", {"parent": parent, "title": title, "state": "Active"}, "name")
+
+
+def _ensure_path(principals, fullpath: str, parent: str) -> str:
+    """Create the folders a browser's directory upload names, and return the leaf."""
+    for segment in Path(fullpath).parts[:-1]:
+        found = _child_named(principals, parent, segment)
+        parent = found or node_core.create_folder(principals, parent, segment)
+    return parent
+
+
+def _upload_key(principals, session: str) -> str:
+    return f"{LEGACY_UPLOAD_PREFIX}:{principals.user}:{session}"
+
+
+def upload_file(
+    total_file_size: int = 0,
+    file_modified: int | None = None,
+    fullpath: str | None = None,
+    parent: str | None = None,
+    embed: int = 0,
+):
+    """`upload_file` -> `POST /uploads`, `PUT .../chunk`, `POST .../finish`.
+
+    One legacy call is one chunk. The old body accumulated chunks in a temp
+    file and inserted the row on the last one; the three new calls do the same
+    work with the session id issued by the server, so the client's own `uuid`
+    is bound to it for the length of the upload and thrown away after.
+
+    `embed=1` is not a placement any more. §9.4 makes an embed a media node
+    below the document it is in, which is the `parent` the caller already
+    named, so the flag decides nothing here.
+    """
+    principals = _principals()
+    parent = parent or _home(principals)
+    if fullpath:
+        parent = _ensure_path(principals, fullpath, parent)
+
+    upload = frappe.request.files["file"]
+    if frappe.form_dict.chunk_index:
+        index = int(frappe.form_dict.chunk_index)
+        total_chunks = int(frappe.form_dict.total_chunk_count)
+        offset = int(frappe.form_dict.chunk_byte_offset)
+    else:
+        index, total_chunks, offset = 0, 1, 0
+
+    session = frappe.form_dict.uuid or frappe.generate_hash(12)
+    if not isinstance(session, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", session):
+        frappe.throw(_("Invalid upload session."), frappe.ValidationError)
+
+    key = _upload_key(principals, session)
+    upload_id = frappe.cache().get_value(key)
+    if not upload_id:
+        opened = upload_core.create_upload(
+            principals,
+            parent,
+            upload.filename,
+            int(total_file_size or 0),
+            mime=upload.mimetype,
+        )
+        upload_id = opened["upload_id"]
+        frappe.cache().set_value(key, upload_id, expires_in_sec=LEGACY_UPLOAD_TTL)
+
+    upload_core.upload_chunk(principals, upload_id, offset, upload.stream.read())
+    if index != total_chunks - 1:
+        return None
+
+    frappe.cache().delete_value(key)
+    node = upload_core.finish_upload(
+        principals,
+        upload_id,
+        parent=parent,
+        title=upload.filename,
+        content_modified=int(file_modified) / 1000 if file_modified else None,
+    )
+    return _legacy_row(node_core.stored(node))
+
+
+def get_thumbnail(entity_name: str):
+    """`get_thumbnail` -> `GET /nodes/<id>?expand=preview`.
+
+    §6.8 stopped streaming a thumbnail through a method call and started
+    signing it, so this redirects to the signed URL instead of answering webp
+    bytes. A node with no rendered preview still answers `""`, which is what
+    the old body answered and what the caller's `<img>` already handles.
+    """
+    principals = _principals()
+    row = node_core.get(principals, entity_name)
+    preview = previews.preview_expansions([row.name]).get(row.name)
+    if not preview:
+        return ""
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = preview["url"]
+    return None
+
+
+def create_folder(file_name: str, parent: str | None = None):
+    """`create_folder` -> `POST /nodes` with `kind=folder`."""
+    principals = _principals()
+    node = node_core.create_folder(principals, parent or _home(principals), file_name)
+    return _legacy_row(node_core.stored(node))
+
+
+def create_link(file_name: str, link: str, parent: str | None = None):
+    """`create_link` -> `POST /nodes` with `kind=link`."""
+    principals = _principals()
+    node = node_core.create_link(principals, parent or _home(principals), file_name, url=link)
+    return _legacy_row(node_core.stored(node))
+
+
+def get_file_content(entity_name: str, trigger_download: bool = False, token: str | None = None):
+    """`get_file_content` -> `GET /nodes/<id>/content`.
+
+    A 302 to a signature that lives fifteen minutes, which is what §6.8 makes
+    every byte path. `trigger_download` is carried by the signature's own
+    filename, so it decides nothing here.
+
+    A `token` is refused rather than honoured. `create_auth_token` is retired
+    and mints nothing, so any token presented here is either expired or forged,
+    and answering bytes for one would be the capability this release removed.
+    """
+    if token:
+        _retire(
+            "the suite.drive.api.files.get_file_content download token",
+            _("Drive signs a download URL at GET /api/suite/drive/nodes/<id>/content."),
+        )
+    principals = _principals()
+    row = node_core.get(principals, entity_name)
+    if row.kind == "document":
+        frappe.local.response["type"] = "redirect"
+        frappe.local.response["location"] = "/drive/w/" + row.name
+        return None
+    signed = node_core.signed_content_url(row)
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = signed["url"]
+    return None
+
+
+def stream_file_content(entity_name: str):
+    """`stream_file_content` -> `GET /nodes/<id>/content`.
+
+    The same redirect. Range requests are answered by storage behind the
+    signed URL now, not by this worker reading twenty megabytes into memory,
+    so there is nothing left for a separate streaming entry point to do.
+    """
+    return get_file_content(entity_name)
+
+
+def set_favourite(entities: list | None = None, clear_all: bool = False):
+    """`set_favourite` -> `PUT`/`DELETE /nodes/<id>/favourite`.
+
+    `clear_all` has no route of its own, so it is walked: every favourite the
+    caller still holds is cleared through the same workflow one mark uses.
+    """
+    principals = _principals()
+    if clear_all:
+        for row in _walk(lambda cursor: activity_core.favourites(principals, cursor=cursor)):
+            activity_core.set_favourite(principals, row["node"], False)
+        return None
+    if not isinstance(entities, list):
+        frappe.throw(_("Expected list but got {0}").format(type(entities)), frappe.ValidationError)
+
+    marks = activity_core.personal_marks(principals, [entity.get("name") for entity in entities])
+    for entity in entities:
+        node = entity.get("name")
+        value = entity.get("is_favourite")
+        if value is None or value == "":
+            # The old body toggled when the client said nothing.
+            value = not (marks.get(node) or {}).get("favourite")
+        if isinstance(value, str):
+            value = json.loads(value)
+        activity_core.set_favourite(principals, node, bool(value))
+    return None
+
+
+def remove_or_restore(entity_names):
+    """`remove_or_restore` -> `PATCH /nodes/<id>` `{state}`.
+
+    The old name is one gesture with two meanings, so the current state
+    decides which, exactly as `toggle_entity_status` did. A restore names no
+    destination: §8.7 puts a node back where it was and refuses when that place
+    is gone, and this shim will not pick a different one to avoid the refusal.
+    """
+    principals = _principals()
+    if isinstance(entity_names, str):
+        entity_names = json.loads(entity_names)
+    if not isinstance(entity_names, list):
+        frappe.throw(_("Expected list but got {0}").format(type(entity_names)), frappe.ValidationError)
+    for node in entity_names:
+        row = node_core.get(principals, node)
+        state = "Trashed" if row.state == "Active" else "Active"
+        node_core.update(principals, node, state=state)
+    return None
+
+
+def delete_entities(entity_names: list[str] | None = None, clear_all: bool = False):
+    """`delete_entities` -> `DELETE /nodes/<id>`.
+
+    `clear_all` is walked over the caller's own trash view, so the rows it
+    purges are the rows §11.2 would have listed and nothing else.
+    """
+    principals = _principals()
+    if clear_all:
+        root = _home(principals)
+        entity_names = [
+            row["name"]
+            for row in _walk(lambda cursor: node_core.views(principals, "trash", cursor=cursor, root=root))
+        ]
+    elif isinstance(entity_names, str):
+        entity_names = json.loads(entity_names)
+    elif not isinstance(entity_names, list) or not entity_names:
+        frappe.throw(
+            _("Expected non-empty list but got {0}").format(type(entity_names)),
+            frappe.ValidationError,
+        )
+    for node in entity_names:
+        node_core.purge(principals, node)
+    return None
+
+
+def rename(entity_name: str, new_title: str):
+    """`rename` -> `PATCH /nodes/<id>` `{title}`."""
+    principals = _principals()
+    node_core.update(principals, entity_name, title=new_title)
+    return _legacy_row(node_core.stored(entity_name))
+
+
+def move(entity_names: list[str], new_parent: str | None = None):
+    """`move` -> `PATCH /nodes/<id>` `{parent}`."""
+    principals = _principals()
+    if isinstance(entity_names, str):
+        entity_names = json.loads(entity_names)
+    if not entity_names or not isinstance(entity_names, list):
+        frappe.throw(
+            _("Expected a non-empty list but got {0}").format(type(entity_names)),
+            frappe.ValidationError,
+        )
+    destination = new_parent or _home(principals)
+    answer = None
+    for node in entity_names:
+        node_core.update(principals, node, parent=destination)
+        answer = _legacy_row(node_core.stored(node))
+    return answer
+
+
+def update_access(entity_name: str, method: str, **kwargs):
+    """`update_access` -> `PUT`/`DELETE /nodes/<id>/grants/<principal>`.
+
+    The five independent bits become one rung: the highest bit the caller set
+    names the role, because that is what the old row let its holder do. It is
+    lossy and it is recorded - a legacy row could say `write` without `read`,
+    and §5.9's ladder cannot - but it never grants a rung no bit asked for.
+
+    Two rules this cannot break. `deny=1` is the caller asking for role 0 and
+    is passed through as one; `unshare` removes the row and writes nothing.
+    §5.10 keeps removal and denial apart, so the old body's habit of inserting
+    a deny to cut inheritance stops here: a client that wants a denial has to
+    say so.
+    """
+    principals = _principals()
+    kwargs.pop("cmd", None)
+    principal = kwargs.get("user") or "$PUBLIC"
+    if principal == "":
+        principal = "$PUBLIC"
+
+    if method == "unshare":
+        access.revoke(entity_name, principal, principals)
+        return None
+    if method != "share":
+        frappe.throw(_("Drive access method {0} is not supported").format(method), frappe.ValidationError)
+
+    if _flag(kwargs.get("deny")):
+        return access.grant(entity_name, principal, 0, principals)
+    role = 0
+    for bit, rung in BIT_ROLE.items():
+        if _flag(kwargs.get(bit)):
+            role = max(role, rung)
+    return access.grant(entity_name, principal, role, principals)
+
+
+def _flag(value) -> bool:
+    """Read one legacy permission bit, which arrives as a bool, an int, or a word."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def remove_recents(entity_names: list[str] | None = None, clear_all: bool = False):
+    """`remove_recents` -> `DELETE /views/recents`.
+
+    `clear_all` clears everything and a named list clears those rows. An empty
+    list clears nothing, which is the one difference from the workflow's own
+    default: `clear_recents(None)` means "all", and forwarding a missing list
+    onto it would empty an inbox the old call left alone.
+    """
+    principals = _principals()
+    if clear_all:
+        return activity_core.clear_recents(principals, None)
+    if not isinstance(entity_names, list | type(None)):
+        frappe.throw(_("Expected list but got {0}").format(type(entity_names)), frappe.ValidationError)
+    return activity_core.clear_recents(principals, entity_names or [])
+
+
+def does_entity_exist(name: str | None = None, folder: str | None = None):
+    """`does_entity_exist` -> the sibling check inside `POST /nodes`.
+
+    Same UPLOAD gate as the old body, for the same reason: the answer is
+    derived from names in a folder, so a caller who could not write there is
+    not entitled to it.
+    """
+    principals = _principals()
+    return node_core.title_taken(principals, folder or _home(principals), name)
+
+
+def search(query: str):
+    """`search` -> `GET /views/search`."""
+    principals = _principals()
+    if not query or not query.strip():
+        return []
+    page = node_core.views(principals, "search", term=query.strip(), limit=50)
+    return [_legacy_search_row(row) for row in page["rows"]]
+
+
+def _legacy_search_row(row) -> dict:
+    """The eleven columns `SEARCH_QUERY` selected, from one node row."""
+    owner = _user_info(row.get("owner"), ["name as user_name", "user_image", "full_name"])
+    return {
+        "name": row.get("name"),
+        "file_name": row.get("title"),
+        "file_type": _file_type(row),
+        "is_folder": int(row.get("kind") in ("folder", "root")),
+        "owner": row.get("owner"),
+        "attached_to_doctype": None,
+        "attached_to_name": None,
+        "content_doctype": row.get("content_doctype"),
+        "content_docname": row.get("content_docname"),
+        "user_name": owner.get("user_name"),
+        "user_image": owner.get("user_image"),
+        "full_name": owner.get("full_name"),
+    }
+
+
+def translate_old_name(old_name: str):
+    """`translate_old_name` -> a readability check on the id itself.
+
+    §14.3 gives every node the id its `File` row had, so a pre-migration id
+    needs no translation: it either names a node the caller may read, or it
+    answers `None`. Missing and unreadable answer the same thing, so a guest
+    cannot probe which private files exist.
+    """
+    return old_name if _readable_row(old_name) else None
+
+
+def get_entity_type(entity_name: str):
+    """`get_entity_type` -> `GET /nodes/<id>`."""
+    row = node_core.get(_principals(), entity_name)
+    return {
+        "name": row.name,
+        "file_type": _file_type(row),
+        "type": "folder" if row.kind in ("folder", "root") else "file",
+    }
+
+
+def get_root_folder():
+    """`get_root_folder` -> the two root nodes a client bootstraps from.
+
+    §11.2 has no root-discovery route: `GET /roots/<id>/usage` needs the id it
+    would have answered. The two roots are read from `_core.roots`, which is
+    where the route would have read them.
+    """
+    principals = _principals()
+    return {
+        "root": roots.active_root_for(kind=roots.SHARED),
+        "home": _home(principals),
+    }
+
+
+def redirect_to_original(file_id: str):
+    """`redirect_to_original` -> `GET /nodes/<id>`, then the original document.
+
+    §14.4 turns an adopted library attachment into a plain file node and drops
+    its content link, so after Build no node answers this and every call meets
+    the same refusal the old body gave a non-attachment. It is not made to
+    answer one by pointing somewhere else.
+    """
+    row = node_core.get(_principals(), file_id)
+    if row.content_doctype != "File":
+        frappe.throw(_("This is not an attachment"), frappe.ValidationError)
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = "/drive/g/" + row.content_docname
+    return None
+
+
+def track_visit(
+    entity_name: str | None = None,
+    doctype: str | None = None,
+    docname: str | None = None,
+):
+    """`track_visit` -> `POST /nodes/<id>/visit`.
+
+    The old body also cleared the caller's unread notifications about the node
+    it opened. That is kept, through `mark_read`, because a badge that never
+    clears is the visible half of this call.
+    """
+    principals = _principals()
+    if not entity_name and doctype and docname:
+        entity_name = frappe.db.get_value(
+            "Drive Node", {"content_doctype": doctype, "content_docname": docname}, "name"
+        )
+    if not entity_name:
+        frappe.throw(_("A Drive file or content document is required"), frappe.ValidationError)
+    activity_core.visit(principals, entity_name)
+    unread = _walk(lambda cursor: activity_core.notifications(principals, only_unread=True, cursor=cursor))
+    here = [row["name"] for row in unread if (row.get("activity") or {}).get("node") == entity_name]
+    if here:
+        activity_core.mark_read(principals, here)
+    return None
+
+
+def resolve_legacy_route(old_id: str):
+    """`resolve_legacy_route` -> `Drive Legacy Route`, then the node it names.
+
+    The mapping table is the only answer to a pre-team-restructure link, so it
+    is read here and the id it yields is checked for readability like any
+    other. Nothing exists, nothing readable, and nothing active all answer
+    `None`, so the caller 404s without being told which of the three it was.
+    """
+    entity = frappe.db.get_value("Drive Legacy Route", old_id, "entity")
+    if not entity:
+        return None
+    row = _readable_row(entity)
+    if row is None or row.state != "Active":
+        return None
+    return {"name": row.name, "is_folder": row.kind in ("folder", "root")}
+
+
+# --------------------------------------------------------------------------
+# api/list.py
+# --------------------------------------------------------------------------
+
+# The legacy default page. §11.4 caps at 200; the old surface capped at 100 and
+# a client that asked for nothing got that, so it still does.
+LEGACY_PAGE_SIZE = 100
+
+
+def _child_counts(names: list[str]) -> dict[str, int]:
+    """Count each listed folder's active children in one query."""
+    if not names:
+        return {}
+    rows = frappe.get_all(
+        "Drive Node",
+        filters={"parent": ["in", names], "state": "Active"},
+        fields=["parent", "count(name) as total"],
+        group_by="parent",
+    )
+    return {row["parent"]: int(row["total"] or 0) for row in rows}
+
+
+def _share_counts(names: list[str]) -> dict[str, int]:
+    """Answer each listed node's share marker from its own grant rows.
+
+    Legacy's `-2` and `-1` meant "published" and "everyone signed in", and its
+    positive count meant "shared with this many people". All three are read
+    from the local rows here, and only the local rows: §5.10 keeps what an
+    ancestor decides in `explain`, and a list that folded inheritance into a
+    per-row count would report a share this node does not hold.
+    """
+    if not names:
+        return {}
+    rows = frappe.get_all(
+        "Drive Grant",
+        filters={"node": ["in", names], "role": [">", 0]},
+        fields=["node", "principal"],
+    )
+    counts: dict[str, int] = dict.fromkeys(names, 0)
+    public: set[str] = set()
+    general: set[str] = set()
+    for row in rows:
+        principal = row["principal"]
+        if principal == "$PUBLIC":
+            public.add(row["node"])
+        elif principal == "$GENERAL":
+            general.add(row["node"])
+        elif not principal.startswith("$LINK:"):
+            counts[row["node"]] += 1
+    for name in names:
+        if name in public:
+            counts[name] = -2
+        elif name in general:
+            counts[name] = -1
+    return counts
+
+
+def _legacy_list_rows(principals, rows: list) -> list[dict]:
+    """Build the twenty-eight column legacy list row for one page of nodes.
+
+    Four decorations the §11.3 node shape does not carry, and each is read
+    once for the whole page rather than once per row: the owner's display
+    fields, the caller's own favourite and recent marks, the folder child
+    count, and the share marker. `slide_count` has no producer on either
+    surface and is left off rather than guessed.
+    """
+    names = [row["name"] for row in rows]
+    marks = activity_core.personal_marks(principals, names)
+    children = _child_counts(names)
+    shares = _share_counts(names)
+    owners = {}
+    answer = []
+    for row in rows:
+        owner = row.get("owner")
+        if owner not in owners:
+            owners[owner] = _user_info(owner, ["full_name", "user_image"])
+        role = access.effective_role(row, principals)
+        mark = marks.get(row["name"]) or {}
+        answer.append(
+            {
+                **_legacy_row(row),
+                "owner_full_name": owners[owner].get("full_name"),
+                "owner_image": owners[owner].get("user_image"),
+                "is_favourite": mark.get("favourite"),
+                "accessed": mark.get("opened_at"),
+                "child_count": children.get(row["name"], 0),
+                "share_count": shares.get(row["name"], 0),
+                "kind": "native",
+                **_bits(role),
+                "type": _access_type(row, role, principals),
+            }
+        )
+    return answer
+
+
+def _matching_kinds(rows: list, file_kinds) -> list:
+    """Keep the rows whose legacy `file_type` the caller asked for.
+
+    §11.2 replaced the family filter with one `mime_prefix`, which cannot spell
+    `Folder` and cannot spell two families at once. The old vocabulary is kept
+    and applied to the page instead, so a client's saved filter still selects
+    what it selected before.
+    """
+    if not file_kinds:
+        return rows
+    if isinstance(file_kinds, str):
+        file_kinds = json.loads(file_kinds)
+    wanted = set(file_kinds)
+    return [row for row in rows if _file_type(row) in wanted]
+
+
+def _listing(principals, page_call, *, file_kinds, start, limit, paginated):
+    """Answer one legacy listing, paged the way the old surface paged.
+
+    Legacy walked raw windows until the page was full, because its permission
+    filter ran after the SQL, and it published `has_next` and a raw
+    `next_start`. §11.4's cursor is that same offset, encoded, so the walk is
+    kept and the two envelopes translate exactly.
+    """
+    window = int(limit) if limit else LEGACY_PAGE_SIZE
+    offset = int(start or 0)
+    cursor = node_core.encode_cursor(offset) if offset else None
+    rows: list = []
+    while True:
+        page = page_call(cursor, window)
+        rows.extend(_matching_kinds(page["rows"], file_kinds))
+        cursor = page["next_cursor"]
+        if not cursor or len(rows) >= window:
+            break
+    rows = _legacy_list_rows(principals, rows[:window])
+    if not paginated:
+        return rows
+    return {
+        "rows": rows,
+        "has_next": bool(cursor),
+        "next_start": node_core.decode_cursor(cursor) if cursor else offset + len(rows),
+    }
+
+
+def files(
+    entity_name: str | None = None,
+    order_by: str = "modified",
+    ascending: bool = True,
+    file_kinds=None,
+    search: str | None = None,
+    start: int = 0,
+    limit: int | None = None,
+    paginated: bool = False,
+):
+    """`list.files` -> `GET /nodes/<id>/children`, or `GET /views/search`.
+
+    `search` made the old query tree-wide and dropped the folder filter, and
+    §11.2 gave that its own view, so a search here is forwarded there. An
+    unknown `order_by` still falls back to `modified` instead of refusing:
+    the toolbar sends five column names and only three of them survive §11.4.
+    """
+    principals = _principals()
+    if search:
+        return _listing(
+            principals,
+            lambda cursor, window: node_core.views(
+                principals, "search", term=search, cursor=cursor, limit=window
+            ),
+            file_kinds=file_kinds,
+            start=start,
+            limit=limit,
+            paginated=paginated,
+        )
+    parent = entity_name or _home(principals)
+    return _listing(
+        principals,
+        lambda cursor, window: node_core.children(
+            principals,
+            parent,
+            cursor=cursor,
+            limit=window,
+            order_by=ORDER_COLUMN.get(order_by, "modified"),
+            ascending=bool(ascending),
+        ),
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+    )
+
+
+def _view(name, principals, *, file_kinds, start, limit, paginated, **filters):
+    return _listing(
+        principals,
+        lambda cursor, window: node_core.views(principals, name, cursor=cursor, limit=window, **filters),
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+    )
+
+
+def shared(
+    shared_type: str = "with",
+    order_by: str = "modified",
+    ascending: bool = True,
+    file_kinds=None,
+    search: str | None = None,
+    start: int = 0,
+    limit: int | None = None,
+    paginated: bool = False,
+):
+    """`list.shared` -> `GET /views/shared`.
+
+    §11.2 freezes one shared view, "shared with me", and it is top-most only.
+    `shared_type="public"` named a second list that no view answers, and it is
+    refused rather than answered with the first one: a caller asking which of
+    their files are published must not be handed the files other people shared
+    with them.
+    """
+    if shared_type not in ("with", None, ""):
+        frappe.throw(
+            _("Drive lists only the files shared with you"),
+            frappe.ValidationError,
+        )
+    return _view(
+        "shared",
+        _principals(),
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+    )
+
+
+def favourites(
+    order_by: str = "modified",
+    ascending: bool = True,
+    file_kinds=None,
+    search: str | None = None,
+    start: int = 0,
+    limit: int | None = None,
+    paginated: bool = False,
+):
+    """`list.favourites` -> `GET /views/favourites`.
+
+    Ordered by when the mark was made, which is the view's own order; the old
+    list ordered by `modified` and never said so in its result, so nothing
+    reads the difference except the eye.
+    """
+    return _view(
+        "favourites",
+        _principals(),
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+    )
+
+
+def recents(
+    order_by: str = "modified",
+    ascending: bool = True,
+    file_kinds=None,
+    search: str | None = None,
+    start: int = 0,
+    limit: int | None = None,
+    paginated: bool = False,
+):
+    """`list.recents` -> `GET /views/recents`.
+
+    `accessed` survives: it is the caller's own `Drive Recent.opened_at`, read
+    through `personal_marks` with the favourite mark, so the page can still
+    group rows by the day they were opened.
+    """
+    return _view(
+        "recents",
+        _principals(),
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+    )
+
+
+def trash(
+    order_by: str = "modified",
+    ascending: bool = True,
+    file_kinds=None,
+    search: str | None = None,
+    start: int = 0,
+    limit: int | None = None,
+    paginated: bool = False,
+):
+    """`list.trash` -> `GET /views/trash` on the caller's own root.
+
+    The view needs a root and §11.2 has no route that names one, so the
+    caller's personal root is used - the only trash a legacy client ever saw,
+    because the old query was scoped to rows they owned.
+
+    One visible difference, and it is the view's rule, not this shim's: §8.7
+    lists trash roots, so a deleted folder is one row here where the old list
+    showed the folder and everything under it.
+    """
+    principals = _principals()
+    return _view(
+        "trash",
+        principals,
+        file_kinds=file_kinds,
+        start=start,
+        limit=limit,
+        paginated=paginated,
+        root=_home(principals),
+    )

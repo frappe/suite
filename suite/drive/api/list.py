@@ -6,6 +6,7 @@ from pypika import Criterion, CustomFunction, Order
 from pypika import functions as fn
 from pypika.terms import ExistsCriterion
 
+from suite.drive.http import shims
 from suite.drive.utils import (
     FILE_FIELDS,
     GENERAL_USER,
@@ -24,7 +25,7 @@ from suite.drive.utils import (
 from suite.drive.utils.api import get_default_access
 from suite.drive.utils.overrides import file_permission_criterion
 
-from .permissions import get_user_access, user_has_permission
+from .permissions import get_user_access_for_user, user_has_permission
 
 DriveUser = frappe.qb.DocType("User")
 UserGroupMember = frappe.qb.DocType("User Group Member")
@@ -228,36 +229,19 @@ def files(
     limit: int | None = None,
     paginated: bool = False,
 ):
+    """List one folder's contents.
+
+    §11.7 forwarder over `GET /nodes/<id>/children`, or over
+    `GET /views/search` when `search` is set, which is what the old query did
+    with the same argument. An unknown `order_by` still falls back to
+    `modified` rather than refusing.
     """
-    Returns active files in a folder. Pass `start`/`limit` to page through large
-    folders. When `search` is set, results span the whole tree (not just the
-    current folder).
-    """
-    is_home_request = not entity_name
-    if is_home_request:
-        entity_name = get_user_folder().name
-
-    entity = frappe.get_doc("File", entity_name)
-
-    if not user_has_permission(entity, "read"):
-        frappe.throw(
-            "You don't have access.",
-            frappe.exceptions.PermissionError,
-        )
-
-    query = _get_basic_query(search)
-    if is_home_request:
-        query = query.where(DriveFile.attached_to_doctype.isnull())
-    if not search:
-        # Folder browsing; search is tree-wide so it skips the folder filter.
-        query = query.where(DriveFile.folder == entity_name)
-
-    return get_query_data(
-        query,
-        file_kinds=file_kinds,
+    return shims.files(
         entity_name=entity_name,
         order_by=order_by,
         ascending=ascending,
+        file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -275,19 +259,16 @@ def shared(
     limit: int | None = None,
     paginated: bool = False,
 ):
-    """
-    Returns shared files based on shared_type parameter.
-    - "with": files shared with current user
-    - "public": publicly shared files
-    """
-    query = _get_basic_query(search)
+    """List the files shared with the caller.
 
-    return get_query_data(
-        query,
+    §11.7 forwarder over `GET /views/shared`.
+    """
+    return shims.shared(
         shared_type=shared_type,
-        file_kinds=file_kinds,
         order_by=order_by,
         ascending=ascending,
+        file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -304,17 +285,15 @@ def favourites(
     limit: int | None = None,
     paginated: bool = False,
 ):
-    """
-    Returns all files marked as favourite by the current user.
-    """
-    query = _get_basic_query(search)
+    """List the caller's favourites.
 
-    return get_query_data(
-        query,
-        favourites_only=True,
-        file_kinds=file_kinds,
+    §11.7 forwarder over `GET /views/favourites`.
+    """
+    return shims.favourites(
         order_by=order_by,
         ascending=ascending,
+        file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -331,17 +310,15 @@ def recents(
     limit: int | None = None,
     paginated: bool = False,
 ):
-    """
-    Returns all files marked recently by the current user.
-    """
-    query = _get_basic_query(search)
+    """List what the caller opened recently.
 
-    return get_query_data(
-        query,
-        recents_only=True,
-        file_kinds=file_kinds,
+    §11.7 forwarder over `GET /views/recents`.
+    """
+    return shims.recents(
         order_by=order_by,
         ascending=ascending,
+        file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -358,22 +335,15 @@ def trash(
     limit: int | None = None,
     paginated: bool = False,
 ):
-    """
-    Returns all deleted files (trash) for the current user.
-    """
-    query = (
-        frappe.qb.from_(DriveFile)
-        .where(DriveFile.status == STATUS_TRASHED)
-        .where(DriveFile.owner == frappe.session.user)
-    )
-    if search:
-        query = query.where(DriveFile.file_name.like(f"%{search}%"))
+    """List the caller's trash.
 
-    return get_query_data(
-        query,
-        file_kinds=file_kinds,
+    §11.7 forwarder over `GET /views/trash` on the caller's own root.
+    """
+    return shims.trash(
         order_by=order_by,
         ascending=ascending,
+        file_kinds=file_kinds,
+        search=search,
         start=start,
         limit=limit,
         paginated=paginated,
@@ -527,7 +497,7 @@ def _visible_rows(res, entity_name):
 
         r["kind"] = entity_kind(r)
         hide_storage_key(r)
-        r |= get_user_access(name)
+        r |= get_user_access_for_user(name, frappe.session.user)
 
     return [r for r in res if r["read"]]
 

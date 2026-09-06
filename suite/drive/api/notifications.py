@@ -2,6 +2,8 @@ import frappe
 from frappe.model.document import Document
 from pypika import Order
 
+from suite.drive.http import shims
+
 
 def get_link(entity):
     if entity.file_type == "Document":
@@ -12,56 +14,31 @@ def get_link(entity):
 
 @frappe.whitelist()
 def get_notifications(only_unread: bool = False):
-    User = frappe.qb.DocType("User")
-    Notification = frappe.qb.DocType("Drive Notification")
-    fields = [
-        Notification.name,
-        Notification.to_user,
-        Notification.from_user,
-        Notification.read,
-        Notification.type,
-        Notification.message,
-        Notification.entity_type,
-        Notification.notif_doctype,
-        Notification.notif_doctype_name,
-        Notification.creation,
-        User.user_image,
-        User.full_name,
-    ]
-    query = (
-        frappe.qb.from_(Notification)
-        .left_join(User)
-        .on(Notification.from_user == User.name)
-        .select(*fields)
-        .orderby(Notification.creation, order=Order.desc)
-    )
+    """Return the caller's notifications.
 
-    if only_unread:
-        query = query.where(Notification.read == 0)
-    query = query.where(Notification.to_user == frappe.session.user)
-    result = query.run(as_dict=True)
-    return result
+    §11.7 forwarder over `GET /notifications`.
+    """
+    return shims.get_notifications(only_unread)
 
 
 @frappe.whitelist()
 def get_unread_count():
+    """Return how many notifications the caller has not read.
+
+    §11.7 forwarder. It counts what the caller can still see, so a
+    notification about a node they lost access to is not counted.
     """
-    Return a count of records where user is current user and read is False
-    """
-    return frappe.db.count("Drive Notification", filters={"to_user": frappe.session.user, "read": 0})
+    return shims.get_unread_count()
 
 
 @frappe.whitelist()
 def mark_as_read(name: str | None = None, all: bool = False):
-    if all:
-        frappe.db.set_value(
-            "Drive Notification", {"to_user": frappe.session.user, "read": False}, "read", True
-        )
-        return
-    # filter on the recipient too: a bare name would let any caller flip the flag
-    # on someone else's notification
-    frappe.db.set_value("Drive Notification", {"name": name, "to_user": frappe.session.user}, "read", True)
-    return
+    """Mark one notification, or all of them, read.
+
+    §11.7 forwarder over `POST /notifications/read`. It answers nothing, as
+    this name always has.
+    """
+    return shims.mark_as_read(name=name, all=all)
 
 
 def notify_mentions(entity_name, mentions, comment=False):

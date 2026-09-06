@@ -1,6 +1,7 @@
 import frappe
 from frappe.model.document import Document
 
+from suite.drive.http import shims
 from suite.drive.utils import (
     APP_FOLDERS,
     FILE_FIELDS,
@@ -35,10 +36,12 @@ def is_drive_admin(user: str | None = None):
 
 @frappe.whitelist(allow_guest=True)
 def get_user_access(entity: str | Document | frappe._dict):
+    """Return the caller's permission bits for an entity.
+
+    §11.7 forwarder. The bits are derived from the caller's role on the node,
+    which `_core.access` resolves; nothing is decided here.
     """
-    Return the user specific permissions for an entity.
-    """
-    return get_user_access_for_user(entity, frappe.session.user)
+    return shims.get_user_access(entity)
 
 
 def get_user_access_for_user(entity: str | Document | frappe._dict, user: str):
@@ -72,21 +75,11 @@ def get_user_access_for_user(entity: str | Document | frappe._dict, user: str):
 def get_general_access(entity: str | Document | frappe._dict):
     """Return an entity's effective public or site-wide access.
 
-    The current session must have read access to the entity. ``type`` is
-    ``public`` for Guest access, ``site`` for all logged-in users, or
-    ``restricted`` when neither principal has read access. The remaining
-    fields are that principal's effective permission bits.
+    §11.7 forwarder. `type` is `public` when `$PUBLIC` reads, `site` when
+    `$GENERAL` reads, and `restricted` when neither does. The caller still
+    needs Read on the entity to ask.
     """
-    if isinstance(entity, str):
-        entity = frappe.get_cached_doc("File", entity)
-    if not get_user_access_for_user(entity, frappe.session.user)["read"]:
-        frappe.throw("You don't have access to this file.", frappe.PermissionError)
-
-    for user, access_type in (("Guest", "public"), (GENERAL_USER, "site")):
-        access = get_user_access_for_user(entity, user)
-        if access["read"]:
-            return {**access, "type": access_type}
-    return {**NO_ACCESS, "type": "restricted"}
+    return shims.get_general_access(entity)
 
 
 def _ref_doc_access(entity, user):
@@ -108,103 +101,22 @@ def _ref_doc_access(entity, user):
 
 @frappe.whitelist(allow_guest=True)
 def get_entity_with_permissions(entity_name: str | None = None):
+    """Return file data with permissions.
+
+    §11.7 forwarder, and the payload `get_file_for_doc` publishes, so its keys
+    are the ones §11.7 makes permanent by reference.
     """
-    Return file data with permissions
-    """
-    entity = None
-    if entity_name:
-        entity = frappe.get_all(
-            "File",
-            filters={"name": entity_name, "status": STATUS_ACTIVE},
-            fields=FILE_FIELDS,
-            limit=1,
-        )
-    if not entity:
-        # Mimic API v2 points
-        frappe.local.response.errors = [
-            {
-                "type": "PageDoesNotExistError",
-                "message": "We couldn't find what you're looking for.",
-            }
-        ]
-        frappe.throw("We couldn't find what you're looking for.", frappe.PageDoesNotExistError)
-    entity = entity[0]
-
-    user_access = get_user_access(entity)
-    if not user_access.get("read"):
-        frappe.local.response.errors = [
-            {
-                "type": "PermissionError",
-                "message": "You don't have access to this file.",
-            }
-        ]
-        frappe.throw("You don't have access to this file.", frappe.PermissionError)
-
-    owner_info = frappe.db.get_value("User", entity.owner, ["user_image", "full_name"], as_dict=True) or {}
-    breadcrumbs = {"breadcrumbs": get_valid_breadcrumbs(entity.name, user_access)}
-    favourite = frappe.db.get_value(
-        "Drive Favourite",
-        {
-            "entity": entity_name,
-            "user": frappe.session.user,
-        },
-        ["entity as is_favourite"],
-    )
-    return_obj = entity | user_access | owner_info | breadcrumbs | {"is_favourite": favourite}
-
-    # General access marker: -2 public (link), -1 site users, 0 restricted.
-    default = 0
-    if get_user_access_for_user(entity, "Guest")["read"]:
-        default = -2
-    elif generate_upward_path(entity_name, GENERAL_USER)[-1]["read"]:
-        default = -1
-    return_obj["share_count"] = default
-
-    return_obj["kind"] = entity_kind(entity)
-    hide_storage_key(return_obj)
-
-    # To work with modern frappe-ui composables
-    frappe.response["data"] = return_obj
-    return return_obj
+    return shims.get_entity_with_permissions(entity_name)
 
 
 @frappe.whitelist()
 def get_shared_with_list(entity: str):
+    """Return the people this file or folder is shared with.
+
+    §11.7 forwarder over `_core.access.grants_for`, which requires Manage -
+    the level the old `share` bit named.
     """
-    Return the list of users with whom this file or folder has been shared
-
-    :param entity: Document-name of this file or folder
-    :raises PermissionError: If the user does not have edit permissions
-    :return: List of users, with permissions and last modified datetime
-    :rtype: list[frappe._dict]
-    """
-    if not user_has_permission(entity, "share"):
-        raise frappe.PermissionError("You do not have permission to check the shares.")
-
-    permissions = frappe.db.get_all(
-        "Drive Permission",
-        filters=[["entity", "=", entity], ["user", "not in", ["", GENERAL_USER]], ["deny", "=", 0]],
-        order_by="user",
-        fields=["user", "read", "write", "comment", "upload", "share"],
-    )
-    for p in permissions:
-        if p.user.startswith(GROUP_PREFIX):
-            p.is_group = 1
-            p.full_name = p.user[len(GROUP_PREFIX) :]
-
-    owner = frappe.db.get_value("File", entity, "owner")
-    owner_info = frappe.db.get_value("User", owner, ["user_image", "full_name", "name as user"], as_dict=True)
-    if owner_info:
-        # the owner's User row can be gone; the file outlives them
-        permissions.insert(0, owner_info)
-
-    for p in permissions:
-        if p.get("is_group"):
-            continue
-        user_info = frappe.db.get_value("User", p.user, ["user_image", "full_name", "email"], as_dict=True)
-        if user_info:
-            p.update(user_info)
-    return permissions
+    return shims.get_shared_with_list(entity)
 
 
 def exceeds_grant_ceiling(entity, requested, user=None):
