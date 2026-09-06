@@ -97,14 +97,17 @@ def activated():
     """
     real_get_hooks = frappe.get_hooks
 
-    def hooks(key=None, *args, **kwargs):
-        if key == "drive_content_types":
-            return list(ACTIVATION[key])
-        if key in ("has_permission", "permission_query_conditions"):
-            wired = dict(real_get_hooks(key, *args, **kwargs) or {})
-            wired.update({name: list(paths) for name, paths in ACTIVATION[key].items()})
+    # `hook`, not `key`: frappe's own signature is `get_hooks(hook=None, ...)`
+    # and three framework call sites pass it by keyword. A different parameter
+    # name here makes those raise `TypeError` inside the block.
+    def hooks(hook=None, *args, **kwargs):
+        if hook == "drive_content_types":
+            return list(ACTIVATION[hook])
+        if hook in ("has_permission", "permission_query_conditions"):
+            wired = dict(real_get_hooks(hook, *args, **kwargs) or {})
+            wired.update({name: list(paths) for name, paths in ACTIVATION[hook].items()})
             return wired
-        return real_get_hooks(key, *args, **kwargs)
+        return real_get_hooks(hook, *args, **kwargs)
 
     clear_registry_cache()
     try:
@@ -176,6 +179,21 @@ class TestSlidesDeclaration(UnitTestCase):
 
     def test_the_controller_carries_the_drive_mixin(self):
         self.assertTrue(issubclass(Presentation, drive.DriveContent))
+
+    def test_slides_declares_the_one_legacy_column_it_keeps_past_activation(self):
+        """`title` only. §10.2 forbids neither `is_template` nor `thumbnail`,
+        so neither needs the exemption and neither gets it."""
+        self.assertEqual(slides.SPEC.legacy_fields, ("title",))
+
+    def test_a_legacy_declaration_only_covers_a_field_drive_owns(self):
+        """The hatch is not a way to keep any column out of any later check.
+        A name §10.2 does not forbid is refused by the shape check itself, with
+        no database and no registry."""
+        from suite.drive._core.content import _validate_shape
+
+        with self.assertRaises(DriveConflict):
+            _validate_shape(dataclasses.replace(slides.SPEC, legacy_fields=("slug",)))
+        _validate_shape(dataclasses.replace(slides.SPEC, legacy_fields=("title", "trashed_on")))
 
     # staged activation
 
@@ -257,21 +275,81 @@ class TestSlidesDeclaration(UnitTestCase):
 
     def test_a_media_id_is_read_from_a_src_a_poster_and_a_background(self):
         row = {"background": "bg-node", "elements": video_with("src-node", "poster-node")}
-        self.assertEqual(
-            slides._value_ids(row["background"]) | slides._slide_element_ids(row),
-            {"bg-node", "src-node", "poster-node"},
-        )
+        found = slides._value_ids(row["background"]) | slides._slide_element_ids(row)
+        self.assertTrue({"bg-node", "src-node", "poster-node"} <= found)
 
     def test_a_dictionary_poster_is_walked_rather_than_skipped(self):
         # §14.7: a legacy poster may be a dict. Losing it would let the daily
         # sweep trash a picture the deck still shows.
         row = {"elements": video_with("src-node", {"url": "poster-node", "width": 640})}
-        self.assertEqual(slides._slide_element_ids(row), {"src-node", "poster-node"})
+        self.assertTrue({"src-node", "poster-node"} <= slides._slide_element_ids(row))
 
-    def test_a_colour_and_a_legacy_url_are_never_read_as_a_node(self):
+    def test_a_poster_is_walked_to_the_bottom_however_deep_it_nests(self):
+        """§14.7 fixes no depth for a legacy dict poster, and a list is the
+        other shape a body carries. A walk that stops one level down reports
+        "this slide names nothing" and the §10.6 sweep trashes the picture."""
+        for poster, expected in (
+            ({"image": {"url": "deep-node"}}, "deep-node"),
+            ({"sources": [{"url": "listed-node"}]}, "listed-node"),
+            (["bare-node"], "bare-node"),
+        ):
+            with self.subTest(poster=poster):
+                row = {"elements": video_with("src-node", poster)}
+                self.assertTrue({"src-node", expected} <= slides._slide_element_ids(row))
+
+    def test_the_sweep_answer_over_reports_and_the_adoption_answer_does_not(self):
+        """The two readers are deliberately different. The sweep decides what to
+        trash, so it reads the whole body and may name a word that is not a
+        node. The adoption reader decides what to copy and rewrite, so it reads
+        only `src` and `poster`."""
+        raw = video_with("src-node", "poster-node")
+        element = json.loads(raw)[0]
+
+        self.assertEqual(slides._element_ids(element), {"src-node", "poster-node"})
+        self.assertIn("video", slides._slide_element_ids({"elements": raw}), "over-reports by design")
+
+    def test_a_deep_poster_is_rewritten_at_the_same_depth_it_is_read(self):
+        element = {"type": "video", "src": "one", "poster": {"image": {"url": "two"}}}
+        self.assertTrue(slides._remap_element(element, {"one": "ONE", "two": "TWO"}))
+        self.assertEqual(element["src"], "ONE")
+        self.assertEqual(element["poster"], {"image": {"url": "TWO"}})
+
+    def test_a_hex_or_functional_colour_and_a_legacy_url_are_never_read_as_a_node(self):
+        """A value carrying a character an id cannot hold is never an id. A
+        bare id-shaped word still is: `red` is reported as used, which only
+        keeps media alive and rewrites nothing (`used_nodes` over-reports by
+        design). This pins which half is a guarantee."""
         for value in ("#00ff00ff", "/private/files/logo.png", "rgba(0, 0, 0, 0.5)", "", None, 7):
             with self.subTest(value=value):
                 self.assertEqual(slides._value_ids(value), set())
+        for value in ("red", "transparent", "currentColor", "auto"):
+            with self.subTest(value=value):
+                self.assertEqual(slides._value_ids(value), {value}, "over-reported, never lost")
+
+    def test_the_sweep_reads_a_body_shape_slides_never_wrote(self):
+        """Under-reporting is what trashes a live picture (§10.6), so the sweep
+        walks the whole parsed body rather than only `src` and `poster`. A key
+        Slides does not know, or a list of elements inside a list, must still
+        keep its picture alive."""
+        for raw in (
+            json.dumps([{"type": "image", "backgroundImage": "surprise-node"}]),
+            json.dumps([[{"type": "image", "src": "surprise-node"}]]),
+            json.dumps([{"type": "group", "children": [{"src": "surprise-node"}]}]),
+        ):
+            with self.subTest(raw=raw):
+                self.assertIn("surprise-node", slides._slide_element_ids({"elements": raw}))
+
+    def test_a_rewrite_stays_narrow_where_the_sweep_is_wide(self):
+        """The asymmetry is deliberate: over-reporting only keeps media alive,
+        while rewriting a value that is not a reference corrupts a body."""
+        element = {"type": "image", "backgroundImage": "one"}
+        self.assertFalse(slides._remap_element(element, {"one": "ONE"}))
+        self.assertEqual(element["backgroundImage"], "one")
+
+    def test_a_rewrite_never_grows_a_media_key_the_element_did_not_have(self):
+        element = {"type": "image", "src": "one"}
+        slides._remap_element(element, {"one": "ONE"})
+        self.assertNotIn("poster", element)
 
     def test_an_unreadable_elements_column_over_reports_instead_of_losing_a_picture(self):
         row = {"elements": "{not json survivor-node"}
@@ -369,21 +447,57 @@ class TestSlidesBeforeActivation(IntegrationTestCase):
 
         validate_content_registry()
 
-    def test_activation_still_refuses_the_legacy_title_column(self):
-        """The ticket 29 blocker, pinned rather than worked around.
+    def test_activation_accepts_the_frozen_legacy_title_column(self):
+        """Ticket 29 has no impossible choice left.
 
-        §10.2 forbids a content doctype owning a `title` field, and
-        `_validate_forbidden_fields` enforces it on every registry build. §14.7
-        needs that column as a Build source and §14.10 drops it at Cleanup,
-        which lands after activation. So this ticket keeps the column and
-        ticket 29 owes the decision: relax the check for a legacy unread
-        column, or drop `title` immediately after Build.
+        §14.7 reads `Presentation.title` at Build and §14.10 drops it at
+        Cleanup, one release after activation, so the column has to outlive
+        activation. §10.2 forbids it because a title field is a mirror. The
+        declaration names it in `legacy_fields`, which exempts it from the
+        forbidden-field check and freezes it instead, so no mirror exists in
+        either direction and the Build value stays for the §14.11 rollback.
         """
         meta = frappe.get_meta(DOCTYPE)
         self.assertIsNotNone(meta.get_field("title"), "Build still reads it (§14.7)")
-        self.assertEqual(meta.get("title_field"), "title")
 
-        with activated(), self.assertRaises(DriveConflict):
+        with activated():
+            validate_content_registry()
+
+    def test_the_doctype_no_longer_names_the_legacy_column_as_its_display_title(self):
+        """The exemption covers the column, never `title_field`.
+
+        §10.2 forbids a mirror "in either direction", and a `title_field`
+        pointing at the frozen column is the read direction. Dropping it moves
+        no data: §14.7 reads the column, not the meta.
+        """
+        self.assertFalse(frappe.get_meta(DOCTYPE).get("title_field"))
+
+    def test_activation_still_refuses_a_title_column_nobody_declared(self):
+        """The hatch is opt-in. An app that just grows a `title` is still refused."""
+        undeclared = dataclasses.replace(slides.SPEC, legacy_fields=())
+        with (
+            activated(),
+            patch(
+                "suite.drive._core.content._build_registry",
+                return_value={DOCTYPE: undeclared},
+            ),
+            self.assertRaises(DriveConflict),
+        ):
+            validate_content_registry()
+
+    def test_a_legacy_declaration_expires_with_the_column_cleanup_drops(self):
+        """The exemption cannot outlive Cleanup.
+
+        Once §14.10 drops the column, the entry names a field the doctype no
+        longer owns and the next migration refuses until the declaration drops
+        it too. `trashed` stands in here for the already-dropped column.
+        """
+        stale = dataclasses.replace(slides.SPEC, legacy_fields=("title", "trashed"))
+        with (
+            activated(),
+            patch("suite.drive._core.content._build_registry", return_value={DOCTYPE: stale}),
+            self.assertRaises(DriveConflict),
+        ):
             validate_content_registry()
 
 
@@ -486,6 +600,37 @@ class TestSlidesInDrive(IntegrationTestCase):
         self.assertFalse(deck.title, "Drive owns the title; §10.2 forbids a mirror")
         self.assertFalse(deck.slug)
 
+    def test_a_linked_deck_cannot_write_the_frozen_legacy_title(self):
+        """The freeze is what makes the §10.2 exemption honest.
+
+        `legacy_fields` keeps the column past activation, so the column must
+        stop being a mirror some other way. Every write to it is refused, in
+        either direction, whoever attempts it.
+        """
+        node = self._deck(title="Frozen")
+        deck = frappe.get_doc(DOCTYPE, self._docname(node))
+        deck.title = "A mirror of the node title"
+
+        with self.assertRaises(DriveConflict):
+            deck.save(ignore_permissions=True)
+
+    def test_a_save_keeps_the_build_title_so_the_rollback_source_survives(self):
+        """§14.11: after Build the rollback is "ship the old code", which reads
+        this column. A Drive-native save must leave the value Build wrote
+        exactly as it found it, not clear it and not refuse the save."""
+        node = self._deck(title="Kept")
+        docname = self._docname(node)
+        # What §14.7 leaves behind on a deck Build linked.
+        frappe.db.set_value(DOCTYPE, docname, "title", "The Build title", update_modified=False)
+        frappe.clear_document_cache(DOCTYPE, docname)
+
+        deck = frappe.get_doc(DOCTYPE, docname)
+        deck.theme = "dark"
+        deck.save(ignore_permissions=True)
+
+        self.assertEqual(frappe.db.get_value(DOCTYPE, docname, "title"), "The Build title")
+        self.assertEqual(frappe.db.get_value("Drive Node", node, "title"), "Kept")
+
     def test_a_deck_without_a_node_cannot_exist(self):
         with self.assertRaises(DriveConflict):
             frappe.new_doc(DOCTYPE).insert(ignore_permissions=True)
@@ -538,6 +683,26 @@ class TestSlidesInDrive(IntegrationTestCase):
         self.assertIn(element["src"], copied_media)
         self.assertIn(element["poster"]["url"], copied_media, "a dictionary poster follows the copy")
         self.assertEqual(row["background"], element["src"], "one blob, one node inside one deck")
+
+    def test_a_copy_repoints_every_element_on_a_slide_not_only_the_first(self):
+        """One slide, three pictures. A rewrite that stops at the first change
+        leaves the rest of the copy pointing at the source deck's nodes, which
+        the destination's owner may not be able to read at all."""
+        node = self._deck(title="Three pictures")
+        first = self._media(node, "one.png", png("red"))
+        second = self._media(node, "two.png", png("green"))
+        third = self._media(node, "three.png", png("blue"))
+        self._write_slide(node, elements=elements_naming(first, second, third))
+
+        copied = drive.copy(node, self.root.node, title="Three pictures copy")
+        copied_media = set(
+            frappe.get_all("Drive Node", filters={"parent": copied, "state": "Active"}, pluck="name")
+        )
+        named = [element["src"] for element in json.loads(self._slide_rows(copied)[0]["elements"])]
+
+        self.assertEqual(len(named), 3)
+        self.assertFalse(set(named) & {first, second, third}, "no element still names the source")
+        self.assertTrue(set(named) <= copied_media)
 
     def test_one_picture_used_twice_becomes_one_node_and_one_charge(self):
         node = self._deck(title="Twice")
@@ -649,6 +814,43 @@ class TestSlidesInDrive(IntegrationTestCase):
         node = self._deck(title="Refuses a folder")
         with self.assertRaises(DriveConflict):
             drive.adopt_media(node, [folder])
+
+    def test_a_paste_naming_a_node_the_caller_cannot_read_is_never_told_what_it_is(self):
+        """§5.4 on the source side. A caller who owns one deck can put any id in
+        a slide body, so the refusal must not separate "a folder you cannot see"
+        from "no such node": that is an existence and kind oracle."""
+        hidden = create_folder(self.admin, self.other_root.node, "Not yours")
+        mine = self._deck(title="Probe", parent=self.root.node)
+        grant(mine, OTHER, drive.EDIT, self.admin)
+        frappe.db.commit()
+
+        self._as(OTHER)
+        self.assertEqual(drive.adopt_media(mine, [hidden]), {}, "skipped, exactly like an unknown id")
+        self.assertEqual(drive.adopt_media(mine, ["no-such-node"]), {})
+
+    def test_a_paste_cannot_pull_an_ordinary_file_in_from_outside_a_deck(self):
+        """The refusal says "media below a Drive content document", so it has to
+        mean it. An ordinary file is not a deck's media, and letting one in is
+        the move `_validate_generic_destination` refuses the other way."""
+        folder = create_folder(self.admin, self.root.node, "Loose files")
+        loose = self._media(folder, "loose.png", png())
+        node = self._deck(title="Refuses a loose file")
+
+        with self.assertRaises(DriveConflict):
+            drive.adopt_media(node, [loose])
+
+    def test_a_paste_that_names_no_media_is_still_checked(self):
+        """`adopt_media` is the gate `update_slide_attachments` relies on for a
+        linked deck. Returning an empty map before the check would let a
+        stranger post a slide naming no picture and be answered."""
+        node = self._deck(title="Empty paste")
+        frappe.db.commit()
+
+        self._as(OTHER)
+        with self.assertRaises(DriveNotFound):
+            drive.adopt_media(node, [])
+        with self.assertRaises(DriveNotFound):
+            api.update_slide_attachments(self._docname(node), {"elements": "[]"})
 
     def test_a_reader_cannot_paste_into_a_deck_and_a_stranger_is_not_told_it_exists(self):
         source = self._deck(title="Paste rights source")
@@ -820,9 +1022,15 @@ class TestSlidesInDrive(IntegrationTestCase):
         save writes no grant and no public permission of any kind."""
         from suite.drive.overrides.file import File as DriveFile
 
+        # The row §6.6 removes is a `Drive Permission` with an empty user
+        # (`presentation.py:106-110`), not a `Drive Grant`. Counting grants
+        # alone would pass whether or not this ticket landed.
+        permissions_before = frappe.db.count("Drive Permission", {"user": "", "deny": 0})
+
         referenced = self._deck(title="Referenced")
         composite = self._composite([referenced], title="Open composite")
 
+        self.assertEqual(frappe.db.count("Drive Permission", {"user": "", "deny": 0}), permissions_before)
         self.assertEqual(frappe.db.count("Drive Grant", {"node": referenced, "principal": "$PUBLIC"}), 0)
         self.assertEqual(frappe.db.count("Drive Grant", {"node": composite, "principal": "$PUBLIC"}), 0)
         for name in (self._docname(referenced), self._docname(composite)):
@@ -850,6 +1058,13 @@ class TestSlidesInDrive(IntegrationTestCase):
         self.assertEqual(readable[self._docname(mine)], True)
         self.assertEqual(readable[self._docname(hidden)], False, "marked, never dropped silently")
         self.assertEqual([slide.background for slide in answered["slides"]], ["#111111ff"])
+
+        named = {row["presentation"]: row["node"] for row in answered["references"]}
+        self.assertEqual(named[self._docname(mine)], mine)
+        self.assertIsNone(
+            named[self._docname(hidden)],
+            "a node id is the handle every Drive route takes; §5.4 never discloses one",
+        )
 
     def test_a_stranger_reads_no_composite_at_all(self):
         composite = self._composite([self._deck(title="Inner")], title="Private composite")
@@ -1062,6 +1277,47 @@ class TestSlidesInDrive(IntegrationTestCase):
         self.assertFalse(api.has_permission(deck, "write", USER))
         predicate = api.get_permission_query_conditions(USER)
         self.assertIn("`tabPresentation`.`node` IS NULL", predicate)
+
+    def test_a_docshare_cannot_open_a_linked_deck_through_the_staged_guards(self):
+        """The staged guards run alone between Build and ticket 29, and
+        answering False is not a denial. Frappe reads it as "no role
+        permission" and then asks `false_if_not_shared`
+        (`frappe/permissions.py:214-216`); the list side ORs the shared names
+        around the predicate (`frappe/database/query.py:1737-1741`). Either
+        would open a linked deck with no `Drive Grant` (§1).
+        """
+        node = self._deck(title="Staged and shared")
+        docname = self._docname(node)
+        share = frappe.get_doc(
+            {"doctype": "DocShare", "share_doctype": DOCTYPE, "share_name": docname, "read": 1, "user": OTHER}
+        )
+        share.flags.ignore_validate = True
+        share.insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
+
+        deck = frappe.get_doc(DOCTYPE, docname)
+        with self.assertRaises(DriveForbidden):
+            api.has_permission(deck, "read", OTHER)
+        with self.assertRaises(frappe.PermissionError):
+            api.get_permission_query_conditions(OTHER)
+
+    def test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone(self):
+        """The refusal is scoped to a deck that carries a node. Before Build no
+        row has one, so a site with Desk assignments lists what it always did."""
+        legacy = make_presentation("Assigned")
+        self.addCleanup(
+            frappe.delete_doc, DOCTYPE, legacy.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        share = frappe.share.add(DOCTYPE, legacy.name, OTHER, read=1)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
+
+        self.assertIn("`tabPresentation`.`node` IS NULL", api.get_permission_query_conditions(OTHER))
 
     def test_a_linked_deck_refuses_every_legacy_method(self):
         """A linked deck never falls back to the `File`: that would be a way
