@@ -812,6 +812,22 @@ def touch_node(node: str) -> None:
     frappe.db.set_value("Drive Node", node, "content_modified", now_datetime(), update_modified=False)
 
 
+def download_filename(title: str) -> str:
+    """Return one node title as a filename a signed `/f/` URL can carry.
+
+    `signed_url_for_blob` signs the filename and puts it in the URL path, so
+    the bytes only arrive if the client asks for the exact same string. A
+    title holding `/` becomes extra path segments, `..` is normalised away by
+    the browser, `//` is collapsed by a proxy, and each of those turns a valid
+    signature into a 403. `_validate_title` accepts all three, and rows
+    carrying them already exist, so the filename is cleaned where it is minted.
+    """
+    cleaned = "".join(
+        character for character in (title or "") if character.isprintable() and character not in "/\\"
+    ).strip(" .")
+    return cleaned or "download"
+
+
 def list_media(principals: Principals, node: str) -> list[dict]:
     """List one readable document's media with signed, 15-minute `/f/` URLs.
 
@@ -828,7 +844,7 @@ def list_media(principals: Principals, node: str) -> list[dict]:
             "title": row.title,
             "mime": row.mime,
             "size": int(row.size or 0),
-            "url": signed_url_for_blob(row.blob, row.title, MEDIA_TTL_SECONDS),
+            "url": signed_url_for_blob(row.blob, download_filename(row.title), MEDIA_TTL_SECONDS),
             "expires": expires,
         }
         for row in media_rows(current.name)

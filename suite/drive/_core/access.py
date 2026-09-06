@@ -448,9 +448,13 @@ def _describe_rows(
         acc.offer(row.principal, row.role, depth[row.node], principals)
     role = acc.answer()
 
+    # Own before open, then deepest. When pass 1 ties pass 2, §5.1 makes pass 1
+    # the answer, and `_authorizing_link` reports no link for exactly that tie.
+    # Sorting on depth alone would name a link as the source of a role the
+    # caller already held, contradicting `via_link` in the same payload.
     winners = sorted(
         (row for row in unlocked if _is_winner(row, acc, depth, principals)),
-        key=lambda row: (-depth[row.node], row.principal),
+        key=lambda row: (row.principal not in principals.own, -depth[row.node], row.principal),
     )
     winner = winners[0] if winners else None
     return {

@@ -9,7 +9,7 @@ from frappe.storage.upload import (
 )
 
 from suite.drive._core.access import require, require_link
-from suite.drive._core.errors import DriveForbidden, DriveNotFound
+from suite.drive._core.errors import DriveForbidden, DriveNotFound, DriveOverQuota
 from suite.drive._core.nodes import _content_time, _node, _validate_parent, create_file, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import preflight, root_for_node
@@ -41,10 +41,13 @@ def create_upload(
     parent_row = _node(parent)
     via_link = require(parent_row, UPLOAD, principals)
     _validate_parent(parent_row)
-    root = root_for_node(parent_row)
-    preflight(root, size)
+    # Before the counter is read: a Guest with no bound link learns nothing
+    # about how full the root is.
     if principals.user == "Guest" and via_link is None:
         raise DriveForbidden(_("Guest uploads require a bound Drive link"))
+    root = root_for_node(parent_row)
+    preflight(root, size)
+    _refuse_over_site_limit(size)
 
     result = create_blob_upload(filename, size, is_private=True)
     binding = {
@@ -60,13 +63,47 @@ def create_upload(
     return result
 
 
+def _refuse_over_site_limit(size: int) -> None:
+    """Report the framework's own file cap as §11.6's over-quota refusal.
+
+    `create_blob_upload` refuses a declared size above `max_file_size` with
+    `MaxFileSizeReachedError`, a plain `ValidationError` that an adapter can
+    only score 400. §11.2 says this route answers on the declared size and
+    that over quota is never anything else, so the bound is read here and
+    reported in Drive's own class.
+    """
+    from frappe.core.api.file import get_max_file_size
+
+    limit = get_max_file_size()
+    if size > limit:
+        raise DriveOverQuota(
+            _("This upload exceeds the largest file this site accepts, {0} bytes").format(limit)
+        )
+
+
+def authorize_chunk(principals: Principals, upload_id: str) -> dict:
+    """Prove the caller may write to this session, before its body is read.
+
+    A chunk body is up to `MAX_CHUNK_BYTES`, and reading it is the expensive
+    part of the request. An adapter calls this first so an unknown or
+    unauthorized session costs one cache read instead of 16 MiB of memory.
+    """
+    binding = _authorized_binding(principals, upload_id)
+    _reauthorize_original_destination(principals, binding)
+    return binding
+
+
 def upload_chunk(
     principals: Principals,
     upload_id: str,
     offset: int,
     data: bytes,
+    *,
+    binding: dict | None = None,
 ) -> dict:
     """Reauthorize a bound chunk and stream its supplied body to storage."""
+    if binding is None:
+        binding = authorize_chunk(principals, upload_id)
     if not isinstance(data, bytes | bytearray):
         frappe.throw(_("An upload chunk is raw bytes"), frappe.ValidationError)
     if len(data) > MAX_CHUNK_BYTES:
@@ -74,8 +111,6 @@ def upload_chunk(
             _("A Drive upload chunk may not exceed {0} bytes").format(MAX_CHUNK_BYTES),
             frappe.ValidationError,
         )
-    binding = _authorized_binding(principals, upload_id)
-    _reauthorize_original_destination(principals, binding)
     result = upload_blob_chunk(upload_id, offset, data)
     _store_binding(upload_id, binding)
     return result

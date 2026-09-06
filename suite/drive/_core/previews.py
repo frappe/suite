@@ -151,7 +151,13 @@ def push_preview(principals: Principals, node: str, image_bytes: bytes, mime: st
         frappe.throw(_("A supported preview image is required"), frappe.ValidationError)
     _refuse_oversized_image(image_bytes)
 
-    preview_bytes = _image_webp(io.BytesIO(image_bytes))
+    try:
+        preview_bytes = _image_webp(io.BytesIO(image_bytes))
+    except (OSError, ValueError):
+        # A header that parsed and a body that did not: Pillow raises
+        # `OSError` on truncated data, which is a malformed argument, not a
+        # server fault.
+        frappe.throw(_("A supported preview image is required"), frappe.ValidationError)
     preview = put_blob(io.BytesIO(preview_bytes), is_private=True, filename=f"{node}.webp")
 
     locked = _preview_node(node, for_update=True)

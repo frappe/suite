@@ -16,17 +16,21 @@ allowed: `access.require` decides that from the principals, and answers a
 caller below READ with 404 rather than 403 so an unreadable node stays
 invisible (§5.2).
 
-Two things a client may not say. It may not name bytes: no route takes a blob
-id, a blob key, a preview id, or a size that reaches accounting, because
-§8.4 makes the upload session the only proof that the caller produced the bytes
-being charged. And it may not name a target twice: the translator writes the
-path segments into `form_dict` after the body was parsed, so the id in the URL
-is the id that acts.
+Two things a client may not say. It may not name bytes that reach accounting:
+`POST /nodes` takes §11.2's declared `blob`, `size`, and `mime`, and they are
+claims `create_file` checks against the stored blob row before it writes or
+charges anything - every other route reaches bytes only through an upload
+session, which §8.4 makes the proof that the caller produced them. And it may
+not name a target twice: the translator writes the path segments into
+`form_dict` after the body was parsed, so the id in the URL is the id that
+acts.
 """
 
 import base64
 import binascii
 import functools
+import unicodedata
+from urllib.parse import quote
 from uuid import uuid4
 
 import frappe
@@ -72,6 +76,10 @@ def _route(handler):
             return handler(*args, **kwargs)
         except DriveError as refusal:
             _refuse(type(refusal), str(refusal))
+        except frappe.DoesNotExistError as missing:
+            # A row a workflow reached for is gone. The framework already
+            # scores this 404; §11.6 spells that `DriveNotFound`.
+            _refuse(DriveNotFound, str(missing))
         except frappe.ValidationError as invalid:
             _refuse(DriveError, str(invalid))
 
@@ -161,16 +169,18 @@ def node_patch(
     title: Given = None,
     parent: Given = None,
     state: Given = None,
-    blob: Given = None,
-    size: Given = None,
-    mime: Given = None,
     content_modified: Given = None,
 ) -> dict:
-    """Rename, move, trash, restore, or replace one node's head (§8.2).
+    """Rename, move, trash, restore, or stamp one node (§8.2).
 
-    `update` takes exactly one mutation. A tree change and a replacement in
-    one body is a `ValidationError`, and so is a replacement missing any of
-    blob, size, and mime.
+    §11.2 gives this route five whole bodies and no more: `{title}`,
+    `{parent}`, `{state}`, `{parent, state: "Active"}`, and
+    `{content_modified}`. `update` takes exactly one of them, and two at once
+    is a `ValidationError`.
+
+    Bytes are not among them. A file head is replaced through
+    `PUT /nodes/<id>/content`, which names an upload session the caller
+    finished, so this route never takes a blob id.
 
     A restore whose original parent chain is gone carries both `parent` and
     `state: "Active"`: the destination is the user's choice, and `_restore`
@@ -184,9 +194,6 @@ def node_patch(
             title=shapes.text(title, "title"),
             parent=shapes.text(parent, "parent"),
             state=shapes.text(state, "state"),
-            blob=shapes.text(blob, "blob"),
-            size=None if size is None else shapes.whole(size, "size", 0),
-            mime=shapes.text(mime, "mime"),
             content_modified=content_modified,
         )
     )
@@ -218,7 +225,7 @@ def node_children(
     result = node_core.children(
         principals,
         parent,
-        cursor=shapes.text(cursor, "cursor"),
+        cursor=shapes.text(cursor, "cursor") or None,
         limit=shapes.whole(limit, "limit", node_core.DEFAULT_PAGE_SIZE),
         order_by=shapes.text(order_by, "order_by") or "title",
         ascending=shapes.flag(ascending, "ascending", True),
@@ -233,13 +240,15 @@ def node_children(
         minted = previews.preview_expansions([row["name"] for row in rows])
         for answer in rows:
             answer["preview"] = minted.get(answer["name"])
-    if "breadcrumbs" in asked:
+    if "breadcrumbs" in asked and rows:
         # Every row in the page shares one parent, so the trail is the listed
-        # folder's own trail with the folder itself appended.
-        listed = node_core.get(principals, parent)
+        # folder's own trail with the folder itself appended. `children`
+        # already read and authorized that folder: reading it again would let
+        # a grant revoked mid-request 404 a page the plain listing answered.
+        listed = result["parent"]
         trail = [*node_core.breadcrumbs(listed, principals), {"name": listed.name, "title": listed.title}]
         for answer in rows:
-            answer["breadcrumbs"] = trail
+            answer["breadcrumbs"] = list(trail)
     return shapes.page(result, rows)
 
 
@@ -285,6 +294,7 @@ def node_batch(nodes: Given = None, patch: Given = None) -> dict:
                 title=shapes.text(mutation.get("title"), "title"),
                 parent=shapes.text(mutation.get("parent"), "parent"),
                 state=shapes.text(mutation.get("state"), "state"),
+                content_modified=mutation.get("content_modified"),
             )
         except frappe.ValidationError as refusal:
             frappe.db.rollback(save_point=savepoint)
@@ -331,7 +341,9 @@ def node_get_content(node: Given = None, format: Given = None) -> Response:
     row = node_core.get(principals, wanted)
 
     if row.kind == "file":
-        minted = node_core.content_url(principals, wanted)
+        # §2.3 budgets this path at one point check. `get` spent it, so the URL
+        # is minted from that row rather than reading and checking again.
+        minted = node_core.signed_content_url(row)
         answer = Response(status=302)
         answer.headers["Location"] = minted["url"]
         answer.headers["Cache-Control"] = "private, no-store"
@@ -340,11 +352,32 @@ def node_get_content(node: Given = None, format: Given = None) -> Response:
     if row.kind == "document":
         stream, mime, filename = content.export_document(principals, wanted, shapes.text(format, "format"))
         answer = Response(stream, mimetype=mime)
-        answer.headers.set("Content-Disposition", "attachment", filename=filename)
+        answer.headers.set("Content-Disposition", "attachment", **_disposition_names(filename))
         answer.headers["Cache-Control"] = "private, no-store"
         return answer
 
     raise DriveConflict(_("This Drive node has no content to send"))
+
+
+def _disposition_names(filename: str) -> dict:
+    """Name a download the way RFC 5987 does, for any title a node may carry.
+
+    A WSGI header is latin-1. `Headers.set` quotes a filename but does not
+    encode one, so a title in Cyrillic or Chinese kills the response after the
+    status line, and a title holding a newline raises `ValueError` past the
+    boundary that maps refusals. Control characters are dropped and non-ASCII
+    is carried in `filename*`, which is what `werkzeug.send_file` does.
+    """
+    cleaned = "".join(character for character in filename if character.isprintable()) or "download"
+    try:
+        cleaned.encode("ascii")
+    except UnicodeEncodeError:
+        simple = unicodedata.normalize("NFKD", cleaned).encode("ascii", "ignore").decode("ascii")
+        return {
+            "filename": simple or "download",
+            "filename*": f"UTF-8''{quote(cleaned, safe='!#$&+-.^_`|~')}",
+        }
+    return {"filename": cleaned}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -398,13 +431,17 @@ def upload_create(
 @frappe.whitelist(allow_guest=True, methods=["PUT"])
 @_route
 def upload_chunk(upload_id: Given = None, offset: Given = None) -> dict:
-    """Write one bounded chunk of a bound session at `?offset=`."""
-    return upload_core.upload_chunk(
-        _principals(),
-        shapes.required_text(upload_id, "upload_id"),
-        shapes.whole(offset, "offset", 0),
-        _chunk_bytes(),
-    )
+    """Write one bounded chunk of a bound session at `?offset=`.
+
+    The session is authorized before the body is read. Python evaluates every
+    argument first, so an unknown or unauthorized session would otherwise cost
+    a whole 16 MiB chunk of memory to refuse.
+    """
+    principals = _principals()
+    wanted = shapes.required_text(upload_id, "upload_id")
+    where = shapes.whole(offset, "offset", 0)
+    binding = upload_core.authorize_chunk(principals, wanted)
+    return upload_core.upload_chunk(principals, wanted, where, _chunk_bytes(), binding=binding)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

@@ -27,7 +27,7 @@ from suite.drive._core import upload as upload_core
 from suite.drive._core.access import grant, unlock_link
 from suite.drive._core.nodes import create_file, create_folder
 from suite.drive._core.principals import Principals
-from suite.drive._core.roles import EDIT, READ, UPLOAD
+from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive.tests.fixtures import drop_personal_root
 from suite.tests.utils import ensure_user
@@ -461,6 +461,48 @@ class TestNodeWorkflows(DriveHTTPCase):
             "PATCH", f"{PREFIX}/nodes/{self.file}", body={"title": "x", "parent": self.root.name}
         )
         self.refusal(response, 400, "DriveError")
+
+    def test_a_content_time_is_a_whole_patch_body_of_its_own(self):
+        # §11.2's PATCH row declares `{content_modified}` as one of five whole
+        # bodies. It is `content.touch` with the time supplied (§8.11), so it
+        # writes no version and, per §9.4, no activity row.
+        before = frappe.db.count("Drive Activity", {"node": self.file})
+        answer = self.data(
+            self.as_owner(
+                "PATCH", f"{PREFIX}/nodes/{self.file}", body={"content_modified": "2024-03-04 05:06:07"}
+            )
+        )
+        self.reread()
+        self.assertEqual(answer["content_modified"], "2024-03-04 05:06:07")
+        self.assertEqual(
+            str(frappe.db.get_value("Drive Node", self.file, "content_modified")),
+            "2024-03-04 05:06:07",
+        )
+        self.assertEqual(frappe.db.count("Drive Activity", {"node": self.file}), before)
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": self.file}), 0)
+
+    def test_a_content_time_cannot_arrive_with_a_tree_mutation(self):
+        response = self.as_owner(
+            "PATCH",
+            f"{PREFIX}/nodes/{self.file}",
+            body={"title": "Renamed.bin", "content_modified": "2024-03-04 05:06:07"},
+        )
+        self.refusal(response, 400, "DriveError")
+
+    def test_a_patch_cannot_name_a_blob_at_all(self):
+        # §11.2 routes a head replacement through PUT /nodes/<id>/content,
+        # which names a finished upload session. `blob` is not an argument of
+        # this handler, so `frappe.call` drops it and the body mutates nothing.
+        blob = frappe.db.get_value("Drive Node", self.file, "blob")
+        row = frappe.db.get_value("File Blob", blob, ["file_size", "mime_type"], as_dict=True)
+        response = self.as_owner(
+            "PATCH",
+            f"{PREFIX}/nodes/{self.file}",
+            body={"blob": blob, "size": row.file_size, "mime": row.mime_type},
+        )
+        self.refusal(response, 400, "DriveError")
+        self.reread()
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": self.file}), 0)
 
     def test_a_copy_shares_the_blob_and_charges_the_root_again(self):
         answer = self.data(
@@ -968,6 +1010,52 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.assertEqual(answer["access"]["role"], EDIT)
         self.assertEqual(answer["access"]["source_node"], self.folder)
         self.assertEqual(answer["access"]["source_principal"], STRANGER)
+
+    def test_a_link_that_ties_an_own_grant_is_not_named_as_the_source(self):
+        # §5.1 makes pass 1 the answer when it ties pass 2, and `via_link` says
+        # so. The source fields have to agree: naming the deeper link while
+        # reporting no deciding link contradicts one payload with itself.
+        link = grant(self.file, "$LINK", EDIT, self.owner)
+        frappe.db.commit()
+        self.addCleanup(self.revoke_row, link)
+        token = link["principal"].split(":", 1)[1]
+        answer = self.data(
+            self.drive(
+                "GET",
+                f"{PREFIX}/nodes/{self.file}",
+                query={"expand": "access"},
+                sid=self.stranger_sid,
+                links=token,
+            )
+        )
+        self.assertEqual(answer["access"]["role"], EDIT)
+        self.assertIsNone(answer["access"]["via_link"])
+        self.assertEqual(answer["access"]["source_principal"], STRANGER)
+        self.assertEqual(answer["access"]["source_node"], self.folder)
+
+    def test_a_link_above_an_own_grant_is_named_by_both_fields(self):
+        link = grant(self.file, "$LINK", MANAGE, self.owner)
+        frappe.db.commit()
+        self.addCleanup(self.revoke_row, link)
+        token = link["principal"].split(":", 1)[1]
+        answer = self.data(
+            self.drive(
+                "GET",
+                f"{PREFIX}/nodes/{self.file}",
+                query={"expand": "access"},
+                sid=self.stranger_sid,
+                links=token,
+            )
+        )
+        self.assertEqual(answer["access"]["role"], MANAGE)
+        self.assertEqual(answer["access"]["via_link"], link["principal"])
+        self.assertEqual(answer["access"]["source_principal"], link["principal"])
+        self.assertEqual(answer["access"]["source_node"], self.file)
+
+    def revoke_row(self, created):
+        frappe.db.rollback()
+        frappe.db.delete("Drive Grant", {"name": created["name"]})
+        frappe.db.commit()
 
     def test_an_editor_may_not_purge(self):
         response = self.drive("DELETE", f"{PREFIX}/nodes/{self.file}", sid=self.stranger_sid)
