@@ -42,6 +42,7 @@ import pycrdt
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from frappe.utils import get_datetime
+from werkzeug.datastructures import FileStorage
 
 from suite import drive
 from suite.drive._core.access import grant
@@ -55,13 +56,18 @@ from suite.drive.framework import refuse_governed_share, validate_content_regist
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
 from suite.writer import overrides
-from suite.writer.api import docs
+from suite.writer.api import docs, embed
 from suite.writer.doctype.writer_document.writer_document import WriterDocument
 
 USER = "writer-adoption-user@example.com"
 OTHER = "writer-adoption-other@example.com"
 
 DOCTYPE = "Writer Document"
+
+# The smallest real PNG, so the upload path sniffs a mime rather than guessing.
+PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
 
 # The three entries ticket 29 installs together, once Build has linked every
 # `Writer Document` row. `suite/hooks.py` carries none of them yet.
@@ -507,6 +513,61 @@ class TestWriterBeforeActivation(IntegrationTestCase):
 
         with self.assertRaises(DriveNotFound):
             docs.get_document(entity.name)
+
+    def _posted(self, body: bytes, filename: str = "cat.png"):
+        """One multipart POST, the way `embed.add` reads it."""
+        upload = FileStorage(stream=io.BytesIO(body), filename=filename, content_type="image/png")
+        # `framework._request_credentials` reads `X-Drive-Links` off the
+        # request, so the stand-in needs headers as well as files.
+        request = frappe._dict(files={"file": upload}, headers=frappe._dict())
+        self.enterContext(patch.object(frappe.local, "request", request, create=True))
+        self.enterContext(patch.object(frappe.local, "form_dict", frappe._dict(), create=True))
+
+    def test_a_picture_added_to_a_legacy_document_lands_beside_it(self):
+        """`embed.add` uploads into the document the editor has open, and a
+        document `create_document` writes is a `File` with no node.
+        `upload_core.create_upload` reads that parent as a node and refuses,
+        so no picture could be added to any document the product creates."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = docs.create_document(title=f"Pictures {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        self._posted(PNG)
+
+        answer = embed.add(entity.name)
+
+        picture = answer["file_url"].split("id=")[-1]
+        self.addCleanup(
+            frappe.delete_doc, "File", picture, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        row = frappe.db.get_value("File", picture, ["folder", "owner", "file_size"], as_dict=True)
+        self.assertEqual(row.folder, entity.name, "the picture hangs off the document")
+        self.assertEqual(row.owner, USER)
+        self.assertEqual(row.file_size, len(PNG))
+        self.assertFalse(frappe.db.exists("Drive Node", picture), "and no node was created")
+
+    def test_a_stranger_cannot_add_a_picture_to_somebody_elses_document(self):
+        """The gate is the old body's, `user_has_permission(parent, "upload")`,
+        and it is the rule that wrote the row."""
+        frappe.set_user(USER)
+        entity = docs.create_document(title=f"Private pictures {frappe.generate_hash(6)}")
+        self.addCleanup(
+            frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        self._posted(PNG)
+        before = set(frappe.get_all("File", filters={"folder": entity.name}, pluck="name"))
+        with self.assertRaises(frappe.PermissionError):
+            embed.add(entity.name)
+        self.assertEqual(
+            set(frappe.get_all("File", filters={"folder": entity.name}, pluck="name")),
+            before,
+            "a refused upload writes nothing",
+        )
 
     def test_a_legacy_document_still_takes_its_private_history(self):
         docname = self._legacy_document()
