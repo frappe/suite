@@ -10,6 +10,7 @@ from suite.drive.webdav.tests.utils import (
     dispatch,
     enable_user_webdav,
     ensure_user_with_password,
+    personal_dav_root,
     set_dav_request,
 )
 
@@ -30,6 +31,9 @@ class TestWebDAVDispatch(IntegrationTestCase):
         super().setUpClass()
         ensure_user_with_password(USER, PASSWORD)
         enable_user_webdav(USER)
+        # the mount is the caller's Personal Root, so a suite that expects a
+        # 207 rather than a 404 has to have one
+        cls.root = personal_dav_root(USER)
         frappe.db.commit()
 
     def setUp(self):

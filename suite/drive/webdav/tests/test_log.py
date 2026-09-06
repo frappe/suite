@@ -3,7 +3,12 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.drive.webdav.tests.utils import dispatch, enable_user_webdav, ensure_user_with_password
+from suite.drive.webdav.tests.utils import (
+    dispatch,
+    enable_user_webdav,
+    ensure_user_with_password,
+    personal_dav_root,
+)
 
 USER = "webdav-log@example.com"
 PASSWORD = "webdav-log-pw-9000"
@@ -15,6 +20,9 @@ class TestWebDAVLogging(IntegrationTestCase):
         super().setUpClass()
         ensure_user_with_password(USER, PASSWORD)
         enable_user_webdav(USER)
+        # the mount is the caller's Personal Root: without one, the PROPFIND
+        # these tests log is a 404 rather than a 207
+        cls.root = personal_dav_root(USER)
         frappe.db.commit()
         cls.logger_name = f"suite.drive.webdav-{frappe.local.site}"
 
