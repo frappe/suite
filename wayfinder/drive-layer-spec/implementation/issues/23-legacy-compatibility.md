@@ -4,7 +4,7 @@
 
 **Blocked by:** [22 — Expose sharing, views, history, and comments through HTTP](22-http-sharing-and-records.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Drive HTTP compatibility
 
@@ -33,13 +33,13 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Inventory the 69 named legacy methods against current code. Classify forwarders, permanent methods, and retired behavior explicitly.
-- [ ] Forward supported legacy calls into the same Drive workflows, preserving required argument and result compatibility.
-- [ ] Keep the product methods, stored S3 fetch URLs, permanent get_file_for_doc entry, and /dav contract.
-- [ ] Retired behavior returns a tested explicit response; it cannot fabricate capability tokens or successful mutations.
-- [ ] Never synthesize a deny or choose a restore destination for old clients.
-- [ ] Preserve legacy authentication restrictions. Remove replaced tests only after equivalent contract coverage passes.
-- [ ] Produce the caller inventory that later frontend and Cleanup tickets use. Leave destructive removal disabled.
+- [x] Inventory the 69 named legacy methods against current code. Classify forwarders, permanent methods, and retired behavior explicitly.
+- [x] Forward supported legacy calls into the same Drive workflows, preserving required argument and result compatibility.
+- [x] Keep the product methods, stored S3 fetch URLs, permanent get_file_for_doc entry, and /dav contract.
+- [x] Retired behavior returns a tested explicit response; it cannot fabricate capability tokens or successful mutations.
+- [x] Never synthesize a deny or choose a restore destination for old clients.
+- [x] Preserve legacy authentication restrictions. Remove replaced tests only after equivalent contract coverage passes.
+- [x] Produce the caller inventory that later frontend and Cleanup tickets use. Leave destructive removal disabled.
 
 ## Verification
 
@@ -47,10 +47,15 @@ Run an executable inventory across all legacy names, including guest-callable me
 
 ## Completion evidence
 
-Status: implementation written and run through every check this worktree can
-run without a site. The acceptance boxes stay unchecked: they rest on the
-serialized site gate below, which needs `bench` and a database, and on an
-independent review. Nothing here was reported without being run.
+Status: closed. Implementation written, independently reviewed, repaired
+module by module, and run through the complete 17-module serialized site gate
+on `slides.localhost`. Every gate command exited 0. All seven acceptance boxes
+are checked; four carry a deviation. See "Site gate, complete, and closeout" at
+the end of this file, which is the later fact wherever a section above it
+disagrees. Nothing here was reported without being run.
+
+The paragraph this replaced said the boxes rest on the site gate and on an
+independent review. Both have now happened.
 
 ### Revisions
 
@@ -1526,3 +1531,252 @@ a gate. Both are in site modules this run was not allowed to execute.
 
 Nothing new. This branch changes test files only, so the unverified list of
 the residual audit stands as written above.
+
+## Site gate, complete, and closeout
+
+Every command in the required 17-module serialized gate ran on
+`slides.localhost` and passed. 926 tests. The status becomes `done` and all
+seven acceptance boxes are checked. Four boxes carry a deviation, recorded
+below. The carried risks stay open and are handed on by name.
+
+### Revisions at closeout
+
+- Suite start `e390a44877c0185522ff186da6c9df09c0e79b89` on
+  `implement/drive-23-legacy-compatibility`.
+- Independent review `f517358f0` on `review/drive-23-legacy-compatibility`.
+- Gate branches off `main`: `forge/drive-23-site-gate-shims`,
+  `forge/drive-23-site-gate-api-files`, `forge/drive-23-site-gate-api-list`,
+  `forge/drive-23-site-gate-api-notifications`,
+  `forge/drive-23-site-gate-writer-adoption`, `forge/drive-23-residual-audit`,
+  and `forge/ticket-23-shims-gate-cleanup`.
+- The gate ran at `7ceaa8abc`, the tip of `main`. The last production change is
+  `1972c38b0`. Every commit after it touches test files and these two
+  documents only, so no gate result is stale.
+- Closeout on `forge/ticket-23-closeout`, this commit. Documentation only. No
+  code, no test, and no configuration changed.
+- Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, read only, unchanged.
+
+### The gate, run
+
+`bench --site slides.localhost migrate` had already completed successfully. No
+DocType JSON changed after it. Then each module, serialized, one command at a
+time, nothing else touching the site:
+
+```
+script -qec "bench --site slides.localhost run-tests --module <m>" /dev/null
+```
+
+The exit status of each command was checked. Every command exited 0.
+
+| # | Module | Result |
+|---|---|---|
+| 1 | `suite.drive.http.tests.test_shims` | 267 OK |
+| 2 | `suite.drive.http.tests.test_dispatch` | 154 OK |
+| 3 | `suite.drive.api.tests.test_files` | 59 OK |
+| 4 | `suite.drive.api.tests.test_list` | 26 OK |
+| 5 | `suite.drive.api.tests.test_notifications` | 1 unit OK, 18 integration OK |
+| 6 | `suite.drive.tests.test_sync_permissions` | 5 OK |
+| 7 | `suite.drive.webdav.tests.test_mkcol_delete` | 12 OK |
+| 8 | `suite.drive.webdav.tests.test_put_get` | 65 OK |
+| 9 | `suite.drive.webdav.tests.test_perms` | 4 OK |
+| 10 | `suite.drive.tests.test_access` | 12 OK |
+| 11 | `suite.drive.tests.test_views` | 10 unit OK, 12 integration OK |
+| 12 | `suite.drive.tests.test_activity` | 8 OK |
+| 13 | `suite.drive.tests.test_nodes` | 13 unit OK, 25 integration OK |
+| 14 | `suite.writer.tests.test_drive_adoption` | 23 unit OK, 73 integration OK |
+| 15 | `suite.slides.tests.test_drive_adoption` | 30 unit OK, 71 integration OK |
+| 16 | `suite.writer.api.tests.test_general` | 7 OK |
+| 17 | `suite.drive.tests.test_grants` | 31 OK |
+
+The order is the order of the required list above, module for module.
+
+**The exit status is the new part.** Earlier module runs were piped into `grep`
+or `tail`, so the shell reported the filter's status and `bench`'s own `1` was
+never seen. `forge/ticket-23-shims-gate-cleanup` found the cause - two suites
+deleted `frappe.local.db` through `mock` and never put it back - and fixed the
+test isolation. This run checked the status of every one of the seventeen
+commands and every one is 0.
+
+### What corroborates the gate here
+
+Read off the tree and the bench logs, not off the summary above.
+
+- **Every count matches the module.** The `test` methods per file, split by
+  `UnitTestCase` and `IntegrationTestCase`, are 267, 154, 59, 26, 1+18, 5, 12,
+  65, 4, 12, 10+12, 8, 13+25, 23+73, 30+71, 7, and 31. Each matches its
+  reported result. 926 in total.
+- **`logs/bench.log` holds the invocation record.** The seventeen commands run
+  from 02:29:42 to 02:30:43 on 2026-09-07, in the order of the table. No other
+  `bench` command touched the site in that window.
+- **`logs/frappe.testing.log` shows each module started exactly once** and
+  every test class of every module visited. No module needed a rerun.
+- **No production file changed during or after the gate.** The last production
+  commit is `1972c38b0` at 02:19; everything after it is a test file or one of
+  these two documents.
+
+The pass or fail of each assertion is the runner's report, not something this
+document re-derived. `frappe.testing.log` records invocations, not counts.
+
+### What each box rests on
+
+Agents audited the criteria against the code. The reconciliation is mine.
+
+1. **Inventory and classification.** `shims.py:74-158` classes all 69 names at
+   37 forwarder, 21 permanent, 8 retained, 3 retired, and `RETAINED_REASON`
+   (`shims.py:160-178`) names the missing route for each retained name. The
+   table is executable, not prose: `test_shims.py:449` compares it with the
+   whitelisted set read out of the eleven legacy modules by `ast`, `:452` and
+   `:456` hold the total and the partition, and `:468` walks the whole `drive/`
+   package and fails on a whitelisted name added outside those modules.
+   `:489`, `:497`, `:502`, and `:508` hold the four class rules.
+2. **Forwarding.** Each whitelisted body keeps its name, signature, and
+   decorator and calls `shims` - `api/permissions.py:48`, `:86`, `:117`, `:127`,
+   and the same shape in the other seven `api/*` modules. `test_shims.py:489` proves the
+   delegation by walking for a call node, so an inlined body fails it. Result
+   compatibility is pinned per group in `test_shims.py` and, on the site, by
+   gate modules 3, 4, and 5.
+3. **The permanent surface.** All 19 product names plus `get_file_for_doc` and
+   the stored S3 entry are `PERMANENT` (`shims.py:130-148`).
+   `test_shims.py:3629` compares each one's decorators, signature, and
+   statements with `e390a4487`. `overrides/file.py` is not in the diff at all;
+   `:3624` pins the `get_file_for_doc` payload and its `allow_guest=False`.
+   `api.s3.fetch` is the one permanent body the review edited, and `:3586` and
+   `:3592` carry that exception by name. `/dav` is mounted at `:3662`
+   (`hooks.py:554`), no WebDAV source file changed, and gate modules 7, 8, and
+   9 run the contract on the site.
+4. **Retired behavior.** The three names refuse through `_retire`
+   (`shims.py:226`) with `DriveRetired` at 410 (`shims.py:186`).
+   `test_shims.py:542`, `:550`, and `:556` each assert the refusal and that
+   nothing is written; `:563` refuses a download token before the node is read.
+   `:584`, `:602`, and `:697` prove the replacement route survives `msgprint`
+   and `clean_html` and reaches the client whole. On the site, gate module 3
+   repeats it (`api/tests/test_files.py:944`, `:954`, `:961`) and module 6
+   pins the `sync_from_disk` retirement and that it creates nothing
+   (`test_sync_permissions.py:33`, `:43`).
+5. **No synthesized deny, no chosen destination.** An unshare calls
+   `access.revoke` and never `access.grant` (`shims.py:2183`); a share that
+   reaches no rung is refused rather than written as role 0 (`:2196-2205`). Role 0
+   is written only when the caller sent `deny`. Tests `:2831`, `:2853`, and
+   `:2868`. A restore forwards `state="Active"` with no `parent`
+   (`shims.py:1917`), and `test_shims.py:2408` asserts `parent` is absent from
+   the call. See deviation 2.
+6. **Legacy authentication.** `test_shims.py:3646` compares the `allow_guest`
+   flag of every one of the 69 names with `e390a4487`, and `:521` and `:526`
+   freeze the 26 guest-callable names in both directions. `:531` and `:3266`
+   prove a Guest gets no personal marks and no root; `:3206` and `:3214` prove
+   a signed-out visitor still meets `PermissionError`. The `sync_preview`
+   site-admin gate survives at `api/scripts.py:28` and is run by gate module 6.
+   No test file was deleted. The rewritten suites are modules 3, 4, and 5, and
+   all three pass. See deviation 3.
+7. **Caller inventory and disabled removal.** `legacy-caller-inventory.md`
+   holds the per-module caller tables, the Cleanup order at `:153-202`, and the
+   carried gaps at `:204-236`. Destructive removal is disabled in the tree: no
+   deletion between `e390a4487` and `7ceaa8abc`, no Drive cleanup patch in
+   `suite/patches.txt`, `/api/method/suite.drive.api.` still in
+   `ALLOWED_WILDCARD_PATHS` (`hooks.py:543`), and `drive_content_types = []`
+   (`hooks.py:163`). Tickets 35 and 36 are unstarted. See deviation 4.
+
+### Deviations, at closeout
+
+1. **No structural signature check for the 37 forwarders.** The byte-for-byte
+   comparison with `e390a4487` covers the 21 permanent names only
+   (`test_shims.py:3629`), and the guest-flag diff covers all 69 (`:3646`).
+   Forwarder argument compatibility rests on the per-name cases and on the
+   inventory's payload table, not on a structural check. Box 2 is checked on
+   that evidence.
+2. **`File.unshare` still writes a deny, on the `File` store only.** The shim
+   invents none. For an unadopted row the shim calls the rule that wrote the
+   row (`shims.py:2128`), and that legacy body inserts a deny when read is
+   inherited from above (`overrides/file.py:246-254`). It is kept on purpose
+   and the reason is in the code (`shims.py:2120-2123`): on the `File` store a
+   deny row is the only way the old resolver spells "restricted", and dropping
+   it would leave an unshared document readable. Box 5 is checked as "the shim
+   synthesizes no deny".
+3. **Guest posture is frozen for 26 names and behaviour-tested for 14.** The
+   download trio and the nine guest-callable product methods are pinned by the
+   byte comparison and the guest-flag diff, not by a behavioural case. All
+   three of the download trio are `RETAINED`, so their bodies did not change.
+4. **The test named for destructive removal does not test it.**
+   `test_shims.py:3677 test_destructive_removal_stays_disabled` asserts only
+   `drive_content_types == []`, which is ticket 29's activation flag. The box
+   rests on the tree, listed under criterion 7 above. Nothing reads
+   `legacy-caller-inventory.md` from a test either, so the document can drift
+   from `CLASSIFICATION` without failing anything.
+
+### What this supersedes
+
+Every section above this one is a dated snapshot of its own branch. Where one
+contradicts this section, this section is the later fact.
+
+- "Required site gate, before this ticket closes" - run, complete, all 17 green.
+- Review risk 10, "Everything the site gate owns" - closed.
+- Review handoff 1, "The site gate has run modules 1 to 5 of 17" - superseded.
+- Review handoff 3, "`suite/drive/api/tests/*` are rewritten where the gate has
+  reached" - all three are rewritten and all three pass.
+- The five "What the gate still owes" notes, from module 1 through the module-1
+  exit-status branch - nothing is owed.
+- The residual audit's unverified list, thirteen modules the root had to rerun
+  - all thirteen ran and passed.
+- Module 1's "`bench run-tests` exits 1 on this bench even when every test
+  passes ... Read the summary line, not the exit code." That was wrong. The
+  exit 1 was this ticket's own test isolation defect, found and fixed on
+  `forge/ticket-23-shims-gate-cleanup`. The exit code is now readable and this
+  gate read it.
+
+### Carried risks, at closeout
+
+Unchanged and still open. Each is recorded in full in its own section above.
+
+- **Review risks 1 to 9.** The site-wide `unshare` that tells the user nothing,
+  `share` without `write` being unspellable, `list-add` reaching the uploader
+  alone, the 200-window listing cap, uploads refused on an `s3` site,
+  `Administrator` having no personal folder, a share to an address with no
+  `User` row, a new share sending no email, and the one e2e spec that depends
+  on the old share ceiling.
+- **Module 4 risks 1 and 2.** A sniffed mime makes a `.txt` file list as
+  `Application`; `kind` is always `native` on a listed row.
+- **Module 5 risks 1 to 4.** Pointerless notification rows keep being written,
+  they carry no node check, `get_unread_count` walks the pointer inbox row by
+  row, and `create_notification` is not covered from the Writer page.
+- **Module 14 and residual-audit risks.** A `File` whose node is purged after
+  Build, the fallbacks outliving their reason if ticket 29 does not replace
+  `create_document`, a node-less `File` carrying no `Drive Node` check, and a
+  cross-store `move` refused rather than performed.
+- **The route surface still deletes the values its refusals name.** Seven
+  `_core` sites predate ticket 23 and belong to §11.2.
+- **The four names classified out of scope**: `get_thumbnail`,
+  `get_entity_type`, `get_entity_activity_log`, and the Drive search names.
+- **Two pre-existing frontend defects**, `ErrorPage.vue:6,14` and
+  `writer/utils/index.js:447`. The frontend ticket owns both.
+
+### Handoffs, at closeout
+
+- **The e2e suites have still not run.** Twelve legacy names are called by name
+  from `e2e/drive-backed-apps/`, and the inventory lists every call site. The
+  17-module gate runs `bench` suites only; the Playwright specs need a site and
+  browsers. `specs/drive/sharing.spec.ts:192-221` is known to fail by reading
+  it. Tickets 32 to 34 own the SPA.
+- **Build has not run.** Forwarders and Build ship in one release. The
+  unadopted-`File` reads the residual audit added are what keeps a document the
+  product creates today usable until then.
+- **Ticket 29 dormancy is preserved.** `drive_content_types = []`, no hook
+  activated, no `site_config` change. The `DocShare.validate` hook
+  (`hooks.py:294`) stays a no-op while that list is empty.
+- **`frappe.local.response.errors` is not restored.** Nothing in
+  `frontend/src` reads it. Unchanged from the review.
+- **Two suites still borrow `frappe.local` through `mock`.**
+  `suite/writer/tests/test_drive_adoption.py:873-874` and
+  `suite/mail/tests/test_admin_roles_and_disable.py:187`. Neither deletes a
+  name `_cleanup_after_tests` reads, so neither breaks a gate. Both are outside
+  this ticket's claimed files.
+- **`test_shims.py:3683` holds `if __name__ == "__main__"` mid-file.** Four
+  classes and fourteen cases are defined after it. `bench run-tests --module`
+  and `python -m unittest` import the module, so all 267 cases ran in the gate.
+  Running the file as a script would skip the fourteen. Cosmetic, recorded for
+  whoever edits the file next.
+
+### Bench note
+
+`suite-bench` runs no RQ worker. Each run leaves background jobs queued, and
+the `short` queue reaches `frappe.QueueOverloaded` if it is not emptied between
+runs. That is why the gate is serialized, one command at a time.
