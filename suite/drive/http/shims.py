@@ -189,6 +189,33 @@ def names_of(kind: str) -> tuple[str, ...]:
     return tuple(name for name, value in CLASSIFICATION.items() if value == kind)
 
 
+# `msgprint` cleans every message it logs with `clean_html`, and strips tags off
+# the exception as well when the caller is a terminal
+# (`frappe/utils/messages.py:77-85`). Both delete everything between angle
+# brackets, so a value spelled into a refusal can leave without its words:
+# `Expected list but got <class 'list'>` reached a legacy client as
+# `Expected list but got `. A message this module writes spells no bracket at
+# all; a value that arrives at runtime is put through `_spelled` first.
+_ANGLE = re.compile(r"[<>]")
+
+
+def _plain(text: str) -> str:
+    """Drop the angle brackets a refusal cannot carry to the reader."""
+    return _ANGLE.sub("", text)
+
+
+def _spelled(value) -> str:
+    """Spell a runtime value into a refusal so the reader still gets it.
+
+    A type is named by `__name__`, because `str(type([]))` is `<class 'list'>`
+    and none of it survives. Anything else is text the caller sent, so its
+    brackets go too.
+    """
+    if isinstance(value, type):
+        return value.__name__
+    return _plain(str(value))
+
+
 def _retire(name: str, replacement: str):
     """Refuse a retired name, and say what took its place.
 
@@ -248,6 +275,11 @@ def _legacy(shim):
     code §11.6 gives it. `routes._route` does this at the other boundary; the
     class is preserved here rather than remapped, because a legacy client
     reads `exc_type` too.
+
+    The message goes through `_plain` on the way. Throwing is what puts a
+    `_core` refusal in front of `clean_html` for the first time, and several of
+    those refusals spell an id or a kind the caller sent: a node named `a<b>c`
+    turned "Drive node a<b>c was not found" into "Drive node ac was not found".
     """
 
     @functools.wraps(shim)
@@ -255,7 +287,7 @@ def _legacy(shim):
         try:
             return shim(*args, **kwargs)
         except DriveError as refusal:
-            frappe.throw(str(refusal), type(refusal))
+            frappe.throw(_plain(str(refusal)), type(refusal))
 
     answered.legacy_boundary = True
     return answered
@@ -926,7 +958,7 @@ def _home(principals) -> str:
     home = roots.personal_root_for(principals.user) or roots.provision_personal_root(principals.user)
     if not home:
         frappe.throw(
-            _("{0} has no personal Drive folder").format(principals.user),
+            _("{0} has no personal Drive folder").format(_spelled(principals.user)),
             frappe.ValidationError,
         )
     return home
@@ -1152,7 +1184,7 @@ def set_favourite(entities: list | None = None, clear_all: bool = False):
             activity_core.set_favourite(principals, row["node"]["name"], False)
         return None
     if not isinstance(entities, list):
-        frappe.throw(_("Expected list but got {0}").format(type(entities)), frappe.ValidationError)
+        frappe.throw(_("Expected list but got {0}").format(_spelled(type(entities))), frappe.ValidationError)
 
     marks = activity_core.personal_marks(principals, [entity.get("name") for entity in entities])
     for entity in entities:
@@ -1180,7 +1212,9 @@ def remove_or_restore(entity_names):
     if isinstance(entity_names, str):
         entity_names = json.loads(entity_names)
     if not isinstance(entity_names, list):
-        frappe.throw(_("Expected list but got {0}").format(type(entity_names)), frappe.ValidationError)
+        frappe.throw(
+            _("Expected list but got {0}").format(_spelled(type(entity_names))), frappe.ValidationError
+        )
     for node in entity_names:
         row = node_core.get(principals, node)
         state = "Trashed" if row.state == "Active" else "Active"
@@ -1206,7 +1240,7 @@ def delete_entities(entity_names: list[str] | None = None, clear_all: bool = Fal
         entity_names = json.loads(entity_names)
     elif not isinstance(entity_names, list) or not entity_names:
         frappe.throw(
-            _("Expected non-empty list but got {0}").format(type(entity_names)),
+            _("Expected non-empty list but got {0}").format(_spelled(type(entity_names))),
             frappe.ValidationError,
         )
     for node in entity_names:
@@ -1238,7 +1272,7 @@ def move(entity_names: list[str], new_parent: str | None = None):
         entity_names = json.loads(entity_names)
     if not entity_names or not isinstance(entity_names, list):
         frappe.throw(
-            _("Expected a non-empty list but got {0}").format(type(entity_names)),
+            _("Expected a non-empty list but got {0}").format(_spelled(type(entity_names))),
             frappe.ValidationError,
         )
     destination = new_parent or _home(principals)
@@ -1320,7 +1354,9 @@ def update_access(entity_name: str, method: str, **kwargs):
             access.revoke(entity_name, target, principals)
         return None
     if method != "share":
-        frappe.throw(_("Drive access method {0} is not supported").format(method), frappe.ValidationError)
+        frappe.throw(
+            _("Drive access method {0} is not supported").format(_spelled(method)), frappe.ValidationError
+        )
 
     expires_on = _kept_expiry(entity_name, principal, principals)
     if _flag(kwargs.get("deny")):
@@ -1375,7 +1411,9 @@ def remove_recents(entity_names: list[str] | None = None, clear_all: bool = Fals
     if clear_all:
         return activity_core.clear_recents(principals, None)
     if not isinstance(entity_names, list | type(None)):
-        frappe.throw(_("Expected list but got {0}").format(type(entity_names)), frappe.ValidationError)
+        frappe.throw(
+            _("Expected list but got {0}").format(_spelled(type(entity_names))), frappe.ValidationError
+        )
     return activity_core.clear_recents(principals, entity_names or [])
 
 
