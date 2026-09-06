@@ -495,8 +495,18 @@ def _validate_mixin(doctype: str, spec: ContentTypeSpec) -> None:
 
 
 def _validate_forbidden_fields(meta, spec: ContentTypeSpec) -> None:
-    """Refuse a title mirror, a trash mirror, and an app-owned share field."""
-    if meta.get("title_field") and meta.get("title_field") != "name":
+    """Refuse a title mirror, a trash mirror, and an app-owned share field.
+
+    The title check asks `meta.get_title_field()`, not the raw `title_field`
+    attribute. Frappe resolves an absent attribute to a field literally called
+    `title` and only then to `name` (`frappe/model/meta.py:373-384`), so
+    reading the attribute alone passes every doctype that owns a `title`
+    column and declares no `title_field` — which is the exact shape §10.2
+    forbids. A declared `legacy_fields` name is the one exemption, and it is
+    frozen rather than absent: see `refuse_legacy_field_write`.
+    """
+    display = meta.get_title_field()
+    if display != "name" and display not in spec.legacy_fields:
         raise DriveConflict(
             _("The Drive content doctype {0} must not mirror the node title").format(spec.doctype)
         )
@@ -504,9 +514,10 @@ def _validate_forbidden_fields(meta, spec: ContentTypeSpec) -> None:
         name = field.fieldname or ""
         if name in spec.legacy_fields:
             # Declared, frozen, and dropped at Cleanup. §10.2's rule is "no
-            # mirror in either direction", and a column no code reads or writes
-            # is not a mirror. `title_field` above stays strict, so the doctype
-            # cannot go on displaying it either.
+            # mirror in either direction". The column survives until §14.10
+            # drops it, so what holds the rule meanwhile is the freeze:
+            # `refuse_legacy_field_write` refuses every write, in either
+            # direction, so the value cannot diverge from what Build left.
             continue
         if name in FORBIDDEN_FIELD_NAMES or name.startswith(FORBIDDEN_FIELD_PREFIXES):
             raise DriveConflict(
