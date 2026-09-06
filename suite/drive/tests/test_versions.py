@@ -237,9 +237,25 @@ class TestVersionWorkflows(IntegrationTestCase):
         rows = list_versions(self.admin, node)["rows"]
         self.assertEqual([(row.seq, row.kind, row.label) for row in rows], [(1, "named", "First")])
 
-        label_version(self.admin, node, 1, label="Release", pinned=True)
+        answered = label_version(self.admin, node, 1, label="Release", pinned=True)
         version = frappe.get_doc("Drive Node Version", rows[0].name)
         self.assertEqual((version.label, version.pinned), ("Release", 1))
+        self.assertEqual(answered, {"label": "Release", "pinned": 1})
+
+        # A change that names one field leaves the other alone. §9.1 makes the
+        # pin a retention exemption, so a rename that cleared it would hand a
+        # milestone to the daily thinner.
+        label_version(self.admin, node, 1, label="Renamed")
+        version.reload()
+        self.assertEqual((version.label, version.pinned), ("Renamed", 1))
+        label_version(self.admin, node, 1, pinned=False)
+        version.reload()
+        self.assertEqual((version.label, version.pinned), ("Renamed", 0))
+        label_version(self.admin, node, 1, label=None)
+        version.reload()
+        self.assertIsNone(version.label)
+        with self.assertRaises(frappe.ValidationError):
+            label_version(self.admin, node, 1)
         version.size = 99
         with self.assertRaises(frappe.ValidationError):
             version.save(ignore_permissions=True)

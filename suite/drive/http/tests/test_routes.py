@@ -15,6 +15,8 @@ from frappe.tests import UnitTestCase
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
+from suite.drive import framework
+from suite.drive._core import nodes as node_core
 from suite.drive._core.errors import (
     DriveConflict,
     DriveError,
@@ -27,6 +29,7 @@ from suite.drive._core.errors import (
 from suite.drive._core.principals import Principals
 from suite.drive.http import routes
 from suite.drive.http.tests import ensure_local_context
+from suite.www import drive_link
 
 SOMEONE = Principals(user="a@example.com", own=("a@example.com",), open=("$PUBLIC",), is_admin=False)
 
@@ -253,6 +256,142 @@ class TestPageEnvelope(BoundaryCase):
             routes.node_children(node="f1", cursor="")
         self.assertIsNone(listed.call_args.kwargs["cursor"])
 
+    def test_a_cursor_seeking_past_the_bound_is_a_bad_request_not_a_query(self):
+        # MariaDB parses OFFSET as an unsigned bigint and fails the statement
+        # on a larger literal, which is a 500 with a traceback rather than one
+        # of §11.6's classes.
+        forged = node_core.encode_cursor(node_core.MAX_PAGE_OFFSET + 1)
+        with self.assertRaises(frappe.ValidationError):
+            node_core.decode_cursor(forged)
+        self.assertEqual(node_core.decode_cursor(node_core.encode_cursor(0)), 0)
+        self.assertEqual(
+            node_core.decode_cursor(node_core.encode_cursor(node_core.MAX_PAGE_OFFSET)),
+            node_core.MAX_PAGE_OFFSET,
+        )
+
+
+class TestPersonalViewExclusions(BoundaryCase):
+    """§11.2: a general node view shows no root, no template, no deck child."""
+
+    def rows(self, *rows):
+        return [frappe._dict(row) for row in rows]
+
+    def test_a_visited_root_and_a_starred_template_never_reach_a_view(self):
+        kept = node_core._view_eligible(
+            self.rows(
+                {"name": "r1", "kind": "root", "is_template": 0, "path": ""},
+                {"name": "t1", "kind": "file", "is_template": 1, "path": ""},
+                {"name": "f1", "kind": "file", "is_template": 0, "path": ""},
+            )
+        )
+        self.assertEqual([row.name for row in kept], ["f1"])
+
+    def test_a_child_of_a_document_node_never_reaches_a_view(self):
+        with patch.object(node_core.frappe, "get_all", return_value=["d1"]) as looked:
+            kept = node_core._view_eligible(
+                self.rows(
+                    {"name": "m1", "kind": "file", "is_template": 0, "path": "/r1/d1/"},
+                    {"name": "f1", "kind": "file", "is_template": 0, "path": "/r1/f0/"},
+                )
+            )
+        self.assertEqual(looked.call_args.kwargs["filters"]["kind"], "document")
+        self.assertEqual([row.name for row in kept], ["f1"])
+
+    def test_a_page_with_no_ancestors_costs_no_query(self):
+        with patch.object(node_core.frappe, "get_all") as looked:
+            node_core._view_eligible(self.rows({"name": "f1", "kind": "file", "is_template": 0, "path": ""}))
+        looked.assert_not_called()
+
+
+class TestViewProjection(BoundaryCase):
+    """§11.3: a list row and a detail fetch publish the same base fields."""
+
+    VIEWS = ("SHARED_SQL", "TRASH_SQL", "TEMPLATES_SQL", "SEARCH_SQL")
+
+    def test_every_node_view_selects_every_base_field(self):
+        # A view that selected a subset published a node whose `state`, `url`,
+        # or `creation` was silently null, because `node_shape` reads each key
+        # with `.get`.
+        for name in self.VIEWS:
+            statement = getattr(node_core, name)
+            for field in node_core.NODE_FIELD_NAMES:
+                with self.subTest(view=name, field=field):
+                    self.assertIn(f"n.`{field}`", statement)
+
+    def test_no_view_statement_carries_an_unformatted_placeholder(self):
+        for name in self.VIEWS:
+            with self.subTest(view=name):
+                self.assertNotIn("{", getattr(node_core, name))
+
+
+class TestSubjectPrincipals(BoundaryCase):
+    """§4.4 and §6.5: who `?principal=` names, and what they hold."""
+
+    def test_every_open_spelling_also_holds_public(self):
+        # §6.5: every session holds `$PUBLIC`, Guest included. Withholding it
+        # would report "no access" for a group that reads a published ancestor.
+        for principal in ("$GENERAL", "$GROUP:Sales", "$LINK:" + "a" * 22, "$PUBLIC"):
+            with self.subTest(principal=principal):
+                self.assertIn("$PUBLIC", framework.principals_for_principal(principal).open)
+
+    def test_a_link_subject_carries_no_unlock_ticket(self):
+        # §4.8: a password link explains as locked, like every other surface.
+        subject = framework.principals_for_principal("$LINK:" + "a" * 22)
+        self.assertEqual(subject.link_tickets, ())
+        self.assertEqual(subject.own, ())
+
+    def test_a_group_and_the_site_principal_are_own_not_open(self):
+        for principal in ("$GENERAL", "$GROUP:Sales"):
+            with self.subTest(principal=principal):
+                self.assertEqual(framework.principals_for_principal(principal).own, (principal,))
+
+    def test_a_spelling_no_grant_can_hold_is_refused(self):
+        # `grant` takes an address, so a User docname that is not one - and an
+        # invented `$` word - name nobody a grant row could ever mention.
+        for principal in ("Administrator", "Guest", "$WHAT", "$", "not an address", "", "  "):
+            with self.subTest(principal=principal):
+                with self.assertRaises(frappe.ValidationError):
+                    framework.principals_for_principal(principal)
+
+
+class TestShareLinkPage(BoundaryCase):
+    """§6.2: `/drive/l/<token>` answers which node, never whether."""
+
+    def context_for(self, token, **patched):
+        frappe.local.form_dict = frappe._dict({"token": token})
+        frappe.flags.redirect_location = None
+        with patch.object(drive_link.drive, "resolve_share_link", **patched) as resolved:
+            context = frappe._dict()
+            try:
+                return drive_link.get_context(context), None, resolved
+            except frappe.Redirect as sent:
+                return None, sent, resolved
+
+    def test_a_known_token_redirects_to_the_node_it_addresses(self):
+        answer = {"node": "n1", "token": "t" * 22}
+        _context, sent, resolved = self.context_for("t" * 22, return_value=answer)
+        resolved.assert_called_once_with("t" * 22)
+        self.assertEqual(sent.http_status_code, 302)
+        self.assertEqual(frappe.flags.redirect_location, "/drive/g/n1#link=" + "t" * 22)
+
+    def test_the_token_rides_the_fragment_so_no_log_or_referer_holds_it(self):
+        _context, _sent, _resolved = self.context_for(
+            "t" * 22, return_value={"node": "n1", "token": "t" * 22}
+        )
+        self.assertNotIn("?", frappe.flags.redirect_location)
+
+    def test_an_unknown_token_and_an_expired_one_render_different_statuses(self):
+        for refusal, status in ((DriveNotFound("gone"), 404), (DriveLinkExpired("over"), 410)):
+            with self.subTest(refusal=type(refusal).__name__):
+                context, sent, _resolved = self.context_for("t" * 22, side_effect=refusal)
+                self.assertIsNone(sent)
+                self.assertEqual(context.http_status_code, status)
+                self.assertEqual(context.message, str(refusal))
+
+    def test_no_refusal_page_ever_echoes_the_token(self):
+        context, _sent, _resolved = self.context_for("t" * 22, side_effect=DriveNotFound("gone"))
+        self.assertNotIn("t" * 22, f"{context.title}{context.message}")
+
 
 class TestContentAnswer(BoundaryCase):
     """§11.2: a file redirects, a document streams, nothing else has bytes."""
@@ -368,7 +507,7 @@ class TestGrantRoutes(BoundaryCase):
         with patch.object(routes.access, "grants_for", return_value=listed) as workflow:
             with patch.object(routes.framework, "principals_for_principal") as resolved:
                 answer = routes.node_grants(node="n1")
-        self.assertIsNone(workflow.call_args.kwargs["subject"])
+        self.assertIsNone(workflow.call_args.kwargs["resolve_subject"])
         resolved.assert_not_called()
         self.assertEqual(set(answer), {"grants"})
 
@@ -378,9 +517,34 @@ class TestGrantRoutes(BoundaryCase):
         with patch.object(routes.access, "grants_for", return_value=listed) as workflow:
             with patch.object(routes.framework, "principals_for_principal", return_value=subject) as resolved:
                 answer = routes.node_grants(node="n1", principal="b@example.com")
+                self.assertIs(workflow.call_args.kwargs["resolve_subject"](), subject)
         resolved.assert_called_once_with("b@example.com")
-        self.assertIs(workflow.call_args.kwargs["subject"], subject)
         self.assertEqual(answer["explain"], {"role": 40, "source": "grant", "rows": []})
+
+    def test_the_named_principal_is_not_resolved_before_the_workflow_gates_it(self):
+        # §11.2: MANAGE on the target is required before another principal is
+        # evaluated. `principals_for_principal` refuses an address that names
+        # no User, so resolving it at the boundary would answer a caller with
+        # no right to ask anything about this node - a user-directory oracle.
+        with patch.object(routes.access, "grants_for", side_effect=DriveNotFound("gone")) as workflow:
+            with patch.object(routes.framework, "principals_for_principal") as resolved:
+                with self.assertRaises(DriveNotFound):
+                    routes.node_grants(node="n1", principal="stranger@example.com")
+        self.assertTrue(workflow.called)
+        resolved.assert_not_called()
+
+    def test_a_blank_password_is_no_password_and_is_never_hashed(self):
+        with patch.object(routes.access, "grant", return_value={"name": "g1"}) as workflow:
+            routes.node_put_grant(node="n1", principal="$LINK:tok", role=20, password="")
+        self.assertIsNone(workflow.call_args.kwargs["password"])
+
+    def test_a_blank_role_is_refused_and_never_reaches_the_workflow_as_a_deny(self):
+        # `shapes.whole` reads "" as its default, and the default a role would
+        # take is 0, which is §5.10's explicit deny.
+        with patch.object(routes.access, "grant") as workflow:
+            with self.assertRaises(DriveError):
+                routes.node_put_grant(node="n1", principal="a@example.com", role="")
+        workflow.assert_not_called()
 
     def test_a_published_grant_row_never_carries_the_stored_password(self):
         # §11.2 publishes `has_password`, which says a password exists. The
@@ -610,13 +774,34 @@ class TestVersionRoutes(BoundaryCase):
         self.assertEqual(workflow.call_args.kwargs["label"], "Q3 sign-off")
         self.assertEqual(answer, {"seq": 5})
 
-    def test_a_label_and_a_pin_are_forwarded_and_the_pin_is_published_as_an_int(self):
-        with patch.object(routes.versions, "label_version") as workflow:
+    def test_a_label_and_a_pin_are_forwarded_and_the_row_state_is_published(self):
+        stored = {"label": "Q3", "pinned": 1}
+        with patch.object(routes.versions, "label_version", return_value=stored) as workflow:
             answer = routes.node_version_patch(node="n1", seq="3", label="Q3", pinned="1")
         self.assertEqual(workflow.call_args.args[1:], ("n1", 3))
         self.assertEqual(workflow.call_args.kwargs, {"label": "Q3", "pinned": True})
-        self.assertEqual(answer, {"label": "Q3", "pinned": 1})
-        self.assertIs(type(answer["pinned"]), int)
+        self.assertEqual(answer, stored)
+
+    def test_a_field_the_request_did_not_name_is_not_forwarded(self):
+        # §9.1 makes `pinned` a retention exemption, so a rename that defaulted
+        # it to false would silently hand a milestone to the daily thinner.
+        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+            routes.node_version_patch(node="n1", seq="3", label="Q3")
+        self.assertEqual(workflow.call_args.kwargs, {"label": "Q3"})
+        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+            routes.node_version_patch(node="n1", seq="3", pinned=True)
+        self.assertEqual(workflow.call_args.kwargs, {"pinned": True})
+
+    def test_an_empty_label_clears_one_and_an_absent_label_does_not(self):
+        with patch.object(routes.versions, "label_version", return_value={}) as workflow:
+            routes.node_version_patch(node="n1", seq="3", label="")
+        self.assertEqual(workflow.call_args.kwargs, {"label": None})
+
+    def test_a_patch_naming_neither_field_changes_nothing(self):
+        with patch.object(routes.versions, "label_version") as workflow:
+            with self.assertRaises(DriveError):
+                routes.node_version_patch(node="n1", seq="3")
+        workflow.assert_not_called()
 
     def test_deleting_a_version_answers_an_empty_body(self):
         with patch.object(routes.versions, "delete_version") as workflow:

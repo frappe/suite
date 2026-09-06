@@ -958,6 +958,127 @@ class TestUploads(DriveHTTPCase):
         frappe.db.set_value("Drive Root", self.root.name, "quota_bytes", 0, update_modified=False)
         frappe.db.commit()
 
+    def test_a_head_replacement_swaps_the_bytes_and_moves_the_charge(self):
+        # §11.2 routes a head replacement through PUT /nodes/<id>/content, and
+        # §8.4 makes a finished session the only proof the caller produced the
+        # bytes. The node id survives. The blob, the size, and the root charge
+        # all move to the new head.
+        first = self.upload(b"first bytes", "replaceable.bin")
+        self.addCleanup(self.drop_node, first["name"])
+        self.reread()
+        original = frappe.db.get_value("Drive Node", first["name"], "blob")
+        before = int(frappe.db.get_value("Drive Root", self.root.name, "used_bytes") or 0)
+
+        payload = b"a second head, longer than the first"
+        opened = self.open_session(len(payload))
+        self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/uploads/{opened['upload_id']}/chunk",
+                raw=payload,
+                query={"offset": "0"},
+            )
+        )
+        answer = self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/nodes/{first['name']}/content",
+                body={"upload_id": opened["upload_id"]},
+            )
+        )
+        self.reread()
+        self.assertEqual(set(answer), NODE_SHAPE_FIELDS)
+        self.assertEqual(answer["name"], first["name"])
+        self.assertEqual(answer["size"], len(payload))
+        replaced = frappe.db.get_value("Drive Node", first["name"], "blob")
+        self.assertNotEqual(replaced, original)
+        self.addCleanup(frappe.db.delete, "File Blob", {"name": replaced})
+        after = int(frappe.db.get_value("Drive Root", self.root.name, "used_bytes") or 0)
+        self.assertEqual(after - before, len(payload) - first["size"])
+
+    def test_a_replacement_target_that_is_not_a_file_is_refused(self):
+        # §11.2 declares 403 on this row. A folder holds no head, so EDIT on it
+        # is not enough to make it a replacement target (§8.4).
+        opened = self.open_session(4)
+        self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/uploads/{opened['upload_id']}/chunk",
+                raw=b"1234",
+                query={"offset": "0"},
+            )
+        )
+        response = self.as_owner(
+            "PUT", f"{PREFIX}/nodes/{self.folder}/content", body={"upload_id": opened["upload_id"]}
+        )
+        self.refusal(response, 403, "DriveForbidden")
+
+    def test_a_replacement_outside_the_sessions_destination_is_refused(self):
+        # The binding names one parent, and §8.4 reauthorizes against it. A
+        # file in another folder is not reachable from this session.
+        elsewhere = create_folder(self.owner, self.root.name, "Elsewhere")
+        target = self.make_file(elsewhere, "other.bin", b"other bytes")
+        frappe.db.commit()
+        self.addCleanup(self.drop_node, target)
+        self.addCleanup(self.drop_node, elsewhere)
+        opened = self.open_session(4)
+        self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/uploads/{opened['upload_id']}/chunk",
+                raw=b"1234",
+                query={"offset": "0"},
+            )
+        )
+        response = self.as_owner(
+            "PUT", f"{PREFIX}/nodes/{target}/content", body={"upload_id": opened["upload_id"]}
+        )
+        self.refusal(response, 403, "DriveForbidden")
+
+    def test_a_replacement_without_a_session_is_a_bad_request(self):
+        response = self.as_owner("PUT", f"{PREFIX}/nodes/{self.file}/content", body={})
+        self.refusal(response, 400, "DriveError")
+
+    def test_a_stranger_cannot_replace_a_head_they_cannot_edit(self):
+        # The session is the caller's own, so the refusal has to come from the
+        # target's own EDIT check, not from the binding.
+        opened = self.open_session(4)
+        self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/uploads/{opened['upload_id']}/chunk",
+                raw=b"1234",
+                query={"offset": "0"},
+            )
+        )
+        sid = self.session_for(STRANGER)
+        response = self.drive(
+            "PUT",
+            f"{PREFIX}/nodes/{self.file}/content",
+            body={"upload_id": opened["upload_id"]},
+            sid=sid,
+        )
+        self.refusal(response, 403, "DriveForbidden")
+
+    def upload(self, payload: bytes, title: str) -> dict:
+        """Create one node the way §8.4 says a node is created."""
+        opened = self.open_session(len(payload), filename=title)
+        self.data(
+            self.as_owner(
+                "PUT",
+                f"{PREFIX}/uploads/{opened['upload_id']}/chunk",
+                raw=payload,
+                query={"offset": "0"},
+            )
+        )
+        return self.data(
+            self.as_owner(
+                "POST",
+                f"{PREFIX}/uploads/{opened['upload_id']}/finish",
+                body={"parent": self.folder, "title": title},
+            )
+        )
+
     def drop_node(self, node):
         frappe.db.rollback()
         blob = frappe.db.get_value("Drive Node", node, "blob")

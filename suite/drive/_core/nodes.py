@@ -40,6 +40,9 @@ from suite.drive._core.roots import personal_root_for, reject_illegal_root_opera
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 200
+# The furthest a cursor may seek. Offset paging past this is not a page a
+# client reached by walking; it is a forged cursor (§11.4).
+MAX_PAGE_OFFSET = 10_000_000
 
 # §6.8 signs previews and media for fifteen minutes. A file download is the
 # same kind of grant: short enough that a leaked URL dies before it travels.
@@ -69,6 +72,10 @@ NODE_FIELD_NAMES = (
     "modified_by",
 )
 NODE_FIELDS = ", ".join(f"`{field}`" for field in NODE_FIELD_NAMES)
+# The same projection qualified for a joined query. §11.3 makes a list row and
+# a detail fetch the same shape, so a view that selected a subset published a
+# node whose `state`, `url`, or `creation` was silently null.
+NODE_FIELDS_N = ", ".join(f"n.`{field}`" for field in NODE_FIELD_NAMES)
 
 FOLDER_PAGE_SQL = """
 SELECT page.*
@@ -107,8 +114,7 @@ ORDER BY page._drive_parent, page.{order_by} {direction}
 """
 
 SHARED_SQL = """
-SELECT DISTINCT g.node AS name, n.root, n.path, n.title, n.kind, n.content_doctype,
-       n.content_docname, n.size, n.mime, n.content_modified, n.owner
+SELECT DISTINCT {node_fields}
 FROM `tabDrive Grant` g
 JOIN `tabDrive Node` n ON n.name = g.node
 JOIN `tabDrive Root` r ON r.name = n.root
@@ -146,7 +152,7 @@ WHERE g.principal IN %(own)s
   )
 ORDER BY n.title
 LIMIT %(limit)s OFFSET %(offset)s
-"""
+""".format(node_fields=NODE_FIELDS_N)
 
 ARCHIVED_SQL = """
 SELECT DISTINCT r.node AS root, r.user, r.used_bytes, r.quota_bytes
@@ -180,8 +186,7 @@ WHERE COALESCE(n.root, n.name) IN %(roots)s
 """
 
 TRASH_SQL = """
-SELECT n.name, n.parent, n.root, n.path, n.title, n.kind, n.state, n.size, n.mime,
-       n.trashed_at, n.owner
+SELECT {node_fields}
 FROM `tabDrive Node` n
 WHERE n.root = %(root)s
   AND n.state = 'Trashed'
@@ -203,12 +208,10 @@ WHERE n.root = %(root)s
   )
 ORDER BY n.trashed_at DESC
 LIMIT %(limit)s OFFSET %(offset)s
-"""
+""".format(node_fields=NODE_FIELDS_N)
 
 TEMPLATES_SQL = """
-SELECT n.name, n.parent, n.root, n.path, n.title, n.kind, n.state, n.size, n.mime,
-       n.content_doctype, n.content_docname, n.content_modified, n.is_template, n.owner,
-       n.creation, n.modified
+SELECT {node_fields}
 FROM `tabDrive Node` n
 WHERE n.state = 'Active'
   AND n.kind <> 'root'
@@ -229,12 +232,10 @@ WHERE n.state = 'Active'
   )
 ORDER BY n.title
 LIMIT %(limit)s OFFSET %(offset)s
-"""
+""".format(node_fields=NODE_FIELDS_N)
 
 SEARCH_SQL = """
-SELECT n.name, n.parent, n.root, n.path, n.title, n.kind, n.state, n.size, n.mime, n.url,
-       n.content_doctype, n.content_docname, n.content_modified, n.is_template, n.owner,
-       n.creation, n.modified
+SELECT {node_fields}
 FROM `tabDrive Node` n
 WHERE n.state = 'Active'
   AND n.kind <> 'root'
@@ -256,7 +257,7 @@ WHERE n.state = 'Active'
   )
 ORDER BY n.modified DESC
 LIMIT %(limit)s OFFSET %(offset)s
-"""
+""".format(node_fields=NODE_FIELDS_N)
 
 VISIBLE_ROOTS_SQL = """
 SELECT DISTINCT r.name
@@ -2211,7 +2212,40 @@ def _personal_view(principals: Principals, name: str, *, cursor: str | None, lim
 
     reader = activity.recents if name == "recents" else activity.favourites
     result = reader(principals, cursor=cursor, limit=limit)
-    return {"rows": [row.node for row in result["rows"]], "next_cursor": result["next_cursor"]}
+    rows = _view_eligible([row.node for row in result["rows"]])
+    return {"rows": rows, "next_cursor": result["next_cursor"]}
+
+
+def _view_eligible(rows: list) -> list:
+    """Apply §11.2's three exclusions to rows a personal list produced.
+
+    "Every view excludes `is_template` nodes except `templates`. Root nodes
+    appear only through explicit root entry points... No view returns the
+    children of a document node." The five SQL views carry all three as
+    predicates; `Drive Recent` and `Drive Favourite` are written by a plain
+    READ check, so a starred template, a visited root, or a deck's own media
+    child would otherwise arrive in a general node view through this door.
+    """
+    kept = [row for row in rows if row.get("kind") != "root" and not row.get("is_template")]
+    if not kept:
+        return kept
+    ancestors = {
+        ancestor for row in kept for ancestor in (row.get("path") or "").strip("/").split("/") if ancestor
+    }
+    documents = (
+        set(
+            frappe.get_all(
+                "Drive Node",
+                filters={"name": ("in", sorted(ancestors)), "kind": "document"},
+                pluck="name",
+            )
+        )
+        if ancestors
+        else set()
+    )
+    if not documents:
+        return kept
+    return [row for row in kept if not documents.intersection((row.get("path") or "").strip("/").split("/"))]
 
 
 def encode_cursor(offset: int) -> str:
@@ -2227,7 +2261,14 @@ def decode_cursor(cursor: str | None) -> int:
         value = base64.b64decode(cursor, validate=True).decode()
         prefix, raw_offset = value.split(":", 1)
         offset = int(raw_offset)
-        if prefix != "offset" or offset < 0 or str(offset) != raw_offset:
+        # An offset above the bound is refused rather than passed on. MariaDB
+        # parses OFFSET as an unsigned bigint and fails the statement outright
+        # on a larger literal, and that failure is neither a Drive refusal nor
+        # anything §11.6 maps: the caller would get a 500 with a database
+        # traceback where a forged cursor deserves a 400.
+        if prefix != "offset" or offset < 0 or offset > MAX_PAGE_OFFSET:
+            raise ValueError
+        if str(offset) != raw_offset:
             raise ValueError
     except (binascii.Error, UnicodeDecodeError, ValueError):
         frappe.throw(_("The Drive cursor is invalid"), frappe.ValidationError)

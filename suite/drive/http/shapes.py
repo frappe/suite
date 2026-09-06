@@ -80,17 +80,43 @@ def version_shape(row: Mapping) -> dict:
 
 
 def activity_shape(row: Mapping) -> dict:
-    """Return one activity row as §9.4's columns, times formatted."""
+    """Return one activity row as §9.4's columns, times formatted.
+
+    Every link token is masked to the bare `$LINK`. §11.2 answers this history
+    to READ, and a Guest holding a published node can reach it, while the token
+    a `share_add` row names and the `via_link` an ordinary row carries are
+    bearer secrets that reach EDIT (§6.1). Rotation would not close that: the
+    row naming the new token is written to the same history. `GET
+    /nodes/<id>/grants` is where a token is shown, and it needs MANAGE.
+    """
     return {
         "name": row.get("name"),
         "node": row.get("node"),
         "action": row.get("action"),
         "actor": row.get("actor"),
         "at": stamp(row.get("at")),
-        "via_link": row.get("via_link"),
+        "via_link": mask_link(row.get("via_link")),
         "client": row.get("client"),
-        "detail": row.get("detail") or {},
+        "detail": _masked_detail(row.get("detail") or {}),
     }
+
+
+def mask_link(value):
+    """Reduce `$LINK:<token>` to `$LINK`, and pass anything else through."""
+    if isinstance(value, str) and value.startswith("$LINK:"):
+        return "$LINK"
+    return value
+
+
+def _masked_detail(detail: Mapping) -> dict:
+    """Mask the three §5.12 detail keys that can hold a link principal."""
+    if not isinstance(detail, Mapping):
+        return detail
+    answer = dict(detail)
+    for key in ("principal", "old_principal", "new_principal"):
+        if key in answer:
+            answer[key] = mask_link(answer[key])
+    return answer
 
 
 def notification_shape(row: Mapping) -> dict:

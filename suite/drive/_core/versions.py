@@ -45,6 +45,11 @@ VERSION_FIELDS = (
 )
 VERSION_KINDS = ("auto", "named", "milestone")
 
+# "Leave this column as it is". A PATCH that names one of the two mutable
+# fields must not clear the other (§9.1), and `None` cannot say so: it is the
+# value that clears a label.
+KEEP = object()
+
 # Tier transitions are lower-bound inclusive, matching "under 24 h" then
 # "24 h to 7 d" in the accepted ladder. Exactly 90 days remains weekly;
 # only versions older than that final bound are removed.
@@ -174,15 +179,26 @@ def label_version(
     node: str,
     seq: int,
     *,
-    label: str | None,
-    pinned: bool,
-) -> None:
-    """Mutate only the user-controlled label and retention pin."""
+    label: str | None | object = KEEP,
+    pinned: bool | object = KEEP,
+) -> dict:
+    """Mutate only the user-controlled label and retention pin.
+
+    An argument left at `KEEP` is not written. §9.1 makes `pinned` a retention
+    exemption - a pinned version is never thinned - so a caller who renamed a
+    milestone and said nothing about the pin must not silently lose it, and a
+    caller who pinned one must not silently lose its name.
+
+    Answers both stored values, so `PATCH /nodes/<id>/versions/<seq>` publishes
+    what the row now holds rather than what the request happened to name.
+    """
     _validate_seq(seq)
-    if label is not None and not isinstance(label, str):
+    if label is not KEEP and label is not None and not isinstance(label, str):
         frappe.throw(_("A Drive version label must be text or null"), frappe.ValidationError)
-    if not isinstance(pinned, bool):
+    if pinned is not KEEP and not isinstance(pinned, bool):
         frappe.throw(_("A Drive version pin must be true or false"), frappe.ValidationError)
+    if label is KEEP and pinned is KEEP:
+        frappe.throw(_("A Drive version change must name a label or a pin"), frappe.ValidationError)
 
     savepoint = f"drive_label_version_{uuid4().hex[:12]}"
     frappe.db.savepoint(savepoint)
@@ -194,16 +210,21 @@ def label_version(
         # history table and §9.1 gives this call EDIT as its one condition.
         _require_version_node(current)
         version = _version(current.name, seq, for_update=True)
-        frappe.db.set_value(
-            "Drive Node Version",
-            version.name,
-            {"label": label, "pinned": int(pinned)},
-        )
+        changes = {}
+        if label is not KEEP:
+            changes["label"] = label
+        if pinned is not KEEP:
+            changes["pinned"] = int(pinned)
+        frappe.db.set_value("Drive Node Version", version.name, changes)
     except Exception:
         frappe.db.rollback(save_point=savepoint)
         raise
     else:
         frappe.db.release_savepoint(savepoint)
+    return {
+        "label": changes.get("label", version.label),
+        "pinned": changes.get("pinned", int(version.pinned or 0)),
+    }
 
 
 def delete_version(principals: Principals, node: str, seq: int) -> None:

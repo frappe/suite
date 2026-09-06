@@ -16,6 +16,15 @@ allowed: `access.require` decides that from the principals, and answers a
 caller below READ with 404 rather than 403 so an unreadable node stays
 invisible (§5.2).
 
+`xss_safe=True` rides beside it wherever a guest sends text that has to arrive
+as it was typed. Without it `is_whitelisted` runs `sanitize_html` over every
+string in `form_dict`, but only for a Guest: the same comment stored verbatim
+for a signed-in user comes back truncated at its first `<` for a link holder, a
+§9.3 anchor stops round-tripping, and a link password containing a bracket can
+never unlock while every attempt still spends one of §6.3's five tries. That
+rewrite is not the escape a client owes its own renderer, and Drive answers
+JSON, so the text is stored as sent and escaped where it is drawn.
+
 Two things a client may not say. It may not name bytes that reach accounting:
 `POST /nodes` takes §11.2's declared `blob`, `size`, and `mime`, and they are
 claims `create_file` checks against the stored blob row before it writes or
@@ -548,14 +557,18 @@ def node_grants(node: Given = None, principal: Given = None) -> dict:
     No session, no answer. A link caps at EDIT (§5.9) and `$PUBLIC` at READ, so
     no principal a Guest can present ever reaches MANAGE, and hearing the call
     would only let an anonymous caller probe for node ids.
+
+    The named principal is handed over unresolved, as a callable the workflow
+    invokes after its MANAGE check. Resolving it here would run
+    `principals_for_principal` first, and its "that names no user" refusal
+    would answer a caller who has no right to ask anything about this node.
     """
     principals = _principals()
     named = shapes.text(principal, "principal")
-    subject = framework.principals_for_principal(named) if named else None
     answer = access.grants_for(
         shapes.required_text(node, "node"),
         principals,
-        subject=subject,
+        resolve_subject=(lambda: framework.principals_for_principal(named)) if named else None,
     )
     shaped = {"grants": [shapes.grant_shape(row) for row in answer["grants"]]}
     if "explain" in answer:
@@ -587,7 +600,10 @@ def node_put_grant(
     patch: a link keeps its password and its expiry only while the caller keeps
     sending them.
     """
-    if role is None:
+    # An absent role and a blank one are the same refusal. `shapes.whole` reads
+    # `""` as its default, and the default a role would take is 0, which is the
+    # explicit deny of §5.10. A dropped form field must never become a denial.
+    if role is None or role == "":
         frappe.throw(_("Drive argument role is required"), frappe.ValidationError)
     written = access.grant(
         shapes.required_text(node, "node"),
@@ -595,7 +611,11 @@ def node_put_grant(
         shapes.whole(role, "role", 0),
         _principals(),
         expires_on=expires_on,
-        password=shapes.text(password, "password"),
+        # A blank password is no password. `""` reaching the workflow would be
+        # hashed and stored, and §6.3's unlock would then guard the link behind
+        # a secret nobody typed; on a principal that is not a link it would
+        # trip refusal 10 and answer 403 for an empty form field.
+        password=shapes.text(password, "password") or None,
     )
     return _grant_answer(written)
 
@@ -642,7 +662,7 @@ def _grant_answer(written: dict) -> dict:
     return answer
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
 def link_unlock(token: Given = None, password: Given = None) -> dict:
     """Trade one link password for the stateless 30-day ticket of §4.8.
@@ -761,7 +781,7 @@ def node_versions(node: Given = None, limit: Given = None, cursor: Given = None)
     return shapes.page(result, [shapes.version_shape(row) for row in result["rows"]])
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
 def node_version_create(node: Given = None, kind: Given = None, label: Given = None) -> dict:
     """Store the node's current bytes as a version and answer its sequence.
@@ -779,7 +799,7 @@ def node_version_create(node: Given = None, kind: Given = None, label: Given = N
     return {"seq": seq}
 
 
-@frappe.whitelist(allow_guest=True, methods=["PATCH"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["PATCH"])
 @_route
 def node_version_patch(
     node: Given = None,
@@ -787,19 +807,26 @@ def node_version_patch(
     label: Given = None,
     pinned: Given = None,
 ) -> dict:
-    """Set the two mutable fields of an otherwise immutable version (§9.1)."""
-    principals = _principals()
-    wanted = shapes.sequence(seq, "seq")
-    keep = shapes.flag(pinned, "pinned", False)
-    named = shapes.text(label, "label")
-    versions.label_version(
-        principals,
+    """Set either mutable field of an otherwise immutable version (§9.1).
+
+    A field the request does not name is left alone. Defaulting `pinned` to
+    false would let a rename clear a retention pin, and §9.1 makes that pin the
+    difference between a version the thinner keeps forever and one it deletes.
+    An empty `label` is the way to clear a label; an absent one is not.
+    """
+    changes = {}
+    if label is not None:
+        changes["label"] = shapes.text(label, "label") or None
+    if pinned is not None and pinned != "":
+        changes["pinned"] = shapes.flag(pinned, "pinned", False)
+    if not changes:
+        frappe.throw(_("Drive requires either label or pinned"), frappe.ValidationError)
+    return versions.label_version(
+        _principals(),
         shapes.required_text(node, "node"),
-        wanted,
-        label=named,
-        pinned=keep,
+        shapes.sequence(seq, "seq"),
+        **changes,
     )
-    return {"label": named, "pinned": int(keep)}
 
 
 @frappe.whitelist(methods=["DELETE"])
@@ -869,7 +896,7 @@ def node_threads(node: Given = None, resolved: Given = None) -> dict:
     }
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
 def node_thread_create(
     node: Given = None,
@@ -903,7 +930,7 @@ def thread_patch(thread: Given = None, resolved: Given = None) -> dict:
     return {"resolved": wanted}
 
 
-@frappe.whitelist(allow_guest=True, methods=["POST"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["POST"])
 @_route
 def thread_comment_create(
     thread: Given = None,
@@ -921,7 +948,7 @@ def thread_comment_create(
     }
 
 
-@frappe.whitelist(allow_guest=True, methods=["PATCH"])
+@frappe.whitelist(allow_guest=True, xss_safe=True, methods=["PATCH"])
 @_route
 def comment_patch(comment: Given = None, text: Given = None) -> dict:
     """Rewrite one comment's body. EDIT on the node, or being its author."""

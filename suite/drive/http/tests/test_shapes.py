@@ -203,6 +203,30 @@ class TestActivityShape(UnitTestCase):
     def test_times_are_published_to_the_second(self):
         self.assertEqual(shapes.activity_shape(ACTIVITY)["at"], "2026-01-02 03:04:05")
 
+    def test_the_link_that_decided_a_row_is_named_without_its_token(self):
+        # §11.2 answers this history to READ and hears a Guest, while the token
+        # is a bearer secret that reaches EDIT (§6.1).
+        self.assertEqual(shapes.activity_shape(ACTIVITY)["via_link"], "$LINK")
+
+    def test_no_share_row_detail_carries_a_token(self):
+        for key in ("principal", "old_principal", "new_principal"):
+            with self.subTest(key=key):
+                row = frappe._dict({**ACTIVITY, "detail": {key: "$LINK:" + "a" * 22, "new_role": 30}})
+                answer = shapes.activity_shape(row)
+                self.assertEqual(answer["detail"][key], "$LINK")
+                self.assertEqual(answer["detail"]["new_role"], 30)
+
+    def test_masking_leaves_every_other_principal_spelling_alone(self):
+        for principal in ("b@example.com", "$PUBLIC", "$GENERAL", "$GROUP:sales", None):
+            with self.subTest(principal=principal):
+                self.assertEqual(shapes.mask_link(principal), principal)
+
+    def test_the_stored_row_is_never_mutated_by_masking(self):
+        detail = {"principal": "$LINK:" + "a" * 22}
+        row = frappe._dict({**ACTIVITY, "detail": detail})
+        shapes.activity_shape(row)
+        self.assertEqual(detail["principal"], "$LINK:" + "a" * 22)
+
 
 class TestNotificationShape(UnitTestCase):
     def test_the_shape_withholds_the_recipient(self):
