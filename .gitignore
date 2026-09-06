@@ -19,6 +19,7 @@ yarn-error.log
 # Built www entrypoints (one per app); the listed pages are hand-written templates
 /suite/**/www/*.html
 !/suite/sheets/www/sheets.html
+!/suite/www/drive_link.html
 !/suite/www/event_rsvp.html
 # Slides service worker — emitted to the unified www root by the vite build
 /suite/www/service-worker.js

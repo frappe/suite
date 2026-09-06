@@ -200,6 +200,23 @@ def import_document(parent: str, title: str, *, content_doctype: str, from_node:
     )
 
 
+def resolve_share_link(token: str) -> dict:
+    """Answer which node one share-link token addresses (§6.2).
+
+    The website route `/drive/l/<token>` is the one caller. It runs outside
+    Drive, so it comes through this interface rather than reaching into the
+    engine, and it needs exactly this much: the node id, and enough of the
+    grant to render a page when the token is unknown or expired.
+
+    No role is checked and no password is asked for. Resolution says which node
+    a link addresses; whether the holder may read it is decided on every
+    following request from the token they present.
+    """
+    from suite.drive._core.access import resolve_link
+
+    return resolve_link(token)
+
+
 def read_file(node: str) -> tuple[IO[bytes], str]:
     """Answer one readable file node's bytes as a stream, with its mime type."""
     from suite.drive._core.nodes import read_file as _read_file
@@ -283,6 +300,7 @@ __all__ = (
     "refuse_shared_linked_rows",
     "refuse_shared_row",
     "release_storage_reservation",
+    "resolve_share_link",
     "take_version",
     "touch",
 )
