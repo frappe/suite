@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
+from frappe.utils import strip_html_tags
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -410,7 +411,7 @@ class TestRetired(ShimCase):
                 shims.create_auth_token("n1")
         writer.assert_not_called()
         self.assertEqual(caught.exception.http_status_code, 410)
-        self.assertIn("nodes/<id>/content", str(caught.exception))
+        self.assertIn("nodes/:id/content", str(caught.exception))
 
     def test_get_new_title_guesses_no_title(self):
         with self.assertRaises(shims.DriveRetired) as caught:
@@ -435,6 +436,57 @@ class TestRetired(ShimCase):
         from suite.drive._core.errors import DriveError
 
         self.assertTrue(issubclass(shims.DriveRetired, DriveError))
+
+class TestRefusalText(ShimCase):
+    """A refusal has to survive the trip to the reader.
+
+    `msgprint` cleans the message it logs, and strips tags from the exception
+    as well when the run has a terminal. Both delete everything between angle
+    brackets, so a route named `nodes/<id>/content` reached the caller as
+    `nodes//content` and told nobody what to call.
+    """
+
+    def test_a_retired_name_names_a_route_the_reader_can_still_read(self):
+        """`message_log` is what the client renders, and it is cleaned whether
+        the run has a terminal or not. The exception text is only stripped on a
+        terminal, so asserting on it alone hides the defect from a piped run."""
+        refusals = {
+            "create_auth_token": lambda: shims.create_auth_token("n1"),
+            "get_new_title": lambda: shims.get_new_title("Report", "f1"),
+            "sync_from_disk": shims.sync_from_disk,
+            "get_file_content token": lambda: shims.get_file_content("n1", token="t"),
+        }
+        for name, call in refusals.items():
+            with self.subTest(name=name):
+                frappe.local.message_log = []
+                with self.assertRaises(shims.DriveRetired) as caught:
+                    call()
+                served = frappe.local.message_log[-1]["message"]
+                self.assertEqual(served, str(caught.exception))
+
+    def test_the_replacement_route_reaches_the_client_whole(self):
+        frappe.local.message_log = []
+        with self.assertRaises(shims.DriveRetired):
+            shims.create_auth_token("n1")
+        self.assertIn(
+            "GET /api/suite/drive/nodes/:id/content",
+            frappe.local.message_log[-1]["message"],
+        )
+
+    def test_no_message_the_shim_writes_carries_an_html_tag(self):
+        """Every user-facing string in the module is wrapped in `_()`."""
+        tree = ast.parse((APP / "drive/http/shims.py").read_text())
+        marked = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_"
+        ]
+        self.assertTrue(marked)
+        for node in marked:
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    with self.subTest(line=node.lineno):
+                        self.assertEqual(strip_html_tags(arg.value), arg.value)
 
 
 # --------------------------------------------------------------------------
