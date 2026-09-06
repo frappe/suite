@@ -343,6 +343,30 @@ pre-fix body first.
 30. `_share_counts` and `_child_named` had no test at all. The second is the
     UPLOAD gate for a directory upload.
 
+## What the site gate fixed
+
+First module of the serialized gate,
+`bench --site slides.localhost run-tests --module suite.drive.http.tests.test_shims`,
+on `forge/drive-23-site-gate-shims`. It ran 164 tests and failed three. All
+three failures need a terminal, so a piped run of the same command passed. The
+first defect below reaches a client either way.
+
+31. **A retired name named a route no reader could call.** `create_auth_token`
+    and the `get_file_content` download token both answered
+    `GET /api/suite/drive/nodes/<id>/content`, and the legacy `$LINK` refusal
+    answered `PUT /api/suite/drive/nodes/<id>/grants/$LINK`. `msgprint` cleans
+    the message it logs (`frappe/utils/messages.py:77`) and strips tags off the
+    exception as well when the caller is a terminal (`:79-85`); both delete
+    everything between angle brackets. Every legacy client read
+    `nodes//content`. The placeholder is spelled `:id` now.
+32. **A test replaced `frappe.cache` for the whole process.** `frappe._` reads
+    the merged translation dict off that one object
+    (`frappe/translate.py:177`), so the two upload refusals raised with a
+    `MagicMock` for a message. On a terminal `strip_html_tags` refused it with
+    `TypeError`; piped, the refusal carried a mock repr and the test still
+    passed. The stub holds the shim's three upload keys and passes every other
+    call to the real cache.
+
 ## Carried risks the review did not fix
 
 - **`unshare` on a site-wide principal writes no deny.** `File.unshare` called
