@@ -109,6 +109,26 @@ def update_root(
     return _root_shape(pair)
 
 
+def usage_for(root: str, principals: Principals) -> frappe._dict:
+    """Answer one root's counters to its own user, its managers, or an admin.
+
+    §11.2 gives this route to "own root, or Suite Admin for any". A Shared Root
+    names no user, so its manager is the closest thing it has to an owner and
+    is admitted the same way. Everyone else meets `require`, which hides a root
+    they cannot read behind 404 rather than confirming it exists.
+    """
+    # `quota` imports this module for `validate_root_pair`, so both stay
+    # function-local here, the same one-way break the purge path uses.
+    from suite.drive._core.access import require
+    from suite.drive._core.quota import get_storage_usage
+
+    pair = validate_root_pair(root)
+    if principals.is_admin or (pair.root.user and pair.root.user == principals.user):
+        return get_storage_usage(root)
+    require(pair.node, MANAGE, principals)
+    return get_storage_usage(root)
+
+
 def purge_root(root: str, principals: Principals) -> frappe._dict:
     """Atomically remove one explicitly selected Archived root pair.
 

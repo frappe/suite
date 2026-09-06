@@ -391,6 +391,115 @@ def add_creator_grant(
     return True
 
 
+def describe(node: Mapping, principals: Principals) -> dict:
+    """Answer §11.3's `access` expansion from the resolution `require` runs.
+
+    Same rows, same nearest-wins accumulator, same deciding-link rule, so an
+    adapter never re-implements policy to show a caller why they got in. It
+    reports; it never refuses. A caller below READ is not this function's
+    problem: `require` has already raised by the time an expansion is built.
+    """
+    if principals.is_admin:
+        return _admin_description()
+    if not principals.all():
+        return _empty_description()
+
+    _role, rows, depth, ticket_results = _point_state(node, principals)
+    return _describe_rows(rows, depth, principals, ticket_results)
+
+
+def describe_page(
+    chain: list[str],
+    child_rows: Mapping[str, list],
+    chain_rows: list,
+    principals: Principals,
+) -> dict[str, dict]:
+    """Describe a page of children from the rows the folder page already read.
+
+    §5.3 buys the whole page in three queries and `effective_roles` spends them
+    on the role alone. The deciding row is in the same result set, so an
+    `?expand=access` list costs no query that a plain list did not already run.
+    """
+    if principals.is_admin:
+        return {child_id: _admin_description() for child_id in child_rows}
+    if not principals.all():
+        return {child_id: _empty_description() for child_id in child_rows}
+
+    ticket_results = {}
+    depth = {node_id: index for index, node_id in enumerate(chain)}
+    child_depth = len(chain)
+    return {
+        child_id: _describe_rows(
+            [*chain_rows, *rows],
+            {**depth, child_id: child_depth},
+            principals,
+            ticket_results,
+        )
+        for child_id, rows in child_rows.items()
+    }
+
+
+def _describe_rows(
+    rows: list, depth: Mapping[str, int], principals: Principals, ticket_results: dict
+) -> dict:
+    unlocked = [row for row in rows if _grant_is_unlocked(row, principals, ticket_results)]
+    acc = Acc()
+    for row in unlocked:
+        acc.offer(row.principal, row.role, depth[row.node], principals)
+    role = acc.answer()
+
+    winners = sorted(
+        (row for row in unlocked if _is_winner(row, acc, depth, principals)),
+        key=lambda row: (-depth[row.node], row.principal),
+    )
+    winner = winners[0] if winners else None
+    return {
+        "role": role,
+        "via_link": _authorizing_link(rows, depth, principals, role, ticket_results) if role else None,
+        "source_node": winner.node if winner else None,
+        "source_principal": winner.principal if winner else None,
+    }
+
+
+def _admin_description() -> dict:
+    return {"role": MANAGE, "via_link": None, "source_node": None, "source_principal": None}
+
+
+def _empty_description() -> dict:
+    return {"role": NONE, "via_link": None, "source_node": None, "source_principal": None}
+
+
+def chain_roles(node: Mapping, principals: Principals) -> dict[str, int]:
+    """Resolve the caller's role at every id on one node's chain, root first.
+
+    One grant query over the whole chain, then the same nearest-wins pass per
+    prefix. A breadcrumb trail needs to know where a caller's sight begins, and
+    the chain is capped at depth 40 (§3.1), so the repeated pass is bounded.
+    """
+    chain = chain_ids(node)
+    if principals.is_admin:
+        return dict.fromkeys(chain, MANAGE)
+    if not principals.all():
+        return dict.fromkeys(chain, NONE)
+
+    depth = {node_id: index for index, node_id in enumerate(chain)}
+    rows = frappe.db.sql(
+        POINT_SQL,
+        {"chain": chain, "principals": principals.all(), "now": now()},
+        as_dict=True,
+    )
+    ticket_results = {}
+    return {
+        node_id: _resolve_rows(
+            [row for row in rows if depth[row.node] <= index],
+            depth,
+            principals,
+            ticket_results=ticket_results,
+        )
+        for index, node_id in enumerate(chain)
+    }
+
+
 def explain(node: Mapping, principals: Principals) -> dict:
     """Return current grant candidates and mark the rows deciding the answer."""
     if principals.is_admin:

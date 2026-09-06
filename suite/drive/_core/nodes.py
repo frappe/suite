@@ -5,6 +5,7 @@ import binascii
 import collections
 import io
 import os
+import time
 from datetime import UTC, datetime
 from typing import IO
 from uuid import uuid4
@@ -13,6 +14,7 @@ import frappe
 from frappe import _
 from frappe.storage.blob import revive_blob
 from frappe.storage.driver import get_driver
+from frappe.storage.url import signed_url_for_blob
 from frappe.utils import convert_utc_to_system_timezone, get_datetime, now, now_datetime
 
 from suite.drive._core import content, previews
@@ -21,7 +23,9 @@ from suite.drive._core.access import (
     _resolve_rows,
     add_creator_grant,
     chain_ids,
+    chain_roles,
     check,
+    describe_page,
     effective_role,
     effective_roles,
     require,
@@ -36,6 +40,10 @@ from suite.drive._core.roots import personal_root_for, reject_illegal_root_opera
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 200
+
+# §6.8 signs previews and media for fifteen minutes. A file download is the
+# same kind of grant: short enough that a leaked URL dies before it travels.
+CONTENT_TTL_SECONDS = 15 * 60
 
 NODE_FIELD_NAMES = (
     "name",
@@ -307,6 +315,160 @@ SET parent = %(dest)s,
     modified_by = %(actor)s
 WHERE name = %(node)s
 """
+
+
+CLIENT_CREATE_KINDS = ("folder", "link", "document")
+
+
+def get(principals: Principals, node: str) -> frappe._dict:
+    """Return one node's stored row after a single READ point check (§8.1)."""
+    row = _node(node)
+    require(row, READ, principals)
+    return row
+
+
+def stored(node: str) -> frappe._dict:
+    """Return one node's row with no check, for a caller that just wrote it.
+
+    A create authorizes the parent, not the node it made, and §4.5 writes no
+    creator grant when the right came from a link: an uploader working through
+    an UPLOAD link can create a node they cannot read. An adapter that owes the
+    caller the node shape reads it here. It is never a substitute for `get`.
+    """
+    return _node(node)
+
+
+def create(
+    principals: Principals,
+    parent: str,
+    title: str,
+    *,
+    kind: str,
+    url: str | None = None,
+    content_doctype: str | None = None,
+    from_node: str | None = None,
+    is_template: bool = False,
+) -> str:
+    """Create one node of every kind a client may create, and return its id.
+
+    §8.3's create shapes plus §10.1's import, behind one authorized entry so
+    an adapter never chooses a workflow from an unauthorized read.
+
+    Bytes are deliberately not an argument. A file node carries a blob, a size,
+    and a mime the framework sniffed, and §8.4 makes the upload session the only
+    thing that proves the caller produced them: `create_file` therefore stays
+    reachable from `finish_upload` alone. A caller who names a blob here is
+    told where bytes come from, not charged for someone else's.
+    """
+    if kind not in CLIENT_CREATE_KINDS:
+        if kind == "file":
+            raise DriveConflict(_("Create a Drive file through an upload session"))
+        frappe.throw(_("Drive node kind {0} cannot be created").format(kind), frappe.ValidationError)
+
+    if kind == "folder":
+        _refuse_create_extras(url=url, content_doctype=content_doctype, from_node=from_node)
+        return create_folder(principals, parent, title)
+    if kind == "link":
+        _refuse_create_extras(content_doctype=content_doctype, from_node=from_node)
+        if not isinstance(url, str) or not url.strip():
+            frappe.throw(_("A Drive link requires a URL"), frappe.ValidationError)
+        return create_link(principals, parent, title, url=url)
+
+    _refuse_create_extras(url=url)
+    if not isinstance(content_doctype, str) or not content_doctype.strip():
+        frappe.throw(_("A Drive document requires a content type"), frappe.ValidationError)
+    if from_node is not None and _authorized_source_kind(principals, from_node) == "file":
+        if is_template:
+            frappe.throw(_("An imported Drive document cannot be a template"), frappe.ValidationError)
+        return import_document(
+            principals,
+            parent,
+            title,
+            content_doctype=content_doctype,
+            from_node=from_node,
+        )
+    return create_document(
+        principals,
+        parent,
+        title,
+        content_doctype=content_doctype,
+        from_node=from_node,
+        is_template=is_template,
+    )
+
+
+def _refuse_create_extras(**arguments) -> None:
+    named = sorted(name for name, value in arguments.items() if value is not None)
+    if named:
+        frappe.throw(
+            _("A Drive create of this kind does not take {0}").format(", ".join(named)),
+            frappe.ValidationError,
+        )
+
+
+def _authorized_source_kind(principals: Principals, from_node: str) -> str:
+    """Read one create source's kind only after the caller proves READ on it."""
+    source = _node(from_node)
+    require(source, READ, principals)
+    return source.kind
+
+
+def breadcrumbs(row: frappe._dict, principals: Principals) -> list[dict]:
+    """Return §11.3's trail from the highest visible ancestor down to the parent.
+
+    The chain above a shared folder is not the caller's to see: §5.2 hides an
+    unreadable node behind 404 on every surface, and a title is content. The
+    trail therefore restarts below the deepest ancestor the caller cannot read,
+    which for a caller reading from their own root is the whole chain.
+    """
+    chain = chain_ids(row)[:-1]
+    if not chain:
+        return []
+    roles = chain_roles(row, principals)
+    titles = {
+        ancestor.name: ancestor.title
+        for ancestor in frappe.get_all(
+            "Drive Node",
+            filters={"name": ["in", chain]},
+            fields=["name", "title"],
+        )
+    }
+    trail: list[dict] = []
+    for node_id in chain:
+        if roles.get(node_id, 0) < READ or node_id not in titles:
+            trail = []
+            continue
+        trail.append({"name": node_id, "title": titles[node_id]})
+    return trail
+
+
+def content_url(principals: Principals, node: str, *, expires_in: int = CONTENT_TTL_SECONDS) -> dict:
+    """Mint one readable file node's signed `/f/` URL after a READ check (§6.8).
+
+    Every byte that leaves Drive by URL leaves through here or through the
+    preview and media expansions, and all three check first. The signature
+    names the blob and the filename, so a minted URL cannot be widened into
+    another node's bytes.
+    """
+    row = _node(node)
+    require(row, READ, principals)
+    if row.kind != "file":
+        raise DriveConflict(_("Only a Drive file has bytes to download"))
+    if not row.blob:
+        # §8.4's empty head: a zero-byte file has no blob to sign.
+        raise DriveConflict(_("This Drive file has no stored bytes"))
+    blob = frappe.db.get_value(
+        "File Blob",
+        row.blob,
+        ["name", "file_size", "is_private", "status"],
+        as_dict=True,
+    )
+    if not blob or blob.status != "Ready" or not blob.is_private:
+        raise DriveConflict(_("The Drive file bytes are unavailable"))
+    return {
+        "url": signed_url_for_blob(row.blob, row.title, expires_in),
+        "expires": int(time.time()) + expires_in,
+    }
 
 
 def create_folder(principals: Principals, parent: str, title: str) -> str:
@@ -1832,8 +1994,13 @@ def children(
     order_by: str = "title",
     ascending: bool = True,
     mime_prefix: str | None = None,
+    with_access: bool = False,
 ) -> dict:
-    """Return one three-query SQL window of readable, ordinary children."""
+    """Return one three-query SQL window of readable, ordinary children.
+
+    `with_access` adds §11.3's access detail to every row from the grant rows
+    this page already read, so an expanded listing costs no extra query.
+    """
     page_size = _page_size(limit)
     offset = decode_cursor(cursor)
     order_column = _order_column(order_by)
@@ -1851,6 +2018,7 @@ def children(
         offset=offset,
         page_size=page_size,
         mime_prefix=mime_prefix,
+        with_access=with_access,
     )
 
 
@@ -1872,6 +2040,7 @@ def _folder_page_from_result(
     offset: int,
     page_size: int,
     mime_prefix: str | None,
+    with_access: bool = False,
 ) -> dict:
     parent_row = None
     window = []
@@ -1903,6 +2072,10 @@ def _folder_page_from_result(
         for row in window
         if roles[row.name] >= READ and (not mime_prefix or (row.mime or "").startswith(mime_prefix))
     ]
+    if with_access:
+        detail = describe_page(chain, {row.name: by_child[row.name] for row in rows}, chain_rows, principals)
+        for row in rows:
+            row.access = detail[row.name]
     return _page(rows, offset, len(window), page_size)
 
 
