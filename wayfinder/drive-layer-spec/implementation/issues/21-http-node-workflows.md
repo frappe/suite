@@ -4,7 +4,7 @@
 
 **Blocked by:** [17 — Move Writer lifecycle and history into Drive](17-writer-adoption.md); [19 — Move Sheets lifecycle and collaboration checks into Drive](19-sheets-adoption-and-collab.md); [20 — Load composite references in authorized groups](20-composite-group-contract.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Drive HTTP
 
@@ -28,14 +28,14 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Implement the translator with PATH_INFO and cached request-path correction. Delegate authentication and response envelopes to Frappe.
-- [ ] Declare allowed verbs and Guest access per route. Path ids override conflicting request arguments, and cmd cannot redirect dispatch.
-- [ ] Wire node CRUD, copy, content, media, previews, uploads, and root usage/admin routes to shared workflows.
-- [ ] Accept parent plus Active state for an explicit restore destination. Return a conflict when user choice is missing.
-- [ ] Keep list and detail node shapes identical, with effective root id and opt-in access, breadcrumbs, and preview expansions.
-- [ ] Implement batch outcomes with independent rollback per failed item and one activity per successful mutation.
-- [ ] Map Drive errors and plain ValidationError to the specified status and v2 envelope. Authorize all byte egress.
-- [ ] Keep raw blob creation inputs within the caller’s authorized workflow; client metadata cannot bypass byte validation or accounting.
+- [x] Implement the translator with PATH_INFO and cached request-path correction. Delegate authentication and response envelopes to Frappe.
+- [x] Declare allowed verbs and Guest access per route. Path ids override conflicting request arguments, and cmd cannot redirect dispatch.
+- [x] Wire node CRUD, copy, content, media, previews, uploads, and root usage/admin routes to shared workflows.
+- [x] Accept parent plus Active state for an explicit restore destination. Return a conflict when user choice is missing.
+- [x] Keep list and detail node shapes identical, with effective root id and opt-in access, breadcrumbs, and preview expansions.
+- [x] Implement batch outcomes with independent rollback per failed item and one activity per successful mutation.
+- [x] Map Drive errors and plain ValidationError to the specified status and v2 envelope. Authorize all byte egress.
+- [x] Keep raw blob creation inputs within the caller’s authorized workflow; client metadata cannot bypass byte validation or accounting.
 
 ## Verification
 
@@ -43,9 +43,10 @@ Run HTTP tests through actual request dispatch for session/API-key/Guest calls, 
 
 ## Completion evidence
 
-Status: implementation written, reviewed by a second agent, and fixed.
-Acceptance boxes stay unchecked because the dispatch suite has not run. It
-needs the shared site.
+Status: implementation written, reviewed by a second agent, fixed, and run
+through the serialized site gate. Every command in the gate passes. The
+acceptance boxes are checked against real requests, not against a reading of
+the code.
 
 ### Revisions
 
@@ -53,7 +54,10 @@ needs the shared site.
   `7801dc0052663446650e89bd3a1f6a1ea45c6b2c` on
   `implement/drive-21-http-workflows`.
 - Independent review on `review/drive-21-http-workflows`:
-  `fcc9232d5` (review fixes) and this evidence update.
+  `fcc9232d5` (review fixes) and `165431d8c` (that evidence update).
+- Site gate on `main`: `07d0490cc` (fixture repairs) and `bcdc964ad` (the
+  media authorization fix and three corrected expectations). The gate ran on
+  `bcdc964ad`.
 - Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, read only, unchanged.
 
 ### Changed behavior
@@ -151,15 +155,91 @@ Re-run after the review fixes, same environment:
 | `python -m unittest ...test_translator ...test_shapes ...test_routes` | `Ran 71 tests in 0.168s ... OK` |
 | import check of `suite.drive.http.tests.test_dispatch` | imports site-free; 96 test methods collected |
 
-### Not verified
+### The site gate, run
 
-`suite/drive/http/tests/test_dispatch.py` has not run. 96 tests, all needing
-the shared site. This worktree may not run bench, migrate, install, or restart
-services, so the whole dispatch suite is unverified, including every claim
-about real status codes, real envelopes, and real accounting. Every review
-finding below was proved site-free; none was proved through a real request.
+Run on `slides.localhost`, serially, nothing else touching the site. Suite at
+`bcdc964ad`; Frappe `e9cc6261d1bb342383d9cb641e8190cbfc3854fd`, read only,
+unchanged. Every command below passed on that revision.
 
-### Required serialized site gate
+| Command (`bench --site slides.localhost run-tests ...`) | Result |
+|---|---|
+| `--module suite.drive.http.tests.test_dispatch` | `Ran 97 tests in 3.941s ... OK`, and again at 3.660s |
+| `--module suite.drive.http.tests.test_translator` | `Ran 25 tests ... OK` |
+| `--module suite.drive.http.tests.test_shapes` | `Ran 15 tests ... OK` |
+| `--module suite.drive.http.tests.test_routes` | `Ran 31 tests ... OK` |
+| `--app suite --module suite.drive.tests.test_nodes` | 13 unit `OK`, 23 integration `OK` |
+| `--app suite --module suite.drive.tests.test_upload` | 8 unit `OK`, 26 integration `OK` |
+| `--app suite --module suite.drive.tests.test_content` | 53 unit `OK`, 49 integration `OK`, 3 uncategorized `OK` |
+| `--app suite --module suite.drive.tests.test_roots` | 2 unit `OK`, 24 integration `OK` |
+| `--app suite --module suite.drive.tests.test_access` | `Ran 12 tests ... OK` |
+| `--app suite --module suite.drive.tests.test_previews` | 14 unit `OK`, 13 integration `OK` |
+| `--module suite.drive.webdav.tests.test_dispatch` | `Ran 11 tests ... OK` |
+| `--module suite.tests.test_architecture` | `Ran 7 tests ... OK` |
+| `ruff check suite/drive/http/ suite/drive/_core/content.py` (0.12.3) | `All checks passed!` |
+| `ruff format --check` on the same paths | `10 files already formatted` |
+
+The dispatch suite is 97 tests, not 96: the gate added one.
+
+**What the first run found.** 8 failures and 41 errors, almost all cascades
+from two fixture faults.
+
+1. `session_for` restored an absent name through `frappe.local.__dict__`.
+   `frappe.local` is a contextvar store with no `__dict__`, so the restore
+   raised on its first entry, `request`, and never reached `session`. The
+   alphabetically first test of every class errored in `setUp`, and every
+   later test in that class then ran as the owner instead of Administrator.
+   That is why `generate_keys` answered `PermissionError` on the two API-key
+   tests. Restored with `delattr` in a `try`.
+2. Every teardown deleted `Drive Notification` by `node`. That table has no
+   `node` column; it points at `Drive Activity`. Each teardown raised, left
+   its tree behind, and the next `setUp` hit `DriveConflict` on the title.
+   One `drop_node_rows` helper now reads the activity ids first, which is
+   what `drive/tests/fixtures.py` already did.
+3. `TestBatch` tried to hide a node from its caller by rewriting the node's
+   `owner` and deleting its grant, while the node stayed under the caller's
+   own root. §5.1's root anchor grant reaches every descendant, so the node
+   was always visible. The fixture now uses a second Personal root.
+4. `TestUploads` needs File Storage v2. `create_blob_upload` reads
+   `frappe.conf`, and each request rebuilds `frappe.conf` from the site
+   config on its own thread, so a conf write in the test thread cannot reach
+   it. `storage_v2_on` patches `frappe.storage.enabled` for the block. The
+   site config is untouched, so dormant activation stays ticket 29's work.
+
+**One implementation defect.** `content.list_media` called `_document_node`
+before it authorized, so a caller with no grant got 409 `DriveConflict`
+"That Drive node is not a content document". That discloses both that the
+node exists and what kind it is. §5.2 hides an unreadable node behind
+`DriveNotFound` on every surface, and §11.2's media row declares 403 as its
+only extra error, unlike the children row two above it, which declares 409 on
+a document node. `_document_node` now takes the caller and runs the point
+check between the not-found branch and the kind branch. Still one point check,
+as §6.8 budgets. `export_document` keeps the old order deliberately: its only
+route authorizes first through `nodes.get`, so a second check would be waste.
+
+**Three test expectations were wrong, not the code.**
+
+- An Active root refuses a purge with 403 `DriveForbidden`. §11.2's roots
+  table declares no extra error for `DELETE /roots/<id>`, and its prose makes
+  Archived a condition on the right to call, next to Suite Admin.
+  `test_root_admin.py:170` already pinned `DriveForbidden`. The dispatch test
+  had asked for 409.
+- A pushed preview was aimed at a plain file. §9.2 accepts one only on an
+  active content document, so the byte check was unreachable. The fixture
+  tree now holds a document, inserted directly the way `test_previews` does,
+  because `drive_content_types` stays empty until ticket 29 and
+  `create_document` therefore cannot mint one. A new test,
+  `test_a_preview_push_is_refused_on_a_node_that_is_not_a_document`, pins the
+  403 the old test had been getting by accident.
+- §5.10 row 9 caps a share link at EDIT, so `grant(..., "$LINK", MANAGE, ...)`
+  can never succeed and "a link above an EDIT grant" cannot exist. The own
+  grant drops to READ and the link takes EDIT.
+
+**Bench note.** `suite-bench` runs no RQ worker, so each test run leaves its
+background jobs queued and the `short` queue reaches `frappe.QueueOverloaded`.
+The `short` and `default` queues were emptied between runs. They hold test
+residue only.
+
+### The gate commands
 
 Run on `slides.localhost`, serially, nothing else touching the site:
 
@@ -184,8 +264,8 @@ The last seven are regression cover: this ticket changed `_core/nodes.py`,
 in `access.py` and the decode guard in `previews.py`, so those two modules
 joined the list.
 
-A background worker must be running, or Drive tests fail with
-`QueueOverloaded` on this bench.
+A background worker must be running, or the queue must be emptied between
+runs, or Drive tests fail with `QueueOverloaded` on this bench.
 
 ### Independent review
 
@@ -306,6 +386,23 @@ five withheld ones, and the ticket 19 and 20 handoffs.
     code starts at the highest ancestor the caller can see, which is what
     §5.2 requires. The spec text disagrees with itself; the code follows
     §5.2.
+13. **`content.touch` and `content.adopt_media` still test the node kind
+    before they authorize.** They share the shape the media fix corrected, so
+    a caller with no grant learns that a node exists and is not a document.
+    Neither has an HTTP route in this ticket, and neither has a failing test,
+    so fixing them here would be an unproved change to code ticket 21 does not
+    expose. Recorded for ticket 30.
+14. **The dispatch suite needs a content document, and no `_core` helper can
+    make one.** `create_document` reads `drive_content_types`, which stays
+    empty until ticket 29, so the fixture inserts the `Drive Node` row
+    directly, the way `drive/tests/test_previews.py` already does. When
+    ticket 29 registers a content type, the fixture should move to
+    `create_document`.
+15. **`storage_v2_on` patches a Frappe predicate, not the site.** The upload
+    tests need `frappe.storage.enabled()` to answer True inside the request
+    thread. The site config stays dormant. If ticket 29 turns
+    `storage_v2` on for `slides.localhost`, this fixture becomes redundant
+    and should go.
 
 ### Unresolved handoffs
 
