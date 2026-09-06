@@ -560,21 +560,63 @@ message is answered by the `get_file_content` download token, and the `$LINK`
 refusal in `update_access` carried
 `PUT /api/suite/drive/nodes/<id>/grants/$LINK`.
 
+### The rest of cause B
+
+Cause B is a class, not one message. Every refusal that spells a runtime value
+into its text meets the same two cleaners, so the sweep was widened to all 15
+files ticket 23 changed. Agents produced the sweep; each finding was re-derived
+against the code before it was acted on.
+
+Eight more messages carry a value that can hold an angle bracket, and all eight
+are in `shims.py`:
+
+| Site | Value | When it is lost |
+|---|---|---|
+| `set_favourite`, `remove_or_restore`, `delete_entities`, `move`, `remove_recents` | `type(x)` | always. `str(type([]))` is `<class 'list'>` |
+| `update_access` | the `method` argument | whenever the request body holds a bracket |
+| `_home` | the user id | a mail address written `<a@example.com>` |
+| `_legacy` | the whole `_core` refusal | a node the caller named `a<b>c` |
+
+The five `type(x)` messages told a legacy client `Expected list but got ` and
+named neither the type wanted nor the type sent. They were carried in from the
+old `api/files.py` bodies, which spelled the same f-string.
+
+`_legacy` is the eighth and the widest. Throwing the refusal again is what
+fills a message in for a legacy client (`shims.py:290`), and it is also the
+first time a `_core` message meets `clean_html`: before ticket 23 those
+refusals reached a legacy client with no text at all. Seven `_core` messages
+spell a client-supplied id, kind, doctype, or view name.
+
 ### What changed
 
-- **`shims.py`.** Three messages spell a route placeholder `:id`. `_retire`'s
-  docstring says why, so it is not spelled back.
+- **`shims.py`, first pass.** Three messages spell a route placeholder `:id`.
+  `_retire`'s docstring says why, so it is not spelled back.
+- **`shims.py`, the class.** `_spelled` names a type by `__name__` and takes
+  the brackets off any other runtime value; the six messages that spell one use
+  it. `_plain` takes them off the `_core` message `_legacy` re-throws. A
+  message this module writes itself spells no bracket at all, and a test holds
+  that rule, so a constant is corrected rather than sanitized: `_plain` on a
+  route would answer `nodes/id/content`, which is still not a route.
+- **The seven `_core` sites are not edited.** They predate ticket 23 and
+  `routes.py:112` cleans them for the §11.2 surface too. Ticket 23 covers its
+  own boundary and records the rest under carried risks.
 - **`test_shims.py`.** `ShimCase.stub_cache` installs `_MemoryCache`, which
   answers the three `get_value`/`set_value`/`delete_value` calls `upload_file`
   makes and passes every other attribute to the real cache. Three test bodies
   used the old patch; all three use the stub.
-- **Three cases added, 164 to 167.** The two upload refusals now assert their
+- **Nine cases added, 164 to 173.** The two upload refusals now assert their
   own text, so a mock message fails them whether the run has a terminal or not.
   `TestRefusalText` reads `frappe.local.message_log`, which is what a client
   renders, and asserts every retired refusal reaches it as the words it was
-  raised with and that the replacement route arrives whole. A second case walks
-  `shims.py` with `ast` and asserts no string marked for translation carries an
-  HTML tag.
+  raised with and that the replacement route arrives whole. Two cases walk
+  `shims.py` with `ast`: one asserts no string marked for translation carries
+  an HTML tag, the other that none spells an angle bracket at all.
+- **The terminal is decided, not inherited.** `_Stdin` replaces `sys.stdin`,
+  which is the only thing `msgprint` asks about the caller. Every new case runs
+  twice, once each way, and asserts the exact text in both the client's
+  `message_log` and the raised exception. A test that reads whichever terminal
+  the runner happens to have proves half the path: that is how the three
+  original failures passed a piped run.
 
 ### Gate commands and results
 
@@ -585,13 +627,29 @@ do not appear without one.
 script -qec "bench --site slides.localhost run-tests \
   --module suite.drive.http.tests.test_shims" /dev/null
 before: Ran 164 tests in 1.020s / FAILED (failures=1, errors=2)
-after:  Ran 167 tests in 1.119s / OK
+after:  Ran 173 tests in 1.024s / OK
 ```
 
-Piped, the same command answers `Ran 167 tests in 1.097s / OK`.
+Piped, the same command answers `Ran 173 tests in 1.140s / OK`.
 
-Site-free, `python -m unittest suite.drive.http.tests.test_shims`:
-`Ran 167 tests in 1.031s / OK`.
+Site-free, on a terminal, `python -m unittest` over `test_shims`, `test_routes`,
+`test_shapes`, `test_translator`, and `test_architecture`:
+`Ran 346 tests in 2.773s / OK`. `test_shims` alone: `Ran 173 tests in 1.203s`.
+
+Five mutations, each reverted in place and run on a terminal and piped:
+
+| Mutation | Killed by |
+|---|---|
+| `_spelled(type(x))` back to `type(x)`, all five | `test_a_bad_argument_names_the_type_that_arrived`, 10 subtests |
+| `_spelled(method)` back to `method` | `test_a_refusal_echoes_the_method_the_caller_sent` |
+| `_spelled(principals.user)` back to `principals.user` | `test_a_missing_root_names_the_user_it_looked_for` |
+| `_plain(str(refusal))` back to `str(refusal)` | `test_a_workflow_refusal_keeps_its_words_at_the_legacy_boundary` |
+| `:id` spelled back as `<id>` | four cases, including both `ast` walks |
+
+**Formatting and lint.** `uvx ruff@0.12.3 format --diff` answers the same three
+hunks on `shims.py` and `test_shims.py` before and after this work, so no drift
+was added; those three predate the branch and are left alone. `check` answers
+one `B007` on `shims.py:1792`, which also predates the branch.
 
 `bench run-tests` exits 1 on this bench even when every test passes.
 `_cleanup_after_tests` calls `enable_scheduler` after the connection is gone
