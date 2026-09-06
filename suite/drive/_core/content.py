@@ -994,8 +994,12 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
 
     # The gate runs even for a paste that names no media. Returning early
     # before it would leave the caller's endpoint with no check of its own, and
-    # answer a stranger where a refusal belongs.
-    require(_document_node(document_node), UPLOAD, principals)
+    # answer a stranger where a refusal belongs. §8.8's trash rule is part of
+    # the gate for the same reason: a bin opens read-only, and a paste of
+    # nothing is still a paste.
+    gate = _document_node(document_node)
+    require(gate, UPLOAD, principals)
+    _refuse_trashed_write(gate, UPLOAD)
 
     requested = tuple(dict.fromkeys(node for node in media_nodes if isinstance(node, str) and node))
     if not requested:
