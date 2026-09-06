@@ -15,6 +15,7 @@ connection's snapshot is dropped, which `reread` does.
 
 import io
 import time
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
@@ -57,6 +58,38 @@ NODE_SHAPE_FIELDS = {
 }
 
 
+@contextmanager
+def storage_v2_on():
+    """Let the requests inside this block open a real upload session.
+
+    `create_blob_upload` refuses unless `frappe.storage.enabled()` answers
+    True, and that reads `frappe.conf`, which every request rebuilds from the
+    site's own config file. The request runs on its own thread, so writing
+    `frappe.conf` here would never reach it. Patch the predicate instead. It is
+    process wide for the length of the block and restored after, so the site
+    config stays dormant. Activating it is ticket 29's work, not this one's.
+    """
+    with patch("frappe.storage.enabled", return_value=True):
+        yield
+
+
+def drop_node_rows(nodes) -> None:
+    """Delete a set of nodes and everything that hangs off them.
+
+    `Drive Notification` has no `node` column. It points at the `Drive
+    Activity` row, so the activity ids must be read before that table goes.
+    """
+    nodes = [node for node in nodes if node]
+    if not nodes:
+        return
+    activity = frappe.get_all("Drive Activity", filters={"node": ["in", nodes]}, pluck="name")
+    if activity:
+        frappe.db.delete("Drive Notification", {"activity": ["in", activity]})
+    for table in ("Drive Activity", "Drive Grant", "Drive Node Version", "Drive Node Preview"):
+        frappe.db.delete(table, {"node": ["in", nodes]})
+    frappe.db.delete("Drive Node", {"name": ["in", nodes]})
+
+
 class DriveHTTPCase(IntegrationTestCase):
     """One committed fixture tree, and one way to send a request at it."""
 
@@ -94,10 +127,7 @@ class DriveHTTPCase(IntegrationTestCase):
             row.name for row in frappe.get_all("Drive Node", filters={"root": cls.root.name}, fields=["name"])
         ]
         nodes.append(cls.root.name)
-        for table in ("Drive Notification", "Drive Activity", "Drive Grant", "Drive Node Version"):
-            frappe.db.delete(table, {"node": ["in", nodes]})
-        frappe.db.delete("Drive Node Preview", {"node": ["in", nodes]})
-        frappe.db.delete("Drive Node", {"name": ["in", nodes]})
+        drop_node_rows(nodes)
         frappe.db.delete("Drive Root", {"name": cls.root.name})
         frappe.db.delete("File Blob", {"name": ["in", cls.created_blobs]})
         frappe.db.commit()
@@ -123,7 +153,12 @@ class DriveHTTPCase(IntegrationTestCase):
         finally:
             for name, value in kept.items():
                 if value is None:
-                    frappe.local.__dict__.pop(name, None)
+                    # `frappe.local` is a contextvar store, not an object with
+                    # a `__dict__`. Deleting a name it never held raises.
+                    try:
+                        delattr(frappe.local, name)
+                    except AttributeError:
+                        pass
                 else:
                     setattr(frappe.local, name, value)
         frappe.db.commit()
@@ -523,10 +558,7 @@ class TestNodeWorkflows(DriveHTTPCase):
 
     def drop_node(self, node):
         frappe.db.rollback()
-        for table in ("Drive Notification", "Drive Activity", "Drive Grant", "Drive Node Version"):
-            frappe.db.delete(table, {"node": node})
-        frappe.db.delete("Drive Node Preview", {"node": node})
-        frappe.db.delete("Drive Node", {"name": node})
+        drop_node_rows([node])
         frappe.db.commit()
 
 
@@ -542,10 +574,7 @@ class TestRestore(DriveHTTPCase):
 
     def drop_tree(self):
         frappe.db.rollback()
-        for node in (self.inner, self.outer):
-            for table in ("Drive Notification", "Drive Activity", "Drive Grant"):
-                frappe.db.delete(table, {"node": node})
-            frappe.db.delete("Drive Node", {"name": node})
+        drop_node_rows([self.inner, self.outer])
         frappe.db.commit()
 
     def trash(self, node):
@@ -595,21 +624,37 @@ class TestRestore(DriveHTTPCase):
 class TestBatch(DriveHTTPCase):
     """§11.5: partial success is a result, and a failure rolls back alone."""
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # A node the caller cannot see has to sit outside the caller's own
+        # root. §5.1 gives the owner a root anchor grant, which every
+        # descendant inherits, so nothing under `cls.root` can be hidden from
+        # them by dropping a grant or rewriting an `owner` column.
+        drop_personal_root(STRANGER)
+        cls.outsider = create_root(kind="Personal", title="HTTP outsider", user=STRANGER)
+        frappe.db.commit()
+        cls.addClassCleanup(cls.remove_outsider)
+
+    @classmethod
+    def remove_outsider(cls):
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+        nodes = frappe.get_all("Drive Node", filters={"root": cls.outsider.name}, pluck="name")
+        drop_node_rows([*nodes, cls.outsider.name])
+        frappe.db.delete("Drive Root", {"name": cls.outsider.name})
+        frappe.db.commit()
+
     def setUp(self):
         super().setUp()
         self.mine = [create_folder(self.owner, self.root.name, f"Batch {i}") for i in range(2)]
-        self.theirs = create_folder(self.admin, self.root.name, "Locked")
-        frappe.db.set_value("Drive Node", self.theirs, "owner", "Administrator", update_modified=False)
-        frappe.db.delete("Drive Grant", {"node": self.theirs})
+        self.theirs = create_folder(self.stranger, self.outsider.name, "Locked")
         frappe.db.commit()
         self.addCleanup(self.drop_tree)
 
     def drop_tree(self):
         frappe.db.rollback()
-        for node in [*self.mine, self.theirs]:
-            for table in ("Drive Notification", "Drive Activity", "Drive Grant"):
-                frappe.db.delete(table, {"node": node})
-            frappe.db.delete("Drive Node", {"name": node})
+        drop_node_rows([*self.mine, self.theirs])
         frappe.db.commit()
 
     def test_a_mixed_batch_reports_both_lists_and_answers_200(self):
@@ -679,6 +724,10 @@ class TestBatch(DriveHTTPCase):
 
 class TestUploads(DriveHTTPCase):
     """§8.4: the session is the only proof that the caller produced the bytes."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(storage_v2_on())
 
     def open_session(self, size: int, filename="upload.bin"):
         return self.data(
@@ -792,10 +841,7 @@ class TestUploads(DriveHTTPCase):
     def drop_node(self, node):
         frappe.db.rollback()
         blob = frappe.db.get_value("Drive Node", node, "blob")
-        for table in ("Drive Notification", "Drive Activity", "Drive Grant", "Drive Node Version"):
-            frappe.db.delete(table, {"node": node})
-        frappe.db.delete("Drive Node Preview", {"node": node})
-        frappe.db.delete("Drive Node", {"name": node})
+        drop_node_rows([node])
         if blob:
             frappe.db.delete("File Blob", {"name": blob})
         frappe.db.commit()
@@ -1062,14 +1108,15 @@ class TestGrantedCollaborator(DriveHTTPCase):
         self.refusal(response, 403, "DriveForbidden")
 
     def test_an_editor_may_open_an_upload_session(self):
-        answer = self.data(
-            self.drive(
-                "POST",
-                f"{PREFIX}/uploads",
-                body={"parent": self.folder, "filename": "theirs.bin", "size": 4},
-                sid=self.stranger_sid,
+        with storage_v2_on():
+            answer = self.data(
+                self.drive(
+                    "POST",
+                    f"{PREFIX}/uploads",
+                    body={"parent": self.folder, "filename": "theirs.bin", "size": 4},
+                    sid=self.stranger_sid,
+                )
             )
-        )
         self.assertIn("upload_id", answer)
 
     def test_an_editor_below_upload_on_a_root_cannot_create_there(self):
