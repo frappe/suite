@@ -1722,6 +1722,37 @@ def create_link(file_name: str, link: str, parent: str | None = None):
     return _legacy_row(node_core.stored(node))
 
 
+LEGACY_CONTENT_FIELDS = ["name", "file_name", "file_type", "status", "file_url", "is_private", "mime_type"]
+
+
+def _legacy_file_content(entity_name: str, trigger_download):
+    """Serve the bytes off the `File` store, for an id no node holds.
+
+    `list.files` opens a folder no node holds, so the files that folder already
+    held are on a page again, and clicking one asks for its bytes. §6.8 signs a
+    node's content and has nothing to sign for a row with no node, so the old
+    body serves it: `get_file_internal` is still the reader behind the WebDAV
+    and archive paths.
+
+    The gate is the old body's `user_has_permission(entity_name, "read")`. The
+    retired download token is refused above, before either store.
+    """
+    from suite.drive.api.files import FORBIDDEN_DOWNLOAD_TYPES, get_file_internal
+    from suite.drive.api.permissions import user_has_permission
+
+    if not user_has_permission(entity_name, "read"):
+        frappe.throw(_("You do not have permission to view this file"), frappe.PermissionError)
+
+    row = frappe.get_value("File", {"name": entity_name}, LEGACY_CONTENT_FIELDS, as_dict=1)
+    if not row or row.file_type in FORBIDDEN_DOWNLOAD_TYPES or row.status != "Active":
+        # `Document` is one of the forbidden types, so the old body answered
+        # "Not found" for one and never reached its own redirect to the
+        # editor. Kept, because no client asks this name about a document:
+        # `openEntity` routes a `Document` to `/writer/w/` instead.
+        frappe.throw(_("Not found"), frappe.DoesNotExistError)
+    return get_file_internal(row, trigger_download)
+
+
 @_legacy
 def get_file_content(entity_name: str, trigger_download: bool = False, token: str | None = None):
     """`get_file_content` -> `GET /nodes/<id>/content`.
@@ -1733,12 +1764,18 @@ def get_file_content(entity_name: str, trigger_download: bool = False, token: st
     A `token` is refused rather than honoured. `create_auth_token` is retired
     and mints nothing, so any token presented here is either expired or forged,
     and answering bytes for one would be the capability this release removed.
+    That refusal comes first, whichever store holds the row.
+
+    It answers from either store: a `File` that no node holds is served by the
+    old reader, because §6.8 has nothing to sign for a row with no node.
     """
     if token:
         _retire(
             "the suite.drive.api.files.get_file_content download token",
             _("Drive signs a download URL at GET /api/suite/drive/nodes/:id/content."),
         )
+    if _unadopted_row(entity_name):
+        return _legacy_file_content(entity_name, trigger_download)
     principals = _principals()
     row = node_core.get(principals, entity_name)
     if row.kind == "document":
