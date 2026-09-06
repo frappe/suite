@@ -214,6 +214,35 @@ The review added 21 passing tests and no new failure. All 5 errors are the same
 site-bound `setUpClass` calls and the same `_build_registry` flags read as
 before, listed under **Not verified**.
 
+Site gate run, on `slides.localhost`, at `fa4c7db13`. This is the first run
+against a real database, so it closes most of **Not verified** below. Every
+command ran serially, one bench invocation at a time:
+
+| Gate step | Command | Result |
+|---|---|---|
+| 1 | `bench --site slides.localhost migrate` | succeeded (run before this repair) |
+| 4 | `run-tests --module suite.sheets.tests.test_drive_adoption` | 42 integration OK, 59 database-free OK |
+| 4 | `run-tests --module suite.sheets.tests.test_permissions` | 14 tests, OK |
+| 4 | `run-tests --module suite.drive.tests.test_content` | 53 + 49 + 3 tests, OK |
+| 4 | `run-tests --module suite.tests.test_architecture` | 7 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_nodes` | 13 + 23 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_access` | 12 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_versions` | 7 + 10 tests, OK |
+| — | `run-tests --module suite.drive.tests.test_grants` | **24 tests, 24 errors** |
+
+`test_drive_adoption` started this run with 3 errors and now has none. All three
+were faults in the test module, not in Drive. `fa4c7db13` records them.
+
+`test_grants` fails identically at `e9171a963` with the repair stashed, so it is
+older than this work and outside it. Every one of the 24 errors is the same
+`setUp`, raising `An active Drive root already exists for
+drive-grant-target@example.com`. No such root is committed on the site, so the
+fixture conflicts with itself inside the run. It blocks gate step 5.
+
+`uvx ruff@0.12.3 format --check` reports the same 14 hunks in
+`test_drive_adoption.py` before and after `fa4c7db13`, so the repair adds no
+formatting drift. The drift itself predates this ticket and was left alone.
+
 Every Python check ran under
 `PYTHONPATH=apps/frappe:<worktree> python -m unittest` from
 `/home/faris/benches/suite-bench/sites`, with no site connected and no bench
@@ -221,11 +250,10 @@ command. No migration, no install, and no service restart.
 
 ### Not verified
 
-- `TestSheetsBeforeActivation` and `TestSheetsInDrive`. They need real rows.
-  They are the only proof of create, copy, import, version, restore, purge,
-  media discovery, satellite queries, and the legacy refusals against a
-  database.
-- The `Sheet` doctype JSON change. It needs `bench migrate` to reach a site.
+- ~~`TestSheetsBeforeActivation` and `TestSheetsInDrive`~~. Both ran green on
+  `slides.localhost` at `fa4c7db13`. See the site gate run above.
+- ~~The `Sheet` doctype JSON change~~. `bench migrate` reached the site. The
+  DocPerm assertion in gate step 2 is still unrun.
 - `index.js` binding the recheck to hocuspocus. `@hocuspocus/server` is not
   installed in this worktree, and the review searched the whole machine and
   found no copy of its source in any other bench or cache. There is also no
@@ -298,6 +326,11 @@ bench --site slides.localhost run-tests --module suite.tests.test_architecture
 ```sh
 bench --site slides.localhost run-tests --app suite
 ```
+
+Blocked today by `suite.drive.tests.test_grants`: 24 tests, 24 errors, all the
+same `setUp` conflict on `drive-grant-target@example.com`. It fails the same way
+at `e9171a963`, so it is not this ticket's, but this step cannot pass until it
+is fixed. Step 4's modules all pass.
 
 **6. The DocShare bypass, by hand.** No test can reach it: the widening happens
 inside Frappe, after the hook has answered. Link a sheet, share it with a user
