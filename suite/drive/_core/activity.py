@@ -235,6 +235,38 @@ def favourites(
     return page_of(_visible_personal_rows(principals, rows), offset, len(rows), window)
 
 
+def personal_marks(principals: Principals, nodes: Iterable[str]) -> dict[str, dict]:
+    """Report the caller's own favourite and recent marks on named nodes.
+
+    Two indexed reads for a whole page, keyed by the caller. `favourites` and
+    `recents` answer "which nodes are marked"; a listing needs the transpose,
+    "is this row marked", and deriving it from those pages would read the
+    caller's entire personal lists to decorate sixty rows.
+
+    No node is checked. The rows belong to the caller, not to the node, and the
+    caller is looking at a page a workflow already authorized. A Guest holds no
+    personal records at all (§11.2), so the answer is empty rather than a
+    refusal: a listing must not fail because the reader is anonymous.
+    """
+    wanted = tuple(dict.fromkeys(node for node in nodes if node))
+    if not wanted or principals.user == "Guest":
+        return {}
+    marks: dict[str, dict] = {node: {"favourite": None, "opened_at": None} for node in wanted}
+    for row in frappe.get_all(
+        "Drive Favourite",
+        filters={"user": principals.user, "node": ["in", wanted]},
+        fields=["name", "node"],
+    ):
+        marks[row.node]["favourite"] = row.name
+    for row in frappe.get_all(
+        "Drive Recent",
+        filters={"user": principals.user, "node": ["in", wanted]},
+        fields=["node", "opened_at"],
+    ):
+        marks[row.node]["opened_at"] = row.opened_at
+    return marks
+
+
 def notify_users(activity: str, users: Iterable[str]) -> int:
     """Create one notification pointer for each distinct existing target user."""
     created = 0
