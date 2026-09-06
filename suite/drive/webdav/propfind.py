@@ -50,7 +50,9 @@ def handle(ctx: DavContext) -> Response:
 
     mode, requested = _parse_body(ctx)
     resources = _collect_resources(ctx, depth)
-    quota = _mount_quota(resources[0].row) if QUOTA_PROPS & set(requested) else None
+    # quota lives on collections only, so a probe at a file pays nothing
+    wants_quota = bool(QUOTA_PROPS & set(requested)) and any(resource.is_collection for resource in resources)
+    quota = _mount_quota(resources[0].row) if wants_quota else None
 
     from suite.drive.webdav import deadprops, locks
 
@@ -119,7 +121,7 @@ def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
     ancestors = chain_ids(row)[:-1]
     resources = [Resource(row, list(ctx.segments), _is_collection(row), row.title, ancestors)]
     child_ancestors = [*ancestors, row.name]
-    for child in children:
+    for child in _one_row_per_name(children):
         resources.append(
             Resource(
                 child,
@@ -130,6 +132,26 @@ def _collect_resources(ctx: DavContext, depth: str) -> list[Resource]:
             )
         )
     return resources
+
+
+def _one_row_per_name(children: list[frappe._dict]) -> list[frappe._dict]:
+    """Publish each title once, keeping the row a path lookup would reach.
+
+    `Drive Node` indexes `(parent, state, title)` but does not make it unique,
+    so two Active siblings can carry the same title. `href_for` quotes the
+    title, so those two share one URL: listing both puts two sizes and two
+    ETags at one href, while every GET of it answers from the one row
+    `pathmap._child` picks, the oldest. The shadowed row has no URL of its own
+    and is not published. Titles that differ only by case keep separate hrefs
+    and are both published, because `_child` resolves each of them exactly.
+    """
+    oldest: dict[str, frappe._dict] = {}
+    for child in children:
+        current = oldest.get(child.title)
+        if current is None or child.creation < current.creation:
+            oldest[child.title] = child
+    published = {id(row) for row in oldest.values()}
+    return [child for child in children if id(child) in published]
 
 
 def _read_page(principals, parent: str) -> tuple[frappe._dict, list[frappe._dict]]:
@@ -216,3 +238,7 @@ def _render(
             missing.append(etree.Element(tag))
     response.propstat(200, found)
     response.propstat(404, missing)
+    if not found and not missing:
+        # RFC 4918 §14.24: a response is an href plus propstat or status, and
+        # an empty <D:prop/> body leaves no propstat to write
+        response.status(200)

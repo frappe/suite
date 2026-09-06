@@ -421,7 +421,7 @@ class TestHiddenContent(DavCase):
         self.assertEqual(parent_row.name, "root1")
         self.assertEqual([row.name for row in listed], ["file1"])
 
-    def test_a_document_path_is_404_end_to_end(self):
+    def test_an_unresolved_path_is_404_in_both_read_handlers(self):
         with patch.object(pathmap, "resolve", return_value=resolved(segments=["Deck"])):
             ctx = self.make_ctx("PROPFIND", "/dav/Deck", headers={"Depth": "0"})
             with self.assertRaises(errors.NotFoundError):
@@ -442,6 +442,43 @@ class TestHiddenContent(DavCase):
         self.assertEqual(self.db.sql.call_count, 3)
         segments = [call.kwargs["values"]["segment"] for call in self.db.sql.call_args_list[1:]]
         self.assertEqual(segments, ["Deck", "Deck"])
+
+
+class TestOneNamespace(DavCase):
+    """A name a listing will not publish must not resolve by hand either."""
+
+    def resolve(self, title, rows):
+        self.db.sql.side_effect = [[root_node()], rows, rows]
+        with patch.object(pathmap, "personal_root_for", return_value="root1"):
+            return pathmap.resolve([title], USER)
+
+    def test_a_title_the_listing_drops_does_not_resolve(self):
+        # `\` survives `_VISIBLE`, survives the URL grammar as %5C, and used to
+        # answer 200 at a href no listing ever published
+        row = node("file1", title="a\\b")
+        self.assertFalse(pathmap.addressable(row))
+        self.assertFalse(pathmap.visible(row))
+        self.assertFalse(self.resolve("a\\b", [row]).exists)
+
+    def test_an_ordinary_title_still_resolves(self):
+        row = node("file1", title="a-b.txt")
+        self.assertTrue(pathmap.visible(row))
+        self.assertTrue(self.resolve("a-b.txt", [row]).exists)
+
+    def test_two_siblings_with_one_title_publish_one_href(self):
+        older = node("file1", title="dup.txt", blob="blob1", creation=STAMP)
+        newer = node("file2", title="dup.txt", blob="blob2", creation=datetime(2026, 9, 6, 12, 0, 0))
+
+        # the row a GET of that href would answer from is the one published,
+        # whichever order the window returned them in
+        for window in ([newer, older], [older, newer]):
+            with self.subTest(window=[row.name for row in window]):
+                published = propfind._one_row_per_name(window)
+                self.assertEqual([row.name for row in published], ["file1"])
+
+    def test_titles_differing_only_by_case_keep_their_own_hrefs(self):
+        rows = [node("file1", title="A.txt"), node("file2", title="a.txt")]
+        self.assertEqual([row.name for row in propfind._one_row_per_name(rows)], ["file1", "file2"])
 
 
 # --- D. the Depth 1 query budget (§5.3, §12.5) ---
@@ -1036,6 +1073,25 @@ class TestQuotaProperties(QuotaCase):
         answer = self.propfind_body(row, PROP_QUOTA, segments=["a.txt"])["/dav/a.txt"]
         self.assertIn(dav("quota-used-bytes"), answer[404])
         self.assertIn(dav("quota-available-bytes"), answer[404])
+
+    def test_a_quota_probe_at_a_file_costs_no_root_read(self):
+        """The answer is a 404 propstat either way, so the three queries
+        `get_storage_usage` spends are three nobody asked for."""
+        row = node("file1", title="a.txt")
+        self.propfind_body(row, PROP_QUOTA, segments=["a.txt"])
+        self.usage.assert_not_called()
+
+    def test_an_empty_prop_body_still_yields_a_valid_response(self):
+        """RFC 4918 §14.24: href plus propstat or status. `<D:prop/>` leaves no
+        propstat, and a bare href is a body a strict client refuses."""
+        body = b'<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop/></D:propfind>'
+        with patch.object(pathmap, "resolve", return_value=resolved(root_node(), is_mount=True)):
+            ctx = self.make_ctx("PROPFIND", "/dav/", headers={"Depth": "0"}, data=body)
+            document = etree.fromstring(propfind.handle(ctx).get_data())
+
+        entry = document.find(dav("response"))
+        self.assertIsNone(entry.find(dav("propstat")))
+        self.assertEqual(entry.find(dav("status")).text, "HTTP/1.1 200 OK")
 
 
 # --- G. principals (§6.9, §12.4) ---
