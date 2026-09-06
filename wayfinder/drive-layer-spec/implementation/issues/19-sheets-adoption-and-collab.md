@@ -270,12 +270,41 @@ The hook only runs for a new user, which is why the module errored while
 `test_upload`, whose fixture emails were already committed on the site, passed.
 `0971534cc` records the repair. It changes no Drive production code.
 
-Gate step 5 now has one failure, and it is not this ticket's and not Drive's:
+Gate step 5 had one failure, and it was not this ticket's and not Drive's:
 
 - `suite.meet.api.test.test_recording_reliability`,
-  `test_one_active_recording_per_room_owner_by_default`, asserts `'Recording'`
-  and reads `'Starting'`. It fails the same way at `e338cccb1` with the repair
-  stashed, and it fails on its own module run.
+  `test_one_active_recording_per_room_owner_by_default`, asserted `'Recording'`
+  and read `'Starting'`. It failed the same way at `e338cccb1` with the repair
+  stashed, and on its own module run.
+
+`e15a9a50f` fixes it in Meet. `recording.start` inserts the recording and its
+storage reservation, then counts the owner's live recordings and refuses over
+the limit. The refusal left both writes in the transaction for the request
+layer to roll back, so a caller that does not roll back kept a `Starting`
+recording and a charged reservation. The test is such a caller: after the
+expected refusal it started the second room again and `start` returned the
+leaked row. A savepoint around the admission block now drops those writes
+before the throw, and the test asserts the refusal leaves no recording row, no
+reservation, and no bytes charged to the owner root.
+
+Site gate run, on `slides.localhost`, at `e15a9a50f`. Every command ran
+serially, one bench invocation at a time:
+
+| Command | Result |
+|---|---|
+| `run-tests --module suite.meet.api.test.test_recording_reliability` | 13 tests, OK |
+| `run-tests --module suite.meet.api.test.test_recording` | 41 tests, OK |
+| `run-tests --module suite.meet.api.test.test_callback_security` | 7 tests, OK |
+| `run-tests --module suite.meet.api.test.test_meeting` | 49 tests, OK |
+| `run-tests --module suite.meet.api.test.test_e2ee_proof` | 7 tests, OK |
+| `run-tests --module suite.meet.doctype.meet_recording.test_meet_recording` | 10 tests, OK |
+| `run-tests --module suite.meet.recording.test_ingest_media` | 3 tests, OK |
+| `run-tests --module suite.meet.recording.test_grants` | 4 tests, OK |
+| `run-tests --module suite.meet.patches.test.test_backfill_recording_storage_reservations` | 6 tests, OK |
+| `run-tests --app suite` | 221 unit OK, 871 integration OK with 26 skipped, 545 unspecified OK |
+
+Gate step 5 has no failure left. No queue overload occurred: the `short` queue
+sat at 156 of its 550 cap after the full run, so nothing was cleared.
 
 One environment note for anyone repeating step 5. The bench has no RQ worker,
 so every run leaves its background jobs queued. The `short` queue reached its
@@ -369,11 +398,12 @@ bench --site slides.localhost run-tests --module suite.tests.test_architecture
 bench --site slides.localhost run-tests --app suite
 ```
 
-Ran at `0971534cc`: 221 unit OK, 871 integration with 1 failure, 545 unspecified
-OK. The one failure is
-`suite.meet.api.test.test_recording_reliability.test_one_active_recording_per_room_owner_by_default`,
-which fails the same way at `e338cccb1` with the repair stashed. Step 4's
-modules all pass. The earlier `test_grants` block is fixed by `0971534cc`.
+Ran at `e15a9a50f`: 221 unit OK, 871 integration OK with 26 skipped, 545
+unspecified OK. Step 4's modules all pass. The earlier `test_grants` block is
+fixed by `0971534cc`, and the one Meet failure by `e15a9a50f`.
+
+The earlier run at `0971534cc` read 871 integration with 1 failure,
+`suite.meet.api.test.test_recording_reliability.test_one_active_recording_per_room_owner_by_default`.
 
 **6. The DocShare bypass, by hand.** No test can reach it: the widening happens
 inside Frappe, after the hook has answered. Link a sheet, share it with a user
