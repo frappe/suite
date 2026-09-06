@@ -461,6 +461,7 @@ class TestArchitecture(unittest.TestCase):
                 "UPLOAD",
                 "ContentTypeSpec",
                 "DriveContent",
+        "DriveError",
                 "Satellite",
                 "adopt_media",
                 "bind_legacy_storage_reservation",

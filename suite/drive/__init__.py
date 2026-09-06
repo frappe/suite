@@ -39,8 +39,9 @@ exactly as it was: an import is neither a move nor a copy.
 
 ## Errors
 
-Every workflow raises a `suite.drive._core.errors.DriveError` subclass. They
-are caught by type, not by message. `DriveError` subclasses
+Every workflow raises a `DriveError` subclass. They are caught by type, not by
+message, and the base class is exported here so an app can catch every refusal
+in one `except` without reaching below this package. `DriveError` subclasses
 `frappe.ValidationError` and carries an `http_status_code`, so an unhandled one
 still aborts the request with the right status.
 
@@ -122,6 +123,7 @@ from suite.drive._core.content import (
     DriveContent,
     Satellite,
 )
+from suite.drive._core.errors import DriveError
 from suite.drive._core.quota import (
     bind_legacy_storage_reservation,
     create_storage_reservation,
@@ -252,6 +254,7 @@ __all__ = (
     "UPLOAD",
     "ContentTypeSpec",
     "DriveContent",
+    "DriveError",
     "Satellite",
     "adopt_media",
     "bind_legacy_storage_reservation",
