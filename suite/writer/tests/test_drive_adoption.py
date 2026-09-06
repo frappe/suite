@@ -55,6 +55,8 @@ from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
 from suite.drive.api.files import (
     create_folder,
+    delete_entities,
+    does_entity_exist,
     move,
     remove_or_restore,
     rename,
@@ -876,6 +878,33 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         self.assertEqual(row.owner, USER)
         self.assertEqual(row.file_size, len(PNG))
         self.assertFalse(frappe.db.exists("Drive Node", picture), "and no node was created")
+
+    def test_a_picture_a_failed_import_uploaded_can_be_taken_back(self):
+        """`writer/utils/docximporter.js` rolls back every picture it uploaded
+        when an import fails, and each one is a `File` under the document."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Rolled back {frappe.generate_hash(6)}")
+        self._posted(PNG)
+        picture = embed.add(entity.name)["file_url"].split("id=")[-1]
+        self.addCleanup(self._drop_rows, picture)
+        self.assertFalse(frappe.db.exists("Drive Node", picture), "no node before Build")
+
+        delete_entities([picture])
+
+        # `File.permanent_delete` tombstones the row, as it always did.
+        self.assertEqual(frappe.db.get_value("File", picture, "status"), "Removed")
+
+    def test_the_uploader_can_ask_whether_that_folder_holds_the_name(self):
+        """`FileUploader.vue` asks before it writes, about the folder whose
+        page `list.files` now opens."""
+        frappe.set_user(USER)
+        self.addCleanup(frappe.set_user, "Administrator")
+        entity = self._opened(f"Named {frappe.generate_hash(6)}")
+        home = frappe.db.get_value("File", entity.name, "folder")
+
+        self.assertTrue(does_entity_exist(entity.file_name, home))
+        self.assertFalse(does_entity_exist(f"Nothing {frappe.generate_hash(6)}", home))
 
     def test_a_stranger_cannot_add_a_picture_to_somebody_elses_document(self):
         """The gate is the old body's, `user_has_permission(parent, "upload")`,
