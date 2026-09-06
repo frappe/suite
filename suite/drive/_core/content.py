@@ -94,6 +94,7 @@ DOCUMENT_NODE_FIELDS = (
     "root",
     "path",
     "state",
+    "title",
     "content_doctype",
     "content_docname",
 )
@@ -832,6 +833,31 @@ def list_media(principals: Principals, node: str) -> list[dict]:
         }
         for row in media_rows(current.name)
     ]
+
+
+def export_document(principals: Principals, node: str, fmt: str | None = None) -> tuple[IO[bytes], str, str]:
+    """Stream one readable document in a declared format, and name the file.
+
+    §10.1's `export` is the only way a document's bytes leave Drive, and only
+    the app can produce them. Drive authorizes the node, refuses a format the
+    app did not offer, and hands back the guarded stream: nothing is stored,
+    so nothing is charged.
+    """
+    current = _document_node(node)
+    require(current, READ, principals)
+    spec = spec_for(current.content_doctype)
+    if not spec.export or not spec.export_formats:
+        raise DriveConflict(_("This Drive content type cannot be exported"))
+    chosen = fmt or spec.default_export
+    if chosen is None:
+        raise DriveConflict(_("This Drive content type has no default export format"))
+    if not isinstance(chosen, str) or chosen not in spec.export_formats:
+        frappe.throw(
+            _("Drive export format {0} is not offered for {1}").format(chosen, spec.doctype),
+            frappe.ValidationError,
+        )
+    stream, mime = call_app_stream(spec.export, current.content_docname, chosen)
+    return stream, mime, f"{current.title}.{chosen}"
 
 
 def media_rows(node: str, *, for_update: bool = False) -> list[frappe._dict]:
