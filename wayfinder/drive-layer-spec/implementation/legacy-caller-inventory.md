@@ -14,6 +14,11 @@ classification, the retention reasons, and the Cleanup gates are this ticket's.
 The table below was written against `9797d1ea6`; the review branch changed no
 name, no class, and no guest flag, so the table still holds. What the review
 changed is recorded in "What the review fixed" below.
+
+**Closeout:** suite `7ceaa8abc` on `main`. The complete 17-module site gate has
+run on `slides.localhost` and every command exited 0. See "The complete gate,
+run" below. Ticket 23 is `done`.
+
 Every path is relative to the app root. The classification is executable:
 `suite.drive.http.shims.CLASSIFICATION`, checked against the legacy modules by
 `suite/drive/http/tests/test_shims.py`.
@@ -147,7 +152,8 @@ directly and waits on the response URL. Every path below is relative to
 | `files.search` | `specs/drive/favourites-search.spec.ts:51` |
 | `files.delete_entities` | `specs/drive/lifecycle.spec.ts:26` |
 
-These were not run: this review has no site. One is known to fail by reading
+These have still not been run. The 17-module gate runs `bench` suites only;
+the Playwright specs need a site and browsers. One is known to fail by reading
 it, and it is named under "Carried risks" below.
 
 ## What Cleanup needs
@@ -352,6 +358,39 @@ pre-fix body first.
 
 ## What the site gate fixed
 
+### The complete gate, run
+
+Every module of the required 17-module serialized gate ran on
+`slides.localhost` under `script -qec "..." /dev/null`, one command at a time,
+with the exit status of each command checked. Every command exited 0. 926
+tests, no failure and no error.
+
+| # | Module | Result |
+|---|---|---|
+| 1 | `suite.drive.http.tests.test_shims` | 267 OK |
+| 2 | `suite.drive.http.tests.test_dispatch` | 154 OK |
+| 3 | `suite.drive.api.tests.test_files` | 59 OK |
+| 4 | `suite.drive.api.tests.test_list` | 26 OK |
+| 5 | `suite.drive.api.tests.test_notifications` | 1 unit OK, 18 integration OK |
+| 6 | `suite.drive.tests.test_sync_permissions` | 5 OK |
+| 7 | `suite.drive.webdav.tests.test_mkcol_delete` | 12 OK |
+| 8 | `suite.drive.webdav.tests.test_put_get` | 65 OK |
+| 9 | `suite.drive.webdav.tests.test_perms` | 4 OK |
+| 10 | `suite.drive.tests.test_access` | 12 OK |
+| 11 | `suite.drive.tests.test_views` | 10 unit OK, 12 integration OK |
+| 12 | `suite.drive.tests.test_activity` | 8 OK |
+| 13 | `suite.drive.tests.test_nodes` | 13 unit OK, 25 integration OK |
+| 14 | `suite.writer.tests.test_drive_adoption` | 23 unit OK, 73 integration OK |
+| 15 | `suite.slides.tests.test_drive_adoption` | 30 unit OK, 71 integration OK |
+| 16 | `suite.writer.api.tests.test_general` | 7 OK |
+| 17 | `suite.drive.tests.test_grants` | 31 OK |
+
+`bench --site slides.localhost migrate` had already completed successfully
+before the run, and no DocType JSON changed after it.
+
+The module notes below are the record of each module's own repair branch. They
+are dated snapshots. This table is the result that closes ticket 23.
+
 First module of the serialized gate,
 `bench --site slides.localhost run-tests --module suite.drive.http.tests.test_shims`,
 on `forge/drive-23-site-gate-shims`. It ran 164 tests and failed three. All
@@ -553,7 +592,8 @@ across sixteen names, so the root must rerun the suites this branch did not:
 `suite.drive.api.tests.test_list`, `suite.drive.api.tests.test_notifications`,
 `suite.drive.tests.test_sync_permissions`, the three WebDAV suites,
 `suite.drive.tests.test_access`, `test_views`, `test_activity`, `test_nodes`,
-and `test_grants`. They are unverified here.
+and `test_grants`. The root has since run all of them, and all of them pass.
+See "The complete gate, run" above.
 
 40. **Zeros for a node-less `File` emptied three Writer reads.** The legacy
     owned-row rule handed the author every bit, and `get_user_access` answered
@@ -688,7 +728,8 @@ and `test_grants`. They are unverified here.
   then expects the re-share to be refused with "cannot grant". The first share
   now lands at READ, so the second call is refused by the MANAGE gate with a
   different message. The spec needs the frontend ticket, not a shim change.
-  Read, not run: this review has no site.
+  Read, not run: the e2e specs need a site and browsers, and the 17-module
+  gate runs `bench` suites only.
 
 - **Uploads fail on a site whose `storage_driver` is `s3`.** The driver offers
   a presigned target, so `create_blob_upload` opens a direct session. A legacy
