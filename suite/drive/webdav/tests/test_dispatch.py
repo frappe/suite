@@ -119,7 +119,9 @@ class TestWebDAVDispatch(IntegrationTestCase):
             response = dispatch("OPTIONS", "/dav")
             # LOCK asked for, LOCK not relinked: it stays off the wire
             self.assertEqual(response.headers["Allow"], "OPTIONS, GET, HEAD")
-            self.assertEqual(response.headers["DAV"], "1, 3")
+            # RFC 4918 §9.1 makes PROPFIND what class 1 means, and this list
+            # holds none, so the site claims no class at all
+            self.assertNotIn("DAV", response.headers)
 
             response = dispatch("LOCK", "/dav/x.txt", user=USER, password=PASSWORD)
             self.assertEqual(response.status_code, 405)
