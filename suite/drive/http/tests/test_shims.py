@@ -290,9 +290,30 @@ class TestInventory(ShimCase):
         self.assertEqual(len(shims.names_of("retired")), 3)
         self.assertEqual(len(shims.names_of("retained")), 8)
 
-    def test_the_three_permanent_names_of_the_table_are_permanent(self):
+    def test_the_two_permanent_names_of_the_table_are_permanent(self):
         for name in ("api.s3.fetch", "overrides.file.get_file_for_doc"):
             self.assertEqual(shims.CLASSIFICATION[name], "permanent", name)
+
+    def test_no_legacy_name_lives_outside_the_eleven_modules_walked(self):
+        """`LEGACY_MODULES` is a frozen list, so something has to notice a new one.
+
+        `whitelisted_names` reads those eleven files. A twelfth `api/*.py`
+        module holding a whitelisted name would be a legacy address nothing in
+        this file classifies, guards a guest flag on, or hands to Cleanup.
+        The whole package is walked here, and the files that may hold one are
+        named: the eleven, plus §11.2's own route module.
+        """
+        allowed = set(LEGACY_MODULES) | {"drive/http/routes.py"}
+        found = set()
+        for path in (APP / "drive").rglob("*.py"):
+            for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                for decorator in node.decorator_list:
+                    call = decorator.func if isinstance(decorator, ast.Call) else decorator
+                    if getattr(call, "attr", getattr(call, "id", "")) == "whitelist":
+                        found.add(path.relative_to(APP).as_posix())
+        self.assertEqual(found, allowed)
 
     def test_every_forwarder_delegates_and_holds_no_second_implementation(self):
         for name in shims.names_of("forwarder"):
