@@ -614,3 +614,98 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_access
 bench --site slides.localhost run-tests --module suite.drive.tests.test_views
 bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
 ```
+
+## Site gate, `suite.drive.tests.test_views`
+
+The module now passes on `slides.localhost`: 10 unit tests and 12 integration
+tests, OK. Status stays `in-progress`. `test_activity`, `test_versions`,
+`test_access`, and `test_grants` are not claimed here.
+
+### The two failures, and what they were
+
+First run, at commit `35834c957`: 8 of 10 unit tests passed, 2 failed, and all
+12 integration tests passed.
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+TestListingContract.test_a_short_fully_hidden_window_has_no_next_cursor
+TestListingContract.test_limit_is_capped_and_short_raw_window_ends_paging
+AssertionError: expected {'rows': [], 'next_cursor': None}
+actual   {'rows': [], 'next_cursor': None,
+          'parent': {'name': 'root', 'kind': 'root', 'root': None, 'path': ''}}
+```
+
+The tests were stale. The return shape is right.
+
+Both cases assert whole-dict equality on what `_core.nodes.children` returns.
+That return grew a third key in ticket 21's review commit `fcc9232d5`:
+`page["parent"]` is the listed folder's own row (`nodes.py:2143-2146`). The
+breadcrumbs expansion reads it there, so a trail costs no second read and no
+second point check on the folder the page just listed, and a grant revoked
+mid-request cannot 404 a page the plain listing already answered
+(`routes.py:262-268`).
+
+Nothing about §11.4 changed. The response envelope is minted by
+`shapes.page`, which copies `rows` and `next_cursor` and nothing else
+(`shapes.py:219-221`). `test_routes.TestPageEnvelope` already pins the
+published page to those two keys, and its own fixture carries the third key
+into the handler. §11.4 constrains the HTTP response. It says nothing about a
+`_core` workflow's return, and the two are not the same value.
+
+Dropping `parent` to satisfy the assertions would delete the read that ticket
+21's review added and put a second point check back on the breadcrumbs path.
+The tests move instead.
+
+### Fix
+
+`suite/drive/tests/test_views.py`, two assertions:
+
+- Each expected dict gains the `parent` row the window's own fixture declares.
+- Whole-dict equality is kept, not relaxed to per-key checks, so a fourth key
+  appearing on the page still fails here.
+- One comment on the first case says why the third key exists, at the point a
+  reader meets it.
+
+No production file changed. The sibling case
+`test_folder_window_uses_exactly_three_queries_and_advances_past_hidden_rows`
+was already written per key and needed nothing.
+
+Agents did not run here. The diagnosis, the fix, and this section are mine.
+
+### Commands and results
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_views
+Ran 10 tests in 0.054s   OK   (unit)
+Ran 12 tests in 0.953s   OK   (integration)
+```
+
+```
+cd /home/faris/benches/suite-bench/sites && PYTHONPATH=<suite>:<frappe> \
+  ../env/bin/python -m unittest suite.drive.http.tests.test_translator \
+  suite.drive.http.tests.test_shapes suite.drive.http.tests.test_routes \
+  suite.tests.test_architecture
+Ran 173 tests in 1.328s
+OK
+```
+
+```
+ruff 0.16.6 format --check suite/drive/tests/test_views.py
+1 file already formatted
+ruff 0.16.6 check suite/drive/tests/test_views.py
+All checks passed!
+```
+
+Ruff here is 0.16.6. The bench venv holds no `ruff` binary; 0.12.3 from the
+pre-commit cache reports the same two results.
+
+### Remaining gate
+
+Four modules, serialized, one command at a time:
+
+```
+bench --site slides.localhost run-tests --module suite.drive.tests.test_activity
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
+bench --site slides.localhost run-tests --module suite.drive.tests.test_access
+bench --site slides.localhost run-tests --module suite.drive.tests.test_grants
+```
