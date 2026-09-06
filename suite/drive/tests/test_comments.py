@@ -76,7 +76,9 @@ class TestCommentWorkflows(IntegrationTestCase):
 
     def test_anchor_replies_resolution_and_server_authorship(self):
         anchor = 'sheet-1:{"cell":"A1"}'
-        thread = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")["thread"]
+        thread = create_thread(self.commenter, self.document.name, anchor, "First", author_name="Forged")[
+            "thread"
+        ]
         reply_id = reply(self.owner, thread, "Second")
         resolve(self.commenter, thread)
 
@@ -114,7 +116,9 @@ class TestCommentWorkflows(IntegrationTestCase):
         grant(self.document.name, LINK_B, COMMENT, self.admin)
         guest_a = Principals("Guest", (), (LINK_A,))
         guest_b = Principals("Guest", (), (LINK_B,))
-        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")["thread"]
+        thread = create_thread(guest_a, self.document.name, "opaque", "Guest text", author_name="Ada")[
+            "thread"
+        ]
         comment = frappe.db.get_value("Drive Comment", {"thread": thread}, "name")
 
         row = frappe.db.get_value("Drive Comment", comment, ["author", "author_name"], as_dict=True)
