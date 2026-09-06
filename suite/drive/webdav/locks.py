@@ -14,8 +14,10 @@ from datetime import datetime, timedelta
 import frappe
 from lxml import etree
 
-from suite.drive.utils import get_ancestors_of
-from suite.drive.webdav import pathmap, perms
+from suite.drive._core.access import chain_ids, effective_role
+from suite.drive._core.nodes import child_path
+from suite.drive._core.roles import READ
+from suite.drive.webdav import pathmap
 from suite.drive.webdav.context import DavContext, validate_segments
 from suite.drive.webdav.errors import BadRequest, Locked, PreconditionFailed
 from suite.drive.webdav.ifheader import EMPTY_IF, BadIfHeader, IfHeader, parse_if_header
@@ -96,8 +98,8 @@ def _conditional_gate(ctx: DavContext, submitted: IfHeader) -> None:
         # a resource the user cannot read evaluates exactly like an absent one:
         # the observable 412 would otherwise disclose its existence, ETag and
         # lock state to anyone who can name its URL in a tagged If list
-        row = resolved.entity
-        if row is None or not perms.resolve_entity_access(row, ctx.user)["read"]:
+        row = resolved.node
+        if row is None or effective_role(row, ctx.principals) < READ:
             return None
         return row.name
 
@@ -137,7 +139,12 @@ def _coverage(entity: str | None, membership_parent: str | None, check_descendan
     covering: dict[str, LockInfo] = {}
 
     def add_chain(target: str) -> None:
-        ancestors = set(get_ancestors_of(target))
+        row = pathmap.fetch(target)
+        if row is None:
+            return
+        # §3.1 materialises the ancestry on the row, so the chain costs nothing
+        # beyond the row itself - the legacy adapter walked it with a CTE.
+        ancestors = set(chain_ids(row)) - {target}
         for lock in _fetch_locks({target, *ancestors}):
             if lock.entity == target or (lock.entity in ancestors and lock.depth == "infinity"):
                 covering[lock.token] = lock
@@ -182,21 +189,28 @@ def discovery_map(ancestors_by_entity: dict[str, list[str]]) -> dict[str, list[L
 
 
 def _locks_over_subtree(subtree_root: str) -> list[str]:
-    """Tokens of active locks anywhere under subtree_root — one inverted CTE
-    seeded from the (small) lock table, climbing the folder chain upward."""
+    """Tokens of active locks anywhere under `subtree_root`, itself included.
+
+    `Drive Node` materialises its ancestry, so the whole subtree is one indexed
+    range on `node_subtree (root, path)` instead of the recursive walk the
+    adjacency list needed.
+    """
+    row = pathmap.fetch(subtree_root)
+    if row is None:
+        return []
     rows = frappe.db.sql(
-        """WITH RECURSIVE lock_paths AS (
-            SELECT l.name AS lock_name, f.name AS node, f.folder
-            FROM `tabDrive DAV Lock` l JOIN `tabFile` f ON f.name = l.entity
-            WHERE l.expires_at > NOW()
-        UNION ALL
-            SELECT lp.lock_name, f.name, f.folder
-            FROM lock_paths lp JOIN `tabFile` f ON f.name = lp.folder
-        )
-        SELECT DISTINCT lock_name FROM lock_paths WHERE node = %(root)s""",
-        values={"root": subtree_root},
+        """SELECT DISTINCT l.name
+        FROM `tabDrive DAV Lock` l
+        JOIN `tabDrive Node` n ON n.name = l.entity
+        WHERE l.expires_at > NOW()
+          AND (n.name = %(node)s OR (n.root = %(root)s AND n.path LIKE %(prefix)s))""",
+        values={
+            "node": subtree_root,
+            "root": row.name if row.kind == "root" else row.root,
+            "prefix": child_path(row) + "%",
+        },
     )
-    return [row[0] for row in rows]
+    return [entry[0] for entry in rows]
 
 
 # --- lifecycle ---
@@ -269,12 +283,12 @@ def find_lock(token: str) -> LockInfo | None:
     return LockInfo(**row) if row else None
 
 
-def find_conflicts(entity: str, *, scope: str, depth: str, is_folder: bool) -> list[LockInfo]:
+def find_conflicts(entity: str, *, scope: str, depth: str, is_collection: bool) -> list[LockInfo]:
     """LOCK conflict matrix: exclusive conflicts with everything, shared only
     with exclusive. A depth-infinity request on a collection also conflicts
     with any lock inside the subtree."""
     covering = list(covering_locks(entity))
-    if is_folder and depth == "infinity":
+    if is_collection and depth == "infinity":
         known = {lock.token for lock in covering}
         subtree = set(_locks_over_subtree(entity))
         covering += _fetch_locks_by_token(list(subtree - known))

@@ -14,7 +14,7 @@ import frappe
 from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.wrappers import Request, Response
 
-from suite.drive.webdav import ALLOWED_METHODS, DAV_PREFIX
+from suite.drive.webdav import DAV_PREFIX, RELINKED_METHODS
 
 
 class DAVResponseException(HTTPException):
@@ -22,19 +22,17 @@ class DAVResponseException(HTTPException):
 
 
 # method -> (module under suite.drive.webdav, handler attribute); imported lazily
-# so non-DAV requests never load the protocol engine
+# so non-DAV requests never load the protocol engine.
+#
+# The write verbs are absent while ticket 25 is open. Their handlers still
+# write legacy `File` rows, and the path they would be handed now names a
+# `Drive Node`, so running one would create a row in the wrong tree. They are
+# refused by the allow-list before they reach here; this table and
+# `RELINKED_METHODS` grow back together.
 _HANDLERS: dict[str, tuple[str, str]] = {
     "PROPFIND": ("propfind", "handle"),
     "GET": ("get", "handle"),
     "HEAD": ("get", "handle"),
-    "PUT": ("put", "handle"),
-    "PROPPATCH": ("proppatch", "handle"),
-    "MKCOL": ("structure", "handle_mkcol"),
-    "DELETE": ("structure", "handle_delete"),
-    "MOVE": ("structure", "handle_move"),
-    "COPY": ("copy", "handle"),
-    "LOCK": ("lock", "handle_lock"),
-    "UNLOCK": ("lock", "handle_unlock"),
 }
 
 
@@ -100,7 +98,7 @@ def _dispatch(request: Request) -> None:
         _respond(response)
 
 
-def _handler_for(method: str, allowed: tuple[str, ...] = ALLOWED_METHODS) -> Callable:
+def _handler_for(method: str, allowed: tuple[str, ...] = RELINKED_METHODS) -> Callable:
     entry = _HANDLERS.get(method)
     if not entry:
         from suite.drive.webdav.errors import MethodNotAllowed

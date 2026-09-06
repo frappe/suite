@@ -105,6 +105,8 @@ def map_exception(exception: Exception) -> DAVError:
     """Fallback mapping for Drive/frappe exceptions a handler let escape."""
     if isinstance(exception, DAVError):
         return exception
+    if mapped := _drive_refusal(exception):
+        return mapped
     if isinstance(exception, frappe.AuthenticationError):
         return AuthRequired(str(exception))
     if isinstance(exception, frappe.PermissionError):
@@ -114,6 +116,44 @@ def map_exception(exception: Exception) -> DAVError:
     if isinstance(exception, frappe.ValidationError):
         return Conflict(str(exception))
     return DAVError("Internal server error.")
+
+
+def _drive_refusal(exception: Exception) -> DAVError | None:
+    """Map a Drive workflow refusal onto its DAV status.
+
+    Every one of these subclasses `frappe.ValidationError`, so without this the
+    generic branch below would answer 409 to all of them - including the one
+    refusal WebDAV is strictest about. §12.1: unreadable is always 404, never
+    403, so `DriveNotFound` has to be recognised before the family it belongs
+    to. The import is function-local because this module is the one every other
+    WebDAV module imports and it must stay cheap.
+    """
+    from suite.drive._core.errors import (
+        DriveConflict,
+        DriveError,
+        DriveForbidden,
+        DriveLinkExpired,
+        DriveLocked,
+        DriveNotFound,
+        DriveOverQuota,
+    )
+
+    if isinstance(exception, DriveNotFound):
+        return NotFoundError("Resource not found.")
+    if isinstance(exception, DriveForbidden):
+        return Forbidden("You do not have permission for this resource.")
+    if isinstance(exception, DriveOverQuota):
+        return InsufficientStorage(str(exception))
+    if isinstance(exception, DriveConflict):
+        return Conflict(str(exception))
+    if isinstance(exception, DriveLocked | DriveLinkExpired):
+        # §6.9 gives a DAV session no link principals, so neither refusal can
+        # be reached from here. If one ever is, it is a credential the client
+        # cannot supply over this protocol, which is a refusal, not a retry.
+        return Forbidden("You do not have permission for this resource.")
+    if isinstance(exception, DriveError):
+        return BadRequest(str(exception))
+    return None
 
 
 @contextmanager
