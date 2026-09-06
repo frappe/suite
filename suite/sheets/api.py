@@ -281,7 +281,13 @@ def unshare_sheet(name: str, user: str = "", everyone: int = 0) -> dict:
         if share_name:
             frappe.delete_doc("DocShare", share_name, ignore_permissions=True)
         return {"status": "ok"}
-    frappe.share.remove("Sheet", name, user)
+    # Same `ignore_permissions` as the `everyone` row above, and as
+    # `frappe.share.add` uses to write the row in the first place
+    # (`frappe/share.py:82`). `DocShare` carries a System Manager DocPerm and
+    # nothing else, so without this an ordinary owner could grant a share and
+    # then never take it back. What may revoke is the `share` right on the
+    # sheet, checked above, exactly as it is for granting.
+    frappe.share.remove("Sheet", name, user, flags={"ignore_permissions": True})
     return {"status": "ok"}
 
 
