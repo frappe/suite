@@ -46,7 +46,7 @@ from frappe.utils import add_to_date, get_datetime
 from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.content import clear_registry_cache, governs, spec_for
-from suite.drive._core.errors import DriveConflict, DriveForbidden
+from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
 from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
@@ -629,11 +629,31 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(frappe.db.count(DOCTYPE), documents_before)
 
     def test_a_stranger_cannot_create_a_document_in_somebody_elses_drive(self):
+        # A caller below Read never learns the node is there: `require` answers
+        # `DriveNotFound`, because an unreadable node is never a 403 (spec
+        # §5.4, [009 §2]). `DriveForbidden` here would disclose the folder.
+        nodes_before = frappe.db.count("Drive Node")
         documents_before = frappe.db.count(DOCTYPE)
         self._as(OTHER)
-        with self.assertRaises(DriveForbidden):
+        with self.assertRaises(DriveNotFound):
             drive.create_document(self.root.node, "Intruder", content_doctype=DOCTYPE)
         frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.count("Drive Node"), nodes_before)
+        self.assertEqual(frappe.db.count(DOCTYPE), documents_before)
+
+    def test_a_reader_who_cannot_upload_is_refused_and_not_hidden_from(self):
+        # The other half of that contract, and the reason the test above is not
+        # simply a weaker assertion: a caller who already holds Read gets
+        # `DriveForbidden`, not 404. Both refusals roll everything back.
+        nodes_before = frappe.db.count("Drive Node")
+        documents_before = frappe.db.count(DOCTYPE)
+        grant(self.root.node, OTHER, drive.READ, self.admin)
+
+        self._as(OTHER)
+        with self.assertRaises(DriveForbidden):
+            drive.create_document(self.root.node, "Uninvited", content_doctype=DOCTYPE)
+        frappe.set_user("Administrator")
+        self.assertEqual(frappe.db.count("Drive Node"), nodes_before)
         self.assertEqual(frappe.db.count(DOCTYPE), documents_before)
 
     # history
@@ -760,18 +780,20 @@ class TestWriterInDrive(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value(DOCTYPE, document.name, "html"), "<p>x</p>")
 
     def test_a_save_stamps_the_node_and_never_the_document_title(self):
-        # `create_document` stamps `content_modified` itself, so `assertGreaterEqual`
-        # against it proves nothing: an equal value passes, and the assertion
-        # survives deleting `drive_touch`. The clock moves instead.
+        # `create_document` stamps `content_modified` itself, so comparing the
+        # save against that stamp proves nothing: two writes inside one second
+        # can read equal, and the assertion survives deleting `drive_touch`.
+        # The stamp is moved back an hour instead, so only a real touch passes.
         node = self._document(title="Stamped")
-        before = get_datetime(frappe.db.get_value("Drive Node", node, "content_modified"))
+        created = get_datetime(frappe.db.get_value("Drive Node", node, "content_modified"))
+        backdated = add_to_date(created, hours=-1)
+        frappe.db.set_value("Drive Node", node, "content_modified", backdated, update_modified=False)
         document = frappe.get_doc(DOCTYPE, self._docname(node))
 
-        with self.freeze_time(add_to_date(before, hours=1)):
-            document.save_html("<p>new</p>")
+        document.save_html("<p>new</p>")
 
         after = frappe.db.get_value("Drive Node", node, ("content_modified", "title"), as_dict=True)
-        self.assertGreater(get_datetime(after.content_modified), before)
+        self.assertGreater(get_datetime(after.content_modified), backdated)
         self.assertEqual(after.title, "Stamped")
 
     def test_an_inherited_folder_grant_reaches_the_row_and_the_list(self):
