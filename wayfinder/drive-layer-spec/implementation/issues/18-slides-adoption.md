@@ -258,22 +258,23 @@ activates one.
 | Cross-deck paste | `test_a_pasted_slide_brings_its_pictures_under_the_destination_deck`, `test_pasting_the_same_picture_twice_reuses_the_node_and_charges_once`, `test_a_loose_element_paste_adopts_its_src_and_its_poster`, `test_a_paste_of_media_the_caller_cannot_read_is_skipped_not_disclosed`, `test_a_paste_that_names_something_other_than_media_is_refused` |
 | Templates | `test_a_template_starts_a_new_deck_and_drops_the_template_flag` |
 | Previews through Drive, `default_export=None` | `test_slides_stays_hidden_over_dav_and_offers_no_export`, `test_the_browser_capture_is_pushed_through_drive_and_not_onto_a_file`, `test_a_reader_cannot_push_a_preview`, `test_a_copy_carries_the_preview_so_it_looks_right_at_once` |
-| Composite: read checks, nothing forced public | `test_a_composite_may_reference_only_what_the_saver_can_read`, `test_a_composite_save_grants_the_reference_nothing_and_forces_nothing_public`, `test_a_composite_marks_an_unreadable_reference_instead_of_dropping_it`, `test_a_stranger_reads_no_composite_at_all` |
+| Composite: read checks, nothing forced public | `test_a_composite_may_reference_only_what_the_saver_can_read`, `test_a_composite_save_grants_the_reference_nothing_and_forces_nothing_public`, `test_a_composite_marks_an_unreadable_reference_instead_of_dropping_it`, `test_a_stranger_reads_no_composite_at_all`, `test_the_composite_route_answers_a_stranger_the_same_way_three_times` |
 | Legacy compatibility, Build sources kept | `test_a_legacy_deck_keeps_its_title_its_slug_and_its_backing_file`, `test_a_legacy_deck_still_renames_and_still_takes_a_thumbnail_file`, `test_the_legacy_columns_and_media_paths_survive_adoption` |
 | No linked deck bypasses Drive | `test_the_staged_legacy_guards_never_answer_for_a_linked_row`, `test_a_linked_deck_refuses_every_legacy_method`, `test_a_linked_deck_never_grows_a_backing_file`, `test_a_docshare_cannot_open_a_deck_the_grants_refuse` |
-| Access, trash, stamps | `test_an_inherited_folder_grant_reaches_the_row_and_the_list`, `test_a_stranger_reads_neither_the_row_nor_the_list`, `test_the_editor_access_answer_comes_from_the_node`, `test_a_trashed_deck_stays_readable_and_leaves_the_list`, `test_a_trashed_deck_refuses_a_paste_and_a_preview_push`, `test_a_save_stamps_the_node_and_never_the_deck_title`, `test_a_stranger_cannot_create_a_deck_in_somebody_elses_drive` |
+| Access, trash, stamps | `test_an_inherited_folder_grant_reaches_the_row_and_the_list`, `test_a_stranger_reads_neither_the_row_nor_the_list`, `test_the_editor_access_answer_comes_from_the_node`, `test_a_linked_composite_answers_editor_access_from_the_node_too`, `test_a_guest_learns_nothing_from_editor_access_about_a_linked_deck`, `test_a_trashed_deck_stays_readable_and_leaves_the_list`, `test_a_trashed_deck_refuses_a_paste_and_a_preview_push`, `test_a_trashed_deck_refuses_a_paste_that_names_no_picture_at_all`, `test_a_save_stamps_the_node_and_never_the_deck_title`, `test_a_stranger_cannot_create_a_deck_in_somebody_elses_drive` |
 | Dormant hooks, no `migrate` failure | `test_the_declaration_ships_dormant_and_the_hooks_stay_where_they_were`, `test_a_dormant_registry_leaves_a_docshare_alone`, `test_a_docshare_on_a_presentation_does_not_fail_a_migration` |
-| Activation, proved without activating | `test_activation_registers_the_declaration_and_moves_all_four_hooks`, `test_activation_accepts_the_frozen_legacy_title_column`, `test_activation_still_refuses_a_title_column_nobody_declared`, `test_a_legacy_declaration_expires_with_the_column_cleanup_drops`, `test_the_doctype_no_longer_names_the_legacy_column_as_its_display_title`, `test_a_legacy_declaration_only_covers_a_field_drive_owns`, `test_slides_declares_the_one_legacy_column_it_keeps_past_activation` |
+| Activation, proved without activating | `test_activation_registers_the_declaration_and_moves_all_four_hooks`, `test_activation_accepts_the_frozen_legacy_title_column`, `test_activation_still_refuses_a_title_column_nobody_declared`, `test_a_legacy_declaration_expires_with_the_column_cleanup_drops`, `test_the_display_title_still_resolves_to_the_frozen_legacy_column`, `test_activation_refuses_a_display_title_frappe_supplied_and_nobody_declared`, `test_a_legacy_declaration_only_covers_a_field_drive_owns`, `test_slides_declares_the_one_legacy_column_it_keeps_past_activation` |
 | The frozen legacy column | `test_a_linked_deck_cannot_write_the_frozen_legacy_title`, `test_a_save_keeps_the_build_title_so_the_rollback_source_survives` |
-| No `DocShare` around the staged guards | `test_a_docshare_cannot_open_a_linked_deck_through_the_staged_guards`, `test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone` |
+| No `DocShare` around the staged guards | `test_a_docshare_cannot_open_a_linked_deck_through_the_staged_guards`, `test_a_docshare_on_a_legacy_deck_leaves_the_staged_list_alone`, `test_the_drive_refusal_is_not_a_frappe_permission_error`, `test_both_staged_guards_refuse_a_share_with_the_same_error`, `test_the_staged_list_guard_refuses_only_a_row_that_carries_a_node`, `test_the_staged_list_guard_never_refuses_an_administrator` |
 | Media the sweep must not lose | `test_a_poster_is_walked_to_the_bottom_however_deep_it_nests`, `test_a_deep_poster_is_rewritten_at_the_same_depth_it_is_read`, `test_the_sweep_reads_a_body_shape_slides_never_wrote`, `test_a_rewrite_stays_narrow_where_the_sweep_is_wide`, `test_the_sweep_answer_over_reports_and_the_adoption_answer_does_not`, `test_a_rewrite_never_grows_a_media_key_the_element_did_not_have`, `test_a_copy_repoints_every_element_on_a_slide_not_only_the_first` |
 | Adoption: disclosure, containment, the gate | `test_a_paste_naming_a_node_the_caller_cannot_read_is_never_told_what_it_is`, `test_a_paste_cannot_pull_an_ordinary_file_in_from_outside_a_deck`, `test_a_paste_that_names_no_media_is_still_checked` |
 
 ### Migration
 
-No new patch. `suite/patches.txt` is untouched. The schema changes are the
-`node` column, which `migrate` adds from the doctype JSON, and the removal of
-`title_field`, which is doctype metadata and moves no data.
+No new patch. `suite/patches.txt` is untouched. The one schema change is the
+`node` column, which `migrate` adds from the doctype JSON. Dropping
+`"title_field": "title"` from `presentation.json` moves no data and, as the
+review correction above records, changes no answer either.
 
 `validate_content_registry` runs from `after_install` and `after_migrate`
 (`suite/composition/lifecycle.py:57,65`). With the registry empty it iterates
@@ -320,17 +321,123 @@ Not fixed, recorded instead:
   unchanged here. §14.7 gives migrated templates a `$GENERAL` READ grant, so the
   migrated set is not a leak; a user-created template that gets a node would be.
   Ticket 21 owns the template route.
-- **`get_presentation_thumbnail`, `is_composite_presentation`, and
-  `get_editor_access`'s composite arm run no permission check for a legacy
-  deck.** Pre-existing. Ticket 23 owns the legacy read path.
-- **A row whose `node` is `''` rather than `NULL`** is excluded by the SQL and
-  treated as legacy by `has_permission`. Frappe writes `NULL` for an unset Link,
-  so it needs a direct write to occur. Inherited from Writer's staged guard.
+- **`get_presentation_thumbnail` and `is_composite_presentation` run no
+  permission check for a legacy deck.** Pre-existing. Ticket 23 owns the legacy
+  read path. `is_composite_presentation` answers the same guest question
+  `get_composite_presentation` was fixed to stop answering, one call earlier.
 - **`composite_references` is an uncapped point check per reference** on a
   guest-reachable route. Ticket 20 owns the grouped load; the cap is not there
   today.
-- **`push_preview` enforces no byte cap of its own.** The 6 MB limit lives in
-  Slides' `get_thumbnail_content`, so ticket 21's route would inherit none.
+- **`push_preview` enforces no byte cap and no pixel bound.** The 6 MB limit is
+  Slides' `get_thumbnail_content`, and the linked arm of
+  `save_presentation_thumbnail` still runs it, so the cap holds today and only
+  ticket 21's future route would inherit none. A byte cap is also the wrong
+  control: `_encode_image` decodes before it thumbnails, so a 294 KB solid
+  WebP of 13000x13000 (169 Mpx, under Pillow's 178.9 Mpx error threshold)
+  peaks at 2.6 GB of RSS and stores 542 bytes. Measured in a standalone process
+  on the venv's Pillow 12.3.0, not through `suite`. It needs EDIT on a deck the
+  caller already holds. `_core/previews.py` is ticket 13's file and the route is
+  ticket 21's, so it is a handoff, not a change here.
+- **`composite_references` returns the docname of an unreadable reference.**
+  §6.6 requires the mark, so this is the spec's answer, not a defect. Nothing
+  else about that deck crosses: `get_composite_presentation` skips an unreadable
+  reference before it inlines any slide.
+- **A composite that names a composite renders a hole.** There is no recursion:
+  the inner deck's own `slides` table is read, and a composite carries none.
+  Every level that is read takes a READ check. Ticket 20 owns the semantics.
+- **`refuse_unreadable_references` runs with the restorer's principals.** A
+  version restore fails if a reference was revoked since the version was taken.
+  Availability, not access. Ticket 20.
+- **The staged list guard refuses a Suite Admin.** `refuse_shared_linked_rows`
+  skips only the literal `Administrator`, where `_refuse_shared_list` skips any
+  Drive admin. Correct here and deliberate: the legacy predicate is empty only
+  for `Administrator`, so for anyone else the shared-names OR still applies and
+  skipping them would be the bypass. It costs a Suite Admin with a `DocShare` on
+  a linked deck their whole `Presentation` list in that window. Fails closed.
+- **`refuse_legacy_field_write` covers no direct-SQL path.** It hangs off
+  `DriveContent.validate`, so `frappe.db.set_value`, `db_set`, `frappe.db.sql`,
+  and `flags.ignore_validate` all bypass it. No production write to
+  `Presentation.title` survives activation: `update_title`,
+  `set_duplicate_metadata`, and `set_template_metadata` are all behind
+  `refuse_drive_native`, and after activation every row is linked.
+- **A linked composite answers `get_composite_presentation` with its legacy
+  columns.** `doc.as_dict()` carries `title`, `slug`, `thumbnail`, and
+  `is_template`. For a Drive-created deck all four are empty; for a Build-linked
+  one they hold the frozen Build values, so a Drive rename leaves the client
+  showing the old name until Cleanup drops the column. Ticket 34 handoff below.
+- **An oversized `X-Drive-Links` header marks every reference unreadable**
+  rather than being rejected. `principals` raises a `frappe.ValidationError` for
+  more than 20 tickets and `_readable` swallows it. §6.6 asks for an explicit
+  refusal. Ticket 20.
+
+### Corrected: two claims this review found wrong
+
+- **`''` needs a direct write only on a *linked* row.** The earlier record said
+  a `''` node needs a direct write full stop. Frappe does not enforce
+  `read_only` on save, so `frappe.client.insert` with `{"node": ""}` persists it
+  on a *legacy* row: `require_node` returns early on a falsy value and
+  `refuse_node_change` sees no stored node. On a linked row `refuse_node_change`
+  refuses, so clearing a real node still needs `frappe.db.set_value`.
+
+  Only one of the sixteen node-presence checks disagrees about `''`, and it
+  fails closed. `("is", "set")` compiles to `node <> ''`
+  (`frappe/database/operator_map.py:112-120`), which puts `''` on the same side
+  as the falsy row hook: legacy. The two staged list predicates use `IS NULL`,
+  which excludes a `''` row from the list entirely. Nothing on this branch
+  writes `''`.
+
+  **Ticket 28 precondition.** Build writes the column in bulk. If it ever
+  writes `''`, the row silently reverts to the legacy `File` path, which is a §1
+  bypass. Either Build guarantees `NULL`, or the two predicates widen to
+  `` (`tab…`.`node` IS NULL OR `tab…`.`node` = '') `` at
+  `presentation.py:654` and `writer/overrides/__init__.py:103`. Not widened here:
+  today that would make a `''` row *more* reachable, not less.
+
+- **Dropping `"title_field": "title"` removed no mirror.** Frappe resolves an
+  absent `title_field` to a field literally called `title` before it falls back
+  to `name` (`frappe/model/meta.py:373-384`), so `Presentation.get_title()`
+  still answers the frozen column. `_validate_forbidden_fields` read the raw
+  attribute, so §10.2's activation gate passed every doctype with that exact
+  shape. Fixed at `e974c07d7`: the guard reads `meta.get_title_field()` and
+  exempts a declared `legacy_fields` name. Setting `title_field` to `name`
+  instead is not open, it would rename every legacy deck's backing `File` to its
+  docname on the next save (`overrides/file.py:607-613`). What holds "no mirror
+  in either direction" is the freeze, not the missing attribute.
+
+  Same correction in `suite/hooks.py`: a deck Build linked keeps its `File`
+  until §14.10, so `sync_content_file` does not return early for it. It is a
+  no-op because `title` is frozen.
+
+- **The `_is_public` fix only half landed.** The render half is fixed. The save
+  half is not: `Presentation.validate`'s legacy arm still throws for a legacy
+  composite naming a reference Build has linked, because `_is_public` answers
+  `False` for it. That is the right answer, not a bug: a legacy composite cannot
+  hold the public invariant over a deck Drive owns. The review table's
+  "failed to save and failed to render" is corrected to render only.
+
+## Second review
+
+An independent review of `6a77171e8`, run by agents against the spec, the
+ticket, and the frappe sources each claim depends on. Nine defects, all fixed
+here. Nothing was found that regresses access relative to `a61e78970`.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| High | `test_a_docshare_cannot_open_a_linked_deck_through_the_staged_guards` expected `frappe.PermissionError` from the staged list guard. It raises `DriveForbidden`, a `frappe.ValidationError`; the two classes are unrelated (`frappe/exceptions.py:23,40`). The assertion could never match, so the one test proving the High fix above never passed. | Expects `DriveForbidden`. Four unit tests pin the contract. `301ba35dd` |
+| High | `_validate_forbidden_fields` read the raw `title_field` attribute, which frappe overrides. §10.2's activation gate accepted every doctype owning a `title` column and declaring no `title_field`. | Reads `meta.get_title_field()`, exempts a declared `legacy_fields` name. `e974c07d7` |
+| High | Two tests about a legacy row lived in `TestSlidesInDrive`, which runs under `activated()`. `require_node` refuses a node-less insert once registered, and `refuse_governed_share` refuses the `frappe.share.add` in one of them. Both died before asserting anything, including the only test proving the staged list guard leaves a Desk-assigned site alone. | Moved to `TestSlidesBeforeActivation`. `c25c00f5e` |
+| Medium | `get_editor_access`'s composite arm ran before the node check and answered `"view"` off the legacy `is_composite` column with no check, on a guest route. A stranger learned a name is a composite deck Drive owns (§5.4), and the answer came from a column rather than `Drive Grant` (§1). | The node arm runs first for a linked deck; a composite's Edit reads as view. `a013f1475` |
+| Medium | `adopt_media` took §8.8's trash refusal inside its savepoint, after the empty-map early return, so a paste that names no media was accepted by a deck in the bin. The endpoints' own `drive.check` reads the caller, not the state. | The refusal sits with the UPLOAD gate. `d49971ec4` |
+| Medium | `test_a_stranger_reads_no_composite_at_all` expected `DriveNotFound`; the route raises `frappe.PermissionError` and could not raise the other. It also asserted the disclosure the route exists to prevent. | Expects `frappe.PermissionError`; one test proves the three refusals give one message. `bad1716d9` |
+| Medium | `test_the_deck_answers_only_the_pictures_it_still_names` and `test_a_background_colour_never_hides_a_picture_from_the_sweep` compared `used_nodes` for equality. It over-reports by design, so both answers carry an element id and a type. | Assert the named pictures are in and an unnamed one is out. `325b7fb88` |
+| Medium | `test_a_paste_naming_a_node_the_caller_cannot_read_is_never_told_what_it_is` put the unreadable folder in OTHER's own Personal root, which anchors a MANAGE grant to its owner (`roots.py:280-283`). OTHER could read it, so the paste reached the kind check and raised. | The folder moves where OTHER holds nothing. `325b7fb88` |
+| Low | `suite/hooks.py` claimed a linked deck has no `File`, so the staged mirror hooks return early. False for a Build-linked deck. | Comment corrected. `ee55f5a5a` |
+
+Three areas were audited and found sound: every write path into the composite
+`references` column reaches `refuse_unreadable_references`; `get_templates` is
+unchanged by this branch and no linked deck reaches it, because `is_template`
+lives on the node and never on the row; and the five Writer tests added at
+`524f62c46` carry no static defect.
 
 ## Verification
 
@@ -339,20 +446,26 @@ dictionary posters, templates, preview pushes, and round-trip copies.
 
 ### Static and pure checks run here
 
-Run in this worktree. No bench, no migrate, no shared-site command.
+Run in this worktree at `325b7fb88`. No bench, no migrate, no shared-site
+command.
 
 | Check | Result |
 |---|---|
-| `python -m compileall suite/slides suite/drive suite/tests suite/hooks.py` | Clean |
-| `uvx ruff@0.12.3 check suite/slides suite/drive suite/tests suite/hooks.py` | One error, pre-existing: `E722` at `suite/drive/patches/team_restructure.py:56`. Untouched file, fires on the starting revision too. |
-| `uvx ruff@0.12.3 format --check` on every changed `.py` | 8 files already formatted |
-| `suite.tests.test_architecture`, 7 tests, no database | OK, 0.96s |
-| `TestSlidesDeclaration`, 26 tests, no database | OK, 0.012s |
+| `compileall suite/slides suite/drive suite/tests suite/hooks.py suite/writer` | Clean |
+| `uvx ruff@0.12.3 check` on the 11 changed `.py` files | All checks passed |
+| `uvx ruff@0.12.3 format --check` on the same 11 | 11 files already formatted |
+| `TestSlidesDeclaration` + `test_architecture` + `TestWriterDeclaration`, 60 tests, no database | OK, 1.07s |
 
-The declaration class runs with `frappe.init(site="slides.localhost")` and no
+Repo-wide `ruff check` still reports five errors, all pre-existing and all in
+files this branch does not touch: `E722` at
+`suite/drive/patches/team_restructure.py:56`, `E731` and `E722` at
+`suite/writer/api/docs.py:108,145`, and `RUF012` at `suite/writer/search.py:9,15`.
+
+The declaration classes run with `frappe.init(site="slides.localhost")` and no
 connection, from `/home/faris/benches/suite-bench/sites` with `PYTHONPATH` set
 to this worktree. `slides.drive.__file__` is asserted to come from the
-worktree.
+worktree. Four of the new unit tests answer `frappe.db` with a `MagicMock`
+bound to `frappe.local.db`, so a guard runs against real code with no server.
 
 ### The site gate, not run here
 
@@ -370,22 +483,55 @@ bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
 bench --site slides.localhost run-tests --module suite.drive.tests.test_previews
 bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
 bench --site slides.localhost run-tests --module suite.drive.api.tests.test_files
+bench --site slides.localhost run-tests --module suite.drive.tests.test_upload
 bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
 bench --site slides.localhost run-tests --module suite.tests.test_architecture
 ```
 
 `migrate` should add the `node` column and nothing else. The Drive and Writer
 modules are in the list because this ticket changed `nodes.create_file`,
-`content`, and `drive.__all__`, which they all exercise.
+`content`, and `drive.__all__`, which they all exercise. `test_upload` is in it
+for the same reason and was missing from the earlier list.
 
-Expected counts from this HEAD: `suite.slides.tests.test_drive_adoption` is 26
-unit (`TestSlidesDeclaration`) and 64 integration (`TestSlidesBeforeActivation`
-7, `TestSlidesInDrive` 57), 90 in total.
+Expected counts from this HEAD: `suite.slides.tests.test_drive_adoption` is 30
+unit (`TestSlidesDeclaration`) and 70 integration
+(`TestSlidesBeforeActivation` 10, `TestSlidesInDrive` 60), 100 in total.
+`suite.writer.tests.test_drive_adoption` is 23 unit and 43 integration, 66 in
+total.
 
-**64 integration tests are unverified.** They have never run: this worktree may
-not touch `slides.localhost`. Nothing outside the "Static and pure checks" table
-above has been executed, including every test the review added for a defect it
-fixed.
+**70 Slides integration tests and 43 Writer ones are unverified.** They have
+never run: this worktree may not touch `slides.localhost`. Nothing outside the
+"Static and pure checks" table above has been executed, including every test
+either review added for a defect it fixed.
+
+#### What the gate is most likely to catch
+
+Each item below is a static suspicion, not an observed failure. They are
+ordered by how likely they are to stop the run.
+
+1. **A pre-existing `DocShare` on any `Presentation` or `Writer Document`
+   refuses activation.** `validate_content_registry` scans the whole table at
+   `before_migrate`. If `slides.localhost` carries shares from earlier manual
+   work, `migrate` fails as soon as ticket 29 flips the registry. It does not
+   fail today, because the registry is empty. Blocker 1.
+2. **The same rows change what the staged list guard answers.** A `DocShare`
+   naming a *linked* deck now makes `refuse_shared_linked_rows` raise for every
+   non-`Administrator` caller, so an unrelated list test in another module can
+   fail with `DriveForbidden`. Deliberate, and it fails closed.
+3. **A Property Setter on `Presentation.title_field` defeats the new §10.2
+   gate, or trips it.** `meta.get_title_field()` reads the customised meta. If
+   the site carries a Property Setter naming `title`, activation now refuses
+   until `legacy_fields` covers it, which it does. If one names another column,
+   activation refuses and should.
+4. **`frappe.get_list`'s default page length of 20 hides a list defect.** The
+   staged-list tests that count rows pass trivially on a small fixture set and
+   would not catch a leak past row 20 on a populated site.
+5. **`create_root` fixture collisions.** The integration classes create roots
+   per test. A leftover root from an aborted earlier run gives
+   `DuplicateEntryError` on setup rather than an assertion failure.
+6. **`frappe.db.commit()` inside any test defeats rollback isolation.** A
+   committed fixture survives into the next module and can turn a later
+   activation scan from item 1 into a failure that looks unrelated.
 
 ## Blockers
 
@@ -424,10 +570,16 @@ resolution keeps the reason and drops the over-strict test:
   §10.2 forbids neither.
 - `_validate_shape` refuses a `legacy_fields` entry that is not already a name
   §10.2 forbids, so the hatch cannot exempt an arbitrary column.
-- `_validate_forbidden_fields` exempts a declared name. `title_field` stays
-  strict, so `presentation.json` drops `"title_field": "title"`. That removes
-  the read-direction mirror and moves no data: §14.7 reads the column, not the
-  meta.
+- `_validate_forbidden_fields` exempts a declared name, for the `title_field`
+  as well as for the column. It has to: frappe resolves an absent `title_field`
+  to a field literally called `title` (`frappe/model/meta.py:373-384`), so
+  dropping `"title_field": "title"` from `presentation.json` changed no answer.
+  `Presentation.get_title()` still returns the frozen column. The guard reads
+  `meta.get_title_field()` for that reason, corrected at `e974c07d7`.
+  What holds "no mirror in either direction" is the freeze, not the missing
+  attribute. Pointing `title_field` at `name` is not an option: it would rename
+  every legacy deck's backing `File` to its docname on the next save
+  (`overrides/file.py:607-613`).
 - `_validate_legacy_fields` refuses a declared name the doctype no longer owns.
   Once Cleanup drops `title`, the next migration fails until the declaration
   drops the entry, so the exemption cannot outlive the column.
@@ -448,6 +600,17 @@ the same route.
   upload route, and a deck is copied through the Drive copy route. Neither is
   exposed yet, so `create_presentation` and `save_base64_image` refuse a linked
   deck instead of answering. Trash, restore, and root workflows are the same.
+  When it exposes `push_preview` it owes a **pixel bound**, not a byte cap:
+  `_encode_image` decodes before it thumbnails, so a small highly compressed
+  image with a huge pixel count costs gigabytes of RSS and stores nothing. See
+  the review corrections above for the measurement. Slides' own 6 MB byte cap
+  still applies on the route that exists today.
+- **Ticket 28, before Build writes `node` in bulk.** Build must write `NULL`
+  for an unlinked deck and never `''`, or the two staged list predicates at
+  `presentation.py:654` and `writer/overrides/__init__.py:103` must widen to
+  `(node IS NULL OR node = '')` first. A `''` row reads as legacy to the row
+  hook and is invisible to the list, which is a §1 bypass once Build has run.
+  Not widened here: today that would make a `''` row more reachable, not less.
 - **Ticket 23, legacy read path.** `is_public_presentation`, `get_attachment`,
   `attach_poster`, `suite/slides/api/file.py`, and the `File`-based list are
   still the only read path. They must move before ticket 29.
@@ -472,4 +635,9 @@ the same route.
 - **Ticket 34, frontend.** `save_presentation_thumbnail` answers `""` for a
   linked deck instead of a `file_url`, and `update_slide_attachments` answers
   node ids rather than `/private/files/` URLs. The client must read the deck
-  preview through Drive and media through the signed `/f/` route.
+  preview through Drive and media through the signed `/f/` route. It also owes
+  the composite payload: `get_composite_presentation` returns `doc.as_dict()`,
+  so a deck Build linked still carries the frozen `title`, `slug`, `thumbnail`,
+  and `is_template`. A Drive rename leaves the client showing the Build-time
+  name until §14.10 drops the columns. The client must read the name from the
+  node.
