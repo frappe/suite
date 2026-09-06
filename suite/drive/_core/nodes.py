@@ -502,6 +502,29 @@ def signed_content_url(row: frappe._dict, *, expires_in: int = CONTENT_TTL_SECON
     }
 
 
+def title_taken(principals: Principals, parent: str, title: str) -> bool:
+    """Answer whether an active child of `parent` already carries `title`.
+
+    The one question §11.7's legacy `does_entity_exist` asks and no §11.2 route
+    answers: a folder page is by id, not by title. It is answered here rather
+    than in the adapter because the answer is derived from names the caller may
+    not be entitled to see, so the check that guards it is Drive policy.
+
+    UPLOAD, not READ, and deliberately: the reply is a fact about siblings, and
+    the only caller is a client naming a file it is about to write. `create`
+    resolves the same parent at the same level, so a caller who may not write
+    here learns nothing they could not already learn by trying.
+    """
+    parent_row = _node(parent)
+    require(parent_row, UPLOAD, principals)
+    _validate_parent(parent_row)
+    if not isinstance(title, str) or not title.strip():
+        frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
+    return bool(
+        frappe.db.exists("Drive Node", {"parent": parent_row.name, "title": title, "state": "Active"})
+    )
+
+
 def create_folder(principals: Principals, parent: str, title: str) -> str:
     """Create an empty folder below an authorized active container."""
     return _create_empty_node(principals, parent, title, kind="folder")
