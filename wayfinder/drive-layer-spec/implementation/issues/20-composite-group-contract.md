@@ -50,9 +50,14 @@ below has not run.
 |---|---|
 | `92a14a9c5` | Claimed the ticket and recorded the two ticket-18 files it touches. |
 | `0ed123202` | `suite/slides/api/composite.py`, the contract, and the narrowed swallow. |
-| `53ae486ad` | 42 tests, the frontend fixture and its vitest test, the debt entry. |
+| `53ae486ad` | The first 42 tests, the frontend fixture and its vitest test, the debt entry. |
 | `543f37d6a` | Refuse a composite name that is not a docname. |
 | `bd9904751` | Never read a blank reference row as a database filter. |
+| `b3ceb6b3d` | Review: stop claiming a composite reference has no slides. |
+| `1d5bb2254` | Review: state what a client reads for a reference with no deck. |
+| `d1e893c6c` | Review: one empty value for a reference that names no deck. |
+| `adbf503df` | Review: refuse a malformed group before it costs a 500. |
+| `6cfac67b3` | Review: make the contract tests able to fail. |
 
 ### Changed behaviour and interfaces
 
@@ -72,9 +77,9 @@ markdown-beside-a-test convention exists to follow.
 
 **New: `slides_drive.composite_reference_rows(docname)`.** The reference list
 with the `Reference Presentation` row's own name as the identifier, its `idx`,
-and the referenced deck's docname. `_reference_names` now reads through it and
-answers `presentation or None`, which is exactly what `pluck` answered, so the
-version envelope and the save-time check are unchanged.
+and the referenced deck's docname, or `None` when the row names no deck.
+`_reference_names` reads through it, so it answers exactly what `pluck`
+answered and the version envelope and the save-time check are unchanged.
 
 **`_readable` became `node_is_readable` and catches `drive.DriveError`.** The
 wider `except frappe.ValidationError` swallowed the oversized-`X-Drive-Links`
@@ -82,6 +87,13 @@ refusal and marked every reference unreadable, which is the silent trim §6.2
 forbids. Ticket 18 recorded this as ticket 20's; it is fixed for the grouped
 load, the whole-deck read path, and the save-time check at once. Every Drive
 access answer is a `DriveError`, so no access behaviour moved.
+
+**A fourth site still swallows it, and this ticket did not fix it.**
+`get_editor_access` (`presentation.py:903-905`) is guest-reachable and catches
+`frappe.ValidationError` around its own `drive.check`, so an oversized header
+makes it answer `"none"` instead of stating the limit. It fails closed, so no
+access is gained. `presentation.py` is not this ticket's file and no handoff
+covers it, so it is recorded here for ticket 23 rather than changed.
 
 **Nothing else moved.** No Drive route, no Drive export, no permission rule, no
 hook, no doctype, no patch. `drive_content_types` is still `[]` and both
@@ -132,10 +144,16 @@ grouped calls.
   position as filters. Both calls are guest-reachable, so a caller sending one
   was choosing the query rather than naming a deck.
 - `test_a_blank_reference_row_is_unreadable_rather_than_an_error` and
-  `bd9904751`: a reference row may hold no deck. `composite_references` handed
-  that falsy name to `get_value`, which reads it as "no filters" and answers
-  some other deck's node id, on a guest-reachable route. Both the grouped load
-  and the whole-deck path now mark the row unreadable.
+  `bd9904751`: a reference row may hold no deck, and both readers now mark it
+  unreadable. **The original claim here was wrong** and `d1e893c6c` restates it.
+  `frappe.db.get_value` does not read a falsy name as "no filters": `get_values`
+  returns before it builds a query for `None`
+  (`frappe/database/database.py:680-722`), and `""` becomes `name = ''`
+  (`frappe/database/query.py:399-401`), which no primary key matches. The guard
+  saves a query. It closed no disclosure, and the test passes with or without
+  it. The real hole is a dict or a list in the name position, which `543f37d6a`
+  closed and `d1e893c6c` closes in the third caller,
+  `refuse_unreadable_references`.
 - `test_an_oversized_link_header_is_refused_rather_than_marking_everything_unreadable`
   asserts the limit error reaches the caller and is not a `DriveError`.
 - `test_the_composite_is_authorized_again_on_every_group` revokes the
@@ -143,22 +161,22 @@ grouped calls.
 
 ### Criteria to tests
 
-42 tests in `suite/slides/tests/test_composite_groups.py`: 12 in
-`TestCompositeGroupRequest` with no site, 30 in `TestCompositeGroups` on real
-rows under `activated()`. 14 more in
+49 tests in `suite/slides/tests/test_composite_groups.py`: 16 in
+`TestCompositeGroupRequest` with no site, 33 in `TestCompositeGroups` on real
+rows under `activated()`. 23 more in
 `frontend/src/apps/slides/contracts/composite-groups.test.ts`.
 
 | Criterion | Tests |
 |---|---|
 | 1 Contract documented beside the adapter tests | The `composite.py` docstring; `test_the_frontend_fixture_matches_a_real_answer`, `test_the_route_refuses_with_the_whole_deck_read_paths_own_words`, and the whole vitest file |
-| 2 Stable ids, bounded groups, membership, injection | `test_a_reference_id_is_the_row_and_never_the_deck_or_the_node`, `test_a_grant_change_never_moves_a_reference_id`, `test_the_group_bound_leaves_exactly_one_code_for_the_composite`, `test_nineteen_ids_are_accepted_and_twenty_are_refused`, `test_a_repeat_counts_toward_the_bound_rather_than_buying_room`, `test_a_repeat_inside_the_bound_is_still_refused`, `test_nineteen_references_load_in_one_group`, `test_a_twentieth_reference_needs_a_second_group`, `test_an_invented_id_a_deck_name_and_a_node_id_are_all_refused`, `test_a_reference_id_from_another_composite_is_refused`, `test_membership_gives_one_answer_for_an_unknown_and_a_foreign_id`, `test_a_name_that_is_not_a_docname_is_refused_before_any_lookup` |
+| 2 Stable ids, bounded groups, membership, injection | `test_a_reference_id_is_the_row_and_never_the_deck_or_the_node`, `test_a_grant_change_never_moves_a_reference_id`, `test_the_group_bound_leaves_exactly_one_code_for_the_composite`, `test_nineteen_ids_are_accepted_and_twenty_are_refused`, `test_a_repeat_counts_toward_the_bound_rather_than_buying_room`, `test_a_repeat_inside_the_bound_is_still_refused`, `test_nineteen_references_load_in_one_group`, `test_a_twentieth_reference_needs_a_second_group`, `test_an_invented_id_a_deck_name_and_a_node_id_are_all_refused`, `test_a_reference_id_from_another_composite_is_refused`, `test_membership_gives_one_answer_for_an_unknown_and_a_foreign_id`, `test_a_name_that_is_not_a_docname_is_refused_before_any_lookup`, `test_an_id_wider_than_a_docname_is_refused`, `test_a_reference_id_held_across_a_version_restore_is_refused_not_guessed` |
 | 3 Authorize composite and every reference per group; count the composite's code | `test_the_composite_is_authorized_again_on_every_group`, `test_a_link_code_authorizes_its_reference_for_the_group_that_carries_it`, `test_more_than_twenty_separately_shared_references_load_in_two_groups`, `test_a_group_carrying_the_wrong_codes_marks_only_those_references`, `test_twenty_codes_are_still_accepted`, `test_an_oversized_link_header_is_refused_rather_than_marking_everything_unreadable` |
-| 4 Unreadable references explicit, in order, without content | `test_an_unreadable_reference_comes_back_in_place_with_no_content`, `test_a_group_answers_in_the_order_it_was_asked_not_the_stored_order`, `test_a_group_answers_one_entry_per_requested_id_and_nothing_else`, `test_the_order_the_caller_asked_for_survives_the_request_reader`, `test_a_readable_reference_carries_its_node_and_its_slides`, `test_a_blank_reference_row_is_unreadable_rather_than_an_error`, `test_a_reference_that_is_itself_a_composite_is_marked_and_holds_no_slides` |
+| 4 Unreadable references explicit, in order, without content | `test_an_unreadable_reference_comes_back_in_place_with_no_content`, `test_a_group_answers_in_the_order_it_was_asked_not_the_stored_order`, `test_a_group_answers_one_entry_per_requested_id_and_nothing_else`, `test_the_order_the_caller_asked_for_survives_the_request_reader`, `test_a_readable_reference_carries_its_node_and_its_slides`, `test_a_blank_reference_row_is_unreadable_rather_than_an_error`, `test_a_reference_that_is_itself_a_composite_is_marked_and_never_recursed_into`, `test_a_group_entry_carries_the_documented_fields_and_nothing_more`, `test_the_manifest_names_an_unreadable_reference_exactly_like_a_readable_one` |
 | 5 Groups independent across grant changes; remembered targets confer nothing | `test_a_reference_revoked_between_two_groups_is_unreadable_in_the_second`, `test_a_reference_granted_between_two_groups_is_readable_in_the_second`, `test_a_placeholder_keeps_its_id_and_its_place_across_repeated_loads`, `test_a_grant_change_never_moves_a_reference_id`, `test_a_remembered_association_confers_no_authority` |
 | 6 Frontend fixtures, more than 20 separately shared references | `composite-groups.fixture.json` (21 references, two groups), `test_the_frontend_fixture_matches_a_real_answer`, and the 14 vitest cases |
 | 7 A Slides operation only | `test_a_deck_that_is_not_a_composite_is_refused_even_to_its_owner`, `suite.tests.test_architecture` (7 tests, including the frozen `drive.__all__`), and the unchanged `suite/hooks.py` |
 | Non-disclosure (§5.4) | `test_a_stranger_is_refused_before_membership_is_ever_checked`, `test_both_calls_answer_a_stranger_the_same_way_three_times`, `test_a_malformed_group_is_refused_the_same_way_whatever_the_name_is`, `test_the_refusal_message_names_no_reference_and_no_deck`, `test_a_guest_reads_a_published_composite_and_only_published_references`, `test_a_shape_refusal_is_a_validation_error_not_a_permission_error` |
-| Malformed shapes | `test_every_malformed_group_is_refused_with_one_answer` (20 shapes, one answer), `test_a_group_arrives_as_a_list_or_as_its_json_text` |
+| Malformed shapes | `test_every_malformed_group_is_refused_with_one_answer` (20 shapes, one answer), `test_a_group_arrives_as_a_list_or_as_its_json_text`, `test_a_json_list_holding_a_non_string_is_refused`, `test_deeply_nested_json_is_refused_rather_than_raised`, `test_an_oversized_request_text_is_refused_before_it_is_parsed` |
 | Duplicates | `test_a_composite_naming_one_deck_twice_answers_two_separate_references`, `test_a_repeat_inside_the_bound_is_still_refused` |
 
 ### The frontend contract fixture
@@ -176,45 +194,54 @@ both of its references come back marked, in place, with no content — which is
 the placeholder case ticket 34 has to draw.
 
 Two tests hold it: `test_the_frontend_fixture_matches_a_real_answer` compares
-it field for field against a real answer from the site, and
-`composite-groups.test.ts` holds a client to the rules it states.
+it against a real answer from the site, and `composite-groups.test.ts` holds
+the fixture to the rules it states. **There is no client.** Nothing in
+`frontend/src` calls either method yet, so the vitest file pins the fixture's
+shapes, counts and arithmetic and nothing more. Ticket 34 writes the client.
 
 ### Verification
 
 #### Static and pure checks run here
 
-Run in this worktree at `bd9904751`. No bench, no migrate, no shared-site
-command, no service touched.
+Run in this worktree at `6cfac67b3`, from
+`/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-20-review`. No
+bench, no migrate, no shared-site command, no service touched.
 
-| Check | Result |
-|---|---|
-| `python -m compileall` on the four changed `.py` files | Clean |
-| `uvx ruff@0.12.3 check` on the four | All checks passed |
-| `uvx ruff@0.12.3 format --check` on the four | 4 files already formatted |
-| `TestCompositeGroupRequest` 12, `TestSlidesDeclaration` 30, `TestWriterDeclaration` 23, `TestSheetsDeclaration` 21, `suite.tests.test_architecture` 7 — 93 tests, no database | OK, 1.13 s |
-| `vitest run` on `composite-groups.test.ts` | 14 passed, 0.61 s |
-| Fixture key sets compared against the dict literals in `composite.py` by AST | Every set matches |
+| Check | Command | Result |
+|---|---|---|
+| Compile | `python -m compileall` on the four changed `.py` files | Clean |
+| Lint | `uvx ruff@0.12.3 check` on the four | All checks passed |
+| Format | `uvx ruff@0.12.3 format --check` on the four | 4 files already formatted |
+| Python, no database | `TestCompositeGroupRequest` 16, `TestSlidesDeclaration` 30, `TestWriterDeclaration` 23, `TestSheetsDeclaration` 21, `suite.tests.test_architecture` 7 | 97 tests, OK |
+| Frontend contract | `vitest run` on `composite-groups.test.ts` | 23 passed |
+| Fixture mutation | 11 fixture mutations against the vitest suite | 10 caught; the eleventh is a legal out-of-order group and must pass |
+| Recursion mutation | `except (ValueError, RecursionError)` narrowed back to `except ValueError` | `TestCompositeGroupRequest` errors, as intended |
 
 The Python classes run with `frappe.init(site="slides.localhost")` and no
 connection, from `/home/faris/benches/suite-bench/sites` with `PYTHONPATH` set
 to this worktree. `test_composite_groups.__file__` and `composite.__file__` are
 both asserted to come from this worktree.
 
-Repo-wide `ruff check` still reports the same five pre-existing errors ticket 18
-recorded, all in files this branch does not touch.
+Repo-wide `uvx ruff@0.12.3 check .` reports **24** errors, in 16 files, none of
+them touched by this branch. The earlier note of "five" was wrong; the count
+was never measured at the repository root.
 
 **The vitest run needed a temporary config.** This worktree has no
-`node_modules`, and installing is out of scope for this run, so the main
-checkout's install was symlinked in. Vite's `server.fs.allow` then refuses the
-setup file through the symlink, and every existing frontend test fails the same
-way, so the run used a throwaway config that widens `server.fs.allow` and drops
-`setupFiles`. The file is not committed. `yarn --cwd frontend test`, the
-repository's own command, is **not verified here**.
+`node_modules`, and installing is out of scope, so the main checkout's install
+was symlinked in (gitignored). Vite's `server.fs.allow` then refuses the setup
+file through the symlink, and **every existing frontend test fails the same
+way** (checked against `src/apps/slides/stores/blankLineStyles.test.ts`), so
+the run used a throwaway config that widens `server.fs.allow`, drops
+`setupFiles`, and uses the `node` environment. The file is not committed.
+`yarn --cwd frontend test`, the repository's own command, is **not verified
+here**. Prettier is not installed either, so the two frontend files follow the
+surrounding style by hand rather than by tool.
 
 #### The site gate, required, not yet run
 
 Serialised on `slides.localhost` from `/home/faris/benches/suite-bench`, in
-this order. Nothing below has been run.
+this order, one command at a time, with the previous one finished. Nothing
+below has been run.
 
 ```
 bench --site slides.localhost migrate
@@ -229,6 +256,9 @@ bench --site slides.localhost run-tests --module suite.tests.test_architecture
 yarn --cwd frontend test
 ```
 
+Run these serially. The bench has no RQ worker, and its short queue saturates
+if several test modules enqueue at once.
+
 `migrate` is listed because the branch is unproved against it, not because it
 changes schema: no doctype, no patch, and no fixture record moved.
 `test_drive_adoption` and `test_presentation` are in the list because this
@@ -236,10 +266,11 @@ ticket changed `suite/slides/drive.py`, which both exercise.
 `suite.drive.tests.test_principals` is there because the narrowed swallow now
 lets its limit error out.
 
-Expected counts, from a static enumeration of the classes at `bd9904751`:
-`test_composite_groups` 12 unit and 30 integration; `test_drive_adoption` 30,
-11 and 60; `test_architecture` 7. No test class inherits a test method, none is
-skipped, and no method name is defined twice in the new module.
+Expected counts, from a static enumeration of the classes at `6cfac67b3`:
+`test_composite_groups` **16** unit and **33** integration; `test_drive_adoption`
+30, 11 and 60; `test_architecture` 7; `composite-groups.test.ts` **23**. No test
+class inherits a test method, none is skipped, and no method name is defined
+twice in the new module.
 
 **Suspicions written before the run.** Each is a guess, not a result.
 
@@ -264,7 +295,88 @@ skipped, and no method name is defined twice in the new module.
    codes they did not ask for. The context manager restores in `finally`.
 7. **`test_the_frontend_fixture_matches_a_real_answer` reads a path four levels
    above the test file.** It breaks if the module moves, and it is the only
-   test that touches the repository tree.
+   test that touches the repository tree. It now also answers the five
+   translated refusal messages from the server, so a site running under a
+   non-English language would fail it.
+8. **`test_a_reference_id_held_across_a_version_restore_is_refused_not_guessed`
+   calls `restore_version` directly.** It saves as Administrator, whose admin
+   bypass carries `refuse_unreadable_references`. If the fixture user changes,
+   the save refuses instead.
+
+## Independent adversarial review
+
+Reviewed 2026-09-06 at `113cebb68`, in a separate worktree, on
+`review/drive-20-composite-groups`. Agents ran three audits: the API contract,
+authorization, and the frontend fixture with test adequacy. Every claim below
+was re-derived from source before it was acted on.
+
+### Fixed here
+
+| Severity | Finding | Commit |
+|---|---|---|
+| High | `test_a_reference_that_is_itself_a_composite_is_marked_and_holds_no_slides` asserted `slides == []`, and the contract said the same. `create_empty` gives every deck one slide and flagging it composite removes nothing, so the test fails the first time the site gate runs. | `b3ceb6b3d` |
+| High | `json.loads` answers `RecursionError`, not `ValueError`, for deeply nested text. `composite_group` parses before it authorizes and is guest-reachable, so a 200 KB body of open brackets was an uncaught 500 and one `Error Log` row, repeatable anonymously. | `adbf503df` |
+| Medium | The grouped load answered `""` for a reference row with no deck; the whole-deck path answered `null` for the same row. A client keying a placeholder on `presentation` collided every blank reference on one value, and could read `""` as a docname. | `d1e893c6c` |
+| Medium | `refuse_unreadable_references` passed `reference.presentation` straight from the submitted document into `frappe.db.get_value`. A dict there becomes filters. Third caller of the hole `543f37d6a` closed. | `d1e893c6c` |
+| Medium | Seven mutations of the fixture passed all 14 vitest cases, including wrong HTTP statuses, junk refusal messages, and a dropped composite code. The refusal assertions were `toBeTruthy()` and `toBeGreaterThan(0)`. | `6cfac67b3` |
+| Medium | The vitest required the flattened group requests to follow manifest order, which forbids a legal out-of-order group the API allows and a backend test proves. | `6cfac67b3` |
+| Medium | `test_the_frontend_fixture_matches_a_real_answer` compared one manifest row, no types, and one of six refusal messages, while its docstring claimed "the same keys, the same types". | `6cfac67b3` |
+| Low | The manifest read `modified` in a second query after the point check had already read the row. | `adbf503df` |
+| Low | The contract stated no HTTP status. These are Slides methods, so frappe answers 417 where §4.7 names 400 on a Drive route. | `adbf503df` |
+| Low | The fixture showed neither of two shapes the backend produces: a nested composite, and a reference with no deck. | `6cfac67b3` |
+
+Corrected in this document: the `bd9904751` failure evidence, the repo-wide
+ruff count, the claim that the vitest holds a client, and the claim that the
+narrowed swallow fixed every site.
+
+### Confirmed, deliberately not changed
+
+- **An unreadable reference still answers its deck's docname.** Suppressing it
+  in a group buys nothing, because the manifest hands the same caller every
+  reference docname and cannot do otherwise: it must cost one point check, so
+  it cannot know which references are readable. The oracle that consumes a
+  docname is `is_composite_presentation` (`presentation.py:696-698`), guest-
+  callable with no check, which ticket 23 already owns. Docnames are random
+  hashes, `Presentation` declares no `autoname`, and every read route still
+  runs `frappe.has_permission`, so a leaked docname is not a capability.
+- **`get_editor_access` keeps the wide swallow.** `presentation.py` is not this
+  ticket's file and no handoff covers it. Recorded above for ticket 23.
+- **`slides` is `as_dict()`, so it carries frappe's row metadata including
+  `owner`.** Identical to what `get_composite_presentation` already answers to
+  the same callers, so narrowing it here would split the two routes' shapes
+  while ticket 34 is migrating between them. The key set is now pinned on both
+  sides and stated in the contract.
+- **Neither call is paged.** A composite with 10000 references answers a
+  10000-row manifest. Building one needs MANAGE and 10000 point checks at save,
+  and `get_composite_presentation` is strictly worse, so this is not a new
+  exposure. Paging is a contract change ticket 34 would have to follow.
+- **The grouped calls answer no `title` and no `theme`,** so a client cannot
+  render a deck from them alone. Drive owns the title (§10.2) and the node id
+  crosses for it; `theme` has no home in this contract. Adding fields during a
+  review is scope this ticket did not ask for. Handed to ticket 34.
+
+### Unresolved lows
+
+- `str(datetime)` drops the fractional part when microseconds are 0, so
+  `manifest.modified` is sometimes `"2026-09-06 11:04:12"`. The fixture records
+  the microsecond form and nothing pins the format.
+- Five of six refusal messages are `_()`-wrapped. A translated site changes
+  them, and `test_the_frontend_fixture_matches_a_real_answer` now compares them
+  against the server, so it is language-dependent. The fixture says to switch
+  on the kind and the status instead.
+- `version_bytes` writes `None` for a blank reference row and `_version_payload`
+  requires every reference to be a `str`, so a version taken of a composite
+  carrying a blank row cannot be restored. Pre-existing, unchanged by ticket 20,
+  and it belongs to ticket 12 or ticket 18.
+- `test_the_route_refuses_with_the_whole_deck_read_paths_own_words` greps
+  `presentation.py` for a literal `frappe.throw` line. It passes on dead code
+  and fails on a reformat.
+- `principals_for_request()` is rebuilt inside each of the 20 `drive.check`
+  calls a full group makes, so `X-Drive-Links` is parsed 20 times and a
+  signed-in caller's roles and groups are looked up 20 times. A Drive engine
+  concern, not this route's.
+- Neither method declares a rate limit. `get_composite_presentation` does not
+  either.
 
 ## Deviations from file ownership
 
