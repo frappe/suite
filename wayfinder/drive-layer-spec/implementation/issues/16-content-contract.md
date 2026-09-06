@@ -105,8 +105,9 @@ untouched.
   real declaration would have died at migrate time. Use
   `frappe.model.base_document.get_controller`.
 - An app factory or `remap_media` that called `frappe.db.commit()` destroyed
-  Drive's savepoint. Every `ContentTypeSpec` callback now runs inside
-  `content.app_callback()`.
+  Drive's savepoint. Those three now run inside `content.app_callback()`. This
+  entry claimed every callback did; five did not, and "Contract corrections"
+  below is where the rest were closed.
 - Swept media landed in a bin no owner could restore from. `_restore` now
   allows the original document parent.
 - The mixin guard read `cls.__dict__`, so an inherited `before_insert` skipped
@@ -139,6 +140,128 @@ per fixture user and `tearDown` deleted it, so a run that stopped between the
 two left the roots behind and `create_root` refused every later run. Cleanup
 now goes through `purge_root`, scoped to the two fixture users, registered with
 `addCleanup` before the first row exists, and repeated in `setUpClass`.
+
+### Contract corrections, `c36991fb8` and `a5d3d44e8`
+
+Two Medium findings from the ticket 17 review, both this ticket's contract.
+
+**Every `ContentTypeSpec` callback now runs guarded** (`c36991fb8`). Five of
+the eight reached app code with transaction control still armed: `on_purge`
+(`nodes.py`, `roots.py`), `restore_version` and `version_bytes`
+(`versions.py`), `export` (no Drive caller yet), and `used_nodes`
+(`content.py`). A callback that called `frappe.db.commit()` there made a
+half-written state permanent and destroyed the caller's savepoint.
+
+- `content.call_app` is the one way into app code. Every call site in `nodes`,
+  `roots`, `versions`, and `content` uses it, the two that already held
+  `app_callback()` included.
+- `content.call_app_stream` covers the two callbacks that answer a stream and
+  wraps the answer in `GuardedStream`. Drive reads a version stream inside
+  `put_blob`, after the callback returned, so a lazily produced body would
+  otherwise run app code unguarded on every `read`. The wrapper re-enters the
+  guard per operation instead of holding it open, never closes the stream, and
+  delegates iteration so a file object still iterates by line.
+- Frappe's own guard converts a hostile `commit` or full `rollback` into a
+  warning and a no-op and leaves `rollback(save_point=...)` working
+  (`frappe/database/database.py:1197`, `:1220`). The tests bind those real
+  methods to a mock rather than restate them.
+- `sweep_unused_media`'s own commit and rollback sit outside `_sweep_document`,
+  so guarding `used_nodes` never disarms them.
+- `export` still has no Drive call path. `call_app_stream` is the guarded entry
+  point ticket 22's export route must use.
+
+**`create` is answered against the parent** (`a5d3d44e8`). §4.3 reads "`create`
+has no meaning on the row being inserted, so it is answered against the
+parent". `doc_has_permission` mapped `create` to UPLOAD and then asked the
+row's own node.
+
+- `Document.insert` runs `check_permission("create")` before `before_insert`
+  and before `set_new_name` (`frappe/model/document.py:730`, `:733`, `:734`),
+  so the row has no name. What it carries is the node Drive already created.
+  `framework._parent_allows` reads that node's parent and asks UPLOAD there,
+  the same check `nodes.create_document` made before the factory ran.
+- Fail closed otherwise: a node that is gone, or one with no parent, denies. A
+  row naming no node at all stays the §5.13 error, not a deny.
+- `_refuse_shared_row` returns on a missing docname before it reads the ptype
+  map. A create denial always arrives with no name, and `create` is not a
+  `DocShare` right (`frappe/permissions.py:185`).
+- The §4.3 `PTYPE_ROLE` table is untouched. Which node the role is asked of is
+  the adapter's decision.
+- Satellites already conformed: a satellite's parent is the content document,
+  resolved through `Satellite.link_field`, never the row being inserted.
+- The same shape exists in core and in Drive's own legacy adapter: `File`
+  answers write, create, and delete against `attached_to_name`
+  (`frappe/core/doctype/file/file.py:897`), the tree check resolves create
+  through the parent field (`frappe/permissions.py:396`), and
+  `suite/drive/api/permissions.py:308` answered create against the folder.
+
+`TestContentContract` goes from 42 tests to 53. The 11 new ones:
+
+| Finding | Tests |
+|---|---|
+| Callbacks run guarded | `test_a_hostile_callback_cannot_commit_or_end_the_drive_transaction`, `test_a_callback_can_still_roll_back_to_a_savepoint`, `test_every_callback_category_reaches_the_app_guarded`, `test_a_streamed_callback_stays_guarded_while_drive_reads_it`, `test_a_guarded_stream_delegates_instead_of_closing_early`, `test_a_streamed_callback_that_answers_the_wrong_shape_is_refused`, `test_no_core_module_calls_a_spec_callback_outside_the_guard` |
+| `create` answered against the parent | `test_create_is_answered_against_the_parent_and_never_against_the_row`, `test_create_is_refused_when_the_parent_cannot_be_resolved`, `test_create_on_a_satellite_is_answered_by_its_content_document`, `test_the_list_predicate_is_a_read_predicate_and_knows_no_create` |
+
+`TestContentWorkflows` gains three adversarial integration tests, unrun at this
+HEAD: `test_a_purge_survives_an_on_purge_that_commits`,
+`test_a_restore_that_commits_leaves_the_body_and_the_charge_unchanged`, and
+`test_a_version_stream_that_commits_while_drive_reads_it_is_guarded`.
+
+### Commands run at `a5d3d44e8`
+
+No bench, no `migrate`, no site test. The worktree runs used
+`frappe.init(site="slides.localhost")` with `frappe.local.db = None`, which
+opens no connection.
+
+```text
+uvx ruff@0.12.3 check suite/                                     # 24 findings, all pre-existing, none in the changed files
+uvx ruff@0.12.3 format --check suite/                            # 2 would reformat, both pre-existing
+TestContentContract, unit only                                   # 53 ran, 51 pass, 2 db-only errors
+TestContentContract at fc23ed55f, same runner                    # 42 ran, 40 pass, the same 2 db-only errors
+```
+
+The two errors are `test_a_child_table_satellite_is_filtered_by_its_parent_doctype`
+and `test_a_list_with_no_share_answers_with_the_predicate`. Both escape through
+a real connection, which the runner does not open. They are red at the base
+commit under the same runner, so the delta is +11 tests and no regression.
+
+Each fix was proved red before it was proved green. Reverting
+`call_app(spec.used_nodes, ...)` and the `create` branch turned 4 of the 11 new
+tests red under the same runner: 6 failures, because one of them is a
+`subTest` over three shapes.
+
+`frappe.local.db = None` stops the runner opening a connection, but it does not
+stop the code under test from opening one: some `UnitTestCase` bodies reach a
+lazy `frappe.db` call and connect to `slides.localhost` on their own. That
+happened during these runs, including a `TestWriterDeclaration` pass (23 tests,
+all green). Read-only meta and settings reads; no rows written, no `migrate`,
+no bench command.
+
+### Site gate, expanded
+
+`TestContentWorkflows` and the three new adversarial tests need
+`slides.localhost`. The gate this branch owes:
+
+```text
+bench --site slides.localhost migrate
+bench --site slides.localhost run-tests --module suite.drive.tests.test_content        # expect 53 unit + 44 integration
+bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes          # expect 36
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions       # expect 17
+bench --site slides.localhost run-tests --module suite.drive.tests.test_previews       # expect 27
+bench --site slides.localhost run-tests --module suite.tests.test_architecture         # expect  7
+bench --site slides.localhost run-tests --module suite.tests.test_scheduler_events     # expect  2
+bench --site slides.localhost run-tests --module suite.tests.test_composition          # expect  3
+bench --site slides.localhost run-tests --module suite.sheets.tests.test_permissions   # expect  9
+bench --site slides.localhost run-tests --module suite.sheets.tests.test_share_notify  # expect  6
+bench --site slides.localhost run-tests --module suite.sheets.tests.test_api_security  # expect 11
+bench --site slides.localhost run-tests --module suite.writer.tests.test_drive_adoption
+```
+
+Counted by parsing the module: `TestContentContract` 42 and
+`TestContentWorkflows` 41 at `fc23ed55f`, 53 and 44 at `a5d3d44e8`. The other
+modules' expected counts are copied from the `74a9a9245` run and are not
+re-measured here.
+
 
 ### Commands run, and results
 
