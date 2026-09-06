@@ -55,6 +55,13 @@ def _dispatch(request: Request) -> None:
         # disabled site is indistinguishable from one without the feature
         raise NotFound()
 
+    # §6.9: a DAV session carries no link principals. Dropping the header from
+    # the environ is what makes that true for the whole request rather than for
+    # one property of one context object - the framework's permission hook reads
+    # it too, and an over-long header throws there before anything can discard
+    # the result. Werkzeug's `request.headers` is a view over this dict.
+    request.environ.pop("HTTP_X_DRIVE_LINKS", None)
+
     log.start_request(request)
 
     if request.method == "OPTIONS":

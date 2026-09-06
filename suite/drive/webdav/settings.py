@@ -25,8 +25,19 @@ def allowed_webdav_methods() -> tuple[str, ...]:
 
 
 def dav_compliance(methods: tuple[str, ...]) -> str:
-    """Advertise lock support (class 2) only when LOCK/UNLOCK are allowed —
-    clients like Finder trust this header to decide read-write behavior."""
+    """The compliance classes this site can actually honour, as a header value.
+
+    Class 1 is PROPFIND: RFC 4918 §9.1 makes it the one request every class 1
+    resource must answer, and a client that reads `DAV: 1` and then gets 405
+    has been told a lie it cannot recover from. An allow-list without PROPFIND
+    claims nothing, and the caller omits the header entirely.
+
+    Class 2 is LOCK and UNLOCK, and Finder trusts it to decide whether a mount
+    is read-write. Class 3 says RFC 4918 rather than RFC 2518, which is a
+    statement about this implementation and rides with class 1.
+    """
+    if "PROPFIND" not in methods:
+        return ""
     return "1, 2, 3" if "LOCK" in methods and "UNLOCK" in methods else "1, 3"
 
 
