@@ -6,6 +6,15 @@ from suite.drive.overrides.file import File, content_query_conditions
 READ_PTYPES = frozenset({"read", "report", "export", "email", "print", "select"})
 
 
+# Writer Document is not here. Drive governs it through
+# `suite.drive.framework.doc_has_permission` and `doc_query_conditions`
+# (§10.4). What stays below guards the two legacy tables Build has not copied
+# yet: `Writer Template` rows become template documents (§14.7) and
+# `Writer Version` rows become `Drive Node Version` rows (§14.6). Both are read
+# through the legacy Drive File they were written under, and both go with the
+# doctypes at Cleanup.
+
+
 def filter_templates(user):
     # Templates are site-wide readable; guests get nothing.
     if (user or frappe.session.user) == "Guest":
@@ -20,12 +29,6 @@ def template_has_permission(doc, ptype="read", user=None):
     if ptype in READ_PTYPES:
         return user != "Guest"
     return doc.get("owner") == user
-
-
-def document_query_conditions(user):
-    """`permission_query_conditions` for Writer Document — delegate to the
-    content SDK so list views can't enumerate documents the caller can't read."""
-    return content_query_conditions("Writer Document", user)
 
 
 def version_has_permission(doc, ptype="read", user=None):

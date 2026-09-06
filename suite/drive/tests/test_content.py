@@ -1426,9 +1426,16 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec(satellites=(wrong,))), self.assertRaises(DriveConflict):
             validate_registry()
 
-    def test_the_registry_is_empty_until_an_app_adoption_ticket_declares_one(self):
+    def test_only_an_adopted_app_is_registered_and_every_declaration_is_valid(self):
+        """Staged activation: an app appears here in its own adoption ticket.
+
+        Writer is registered by ticket 17. Slides and Sheets join at tickets 18
+        and 19, so the set is exact rather than a lower bound: a doctype that
+        arrives without its adoption ticket fails here.
+        """
         content.clear_registry_cache()
-        self.assertEqual(registry(), {}, "staged activation: no app is registered yet")
+        self.assertEqual(sorted(registry()), ["Writer Document"])
+        validate_registry()
 
 
 def _purge_fixture_roots() -> None:
