@@ -691,6 +691,113 @@ def _notification_message(action: str, node: dict | None, sender_name: str | Non
     return _('{0} shared a {1} with you: "{2}"').format(sender_name or _("Someone"), kind, title)
 
 
+# Every column the old `get_notifications` query selected off the row itself.
+# The two `User` columns are joined on by `_user_info`.
+LEGACY_NOTIFICATION_FIELDS = [
+    "name",
+    "to_user",
+    "from_user",
+    "read",
+    "type",
+    "message",
+    "entity_type",
+    "notif_doctype",
+    "notif_doctype_name",
+    "creation",
+]
+
+
+def _legacy_inbox_filters(principals, *, only_unread: bool = False) -> dict:
+    """Scope a pointerless read to the caller, which is the only scope the old query had.
+
+    No node check is added on top: `notif_doctype_name` names a `File`, the
+    caller was the recipient when the row was written, and inventing a deny is
+    forbidden here.
+    """
+    filters: dict = {"to_user": principals.user, "activity": ["is", "not set"]}
+    if only_unread:
+        filters["read"] = 0
+    return filters
+
+
+def _legacy_unread_count(principals) -> int:
+    """Count the caller's unread pointerless rows, the way the old body counted."""
+    return frappe.db.count("Drive Notification", _legacy_inbox_filters(principals, only_unread=True))
+
+
+def _legacy_inbox(principals, *, only_unread: bool = False, limit: int | None = None) -> list[dict]:
+    """The caller's notification rows that carry no activity pointer.
+
+    §9.5 made a `Drive Notification` a pointer at a `Drive Activity` row, and
+    `activity_core._visible_notifications` reads that pointer and drops any row
+    without one. Rows without one exist and are still written: every row a site
+    held before Build, and every row
+    `api.notifications.create_notification` writes today - the legacy Writer
+    comment path still calls it through `writer_document.notify_comments`.
+
+    The old bodies read `tabDrive Notification` directly and never asked, so
+    forwarding alone empties a legacy inbox: the page goes blank, the badge
+    reads zero, and `mark_as_read` cannot clear a row. They are read here
+    rather than in `_core`, because a row with no activity is a legacy shape
+    and §11.2 has no way to publish one; the read dies with this module.
+    """
+    options: dict = {
+        "filters": _legacy_inbox_filters(principals, only_unread=only_unread),
+        "fields": LEGACY_NOTIFICATION_FIELDS,
+        "order_by": "creation desc",
+    }
+    if limit is not None:
+        options["limit"] = limit
+    return frappe.get_all("Drive Notification", **options)
+
+
+def _legacy_notification_row(row) -> dict:
+    """One legacy row in the flat shape `Notifications.vue` reads.
+
+    The sentence, the type, and the entity type are the ones stored on the
+    row. Nothing is rebuilt: this row was rendered by the old writer, not by
+    §9.5's action vocabulary.
+    """
+    sender = _user_info(row.get("from_user"), ["full_name", "user_image"])
+    return {
+        "name": row.get("name"),
+        "to_user": row.get("to_user"),
+        "from_user": row.get("from_user"),
+        "read": int(row.get("read") or 0),
+        "type": row.get("type"),
+        "message": row.get("message"),
+        "entity_type": row.get("entity_type"),
+        "notif_doctype": row.get("notif_doctype"),
+        "notif_doctype_name": row.get("notif_doctype_name"),
+        "creation": row.get("creation"),
+        "full_name": sender.get("full_name"),
+        "user_image": sender.get("user_image"),
+    }
+
+
+def _mark_legacy_read(principals, name: str | None) -> int:
+    """Mark the caller's pointerless rows read, one named or all of them.
+
+    Written the way `activity_core.mark_read` writes: the unread ids are read
+    first, then one `UPDATE` that repeats `to_user` and `read`. Uncapped, as
+    the old body was - a cap here would leave a row nobody can ever clear.
+    """
+    filters = _legacy_inbox_filters(principals, only_unread=True)
+    if name is not None:
+        filters["name"] = name
+    ids = tuple(frappe.get_all("Drive Notification", filters=filters, pluck="name"))
+    if not ids:
+        return 0
+    frappe.db.set_value(
+        "Drive Notification",
+        {"name": ["in", ids], "to_user": principals.user, "read": 0},
+        "read",
+        1,
+        update_modified=False,
+    )
+    return len(ids)
+
+
 @_legacy
 def get_notifications(only_unread: bool = False) -> list[dict]:
     """`get_notifications` -> `GET /notifications`.
@@ -730,7 +837,17 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
                 "user_image": people[sender].get("user_image"),
             }
         )
-    return answer
+    # The workflow runs first, so a Guest is refused before a row is read.
+    answer.extend(
+        _legacy_notification_row(row)
+        for row in _legacy_inbox(principals, only_unread=bool(only_unread), limit=MAX_LEGACY_ROWS)
+    )
+    # The old query ordered the whole table by `creation desc`, so the two
+    # inboxes interleave rather than sit one after the other. Sorted on the
+    # text, because a stamp reaches here as a `datetime` from the database and
+    # as a string from a serialized page, and the two do not compare.
+    answer.sort(key=lambda row: str(row.get("creation") or ""), reverse=True)
+    return answer[:MAX_LEGACY_ROWS]
 
 
 @_legacy
@@ -742,7 +859,9 @@ def get_unread_count() -> int:
     caller can still see, which the old `frappe.db.count` did not: a
     notification about a node they lost access to no longer shows up.
     """
-    return activity_core.unread_count(_principals())
+    principals = _principals()
+    # The workflow runs first, so a Guest is refused before a row is counted.
+    return activity_core.unread_count(principals) + _legacy_unread_count(principals)
 
 
 @_legacy
@@ -756,12 +875,14 @@ def mark_as_read(name: str | None = None, all: bool = False) -> None:
     principals = _principals()
     if all:
         activity_core.mark_read(principals, None)
+        _mark_legacy_read(principals, None)
         return
     if not name:
         # The old body wrote a filter that matched nothing and said nothing.
         # It stays a no-op; a refusal here would be new behavior.
         return
     activity_core.mark_read(principals, name)
+    _mark_legacy_read(principals, name)
 
 
 # --------------------------------------------------------------------------
