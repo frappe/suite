@@ -21,12 +21,14 @@ suites prove the workflows behind them.
 import ast
 import inspect
 import pathlib
+import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import UnitTestCase
 from frappe.utils import strip_html_tags
+from frappe.utils.html_utils import clean_html
 
 from suite.drive._core.errors import (
     DriveConflict,
@@ -284,6 +286,23 @@ def node_row(**overrides) -> frappe._dict:
     return row
 
 
+class _Stdin:
+    """`msgprint` asks `sys.stdin.isatty()`, and nothing else about the caller.
+
+    The message a client reads is always cleaned with `clean_html`; the
+    exception text is stripped with `strip_html_tags` only when the run has a
+    terminal (`frappe/utils/messages.py:77-85`). The site gate found three
+    failures that a piped run had passed, so a test that reads whichever
+    terminal the runner happens to have proves half the path. This decides it.
+    """
+
+    def __init__(self, terminal: bool):
+        self.terminal = terminal
+
+    def isatty(self) -> bool:
+        return self.terminal
+
+
 class _MemoryCache:
     """The three cache calls `upload_file` makes, answered from memory.
 
@@ -511,6 +530,140 @@ class TestRefusalText(ShimCase):
             "GET /api/suite/drive/nodes/:id/content",
             frappe.local.message_log[-1]["message"],
         )
+
+    def refuse(self, call, terminal: bool):
+        """Raise one refusal with the terminal decided, and read both texts.
+
+        `message_log` holds `clean_html(msg)`, which `_server_messages` carries
+        to the client. The exception holds `strip_html_tags(msg)`, but only on
+        a terminal. A message that survives the trip reads the same in both.
+        """
+        frappe.local.message_log = []
+        with patch("sys.stdin", _Stdin(terminal)):
+            with self.assertRaises(frappe.ValidationError) as caught:
+                call()
+        return frappe.local.message_log[-1]["message"], str(caught.exception)
+
+    def assert_arrives_whole(self, name: str, call, expected: str):
+        """The client and the caller both read `expected`, terminal or not."""
+        for terminal in (False, True):
+            with self.subTest(name=name, terminal=terminal):
+                served, raised = self.refuse(call, terminal)
+                self.assertEqual(served, expected)
+                self.assertEqual(raised, expected)
+
+    def test_a_bad_argument_names_the_type_that_arrived(self):
+        """`type([])` is `<class 'list'>` and both cleaners delete all of it,
+        so five argument checks named neither what was wanted nor what came.
+        `__name__` says the same thing in words that survive."""
+        calls = {
+            "set_favourite": (
+                lambda: shims.set_favourite(entities="n1"),
+                "Expected list but got str",
+            ),
+            "remove_or_restore": (
+                lambda: shims.remove_or_restore({"name": "n1"}),
+                "Expected list but got dict",
+            ),
+            "delete_entities": (
+                lambda: shims.delete_entities(entity_names=[]),
+                "Expected non-empty list but got list",
+            ),
+            "move": (
+                lambda: shims.move(entity_names={}),
+                "Expected a non-empty list but got dict",
+            ),
+            "remove_recents": (
+                lambda: shims.remove_recents(entity_names="n1"),
+                "Expected list but got str",
+            ),
+        }
+        for name, (call, expected) in calls.items():
+            self.assert_arrives_whole(name, call, expected)
+
+    def test_a_refusal_echoes_the_method_the_caller_sent(self):
+        """`method` is whatever the legacy client put in the request body."""
+        self.assert_arrives_whole(
+            "update_access",
+            lambda: shims.update_access("n1", "<share>"),
+            "Drive access method share is not supported",
+        )
+
+    def test_a_missing_root_names_the_user_it_looked_for(self):
+        """A mail address is written `<a@example.com>` often enough that the
+        refusal named nobody at all."""
+        roots = self.stub("roots")
+        roots.personal_root_for.return_value = None
+        roots.provision_personal_root.return_value = None
+        addressed = Principals(
+            user="<a@example.com>", own=("a@example.com",), open=("$PUBLIC",), is_admin=False
+        )
+        self.assert_arrives_whole(
+            "_home",
+            lambda: shims._home(addressed),
+            "a@example.com has no personal Drive folder",
+        )
+
+    def test_a_workflow_refusal_keeps_its_words_at_the_legacy_boundary(self):
+        """`_legacy` throwing again is what puts a `_core` message in front of
+        `clean_html` for the first time: a bare `raise` sent no text at all.
+        Several `_core` refusals spell an id the caller sent, and a node named
+        `a<b>c` cost the message the name it was about."""
+
+        @shims._legacy
+        def refused():
+            raise DriveNotFound("Drive node a<b>c was not found")
+
+        self.assert_arrives_whole("core refusal", refused, "Drive node abc was not found")
+
+    def test_every_retired_refusal_arrives_whole_on_a_terminal(self):
+        """All four, not one. Each names a route, and a route is what the
+        reader has to be able to read."""
+        download = "Drive signs a download URL at GET /api/suite/drive/nodes/:id/content."
+        refusals = {
+            "create_auth_token": (
+                lambda: shims.create_auth_token("n1"),
+                f"suite.drive.api.files.create_auth_token is no longer supported. {download}",
+            ),
+            "get_file_content token": (
+                lambda: shims.get_file_content("n1", token="t"),
+                "the suite.drive.api.files.get_file_content download token is no longer "
+                f"supported. {download}",
+            ),
+            "get_new_title": (
+                lambda: shims.get_new_title("Report", "f1"),
+                "suite.drive.api.files.get_new_title is no longer supported. Drive answers "
+                "a sibling collision with a 409 refusal at write time.",
+            ),
+            "sync_from_disk": (
+                shims.sync_from_disk,
+                "suite.drive.api.scripts.sync_from_disk is no longer supported. The Drive "
+                "Build migration imports the storage tree.",
+            ),
+        }
+        for name, (call, expected) in refusals.items():
+            self.assert_arrives_whole(name, call, expected)
+
+    def test_no_message_the_shim_writes_spells_an_angle_bracket(self):
+        """Stronger than "carries no HTML tag", and it is the module's rule.
+        A lone `<` is escaped by `clean_html` and kept by `strip_html_tags`, so
+        the client and the terminal read different words even where no tag is
+        formed. A value that arrives at runtime goes through `_spelled`."""
+        tree = ast.parse((APP / "drive/http/shims.py").read_text())
+        marked = [
+            arg.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_"
+            for arg in node.args
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+        ]
+        self.assertTrue(marked)
+        routed = [text for text in marked if "/api/suite/drive/" in text]
+        self.assertGreaterEqual(len(routed), 3)
+        for text in marked:
+            with self.subTest(text=text):
+                self.assertNotIn("<", text)
+                self.assertNotIn(">", text)
 
     def test_no_message_the_shim_writes_carries_an_html_tag(self):
         """Every user-facing string in the module is wrapped in `_()`."""
