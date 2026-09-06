@@ -421,6 +421,28 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         with activated(), self.assertRaises(DriveConflict):
             validate_content_registry()
 
+    def test_a_docshare_on_a_legacy_document_still_opens_it_and_still_lists_it(self):
+        """The two refusals are scoped to a row that carries a node. No row
+        carries one before Build, so a site with Desk assignments reads and
+        lists exactly what it always did: `false_if_not_shared` answers the row
+        check the staged hook denied, and the shared names are ORed into the
+        list around the staged predicate.
+        """
+        docname = self._legacy_document()
+        share = frappe.share.add(DOCTYPE, docname, OTHER, read=1)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
+
+        frappe.set_user(OTHER)
+        self.addCleanup(frappe.set_user, "Administrator")
+
+        self.assertIn("`tabWriter Document`.`node` IS NULL", overrides.document_query_conditions(OTHER))
+        self.assertFalse(overrides.document_has_permission(frappe.get_doc(DOCTYPE, docname), "read", OTHER))
+        self.assertTrue(frappe.has_permission(DOCTYPE, "read", docname))
+        self.assertIn(docname, frappe.get_list(DOCTYPE, pluck="name"))
+
     def test_activation_would_accept_the_declaration_itself(self):
         # Every check `validate_registry` makes that needs a database: the node
         # Link, the mixin, the node field name, and the fields §10.2 forbids.
@@ -508,6 +530,25 @@ class TestWriterInDrive(IntegrationTestCase):
     def _as(self, user: str):
         frappe.set_user(user)
         self.addCleanup(frappe.set_user, "Administrator")
+
+    def _share_row(self, docname: str, **columns) -> None:
+        """Write one `DocShare` the way a site carried it before adoption.
+
+        `refuse_governed_share` refuses a new one under `activated()`, and
+        nothing rewrites the rows a site already had before Build, so the row
+        the staged guards have to answer for is always a hand-written one.
+        `ignore_validate` also keeps `cascade_permissions_downwards` off, so a
+        write-only row stays write-only.
+        """
+        share = frappe.get_doc(
+            {"doctype": "DocShare", "share_doctype": DOCTYPE, "share_name": docname, **columns}
+        )
+        share.flags.ignore_validate = True
+        share.insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
 
     # creation, and the immutable link
 
@@ -912,6 +953,80 @@ class TestWriterInDrive(IntegrationTestCase):
         ):
             with self.subTest(predicate=predicate):
                 self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
+
+    def test_a_docshare_cannot_open_a_linked_row_through_the_staged_guards(self):
+        """The staged guards run alone between Build and ticket 29, and
+        answering `False` is not a denial. Frappe reads `False` as "no role
+        permission" and then asks `false_if_not_shared`
+        (`frappe/permissions.py:214-216`); the list side ORs the shared names
+        around whatever predicate the hook returns
+        (`frappe/database/query.py:1739-1742`). Either one opens a linked
+        document that has no `Drive Grant` (§1).
+        """
+        docname = self._docname(self._document(title="Staged and shared"))
+        self._share_row(docname, user=OTHER, read=1)
+        document = frappe.get_doc(DOCTYPE, docname)
+
+        with self.assertRaises(DriveForbidden):
+            overrides.document_has_permission(document, "read", OTHER)
+        with self.assertRaises(DriveForbidden):
+            overrides.document_query_conditions(OTHER)
+
+        # The admin is the person who has to delete that row. Their predicate
+        # is empty, so the engine ORs the shared names around nothing.
+        self.assertEqual(overrides.document_query_conditions("Administrator"), "")
+
+    def test_an_everyone_docshare_reaches_a_linked_row_no_more_easily(self):
+        """`everyone` is the wide row: no `user` column at all, and
+        `frappe.share.get_shared` matches it for every signed-in user
+        (`frappe/share.py:188-190`). Guest is the exception those same lines
+        make, so the guard finds nothing to refuse for a Guest and the hook
+        denies for the ordinary reason.
+        """
+        docname = self._docname(self._document(title="Shared with everyone"))
+        self._share_row(docname, everyone=1, read=1)
+        document = frappe.get_doc(DOCTYPE, docname)
+
+        with self.assertRaises(DriveForbidden):
+            overrides.document_has_permission(document, "read", OTHER)
+        with self.assertRaises(DriveForbidden):
+            overrides.document_query_conditions(OTHER)
+        self.assertFalse(overrides.document_has_permission(document, "read", "Guest"))
+
+    def test_the_row_guard_refuses_exactly_the_rights_the_share_carries(self):
+        """`false_if_not_shared` reads one `DocShare` column per ptype
+        (`frappe/permissions.py:185-192`), so the guard reads the same one. A
+        write-only row must not refuse a read the framework would never have
+        granted, `email` and `print` are answered by the `read` column, and
+        `select` is not shareable at all: the framework retries it as `read`.
+        """
+        write_only = frappe.get_doc(DOCTYPE, self._docname(self._document(title="Write only")))
+        self._share_row(write_only.name, user=OTHER, write=1)
+
+        with self.assertRaises(DriveForbidden):
+            overrides.document_has_permission(write_only, "write", OTHER)
+        for unshared in ("read", "email", "print", "select", "delete"):
+            with self.subTest(ptype=unshared):
+                self.assertFalse(overrides.document_has_permission(write_only, unshared, OTHER))
+
+        read_only = frappe.get_doc(DOCTYPE, self._docname(self._document(title="Read only")))
+        self._share_row(read_only.name, user=OTHER, read=1)
+        for granted in ("read", "email", "print"):
+            with self.subTest(ptype=granted), self.assertRaises(DriveForbidden):
+                overrides.document_has_permission(read_only, granted, OTHER)
+
+    def test_a_share_on_a_linked_row_leaves_the_legacy_version_list_alone(self):
+        """The list refusal belongs to the doctype being listed. Frappe ORs the
+        shared names of `Writer Version` around the version predicate, never
+        those of `Writer Document`, so a share on a linked document cannot
+        widen it. Refusing there would take a legacy reader's own history away
+        for a row that could never have opened it.
+        """
+        docname = self._docname(self._document(title="Shared and versioned"))
+        self._share_row(docname, user=OTHER, read=1)
+
+        predicate = overrides.version_query_conditions(OTHER)
+        self.assertIn("`tabWriter Document`.`node` IS NULL", predicate)
 
     def test_a_linked_row_refuses_every_legacy_method(self):
         """§14.6 and §8.11 put history and comments on the node. A linked row
