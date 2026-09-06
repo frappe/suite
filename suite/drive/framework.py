@@ -154,7 +154,7 @@ def doc_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     allowed = _parent_allows(node, role, user) if ptype == "create" else _node_allows(node, role, user)
     if allowed:
         return True
-    _refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
+    refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
     return False
 
 
@@ -190,7 +190,7 @@ def satellite_has_permission(doc, ptype="read", user=None, debug=False) -> bool:
     role = READ if ptype in (None, "read", "select") else EDIT
     if _node_allows(node, role, user):
         return True
-    _refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
+    refuse_shared_row(doc.doctype, doc.get("name"), ptype, user)
     return False
 
 
@@ -217,8 +217,15 @@ def satellite_query_conditions(user: str | None = None, doctype: str | None = No
     )
 
 
-def _refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | None) -> None:
+def refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | None) -> None:
     """Refuse outright when a `DocShare` would grant the row Drive refused.
+
+    Public because a staged app guard needs it too. A `has_permission` hook
+    that answers False for a row Drive owns has not denied it: Frappe reads
+    that as "no role permission" and then asks `false_if_not_shared`
+    (`frappe/permissions.py:214-216`), which a `DocShare` answers. Between
+    Build and activation the app's own hook is the only one running, so it has
+    to raise the same way this module does.
 
     Called only after Drive said no, so the reader pays for it only on a
     denial. `frappe.share.get_shared` is asked exactly as
@@ -239,6 +246,36 @@ def _refuse_shared_row(doctype: str, docname, ptype: str | None, user: str | Non
     if not get_shared(doctype, user, rights=[right], filters=[["share_name", "=", str(docname)]], limit=1):
         return
     raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
+
+
+def refuse_shared_linked_rows(doctype: str, node_field: str, user: str | None) -> None:
+    """Refuse a staged app's list when a `DocShare` would reopen a linked row.
+
+    The window between Build and activation is the one where an app's own
+    `permission_query_conditions` still answers for a doctype whose rows Drive
+    already owns. `frappe.db.query` ORs the shared names around whatever that
+    hook returns (`frappe/database/query.py:1737-1741`), so no predicate the app
+    writes can keep a shared linked row out of the answer. Refusing is the same
+    answer `_refuse_shared_list` gives after activation.
+
+    Scoped to a row that carries a node, because a legacy row is still the app's
+    to share. Before Build no row carries one, so a site with Desk assignments
+    lists exactly what it always listed.
+
+    `Administrator` is skipped, for the reason `_refuse_shared_list` skips an
+    admin: the predicate disappears for them, so refusing would only lock out
+    the person who has to remove the row.
+    """
+    from frappe.share import get_shared
+
+    user = user or frappe.session.user
+    if user == "Administrator":
+        return
+    shared = get_shared(doctype, user)
+    if not shared:
+        return
+    if frappe.db.get_value(doctype, {"name": ("in", shared), node_field: ("is", "set")}, "name"):
+        raise DriveForbidden(_("Drive decides who reads {0}. A share cannot grant it.").format(doctype))
 
 
 def _refuse_shared_list(doctype: str, user: str | None) -> None:

@@ -75,6 +75,11 @@ check the session user and they do not require one: `create_storage_reservation`
 and its siblings run under whatever user the caller has set, including a
 background job. The caller owns the decision that the reservation may be made.
 
+`refuse_shared_row` and `refuse_shared_linked_rows` exist for the expand
+phase only. An app whose permission hooks are still its own has to refuse a
+`DocShare` the same way this package does after activation, because Frappe
+widens both a denied row check and a list predicate with shared names.
+
 The content workflows do check. `check`, `create_document`, `copy`,
 `adopt_media`, `touch`, `take_version`, and `push_preview` build the caller's
 principals from the current Frappe session and this request's `X-Drive-Links`
@@ -169,6 +174,20 @@ def adopt_media(document_node: str, media_nodes) -> dict[str, str]:
     return _adopt_media(_principals(), document_node, media_nodes)
 
 
+def refuse_shared_row(doctype: str, docname, ptype: str | None = None, user: str | None = None) -> None:
+    """Refuse when a `DocShare` would grant one row a staged app guard denied."""
+    from suite.drive.framework import refuse_shared_row as _refuse_shared_row
+
+    _refuse_shared_row(doctype, docname, ptype, user)
+
+
+def refuse_shared_linked_rows(doctype: str, node_field: str, user: str | None = None) -> None:
+    """Refuse a staged app's list when a `DocShare` would reopen a linked row."""
+    from suite.drive.framework import refuse_shared_linked_rows as _refuse_shared_linked_rows
+
+    _refuse_shared_linked_rows(doctype, node_field, user)
+
+
 def touch(doctype: str, docname: str) -> None:
     """Record that one content document's body changed now."""
     from suite.drive._core.content import touch as _touch
@@ -218,6 +237,8 @@ __all__ = (
     "personal_root_for",
     "push_preview",
     "reduce_storage_reservation",
+    "refuse_shared_linked_rows",
+    "refuse_shared_row",
     "release_storage_reservation",
     "take_version",
     "touch",

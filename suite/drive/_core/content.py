@@ -46,7 +46,13 @@ from frappe.storage.url import signed_url_for_blob
 from frappe.utils import get_attr, now_datetime
 
 from suite.drive._core.access import add_creator_grant, require
-from suite.drive._core.errors import DriveConflict, DriveForbidden, DriveNotFound
+from suite.drive._core.errors import (
+    DriveConflict,
+    DriveForbidden,
+    DriveLinkExpired,
+    DriveLocked,
+    DriveNotFound,
+)
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import EDIT, READ, UPLOAD
 
@@ -975,6 +981,11 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
     from suite.drive._core.previews import copy_preview
     from suite.drive._core.quota import admit
 
+    # The gate runs even for a paste that names no media. Returning early
+    # before it would leave the caller's endpoint with no check of its own, and
+    # answer a stranger where a refusal belongs.
+    require(_document_node(document_node), UPLOAD, principals)
+
     requested = tuple(dict.fromkeys(node for node in media_nodes if isinstance(node, str) and node))
     if not requested:
         return {}
@@ -993,13 +1004,21 @@ def adopt_media(principals: Principals, document_node: str, media_nodes: Iterabl
             source = frappe.db.get_value("Drive Node", node, MEDIA_SOURCE_FIELDS, as_dict=True)
             if not source:
                 continue
-            _validate_adoptable_media(source)
-            if source.state != "Active":
-                continue
             try:
                 require(source, READ, principals)
-            except DriveNotFound:
+            except (DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired):
+                # Every "you cannot read this" answer skips the id. `require`
+                # raises `DriveLocked` and `DriveLinkExpired` before it decides
+                # the role, so catching `DriveNotFound` alone let one expired
+                # link in the chain refuse a whole paste.
                 continue
+            # After the read check, never before it. A caller with no grant must
+            # not learn from the refusal that the id names a folder rather than
+            # nothing at all (§5.4). Only a node the caller can already see is
+            # answered as a caller error.
+            if source.state != "Active":
+                continue
+            _validate_adoptable_media(source)
             reused = by_blob.get(source.blob)
             if reused is not None:
                 remapped[node] = reused
@@ -1033,8 +1052,14 @@ def _validate_adoptable_media(source: Mapping) -> None:
     A missing id is a body value, not an error, and is skipped by the caller. An
     id that resolves to a folder, a document, or a file with no blob is a caller
     error: node names are opaque hashes, so a colour or a URL never reaches here.
+
+    The ancestor check is what makes the message true. Without it an ordinary
+    file anywhere in the caller's Drive could enter a deck as media, which is
+    the move `_validate_generic_destination` refuses in the other direction.
     """
-    if source.get("kind") != "file" or not source.get("blob"):
+    from suite.drive._core.nodes import _has_document_ancestor
+
+    if source.get("kind") != "file" or not source.get("blob") or not _has_document_ancestor(source):
         raise DriveConflict(_("Only media below a Drive content document can be adopted"))
 
 
