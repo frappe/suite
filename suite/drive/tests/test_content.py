@@ -7,6 +7,7 @@ from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import frappe
+import frappe.share
 from frappe.model.base_document import get_controller
 from frappe.model.document import Document
 from frappe.storage.blob import put_blob
@@ -38,7 +39,7 @@ from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ, UPLOAD
 from suite.drive._core.roots import create_root
 from suite.drive._core.versions import restore_version, take_version
-from suite.hooks import scheduler_events
+from suite.hooks import doc_events, scheduler_events
 from suite.tests.utils import ensure_user, stub_db
 
 USER = "drive-content-user@example.com"
@@ -136,14 +137,19 @@ def registered(*specs: ContentTypeSpec):
     def hooks(key, *args, **kwargs):
         if key == "drive_content_types":
             return paths
-        if key == "permission_query_conditions":
+        if key in ("permission_query_conditions", "has_permission"):
             # Without this the fixture doctype has no hook entry, so a list
-            # call would never reach the predicate under test.
+            # call or a row check would never reach the adapter under test.
+            # §10.4 wires both entries together, so the fixture does too.
+            targets = {
+                "permission_query_conditions": ("doc_query_conditions", "satellite_query_conditions"),
+                "has_permission": ("doc_has_permission", "satellite_has_permission"),
+            }[key]
             wired = dict(real_get_hooks(key, *args, **kwargs) or {})
             for declared in specs:
-                wired[declared.doctype] = ["suite.drive.framework.doc_query_conditions"]
+                wired[declared.doctype] = [f"suite.drive.framework.{targets[0]}"]
                 for satellite in declared.satellites:
-                    wired[satellite.doctype] = ["suite.drive.framework.satellite_query_conditions"]
+                    wired[satellite.doctype] = [f"suite.drive.framework.{targets[1]}"]
             return wired
         return real_get_hooks(key, *args, **kwargs)
 
@@ -334,6 +340,9 @@ class TestContentContract(UnitTestCase):
         with (
             registered(declared),
             patch("suite.drive.framework.principals_for", return_value=person),
+            # the list guard below reads the share table; there is none here
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("frappe.share.get_shared", return_value=[]),
         ):
             predicate = framework.satellite_query_conditions(user=USER, doctype=SATELLITE_DOCTYPE)
         self.assertTrue(predicate.startswith(f"`tab{SATELLITE_DOCTYPE}`.`content` IN ("))
@@ -436,6 +445,9 @@ class TestContentContract(UnitTestCase):
             registered(declared),
             stub_db(MagicMock()) as db,
             patch("suite.drive.framework.principals_for", return_value=person),
+            # the list guard below reads the share table; there is none here
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("frappe.share.get_shared", return_value=[]),
         ):
             db.escape.side_effect = lambda value, percent=True: "'{0}'".format(str(value).replace("'", "''"))
             predicate = framework.satellite_query_conditions(user=USER, doctype=SATELLITE_DOCTYPE)
@@ -527,6 +539,186 @@ class TestContentContract(UnitTestCase):
         for method in DAILY_DRIVE_JOBS:
             with self.subTest(method=method):
                 self.assertTrue(callable(frappe.get_attr(method)))
+
+    # a DocShare must not widen what the four adapters answered
+
+    def test_a_docshare_cannot_grant_a_document_row_the_grants_refuse(self):
+        # `frappe.permissions.has_permission` runs the row hook, then ORs
+        # `false_if_not_shared()` over its answer. Returning False here would
+        # hand the document straight back, so the adapter refuses instead.
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="deck-1", node="node-1")
+        with (
+            registered(spec()),
+            patch("suite.drive.framework._node_allows", return_value=False),
+            patch("frappe.share.get_shared", return_value=["deck-1"]) as shared,
+            self.assertRaises(DriveForbidden),
+        ):
+            framework.doc_has_permission(doc=doc, ptype="read", user=OTHER)
+        self.assertEqual(
+            shared.call_args.kwargs,
+            {"rights": ["read"], "filters": [["share_name", "=", "deck-1"]], "limit": 1},
+            "the guard asks the share table exactly what the framework would ask it",
+        )
+        self.assertEqual(shared.call_args.args, (CONTENT_DOCTYPE, OTHER))
+
+    def test_a_docshare_cannot_grant_a_satellite_row_the_grants_refuse(self):
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        doc = frappe._dict(doctype=SATELLITE_DOCTYPE, name="op-1", content="deck-1")
+        with (
+            registered(declared),
+            stub_db(MagicMock()) as db,
+            patch("suite.drive.framework._node_allows", return_value=False),
+            patch("frappe.share.get_shared", return_value=["op-1"]),
+            self.assertRaises(DriveForbidden),
+        ):
+            db.get_value.return_value = "node-1"
+            framework.satellite_has_permission(doc=doc, ptype="write", user=OTHER)
+
+    def test_a_row_the_grants_allow_never_reads_the_share_table(self):
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="deck-1", node="node-1")
+        with (
+            registered(spec()),
+            patch("suite.drive.framework._node_allows", return_value=True),
+            patch("frappe.share.get_shared") as shared,
+        ):
+            self.assertTrue(framework.doc_has_permission(doc=doc, ptype="read", user=OTHER))
+        shared.assert_not_called()
+
+    def test_a_ptype_the_framework_cannot_share_stays_a_plain_refusal(self):
+        # Only the six shareable rights are ever widened, so a denied delete
+        # is still answered with False and costs no extra read.
+        doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="deck-1", node="node-1")
+        with (
+            registered(spec()),
+            patch("suite.drive.framework._node_allows", return_value=False),
+            patch("suite.drive.framework.get_doctype_ptype_map", return_value={}),
+            patch("frappe.share.get_shared") as shared,
+        ):
+            self.assertFalse(framework.doc_has_permission(doc=doc, ptype="delete", user=OTHER))
+        shared.assert_not_called()
+
+    def test_the_share_right_the_guard_asks_for_matches_the_framework(self):
+        # `false_if_not_shared` reads a `read` share for email and print, the
+        # column itself for the other four, and nothing for anything else.
+        with patch(
+            "suite.drive.framework.get_doctype_ptype_map", return_value={CONTENT_DOCTYPE: ["approve"]}
+        ):
+            for ptype, right in (
+                (None, "read"),
+                ("read", "read"),
+                ("write", "write"),
+                ("share", "share"),
+                ("submit", "submit"),
+                ("email", "read"),
+                ("print", "read"),
+                ("approve", "approve"),
+                ("select", None),
+                ("delete", None),
+                ("create", None),
+            ):
+                with self.subTest(ptype=ptype):
+                    self.assertEqual(framework._shared_right(CONTENT_DOCTYPE, ptype), right)
+
+    def test_a_docshare_refuses_the_list_it_would_widen(self):
+        # `get_permission_conditions` ORs the shared names around whatever the
+        # predicate says, and drops the predicate altogether when the doctype
+        # carries no role read. Neither is answerable from inside the hook.
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        with (
+            registered(declared),
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("frappe.share.get_shared", return_value=["deck-1"]) as shared,
+        ):
+            with self.assertRaises(DriveForbidden):
+                framework.doc_query_conditions(user=OTHER, doctype=CONTENT_DOCTYPE)
+            with self.assertRaises(DriveForbidden):
+                framework.satellite_query_conditions(user=OTHER, doctype=SATELLITE_DOCTYPE)
+        self.assertEqual(shared.call_args.args, (SATELLITE_DOCTYPE, OTHER))
+        self.assertEqual(
+            shared.call_args.kwargs,
+            {"limit": 1},
+            "the default right is `read`, which is what the list engine asks for",
+        )
+
+    def test_an_admin_lists_beside_a_share_instead_of_being_locked_out(self):
+        # The predicate disappears for an admin, so the engine adds no
+        # condition and has nothing to OR the share around.
+        admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+        with (
+            registered(spec()),
+            patch("suite.drive.framework.is_drive_admin", return_value=True),
+            patch("suite.drive.framework.principals_for", return_value=admin),
+            patch("frappe.share.get_shared", return_value=["deck-1"]) as shared,
+        ):
+            self.assertEqual(framework.doc_query_conditions(user=USER, doctype=CONTENT_DOCTYPE), "")
+        shared.assert_not_called()
+
+    def test_a_list_with_no_share_answers_with_the_predicate(self):
+        person = Principals(USER, (USER,), ())
+        with (
+            registered(spec()),
+            patch("suite.drive.framework.principals_for", return_value=person),
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("frappe.share.get_shared", return_value=[]),
+        ):
+            predicate = framework.doc_query_conditions(user=USER, doctype=CONTENT_DOCTYPE)
+        self.assertIn(f"`tab{CONTENT_DOCTYPE}`.`node`", predicate)
+
+    def test_an_everyone_share_is_one_the_guard_finds(self):
+        # `get_shared` ORs `everyone = 1` in for every signed-in user
+        # (`frappe/share.py:188-190`), so calling it is what makes an existing
+        # everyone row refuse the list instead of opening it.
+        seen = {}
+
+        def get_all(doctype, **kwargs):
+            seen.update(kwargs, doctype=doctype)
+            return [frappe._dict(share_name="deck-1")]
+
+        with (
+            registered(spec()),
+            patch("suite.drive.framework.is_drive_admin", return_value=False),
+            patch("suite.drive.framework.frappe.get_all", side_effect=get_all),
+            self.assertRaises(DriveForbidden),
+        ):
+            framework.doc_query_conditions(user=OTHER, doctype=CONTENT_DOCTYPE)
+        self.assertEqual(seen["doctype"], "DocShare")
+        self.assertIn(["everyone", "=", 1], seen["or_filters"])
+        self.assertIn(["share_doctype", "=", CONTENT_DOCTYPE], seen["filters"])
+
+    def test_a_share_of_a_governed_doctype_is_refused_and_one_elsewhere_is_not(self):
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        with registered(declared):
+            for doctype in (CONTENT_DOCTYPE, SATELLITE_DOCTYPE):
+                with self.subTest(doctype=doctype), self.assertRaises(DriveForbidden):
+                    framework.refuse_governed_share(frappe._dict(doctype="DocShare", share_doctype=doctype))
+            framework.refuse_governed_share(frappe._dict(doctype="DocShare", share_doctype="ToDo"))
+        with registered():
+            # staged activation: nothing is governed yet, so nothing is refused
+            framework.refuse_governed_share(frappe._dict(doctype="DocShare", share_doctype=CONTENT_DOCTYPE))
+
+    def test_the_share_guard_is_wired_on_validate_alone(self):
+        # Deleting a row runs `on_trash`, so the guard must not sit there:
+        # a legacy share has to stay removable.
+        self.assertEqual(
+            doc_events["DocShare"], {"validate": ["suite.drive.framework.refuse_governed_share"]}
+        )
+        self.assertTrue(callable(frappe.get_attr(doc_events["DocShare"]["validate"][0])))
+
+    def test_boot_validation_refuses_a_content_type_that_still_carries_shares(self):
+        declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="content"),))
+        with registered(declared):
+            self.assertEqual(content.governed_doctypes(), (CONTENT_DOCTYPE, SATELLITE_DOCTYPE))
+        with (
+            registered(declared),
+            patch("suite.drive._core.content.validate_registry"),
+            stub_db(MagicMock()) as db,
+        ):
+            db.exists.return_value = True
+            with self.assertRaises(DriveConflict) as raised:
+                framework.validate_content_registry()
+            self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
+            db.exists.return_value = False
+            framework.validate_content_registry()
 
 
 class TestContentWorkflows(IntegrationTestCase):
@@ -1094,6 +1286,89 @@ class TestContentWorkflows(IntegrationTestCase):
                 frappe.set_user("Administrator")
             doc = frappe.get_doc(CONTENT_DOCTYPE, docname)
             self.assertTrue(framework.doc_has_permission(doc=doc, ptype="read", user=OTHER))
+
+    # a DocShare must not widen what the four adapters answered
+
+    def _legacy_share(self, docname: str, **rights) -> str:
+        """Write one DocShare the way a site did before Drive governed it.
+
+        Written outside `registered`, so the guard on `DocShare.validate` is
+        a no-op, which is exactly the row an adoption ticket inherits.
+        """
+        share = frappe.get_doc(
+            {
+                "doctype": "DocShare",
+                "share_doctype": CONTENT_DOCTYPE,
+                "share_name": docname,
+                "read": 1,
+                **rights,
+            }
+        ).insert(ignore_permissions=True)
+        self.addCleanup(
+            frappe.delete_doc, "DocShare", share.name, force=1, ignore_permissions=True, ignore_missing=True
+        )
+        frappe.db.commit()
+        return share.name
+
+    def test_an_everyone_share_that_predates_adoption_opens_no_document(self):
+        with registered(spec()):
+            node = self._document("Deck")
+            docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        self._legacy_share(docname, everyone=1)
+
+        with registered(spec()):
+            doc = frappe.get_doc(CONTENT_DOCTYPE, docname)
+            # the adapter alone
+            with self.assertRaises(DriveForbidden):
+                framework.doc_has_permission(doc=doc, ptype="read", user=OTHER)
+            # and the whole framework composition around it, which is what
+            # would otherwise OR the share back in
+            with self.assertRaises(DriveForbidden):
+                frappe.has_permission(CONTENT_DOCTYPE, "read", doc=doc, user=OTHER)
+            frappe.set_user(OTHER)
+            try:
+                with self.assertRaises(DriveForbidden):
+                    frappe.get_list(CONTENT_DOCTYPE, pluck="name")
+            finally:
+                frappe.set_user("Administrator")
+
+    def test_a_grant_still_answers_beside_a_share_of_another_document(self):
+        # The guard is per document on the row path, so an unrelated share
+        # must not disturb a document Drive does allow.
+        with registered(spec()):
+            readable = self._document("Readable")
+            other = self._document("Other")
+            grant(readable, OTHER, READ, self.admin)
+            names = [frappe.db.get_value("Drive Node", node, "content_docname") for node in (readable, other)]
+        self._legacy_share(names[1], user=OTHER)
+
+        with registered(spec()):
+            doc = frappe.get_doc(CONTENT_DOCTYPE, names[0])
+            self.assertTrue(framework.doc_has_permission(doc=doc, ptype="read", user=OTHER))
+            self.assertTrue(frappe.has_permission(CONTENT_DOCTYPE, "read", doc=doc, user=OTHER))
+
+    def test_a_share_of_a_registered_content_doctype_is_refused_but_stays_removable(self):
+        with registered(spec()):
+            node = self._document("Deck")
+            docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        name = self._legacy_share(docname, user=OTHER)
+
+        with registered(spec()):
+            with self.assertRaises(DriveForbidden):
+                frappe.share.add(CONTENT_DOCTYPE, docname, USER, flags={"ignore_share_permission": True})
+            # the guard sits on validate alone, so the legacy row can go
+            frappe.delete_doc("DocShare", name, force=1, ignore_permissions=True)
+        self.assertFalse(frappe.db.exists("DocShare", name))
+
+    def test_boot_validation_refuses_a_type_that_still_carries_a_share(self):
+        with registered(spec()):
+            node = self._document("Deck")
+            docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        self._legacy_share(docname, everyone=1)
+
+        with registered(spec()), self.assertRaises(DriveConflict) as raised:
+            framework.validate_content_registry()
+        self.assertIn(CONTENT_DOCTYPE, str(raised.exception))
 
     # boot validation against the real doctypes
 

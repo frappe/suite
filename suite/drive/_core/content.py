@@ -216,6 +216,27 @@ def satellite_for(doctype: str) -> tuple[ContentTypeSpec, Satellite]:
     raise DriveConflict(_("The Drive satellite type is not registered"))
 
 
+def governs(doctype: str) -> bool:
+    """Answer whether Drive decides who reads one doctype.
+
+    True for a registered content doctype and for every satellite one of them
+    declares. `suite.drive.framework` asks before it lets the framework widen
+    an answer Drive gave.
+    """
+    registered = registry()
+    if doctype in registered:
+        return True
+    return any(satellite.doctype == doctype for spec in registered.values() for satellite in spec.satellites)
+
+
+def governed_doctypes() -> tuple[str, ...]:
+    """Return every doctype Drive governs, content types and satellites."""
+    registered = registry()
+    names = set(registered)
+    names.update(satellite.doctype for spec in registered.values() for satellite in spec.satellites)
+    return tuple(sorted(names))
+
+
 def validate_registry() -> None:
     """Prove every declaration against the doctype it names.
 

@@ -220,9 +220,9 @@ The following remain private implementation details:
 from suite import drive
 
 node = drive.create_document(
-    content_type="writer",
-    parent=parent,
-    title=title,
+    parent,
+    title,
+    content_doctype="Writer Document",
 )
 drive.touch("Writer Document", document_name)
 ```
