@@ -4,7 +4,7 @@
 
 **Blocked by:** [11 — Move, copy, trash, and explicitly restore node trees](11-node-lifecycle.md)
 
-**Status:** in-progress
+**Status:** done
 
 **Owner:** Suite Drive versions
 
@@ -15,12 +15,12 @@ Read [execution rules and source precedence](../README.md#execution-rules) befor
 
 ## Acceptance criteria
 
-- [ ] Implement take, list, label/pin, delete, and restore through the Drive workflows.
-- [ ] Preserve bytes and sequence uniqueness under concurrent writers. Only label and pinned fields remain mutable as specified.
-- [ ] Restore first captures current content. Keep the zero-byte old-head exception and exact quota deltas.
-- [ ] Use content callbacks for document bytes. File history uses blob references.
-- [ ] Apply the full age ladder. Named, milestone, and pinned versions survive automatic thinning.
-- [ ] Register daily thinning through the scheduler adapter, and release each removed version’s charge.
+- [x] Implement take, list, label/pin, delete, and restore through the Drive workflows.
+- [x] Preserve bytes and sequence uniqueness under concurrent writers. Only label and pinned fields remain mutable as specified.
+- [x] Restore first captures current content. Keep the zero-byte old-head exception and exact quota deltas.
+- [x] Use content callbacks for document bytes. File history uses blob references.
+- [x] Apply the full age ladder. Named, milestone, and pinned versions survive automatic thinning.
+- [x] Register daily thinning through the scheduler adapter, and release each removed version’s charge.
 
 ## Verification
 
@@ -33,9 +33,7 @@ Implemented 2026-09-06 from ticket 11 revision
 `158a173a1c8fb0083f2b352250f8ac4bba1781ba`. Finalized on 2026-09-06 after
 merging Drive layer revision `9cad154bf00220b713de2d1c0652fa0c4a242838`, which
 adds the corrupt-ancestry refusal. The merge was clean and touched only
-`_core/nodes.py`, `tests/test_nodes.py`, and ticket 11. Status stays
-`in-progress`: the integration tests need the shared bench site and have not
-run on this revision.
+`_core/nodes.py`, `tests/test_nodes.py`, and ticket 11.
 
 Changed behavior:
 
@@ -105,7 +103,8 @@ Review decisions recorded on this ticket:
   URL, which is §13 framework work and is not on the framework ask list.
   Each amends an accepted decision, so nothing was implemented. The
   limitation is recorded as a handoff below and as a `LIMITATION` and
-  `HANDOFF` comment at the `put_blob` call in `_content_version_blob`.
+  `HANDOFF` comment above the `put_blob` call in `_version_bytes`
+  (`suite/drive/_core/versions.py:383-402`).
 - **Thinner transaction scope.** §7.2 makes the `Drive Root` row UPDATE the
   quota lock. One transaction for the whole daily pass would hold that row for
   every visited root until the job ended, blocking admission for every writer
@@ -165,31 +164,44 @@ All passed. Two no-database harnesses ran this worktree's own module under
   cycle through `nodes` -> `versions` -> `roots`, and
   `suite.drive.jobs.thin_versions` resolved as a dotted hook target.
 
-Not run, and therefore not verified: the ten integration tests in
-`TestVersionWorkflows`. They need MariaDB and the shared bench site, which
-this run was not authorized to touch. The seven unit tests in
-`TestVersionLadder` were reproduced by the harnesses above but were not run
-through the Frappe test runner either. The commands are:
+### Site test results
+
+Run on the authorized bench site against this branch. All three modules
+passed:
 
 ```text
-cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_versions
-cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes
-cd /home/faris/benches/suite-bench && PYTHONPATH=/home/faris/benches/suite-bench/apps/.worktrees/suite-drive-12:/home/faris/benches/suite-bench/apps/frappe bench --site slides.localhost run-tests --module suite.drive.tests.test_upload
+bench --site slides.localhost run-tests --module suite.drive.tests.test_versions   # 17/17
+bench --site slides.localhost run-tests --module suite.drive.tests.test_nodes      # 36/36
+bench --site slides.localhost run-tests --module suite.drive.tests.test_upload     # 34/34
 ```
 
-`test_nodes` and `test_upload` are regression runs, because `_preserve_head`
-and the replace path now go through `versions.preserve_file_head`.
+`test_versions` is 7 unit tests in `TestVersionLadder` plus 10 integration
+tests in `TestVersionWorkflows`. `test_nodes` and `test_upload` are regression
+runs, because `_preserve_head` and the replace path now go through
+`versions.preserve_file_head`.
 
-Handoff to ticket 13, previews:
+Every acceptance criterion above is now covered by a named test:
 
-Restoring a file version repoints the node's head blob, so it changes the
-node's bytes exactly as a replace does. §8.5 step 5 requires deleting the
-`Drive Node Preview` row and enqueuing a render on such a change. Neither
-`_core/previews.py` nor the `Drive Node Preview` doctype exists yet, so
-`restore_version` makes no preview call and carries a `HANDOFF, ticket 13`
-comment at that line. Ticket 13 must cover the restore path together with
-replace and upload finalize. Its criterion "Invalidate on replace" does not
-name restore today.
+| Criterion | Tests |
+|---|---|
+| Five workflows and their roles | `test_take_list_label_pin_delete_and_immutable_bytes`, `test_edit_can_take_and_label_but_only_manage_can_delete`, `test_every_root_version_workflow_is_refused`, `test_only_files_and_documents_have_versions` |
+| Bytes and sequence uniqueness | `test_concurrent_take_allocates_unique_monotonic_sequences`, `test_upload.test_concurrent_replace_preserves_the_intermediate_head_with_unique_sequences`, `test_upload.test_version_identity_and_bytes_are_immutable_but_label_and_pin_are_editable` |
+| Restore capture, zero-byte head, quota deltas | `test_file_restore_captures_current_head_and_admits_only_restored_head`, `test_zero_byte_file_restore_skips_old_head_version`, `test_restore_quota_refusal_rolls_back_capture_and_head` |
+| Content callbacks and blob references | `test_content_callbacks_round_trip_bytes_and_charge_captures` |
+| Age ladder and protected versions | `test_every_default_boundary_uses_the_decided_tier`, `test_newest_row_survives_each_density_bucket`, `test_configured_ladder_overrides_are_validated`, `test_thin_keeps_protected_versions_and_releases_removed_sizes` |
+| Daily thinner and released charge | `test_scheduler_adapter_delegates_to_core_thinner`, `test_thinner_is_registered_once_as_a_daily_scheduler_event`, `test_thin_commits_each_node_and_isolates_one_failure`, `test_thin_keeps_protected_versions_and_releases_removed_sizes` |
+
+### Ticket 13 handoff, closed
+
+The earlier handoff said `restore_version` makes no preview call because
+`_core/previews.py` and the `Drive Node Preview` doctype did not exist. Both
+exist now. Ticket 13 covered the restore path: `restore_version` deletes the
+`Drive Node Preview` row and enqueues a render when the restore moves the head
+blob, and keeps the preview when the target blob equals the current one
+(`suite/drive/_core/versions.py:218-224`). The `HANDOFF, ticket 13` comment is
+gone. Proved by `test_previews.test_version_restore_invalidates_only_when_the_head_blob_moves`
+(unit), `test_version_restore_invalidates_the_preview_and_queues_one_render`,
+and `test_version_restore_onto_the_same_blob_keeps_the_preview`.
 
 Handoff to ticket 22, the version HTTP routes:
 
