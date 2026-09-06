@@ -113,6 +113,7 @@ BASELINE_DEBT = {
             "suite/writer/doctype/writer_document/writer_document.py|import|suite.drive.api.notifications",
             "suite/writer/overrides/__init__.py|import|suite.drive.api.permissions",
             "suite/writer/overrides/__init__.py|import|suite.drive.overrides.file",
+            "suite/writer/tests/test_drive_adoption.py|import|suite.drive.api.list",
         ),
     ),
     **_debt(

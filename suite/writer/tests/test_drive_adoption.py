@@ -52,7 +52,7 @@ from suite.drive._core.nodes import create_file, create_folder, purge, update
 from suite.drive._core.principals import Principals
 from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version
-from suite.drive.api import list as drive_list
+from suite.drive.api.list import files as legacy_files
 from suite.drive.framework import refuse_governed_share, validate_content_registry
 from suite.tests.utils import ensure_user
 from suite.writer import drive as writer
@@ -528,7 +528,7 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         )
         self.assertFalse(frappe.db.exists("Drive Node", entity.folder), "no node before Build")
 
-        rows = {row["name"]: row for row in drive_list.files(entity_name=entity.folder)}
+        rows = {row["name"]: row for row in legacy_files(entity_name=entity.folder)}
 
         self.assertIn(entity.name, rows)
         row = rows[entity.name]
@@ -548,12 +548,12 @@ class TestWriterBeforeActivation(IntegrationTestCase):
                 frappe.delete_doc, "File", entity.name, force=1, ignore_permissions=True, ignore_missing=True
             )
 
-        page = drive_list.files(entity_name=entity.folder, limit=2, paginated=True)
+        page = legacy_files(entity_name=entity.folder, limit=2, paginated=True)
 
         self.assertEqual(len(page["rows"]), 2)
         self.assertEqual(page["next_start"], 2)
         self.assertTrue(page["has_next"])
-        rest = drive_list.files(entity_name=entity.folder, start=2, limit=2, paginated=True)
+        rest = legacy_files(entity_name=entity.folder, start=2, limit=2, paginated=True)
         seen = {row["name"] for row in page["rows"]} | {row["name"] for row in rest["rows"]}
         self.assertTrue(set(made) <= seen, "every document is on one of the two pages")
 
@@ -568,7 +568,7 @@ class TestWriterBeforeActivation(IntegrationTestCase):
         frappe.set_user(OTHER)
         self.addCleanup(frappe.set_user, "Administrator")
         with self.assertRaises(frappe.PermissionError):
-            drive_list.files(entity_name=entity.folder)
+            legacy_files(entity_name=entity.folder)
 
     def _posted(self, body: bytes, filename: str = "cat.png"):
         """One multipart POST, the way `embed.add` reads it."""
