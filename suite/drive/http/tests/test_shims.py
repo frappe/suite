@@ -906,6 +906,17 @@ class TestFileForwarders(ShimCase):
             shims.upload_file(parent="f1", total_file_size=100)
         uploads.create_upload.assert_not_called()
 
+    def test_an_unreadable_id_answers_none_whichever_refusal_it_meets(self):
+        """`translate_old_name` is guest-callable and answers `None` for
+        anything it cannot read. A caller presenting a link meets
+        `DriveLocked` (401) or `DriveLinkExpired` (410) on the same read, and
+        naming `DriveNotFound` alone let those two travel."""
+        nodes = self.stub("node_core")
+        for error in (DriveNotFound, DriveForbidden, DriveLocked, DriveLinkExpired):
+            with self.subTest(error=error.__name__):
+                nodes.get.side_effect = error("no")
+                self.assertIsNone(shims.translate_old_name("n1"))
+
     def test_get_entity_type_answers_folder_or_file(self):
         nodes = self.stub("node_core")
         nodes.get.return_value = node_row(kind="folder", mime=None)
@@ -1198,6 +1209,16 @@ class TestAccessForwarder(ShimCase):
         gives no legacy name a link-issuing contract."""
         access = self.stub("access")
         for principal in ("$LINK", "$LINK:abcdefghijklmnopqrstuv"):
+            with self.subTest(principal=principal):
+                with self.assertRaises(frappe.ValidationError):
+                    shims.update_access("n1", "share", user=principal, read=1)
+        access.grant.assert_not_called()
+
+    def test_a_non_string_principal_is_a_refusal_not_a_traceback(self):
+        """`**kwargs` is the request body. `access._principal_kind` refuses a
+        non-string cleanly; reaching `startswith` first answers a 500."""
+        access = self.stub("access")
+        for principal in ([{"user": "a"}], {"a": 1}, 7):
             with self.subTest(principal=principal):
                 with self.assertRaises(frappe.ValidationError):
                     shims.update_access("n1", "share", user=principal, read=1)
@@ -1525,6 +1546,116 @@ class TestCallerHomeFolder(ShimCase):
         with self.assertRaises(frappe.ValidationError):
             shims._home(GUEST)
         roots.personal_root_for.assert_not_called()
+
+
+class TestListingScanBound(ListCase):
+    """A listing walk is bounded, and `list.files` is `allow_guest`.
+
+    `file_kinds` and `search` were SQL predicates on the old surface, so a
+    filter matching nothing came back exhausted on the first window. §11.2 can
+    spell neither, so they are applied to the page here, and a window of
+    non-matching rows does not advance the page at all. The permission filter
+    runs after the SQL window on both surfaces, so even an unfiltered page can
+    come back short and ask again.
+
+    The counts below are numbers, not the module's own constants: a bound
+    asserted against itself moves whenever the bound is changed.
+    """
+
+    # Deeper than any bound under test, and finite: an unbounded walk has to
+    # come back and fail the count, not hang the suite.
+    DEEPER_THAN_ANY_BOUND = 500
+
+    def deep(self, stub, kind="folder"):
+        """A view the workflow answers one row at a time, five hundred times."""
+        self.nodes.MAX_PAGE_SIZE = 200
+
+        def one_row(*args, **kwargs):
+            reached = stub.call_count
+            return {
+                "rows": [node_row(name=f"n{reached}", mime="application/pdf")],
+                "next_cursor": "c1" if reached < self.DEEPER_THAN_ANY_BOUND else None,
+            }
+
+        stub.side_effect = one_row
+
+    def test_a_filter_that_matches_nothing_stops_at_the_scan_bound(self):
+        self.deep(self.nodes.children)
+        answer = shims.files(limit=1, paginated=True, file_kinds=["Folder"])
+        self.assertEqual(answer["rows"], [])
+        self.assertEqual(self.nodes.children.call_count, 10)
+
+    def test_a_filtered_page_that_stopped_at_the_bound_still_says_there_is_more(self):
+        """The walk stopped reading, so the rows it kept are not the whole
+        match set and their number cannot say the listing is finished."""
+        self.deep(self.nodes.children)
+        answer = shims.files(limit=1, paginated=True, file_kinds=["Folder"])
+        self.assertTrue(answer["has_next"])
+
+    def test_a_search_that_matches_nothing_stops_at_the_same_bound(self):
+        """`recents` is the one view that keeps its own order, so a search on
+        it reaches `_listing` rather than the ordered walk."""
+        self.deep(self.nodes.views)
+        answer = shims.recents(limit=1, paginated=True, search="no such title")
+        self.assertEqual(answer["rows"], [])
+        self.assertEqual(self.nodes.views.call_count, 10)
+
+    def test_an_unfiltered_walk_has_a_ceiling_of_its_own(self):
+        """A caller who can read almost nothing walks a large folder a page at
+        a time. `decode_cursor` refuses only at offset ten million, which is
+        not a bound."""
+        self.nodes.MAX_PAGE_SIZE = 200
+        self.nodes.children.side_effect = lambda *a, **k: {
+            "rows": [],
+            "next_cursor": "c1" if self.nodes.children.call_count < self.DEEPER_THAN_ANY_BOUND else None,
+        }
+        answer = shims.files(limit=1, paginated=True)
+        self.assertEqual(answer["rows"], [])
+        self.assertEqual(self.nodes.children.call_count, 200)
+
+    def test_an_unfiltered_page_still_asks_for_exactly_what_it_needs(self):
+        """Every row the workflow returns is a row the page keeps, so asking
+        for the whole window would overshoot: the surplus is cut to fit while
+        `next_cursor` has already moved past it."""
+        self.deep(self.nodes.children)
+        answer = shims.files(limit=3, paginated=True)
+        self.assertEqual(len(answer["rows"]), 3)
+        self.assertEqual(self.nodes.children.call_count, 3)
+        self.assertEqual([call.kwargs["limit"] for call in self.nodes.children.call_args_list], [3, 2, 1])
+
+    def test_a_filtered_page_reads_full_windows_and_counts_the_matches(self):
+        """`start` and `limit` counted matching rows on the old surface: page
+        two of a PDF-only folder began at the twenty-first PDF, not at the
+        twenty-first child. The page is cut to `limit` after the filter."""
+        self.nodes.MAX_PAGE_SIZE = 200
+        self.nodes.children.return_value = {
+            "rows": [node_row(name=f"n{i}", mime="application/pdf") for i in range(4)]
+            + [node_row(name="d1", kind="folder", mime=None)],
+            "next_cursor": None,
+        }
+        answer = shims.files(start=1, limit=2, paginated=True, file_kinds=["PDF"])
+        self.assertEqual(self.nodes.children.call_args.kwargs["limit"], 200)
+        self.assertEqual([row["name"] for row in answer["rows"]], ["n1", "n2"])
+        self.assertEqual(answer["next_start"], 3)
+        self.assertTrue(answer["has_next"])
+
+    def test_a_filtered_page_walks_from_the_top_whatever_offset_it_is_given(self):
+        """A cursor built from `start` would index unfiltered rows, so the
+        filter would be applied to the wrong window entirely."""
+        self.nodes.MAX_PAGE_SIZE = 200
+        self.nodes.children.return_value = {
+            "rows": [node_row(name=f"n{i}", mime="application/pdf") for i in range(3)],
+            "next_cursor": None,
+        }
+        shims.files(start=40, limit=2, paginated=True, file_kinds=["PDF"])
+        self.assertIsNone(self.nodes.children.call_args.kwargs["cursor"])
+
+    def test_a_whole_view_walk_stops_reading_at_its_own_bound(self):
+        """Ten windows to try to sort the view, then the over-bound fallback
+        walks the filtered listing, which is bounded the same way."""
+        self.deep(self.nodes.views)
+        shims.shared(file_kinds=["Folder"])
+        self.assertEqual(self.nodes.views.call_count, 10 + 10)
 
 
 class TestListOrdering(ListCase):

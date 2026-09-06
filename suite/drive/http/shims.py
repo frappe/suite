@@ -352,10 +352,15 @@ def _readable_row(node: str):
     question with a zeroed dict or a `None`, so it is translated back into
     whichever of those the caller expects. It is never re-raised as a deny and
     never stored.
+
+    Every Drive refusal answers `None`, not `DriveNotFound` alone. A caller
+    presenting a link meets `DriveLocked` (401) or `DriveLinkExpired` (410) on
+    the same read, and `translate_old_name` is guest-callable and documented
+    to answer `None` for anything it cannot read.
     """
     try:
         return node_core.get(_principals(), node)
-    except DriveNotFound:
+    except DriveError:
         return None
 
 
@@ -1198,6 +1203,10 @@ def update_access(entity_name: str, method: str, **kwargs):
     principals = _principals()
     kwargs.pop("cmd", None)
     principal = kwargs.get("user") or "$PUBLIC"
+    if not isinstance(principal, str):
+        # `**kwargs` is the request body. `access._principal_kind` refuses a
+        # non-string cleanly; reaching `startswith` first answers a traceback.
+        frappe.throw(_("Drive grant principal is invalid"), frappe.ValidationError)
     if principal == "":
         principal = "$PUBLIC"
     if principal == "$LINK" or principal.startswith("$LINK:"):
@@ -1563,6 +1572,21 @@ def _matching_titles(rows: list, term: str | None) -> list:
 # than losing the rows past the bound: `_ordered_listing` says why.
 MAX_SORTABLE_ROWS = 2000
 
+# The ceiling on an unfiltered listing walk. The permission filter
+# runs after the SQL window on the old surface and on this one, so a caller who
+# can read almost nothing in a large folder walks it a page at a time either
+# way; `decode_cursor` refuses only at offset ten million, which is not a
+# bound. Two hundred full windows is forty thousand rows, past any folder the
+# tree sidebar or the move dialog asks for whole, and `has_next` stays true.
+MAX_WALK_WINDOWS = 200
+
+# The ceiling on a whole-view walk, which reads full windows and keeps only
+# the rows a filter of this module's own matches. Ten of them is the same two
+# thousand rows `MAX_SORTABLE_ROWS` allows, counted in reads instead of keeps:
+# without it a filter matching nothing reads the whole view on every call, and
+# `list.files` is `allow_guest`.
+MAX_VIEW_WINDOWS = MAX_SORTABLE_ROWS // node_core.MAX_PAGE_SIZE
+
 
 def _sort_key(row, column: str):
     """One row's value under a legacy sort column, in the old collation."""
@@ -1595,10 +1619,16 @@ def _ordered(rows: list, order_by: str, ascending: bool) -> list:
 
 
 def _whole_view(page_call, file_kinds, search) -> tuple[list, bool]:
-    """Collect every row of a view, and say whether it ran past the bound."""
+    """Collect every row of a view, and say whether it ran past either bound.
+
+    Two bounds, because the rows kept and the rows read are not the same
+    number once `file_kinds` or `search` is applied here: `MAX_SORTABLE_ROWS`
+    caps what is sorted, and `MAX_VIEW_WINDOWS` caps what is read. Without the
+    second one a filter matching nothing walks the whole view every call.
+    """
     rows: list = []
     cursor = None
-    while True:
+    for window in range(MAX_VIEW_WINDOWS):
         page = page_call(cursor, node_core.MAX_PAGE_SIZE)
         rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
         cursor = page["next_cursor"]
@@ -1606,6 +1636,7 @@ def _whole_view(page_call, file_kinds, search) -> tuple[list, bool]:
             return rows, False
         if len(rows) >= MAX_SORTABLE_ROWS:
             return rows, True
+    return rows, True
 
 
 def _ordered_listing(principals, page_call, *, file_kinds, search, start, limit, paginated, order):
@@ -1690,11 +1721,25 @@ def _listing(principals, page_call, *, file_kinds, search, start, limit, paginat
         )
     window = int(limit) if limit else (LEGACY_PAGE_SIZE if paginated else None)
     offset = int(start or 0)
+    if file_kinds or search:
+        return _filtered_listing(
+            principals,
+            page_call,
+            file_kinds=file_kinds,
+            search=search,
+            offset=offset,
+            window=window,
+            paginated=paginated,
+        )
     cursor = node_core.encode_cursor(offset) if offset else None
     rows: list = []
+    walked = 0
     while window is None or len(rows) < window:
+        if walked >= MAX_WALK_WINDOWS:
+            break
+        walked += 1
         page = page_call(cursor, node_core.MAX_PAGE_SIZE if window is None else window - len(rows))
-        rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
+        rows.extend(page["rows"])
         cursor = page["next_cursor"]
         if not cursor:
             break
@@ -1705,6 +1750,34 @@ def _listing(principals, page_call, *, file_kinds, search, start, limit, paginat
         "rows": rows,
         "has_next": bool(cursor),
         "next_start": node_core.decode_cursor(cursor) if cursor else offset + len(rows),
+    }
+
+
+def _filtered_listing(principals, page_call, *, file_kinds, search, offset, window, paginated):
+    """Answer a listing whose `file_kinds` or `search` this module applies.
+
+    Both were SQL predicates on the old surface, so `start` and `limit`
+    counted matching rows: page two of a PDF-only folder began at the
+    twenty-first PDF, not at the twenty-first child. §11.2 can spell neither,
+    so the filter runs here, and a cursor built from `start` would count the
+    wrong rows entirely.
+
+    So the view is walked from the top, filtered, and cut - the same answer
+    `_ordered_listing` gives to the same problem. Resuming from the caller's
+    cursor instead would also read a folder one row at a time whenever the
+    filter matches little, and `list.files` is `allow_guest`.
+    """
+    rows, over_bound = _whole_view(page_call, file_kinds, search)
+    page = rows[offset:] if window is None else rows[offset : offset + window]
+    shaped = _legacy_list_rows(principals, page)
+    if not paginated:
+        return shaped
+    return {
+        "rows": shaped,
+        # Past the bound the walk stopped reading, so `rows` is not the whole
+        # match set and its length cannot say there is nothing more.
+        "has_next": offset + len(page) < len(rows) or over_bound,
+        "next_start": offset + len(page),
     }
 
 
