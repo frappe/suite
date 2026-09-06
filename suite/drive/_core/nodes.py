@@ -525,6 +525,41 @@ def title_taken(principals: Principals, parent: str, title: str) -> bool:
     )
 
 
+def available_title(principals: Principals, parent: str, title: str) -> str:
+    """Answer the title `title` becomes below `parent` when a sibling holds it.
+
+    §8.6's dedupe rule, read rather than written: the oldest keeps the plain
+    title and later ones get ` (2)`, ` (3)`. The rule is stated there for the
+    paths that create a node with no user in the loop, and this read is how the
+    §11.7 compatibility layer keeps that promise for a legacy client that has
+    no dialog to ask a new title with.
+
+    The gate is UPLOAD, the one the retired `get_new_title` carried, and for
+    its reason: the suffix counts the siblings, so it says more than
+    `title_taken` does. It reads without `FOR UPDATE`, unlike
+    `_deduplicated_title`, because the answer is advisory and no write follows
+    it here; `create_file` still refuses a collision under its own lock.
+    """
+    parent_row = _node(parent)
+    require(parent_row, UPLOAD, principals)
+    _validate_parent(parent_row)
+    if not isinstance(title, str) or not title.strip():
+        frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
+
+    def taken(candidate: str) -> bool:
+        return bool(
+            frappe.db.exists("Drive Node", {"parent": parent_row.name, "title": candidate, "state": "Active"})
+        )
+
+    if not taken(title):
+        return title
+    stem, extension = os.path.splitext(title)
+    suffix = 2
+    while taken(f"{stem} ({suffix}){extension}"):
+        suffix += 1
+    return f"{stem} ({suffix}){extension}"
+
+
 def create_folder(principals: Principals, parent: str, title: str) -> str:
     """Create an empty folder below an authorized active container."""
     return _create_empty_node(principals, parent, title, kind="folder")

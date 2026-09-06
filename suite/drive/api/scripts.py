@@ -53,10 +53,12 @@ def sync_from_disk():
 
 def auto_delete_from_trash():
     days_before = (date.today() - timedelta(days=30)).isoformat()
+    # Ids, not rows: `delete_entities` forwards onto `nodes.purge`, which takes
+    # a node id. The old body reached `frappe.get_doc`, which accepted either.
     result = frappe.db.get_all(
         "File",
         filters={"status": STATUS_TRASHED, "file_modified": ["<", days_before]},
-        fields=["name"],
+        pluck="name",
     )
     if result:
         delete_entities(result)

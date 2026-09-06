@@ -9,8 +9,10 @@ def add(file_id: str):
     file_doc = frappe.get_doc("File", file_id)
     file = frappe.request.files["file"]
     file.filename = f"{file_doc.name} embed -{file.filename}"
+    # §11.7 turned `upload_file` into a forwarder that answers a plain dict of
+    # the legacy columns, not a Document.
     embed = upload_file(parent=file_doc.name, embed=1)
-    return {"file_url": f"/api/method/suite.writer.api.embed.get?id={embed.name}"}
+    return {"file_url": f"/api/method/suite.writer.api.embed.get?id={embed['name']}"}
 
 
 @frappe.whitelist(allow_guest=True)
