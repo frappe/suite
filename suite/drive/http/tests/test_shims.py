@@ -1211,20 +1211,49 @@ class TestUnadoptedUploadTarget(ShimCase):
             shims.upload_file(parent="f1")
         legacy.assert_not_called()
 
-    def test_a_directory_upload_into_a_node_less_parent_is_refused_by_name(self):
-        """A `fullpath` names folders to create, and creating one here would
-        be a second legacy folder writer beside `create_folder`, which is a
-        forwarder and refuses this parent too. Refused with words a user can
-        act on, and nothing is written on the way out."""
+    def test_a_directory_upload_into_a_node_less_parent_walks_the_file_store(self):
+        """A `fullpath` names folders to create. `create_folder` answers a
+        legacy parent again, so the old walk works whole and the file lands in
+        the deepest folder it made."""
         self.stub("node_core")
         uploads = self.stub("upload_core")
         self.stub_unadopted_row(True)
-        with patch.object(shims, "_legacy_upload") as legacy:
-            with self.assertRaises(frappe.ValidationError) as caught:
-                shims.upload_file(parent="d1", fullpath="pictures/cat.png")
-        self.assertIn("cannot upload a folder", str(caught.exception))
-        legacy.assert_not_called()
+        with (
+            patch.object(shims, "_legacy_ensure_path", return_value="d2") as walk,
+            patch.object(shims, "_legacy_upload", return_value={"name": "e1"}) as legacy,
+        ):
+            shims.upload_file(parent="d1", fullpath="pictures/cat.png")
+        walk.assert_called_once_with("pictures/cat.png", "d1")
+        self.assertEqual(legacy.call_args.kwargs["parent"], "d2")
         uploads.create_upload.assert_not_called()
+
+    def test_the_walk_is_the_old_body_and_answers_its_deepest_folder(self):
+        from suite.drive.api import files as legacy_files
+        from suite.drive.api import permissions
+
+        with (
+            patch.object(shims, "_", side_effect=lambda text: text),
+            patch.object(legacy_files, "ensure_path", return_value="d2") as walk,
+            patch.object(permissions, "user_has_permission", return_value=True),
+        ):
+            self.assertEqual(shims._legacy_ensure_path("pictures/cat.png", "d1"), "d2")
+        walk.assert_called_once_with("pictures/cat.png", "d1")
+
+    def test_the_walk_is_gated_by_the_rule_that_wrote_the_folder(self):
+        """The old body checked upload on the parent the caller named, before
+        it walked. Nothing is created for a caller the folder refuses."""
+        from suite.drive.api import files as legacy_files
+        from suite.drive.api import permissions
+
+        with (
+            patch.object(shims, "_", side_effect=lambda text: text),
+            patch.object(legacy_files, "ensure_path") as walk,
+            patch.object(permissions, "user_has_permission", return_value=False) as gate,
+        ):
+            with self.assertRaises(frappe.PermissionError):
+                shims._legacy_ensure_path("pictures/cat.png", "d1")
+        gate.assert_called_once_with("d1", "upload")
+        walk.assert_not_called()
 
 
 class TestUnadoptedAccessRead(ShimCase):

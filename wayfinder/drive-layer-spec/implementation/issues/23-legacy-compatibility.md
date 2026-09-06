@@ -1236,3 +1236,164 @@ acceptance criteria say may not be synthesized. It is not touched here:
 ### What the gate still owes
 
 Modules 15 to 17 have not been run.
+
+## Residual audit evidence
+
+The residual audit follows module 14. Work on
+`forge/drive-23-residual-audit`, branched from `a2369aea0`.
+
+### What the audit was
+
+The final known-residual audit for ticket 23. It started from the three
+untested in-scope defects the module-14 handoff named:
+
+- `get_user_access` answers zeros for a node-less legacy `File`, even though
+  the legacy owned-row rule set every bit. The Writer list, version and search
+  paths are built on it.
+- `list.files` may not serve a node-less legacy tree.
+- `embed.add` may not work for a node-less legacy Writer document.
+
+**The scoping judgement.** The "Build gap" is not a shipped regression. Those
+are pre-Build legacy rows that Build will link. The genuine class is the rows
+a live writer creates that Build will never link before ticket 29: everything
+`writer.api.docs.create_document` writes. `drive_content_types` is `[]`, so
+`Writer Document` is in the §10.2 expand phase, and every document the product
+creates is a `File` with no node.
+
+### The defects found
+
+Every fix takes one shape. It is stated once here and not repeated per name:
+
+- **The store is chosen by which one holds the id.** `_unadopted_row(id)` is
+  `not frappe.db.exists("Drive Node", id) and frappe.db.exists("File", id)`.
+  Never by catching a refusal: §5.2 makes `DriveNotFound` the answer for a node
+  the caller may not read.
+- **No node is created early.** Dormant activation is intact, and ticket 29
+  owns it.
+- **The gate is always the surviving legacy body's own check**, so no deny is
+  synthesized: `File.rename`, `toggle_entity_status`, `File.share`,
+  `File.unshare`, `File.permanent_delete`, `user_has_permission`,
+  `get_user_access_for_user`.
+- **No destination is synthesized.** `move` refuses a cross-store move by name
+  (`_refuse_crossing`), and `remove_or_restore` uses `toggle_entity_status`,
+  which restores in place.
+- **The read and the write live in the shim and die with it.** `_core` is not
+  widened.
+- **The imports are function-local.** `api/permissions.py` imports `shims`, and
+  `drive/utils` builds a query-builder DocType at import time.
+
+What is particular to each name, and how ordinary the gesture that reaches it
+is:
+
+| Name(s) | Particular to it | Reached by | Commits |
+|---|---|---|---|
+| `get_user_access` | Answers the bits the `Drive Permission` rows still carry. The three Writer reads built on it come back with it: `get_document_list`, `get_versions`, `search` in `writer/api/general.py` | The author listing, versioning or finding their own document | `1090672f3` / `72557bbed`, `727d59cab` |
+| `upload_file` | Writes the picture into the document that holds it. A directory upload into a legacy parent is refused by name, because creating the folders would be a second legacy folder writer | `embed.add` | `580c5b8c5` / `5b9798d0d` |
+| `list.files` | Pages a legacy folder. Both halves are read whole and merged, because a page cannot be merged on its own | The Drive folder page | `2be00015f` / `a861cc8a6`, `be515e4e7` |
+| `track_visit` | Rank 1, no unusual gesture: every document open | Opening a document | `42d0b1684` / `71a6a5e94` |
+| `rename` | Rank 1: the auto-title on the first Enter, `CoreEditor.vue:349` | Typing the first line | `b31aa9adb` / `c08a3d3cc` |
+| `remove_or_restore` | Restores in place, as `toggle_entity_status` always did | Writer's navbar | `c5d7e389b` / `033f3d8f4` |
+| `update_access`, `get_general_access`, `get_shared_with_list` | The caller's own `user` spelling reaches `File.share` and `File.unshare`, not the normalised `$PUBLIC` | Writer's navbar | `bf75a546e` / `0d016d64d` |
+| `set_favourite`, `move`, `create_folder` | Rank 2 for `set_favourite`, rank 3 for `move`. `create_folder` breaks on a node-less parent | The row menu, and Drive's New menu on a legacy folder page | `41d853c58` / `03ad4ab21` |
+| `delete_entities`, `does_entity_exist` | `File.permanent_delete` is the rule that wrote the row and carries its own Write check. It tombstones (`status = "Removed"`), as it always did. `clear_all` still names only the node trash view | The DOCX-import rollback, `writer/utils/docximporter.js` | `f71e67d69` / `55fa73339` |
+| `create_link` | Breaks on a node-less parent | `NewLinkDialog.vue` on a legacy folder page | `75cd6e827` / `51b0e4c52` |
+| `get_file_content` | `Document` is in `FORBIDDEN_DOWNLOAD_TYPES`, so the old body answered "Not found" and never reached its own redirect to the editor. That dead branch is left out, with the reason in the code: `openEntity` routes a `Document` to `/writer/w/` | The `list.files` fix, which puts the files a legacy folder already held back on a page | `c51c9fa48` / `fa4baa49b`, `60d9a7b5c` |
+
+One more decision, in `update_access`: the deny that `File.unshare` writes is
+kept. On the `File` store it is the only way the old resolver spells
+"restricted". Dropping it would leave an unshared document readable.
+
+### Classified out of scope
+
+| Name | Reason |
+|---|---|
+| `get_thumbnail` | The URL is only built for Image, Video and PDF. A 404 degrades to the same broken `<img>` a missing thumbnail already gives |
+| `get_entity_type` | Only the `/drive/g/:id` guard reads it, and that route is fed by pre-team-restructure links |
+| `get_entity_activity_log` | Zero call sites in `frontend/src` and `e2e/` |
+| The Drive search names, `search` and `list.files(search=...)` | They return nothing rather than refusing, and a legacy full-text search would be a second search implementation |
+
+### Correction to module 14
+
+Module 14's "The rest of the boundary, diagnosed and not fixed" is now largely
+fixed. Every row of that table is covered by this branch, except the names
+classified out of scope above.
+
+### Gate commands and results
+
+Site-free, from `/home/faris/benches/suite-bench/sites`:
+
+```
+../env/bin/python -m unittest suite.drive.http.tests.test_shims \
+  suite.drive.http.tests.test_routes suite.drive.http.tests.test_shapes \
+  suite.drive.http.tests.test_translator suite.tests.test_architecture
+main:  Ran 367 tests / OK
+after: Ran 434 tests in 2.866s / OK
+```
+
+`test_shims` alone: `Ran 261 tests in 1.321s / OK`, up from 194.
+
+Site modules, serialized, `script -qec "bench --site slides.localhost
+run-tests --module <m>" /dev/null`:
+
+```
+suite.writer.tests.test_drive_adoption   Ran 23 / OK and Ran 72 / OK  (main: 23 and 47)
+suite.writer.api.tests.test_general      Ran 7 tests in 0.697s / OK   (main: 2)
+suite.drive.http.tests.test_shims        Ran 261 tests in 1.122s / OK (main: 194)
+suite.slides.tests.test_drive_adoption   Ran 30 / OK and Ran 71 / OK  (unchanged from main)
+```
+
+### Mutation runs
+
+Every site case was mutation-checked. Disabling its `_unadopted_row` branch
+makes the case error or fail, and each mutation was reverted in place. The last
+one run: commenting out the `get_file_content` branch turns
+`test_a_picture_in_that_folder_can_still_be_opened` and
+`test_a_stranger_cannot_open_a_picture_in_somebody_elses_folder` into errors,
+`Ran 72 / FAILED (errors=2)`.
+
+### Formatting and lint
+
+`uvx ruff@0.12.3 check` answers the same one pre-existing `B007` on `shims.py`.
+`check --select=I` is clean. `format --check` wants exactly the three
+pre-existing hunks, one in `shims.py` and two in `test_shims.py`.
+`test_drive_adoption.py` is clean on both commands.
+
+### Carried risks: residual audit
+
+1. **A `File` whose node is purged after Build would be answered again.** The
+   store decision reads existence, so a legacy row left behind by a purge would
+   be answered by every one of these names. It cannot happen before Build,
+   because no node exists at all. Tickets 27 and 29 own keeping the two stores
+   in step.
+2. **These branches outlive their reason if ticket 29 does not replace
+   `create_document`.** Once `drive_content_types` names Writer,
+   `content.require_node` refuses a `Writer Document` with no node. The
+   endpoint then fails loudly rather than writing more legacy rows.
+3. **A cross-store `move` is refused by name, not performed.** Build is what
+   joins the two trees.
+4. **Two pre-existing frontend defects were found and not fixed.** They predate
+   ticket 23 and belong to the frontend ticket.
+   `frontend/src/apps/writer/components/ErrorPage.vue:6,14` branches on
+   `error.type` while `frappeRequest` sets `exc_type`, so every non-string
+   error renders "You do not have access to this.".
+   `frontend/src/apps/writer/utils/index.js:447` has a duplicated
+   `/api/method/` prefix.
+
+### What the gate still owes
+
+Run and green here: `suite.drive.http.tests.test_shims`,
+`suite.writer.tests.test_drive_adoption`, `suite.writer.api.tests.test_general`,
+`suite.slides.tests.test_drive_adoption`.
+
+Not run here, and therefore unverified. `shims.py` changed across
+`get_user_access`, `upload_file`, `list.files`, `track_visit`, `rename`,
+`remove_or_restore`, `update_access`, `get_general_access`,
+`get_shared_with_list`, `set_favourite`, `move`, `create_folder`,
+`create_link`, `delete_entities`, `does_entity_exist` and `get_file_content`,
+so root must rerun: `suite.drive.http.tests.test_dispatch`,
+`suite.drive.api.tests.test_files`, `suite.drive.api.tests.test_list`,
+`suite.drive.api.tests.test_notifications`,
+`suite.drive.tests.test_sync_permissions`, the three WebDAV suites,
+`suite.drive.tests.test_access`, `suite.drive.tests.test_views`,
+`suite.drive.tests.test_activity`, `suite.drive.tests.test_nodes`,
+`suite.drive.tests.test_grants`.
