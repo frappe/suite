@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from importlib import import_module
 from threading import Barrier
 from unittest.mock import call, patch
 from uuid import uuid4
@@ -26,6 +27,18 @@ from suite.drive._core.quota import (
 )
 from suite.drive._core.roots import create_root, personal_root_for
 from suite.drive.jobs import recompute_root_usage
+from suite.hooks import scheduler_events
+
+
+def scan_active_and_archived_roots(doctype, filters=None, pluck=None):
+    """Answer only the daily scan's own query, so a changed filter fails here."""
+    if (doctype, filters, pluck) != (
+        "Drive Root",
+        {"state": ["in", ("Active", "Archived")]},
+        "name",
+    ):
+        raise AssertionError(f"unexpected root scan: {doctype}, {filters}, {pluck}")
+    return ["active", "archived", "broken"]
 
 
 class TestQuotaContract(UnitTestCase):
@@ -98,7 +111,7 @@ class TestQuotaContract(UnitTestCase):
     @patch("suite.drive.jobs.frappe.db.commit")
     @patch("suite.drive.jobs.frappe.log_error")
     @patch("suite.drive.jobs.recompute_usage")
-    @patch("suite.drive.jobs.frappe.get_all", return_value=["active", "archived", "broken"])
+    @patch("suite.drive.jobs.frappe.get_all", side_effect=scan_active_and_archived_roots)
     def test_daily_recompute_isolates_roots_and_logs_drift(
         self, _get_all, recompute, log_error, commit, rollback
     ):
@@ -114,6 +127,31 @@ class TestQuotaContract(UnitTestCase):
         self.assertEqual(commit.call_count, 2)
         rollback.assert_called_once_with()
         self.assertEqual(log_error.call_count, 2)
+
+    @patch("suite.drive.jobs.frappe.db.commit")
+    @patch("suite.drive.jobs.recompute_usage", return_value=frappe._dict(root="archived", drift=0))
+    @patch("suite.drive.jobs.frappe.get_all", return_value=["archived"])
+    def test_the_daily_scan_reads_archived_roots_as_well_as_active_ones(self, get_all, recompute, _commit):
+        recompute_root_usage()
+
+        get_all.assert_called_once_with(
+            "Drive Root", filters={"state": ["in", ("Active", "Archived")]}, pluck="name"
+        )
+        recompute.assert_called_once_with("archived")
+
+    def test_the_recompute_is_registered_once_as_a_daily_scheduler_event(self):
+        job = "suite.drive.jobs.recompute_root_usage"
+        registered = []
+        for events in scheduler_events.values():
+            if isinstance(events, dict):
+                for schedule in events.values():
+                    registered.extend(schedule)
+            else:
+                registered.extend(events)
+        self.assertIn(job, scheduler_events["daily"])
+        self.assertEqual(registered.count(job), 1)
+        module_path, _, attribute = job.rpartition(".")
+        self.assertIs(getattr(import_module(module_path), attribute), recompute_root_usage)
 
 
 class TestRootReservationsAndRecompute(IntegrationTestCase):
@@ -154,7 +192,8 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         release_storage_reservation(self.root, "quota-test")
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
-    def test_recompute_repairs_nodes_versions_and_reservations(self):
+    def _charge_a_node_a_version_and_a_reservation(self, key: str) -> None:
+        """Charge 7 node bytes, 5 version bytes, and 11 reserved bytes to the root."""
         child = frappe.get_doc(
             {
                 "doctype": "Drive Node",
@@ -178,7 +217,10 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
                 "size": 5,
             }
         ).insert(ignore_permissions=True)
-        create_storage_reservation(self.root, "recompute-test", 11)
+        create_storage_reservation(self.root, key, 11)
+
+    def test_recompute_repairs_nodes_versions_and_reservations(self):
+        self._charge_a_node_a_version_and_a_reservation("recompute-test")
         frappe.db.set_value("Drive Root", self.root, "used_bytes", 999, update_modified=False)
 
         result = recompute_usage(self.root)
@@ -186,6 +228,35 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
         self.assertEqual((result.nodes, result.versions, result.reserved), (7, 5, 11))
         self.assertEqual(result.after, 23)
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 23)
+
+    def test_the_daily_pass_recomputes_an_archived_root(self):
+        """The daily job must reach an Archived root, not only an Active one.
+
+        The scan runs against the real table, so the state filter is proved
+        here. Only this root is recomputed for real: every other root on the
+        site is stubbed, so the pass stays inside the test's own data.
+        """
+        self._charge_a_node_a_version_and_a_reservation("archived-recompute")
+        frappe.db.set_value(
+            "Drive Root", self.root, {"state": "Archived", "used_bytes": 999}, update_modified=False
+        )
+        scanned = []
+        repair = recompute_usage
+
+        def recompute_this_root_only(root):
+            scanned.append(root)
+            return repair(root) if root == self.root else frappe._dict(root=root, drift=0)
+
+        with (
+            patch("suite.drive.jobs.recompute_usage", side_effect=recompute_this_root_only),
+            patch("suite.drive.jobs.frappe.db.commit"),
+        ):
+            result = recompute_root_usage()
+
+        self.assertIn(self.root, scanned)
+        self.assertEqual((result["corrected"], result["failed"]), (1, 0))
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 23)
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "state"), "Archived")
 
     def test_every_operation_stays_on_the_bound_root_once_it_is_archived(self):
         """Archive then reprovision must not move a charged reservation.
