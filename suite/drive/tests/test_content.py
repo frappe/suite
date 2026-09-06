@@ -37,7 +37,7 @@ from suite.drive._core.nodes import _link_document, copy, create_file, create_fo
 from suite.drive._core.nodes import create_document as create_document_node
 from suite.drive._core.principals import Principals
 from suite.drive._core.roles import COMMENT, EDIT, READ, UPLOAD
-from suite.drive._core.roots import create_root
+from suite.drive._core.roots import create_root, purge_root, update_root
 from suite.drive._core.versions import restore_version, take_version
 from suite.hooks import doc_events, scheduler_events
 from suite.tests.utils import ensure_user, stub_db
@@ -255,6 +255,33 @@ class TestContentContract(UnitTestCase):
             doc.before_insert()
         self.assertEqual(calls, ["own"], "and the app's own hook still runs")
 
+    def test_the_node_accessor_takes_the_link_write_back_frappe_always_does(self):
+        # `_validate_links` assigns every Link field the name it just read
+        # (`frappe/model/base_document.py:1159`). While `node` was read-only,
+        # every insert of a content doctype whose node field is called `node`,
+        # which is what §10.7 declares for every app, died there.
+        class Own(DriveContent):
+            doctype = CONTENT_DOCTYPE
+
+            def __init__(self):
+                self.fields = {}
+
+            def get(self, field):
+                return self.fields.get(field)
+
+            def set(self, field, value):
+                self.fields[field] = value
+
+        doc = Own()
+        with registered(spec()):
+            doc.node = "node-a"
+            self.assertEqual(doc.fields, {"node": "node-a"})
+            self.assertEqual(doc.node, "node-a")
+        with registered(spec(node_field="body")):
+            doc.fields = {}
+            doc.node = "node-b"
+            self.assertEqual(doc.fields, {"body": "node-b"}, "the declared field, not the accessor name")
+
     def test_a_document_that_names_another_node_is_refused(self):
         doc = frappe._dict(doctype=CONTENT_DOCTYPE, name="one", node="node-a")
         with registered(spec()), stub_db(MagicMock()) as db:
@@ -443,13 +470,13 @@ class TestContentContract(UnitTestCase):
         declared = spec(satellites=(Satellite(doctype=SATELLITE_DOCTYPE, link_field="parent"),))
         with (
             registered(declared),
-            stub_db(MagicMock()) as db,
             patch("suite.drive.framework.principals_for", return_value=person),
             # the list guard below reads the share table; there is none here
             patch("suite.drive.framework.is_drive_admin", return_value=False),
             patch("frappe.share.get_shared", return_value=[]),
         ):
-            db.escape.side_effect = lambda value, percent=True: "'{0}'".format(str(value).replace("'", "''"))
+            # The predicate escapes through the real connection. A stub there
+            # breaks `now()`, which reads System Settings through `frappe.db`.
             predicate = framework.satellite_query_conditions(user=USER, doctype=SATELLITE_DOCTYPE)
         self.assertTrue(
             predicate.startswith(f"`tab{SATELLITE_DOCTYPE}`.`parenttype` = '{CONTENT_DOCTYPE}' AND "),
@@ -735,6 +762,9 @@ class TestContentWorkflows(IntegrationTestCase):
         # The titled fixture carries the mixin too, so `_validate_mixin` passes
         # and `_validate_forbidden_fields` is the check that refuses it.
         controllers[TITLED_DOCTYPE] = DriveTestContent
+        # A run killed between `setUp` and the cleanup leaves the two fixture
+        # roots behind, and `create_root` then refuses every later run.
+        _purge_fixture_roots()
         frappe.db.commit()
 
     @classmethod
@@ -750,42 +780,24 @@ class TestContentWorkflows(IntegrationTestCase):
         super().setUp()
         frappe.set_user("Administrator")
         self._blobs_before = set(frappe.get_all("File Blob", pluck="name"))
+        # Registered before the first row exists, so a `setUp` that dies half
+        # way still hands its roots back. `tearDown` never runs in that case.
+        self.addCleanup(self._remove_fixture_rows)
         self.root = create_root(kind="Personal", title="Content Root", user=USER)
         self.other_root = create_root(kind="Personal", title="Content Other", user=OTHER)
-        self.root_ids = (self.root.name, self.other_root.name)
         self.admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
         self.person = Principals(USER, (USER, "$GENERAL"), ("$PUBLIC",))
         self.stranger = Principals(OTHER, (OTHER, "$GENERAL"), ("$PUBLIC",))
         frappe.cache().delete_value(content._sweep_cursor_key())
 
-    def tearDown(self):
+    def _remove_fixture_rows(self):
+        """Hand back everything this test owns, whatever it managed to create."""
         frappe.set_user("Administrator")
-        placeholders = ", ".join(["%s"] * len(self.root_ids))
-        node_ids = tuple(
-            frappe.db.sql(
-                f"SELECT name FROM `tabDrive Node` WHERE name IN ({placeholders}) "
-                f"OR root IN ({placeholders})",
-                self.root_ids * 2,
-                pluck=True,
-            )
-        )
-        if node_ids:
-            frappe.db.delete(SATELLITE_DOCTYPE, {"content": ["in", _content_names(node_ids)]})
-            frappe.db.delete(CONTENT_DOCTYPE, {"node": ["in", node_ids]})
-            for doctype in (
-                "Drive Node Preview",
-                "Drive Node Version",
-                "Drive Grant",
-                "Drive Activity",
-            ):
-                frappe.db.delete(doctype, {"node": ["in", node_ids]})
-            frappe.db.delete("Drive Node", {"name": ["in", node_ids]})
-        frappe.db.delete("Drive Root", {"name": ["in", self.root_ids]})
+        _purge_fixture_roots()
         for blob in set(frappe.get_all("File Blob", pluck="name")) - self._blobs_before:
             frappe.delete_doc("File Blob", blob, force=1, ignore_permissions=True, ignore_missing=True)
         frappe.cache().delete_value(content._sweep_cursor_key())
         frappe.db.commit()
-        super().tearDown()
 
     # helpers
 
@@ -868,7 +880,9 @@ class TestContentWorkflows(IntegrationTestCase):
         with registered(spec()):
             node = self._document("Deck")
             docname = frappe.db.get_value("Drive Node", node, "content_docname")
-            other = create_empty(node)
+            # `require_node` refuses a second row on the same node, so the
+            # rival document the link has to reject needs a node of its own.
+            other = frappe.db.get_value("Drive Node", self._document("Rival"), "content_docname")
             with self.assertRaises(DriveConflict):
                 _link_document(node, spec_for(CONTENT_DOCTYPE), other)
         self.assertEqual(frappe.db.get_value("Drive Node", node, "content_docname"), docname)
@@ -1201,6 +1215,11 @@ class TestContentWorkflows(IntegrationTestCase):
             touch(self.admin, CONTENT_DOCTYPE, docname)
             after = frappe.db.get_value("Drive Node", document, "content_modified")
             self.assertGreaterEqual(after, before - timedelta(seconds=1))
+            # Below Read the document is not there at all; Read alone still
+            # cannot write, which is what makes this an edit check.
+            with self.assertRaises(DriveNotFound):
+                touch(self.stranger, CONTENT_DOCTYPE, docname)
+            grant(document, OTHER, READ, self.admin)
             with self.assertRaises(DriveForbidden):
                 touch(self.stranger, CONTENT_DOCTYPE, docname)
 
@@ -1412,9 +1431,23 @@ class TestContentWorkflows(IntegrationTestCase):
         self.assertEqual(registry(), {}, "staged activation: no app is registered yet")
 
 
-def _content_names(node_ids: tuple[str, ...]) -> tuple[str, ...]:
-    names = tuple(frappe.get_all(CONTENT_DOCTYPE, filters={"node": ["in", node_ids]}, pluck="name"))
-    return names or ("",)
+def _purge_fixture_roots() -> None:
+    """Remove every Drive root the two fixture users own, through Drive's own purge.
+
+    `USER` and `OTHER` belong to this module alone, so the filter can never
+    reach a live account or another test. `purge_root` is the one path that
+    clears every reference table and calls `on_purge` for the app rows behind
+    a document, so the fixture registry has to be live while it runs.
+    """
+    admin = Principals("Administrator", ("Administrator",), (), is_admin=True)
+    roots = frappe.get_all("Drive Root", filters={"user": ["in", (USER, OTHER)]}, pluck="name")
+    if not roots:
+        return
+    with registered(spec()):
+        for root in roots:
+            if frappe.db.get_value("Drive Root", root, "state") == "Active":
+                update_root(root, admin, state="Archived")
+            purge_root(root, admin)
 
 
 def _create_fixture_doctypes() -> None:
