@@ -430,8 +430,10 @@ def get_shared_with_list(entity: str) -> list[dict]:
     and `grants_for` requires MANAGE. The old row filter is kept here, not
     pushed into the workflow: legacy hid deny rows and the two site-wide
     principals, because this list is the dialog's "shared with" list and the
-    general access sits in its own control. An expired link row is dropped for
-    the same reason - it is not somebody the node is shared with.
+    general access sits in its own control.
+
+    Every `$LINK:` row is dropped, expired or not. A link is a credential, not
+    a person, and §4.4 gives the dialog no control that would show one.
     """
     principals = _principals()
     rows = access.grants_for(entity, principals)["grants"]
@@ -525,6 +527,29 @@ NOTIFICATION_TYPE = {
 }
 
 
+def _entity_types(node_ids: list[str]) -> dict[str, str]:
+    """Answer legacy `entity_type` for a page of nodes, in one read.
+
+    `Drive Notification.entity_type` held "Document", "Folder", or "File", and
+    `Notifications.vue` routes on it: `drive-` + the value. It is derived here
+    rather than published as `None`, because a null makes every row on that
+    page unclickable.
+    """
+    wanted = sorted({node for node in node_ids if node})
+    if not wanted:
+        return {}
+    rows = frappe.get_all("Drive Node", filters={"name": ("in", wanted)}, fields=["name", "kind", "mime"])
+    answer = {}
+    for row in rows:
+        if _file_type(row) == "Document":
+            answer[row["name"]] = "Document"
+        elif row["kind"] in ("folder", "root"):
+            answer[row["name"]] = "Folder"
+        else:
+            answer[row["name"]] = "File"
+    return answer
+
+
 def get_notifications(only_unread: bool = False) -> list[dict]:
     """`get_notifications` -> `GET /notifications`.
 
@@ -536,6 +561,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
     rows = _walk(
         lambda cursor: activity_core.notifications(principals, only_unread=bool(only_unread), cursor=cursor)
     )
+    kinds = _entity_types([(row.get("activity") or {}).get("node") for row in rows])
     people: dict[str, dict] = {}
     answer = []
     for row in rows:
@@ -551,7 +577,7 @@ def get_notifications(only_unread: bool = False) -> list[dict]:
                 "read": int(row.get("read") or 0),
                 "type": NOTIFICATION_TYPE.get(record.get("action"), "Share"),
                 "message": record.get("detail", {}).get("message"),
-                "entity_type": None,
+                "entity_type": kinds.get(record.get("node")),
                 "notif_doctype": "Drive Node",
                 "notif_doctype_name": record.get("node"),
                 "creation": row.get("creation"),
@@ -861,7 +887,16 @@ def upload_file(
         title=node_core.available_title(principals, parent, upload.filename),
         content_modified=int(file_modified) / 1000 if file_modified else None,
     )
-    return _legacy_row(node_core.stored(node))
+    row = node_core.stored(node)
+    # `GenericPage.vue` still listens for `list-add` and appends the row to the
+    # open folder. Without it the uploaded file only appears on a reload. The
+    # old body broadcast the row to every connected session; it is sent to the
+    # uploader alone here, because §5 does not let a node row travel to a
+    # session that was never authorized for it.
+    frappe.publish_realtime(
+        "list-add", {"file": _legacy_list_rows(principals, [row])[0]}, user=principals.user
+    )
+    return _legacy_row(row)
 
 
 def get_thumbnail(entity_name: str):
@@ -1014,7 +1049,15 @@ def rename(entity_name: str, new_title: str):
 
 
 def move(entity_names: list[str], new_parent: str | None = None):
-    """`move` -> `PATCH /nodes/<id>` `{parent}`."""
+    """`move` -> `PATCH /nodes/<id>` `{parent}`.
+
+    Answers the destination, not the moved file. `File.move` returned
+    `frappe.get_value("File", new_parent, ["file_name", "name", "folder"])`,
+    and both frontend `move` resources read it that way: the toast says "Moved
+    to <file_name>", "Go" opens `name` as a folder, and `updateMoved(name)`
+    refreshes that folder's page. Returning the moved node instead sent the
+    user into a file and refreshed the wrong listing.
+    """
     principals = _principals()
     if isinstance(entity_names, str):
         entity_names = json.loads(entity_names)
@@ -1024,26 +1067,53 @@ def move(entity_names: list[str], new_parent: str | None = None):
             frappe.ValidationError,
         )
     destination = new_parent or _home(principals)
-    answer = None
     for node in entity_names:
         node_core.update(principals, node, parent=destination)
-        answer = _legacy_row(node_core.stored(node))
-    return answer
+    row = node_core.stored(destination)
+    return {"file_name": row.get("title"), "name": row.get("name"), "folder": row.get("parent")}
+
+
+# The two site-wide principals were one setting on the old surface: a
+# `Drive Permission` row naming `""` or `$GENERAL`, and `File._clear_general`
+# dropped both of them together. §4.4 keeps them as two principals, so a
+# legacy caller naming either one is naming that whole setting.
+SITE_WIDE = ("$PUBLIC", "$GENERAL")
+
+
+def _legacy_role(kwargs) -> int:
+    """Read one rung from the five legacy bits, granting no verb unasked.
+
+    The old bits were independent; §5.9's rungs are ordered, and a rung carries
+    every verb below it. So the rung is the highest one whose bit is set *and*
+    all of whose lower bits are set, not the highest bit on its own: a row that
+    says `read, comment, share` is asking to re-share something it may not
+    edit, and the highest bit alone would answer MANAGE and hand out edit,
+    move, and purge with it.
+
+    Lossy downwards, and recorded: `share` without `write` cannot be spelled,
+    so the answer stops below it. Nothing here reaches a rung the caller did
+    not ask for every verb of.
+    """
+    role = 0
+    for bit, rung in sorted(BIT_ROLE.items(), key=lambda pair: pair[1]):
+        if not _flag(kwargs.get(bit)):
+            break
+        role = rung
+    return role
 
 
 def update_access(entity_name: str, method: str, **kwargs):
     """`update_access` -> `PUT`/`DELETE /nodes/<id>/grants/<principal>`.
 
-    The five independent bits become one rung: the highest bit the caller set
-    names the role, because that is what the old row let its holder do. It is
-    lossy and it is recorded - a legacy row could say `write` without `read`,
-    and §5.9's ladder cannot - but it never grants a rung no bit asked for.
+    The five independent bits become one rung through `_legacy_role`, and
+    `$PUBLIC` is held at §6.5's ceiling: a published node is the one row
+    `(node, $PUBLIC, READ)`, so that is what a legacy publish writes. Granting
+    less than the old row named is the safe direction and the only legal one.
 
     Two rules this cannot break. `deny=1` is the caller asking for role 0 and
-    is passed through as one; `unshare` removes the row and writes nothing.
-    §5.10 keeps removal and denial apart, so the old body's habit of inserting
-    a deny to cut inheritance stops here: a client that wants a denial has to
-    say so.
+    is passed through as one; `unshare` removes rows and writes none. §5.10
+    keeps removal and denial apart, so the old body's habit of inserting a deny
+    to cut inheritance stops here: a client that wants a denial has to say so.
     """
     principals = _principals()
     kwargs.pop("cmd", None)
@@ -1052,17 +1122,21 @@ def update_access(entity_name: str, method: str, **kwargs):
         principal = "$PUBLIC"
 
     if method == "unshare":
-        access.revoke(entity_name, principal, principals)
+        # One gesture, both rows. `File.unshare("$GENERAL")` called
+        # `_clear_general`, which dropped the public row with it, and the
+        # dialog's "Restricted" still sends only `$GENERAL`. Revoking one row
+        # would leave a published file published.
+        for target in SITE_WIDE if principal in SITE_WIDE else (principal,):
+            access.revoke(entity_name, target, principals)
         return None
     if method != "share":
         frappe.throw(_("Drive access method {0} is not supported").format(method), frappe.ValidationError)
 
     if _flag(kwargs.get("deny")):
         return access.grant(entity_name, principal, 0, principals)
-    role = 0
-    for bit, rung in BIT_ROLE.items():
-        if _flag(kwargs.get(bit)):
-            role = max(role, rung)
+    role = _legacy_role(kwargs)
+    if principal == "$PUBLIC":
+        role = min(role, READ)
     return access.grant(entity_name, principal, role, principals)
 
 
@@ -1231,19 +1305,6 @@ def resolve_legacy_route(old_id: str):
 LEGACY_PAGE_SIZE = 100
 
 
-def _child_counts(names: list[str]) -> dict[str, int]:
-    """Count each listed folder's active children in one query."""
-    if not names:
-        return {}
-    rows = frappe.get_all(
-        "Drive Node",
-        filters={"parent": ["in", names], "state": "Active"},
-        fields=["parent", "count(name) as total"],
-        group_by="parent",
-    )
-    return {row["parent"]: int(row["total"] or 0) for row in rows}
-
-
 def _share_counts(names: list[str]) -> dict[str, int]:
     """Answer each listed node's share marker from its own grant rows.
 
@@ -1282,16 +1343,21 @@ def _share_counts(names: list[str]) -> dict[str, int]:
 def _legacy_list_rows(principals, rows: list) -> list[dict]:
     """Build the twenty-eight column legacy list row for one page of nodes.
 
-    Four decorations the §11.3 node shape does not carry, and each is read
+    Five decorations the §11.3 node shape does not carry, and each is read
     once for the whole page rather than once per row: the owner's display
     fields, the caller's own favourite and recent marks, the folder child
-    count, and the share marker. `slide_count` has no producer on either
-    surface and is left off rather than guessed.
+    count, the share marker, and a presentation's slide count.
+
+    `slide_count` is carried only on presentation rows, as `_visible_rows`
+    carried it. `DriveListRow.sizeLabel` reads `row.slide_count != null` to
+    decide between "12 slides" and a byte size, so setting it on every row
+    would relabel every file on the page.
     """
     names = [row["name"] for row in rows]
     marks = activity_core.personal_marks(principals, names)
-    children = _child_counts(names)
+    children = node_core.readable_child_counts(principals, names)
     shares = _share_counts(names)
+    slides = _slide_counts(rows)
     owners = {}
     answer = []
     for row in rows:
@@ -1300,21 +1366,36 @@ def _legacy_list_rows(principals, rows: list) -> list[dict]:
             owners[owner] = _user_info(owner, ["full_name", "user_image"])
         role = access.effective_role(row, principals)
         mark = marks.get(row["name"]) or {}
-        answer.append(
-            {
-                **_legacy_row(row),
-                "owner_full_name": owners[owner].get("full_name"),
-                "owner_image": owners[owner].get("user_image"),
-                "is_favourite": mark.get("favourite"),
-                "accessed": mark.get("opened_at"),
-                "child_count": children.get(row["name"], 0),
-                "share_count": shares.get(row["name"], 0),
-                "kind": "native",
-                **_bits(role),
-                "type": _access_type(row, role, principals),
-            }
-        )
+        shaped = {
+            **_legacy_row(row),
+            "owner_full_name": owners[owner].get("full_name"),
+            "owner_image": owners[owner].get("user_image"),
+            "is_favourite": mark.get("favourite"),
+            "accessed": mark.get("opened_at"),
+            "child_count": children.get(row["name"], 0),
+            "share_count": shares.get(row["name"], 0),
+            "kind": "native",
+            **_bits(role),
+            "type": _access_type(row, role, principals),
+        }
+        if row.get("content_doctype") == "Presentation":
+            shaped["slide_count"] = slides.get(row.get("content_docname"), 0)
+        answer.append(shaped)
     return answer
+
+
+def _slide_counts(rows: list) -> dict[str, int]:
+    """Count the slides behind each presentation row, in one query.
+
+    `api/list._get_slide_counts` is retained and already answers this. It is
+    reached rather than copied because reaching the producer directly would
+    put a second Drive-to-content-product import in the tree, and that import
+    is owned debt held against one file (see `tests/test_architecture.py`).
+    The import is function-local because `api/list` imports this module.
+    """
+    from suite.drive.api.list import _get_slide_counts
+
+    return _get_slide_counts(rows)
 
 
 def _matching_kinds(rows: list, file_kinds) -> list:
@@ -1362,18 +1443,25 @@ def _listing(principals, page_call, *, file_kinds, search, start, limit, paginat
     window every time overshoots: the surplus rows are cut to fit the page
     while `next_cursor` has already moved past them, so the client's next call
     resumes beyond rows it was never shown.
+
+    A caller that names no `limit` and does not page gets the whole listing.
+    The old `get_query_data` capped at `MAX_PAGE_SIZE` only on its paginated
+    branch; the other branch ran the query with no `LIMIT` at all. The folder
+    tree (`data/folderTree.js`) and the move dialog both call that way, so a
+    default page here hid every child past the first hundred from the sidebar
+    and from the move target list.
     """
-    window = int(limit) if limit else LEGACY_PAGE_SIZE
+    window = int(limit) if limit else (LEGACY_PAGE_SIZE if paginated else None)
     offset = int(start or 0)
     cursor = node_core.encode_cursor(offset) if offset else None
     rows: list = []
-    while len(rows) < window:
-        page = page_call(cursor, window - len(rows))
+    while window is None or len(rows) < window:
+        page = page_call(cursor, node_core.MAX_PAGE_SIZE if window is None else window - len(rows))
         rows.extend(_matching_titles(_matching_kinds(page["rows"], file_kinds), search))
         cursor = page["next_cursor"]
         if not cursor:
             break
-    rows = _legacy_list_rows(principals, rows[:window])
+    rows = _legacy_list_rows(principals, rows if window is None else rows[:window])
     if not paginated:
         return rows
     return {
