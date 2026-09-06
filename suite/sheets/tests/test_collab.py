@@ -48,11 +48,15 @@ class CheckCollabAccess(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_rejects_guest(self):
+        """Refused, not thrown at: the collab server counts a status as a
+        network failure and would retry a settled answer for fifteen minutes."""
         from suite.sheets import collab
 
         self.frappe.session.user = "Guest"
-        with self.assertRaises(self.frappe.AuthenticationError):
-            collab.check_collab_access("SH-1")
+        answer = collab.check_collab_access("SH-1")
+        self.assertFalse(answer["canRead"])
+        self.assertFalse(answer["canWrite"])
+        self.assertNotIn("user", answer)
 
     def test_no_read_returns_false_flags(self):
         from suite.sheets import collab

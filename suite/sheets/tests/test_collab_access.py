@@ -283,11 +283,18 @@ class TheTwoSides(unittest.TestCase):
         self.assertTrue(answer["canRead"])
 
     def test_a_legacy_sheet_still_refuses_guest(self):
-        """A legacy row has no link grant to hold, so there is nothing to check."""
-        frappe, patcher = _patched_frappe(node=None, user="Guest")
+        """A legacy row has no link grant to hold, so there is nothing to check.
+
+        The refusal is the same shape a linked sheet's is. A raised status would
+        read to the collab server as an unreachable Frappe, and it would spend
+        three whole recheck periods retrying an answer that cannot change.
+        """
+        _frappe, patcher = _patched_frappe(node=None, user="Guest")
         self.addCleanup(patcher.stop)
-        with self.assertRaises(frappe.AuthenticationError):
-            collab.check_collab_access(SHEET)
+        answer = collab.check_collab_access(SHEET)
+        self.assertFalse(answer["canRead"])
+        self.assertEqual(answer["recheckSeconds"], collab.RECHECK_SECONDS)
+        self.assertNotIn("fullName", answer)
 
 
 if __name__ == "__main__":

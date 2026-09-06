@@ -135,9 +135,15 @@ def _may_edit(node: str) -> bool:
 
 
 def _legacy_access(name: str) -> dict:
-    """Answer one sheet Build has not linked, exactly as before ticket 19."""
+    """Answer one sheet Build has not linked, exactly as before ticket 19.
+
+    A Guest is refused, not thrown at. A legacy sheet has no link grant to
+    hold, so the answer is settled and permanent — and the collab server counts
+    a thrown status as an unreachable Frappe, which burns its three fail-closed
+    periods and reports a deterministic refusal as a network problem.
+    """
     if frappe.session.user == "Guest":
-        frappe.throw("Login required", frappe.AuthenticationError)
+        return _refused("DriveNotFound")
 
     can_read = bool(frappe.has_permission("Sheet", doc=name, ptype="read", throw=False))
     if not can_read:
