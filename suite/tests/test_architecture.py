@@ -519,6 +519,7 @@ class TestArchitecture(unittest.TestCase):
                 "refuse_shared_linked_rows",
                 "refuse_shared_row",
                 "release_storage_reservation",
+                "resolve_share_link",
                 "take_version",
                 "touch",
             ),
