@@ -162,6 +162,20 @@ BASELINE_DEBT = {
         ),
     ),
     **_debt(
+        "Suite Slides API",
+        "Remove when tickets 21 and 22 expose root, grant, and trash workflows over HTTP.",
+        (
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.doc_has_permission",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.doc_query_conditions",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.satellite_has_permission",
+            "suite/slides/tests/test_composite_groups.py|dotted-string|suite.drive.framework.satellite_query_conditions",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.access",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.content",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.principals",
+            "suite/slides/tests/test_composite_groups.py|import|suite.drive._core.roots",
+        ),
+    ),
+    **_debt(
         "Suite Sheets",
         "Remove when tickets 21 and 22 expose root, trash, media, and version workflows over HTTP.",
         (

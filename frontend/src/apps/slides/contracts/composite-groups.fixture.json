@@ -1,0 +1,880 @@
+{
+  "readme": [
+    "Contract fixtures for the Slides grouped composite load (ticket 20, spec 6.2 and 6.6).",
+    "The contract itself is the module docstring of suite/slides/api/composite.py.",
+    "Ids, timestamps and codes here are placeholders; shapes, ordering and counts are not.",
+    "suite/slides/tests/test_composite_groups.py compares a real answer against this file,",
+    "and composite-groups.test.ts holds the client to the rules the file states.",
+    "The composite names 21 separately shared decks, so it cannot be loaded in one request:",
+    "the first group carries the composite's own code plus 19 reference codes, which is the",
+    "20 items X-Drive-Links allows. The second group carries only the composite's code, so",
+    "both of its references come back marked unreadable, in place, with no content."
+  ],
+  "group_limit": 19,
+  "link_header_limit": 20,
+  "methods": {
+    "manifest": "suite.slides.api.composite.composite_manifest",
+    "group": "suite.slides.api.composite.composite_group"
+  },
+  "manifest": {
+    "presentation": "deck-composite",
+    "node": "c0mp0site1",
+    "modified": "2026-09-06 11:04:12.882913",
+    "group_limit": 19,
+    "reference_count": 21,
+    "references": [
+      {
+        "reference": "ref00000000000000000000000000",
+        "index": 1,
+        "presentation": "deck-00"
+      },
+      {
+        "reference": "ref01000000000000000000000000",
+        "index": 2,
+        "presentation": "deck-01"
+      },
+      {
+        "reference": "ref02000000000000000000000000",
+        "index": 3,
+        "presentation": "deck-02"
+      },
+      {
+        "reference": "ref03000000000000000000000000",
+        "index": 4,
+        "presentation": "deck-03"
+      },
+      {
+        "reference": "ref04000000000000000000000000",
+        "index": 5,
+        "presentation": "deck-04"
+      },
+      {
+        "reference": "ref05000000000000000000000000",
+        "index": 6,
+        "presentation": "deck-05"
+      },
+      {
+        "reference": "ref06000000000000000000000000",
+        "index": 7,
+        "presentation": "deck-06"
+      },
+      {
+        "reference": "ref07000000000000000000000000",
+        "index": 8,
+        "presentation": "deck-07"
+      },
+      {
+        "reference": "ref08000000000000000000000000",
+        "index": 9,
+        "presentation": "deck-08"
+      },
+      {
+        "reference": "ref09000000000000000000000000",
+        "index": 10,
+        "presentation": "deck-09"
+      },
+      {
+        "reference": "ref10000000000000000000000000",
+        "index": 11,
+        "presentation": "deck-10"
+      },
+      {
+        "reference": "ref11000000000000000000000000",
+        "index": 12,
+        "presentation": "deck-11"
+      },
+      {
+        "reference": "ref12000000000000000000000000",
+        "index": 13,
+        "presentation": "deck-12"
+      },
+      {
+        "reference": "ref13000000000000000000000000",
+        "index": 14,
+        "presentation": "deck-13"
+      },
+      {
+        "reference": "ref14000000000000000000000000",
+        "index": 15,
+        "presentation": "deck-14"
+      },
+      {
+        "reference": "ref15000000000000000000000000",
+        "index": 16,
+        "presentation": "deck-15"
+      },
+      {
+        "reference": "ref16000000000000000000000000",
+        "index": 17,
+        "presentation": "deck-16"
+      },
+      {
+        "reference": "ref17000000000000000000000000",
+        "index": 18,
+        "presentation": "deck-17"
+      },
+      {
+        "reference": "ref18000000000000000000000000",
+        "index": 19,
+        "presentation": "deck-18"
+      },
+      {
+        "reference": "ref19000000000000000000000000",
+        "index": 20,
+        "presentation": "deck-19"
+      },
+      {
+        "reference": "ref20000000000000000000000000",
+        "index": 21,
+        "presentation": "deck-20"
+      }
+    ]
+  },
+  "groups": [
+    {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000",
+          "ref01000000000000000000000000",
+          "ref02000000000000000000000000",
+          "ref03000000000000000000000000",
+          "ref04000000000000000000000000",
+          "ref05000000000000000000000000",
+          "ref06000000000000000000000000",
+          "ref07000000000000000000000000",
+          "ref08000000000000000000000000",
+          "ref09000000000000000000000000",
+          "ref10000000000000000000000000",
+          "ref11000000000000000000000000",
+          "ref12000000000000000000000000",
+          "ref13000000000000000000000000",
+          "ref14000000000000000000000000",
+          "ref15000000000000000000000000",
+          "ref16000000000000000000000000",
+          "ref17000000000000000000000000",
+          "ref18000000000000000000000000"
+        ],
+        "x_drive_links": [
+          "<composite code>",
+          "<code for deck-00>",
+          "<code for deck-01>",
+          "<code for deck-02>",
+          "<code for deck-03>",
+          "<code for deck-04>",
+          "<code for deck-05>",
+          "<code for deck-06>",
+          "<code for deck-07>",
+          "<code for deck-08>",
+          "<code for deck-09>",
+          "<code for deck-10>",
+          "<code for deck-11>",
+          "<code for deck-12>",
+          "<code for deck-13>",
+          "<code for deck-14>",
+          "<code for deck-15>",
+          "<code for deck-16>",
+          "<code for deck-17>",
+          "<code for deck-18>"
+        ]
+      },
+      "presentation": "deck-composite",
+      "node": "c0mp0site1",
+      "references": [
+        {
+          "reference": "ref00000000000000000000000000",
+          "index": 1,
+          "presentation": "deck-00",
+          "readable": true,
+          "node": "node00abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide001000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 0 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c001",
+              "parent": "deck-00",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref01000000000000000000000000",
+          "index": 2,
+          "presentation": "deck-01",
+          "readable": true,
+          "node": "node01abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide011000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 1 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c011",
+              "parent": "deck-01",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref02000000000000000000000000",
+          "index": 3,
+          "presentation": "deck-02",
+          "readable": true,
+          "node": "node02abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide021000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 2 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c021",
+              "parent": "deck-02",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref03000000000000000000000000",
+          "index": 4,
+          "presentation": "deck-03",
+          "readable": true,
+          "node": "node03abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide031000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 3 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c031",
+              "parent": "deck-03",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref04000000000000000000000000",
+          "index": 5,
+          "presentation": "deck-04",
+          "readable": true,
+          "node": "node04abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide041000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 4 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c041",
+              "parent": "deck-04",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref05000000000000000000000000",
+          "index": 6,
+          "presentation": "deck-05",
+          "readable": true,
+          "node": "node05abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide051000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 5 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c051",
+              "parent": "deck-05",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref06000000000000000000000000",
+          "index": 7,
+          "presentation": "deck-06",
+          "readable": true,
+          "node": "node06abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide061000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 6 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c061",
+              "parent": "deck-06",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref07000000000000000000000000",
+          "index": 8,
+          "presentation": "deck-07",
+          "readable": true,
+          "node": "node07abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide071000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 7 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c071",
+              "parent": "deck-07",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref08000000000000000000000000",
+          "index": 9,
+          "presentation": "deck-08",
+          "readable": true,
+          "node": "node08abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide081000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 8 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c081",
+              "parent": "deck-08",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref09000000000000000000000000",
+          "index": 10,
+          "presentation": "deck-09",
+          "readable": true,
+          "node": "node09abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide091000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 9 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c091",
+              "parent": "deck-09",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref10000000000000000000000000",
+          "index": 11,
+          "presentation": "deck-10",
+          "readable": true,
+          "node": "node10abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide101000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 10 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c101",
+              "parent": "deck-10",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref11000000000000000000000000",
+          "index": 12,
+          "presentation": "deck-11",
+          "readable": true,
+          "node": "node11abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide111000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 11 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c111",
+              "parent": "deck-11",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref12000000000000000000000000",
+          "index": 13,
+          "presentation": "deck-12",
+          "readable": true,
+          "node": "node12abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide121000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 12 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c121",
+              "parent": "deck-12",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref13000000000000000000000000",
+          "index": 14,
+          "presentation": "deck-13",
+          "readable": true,
+          "node": "node13abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide131000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 13 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c131",
+              "parent": "deck-13",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref14000000000000000000000000",
+          "index": 15,
+          "presentation": "deck-14",
+          "readable": true,
+          "node": "node14abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide141000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 14 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c141",
+              "parent": "deck-14",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref15000000000000000000000000",
+          "index": 16,
+          "presentation": "deck-15",
+          "readable": true,
+          "node": "node15abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide151000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 15 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c151",
+              "parent": "deck-15",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref16000000000000000000000000",
+          "index": 17,
+          "presentation": "deck-16",
+          "readable": true,
+          "node": "node16abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide161000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 16 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c161",
+              "parent": "deck-16",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref17000000000000000000000000",
+          "index": 18,
+          "presentation": "deck-17",
+          "readable": true,
+          "node": "node17abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide171000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 17 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c171",
+              "parent": "deck-17",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        },
+        {
+          "reference": "ref18000000000000000000000000",
+          "index": 19,
+          "presentation": "deck-18",
+          "readable": true,
+          "node": "node18abcd",
+          "composite": false,
+          "slides": [
+            {
+              "name": "slide181000000000000000000000",
+              "owner": "owner@example.com",
+              "creation": "2026-09-06 10:00:00.000000",
+              "modified": "2026-09-06 10:00:00.000000",
+              "modified_by": "owner@example.com",
+              "docstatus": 0,
+              "idx": 1,
+              "background": "#111111ff",
+              "elements": "[{\"id\": \"e1\", \"type\": \"text\", \"text\": \"Deck 18 slide 1\"}]",
+              "thumbnail": null,
+              "transition": "none",
+              "transition_duration": 0.0,
+              "fade_unmatched_elements": 0,
+              "client_id": "c181",
+              "parent": "deck-18",
+              "parentfield": "slides",
+              "parenttype": "Presentation",
+              "doctype": "Slide"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref19000000000000000000000000",
+          "ref20000000000000000000000000"
+        ],
+        "x_drive_links": [
+          "<composite code>"
+        ]
+      },
+      "presentation": "deck-composite",
+      "node": "c0mp0site1",
+      "references": [
+        {
+          "reference": "ref19000000000000000000000000",
+          "index": 20,
+          "presentation": "deck-19",
+          "readable": false,
+          "node": null,
+          "composite": null,
+          "slides": null
+        },
+        {
+          "reference": "ref20000000000000000000000000",
+          "index": 21,
+          "presentation": "deck-20",
+          "readable": false,
+          "node": null,
+          "composite": null,
+          "slides": null
+        }
+      ]
+    }
+  ],
+  "refusals": {
+    "malformed_group": {
+      "request": {
+        "name": "deck-composite",
+        "references": "not a list"
+      },
+      "exception": "frappe.ValidationError",
+      "http_status": 417,
+      "error": "A composite group is a list of reference ids"
+    },
+    "oversized_group": {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000",
+          "ref01000000000000000000000000",
+          "ref02000000000000000000000000",
+          "ref03000000000000000000000000",
+          "ref04000000000000000000000000",
+          "ref05000000000000000000000000",
+          "ref06000000000000000000000000",
+          "ref07000000000000000000000000",
+          "ref08000000000000000000000000",
+          "ref09000000000000000000000000",
+          "ref10000000000000000000000000",
+          "ref11000000000000000000000000",
+          "ref12000000000000000000000000",
+          "ref13000000000000000000000000",
+          "ref14000000000000000000000000",
+          "ref15000000000000000000000000",
+          "ref16000000000000000000000000",
+          "ref17000000000000000000000000",
+          "ref18000000000000000000000000",
+          "ref19000000000000000000000000"
+        ]
+      },
+      "exception": "frappe.ValidationError",
+      "http_status": 417,
+      "error": "A composite group takes at most 19 references"
+    },
+    "repeated_reference": {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000",
+          "ref00000000000000000000000000"
+        ]
+      },
+      "exception": "frappe.ValidationError",
+      "http_status": 417,
+      "error": "A composite group cannot name the same reference twice"
+    },
+    "injected_reference": {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000",
+          "deck-99"
+        ]
+      },
+      "exception": "frappe.ValidationError",
+      "http_status": 417,
+      "error": "A composite group may only name this presentation's own references"
+    },
+    "oversized_link_header": {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000"
+        ],
+        "x_drive_links_count": 21
+      },
+      "exception": "frappe.ValidationError",
+      "http_status": 417,
+      "error": "X-Drive-Links accepts at most 20 items"
+    },
+    "unreadable_composite": {
+      "request": {
+        "name": "deck-composite",
+        "references": [
+          "ref00000000000000000000000000"
+        ]
+      },
+      "exception": "frappe.PermissionError",
+      "http_status": 403,
+      "error": "Presentation is not public",
+      "note": "The same answer for a name that is not a composite and for one that does not exist."
+    }
+  }
+}
